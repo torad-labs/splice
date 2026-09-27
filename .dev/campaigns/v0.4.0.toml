@@ -8676,3 +8676,11 @@ title = "Doctor's trace row and /api/config say what the running daemon does, no
 files = ["features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/DoctorTraceChecks.kt", "features/diagnostics/src/test/kotlin/splice/diagnostics/doctor/v4371/"]
 status = "todo"
 verify = "red first: a declared-on, running-off head's row does not say it writes (fails today: 'writes its FULL'); a declared-off, running-on head has a row saying it still writes until restart (fails today: no row); running-on and declared-on says writes; daemon down reads the declaration as the next start; the value never quoted beyond true/false; live on walk-desk: plant trace = \"true\" without restart, doctor says it will write after restart; restart, doctor says writes; remove the key without restart, doctor says still writes until restart."
+
+[[items]]
+id = "V4-372"
+phase = "release"
+title = "Settings shows a per-head knob's pending value beside the running one when splice.toml changed it and a restart applies it (V4-360 walk, p19 steps 13-14, daily-011): the claude-local tab showed Full trace Off, the running value, while splice.toml said on and Needs you and Doctor spoke of it, and nothing on the knob said 'On in splice.toml, applies at restart'. Uses V4-371's running-versus-declared report; the knob row says both and points at the one restart."
+files = ["console/src/widgets/knob-form/", "console/src/pages/settings/", "console/tests/v4372-pending-knob.test.ts"]
+status = "todo"
+verify = "red first: a per-head knob whose declared value differs from its running value renders both ('On in splice.toml, Off until restart') and links the restart (fails today: only the running value); equal values render as today; console lint, test, bun tools/gate typecheck green; walked with V4-360's re-walk."

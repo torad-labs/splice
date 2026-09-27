@@ -8300,3 +8300,11 @@ title = "Every page uses my words (build order 5; acceptance Q0c, Q31, Q32, Q64)
 files = ["console/src/"]
 status = "todo"
 verify = "Marlin walks it by eye in a normal-size browser on a fresh home (or the film home where history is needed) at the built sha and approves; his walk log names the sha; CI gate on the train sha. A green gate is not approval."
+
+[[items]]
+id = "V4-349"
+phase = "release"
+title = "Every error reads in plain words with what to do (build order 6; acceptance Q52). The baseline's one failure reads 'io.ktor.utils.io.ClosedWriteChannelException from chatgpt.com:443, with no message'; a transport failure is named as what happened to the user's turn (the connection to ChatGPT closed while sending) and what splice did or what to do."
+files = ["features/turns/src/main/kotlin/splice/head/pipeline/", "features/turns/src/test/kotlin/splice/head/pipeline/"]
+status = "todo"
+verify = "Marlin walks it by eye in a normal-size browser on a fresh home (or the film home where history is needed) at the built sha and approves; his walk log names the sha; CI gate on the train sha. A green gate is not approval."

@@ -132,7 +132,10 @@ class TurnPathProbeLoopTest {
         // A loop whose body throws a non-cancellation error, supervised by the SAME completion
         // handler start() installs. Driven through the real class so the handler under test is
         // the shipped one.
-        val loop = TurnPathProbeLoop("t", port = 1, stalled = stalled, log = { logs += it }, intervalMs = 1)
+        // An hour between ticks, so the cancel below is the only thing that happens to this loop. At 1 ms
+        // the loop's own ticks raced it: two refused probes on port 1 flip stalled[t] to true before
+        // cancel() lands, and the assertion blamed the cancel (CI run 36282792630, 2026-09-26).
+        val loop = TurnPathProbeLoop("t", port = 1, stalled = stalled, log = { logs += it }, intervalMs = 3_600_000)
         val job = loop.start(scope)
         job.cancel() // clean shutdown first: cancellation must NOT page
         job.join()

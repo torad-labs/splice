@@ -25,6 +25,9 @@ public data class TranscriptMessage(
     val tool: String? = null,
     /** True on a tool result, false on the call; null on everything else. */
     val result: Boolean? = null,
+    /** The id Claude Code wrote on an assistant reply. Several lines share it, and the reader merges
+     *  them into this message; the perf row joins its response to this id (V4-354). */
+    val messageId: String? = null,
 )
 
 public data class TranscriptPage(
@@ -44,6 +47,27 @@ public sealed class TranscriptLookup {
 
     /** The request itself cannot be served: a malformed id or cursor. */
     public data class Refused(val reason: String) : TranscriptLookup()
+}
+
+/** The redacted context of one response id from a client's local transcript, never raw request bytes.
+ *  [earlier] counts messages before this bounded window so the console never claims it holds every
+ *  message from a very large transcript (V4-354). */
+public sealed class MessageConversation {
+    public data class Found(
+        val sessionId: String,
+        val responseId: String,
+        val messages: List<TranscriptMessage>,
+        val earlier: Long,
+    ) : MessageConversation()
+
+    public data class Missing(val reason: String) : MessageConversation()
+    public data class Refused(val reason: String) : MessageConversation()
+}
+
+/** An exact response-id lookup against Claude Code's own local transcript, in caller-supplied root
+ *  priority. The implementation returns only redacted conversation messages, no headers or bodies. */
+public fun interface TranscriptMessageSource {
+    public fun lookup(sessionId: String, roots: List<Path>, responseId: String): MessageConversation
 }
 
 /** What [SessionTranscripts.sentTexts] found. */

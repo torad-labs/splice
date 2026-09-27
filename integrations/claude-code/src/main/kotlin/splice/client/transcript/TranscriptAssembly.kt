@@ -126,12 +126,21 @@ internal class PageAssembly(firstIndex: Long, private val limit: Int, private va
     private fun flush() {
         val done = pending ?: return
         pending = null
-        if (done.texts.isNotEmpty()) emit(TranscriptRole.ASSISTANT, done.ts, done.joined())
-        for ((name, input) in done.calls) emit(TranscriptRole.ASSISTANT, done.ts, input, tool = name, result = false)
+        if (done.texts.isNotEmpty()) emit(TranscriptRole.ASSISTANT, done.ts, done.joined(), messageId = done.id)
+        for ((name, input) in done.calls) {
+            emit(TranscriptRole.ASSISTANT, done.ts, input, tool = name, result = false, messageId = done.id)
+        }
     }
 
-    private fun emit(role: TranscriptRole, ts: Long?, text: String, tool: String? = null, result: Boolean? = null) {
-        messages += TranscriptMessage(nextIndex, role, ts, redaction.shown(text), tool, result)
+    private fun emit(
+        role: TranscriptRole,
+        ts: Long?,
+        text: String,
+        tool: String? = null,
+        result: Boolean? = null,
+        messageId: String? = null,
+    ) {
+        messages += TranscriptMessage(nextIndex, role, ts, redaction.shown(text), tool, result, messageId)
         nextIndex += 1
     }
 

@@ -8303,6 +8303,7 @@ title = "Every page uses my words (build order 5; acceptance Q0c, Q31, Q32, Q64)
 files = ["console/src/"]
 status = "todo"
 verify = "Marlin walks it by eye in a normal-size browser on a fresh home (or the film home where history is needed) at the built sha and approves; his walk log names the sha; CI gate on the train sha. A green gate is not approval."
+# depends:V4-344,V4-345,V4-346,V4-347
 
 [[items]]
 id = "V4-349"

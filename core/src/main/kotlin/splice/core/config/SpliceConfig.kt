@@ -36,6 +36,9 @@ public class SpliceConfig internal constructor(private val m: Map<String, Any?>)
     public val foldMaxTier: Int get() = long(Knob.FOLD_MAX_TIER).toInt()
     public val maxInflight: Int get() = long(Knob.MAX_INFLIGHT).toInt()
     public val maxQueued: Int get() = long(Knob.MAX_QUEUED).toInt()
+
+    /** Live console switch for reading Claude Code's already-written redacted transcript (V4-354). */
+    public val transcriptView: Boolean get() = bool(Knob.TRANSCRIPT_VIEW)
     public val upstreamRetries: Int get() = long(Knob.UPSTREAM_RETRIES).toInt()
     public val upstreamTimeoutMs: Long get() = long(Knob.UPSTREAM_TIMEOUT_MS)
     public val firstByteTimeoutMs: Long get() = long(Knob.FIRST_BYTE_TIMEOUT_MS)

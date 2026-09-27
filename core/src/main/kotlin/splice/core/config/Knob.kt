@@ -181,6 +181,12 @@ public enum class Knob(
     // or opt out with 0 = unlimited. Hot-PATCHable, no restart.
     MAX_INFLIGHT("maxInflight", KnobKind.NUMBER, listOf("CLAUDEX_MAX_INFLIGHT"), 12L),
     MAX_QUEUED("maxQueued", KnobKind.NUMBER, listOf("CLAUDEX_MAX_QUEUED"), 512L),
+
+    // V4-354: one GLOBAL live switch for reading the redacted conversation Claude Code already wrote
+    // locally. ON by default because it collects no new bytes. The operator's 2026-09-20 opt-in ruling
+    // for exact request/response bodies still belongs to per-head TRACE below, OFF by default;
+    // this switch neither changes TRACE nor exposes its instructions, tools or raw headers.
+    TRANSCRIPT_VIEW("transcriptView", KnobKind.BOOL, emptyList(), true),
     UPSTREAM_RETRIES(
         "upstreamRetries",
         KnobKind.NUMBER,

@@ -207,7 +207,7 @@ function config(ports: { control: number; mock: number; oauth: number; solo: num
     // V4-345: the solo head keeps its trace from boot, so a turn a journey drives through it opens with
     // its request whole. The OAuth head keeps none: the capture journey turns its trace on and off.
     `[heads.${STACK.soloHead}.overrides]`,
-    'trace = true',
+    'trace = "true"',
     '',
     '[providers.openrouter]',
     'dialect = "openai-chat"',

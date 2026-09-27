@@ -8408,6 +8408,7 @@ verify = "red first, on today's tree: a DaemonSpawn test with an empty daemon-bo
 claimed_by = "splice-lead"
 claimed_at = "2026-09-27T08:54:09.848Z"
 # [2026-09-27] CLAIM: owner=splice-lead at=2026-09-27T08:54:09Z
+# [2026-09-27] Code 8fdb36b2c (splice-lead). Red on HEAD 1ac8758e6 in a detached export: BootLogReasonTest empty-log case failed at :30, its control passed; DaemonLogWiringTest compile-red without bootEnded. Green in the same export with the fix: lifecycle start tests 17/17, app log+boot tests 23/23, detekt on :app and :features-lifecycle. Mutant StderrEcho { !stderrIsBootLog } (V4-258's always-off echo) turns the new app test red (14 run, 1 failed). Uncovered by a test: the one call that ends the echo after Daemon.start (no test boots a real daemon); its live leg runs on the next install: a daemon whose control port is taken prints the bind reason in the terminal, and a daemon that came up stops copying to daemon-boot.log.
 
 [[items]]
 id = "V4-354"

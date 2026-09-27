@@ -8534,3 +8534,11 @@ title = "Resume elsewhere says what stays behind (Marlin F2 finding 1, 0 of 3 wa
 files = ["console/src/pages/sessions/"]
 status = "todo"
 verify = "red first: a sessions panel test renders the Resume elsewhere section and finds the line naming what carries (the conversation) and what does not (earlier reasoning, shown as [Thinking removed]) (fails today: strings.ts:102 says only 'splice copies nothing until that launch'); the words are true to what Claude Code shows on resume (cite the transcript line or Marlin's run); console lint/typecheck/test green; Marlin walks it."
+
+[[items]]
+id = "V4-362"
+phase = "release"
+title = "Folder trust on resume, proved live (Marlin F2 finding 2). Found: film-home-3's tally session was started with claude -p (daemon.log 9:53:27 AM CT, launch claude-splice -> [claude, -p, ...]); print mode never asks about trust, so no head held a trust record for ~/tally (.claude-claude-splice/.claude.json has no tally project) and V4-283 (LaunchService.kt:103-105, TrustedLaunch over sibling config dirs) had nothing to carry. The walk fixture made the question appear, not a missing carry; the carry itself has only unit proof (LaunchFolderTrustTest)."
+files = ["features/launch/src/test/kotlin/splice/launch/recipe/v4362/"]
+status = "todo"
+verify = "live leg on a throwaway home (captures/, never the operator's): claude-splice run interactively in a git repo, trust answered yes, one turn; then claude-grok -r <that id> in tmux: capture-pane shows no trust dialog before the resumed conversation (R3: the same leg with the trust record removed shows the dialog); if the live leg reds, the fix lands with a red-first test in v4362/."

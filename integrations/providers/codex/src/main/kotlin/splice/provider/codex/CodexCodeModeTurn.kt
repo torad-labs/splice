@@ -102,7 +102,8 @@ internal class CodexCodeModeTurn(
      *  restored around it — or null when there is none, or when the one there was is abandoned. */
     private fun placedOwner(context: CodeModeRunContext, canonicalBody: String): PlacedOwner? {
         val resultIds = context.turn.toolResults.map(CodeModeResult::id).toSet()
-        val owner = registry.owner(context.key, context.digest, resultIds) ?: return null
+        val callbackIds = wire.callbackIds(canonicalBody)
+        val owner = registry.owner(context.key, context.digest, resultIds, callbackIds) ?: return null
         val restored = wire.restoreBaseline(canonicalBody, owner)
         val error = restored.error ?: return PlacedOwner(owner, checkNotNull(restored.bodyJson))
         abandon(owner, error)

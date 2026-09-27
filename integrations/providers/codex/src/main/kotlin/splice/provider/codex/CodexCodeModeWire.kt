@@ -48,6 +48,21 @@ internal class CodexCodeModeWire(private val json: Json, private val log: LogSin
 
     fun inputBoundary(bodyJson: String): CodeModeInputBoundary? = history.inputBoundary(bodyJson)
 
+    /** An owned call can be present before its result arrives. Keep both wire forms as owner evidence;
+     *  a call from a completed record is not an ACTIVE owner's id and cannot claim it. */
+    fun callbackIds(bodyJson: String): Set<String> {
+        val input = (json.parseToJsonElement(bodyJson) as? JsonObject)?.get(FIELD_INPUT) as? JsonArray
+            ?: return emptySet()
+        return input.mapNotNull { element ->
+            val item = element as? JsonObject
+            when (string(item, FIELD_TYPE)) {
+                "function_call", "function_call_output" ->
+                    string(item, CODE_MODE_FIELD_CALL_ID).takeIf(String::isNotEmpty)
+                else -> null
+            }
+        }.toSet()
+    }
+
     /** [candidateMedia]: this turn's rendered follow-ups for result ids the record does not hold
      *  yet — owned on sight, so a screenshot arriving for a parked script resumes it. */
     fun extraContent(

@@ -54,16 +54,21 @@ internal class CodexCodeModeRegistry(
         }
     }
 
-    fun owner(key: String, digest: String, ids: Set<String>): CodeModeRecord? = synchronized(monitor) {
+    /** ACTIVE owns visible calls before their result; LOST still needs a result or an exact retry. */
+    fun owner(
+        key: String,
+        digest: String,
+        resultIds: Set<String>,
+        callbackIds: Set<String>,
+    ): CodeModeRecord? = synchronized(monitor) {
         if (sweeper.sweep()) store.save(records, history.entries)
+        val activeIds = if (callbackIds.isEmpty()) resultIds else resultIds + callbackIds
         records.lastOrNull { record ->
-            record.key == key && record.phase == CodeModePhase.ACTIVE
+            record.key == key && record.phase == CodeModePhase.ACTIVE &&
+                CodeModeOwnerMatch.matches(record, digest, activeIds)
         } ?: records.lastOrNull { record ->
             record.key == key && record.phase == CodeModePhase.LOST &&
-                (
-                    record.lastDigest == digest ||
-                        record.clientIds().any { it in ids }
-                    )
+                CodeModeOwnerMatch.matches(record, digest, resultIds)
         }
     }
 
@@ -199,6 +204,12 @@ internal class CodexCodeModeRegistry(
             throw error
         }
     }
+}
+
+/** A retry or one of this record's client ids, never just another turn with the same conversation key. */
+private object CodeModeOwnerMatch {
+    fun matches(record: CodeModeRecord, digest: String, ids: Set<String>): Boolean =
+        record.lastDigest == digest || (ids.isNotEmpty() && record.clientIds().any { it in ids })
 }
 
 /** V4-337: the start of a conversation's turn, under the registry's [monitor] and on its own collections.

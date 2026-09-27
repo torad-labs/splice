@@ -8209,3 +8209,11 @@ claimed_at = "2026-09-27T02:20:35.959Z"
 # [2026-09-27] CLAIM: owner=console at=2026-09-27T02:20:35Z
 # [2026-09-27] amend by=orchestrator: files were ["tools/gate/src/lib/slot.ts", "tools/gate/test/slot.test.ts"]
 # [2026-09-27] RECEIPT cmd="802dab129. Red: parent tree (detached worktree at the parent) with the new slot.test.ts, bun test tools/gate/test/slot.test.ts -> 3 of 19 fail; the contention test: 'the worktree's run must queue behind the checkout's, not beside it' Expected: 75 Received: 0. Green: bun test tools/gate -> 252 pass 0 fail; slot.test.ts 19/19 with GRADLE_SLOT_LOCK unset and with it exported; bun tools/gate typecheck none added; bun tools/gate rules exit 0; no-python holds; census 0 findings. Mutants killed (detached worktree): no shared lock (3 fail), no ceiling above the root (1), caller's GIT_* kept (1), relative common dir (2)" exit=0 tests=252 touched=tools/gate/src/lib/slot.ts,tools/gate/test/slot.test.ts,.dev/campaigns/v0.4.0/seat-laws.md
+
+[[items]]
+id = "V4-342"
+phase = "release"
+title = "Find and remove what moves a parked script's history under it: after V4-336 the largest live interruption class is 'history no longer places the running script' (console's recount 2026-09-26 10:00 PM CT: 2 logical-baseline mismatches and 1 'native discovery history was edited' of 21 v4 records; 4 of 49 before), abandoned in restoreBaseline before the resume reader runs"
+files = []
+status = "todo"
+verify = "diagnose first, counts and structure only: for each live abandonment, the first differing item between the record's baseline and the resumed body (index, item type, which side changed: client, splice injection, or reasoning replay), named in a ledger note before any code; then red first on that exact shape, green, and a live recount where the class falls"

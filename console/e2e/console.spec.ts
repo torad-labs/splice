@@ -989,6 +989,7 @@ test('a turn opens from a press on its time cell, with what the model received a
   const opener = page.getByRole('button', { name: `Turn detail ${STACK.soloHead} ${STACK.soloModel}` });
   await expect(opener).toHaveCount(1, { timeout: 15_000 });
   const time = page.getByRole('row').filter({ has: opener }).getByRole('cell').first();
+  await time.scrollIntoViewIfNeeded();
   const box = await time.boundingBox();
   if (box === null) throw new Error('the time cell drew no box');
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);

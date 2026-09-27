@@ -8148,3 +8148,4 @@ files = ["integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/
 status = "todo"
 verify = "red first: ResponsesReanchorTest asserts the replayed partial prose carries phase commentary on a lite turn, failing on today's tree; green: passes, non-lite shape unchanged, dialect tests and detekt green"
 # [2026-09-27] amend by=orchestrator: files were ["integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/reasoning/ResponsesReanchorController.kt", "integrations/dialects/openai-responses/src/test/kotlin/splice/dialect/responses/reasoning/ResponsesReanchorTest.kt"]
+# depends:V4-336

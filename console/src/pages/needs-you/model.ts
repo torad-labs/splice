@@ -82,6 +82,7 @@ export type Fix =
   | { kind: 'start'; head: string }
   | { kind: 'restart'; head: string }
   | { kind: 'restart-daemon' }
+  | { kind: 'login'; head: string }
   | { kind: 'copy'; command: string }
   /** A remedy the report's redaction reached: printed with why, never offered to copy. */
   | { kind: 'masked'; command: string }
@@ -114,6 +115,8 @@ export interface NeedsList {
 const open = (href: string, label: string): Fix => ({ kind: 'open', href, label });
 const ACCOUNTS = open('#/accounts', S.openAccounts);
 const SIGN_IN = open('#/accounts', S.signIn);
+const OAUTH_KINDS = new Set(['chatgpt-oauth', 'grok-oauth', 'kimi-oauth', 'muse-oauth']);
+const loginFix = (kind: string, head: string): Fix => OAUTH_KINDS.has(kind) ? { kind: 'login', head } : SIGN_IN;
 
 /** A read's data, or null when it holds none or holds a route this daemon does not serve. */
 const answered = <T>(read: Read<T | { pending: string }>): T | null =>
@@ -146,7 +149,7 @@ function headNeeds(heads: readonly HeadStatus[], auth: AuthPayload | null): Need
       case 'version mismatch':
         return need('warn', `${U.runs} ${head.version ?? ABSENT}, ${U.wants} ${head.wantVersion}`, { kind: 'restart', head: head.key });
       case 'signed out':
-        return need('warn', H.signedOut, SIGN_IN);
+        return need('warn', H.signedOut, loginFix(head.authKind, head.key));
       case 'key missing': {
         // `splice key set` writes the key store and the next request reads it: no restart (Fleet).
         const variable = card?.env_var;
@@ -155,7 +158,7 @@ function headNeeds(heads: readonly HeadStatus[], auth: AuthPayload | null): Need
           : need('warn', `${variable} ${U.notSet}`, { kind: 'copy', command: `splice key set ${variable}` });
       }
       case 'login expired':
-        return need('warn', H.loginExpired, SIGN_IN);
+        return need('warn', H.loginExpired, loginFix(head.authKind, head.key));
       case 'queue full':
         return need('warn', H.queueFull, open('#/turns', S.openTurns));
       case 'account excluded':
@@ -213,7 +216,10 @@ function accountNeeds(accounts: readonly AccountRow[], now: number): Need[] {
       fix,
       at: itemHref('accounts', accountKey(account)),
     }];
-    if (state === 'signedOut' && account.label !== null) return need(H.accountSignedOut, SIGN_IN);
+    if (state === 'signedOut' && account.label !== null) {
+      const head = account.heads[0];
+      return need(H.accountSignedOut, head === undefined ? SIGN_IN : loginFix(account.kind, head));
+    }
     if (state === 'excluded') return need(exclusionText(account), ACCOUNTS);
     return [];
   });

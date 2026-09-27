@@ -2,12 +2,16 @@
 // line an action reads back, one sentence of twelve words or fewer.
 export const S = {
   add: 'Add account',
+  renew: 'Sign in again',
   label: 'Label',
   start: 'Start login',
   cancel: 'Cancel',
   copy: 'Copy',
   code: 'Code',
   link: 'Link',
+  openSignIn: 'Open sign-in page',
+  openVerification: 'Open verification page',
+  opening: 'Opening sign-in',
   switch: 'Switch',
   /** Drops a manual switch's pin, so the selector's own order picks again. */
   unpin: 'Unpin',
@@ -21,6 +25,7 @@ export const H = {
   signInUnavailable: 'This splice version cannot sign in here; run splice login <head>.',
   device: 'Finish signing in in the browser with this code.',
   browser: 'Finish signing in at this link.',
+  opening: 'Opening sign-in with your provider; return to splice when finished.',
   waiting: 'Starting the sign-in.',
   afterRestart: 'Signed in; the head restarts to take the account.',
   added: 'Account added.',

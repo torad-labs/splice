@@ -3,6 +3,7 @@
 .myx-ny { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-7); }
 .myx-ny .myx-ph { margin-block-end: 0; }
 .myx-ny .myx-sec + .myx-sec { margin-block-start: 0; }
+.myx-ny-setup { margin: 0 0 var(--space-5); color: var(--fg-muted); }
 
 /* A fix is read whole: a remedy the doctor wrote as a sentence breaks onto more lines rather than
    ending at the column's edge. */

@@ -120,6 +120,26 @@ describe('an input is read, still out, failed or not served, and only read count
   });
 });
 
+describe('the first hour with zero connected heads', () => {
+  test('offers one connection screen instead of claiming setup is already complete', () => {
+    const list = needsOf(quiet({ heads: read([]), auth: read({}), accounts: read({ accounts: [] }) }), NOW);
+    const html = renderToStaticMarkup(createElement(NeedsYouBoard, { list, now: NOW, setup: true }));
+    expect(html).toContain('Connect a plan');
+    expect(html).not.toContain(S.nothing);
+    expect(html).not.toContain(S.nothingYet);
+  });
+
+  test('an actual doctor failure remains visible during setup', () => {
+    const list = needsOf(quiet({
+      heads: read([]), auth: read({}), accounts: read({ accounts: [] }),
+      doctor: read(doctor([{ id: 'daemon/port', status: 'fail', detail: 'control port refused' }])),
+    }), NOW);
+    const html = renderToStaticMarkup(createElement(NeedsYouBoard, { list, now: NOW, setup: true }));
+    expect(html).toContain('control port refused');
+    expect(html).toContain('Connect a plan');
+  });
+});
+
 describe('"Nothing needs you" only when every input was read, with the time of the read', () => {
   test('an input still out is listed, and the answer is not all clear', () => {
     const html = render(quiet({ usage: { data: null, error: null, lastUpdated: null } }));
@@ -162,7 +182,12 @@ describe('each head, by the cause Fleet prints', () => {
 
   test('a missing login signs in, and a missing key is the command that sets it', () => {
     const out = needs([head()], read({ claudex: { kind: 'chatgpt-oauth', login: 'x', present: false } }));
-    expect(out[0]).toMatchObject({ finding: H.signedOut, fix: { kind: 'open', href: '#/accounts', label: S.signIn } });
+    expect(out[0]).toMatchObject({ finding: H.signedOut, fix: { kind: 'login', head: 'claudex' } });
+    const html = renderToStaticMarkup(createElement(NeedsYouBoard, {
+      list: needsOf(quiet({ heads: read([head()]), auth: read({ claudex: { kind: 'chatgpt-oauth', login: 'x', present: false } }) }), NOW),
+      now: NOW,
+    }));
+    expect(html).toContain('Sign in again');
     const key = needs([head({ key: 'openrouter', label: 'openrouter', authKind: 'api-key' })], read({ openrouter: { kind: 'api-key', login: '', present: false, env_var: 'OPENROUTER_API_KEY' } }));
     expect(key[0]).toMatchObject({ finding: 'OPENROUTER_API_KEY not set', fix: { kind: 'copy', command: 'splice key set OPENROUTER_API_KEY' } });
   });
@@ -212,6 +237,8 @@ describe('the daemon, the plans and the accounts', () => {
     ];
     const out = needsOf(quiet({ accounts: read({ accounts }) }), NOW).needs.filter((need) => need.source === 'accounts');
     expect(out.map((need) => [need.subject, need.finding])).toEqual([['spare', H.accountSignedOut], ['main', 'refresh rejected']]);
+    expect(out[0]?.fix).toEqual({ kind: 'login', head: 'claudex' });
+    expect(out[0]?.finding).toContain('new label');
   });
 });
 

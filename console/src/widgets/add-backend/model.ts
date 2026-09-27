@@ -25,6 +25,11 @@ export function draftFor(profile: string): AddDraft {
   return { profile, name: '', baseUrl: '', command: '', models: [EMPTY_ROW] };
 }
 
+export function firstDraft(profiles: readonly AddProfile[], preferred?: string): AddDraft {
+  if (preferred !== undefined) return draftFor(profiles.some((profile) => profile.name === preferred) ? preferred : '');
+  return draftFor(profiles[0]?.name ?? '');
+}
+
 const WHOLE = /^\d+$/;
 
 /** The rows that name a model: a blank id is a row the operator has not filled. */

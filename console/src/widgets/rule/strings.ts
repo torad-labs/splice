@@ -9,6 +9,9 @@ export const S = {
     amber: 'Daemon degraded',
     red: 'Daemon unreachable',
     grey: 'Key required',
+    setup: 'Not set up',
+    reading: 'Checking heads',
+    unread: 'Heads unread',
   },
   /** Printed beside the check glyph while the daemon is fine. */
   daemon: 'Daemon',

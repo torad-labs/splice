@@ -7,6 +7,7 @@ export const S = {
   about: 'About this list',
   /** The list's own section and its columns. */
   items: 'Open items',
+  connect: 'Connect a plan',
   item: 'Item',
   finding: 'Finding',
   page: 'Page',
@@ -66,6 +67,7 @@ export const S = {
 
 export const H = {
   about: 'Everything that needs you now, worst first, each with its fix.',
+  setup: 'Not set up yet; connect a plan for your first command.',
   nothing: 'Every input answered, and none of them found anything to do.',
   nothingYet: 'An input below has not answered, so this is not all clear.',
   unread: 'An input nobody could read hides what it would show.',
@@ -76,7 +78,7 @@ export const H = {
   loginExpired: 'Its login expired and the refresh is blocked.',
   queueFull: 'Every slot is busy and the queue is full.',
   configChanged: 'The config file changed since the daemon started.',
-  accountSignedOut: 'Its login is gone; sign in again.',
+  accountSignedOut: 'Its login is gone; sign in with a new label.',
   seatEnded: 'Its bound session ended; bind another in the team.',
   seatUnlisted: 'Its bound session is not in the registry.',
   quietSince: 'Alive, but never heard from since it registered.',

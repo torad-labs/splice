@@ -23,6 +23,9 @@
   color: var(--fg-muted);
 }
 
+.myx-add-command { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); margin: 0; }
+.myx-add-command code { font-family: var(--font-mono); overflow-wrap: anywhere; }
+
 .myx-add-checks {
   margin: 0;
   padding: 0;

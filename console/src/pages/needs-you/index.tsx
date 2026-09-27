@@ -16,9 +16,12 @@ import { restartHead, startHead, useHeads } from '@entities/heads';
 import { startSessionsPolling, useSessionRegistry } from '@entities/session';
 import { fetchTeams, useTeams } from '@entities/team';
 import { useUsage } from '@entities/usage';
+import { AccountLogin } from '@features/account-login';
 import { DaemonRestart } from '@features/daemon-restart';
 import { DoctorFix } from '@features/doctor-fix';
 import { clockText } from '@widgets/rule';
+import { AddBackend } from '@widgets/add-backend';
+import { ConnectPlan } from '@widgets/connect-plan';
 import { Confirm, Copy, Key, KeyLink } from '@shared/controls';
 import { poll, timeAgo } from '@shared/lib';
 import { Badge, DataTable, Empty, InfoTip, PageHeader, Section } from '@shared/ui';
@@ -79,6 +82,8 @@ export function FixCell({ fix }: { fix: Fix }) {
       return <HeadWrite head={fix.head} kind={fix.kind} />;
     case 'restart-daemon':
       return <DaemonRestart />;
+    case 'login':
+      return <AccountLogin head={fix.head} purpose="renew" />;
     case 'copy':
     case 'masked':
       return <FixCommand command={fix.command} masked={fix.kind === 'masked'} />;
@@ -124,13 +129,19 @@ function readingColumns(now: number): Column<Reading>[] {
 
 /** The list as the page draws it, from a list already derived: the test renders this from
  *  payloads, since a static render never sees a store past its first state. */
-export function NeedsYouBoard({ list, now }: { list: NeedsList; now: number }) {
+export function NeedsYouBoard({ list, now, setup = false }: { list: NeedsList; now: number; setup?: boolean }) {
   const unread = list.readings.filter((reading) => reading.state !== 'read');
   const all = list.readAt !== null;
   return (
     <div className="myx-ny">
       <PageHeader title={S.title} info={{ text: H.about, label: S.about }} />
-      <Section
+      {setup ? (
+        <Section title={S.connect}>
+          <p className="myx-ny-setup">{H.setup}</p>
+          <ConnectPlan renderAdd={(profile, done) => <AddBackend key={profile ?? 'other'} {...(profile === null ? {} : { initialProfile: profile })} onDone={done} />} />
+        </Section>
+      ) : null}
+      {!setup || list.needs.length > 0 ? <Section
         title={S.items}
         count={list.needs.length}
         {...(all ? { actions: <span className="myx-ny-read">{`${U.read} ${clockText(list.readAt ?? now, false)}`}</span> } : {})}
@@ -144,7 +155,7 @@ export function NeedsYouBoard({ list, now }: { list: NeedsList; now: number }) {
             rowTone={(need) => need.severity}
           />
         ) : all ? <Empty text={S.nothing} source={H.nothing} /> : <Empty text={S.nothingYet} source={H.nothingYet} />}
-      </Section>
+      </Section> : null}
       {unread.length === 0 ? null : (
         <Section title={S.unread} count={unread.length} info={{ text: H.unread, label: S.unread }}>
           <DataTable columns={readingColumns(now)} rows={unread} rowKey={(reading) => reading.input} label={S.unread} />
@@ -181,7 +192,7 @@ export function NeedsYouPage() {
 
   const now = Date.now();
   const list = needsOf({ heads, auth, accounts, usage, sessions, teams, doctor, topology, restartPending }, now);
-  return <NeedsYouBoard list={list} now={now} />;
+  return <NeedsYouBoard list={list} now={now} setup={heads.data?.length === 0} />;
 }
 
 export default NeedsYouPage;

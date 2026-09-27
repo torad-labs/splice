@@ -216,6 +216,10 @@ export function noneAvailable(pool: readonly AccountRow[]): boolean {
  *  .isOAuth, AccountsRoute.fold). Every other kind is outside the join by the daemon's own rule. */
 const OAUTH_FAMILIES: ReadonlySet<ProviderFamily> = new Set<ProviderFamily>(['chatgpt', 'grok', 'kimi', 'muse']);
 
+export function canSignIn(authKind: string): boolean {
+  return OAUTH_FAMILIES.has(providerFamily(authKind));
+}
+
 /** What the opened head says about its state: the cause in one sentence, and the one step that
  *  clears it, as a command to copy or a page to open. The badge has room for one word; this is where
  *  the word is explained (walkthrough S1, S2). */
@@ -246,7 +250,7 @@ export function causeHelp(head: HeadStatus, cause: HeadState, auth: ProviderAuth
       return variable === undefined ? { text: H.keyMissingBare } : { text: H.keyMissing, command: `splice key set ${variable}` };
     }
     case 'login expired':
-      return { text: H.loginExpired, ...signIn };
+      return { text: H.loginExpired };
     case 'account excluded':
       return { text: H.accountExcluded };
     case 'queue full':
@@ -284,7 +288,7 @@ export const EMPTIES = {
  */
 export function poolEmpty(authKind: string): { text: string; source: string } {
   if (authKind === 'client') return EMPTIES.oneLogin;
-  if (OAUTH_FAMILIES.has(providerFamily(authKind))) return EMPTIES.noAccounts;
+  if (canSignIn(authKind)) return EMPTIES.noAccounts;
   if (authKind === 'api-key') return EMPTIES.apiKey;
   return EMPTIES.local;
 }

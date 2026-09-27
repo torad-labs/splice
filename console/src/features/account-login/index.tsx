@@ -5,14 +5,14 @@
 //
 // Nothing here is modal. Remove is a Confirm: it arms in place and disarms when the operator moves
 // on, because a dialog over the page is ruled out.
-import { useEffect, useReducer, useState } from 'react';
+import { useEffect, useReducer, useRef, useState } from 'react';
 import { fetchLoginStatus, refreshAuth, relabelAccount, removeAccount, startLogin, switchAccount, unpinAccount } from '@entities/auth';
 import type { LoginView } from '@entities/auth';
 import { Empty, Reveal } from '@shared/ui';
 import { poll } from '@shared/lib';
 import { Confirm, Copy, Input, Key } from '@shared/controls';
 import { IDLE, LOGIN_PENDING_EMPTY, canStart, next, polling, stepMessage } from './model';
-import type { LoginEvent } from './model';
+import type { LoginEvent, LoginFlowState } from './model';
 import { fetchAccounts } from '@entities/account';
 import { H, S } from './strings';
 import './account-login.css';
@@ -58,6 +58,60 @@ async function pollLogin(
   }
 }
 
+function providerPage(url: string | null): string | null {
+  if (url === null || !URL.canParse(url)) return null;
+  return new URL(url).protocol === 'https:' ? url : null;
+}
+
+/** Open in the click's gesture; a later POST cannot reliably open a browser tab. */
+export function openSignInTab(): Window | null {
+  if (typeof window === 'undefined') return null;
+  const tab = window.open('', '_blank');
+  if (tab === null) return null;
+  tab.opener = null;
+  tab.document.title = S.opening;
+  if (tab.document.body !== null) tab.document.body.textContent = H.opening;
+  return tab;
+}
+
+/** Navigate only after the daemon announces a safe provider page; close on terminal refusal. */
+export function advanceSignInTab(tab: Window | null, status: LoginView | null, error: string | null): Window | null {
+  if (tab === null) return null;
+  const url = providerPage(status?.browser_url ?? null) ?? providerPage(status?.verification_uri ?? null);
+  if (url !== null) {
+    tab.location.href = url;
+    return null;
+  }
+  const announced = status !== null && (status.browser_url !== null || status.verification_uri !== null);
+  if (error !== null || announced || status?.state === 'failed' || status?.state === 'signed_in' || status?.state === 'live_after_restart') {
+    tab.close();
+    return null;
+  }
+  return tab;
+}
+
+/** The shared browser handoff for adding a head and renewing an account. */
+export function useLoginPage(status: LoginView | null, error: string | null): () => void {
+  const tab = useRef<Window | null>(null);
+  useEffect(() => { tab.current = advanceSignInTab(tab.current, status, error); }, [status, error]);
+  useEffect(() => () => { tab.current?.close(); }, []);
+  return () => {
+    tab.current?.close();
+    tab.current = openSignInTab();
+  };
+}
+
+/** Only provider web pages are actionable; never turn a malformed URL into a browser command. */
+function LoginPageLink({ url, label }: { url: string; label: string }) {
+  if (providerPage(url) === null) return <span>{S.signInUnavailable}</span>;
+  return (
+    <>
+      <a className="myx-acct-link" href={url} target="_blank" rel="noopener noreferrer">{label}</a>
+      <Copy value={url} label={`${S.copy} ${S.link}`} />
+    </>
+  );
+}
+
 /** What the operator needs to finish a login somewhere else, as the flow announced it: a device
  *  flow's code and its link, or a browser flow's URL. Nothing until the flow has announced one. */
 export function LoginTicket({ status }: { status: LoginView }) {
@@ -70,26 +124,24 @@ export function LoginTicket({ status }: { status: LoginView }) {
           <Copy value={status.user_code} label={`${S.copy} ${S.code}`} />
         </>
       )}
-      {status.verification_uri === null ? null : (
-        <>
-          <a className="myx-acct-link" href={status.verification_uri}>{status.verification_uri}</a>
-          <Copy value={status.verification_uri} label={`${S.copy} ${S.link}`} />
-        </>
-      )}
-      {status.browser_url === null ? null : (
-        <>
-          <a className="myx-acct-link" href={status.browser_url}>{status.browser_url}</a>
-          <Copy value={status.browser_url} label={`${S.copy} ${S.link}`} />
-        </>
-      )}
+      {status.verification_uri === null ? null : <LoginPageLink url={status.verification_uri} label={S.openVerification} />}
+      {status.browser_url === null ? null : <LoginPageLink url={status.browser_url} label={S.openSignIn} />}
     </div>
   );
 }
 
+export function loginTabError(state: LoginFlowState): string | null {
+  if (state.step === 'idle') return S.cancel;
+  if (state.step === 'pending') return state.note ?? S.signInUnavailable;
+  if (state.step === 'failed') return state.note ?? H.failed;
+  return null;
+}
+
 /** Start a login for a new account on one head. The form stays behind a Reveal, so the panel shows
  *  one "Add account" until the operator asks for the form. */
-export function AccountLogin({ head }: { head: string }) {
+export function AccountLogin({ head, purpose = 'add' }: { head: string; purpose?: 'add' | 'renew' }) {
   const [state, dispatch] = useReducer(next, IDLE);
+  const openPage = useLoginPage(state.status, loginTabError(state));
   // Polled by the id the start answered with, from starting through the head's restart.
   const loginId = polling(state) ? state.status?.id ?? null : null;
 
@@ -112,11 +164,11 @@ export function AccountLogin({ head }: { head: string }) {
   const message = stepMessage(state);
 
   return (
-    <Reveal label={S.add}>
+    <Reveal label={purpose === 'renew' ? S.renew : S.add}>
       <div className="myx-acct-form">
         <Input label={S.label} value={state.label} onChange={(value) => dispatch({ kind: 'label', value })} />
         <div className="myx-acct-row">
-          <Key disabled={!canStart(state)} onClick={() => void beginLogin(head, state.label.trim(), dispatch)}>
+          <Key disabled={!canStart(state)} onClick={() => { openPage(); void beginLogin(head, state.label.trim(), dispatch); }}>
             {S.start}
           </Key>
           {state.step === 'idle' ? null : <Key onClick={() => dispatch({ kind: 'reset' })}>{S.cancel}</Key>}

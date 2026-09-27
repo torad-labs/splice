@@ -22,7 +22,7 @@ export const S = {
   refreshError: 'Refresh error',
   nearestLimit: 'Nearest limit',
   aboutFirstByte: 'About first byte',
-  addBackend: 'Add backend',
+  addBackend: 'Connect a plan',
   detail: 'Head detail',
   openHead: 'Open head',
   close: 'Close',

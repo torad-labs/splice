@@ -6,7 +6,7 @@
 // through the console's draining restart. Every answer is the add's whole view, so the form holds
 // that view and never infers a state the daemon did not report.
 //
-// ONE PANEL, THREE STATES: the profile and what it asks, then the open add (who it is, how it signs
+// ONE FLOW, THREE STATES: the profile and what it asks, then the open add (who it is, how it signs
 // in, its checks, save or discard), then what the save wrote and the restart it took. An open add is
 // read again while the form is up, since a sign-in or a stored key lands off the form. An add the
 // form leaves unsaved is the daemon's to evict (AddConsole keeps the newest 64), so closing the
@@ -18,12 +18,12 @@ import { useEffect, useState } from 'react';
 import { discardAdd, fetchAddProfiles, openAdd, readAdd, saveAdd, signInAdd, verifyAdd } from '@entities/add';
 import type { AddChecksFailed, AddCheck, AddProfile, AddView } from '@entities/add';
 import { fetchKeys, useKeys } from '@entities/auth';
-import { LoginTicket } from '@features/account-login';
+import { LoginTicket, useLoginPage } from '@features/account-login';
 import { ApiKeyForm } from '@features/api-key';
-import { Blank, Choice, Confirm, Fault, Input, Key } from '@shared/controls';
+import { Blank, Choice, Confirm, Copy, Fault, Input, Key } from '@shared/controls';
 import { ABSENT, poll } from '@shared/lib';
 import { Badge, InfoTip, KeyValue, Section } from '@shared/ui';
-import { EMPTY_ROW, draftFor, live, ready, requestOf } from './model';
+import { EMPTY_ROW, draftFor, firstDraft, live, ready, requestOf } from './model';
 import type { AddDraft, ModelRow } from './model';
 import { H, S, SIGN_IN_BY } from './strings';
 import './add-backend.css';
@@ -69,12 +69,13 @@ function ModelRows({ rows, onChange }: { rows: readonly ModelRow[]; onChange: (r
 }
 
 /** The profile and what it asks. A blank field sends nothing, so the profile's default holds. */
-export function ProfileForm({ profiles, draft, onDraft, busy, onOpen }: {
+export function ProfileForm({ profiles, draft, onDraft, busy, onOpen, pinned = false }: {
   profiles: readonly AddProfile[];
   draft: AddDraft;
   onDraft: (draft: AddDraft) => void;
   busy: boolean;
   onOpen: () => void;
+  pinned?: boolean;
 }) {
   const profile = profiles.find((each) => each.name === draft.profile) ?? null;
   const key = draft.name.trim() === '' ? profile?.head_key ?? '' : draft.name.trim();
@@ -83,8 +84,12 @@ export function ProfileForm({ profiles, draft, onDraft, busy, onOpen }: {
   return (
     <div className="myx-add">
       <div className="myx-add-row">
-        <Choice label={S.profile} value={draft.profile} options={profiles.map((each) => ({ value: each.name, label: each.name }))} onChange={(name) => onDraft(draftFor(name))} w={20} />
-        {profile === null ? null : <InfoTip text={profile.summary} label={S.aboutProfile} />}
+        {pinned ? <p className="myx-add-note">{profile?.summary ?? H.unavailable}</p> : (
+          <>
+            <Choice label={S.profile} value={draft.profile} options={profiles.map((each) => ({ value: each.name, label: each.name }))} onChange={(name) => onDraft(draftFor(name))} w={20} />
+            {profile === null ? null : <InfoTip text={profile.summary} label={S.aboutProfile} />}
+          </>
+        )}
       </div>
       <Input label={S.name} value={draft.name} onChange={(name) => onDraft({ ...draft, name })} placeholder={profile?.head_key ?? ''} w={24} />
       {profile?.asks.includes('base_url') === true ? (
@@ -111,7 +116,7 @@ function SignIn({ view, busy, onSignIn }: { view: AddView; busy: boolean; onSign
     if (keyEnv !== null) void fetchKeys();
   }, [keyEnv]);
 
-  if (view.sign_in_by === 'none') return <p className="myx-add-note">{H.forwarded}</p>;
+  if (view.sign_in_by === 'none') return <p className="myx-add-note">{view.profile === 'local' ? H.localNoKey : H.forwarded}</p>;
   if (view.sign_in_by === 'key' && keyEnv !== null) {
     return (
       <>
@@ -153,10 +158,12 @@ export function OpenAdd({ view, checks, busy, readFault = null, onSignIn, onVeri
       <KeyValue rows={[
         [S.head, view.key],
         [S.command, view.command],
-        [S.signsIn, SIGN_IN_BY[view.sign_in_by] ?? view.sign_in_by],
+        [S.signsIn, view.profile === 'local' && view.sign_in_by === 'none' ? S.noKey : SIGN_IN_BY[view.sign_in_by] ?? view.sign_in_by],
         [S.baseUrl, view.base_url ?? ABSENT],
         [S.models, view.models.length === 0 ? ABSENT : view.models.map((model) => model.id).join(', ')],
-        [S.credential, <Badge key="credential" tone={present ? 'ok' : 'warn'}>{present ? S.present : S.missing}</Badge>],
+        [S.credential, view.profile === 'local' && view.sign_in_by === 'none'
+          ? S.noKey
+          : <Badge key="credential" tone={present ? 'ok' : 'warn'}>{present ? S.present : S.missing}</Badge>],
       ]} />
       {present || view.sign_in_by === 'none' ? null : <p className="myx-add-note">{view.credential.detail}</p>}
       <SignIn view={view} busy={busy} onSignIn={onSignIn} />
@@ -193,6 +200,13 @@ export function SavedAdd({ view }: { view: AddView }) {
         [S.wrapper, wrapper.linked ? <Badge key="wrapper" tone="ok">{S.linked}</Badge> : ABSENT],
         [S.restart, <Badge key="restart" tone={restart.status === 'refused' ? 'warn' : 'accent'}>{restart.status}</Badge>],
       ]} />
+      {wrapper.linked ? (
+        <p className="myx-add-command" role="status">
+          <span>{H.launch}</span>
+          <code>{view.command}</code>
+          <Copy value={view.command} />
+        </p>
+      ) : null}
       {wrapper.error === undefined ? null : <Fault message={wrapper.error} />}
       {restart.status === 'draining' ? <p className="myx-add-note" role="status">{H.draining}</p>
         : restart.status === 'waiting' ? <p className="myx-add-note" role="status">{H.waiting(restart.compactions?.length ?? 0)}</p>
@@ -213,24 +227,26 @@ export function readOpenAdd(id: string, onView: (view: AddView) => void, onFault
   );
 }
 
-export function AddBackend({ onDone }: { onDone: () => void }) {
+export function AddBackend({ onDone, initialProfile }: { onDone: () => void; initialProfile?: string }) {
   const [profiles, setProfiles] = useState<AddProfile[] | null>(null);
   const [draft, setDraft] = useState<AddDraft | null>(null);
   const [view, setView] = useState<AddView | null>(null);
   const [checks, setChecks] = useState<AddCheck[] | null>(null);
   const [fault, setFault] = useState<string | null>(null);
   const [readFault, setReadFault] = useState<string | null>(null);
+  const [loginError, setLoginError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const openPage = useLoginPage(view?.sign_in ?? null, loginError);
 
   useEffect(() => {
     fetchAddProfiles().then(
       (rows) => {
         setProfiles(rows);
-        setDraft(draftFor(rows[0]?.name ?? ''));
+        setDraft(firstDraft(rows, initialProfile));
       },
       (err: unknown) => setFault(messageOf(err)),
     );
-  }, []);
+  }, [initialProfile]);
 
   // Read the open add again while it is unsaved: a failed read keeps the view it has and says so, and
   // the next good read clears it. Its own fault, because a good read must not clear a write's.
@@ -264,6 +280,7 @@ export function AddBackend({ onDone }: { onDone: () => void }) {
         profiles={profiles}
         draft={draft}
         onDraft={setDraft}
+        pinned={initialProfile !== undefined}
         busy={busy}
         onOpen={() => run(openAdd(requestOf(draft)).then((opened) => {
           setView(opened);
@@ -279,7 +296,14 @@ export function AddBackend({ onDone }: { onDone: () => void }) {
         checks={checks}
         busy={busy}
         readFault={readFault}
-        onSignIn={() => run(signInAdd(id).then(setView))}
+        onSignIn={() => {
+          openPage();
+          setLoginError(null);
+          run(signInAdd(id).then(setView, (err: unknown) => {
+            setLoginError(messageOf(err));
+            throw err;
+          }));
+        }}
         onVerify={(liveTurn) => run(verifyAdd(id, liveTurn).then(settle))}
         onSave={() => run(saveAdd(id).then(settle))}
         onDiscard={() => run(discardAdd(id).then(onDone))}

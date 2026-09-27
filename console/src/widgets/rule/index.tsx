@@ -67,10 +67,12 @@ function useClock(): { local: string; utc: string } {
  * running and healthy (`/api/heads`). A head that is down is the daemon
  * degraded, not the console guessing.
  */
-export type HealthState = 'green' | 'amber' | 'red' | 'grey';
+export type HealthState = 'green' | 'amber' | 'red' | 'grey' | 'setup' | 'reading' | 'unread';
 
 /** The status colour each health state prints beside its word. */
-const HEALTH_TONE: Record<HealthState, Tone> = { green: 'ok', amber: 'warn', red: 'danger', grey: 'neutral' };
+const HEALTH_TONE: Record<HealthState, Tone> = {
+  green: 'ok', amber: 'warn', red: 'danger', grey: 'neutral', setup: 'neutral', reading: 'neutral', unread: 'warn',
+};
 
 /** A glyph per health state, so the state reads in greyscale as well as in colour. */
 const HEALTH_GLYPH: Record<HealthState, ReactNode> = {
@@ -78,13 +80,19 @@ const HEALTH_GLYPH: Record<HealthState, ReactNode> = {
   amber: <WarningCircleIcon weight="fill" aria-hidden="true" />,
   red: <XCircleIcon weight="fill" aria-hidden="true" />,
   grey: <KeyIcon aria-hidden="true" />,
+  setup: <KeyIcon aria-hidden="true" />,
+  reading: <TimerIcon aria-hidden="true" />,
+  unread: <WarningCircleIcon aria-hidden="true" />,
 };
 
-export function healthOf(statusFailed: boolean, anyHeadDown: boolean, locked: boolean): HealthState {
+export function healthOf(statusFailed: boolean, anyHeadDown: boolean, locked: boolean, headCount?: number | null, headsFailed = false): HealthState {
   // A 401 is the daemon ANSWERING: without the key the console cannot say how the daemon is, and
   // the red "unreachable" it printed over the key gate was a claim the answer had just disproved.
   if (locked) return 'grey';
   if (statusFailed) return 'red';
+  if (headsFailed) return 'unread';
+  if (headCount === null) return 'reading';
+  if (headCount === 0) return 'setup';
   return anyHeadDown ? 'amber' : 'green';
 }
 
@@ -229,7 +237,8 @@ export function PendingRestartCell({ pending }: { pending: readonly string[] }) 
 
 export function Rule() {
   const status = useControlStatus((state) => state);
-  const heads = useHeads((state) => state.data);
+  const headsRead = useHeads((state) => state);
+  const heads = headsRead.data;
   const usage = useUsage((state) => state.data);
   const auth = useAuth((state) => state.data);
   const pools = useAccounts((state) => state.data);
@@ -267,7 +276,7 @@ export function Rule() {
   }, []);
 
   const anyHeadDown = heads !== null && heads.some((head) => !head.running || !head.healthy);
-  const health = healthOf(status.error !== null, anyHeadDown, locked);
+  const health = healthOf(status.error !== null, anyHeadDown, locked, heads === null ? null : heads.length, headsRead.error !== null);
   const strands = strandsOf(heads, hues);
 
   return (

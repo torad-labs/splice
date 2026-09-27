@@ -28,6 +28,7 @@ import type { TurnRow } from '@entities/perf';
 import { startTopologyPolling, useTopology } from '@entities/topology';
 import { headWindow, startUsagePolling, useUsage } from '@entities/usage';
 import type { HeadWindow } from '@entities/usage';
+import { AccountLogin } from '@features/account-login';
 import { DaemonRestart } from '@features/daemon-restart';
 import { limitText, limitTone, nearestLimit } from '@features/nearest-limit';
 import type { NearestLimit } from '@features/nearest-limit';
@@ -43,11 +44,12 @@ import {
 import type { Column, RowGroup } from '@shared/ui';
 import { NextRule, accountColumns, accountKey, accountName, accountTone } from '@widgets/account-table';
 import { AddBackend } from '@widgets/add-backend';
+import { ConnectPlan } from '@widgets/connect-plan';
 import { KnobReadout } from '@widgets/knob-form';
 import { dispositions } from './coverage';
 import { LiveTurns } from './live-turns';
 import {
-  EMPTIES, HEAD_FIELDS, arrangeHeads, causeHelp, columnsOf, dialectOf, firstBytes, healthParts,
+  EMPTIES, HEAD_FIELDS, arrangeHeads, canSignIn, causeHelp, columnsOf, dialectOf, firstBytes, healthParts,
   inflightTotals, lastTurnOf, median, noneAvailable, poolEmpty, rowTone, stateTone, windowTone,
 } from './model';
 import type { CauseHelp, LastTurn } from './model';
@@ -427,7 +429,9 @@ export function FleetBoard({ heads, error = null, lastRead = null, sources, open
       <div className={opened === null && !adding ? 'myx-fl-board' : 'myx-fl-board myx-fl-board-open'}>
         <div className="myx-fl-main">
           {heads === null ? <Blank strips={4} /> : heads.length === 0 ? (
-            <Empty text={EMPTIES.noHeads.text} source={EMPTIES.noHeads.source} action={<AddKey onAdd={() => onAdd(true)} />} />
+            <Section title={S.addBackend}>
+              <ConnectPlan renderAdd={(profile, done) => <AddBackend key={profile ?? 'other'} {...(profile === null ? {} : { initialProfile: profile })} onDone={done} />} />
+            </Section>
           ) : (
             <>
               <Figures lines={[...lines.values()]} landed={sources.landed} limit={nearestLimit({ accounts, usage: sources.usage, auth: sources.auth }, nowMs)} />
@@ -454,7 +458,7 @@ export function FleetBoard({ heads, error = null, lastRead = null, sources, open
         {/* Unmounted at rest: no track and no empty panel until a head or the add is opened. */}
         {!adding || opened !== null ? null : (
           <DetailPanel title={S.addBackend} label={S.addBackend} onClose={() => onAdd(false)} closeLabel={S.close}>
-            <AddBackend onDone={() => onAdd(false)} />
+            <ConnectPlan renderAdd={(profile, done) => <AddBackend key={profile ?? 'other'} {...(profile === null ? {} : { initialProfile: profile })} onDone={() => { done(); onAdd(false); }} />} />
           </DetailPanel>
         )}
         {opened === null ? null : (
@@ -466,6 +470,10 @@ export function FleetBoard({ heads, error = null, lastRead = null, sources, open
             closeLabel={S.close}
           >
             <CauseLine help={help} />
+            {canSignIn(opened.head.authKind) &&
+              (opened.attention.cause === 'login expired' || opened.attention.cause === 'signed out') ? (
+                <AccountLogin head={opened.head.key} purpose="renew" />
+              ) : null}
             <KeyValue rows={headFacts(opened, sources.auth, nowMs)} />
             <Section title={S.lifecycle}>
               <Lifecycle head={opened.head} />

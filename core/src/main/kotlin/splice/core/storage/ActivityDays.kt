@@ -211,11 +211,20 @@ public class DayFiles(private val dir: Path, prefix: String) {
      *  A directory or a day that cannot be read throws why, as [lines] does. */
     @Throws(IOException::class)
     public fun newestFirst(visit: LineVisit) {
-        for ((_, file) in days().asReversed()) {
+        for (file in files()) {
             if (!backward.read(file, visit)) return
-            if (!backward.read(file.resolveSibling("${file.fileName}$ROLLED_SUFFIX"), visit)) return
         }
     }
+
+    /** V4-343: each file of every day on disk, in [newestFirst]'s order, open as a [LineFile] for the one visit
+     *  it is handed to, with what each visit answered; a file that is not there is passed over. For a reader
+     *  that reads each file its own way: the trace count reads only what a file gained since it last read it. */
+    @Throws(IOException::class)
+    public fun <T : Any> eachFile(visit: FileVisit<T>): List<T> = files().mapNotNull { backward.open(it, visit) }
+
+    /** Every file of every day on disk, the newest day first, each day's live file before its rolled half. */
+    private fun files(): List<Path> =
+        days().asReversed().flatMap { (_, file) -> listOf(file, file.resolveSibling("${file.fileName}$ROLLED_SUFFIX")) }
 
     /** V4-174: deletes EVERY day file of this store, whatever its age, with JsonlSink's siblings —
      *  the `splice trace --purge` verb. Answers what went and what did not (V4-286: it answered the

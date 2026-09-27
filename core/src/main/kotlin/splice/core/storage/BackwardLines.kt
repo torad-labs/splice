@@ -12,7 +12,10 @@
 // decoded to a String before its reader saw it, and on claudex's 3.6 GB store that decode was 21% of the
 // console trace page's 21.4 s, most of the rest being kotlinx skipping the bodies of those Strings; a count
 // that needs a few fields of each record now streams its bytes and decodes none of the body. The search for
-// the line before steps eight bytes at a time (ByteWords) while none of them ends a line.
+// the line before steps eight bytes at a time (ByteWords) while none of them ends a line. A [LineFile] reads
+// the lines of any stretch between two terminators, which are the ones the whole file splits into there, and
+// says where its settled lines end: in a file that only grows, a reader that keeps what it counted before that
+// end reads only what was appended after it.
 package splice.core.storage
 
 import java.io.IOException
@@ -27,6 +30,11 @@ import java.nio.file.StandardOpenOption
 /** Hears lines one at a time and answers whether to go on. */
 public fun interface LineVisit {
     public fun line(line: DayLine): Boolean
+}
+
+/** Hears one open file and answers what it read of it: a reader that reads each file its own way. */
+public fun interface FileVisit<T : Any> {
+    public fun file(file: LineFile): T
 }
 
 /** One line of a file, read no further than its reader asks: [bytes] streams it a read at a time, [text]
@@ -93,40 +101,73 @@ private val CR: Byte = '\r'.code.toByte()
 private val LF_WORD = ByteWords.repeated(LF)
 private val CR_WORD = ByteWords.repeated(CR)
 
+/** One open file of lines, its size read once, at the open: a line appended after it is not read, and the torn
+ *  half of an append in flight reads as the line it is. It reads the file it came from, so it is good only
+ *  inside the visit it was handed to. */
+public class LineFile internal constructor(private val reads: ChannelReads) {
+    public val size: Long = reads.size()
+
+    /** Just past the last terminator no byte appended later can change, or 0: in a file that only grows, every
+     *  line before it is whole and final. A \r ending the file is not one, since a \n appended next would join
+     *  it into one \r\n. */
+    public fun settledEnd(): Long = BackwardCursor(reads, 0L).settledBefore(size)
+
+    /** The [count] bytes from [from], fewer when the file ends first; [from] is at most [size]. */
+    public fun bytes(from: Long, count: Int): ByteArray =
+        ByteArray(minOf(count.toLong(), size - from).toInt()).also { reads.fill(ByteBuffer.wrap(it), from) }
+
+    /** Visits the lines between [from] and [until], the last first, until [visit] answers false; false when it
+     *  did. [from] starts a line (0, or just past a terminator) and [until] ends one or is [size], so these are
+     *  the lines the whole file splits into there. */
+    public fun lines(from: Long, until: Long, visit: LineVisit): Boolean =
+        BackwardCursor(reads, from).each(until, visit)
+}
+
 /** Reads files' lines from their end. */
 internal class BackwardLines {
     /** Visits [file]'s lines, the last first, until [visit] answers false; false when it did. A file that is
      *  not there has no lines; any other failure throws. */
     @Throws(IOException::class)
-    fun read(file: Path, visit: LineVisit): Boolean {
+    fun read(file: Path, visit: LineVisit): Boolean = open(file) { it.lines(0L, it.size, visit) } ?: true
+
+    /** What [visit] answers of [file] open as a [LineFile]; null when the file is not there. Any other failure
+     *  throws. */
+    @Throws(IOException::class)
+    fun <T : Any> open(file: Path, visit: FileVisit<T>): T? {
         val channel = try {
             FileChannel.open(file, StandardOpenOption.READ)
         } catch (_: NoSuchFileException) {
-            return true
+            return null
         }
-        return channel.use { BackwardCursor(ChannelReads(it)).each(visit) }
+        return channel.use { visit.file(LineFile(ChannelReads(it))) }
     }
 }
 
-/** One open file read from its end. Its size is read once, at the start: a line appended after it is not
- *  read, and the torn half of an append in flight reads as the line it is. */
-private class BackwardCursor(private val reads: ChannelReads) {
+/** One open file read from its end, no further back than [floor], where the lines it reads start. */
+private class BackwardCursor(private val reads: ChannelReads, private val floor: Long) {
     private val window = ByteArray(WINDOW_BYTES)
     private val words = ByteWords.view(window)
     private var windowStart = 0L
     private var windowEnd = 0L
 
-    /** Visits each line, the last first; false when [visit] stopped the read. */
-    fun each(visit: LineVisit): Boolean {
-        val size = reads.size()
-        var end = if (size == 0L) -1L else terminatorStart(size)
+    /** Visits each line before [until], the last first; false when [visit] stopped the read. */
+    fun each(until: Long, visit: LineVisit): Boolean {
+        var end = if (until <= floor) -1L else terminatorStart(until)
         var going = true
-        while (going && end >= 0) {
+        while (going && end >= floor) {
             val cut = lastTerminatorBefore(end)
             going = visit.line(DayLine(reads, cut + 1, end))
-            end = if (cut < 0) -1L else terminatorStart(cut + 1)
+            end = if (cut < floor) -1L else terminatorStart(cut + 1)
         }
         return going
+    }
+
+    /** Just past the last terminator before [end] that a byte appended at [end] cannot join, or [floor]. */
+    fun settledBefore(end: Long): Long {
+        if (end <= floor) return floor
+        val last = lastTerminatorBefore(end)
+        val open = last == end - 1 && byteAt(last) == CR
+        return (if (open) lastTerminatorBefore(last) else last) + 1
     }
 
     /** Where the terminator ending just before [after] starts (\r\n is one terminator), or [after] when the
@@ -134,16 +175,16 @@ private class BackwardCursor(private val reads: ChannelReads) {
     private fun terminatorStart(after: Long): Long {
         val last = byteAt(after - 1)
         return when {
-            last == LF && after >= 2 && byteAt(after - 2) == CR -> after - 2
+            last == LF && after - 2 >= floor && byteAt(after - 2) == CR -> after - 2
             last == LF || last == CR -> after - 1
             else -> after
         }
     }
 
-    /** The offset of the last terminator byte before [end], or -1 when the line runs from the file's start. */
+    /** The offset of the last terminator byte before [end], or [floor] - 1 when the line runs from [floor]. */
     private fun lastTerminatorBefore(end: Long): Long {
         var at = end - 1
-        while (at >= 0) {
+        while (at >= floor) {
             hold(at) // the scan below runs over the window's array
             var i = (at - windowStart).toInt()
             // V4-343: eight bytes a step while none of them ends a line, then the last few a byte at a time
@@ -152,7 +193,7 @@ private class BackwardCursor(private val reads: ChannelReads) {
             if (i >= 0) return windowStart + i
             at = windowStart - 1
         }
-        return -1L
+        return floor - 1
     }
 
     private fun ends(byte: Byte): Boolean = byte == LF || byte == CR
@@ -164,10 +205,11 @@ private class BackwardCursor(private val reads: ChannelReads) {
         return window[(offset - windowStart).toInt()]
     }
 
-    /** Reads the window that ends at [offset] into [window], unless it already holds [offset]. */
+    /** Reads the window that ends at [offset] into [window], unless it already holds [offset]; it reaches no
+     *  further back than [floor]. */
     private fun hold(offset: Long) {
         if (offset in windowStart until windowEnd) return
-        windowStart = maxOf(0L, offset + 1 - WINDOW_BYTES)
+        windowStart = maxOf(floor, offset + 1 - WINDOW_BYTES)
         windowEnd = offset + 1
         reads.fill(ByteBuffer.wrap(window, 0, (windowEnd - windowStart).toInt()), windowStart)
     }

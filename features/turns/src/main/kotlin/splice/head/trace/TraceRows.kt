@@ -13,7 +13,11 @@
 // latest, so a read from the end meets its turns in that order and holds each one until its opening
 // record (its first attempt, or a turn record that made none) is read, and a turn whose first attempt
 // came with no turn record yet through the minute before it, where a late-written turn record would lie.
-// A count of the turns on disk reads every line and keeps one. The read itself is [TraceTail].
+// The read itself is [TraceTail].
+//
+// V4-343: the count of the turns on disk is [TraceCensus], kept for as long as this reader lives, which for the
+// console's route is the daemon's life: a page counts only what the day files gained since the last one, where
+// every page read every line of every day. The turns are read first, so every turn listed is in the count.
 package splice.head.trace
 
 import kotlinx.serialization.json.Json
@@ -24,6 +28,7 @@ import splice.core.storage.DayFiles
 import splice.core.util.JsonScalars
 import java.io.IOException
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
 
 /** Every record of one turn, in the order they were written: the attempts, then the turn record
  *  (null when the turn has not ended yet, or its ending was lost to the file lane). */
@@ -73,24 +78,26 @@ internal data class TraceAsk(val last: Int, val session: String? = null, val tur
 internal data class TraceRead(val turns: List<TracedTurn>, val onDisk: Int, val skippedLines: Int)
 
 internal class TraceRows(private val json: Json = Json { ignoreUnknownKeys = true }) {
+    /** Each store's count, by its trace dir and head, kept for as long as this reader lives. */
+    private val censuses = ConcurrentHashMap<Pair<Path, String>, TraceCensus>()
 
     /** The head's day files, everything on disk (retention is the daemon's business, V4-273). */
     internal fun days(traceDir: Path, head: String): DayFiles = DayFiles(traceDir, head)
 
-    /** The turns [ask] names, oldest first, with how many turns and skipped lines the store holds: every
-     *  line is read, one at a time. A trace dir or a day that cannot be read throws why (V4-286), so no
-     *  turns means none on disk. */
+    /** The turns [ask] names, oldest first, with how many turns and skipped lines the store holds over every
+     *  line of every day; the count reads only what the files gained since this reader last counted them. A
+     *  trace dir or a day that cannot be read throws why (V4-286), so no turns means none on disk. */
     @Throws(IOException::class)
     internal fun read(traceDir: Path, head: String, ask: TraceAsk): TraceRead {
-        val tail = TraceTail(ask, census = true, json)
-        days(traceDir, head).newestFirst(tail)
-        return TraceRead(tail.turns(), tail.onDisk(), tail.skipped())
+        val turns = turns(traceDir, head, ask)
+        val count = censuses.computeIfAbsent(traceDir to head) { TraceCensus(json) }.count(days(traceDir, head))
+        return TraceRead(turns, count.onDisk, count.skippedLines)
     }
 
     /** The turns [ask] names, oldest first, read from the newest line only until each is whole. */
     @Throws(IOException::class)
     internal fun turns(traceDir: Path, head: String, ask: TraceAsk): List<TracedTurn> {
-        val tail = TraceTail(ask, census = false, json)
+        val tail = TraceTail(ask, json)
         days(traceDir, head).newestFirst(tail)
         return tail.turns()
     }

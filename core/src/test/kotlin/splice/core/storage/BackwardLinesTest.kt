@@ -1,10 +1,12 @@
 // NEW: V4-338 — a file's lines read from its end are the lines DayFiles reads forward, in reverse, on the
 // same bytes: the same splits (\n, \r, \r\n, no empty line after a final terminator) and the same lenient
-// decode, across the 64 KiB windows the backward scan reads in. V4-343: a line's bytes are its raw bytes.
+// decode, across the 64 KiB windows the backward scan reads in. V4-343: a line's bytes are its raw bytes, and a
+// file split at its settled end reads as the whole file does, before and after any append.
 package splice.core.storage
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
@@ -127,5 +129,52 @@ class BackwardLinesTest {
         assertFalse(finished)
         assertEquals(listOf("4", "3"), seen)
         assertTrue(BackwardLines().read(dir.resolve("absent")) { error("a missing file has no line: $it") })
+    }
+
+    /** [text]'s lines as the forward read splits them. */
+    private fun forward(text: String): List<String> = text.reader().readLines()
+
+    /** [file]'s lines between [from] and [until], in the order they were written. */
+    private fun LineFile.between(from: Long, until: Long): List<String> =
+        mutableListOf<String>().also { lines ->
+            lines(from, until) { line ->
+                lines += line.text()
+                true
+            }
+        }.asReversed()
+
+    /** Every text of up to [length] characters drawn from [alphabet], the empty one first. */
+    private fun texts(alphabet: String, length: Int): List<String> =
+        (1..length).runningFold(listOf("")) { shorter, _ -> shorter.flatMap { t -> alphabet.map { t + it } } }
+            .flatten()
+
+    @Test
+    fun `lines before the settled end are the whole file's there, and no append changes one`(@TempDir dir: Path) {
+        // V4-343: a reader keeps what it counted before a file's settled end and reads only the rest later, so every
+        // file of up to six bytes of a, \r and \n, and every append of up to two more, is split there both ways.
+        val file = dir.resolve("f")
+        texts("a\r\n", length = 6).forEach { text ->
+            Files.writeString(file, text)
+            val settled = checkNotNull(BackwardLines().open(file) { it.settledEnd() })
+            texts("a\r\n", length = 2).forEach { appended ->
+                val case = "${(text + "|" + appended).replace("\r", "\\r").replace("\n", "\\n")} settled at $settled"
+                Files.writeString(file, text + appended)
+                BackwardLines().open(file) { grown ->
+                    val before = grown.between(0L, settled)
+                    assertEquals(forward(text + appended), before + grown.between(settled, grown.size), case)
+                    assertEquals(forward(text.take(settled.toInt())), before, case)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `a file's bytes from an offset are the ones it holds there, fewer at its end`(@TempDir dir: Path) {
+        val file = Files.writeString(dir.resolve("f"), "abcdef")
+
+        val read = BackwardLines().open(file) { f -> listOf(0L, 4L, 6L).map { String(f.bytes(it, 4)) } }
+
+        assertEquals(listOf("abcd", "ef", ""), read)
+        assertNull(BackwardLines().open<String>(dir.resolve("absent")) { error("a missing file is not opened") })
     }
 }

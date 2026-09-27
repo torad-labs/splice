@@ -1,6 +1,6 @@
 // NEW: V4-338 — DayFiles.newestFirst: every line of every day on disk, newest first, one at a time. It is
 // the forward read reversed (newest day first, each day's live file before its rolled half), and a visit
-// that stops never opens an older day.
+// that stops never opens an older day. V4-343: eachFile opens the same files in the same order.
 package splice.core.storage
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -69,5 +69,15 @@ class DayFilesNewestFirstTest {
 
         assertThrows(IOException::class.java) { DayFiles(notADir, "kimi").newest() }
         assertEquals(emptyList<String>(), DayFiles(dir, "kimi").newest())
+    }
+
+    @Test
+    fun `each file is opened in the newest-first order, and a day with no rolled half has one`(@TempDir dir: Path) {
+        // V4-343: the files newestFirst reads, for a reader that reads each its own way.
+        twoDays(dir)
+
+        val opened = DayFiles(dir, "kimi").eachFile { file -> String(file.bytes(0L, file.size.toInt())) }
+
+        assertEquals(listOf("d2-c\nd2-d\n", "d2-a\nd2-b\n", "d1-a\nd1-b\n"), opened)
     }
 }

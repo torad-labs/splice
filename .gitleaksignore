@@ -63,3 +63,7 @@ b6b7743f36810c8d3e6b2f881a264bbcdcc1791a:.dev/campaigns/web-console.toml:generic
 446d7fd1083cfb6333861b8babe02766a2037485:gateway/core/src/test/kotlin/console/v4131/TranscriptSentTextsTest.kt:generic-api-key:21
 38b02d5b6c2c963ddf2e036d40138f9af0d3257d:gateway/provider-grok/src/test/kotlin/grok/GrokProviderTest.kt:generic-api-key:73
 c361520c57ecdd3eb7c9ab2257a71f037f5a899d:app/src/test/kotlin/splice/app/cli/status/DashboardKeyLineTest.kt:generic-api-key:14
+# 2026-09-27: V4-344 redaction fixture. TranscriptHistoryIndexTest plants the alphabet run
+# `abcdefghijklmnopqrstuvwxyz123456` as api_key= to prove the history index redacts it
+# (asserts `api_key=[redacted]`). Test-source literal, grants nothing; triaged by hand.
+3d0eb88804977ccaa6bcfd9cb20b6fbc83a2a89e:integrations/claude-code/src/test/kotlin/splice/client/transcript/v4344/TranscriptHistoryIndexTest.kt:generic-api-key:46

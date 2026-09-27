@@ -26,7 +26,9 @@ internal class CodexCodeModeHistory(json: Json) {
     ): CodeModeExtra = extras.of(bodyJson, record, candidateMedia)
 
     /**
-     * Rewrites every completed record it can still place. A record whose baseline no longer matches
+     * Rewrites every completed record it can still place, except an abandoned one (V4-342): its
+     * conversation went on upstream on the client's history, and a later rewrite of it would move the
+     * baseline of any script started in that request. A record whose baseline no longer matches
      * is OMITTED, never fatal: its client calls stay in the history as the ordinary tool calls the
      * client already saw, which is the pre-code-mode wire shape. Records after an omitted one were
      * measured on top of its canonical items, so they omit too; the caller logs each omission.
@@ -46,7 +48,7 @@ internal class CodexCodeModeHistory(json: Json) {
         val conversation = codec.conversation(codec.projection.project(root.second))
         var body = conversation.body
         val omitted = mutableListOf<CodeModeOmission>()
-        records.forEach { record ->
+        records.filterNot(CodeModeRecord::abandoned).forEach { record ->
             val rewritten = canonicalizeRecord(body, record, replayMedia)
             val error = rewritten.error
             if (error == null) body = checkNotNull(rewritten.input) else omitted += CodeModeOmission(record, error)
@@ -110,9 +112,12 @@ internal class CodexCodeModeHistory(json: Json) {
             ResponsesCodeModeReplay(boundary + it.logicalOffset, null, it.items)
         }
         val remapped = remapReplay(input.replayItems, record, retained, canonical.size)
-        val replay = mergeNative(remapped + continuityReplay, record)
+        // V4-342: the natives first, then the continuity at the same offset: upstream's order, the search
+        // the model made before its script and then the reasoning right before the script's call. Merged
+        // after them, a native the client never replays (a tool search) landed behind the continuity.
+        val replay = mergeNative(remapped, record)
         return replay.error?.let { ProjectedRewrite(null, it) }
-            ?: ProjectedRewrite(ResponsesCodeModeInput(logical, checkNotNull(replay.items)))
+            ?: ProjectedRewrite(ResponsesCodeModeInput(logical, placed(checkNotNull(replay.items), continuityReplay)))
     }
 
     private fun remapReplay(
@@ -140,6 +145,11 @@ internal class CodexCodeModeHistory(json: Json) {
             }
         }
     }
+
+    private fun placed(
+        natives: List<ResponsesCodeModeReplay>,
+        continuity: List<ResponsesCodeModeReplay>,
+    ): List<ResponsesCodeModeReplay> = (natives + continuity).sortedBy(ResponsesCodeModeReplay::logicalOffset)
 
     private fun mergeNative(replay: List<ResponsesCodeModeReplay>, record: CodeModeRecord): ReplayRewrite {
         val expected = record.nativeSegments.map { it.logicalOffset to it.items }

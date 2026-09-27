@@ -18,11 +18,11 @@
 package splice.dialect.responses.tools
 
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import splice.core.turn.ToolSearchCall
 import splice.core.wire.ToolDefinition
 import splice.dialect.responses.reasoning.ReasoningEnvelopeDecoder
+import splice.dialect.responses.request.AssistantPhase
+import splice.dialect.responses.request.ResponsesAssistantText
 import splice.dialect.responses.stream.ResponsesContinuation
 import splice.upstream.ToolSearchController
 import splice.upstream.ToolSearchRound
@@ -72,13 +72,13 @@ internal class ResponsesToolSearchController(
         return continuation.continuationRequest(round.requestBody, items)
     }
 
-    /** The round's prose the client already saw, replayed as context — mirrors
-     *  ResponsesReanchorController.assistantText (duplicated, not shared: a 2-line JSON builder,
-     *  and every wire literal in this file is already private-per-file). */
-    private fun assistantText(text: String): JsonObject = buildJsonObject {
-        put(FIELD_ROLE, ROLE_ASSISTANT)
-        put(FIELD_CONTENT, text)
-    }
+    /** The round's prose the client already saw, replayed as context: [ResponsesAssistantText]'s item,
+     *  commentary. The model went on past it in the same turn, and the client replays it the same way
+     *  (the builder's commentary: a tool_use follows it in that message). A search round runs on a lite
+     *  turn only (ToolSurface.kt:127: a non-lite turn defers nothing). V4-342: hand-built without a
+     *  phase, it put a second shape of one message into the baseline of a script this continuation
+     *  started, and the script was abandoned when the client replayed the builder's. */
+    private fun assistantText(text: String): JsonObject = ResponsesAssistantText.item(text, AssistantPhase.COMMENTARY)
 
     // Stop conditions, each a plain early return via a flat when — never a compound boolean.
     private fun stopSearching(round: ToolSearchRound): Boolean = when {
@@ -103,7 +103,3 @@ internal class ResponsesToolSearchController(
 
     private fun clampedLimit(requested: Int?): Int = (requested ?: policy.searchLimit).coerceIn(1, policy.searchLimit)
 }
-
-private const val FIELD_ROLE = "role"
-private const val FIELD_CONTENT = "content"
-private const val ROLE_ASSISTANT = "assistant"

@@ -16,8 +16,6 @@
 package splice.dialect.responses.reasoning
 
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import splice.core.turn.DEFAULT_MAX_CONTINUATIONS
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
@@ -85,11 +83,8 @@ public class ResponsesReanchorController(
 
     // phase:commentary keeps the marker out of the visible transcript (the fold marker trick) and
     // satisfies the Responses "reasoning item needs a following item" constraint.
-    private fun reanchorMarker(): JsonObject = buildJsonObject {
-        put("role", "assistant")
-        put("phase", "commentary")
-        put("content", MARKER_TEXT)
-    }
+    // V4-342: [ResponsesAssistantText]'s item, the one author of an assistant item; the same bytes.
+    private fun reanchorMarker(): JsonObject = ResponsesAssistantText.item(MARKER_TEXT, AssistantPhase.COMMENTARY)
 }
 
 // The re-anchor defaults, at file scope because Kotlin main sources carry no `companion` blocks.

@@ -12,10 +12,10 @@ package splice.dialect.responses.stream
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import splice.core.config.Knob
 import splice.dialect.responses.reasoning.ReasoningEnvelopeDecoder
+import splice.dialect.responses.request.AssistantPhase
+import splice.dialect.responses.request.ResponsesAssistantText
 import splice.dialect.responses.request.ResponsesRequest
 import splice.dialect.responses.request.responsesRequestJson
 import splice.upstream.FoldController
@@ -85,11 +85,9 @@ public class ResponsesFoldController(
 
     // A hidden phase:commentary assistant message — the codex-rs / CodexCont / codexcomp nudge.
     // It ALSO satisfies the Responses "reasoning item needs a following item" constraint.
-    private fun continuationMarker(): JsonObject = buildJsonObject {
-        put("role", "assistant")
-        put("phase", "commentary")
-        put("content", config.markerText)
-    }
+    // V4-342: [ResponsesAssistantText]'s item, the one author of an assistant item; the same bytes.
+    private fun continuationMarker(): JsonObject =
+        ResponsesAssistantText.item(config.markerText, AssistantPhase.COMMENTARY)
 }
 
 // reasoning_tokens == 518*n - 2  ⇔  (reasoning_tokens + 2) % 518 == 0, reasoning_tokens > 0.

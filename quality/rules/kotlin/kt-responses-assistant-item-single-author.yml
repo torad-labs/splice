@@ -1,0 +1,63 @@
+# WALL (V4-342): a Responses assistant item is written in ONE place, `ResponsesAssistantText.item`
+# (integrations/dialects/openai-responses/.../request/ResponsesAssistantText.kt, V4-335). Code mode
+# records the items a request carried and compares the client's next replay of them BY VALUE: an
+# assistant item one author writes as {role,content} and another as {role,phase,content} is two
+# different items, and the parked script is abandoned as "code-mode history no longer places the
+# running script". Live on 2026-09-26 record 923aa85d died on exactly that: the tool-search round's
+# prose, hand-built without a phase, was in the script's baseline; the builder replayed it with one.
+#
+# CENSUS AT AUTHORING (2026-09-26, derived from the tree at 84f1af3c7 with this rule): three
+# hand-built assistant items in the Responses dialect, all moved onto the factory in V4-342 with
+# their bytes pinned (v4342/AssistantTextSingleAuthorTest). Seven with the ignores dropped: the
+# other four are THE IGNORES below.
+#   tools/ResponsesToolSearchController.kt  `assistantText`       — no phase; now commentary, the
+#                                                                    phase the builder gives prose
+#                                                                    a tool_use follows
+#   reasoning/ResponsesReanchorController.kt `reanchorMarker`      — commentary, bytes unchanged
+#   stream/ResponsesFold.kt                  `continuationMarker`  — commentary, bytes unchanged
+#
+# THE IGNORES are the other wires, whose assistant role is not a Responses input item and never
+# reaches a code-mode record (rule-coverage-exclusions.toml carries the same three, with the reason):
+#   features/turns                    the Anthropic message the client reads: SSE `message_start`
+#                                     (MessageStart.kt) and the non-stream terminal (SseEmitter.kt)
+#   integrations/dialects/openai-chat the Chat Completions `messages` role (ChatWireMapper.kt)
+#   integrations/dialects/anthropic   the Anthropic passthrough re-anchor's assistant turn
+#                                     (PassthroughReanchorController.kt)
+#
+# THE MATCHER is the second argument of a `put` call: the constant `ROLE_ASSISTANT` or the literal
+# word `assistant`. That is the value of an assistant item's role, however the key is spelled, and
+# it excludes `put("assistant", …)` (a key named assistant). NOT CAUGHT: a constant with another
+# name holding "assistant", or an item decoded from a string template; neither exists today.
+id: kt-responses-assistant-item-single-author
+language: kotlin
+severity: error
+message: "A Responses assistant item is written by ResponsesAssistantText.item(text, phase) only; never hand-build {role: assistant, ...} here."
+note: "Code mode compares the items it recorded with the client's replay by value, so a second author of the assistant item (another key order, a missing phase) abandons the parked script whose baseline holds it (V4-342, record 923aa85d). Call ResponsesAssistantText.item with the phase the builder gives that text."
+files:
+  - "**/src/main/**/*.kt"
+ignores:
+  # Other wires: their assistant role is not a Responses input item (see THE IGNORES above).
+  - features/turns/**
+  - integrations/dialects/openai-chat/**
+  - integrations/dialects/anthropic/**
+rule:
+  all:
+    - kind: call_expression
+    - has: {kind: simple_identifier, regex: '^put$'}
+    # The VALUE argument, second of the call's arguments, is the assistant role.
+    - has:
+        kind: call_suffix
+        has:
+          kind: value_arguments
+          has:
+            kind: value_argument
+            nthChild: {position: 2, ofRule: {kind: value_argument}}
+            any:
+              - has: {kind: simple_identifier, regex: '^ROLE_ASSISTANT$'}
+              - has: {kind: string_literal, has: {kind: string_content, regex: '^assistant$'}}
+    # The factory itself is the one author.
+    - not:
+        inside:
+          stopBy: end
+          kind: object_declaration
+          has: {kind: type_identifier, regex: '^ResponsesAssistantText$'}

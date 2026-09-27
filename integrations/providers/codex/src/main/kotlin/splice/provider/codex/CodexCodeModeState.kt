@@ -36,6 +36,9 @@ internal class CodeModeExpiredHistory(
     }
 }
 
+/** The detail an abandoned record carries (V4-342: [CodeModeRecord.abandoned] reads it back). */
+internal const val CODE_MODE_ABANDONED: String = "code-mode history no longer places the running script"
+
 @Serializable
 internal data class CodeModeRecordSnapshot(
     val id: String,
@@ -133,6 +136,12 @@ internal data class CodeModeRecord(
     fun clientIds(): Set<String> = (results.keys + pending.map(CodeModePending::clientId)).toSet()
 
     fun terminal(): Boolean = phase == CodeModePhase.COMPLETED || error != null
+
+    /** V4-342: whether the record was abandoned, its history no longer placing it. The conversation went on
+     *  upstream on the client's own history, and that stays the history: no later rewrite places the
+     *  record. Read off the abandon detail in [error], which completing the record keeps, so a record
+     *  abandoned before this rule reads the same from its store. */
+    fun abandoned(): Boolean = error?.startsWith(CODE_MODE_ABANDONED) == true
 
     fun snapshot(): CodeModeRecordSnapshot = CodeModeRecordSnapshot(
         id = id,

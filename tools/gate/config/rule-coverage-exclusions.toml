@@ -44,7 +44,7 @@ rules = [
   "kt-no-silent-result-collapse", "kt-no-stream-options-request", "kt-no-system-getenv",
   "kt-no-todo-throws", "kt-no-top-level-functions", "kt-no-unsafe-bang-bang", "kt-no-unsafe-cast",
   "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source", "kt-perf-history-archived",
-  "kt-quota-tracker-single-resolution",
+  "kt-quota-tracker-single-resolution", "kt-responses-assistant-item-single-author",
   "kt-secure-file-single-source", "kt-shared-summary-parts-single-source",
   "kt-state-paths-single-source", "kt-tool-partition-no-transcript",
   "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone", "kt-ws-frame-without-epoch",
@@ -292,6 +292,21 @@ cancellation seal's error frame, SealedDrive rethrowing after it), and every hea
 :features-turns. The control plane's two streams (EventsRoute in :features-events, McpRoutes in
 :integrations-mcp; both lived in daemon-control until LAYOUT-01) end only when their client or the daemon
 goes, with no terminal frame to lose; no other module answers an HTTP stream.
+"""
+
+[[exclusion]]
+rule = "kt-responses-assistant-item-single-author"
+modules = ["features-turns", "integrations-dialects-openai-chat", "integrations-dialects-anthropic"]
+sourceSets = ["main"]
+date = "2026-09-26"
+reason = """
+The wall makes ResponsesAssistantText.item the one author of a Responses assistant input item, because
+code mode compares the items it recorded with the client's replay by value (V4-342). These three write
+an assistant role on other wires, which never reach a code-mode record: the Anthropic message the client
+reads (MessageStart.kt's SSE message_start, SseEmitter.kt's non-stream terminal), the Chat Completions
+messages role (ChatWireMapper.kt), and the Anthropic passthrough re-anchor's assistant turn
+(PassthroughReanchorController.kt). They are the rule's `ignores:`. Measured on 84f1af3c7: seven hits
+with the ignores dropped, three with them in.
 """
 
 # ─── file scope: the single declaration site each single-source wall exempts ──────────────────────

@@ -8285,10 +8285,11 @@ verify = "Marlin walks it by eye in a normal-size browser on a fresh home (or th
 id = "V4-345"
 phase = "release"
 title = "I can open a request and read it whole (build order 2; acceptance Q48, Q47). Clicking a request opens everything the model received (instructions, messages, tools) and everything it sent back, with tokens, time, cache and cost, beside the list. Today clicking a Turns row only highlights it; the operator's own ask of 2026-09-26: the prompt for a request cannot be seen in the console."
-files = ["console/src/pages/turns/", "console/src/widgets/request-detail/", "features/turns/src/main/kotlin/splice/head/trace/", "features/turns/src/test/kotlin/splice/head/trace/"]
+files = ["console/src/pages/turns/", "console/src/widgets/request-detail/", "features/turns/src/main/kotlin/splice/head/trace/", "features/turns/src/test/kotlin/splice/head/trace/", "features/turns/src/main/kotlin/splice/head/perf/PerfStats.kt", "features/turns/src/main/kotlin/splice/head/turn/TurnTelemetry.kt", "features/usage/src/main/kotlin/splice/usage/perf/HeadPerfSource.kt", "features/usage/src/main/kotlin/splice/usage/perf/PerfRoutes.kt", "console/src/entities/perf/model/types.ts", "console/src/entities/perf/model/turns-wire.ts", "app/src/main/kotlin/splice/app/control/mount/TurnsMount.kt", "console/src/shared/lib/index.ts", "console/src/pages/usage/model.ts", "features/turns/src/test/kotlin/splice/head/perf/v4345/", "features/usage/src/test/kotlin/splice/usage/perf/v4345/", "console/tests/request-detail.test.ts"]
 status = "todo"
 verify = "Marlin walks it by eye in a normal-size browser on a fresh home (or the film home where history is needed) at the built sha and approves; his walk log names the sha; CI gate on the train sha. A green gate is not approval."
 # depends:V4-343
+# [2026-09-27] amend by=orchestrator: files were ["console/src/pages/turns/", "console/src/widgets/request-detail/", "features/turns/src/main/kotlin/splice/head/trace/", "features/turns/src/test/kotlin/splice/head/trace/"]
 
 [[items]]
 id = "V4-346"

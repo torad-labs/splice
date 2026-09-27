@@ -210,7 +210,7 @@ internal enum class CodeModeExtra { NONE, SYSTEM, STEERING }
 
 /**
  * The logical items after the baseline (and after its continuity, while that is intact) that are
- * neither the script's callbacks nor their follow-ups, and any replay item in a slot nothing put it in.
+ * neither the script's callbacks nor their follow-ups, and any replay item in the tail nothing put there.
  */
 internal class CodeModeExtraContent(
     private val codec: CodexCodeModeHistoryCodec,
@@ -255,6 +255,11 @@ internal class CodeModeExtraContent(
         }.map(items::get)
     }
 
+    /** A replay item in the tail (from the baseline's end on) that neither the record put there nor an
+     *  owned callback carries. Replay inside the baseline is history, held by the baseline's digest and
+     *  native segments before this runs; reasoning before an earlier ordinary call is never recorded
+     *  (native segments keep only replay no function_call follows), and read as new it stopped every
+     *  resume in a conversation with reasoning (live after the V4-336 install: 35 of 49 records). */
     private fun unexpectedReplay(
         projected: ResponsesCodeModeInput,
         record: CodeModeRecord,
@@ -267,7 +272,7 @@ internal class CodeModeExtraContent(
         return projected.replayItems.any { replay ->
             val slot = replay.logicalOffset to replay.items
             val expected = slot in baselineReplay || slot in continuityReplay
-            !expected && replay.callbackId !in owned
+            replay.logicalOffset >= record.baselineLogicalCount && !expected && replay.callbackId !in owned
         }
     }
 

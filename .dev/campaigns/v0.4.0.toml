@@ -8527,9 +8527,10 @@ claimed_at = "2026-09-27T18:53:27.190Z"
 id = "V4-360"
 phase = "release"
 title = "Needs you says one fact once: /health's topologyStale and the doctor's topology WARN are one item that names splice.toml (Marlin F2 finding 5). Found: p9's first look (walks-2026-09-27-f2/p9/shots/daily-001.png) listed 'Daemon: The config file changed since the daemon started' and 'daemon/topology: splice.toml changed since the daemon booted' for the same stale splice.toml, with two different fixes (Restart daemon, and Doctor + splice restart)."
-files = ["console/src/pages/needs-you/"]
+files = ["console/src/pages/needs-you/", "console/tests/needs-you.test.ts"]
 status = "todo"
 verify = "red first: a needs-you model test with topology=true and a doctor WARN row named topology yields ONE item, not two (fails today); the item says splice.toml changed since the daemon booted, not 'the config file'; one fix; the Doctor page still shows its own row; console lint/typecheck/test green."
+# [2026-09-27] amend by=orchestrator: files were ["console/src/pages/needs-you/"]
 
 [[items]]
 id = "V4-361"

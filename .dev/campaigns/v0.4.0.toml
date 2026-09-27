@@ -8186,3 +8186,11 @@ files = ["integrations/providers/codex/src/main/kotlin/splice/provider/codex/Cod
 status = "todo"
 verify = "red first: a test that saves one record on a head holding N other conversations asserts only that conversation's file is written (bytes written or file mtimes), failing on today's tree; green: passes, restart restores every conversation, a corrupt file drops only its conversation, files 0600 in a 0700 dir, disk-writes law and README name the new layout; depends on V4-337's retention"
 # depends:V4-337
+
+[[items]]
+id = "V4-341"
+phase = "release"
+title = "Every worktree of the repo shares one gradle slot: tools/gate/src/lib/slot.ts:39-40 defaults the lock to the worktree's own buildRoot, so detached-worktree runs never queue behind each other or the main checkout; 2026-09-26 console's V4-336 run and claude-builder's V4-338 run held 'the slot' at once and the contention pushed HeadServerLoadTest's disconnect cell to 34.2 s against its 30 s cap (4.3 s alone)"
+files = ["tools/gate/src/lib/slot.ts", "tools/gate/test/slot.test.ts"]
+status = "todo"
+verify = "red first: a slot test with two layouts that share one git common dir (a checkout and a detached worktree of it) asserts the second run waits on the first, failing on today's tree; green: the default lock is <git common dir>/gradle-slot.lock, GRADLE_SLOT_LOCK still overrides, the existing slot tests pass, bun tools/gate selftests green"

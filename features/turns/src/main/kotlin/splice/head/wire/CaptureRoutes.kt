@@ -96,7 +96,11 @@ public class CaptureRoutes(
         }
         val head = current.heads[key] ?: return unknownHead(key)
         val overrides = head.overrides.toMutableMap()
-        overrides[Knob.TRACE.key] = parsed.enabled.toString()
+        if (parsed.enabled) {
+            overrides[Knob.TRACE.key] = "true"
+        } else {
+            overrides.remove(Knob.TRACE.key)
+        }
         parsed.retentionDays?.let { overrides[Knob.TRACE_RETENTION_DAYS.key] = it.toString() }
         parsed.maxBodyChars?.let { overrides[Knob.TRACE_MAX_BODY_CHARS.key] = it.toString() }
         val requested = current.copy(heads = current.heads + (key to head.copy(overrides = overrides)))

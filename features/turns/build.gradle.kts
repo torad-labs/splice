@@ -21,6 +21,7 @@ dependencies {
         exclude(group = "io.ktor", module = "ktor-client-apache5")
     }
     testImplementation(libs.ktor.client.cio)
+    testImplementation(project(":integrations-topology"))
     testImplementation(project(":integrations-dialects-openai-responses"))
     testImplementation(project(":integrations-dialects-anthropic"))
     testImplementation(project(":integrations-providers-codex"))

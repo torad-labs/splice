@@ -8163,3 +8163,4 @@ title = "The code-mode store saves one conversation, not the whole head: today C
 files = ["integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeStore.kt"]
 status = "todo"
 verify = "red first: a test that saves one record on a head holding N other conversations asserts only that conversation's file is written (bytes written or file mtimes), failing on today's tree; green: passes, restart restores every conversation, a corrupt file drops only its conversation, files 0600 in a 0700 dir, disk-writes law and README name the new layout; depends on V4-337's retention"
+# depends:V4-337

@@ -8349,5 +8349,8 @@ id = "V4-352"
 phase = "release"
 title = "A completed code-mode record's canonical rewrite must not move a later running script's baseline (console's V4-342 recount, 2026-09-27 2:04:04 AM CT: record 7661c965 abandoned with 'code-mode logical history does not match its persisted baseline' although its creation attempt 1790492642059 and resume attempt 1790492651391 carry the same first 10 logical items and digest on the client/upstream side; the same conversation holds completed record 5f8ca7c0, boundary 4, done at 2:03:45 AM CT). runLocked canonicalizes the body over every completed record before placedOwner calls restoreBaseline (CodexCodeModeTurn.kt:88-92, 104-106); begin() persists the baseline from the body its drive was handed (CodexCodeModeDriver.kt:112-128). Diagnose first, counts and structure only: the first differing logical item between 7661c965's persisted baseline and its resume body AFTER canonicalization (index, type, which rewrite made it), named in a ledger note before any code."
 files = ["integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeTurn.kt", "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeHistory.kt", "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeDriver.kt", "integrations/providers/codex/src/test/kotlin/splice/provider/codex/v4352/"]
-status = "todo"
+status = "in_flight"
 verify = "the diagnosis note first; then red first on that exact shape (a completed record at an earlier boundary and a script started after it, resumed with an unchanged client prefix), green, the mutant that reintroduces the moving rewrite goes red; live recount: no splice-side abandon over the next records; CI gate on the train sha"
+claimed_by = "console"
+claimed_at = "2026-09-27T07:08:22.813Z"
+# [2026-09-27] CLAIM: owner=console at=2026-09-27T07:08:22Z

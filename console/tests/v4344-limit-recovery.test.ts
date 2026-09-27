@@ -55,6 +55,28 @@ const byProject = DEFAULT_VIEWS.find((entry) => entry.id === 'by-project');
 if (byProject === undefined) throw new Error('Sessions is missing its project view');
 
 describe('transcript view off', () => {
+  test('a prior registry title stays hidden until the live switch answers this visit', () => {
+    const html = renderToStaticMarkup(createElement(SessionsBoard, {
+      payload: { note: 'Live registry', sessions: [{ ...historical, name: 'PRIVATE_TITLE', availability: 'live' }] },
+      history: { sessions: [{ ...historical, name: 'PRIVATE_HISTORY' }], next: null },
+      viewChecked: false, linked: sessionKey(historical), view: byProject,
+      edges: {
+        last: {
+          key: 'finished-id', at: NOW,
+          data: { session_id: 'finished-id', edges: [{
+            from: 'finished-id', to: 'uds:/peer.sock', at: NOW, direction: 'out' as const,
+            text: 'PRIVATE_HANDOFF', text_source: '/work/private.jsonl', missing_reason: null,
+          }] },
+        },
+        failures: new Map(),
+      },
+    }));
+    expect(html).not.toContain('PRIVATE_TITLE');
+    expect(html).not.toContain('PRIVATE_HISTORY');
+    expect(html).not.toContain('Show message');
+    expect(html).toContain('finished-id');
+  });
+
   test('sessions hide a registry title while keeping its id and repository when view is off', () => {
     const html = renderToStaticMarkup(createElement(SessionsBoard, {
       payload: { note: 'Live registry', sessions: [{ ...historical, name: 'PRIVATE_TITLE', availability: 'live' }] },

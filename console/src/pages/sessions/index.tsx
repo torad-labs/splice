@@ -306,10 +306,12 @@ const WIDTH_WITHOUT_HEAD: Record<string, string> = { name: '20%', project: '18%'
 const WIDTH_WITH_HEAD: Record<string, string> = { name: '16%', head: '14%', project: '16%', life: '24%', peer: '20%' };
 
 /** The board, drawn from a payload. Exported so a test can hand it one. */
-export function SessionsBoard({ payload, history = null, historyOff = null, historyQuery = '', onHistoryQuery, onHistoryNext, historyError = null, historyLoading = false, resumeHead = null, view, linked = null, edges = null, boardEdges = null, edgesError = null, locked = false, error = null, lastRead = null, sample }: {
+export function SessionsBoard({ payload, history = null, historyOff = null, viewChecked = true, historyQuery = '', onHistoryQuery, onHistoryNext, historyError = null, historyLoading = false, resumeHead = null, view, linked = null, edges = null, boardEdges = null, edgesError = null, locked = false, error = null, lastRead = null, sample }: {
   payload: SessionsPayload | null;
   history?: SessionHistoryPayload | null;
   historyOff?: string | null;
+  /** The live transcript-view response answered this visit, not a cached earlier page. */
+  viewChecked?: boolean;
   historyQuery?: string;
   onHistoryQuery?: (query: string) => void;
   onHistoryNext?: () => void;
@@ -341,9 +343,11 @@ export function SessionsBoard({ payload, history = null, historyOff = null, hist
   const [openId, setOpenId] = useOpen(linked);
 
   const needle = historyQuery.trim().toLowerCase();
-  const indexed = new Map((history?.sessions ?? []).map((row) => [row.session_id, row]));
+  const titleVisible = viewChecked && historyOff === null;
+  const historyRows = titleVisible ? history?.sessions ?? [] : [];
+  const indexed = new Map(historyRows.map((row) => [row.session_id, row]));
   const live = (payload?.sessions ?? []).map((entry): SessionRow => {
-    const row = historyOff === null ? entry : { ...entry, name: null };
+    const row = titleVisible ? entry : { ...entry, name: null };
     const durable = indexed.get(row.session_id);
     if (durable === undefined) return row;
     const repo = row.repo ?? durable.repo;
@@ -359,17 +363,17 @@ export function SessionsBoard({ payload, history = null, historyOff = null, hist
   }).filter((row) => needle === '' ||
     [sessionLabel(row), row.repo?.root, row.cwd, row.head].some((value) => value?.toLowerCase().includes(needle)));
   const liveIds = new Set(live.map((row) => row.session_id).filter((id) => id !== null));
-  const rows = [...live, ...(history?.sessions ?? []).filter((row) => row.session_id === null || !liveIds.has(row.session_id))];
+  const rows = [...live, ...historyRows.filter((row) => row.session_id === null || !liveIds.has(row.session_id))];
   const open = rows.find((row) => sessionKey(row) === openId) ?? null;
 
   // The OPENED session's hand-offs bay reads its own edges route when it opens; the peer column of
   // every row comes from the one board-wide read (GET /api/sessions/edges, the route M2-02 asked
   // V4-130 for), so no row needs a request of its own.
   useEffect(() => {
-    if (historyOff === null && open?.session_id != null) void fetchSessionEdges(open.session_id);
-  }, [historyOff, open?.session_id]);
+    if (viewChecked && historyOff === null && open?.session_id != null) void fetchSessionEdges(open.session_id);
+  }, [viewChecked, historyOff, open?.session_id]);
 
-  const handoffs = historyOff !== null || open?.session_id == null || edges === null
+  const handoffs = !viewChecked || historyOff !== null || open?.session_id == null || edges === null
     ? null : readFor(edges, open.session_id);
 
   const peerFor = (row: SessionRow): Peer | null => {
@@ -594,7 +598,7 @@ export function SessionsBoard({ payload, history = null, historyOff = null, hist
               rowHue={(row) => hueClass(hueOf(row.head))}
             />
           )}
-          {history?.next === null || history === null ? null : (
+          {!titleVisible || history?.next === null || history === null ? null : (
             <Key onClick={() => onHistoryNext?.()} busy={historyLoading} disabled={onHistoryNext === undefined}>{S.moreSessions}</Key>
           )}
         </div>
@@ -629,7 +633,7 @@ export function SessionsBoard({ payload, history = null, historyOff = null, hist
               )}
             </Section>
             <Section title={S.handoffs}>
-              {historyOff !== null ? <Empty text={S.off} /> : (
+              {!viewChecked ? <Empty text={S.checkingView} /> : historyOff !== null ? <Empty text={S.off} /> : (
                 <>
                   {handoffs?.error == null ? null : <Fault message={handoffs.error} />}
                   <EdgeRows edges={handoffs?.data ?? null} rows={rows} />
@@ -692,6 +696,7 @@ export default function SessionsPage() {
   const history = useSessionHistory((s) => s);
   const [query, setQuery] = useState('');
   const [historyReady, setHistoryReady] = useState(false);
+  const [viewFresh, setViewFresh] = useState(false);
   const [paging, setPaging] = useState(false);
   const edges = useSessionEdges((s) => s);
   const boardEdges = useBoardEdges((s) => s);
@@ -708,7 +713,9 @@ export default function SessionsPage() {
   useEffect(() => {
     let active = true;
     const timer = setTimeout(() => {
-      void fetchSessionHistory(query).then(() => { if (active) setHistoryReady(true); });
+      void fetchSessionHistory(query).then(() => {
+        if (active) { setHistoryReady(true); setViewFresh(true); }
+      });
     }, query === '' ? 0 : 250);
     return () => { active = false; clearTimeout(timer); };
   }, [query]);
@@ -752,6 +759,7 @@ export default function SessionsPage() {
       payload={fixture ?? registry.data}
       history={historyPage}
       historyOff={historyOff}
+      viewChecked={fixture !== null || (viewFresh && history.error === null)}
       historyQuery={query}
       onHistoryQuery={search}
       onHistoryNext={loadMore}

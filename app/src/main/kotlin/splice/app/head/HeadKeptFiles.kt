@@ -5,7 +5,8 @@
 // stayed after trace was turned off. What happens now (V4-286 says it as it is): an expired
 // compaction answer goes at its head's start or at that head's next save, whichever comes first;
 // code-mode state goes at the first start with code mode off or the head gone from splice.toml; trace
-// days go at the first start with trace off or the head gone. While the daemon runs, nothing here
+// days go at the first start with trace off or the head gone; a head's own state dir, `heads/<key>/`
+// (V4-334), goes at the first start with the head gone. While the daemon runs, nothing here
 // deletes anything. Heads are assembled only at the daemon's start, so that start is each head's start
 // ([atStart], from ManagedHeadFactory) and the first moment a head removed from splice.toml is known
 // to be gone ([ofRemovedHeads], from Daemon.start, before any head). The daemon lock makes this daemon
@@ -62,6 +63,23 @@ internal class HeadKeptFiles(private val statePaths: StatePaths, private val log
         listed(statePaths.traceDir) { DayFileStores(it).prefixes() }.filter { it !in heads }.forEach { key ->
             dropTrace(key, "the head is no longer in splice.toml")
         }
+        // V4-334: a head's own state dir (its Responses reasoning, per conversation) goes with the head.
+        listed(statePaths.headsDir) { DirectoryEntries.of(it) }
+            .filter { it.fileName.toString() !in heads }
+            .forEach { dir -> dropHeadState(dir, "the head is no longer in splice.toml") }
+    }
+
+    /** [dir] and everything under it, deepest first; each path that stays is named with why. */
+    private fun dropHeadState(dir: Path, why: String) {
+        val key = dir.fileName.toString()
+        val paths = listed(dir) { root -> Files.walk(root).use { walk -> walk.toList() } }.sortedDescending()
+        val failed = paths.mapNotNull { path ->
+            Cancellables.runCatchingCancellable { Files.deleteIfExists(path) }.exceptionOrNull()?.let { path to it }
+        }
+        failed.forEach { (path, failure) ->
+            log("[$key] head state $path could not be deleted (${SafeFailureText.render(failure)}): $why\n")
+        }
+        if (failed.isEmpty() && paths.isNotEmpty()) log("[$key] head state deleted: $why\n")
     }
 
     private fun dropCodeMode(key: String, why: String) {

@@ -255,6 +255,12 @@ public class StatePaths(
      *  (FileCompactionRecordings), owner-only: each file is a summary of the user's conversation. */
     public fun compactionRecordingsDir(headKey: String): Path = compactionsDir.resolve(headKey)
 
+    /** V4-334: one directory per head key, `heads/<key>/`, for what that head's provider keeps across a
+     *  restart (ProviderTuning.stateDir), named by the provider inside it: the Responses dialect keeps
+     *  each conversation's encrypted reasoning under `reasoning/`, owner-only. A property and a resolve
+     *  at the arms rather than a function here: StatePaths sits at detekt's function ceiling. */
+    public val headsDir: Path = stateDir.resolve("heads")
+
     /** Compact-stats JSONL lives in the ROOT dir (not state/) — legacy layout, kept with the names.
      *  The two legacy names are irregular on purpose (claudex-…, claude-grok-…); overridable per head. */
     public fun compactStatsFile(headKey: String, nameOverride: String? = null): Path {

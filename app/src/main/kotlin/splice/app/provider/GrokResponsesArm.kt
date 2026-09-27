@@ -4,6 +4,7 @@
 package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
+import splice.core.config.StatePaths
 import splice.core.util.LogSink
 import splice.oauth.grok.GrokRefresh
 import splice.provider.grok.GrokProvider
@@ -16,6 +17,8 @@ internal class GrokResponsesArm(
     private val probeScope: CoroutineScope,
     private val log: LogSink,
     private val grokRefresh: GrokRefresh,
+    /** Names the head's own directory (V4-334: its reasoning outlives a restart). */
+    private val statePaths: StatePaths,
 ) {
     private val quirksOverlay = QuirksOverlay()
     private val grokAccounts = GrokAccountWiring(probeScope, log, grokRefresh)
@@ -45,6 +48,7 @@ internal class GrokResponsesArm(
                     baseUrl = providerCfg.baseUrl,
                     watchdog = watchdog,
                     loginCommand = ctx.loginCommand,
+                    stateDir = statePaths.headsDir.resolve(key),
                 ),
                 showReasoning = cfg.showReasoning,
                 replayReasoning = cfg.replayReasoning,

@@ -32,8 +32,8 @@ internal class ProviderAssembly(
     private val passthroughAssembly = PassthroughAssembly()
     private val chatArm = ChatArm(probeScope, log, grokRefresh)
     private val passthroughArm = PassthroughArm(passthroughAssembly)
-    private val grokResponsesArm = GrokResponsesArm(probeScope, log, grokRefresh)
-    private val apiKeyResponsesArm = ApiKeyResponsesArm()
+    private val grokResponsesArm = GrokResponsesArm(probeScope, log, grokRefresh, statePaths)
+    private val apiKeyResponsesArm = ApiKeyResponsesArm(statePaths)
     private val codexResponsesArm = CodexResponsesArm(statePaths, probeScope, log, refreshCall)
     private val responsesArm = ResponsesArm(grokResponsesArm, apiKeyResponsesArm, codexResponsesArm)
 

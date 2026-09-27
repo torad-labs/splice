@@ -7,6 +7,7 @@ import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.TurnMeta
 import splice.dialect.responses.reasoning.EmitEncryptedReasoning
 import splice.dialect.responses.reasoning.ResponsesReanchorController
+import splice.dialect.responses.reasoning.TurnReasoningSink
 import splice.dialect.responses.stream.ResponsesFoldController
 import splice.dialect.responses.stream.ResponsesStreamTranslator
 import splice.upstream.FoldController
@@ -56,14 +57,28 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
                     // envelope collected on a compaction would be carried and never read.
                     collectReasoningEnvelopes = !meta.compact ||
                         deps.cachePolicy.reasoningCacheActive(deps.quirks, meta.compact),
-                    onTurnReasoning = { ids, envs ->
-                        if (deps.cachePolicy.reasoningCacheActive(deps.quirks, meta.compact)) {
-                            deps.reasoningCache.put(meta.conversationKey, ids, envs)
-                        }
-                    },
+                    onTurnReasoning = reasoningSink(meta),
                 ),
             )
         }
+
+    /** The turn's writes to the reasoning cache, keyed within its session as the lookup keys them
+     *  (ResponsesTurnOptions): a tool round's reasoning in, and, on a compaction's Success, the
+     *  conversation out (V4-334). Both only where the quirk runs the cache. */
+    private fun reasoningSink(meta: TurnMeta): TurnReasoningSink {
+        val conversation = deps.cachePolicy.conversationKey(meta.sessionId, meta.conversationKey)
+        return object : TurnReasoningSink {
+            override fun invoke(toolIds: List<String>, envelopes: List<String>) {
+                if (deps.cachePolicy.reasoningCacheActive(deps.quirks, meta.compact)) {
+                    deps.reasoningCache.put(conversation, toolIds, envelopes)
+                }
+            }
+
+            override fun compacted() {
+                if (deps.quirks.reasoningCache) deps.reasoningCache.dropConversation(conversation)
+            }
+        }
+    }
 
     private fun summaryOwner(meta: TurnMeta): SummaryRoundOwner =
         deps.summaryParts.ownerForConversation(meta.sessionId, meta.conversationKey)

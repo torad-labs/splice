@@ -58,7 +58,14 @@ public fun interface ReasoningLookup {
  * "Real" is load-bearing and is why this is not a general event hook: synthetic tool ids
  * (`toolu_synth_*`) repeat across turns, so keying the cache with one bleeds one turn's reasoning
  * into another. The default no-op keeps the reducer byte-identical when the provider wires no cache.
+ *
+ * V4-334: [compacted] is the cache's other write — called ONCE when a compaction turn ends in Success,
+ * because the conversation's reasoning ends there (the client carries on under a new opening, and
+ * codex-rs drops its reasoning items at the same point). Not on a failed compaction: that conversation
+ * carries on as it was. No-op by default, like the capture.
  */
 public fun interface TurnReasoningSink {
     public operator fun invoke(toolIds: List<String>, envelopes: List<String>)
+
+    public fun compacted(): Unit = Unit
 }

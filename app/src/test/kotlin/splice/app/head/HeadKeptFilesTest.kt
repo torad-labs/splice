@@ -64,6 +64,19 @@ class HeadKeptFilesTest {
     }
 
     @Test
+    fun `a removed head's own state dir goes whole at the start, and a head still in splice toml keeps its own`() {
+        val gone = seed(paths.headsDir.resolve("gone/reasoning/splice-0123.jsonl"))
+        val kept = seed(paths.headsDir.resolve("claudex/reasoning/splice-4567.jsonl"))
+
+        kept().ofRemovedHeads(setOf("claudex"))
+
+        assertFalse(Files.exists(paths.headsDir.resolve("gone")), "the removed head's dir stayed: $lines")
+        assertTrue(Files.exists(kept))
+        assertTrue(lines.contains("[gone] head state deleted: the head is no longer in splice.toml\n"), "$lines")
+        assertFalse(Files.exists(gone))
+    }
+
+    @Test
     fun `a file named for a date not on the calendar does not stop the start, and the head's days still go`() {
         val notADay = seed(paths.traceDir.resolve("gone-2026-02-29.jsonl"))
         val day = seed(paths.traceDir.resolve("gone-2026-09-18.jsonl"))

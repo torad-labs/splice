@@ -7,6 +7,7 @@ import splice.dialect.responses.ResponsesTurnSeams
 import splice.dialect.responses.ResponsesTurnSeamsDeps
 import splice.dialect.responses.TurnOptionsDeps
 import splice.dialect.responses.reasoning.ReasoningCache
+import splice.dialect.responses.reasoning.ReasoningCacheFiles
 import splice.dialect.responses.reasoning.ReasoningCachePolicy
 import splice.dialect.responses.stream.ConversationSummaryParts
 import splice.dialect.responses.stream.ResponsesFailureAmend
@@ -18,7 +19,20 @@ internal class ResponsesParts(input: ResponsesPartsInput) {
     private val cachePolicy = ReasoningCachePolicy()
     private val surfaceRecovery = ToolSurfaceRecovery()
     private val ids = ResponsesStableIds()
-    private val reasoningCache = ReasoningCache(log = input.log)
+
+    // V4-334: the head's state dir keeps each conversation's reasoning across a restart, while the quirk
+    // runs the cache; a head that turned it off drops what an earlier start kept (V4-260: kept files go
+    // when their use ends).
+    private val reasoningFiles =
+        input.tuning.stateDir?.let { ReasoningCacheFiles(it.resolve(REASONING_DIR), input.log) }
+    private val reasoningCache = ReasoningCache(
+        log = input.log,
+        files = reasoningFiles.takeIf { input.quirks.reasoningCache },
+    )
+
+    init {
+        if (!input.quirks.reasoningCache) reasoningFiles?.purge()
+    }
     private val summaryParts = ConversationSummaryParts()
     private val toolSurfaceLatch = ToolSurfaceLatch()
     val turnOptions = ResponsesTurnOptions(
@@ -59,3 +73,6 @@ internal class ResponsesParts(input: ResponsesPartsInput) {
         input.log,
     )
 }
+
+// Under the head's own state dir (ProviderTuning.stateDir).
+private const val REASONING_DIR = "reasoning"

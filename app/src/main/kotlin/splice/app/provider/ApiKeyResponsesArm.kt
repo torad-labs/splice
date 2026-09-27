@@ -3,6 +3,7 @@
 // plus the dated session-id cache_key arm. Reasoning display knobs come from ConfigService.
 package splice.app.provider
 
+import splice.core.config.StatePaths
 import splice.core.topology.ApiKeyProviderRegistry
 import splice.provider.grok.GrokProvider
 import splice.provider.grok.GrokQuirks
@@ -13,7 +14,8 @@ import splice.topology.TopologyLoader
 import splice.upstream.ProviderTuning
 import java.nio.file.Paths
 
-internal class ApiKeyResponsesArm {
+/** [statePaths] names each head's own directory (V4-334: its reasoning outlives a restart). */
+internal class ApiKeyResponsesArm(private val statePaths: StatePaths) {
     private val quirksOverlay = QuirksOverlay()
 
     // api-key + responses: GrokProvider vs OpenAiResponsesProvider. Reasoning display knobs come
@@ -40,6 +42,7 @@ internal class ApiKeyResponsesArm {
             baseUrl = providerCfg.baseUrl,
             watchdog = watchdog,
             loginCommand = ctx.loginCommand,
+            stateDir = statePaths.headsDir.resolve(key),
         )
         // Registry ids xai and grok mean this vendor. 2026-09-15 compatibility: pre-V4-21 this arm
         // selected GrokProvider by quirks.cache_key == session-id, not by the table name. Keep that

@@ -49,7 +49,8 @@ class ApiKeyResponsesArmTest {
     }
 
     private fun wired(tmp: Path, providerId: String, cacheKey: String) =
-        ApiKeyResponsesArm().apiKeyResponsesProvider(ctx(tmp, providerId, cacheKey), "label").provider
+        ApiKeyResponsesArm(StatePaths(baseOverride = tmp.resolve("state")))
+            .apiKeyResponsesProvider(ctx(tmp, providerId, cacheKey), "label").provider
 
     private fun ctx(tmp: Path, providerId: String, cacheKey: String): ProviderBuild {
         val key = "head"

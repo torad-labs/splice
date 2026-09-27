@@ -362,6 +362,8 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
         "Files.move(" to 2,
         "writeAtomic0600(" to 1,
     ),
+    "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/" +
+        "reasoning/ReasoningCacheFiles.kt" to mapOf("JsonlSink.appendLine(" to 1, "createNew0600(" to 1),
     "integrations/oauth/src/main/kotlin/splice/oauth/LoginIo.kt" to mapOf("writeAtomic0600(" to 1),
     "integrations/oauth/src/main/kotlin/splice/oauth/OAuthAccountFiles.kt" to mapOf("Files.move(" to 1),
     "integrations/oauth/src/main/kotlin/splice/oauth/OAuthAccountWrites.kt" to mapOf("writeAtomic0600(" to 1),

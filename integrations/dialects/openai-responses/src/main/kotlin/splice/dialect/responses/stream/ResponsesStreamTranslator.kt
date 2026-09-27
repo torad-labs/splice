@@ -196,10 +196,16 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
     }
 
     /** RC-1 capture: only a SUCCESSFUL tool-use round seeds the reasoning cache — the client
-     *  will come back with these tool ids and the injection needs the plan that produced them. */
+     *  will come back with these tool ids and the injection needs the plan that produced them.
+     *  A compaction seeds nothing (its own reasoning is never stored); its Success ends the
+     *  conversation's reasoning instead (V4-334). */
     private fun captureTurnReasoning(state: ResponsesTurnState, outcome: TurnOutcome) {
-        if (outcome !is TurnOutcome.Success || !outcome.hasToolUse) return
-        if (state.turnToolIds.isEmpty() || state.reasoningEnvelopes.isEmpty()) return
-        ctx.onTurnReasoning(state.turnToolIds.toList(), state.reasoningEnvelopes.toList())
+        if (outcome !is TurnOutcome.Success) return
+        when {
+            ctx.compact -> ctx.onTurnReasoning.compacted()
+            !outcome.hasToolUse -> Unit
+            state.turnToolIds.isNotEmpty() && state.reasoningEnvelopes.isNotEmpty() ->
+                ctx.onTurnReasoning(state.turnToolIds.toList(), state.reasoningEnvelopes.toList())
+        }
     }
 }

@@ -24,6 +24,15 @@
 //
 // Policy + RC-4 walk live in ReasoningCachePolicy.kt so this file is the store only
 // (concentration, 2026-08-19).
+//
+// REWORKED 2026-09-26 (V4-334): a keyed conversation lasts until its compaction, as codex-rs keeps every
+// reasoning item until compaction (context_manager/history.rs:944-960), and it outlives the process. The
+// idle TTL no longer applies to it: a 31-minute pause dropped a live conversation whole, and each restart
+// dropped all of them (0/634 pre-restart tool steps carried reasoning after the 2026-09-26 restarts). The
+// bounds below stay the only other exit. With a directory (ReasoningCacheFiles) every keyed conversation
+// is also on disk, restored before the first read: disk and memory hold the same conversations, except
+// one whose file could not be written, which lives in memory only. Writes are queued under the lock and
+// applied after it (ReasoningCacheWrites), so no request waits on the disk.
 package splice.dialect.responses.reasoning
 
 import splice.core.util.ElapsedClock
@@ -34,23 +43,27 @@ internal class ReasoningCache(
     private val maxEntries: Int = MAX_ENTRIES,
     private val maxTotalBytes: Long = MAX_TOTAL_BYTES,
     private val ttlMs: Long = TTL_MS,
-    // Monotonic, not wall clock: both sweeps' takeWhile early-exits are sound only while
+    // Monotonic, not wall clock: the null-key sweep's takeWhile early-exit is sound only while
     // iteration order matches timestamp order — an NTP step backward would break that invariant
     // and leave an expired record unswept (review 2026-07-24; same reasoning as UpstreamClient).
     private val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
-    /** Daemon log sink for the two one-way transitions worth an operator's eye (freeze, bound
-     *  eviction). Defaults to a no-op so tests need not thread it. */
+    /** Daemon log sink for the one-way transitions worth an operator's eye (freeze, bound
+     *  eviction, compaction, a file that did not read back). Defaults to a no-op so tests need not
+     *  thread it. */
     private val log: LogSink = LogSink {},
+    /** V4-334: where keyed conversations outlive the process; null keeps them in memory only. */
+    files: ReasoningCacheFiles? = null,
 ) {
 
-    // Iteration order = least-recently-TOUCHED first (touch re-inserts; MonoClock keeps `at`
-    // monotone with re-insertion order, which sweepLocked's takeWhile depends on).
+    // Iteration order = least-recently-TOUCHED first (touch re-inserts). Bound pressure evicts from
+    // the front.
     private val convos = LinkedHashMap<String, ReasoningCacheConvo>()
 
     // The null-key class (first user message with no text to hash — image-first or tool_result-
     // first openers) has no grouping identity, so it keeps the ORIGINAL flat per-round insertion
     // TTL and shares one id namespace, exactly the pre-rework behavior. Documented limitation:
-    // that class retains the old mid-conversation-expiry pathology (spike doc, "not fixed").
+    // that class retains the old mid-conversation-expiry pathology (spike doc, "not fixed"), and with
+    // no conversation to name a file after, it is never written to disk.
     private val nullRounds = LinkedHashMap<String, ReasoningCacheRound>()
     private val nullByToolId = HashMap<String, String>()
 
@@ -58,9 +71,36 @@ internal class ReasoningCache(
     private var totalBytes = 0L
     private var seq = 0L
     private val lock = Any()
+    private val writes = ReasoningCacheWrites(files)
+
+    // What the last process left on disk, published once before any read or write sees the maps: a
+    // restarted daemon's first request must find it. The directory is read under the lazy's own lock,
+    // never under `lock`; conversations are published least recently written first, and the bounds
+    // apply to them as to any other.
+    private val restored: Lazy<Unit> = lazy {
+        val stored = writes.restore()
+        synchronized(lock) {
+            stored.forEach { conversation ->
+                val convo = ReasoningCacheConvo()
+                conversation.rounds.forEach { round ->
+                    val rk = "r${seq++}"
+                    val bytes = round.envelopes.sumOf { it.length.toLong() }
+                    convo.rounds[rk] = ReasoningCacheRound(round.ids, round.envelopes, bytes, clock())
+                    round.ids.forEach { convo.byToolId[it] = rk }
+                    convo.bytes += bytes
+                    roundCount++
+                }
+                totalBytes += convo.bytes
+                convos[conversation.key] = convo
+            }
+            evictToBoundLocked(writing = null, writer = null, offered = null)
+        }
+        writes.flush()
+    }
 
     fun put(conversationKey: String?, toolIds: List<String>, envelopes: List<String>) {
         if (toolIds.isEmpty() || envelopes.isEmpty()) return
+        restored.value
         val bytes = envelopes.sumOf { it.length.toLong() }
         synchronized(lock) {
             sweepLocked()
@@ -70,17 +110,21 @@ internal class ReasoningCache(
                 putConvoLocked(conversationKey, toolIds, envelopes, bytes)
             }
         }
+        writes.flush()
     }
 
     /** The ordered envelopes for the round of THIS conversation that emitted [toolId], or null
      *  (miss = status quo; another conversation's identical id never resolves — per-conversation
      *  id maps; the null-key class shares one namespace as before). Touching refreshes the WHOLE
      *  conversation: active conversations never partially expire. */
-    fun lookup(conversationKey: String?, toolId: String): List<String>? = synchronized(lock) {
-        sweepLocked()
-        if (conversationKey == null) return nullByToolId[toolId]?.let { nullRounds[it]?.envelopes }
-        val convo = touchLocked(conversationKey) ?: return null
-        convo.byToolId[toolId]?.let { convo.rounds[it]?.envelopes }
+    fun lookup(conversationKey: String?, toolId: String): List<String>? {
+        restored.value
+        return synchronized(lock) {
+            sweepLocked()
+            if (conversationKey == null) return nullByToolId[toolId]?.let { nullRounds[it]?.envelopes }
+            val convo = touchLocked(conversationKey) ?: return null
+            convo.byToolId[toolId]?.let { convo.rounds[it]?.envelopes }
+        }
     }
 
     /** Every round of [conversationKey] as toolId -> envelopes in ONE atomic read with ONE touch.
@@ -88,13 +132,16 @@ internal class ReasoningCache(
      *  concurrent eviction (rounds 1..k injected, k+1.. missing — the forbidden partial shape,
      *  review finding 14) and re-touch the conversation N times (finding 10). A snapshot cannot
      *  tear and costs one lock acquisition per build. */
-    fun snapshot(conversationKey: String?): Map<String, List<String>> = synchronized(lock) {
-        sweepLocked()
-        if (conversationKey == null) {
-            return nullByToolId.entries.associate { (id, rk) -> id to nullRounds.getValue(rk).envelopes }
+    fun snapshot(conversationKey: String?): Map<String, List<String>> {
+        restored.value
+        return synchronized(lock) {
+            sweepLocked()
+            if (conversationKey == null) {
+                return nullByToolId.entries.associate { (id, rk) -> id to nullRounds.getValue(rk).envelopes }
+            }
+            val convo = touchLocked(conversationKey) ?: return emptyMap()
+            convo.byToolId.entries.associate { (id, rk) -> id to convo.rounds.getValue(rk).envelopes }
         }
-        val convo = touchLocked(conversationKey) ?: return emptyMap()
-        convo.byToolId.entries.associate { (id, rk) -> id to convo.rounds.getValue(rk).envelopes }
     }
 
     /** Upstream rejected [toolId]'s envelopes as stale: drop the WHOLE conversation that carried
@@ -106,6 +153,7 @@ internal class ReasoningCache(
      *  call_id collision over-evicts a healthy conversation, which costs a miss, never a wrong
      *  injection. */
     fun evictByToolId(toolId: String) {
+        restored.value
         synchronized(lock) {
             convos.filterValues { toolId in it.byToolId }.keys.toList().forEach {
                 log("[reasoning-cache] stale-400 evicted conversation ${it.take(KEY_LOG_CHARS)}… whole")
@@ -113,35 +161,49 @@ internal class ReasoningCache(
             }
             nullByToolId[toolId]?.let { removeNullLocked(it) }
         }
+        writes.flush()
+    }
+
+    /** V4-334: [conversationKey] compacted, so its reasoning is done — the client carries on under a
+     *  new opening, and codex-rs drops its reasoning items at the same point. Dropped whole, file
+     *  included. The null-key class has no conversation to end. */
+    fun dropConversation(conversationKey: String?) {
+        if (conversationKey == null) return
+        restored.value
+        synchronized(lock) {
+            val convo = convos[conversationKey] ?: return@synchronized
+            log(
+                "[reasoning-cache] conversation ${conversationKey.take(KEY_LOG_CHARS)}… compacted: " +
+                    "dropped whole (${convo.rounds.size} rounds)",
+            )
+            removeConvoLocked(conversationKey)
+        }
+        writes.flush()
     }
 
     // ── internals ────────────────────────────────────────────────────────────────────────────
 
-    /** Re-insert [key] at the most-recently-touched end with a fresh timestamp, or null if the
-     *  conversation is not held. O(1): the whole point of conversation-primary records. */
+    /** Re-insert [key] at the most-recently-touched end, or null if the conversation is not held.
+     *  O(1): the whole point of conversation-primary records. */
     private fun touchLocked(key: String): ReasoningCacheConvo? =
-        convos.remove(key)?.also {
-            it.at = clock()
-            convos[key] = it
-        }
+        convos.remove(key)?.also { convos[key] = it }
 
     private fun putConvoLocked(key: String, toolIds: List<String>, envelopes: List<String>, bytes: Long) {
-        val convo = touchLocked(key) ?: ReasoningCacheConvo().also {
-            it.at = clock()
-            convos[key] = it
-        }
+        val convo = touchLocked(key) ?: ReasoningCacheConvo().also { convos[key] = it }
         if (convo.frozen) return // admission frozen; admitted rounds keep serving
         // Client-retry grace: an id we already hold is a re-capture of the same round. Admitting
         // it again would orphan the old round, which still counts against the bound (review
         // finding 2's accelerator) — refresh (the touch above) and return instead.
         if (toolIds.any { it in convo.byToolId }) return
         val rk = "r${seq++}"
-        convo.rounds[rk] = ReasoningCacheRound(toolIds, envelopes, bytes, convo.at)
+        convo.rounds[rk] = ReasoningCacheRound(toolIds, envelopes, bytes, clock())
         toolIds.forEach { convo.byToolId[it] = rk }
         convo.bytes += bytes
         totalBytes += bytes
         roundCount++
         evictToBoundLocked(writing = key, writer = convo, offered = rk)
+        // Written only once it survived the bound: a round the freeze rejected was never served.
+        if (rk in convo.rounds) writes.append(key, toolIds, envelopes)
     }
 
     private fun putNullLocked(toolIds: List<String>, envelopes: List<String>, bytes: Long) {
@@ -206,18 +268,16 @@ internal class ReasoningCache(
         // Null-class: flat per-round INSERTION TTL (never touched, so insertion order = age order).
         nullRounds.entries.takeWhile { it.value.at < cutoff }.map { it.key }.toList()
             .forEach { removeNullLocked(it) }
-        // Conversations expire WHOLESALE on idle — half a conversation is the one state this
-        // cache must never serve. An active conversation is re-touched every build, so only a
-        // genuinely idle one lapses; its frozen flag (if any) dies with it, and a later resume
-        // re-caches from its next round onward (tail-append, prefix-stable).
-        convos.entries.takeWhile { it.value.at < cutoff }.map { it.key }.toList()
-            .forEach { removeConvoLocked(it) }
+        // Keyed conversations do not expire on idle (V4-334): a paused session came back to no
+        // reasoning at all. They end at their compaction (dropConversation), a stale 400, or bound
+        // pressure, each wholesale.
     }
 
     private fun removeConvoLocked(key: String) {
         val convo = convos.remove(key) ?: return
         totalBytes -= convo.bytes
         roundCount -= convo.rounds.size
+        writes.drop(key)
     }
 
     private fun removeNullLocked(roundKey: String) {
@@ -233,9 +293,8 @@ internal class ReasoningCache(
 }
 
 // The ReasoningCache bounds, at file scope because Kotlin main sources carry no `companion` blocks.
-// The TTL is an IDLE timer for keyed conversations (each build re-touches), an insertion TTL for the
-// null-key class. 30 min of genuine inactivity, with an order of magnitude over any realistic
-// tool-loop gap (eli risk 4).
+// The TTL is the null-key class's insertion TTL, and nothing else's since V4-334: keyed conversations
+// end at compaction or under the bounds, never on a clock.
 private const val TTL_MS: Long = 30 * 60 * 1000L
 
 // Total ROUNDS across all conversations on the head (one entry per tool round). 8192, not the
@@ -249,5 +308,5 @@ private const val TTL_MS: Long = 30 * 60 * 1000L
 private const val MAX_ENTRIES: Int = 8192
 private const val MAX_TOTAL_BYTES: Long = 64L * 1024 * 1024
 
-// "splice-" + 7 hash chars: identifiable in logs, not noisy.
-private const val KEY_LOG_CHARS: Int = 14
+// "splice-" + 7 hash chars: identifiable in logs, not noisy. Internal: ReasoningCacheFiles names keys too.
+internal const val KEY_LOG_CHARS: Int = 14

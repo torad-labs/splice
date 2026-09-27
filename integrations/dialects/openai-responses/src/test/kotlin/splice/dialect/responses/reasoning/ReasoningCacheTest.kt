@@ -52,16 +52,15 @@ class ReasoningCacheTest {
     }
 
     @Test
-    fun `ttl expires IDLE entries`() {
-        // The TTL is an IDLE timer (prefix stability, 2026-07-30): untouched entries still expire
-        // exactly as before. The active-conversation case is pinned by the next two tests.
+    fun `a keyed conversation never expires on idle - it ends at compaction or under the bounds`() {
+        // Was "ttl expires IDLE entries" (2026-07-30). V4-334: a paused session came back to no
+        // reasoning at all, while codex-rs keeps every item until compaction. The TTL is the
+        // null-key class's alone now (pinned below).
         var now = 0L
         val c = ReasoningCache(ttlMs = 100, clock = { now })
         c.put(CONV, listOf("call_a"), listOf("e1"))
-        now = 99
-        assertEquals(listOf("e1"), c.lookup(CONV, "call_a"), "not yet idle-expired")
-        now = 200 // 101ms since the refresh at t=99 -> idle past the TTL
-        assertNull(c.lookup(CONV, "call_a"))
+        now = 1_000_000 // ten thousand TTLs of true idle
+        assertEquals(listOf("e1"), c.lookup(CONV, "call_a"))
     }
 
     @Test
@@ -94,20 +93,19 @@ class ReasoningCacheTest {
     }
 
     @Test
-    fun `an idle conversation expires WHOLESALE, never half`() {
-        // One record, ONE clock: rounds inserted 161ms and 101ms ago expire together the moment
-        // the conversation's idle timer lapses — there is no per-round age to half-expire on.
-        // (Half a conversation is exactly the prefix-shifting state the cache must never serve.)
-        var now = 0L
-        val c = ReasoningCache(ttlMs = 100, clock = { now })
+    fun `a compacted conversation ends WHOLESALE, never half, and spares its neighbor`() {
+        // Was "an idle conversation expires WHOLESALE" — the idle exit is gone (V4-334); the
+        // compaction exit keeps the same law: half a conversation is exactly the prefix-shifting
+        // state the cache must never serve.
+        val c = ReasoningCache(clock = { 0L })
         c.put(CONV, listOf("call_1"), listOf("e1"))
-        now = 60
         c.put(CONV, listOf("call_2"), listOf("e2"))
-        now = 130 // idle only 70ms since the last touch: BOTH still serve — no partial state
-        assertEquals(listOf("e1"), c.lookup(CONV, "call_1"))
-        now = 340 // the t=130 lookup touched the conversation; 210ms of true idle since -> gone
+        c.put("conv-other", listOf("call_3"), listOf("e3"))
+        c.dropConversation(CONV)
         assertNull(c.lookup(CONV, "call_1"))
         assertNull(c.lookup(CONV, "call_2"), "the younger round goes with its conversation")
+        assertEquals(listOf("e3"), c.lookup("conv-other", "call_3"))
+        c.dropConversation(null) // the null-key class has no conversation to end: a no-op
     }
 
     @Test
@@ -237,18 +235,19 @@ class ReasoningCacheTest {
     fun `snapshot returns every round in one atomic read and counts as ONE touch`() {
         // The builder consumes the cache through snapshot() (review finding 14: N per-block
         // lookups could tear across a concurrent eviction; finding 10: they re-touched N times).
-        var now = 0L
-        val c = ReasoningCache(ttlMs = 100, clock = { now })
+        // The touch is recency now (V4-334 retired the idle clock): the snapshot makes CONV the most
+        // recently touched, so bound pressure takes the neighbor written after it instead.
+        val c = ReasoningCache(maxTotalBytes = 6, clock = { 0L })
         c.put(CONV, listOf("call_1"), listOf("e1"))
-        now = 60
         c.put(CONV, listOf("call_2"), listOf("e2"))
-        now = 130 // 70ms since the last touch: alive
+        c.put("conv-b", listOf("call_3"), listOf("e3"))
         val snap = c.snapshot(CONV)
         assertEquals(listOf("e1"), snap["call_1"])
         assertEquals(listOf("e2"), snap["call_2"])
         assertNull(snap["call_9"], "absent ids are plain map misses")
-        now = 220 // 90ms since the snapshot's touch: still alive — snapshot refreshed the clock
-        assertEquals(listOf("e1"), c.lookup(CONV, "call_1"))
+        c.put("conv-c", listOf("call_4"), listOf("e4")) // 8 > 6: one conversation must go
+        assertEquals(listOf("e1"), c.lookup(CONV, "call_1"), "the snapshot counted as a touch")
+        assertNull(c.lookup("conv-b", "call_3"), "the least recently touched went instead")
     }
 
     @Test

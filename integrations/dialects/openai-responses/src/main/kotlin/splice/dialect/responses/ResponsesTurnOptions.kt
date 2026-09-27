@@ -61,7 +61,11 @@ internal class ResponsesTurnOptions(
             reasoningLookup = if (!deps.quirks.reasoningCache) {
                 { null }
             } else {
-                val snapshot = lazy { deps.reasoningCache.snapshot(deps.ids.stablePromptCacheKey(body.typed)) }
+                // V4-334: keyed within this session, as the capture keys it (ResponsesTurnSeams).
+                val snapshot = lazy {
+                    val opening = deps.ids.stablePromptCacheKey(body.typed)
+                    deps.reasoningCache.snapshot(deps.cachePolicy.conversationKey(sessionId, opening))
+                }
                 ({ id -> snapshot.value[id] })
             },
             // The provider's capability latch, read at build time: false = a shape-400 already

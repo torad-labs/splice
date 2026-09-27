@@ -57,6 +57,7 @@ internal class CodexResponsesArm(
                     baseUrl = providerCfg.baseUrl,
                     watchdog = watchdog,
                     loginCommand = ctx.loginCommand,
+                    stateDir = statePaths.headsDir.resolve(key),
                 ),
                 showReasoning = cfg.showReasoning,
                 replayReasoning = cfg.replayReasoning,

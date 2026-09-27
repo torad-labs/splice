@@ -24,7 +24,7 @@ class DayFilesNewestFirstTest {
     private fun DayFiles.newest(stopAfter: Int = Int.MAX_VALUE): List<String> =
         mutableListOf<String>().also { lines ->
             newestFirst { line ->
-                lines += line
+                lines += line.text()
                 lines.size < stopAfter
             }
         }

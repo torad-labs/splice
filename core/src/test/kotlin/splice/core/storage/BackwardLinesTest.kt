@@ -1,6 +1,6 @@
 // NEW: V4-338 — a file's lines read from its end are the lines DayFiles reads forward, in reverse, on the
 // same bytes: the same splits (\n, \r, \r\n, no empty line after a final terminator) and the same lenient
-// decode, across the 64 KiB windows the backward scan reads in.
+// decode, across the 64 KiB windows the backward scan reads in. V4-343: a line's bytes are its raw bytes.
 package splice.core.storage
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -25,7 +25,7 @@ class BackwardLinesTest {
     private fun backward(file: Path): List<String> =
         mutableListOf<String>().also { lines ->
             val read = BackwardLines().read(file) { line ->
-                lines += line
+                lines += line.text()
                 true
             }
             assertTrue(read, "a visit that never stops read to the file's start")
@@ -84,12 +84,33 @@ class BackwardLinesTest {
     }
 
     @Test
+    fun `a line's bytes are its raw bytes, read unsigned, its terminator not among them`(@TempDir dir: Path) {
+        // The middle line starts with a cut character and runs past the scan window, so its bytes come from two.
+        val middle = byteArrayOf(0xE2.toByte(), 0x82.toByte()) + "b".repeat(WINDOW + 10).toByteArray()
+        val file = dir.resolve("f")
+        Files.write(file, "first\r\n".toByteArray() + middle + "\nlast".toByteArray())
+        val whole = mutableListOf<List<Byte>>()
+        val firsts = mutableListOf<Int>()
+
+        assertTrue(
+            BackwardLines().read(file) { line ->
+                whole += line.bytes().readAllBytes().toList()
+                firsts += line.bytes().read()
+                true
+            },
+        )
+
+        assertEquals(listOf("last".toByteArray(), middle, "first".toByteArray()).map { it.toList() }, whole)
+        assertEquals(listOf('l'.code, 0xE2, 'f'.code), firsts, "a byte past 0x7F reads as 0-255, as InputStream.read")
+    }
+
+    @Test
     fun `a visit that answers false stops the read, and a missing file has no lines`(@TempDir dir: Path) {
         val file = Files.writeString(dir.resolve("f"), "1\n2\n3\n4\n")
         val seen = mutableListOf<String>()
 
         val finished = BackwardLines().read(file) { line ->
-            seen += line
+            seen += line.text()
             seen.size < 2
         }
 

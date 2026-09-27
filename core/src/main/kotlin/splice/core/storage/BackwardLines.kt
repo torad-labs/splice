@@ -7,9 +7,15 @@
 // terminator ending the last line rather than starting an empty one. Each is decoded leniently, as
 // DayFiles.readLines decodes, so a malformed byte reads as U+FFFD and costs only its own line; no line
 // terminator is ever part of a UTF-8 sequence, so a line decoded alone reads as it does in the stream.
+//
+// V4-343: a line is handed over as a [DayLine], read no further than its reader asks. Every line was
+// decoded to a String before its reader saw it, and on claudex's 3.6 GB store that decode was 21% of the
+// console trace page's 21.4 s, most of the rest being kotlinx skipping the bodies of those Strings; a count
+// that needs a few fields of each record now streams its bytes and decodes none of the body.
 package splice.core.storage
 
 import java.io.IOException
+import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.charset.CodingErrorAction
@@ -19,7 +25,62 @@ import java.nio.file.StandardOpenOption
 
 /** Hears lines one at a time and answers whether to go on. */
 public fun interface LineVisit {
-    public fun line(text: String): Boolean
+    public fun line(line: DayLine): Boolean
+}
+
+/** One line of a file, read no further than its reader asks: [bytes] streams it a read at a time, [text]
+ *  decodes it whole. It reads the file it came from, so it is good only inside the visit it was handed to. */
+public class DayLine internal constructor(
+    private val reads: ChannelReads,
+    private val start: Long,
+    private val end: Long,
+) {
+    /** Its bytes in order, its terminator not among them, read from the file as they are asked for. */
+    public fun bytes(): InputStream = SpanStream(reads, start, end)
+
+    /** The whole line, decoded leniently as DayFiles.readLines decodes it: a malformed byte reads as U+FFFD. */
+    @Throws(IOException::class)
+    public fun text(): String {
+        val bytes = ByteArray((end - start).toInt())
+        reads.fill(ByteBuffer.wrap(bytes), start)
+        return Charsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPLACE)
+            .onUnmappableCharacter(CodingErrorAction.REPLACE)
+            .decode(ByteBuffer.wrap(bytes))
+            .toString()
+    }
+}
+
+/** Positional reads of one open file, shared by the cursor that finds its lines and the lines it hands out. */
+internal class ChannelReads(private val channel: FileChannel) {
+    fun size(): Long = channel.size()
+
+    /** Reads [into] full from [position]. The size was read at the start and a day file only grows, so a
+     *  short file here is one that was cut under the read, and that is said. */
+    fun fill(into: ByteBuffer, position: Long) {
+        var at = position
+        while (into.hasRemaining()) {
+            val read = channel.read(into, at)
+            if (read < 0) throw IOException("the file shrank while it was read backward, at byte $at")
+            at += read
+        }
+    }
+}
+
+/** The bytes from [at] up to [end] of a file, as a stream that reads them when asked. */
+private class SpanStream(private val reads: ChannelReads, private var at: Long, private val end: Long) : InputStream() {
+    override fun read(): Int {
+        val one = ByteArray(1)
+        return if (read(one, 0, 1) < 0) -1 else one[0].toUByte().toInt()
+    }
+
+    override fun read(b: ByteArray, off: Int, len: Int): Int {
+        if (at >= end) return -1
+        val n = minOf(len.toLong(), end - at).toInt()
+        reads.fill(ByteBuffer.wrap(b, off, n), at)
+        at += n
+        return n
+    }
 }
 
 // why: the bytes scanned per read while looking for the line before; a few pages, so a 2-3 MB trace
@@ -40,25 +101,25 @@ internal class BackwardLines {
         } catch (_: NoSuchFileException) {
             return true
         }
-        return channel.use { BackwardCursor(it).each(visit) }
+        return channel.use { BackwardCursor(ChannelReads(it)).each(visit) }
     }
 }
 
 /** One open file read from its end. Its size is read once, at the start: a line appended after it is not
  *  read, and the torn half of an append in flight reads as the line it is. */
-private class BackwardCursor(private val channel: FileChannel) {
+private class BackwardCursor(private val reads: ChannelReads) {
     private val window = ByteArray(WINDOW_BYTES)
     private var windowStart = 0L
     private var windowEnd = 0L
 
     /** Visits each line, the last first; false when [visit] stopped the read. */
     fun each(visit: LineVisit): Boolean {
-        val size = channel.size()
+        val size = reads.size()
         var end = if (size == 0L) -1L else terminatorStart(size)
         var going = true
         while (going && end >= 0) {
             val cut = lastTerminatorBefore(end)
-            going = visit.line(text(cut + 1, end))
+            going = visit.line(DayLine(reads, cut + 1, end))
             end = if (cut < 0) -1L else terminatorStart(cut + 1)
         }
         return going
@@ -100,27 +161,6 @@ private class BackwardCursor(private val channel: FileChannel) {
         if (offset in windowStart until windowEnd) return
         windowStart = maxOf(0L, offset + 1 - WINDOW_BYTES)
         windowEnd = offset + 1
-        fill(ByteBuffer.wrap(window, 0, (windowEnd - windowStart).toInt()), windowStart)
-    }
-
-    private fun text(start: Long, end: Long): String {
-        val bytes = ByteArray((end - start).toInt())
-        fill(ByteBuffer.wrap(bytes), start)
-        return Charsets.UTF_8.newDecoder()
-            .onMalformedInput(CodingErrorAction.REPLACE)
-            .onUnmappableCharacter(CodingErrorAction.REPLACE)
-            .decode(ByteBuffer.wrap(bytes))
-            .toString()
-    }
-
-    /** Reads [into] full from [position]. The size was read at the start and a day file only grows, so a
-     *  short file here is one that was cut under the read, and that is said. */
-    private fun fill(into: ByteBuffer, position: Long) {
-        var at = position
-        while (into.hasRemaining()) {
-            val read = channel.read(into, at)
-            if (read < 0) throw IOException("the file shrank while it was read backward, at byte $at")
-            at += read
-        }
+        reads.fill(ByteBuffer.wrap(window, 0, (windowEnd - windowStart).toInt()), windowStart)
     }
 }

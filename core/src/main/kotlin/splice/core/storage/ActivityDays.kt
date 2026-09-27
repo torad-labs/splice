@@ -205,8 +205,9 @@ public class DayFiles(private val dir: Path, prefix: String) {
     public fun lines(): Sequence<String> = linesFrom(LocalDate.MIN)
 
     /** V4-338: every line of every day on disk, NEWEST first (the newest day's file from its end, then that
-     *  day's rolled half, then the day before), to [visit] one at a time until it answers false. Holds one
-     *  line, where [lines] reads each day whole: the `splice trace` reader stops once it holds its turns.
+     *  day's rolled half, then the day before), to [visit] one at a time until it answers false. Holds no
+     *  line whole unless [visit] asks for its text (V4-343: each is a DayLine, read as far as it is asked),
+     *  where [lines] reads each day whole: the `splice trace` reader stops once it holds its turns.
      *  A directory or a day that cannot be read throws why, as [lines] does. */
     @Throws(IOException::class)
     public fun newestFirst(visit: LineVisit) {

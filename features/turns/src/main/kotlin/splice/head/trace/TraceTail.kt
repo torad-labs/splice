@@ -1,13 +1,20 @@
 // NEW: V4-338 — one trace read from the NEWEST line back, for TraceRows: which lines are records, which
 // turns the read takes, and when it holds them whole and can stop. It keeps the records of the turns it
 // takes and nothing else; with a census it also counts every turn and skipped line on the way.
+//
+// V4-343: a line's stamp is read off its bytes by [JsonLineShape], which decodes none of the body, and only a
+// line the shape cannot vouch for is decoded whole by kotlinx, as every line was. A record torn after its
+// leading fields, the usual cut of a full disk, is one of those: kotlinx rejects it, so it stays a skipped
+// line and a turn only it named is not on disk, since a record no read can list is no turn to count.
 package splice.head.trace
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.elementNames
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import splice.core.storage.DayLine
 import splice.core.storage.LineVisit
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
@@ -58,11 +65,12 @@ internal class TraceTail(private val ask: TraceAsk, private val census: Boolean,
     private val unended = HashMap<String, Long>()
     private val placed = HashSet<String>()
     private var skipped = 0
+    private val shape = JsonLineShape(TraceStamp.serializer().descriptor.elementNames.toSet())
 
-    override fun line(text: String): Boolean {
-        val stamp = stamp(text)
+    override fun line(line: DayLine): Boolean {
+        val stamp = stamp(line)
         val id = stamp?.placedId
-        if (stamp == null || id == null) skipped += 1 else take(id, stamp, text)
+        if (stamp == null || id == null) skipped += 1 else take(id, stamp, line)
         return census || !answered(stamp?.at)
     }
 
@@ -78,10 +86,10 @@ internal class TraceTail(private val ask: TraceAsk, private val census: Boolean,
 
     fun skipped(): Int = skipped
 
-    private fun take(id: String, stamp: TraceStamp, text: String) {
+    private fun take(id: String, stamp: TraceStamp, line: DayLine) {
         if (census) placed += id
         val held = taken[id] ?: admit(id, stamp) ?: return
-        held.add(json.parseToJsonElement(text).jsonObject, stamp.isTurnRecord)
+        held.add(json.parseToJsonElement(line.text()).jsonObject, stamp.isTurnRecord)
         if (stamp.isTurnRecord) unended -= id
         if (stamp.opens) {
             unopened -= id
@@ -97,9 +105,17 @@ internal class TraceTail(private val ask: TraceAsk, private val census: Boolean,
         return HeldTurn().also { taken[id] = it }
     }
 
-    private fun stamp(text: String): TraceStamp? =
+    /** The line's stamp off its bytes when the shape vouches for it, its named members decoded alone by the same
+     *  serializer; else the whole line decoded, as every line was before V4-343. */
+    private fun stamp(line: DayLine): TraceStamp? {
+        val members = shape.members(line.bytes()) ?: return decoded(line)
+        val fields = JsonObject(members.mapValues { (_, raw) -> json.parseToJsonElement(raw) })
+        return json.decodeFromJsonElement(TraceStamp.serializer(), fields)
+    }
+
+    private fun decoded(line: DayLine): TraceStamp? =
         // ast-grep-ignore: kt-no-silent-result-collapse -- V4-174: a torn or foreign line is counted as skipped by the caller and shown to the operator
-        Cancellables.runCatchingCancellable { json.decodeFromString(TraceStamp.serializer(), text) }.getOrNull()
+        Cancellables.runCatchingCancellable { json.decodeFromString(TraceStamp.serializer(), line.text()) }.getOrNull()
 }
 
 /** One taken turn's records as they were read, newest first. */

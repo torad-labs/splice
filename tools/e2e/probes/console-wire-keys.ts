@@ -85,6 +85,8 @@ const ID_SOURCES: Record<string, IdSource> = {
  *  path placeholder is. */
 const QUERY_FILL: Record<string, string> = {
   "entities/perf|query.toString()": "head={head}&n=20",
+  // fetchSessionHistory's first page is a live read with no cursor and an empty search query.
+  "entities/session|params": "limit=50&query=",
   // fetchTeamPanels sends the viewer's day as ?from=&to=; the daemon's default day answers the same keys.
   "entities/team|query": "",
 };
@@ -117,6 +119,10 @@ const DISPOSITIONED: Record<string, string> = {
     "one turn of the trace the list read above checks; a turn id exists only after a head traced a " +
     "turn, which the isolated boot never runs, so TraceTurnWire's keys are held against TraceRoute's " +
     "turnJson and summary and TraceStore's stamp by console/tests/capture-read.test.ts",
+  "entities/perf/api/index.ts|`${headPath(head, 'conversation')}?${query}`":
+    "a saved response id exists only after a head serves a turn; the isolated boot never sends one. " +
+    "TranscriptConversationWire's found, off and missing states are checked against the route's " +
+    "serializer by TranscriptRequestRouteTest and the default-install journey in console/e2e/console.spec.ts",
   "entities/model/api/index.ts|`/api/models/upstream${query}`":
     "each call asks every provider's model endpoint, which a CI probe must not do, so " +
     "UpstreamModelsPayload's keys are held against UpstreamModelsRoute's json, provider and row by " +

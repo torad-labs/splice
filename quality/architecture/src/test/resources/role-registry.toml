@@ -100,6 +100,7 @@ names = [
     "DaemonRestart",
     "DaemonSupervised",
     "KeyPresenceProbe",
+    "StderrEcho",
     "TerminalSeen",
     "TopologyStale",
     "UpgradeRun",
@@ -121,8 +122,11 @@ sets on every process it starts). DaemonSupervised and DaemonRestart are the pai
 apart most carefully, because they read as near-synonyms and sit on the same route: DaemonSupervised \
 ASKS whether a restart is survivable and DaemonRestart ACTS. Swapping them turns the console's restart \
 button into a stop button on an unsupervised daemon — the route refuses precisely so that cannot \
-happen, and collapsing the two types is the one edit that would make the refusal unreachable. A single \
-shared BooleanSupplier would make every one of those ten substitutions compile."""
+happen, and collapsing the two types is the one edit that would make the refusal unreachable. \
+StderrEcho (V4-353, 2026-09-27: should this daemon.log line also go to stderr, which is daemon-boot.log \
+until the daemon is up) is a logging decision read per line; read as any of the others it would either \
+re-grow the boot log for the daemon's whole life (V4-258) or drop the reason a failed boot prints. A single \
+shared BooleanSupplier would make every one of those substitutions compile."""
 
 # ── 6 names, () -> Long (TWO MORE ARE DUPLICATES AND ARE NOT LISTED) ─────────────────────────────
 [[groups]]

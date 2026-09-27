@@ -8563,6 +8563,7 @@ files = ["console/src/pages/kept/", "console/src/app/pages.ts", "console/src/app
 status = "todo"
 verify = "red first: a page test lists every store splice writes about conversations, from a source enumerated in the test (the Knob entries that govern a store, plus the transcript view), each with what it holds, for how long, where, and its switch; a store added to Knob without a row fails the test by name; a switch that needs a restart says so and applies from this page through V4-365's restart (or names the exact command where the install cannot restart); console lint/typecheck/test green; Marlin walks 'Can you stop splice from keeping these?' on a default install and all three walkers end on this page."
 # [2026-09-27] amend by=orchestrator: files were ["console/src/pages/kept/", "console/src/app/routes.ts"]
+# [2026-09-27] Marlin's pass bar (Sep 27, ~1:55 PM CT): a walker asking "what does splice keep about me, and how do I stop it?" ends in one place with the true answer and a working switch, in at least 2 of 3 walks.
 
 [[items]]
 id = "V4-365"

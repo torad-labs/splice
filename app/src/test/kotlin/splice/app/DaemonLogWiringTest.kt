@@ -226,12 +226,36 @@ class DaemonLogWiringTest {
     @Test
     fun `a daemon told its stderr is the boot log writes each line to daemon-log alone - V4-258`(@TempDir logs: Path) {
         val stderr = capturingStderr {
-            DaemonProcess(listOf("daemon", BOOT_LOG_FLAG)).persistentLogger(logs)("[v4-258] a turn line")
+            val served = DaemonProcess(listOf("daemon", BOOT_LOG_FLAG)).also { it.bootEnded() }
+            served.persistentLogger(logs)("[v4-258] a turn line")
             drainToDisk()
         }
 
         assertTrue(Files.readString(logs.resolve("daemon.log")).contains("[v4-258] a turn line"), "daemon.log keeps it")
         assertFalse(stderr.contains("[v4-258] a turn line"), "the line was copied into the boot log: $stderr")
+    }
+
+    // V4-353: V4-258's bound starts once the daemon is up. Before that the boot log is the only place the cold start
+    // reads (DaemonSpawn.printBootLogTail), so a boot that fails, a control port another process holds (F1 walk p6),
+    // leaves its reason there instead of an empty "last boot output".
+    @Test
+    fun `a daemon told its stderr is the boot log copies boot lines there until up - V4-353`(@TempDir logs: Path) {
+        val process = DaemonProcess(listOf("daemon", BOOT_LOG_FLAG))
+        val log = process.persistentLogger(logs)
+        val booting = capturingStderr {
+            log("[daemon] control plane could not bind :47360 (Address already in use); another owns it, exiting")
+            drainToDisk()
+        }
+        process.bootEnded()
+        val serving = capturingStderr {
+            log("[v4-353] a turn line")
+            drainToDisk()
+        }
+
+        assertTrue(booting.contains("Address already in use"), "the boot's reason missed the boot log: $booting")
+        assertFalse(serving.contains("[v4-353] a turn line"), "a line after the boot reached the boot log: $serving")
+        val kept = Files.readString(logs.resolve("daemon.log"))
+        assertTrue(kept.contains("Address already in use"), "daemon.log keeps it")
     }
 
     @Test

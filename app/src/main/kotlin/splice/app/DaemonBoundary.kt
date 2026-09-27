@@ -84,7 +84,7 @@ internal class DaemonBoundary(private val listing: DirectoryListing = FilesListi
     internal fun persistentLogger(
         logsDir: Path,
         maxBytes: Long = MAX_LOG_BYTES,
-        echoToStderr: Boolean = true,
+        echoToStderr: StderrEcho = StderrEcho { true },
     ): LogSink {
         // v0.4.0: owner-only, and re-asserted each start (SecureFile.ownerOnlyDirectory): the dir is
         // the boundary, so daemon.log and the per-head logs need no mode of their own. A dir left
@@ -101,8 +101,11 @@ internal class DaemonBoundary(private val listing: DirectoryListing = FilesListi
             .getOrDefault(0L)
         val sink = LogSink { msg ->
             val line = "[${logStamp.format(LocalDateTime.now())}] ${msg.trimEnd('\n')}\n"
+            // Decided when the line is logged, not when the lane writes it: a boot line queued before the
+            // daemon came up still reaches the boot log (V4-353).
+            val echo = echoToStderr()
             AsyncFileIo.submit {
-                if (echoToStderr) System.err.print(line)
+                if (echo) System.err.print(line)
                 Cancellables.runCatchingCancellable {
                     if (written >= maxBytes) {
                         writer?.close()
@@ -129,7 +132,7 @@ internal class DaemonBoundary(private val listing: DirectoryListing = FilesListi
                         "[daemon-log] write/rotate failed (${SafeFailureText.render(failure)}); " +
                             "size reconciled to $written\n",
                     )
-                    if (!echoToStderr) System.err.print(line)
+                    if (!echo) System.err.print(line)
                 }
             }
         }
@@ -244,6 +247,12 @@ internal class DaemonBoundary(private val listing: DirectoryListing = FilesListi
 // every column-oriented read of the file.
 internal val logStamp: DateTimeFormatter =
     DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss", Locale.ROOT)
+
+/** Whether a daemon.log line is also printed to stderr, asked as each line is logged: always on a terminal or
+ *  under the unit, and only while booting when stderr is daemon-boot.log (V4-258, V4-353). */
+internal fun interface StderrEcho {
+    operator fun invoke(): Boolean
+}
 
 // One rolled generation at 64MB caps daemon.log disk at ~128MB — plenty of tail history, bounded.
 private const val MAX_LOG_BYTES = 64L * 1024 * 1024

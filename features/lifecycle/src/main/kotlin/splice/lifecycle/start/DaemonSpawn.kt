@@ -66,8 +66,16 @@ internal open class DaemonSpawn(
         Cancellables.runCatchingCancellable {
             Files.readAllLines(bootLog).takeLast(BOOT_LOG_TAIL_LINES)
         }.onSuccess { tail ->
-            output.line("splice: daemon did not come up; last boot output ($bootLog):")
-            tail.forEach(output::line)
+            // V4-353: a header over an empty tail read as a reason that was cut off; say there is none there.
+            if (tail.all(String::isBlank)) {
+                output.line(
+                    "splice: daemon did not come up, and it left no reason in $bootLog; " +
+                        "its log is ${logsDir().resolve("daemon.log")}",
+                )
+            } else {
+                output.line("splice: daemon did not come up; last boot output ($bootLog):")
+                tail.forEach(output::line)
+            }
         }.onFailure { failure ->
             val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
                 !Files.exists(bootLog, java.nio.file.LinkOption.NOFOLLOW_LINKS)

@@ -157,6 +157,8 @@ internal class DaemonProcess(
         runBlocking {
             try {
                 daemon.start()
+                // A control plane that could not bind asks for shutdown before start returns (ControlPlane.start).
+                if (!shutdownSignal.isCompleted) bootEnded()
                 shutdownSignal.await()
             } finally {
                 shutdown(daemon, lock)
@@ -220,9 +222,20 @@ internal class DaemonProcess(
     }
 
     /** V4-258: a launcher that sends this daemon's stderr into daemon-boot.log passes [BOOT_LOG_FLAG],
-     *  and daemon.log's lines then stay out of it. */
-    internal fun persistentLogger(logsDir: Path, maxBytes: Long = MAX_LOG_BYTES): LogSink =
-        boundary.persistentLogger(logsDir, maxBytes, echoToStderr = BOOT_LOG_FLAG !in args)
+     *  and daemon.log's lines then stay out of it once the daemon is up. V4-353: until then they reach it
+     *  too, because the boot log is what a cold start prints when the daemon never answers. */
+    internal fun persistentLogger(logsDir: Path, maxBytes: Long = MAX_LOG_BYTES): LogSink {
+        val stderrIsBootLog = BOOT_LOG_FLAG in args
+        return boundary.persistentLogger(logsDir, maxBytes, echoToStderr = StderrEcho { !stderrIsBootLog || booting })
+    }
+
+    /** V4-353: the daemon is up (its control plane bound); the boot log's copy of daemon.log ends here. */
+    internal fun bootEnded() {
+        booting = false
+    }
+
+    @Volatile
+    private var booting = true
 
     internal fun bootFailureHandler(statePaths: StatePaths): Thread.UncaughtExceptionHandler =
         boundary.bootFailureHandler(statePaths)

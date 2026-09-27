@@ -8354,3 +8354,4 @@ verify = "the diagnosis note first; then red first on that exact shape (a comple
 claimed_by = "console"
 claimed_at = "2026-09-27T07:08:22.813Z"
 # [2026-09-27] CLAIM: owner=console at=2026-09-27T07:08:22Z
+# [2026-09-27] Console's first diagnosis step (2:10 AM CT, structure only): between creation turn 0e5eee55b637 and resume turn 08ed99542b88 the client's message prefix changed ONLY by dropping cache_control on two old blocks (messages[5].content[0] Skill tool_use, messages[6].content[1] text); tool name/id/input and result/text hashes match, and the upstream logical first 10 items hash identical to the baseline on both. So validPrefix fails on a body splice transformed before restoreBaseline (5f8ca7c0's canonicalization or another pre-restore step), not on a client edit.

@@ -8388,6 +8388,7 @@ verify = "red first: ModelCatalogTest asserts labelFor and discoveryRows name an
 claimed_by = "splice-lead"
 claimed_at = "2026-09-27T06:41:22.259Z"
 # [2026-09-27] CLAIM: owner=splice-lead at=2026-09-27T06:41:22Z
+# [2026-09-27] Code f72aaadba (splice-lead): ModelEntry.shownName() = label or id when blank; labelFor and discoveryRows use it. Red on HEAD (the new ModelCatalogTest cell expected the id, got ''), green with core tests + detekt, mutant (labelFor back on the raw label) red. Gate of record: CI run 36324434041 success on 39f85ac30, which contains it. Live leg GREEN on the installed 39f85ac30 (pid 75912, open-fd sha256 b29ca3b7...fd01), Sep 27, 9:30 AM CT, claude-muse on Claude Code 2.1.283: before (1:50 AM CT) the muse-spark-1.3-contributor status line read '●    no rate card'; after, the /model picker names rows 6-8 by id and, picked for the session only, the status line reads '● muse-spark-1.3-contributor·xhigh   no rate card'. No turn sent. Receipt captures/v4350-live/ (private).
 
 [[items]]
 id = "V4-351"

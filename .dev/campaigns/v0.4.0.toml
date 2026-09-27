@@ -8157,11 +8157,14 @@ id = "V4-339"
 phase = "release"
 title = "A re-anchored turn replays the partial prose the client already saw with phase commentary, not as a bare assistant message: it was mid-turn text, so by V4-335's rule it is commentary (ResponsesReanchorController.kt:74-77 assistantText; console's V4-335 receipt 2026-09-26)"
 files = ["integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/reasoning/ResponsesReanchorController.kt", "integrations/dialects/openai-responses/src/test/kotlin/splice/dialect/responses/reasoning/ResponsesReanchorTest.kt", "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesLite.kt", "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTurnSeams.kt", "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesProvider.kt"]
-status = "todo"
+status = "in_flight"
 verify = "red first: ResponsesReanchorTest asserts the replayed partial prose carries phase commentary on a lite turn, failing on today's tree; green: passes, non-lite shape unchanged, dialect tests and detekt green"
 # [2026-09-27] amend by=orchestrator: files were ["integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/reasoning/ResponsesReanchorController.kt", "integrations/dialects/openai-responses/src/test/kotlin/splice/dialect/responses/reasoning/ResponsesReanchorTest.kt"]
 # depends:V4-336
 # [2026-09-27] amend by=orchestrator: files were ["integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/reasoning/ResponsesReanchorController.kt", "integrations/dialects/openai-responses/src/test/kotlin/splice/dialect/responses/reasoning/ResponsesReanchorTest.kt", "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesLite.kt", "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTurnSeams.kt"]
+claimed_by = "claude-builder"
+claimed_at = "2026-09-27T00:32:20.037Z"
+# [2026-09-27] CLAIM: owner=claude-builder at=2026-09-27T00:32:20Z
 
 [[items]]
 id = "V4-340"

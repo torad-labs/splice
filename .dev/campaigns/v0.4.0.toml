@@ -7013,6 +7013,7 @@ claimed_by = "splice-lead"
 claimed_at = "2026-09-27T04:42:55.408Z"
 # [2026-09-27] CLAIM: owner=splice-lead at=2026-09-27T04:42:55Z
 # [2026-09-27] part 2 (3:05 AM CT): 2fdb48011 renames README:279 'More than one account per provider' to 'More than one ChatGPT, Grok, Kimi or Muse account' (no link used the old anchor). With 7540b6291 all six points are written; point 6's disclaimer words stay superseded by the 2026-09-26 no-disclaimer ruling (dd248fcf0). Left: Marlin reads the notes and README on the release sha; bun test tools/release there.
+# [2026-09-27] correction: part 2's commit 2fdb48011 is at 2:58 AM CT (git's commit time), not 3:05 AM CT as the previous note says.
 
 [[items]]
 id = "V4-255"

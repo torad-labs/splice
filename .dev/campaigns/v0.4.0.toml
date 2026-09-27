@@ -8531,6 +8531,7 @@ claimed_by = "claude-builder"
 claimed_at = "2026-09-27T18:53:27.190Z"
 # [2026-09-27] CLAIM: owner=claude-builder at=2026-09-27T18:53:27Z
 # [2026-09-27] amend by=orchestrator: files were ["features/turns/src/main/kotlin/splice/head/wire/CaptureRoutes.kt", "features/turns/src/test/kotlin/splice/head/wire/v4359/"]
+# [2026-09-27] claude-builder receipt: commit a920ae350. Pre-fix detached SHA 059a8e234, focused CaptureOffStaleTest exit 1 with 4 tests / 3 expected failures, including expected {} but got {trace=false}; detached tree removed. Final focused test exit 0 with 4 tests / 0 failures; :features-turns:compileKotlin, :features-turns:detekt, :app:shadowJar all exit 0. bun tools/gate typecheck exit 0 (no new diagnostics); bun run gate:rules exit 0 (77/77). Isolated captures/v4359-green.Sh07PH on jar sha256 a774fc0192fcb27152101fbeb8459d3e983856dac2d0a0543974ac11f3494094: PUT On 200, PUT Off 200, /health topologyStale=false, doctor daemon/topology=ok; test daemon exited and :47539 freed.
 
 [[items]]
 id = "V4-360"

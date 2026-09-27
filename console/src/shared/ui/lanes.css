@@ -12,20 +12,26 @@
   overflow-x: auto;
 }
 /* The drawing the cards and arcs share: the page's width, and wider only when the cards at their
-   narrowest do not fit, so more sessions than the width holds scroll as one piece with their arcs. */
+   narrowest do not fit, so more sessions than the width holds scroll as one piece with their arcs.
+   The board owns the two columns every lane shares (V4-333): the names, as wide as the longest name
+   and at most 14u, and the cards, whose floor is the cards at their narrowest. A 0 floor there left
+   the board's own width blind to the cards, so a fifth card at 1536 px ran off its strand, clipped. */
 .myx-lanes-board {
   position: relative;
   display: grid;
-  gap: var(--space-7);
+  grid-template-columns: fit-content(calc(14 * var(--u))) minmax(min-content, 1fr);
+  column-gap: var(--space-5);
+  row-gap: var(--space-7);
   width: min-content;
   min-width: 100%;
   padding-block: var(--space-4);
 }
 
+/* A lane takes the board's columns, so every strand starts at the same x. */
 .myx-lane {
   display: grid;
-  grid-template-columns: calc(14 * var(--u)) minmax(0, 1fr);
-  column-gap: var(--space-5);
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   align-items: start;
 }
 
@@ -158,8 +164,9 @@ button.myx-lane-card:focus-visible { outline: var(--focus-width) solid var(--foc
   r: calc(.4375 * var(--u));
 }
 
-/* A narrow window stacks the name over its strand. */
+/* A narrow window stacks the name over its strand: one column, with the same floor as the cards'. */
 @media (max-width: 720px) {
-  .myx-lane { grid-template-columns: minmax(0, 1fr); row-gap: var(--space-2); }
+  .myx-lanes-board { grid-template-columns: minmax(min-content, 1fr); }
+  .myx-lane { row-gap: var(--space-2); }
   .myx-lane-head { min-height: 0; }
 }

@@ -279,6 +279,19 @@ describe('the doctor', () => {
     expect(out.map((need) => need.source)).toEqual(['heads']);
   });
 
+  test('what Doctor found follows the head\'s finding as its own sentence - V4-333', () => {
+    // V4-331's render read "ANTHROPIC_API_KEY not set Doctor: ANTHROPIC_API_KEY is not set".
+    const inputs = {
+      heads: read([head({ key: 'openrouter', label: 'openrouter', authKind: 'api-key' })]),
+      auth: read({ openrouter: { kind: 'api-key', login: '', present: false, env_var: 'OPENROUTER_API_KEY' } }),
+    };
+    const [alone] = needsOf(quiet(inputs), NOW).needs;
+    const checks: DoctorCheck[] = [{ id: 'auth/openrouter', status: 'fail', detail: 'OPENROUTER_API_KEY is not set' }];
+    const [folded] = needsOf(quiet({ ...inputs, doctor: read(doctor(checks)) }), NOW).needs;
+    expect(alone.finding).toBe('OPENROUTER_API_KEY not set');
+    expect(folded.finding).toBe(`OPENROUTER_API_KEY not set. ${U.doctor} OPENROUTER_API_KEY is not set`);
+  });
+
   // V4-333: V4-331's render listed one stopped head three times: its own item, the daemon's
   // "still converging" count and its port's "not listening" (DoctorHeadChecks), each with a fix.
   const stopped = (): Partial<NeedInputs> => ({

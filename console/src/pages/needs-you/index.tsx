@@ -103,7 +103,8 @@ function Subject({ need }: { need: Need }) {
 const NEED_COLUMNS: Column<Need>[] = [
   { key: 'item', label: S.item, primary: true, width: '22%', cell: (need) => <Subject need={need} /> },
   { key: 'finding', label: S.finding, wrap: true, cell: (need) => need.finding },
-  { key: 'page', label: S.page, width: '10%', cell: (need) => (need.at === null ? S.sources[need.source] : <KeyLink href={need.at}>{S.sources[need.source]}</KeyLink>) },
+  // In u, the unit its words are set in: 10% ellipsized Sessions to ".." at 1536 px (V4-333).
+  { key: 'page', label: S.page, width: 'calc(9 * var(--u))', cell: (need) => (need.at === null ? S.sources[need.source] : <KeyLink href={need.at}>{S.sources[need.source]}</KeyLink>) },
   { key: 'fix', label: S.fix, width: '30%', wrap: true, cell: (need) => <FixCell fix={need.fix} /> },
 ];
 

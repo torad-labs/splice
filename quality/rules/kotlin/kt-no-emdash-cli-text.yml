@@ -14,12 +14,21 @@
 # pass.
 # V4-238 (2026-09-25) widened it module by module as each came clean, starting with the paths a new
 # user's first run prints (app, splice add, launch, the Claude Code heads, sign-in and the providers
-# the add path signs into), then every other main source set, build-logic's gate text included. Two
-# em dashes are not sentences: the RetryMatrix table's empty cell is built from its code point, and
-# the clause boundary UpstreamFailureClassifier reads in vendor prose is the regex escape \x{2014}.
-# Tests stay out (their exclusion in rule-coverage-exclusions.toml).
+# the add path signs into), then every other main source set. That is every `*.kt` under src/main:
+# build-logic's two Kotlin sources are in it, its `*.gradle.kts` scripts are not (their gate messages
+# are build output, never a frame). The clause boundary UpstreamFailureClassifier reads in vendor
+# prose is the regex escape \x{2014}, not a sentence. Tests stay out (their exclusion in
+# rule-coverage-exclusions.toml).
 # V4-253 (2026-09-26): the report's fix separator, built from its code point and carved out here as
 # the one em-dash on the wire, is gone: `splice doctor --json` carries a check's fix in its own key.
+# V4-235 (2026-09-27): every string the gateway writes into a frame. The wall now also reads the
+# spellings that are not string_content, each of which walked past it: a char literal ('—' and its
+# \u escape), the code point in hex anywhere (`0x2014`: RetryMatrix built its NO_LAYER cell from
+# `const val NO_LAYER_CODE_POINT = 0x2014`, which a Char(...) matcher alone never sees), and the code
+# point in decimal where it becomes a Char (`Char(8212)`, `8212.toChar()`; a bare 8212 is any number).
+# RetryMatrix.kt is the one ignore: its table renders only into AGENTS.md's generated block (agent
+# docs, RetryMatrixTableTest), never a frame. Text splice relays from upstream is not a literal at
+# all: FailurePresenter rewrites its em dashes as it presents them.
 id: kt-no-emdash-cli-text
 language: kotlin
 severity: error
@@ -28,6 +37,31 @@ note: |
   Split the clause, or use a colon, a semicolon or a comma.
 files:
   - "**/src/main/**/*.kt"
+ignores:
+  # The docs table's empty cell, rendered only into AGENTS.md (see V4-235 above).
+  - integrations/upstream/src/main/kotlin/splice/upstream/retry/RetryMatrix.kt
 rule:
-  kind: string_content
-  regex: "—|\\x5Cu2014"
+  any:
+    - kind: string_content
+      regex: "—|\\x5Cu2014"
+    - kind: character_literal
+      regex: "—|\\x5Cu2014"
+    - kind: hex_literal
+      regex: "^0[xX]0*2014$"
+    - kind: integer_literal
+      regex: "^8212$"
+      any:
+        # Char(8212)
+        - inside:
+            kind: value_argument
+            inside:
+              kind: value_arguments
+              inside:
+                kind: call_suffix
+                inside:
+                  kind: call_expression
+                  has: {nthChild: 1, kind: simple_identifier, regex: '^Char$'}
+        # 8212.toChar()
+        - inside:
+            kind: navigation_expression
+            has: {kind: navigation_suffix, has: {kind: simple_identifier, regex: '^toChar$'}}

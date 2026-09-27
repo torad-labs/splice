@@ -338,7 +338,7 @@ async function startThroughUnit() {
   }
   if (HEALTH_JSON === "") {
     fail(
-      `splice: ${unit} did not answer /health within ${waitSeconds}s — never starting a second daemon beside it. ` +
+      `splice: ${unit} did not answer /health within ${waitSeconds}s; never starting a second daemon beside it. ` +
         `See: systemctl --user status ${unit}; journalctl --user -u ${unit} -n 50`,
     );
   }
@@ -415,7 +415,7 @@ function warnings() {
   const wantShim = healthField("wantShimVersion");
   if (wantShim !== "" && wantShim !== SPLICE_SHIM_VERSION) {
     warn(
-      `splice: WARNING — installed launch shim (${process.argv[1]}) is stale (marker=${SPLICE_SHIM_VERSION}, ` +
+      `splice: WARNING: installed launch shim (${process.argv[1]}) is stale (marker=${SPLICE_SHIM_VERSION}, ` +
         `daemon expects=${wantShim}). Run ./install.sh from a checkout, or re-run the release installer, to refresh it.`,
     );
   }
@@ -423,7 +423,7 @@ function warnings() {
   // until a restart — the daemon re-compares its booted digest to the file per /health request
   // (topologyStale, fail-open), and this names the fix instead of leaving the edit silently dead.
   if (healthField("topologyStale") === "true") {
-    warn("splice: WARNING — splice.toml changed since the daemon booted; the running topology is stale. Run: splice restart");
+    warn("splice: WARNING: splice.toml changed since the daemon booted; the running topology is stale. Run: splice restart");
   }
 }
 

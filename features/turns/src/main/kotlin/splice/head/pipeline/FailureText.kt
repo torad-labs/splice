@@ -19,7 +19,8 @@
 // WHAT A BODY CONTRIBUTES. A JSON object contributes exactly ONE human-meaningful field — never its
 // braces, and never a substring of its text (a truncated dump is still a dump). A body that cannot
 // be read at all is DESCRIBED, because an unreadable payload's raw text is precisely the thing a
-// reader cannot use. A body that is not JSON is already prose and rides through untouched.
+// reader cannot use. A body that is not JSON is already prose and rides through, its em dashes spoken
+// as clause breaks like every other sentence splice writes into a frame (V4-235).
 package splice.head.pipeline
 
 import kotlinx.serialization.json.Json
@@ -51,20 +52,21 @@ internal class FailurePresenter {
 
     /** The human sentence for a failure body. See the header for what each shape contributes. */
     fun sentence(message: String): String {
-        // A body that is not JSON is prose and rides through untouched: null IS the complete story
+        // A body that is not JSON is prose and rides through (V4-235: dashes aside): null IS the complete story
         // here, by design (see the header). Cancellable so a cancelled turn actually stops.
         // ast-grep-ignore: kt-no-silent-result-collapse -- non-JSON body is prose by contract, see header
         val element = Cancellables.runCatchingCancellable { Json.parseToJsonElement(message) }.getOrNull()
         return when {
-            // Not JSON rides through untouched. A rule that ALSO rejected markup was tried here and
+            // Not JSON rides through as prose. A rule that ALSO rejected markup was tried here and
             // reverted: zero_event_auth's body is an <html> page whose text reads "401 Unauthorized:
             // your session token has expired, please sign in again", and the login-hint test pins
             // that the operator keeps it. Markup is not the same as noise, and a shape test cannot
             // tell a proxy's 502 page from a vendor's prose, so this layer does not guess.
-            element == null -> message.take(ERR_SNIPPET).ifBlank { UNREADABLE }
+            // V4-235: its em dashes are spoken before the cap, so the snippet stays within it.
+            element == null -> clauseBreaks(message).take(ERR_SNIPPET).ifBlank { UNREADABLE }
             // A JSON string is prose wearing quotes — unwrap it rather than describing it.
-            element is JsonPrimitive && element.isString -> element.content.ifBlank { UNREADABLE }
-            element is JsonObject -> humanField(element) ?: UNREADABLE
+            element is JsonPrimitive && element.isString -> clauseBreaks(element.content).ifBlank { UNREADABLE }
+            element is JsonObject -> humanField(element)?.let(::clauseBreaks) ?: UNREADABLE
             // Valid JSON that is neither an object nor a string (an array, a number, a bare true):
             // there is no human-meaningful field to lift out of it, so it is described, not dumped.
             else -> UNREADABLE
@@ -78,6 +80,12 @@ internal class FailurePresenter {
         (obj[ERROR] as? JsonObject)?.get(MESSAGE),
         obj[MESSAGE],
     )
+
+    /** V4-235: no string the gateway writes into a frame carries an em dash, and a vendor's sentence is
+     *  one the gateway writes. Each dash, with the space around it, is spoken as the clause break it
+     *  marks. Applied to decoded text, so a JSON body's escaped dash is caught too; the classifier is
+     *  upstream of this and still reads the dash as a clause boundary in the raw text. */
+    private fun clauseBreaks(text: String): String = text.replace(EM_DASH_CLAUSE, CLAUSE_BREAK)
 
     private fun firstNonBlank(vararg candidates: Any?): String? {
         val found = candidates.firstNotNullOfOrNull { (it as? JsonPrimitive)?.takeIf(JsonPrimitive::isString) }
@@ -95,3 +103,8 @@ private const val MESSAGE = "message"
  *  the upstream failed in a way we could not parse, which is itself the diagnostic, rather than
  *  receiving the unparseable thing he cannot act on. */
 private const val UNREADABLE = "the upstream returned an error that could not be read"
+
+/** An em dash and the whitespace around it, named by the regex escape: the character itself may not
+ *  appear in a main-source string (kt-no-emdash-cli-text). */
+private val EM_DASH_CLAUSE = Regex("\\s*\\x{2014}\\s*")
+private const val CLAUSE_BREAK = "; "

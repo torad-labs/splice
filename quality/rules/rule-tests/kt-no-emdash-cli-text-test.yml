@@ -6,6 +6,11 @@ valid:
   - 'val detail = "every account is out ($at): $detail"'
   # V4-238: a regex's clause boundary is read, not written; it names the character with the regex escape
   - 'val re = Regex("[^.,;:!?\\x{2014}\\n]{0,2000}?retry")'
+  # V4-235: a number that is not a code point, another dash, and a hex literal that only starts alike
+  - 'val port = 8212'
+  - 'val enDash = Char(0x2013)'
+  - 'val mask = 0x20140'
+  - "val hyphen = '-'"
 invalid:
   - 'val detail = "splice.toml changed since the daemon booted — the running topology is stale"'
   # after an interpolation: the em-dash sits in its own string_content node
@@ -23,3 +28,12 @@ invalid:
   - 'output.line("splice: the daemon did not stop — terminate it manually and retry")'
   - 'val detail = "Rate limit exceeded — $gatewayClause to avoid a retry wave"'
   - 'throw UnreadableMetadata("$where: no <component> elements found — an unread metadata file must not read as empty")'
+  # V4-235: the spellings that are not string_content. A char literal, as the character and as the
+  # escape, and the code point: in hex anywhere (RetryMatrix's NO_LAYER built Char(NO_LAYER_CODE_POINT)
+  # from `const val NO_LAYER_CODE_POINT = 0x2014`), in decimal where it becomes a Char.
+  - "val dash = '—'"
+  - "val dash = '\\u2014'"
+  - 'val dash = Char(0x2014).toString()'
+  - 'private const val NO_LAYER_CODE_POINT = 0x2014'
+  - 'val dash = Char(8212)'
+  - 'val dash = 8212.toChar()'

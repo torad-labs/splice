@@ -85,6 +85,19 @@ A copy gate on the sentences splice prints. A test's assertion messages are read
 red test, never by the operator in the CLI or the console, so they are not the text this wall grades.
 """
 
+[[exclusion]]
+rule = "kt-no-emdash-cli-text"
+modules = ["integrations-upstream"]
+sourceSets = ["main"]
+files = ["integrations/upstream/src/main/kotlin/splice/upstream/retry/RetryMatrix.kt"]
+date = "2026-09-27"
+reason = """
+The docs table, never a frame. V4-235 widened the wall to the code point, and RetryMatrix builds its
+table's empty cell from `const val NO_LAYER_CODE_POINT = 0x2014`: the one hit on the tree. table()
+has no production caller; RetryMatrixTableTest renders it into AGENTS.md's generated block, which
+agents read and no client ever receives.
+"""
+
 # ─── module scope ────────────────────────────────────────────────────────────────────────────────
 
 [[exclusion]]

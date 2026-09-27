@@ -8547,6 +8547,7 @@ claimed_at = "2026-09-27T18:54:57.556Z"
 # [2026-09-27] CLAIM: owner=console at=2026-09-27T18:54:57Z
 # [2026-09-27] amend by=orchestrator: files were ["console/src/pages/sessions/"]
 # [2026-09-27] RECEIPT cmd="npm run test --prefix console -- --run tests/v4344-limit-recovery.test.ts tests/copy.test.ts && npm run build --prefix console && npm run lint --prefix console" exit=0 tests=26 touched=console/src/pages/sessions/index.tsx,console/src/pages/sessions/sessions.css,console/src/pages/sessions/strings.ts,console/tests/v4344-limit-recovery.test.ts tail="Red-first: resume elsewhere says what comes along and what stays behind failed with expected Marlin sentence but received undefined. Green: 26/26 scoped tests, vite build begins tsc --noEmit, lint 0 findings. Marlin film-home-3 observed [Thinking removed] (v0.4.0.toml:8311,8543). Packet extra bun run typecheck exited 1: Script not found; console/package.json:8 is the working typecheck."
+# [2026-09-27] RECEIPT cmd="bun tools/gate typecheck" exit=0 tests=0 touched=console/src/pages/sessions/index.tsx,console/src/pages/sessions/sessions.css,console/src/pages/sessions/strings.ts,console/tests/v4344-limit-recovery.test.ts tail="Corrected packet operand from 0fb054c88: typecheck scanned 568 tracked TypeScript files in 7 programs; console/tsconfig.json 424 files 0 diagnostics; 0 new diagnostics beyond baseline debt."
 
 [[items]]
 id = "V4-362"

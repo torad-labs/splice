@@ -8343,8 +8343,11 @@ id = "V4-346"
 phase = "release"
 title = "My first hour: a fresh splice says it isn't set up yet, and one screen connects a plan (build order 3; acceptance Q0b, Q23, Q24, Q26). The walk that must pass: a fresh home shows nothing red; one screen offers connect a plan (ChatGPT, Grok, Kimi, Muse, an OpenRouter key, a local model); signing in opens the provider's page; I come back to a command I can type. Today a fresh home greets the user with four red failures and 'Daemon degraded', all from a starter OpenRouter head the user never chose, connecting ChatGPT hides under Fleet > Add backend > 'Profile: codex', and sign-in shows a raw authorize link overflowing its box."
 files = ["console/src/pages/fleet/", "console/src/pages/doctor/", "console/src/widgets/connect-plan/"]
-status = "todo"
+status = "in_flight"
 verify = "Marlin walks it by eye in a normal-size browser on a fresh home (or the film home where history is needed) at the built sha and approves; his walk log names the sha; CI gate on the train sha. A green gate is not approval."
+claimed_by = "console"
+claimed_at = "2026-09-27T14:55:29.469Z"
+# [2026-09-27] CLAIM: owner=console at=2026-09-27T14:55:29Z
 
 [[items]]
 id = "V4-347"

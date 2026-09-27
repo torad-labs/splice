@@ -8268,6 +8268,7 @@ title = "When I hit a limit, the console carries me to where I can keep working 
 files = ["console/src/pages/accounts/", "console/src/pages/usage/", "console/src/pages/sessions/", "console/src/pages/needs-you/", "features/sessions/src/main/kotlin/splice/sessions/", "features/sessions/src/test/kotlin/splice/sessions/"]
 status = "todo"
 verify = "Marlin walks it by eye in a normal-size browser on a fresh home (or the film home where history is needed) at the built sha and approves; his walk log names the sha; CI gate on the train sha. A green gate is not approval."
+# depends:V4-218
 
 [[items]]
 id = "V4-345"

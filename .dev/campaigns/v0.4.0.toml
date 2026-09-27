@@ -8149,8 +8149,11 @@ id = "V4-338"
 phase = "release"
 title = "splice trace <head> --last N --json answers without reading the whole trace store: today it dies with java.lang.OutOfMemoryError (kotlinx JsonTreeReader) on claudex's 3.7 GB of day files (2026-09-26), so the one tool that shows a GPT turn's real responses is unusable exactly when a head is busy"
 files = ["app/src/main/kotlin/splice/app/cli/"]
-status = "todo"
+status = "in_flight"
 verify = "red first: a test over a generated trace store larger than the CLI heap asserts --last 3 returns 3 records, failing on today's tree with the OOM; green: the read streams from the newest day file backwards and holds at most N records; live: splice trace claudex --last 3 --json exits 0"
+claimed_by = "claude-builder"
+claimed_at = "2026-09-27T00:43:41.684Z"
+# [2026-09-27] CLAIM: owner=claude-builder at=2026-09-27T00:43:41Z
 
 [[items]]
 id = "V4-339"

@@ -2,12 +2,16 @@
 // file only grows (JsonlSink appends, heals a torn tail by appending, rotates by rename), so a kept read counts
 // only the bytes appended since the last one, and knows a file it counted by its first bytes and the last ones it
 // counted, under whatever name the file has now; at every step a day file takes, it answers what a fresh read does.
+// A count read on several lanes at once answers what one read on the calling thread does.
 package splice.head.trace.v4343
 
+import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.storage.DayFiles
 import splice.head.trace.TraceAsk
+import splice.head.trace.TraceCensus
 import splice.head.trace.TraceRead
 import splice.head.trace.TraceRows
 import java.nio.file.Files
@@ -33,6 +37,15 @@ private const val SECOND = 1_000L
 // why: the lines of a file's first two turns, an attempt and a turn record each: more than the first bytes a file is
 // known by, kept as they were when it is written anew
 private const val HEAD_LINES = 4
+
+// why: more days than lanes, so each lane reads several files and their counts are added up together
+private const val LANE_DAYS = 24
+
+// why: turns enough per day that a tally the lanes shared would lose some: tens of thousands of adds at once
+private const val TURNS_PER_DAY = 4000
+
+// why: a machine of sixteen cores, whose quarter is the four lanes the count takes at most
+private const val LANE_CORES = 16
 
 class TraceCensusIncrementalTest {
     private var ts = FIRST_TS
@@ -158,5 +171,28 @@ class TraceCensusIncrementalTest {
             change()
             assertEquals(read(TraceRows(), dir), read(kept, dir), step)
         }
+    }
+
+    /** A record of about seventy bytes, so many thousands of them pass through the lanes in a moment. */
+    private fun small(turn: String): String = """{"kind":"attempt","turn":"$turn","ts":1,"attempt":1}"""
+
+    @Test
+    fun `a count on four lanes answers what one on the calling thread does, over many files of many turns`(
+        @TempDir dir: Path,
+    ) {
+        // The lanes share nothing: a tally they shared would lose turns under this many at once.
+        (1..LANE_DAYS).forEach { d ->
+            val turns = (1..TURNS_PER_DAY).joinToString("") { n -> small("d$d-t$n") + "\n" }
+            append(day(dir, "2026-08-%02d".format(d)), turns + "not a record\n")
+        }
+        val json = Json { ignoreUnknownKeys = true }
+        val days = DayFiles(dir, HEAD)
+        val none = DayFiles(Files.createDirectory(dir.resolve("empty")), HEAD)
+
+        val calling = TraceCensus(json, processors = 1).count(days)
+
+        assertEquals(TraceCensus.Count(LANE_DAYS * TURNS_PER_DAY, LANE_DAYS), calling)
+        assertEquals(calling, TraceCensus(json, processors = LANE_CORES).count(days), "four lanes")
+        assertEquals(TraceCensus.Count(0, 0), TraceCensus(json, processors = LANE_CORES).count(none), "no days")
     }
 }

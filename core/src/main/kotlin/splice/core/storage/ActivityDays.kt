@@ -216,15 +216,18 @@ public class DayFiles(private val dir: Path, prefix: String) {
         }
     }
 
-    /** V4-343: each file of every day on disk, in [newestFirst]'s order, open as a [LineFile] for the one visit
-     *  it is handed to, with what each visit answered; a file that is not there is passed over. For a reader
-     *  that reads each file its own way: the trace count reads only what a file gained since it last read it. */
+    /** V4-343: every file of every day on disk, the newest day first, each day's live file before its rolled half:
+     *  the files [newestFirst] reads, for a reader that reads each one its own way and when it likes (the trace
+     *  count reads several at once, and only what each gained since it last read it). A rolled half is named
+     *  whether or not it is there. A directory that cannot be listed throws why. */
     @Throws(IOException::class)
-    public fun <T : Any> eachFile(visit: FileVisit<T>): List<T> = files().mapNotNull { backward.open(it, visit) }
-
-    /** Every file of every day on disk, the newest day first, each day's live file before its rolled half. */
-    private fun files(): List<Path> =
+    public fun files(): List<Path> =
         days().asReversed().flatMap { (_, file) -> listOf(file, file.resolveSibling("${file.fileName}$ROLLED_SUFFIX")) }
+
+    /** V4-343: what [visit] answers of [file] open as a [LineFile]; null when the file is not there. Any other
+     *  failure throws. */
+    @Throws(IOException::class)
+    public fun <T : Any> open(file: Path, visit: FileVisit<T>): T? = backward.open(file, visit)
 
     /** V4-174: deletes EVERY day file of this store, whatever its age, with JsonlSink's siblings —
      *  the `splice trace --purge` verb. Answers what went and what did not (V4-286: it answered the

@@ -6,6 +6,7 @@ const SIGN_IN = 'https://signin.fixture.invalid/authorize';
 const profiles: AddProfile[] = ['codex', 'grok', 'kimi', 'muse', 'openrouter', 'local', 'deepseek'].map((name) => ({
   name, summary: name === 'codex' ? 'ChatGPT subscription over the Responses API' : `${name} plan`,
   auth_kind: name === 'openrouter' || name === 'local' || name === 'deepseek' ? 'api-key' : 'chatgpt-oauth',
+  requires_key: name === 'openrouter' || name === 'deepseek',
   base_url: name === 'local' ? null : 'https://api.example.invalid',
   head_key: name, command: name === 'codex' ? 'claudex' : `claude-${name}`,
   models: [], asks: name === 'local' ? ['name', 'base_url', 'models'] : [],

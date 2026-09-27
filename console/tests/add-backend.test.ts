@@ -27,7 +27,7 @@ const sorted = (...lists: readonly string[][]): string[] => [...new Set(lists.fl
 
 // `Required` holds each object to its whole interface, so a key a type gains or loses moves here.
 const MODEL: Required<AddModel> = { id: '', label: '', context_window: 0, slots: [] };
-const PROFILE: Required<AddProfile> = { name: '', summary: '', auth_kind: '', base_url: null, head_key: '', command: '', models: [], asks: [] };
+const PROFILE: Required<AddProfile> = { name: '', summary: '', auth_kind: '', requires_key: false, base_url: null, head_key: '', command: '', models: [], asks: [] };
 const CHECK: Required<AddCheck> = { name: '', ok: true, detail: '' };
 const RESTART: Required<AddRestart> = { status: 'draining', error: '', compactions: [{ head: '', age_ms: 0 }] };
 const SAVED: Required<AddSaved> = { path: '', wrapper: { linked: true, error: '' }, restart: RESTART };

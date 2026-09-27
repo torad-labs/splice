@@ -20,6 +20,8 @@ export interface AddProfile {
   name: string;
   summary: string;
   auth_kind: string;
+  /** False for a keyless local runtime; OAuth profiles also need no operator API key. */
+  requires_key: boolean;
   base_url: string | null;
   head_key: string;
   /** The wrapper's command; empty means `claude-<key>`. */

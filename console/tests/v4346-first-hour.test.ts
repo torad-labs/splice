@@ -17,7 +17,7 @@ import type { AddProfile, AddView } from '../src/entities/add';
 import type { HeadStatus } from '../src/shared/api';
 
 const profile = (name: string): AddProfile => ({
-  name, summary: `${name} profile`, auth_kind: 'api-key', base_url: null,
+  name, summary: `${name} profile`, auth_kind: 'api-key', requires_key: name !== 'local', base_url: null,
   head_key: name, command: `claude-${name}`, models: [], asks: [],
 });
 

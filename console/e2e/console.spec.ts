@@ -463,8 +463,9 @@ test('a backend is added from the fleet\'s detail panel through the daemon\'s ow
   // Nothing supplies its key, so the checks refuse (409, with the rows), and the add is discarded:
   // a save would write the stack's splice.toml and restart the daemon under the journeys after it.
   const faults = await open(page, 'fleet');
-  await page.locator('main').getByRole('button', { name: 'Add backend', exact: true }).click();
-  const panel = page.getByRole('complementary', { name: 'Add backend' });
+  await page.locator('main').getByRole('button', { name: 'Connect a plan', exact: true }).click();
+  const panel = page.getByRole('complementary', { name: 'Connect a plan' });
+  await panel.getByRole('button', { name: 'Other providers', exact: true }).click();
   await pick(panel, 'Profile', 'api-key');
   await panel.getByLabel('Head name', { exact: true }).fill('claude-e2e-added');
   await panel.getByLabel('Base URL', { exact: true }).fill('http://127.0.0.1:9/v1');

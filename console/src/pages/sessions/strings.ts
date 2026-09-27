@@ -100,6 +100,8 @@ export const H = {
   sendTo: 'Paste into another Claude session; splice never writes to one.',
   notLive: 'A session that is not live may never answer.',
   resume: 'Run it in a terminal; splice copies nothing until that launch.',
+  resumeCarry: 'Your conversation comes with you.',
+  resumeThinking: "The earlier model's reasoning stays behind and shows as [Thinking removed].",
   stillLive: 'The original still runs; the resumed copy diverges from it.',
 } as const;
 

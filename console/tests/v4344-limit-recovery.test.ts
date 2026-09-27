@@ -182,6 +182,23 @@ describe('limit recovery on Sessions', () => {
     expect(html).toContain('More sessions');
   });
 
+  test('resume elsewhere says what comes along and what stays behind', () => {
+    const html = renderToStaticMarkup(createElement(SessionsBoard, {
+      payload: { note: 'Live registry', sessions: [] },
+      history: { sessions: [historical], next: null },
+      linked: sessionKey(historical), view: byProject,
+    }));
+    const note = /<p class="myx-sx-resume-intro">([^<]+)<\/p>/.exec(html)?.[1]?.replaceAll('&#x27;', "'");
+    expect(note).toBe("Your conversation comes with you. The earlier model's reasoning stays behind and shows as [Thinking removed].");
+
+    const unavailable = renderToStaticMarkup(createElement(SessionsBoard, {
+      payload: { note: 'Live registry', sessions: [] },
+      history: { sessions: [{ ...historical, source: 'history-only' }], next: null },
+      linked: sessionKey(historical), view: byProject,
+    }));
+    expect(unavailable).not.toContain('myx-sx-resume-intro');
+  });
+
   test('an unreadable registry is not presented as an empty machine', () => {
     const html = renderToStaticMarkup(createElement(SessionsBoard, {
       payload: { note: 'Live registry', error: 'registrations unreadable', sessions: [] },

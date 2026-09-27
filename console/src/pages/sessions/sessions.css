@@ -75,6 +75,7 @@ button.myx-sx-peer:hover { color: var(--fg); }
 .myx-sx-call { font-family: var(--font-mono); overflow-wrap: anywhere; color: var(--fg); }
 /* V4-320: the head picker, the command it answers, and what the launch does with the transcript */
 .myx-sx-resume { display: grid; gap: var(--space-3); }
+.myx-sx-resume-intro { margin: 0; color: var(--fg-muted); }
 
 /* the fleet's hand-offs follow the board */
 .myx-sx > .myx-sx-handoffs { margin-block-start: var(--space-7); }

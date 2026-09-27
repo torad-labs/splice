@@ -651,7 +651,10 @@ export function SessionsBoard({ payload, history = null, historyOff = null, view
               ) : open.session_id === null ? (
                 <Empty text={S.noSessionId} />
               ) : (
-                <ResumeElsewhere key={open.session_id} sessionId={open.session_id} own={open.head} target={resumeHead} />
+                <div className="myx-sx-resume">
+                  <p className="myx-sx-resume-intro">{H.resumeCarry} {H.resumeThinking}</p>
+                  <ResumeElsewhere key={open.session_id} sessionId={open.session_id} own={open.head} target={resumeHead} />
+                </div>
               )}
             </Section>
           </DetailPanel>

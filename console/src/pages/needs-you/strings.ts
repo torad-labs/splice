@@ -77,7 +77,7 @@ export const H = {
   keyMissingBare: 'Its API key is not set.',
   loginExpired: 'Its login expired and the refresh is blocked.',
   queueFull: 'Every slot is busy and the queue is full.',
-  configChanged: 'The config file changed since the daemon started.',
+  configChanged: 'The splice.toml file changed since the daemon booted.',
   accountSignedOut: 'Its login is gone; sign in with a new label.',
   seatEnded: 'Its bound session ended; bind another in the team.',
   seatUnlisted: 'Its bound session is not in the registry.',

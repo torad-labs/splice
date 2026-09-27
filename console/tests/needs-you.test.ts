@@ -274,6 +274,34 @@ describe('turns, sessions and team seats', () => {
   });
 });
 
+describe('one changed splice.toml, one Needs you item', () => {
+  test('a topology warning stays on Doctor when health does not report staleness', () => {
+    const checks: DoctorCheck[] = [{
+      id: 'daemon/topology', status: 'warn', detail: 'splice.toml changed since the daemon booted', fix: 'splice restart',
+    }];
+    const out = needsOf(quiet({ topology: read(false), doctor: read(doctor(checks)) }), NOW).needs;
+    expect(out.map((need) => need.source)).toEqual(['doctor']);
+    expect(out[0]?.finding).toContain('splice.toml');
+  });
+
+  test('the health flag and Doctor topology warning share one restart item while Doctor keeps its row', () => {
+    const checks: DoctorCheck[] = [{
+      id: 'daemon/topology', status: 'warn', detail: 'splice.toml changed since the daemon booted', fix: 'splice restart',
+    }];
+    const inputs = quiet({ topology: read(true), doctor: read(doctor(checks)) });
+    const out = needsOf(inputs, NOW).needs;
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({
+      source: 'daemon', subject: 'Daemon', fix: { kind: 'restart-daemon' },
+    });
+    expect(out[0]?.finding).toContain('splice.toml');
+    expect(out[0]?.finding).not.toContain('the config file');
+    expect(renderToStaticMarkup(createElement(DoctorBoard, {
+      report: doctor(checks), onToggle: () => undefined,
+    }))).toContain('daemon/topology');
+  });
+});
+
 describe('the doctor', () => {
   test('a failing check is danger with its own remedy to copy; warn is warn; ok and info are quiet', () => {
     const checks: DoctorCheck[] = [

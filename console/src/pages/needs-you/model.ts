@@ -340,6 +340,7 @@ export function needsOf(inputs: NeedInputs, now: number): NeedsList {
   const registry = answered(inputs.sessions);
   const teams = answered(inputs.teams)?.teams ?? [];
   const doctor = answered(inputs.doctor);
+  const topologyStale = answered(inputs.topology);
 
   const fromHeads = headNeeds(heads, auth);
   const headOf = (need: Need): string[] => (need.head === null ? [] : [need.head]);
@@ -350,13 +351,16 @@ export function needsOf(inputs: NeedInputs, now: number): NeedsList {
   const about = new Map(wanted.map((check) => [check, headsOfCheck(check, said, down)] as const));
   const needs = [
     ...fromHeads.map((need) => withDoctor(need, wanted.filter((check) => need.head !== null && about.get(check)?.includes(need.head)))),
-    ...daemonNeeds(answered(inputs.topology), inputs.restartPending),
+    ...daemonNeeds(topologyStale, inputs.restartPending),
     ...planNeeds(accounts, usage, auth, now),
     ...accountNeeds(accounts, now),
     ...turnNeeds(heads),
     ...(registry === null ? [] : sessionNeeds(registry.sessions, now)),
     ...(registry === null ? [] : teamNeeds(teams, registry.sessions)),
-    ...(doctor === null ? [] : doctorNeeds(wanted.filter((check) => about.get(check)?.length === 0))),
+    ...(doctor === null ? [] : doctorNeeds(wanted.filter((check) =>
+      about.get(check)?.length === 0 &&
+      !(topologyStale === true && check.id === 'daemon/topology' && check.status === 'warn'),
+    ))),
   ];
   const rank = (need: Need): number => (need.severity === 'danger' ? 0 : 1) * SOURCE_ORDER.length + SOURCE_ORDER.indexOf(need.source);
   needs.sort((left, right) => rank(left) - rank(right));

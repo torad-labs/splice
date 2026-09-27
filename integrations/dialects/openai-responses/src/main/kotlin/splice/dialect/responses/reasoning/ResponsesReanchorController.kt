@@ -9,6 +9,10 @@
 // the whole-stream half of codex-rs's retry, which the marker continuation cannot cover.
 // One honest terminal ends the whole turn (L3); tool rounds and an exhausted budget still
 // fall back to the error.
+//
+// V4-339: the partial prose rides as [ResponsesAssistantText]'s item with the turn's [prosePhase]. It
+// was said mid-turn, so a lite turn replays it as commentary, as its builder does every mid-turn
+// preface (V4-335); replayed bare, it read to the model as the turn's final answer.
 package splice.dialect.responses.reasoning
 
 import kotlinx.serialization.json.JsonObject
@@ -17,13 +21,18 @@ import kotlinx.serialization.json.put
 import splice.core.turn.DEFAULT_MAX_CONTINUATIONS
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
+import splice.dialect.responses.request.AssistantPhase
+import splice.dialect.responses.request.ResponsesAssistantText
 import splice.dialect.responses.stream.ResponsesContinuation
 import splice.upstream.ReanchorController
 import splice.upstream.ReanchorRound
 
+/** [prosePhase] is the phase the replayed partial prose carries: commentary on a lite turn, null (the
+ *  bare item it always had) on any other. */
 public class ResponsesReanchorController(
     private val decodeReasoningEnvelope: ReasoningEnvelopeDecoder,
     private val maxContinuations: Int = DEFAULT_MAX_CONTINUATIONS,
+    private val prosePhase: AssistantPhase? = null,
 ) : ReanchorController {
 
     private val continuation = ResponsesContinuation()
@@ -72,10 +81,7 @@ public class ResponsesReanchorController(
     }
 
     /** The partial prose the client already saw, replayed as context so the model resumes it. */
-    private fun assistantText(text: String): JsonObject = buildJsonObject {
-        put("role", "assistant")
-        put("content", text)
-    }
+    private fun assistantText(text: String): JsonObject = ResponsesAssistantText.item(text, prosePhase)
 
     // phase:commentary keeps the marker out of the visible transcript (the fold marker trick) and
     // satisfies the Responses "reasoning item needs a following item" constraint.

@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -17,17 +18,29 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.auth.AuthDescription
+import splice.core.auth.Credentials
+import splice.core.auth.RefreshableAuthProvider
 import splice.core.index.WireBlockIndex
+import splice.core.model.ModelCatalog
+import splice.core.model.ModelEntry
+import splice.core.parse.AnthropicParse
 import splice.core.turn.ErrorType
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
+import splice.core.turn.ReasoningDisplayParser
 import splice.core.turn.SharedSummaryParts
 import splice.core.turn.TurnOutcome
+import splice.core.turn.WatchdogBudget
+import splice.dialect.responses.ResponsesProvider
+import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.StreamTurnContext
 import splice.dialect.responses.stream.ResponsesStreamTranslator
+import splice.upstream.ProviderTuning
 import splice.upstream.ReanchorRound
 import splice.upstream.retry.WatchdogFired
 import splice.upstream.sse.WireSink
+import kotlin.time.Duration.Companion.seconds
 
 private fun previousBody(): JsonObject = Json.parseToJsonElement(
     """{"model":"gpt-5.6-sol","input":[{"role":"user","content":"hi"}],"store":false,"stream":true}""",
@@ -48,7 +61,71 @@ private val controller = ResponsesReanchorController(
     },
 )
 
+private object ReanchorProbeAuth : RefreshableAuthProvider {
+    override suspend fun credentials(): Credentials = Credentials.Bearer("tok", "acct")
+    override suspend fun refresh(): Credentials = credentials()
+    override suspend fun describe(): AuthDescription = AuthDescription(true, "stub")
+}
+
+/** V4-339: a claudex-shaped provider on gpt-5.6-sol, served responses-lite when [lite]. */
+private class ReanchorProbe(lite: Boolean) : ResponsesProvider(
+    tuning = ProviderTuning(
+        key = "probe",
+        label = "probe",
+        catalog = ModelCatalog(
+            discoveryPrefix = "claude-codex",
+            models = listOf(ModelEntry(id = "gpt-5.6-sol", label = "sol", contextWindow = 400_000)),
+            defaultContextWindow = 400_000,
+        ),
+        pinnedModel = "gpt-5.6-sol",
+        auth = ReanchorProbeAuth,
+        baseUrl = "https://chatgpt.com/backend-api/codex",
+        watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
+    ),
+    showReasoning = ReasoningDisplayParser.from("text"),
+    replayReasoning = false,
+    configEffort = null,
+    configSummary = null,
+    quirks = ResponsesQuirks(providerTag = "claudex", responsesLiteModelRegex = Regex("gpt-5\\.6").takeIf { lite }),
+) {
+    override fun extraHeaders(creds: Credentials): Map<String, String> = emptyMap()
+}
+
+/** The item [provider]'s re-anchor replays for a turn it built, cut after "The fix is to": the path the
+ *  head takes (TurnRoundRun asks the provider for the controller with the turn's meta). */
+private fun replayedProse(provider: ResponsesProvider): JsonObject {
+    val built = provider.buildTurn(
+        AnthropicParse.parseAnthropicBody(
+            """{"model":"gpt-5.6-sol","max_tokens":1000,"messages":[{"role":"user","content":"fix the build"}]}""",
+        ),
+        compact = false,
+        sessionId = null,
+    )
+    val next = checkNotNull(provider.reanchorController(built.meta))
+        .continuationForFailure(ReanchorRound(built.requestBody, failureWith(), attempt = 0))
+    return checkNotNull(next).getValue("input").jsonArray.map { it.jsonObject }
+        .single { (it["content"] as? JsonPrimitive)?.content == "The fix is to" }
+}
+
 class ResponsesReanchorControllerTest {
+
+    // V4-339: the partial prose the client already saw was said mid-turn, so by V4-335's rule it is
+    // commentary on a lite turn; replayed bare, it read to the model as the turn's final answer.
+    @Test
+    fun `a lite turn replays the cut turn's partial prose as commentary`() {
+        val prose = replayedProse(ReanchorProbe(lite = true))
+
+        assertEquals("commentary", prose["phase"]?.jsonPrimitive?.content, "replayed as $prose")
+        assertEquals(listOf("role", "phase", "content"), prose.keys.toList())
+    }
+
+    @Test
+    fun `a non-lite turn replays the partial prose exactly as before`() {
+        val prose = replayedProse(ReanchorProbe(lite = false))
+
+        assertEquals(listOf("role", "content"), prose.keys.toList(), "$prose")
+        assertEquals("assistant", prose.getValue("role").jsonPrimitive.content)
+    }
 
     // SSE is a FALLBACK, and reaching it costs the socket's cache key plus a full re-upload, so
     // the socket gets the reference client's number of attempts before we abandon it: codex-rs

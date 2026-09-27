@@ -8,6 +8,7 @@ import splice.core.turn.TurnMeta
 import splice.dialect.responses.reasoning.EmitEncryptedReasoning
 import splice.dialect.responses.reasoning.ResponsesReanchorController
 import splice.dialect.responses.reasoning.TurnReasoningSink
+import splice.dialect.responses.request.AssistantPhase
 import splice.dialect.responses.stream.ResponsesFoldController
 import splice.dialect.responses.stream.ResponsesStreamTranslator
 import splice.upstream.FoldController
@@ -18,9 +19,17 @@ import splice.upstream.TurnSignals
 internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
     // The controller is stateless — one cached instance serves every turn (a per-call
     // allocation here also ran per ROUND via the collectReasoningEnvelopes null-check).
+    // V4-339: one per wire shape. A lite turn's replayed partial prose is commentary (V4-335's rule).
     private val reanchorPolicy: ReanchorController by lazy {
         ResponsesReanchorController(decodeReasoningEnvelope = { ReasoningReplay.decodeReasoningEnvelope(it) })
     }
+    private val liteReanchorPolicy: ReanchorController by lazy {
+        ResponsesReanchorController(
+            decodeReasoningEnvelope = { ReasoningReplay.decodeReasoningEnvelope(it) },
+            prosePhase = AssistantPhase.COMMENTARY,
+        )
+    }
+    private val liteShape = ResponsesLiteShape(deps.quirks)
 
     fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator =
         summaryOwner(meta).let { summaryOwner ->
@@ -108,5 +117,6 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
     // deterministic verdicts (cyber_policy, refusals, content filter) carry no partial and are never
     // re-POSTed. NB: fold-eligible turns get re-anchor via FoldRunner's trigger-B, not
     // ReanchorRunner (driveOneTurn routes fold first).
-    fun reanchorController(): ReanchorController = reanchorPolicy
+    fun reanchorController(meta: TurnMeta): ReanchorController =
+        if (liteShape.isLiteModel(meta.upstreamModel)) liteReanchorPolicy else reanchorPolicy
 }

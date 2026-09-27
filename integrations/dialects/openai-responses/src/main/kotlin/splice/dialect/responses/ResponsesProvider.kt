@@ -132,5 +132,6 @@ public abstract class ResponsesProvider(
         parts.failureAmend.amendBodyOnFailure(status, responseText, bodyJson)
 
     // Every turn, compaction included (2026-09-02, see ResponsesTurnSeams.reanchorController).
-    final override fun reanchorController(meta: TurnMeta): ReanchorController? = parts.turnSeams.reanchorController()
+    final override fun reanchorController(meta: TurnMeta): ReanchorController? =
+        parts.turnSeams.reanchorController(meta)
 }

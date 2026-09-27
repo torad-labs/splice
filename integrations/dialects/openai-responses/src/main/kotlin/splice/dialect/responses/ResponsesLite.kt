@@ -26,8 +26,11 @@ internal class ResponsesLiteShape(private val quirks: ResponsesQuirks) {
     /** Lite gate: every turn on a responses-lite model, compaction included — lite is a property
      *  of the MODEL, and a compaction built in the non-lite shape shares no prefix with the
      *  session's lite turns (2026-09-05). */
-    fun isLite(opts: BuildOptions): Boolean =
-        quirks.responsesLiteModelRegex?.containsMatchIn(opts.upstreamModel) == true
+    fun isLite(opts: BuildOptions): Boolean = isLiteModel(opts.upstreamModel)
+
+    /** The same gate on a bare model id, for a seam that holds a turn's meta rather than its build
+     *  options (the re-anchor controller, V4-339). */
+    fun isLiteModel(model: String): Boolean = quirks.responsesLiteModelRegex?.containsMatchIn(model) == true
 
     fun wireShape(lite: Boolean, input: JsonArray, instructions: String, tools: JsonArray?): WireShape =
         if (lite) {

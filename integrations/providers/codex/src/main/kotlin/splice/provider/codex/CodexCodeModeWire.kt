@@ -12,6 +12,8 @@ import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.TurnOutcome
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
+import splice.dialect.responses.request.AssistantPhase
+import splice.dialect.responses.request.ResponsesAssistantText
 import splice.dialect.responses.request.ResponsesCodeModeProjection
 import java.util.concurrent.ConcurrentHashMap
 
@@ -76,13 +78,10 @@ internal class CodexCodeModeWire(private val json: Json, private val log: LogSin
     fun continuity(outcome: TurnOutcome.Success): CodeModeContinuity {
         val items = buildList {
             addAll(outcome.reasoningEnvelopes.mapNotNull(ReasoningReplay::decodeReasoningEnvelope))
+            // V4-335: the text said before the script, as the client replays it: it precedes the
+            // client calls in the same message, which the builder calls commentary.
             if (outcome.emittedText && outcome.bodyText.isNotEmpty()) {
-                add(
-                    buildJsonObject {
-                        put(FIELD_ROLE, ROLE_ASSISTANT)
-                        put(FIELD_CONTENT, outcome.bodyText)
-                    },
-                )
+                add(ResponsesAssistantText.item(outcome.bodyText, AssistantPhase.COMMENTARY))
             }
         }
         val projected = ResponsesCodeModeProjection().project(JsonArray(items))
@@ -128,17 +127,16 @@ internal const val CODE_MODE_TOOL_NAME = "splice_exec"
 
 /** v3 (2026-09-07): counts, digests and native offsets are conversation-relative (lite preamble
  *  excluded). A v2 record's numbers point into the whole input, so it is never re-placed: a
- *  completed one is omitted from the rewrite, an unfinished one is LOST. */
-internal const val CODE_MODE_METADATA_VERSION = 3
+ *  completed one is omitted from the rewrite, an unfinished one is LOST.
+ *  v4 (2026-09-26, V4-335): continuity carries the phase the client replays. A v3 record's
+ *  continuity has none, so the client's preface never matches it and would be placed twice. */
+internal const val CODE_MODE_METADATA_VERSION = 4
 private const val RECORD_ID_LOG_CHARS = 8
-private const val FIELD_CONTENT = "content"
 private const val FIELD_INPUT = "input"
 private const val FIELD_TYPE = "type"
 private const val FIELD_NAME = "name"
 private const val FIELD_DESCRIPTION = "description"
 private const val FIELD_TOOLS = "tools"
-private const val FIELD_ROLE = "role"
-private const val ROLE_ASSISTANT = "assistant"
 private const val TYPE_ADDITIONAL_TOOLS = "additional_tools"
 private const val CODE_MODE_TOOL_DESCRIPTION =
     "Run several tool calls in one round trip: one bounded JavaScript cell with await and " +

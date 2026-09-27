@@ -15,7 +15,6 @@ import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
-import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.request.BuildOptions
 import splice.dialect.responses.request.ResponsesRequestBuilder
@@ -104,7 +103,9 @@ class CodexCodeModeContinuityTest : CodeModeBridgeTestSupport() {
             }
         """.trimIndent()
         val parsed = AnthropicParse.parseAnthropicBody(raw)
-        return ResponsesRequestBuilder(ResponsesQuirks(providerTag = "test"))
+        // Codex's own quirks: code mode runs on lite requests only, whose assistant text carries its
+        // phase (V4-335).
+        return ResponsesRequestBuilder(CodexQuirks().defaultQuirks())
             .build(parsed.typed, parsed.raw, buildOptions(replayReasoning)).req.toString()
     }
 

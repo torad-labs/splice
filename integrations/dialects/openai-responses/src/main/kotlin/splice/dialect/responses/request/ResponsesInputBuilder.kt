@@ -59,12 +59,13 @@ internal class ResponsesInputBuilder(
      * cause preambles to be treated as final answers". Claude Code keeps no phase, so it is read off
      * the message: text a tool call follows in the same message was said on the way to that call
      * (commentary), and text no call follows is the answer (final_answer). An assistant message on
-     * a lite turn only: never a user's, and the non-lite shape stays as it was.
+     * a lite turn only: never a user's, and the non-lite shape stays as it was. [ROLE_ASSISTANT] is
+     * the Responses role's own const: the comparison is where the Anthropic role becomes it.
      */
-    private fun phaseOf(msg: AnthropicMessage, at: Int, opts: BuildOptions): String? = when {
+    private fun phaseOf(msg: AnthropicMessage, at: Int, opts: BuildOptions): AssistantPhase? = when {
         msg.role != ROLE_ASSISTANT || !liteShape.isLite(opts) -> null
-        msg.content.subList(at + 1, msg.content.size).any { it is ToolUseBlock } -> PHASE_COMMENTARY
-        else -> PHASE_FINAL_ANSWER
+        msg.content.subList(at + 1, msg.content.size).any { it is ToolUseBlock } -> AssistantPhase.COMMENTARY
+        else -> AssistantPhase.FINAL_ANSWER
     }
 
     private fun appendBlock(
@@ -122,6 +123,3 @@ internal class ResponsesInputBuilder(
 // FIELD_CONTENT is deliberately private-per-file, matching ResponsesInputParts.kt's own copy — see
 // that file's note on the pre-existing ResponsesHarvest.kt / ResponsesToolSearchController.kt collision.
 private const val FIELD_CONTENT = "content"
-private const val ROLE_ASSISTANT = "assistant"
-private const val PHASE_COMMENTARY = "commentary"
-private const val PHASE_FINAL_ANSWER = "final_answer"

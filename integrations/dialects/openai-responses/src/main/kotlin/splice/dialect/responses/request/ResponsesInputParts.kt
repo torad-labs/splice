@@ -73,13 +73,17 @@ internal class ResponsesInputParts(minImageEdgePx: Int? = null) {
         }
     }
 
-    /** A text message. [phase] is an assistant message's, commentary or final_answer (V4-335), in
-     *  the place the continuation markers put it (ResponsesFold, ResponsesReanchorController). */
-    internal fun roleText(role: String, text: String, phase: String? = null): JsonObject = buildJsonObject {
-        put("role", role)
-        if (phase != null) put("phase", phase)
-        put(FIELD_CONTENT, text)
-    }
+    /** A text message. An assistant's is [ResponsesAssistantText]'s item, with its [phase] (V4-335):
+     *  code mode records the same item and compares the client's replay against it. */
+    internal fun roleText(role: String, text: String, phase: AssistantPhase? = null): JsonObject =
+        if (role == ROLE_ASSISTANT) {
+            ResponsesAssistantText.item(text, phase)
+        } else {
+            buildJsonObject {
+                put("role", role)
+                put(FIELD_CONTENT, text)
+            }
+        }
 }
 
 // Wire field names/pieces used by the input-item factories. All private-per-file: none is read

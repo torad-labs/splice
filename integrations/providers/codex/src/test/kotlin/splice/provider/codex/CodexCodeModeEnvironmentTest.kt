@@ -104,7 +104,8 @@ class CodexCodeModeEnvironmentTest : CodeModeBridgeTestSupport() {
             .intercept(liteBody(listOf("Read"), "s", callback(readId)), RecordingSink()) { completedOutcome() }
         val stateFile = tempDir.resolve("bridge.json")
         val persisted = Files.readString(stateFile)
-        Files.writeString(stateFile, persisted.replace("\"metadataVersion\":3", "\"metadataVersion\":2"))
+        val current = "\"metadataVersion\":$CODE_MODE_METADATA_VERSION"
+        Files.writeString(stateFile, persisted.replace(current, "\"metadataVersion\":2"))
 
         val restored = bridge(ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Completed("must not run")))))
         var posted = ""

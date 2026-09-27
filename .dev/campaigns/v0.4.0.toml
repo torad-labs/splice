@@ -6754,6 +6754,7 @@ verify = "red first: the extended wall's rule test matches the em dash as a char
 claimed_by = "console"
 claimed_at = "2026-09-27T04:36:49.562Z"
 # [2026-09-27] CLAIM: owner=console at=2026-09-27T04:36:49Z
+# [2026-09-27] RECEIPT cmd="bun tools/gate slot v4235-green -- :features-turns:test :features-turns:detekt :core:test --tests splice.core.model.ModelCatalogTest :app:test --tests 'splice.app.Example*' --tests splice.app.PromotedKnobsExampleTest --tests splice.app.cli.setup.RigRefusalsTest :quality-architecture:test :verifyTestDiscovery" exit=0 tests=3570 touched=quality/rules/kotlin/kt-no-emdash-cli-text.yml,quality/rules/rule-tests/kt-no-emdash-cli-text-test.yml,tools/gate/config/rule-coverage-exclusions.toml,features/turns/src/main/kotlin/splice/head/pipeline/FailureText.kt,features/turns/src/test/kotlin/splice/head/pipeline/v4235/RelayedProseEmDashTest.kt,app/src/main/resources/splice.example.toml,app/src/main/dist/bin/splice-launch tail="yTestDiscovery red ONLY on the filtered :app (123) and :core (72) classes (filter artifact; features-turns discovered in full). ast-grep test 76/76, gate rules --prove-coverage OK, census 0 findings, launcher rehearsal 8/8. Widened wall without its ignore: 1 hit, RetryMatrix.kt:229. Presenter mutants 4/4 killed (identity 3 red, object 1, string 1, prose 2). CI gate on the train sha is the verdict."
 
 [[items]]
 id = "V4-236"

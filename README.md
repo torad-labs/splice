@@ -18,13 +18,13 @@ ChatGPT · Grok · Kimi · Muse · API backends · native Claude
 ```text
 splice puts Claude Code in front of the backend you choose.
 
-  The bytes are exactly right for every backend.        integrations/        (docs/architecture)
-  A turn is never lost.                                 features/turns
-  It never runs away, and never corrupts a credential.  integrations/upstream  core/config
-  Your Claude Code stays yours.                         integrations/claude-code
-  You see what happens and what it costs.               features/usage  app/control  console/
-  Every failure comes with its remedy.                  features/diagnostics  features/turns
-  Heads see each other.                                 features/sessions  integrations/claude-code
+  The bytes are exactly right for every backend.             integrations/        (docs/architecture)
+  A turn is never lost.                                      features/turns
+  It never runs away, and never corrupts a credential.       integrations/upstream  core/config
+  Your Claude Code stays yours.                              integrations/claude-code
+  You see what happens and what it would cost at API rates.  features/usage  app/control  console/
+  Every failure comes with its remedy.                       features/diagnostics  features/turns
+  Heads see each other.                                      features/sessions  integrations/claude-code
 
   app/ assembles all of it.
 ```
@@ -56,7 +56,7 @@ For example, ask one session to implement a change and the other to review it. T
 
 Each named backend connection is called a **head**. You choose which heads to configure and launch; the commands above do not configure providers for you.
 
-**In [v0.4.0](https://github.com/torad-labs/splice/releases/tag/v0.4.0):** a launched session holds a turn key, never the management key; `splice upgrade` with rollback; several accounts per provider with automatic switching; first-class local models; and [code mode](#code-mode-for-chatgpt) on by default for ChatGPT. Coming from 0.3.x? Read [the upgrade notes](CHANGELOG.md#upgrading-from-03x) first.
+**In [v0.4.0](https://github.com/torad-labs/splice/releases/tag/v0.4.0):** a launched session holds a turn key, never the management key; `splice upgrade` with rollback; account pools with automatic switching on the ChatGPT, Grok, Kimi and Muse heads; first-class local models; and [code mode](#code-mode-for-chatgpt) on by default for ChatGPT. Coming from 0.3.x? Read [the upgrade notes](CHANGELOG.md#upgrading-from-03x) first.
 
 ## Install
 
@@ -278,7 +278,7 @@ Splice signs in on its own. Each OAuth head keeps its own credential file under 
 
 ### More than one account per provider
 
-An OAuth head can hold several accounts of its kind and switch between them when one runs out.
+An OAuth head (ChatGPT, Grok, Kimi or Muse) can hold several accounts of its kind and switch between them when one runs out; `claude-splice` keeps several Claude logins instead, [switched by you](#more-than-one-claude-login-on-claude-splice).
 `splice login <head>` without `--label` always signs in the primary account in the file above,
 so a revoked primary is replaced in place; every further `splice login <head> --label <name>` lands
 beside it under `~/.config/splice/auth/<kind>/<primary file>/<name>.json`, for the default primary
@@ -608,7 +608,7 @@ Each wrapper is an `argv[0]` symlink to the shared launch shim `app/src/main/dis
 
 Compaction uses the session's own model and reasoning effort and preserves its request shape. A stable prompt-cache key and unchanged prefixes support cache reuse, but the actual cache result depends on the backend and workload. Opaque reasoning replay is a separate, default-off trade-off described [below](#the-cache-replay-experiment).
 
-A client disconnect during compaction detaches that client rather than cancelling the upstream work. A byte-identical retry can follow the running turn or receive its recorded result without starting a second upstream turn. This is compaction recovery, not a promise to replay arbitrary tool executions. Stopping a head ends compactions still running on it.
+A client disconnect during compaction detaches that client rather than cancelling the upstream work. A byte-identical retry can follow the running turn or receive its recorded result without starting a second upstream turn. This is compaction recovery, not a promise to replay arbitrary tool executions. Stopping a head ends compactions still running on it. `splice restart`, `splice upgrade` and the console's restart wait for them first, each until Claude Code's own 600 s cap, and a finished answer is kept on disk (two hours at most) so the retry after the restart is served without a second upstream turn.
 
 A `context_window` edit in `splice.toml` needs no restart. The running daemon re-reads the windows (a model's `context_window`, `extra_windows`, `window_rules`, `default_context_window` and a head's `context_window`) when the file changes. Running sessions compact at the new window through usage scaling, and the next launch plants it. A local runtime is asked about a new window first and a window it refuses is not applied; a file that does not parse keeps the windows in force. The daemon log names what moved, or why nothing did. Every other key is still read only at boot, and `splice doctor` reports the file stale until `splice restart`.
 

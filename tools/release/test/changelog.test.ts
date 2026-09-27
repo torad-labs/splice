@@ -52,6 +52,14 @@ describe("release notes from the CHANGELOG", () => {
     );
   });
 
+  // V4-254: the v0.4.0 heading follows its version with a colon, where the older ones use an em dash.
+  test("a colon may follow the version, and still only its exact version matches", () => {
+    const log = "## splice v0.4.0: the release - 2026-09-27\n\n- one\n\n## splice v0.4.01: a longer number - x\n- two\n";
+    expect(releaseNotes(log, "0.4.0")).toBe("## splice v0.4.0: the release - 2026-09-27\n\n- one\n");
+    expect(releaseNotes(log, "0.4")).toBeInstanceOf(Error);
+    expect(releaseNotes("## splice v0.4.01: a longer number - x\n- two\n", "0.4.0")).toBeInstanceOf(Error);
+  });
+
   test("a missing or empty section is an Error naming the version", () => {
     const missing = releaseNotes(LOG, "9.9.9");
     expect(missing).toBeInstanceOf(Error);

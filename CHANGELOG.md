@@ -1,6 +1,6 @@
 # Changelog
 
-## splice v0.4.0 — a console, self-upgrade, account pools and local models, and sessions that never hold the management key - 2026-09-24
+## splice v0.4.0: a console, self-upgrade, account pools and local models, and sessions that never hold the management key - 2026-09-24
 
 ### Highlights
 - **Sessions hold a turn key, never the management key.** Every session launched by 0.3.x held
@@ -8,8 +8,10 @@
   rotate the key ([Security](#security), [Upgrading from 0.3.x](#upgrading-from-03x)).
 - **`splice upgrade`** fetches, verifies and stages a release, waits for in-flight turns, restarts
   the daemon and runs doctor. `--rollback` puts the previous release back.
-- **Several accounts per provider.** `splice login <head> --label <name>` adds an account, and a
-  head switches accounts on its own when a provider's limits are hit.
+- **Account pools on the ChatGPT, Grok, Kimi and Muse heads.** `splice login <head> --label <name>`
+  adds an account to one of these OAuth heads, and the head moves a session to another account when
+  a provider's limits are hit. `claude-splice` keeps several Claude logins that you switch yourself;
+  it has no pool.
 - **Local models are first-class** on the `openai-chat` dialect. splice asks the runtime what it
   serves and refuses a row it doesn't. llama-server conversations keep their own slot. Local heads
   report token usage, so Claude Code auto-compacts, and their errors say what happened.
@@ -20,10 +22,18 @@
 - **New heads and modes:** `claude-muse` (a Meta Muse Code subscription); Claude head mode (wrap
   the default `claude` command); per-head system prompts, including a `strip` mode; custom
   compaction instructions; shared MCP hosting.
+- **A restart never costs a compaction.** `splice restart`, `splice upgrade` and the console's
+  restart let a compaction in flight finish first, within Claude Code's own 600 s cap, and its
+  answer is kept on disk for Claude Code's retry.
+- **Installing needs no GitHub account.** Every download is still checked against the release's
+  checksums, and build provenance is verified whenever `gh` is signed in.
 - **Code mode is out of beta** and on by default for ChatGPT.
 - **Teams.** Sessions on different heads, say Claude and GPT-6 Astra, work one goal: each gets
   its role and the lead's address in its prompt, and the console's board shows their hand-offs,
-  activity and cost per role.
+  activity and estimated cost per role.
+- **Every dollar figure is an API-rate estimate.** The status line reads `API est. $0.85`, a
+  budget's warning says "an estimated $2.50 in API cost", and a subscription head bills no token at
+  all.
 
 ### Upgrading from 0.3.x
 0.3.x has no `splice upgrade`. Re-run the installer pinned to this release:
@@ -97,9 +107,10 @@ origin.
   (kimi, or any provider with `reanchor_prefill = true`) continue where they stopped. Muse answers
   an assistant prefill with a 400, as Anthropic documents for Claude 4.6 and later, and
   restarting would repeat what you already read. Re-send the turn.
-- **A restart waits for turns in flight, but only for 45 s.** A turn still streaming after that
-  is cut, and Claude Code does not retry a turn cut after its text began. `splice upgrade` waits
-  until every head is idle unless you pass `--now`.
+- **A restart waits for an ordinary turn in flight, but only for 45 s.** A turn that is not a
+  compaction and is still streaming after that is cut, and Claude Code does not retry a turn cut
+  after its text began. A compaction is let finish first (see Changed). `splice upgrade` waits until
+  every head is idle unless you pass `--now`.
 - **splice is tested against Claude Code 2.1.283.** When a session runs a newer one, doctor,
   `splice status` and the status line say so once.
 - **Claude Code's header reads `API Usage Billing` on every head but `claude-splice`.** Claude Code
@@ -202,8 +213,8 @@ origin.
   the prompt cache, and its perf row says so. The board shows each member by head (model, window,
   last turn, turns, tokens, estimated cost), the team chat (the `SendMessage` hand-offs between
   members that passed through splice, each message's text read from the sender's own transcript),
-  the members' activity sampled every 30 seconds, and lifetime turns, tokens and dollars per role
-  and slot (`GET /api/teams/{id}/economics`). Teams live in `teams.json` under the state dir and
+  the members' activity sampled every 30 seconds, and lifetime turns, tokens and estimated dollars
+  per role and slot (`GET /api/teams/{id}/economics`). Teams live in `teams.json` under the state dir and
   are archived, never deleted. A plain `claude` session can hold a slot, but its own messages
   don't pass through splice, so the chat shows only what it receives.
 - **The console can sign accounts in, switch, remove and relabel them, from one joined view
@@ -572,6 +583,14 @@ origin.
   is priced turn by turn, so each request pays its own tier. The `kt-dollar-figure-single-source`
   wall keeps any other source from gluing a `$` to an amount, in any of its spellings:
   `"$$amount"`, `"\$" + amount` and `"\$%.2f"` (V4-240).
+- **A restart never costs a compaction (V4-216).** `splice restart`, `splice upgrade` and every
+  restart the daemon takes on itself (the console's restart button, an add's save) first wait for
+  the compactions in flight. The daemon keeps serving meanwhile and no head closes admission, so
+  ordinary turns never hold the restart. Each compaction is waited for until it reaches Claude
+  Code's 600 s cap, and the whole wait is held to the same 600 s; `--now` skips it. A finished
+  compaction answer is kept owner-only under `<state>/compactions/<head>/` for two hours at most, so
+  the byte-identical retry Claude Code sends after the restart is served from it with no second
+  upstream run.
 - **Installing a release needs no GitHub account.** `install.sh` and `splice upgrade` used to stop
   unless the GitHub CLI was installed and signed in. Now every asset is still checked against the
   release's `sha256sums.txt`, and a mismatch still refuses. The build-provenance attestation is

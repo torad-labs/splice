@@ -1,15 +1,16 @@
-// THE RELEASE NOTES, FROM THE CHANGELOG — the hand-kept `## splice vX.Y.Z — theme - date` section of
+// THE RELEASE NOTES, FROM THE CHANGELOG — the hand-kept `## splice vX.Y.Z: theme - date` section of
 // CHANGELOG.md for one version (V4-198, v0.4.0). release.yml hands it to the publish step as the
 // release body, above GitHub's generated PR list; `bun test tools/release` holds that the version the
 // launch shim declares has one, so a version bump without its CHANGELOG cut fails the bump's own gate
 // (CONTRIBUTING's release step 1), long before a promotion would publish an empty page.
 //
-// A heading matches its version exactly: `v0.4.0` never matches `v0.4.0-beta.1` or `v0.4.01`.
+// A heading matches its version exactly: `v0.4.0` never matches `v0.4.0-beta.1` or `v0.4.01`. From v0.4.0
+// a colon follows the version; the older headings use a space and an em dash (V4-254).
 
-/** The CHANGELOG heading of one release: `## splice v<version>` followed by a space or the line's end. */
+/** The CHANGELOG heading of one release: `## splice v<version>` followed by a colon, a space or the line's end. */
 function headingFor(version: string): RegExp {
   const escaped = version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`^## splice v${escaped}(?: |$)`);
+  return new RegExp(`^## splice v${escaped}(?:[: ]|$)`);
 }
 
 /** The section of [changelog] for [version]: its heading line through the line before the next `## `

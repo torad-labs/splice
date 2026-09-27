@@ -8394,9 +8394,10 @@ claimed_at = "2026-09-27T07:08:22.813Z"
 id = "V4-353"
 phase = "release"
 title = "When splice can't start, it says why: a daemon that fails to bind its control port (or dies at boot for any logged reason) prints that reason in the terminal, never an empty 'last boot output' (F1 walk p6, 2026-09-27: 'splice: daemon did not come up; last boot output (…/daemon-boot.log):' followed by nothing, then 'the daemon isn't running and couldn't be started.', while daemon.log held 'control plane could not bind :47360 (Address already in use); another owns it, exiting'). Cause: V4-258 stopped echoing to stderr when stderr IS daemon-boot.log (DaemonBoundary.kt:80), so the fatal line reaches only daemon.log, and JW-01's printBootLogTail reads only daemon-boot.log (DaemonSpawn.kt:61-80)."
-files = ["features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonSpawn.kt", "app/src/main/kotlin/splice/app/DaemonBoundary.kt", "app/src/main/kotlin/splice/app/ControlPlane.kt"]
+files = ["features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonSpawn.kt", "app/src/main/kotlin/splice/app/DaemonBoundary.kt", "app/src/main/kotlin/splice/app/Main.kt", "app/src/test/kotlin/splice/app/DaemonLogWiringTest.kt", "features/lifecycle/src/test/kotlin/splice/lifecycle/start/v4353/"]
 status = "todo"
 verify = "red first, on today's tree: a DaemonSpawn test with an empty daemon-boot.log and a daemon.log whose last spawn wrote the bind failure asserts the terminal names the port and 'Address already in use', and that no empty 'last boot output' header is printed; a second case where the boot log holds the reason keeps today's tail; a third where both are empty says the daemon left no reason and names daemon.log. Mutants: drop the daemon.log read (red), print the header on an empty tail (red). Rule: V4-258's bound on daemon-boot.log holds (the log is not re-grown)."
+# [2026-09-27] amend by=orchestrator: files were ["features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonSpawn.kt", "app/src/main/kotlin/splice/app/DaemonBoundary.kt", "app/src/main/kotlin/splice/app/ControlPlane.kt"]
 
 [[items]]
 id = "V4-354"

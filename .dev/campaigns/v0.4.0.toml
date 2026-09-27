@@ -8215,5 +8215,8 @@ id = "V4-342"
 phase = "release"
 title = "Find and remove what moves a parked script's history under it: after V4-336 the largest live interruption class is 'history no longer places the running script' (console's recount 2026-09-26 10:00 PM CT: 2 logical-baseline mismatches and 1 'native discovery history was edited' of 21 v4 records; 4 of 49 before), abandoned in restoreBaseline before the resume reader runs"
 files = []
-status = "todo"
+status = "in_flight"
 verify = "diagnose first, counts and structure only: for each live abandonment, the first differing item between the record's baseline and the resumed body (index, item type, which side changed: client, splice injection, or reasoning replay), named in a ledger note before any code; then red first on that exact shape, green, and a live recount where the class falls"
+claimed_by = "console"
+claimed_at = "2026-09-27T03:00:28.764Z"
+# [2026-09-27] CLAIM: owner=console at=2026-09-27T03:00:28Z

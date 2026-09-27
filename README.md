@@ -276,7 +276,7 @@ Splice signs in on its own. Each OAuth head keeps its own credential file under 
 | splice api-key store | — | `~/.config/splice/keys.toml` (0600) | env wins over the store — password-equivalent |
 | splice control plane | — | `~/.splice/state/mgmt-key` (pre-0.4 installs: `~/.claude-codex/state/mgmt-key`) | dashboard/API unlock key — password-equivalent |
 
-### More than one account per provider
+### More than one ChatGPT, Grok, Kimi or Muse account
 
 An OAuth head (ChatGPT, Grok, Kimi or Muse) can hold several accounts of its kind and switch between them when one runs out; `claude-splice` keeps several Claude logins instead, [switched by you](#more-than-one-claude-login-on-claude-splice).
 `splice login <head>` without `--label` always signs in the primary account in the file above,

@@ -8510,3 +8510,11 @@ title = "A screenshot-heavy session on a large-window head keeps its images (fou
 files = []
 status = "todo"
 verify = "red first: a launch recipe test for a head declared at 872k shows the model id Claude Code receives is not 1M-context today; after, it is, and the scaled usage makes the client compact at the backend's ceiling (the same window proof V4-232 uses). Live: a claudex session reading 150 images keeps them all on the wire (no '[media removed: request limit]' in the trace) and compacts before the backend rejects."
+
+[[items]]
+id = "V4-359"
+phase = "release"
+title = "Capture Off removes the head's trace override, so switching capture on and back off leaves nothing stale and no false restart banner (Marlin F2 finding 5). Found: p8 turned Request capture On then Off at 12:55:49 PM CT on walk-desk; CaptureRoutes.kt:100 wrote trace = \"false\" into [heads.local.overrides] of a head that booted with none, TopologyWindows compares declared.withoutWindows() to boot's, {trace=false} is not {}, so /health read topologyStale and p9 opened on 'config file changed' plus 'splice.toml changed ... topology is stale' with nothing to restart for. Removing only that override read topologyStale False at once (walk-desk, 2:0x PM CT). trace is head-only (Knob.kt WIRE_TAP/TRACE headOnly), so absent already means off."
+files = ["features/turns/src/main/kotlin/splice/head/wire/CaptureRoutes.kt", "features/turns/src/test/kotlin/splice/head/wire/v4359/"]
+status = "todo"
+verify = "red first: a head booted with no overrides, PUT capture enabled=true then enabled=false leaves the parsed topology equal to boot's (withoutWindows) and the head's overrides empty (fails today: {trace=false}); Off on a head that booted with trace=true removes the key and reads stale until a restart; retention_days/max_body_chars overrides are untouched by an Off; an overrides table left empty parses equal to an absent one; live leg on a throwaway home: On, Off, then /health topologyStale=false and splice doctor's topology row OK."

@@ -8226,9 +8226,10 @@ claimed_at = "2026-09-27T03:00:28.764Z"
 id = "V4-343"
 phase = "release"
 title = "The console trace page answers in about a second, not 21: after V4-338 GET /api/heads/claudex/trace takes 21.4 s on the live 3.6 GB store (claude-builder, 2026-09-26 9:57 PM CT) because the exact on_disk count decodes every full record, while kind, turn and ts sit at the start of each; count from each record's leading fields, contract unchanged"
-files = ["features/turns/src/main/kotlin/splice/head/trace/TraceRows.kt", "features/turns/src/main/kotlin/splice/head/trace/TraceTail.kt", "features/turns/src/test/kotlin/splice/head/trace/v4343/", ".dev/restructure/capabilities.tsv"]
+files = ["features/turns/src/main/kotlin/splice/head/trace/TraceRows.kt", "features/turns/src/main/kotlin/splice/head/trace/TraceTail.kt", "features/turns/src/test/kotlin/splice/head/trace/v4343/", ".dev/restructure/capabilities.tsv", "core/src/main/kotlin/splice/core/storage/BackwardLines.kt", "core/src/main/kotlin/splice/core/storage/ActivityDays.kt", "core/src/test/kotlin/splice/core/storage/BackwardLinesTest.kt", "core/src/test/kotlin/splice/core/storage/DayFilesNewestFirstTest.kt", "features/turns/src/main/kotlin/splice/head/trace/JsonLineShape.kt", "quality/architecture/src/test/resources/role-registry.toml", "quality/architecture/src/test/kotlin/splice/quality/RoleRegistryLawTest.kt"]
 status = "in_flight"
 verify = "red first: a test over a generated store asserts the on_disk count equals the full-decode count while never decoding a record body past its leading fields (a body that fails to decode after them still counts as the full decode counts it today, or the equivalence is pinned otherwise), failing on today's tree; green: on_disk and the listed turns byte-equal to today's on the same store; live: the claudex page latency and daemon RSS before (21.4 s, +33 MB) and after in the receipt"
 claimed_by = "claude-builder"
 claimed_at = "2026-09-27T03:02:15.330Z"
 # [2026-09-27] CLAIM: owner=claude-builder at=2026-09-27T03:02:15Z
+# [2026-09-27] amend by=orchestrator: files were ["features/turns/src/main/kotlin/splice/head/trace/TraceRows.kt", "features/turns/src/main/kotlin/splice/head/trace/TraceTail.kt", "features/turns/src/test/kotlin/splice/head/trace/v4343/", ".dev/restructure/capabilities.tsv"]

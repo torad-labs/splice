@@ -8458,7 +8458,7 @@ verify = "red first: a turn row written by a translated head carries its respons
 id = "V4-355"
 phase = "release"
 title = "A splice.toml value of the wrong type says which key and what it wants, instead of crashing the boot with a withheld message. Found on CI run 36308987537 (b23456702): the e2e stack wrote 'trace = true' under [heads.<h>.overrides], a table of strings, and the daemon died with only '[daemon] UNCAUGHT on main: failure (message withheld: it may quote file bytes)' (SafeFailureText.kt:23 renders every parse failure that way, rightly, since parser text can quote file bytes). The key path, the line, and the expected type are not file bytes: say those, never the value (e.g. 'splice.toml line 42: heads.solo.overrides.trace must be a quoted string, like \"true\"'), from TopologyLoader's decode (TopologyLoader.kt:177), and the same sentence reaches the terminal through the boot log (V4-353)."
-files = ["integrations/topology/src/main/kotlin/splice/topology/TopologyLoader.kt", "integrations/topology/src/test/kotlin/splice/topology/v4355/", "core/src/main/kotlin/splice/core/util/SafeFailureText.kt", "core/src/test/kotlin/splice/core/util/SafeFailureTextTest.kt"]
+files = ["integrations/topology/src/test/kotlin/splice/topology/v4355/", "core/src/main/kotlin/splice/core/util/SafeFailureText.kt", "core/src/test/kotlin/splice/core/util/SafeFailureTextTest.kt"]
 status = "in_flight"
 verify = "red first: a TopologyLoader test over a config with a boolean under [heads.x.overrides] asserts the error names heads.x.overrides.trace, its line, and 'quoted string', and that the planted value text (a unique marker string in another wrong-typed field) never appears in the message; a second case with a wrong-typed secret-bearing field (extra_headers value as a table) names the key and not the value; mutant: render the raw parser message, red on the marker."
 claimed_by = "claude-builder"
@@ -8466,6 +8466,7 @@ claimed_at = "2026-09-27T14:55:29.144Z"
 # [2026-09-27] CLAIM: owner=claude-builder at=2026-09-27T14:55:29Z
 # [2026-09-27] amend by=orchestrator: files were ["integrations/topology/src/main/kotlin/splice/topology/TopologyLoader.kt", "integrations/topology/src/test/kotlin/splice/topology/v4355/"]
 # [2026-09-27] Code 62585cb76 (claude-builder): a wrong-typed splice.toml value raises one typed topology diagnostic carrying only the dotted key, its line and the expected type (from the TOML mask and the serializer descriptor), the single new SafeFailureText allowlist entry; every other decoder failure stays withheld. Red first: TopologyTypeDiagnosticTest 3 failed on the withheld generic; inline-table and quoted-key mutants failed before their fixes. Green: core 482, topology 42, architecture 250, detekt, census 0. Raw-render mutant (SafeFailureText else -> failure.message) red on the planted markers. Verified once CI's gate passes on the train sha.
+# [2026-09-27] amend by=orchestrator: files were ["integrations/topology/src/main/kotlin/splice/topology/TopologyLoader.kt", "integrations/topology/src/test/kotlin/splice/topology/v4355/", "core/src/main/kotlin/splice/core/util/SafeFailureText.kt", "core/src/test/kotlin/splice/core/util/SafeFailureTextTest.kt"]
 
 [[items]]
 id = "V4-356"

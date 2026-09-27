@@ -164,6 +164,7 @@ Each page answers one question. An action with a row in brackets is not built ye
 **Actions.**
 
 - Open a turn's waterfall
+- Read a request and its model response
 - Turn a head's request capture on or off
 - Start a stopped head
 - Read the request bodies a head sent upstream

@@ -37,6 +37,7 @@ export const job: PageJob = {
   leaves: 'Every landed turn with its timing split, cache hit and tokens, and the turns in flight now.',
   actions: [
     { name: 'Open a turn\'s waterfall' },
+    { name: 'Read a request and its model response' },
     { name: 'Turn a head\'s request capture on or off' },
     { name: 'Start a stopped head' },
     { name: 'Read the request bodies a head sent upstream' },

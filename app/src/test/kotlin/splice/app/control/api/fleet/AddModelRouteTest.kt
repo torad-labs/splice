@@ -1,6 +1,6 @@
 // NEW: V4-220 — `splice add-model` from the console, over /api/add-model. Driven end to end: the real
-// control server under the bearer, the real offers, roster edit and write, on the starter TopologyLoader
-// materializes in a temp dir SPLICE_CONFIG names; no operator file is read. What is on offer is checked
+// control server under the bearer, the real offers, roster edit and write, on an explicitly chosen
+// OpenRouter head in a temp dir SPLICE_CONFIG names; no operator file is read. What is on offer is checked
 // against a denominator the route does not compute: GET /api/add/profiles' OpenRouter rows minus the
 // roster the loader parses back.
 package splice.app.control.api.fleet
@@ -104,7 +104,29 @@ class AddModelRouteTest {
         logged.clear()
         vars.clear()
         vars["SPLICE_CONFIG"] = Files.createTempDirectory(tmp, "config").resolve("splice.toml").toString()
-        TopologyLoader.loadOrMaterialize(config)
+        Files.writeString(
+            config,
+            """
+            [providers.openrouter]
+            dialect = "openai-chat"
+            base_url = "https://example.invalid/v1"
+            auth = { kind = "api-key", env = "OPENROUTER_API_KEY" }
+            [[providers.openrouter.models]]
+            id = "anthropic/claude-sonnet-5"
+            label = "Claude Sonnet 5"
+            context_window = 1000000
+            [heads.openrouter]
+            provider = "openrouter"
+            port = 3101
+            discovery_prefix = "claude-openrouter--"
+            pinned_model = "anthropic/claude-sonnet-5"
+            models = [
+              { id = "anthropic/claude-sonnet-5", slot = "sonnet" },
+            ]
+            [heads.openrouter.claude]
+            command = "claude-openrouter"
+            """.trimIndent() + "\n",
+        )
         control.ports.add = adds
         control.ports.supervised = DaemonSupervised { true }
     }
@@ -118,7 +140,7 @@ class AddModelRouteTest {
             val head = body(listed)["heads"]!!.jsonArray.single().jsonObject
             assertEquals(HEAD, head["head"]!!.jsonPrimitive.content)
             val offered = ids(head)
-            assertTrue(offered.isNotEmpty(), "the starter's roster already reaches every catalogue row")
+            assertTrue(offered.isNotEmpty(), "the configured head's roster already reaches every catalogue row")
             assertEquals(catalogue() - roster().toSet(), offered)
 
             val pick = offered.first()

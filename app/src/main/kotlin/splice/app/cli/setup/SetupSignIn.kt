@@ -87,7 +87,8 @@ internal class SetupSignIn(
      * previous four-row key/value block gave that answer the same weight as the dashboard URL.
      *
      * So: the next thing to type, alone, in splice's own tone, surrounded by space. That is the
-     * first head that can launch, or — when none can yet — the login that makes one launchable.
+     * first head that can launch, the login that makes one launchable, or the setup command when
+     * no plan was selected.
      * Everything else is a quiet line under it. A head still missing a credential is listed as the
      * command that finishes it, never as a status, because "needs a key" is not actionable and
      * `claude-or login` is.
@@ -108,6 +109,7 @@ internal class SetupSignIn(
         val ready = heads.filter { it.second }.map { it.first }
         val pending = heads.filterNot { it.second }.map { "${it.first} login" }
         val hero = ready.firstOrNull() ?: pending.firstOrNull()
+            ?: if (topology.heads.isEmpty()) "splice setup" else null
         println()
         if (hero != null) {
             println()

@@ -72,6 +72,9 @@ public data class AddProfile internal constructor(
      *  ANY model id (llama-server lists a file path, not the id a row sends): there an unlisted row
      *  is trusted and reported as such, the rule LocalRuntimeProbe applies at boot. */
     internal val listAuthoritative: Boolean = true,
+    /** Whether an API-key profile needs a key from the operator. Local runtimes use a non-secret
+     *  placeholder at save instead; OAuth and client profiles have their own sign-in path. */
+    internal val requiresKey: Boolean = authKind == API_KEY,
 )
 
 public class AddProfiles {

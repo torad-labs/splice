@@ -47,14 +47,33 @@ internal class AddChecks(output: TerminalOutput, private val http: AddHttp = Jdk
 
     /** Every check an add runs before it writes, in the order they print; [live] adds the one turn.
      *  V4-220: one list for the CLI and the console, so neither can save past a check the other runs. */
-    fun all(c: AddCandidate, live: Boolean, env: EnvReader): List<AddCheck> = listOf(
-        credential(c.key, c.provider, env),
-        reachable(c.provider.baseUrl),
-        modelsListed(c.models, listedModels(c.provider, c.key, env), c.resolved.listAuthoritative),
-    ) + listOfNotNull(if (live) liveTurn(c.provider, c.key, c.models.first(), env) else null)
+    fun all(c: AddCandidate, live: Boolean, env: EnvReader): List<AddCheck> {
+        val local = c.resolved.authKind == API_KEY && !c.resolved.requiresKey
+        val keyEnv = c.provider.auth.effectiveApiKeyEnv(c.key)
+        // Local runtimes need no operator key. Checks present only the non-secret placeholder,
+        // never a real key the operator may have stored under the same env name.
+        val checkEnv = if (local) {
+            EnvReader { name -> if (name == keyEnv) RUNTIME_KEY_PLACEHOLDER else env(name) }
+        } else {
+            env
+        }
+        return listOf(
+            credential(c, env),
+            reachable(c.provider.baseUrl),
+            modelsListed(c.models, listedModels(c.provider, c.key, checkEnv), c.resolved.listAuthoritative),
+        ) + listOfNotNull(if (live) liveTurn(c.provider, c.key, c.models.first(), checkEnv) else null)
+    }
 
     /** The candidate file must parse as a topology before anyone is asked to sign in. */
     fun parses(text: String): Result<Topology> = Cancellables.runCatchingCancellable { TopologyLoader.parse(text) }
+
+    /** A local runtime does not ask the operator for a key; save stores its non-secret placeholder. */
+    fun credential(c: AddCandidate, env: EnvReader): AddCheck =
+        if (c.resolved.authKind == API_KEY && !c.resolved.requiresKey) {
+            AddCheck("credential", true, "local runtime needs no operator key")
+        } else {
+            credential(c.key, c.provider, env)
+        }
 
     /** Present AND usable: an OAuth file must carry token material the daemon could serve or refresh. */
     fun credential(key: String, provider: ProviderConfig, env: EnvReader): AddCheck {

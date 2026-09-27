@@ -92,7 +92,7 @@ internal class SetupCommand(
         signIn.printNextSteps(topology)
         // The ONE completion line on the last screen — printNextSteps deliberately has none. "You're
         // set." rather than "Toolkit ready!": splice is not called a toolkit anywhere else.
-        frame.outro("You're set.")
+        frame.outro(if (topology.heads.isEmpty()) "Not set up yet." else "You're set.")
         return ok
     }
 
@@ -138,14 +138,16 @@ internal class SetupCommand(
         val starter = if (Files.exists(path)) {
             "No starter will be written because one is already present"
         } else {
-            "Starter topology → $path"
+            "Starter topology (no plan) → $path"
         }
         val wrappers = "Wrapper commands under $bin"
-        val extra = when (start) {
-            is SetupStart.OAuth ->
-                listOf("Starter is still OpenRouter; add that head with: splice add ${start.kind}")
-            else -> emptyList()
+        val suggested = when (start) {
+            is SetupStart.OAuth -> profiles.catalog().firstOrNull { it.authKind == start.kind }
+            SetupStart.OpenRouter -> profiles.find("openrouter")
+            SetupStart.Existing -> null
         }
+        val extra = suggested?.takeUnless { it.name in heads }
+            ?.let { listOf("Connect the chosen plan with: splice add ${it.name}") }.orEmpty()
         val adding = if (heads.isEmpty()) {
             emptyList()
         } else {

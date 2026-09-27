@@ -128,9 +128,11 @@ internal class SetupHeads(
 // AddPrepare.kt:42 takes `args.name ?: profile.headKey` and the catalogue gives it `claude-splice`,
 // so `splice add claude --yes` has always worked unaided. The wrong reason is what kept the lane
 // choice off the wizard entirely, which is the half of V4-175 the operator asked for. `api-key`
-// stays: its headKey and baseUrl are both empty by construction, so it genuinely cannot be ticked.
+// and `local` stay excluded: both need a name, base URL and model before they can be added, and
+// the tick list cannot collect those values.
 private val TICK_EXCLUDED = mapOf(
     "api-key" to "needs a base URL; run: splice add api-key --base-url URL --name NAME",
+    "local" to "needs a name, base URL and model; run: splice add local --name NAME --base-url URL --model ID:WINDOW",
 )
 
 // The literal itself lives in :core beside the registered kinds (API_KEY_WIRE, 2026-09-22); this

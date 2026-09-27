@@ -16,11 +16,17 @@ package splice.configuration.add
 
 import splice.accounts.signin.LoginState
 import splice.accounts.signin.LoginStatus
+import splice.core.config.KeyStore
+import splice.core.config.KeyStorePath
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
+import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.LruSizing
+import splice.core.util.SafeFailureText
+import splice.topology.TopologyLoader
+import java.nio.file.Files
 import java.util.UUID
 
 // why: an open add is one operator's form, held until its save or discard; 64 is far above any
@@ -61,6 +67,9 @@ internal sealed class AddSignInOutcome {
     /** A client head: the operator's own Claude login is forwarded at launch. */
     data object NoSignIn : AddSignInOutcome()
 
+    /** A local runtime has no operator credential or sign-in flow. */
+    data object NoKeyRequired : AddSignInOutcome()
+
     data object AlreadySaved : AddSignInOutcome()
 }
 
@@ -80,7 +89,7 @@ public class AddConsole(
     private val signIn: AddSignIn,
     install: WrapperInstall,
     private val env: EnvReader,
-    output: TerminalOutput,
+    private val output: TerminalOutput,
 ) {
     private val checks = AddChecks(output)
 
@@ -94,6 +103,7 @@ public class AddConsole(
     // save's re-read and rename never interleave with another's: the second then sees the first's
     // tables and refuses as stale, never renaming over them.
     private val writes = Any()
+    private val saver = Saver()
 
     /** `splice add-model` as the console runs it, under the same [writes] lock as a save. */
     internal val models = AddModelConsole(env, writes)
@@ -122,7 +132,7 @@ public class AddConsole(
     internal fun discard(id: String): Boolean = synchronized(lock) { sessions.remove(id) != null }
 
     /** The credential check, read now: a sign-in or a key set since the last read shows at once. */
-    internal fun credential(s: AddSession): AddCheck = checks.credential(s.candidate.key, s.candidate.provider, env)
+    internal fun credential(s: AddSession): AddCheck = checks.credential(s.candidate, env)
 
     internal fun signInStatus(s: AddSession): LoginStatus? = s.signInId?.let(signIn::poll)
 
@@ -132,6 +142,7 @@ public class AddConsole(
         when {
             s.saved != null -> AddSignInOutcome.AlreadySaved
             kind == AuthKind.Client.wire -> AddSignInOutcome.NoSignIn
+            kind == API_KEY && !s.candidate.resolved.requiresKey -> AddSignInOutcome.NoKeyRequired
             !AuthKindRegistry.isOAuth(kind) -> AddSignInOutcome.ByKey(keyEnv(s))
             else -> AddSignInOutcome.Started(running(s) ?: started(s))
         }
@@ -143,21 +154,65 @@ public class AddConsole(
     internal fun verify(s: AddSession, live: Boolean): List<AddCheck> =
         checks.all(s.candidate, live, env).also { s.checks = it }
 
-    /** The checks again, then the write, the wrapper and the restart — in the CLI's order, and nothing
-     *  after a step that refused. */
+    /** The checks again, then the write, the wrapper and the restart — in the CLI's order. */
     internal fun save(s: AddSession, restart: AddDaemonRestart): AddSaveOutcome = synchronized(s) {
         if (s.saved != null) return AddSaveOutcome.AlreadySaved
         val results = verify(s, live = false)
-        val written = if (results.all { it.ok }) synchronized(writes) { AddWrite().write(s.candidate) } else null
-        when (written) {
-            null -> AddSaveOutcome.ChecksFailed(results)
-            is AddWritten.Refused -> AddSaveOutcome.Stale(written)
-            AddWritten.Written -> {
-                val saved = AddSaved(link.link(s.candidate.key, env), restart.take())
-                s.saved = saved
-                AddSaveOutcome.Saved(saved)
+        if (results.any { !it.ok }) return AddSaveOutcome.ChecksFailed(results)
+        val local = s.candidate.resolved.authKind == API_KEY && !s.candidate.resolved.requiresKey
+        if (local) saver.withLocalPlaceholder(s, results, restart) else saver.finishSave(s, restart)
+    }
+
+    /** The write and its optional local-placeholder claim are one operation under AddConsole's
+     *  existing session monitor; the nested collaborator keeps KeyStore ownership in one place. */
+    private inner class Saver {
+        fun finishSave(s: AddSession, restart: AddDaemonRestart): AddSaveOutcome =
+            when (val written = synchronized(writes) { AddWrite().write(s.candidate) }) {
+                is AddWritten.Refused -> AddSaveOutcome.Stale(written)
+                AddWritten.Written -> {
+                    val saved = AddSaved(link.link(s.candidate.key, env), restart.take())
+                    s.saved = saved
+                    AddSaveOutcome.Saved(saved)
+                }
+            }
+
+        /** Claim before the file can name it; a refused save removes only our own value. */
+        fun withLocalPlaceholder(s: AddSession, checks: List<AddCheck>, restart: AddDaemonRestart): AddSaveOutcome {
+            val store = KeyStore(KeyStorePath.defaultPath(env))
+            val envVar = keyEnv(s)
+            val planted = Cancellables.runCatchingCancellable {
+                store.placeholders.writeIfAbsent(envVar, RUNTIME_KEY_PLACEHOLDER)
+            }.getOrElse { failure ->
+                val reason = SafeFailureText.render(failure)
+                val failed = checks.map { row ->
+                    if (row.name == "credential") {
+                        row.copy(ok = false, detail = "could not store local placeholder: $reason")
+                    } else {
+                        row
+                    }
+                }
+                s.checks = failed
+                return AddSaveOutcome.ChecksFailed(failed)
+            }
+            return try {
+                finishSave(s, restart)
+            } finally {
+                if (planted && !landed(s)) {
+                    Cancellables.runCatchingCancellable {
+                        store.placeholders.unsetIfValue(envVar, RUNTIME_KEY_PLACEHOLDER)
+                    }.onFailure {
+                        output.line(
+                            "  $envVar placeholder could not be taken back: ${SafeFailureText.render(it)}",
+                        )
+                    }
+                }
             }
         }
+
+        /** An unreadable file may already hold the new head, so keep its placeholder. */
+        private fun landed(s: AddSession): Boolean = Cancellables.runCatchingCancellable {
+            s.candidate.key in TopologyLoader.parse(Files.readString(s.candidate.path)).providers
+        }.fold(onSuccess = { it }, onFailure = { true })
     }
 
     private fun running(s: AddSession): LoginStatus? =

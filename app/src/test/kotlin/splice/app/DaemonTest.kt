@@ -311,16 +311,14 @@ class DaemonTest {
     }
 
     @Test
-    fun `topology materializes supported api-key defaults on first run`() {
+    fun `topology materializes daemon defaults without selecting a plan on first run`() {
         val tmp = Files.createTempDirectory("topo")
         val path: Path = tmp.resolve("splice.toml")
         val topo = TopologyLoader.loadOrMaterialize(path)
         assertTrue(Files.exists(path))
         assertEquals(3096, topo.daemon.controlPort)
-        assertEquals(setOf("openrouter"), topo.heads.keys)
-        assertEquals(setOf("api-key"), topo.providers.values.map { it.auth.kind }.toSet())
-        assertTrue(topo.providers.values.none { it.auth.kind.endsWith("oauth") })
-        assertEquals("claude-openrouter", topo.heads.getValue("openrouter").claude.command)
+        assertTrue(topo.heads.isEmpty(), "a first-run daemon has no configured head")
+        assertTrue(topo.providers.isEmpty(), "no vendor is selected for the operator")
     }
 
     @Test

@@ -13,7 +13,7 @@ import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
-import splice.topology.TopologyLoader
+import java.nio.file.Files
 import java.nio.file.Path
 
 private const val HOUR_MS = 3_600_000L
@@ -24,7 +24,20 @@ class PerfCommandSummaryTest {
     @Test
     fun `the CLI prints the API summary's p50 for the chosen window`(@TempDir tmp: Path) {
         val config = tmp.resolve("splice.toml")
-        TopologyLoader.loadOrMaterialize(config)
+        Files.writeString(
+            config,
+            """
+            [providers.openrouter]
+            dialect = "openai-chat"
+            base_url = "https://example.invalid/v1"
+            auth = { kind = "api-key", env = "OPENROUTER_API_KEY" }
+            [heads.openrouter]
+            provider = "openrouter"
+            port = 3101
+            discovery_prefix = "claude-openrouter--"
+            pinned_model = "m"
+            """.trimIndent() + "\n",
+        )
         val env = EnvReader { name -> if (name == "SPLICE_CONFIG") config.toString() else null }
         val now = System.currentTimeMillis()
         val rows = listOf(800L to 3 * DAY_MS, 400L to 2 * HOUR_MS, 300L to HOUR_MS / 2, 200L to HOUR_MS / 3)

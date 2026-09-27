@@ -1,18 +1,10 @@
 // NEW: V4-34 — splice add-model writes through SelectPrompt and MultiSelectPrompt.
 // Cancel and a non-TTY empty selection leave the seeded file byte-identical.
 //
-// REDO 2026-09-17: the seed is now the REAL starter TopologyLoader materializes, not a hand-written
-// stub. The old stub declared no `models = [...]` line on the head, so Topology.modelsFor fell
-// through to the whole provider table and the provider-only write looked like it worked. On the
-// shipped starter the head DOES declare a roster, modelsFor returns it verbatim
-// (Topology.kt:206), and an id added to the provider table alone never reaches /v1/models.
-//
-// V4-83 (/code-review 2026-09-17 findings 2, 5, 8): every seed below is the REAL starter with one
-// documented surgery applied to it — a commented-out roster entry, a comment carrying a `]`, a
-// trailing comment on the table header, one provider row cut out — so the denominator stays the
-// shipped file rather than a stub that agrees with the test. The starter's provider table already
-// carries all ten catalog ids, which is why the `[[providers.KEY.models]]` emitter needed the
-// trimmed seed to be executed at all.
+// V4-356: the first-run starter intentionally has no head. These add-model tests instead append
+// the shipped OpenRouter profile through AddProfiles.toml, then lay out its declared head roster
+// over several lines so the editor's comment, bracket and byte-preservation cases stay exercised.
+// The denominator is the profile the operator can choose, never a duplicate hand-written roster.
 package splice.configuration.add
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -37,12 +29,11 @@ import java.nio.file.StandardOpenOption
 class AddModelsTest {
 
     @Test
-    fun `the seeded starter declares a head model roster`(@TempDir dir: Path) {
-        // The denominator this whole class rests on: if the starter ever stops declaring
-        // `models = [...]`, the roster assertions below would pass vacuously.
+    fun `the configured OpenRouter profile declares a head model roster`(@TempDir dir: Path) {
+        // If the emitted profile stops declaring `models = [...]`, the editor tests would pass vacuously.
         val path = seed(dir)
         val head = requireNotNull(TopologyLoader.loadOrMaterialize(path).heads["openrouter"])
-        val roster = requireNotNull(head.models) { "starter head declares no models = [...] roster" }
+        val roster = requireNotNull(head.models) { "profile head declares no models = [...] roster" }
         assertFalse(LUNA in roster.map { it.id }, "seed already rosters the model the test adds")
     }
 
@@ -209,8 +200,7 @@ class AddModelsTest {
         assertFalse(LUNA in rosterOf(after), "the refused add still reached the roster")
     }
 
-    /** The real starter with [edit] applied — the seed is always the shipped file plus one named
-     *  surgery, so no assertion here rests on a hand-written topology. */
+    /** The emitted OpenRouter profile with one named surgery, never a hand-written topology. */
     private fun seedWith(dir: Path, edit: (String) -> String): Path {
         val path = seed(dir)
         Files.writeString(path, edit(Files.readString(path)))
@@ -220,15 +210,15 @@ class AddModelsTest {
     /** [line] inserted as the last line of the head's `models = [ ... ]` array. */
     private fun intoRoster(text: String, line: String): String {
         val close = text.indexOf("\n]", text.indexOf(ROSTER_OPEN))
-        require(close > 0) { "the starter roster no longer ends with a bracket on its own line" }
+        require(close > 0) { "the configured profile roster no longer ends with a bracket on its own line" }
         return text.substring(0, close) + "\n" + line + text.substring(close)
     }
 
-    /** The starter with one `[[providers.openrouter.models]]` block cut out. */
+    /** The emitted profile with one `[[providers.openrouter.models]]` block cut out. */
     private fun withoutProviderRow(text: String, id: String): String {
         val lines = text.lines()
         val row = lines.indexOfFirst { it == "id = \"$id\"" }
-        require(row > 0 && lines[row - 1] == PROVIDER_ROW) { "the starter provider block shape changed" }
+        require(row > 0 && lines[row - 1] == PROVIDER_ROW) { "the profile provider block shape changed" }
         return (lines.subList(0, row - 1) + lines.subList(row + PROVIDER_ROW_LINES, lines.size)).joinToString("\n")
     }
 
@@ -238,7 +228,7 @@ class AddModelsTest {
             .split("\n")
             .mapNotNull { Regex("id = \"([^\"]*)\"").find(it)?.groupValues?.get(1) }
 
-    /** The first id the starter's head roster does not already carry — `openai/gpt-6-luna`. */
+    /** The first id the emitted profile's head roster does not yet carry. */
     private fun addFirstRemaining(path: Path): Boolean = verb(
         selectTty = false,
         multiTty = true,
@@ -249,10 +239,20 @@ class AddModelsTest {
     private fun outsideRoster(text: String): String =
         text.substringBefore(ROSTER_OPEN) + text.substringAfter(ROSTER_OPEN).substringAfter("]")
 
-    /** The operator's REAL shape: whatever TopologyLoader writes on a first run. */
+    /** The operator selects OpenRouter explicitly. The row comes from AddProfiles; the head roster
+     *  uses the multiline TOML spelling these editor cases probe, not a second model list. */
     private fun seed(dir: Path): Path {
         val path = dir.resolve("splice.toml")
         TopologyLoader.loadOrMaterialize(path)
+        val profiles = AddProfiles()
+        val profile = requireNotNull(profiles.find("openrouter"))
+        val emitted = profiles.toml(profile, "openrouter", OPENROUTER_PORT)
+        val oneLine = emitted.lineSequence().first { it.startsWith(ROSTER_OPEN) }
+        val entries = profile.models.flatMap { model ->
+            model.slots.map { slot -> "  { id = \"${model.id}\", slot = \"$slot\" }," }
+        }
+        val multiline = (listOf(ROSTER_OPEN) + entries + "]").joinToString("\n")
+        Files.writeString(path, Files.readString(path) + emitted.replace(oneLine, multiline))
         return path
     }
 
@@ -292,6 +292,9 @@ class AddModelsTest {
 private const val ESC: Byte = 27
 private const val SPACE: Byte = 32
 private const val ENTER: Byte = 13
+
+// why: the configured fixture needs a valid, inert head port; no socket is bound in these tests.
+private const val OPENROUTER_PORT = 3101
 private const val SONNET = "anthropic/claude-sonnet-5"
 private const val LUNA = "openai/gpt-6-luna"
 private const val ROSTER_OPEN = "models = ["
@@ -300,5 +303,5 @@ private const val PROVIDER_ROW = "[[providers.openrouter.models]]"
 private const val PROVIDER_ROW_LINES = 3
 private const val FIRST_ROW = "  { id = \"anthropic/claude-sonnet-5\", slot = \"sonnet\" },"
 
-/** The starter's four slotted rows, plus the one this test adds. */
+/** The selected profile's four slotted rows, plus the one this test adds. */
 private const val SLOTS = 5

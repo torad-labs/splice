@@ -29,6 +29,7 @@ internal class AddViews {
         put("name", p.name)
         put("summary", p.summary)
         put("auth_kind", p.authKind)
+        put("requires_key", p.requiresKey)
         put("base_url", p.baseUrl)
         put("head_key", p.headKey)
         put("command", p.command)
@@ -51,8 +52,9 @@ internal class AddViews {
         put("auth_kind", kind)
         put("base_url", c.provider.baseUrl)
         putJsonArray(MODELS) { c.resolved.models.forEach { add(model(it)) } }
-        put("sign_in_by", signInBy(kind))
-        put("key_env", if (signInBy(kind) == SIGN_IN_KEY) console.keyEnv(s) else null)
+        val signInBy = signInBy(kind, c.resolved.requiresKey)
+        put("sign_in_by", signInBy)
+        put("key_env", if (signInBy == SIGN_IN_KEY) console.keyEnv(s) else null)
         val credential = console.credential(s)
         putJsonObject("credential") {
             put("present", credential.ok)
@@ -155,8 +157,8 @@ internal class AddViews {
         putJsonArray("slots") { m.slots.forEach { add(it) } }
     }
 
-    private fun signInBy(kind: String): String = when {
-        kind == AuthKind.Client.wire -> SIGN_IN_NONE
+    private fun signInBy(kind: String, requiresKey: Boolean): String = when {
+        kind == AuthKind.Client.wire || kind == API_KEY && !requiresKey -> SIGN_IN_NONE
         AuthKindRegistry.isOAuth(kind) -> SIGN_IN_LOGIN
         else -> SIGN_IN_KEY
     }

@@ -21,12 +21,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
@@ -158,6 +160,61 @@ class AddBackendRouteTest {
         assertTrue(names.containsAll(listOf("codex", "grok", "claude", "muse", "api-key")), "$names")
         val generic = profiles.single { it["name"]!!.jsonPrimitive.content == "api-key" }
         assertEquals(listOf("name", "base_url", "models"), generic["asks"]!!.jsonArray.map { it.jsonPrimitive.content })
+        assertEquals("true", generic.getValue("requires_key").jsonPrimitive.content)
+        val local = profiles.single { it["name"]!!.jsonPrimitive.content == "local" }
+        assertEquals("api-key", local.getValue("auth_kind").jsonPrimitive.content)
+        assertEquals("false", local.getValue("requires_key").jsonPrimitive.content)
+        assertEquals(
+            listOf("name", "base_url", "models"),
+            local.getValue("asks").jsonArray.map { it.jsonPrimitive.content },
+        )
+    }
+
+    @Test
+    fun `a local model opens verifies and saves without asking for an api key`() = runBlocking {
+        val requestJson = """{"profile":"local","name":"bonsai","base_url":"http://127.0.0.1:${endpoint.address.port}/v1",""" +
+            """"models":[{"id":"m","context_window":1000}]}"""
+        val store = KeyStore(KeyStorePath.defaultPath(env))
+        val opened = post("/api/add", requestJson)
+        assertEquals(HttpStatusCode.OK, opened.status, opened.bodyAsText())
+        val view = body(opened)
+        val id = view.getValue("id").jsonPrimitive.content
+        assertEquals("none", view.getValue("sign_in_by").jsonPrimitive.content)
+        assertEquals(JsonNull, view.getValue("key_env"))
+        assertEquals("true", view.getValue("credential").jsonObject.getValue("present").jsonPrimitive.content)
+        val login = post("/api/add/$id/login")
+        assertEquals(HttpStatusCode.Conflict, login.status)
+        assertTrue(error(login).contains("needs no sign-in"), error(login))
+        assertNull(store.read("BONSAI_API_KEY"), "opening and verifying never write a key")
+        assertEquals(HttpStatusCode.OK, post("/api/add/$id/verify").status)
+        assertNull(store.read("BONSAI_API_KEY"))
+
+        val saved = post("/api/add/$id/save")
+        assertEquals(HttpStatusCode.OK, saved.status, saved.bodyAsText())
+        assertEquals("local-runtime-no-auth", store.read("BONSAI_API_KEY"))
+        assertTrue("[heads.bonsai]" in Files.readString(config))
+    }
+
+    @Test
+    fun `a local plan never replaces an operator-owned key`() = runBlocking {
+        val name = "BONSAI_API_KEY"
+        assertEquals(HttpStatusCode.OK, put("/api/keys/$name", """{"value":"operator-owned"}""").status)
+        val requestJson = """{"profile":"local","name":"bonsai","base_url":"http://127.0.0.1:${endpoint.address.port}/v1",""" +
+            """"models":[{"id":"m","context_window":1000}]}"""
+        val id = body(post("/api/add", requestJson)).getValue("id").jsonPrimitive.content
+        assertEquals(HttpStatusCode.OK, post("/api/add/$id/save").status)
+        assertEquals("operator-owned", KeyStore(KeyStorePath.defaultPath(env)).read(name))
+    }
+
+    @Test
+    fun `a refused local save takes back only its own placeholder`() = runBlocking {
+        val requestJson = """{"profile":"local","name":"bonsai","base_url":"http://127.0.0.1:${endpoint.address.port}/v1",""" +
+            """"models":[{"id":"m","context_window":1000}]}"""
+        val id = body(post("/api/add", requestJson)).getValue("id").jsonPrimitive.content
+        Files.writeString(config, Files.readString(config) + "\n# another edit\n")
+        val refused = post("/api/add/$id/save")
+        assertEquals(HttpStatusCode.Conflict, refused.status, refused.bodyAsText())
+        assertNull(KeyStore(KeyStorePath.defaultPath(env)).read("BONSAI_API_KEY"))
     }
 
     /** RED before V4-220 item 3: POST /api/add answered 404; the console could not add a backend. */
@@ -292,6 +349,16 @@ class AddBackendRouteTest {
         val bare = post("/api/add", "{}")
         assertEquals(HttpStatusCode.BadRequest, bare.status)
         assertEquals("Name the profile to add.", error(bare))
+        // A fresh home has no head. Reserve this provider key explicitly to test the collision.
+        Files.writeString(
+            config,
+            """
+            [providers.openrouter]
+            dialect = "openai-chat"
+            base_url = "https://example.invalid/v1"
+            auth = { kind = "api-key", env = "OPENROUTER_API_KEY" }
+            """.trimIndent() + "\n",
+        )
         val taken = post("/api/add", """{"profile":"openrouter"}""")
         assertEquals(HttpStatusCode.Conflict, taken.status, taken.bodyAsText())
         assertEquals("'openrouter' is already configured; pick another name.", error(taken))

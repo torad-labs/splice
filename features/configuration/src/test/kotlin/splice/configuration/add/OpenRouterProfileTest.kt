@@ -39,12 +39,13 @@ class OpenRouterProfileTest {
     }
 
     @Test
-    fun `the starter catalog carries ten models and four unique slots`(@TempDir dir: Path) {
+    fun `the selected profile catalog carries ten models and four unique slots`(@TempDir dir: Path) {
         val path = dir.resolve("splice.toml")
+        Files.writeString(path, DAEMON_BLOCK + AddProfiles().toml(profile, "openrouter", PORT))
         val topology = TopologyLoader.loadOrMaterialize(path)
-        val head = requireNotNull(topology.heads["openrouter"]) { "starter head missing" }
+        val head = requireNotNull(topology.heads["openrouter"]) { "profile head missing" }
         assertEquals("claude-openrouter", head.claude.command)
-        val provider = requireNotNull(topology.providers["openrouter"]) { "starter provider missing" }
+        val provider = requireNotNull(topology.providers["openrouter"]) { "profile provider missing" }
         assertEquals(PROFILE_MODELS, provider.models.size)
         val catalog = provider.catalogFor(head)
         assertEquals(SLOTTED, catalog.models.size)
@@ -57,9 +58,9 @@ class OpenRouterProfileTest {
 
     /** V4-228, RED before: opus took anthropic/claude-opus-5 and fable openai/gpt-5.6-sol, a generation
      *  behind what OpenRouter lists. The windows are OpenRouter's own context_length, read 2026-09-25
-     *  through `splice models --all`; the starter's slots name the same rows as `splice add openrouter`. */
+     *  through `splice models --all`; the selected profile's slots reach those same rows. */
     @Test
-    fun `splice add openrouter and the starter reach each family's latest at OpenRouter's window - V4-228`(
+    fun `splice add openrouter reaches each family's latest at OpenRouter's window - V4-228`(
         @TempDir dir: Path,
     ) {
         val latest = mapOf(
@@ -68,10 +69,12 @@ class OpenRouterProfileTest {
         )
         val shipped = profile.models.flatMap { m -> m.slots.map { it to (m.id to m.contextWindow) } }.toMap()
         assertEquals(latest, shipped.filterKeys { it in latest })
-        val starter = TopologyLoader.loadOrMaterialize(dir.resolve("splice.toml"))
-        val slots = starter.heads.getValue("openrouter").models.orEmpty().associate { it.slot to it.id }
+        val path = dir.resolve("splice.toml")
+        Files.writeString(path, DAEMON_BLOCK + AddProfiles().toml(profile, "openrouter", PORT))
+        val selected = TopologyLoader.loadOrMaterialize(path)
+        val slots = selected.heads.getValue("openrouter").models.orEmpty().associate { it.slot to it.id }
         assertEquals(latest.mapValues { it.value.first }, slots.filterKeys { it in latest })
-        val windows = starter.providers.getValue("openrouter").models.associate { it.id to it.contextWindow }
+        val windows = selected.providers.getValue("openrouter").models.associate { it.id to it.contextWindow }
         latest.values.forEach { (id, window) -> assertEquals(window, windows[id], id) }
     }
 

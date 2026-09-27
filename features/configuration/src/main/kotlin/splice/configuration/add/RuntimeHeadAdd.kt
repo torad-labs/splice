@@ -25,7 +25,7 @@ import java.nio.file.Files
 
 /** What keys.toml holds for a runtime head. Readable on purpose: an operator who opens the file sees
  *  why a key with no secret in it is there. */
-private const val RUNTIME_KEY_PLACEHOLDER = "local-runtime-no-auth"
+internal const val RUNTIME_KEY_PLACEHOLDER = "local-runtime-no-auth"
 
 /** V4-232: the Claude model a runtime row is presented to the client as (ModelEntry.clientModel), so a
  *  fresh runtime head prints no `[claude-code:unrecognized_model]` line. This one because the request it
@@ -72,24 +72,22 @@ internal class RuntimeHeadAdd(
         val planted = plant(store, envVar) ?: return false
         val added = command.addDescribed(profile(head, envVar), env)
         if (planted && !landed(head.key, env)) {
-            Cancellables.runCatchingCancellable { store.unset(envVar) }
+            Cancellables.runCatchingCancellable { store.placeholders.unsetIfValue(envVar, RUNTIME_KEY_PLACEHOLDER) }
                 .onFailure { output.line("  $envVar placeholder left in ${store.path}: ${SafeFailureText.render(it)}") }
         }
         return added
     }
 
-    /** True when this call wrote the placeholder, false when a value was already there, null when
-     *  keys.toml could not be written — said, and the add does not run. */
-    private fun plant(store: KeyStore, envVar: String): Boolean? {
-        if (store.read(envVar) != null) return false
-        return Cancellables.runCatchingCancellable { store.write(envVar, RUNTIME_KEY_PLACEHOLDER) }.fold(
-            onSuccess = { true },
+    /** The claim and the absence check share KeyStore's lock, so a concurrent key set cannot be
+     *  overwritten. Null means the store refused a write; the add does not run. */
+    private fun plant(store: KeyStore, envVar: String): Boolean? =
+        Cancellables.runCatchingCancellable { store.placeholders.writeIfAbsent(envVar, RUNTIME_KEY_PLACEHOLDER) }.fold(
+            onSuccess = { it },
             onFailure = {
                 output.line("  could not store the $envVar placeholder in ${store.path}: ${SafeFailureText.render(it)}")
                 null
             },
         )
-    }
 
     /** Asked of the file, the only witness: AddCommand's false also covers a restart that failed
      *  AFTER the save. A file that cannot be read counts as landed, so the key stays — a stray
@@ -116,5 +114,6 @@ internal class RuntimeHeadAdd(
         ),
         origin = "splice setup",
         listAuthoritative = !head.anyModelId,
+        requiresKey = false,
     )
 }

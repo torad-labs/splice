@@ -235,6 +235,21 @@ class DoctorCommandTest {
     }
 
     @Test
+    fun `a readable zero-head topology offers setup without a false ready verdict`() {
+        val tmp = Files.createTempDirectory("doctor-unconfigured")
+        val bin = Files.createDirectories(tmp.resolve("bin"))
+        val share = Files.createDirectories(tmp.resolve("share"))
+        val configDir = Files.createDirectories(tmp.resolve("config/splice"))
+        Files.writeString(configDir.resolve("splice.toml"), "[daemon]\ncontrol_port = 4499\n")
+
+        val (_, out) = runDoctor(env(tmp, bin, share, hermetic(tmp)))
+        assertTrue(out.contains("not set up yet"), out)
+        assertTrue(out.contains("splice setup"), out)
+        assertFalse(out.contains("0 of 0 head(s) ready"), out)
+        assertFalse(out.contains("0 head(s):"), out)
+    }
+
+    @Test
     fun `a fresh machine names every fix`() {
         val tmp = Files.createTempDirectory("doctor-fresh")
         val bin = Files.createDirectories(tmp.resolve("bin"))

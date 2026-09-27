@@ -104,6 +104,11 @@ public class AddRoutes(
                 "'$key' has no sign-in of its own: your Claude login is forwarded at launch.",
                 HttpStatusCode.Conflict,
             )
+            AddSignInOutcome.NoKeyRequired -> refuse(
+                call,
+                "'$key' needs no sign-in: its local runtime takes no operator API key.",
+                HttpStatusCode.Conflict,
+            )
             AddSignInOutcome.AlreadySaved -> refuse(call, "'$key' is already saved.", HttpStatusCode.Conflict)
         }
     }

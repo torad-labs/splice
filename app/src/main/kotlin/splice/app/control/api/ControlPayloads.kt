@@ -57,7 +57,8 @@ internal class ControlPayloads(
         val runningKeys = heads.filterValues { it.head.healthSnapshot().running }.keys
         val stalledHeads = turnPathStalled().filter { it in runningKeys }
         val running = runningKeys.size
-        put("ok", stalledHeads.isEmpty() && failedHeads() == 0 && (configuredHeads == 0 || running > 0))
+        val failed = failedHeads()
+        put("ok", stalledHeads.isEmpty() && failed == 0 && (configuredHeads == 0 || running > 0))
         if (stalledHeads.isNotEmpty()) {
             put(
                 "turnPathStalled",
@@ -74,7 +75,13 @@ internal class ControlPayloads(
         // forever with running=false, so the old equality-wait spun forever on a degraded boot
         // (review 2026-07-22 round 3).
         put("readyHeads", running)
-        put("failedHeads", failedHeads())
+        put("failedHeads", failed)
+        if (configuredHeads == 0 && running == 0) {
+            if (failed == 0) {
+                put("setupState", "not_set_up")
+                put("setupCommand", "splice setup")
+            }
+        }
         // JW-04: the booted config identity — an edited splice.toml used to be silently inert
         // (topology loads once by design; nothing anywhere compared disk to boot). Stale is
         // recomputed per request and fails OPEN on an unreadable file. V4-162: the digest is the

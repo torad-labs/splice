@@ -84,6 +84,15 @@ class DoctorHeadChecksTest {
     }
 
     @Test
+    fun `a running daemon with zero configured heads is awaiting setup not degraded`() {
+        val rows = checks.headChecks(DaemonSnapshot(port = 1, probe = up(0, 0, 0)), Topology())
+        val summary = rows.single { it.name == "heads" }
+        assertEquals(CheckStatus.INFO, summary.status)
+        assertTrue(summary.detail.contains("not set up yet"), summary.detail)
+        assertEquals("splice setup", summary.fix)
+    }
+
+    @Test
     fun `failed heads are a FAIL counting both sides - JW-02`() {
         val rows = checks.headChecks(DaemonSnapshot(port = 1, probe = up(3, 1, 2)), null)
         val summary = rows.single { it.detail.contains("FAILED to start") }

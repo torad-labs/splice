@@ -131,12 +131,13 @@ class StatusTableTest {
     }
 
     @Test
-    fun `a topology with no heads lays out the header alone`() {
-        // Column widths are a max over the rows; with zero rows that max must not throw. DR-173 was
-        // this exact shape in doctor, on a running daemon with no heads.
+    fun `a topology with no heads says how to connect a plan without a failed row`() {
         val lines = StatusTable(CliPalette(ColorDepth.NONE)).lines(Topology(), EnvReader { null })
-        assertEquals(1, lines.size, lines.toString())
-        assertTrue(lines.single().contains("upstream"), lines.single())
+        assertEquals(2, lines.size, lines.toString())
+        assertTrue(lines.first().contains("upstream"), lines.toString())
+        assertTrue(lines.last().contains("not set up yet"), lines.toString())
+        assertTrue(lines.last().contains("splice setup"), lines.toString())
+        assertFalse(lines.last().contains("failed", ignoreCase = true), lines.toString())
     }
 
     @Test

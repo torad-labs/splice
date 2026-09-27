@@ -92,6 +92,30 @@ class KeyStoreTest {
     }
 
     @Test
+    fun `placeholder claim cannot overwrite a key set after an earlier absence read`(@TempDir tmp: Path) {
+        val claimant = store(tmp)
+        val operator = store(tmp)
+        assertNull(claimant.read("LOCAL_API_KEY"))
+        operator.write("LOCAL_API_KEY", "operator-owned")
+
+        assertFalse(claimant.placeholders.writeIfAbsent("LOCAL_API_KEY", "local-runtime-no-auth"))
+        assertEquals("operator-owned", operator.read("LOCAL_API_KEY"))
+    }
+
+    @Test
+    fun `rollback cannot delete a key the operator replaced after placeholder claim`(@TempDir tmp: Path) {
+        val claimant = store(tmp)
+        val operator = store(tmp)
+        assertTrue(claimant.placeholders.writeIfAbsent("LOCAL_API_KEY", "local-runtime-no-auth"))
+        operator.write("LOCAL_API_KEY", "operator-owned")
+
+        assertFalse(claimant.placeholders.unsetIfValue("LOCAL_API_KEY", "local-runtime-no-auth"))
+        assertEquals("operator-owned", operator.read("LOCAL_API_KEY"))
+        assertTrue(claimant.placeholders.unsetIfValue("LOCAL_API_KEY", "operator-owned"))
+        assertNull(claimant.read("LOCAL_API_KEY"))
+    }
+
+    @Test
     fun `invalid names and empty values are rejected`(@TempDir tmp: Path) {
         val s = store(tmp)
         assertThrows(IllegalArgumentException::class.java) { s.write("lowercase", "x") }

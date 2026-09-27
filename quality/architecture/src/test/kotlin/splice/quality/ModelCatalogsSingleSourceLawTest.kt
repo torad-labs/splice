@@ -1,23 +1,16 @@
-// NEW: V4-98 — the three hand-authored model rosters agree with app/src/main/resources/splice.example.toml
-// (ported from checks/model-catalogs-single-source.ts, restructure PR 6).
+// NEW: V4-98 — the chosen AddProfileCatalog roster agrees with splice.example.toml while
+// DEFAULT_TOML selects no provider on first run (ported from checks/model-catalogs-single-source.ts).
 //
-// WHY THIS EXISTS. splice declares its model rows THREE times, by hand, in three languages: the
-// example config an operator copies (ids, labels, context windows, per-provider commentary), the
-// rows `splice add <vendor>` renders into the operator's file (AddProfileCatalog.kt), and
-// TopologyLoader's DEFAULT_TOML, the starter materialized on first run. Nothing paired them. A
-// window corrected in the example stayed wrong in the two emitters, and a model id added to an
-// emitter never had to exist in the reference at all. A window that disagrees is not cosmetic:
-// TopologyLoader plants the pinned row's window as CLAUDE_CODE_MAX_CONTEXT_TOKENS and
-// ModelCatalog.usageScale compacts every other row against its declared number, so a roster that
-// drifted by 4.6% compacts 4.6% early or late with nothing logging it.
+// WHY THIS EXISTS. The example config an operator copies and the rows `splice add <vendor>`
+// renders into that file are both hand-authored model surfaces. A window corrected in the example
+// but not in AddProfileCatalog.kt makes a chosen head compact early or late with nothing logging it.
+// V4-356 removed the third historical roster: DEFAULT_TOML now carries daemon defaults alone. A
+// first-run provider, even one with no models, is a vendor choice the operator never made.
 //
-// THE LAW. Every model row a DERIVED roster declares must exist in the example's roster for the
-// SAME provider, with a byte-identical context window. DEFAULT_TOML is a curated starter, so the
-// example may declare more than it does. The `splice add` catalog MIRRORS the example (V4-224): an
-// example provider a catalog roster joins declares no row that roster lacks. The superset allowance
-// is how the catalog fell behind — the example carried gpt-6-astra and grok-build while
-// `splice add codex` still pinned gpt-5.6-sol at a 400K window the backend does not serve, and this
-// law stayed green.
+// THE LAW. Every model row the catalog declares must exist in the example's roster for the SAME
+// provider, with a byte-identical context window. The catalog MIRRORS an example provider it joins
+// (V4-224), so an example row omitted by that catalog is RED too. DEFAULT_TOML must parse to zero
+// providers; a model row, or even an empty provider table, is a preselected plan and fails by name.
 //
 // THE JOIN KEY IS base_url, NEVER the table name. The provider keys disagree on purpose: the
 // catalog calls xAI `grok` and Anthropic `claude` (the WRAPPER an operator types) while the example
@@ -27,32 +20,24 @@
 // daemon dials. Two example providers sharing one base_url make the join ambiguous and are RED.
 //
 // DENOMINATORS, FROM THE SOURCES, never a hand list. The example's providers and rows are parsed
-// out of the TOML on disk. The catalog's rows are parsed out of AddProfileCatalog.kt's
-// AddProfile/AddModel calls, with the WINDOW_* constants resolved from that same file's
-// `private const val` declarations. DEFAULT_TOML is extracted from TopologyLoader.kt by its marker
-// and parsed as TOML. Both Kotlin files are resolved THROUGH THE BUILD'S PROJECT MAP (:app), never
-// a literal directory, so a module that moves keeps being graded. A vendor added to any of the
-// three is in scope with no edit to this file.
+// from TOML on disk. The catalog's AddProfile/AddModel calls and WINDOW_* constants are parsed from
+// AddProfileCatalog.kt. DEFAULT_TOML is extracted from TopologyLoader.kt and parsed as TOML too:
+// zero providers is a measured invariant, not an exclusion. Both Kotlin files resolve through the
+// build's project map, so a module move cannot drop a source from the gate.
 //
-// FOUR GUARDS REFUSE A VACUOUS PASS: the example must yield at least one provider carrying a model
-// row; each derived source must yield at least one roster carrying a model row; the rows parsed out
-// of each TOML must equal the count of `[[providers.*.models]]` headers in its comment-stripped
-// text, and the AddModel rows parsed out of the catalog must equal the count of `AddModel(` calls
-// in its comment-stripped text; and the number of (id, window) comparisons performed must be
-// non-zero.
+// GUARDS REFUSE A VACUOUS PASS: the example and catalog must each yield model rows; the parsed
+// rows must match their source headers/calls; the comparison count must be non-zero; and any
+// provider parsed from DEFAULT_TOML fails, including one with an EMPTY model list. A missing
+// starter marker is an untrusted source, not a green empty result.
 //
-// DISPOSITION. agrees — joined by base_url, every id present, every window equal; no-roster — the
-// roster declares NO base_url and NO models, so there is nothing to compare (the generic `api-key`
-// row, whose base URL and models the operator supplies on the command line). That condition is
-// COMPUTED, not a named exemption: a row that grows models while keeping a null base_url stops
-// qualifying and goes red. Anything else is RED BY NAME. Absence is not a disposition.
+// DISPOSITION. Catalog rosters agree by base_url and id/window, or have no base_url and no models
+// (generic `api-key` and `local` profiles the operator fills in). The empty starter is reported as
+// no-roster, but a provider added to it is RED BY NAME. A catalog row that grows models without a
+// base_url also goes red; absence is not a disposition.
 //
-// NOT CAUGHT, and why. A label that disagrees — display strings shown in different places, and
-// pinning them would red the wall for a copy edit; ids and windows are the wire. A model the
-// example declares and DEFAULT_TOML omits — deliberate, the starter is curated. An example provider
-// no catalog roster joins (fireworks, the local runtimes) — `splice add` has no profile for it.
-// Slots, rates and quirks — other walls own those. A window that is wrong in the EXAMPLE — that is a
-// live-probe job; this law makes the three agree.
+// NOT CAUGHT, and why. Labels are display copy, not ids/windows on the wire. An example provider
+// with no catalog profile remains example-only. Slots, rates and quirks have other walls. An
+// incorrect example window still needs a live provider probe; this law enforces agreement with it.
 package splice.quality
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -520,9 +505,7 @@ internal object ModelCatalogsSingleSource {
         val catalog: List<ModelRosters.Roster>,
         val starter: List<ModelRosters.Roster>,
         val problems: List<String>,
-    ) {
-        val derived: List<List<ModelRosters.Roster>> get() = listOf(catalog, starter)
-    }
+    )
 
     /** An example provider seen from a derived roster: its name and its declared windows. */
     private data class Target(val provider: String, val windows: Map<String, Long?>)
@@ -700,7 +683,11 @@ internal object ModelCatalogsSingleSource {
         }
         val index = indexByBaseUrl(loaded.example, surfaces.example.rel)
         problems += index.problems
-        val comparisons = loaded.derived.sumOf { auditDerived(it, index.byBaseUrl, surfaces.example.rel, problems) }
+        if (loaded.starter.isNotEmpty()) {
+            problems += "${surfaces.starter.rel}:${ModelRosters.STARTER_MARKER}: " +
+                "first-run topology preselects a provider; choose it through splice add instead"
+        }
+        val comparisons = auditDerived(loaded.catalog, index.byBaseUrl, surfaces.example.rel, problems)
         auditMirror(loaded.catalog, index.byBaseUrl, surfaces.example.rel, problems)
         if (comparisons == 0 && problems.isEmpty()) {
             problems += "compared 0 model rows across the derived rosters — refusing to pass vacuously"
@@ -734,9 +721,14 @@ internal object ModelCatalogsSingleSource {
             lines += "  source   [${roster.provider.padEnd(PROVIDER_COLUMN)}] " +
                 "${roster.models.size.toString().padStart(ROWS_COLUMN)} rows  ${roster.baseUrl}"
         }
-        for ((rosters, mirror) in listOf(loaded.catalog to true, loaded.starter to false)) {
-            rosters.firstOrNull()?.let { lines += "  ${it.label}" }
-            rosters.forEach { lines += row(it, state(it, index, mirror)) }
+        loaded.catalog.firstOrNull()?.let { lines += "  ${it.label}" }
+        loaded.catalog.forEach { lines += row(it, state(it, index, mirror = true)) }
+        val starterName = "${surfaces.starter.rel}:${ModelRosters.STARTER_MARKER}"
+        if (loaded.starter.isEmpty()) {
+            lines += "  $starterName  no-roster (first run selects none)"
+        } else {
+            lines += "  $starterName  PRESELECTED"
+            loaded.starter.forEach { lines += row(it, state(it, index, mirror = false)) }
         }
         return lines
     }
@@ -753,17 +745,17 @@ class ModelCatalogsSingleSourceLawTest {
             "the example yielded ${loaded.example.size} provider(s) — the read is broken, and a law that " +
                 "compares against nothing passes vacuously."
         }
-        assertTrue(loaded.derived.all { rosters -> rosters.any { it.models.isNotEmpty() } }) {
-            "a derived source yielded no roster carrying a model row: ${loaded.derived.map { it.size }}"
+        assertTrue(loaded.catalog.any { it.models.isNotEmpty() }) {
+            "the chosen catalog yielded no roster carrying a model row: ${loaded.catalog.size}"
         }
+        assertTrue(loaded.starter.isEmpty()) { "a fresh starter must not preselect a provider: ${loaded.starter}" }
         val problems = ModelCatalogsSingleSource.audit(surfaces)
         assertTrue(problems.isEmpty()) {
             problems.joinToString(separator = "\n  - ", prefix = "MODEL CATALOGS SINGLE SOURCE (V4-98) violated:\n  - ")
         }
     }
 
-    /** The synthetic tree the red proof writes into: the SOURCE and the two emitters, each
-     *  replaceable per arm, under the same relative paths the live tree uses. */
+    /** The synthetic example, chosen catalog and empty starter, each replaceable per red arm. */
     private class Tree(val root: File) {
         private val synthetic = ProjectMap.parse(
             root,
@@ -795,19 +787,21 @@ class ModelCatalogsSingleSourceLawTest {
             assertEquals(
                 emptyList<String>(),
                 audit(),
-                "the compliant tree must be GREEN (alias join by base_url, a catalog that mirrors the example, " +
-                    "an example superset of the starter, null-baseUrl row)",
+                "the compliant tree must be GREEN (alias join by base_url, catalog mirror, " +
+                    "an unchosen starter and the null-baseUrl profile)",
             )
             val loaded = loaded()
             assertEquals(emptyList<String>(), loaded.problems, "the compliant parse must be trusted")
             assertEquals(listOf("xai", "kimi"), loaded.example.map { it.provider })
             assertEquals(listOf(2, 1), loaded.example.map { it.models.size }, "extra_windows is not a model roster")
-            assertEquals(listOf(3, 1), loaded.derived.map { it.size })
+            assertEquals(3, loaded.catalog.size)
+            assertTrue(loaded.starter.isEmpty(), "the first run chooses no provider")
 
             // The BORING case: one provider, one model, nothing else — the tree that gets waved through.
             write(EXAMPLE_BORING, CATALOG_BORING, STARTER_BORING)
             assertEquals(emptyList<String>(), audit(), "the one-provider/one-model tree must be GREEN")
-            assertEquals(listOf(1, 1), loaded().derived.map { it.first().models.size })
+            assertEquals(1, loaded().catalog.first().models.size)
+            assertTrue(loaded().starter.isEmpty())
         }
     }
 
@@ -827,8 +821,8 @@ class ModelCatalogsSingleSourceLawTest {
                     "    [grok        ]  2 rows  agrees with [xai]",
                     "    [kimi        ]  1 rows  agrees with [kimi]",
                     "    [api-key     ]  0 rows  no-roster (no base_url, no models)",
-                    "  integrations/topology/src/main/kotlin/splice/topology/TopologyLoader.kt:DEFAULT_TOML",
-                    "    [xai         ]  1 rows  agrees with [xai]",
+                    "  integrations/topology/src/main/kotlin/splice/topology/TopologyLoader.kt:DEFAULT_TOML  " +
+                        "no-roster (first run selects none)",
                 ),
                 ModelCatalogsSingleSource.census(surfaces),
             )
@@ -850,17 +844,17 @@ class ModelCatalogsSingleSourceLawTest {
             write(catalog = mutated)
             assertHit(audit(), "grok-fake-9", "absent from") { "a synthetic catalog id must be RED BY NAME" }
 
-            write(starter = STARTER_OK.replace("context_window = 500000", "context_window = 262144"))
-            assertHit(audit(), "DEFAULT_TOML", "grok-4.6", "262144") { "a starter window that disagrees must be RED" }
+            write(starter = STARTER_WITH_PROVIDER)
+            assertHit(audit(), "DEFAULT_TOML", "preselects a provider") {
+                "putting a model roster back in the starter must be RED"
+            }
 
-            write(
-                starter = STARTER_OK.replace(
-                    "context_window = 500000\n$RAW",
-                    "context_window = 500000\n[[providers.xai.models]]\nid = \"grok-fake-9\"\n" +
-                        "context_window = 500000\n$RAW",
-                ),
+            val providerWithoutModels = STARTER_OK.replace(
+                "control_port = 3096",
+                "[providers.xai]\nbase_url = \"https://api.x.ai/v1\"",
             )
-            assertHit(audit(), "grok-fake-9", "absent from") { "a synthetic starter id must be RED BY NAME" }
+            write(starter = providerWithoutModels)
+            assertHit(audit(), "preselects a provider") { "an empty provider still selects a vendor" }
         }
     }
 
@@ -887,8 +881,8 @@ class ModelCatalogsSingleSourceLawTest {
         }
     }
 
-    /** V4-224: the catalog is a mirror. The starter lacking the example's grok-4.3 stays green in the
-     *  compliant tree; the catalog lacking it is RED by name, and the census says which row. */
+    /** V4-224: the catalog mirrors the example. The starter has no provider at all; a catalog row
+     *  the example gained is still RED by name, and the census says which row. */
     @Test
     fun `the law can actually fail - a row the example declares and splice add omits - V4-224`(@TempDir root: File) {
         with(Tree(root)) {
@@ -899,7 +893,7 @@ class ModelCatalogsSingleSourceLawTest {
             assertHit(audit(), named, "[providers.xai] but not here") {
                 "an example row the splice add catalog lacks must be RED BY NAME"
             }
-            assertEquals(1, audit().size, "only the catalog mirrors; DEFAULT_TOML lacks grok-4.3 too and stays green")
+            assertEquals(1, audit().size, "only the catalog mirrors; DEFAULT_TOML selects no provider")
             val census = ModelCatalogsSingleSource.census(surfaces)
             val drift = "    [grok        ]  1 rows  DRIFT: grok-4.3 (not mirrored)"
             assertTrue(drift in census) { census.joinToString("\n") }
@@ -909,11 +903,11 @@ class ModelCatalogsSingleSourceLawTest {
     @Test
     fun `the law can actually fail - the parser-drift guards - V4-98`(@TempDir root: File) {
         with(Tree(root)) {
-            // TOML side: a models header the walker cannot attribute to any provider table.
+            // TOML source: a model header before its provider must still reach the denominator.
             write(
-                starter = STARTER_OK.replace(
-                    "[providers.xai]\nbase_url",
-                    "[[providers.xai.models]]\nid = \"orphan\"\ncontext_window = 1\n[providers.xai]\nbase_url",
+                example = EXAMPLE_OK.replace(
+                    "[providers.xai]\ndialect",
+                    "[[providers.xai.models]]\nid = \"orphan\"\ncontext_window = 1\n[providers.xai]\ndialect",
                 ),
             )
             val hits = audit()
@@ -962,17 +956,28 @@ class ModelCatalogsSingleSourceLawTest {
         }
         assertEquals(1, unmirrored.size, "only the catalog mirrors the example: $unmirrored")
 
-        val slipped = starter.replace(LLAMA_ROW + "1048576", LLAMA_ROW + "131072")
-        assertTrue(slipped != starter, "MUTATION NOT APPLIED: the llama-4-maverick starter row is gone")
+        val marker = "# No provider or head is selected on first run. Connect a plan with `splice setup`, or add a"
+        val slipped = starter.replace(
+            marker,
+            "$marker\n[providers.xai]\nbase_url = \"https://api.x.ai/v1\"\n" +
+                "[[providers.xai.models]]\nid = \"grok-4.6\"\ncontext_window = 500000",
+        )
+        assertTrue(slipped != starter, "MUTATION NOT APPLIED: the no-provider starter marker changed")
         tree.write(example, catalog, slipped)
-        assertHit(tree.audit(), "declares context_window 131072") { "a real DEFAULT_TOML window drift must be RED" }
+        assertHit(tree.audit(), "DEFAULT_TOML", "preselects a provider") {
+            "one real model row restored to the starter must be RED"
+        }
 
         val shrunk = dropExampleRow(example)
         assertTrue(shrunk != example, "MUTATION NOT APPLIED: the z-ai/glm-5.3 example row is gone")
         tree.write(shrunk, catalog, starter)
         val hits = tree.audit()
         assertHit(hits, DELETED_ROW) { "a row deleted from the SOURCE must red the emitters that carry it" }
-        assertEquals(2, hits.count { it.contains(DELETED_ROW) }, "one deleted SOURCE row reds BOTH emitters: $hits")
+        assertEquals(
+            1,
+            hits.count { it.contains(DELETED_ROW) },
+            "one deleted SOURCE row reds the chosen catalog: $hits",
+        )
     }
 
     /** Drop the `[[providers.openrouter.models]]` row whose id is exactly `z-ai/glm-5.3`. */
@@ -999,7 +1004,6 @@ class ModelCatalogsSingleSourceLawTest {
         const val OPENROUTER_MODELS = "[[providers.openrouter.models]]"
         const val CODEX_MODELS = "[[providers.codex.models]]\n"
         const val FAKE_CODEX_ROW = "id = \"gpt-fake-9\"\nlabel = \"Fake 9\"\ncontext_window = 272000\n"
-        const val LLAMA_ROW = "id = \"meta-llama/llama-4-maverick\"\nlabel = \"Llama 4 Maverick\"\ncontext_window = "
         const val DELETED_ROW = "z-ai/glm-5.3 (context_window 1310720) is absent from"
 
         const val NULL_ROSTER = "            name = \"api-key\",\n            baseUrl = null,\n" +
@@ -1076,6 +1080,16 @@ $GROK_43_ROW
 
 public object TopologyLoader {
     private const val DEFAULT_TOML = $RAW
+[daemon]
+control_port = 3096
+$RAW
+}
+"""
+
+        val STARTER_WITH_PROVIDER = """package splice.app
+
+public object TopologyLoader {
+    private const val DEFAULT_TOML = $RAW
 [providers.xai]
 base_url = "https://api.x.ai/v1"
 [[providers.xai.models]]
@@ -1107,17 +1121,6 @@ internal class AddProfileCatalog {
 }
 """
 
-        val STARTER_BORING = """package splice.app
-
-public object TopologyLoader {
-    private const val DEFAULT_TOML = $RAW
-[providers.solo]
-base_url = "https://example.invalid/v1"
-[[providers.solo.models]]
-id = "only-one"
-context_window = 128000
-$RAW
-}
-"""
+        val STARTER_BORING = STARTER_OK
     }
 }

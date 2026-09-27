@@ -149,71 +149,9 @@ show_reasoning = "text"
 summary = "detailed"
 replay_reasoning = false
 
-# Supported starter route: create an OpenRouter API key, then EITHER export OPENROUTER_API_KEY
-# or let `claude-openrouter login` store it to ~/.config/splice/keys.toml (0600, which survives restarts from
-# any shell; inside a claude-openrouter session you can also paste it as a bare message and the
-# token-capture hook stores it without it reaching the model).
-# Experimental vendor-OAuth examples remain opt-in in app/src/main/resources/splice.example.toml.
-[providers.openrouter]
-dialect = "openai-chat"
-base_url = "https://openrouter.ai/api/v1"
-auth = { kind = "api-key", env = "OPENROUTER_API_KEY" }
-
-[[providers.openrouter.models]]
-id = "anthropic/claude-sonnet-5"
-label = "Claude Sonnet 5"
-context_window = 1000000
-[[providers.openrouter.models]]
-id = "anthropic/claude-opus-5.5"
-label = "Claude Opus 5.5"
-context_window = 1000000
-[[providers.openrouter.models]]
-id = "z-ai/glm-5.3-flash"
-label = "GLM 5.3 Flash"
-context_window = 1310720
-[[providers.openrouter.models]]
-id = "openai/gpt-6-sol"
-label = "GPT-6 Sol"
-context_window = 1050000
-[[providers.openrouter.models]]
-id = "openai/gpt-6-luna"
-label = "GPT-6 Luna"
-context_window = 1050000
-[[providers.openrouter.models]]
-id = "google/gemini-3.8-flash"
-label = "Gemini 3.8 Flash"
-context_window = 1048576
-[[providers.openrouter.models]]
-id = "deepseek/deepseek-v4.1-flash"
-label = "DeepSeek V4.1 Flash"
-context_window = 1048576
-[[providers.openrouter.models]]
-id = "z-ai/glm-5.3"
-label = "GLM 5.3"
-context_window = 1310720
-[[providers.openrouter.models]]
-id = "meta-llama/llama-4-maverick"
-label = "Llama 4 Maverick"
-context_window = 1048576
-[[providers.openrouter.models]]
-id = "anthropic/claude-haiku-4.5"
-label = "Claude Haiku 4.5"
-context_window = 200000
-
-[heads.openrouter]
-provider = "openrouter"
-port = 3101
-discovery_prefix = "claude-openrouter--"
-pinned_model = "anthropic/claude-sonnet-5"
-models = [
-  { id = "anthropic/claude-sonnet-5", slot = "sonnet" },
-  { id = "anthropic/claude-opus-5.5", slot = "opus" },
-  { id = "z-ai/glm-5.3-flash", slot = "haiku" },
-  { id = "openai/gpt-6-sol", slot = "fable" },
-]
-
-[heads.openrouter.claude]
-command = "claude-openrouter"
+# No provider or head is selected on first run. Connect a plan with `splice setup`, or add a
+# specific profile with `splice add <profile>`. Experimental vendor-OAuth examples stay opt-in
+# in splice.example.toml.
 """
 
     public fun configPath(env: EnvReader = EnvReader(System::getenv)): Path {

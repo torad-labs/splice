@@ -1,5 +1,5 @@
 // NEW: CW-7 / CW-10 — splice setup on the prompt toolkit. Headless topology is the
-// captured pre-campaign oracle; declining confirm writes nothing. Extra heads tick
+// captured first-run no-plan oracle; declining confirm writes nothing. Extra heads tick
 // from AddProfiles and install through AddCommand.
 package splice.app.cli.setup
 
@@ -35,7 +35,7 @@ import java.nio.file.Path
 class SetupCommandTest {
 
     @Test
-    fun `headless setup writes the captured pre-campaign topology`(@TempDir home: Path) {
+    fun `headless setup writes the captured no-plan topology`(@TempDir home: Path) {
         val topology = withHome(home) {
             seedShim(home)
             runBlocking { SetupCommand(loginHead = NO_REAL_LOGIN).setup() }
@@ -92,7 +92,7 @@ class SetupCommandTest {
         val text = chrome.toString()
         val intro = text.indexOf("splice setup")
         val summary = text.indexOf("Summary")
-        val outro = text.indexOf("You're set.")
+        val outro = text.indexOf("Not set up yet.")
         assertTrue(intro >= 0 && summary > intro && outro > summary, text)
         assertFalse(text.contains("Detected"), "fresh machine prints no Detected line")
     }
@@ -117,8 +117,13 @@ class SetupCommandTest {
         // SetupCommand still ended on the frame's outro, so the last screen announced completion
         // twice — the old "You're set." heading had the same duplicate against "Toolkit ready!".
         // The frame owns the announcement; this block owns what to type.
-        assertEquals(1, Regex("You're set\\.").findAll(log).count(), "completion must be announced once: $log")
-        assertFalse("Setup complete." in log, "the block must not announce completion a second time: $log")
+        assertEquals(
+            1,
+            Regex("Not set up yet\\.").findAll(log).count(),
+            "a planless setup must not claim completion: $log",
+        )
+        assertTrue("splice setup" in log, "the planless close names the command to connect a plan: $log")
+        assertFalse("You're set." in log, "no head is ready until a plan is chosen: $log")
     }
 
     @Test
@@ -166,13 +171,15 @@ class SetupCommandTest {
     )
 
     @Test
-    fun `starter topology keeps OpenRouter key hygiene`(@TempDir home: Path) {
+    fun `starter topology selects no vendor or credential`(@TempDir home: Path) {
         val topology = withHome(home) {
             seedShim(home)
             runBlocking { SetupCommand(loginHead = NO_REAL_LOGIN).setup() }
             Files.readString(home.resolve(".config").resolve("splice").resolve("splice.toml"))
         }
-        assertTrue("env = \"OPENROUTER_API_KEY\"" in topology)
+        assertFalse("[providers.openrouter]" in topology)
+        assertFalse("[heads.openrouter]" in topology)
+        assertFalse("env = \"OPENROUTER_API_KEY\"" in topology)
         assertFalse("chatgpt-oauth" in topology)
     }
 
@@ -206,8 +213,9 @@ class SetupCommandTest {
         assertTrue(openRouter != oauth, "discarding the pick would make both Summaries identical")
         assertTrue("Wrapper commands under" in openRouter, openRouter)
         assertTrue("Wrapper commands under" in oauth, oauth)
-        assertTrue("splice add chatgpt-oauth" in oauth, oauth)
-        assertFalse("splice add chatgpt-oauth" in openRouter, openRouter)
+        assertTrue("splice add codex" in oauth, "the selected plan must name a real profile: $oauth")
+        assertFalse("splice add codex" in openRouter, openRouter)
+        assertFalse("splice add chatgpt-oauth" in oauth, "an auth kind is not an add profile: $oauth")
     }
 
     @Test
@@ -293,6 +301,8 @@ class SetupCommandTest {
             assertEquals(catalog, offered.toSet() + named, "catalog=$catalog offered=$offered named=$named log=$log")
             assertTrue("api-key" in named, log)
             assertFalse("api-key" in offered)
+            assertTrue("local" in named, "a local model needs a name, URL and model before adding: $log")
+            assertFalse("local" in offered, "the wizard cannot tick an incomplete local profile")
             // V4-175: `claude` is TICKABLE now. It was excluded with "needs a name", which was
             // never true of that row (AddPrepare.kt:42 falls back to profile.headKey, and the
             // catalogue gives it `claude-splice`), and the wrong reason is what kept the lane
@@ -619,69 +629,7 @@ show_reasoning = "text"
 summary = "detailed"
 replay_reasoning = false
 
-# Supported starter route: create an OpenRouter API key, then EITHER export OPENROUTER_API_KEY
-# or let `claude-openrouter login` store it to ~/.config/splice/keys.toml (0600, which survives restarts from
-# any shell; inside a claude-openrouter session you can also paste it as a bare message and the
-# token-capture hook stores it without it reaching the model).
-# Experimental vendor-OAuth examples remain opt-in in app/src/main/resources/splice.example.toml.
-[providers.openrouter]
-dialect = "openai-chat"
-base_url = "https://openrouter.ai/api/v1"
-auth = { kind = "api-key", env = "OPENROUTER_API_KEY" }
-
-[[providers.openrouter.models]]
-id = "anthropic/claude-sonnet-5"
-label = "Claude Sonnet 5"
-context_window = 1000000
-[[providers.openrouter.models]]
-id = "anthropic/claude-opus-5.5"
-label = "Claude Opus 5.5"
-context_window = 1000000
-[[providers.openrouter.models]]
-id = "z-ai/glm-5.3-flash"
-label = "GLM 5.3 Flash"
-context_window = 1310720
-[[providers.openrouter.models]]
-id = "openai/gpt-6-sol"
-label = "GPT-6 Sol"
-context_window = 1050000
-[[providers.openrouter.models]]
-id = "openai/gpt-6-luna"
-label = "GPT-6 Luna"
-context_window = 1050000
-[[providers.openrouter.models]]
-id = "google/gemini-3.8-flash"
-label = "Gemini 3.8 Flash"
-context_window = 1048576
-[[providers.openrouter.models]]
-id = "deepseek/deepseek-v4.1-flash"
-label = "DeepSeek V4.1 Flash"
-context_window = 1048576
-[[providers.openrouter.models]]
-id = "z-ai/glm-5.3"
-label = "GLM 5.3"
-context_window = 1310720
-[[providers.openrouter.models]]
-id = "meta-llama/llama-4-maverick"
-label = "Llama 4 Maverick"
-context_window = 1048576
-[[providers.openrouter.models]]
-id = "anthropic/claude-haiku-4.5"
-label = "Claude Haiku 4.5"
-context_window = 200000
-
-[heads.openrouter]
-provider = "openrouter"
-port = 3101
-discovery_prefix = "claude-openrouter--"
-pinned_model = "anthropic/claude-sonnet-5"
-models = [
-  { id = "anthropic/claude-sonnet-5", slot = "sonnet" },
-  { id = "anthropic/claude-opus-5.5", slot = "opus" },
-  { id = "z-ai/glm-5.3-flash", slot = "haiku" },
-  { id = "openai/gpt-6-sol", slot = "fable" },
-]
-
-[heads.openrouter.claude]
-command = "claude-openrouter"
+# No provider or head is selected on first run. Connect a plan with `splice setup`, or add a
+# specific profile with `splice add <profile>`. Experimental vendor-OAuth examples stay opt-in
+# in splice.example.toml.
 """.trimIndent() + "\n"

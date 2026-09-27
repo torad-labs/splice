@@ -22,6 +22,7 @@ import java.nio.file.Path
 internal class DoctorHeadChecks(private val doctorRuntime: DoctorRuntime) {
 
     private val mgmtKeyCheckName = "mgmt-key"
+    private val headCheckName = "heads"
 
     /** JW-02: the degraded-boot rows doctor was structurally blind to. /health has carried
      *  heads/readyHeads/failedHeads since the shim's converge-wait; a green "daemon running" over
@@ -54,14 +55,24 @@ internal class DoctorHeadChecks(private val doctorRuntime: DoctorRuntime) {
         checkNotNull(failed)
         return when {
             failed > 0 -> DoctorCheck(
-                "heads",
+                headCheckName,
                 CheckStatus.FAIL,
                 "$failed of $heads head(s) FAILED to start",
                 "splice restart (then: splice logs --head <key> --tail 50 to see why)",
             )
-            ready + failed < heads ->
-                DoctorCheck("heads", CheckStatus.WARN, "still converging: $ready ready + $failed failed of $heads")
-            else -> DoctorCheck("heads", CheckStatus.OK, "$ready of $heads head(s) ready")
+            ready + failed < heads -> DoctorCheck(
+                headCheckName,
+                CheckStatus.WARN,
+                "still converging: $ready ready + $failed failed of $heads",
+            )
+            heads == 0 && ready == 0 ->
+                DoctorCheck(
+                    headCheckName,
+                    CheckStatus.INFO,
+                    "not set up yet: no heads configured",
+                    "splice setup",
+                )
+            else -> DoctorCheck(headCheckName, CheckStatus.OK, "$ready of $heads head(s) ready")
         }
     }
 

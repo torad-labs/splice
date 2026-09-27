@@ -11,7 +11,6 @@ import org.junit.jupiter.api.io.TempDir
 import splice.app.PerfWiring
 import splice.core.config.StatePaths
 import splice.core.util.EnvReader
-import splice.topology.TopologyLoader
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
@@ -22,9 +21,25 @@ private const val DAY_MS = 24 * HOUR_MS
 
 class PerfCommandTest {
 
-    /** The starter topology is written by the TEST: `splice perf` itself is read-only. */
+    /** The configured head is explicit: a fresh starter selects no plan. `splice perf` only reads. */
     private fun env(tmp: Path): EnvReader {
-        TopologyLoader.loadOrMaterialize(tmp.resolve("splice.toml"))
+        Files.writeString(
+            tmp.resolve("splice.toml"),
+            """
+            [providers.openrouter]
+            dialect = "openai-chat"
+            base_url = "https://example.invalid/v1"
+            auth = { kind = "api-key", env = "OPENROUTER_API_KEY" }
+            [[providers.openrouter.models]]
+            id = "m"
+            context_window = 200000
+            [heads.openrouter]
+            provider = "openrouter"
+            port = 3101
+            discovery_prefix = "claude-openrouter--"
+            pinned_model = "m"
+            """.trimIndent() + "\n",
+        )
         return EnvReader { name ->
             when (name) {
                 "SPLICE_CONFIG" -> tmp.resolve("splice.toml").toString()

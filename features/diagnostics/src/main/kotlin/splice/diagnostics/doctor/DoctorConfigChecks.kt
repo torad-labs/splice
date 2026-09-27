@@ -65,11 +65,16 @@ internal class DoctorConfigChecks(
         is DoctorTopology.Parsed -> {
             val topology = topo.topology
             val heads = topology.heads.entries.joinToString(", ") { (k, h) -> "$k → ${h.claude.command ?: k}" }
-            val summary = DoctorCheck(
-                CHECK_TOPOLOGY,
-                CheckStatus.OK,
-                "$configPath, ${topology.heads.size} head(s): $heads",
-            )
+            val summary = if (topology.heads.isEmpty()) {
+                DoctorCheck(
+                    CHECK_TOPOLOGY,
+                    CheckStatus.INFO,
+                    "$configPath, not set up yet: no plan connected",
+                    "splice setup",
+                )
+            } else {
+                DoctorCheck(CHECK_TOPOLOGY, CheckStatus.OK, "$configPath, ${topology.heads.size} head(s): $heads")
+            }
             val brokenRefs = topology.heads.filterValues { it.provider !in topology.providers }.map { (key, head) ->
                 DoctorCheck(
                     CHECK_TOPOLOGY,

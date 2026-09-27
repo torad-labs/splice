@@ -9,6 +9,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.util.EnvReader
 import splice.head.trace.TraceHeads
 import splice.topology.TopologyLoader
+import java.nio.file.Files
 import java.nio.file.Path
 
 class TopologyTraceHeadsTest {
@@ -18,6 +19,20 @@ class TopologyTraceHeadsTest {
     @Test
     fun `the heads are the configured topology's, named with the file they came from`(@TempDir tmp: Path) {
         val config = tmp.resolve("splice.toml")
+        Files.writeString(
+            config,
+            """
+            [providers.openrouter]
+            dialect = "openai-chat"
+            base_url = "https://example.invalid/v1"
+            auth = { kind = "api-key", env = "OPENROUTER_API_KEY" }
+            [heads.openrouter]
+            provider = "openrouter"
+            port = 3101
+            discovery_prefix = "claude-openrouter--"
+            pinned_model = "m"
+            """.trimIndent() + "\n",
+        )
         val topology = TopologyLoader.loadOrMaterialize(config)
 
         val heads = TopologyTraceHeads().load(env(config))

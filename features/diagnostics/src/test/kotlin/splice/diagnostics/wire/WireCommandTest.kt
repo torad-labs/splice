@@ -14,7 +14,6 @@ import splice.core.config.StatePaths
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.daemonclient.ControlReply
-import splice.topology.TopologyLoader
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
@@ -24,9 +23,22 @@ private const val MGMT_KEY = "the-mgmt-key"
 
 class WireCommandTest {
 
-    /** The starter topology (head `openrouter` on :3101) and a minted management key. */
+    /** A chosen OpenRouter head on :3101 and a minted management key. */
     private fun env(tmp: Path): EnvReader {
-        TopologyLoader.loadOrMaterialize(tmp.resolve("splice.toml"))
+        Files.writeString(
+            tmp.resolve("splice.toml"),
+            """
+            [providers.openrouter]
+            dialect = "openai-chat"
+            base_url = "https://example.invalid/v1"
+            auth = { kind = "api-key", env = "OPENROUTER_API_KEY" }
+            [heads.openrouter]
+            provider = "openrouter"
+            port = 3101
+            discovery_prefix = "claude-openrouter--"
+            pinned_model = "m"
+            """.trimIndent() + "\n",
+        )
         val env = EnvReader { name ->
             when (name) {
                 "SPLICE_CONFIG" -> tmp.resolve("splice.toml").toString()

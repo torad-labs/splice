@@ -67,6 +67,17 @@ private class TomlCommentScanner {
     private fun startsUnquotedComment(char: Char): Boolean = quote == null && char == '#'
 }
 
+/** One validation for ordinary writes and conditional placeholder claims. */
+private object KeyEntryValue {
+    fun checked(envVar: String, value: String): String {
+        require(envVar.matches(envNameRegex)) { "invalid env name '$envVar' (want $envNameRegex)" }
+        require(value.isNotBlank()) { "empty key for '$envVar'" }
+        // An embedded newline would split the line-oriented store into multiple assignments.
+        require('\n' !in value && '\r' !in value) { "key for '$envVar' contains a newline and cannot be stored" }
+        return value.trim()
+    }
+}
+
 public class KeyStore(
     public val path: Path,
     private val log: LogSink = LogSink(DaemonLog::write),
@@ -108,16 +119,44 @@ public class KeyStore(
     /** Insert or replace [envVar] = [value] (0600 atomic write). Preserves sibling entries;
      *  comments are NOT (we are the only writer — hand edits survive only as entries). */
     public fun write(envVar: String, value: String) {
-        require(envVar.matches(envNameRegex)) { "invalid env name '$envVar' (want $envNameRegex)" }
-        require(value.isNotBlank()) { "empty key for '$envVar'" }
-        // An embedded newline (survives the trim() below, which only strips leading/trailing
-        // whitespace) would split into multiple assignments. The line-oriented store cannot encode
-        // that shape, so reject it rather than silently persist a different credential.
-        require('\n' !in value && '\r' !in value) { "key for '$envVar' contains a newline and cannot be stored" }
+        val checked = KeyEntryValue.checked(envVar, value)
         withStoreLock {
             val next = entriesStrict().toMutableMap()
-            next[envVar] = value.trim()
+            next[envVar] = checked
             persist(next)
+        }
+    }
+
+    /** Placeholder claims share KeyStore's strict read and process lock. This separate collaborator
+     *  keeps conditional writes out of the ordinary overwrite/remove API. */
+    public val placeholders: PlaceholderEdits = PlaceholderEdits()
+
+    public inner class PlaceholderEdits {
+        /** A prior read cannot protect against `splice key set` between that read and this write. */
+        public fun writeIfAbsent(envVar: String, value: String): Boolean {
+            val checked = KeyEntryValue.checked(envVar, value)
+            return withStoreLock {
+                val next = entriesStrict().toMutableMap()
+                if (envVar in next) {
+                    false
+                } else {
+                    next[envVar] = checked
+                    persist(next)
+                    true
+                }
+            }
+        }
+
+        /** An operator's intervening key set wins over rollback. */
+        public fun unsetIfValue(envVar: String, expected: String): Boolean = withStoreLock {
+            val next = entriesStrict().toMutableMap()
+            if (next[envVar] != expected) {
+                false
+            } else {
+                next.remove(envVar)
+                persist(next)
+                true
+            }
         }
     }
 

@@ -40,7 +40,7 @@ internal class StatusTable(
             topology.providers[head.provider]?.let { row(key, head, it, envReader) }
         }
         // Each width is the larger of the header label and the widest cell, so it never maxes over
-        // an empty list: zero heads lays out the header alone. DR-173 was that exact shape in doctor
+        // an empty list: zero heads still lays out its header before the setup action. DR-173 was that shape in doctor
         // — `maxOf` over an empty section threw on a running daemon with no heads.
         val widths = COLUMNS.mapIndexed { i, label ->
             maxOf(label.length, rows.maxOfOrNull { visible(it.cells[i]) } ?: 0) + GAP
@@ -51,9 +51,18 @@ internal class StatusTable(
         // Four leading spaces: two of indent plus the glyph gutter every row opens with, so each
         // label sits over its data rather than over the glyphs.
         val header = "    " + palette.paint(palette.quiet, labels.joinToString(""))
-        return listOf(header) + rows.map { row ->
+        val data = rows.map { row ->
             "  ${row.glyph} " + row.cells.mapIndexed { i, cell -> pad(cell, widths[i]) }.joinToString("") + row.action
         }
+        val setup = if (topology.heads.isEmpty()) {
+            listOf(
+                "  " + palette.paint(palette.quiet, "not set up yet; connect a plan: ") +
+                    palette.paint(palette.signal, "splice setup"),
+            )
+        } else {
+            emptyList()
+        }
+        return listOf(header) + data + setup
     }
 
     // Calls CliSignIn / AuthKindRegistry directly — constructing StatusCommand

@@ -67,6 +67,17 @@ class ControlHealthTest {
         json["ok"]?.jsonPrimitive?.content?.toBooleanStrictOrNull()
 
     @Test
+    fun `zero configured heads is healthy but explicitly awaits plan setup`() {
+        val h = Json.parseToJsonElement(payloads(emptyMap(), emptyList()).controlHealthJson()).jsonObject
+        assertEquals(true, ok(h), "an unconfigured install is not a degraded daemon")
+        assertEquals("0", h.getValue("heads").jsonPrimitive.content)
+        assertEquals("0", h.getValue("readyHeads").jsonPrimitive.content)
+        assertEquals("0", h.getValue("failedHeads").jsonPrimitive.content)
+        assertEquals("not_set_up", h.getValue("setupState").jsonPrimitive.content)
+        assertEquals("splice setup", h.getValue("setupCommand").jsonPrimitive.content)
+    }
+
+    @Test
     fun `ok stays a plain true when every turn path is live`() {
         val h = Json.parseToJsonElement(
             payloads(mapOf("codex" to managed("codex", running = true)), emptyList()).controlHealthJson(),

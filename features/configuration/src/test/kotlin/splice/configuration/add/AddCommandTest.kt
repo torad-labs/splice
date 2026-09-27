@@ -1,5 +1,5 @@
 // `splice add` (v0.4.0, FEATURES.md §1) against a fake HOME, no network, no terminal: a second
-// provider lands next to the starter without editing TOML; every refusal and every failed check
+// provider lands after the empty starter without editing TOML; every refusal and every failed check
 // leaves the previous file byte-identical.
 package splice.configuration.add
 
@@ -88,6 +88,14 @@ class AddCommandTest {
         return Files.readString(config())
     }
 
+    private fun configuredOpenRouter(): String {
+        val before = starter()
+        val profile = requireNotNull(AddProfiles().find("openrouter"))
+        val configured = before + AddProfiles().toml(profile, "openrouter", 3101)
+        Files.writeString(config(), configured)
+        return configured
+    }
+
     private val fwRoutes = mapOf(
         "GET http://localhost:1/v1" to "{}",
         "GET http://localhost:1/v1/models" to """{"data":[{"id":"m"},{"id":"other"}]}""",
@@ -95,7 +103,7 @@ class AddCommandTest {
     )
 
     @Test
-    fun `an api-key endpoint lands next to the starter, the starter intact`(@TempDir home: Path) = withHome(home) {
+    fun `an api-key endpoint is the first head after an empty starter`(@TempDir home: Path) = withHome(home) {
         val before = starter()
         val args = listOf("api-key", "--name", "fw", "--base-url", "http://localhost:1/v1", "--model", "m:1000")
         val ok = runBlocking { command(http(fwRoutes)).add(args + listOf("--live", "--yes"), env) }
@@ -103,11 +111,11 @@ class AddCommandTest {
         val text = Files.readString(config())
         assertTrue(text.startsWith(before.trimEnd('\n')), "the previous file is a prefix of the new one")
         val topology = TopologyLoader.parse(text)
-        assertEquals(setOf("openrouter", "fw"), topology.heads.keys)
+        assertEquals(setOf("fw"), topology.heads.keys)
         assertEquals("claude-fw", topology.heads.getValue("fw").claude.command)
         assertEquals("FW_API_KEY", topology.providers.getValue("fw").auth.env)
         assertEquals(1000L, topology.providers.getValue("fw").models.single().contextWindow)
-        assertEquals(topology.heads.getValue("openrouter").port + 1, topology.heads.getValue("fw").port)
+        assertEquals(3099, topology.heads.getValue("fw").port, "the first configured head gets the first free port")
         assertEquals(listOf("fw"), installed)
         assertEquals(0, restarted, "no daemon was up, nothing to restart")
     }
@@ -128,7 +136,7 @@ class AddCommandTest {
     fun `a taken key, a missing base url and an unknown profile are refused before anything is asked`(
         @TempDir home: Path,
     ) = withHome(home) {
-        val before = starter()
+        val before = configuredOpenRouter()
         val cmd = command(http(fwRoutes))
         val taken = listOf("api-key", "--name", "openrouter", "--base-url", "http://x", "--model", "m")
         assertFalse(runBlocking { cmd.add(taken, env) })
@@ -422,7 +430,7 @@ class AddCommandTest {
 
     @Test
     fun `a command equal to a head whose command is omitted is refused`(@TempDir home: Path) = withHome(home) {
-        val implicit = starter().replace("command = \"claude-openrouter\"\n", "")
+        val implicit = configuredOpenRouter().replace("command = \"claude-openrouter\"\n", "")
         Files.writeString(config(), implicit)
         val collide = listOf("api-key", "--name", "fw", "--base-url", "http://localhost:1/v1") +
             listOf("--model", "m:1000", "--command", "openrouter", "--yes")

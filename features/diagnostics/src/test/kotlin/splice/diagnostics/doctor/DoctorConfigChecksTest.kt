@@ -16,6 +16,16 @@ import java.nio.file.Paths
 
 class DoctorConfigChecksTest {
 
+    @Test
+    fun `a parsed topology with no heads is setup guidance, not a failure`() {
+        val row = DoctorTestPorts.configChecks()
+            .configurationChecks(DoctorTopology.Parsed(Topology()), Paths.get("/tmp/splice.toml"))
+            .single { it.name == "topology" }
+        assertEquals(CheckStatus.INFO, row.status)
+        assertTrue(row.detail.contains("not set up yet"), row.detail)
+        assertEquals("splice setup", row.fix)
+    }
+
     // V4-109: a key the operator wrote and did not get is a WARN that names it. Nothing pinned this
     // row: deleting its call in configurationChecks left every doctor test green.
     @Test

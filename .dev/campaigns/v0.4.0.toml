@@ -8294,6 +8294,7 @@ title = "The console never sends me to the terminal for something it can do itse
 files = ["console/src/pages/needs-you/", "console/src/pages/doctor/", "console/src/pages/logs/"]
 status = "todo"
 verify = "Marlin walks it by eye in a normal-size browser on a fresh home (or the film home where history is needed) at the built sha and approves; his walk log names the sha; CI gate on the train sha. A green gate is not approval."
+# depends:V4-344
 
 [[items]]
 id = "V4-348"

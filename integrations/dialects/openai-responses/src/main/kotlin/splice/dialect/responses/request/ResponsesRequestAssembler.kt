@@ -47,7 +47,7 @@ internal data class RequestParts(
 
 internal class ResponsesRequestAssembler(private val quirks: ResponsesQuirks) {
 
-    private val toolWire = ToolWireObjects()
+    private val toolWire = ToolWireObjects(quirks.toolNameCodec)
     private val liteShape = ResponsesLiteShape(quirks)
     private val hints = ResponsesClientHints()
     private val ids = ResponsesStableIds()
@@ -85,6 +85,7 @@ internal class ResponsesRequestAssembler(private val quirks: ResponsesQuirks) {
             stream = true,
             include = include,
             promptCacheKey = cacheKey(body, opts),
+            promptCacheRetention = quirks.promptCacheRetention,
             instructions = shape.instructions,
             tools = shape.tools,
             toolChoice = toolChoiceFor(emitToolChoice, lite, body),
@@ -113,7 +114,16 @@ internal class ResponsesRequestAssembler(private val quirks: ResponsesQuirks) {
     internal fun toolChoiceFor(emitToolChoice: Boolean, lite: Boolean, body: AnthropicRequest): JsonElement? = when {
         !emitToolChoice -> null
         lite -> JsonPrimitive("auto")
-        else -> ToolChoiceMapping.openAiToolChoice(body.toolChoice)
+        else -> {
+            val choice = body.toolChoice
+            val name = choice?.name
+            val wireChoice = if (choice?.type == "tool" && name != null) {
+                choice.copy(name = quirks.toolNameCodec?.shorten(name) ?: name)
+            } else {
+                choice
+            }
+            ToolChoiceMapping.openAiToolChoice(wireChoice)
+        }
     }
 
     /** codex-rs parity: 5.6-family models get parallel_tool_calls=false whenever tools ride —
@@ -149,6 +159,8 @@ internal class ResponsesRequestAssembler(private val quirks: ResponsesQuirks) {
         // Prefix from quirks.providerTag (not a hard-coded "claude-grok:") so TOML cache_key=session-id
         // on any Responses provider stays in its own cache namespace.
         CacheKeyStrategy.SESSION_ID -> opts.sessionId?.let { "${quirks.providerTag}:$it" }
+        CacheKeyStrategy.SESSION_OR_FIRST_MESSAGE_HASH ->
+            opts.sessionId?.let { "${quirks.providerTag}:$it" } ?: ids.stablePromptCacheKey(body)
         CacheKeyStrategy.FIRST_MESSAGE_HASH -> ids.stablePromptCacheKey(body)
     }
 }

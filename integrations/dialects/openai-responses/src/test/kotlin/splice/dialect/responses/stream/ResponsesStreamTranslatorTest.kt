@@ -23,11 +23,12 @@ import splice.core.turn.SharedSummaryParts
 import splice.core.turn.TurnOutcome
 import splice.dialect.responses.StreamTurnContext
 import splice.dialect.responses.reasoning.EmitEncryptedReasoning
+import splice.dialect.responses.tools.MuseToolNameCodec
 import splice.upstream.retry.WatchdogFired
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.BufferCapacity
 
-private class RecordingSink : WireSink {
+internal class RecordingSink : WireSink {
     val calls = mutableListOf<String>()
     private var next = 0
 
@@ -69,7 +70,7 @@ private class RecordingSink : WireSink {
     }
 }
 
-private fun ctx(
+internal fun ctx(
     compact: Boolean = false,
     emit: Boolean = false,
     clientGone: Boolean = false,
@@ -78,6 +79,7 @@ private fun ctx(
     dedupe: Boolean = false,
     shared: SharedSummaryParts = SharedSummaryParts(),
     capture: ((List<String>, List<String>) -> Unit)? = null,
+    names: MuseToolNameCodec? = null,
 ) = StreamTurnContext(
     compact = compact,
     emitEncryptedReasoning = EmitEncryptedReasoning(emit),
@@ -90,6 +92,7 @@ private fun ctx(
     dedupeRepeatedSummaryParts = dedupe,
     summaryPartsShared = shared,
     onTurnReasoning = capture ?: { _, _ -> },
+    toolNameCodec = names,
 )
 
 private fun ev(json: String): JsonObject = Json.parseToJsonElement(json).jsonObject

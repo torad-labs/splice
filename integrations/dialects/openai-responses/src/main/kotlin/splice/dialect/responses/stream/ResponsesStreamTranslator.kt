@@ -77,7 +77,7 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
         val state = ResponsesTurnState()
         val reasoningFold = ResponsesReasoningFold(ctx, state, summaryParts)
         val replay = ResponsesReasoningReplay(ctx, state)
-        val itemFold = ResponsesItemFold(state, reasoningFold, replay)
+        val itemFold = ResponsesItemFold(state, reasoningFold, replay, ctx.toolNameCodec)
         val reducer = ResponsesEventReducer(state, itemFold, reasoningFold)
         // Stream read errors surface via the terminal decision, never a crash; only a genuine
         // cancellation (no watchdog fire) is allowed to propagate.

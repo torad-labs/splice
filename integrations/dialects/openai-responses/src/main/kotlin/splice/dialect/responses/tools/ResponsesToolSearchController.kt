@@ -36,10 +36,11 @@ internal class ResponsesToolSearchController(
     private val forceStrictFalse: Boolean,
     private val normalizeSchemas: Boolean,
     private val decodeReasoningEnvelope: ReasoningEnvelopeDecoder,
+    names: MuseToolNameCodec? = null,
 ) : ToolSearchController {
 
     private val continuation = ResponsesContinuation()
-    private val output = ToolSearchOutput()
+    private val output = ToolSearchOutput(names)
 
     override fun continuationForSearch(round: ToolSearchRound): JsonObject? {
         if (stopSearching(round)) return null

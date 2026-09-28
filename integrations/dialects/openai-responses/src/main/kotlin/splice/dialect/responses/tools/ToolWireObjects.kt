@@ -16,7 +16,7 @@ import splice.core.wire.ToolDefinition
  * be (Kotlin main sources carry no top-level functions); every member keeps its old name and
  * argument list, so a call site only gained a receiver.
  */
-internal class ToolWireObjects {
+internal class ToolWireObjects(private val names: MuseToolNameCodec? = null) {
 
     private val normalizer = ToolSchemaNormalizer()
 
@@ -36,7 +36,7 @@ internal class ToolWireObjects {
         val strictPassthrough = emitStrict && t.strict == true
         return buildJsonObject {
             put(FIELD_TYPE, TYPE_FUNCTION)
-            put(FIELD_NAME, t.name)
+            put(FIELD_NAME, names?.shorten(t.name) ?: t.name)
             put(FIELD_DESCRIPTION, t.description ?: "")
             // forceStrictFalse is a HARD SET (codex-rs parity, responses_api.rs:29-32): every
             // function tool gets strict:false regardless of the tool's OWN value — passing
@@ -65,7 +65,7 @@ internal class ToolWireObjects {
         val strictPassthrough = emitStrict && t.strict == true
         return buildJsonObject {
             put(FIELD_TYPE, TYPE_FUNCTION)
-            put(FIELD_NAME, t.name)
+            put(FIELD_NAME, names?.shorten(t.name) ?: t.name)
             put(FIELD_DESCRIPTION, t.description ?: "")
             // Same hard-set law as functionToolObject's identical branch (review 2026-07-25) — a
             // deferred tool answered through tool_search gets forced strict:false too, never a

@@ -5,6 +5,7 @@
 package splice.dialect.responses
 
 import splice.dialect.responses.request.DefaultEffortVocabulary
+import splice.dialect.responses.tools.MuseToolNameCodec
 import splice.dialect.responses.tools.ToolDeferralPolicy
 import splice.upstream.EffortVocabulary
 
@@ -13,6 +14,10 @@ public data class ResponsesQuirks(
     val providerTag: String, // rides honest omission markers: "[image omitted by <tag> proxy: ...]"
     val store: Boolean = false,
     val cacheKeyStrategy: CacheKeyStrategy = CacheKeyStrategy.FIRST_MESSAGE_HASH,
+    /** Meta's Responses-only extended prompt-cache hint; null preserves every other provider's bytes. */
+    val promptCacheRetention: String? = null,
+    /** One Muse head's shared request/stream alias map; null preserves other providers' tool names. */
+    val toolNameCodec: MuseToolNameCodec? = null,
     val effortVocabulary: EffortVocabulary = DefaultEffortVocabulary(),
     val supportsSummary: Boolean = true,
     /** Null omits the drop. A vendor whose models reject reasoning.summary sets the pattern
@@ -164,4 +169,4 @@ public data class ResponsesQuirks(
         copy(webSocket = webSocket ?: this.webSocket)
 }
 
-public enum class CacheKeyStrategy { FIRST_MESSAGE_HASH, SESSION_ID, OFF }
+public enum class CacheKeyStrategy { FIRST_MESSAGE_HASH, SESSION_ID, SESSION_OR_FIRST_MESSAGE_HASH, OFF }

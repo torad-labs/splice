@@ -23,7 +23,7 @@ internal class ResponsesInputTools(
 ) {
 
     private val ids = ResponsesStableIds()
-    private val toolSearchOutput = ToolSearchOutput()
+    private val toolSearchOutput = ToolSearchOutput(quirks.toolNameCodec)
     private val media = ResponsesToolResultMedia(quirks)
     private val inject = ResponsesReasoningInject()
 
@@ -55,7 +55,7 @@ internal class ResponsesInputTools(
             buildJsonObject {
                 put("type", "function_call")
                 put("call_id", block.id)
-                put("name", block.name)
+                put("name", quirks.toolNameCodec?.shorten(block.name) ?: block.name)
                 put("arguments", block.input.toString())
             },
         )

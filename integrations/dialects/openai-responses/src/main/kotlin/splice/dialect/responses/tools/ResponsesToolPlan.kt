@@ -36,6 +36,7 @@ internal class ResponsesToolPlan(private val quirks: ResponsesQuirks) {
             forceStrictFalse = quirks.forceStrictFalse,
             normalizeSchemas = quirks.normalizeToolSchemas,
             decodeReasoningEnvelope = opts.decodeReasoningEnvelope,
+            names = quirks.toolNameCodec,
         )
     }
 

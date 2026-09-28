@@ -20,9 +20,9 @@ import splice.core.wire.ToolDefinition
  * A type rather than a file-level function (Kotlin main sources carry no top-level functions); the
  * member keeps its old name and argument list.
  */
-internal class ToolSearchOutput {
+internal class ToolSearchOutput(names: MuseToolNameCodec? = null) {
 
-    private val toolWire = ToolWireObjects()
+    private val toolWire = ToolWireObjects(names)
 
     fun toolSearchOutputItem(
         callId: String,

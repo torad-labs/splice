@@ -10,6 +10,7 @@ import splice.core.model.ModelRates
 private const val WINDOW_200K = 200_000L
 private const val WINDOW_262K = 262_144L
 private const val ANTHROPIC_PASSTHROUGH = "anthropic-passthrough"
+private const val OPENAI_RESPONSES = "openai-responses"
 
 /** Shared with AddProfiles.kt across the 2026-09-16 split. */
 internal const val API_KEY = "api-key"
@@ -146,10 +147,10 @@ internal class AddProfileCatalog {
         ),
         AddProfile(
             name = "muse",
-            summary = "Meta Muse subscription over the Anthropic wire (device sign-in)",
-            dialect = ANTHROPIC_PASSTHROUGH,
+            summary = "Meta Muse subscription over the Responses wire (device sign-in)",
+            dialect = OPENAI_RESPONSES,
             authKind = "muse-oauth",
-            baseUrl = "https://api.meta.ai",
+            baseUrl = "https://api.meta.ai/v1",
             headKey = "muse",
             command = "claude-muse",
             // V4-229: Meta publishes no window, so 1.3's is measured. api.meta.ai served a prompt of

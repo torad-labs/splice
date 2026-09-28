@@ -13,6 +13,7 @@ import splice.core.config.Knob
 import splice.core.config.UserHome
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.AuthKindRegistry
+import splice.core.topology.Dialect
 import splice.core.util.EnvReader
 import splice.topology.TopologyLoader
 import java.io.ByteArrayOutputStream
@@ -337,7 +338,7 @@ class AddCommandTest {
         @TempDir home: Path,
     ) = withHome(home) {
         val before = starter()
-        val routes = mapOf("GET https://api.meta.ai" to "{}")
+        val routes = mapOf("GET https://api.meta.ai/v1" to "{}")
         Files.writeString(authFile("muse-oauth"), "{}")
         assertFalse(runBlocking { command(http(routes), login = false).add(listOf("muse", "--yes"), env) })
         assertEquals(before, Files.readString(config()))
@@ -347,7 +348,8 @@ class AddCommandTest {
         val museHead = topology.heads.getValue("muse")
         topology.providers.getValue("muse").catalogFor(museHead)
         assertEquals("muse-oauth", topology.providers.getValue("muse").auth.kind)
-        assertEquals("https://api.meta.ai", topology.providers.getValue("muse").baseUrl)
+        assertEquals(Dialect.OPENAI_RESPONSES, topology.providers.getValue("muse").dialect)
+        assertEquals("https://api.meta.ai/v1", topology.providers.getValue("muse").baseUrl)
         assertEquals("claude-muse", museHead.claude.command)
         assertEquals("muse-spark-1.3[1m]", museHead.pinnedModel)
         assertEquals(null, museHead.models)
@@ -403,7 +405,7 @@ class AddCommandTest {
                 "https://chatgpt.com/backend-api/codex",
                 "https://api.x.ai/v1",
                 "https://api.anthropic.com",
-                "https://api.meta.ai",
+                "https://api.meta.ai/v1",
             )
             val routes = bases.associate { "GET $it" to "{}" }
             Files.writeString(authFile("chatgpt-oauth"), TOKENS)

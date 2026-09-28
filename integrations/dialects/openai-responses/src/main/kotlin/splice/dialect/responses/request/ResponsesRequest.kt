@@ -22,6 +22,7 @@ internal data class ResponsesRequest(
     val stream: Boolean,
     val include: List<String>? = null,
     @SerialName("prompt_cache_key") val promptCacheKey: String? = null,
+    @SerialName("prompt_cache_retention") val promptCacheRetention: String? = null,
     /** Nullable since responses-lite (2026-07-19): lite turns move the instructions text into a
      *  developer-role input item and OMIT this field, exactly as codex-rs serves the 5.6 family. */
     val instructions: String? = null,

@@ -25,7 +25,7 @@ internal class ProviderAssembly(
     private val probeScope: CoroutineScope,
     private val log: LogSink,
     private val refreshCall: TokenUrlRefreshCall,
-    private val museArm: MusePassthroughArm = MusePassthroughArm(log, probeScope),
+    private val museArm: MuseResponsesArm = MuseResponsesArm(statePaths, log, probeScope),
     private val kimiArm: KimiPassthroughArm = KimiPassthroughArm(statePaths, probeScope, log),
 ) {
     private val grokRefresh = GrokRefresh(log)
@@ -76,7 +76,7 @@ internal class ProviderAssembly(
         AuthKind.ChatgptOAuth -> dialect == Dialect.OPENAI_RESPONSES
         AuthKind.GrokOAuth -> dialect == Dialect.OPENAI_RESPONSES || dialect == Dialect.OPENAI_CHAT
         AuthKind.KimiOAuth -> dialect == Dialect.ANTHROPIC_PASSTHROUGH && provider == "kimi"
-        AuthKind.MuseOAuth -> dialect == Dialect.ANTHROPIC_PASSTHROUGH && provider == "muse"
+        AuthKind.MuseOAuth -> dialect == Dialect.OPENAI_RESPONSES && provider == "muse"
         AuthKind.Client -> dialect == Dialect.ANTHROPIC_PASSTHROUGH
     }
 }

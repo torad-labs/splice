@@ -50,7 +50,7 @@ class ProviderAssemblyCompatibilityTest {
         AuthKind.ChatgptOAuth to setOf(Dialect.OPENAI_RESPONSES),
         AuthKind.GrokOAuth to setOf(Dialect.OPENAI_RESPONSES, Dialect.OPENAI_CHAT),
         AuthKind.KimiOAuth to setOf(Dialect.ANTHROPIC_PASSTHROUGH),
-        AuthKind.MuseOAuth to setOf(Dialect.ANTHROPIC_PASSTHROUGH),
+        AuthKind.MuseOAuth to setOf(Dialect.OPENAI_RESPONSES),
         AuthKind.Client to setOf(Dialect.ANTHROPIC_PASSTHROUGH),
     )
 
@@ -92,9 +92,10 @@ class ProviderAssemblyCompatibilityTest {
     fun `vendor-bound OAuth requires its own provider id`(@TempDir tmp: Path) = runTest {
         val fixture = Fixture(tmp, backgroundScope)
         for (kind in listOf(AuthKind.KimiOAuth, AuthKind.MuseOAuth)) {
+            val dialect = if (kind == AuthKind.MuseOAuth) Dialect.OPENAI_RESPONSES else Dialect.ANTHROPIC_PASSTHROUGH
             val ctx = fixture.context(
                 kind = kind.wire,
-                dialect = Dialect.ANTHROPIC_PASSTHROUGH,
+                dialect = dialect,
                 provider = "not-the-vendor",
             )
             val error = assertThrows(IllegalArgumentException::class.java) {
@@ -211,7 +212,8 @@ class ProviderAssemblyCompatibilityTest {
             "backup",
             Json.parseToJsonElement(backupJson).jsonObject,
         )
-        val ctx = fixture.context(AuthKind.MuseOAuth.wire, Dialect.ANTHROPIC_PASSTHROUGH)
+        val base = fixture.context(AuthKind.MuseOAuth.wire, Dialect.OPENAI_RESPONSES)
+        val ctx = base.copy(providerCfg = base.providerCfg.copy(extraHeaders = mapOf("X-Muse-Test" to "yes")))
         repeat(2) {
             val wired = fixture.assembly.buildProvider(ctx)
             assertEquals(listOf("primary", "backup"), wired.accounts.map(WiredAccount::label))
@@ -220,34 +222,55 @@ class ProviderAssemblyCompatibilityTest {
                 val credentials = requireNotNull(account.auth.credentials())
                 assertEquals(Credentials.Bearer("key-${account.label}"), credentials)
                 val headers = requireNotNull(account.extraHeaders).invoke(credentials)
-                assertEquals(mapOf("Accept" to "text/event-stream", "User-Agent" to "splice/$GATEWAY_VERSION"), headers)
+                assertEquals(
+                    mapOf(
+                        "Accept" to "text/event-stream",
+                        "User-Agent" to "splice/$GATEWAY_VERSION",
+                        "X-Muse-Test" to "yes",
+                    ),
+                    headers,
+                )
             }
             val headers = wired.provider.extraHeaders(requireNotNull(wired.auth.credentials()))
             assertNull(headers["x-api-version"])
-            assertEquals(mapOf("Accept" to "text/event-stream", "User-Agent" to "splice/$GATEWAY_VERSION"), headers)
+            assertEquals(
+                mapOf(
+                    "Accept" to "text/event-stream",
+                    "User-Agent" to "splice/$GATEWAY_VERSION",
+                    "X-Muse-Test" to "yes",
+                ),
+                headers,
+            )
             assertEquals(2, wired.accounts.map { it.quotaFile }.toSet().size)
         }
         assertEquals(0, fixture.museMintCalls)
     }
 
     @Test
-    fun `Muse strips model tier suffixes but preserves Anthropic caching content`(@TempDir tmp: Path) = runTest {
+    fun `Muse Responses keeps the client model while sending summaries and encrypted replay`(
+        @TempDir tmp: Path,
+    ) = runTest {
         val fixture = Fixture(tmp, backgroundScope)
-        val ctx = fixture.context(AuthKind.MuseOAuth.wire, Dialect.ANTHROPIC_PASSTHROUGH)
+        val ctx = fixture.context(AuthKind.MuseOAuth.wire, Dialect.OPENAI_RESPONSES)
         val wired = fixture.assembly.buildProvider(
-            ctx.copy(providerCfg = ctx.providerCfg.copy(baseUrl = "https://api.meta.ai")),
+            ctx.copy(providerCfg = ctx.providerCfg.copy(baseUrl = "https://api.meta.ai/v1")),
         )
-        assertEquals("https://api.meta.ai/v1/messages", wired.provider.upstreamUrl)
+        assertEquals("https://api.meta.ai/v1/responses", wired.provider.upstreamUrl)
         for (model in listOf("muse-spark-1.3", "muse-spark-1.2")) {
             val body = AnthropicParse.parseAnthropicBody(
-                """{"model":"$model[1m]","messages":[{"role":"user","content":[
-                    {"type":"text","text":"hi","cache_control":{"type":"ephemeral"}}]}]}""",
+                """{"model":"$model[1m]","messages":[{"role":"user","content":"hi"}]}""",
             )
-            val built = wired.provider.buildTurn(body, compact = false, sessionId = null)
+            val built = wired.provider.buildTurn(body, compact = false, sessionId = "muse-session")
             assertEquals(model, built.requestBody["model"]?.jsonPrimitive?.content)
-            val message = built.requestBody.getValue("messages").jsonArray.first().jsonObject
-            val block = message.getValue("content").jsonArray.first().jsonObject
-            assertTrue("cache_control" in block)
+            assertEquals("$model[1m]", built.meta.originalModel)
+            assertEquals("24h", built.requestBody["prompt_cache_retention"]?.jsonPrimitive?.content)
+            assertEquals("muse:muse-session", built.requestBody["prompt_cache_key"]?.jsonPrimitive?.content)
+            assertEquals("detailed", built.requestBody["reasoning"]?.jsonObject?.get("summary")?.jsonPrimitive?.content)
+            assertTrue(
+                built.requestBody.getValue("include").jsonArray.any {
+                    it.jsonPrimitive.content == "reasoning.encrypted_content"
+                },
+            )
         }
         assertEquals(0, fixture.museMintCalls)
     }
@@ -262,7 +285,7 @@ class ProviderAssemblyCompatibilityTest {
             Json.parseToJsonElement("""{"access_token":"account-backup","api_key":"key-backup"}""").jsonObject,
         )
         val wired = fixture.assembly.buildProvider(
-            fixture.context(AuthKind.MuseOAuth.wire, Dialect.ANTHROPIC_PASSTHROUGH),
+            fixture.context(AuthKind.MuseOAuth.wire, Dialect.OPENAI_RESPONSES),
         )
         assertFalse(wired.accounts.single(WiredAccount::primary).credentialPresent)
         assertEquals(Credentials.Bearer("key-backup"), wired.auth.credentials())
@@ -403,7 +426,8 @@ class ProviderAssemblyCompatibilityTest {
             probeScope = scope,
             log = {},
             refreshCall = TokenUrlRefreshCall { _, _ -> RefreshAttempt.Denied("test-denied") },
-            museArm = MusePassthroughArm(
+            museArm = MuseResponsesArm(
+                statePaths = statePaths,
                 log = {},
                 probeScope = scope,
                 mintCall = MuseKeyMintCall { _, _ ->

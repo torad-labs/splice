@@ -8,6 +8,7 @@ import splice.dialect.responses.ResponsesTurnState
 import splice.dialect.responses.reasoning.ResponsesReasoningFold
 import splice.dialect.responses.reasoning.ResponsesReasoningReplay
 import splice.dialect.responses.request.BlockState
+import splice.dialect.responses.tools.MuseToolNameCodec
 import splice.dialect.responses.tools.ResponsesToolSearchParse
 import splice.upstream.sse.WireSink
 
@@ -15,6 +16,7 @@ internal class ResponsesItemFold(
     private val state: ResponsesTurnState,
     private val reasoningFold: ResponsesReasoningFold,
     private val replay: ResponsesReasoningReplay,
+    private val names: MuseToolNameCodec? = null,
 ) {
 
     private val frames = ResponsesFrameParse()
@@ -42,7 +44,8 @@ internal class ResponsesItemFold(
             val rawId = JsonScalars.strOrEmpty(item["call_id"]).ifEmpty { JsonScalars.strOrEmpty(item["id"]) }
             val id = rawId.ifEmpty { "toolu_synth_${toolSynthCounter++}_$oi" }
             if (rawId.isNotEmpty()) state.turnToolIds.add(rawId)
-            val idx = sink.openTool(id = id, name = JsonScalars.strOrEmpty(item["name"]))
+            val wireName = JsonScalars.strOrEmpty(item["name"])
+            val idx = sink.openTool(id = id, name = names?.restore(wireName) ?: wireName)
             state.putBlock(oi, BlockState(idx, sawDelta = false, tool = true))
             state.hasToolUse = true
             state.toolSalvage.opened(oi)

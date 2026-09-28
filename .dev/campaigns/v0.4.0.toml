@@ -9291,6 +9291,7 @@ claimed_at = "2026-09-28T17:55:35.494Z"
 # [2026-09-28] CLAIM: owner=splice-lead at=2026-09-28T17:55:35Z
 # [2026-09-28] amend by=splice-lead: files were ["features/usage/src/main/kotlin/splice/usage/quota/UsagePayloads.kt", "features/usage/src/test/kotlin/splice/usage/quota/v4396/", "console/src/entities/usage/model/derive.ts", "console/tests/v4396/"]
 # [2026-09-28] amend by=splice-lead: files were ["features/usage/src/main/kotlin/splice/usage/quota/UsagePayloads.kt", "features/usage/src/test/kotlin/splice/usage/quota/v4396/", "features/usage/src/test/kotlin/splice/usage/quota/UsagePayloadsTest.kt", "features/usage/src/test/kotlin/splice/usage/quota/UsageWarnPayloadTest.kt", "console/src/entities/usage/model/derive.ts", "console/tests/v4396/"]
+# [2026-09-28] RECEIPT cmd="bun tools/gate slot V4-396 -- :features-usage:test :features-usage:detekt (red first on HEAD: 3 of 4 v4396 tests FAILED — stale 16-min window, reset window, stale-beside-current all still shown)" exit=0 tests=143 touched=features/usage/src/main/kotlin/splice/usage/quota/UsagePayloads.kt,features/usage/src/test/kotlin/splice/usage/quota/v4396/UsageFreshWindowsTest.kt,features/usage/src/test/kotlin/splice/usage/quota/UsagePayloadsTest.kt,features/usage/src/test/kotlin/splice/usage/quota/UsageWarnPayloadTest.kt tail="0eba6ef12"
 
 [[items]]
 id = "V4-397"

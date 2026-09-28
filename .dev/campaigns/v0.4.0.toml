@@ -9446,3 +9446,11 @@ title = "A plan account whose credential is gone is invisible after a restart (M
 files = ["integrations/oauth/src/main/kotlin/splice/oauth/OAuthAccountFiles.kt", "integrations/oauth/src/test/kotlin/splice/oauth/v4405/", "features/accounts/src/main/kotlin/splice/accounts/pool/AccountsRoute.kt"]
 status = "todo"
 verify = "red first: a pool dir with <label>-quota.json and no <label>.json lists <label> with credential_present false after a fresh discover (so Needs you offers renew); a symlinked <label>.json lists as refused with its reason, never loaded as a credential; regular labeled credentials and the primary are unchanged. Mutant: drop the orphan branch and the listing test goes red. Marlin re-walks V4-357 on walk-357 up to the renew form (no real sign-in)."
+
+[[items]]
+id = "V4-406"
+phase = "release"
+title = "splice status drops a head whose provider cannot be built (Marlin walk of V4-394 on bb54736ea): with [heads.grok] provider = \"no-such-provider\", /health reports failedHeadReasons {grok: unknown provider 'no-such-provider'} but splice status prints no grok row at all, so the user sees claude-grok missing, not 'not running: unknown provider …'. The status rows must come from the configured heads, with a row for every head /health names as failed."
+files = ["app/src/main/kotlin/splice/app/cli/status/StatusTable.kt", "app/src/main/kotlin/splice/app/cli/status/StatusCommand.kt", "app/src/test/kotlin/splice/app/cli/status/v4406/"]
+status = "todo"
+verify = "red first: a topology with one head whose provider is unknown prints that head's row as 'not running: unknown provider …' with the reason from /health; the other heads unchanged; a head /health names failed but the local topology cannot resolve still gets a row. Marlin re-walks it."

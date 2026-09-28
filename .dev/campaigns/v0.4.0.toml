@@ -9264,3 +9264,11 @@ title = "splice restart from another home bounces the everyday daemon: at 12:40:
 files = ["features/lifecycle/src/main/kotlin/splice/lifecycle/start/SupervisedStart.kt", "features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonLaunch.kt", "features/lifecycle/src/main/kotlin/splice/lifecycle/restart/RestartCommand.kt", "features/lifecycle/src/main/kotlin/splice/lifecycle/restart/DaemonStop.kt", "features/lifecycle/src/test/kotlin/splice/lifecycle/restart/v4395/"]
 status = "todo"
 verify = "red first: restart invoked for a home whose control port differs from the unit's daemon (and one whose HOME differs) exits non-zero, signals nothing, and names the unit; the unit's own home still restarts through it"
+
+[[items]]
+id = "V4-396"
+phase = "release"
+title = "The console's plan bar shows a reading hours old (Marlin, film-home-team-walk at 4c3bc80d1): the header's closest plan limit read 'claude-splice 7d 99% · in 2d 11h' from claude-splice-quota.json updated Sep 27 10:56 PM CT, 13.8 h old, on a home with no Claude credential. PRODUCT.md: plan bars show only a reading under 15 minutes old whose window hasn't reset (V4-327, QuotaFreshness). V4-327 put that rule on the status line only: /api/usage sends observed_at but never applies QuotaFreshness (UsagePayloads.kt:70,102), and console derive.ts:41 marks stale only by resets_at. The daemon's /api/usage applies QuotaView.currentAt as the one rule, and the console reads a non-current window as no reading."
+files = ["features/usage/src/main/kotlin/splice/usage/quota/UsagePayloads.kt", "features/usage/src/test/kotlin/splice/usage/quota/v4396/", "console/src/entities/usage/model/derive.ts", "console/tests/v4396/"]
+status = "todo"
+verify = "red first: /api/usage for a window observed 16 min ago (resets_at in the future) reports it not current, one observed 14 min ago current; the console header shows no plan limit for the stale one; CI gate on the exact sha"

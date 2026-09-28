@@ -9076,5 +9076,8 @@ id = "V4-388"
 phase = "release"
 title = "GPT code_mode_only turns carry Codex's exec surface: one exec tool whose manual is generated from every Claude Code tool's schema (codex-rs code-mode-protocol description.rs + json_schema_types.rs), no top-level client tools, the lark grammar format, and a runtime with tools.<Name>(), text(), exit(), ALL_TOOLS. Operator Sep 28: 'we're not sending tools upstream correctly', 'send the requests the way Codex does it'. Measured before: 31 direct function tools + a 478-char splice_exec with tools.call(), exec share 0-10%."
 files = ["integrations/upstream/src/main/kotlin/splice/upstream/codemode/", "integrations/codemode/src/main/kotlin/splice/codemode/", "integrations/providers/codex/src/main/kotlin/splice/provider/codex/", "integrations/providers/codex/src/main/resources/splice/provider/codex/", "integrations/providers/codex/src/test/kotlin/splice/provider/codex/", "integrations/upstream/src/test/kotlin/splice/upstream/codemode/v4388/", "integrations/codemode/src/test/kotlin/splice/codemode/v4388/", "core/src/main/kotlin/splice/core/topology/QuirksConfig.kt"]
-status = "todo"
+status = "in_flight"
 verify = "v4388 conformance test red on fdfcdb53f, green after; CI gate on the pushed sha; live claudex trace shows exec as the only top-level client surface"
+claimed_by = "splice-lead"
+claimed_at = "2026-09-28T10:05:09.127Z"
+# [2026-09-28] CLAIM: owner=splice-lead at=2026-09-28T10:05:09Z

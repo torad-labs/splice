@@ -53,12 +53,14 @@ import java.io.IOException
 import java.io.InputStreamReader
 import java.nio.charset.CodingErrorAction
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.time.format.DateTimeParseException
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.TimeUnit
@@ -86,6 +88,9 @@ private const val MIN_SWEEP_GAP_MS = 1_000L
 // stops while the machine sleeps, so a laptop asleep across midnight swept up to a day late; a wait
 // that ends early rereads the wall clock and waits again, so a slept midnight is swept this soon after waking.
 private const val MAX_SWEEP_WAIT_MS = 10 * 60_000L
+
+// A head's trace can span gigabytes; counting its rows before deletion must not time out at one screen's budget.
+private const val DELETE_WAIT_MS = 120_000L
 
 /** V4-273: the waits for every store's midnight sweep, on one named daemon thread. It holds only the
  *  wait; the sweep itself is handed to the file lane when its midnight comes. */
@@ -120,6 +125,7 @@ public class ActivityDays(
     private val maxSweepWaitMs: Long = MAX_SWEEP_WAIT_MS,
 ) {
     private val files = DayFiles(dir, prefix)
+    private val deleted = DayDeleteMarker(dir, prefix, ownerOnly)
     private val sweptFor = AtomicReference<LocalDate?>(null)
     private val armed = AtomicBoolean(false)
 
@@ -147,6 +153,7 @@ public class ActivityDays(
                         Files.createDirectories(dir)
                     }
                     JsonlSink.appendLine(file, line, DAY_MAX_BYTES)
+                    deleted.clear()
                     if (sweptFor.getAndSet(today) != today) sweep(today)
                 },
                 "a best-effort metadata row on the file lane; AsyncFileIo counts lane drops, and a failed " +
@@ -194,11 +201,119 @@ public class ActivityDays(
     private fun day(epochMs: Long): LocalDate = Instant.ofEpochMilli(epochMs).atZone(ZoneOffset.UTC).toLocalDate()
 }
 
+/** What one store physically holds, including empty and rolled-only days. [agesOut] is the UTC day
+ *  after the newest kept day leaves the configured window; null when no day holds data. */
+public data class DayInventory(
+    val days: Int,
+    val rows: Long,
+    val bytes: Long,
+    val oldest: LocalDate?,
+    val agesOut: LocalDate?,
+)
+
+/** A store's delete state is a sibling of its day files, not itself a day file. */
+private class DayDeleteMarker(private val dir: Path, prefix: String, private val ownerOnly: Boolean) {
+    private val path = dir.resolve("$prefix.deleted")
+
+    fun exists(): Boolean = Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)
+
+    fun mark() {
+        if (Files.isSymbolicLink(dir)) throw IOException("day directory is a symlink: $dir")
+        if (ownerOnly) {
+            val _ = SecureFile.ownerOnlyDirectory(dir)
+        } else {
+            Files.createDirectories(dir)
+        }
+        SecureFile.writeAtomic0600(path, "deleted\n")
+    }
+
+    fun clear() {
+        val _ = Files.deleteIfExists(path)
+    }
+}
+
+/** Source-derived inventory of real day files; neither sizes nor lines follow a symlink target. */
+private class DayFileMetadata(prefix: String) {
+    private val namePattern = Regex("${Regex.escape(prefix)}-(\\d{4}-\\d{2}-\\d{2})\\.jsonl(?:\\.lock|\\.1)?")
+
+    fun inventory(days: List<Pair<LocalDate, Path>>, retentionDays: Int): DayInventory {
+        require(retentionDays > 0)
+        val kept = days.mapNotNull { (date, file) ->
+            val content = listOf(file.resolveSibling("${file.fileName}$ROLLED_SUFFIX"), file)
+                .mapNotNull { path -> regularSize(path)?.let { path to it } }
+            if (content.isEmpty()) null else date to content
+        }
+        return DayInventory(
+            days = kept.size,
+            rows = kept.sumOf { (_, content) -> content.sumOf { (file, _) -> countLines(file) } },
+            bytes = kept.sumOf { (_, content) -> content.sumOf { (_, size) -> size } },
+            oldest = kept.firstOrNull()?.first,
+            agesOut = kept.lastOrNull()?.first?.plusDays(retentionDays.toLong()),
+        )
+    }
+
+    fun regularSize(file: Path): Long? = try {
+        val attrs = Files.readAttributes(file, "basic:size,isRegularFile", LinkOption.NOFOLLOW_LINKS)
+        when {
+            attrs["isRegularFile"] == true -> attrs["size"] as? Long
+            Files.isSymbolicLink(file) -> null
+            else -> throw IOException("not a regular day file: $file")
+        }
+    } catch (_: NoSuchFileException) {
+        null
+    }
+
+    /** Only a calendar day carried by a regular file or a removable symlink is a store entry. */
+    fun dateOf(file: Path): LocalDate? {
+        val name = namePattern.matchEntire(file.fileName.toString())?.groupValues?.get(1) ?: return null
+        val date = try {
+            LocalDate.parse(name)
+        } catch (_: DateTimeParseException) {
+            null
+        }
+        if (date != null) {
+            val attrs = try {
+                Files.readAttributes(file, "basic:isRegularFile,isSymbolicLink", LinkOption.NOFOLLOW_LINKS)
+            } catch (_: NoSuchFileException) {
+                return null
+            }
+            if (attrs["isRegularFile"] != true && attrs["isSymbolicLink"] != true) {
+                throw IOException("not a day file: $file")
+            }
+        }
+        return date
+    }
+
+    private fun countLines(file: Path): Long {
+        val decoder = Charsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPLACE)
+            .onUnmappableCharacter(CodingErrorAction.REPLACE)
+        return InputStreamReader(Files.newInputStream(file, LinkOption.NOFOLLOW_LINKS), decoder)
+            .useLines { lines -> lines.fold(0L) { count, _ -> count + 1 } }
+    }
+}
+
+/** Bounded wait for the file lane, keeping refusal and incomplete work distinct from a completed delete. */
+private class DayDeleteWait {
+    val ready = CountDownLatch(1)
+    val result = AtomicReference<Result<DayInventory>?>(null)
+
+    @Throws(IOException::class, InterruptedException::class)
+    fun await(queued: Boolean): DayInventory {
+        if (!queued) throw IOException("the file lane refused the delete; nothing was removed")
+        if (!ready.await(DELETE_WAIT_MS, TimeUnit.MILLISECONDS)) {
+            throw IOException("the delete is still running; read inventory before retrying")
+        }
+        return checkNotNull(result.get()).getOrThrow()
+    }
+}
+
 /** V4-273: one store's day files whatever their age, with no window: every line on disk (the
  *  `splice trace` reader) and the purge of all of them. The window, and every sweep, belong to the
  *  store that writes the files ([ActivityDays]). */
-public class DayFiles(private val dir: Path, prefix: String) {
-    private val namePattern = Regex("${Regex.escape(prefix)}-(\\d{4}-\\d{2}-\\d{2})\\.jsonl")
+public class DayFiles(private val dir: Path, private val prefix: String, private val ownerOnly: Boolean = false) {
+    private val marker = DayDeleteMarker(dir, prefix, ownerOnly)
+    private val metadata = DayFileMetadata(prefix)
     private val backward = BackwardLines()
 
     /** Every line of every day on disk, oldest day first. */
@@ -222,7 +337,43 @@ public class DayFiles(private val dir: Path, prefix: String) {
      *  whether or not it is there. A directory that cannot be listed throws why. */
     @Throws(IOException::class)
     public fun files(): List<Path> =
-        days().asReversed().flatMap { (_, file) -> listOf(file, file.resolveSibling("${file.fileName}$ROLLED_SUFFIX")) }
+        days().asReversed()
+            .flatMap { (_, file) -> listOf(file, file.resolveSibling("${file.fileName}$ROLLED_SUFFIX")) }
+            .filter { metadata.regularSize(it) != null || !Files.exists(it, LinkOption.NOFOLLOW_LINKS) }
+
+    /** Count actual day files, including an empty base or a rolled half without its base. Symlink targets
+     *  are not part of this store, so neither their bytes nor their lines enter the inventory. */
+    @Throws(IOException::class)
+    public fun inventory(retentionDays: Int): DayInventory = metadata.inventory(days(), retentionDays)
+
+    /** A delete marker is a non-day file. It survives a restart, but a successfully appended row clears it. */
+    public fun deleted(): Boolean = marker.exists()
+
+    /** Delete after earlier appends on the same file lane, then mark the empty store before later writes.
+     *  A rejected or timed-out lane never claims the deletion finished. Call from an I/O dispatcher. */
+    @Throws(IOException::class, InterruptedException::class)
+    public fun deleteKept(retentionDays: Int): DayInventory {
+        val wait = DayDeleteWait()
+        val queued = AsyncFileIo.submit {
+            try {
+                val attempt = Cancellables.runCatchingCancellable {
+                    val before = inventory(retentionDays)
+                    when (val purged = purge()) {
+                        is DayPurge.Unlisted -> throw IOException("cannot list ${purged.dir}", purged.failure)
+                        is DayPurge.Listed -> purged.failed.entries.firstOrNull()?.let { (file, failure) ->
+                            throw IOException("could not delete $file", failure)
+                        }
+                    }
+                    marker.mark()
+                    before
+                }
+                wait.result.set(attempt)
+            } finally {
+                wait.ready.countDown()
+            }
+        }
+        return wait.await(queued)
+    }
 
     /** V4-343: what [visit] answers of [file] open as a [LineFile]; null when the file is not there. Any other
      *  failure throws. */
@@ -272,22 +423,12 @@ public class DayFiles(private val dir: Path, prefix: String) {
             }
             .toMap()
 
-    private fun days(): List<Pair<LocalDate, Path>> =
-        DirectoryEntries.of(dir)
-            .mapNotNull { file -> dateOf(file)?.let { it to file } }
+    private fun days(): List<Pair<LocalDate, Path>> {
+        if (Files.isSymbolicLink(dir)) throw IOException("day directory is a symlink: $dir")
+        return DirectoryEntries.of(dir)
+            .mapNotNull { entry -> metadata.dateOf(entry)?.let { it to dir.resolve("$prefix-$it.jsonl") } }
+            .distinctBy { it.first }
             .sortedBy { it.first }
-
-    /** The day a file of this store is named for; null for any other name, a date that is not on the
-     *  calendar among them (V4-286: `edges-2026-02-29.jsonl` threw out of every listing, sweeps and
-     *  the daemon's start included). DateTimeParseException is not one of the kinds
-     *  runCatchingCancellable folds, so it is caught here. */
-    private fun dateOf(file: Path): LocalDate? {
-        val name = namePattern.matchEntire(file.fileName.toString())?.groupValues?.get(1) ?: return null
-        return try {
-            LocalDate.parse(name)
-        } catch (_: DateTimeParseException) {
-            null
-        }
     }
 
     /** The day's rotated older half, read BEFORE the live file so the day comes back whole and in order
@@ -297,11 +438,12 @@ public class DayFiles(private val dir: Path, prefix: String) {
     /** [file]'s lines, decoded leniently: a malformed byte reads as U+FFFD and costs only its own line,
      *  as JsonlSink.readTailAt reads. None when the file is not there; any other failure throws. */
     private fun readLines(file: Path): List<String> {
+        if (metadata.regularSize(file) == null) return emptyList()
         val decoder = Charsets.UTF_8.newDecoder()
             .onMalformedInput(CodingErrorAction.REPLACE)
             .onUnmappableCharacter(CodingErrorAction.REPLACE)
         return try {
-            InputStreamReader(Files.newInputStream(file), decoder).useLines { it.toList() }
+            InputStreamReader(Files.newInputStream(file, LinkOption.NOFOLLOW_LINKS), decoder).useLines { it.toList() }
         } catch (_: NoSuchFileException) {
             emptyList()
         }
@@ -318,7 +460,7 @@ public sealed class DayPurge {
 }
 
 /** A day file's name: its store's prefix, then the UTC day. */
-private val DAY_FILE = Regex("(.+)-\\d{4}-\\d{2}-\\d{2}\\.jsonl")
+private val DAY_FILE = Regex("(.+)-\\d{4}-\\d{2}-\\d{2}\\.jsonl(?:\\.1|\\.lock)?")
 
 /** V4-260: the [ActivityDays] stores that have day files in [dir], by prefix. For the trace dir that
  *  is every head with trace days on disk, so the days of a head splice.toml no longer names can go. */

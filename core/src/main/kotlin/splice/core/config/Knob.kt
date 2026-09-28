@@ -471,9 +471,18 @@ public enum class Knob(
         restartRequired = true,
     ),
 
+    // V4-367: a daemon-wide switch for storing SendMessage metadata. Existing day files remain until
+    // retention or an explicit delete; false stops new appends after the next restart.
+    MESSAGE_EDGES(
+        "messageEdges",
+        KnobKind.BOOL,
+        listOf("SPLICE_MESSAGE_EDGES"),
+        true,
+        restartRequired = true,
+    ),
+
     // V4-130: the per-head switch for the activity label store. `*` stores every head, an empty value
-    // stores none, otherwise a comma-separated list of head keys. Message edges are not switched: the
-    // contract keeps them by default as metadata.
+    // stores none, otherwise a comma-separated list of head keys. Message edges use their own switch.
     ACTIVITY_STORE_HEADS(
         "activityStoreHeads",
         KnobKind.STRING,

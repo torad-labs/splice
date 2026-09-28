@@ -175,7 +175,7 @@ class TeamsRoutesTest {
             edge(OUTSIDER, "uds:/run/1.sock", AT + 3, "in", null, "lead"),
         )
         assertEquals(
-            rig.json("""{"team_id":"$id","edges":[${expected.joinToString(",")}]}"""),
+            rig.json("""{"team_id":"$id","state":"on","edges":[${expected.joinToString(",")}]}"""),
             rig.json(routes().reads.edges(id).body),
         )
     }
@@ -334,7 +334,7 @@ class TeamsRoutesTest {
             """"label":"Reviewing","detail":null}"""
         assertEquals(
             rig.json(
-                """{"team_id":"$id","day_start_epoch_millis":$DAY_START,"sample_interval_note":"$note",""" +
+                """{"team_id":"$id","state":"on","day_start_epoch_millis":$DAY_START,"sample_interval_note":"$note",""" +
                     """"upstream_label_queries":1,"entries":[$first,$second]}""",
             ),
             rig.json(routes().reads.activity(id, null).body),

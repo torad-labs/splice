@@ -5,9 +5,11 @@ package splice.app.control.mount
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.receiveText
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
+import kotlinx.coroutines.withContext
 import splice.app.control.ConsolePorts
 import splice.app.control.ManagedHead
 import splice.app.control.SessionHeadAdapter
@@ -18,6 +20,7 @@ import splice.core.config.UserHome
 import splice.core.topology.AuthKindRegistry
 import splice.sessions.http.ActivitySource
 import splice.sessions.http.CompactionSource
+import splice.sessions.http.KeptActivity
 import splice.sessions.http.ProjectsRoutes
 import splice.sessions.http.RepoOf
 import splice.sessions.http.SentTextSource
@@ -32,6 +35,7 @@ import splice.sessions.http.TeamsRoutes
 import splice.sessions.registry.SessionSource
 import splice.sessions.transcript.SessionHistoryRoot
 import splice.sessions.transcript.SessionTranscriptViewEnabled
+import splice.upstream.codemode.ProcessDispatchers
 
 /** Every route here is registered only when a session registry is wired, as /api/sessions always was.
  *  [ports] is read at CALL time: ControlPlane assigns the activity and team stores after construction. */
@@ -43,6 +47,7 @@ internal class SessionsMount(
     private val guard: ControlGuard,
 ) {
     private val sessionHeads = SessionHeadAdapter.adapt(heads)
+    private val fileIo = ProcessDispatchers().io()
     private val sessionAccounts = SessionAccountOf { head, id ->
         val managed = head?.let(heads::get)
         val pool = managed?.accountPool
@@ -112,6 +117,18 @@ internal class SessionsMount(
                     history.page(query["query"], query["cursor"], query["limit"]?.toIntOrNull()).send(call)
                 }
             }
+        }
+        route.get("/api/kept/edges") {
+            guard.guarded(call) { withContext(fileIo) { routes.edgeRoutes.kept(KeptActivity.EDGES) }.send(call) }
+        }
+        route.delete("/api/kept/edges") {
+            guard.guarded(call) { withContext(fileIo) { routes.edgeRoutes.deleteKept(KeptActivity.EDGES) }.send(call) }
+        }
+        route.get("/api/kept/labels") {
+            guard.guarded(call) { withContext(fileIo) { routes.edgeRoutes.kept(KeptActivity.LABELS) }.send(call) }
+        }
+        route.delete("/api/kept/labels") {
+            guard.guarded(call) { withContext(fileIo) { routes.edgeRoutes.deleteKept(KeptActivity.LABELS) }.send(call) }
         }
         route.get("/api/sessions/edges") { guard.guarded(call) { routes.edgeRoutes.boardEdges().send(call) } }
         route.get("/api/sessions/{id}/edges") {

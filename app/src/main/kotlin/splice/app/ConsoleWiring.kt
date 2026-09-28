@@ -169,7 +169,13 @@ internal object ConsoleWiring {
         val knobs = config.getConfig().asMap()
         val days = (knobs[Knob.ACTIVITY_RETENTION_DAYS.key] as? Long ?: Knob.ACTIVITY_RETENTION_DAYS.default as Long)
         val heads = knobs[Knob.ACTIVITY_STORE_HEADS.key] as? String ?: ALL_HEADS
-        return ActivityStores(statePaths.stateDir.resolve(ACTIVITY_DIRECTORY), days.coerceAtLeast(1L).toInt(), heads)
+        val edges = knobs[Knob.MESSAGE_EDGES.key] as? Boolean ?: true
+        return ActivityStores(
+            statePaths.stateDir.resolve(ACTIVITY_DIRECTORY),
+            days.coerceAtLeast(1L).toInt(),
+            heads,
+            messageEdges = edges,
+        )
     }
 
     /** V4-131: the daemon's ONE team store, `teams.json` under the state dir. */

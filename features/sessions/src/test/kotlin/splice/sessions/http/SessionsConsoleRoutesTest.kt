@@ -113,7 +113,7 @@ class SessionsConsoleRoutesTest {
         assertEquals(HttpStatusCode.OK, alpha.status)
         assertEquals(
             json(
-                """{"session_id":"$ALPHA","edges":[""" +
+                """{"session_id":"$ALPHA","state":"on","edges":[""" +
                     """{"from":"$ALPHA","to":"uds:/run/b.sock","at":${NOW - 30},"direction":"out",${unread()}},""" +
                     """{"from":"$BETA","to":"uds:/run/a.sock","at":${NOW - 20},"direction":"in",${unread()}}]}""",
             ),
@@ -149,7 +149,7 @@ class SessionsConsoleRoutesTest {
         assertEquals(json("""{"sent":0,"received":0,"last_at":null}"""), rows.getValue(ALPHA)["edges"])
         assertEquals(
             json(
-                """{"session_id":"$BETA","edges":[""" +
+                """{"session_id":"$BETA","state":"on","edges":[""" +
                     """{"from":"$GAMMA","to":"uds:/run/b.sock","at":${NOW - 5},"direction":"in",${unread()}}]}""",
             ),
             json(routes.edgeRoutes.edges(BETA).body),

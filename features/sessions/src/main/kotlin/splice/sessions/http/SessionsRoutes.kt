@@ -24,6 +24,7 @@ package splice.sessions.http
 
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -79,6 +80,7 @@ public class SessionsRoutes(
     public fun sessionsJson(): String = buildJsonObject {
         val listing = registry.list()
         val edges = edgeRoutes.index(listing.sessions)
+        addEdgeState(this)
         put("note", HEADLESS_NOTE)
         // An unreadable directory is not an empty one: the error rides beside the (empty) list.
         listing.error?.let { put("error", it) }
@@ -110,6 +112,12 @@ public class SessionsRoutes(
     /** The exact same row projection for a durable-history entry after the live overlay. */
     public fun historyRow(record: SessionRecord): JsonObject = row(record, null)
 
+    private fun addEdgeState(body: JsonObjectBuilder) {
+        val state = edgeRoutes.state() ?: return
+        body.put("edges_state", state.wire)
+        state.reason("edges")?.let { body.put("edges_reason", it) }
+    }
+
     private fun row(s: SessionRecord, edges: EdgeIndex?): JsonObject = buildJsonObject {
         put("pid", s.pid)
         put("session_id", s.sessionId)
@@ -129,6 +137,7 @@ public class SessionsRoutes(
         put("team", s.sessionId?.let { teamOf(it) })
         put("account", s.sessionId?.let { accountOf.label(s.head, it) })
         val id = s.sessionId
+        addEdgeState(this)
         if (edges != null && id != null) put("edges", edges.summary(id, s.address))
     }
 

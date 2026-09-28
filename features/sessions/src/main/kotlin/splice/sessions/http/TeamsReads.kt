@@ -62,6 +62,9 @@ public class TeamReads internal constructor(
         val members = Members(team, registry?.read().orEmpty())
         buildJsonObject {
             put(TEAM_ID, team.id)
+            val state = stores.edgeState()
+            put("state", state.wire)
+            state.reason("edges")?.let { put("reason", it) }
             put("edges", buildJsonArray { members.edges(stores.edges.edges()).forEach { add(it.json()) } })
         }
     }
@@ -75,6 +78,9 @@ public class TeamReads internal constructor(
             }
             buildJsonObject {
                 put(TEAM_ID, team.id)
+                val state = stores.edgeState()
+                put("state", state.wire)
+                state.reason("edges")?.let { put("reason", it) }
                 put("day_start_epoch_millis", window.first)
                 put("packet_note", PACKET_NOTE)
                 put("messages", buildJsonArray { today.forEach { add(it.message(found[it.edge.from])) } })
@@ -87,6 +93,9 @@ public class TeamReads internal constructor(
             val rows = slots.keys.flatMap { stores.activity.rows(it) }.filter { it.at in window }
             buildJsonObject {
                 put(TEAM_ID, team.id)
+                val state = stores.labelState()
+                put("state", state.wire)
+                state.reason("labels")?.let { put("reason", it) }
                 put("day_start_epoch_millis", window.first)
                 put("sample_interval_note", ACTIVITY_SAMPLE_NOTE)
                 put("upstream_label_queries", rows.count { it.upstream })

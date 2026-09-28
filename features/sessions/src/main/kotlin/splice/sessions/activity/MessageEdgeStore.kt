@@ -27,6 +27,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.core.storage.ActivityDays
+import splice.core.storage.DayFiles
+import splice.core.storage.DayInventory
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.sessions.registry.SessionAvailability
@@ -57,10 +59,20 @@ public class NameHolders(private val sessions: SessionSource) {
         .singleOrNull()
 }
 
-public class MessageEdgeStore(private val days: ActivityDays) {
+public class MessageEdgeStore(
+    private val days: ActivityDays,
+    private val files: DayFiles,
+    private val retentionDays: Int,
+    public val storing: Boolean,
+) {
     private val json = Json { ignoreUnknownKeys = true }
 
+    public fun inventory(): DayInventory = files.inventory(retentionDays)
+    public fun deleteKept(): DayInventory = files.deleteKept(retentionDays)
+    public fun deleted(): Boolean = files.deleted()
+
     public fun record(edge: MessageEdge) {
+        if (!storing) return
         days.append(
             buildJsonObject {
                 put("from", edge.from)

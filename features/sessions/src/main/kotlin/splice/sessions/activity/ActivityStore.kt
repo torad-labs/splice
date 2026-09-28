@@ -29,6 +29,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.core.storage.ActivityDays
+import splice.core.storage.DayFiles
+import splice.core.storage.DayInventory
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.WallClock
@@ -59,28 +61,67 @@ public class ActivityHeads(value: String) {
     private val heads = value.split(',').map { it.trim() }.filter { it.isNotEmpty() && it != ALL_HEADS }.toSet()
 
     public fun stores(head: String): Boolean = all || head in heads
+    public fun storesAny(): Boolean = all || heads.isNotEmpty()
 }
 
 /** The console's two activity stores, opened once by the daemon under [activityDir] (the state dir's
  *  ACTIVITY_DIRECTORY) with the activityStoreHeads knob value and [retentionDays], the edges' window
  *  (activityRetentionDays, never under LOCAL_DAY_UTC_DAYS); the labels keep LOCAL_DAY_UTC_DAYS. The
  *  writer (the console publisher) and the readers (the sessions routes) hold this one instance. */
+public enum class KeptState(public val wire: String) {
+    ON("on"),
+    OFF("off"),
+    DELETED("deleted"),
+    ;
+
+    public fun reason(store: String): String? = when (this) {
+        ON -> null
+        OFF -> "$store off"
+        DELETED -> "$store deleted"
+    }
+}
+
 public class ActivityStores(
     activityDir: Path,
     retentionDays: Int,
     storeHeads: String,
     clock: WallClock = WallClock(System::currentTimeMillis),
+    messageEdges: Boolean = true,
 ) {
     public val edges: MessageEdgeStore = MessageEdgeStore(
         ActivityDays(activityDir, EDGES_PREFIX, retentionDays.coerceAtLeast(LOCAL_DAY_UTC_DAYS), clock),
+        DayFiles(activityDir, EDGES_PREFIX),
+        retentionDays.coerceAtLeast(LOCAL_DAY_UTC_DAYS),
+        messageEdges,
     )
     public val activity: ActivityStore = ActivityStore(
         ActivityDays(activityDir, ACTIVITY_PREFIX, LOCAL_DAY_UTC_DAYS, clock),
         ActivityHeads(storeHeads),
+        DayFiles(activityDir, ACTIVITY_PREFIX),
     )
+
+    public fun edgeState(): KeptState = when {
+        edges.deleted() -> KeptState.DELETED
+        !edges.storing -> KeptState.OFF
+        else -> KeptState.ON
+    }
+
+    public fun labelState(): KeptState = when {
+        activity.deleted() -> KeptState.DELETED
+        !activity.storing() -> KeptState.OFF
+        else -> KeptState.ON
+    }
 }
 
-public class ActivityStore(private val days: ActivityDays, private val heads: ActivityHeads) {
+public class ActivityStore(
+    private val days: ActivityDays,
+    private val heads: ActivityHeads,
+    private val files: DayFiles,
+) {
+    public fun inventory(): DayInventory = files.inventory(LOCAL_DAY_UTC_DAYS)
+    public fun deleteKept(): DayInventory = files.deleteKept(LOCAL_DAY_UTC_DAYS)
+    public fun deleted(): Boolean = files.deleted()
+    public fun storing(): Boolean = heads.storesAny()
     private val json = Json { ignoreUnknownKeys = true }
 
     public fun label(session: String, head: String, label: String, at: Long) {

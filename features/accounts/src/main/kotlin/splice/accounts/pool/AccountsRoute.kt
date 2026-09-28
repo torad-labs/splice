@@ -17,18 +17,16 @@ import splice.accounts.AccountHead
 import splice.core.auth.AuthDescription
 import splice.core.topology.AuthKindRegistry
 import splice.core.usage.QuotaView
-import splice.core.util.WallClock
+import java.util.concurrent.TimeUnit
 import splice.core.usage.QuotaWindowView as PlanWindow
 
-public class AccountsRoute(
-    private val heads: Map<String, AccountHead>,
-    /** Decides which windows are current (V4-407), by the rule /api/usage applies (V4-396). */
-    private val clock: WallClock = WallClock(System::currentTimeMillis),
-) {
-    public suspend fun accountsJson(): String {
+public class AccountsRoute(private val heads: Map<String, AccountHead>) {
+    /** [nowSeconds] decides which windows are current (V4-407), by the rule /api/usage applies (V4-396). */
+    public suspend fun accountsJson(
+        nowSeconds: Long = TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis()),
+    ): String {
         val joined = LinkedHashMap<String, JoinedAccount>()
         heads.values.forEach { head -> fold(head, joined) }
-        val nowSeconds = clock() / MILLIS_PER_SECOND
         return buildJsonObject {
             putJsonArray("accounts") { joined.values.forEach { row -> addJsonObject { write(this, row, nowSeconds) } } }
         }.toString()
@@ -181,8 +179,6 @@ public class AccountsRoute(
         return PlanWindow(used.toInt(), window.resetEpochSeconds, observedAt).currentAt(nowSeconds) != null
     }
 }
-
-private const val MILLIS_PER_SECOND = 1000L
 
 /** One quota window's percent, reset and (V4-132) its own reported LENGTH — [AccountPool]'s own
  *  [splice.upstream.credentials.AccountView] carries the same three fields; this is the console-payload copy of

@@ -24,11 +24,9 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.usage.QuotaView
 import splice.core.usage.QuotaWindowView
-import splice.core.util.WallClock
 
 class AccountWindowsCurrentTest {
     private val json = Json { ignoreUnknownKeys = true }
-    private val clock = WallClock { NOW * 1000 }
 
     @Test
     fun `a pooled reading four and a half hours old is not current and keeps its figures`() = runBlocking {
@@ -110,7 +108,7 @@ class AccountWindowsCurrentTest {
     }
 
     private suspend fun rowOf(head: AccountHead): JsonObject {
-        val body = json.parseToJsonElement(AccountsRoute(mapOf(head.key to head), clock).accountsJson()).jsonObject
+        val body = json.parseToJsonElement(AccountsRoute(mapOf(head.key to head)).accountsJson(NOW)).jsonObject
         return body["accounts"]!!.jsonArray.single().jsonObject
     }
 

@@ -8419,7 +8419,7 @@ id = "V4-348"
 phase = "release"
 title = "Every page uses my words (build order 5; acceptance Q0c, Q31, Q32, Q64): plans, sessions, requests, instructions, commands, ChatGPT; never head, knobs, daemon, backend, codex, registry, 'bound session', 'tiers filled'. Settings gets an instructions group a person would notice. Plus the baseline's craft faults: Fleet's Head and Provider headers print on top of each other, Add backend squeezes the heads table until the command name disappears, Turns truncates model names and cache percentages."
 files = ["console/src/", "console/e2e/console.spec.ts", "console/e2e/v4346-first-hour.spec.ts", "console/tests/", "console/e2e/stack.ts"]
-status = "done"
+status = "in_flight"
 verify = "Marlin walks it by eye in a normal-size browser on a fresh home (or the film home where history is needed) at the built sha and approves; his walk log names the sha; CI gate on the train sha. A green gate is not approval."
 # depends:V4-344,V4-345,V4-346,V4-347
 # [2026-09-27] Craft fault, by name (Marlin, 2026-09-27, walk 1 p2 new-006.png): Jump-to's focused input shows a white outline only from x 360 to 636 (a top-left corner and a partial bottom edge) inside the 720-wide dialog; it reads as a leftover rectangle, not focus. Good: a focused field shows its focus along its whole edge, like every other input in the console, or not at all. The other three first-walk reports (Accounts wheel scroll, sidebar click, Jump-to pick, Settings search focus) did not reproduce in real Chrome at 1440x900 and are harness notes, not this row's.

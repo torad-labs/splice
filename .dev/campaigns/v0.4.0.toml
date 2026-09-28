@@ -8404,6 +8404,7 @@ claimed_at = "2026-09-28T07:14:50.677Z"
 # [2026-09-28] Fence gains console/tests/needs-you.test.ts (released from V4-378, edits committed in e698eae58) and console/tests/v4347-console-actions.test.ts (2:18 AM CT, splice-lead). needs-you.test.ts:338-346 pin the copy-the-command fix that this row replaces with the console action where one exists; the CLI fallback stays only where no console action exists.
 # [2026-09-28] amend by=splice-lead: files were ["console/src/pages/needs-you/", "console/src/pages/doctor/", "console/src/pages/logs/", "console/src/entities/doctor/", "console/tests/needs-you.test.ts", "console/tests/v4347-console-actions.test.ts"]
 # [2026-09-28] amend by=splice-lead: files were ["console/src/pages/needs-you/", "console/src/pages/doctor/", "console/src/pages/logs/", "console/src/entities/doctor/", "console/tests/needs-you.test.ts", "console/tests/v4347-console-actions.test.ts", "console/tests/mcp-doctor.test.ts"]
+# [2026-09-28] Fence gains console/src/entities/logs/{api/index.ts,index.ts} and tests/logs.test.ts (2:45 AM CT, splice-lead). Console found a race: setLogTail fetches the module-global head selected last (entities/logs/api/index.ts:8-23), while LogsPage selects the linked head in a later effect (logs/index.tsx:250-256), so a deep link can read a stale head and show a false 404. The fix is one atomic setLogRead(head, tail). V4-348 (todo, console/src/ wide) also names these files; it is unclaimed and last in console's queue.
 
 [[items]]
 id = "V4-348"

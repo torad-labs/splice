@@ -8399,6 +8399,7 @@ claimed_by = "console"
 claimed_at = "2026-09-28T07:14:50.677Z"
 # [2026-09-28] CLAIM: owner=console at=2026-09-28T07:14:50Z
 # [2026-09-28] amend by=splice-lead: files were ["console/src/pages/needs-you/", "console/src/pages/doctor/", "console/src/pages/logs/"]
+# [2026-09-28] Fence gains console/src/entities/doctor/ (the whole entity, released from V4-378 whose doctor edits are committed in e698eae58) (2:16 AM CT, splice-lead). Console's finding, verified: Doctor parses 'splice logs --head' at pages/doctor/model.ts:125 while Needs you copies the same CLI line, and ESLint forbids page-to-page imports (console/eslint.config.mjs:61-65). So the one parser moves into the doctor entity and both pages use it.
 
 [[items]]
 id = "V4-348"

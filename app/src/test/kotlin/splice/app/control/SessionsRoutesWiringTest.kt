@@ -119,15 +119,16 @@ class SessionsRoutesWiringTest {
             )
             val two = get("/api/sessions/$TWO/edges")
             assertEquals(200, two.status.value, two.bodyAsText())
-            // V4-314: the edge carries its sender's text. No test transcript exists, so it says why,
-            // naming the trees searched: asserted by prefix, since the vanilla tree is the JVM's own.
+            // V4-314: the edge carries its sender's text. No test transcript exists, so it says why
+            // in a path-free sentence; the searched trees stay on this machine.
             val handed = json(two.bodyAsText())["edges"]!!.jsonArray.single().jsonObject
             val reason = handed["missing_reason"]!!.jsonPrimitive.content
             assertEquals(
                 json("""$edge,"direction":"in","text":null,"text_source":null,"missing_reason":"$reason"}"""),
                 handed,
             )
-            assertTrue(reason.startsWith("no transcript for the sender in "), reason)
+            assertEquals("The sender transcript is no longer on this machine.", reason)
+            assertTrue('/' !in reason, "the missing-text reason must carry no absolute path: $reason")
             val anonymous = bare("/api/sessions/$TWO/edges")
             assertEquals(401, anonymous.status.value, "an edge's text is read with the mgmt key only")
             // The transcript route is reached. A bad cursor is refused before any tree is opened, so

@@ -436,7 +436,7 @@ describe('a hand-off carries the text its sender handed off (V4-314)', () => {
   };
   const unread: HandedEdge = {
     from: 'sid-peer', to: 'uds:/run/user/1000/cc-socks/100.sock', at: T0 + 20_000, direction: 'in',
-    text: null, text_source: null, missing_reason: 'no transcript for the sender in /home/user/.claude/projects',
+    text: null, text_source: null, missing_reason: 'The sender transcript is no longer on this machine.',
   };
   const opened = (edges: HandedEdge[]) => render(h(SessionsBoard, {
     payload: payload([session()]),
@@ -470,9 +470,10 @@ describe('a hand-off carries the text its sender handed off (V4-314)', () => {
   test('a hand-off whose text was not read says why, and has nothing to reveal', () => {
     const out = render(h(HandoffText, { edge: unread }));
     expect(out).toContain('Not read');
-    expect(out).toContain('no transcript for the sender in /home/user/.claude/projects');
+    expect(out).toContain('The sender transcript is no longer on this machine.');
+    expect(unread.missing_reason).not.toContain('/');
     expect(out).not.toContain('myx-reveal-btn');
-    expect(opened([unread])).toContain('no transcript for the sender in /home/user/.claude/projects');
+    expect(opened([unread])).toContain('The sender transcript is no longer on this machine.');
   });
 
   test('the reveal holds the text and the transcript it was read from', () => {

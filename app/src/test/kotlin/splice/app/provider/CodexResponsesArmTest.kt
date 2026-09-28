@@ -86,12 +86,13 @@ class CodexResponsesArmTest {
         assertTrue(built.extraHeaders.containsKey("thread-id"))
         assertEquals("model=gpt-6-astra", built.extraHeaders["x-codex-routing-hint"])
         val wire = built.requestBody.toString()
-        assertTrue(wire.contains("\"strict\":false"))
+        // V4-388: a code-mode turn declares the client tools inside exec's manual, none top-level.
+        assertFalse(wire.contains("\"type\":\"function\""))
         assertFalse(wire.contains("\"strict\":true"))
         assertEquals("", built.requestBody["instructions"]?.jsonPrimitive?.content)
         assertEquals("true", built.requestBody["store"]?.jsonPrimitive?.content)
         assertNotNull(built.roundInterceptor)
-        assertTrue(wire.contains("splice_exec"))
+        assertTrue(wire.contains("\"name\":\"exec\""))
     }
 
     private fun context(tmp: Path, authFile: Path): ProviderBuild {

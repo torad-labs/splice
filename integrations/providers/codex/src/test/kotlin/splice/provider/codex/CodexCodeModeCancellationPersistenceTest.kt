@@ -83,7 +83,11 @@ class CodexCodeModeCancellationPersistenceTest : CodeModeBridgeTestSupport() {
         var startupCleaned = false
         val cell = CancellingCell()
 
-        override suspend fun start(source: String, tools: Set<String>): CodeModeCell {
+        override suspend fun start(
+            source: String,
+            tools: Set<String>,
+            descriptions: Map<String, String>,
+        ): CodeModeCell {
             starts++
             if (cancelAt == 0) {
                 try {

@@ -11,7 +11,11 @@ internal object CodeModeJson {
     val codec: Json = Json { explicitNulls = true }
 }
 
-internal data class WorkerStart(val source: String, val tools: Set<String>)
+internal data class WorkerStart(
+    val source: String,
+    val tools: Set<String>,
+    val descriptions: Map<String, String> = emptyMap(),
+)
 
 internal data class WorkerReply(
     val calls: List<CodeModeCall>?,

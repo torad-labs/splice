@@ -2,11 +2,12 @@
 package splice.codemode
 
 import kotlinx.coroutines.CancellationException
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import org.graalvm.polyglot.Context
 import org.graalvm.polyglot.HostAccess
 import org.graalvm.polyglot.PolyglotAccess
@@ -15,6 +16,7 @@ import org.graalvm.polyglot.io.IOAccess
 import org.graalvm.polyglot.proxy.ProxyExecutable
 import org.graalvm.polyglot.proxy.ProxyObject
 import splice.upstream.codemode.CodeModeCall
+import splice.upstream.codemode.CodeModeManual
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.failure.CodeModeInfrastructureCategory
 import splice.upstream.failure.CodeModeInfrastructureClass
@@ -102,8 +104,8 @@ internal class WorkerSession : AutoCloseable {
     // bridge nothing else holds.
     private val launcher: Value = context.eval("js", LAUNCHER).also { launcher ->
         val warmUp = launcher.execute(
-            "await tools.call(\"warm\", {}); return 1;",
-            "[\"warm\"]",
+            "text(ALL_TOOLS.length); await tools.warm({}); return 1;",
+            catalog(WorkerStart("", setOf("warm"))),
             WorkerBridge(setOf("warm")).host,
         )
         warmUp.getMember("settle").execute("1", "{}", false)
@@ -114,11 +116,7 @@ internal class WorkerSession : AutoCloseable {
 
     fun start(start: WorkerStart): WorkerReply {
         val bridge = WorkerBridge(start.tools).also { this.bridge = it }
-        val toolsJson = CodeModeJson.codec.encodeToString(
-            JsonArray.serializer(),
-            buildJsonArray { start.tools.sorted().forEach(::add) },
-        )
-        val control = launcher.execute(start.source, toolsJson, bridge.host)
+        val control = launcher.execute(start.source, catalog(start), bridge.host)
         settle = control.getMember("settle")
         return reply()
     }
@@ -136,6 +134,29 @@ internal class WorkerSession : AutoCloseable {
     override fun close() {
         context.close(true)
     }
+
+    /** V4-388: every allowed client name for `tools.call`, and the nested tools under their codex
+     *  identifiers for `tools.<Name>` and `ALL_TOOLS` — the rule the exec manual is rendered by. */
+    private fun catalog(start: WorkerStart): String = CodeModeJson.codec.encodeToString(
+        JsonObject.serializer(),
+        buildJsonObject {
+            put("allowed", buildJsonArray { start.tools.sorted().forEach(::add) })
+            put(
+                "nested",
+                buildJsonArray {
+                    CodeModeManual.nestedNames(start.tools).forEach { name ->
+                        add(
+                            buildJsonObject {
+                                put("name", name)
+                                put("global", CodeModeManual.identifier(name))
+                                put("description", start.descriptions[name].orEmpty())
+                            },
+                        )
+                    }
+                },
+            )
+        },
+    )
 
     private fun reply(): WorkerReply {
         val bridge = checkNotNull(bridge)
@@ -266,33 +287,49 @@ internal class WorkerBridge(private val allowedTools: Set<String>) {
 internal data class WorkerCompletion(val output: String, val error: String?)
 
 private const val LAUNCHER: String = """
-(source, toolsJson, host) => {
-  const allowed = new Set(JSON.parse(toolsJson));
+(source, catalogJson, host) => {
+  const catalog = JSON.parse(catalogJson);
+  const allowed = new Set(catalog.allowed);
   const pending = new Map();
   let sequence = 0;
-  const tools = Object.freeze({
-    call(name, args) {
-      return new Promise((resolve, reject) => {
-        if (typeof name !== "string" || !allowed.has(name)) {
-          reject(new Error("Tool is not allowed"));
-          return;
-        }
-        if (args === null || Array.isArray(args) || typeof args !== "object") {
-          reject(new Error("Tool arguments must be a serializable object"));
-          return;
-        }
-        try {
-          const encoded = JSON.stringify(args);
-          if (typeof encoded !== "string") throw new Error("Tool arguments must be a serializable object");
-          const id = String(++sequence);
-          pending.set(id, {resolve, reject});
-          host.call(JSON.stringify({id, name, arguments: JSON.parse(encoded)}));
-        } catch (error) {
-          reject(error);
-        }
-      });
+  const call = (name, args) => new Promise((resolve, reject) => {
+    if (typeof name !== "string" || !allowed.has(name)) {
+      reject(new Error("Tool is not allowed"));
+      return;
+    }
+    if (args === null || Array.isArray(args) || typeof args !== "object") {
+      reject(new Error("Tool arguments must be a serializable object"));
+      return;
+    }
+    try {
+      const encoded = JSON.stringify(args);
+      if (typeof encoded !== "string") throw new Error("Tool arguments must be a serializable object");
+      const id = String(++sequence);
+      pending.set(id, {resolve, reject});
+      host.call(JSON.stringify({id, name, arguments: JSON.parse(encoded)}));
+    } catch (error) {
+      reject(error);
     }
   });
+  // codex's globals: tools.<Name>(args) per nested tool, ALL_TOOLS, text() and exit(). tools.call
+  // stays for cells written against the splice_exec API before V4-388.
+  const bound = {};
+  for (const tool of catalog.nested) bound[tool.global] = args => call(tool.name, args);
+  if (!Object.prototype.hasOwnProperty.call(bound, "call")) bound.call = call;
+  const tools = Object.freeze(bound);
+  const ALL_TOOLS = Object.freeze(catalog.nested.map(tool =>
+    Object.freeze({name: tool.global, description: tool.description})));
+  const render = value => {
+    if (typeof value === "string") return value;
+    try {
+      const encoded = JSON.stringify(value);
+      if (typeof encoded === "string") return encoded;
+    } catch (_) {}
+    return String(value);
+  };
+  const text = value => { host.log(render(value)); };
+  const EXIT = Object.freeze({exit: true});
+  const exit = () => { throw EXIT; };
   const console = Object.freeze({
     log(...values) {
       host.log(values.map(value => String(value)).join(" "));
@@ -306,10 +343,13 @@ private const val LAUNCHER: String = """
     return String(error.name || "Error") + ": " + message;
   };
   try {
-    const program = new Function("tools", "console", "\"use strict\"; return (async () => {\n" + source + "\n})()");
-    Promise.resolve(program(tools, console)).then(
+    const program = new Function(
+      "tools", "console", "text", "exit", "ALL_TOOLS",
+      "\"use strict\"; return (async () => {\n" + source + "\n})()"
+    );
+    Promise.resolve(program(tools, console, text, exit, ALL_TOOLS)).then(
       value => host.complete(value === undefined ? "" : String(value), false),
-      error => host.complete(describe(error), true)
+      error => error === EXIT ? host.complete("", false) : host.complete(describe(error), true)
     );
   } catch (error) {
     host.complete(describe(error), true);

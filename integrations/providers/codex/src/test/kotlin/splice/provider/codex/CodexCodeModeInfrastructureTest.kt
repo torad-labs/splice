@@ -26,7 +26,11 @@ class CodexCodeModeInfrastructureTest : CodeModeBridgeTestSupport() {
         var starts = 0
         var closed = false
         val runtime = object : CodeModeRuntime {
-            override suspend fun start(source: String, tools: Set<String>): CodeModeCell {
+            override suspend fun start(
+                source: String,
+                tools: Set<String>,
+                descriptions: Map<String, String>,
+            ): CodeModeCell {
                 starts++
                 if (atStartup) throw fatal()
                 return object : CodeModeCell {

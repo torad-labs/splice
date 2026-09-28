@@ -70,9 +70,9 @@ public class JvmCodeModeRuntime(
         require(workerClasspath.isNotBlank()) { "Code-mode worker classpath is required" }
     }
 
-    override suspend fun start(source: String, tools: Set<String>): CodeModeCell {
+    override suspend fun start(source: String, tools: Set<String>, descriptions: Map<String, String>): CodeModeCell {
         check(!closed.get()) { "Code-mode runtime is closed" }
-        val start = CodeModeWire.startFrame(source, tools)
+        val start = CodeModeWire.startFrame(source, tools, descriptions)
         if (!permits.tryAcquire()) throw CodeModeCapacityException()
         var channel: WorkerChannel? = null
         var started = false

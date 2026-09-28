@@ -47,7 +47,11 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
     private class TerminalRuntime : CodeModeRuntime {
         var closed = false
 
-        override suspend fun start(source: String, tools: Set<String>): CodeModeCell {
+        override suspend fun start(
+            source: String,
+            tools: Set<String>,
+            descriptions: Map<String, String>,
+        ): CodeModeCell {
             check(!closed) { "Code-mode runtime is closed" }
             return ScriptedCell(ArrayDeque(listOf(CodeModeStep.Completed("done"))))
         }

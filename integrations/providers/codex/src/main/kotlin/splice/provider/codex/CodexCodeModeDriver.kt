@@ -184,10 +184,10 @@ internal class CodexCodeModeDriver(
 
     /** One start attempt; at capacity the oldest parked cell is evicted first and the start retried once. */
     private suspend fun startWithEviction(record: CodeModeRecord, context: CodeModeRunContext) = try {
-        run.runtime().start(record.source, context.turn.tools)
+        run.runtime().start(record.source, context.turn.tools, context.turn.descriptions)
     } catch (error: CodeModeCapacityException) {
         registry.evictIdleCell() ?: throw error
-        run.runtime().start(record.source, context.turn.tools)
+        run.runtime().start(record.source, context.turn.tools, context.turn.descriptions)
     }
 
     /** The spawn failure's cause chain goes to the head log; the previous `catch (_: …)` hid it, and

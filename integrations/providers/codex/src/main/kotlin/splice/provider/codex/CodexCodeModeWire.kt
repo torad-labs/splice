@@ -5,7 +5,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.reasoning.ReasoningReplay
@@ -15,6 +14,7 @@ import splice.core.util.LogSink
 import splice.dialect.responses.request.AssistantPhase
 import splice.dialect.responses.request.ResponsesAssistantText
 import splice.dialect.responses.request.ResponsesCodeModeProjection
+import splice.upstream.codemode.CodeModeManual
 import java.util.concurrent.ConcurrentHashMap
 
 internal class CodexCodeModeWire(private val json: Json, private val log: LogSink) {
@@ -23,27 +23,26 @@ internal class CodexCodeModeWire(private val json: Json, private val log: LogSin
     /** Record ids whose omission was already logged — one line per record, not one per turn. */
     private val announced: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
-    fun injectTool(request: JsonObject): JsonObject {
+    /** V4-388: codex's code_mode_only surface (codex-rs core/src/tools/spec_plan.rs
+     *  is_hidden_by_code_mode_only): every client function tool leaves the top level and is rendered
+     *  into `exec`'s manual; a hosted tool (tool_search) stays beside it. [clientTools] is the whole
+     *  client catalog, so a tool the deferred surface withheld gets the manual's deferred note and
+     *  stays callable through `tools`. */
+    fun injectTool(request: JsonObject, clientTools: Set<String>): JsonObject {
         val input = request[FIELD_INPUT] as? JsonArray ?: return request
-        var injected = false
-        val replaced = buildJsonArray {
-            input.forEach { element ->
-                val item = element as? JsonObject
-                if (!injected && string(item, FIELD_TYPE) == TYPE_ADDITIONAL_TOOLS) {
-                    val tools = item?.get(FIELD_TOOLS) as? JsonArray
-                    if (tools != null) {
-                        add(JsonObject(item + (FIELD_TOOLS to JsonArray(tools + customTool()))))
-                        injected = true
-                    } else {
-                        add(element)
-                    }
-                } else {
-                    add(element)
-                }
-            }
+        val index = input.indexOfFirst { string(it as? JsonObject, FIELD_TYPE) == TYPE_ADDITIONAL_TOOLS }
+        val item = input.getOrNull(index) as? JsonObject
+        val tools = item?.get(FIELD_TOOLS) as? JsonArray
+        require(item != null && tools != null) { "code mode requires the Responses lite additional_tools item" }
+        val (functions, hosted) = tools.partition { string(it as? JsonObject, FIELD_TYPE) == TYPE_FUNCTION }
+        val nested = functions.mapNotNull { it as? JsonObject }.map { tool ->
+            CodeModeManual.NestedTool(string(tool, FIELD_NAME), string(tool, FIELD_DESCRIPTION), tool[FIELD_PARAMETERS])
         }
-        require(injected) { "code mode requires the Responses lite additional_tools item" }
-        return JsonObject(request + (FIELD_INPUT to replaced))
+        val deferred = (clientTools - nested.map(CodeModeManual.NestedTool::name).toSet()).isNotEmpty()
+        val surface = JsonArray(listOf(execTool(CodeModeManual.description(nested, deferred))) + hosted)
+        val replaced = JsonObject(item + (FIELD_TOOLS to surface))
+        val rebuilt = input.mapIndexed { position, element -> if (position == index) replaced else element }
+        return JsonObject(request + (FIELD_INPUT to JsonArray(rebuilt)))
     }
 
     fun inputBoundary(bodyJson: String): CodeModeInputBoundary? = history.inputBoundary(bodyJson)
@@ -106,11 +105,19 @@ internal class CodexCodeModeWire(private val json: Json, private val log: LogSin
         )
     }
 
-    private fun customTool(): JsonObject = buildJsonObject {
+    /** codex-rs execute_spec.rs create_code_mode_tool: a freeform tool constrained by the exec grammar. */
+    private fun execTool(description: String): JsonObject = buildJsonObject {
         put(FIELD_TYPE, "custom")
         put(FIELD_NAME, CODE_MODE_TOOL_NAME)
-        put(FIELD_DESCRIPTION, CODE_MODE_TOOL_DESCRIPTION)
-        put("format", buildJsonObject { put(FIELD_TYPE, "text") })
+        put(FIELD_DESCRIPTION, description)
+        put(
+            "format",
+            buildJsonObject {
+                put(FIELD_TYPE, "grammar")
+                put("syntax", "lark")
+                put("definition", CodeModeManual.GRAMMAR)
+            },
+        )
     }
 
     private fun string(item: JsonObject?, key: String): String = JsonScalars.str(item, key).orEmpty()
@@ -138,7 +145,11 @@ internal data class CodeModeRewrite(
 /** A completed record the rewrite could not place; the reason is what the digest check reported. */
 internal data class CodeModeOmission(val record: CodeModeRecord, val reason: String)
 
-internal const val CODE_MODE_TOOL_NAME = "splice_exec"
+internal const val CODE_MODE_TOOL_NAME = CodeModeManual.TOOL_NAME
+
+/** The outer tool's name before V4-388: a live conversation's history and a parked record still carry
+ *  it, so its calls are still this bridge's. */
+internal const val LEGACY_CODE_MODE_TOOL_NAME = "splice_exec"
 
 /** v3 (2026-09-07): counts, digests and native offsets are conversation-relative (lite preamble
  *  excluded). A v2 record's numbers point into the whole input, so it is never re-placed: a
@@ -152,10 +163,6 @@ private const val FIELD_TYPE = "type"
 private const val FIELD_NAME = "name"
 private const val FIELD_DESCRIPTION = "description"
 private const val FIELD_TOOLS = "tools"
+private const val FIELD_PARAMETERS = "parameters"
 private const val TYPE_ADDITIONAL_TOOLS = "additional_tools"
-private const val CODE_MODE_TOOL_DESCRIPTION =
-    "Run several tool calls in one round trip: one bounded JavaScript cell with await and " +
-        "tools.call('name', args). Use it whenever two or more tool calls with known arguments come " +
-        "next. Calls resolve to their original output strings and reject with the tool's error text; " +
-        "use console.log for final output. The cell persists only while awaiting its calls and has " +
-        "no filesystem or network access."
+private const val TYPE_FUNCTION = "function"

@@ -17,11 +17,12 @@ internal class CodexCodeModeValidation(private val config: CodeModeBridgeConfig)
         result.copy(output = CodeModeLimits.boundedText(result.output, config.maxOutputChars))
 
     fun outer(call: GatewayCustomCall): String? = when {
-        call.name != CODE_MODE_TOOL_NAME -> "unsupported custom tool call '${call.name.ifEmpty { "<unnamed>" }}'"
-        call.callId.isBlank() -> "splice_exec call is missing call_id"
-        call.input.isBlank() -> "splice_exec call is missing JavaScript input"
+        call.name != CODE_MODE_TOOL_NAME && call.name != LEGACY_CODE_MODE_TOOL_NAME ->
+            "unsupported custom tool call '${call.name.ifEmpty { "<unnamed>" }}'"
+        call.callId.isBlank() -> "exec call is missing call_id"
+        call.input.isBlank() -> "exec call is missing JavaScript input"
         call.input.length > config.maxSourceChars || !CodeModeLimits.fitsText(call.input) ->
-            "splice_exec source exceeds the size limit"
+            "exec source exceeds the size limit"
         else -> null
     }
 

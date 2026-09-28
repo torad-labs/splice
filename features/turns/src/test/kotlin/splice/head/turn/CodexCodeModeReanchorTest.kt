@@ -122,7 +122,11 @@ class CodexCodeModeReanchorTest {
 
     private class Runtime(private val fail: Boolean) : CodeModeRuntime {
         var starts = 0
-        override suspend fun start(source: String, tools: Set<String>): CodeModeCell {
+        override suspend fun start(
+            source: String,
+            tools: Set<String>,
+            descriptions: Map<String, String>,
+        ): CodeModeCell {
             starts++
             if (fail) throw IOException("synthetic startup failure")
             return object : CodeModeCell {

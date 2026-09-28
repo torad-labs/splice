@@ -100,6 +100,8 @@ public class CodexCodeModeBridge(
         /** V4-179: the same results rendered with the V4-178 markers, for replay identity against a
          *  record the previous daemon wrote (see CodexCodeModeValidation.conflicts). */
         val legacyResults: List<CodeModeResult> = emptyList(),
+        /** V4-388: each client tool's description, for the cell's `ALL_TOOLS`. */
+        val descriptions: Map<String, String> = emptyMap(),
     )
 
     private val json = Json { encodeDefaults = true }
@@ -140,7 +142,8 @@ public class CodexCodeModeBridge(
         }
     }
 
-    public fun injectTool(request: JsonObject): JsonObject = wire.injectTool(request)
+    public fun injectTool(request: JsonObject, clientTools: Set<String>): JsonObject =
+        wire.injectTool(request, clientTools)
 
     public fun onHeadStop() {
         registry.onHeadStop()

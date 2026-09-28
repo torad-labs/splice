@@ -140,7 +140,11 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
         var starts = 0
         val cell = RecordingCell()
 
-        override suspend fun start(source: String, tools: Set<String>): CodeModeCell {
+        override suspend fun start(
+            source: String,
+            tools: Set<String>,
+            descriptions: Map<String, String>,
+        ): CodeModeCell {
             starts++
             return cell
         }

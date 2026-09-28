@@ -21,6 +21,7 @@ import java.io.IOException
 private const val DESCRIPTION_RESULT_OUTPUT: String = "result output"
 private const val FIELD_ARGUMENTS: String = "arguments"
 private const val FIELD_CALLS: String = "calls"
+private const val FIELD_DESCRIPTIONS: String = "descriptions"
 private const val FIELD_ID: String = "id"
 private const val FIELD_IS_ERROR: String = "isError"
 private const val FIELD_NAME: String = "name"
@@ -42,6 +43,7 @@ internal object CodeModeWire {
     const val maxCallsPerBatch: Int = 8
     const val maxCallsPerCell: Int = 32
     const val maxToolCatalog: Int = 2_048
+    const val maxDescriptionBytes: Int = 524_288
 
     fun write(output: DataOutputStream, frame: JsonObject) {
         val bytes = CodeModeProtocol.encodeFrame(frame)
@@ -89,14 +91,28 @@ internal object CodeModeWire {
      *  reads the start frame, so the parent can time its start apart from the script's advance. */
     fun readyFrame(): JsonObject = buildJsonObject { put(FIELD_TYPE, TYPE_READY) }
 
-    fun startFrame(source: String, tools: Set<String>): JsonObject {
+    /** V4-388: [descriptions] ride inside [maxDescriptionBytes] in name order; a description past the
+     *  budget is sent empty, so a large client catalog cannot push the frame over [maxFrameBytes]. */
+    fun startFrame(source: String, tools: Set<String>, descriptions: Map<String, String> = emptyMap()): JsonObject {
         CodeModeFrames.requireText(source, FIELD_SOURCE)
         require(tools.size <= maxToolCatalog) { TOO_MANY_TOOLS }
         tools.forEach(CodeModeFrames::requireToolName)
+        var budget = maxDescriptionBytes
         return buildJsonObject {
             put(FIELD_TYPE, TYPE_START)
             put(FIELD_SOURCE, source)
             put(FIELD_TOOLS, buildJsonArray { tools.sorted().forEach(::add) })
+            put(
+                FIELD_DESCRIPTIONS,
+                buildJsonObject {
+                    tools.sorted().forEach { name ->
+                        val description = CodeModeLimits.boundedText(descriptions[name].orEmpty())
+                        val size = description.encodeToByteArray().size
+                        put(name, if (size <= budget) description else "")
+                        if (size <= budget) budget -= size
+                    }
+                },
+            )
         }
     }
 
@@ -145,7 +161,7 @@ internal object CodeModeFrames {
     }
 
     fun parseStart(frame: JsonObject): WorkerStart {
-        CodeModeFields.requireKeys(frame, setOf(FIELD_TYPE, FIELD_SOURCE, FIELD_TOOLS))
+        CodeModeFields.requireKeys(frame, setOf(FIELD_TYPE, FIELD_SOURCE, FIELD_TOOLS, FIELD_DESCRIPTIONS))
         require(CodeModeFields.requiredString(frame, FIELD_TYPE) == TYPE_START) { "Expected a code-mode start frame" }
         val source = CodeModeFields.requiredString(frame, FIELD_SOURCE).also { requireText(it, FIELD_SOURCE) }
         val rawTools = CodeModeFields.requiredArray(frame, FIELD_TOOLS)
@@ -156,7 +172,12 @@ internal object CodeModeFrames {
         }.toSet()
         require(tools.size <= CodeModeWire.maxToolCatalog) { TOO_MANY_TOOLS }
         tools.forEach(::requireToolName)
-        return WorkerStart(source, tools)
+        val rawDescriptions = CodeModeFields.requiredObject(
+            frame[FIELD_DESCRIPTIONS],
+            "Code-mode protocol field $FIELD_DESCRIPTIONS must be an object",
+        )
+        val descriptions = rawDescriptions.keys.associateWith { CodeModeFields.requiredString(rawDescriptions, it) }
+        return WorkerStart(source, tools, descriptions)
     }
 
     fun parseResults(frame: JsonObject): List<CodeModeResult> {

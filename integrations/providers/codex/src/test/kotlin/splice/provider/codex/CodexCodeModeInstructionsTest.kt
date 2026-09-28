@@ -45,12 +45,18 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
                     Regex("<code_mode_orchestration>").findAll(prefix).count() + 1,
                     Regex("<code_mode_orchestration>").findAll(instructions(prepared.requestBody)).count(),
                 )
-                assertTrue(instructions(prepared.requestBody).contains("Use splice_exec whenever the next step"))
+                val batching = "Batch independent searches and reads in one functions.exec"
+                assertTrue(instructions(prepared.requestBody).contains(batching))
                 assertTrue(instructions(prepared.requestBody).contains("Promise.all"))
                 val originalTools = before.first().jsonObject.getValue("tools").jsonArray
                 val augmentedTools = after.first().jsonObject.getValue("tools").jsonArray
-                assertEquals(originalTools, augmentedTools.dropLast(1))
-                assertEquals("splice_exec", augmentedTools.last().jsonObject.getValue("name").jsonPrimitive.content)
+                // V4-388: the client tools leave the top level and are declared inside exec's manual.
+                val exec = augmentedTools.single().jsonObject
+                assertEquals("exec", exec.getValue("name").jsonPrimitive.content)
+                originalTools.forEach { tool ->
+                    val name = tool.jsonObject.getValue("name").jsonPrimitive.content
+                    assertTrue(exec.getValue("description").jsonPrimitive.content.contains("### `$name`"), name)
+                }
                 val projection = ResponsesCodeModeProjection()
                 assertEquals(projection.project(before).logicalItems.size, projection.project(after).logicalItems.size)
                 assertEquals(projection.project(before).replayItems, projection.project(after).replayItems)
@@ -89,7 +95,7 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
         listOf("gpt-6-astra", "gpt-6-sol", "gpt-5.6-sol", "GPT-5.6-Sol[1m]").forEach { model ->
             val eligible = original.copy(meta = original.meta.copy(upstreamModel = model))
             val prepared = default.prepare(body, false, "session", eligible)
-            assertTrue(instructions(prepared.requestBody).contains("splice_exec"), model)
+            assertTrue(instructions(prepared.requestBody).contains("functions.exec"), model)
         }
         val configured = CodexCodeModeTurnBuilder(
             bridge(ScriptedRuntime(ArrayDeque())),
@@ -98,7 +104,7 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
         )
         val terra = original.copy(meta = original.meta.copy(upstreamModel = "gpt-5.6-terra"))
         val terraPrepared = configured.prepare(body, false, "session", terra)
-        assertTrue(instructions(terraPrepared.requestBody).contains("splice_exec"))
+        assertTrue(instructions(terraPrepared.requestBody).contains("functions.exec"))
         val astra = original.copy(meta = original.meta.copy(upstreamModel = "gpt-6-astra"))
         assertSame(astra, configured.prepare(body, false, "session", astra))
     }

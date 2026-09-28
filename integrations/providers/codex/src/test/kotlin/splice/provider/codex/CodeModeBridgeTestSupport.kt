@@ -120,17 +120,21 @@ abstract class CodeModeBridgeTestSupport {
         toolResults = results ?: resultId?.let { listOf(CodeModeResult(it, result)) }.orEmpty(),
     )
 
-    protected fun outer(callId: String = "outer-call", source: String = "source") = GatewayCustomCall(
+    protected fun outer(
+        callId: String = "outer-call",
+        source: String = "source",
+        name: String = CODE_MODE_TOOL_NAME,
+    ) = GatewayCustomCall(
         callId = callId,
-        name = "splice_exec",
+        name = name,
         input = source,
         raw = Json.parseToJsonElement(
-            """{"type":"custom_tool_call","call_id":"$callId","name":"splice_exec","input":"$source"}""",
+            """{"type":"custom_tool_call","call_id":"$callId","name":"$name","input":"$source"}""",
         ).jsonObject,
     )
 
-    protected fun outerOutcome(callId: String = "outer-call") =
-        TurnOutcome.Success(false, false, Usage(), customCalls = listOf(outer(callId)))
+    protected fun outerOutcome(callId: String = "outer-call", name: String = CODE_MODE_TOOL_NAME) =
+        TurnOutcome.Success(false, false, Usage(), customCalls = listOf(outer(callId, name = name)))
 
     protected fun completedOutcome() = TurnOutcome.Success(false, false, Usage(), messageClosed = true)
 
@@ -157,7 +161,11 @@ abstract class CodeModeBridgeTestSupport {
         val release = CompletableDeferred<CodeModeCell>()
         var cell: ScriptedCell? = null
 
-        override suspend fun start(source: String, tools: Set<String>): CodeModeCell {
+        override suspend fun start(
+            source: String,
+            tools: Set<String>,
+            descriptions: Map<String, String>,
+        ): CodeModeCell {
             started.complete(Unit)
             return release.await()
         }
@@ -170,7 +178,11 @@ abstract class CodeModeBridgeTestSupport {
         val cells = mutableListOf<ScriptedCell>()
         val starts: Int get() = sources.size
 
-        override suspend fun start(source: String, tools: Set<String>): CodeModeCell {
+        override suspend fun start(
+            source: String,
+            tools: Set<String>,
+            descriptions: Map<String, String>,
+        ): CodeModeCell {
             sources += source
             return ScriptedCell(queued.removeFirst()).also(cells::add)
         }
@@ -182,7 +194,11 @@ abstract class CodeModeBridgeTestSupport {
         val cell = ScriptedCell(steps)
         var starts = 0
 
-        override suspend fun start(source: String, tools: Set<String>): CodeModeCell {
+        override suspend fun start(
+            source: String,
+            tools: Set<String>,
+            descriptions: Map<String, String>,
+        ): CodeModeCell {
             starts++
             return cell
         }

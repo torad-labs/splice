@@ -223,7 +223,11 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
         var starts = 0
         val open: Int get() = cells.count { !it.closed }
 
-        override suspend fun start(source: String, tools: Set<String>): CodeModeCell {
+        override suspend fun start(
+            source: String,
+            tools: Set<String>,
+            descriptions: Map<String, String>,
+        ): CodeModeCell {
             if (open >= capacity) throw CodeModeCapacityException()
             starts++
             return ParkedCell(callsPerCell).also(cells::add)

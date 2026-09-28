@@ -544,12 +544,14 @@ origin.
   `POST https://api.meta.ai/muse-code/key`. The account token is not itself an inference
   credential, so the mint runs at the end of the login and the first turn never waits on it; a
   mint that fails leaves a signed-in file behind instead of failing the login, and the next
-  refresh mints. The head speaks Anthropic Messages at `https://api.meta.ai/v1/messages` through
-  the anthropic-passthrough dialect and sends the minted key as a bearer plus splice's own user
-  agent and nothing else: the `x-api-version` header every other harness sends is required
-  nowhere on this wire, which a capture of the real Muse client through a reverse proxy settled
-  on 2026-09-15. `splice add muse` writes the provider and head tables with `muse-spark-1.3[1m]`
-  and `muse-spark-1.2[1m]` at a 1,000,000 window, and the example config carries
+  refresh mints. The head speaks OpenAI Responses at `https://api.meta.ai/v1/responses` with the
+  minted key as a bearer. Reasoning comes back as readable summaries, and each conversation sends a
+  `prompt_cache_key`, 24-hour cache retention and Meta's gateway session header, so a long session
+  reads its history from Meta's cache (96.9% of input tokens over a 62-turn session, measured
+  2026-09-28). A `[providers.muse]` table written by a pre-release build (dialect
+  `anthropic-passthrough`, or a `base_url` without `/v1`) still boots on Responses, and doctor
+  names each line to update. `splice add muse` writes the provider and head tables with
+  `muse-spark-1.3[1m]` and `muse-spark-1.2[1m]` at a 1,000,000 window, and the example config carries
   `[heads.claude-muse]`. Like every other OAuth head it owns its credential file, never the Muse
   CLI's, and that file is merged rather than rewritten, so a key minted at runtime cannot drop the
   fields the login wrote. A rate-limited mint is held for at least a minute instead of retried, a
@@ -650,6 +652,14 @@ origin.
   (`RETURN_VALUE_NOT_USED`) is an error in tests too.
 
 ### Fixed
+- **`splice status` no longer calls a head ready when the daemon could not build it.** The table
+  judged each row by its credential and its wrapper alone, so a head skipped at boot read "ready"
+  while `/health` counted it failed. The row now reads "not running" with the daemon's own boot
+  reason, and `/health` names each failed head and its reason beside the count.
+- **A code-mode turn that cannot save its state says why.** When the disk holding splice's state
+  filled, every code-mode turn failed as "code-mode state persistence failed", which read as a
+  code-mode bug. The message now says the disk is full, and any other save failure names its cause.
+  As before, the code is never run a second time.
 - **A turn's cache write reaches Claude Code as a cache write.** splice reported the tokens an
   upstream wrote to its prompt cache as plain input and `cache_creation_input_tokens` as 0, so a
   session's transcript showed a cache that never wrote, and Claude Code priced each write as

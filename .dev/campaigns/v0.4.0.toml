@@ -8572,6 +8572,7 @@ claimed_at = "2026-09-27T18:54:57.556Z"
 # [2026-09-27] CI gate run 36343356066 on 0fb054c88 (which carries 3fd8ee31e): success, 2:24 PM CT. Awaits Marlin's walk.
 # [2026-09-28] Walks started 7:54 PM CT (captures/console-acceptance/walks-2026-09-27-v4361, HARNESS.md): film-home-3 upgraded to da2b006bd at 7:48 PM CT (4/4 heads ready, fd sha256 equals the built jar); its tally conversation started interactively at 7:54 PM CT (first-session.sh, trust granted, one answered question); p23/p24/p25 = personas A/B/C on prompt-s2 through claude-muse (claudex spent until Oct 3). Pass: 2 of 3 get the resume command and say what stays behind.
 # [2026-09-28] Walks done 7:54-8:28 PM CT (walks-2026-09-27-v4361, HARNESS.md). Pass line 2 of 3: p24 and p25 found Resume elsewhere, gave claude-muse -r 64eefd61-… from the panel and quoted what stays behind ([Thinking removed]); p23 assembled claude-grok --resume 1ebf6212-… by hand and stopped scrolling above the section. All three saw Resume on default to spent claudex: filed V4-380 (console). Sent to Marlin 8:42 PM CT for the verdict.
+# [2026-09-28] Correction to the previous note: the walks went to Marlin at about 8:30 PM CT, not 8:42 PM CT (the time was written without reading the clock).
 
 [[items]]
 id = "V4-362"

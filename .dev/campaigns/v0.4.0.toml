@@ -9025,3 +9025,4 @@ claimed_by = "claude-builder"
 claimed_at = "2026-09-28T08:46:16.886Z"
 # [2026-09-28] CLAIM: owner=claude-builder at=2026-09-28T08:46:16Z
 # [2026-09-28] amend by=splice-lead: files were ["features/configuration/src/main/kotlin/splice/configuration/add/AddPrepare.kt", "features/configuration/src/test/kotlin/splice/configuration/add/v4384/"]
+# [2026-09-28] Fence widened to AddRefusal.kt (sealed AddRefusal :8-26 plus its exhaustive cli/console renderers :45-68, same file) and AddRefusalTextTest.kt: a bounded port search that finds nothing bindable refuses as a typed AddRefusal both surfaces render, not a free string.

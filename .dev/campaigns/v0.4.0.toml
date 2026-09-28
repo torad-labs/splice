@@ -8588,9 +8588,12 @@ id = "V4-357"
 phase = "release"
 title = "A pooled plan account whose credential is gone can be signed in again under its own label (found by console on V4-346, 2026-09-27). Needs you lists it (credential_present:false) with a renew form, but OAuthAccountWrites.writeLabeled refuses any label with retained quota state (OAuthAccountWrites.kt:27-31; retainedQuota = a <label>-quota.json with no regular <label>.json, :64-69), so the renewal the console offers cannot land under the old label. The refusal exists so a DIFFERENT identity never inherits another account's quota; the recovery keeps that: a sign-in that proves the SAME identity (the OAuthAccountIdentity match writeTokenDerived already uses, :43-60) reclaims the label and its quota, a different identity is refused with a new-label offer, and the console's renew result says which happened."
 files = ["integrations/oauth/src/main/kotlin/splice/oauth/OAuthAccountWrites.kt", "integrations/oauth/src/main/kotlin/splice/oauth/OAuthAccountFiles.kt", "integrations/oauth/src/main/kotlin/splice/oauth/LoginIo.kt", "integrations/oauth/src/test/kotlin/splice/oauth/v4357/", "console/src/features/account-login/", "console/src/pages/needs-you/", "console/tests/account-login.test.ts", "console/e2e/v4357/"]
-status = "todo"
+status = "in_flight"
 verify = "red first: a pool dir with <label>-quota.json and no <label>.json; a labeled re-login whose token proves the same identity lands at <label>.json and keeps the quota file (today refused); a token for a different identity is refused and names a free label; a linked (symlinked) credential still cannot claim the quota. Mutant: drop the identity check (the different-identity case goes red). Console: the renew result copy names reclaimed vs new label; Marlin walks the renew from Needs you on a home with an orphaned quota file."
 # [2026-09-28] amend by=splice-lead: files were ["integrations/oauth/src/main/kotlin/splice/oauth/OAuthAccountWrites.kt", "integrations/oauth/src/test/kotlin/splice/oauth/v4357/"]
+claimed_by = "console"
+claimed_at = "2026-09-28T15:28:18.486Z"
+# [2026-09-28] CLAIM: owner=console at=2026-09-28T15:28:18Z
 
 [[items]]
 id = "V4-358"

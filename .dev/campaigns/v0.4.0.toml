@@ -8703,6 +8703,7 @@ verify = "ModuleLawsTest green with features/turns/build.gradle.kts back to its 
 claimed_by = "claude-builder"
 claimed_at = "2026-09-27T20:17:59.215Z"
 # [2026-09-27] CLAIM: owner=claude-builder at=2026-09-27T20:17:59Z
+# [2026-09-28] HANDOVER (orchestrator, 7:10 PM CT): claude-builder has sat in shell state since at least 3:40 PM CT and processed none of the go (sent 3:49 PM CT); the row was unstarted at 7:06 PM CT (no touch of its files in the tree or history). splice-lead takes it, same plan: the V4-359 round trip moves to :app, features/turns/build.gradle.kts back to its pre-V4-359 test deps, console.spec.ts:1126 asserts the key absent after Off.
 
 [[items]]
 id = "V4-374"

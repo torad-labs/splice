@@ -8688,10 +8688,13 @@ id = "V4-363"
 phase = "release"
 title = "A session splice served makes its repo a project splice has seen (Marlin F2 finding 3). Found: p13 and p14 read 'not a project root splice has seen' in the session panel's Files section for film-home-3's tally session, which splice itself served (p14 daily-019); ProjectsRoutes.kt:181 takes roots only from registry records' repos and teams, and this session (a claude -p launch, now Gone) has none, so /api/projects/<root>/files answers 404 (ProjectsRoutes.kt:134). Either the roots include the repo of every session the Sessions route lists, or the panel does not show a refusal for a session it just listed."
 files = ["features/sessions/src/main/kotlin/splice/sessions/http/ProjectsRoutes.kt", "features/sessions/src/test/kotlin/splice/sessions/http/v4363/", "app/src/main/kotlin/splice/app/control/mount/SessionsMount.kt", ".dev/restructure/capabilities.tsv"]
-status = "todo"
+status = "in_flight"
 verify = "red first: a session the Sessions route lists from its transcript, with no registry record, and a cwd inside a git repo: /api/projects/<that root> and /files answer 200 (fails today: 404 'not a project root splice has seen'); a path that no session and no team names still 404s; the roots stay git roots (a cwd in a subdirectory resolves to its repo root); p13/p14's session detail shows its instruction files on a re-walk."
 # [2026-09-27] amend by=orchestrator: files were ["features/sessions/src/main/kotlin/splice/sessions/http/ProjectsRoutes.kt", "features/sessions/src/test/kotlin/splice/sessions/http/v4363/"]
 # [2026-09-28] amend by=splice-lead: files were ["features/sessions/src/main/kotlin/splice/sessions/http/ProjectsRoutes.kt", "features/sessions/src/test/kotlin/splice/sessions/http/v4363/", "app/src/main/kotlin/splice/app/control/mount/SessionsMount.kt"]
+claimed_by = "console"
+claimed_at = "2026-09-28T17:17:31.086Z"
+# [2026-09-28] CLAIM: owner=console at=2026-09-28T17:17:31Z
 
 [[items]]
 id = "V4-364"

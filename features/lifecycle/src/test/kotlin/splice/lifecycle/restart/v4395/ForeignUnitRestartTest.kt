@@ -21,6 +21,7 @@ import splice.lifecycle.restart.RestartCommand
 import splice.lifecycle.start.DaemonColdStart
 import splice.lifecycle.start.HostSupervisedStart
 import splice.lifecycle.start.ManagerEnvironment
+import splice.lifecycle.start.ManagerEnvironmentBlock
 import splice.lifecycle.start.SupervisedStart
 import splice.lifecycle.start.Systemctl
 import splice.lifecycle.start.SystemdUnitDaemon
@@ -197,6 +198,37 @@ class ForeignUnitRestartTest {
         assertEquals("/home/a b", env["SPACED"])
         assertEquals("it's", env["QUOTED"])
         assertEquals(4, env.size, "a line with no name or no equals sign is not a variable: $env")
+    }
+
+    /** The reader over a manager whose environment block is [block]: no host manager, no host home. */
+    private fun readerOver(block: String?): UnitDaemonReader =
+        SystemdUnitDaemon(DaemonSettings(TerminalOutput { lines += it }), ManagerEnvironmentBlock { block })
+
+    @Test
+    fun `a unit's daemon is read from the manager's HOME and that home's splice toml`(@TempDir tmp: Path) {
+        val home = tmp.resolve("unit-home")
+        val config = Files.createDirectories(home.resolve(".config").resolve("splice")).resolve("splice.toml")
+        Files.writeString(config, "[daemon]\ncontrol_port = 4321\n")
+        assertEquals(UnitDaemon(home, 4321), readerOver("HOME=$home\nPATH=/usr/bin\n")(UNIT))
+    }
+
+    @Test
+    fun `a unit's home with no splice toml is read as the default port and never written into`(@TempDir tmp: Path) {
+        val home = tmp.resolve("unit-home")
+        val env = EnvReader { name -> if (name == "HOME") home.toString() else null }
+        val daemon = readerOver("HOME=$home\n")(UNIT)
+        assertEquals(UnitDaemon(home, DaemonSettings(TerminalOutput { }).controlPort(null, env)), daemon)
+        assertTrue(Files.notExists(home), "reading another home's daemon must never create files there")
+    }
+
+    @Test
+    fun `a manager block that cannot be trusted reads as no daemon`(@TempDir tmp: Path) {
+        val home = Files.createDirectories(tmp.resolve("unit-home").resolve(".config").resolve("splice"))
+        Files.writeString(home.resolve("splice.toml"), "[daemon\ncontrol_port = = 4321")
+        val unreadable = "HOME=${tmp.resolve("unit-home")}\n"
+        assertEquals(null, readerOver(unreadable)(UNIT), "a splice.toml that does not parse cannot name a port")
+        assertEquals(null, readerOver("PATH=/usr/bin\n")(UNIT), "no HOME in the block must not fall back to ours")
+        assertEquals(null, readerOver(null)(UNIT), "no manager answered")
     }
 
     @Test

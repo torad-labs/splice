@@ -8,7 +8,6 @@ package splice.lifecycle.restart
 import splice.core.GATEWAY_VERSION
 import splice.core.config.RunningJar
 import splice.core.terminal.TerminalOutput
-import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
@@ -69,7 +68,7 @@ public class RestartCommand(
         // V4-395: before any stop or unit verb. A unit that is another home's is never this verb's to touch.
         val refusal = coldStart.foreignUnitRefusal(port)
         return if (refusal == null) {
-            restartOwn(topology, port, expectedVersion, waitForCompactions)
+            restartOwn(topology?.heads?.values?.map { it.port }.orEmpty(), port, expectedVersion, waitForCompactions)
         } else {
             output.line(refusal)
             false
@@ -77,16 +76,15 @@ public class RestartCommand(
     }
 
     /** The daemon on [port] is this home's, or no unit claims it: restart it through its unit when the
-     *  unit runs it, else stop it here and cold-start. */
+     *  unit runs it, else stop it here (the head ports [tomlPorts] must free too) and cold-start. */
     private fun restartOwn(
-        topology: Topology?,
+        tomlPorts: List<Int>,
         port: Int,
         expectedVersion: String,
         waitForCompactions: Boolean,
     ): Boolean {
         val unit = coldStart.activeUnit()
         if (unit != null) return restartThroughUnit(unit, port, expectedVersion, waitForCompactions)
-        val tomlPorts = topology?.heads?.values?.map { it.port } ?: emptyList()
         return if (stopIfRunning(port, tomlPorts, waitForCompactions)) {
             coldStart.ensureDaemon(port, expectedVersion).also { started ->
                 if (started) output.line("splice: daemon restarted")

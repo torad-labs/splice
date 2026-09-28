@@ -725,6 +725,7 @@ class RoleRegistryLawTest {
         )
         val names = config.entries.values.map { it.strings("names") }
         assertTrue(names.none { it == null }) { "every entry must declare an array of strings under `names`" }
+        // 119 since 2026-09-28: V4-395's ManagerEnvironmentBlock joined `()->String?`, the unit manager's environment.
         // 118 since 2026-09-28: V4-384's HeadPortBindable joined `(Int)->Boolean`, the head port bind probe.
         // 117 since 2026-09-27: V4-365's DaemonSuccessor joined `()->Boolean`, the pre-drain arm decision.
         // 116 since 2026-09-27: V4-354's SessionTranscriptViewEnabled joined `()->Boolean`, the live global view guard.
@@ -736,7 +737,7 @@ class RoleRegistryLawTest {
         // names. 111 since 2026-09-26: V4-243's SupervisorUnitName joined `()->String`. 110 since 2026-09-25: DoctorReport
         // left `()->String` when it began taking the daemon's answers (V4-230), and V4-226 wrote WorkerFrameIo and
         // GlobalMcpServers as two roles of one shape.
-        assertEquals(118, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
+        assertEquals(119, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
         assertTrue(config.entries.values.all { !it.text("reason").isNullOrBlank() }) { "every entry is reasoned" }
         assertTrue(config.entries.values.all { !it.text("dated").isNullOrBlank() }) { "every entry is dated" }
 

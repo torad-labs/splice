@@ -11,18 +11,10 @@
 // selector list is the shim's `unitDefaults()` byte for byte (SupervisedStartTest pins the two).
 package splice.lifecycle.start
 
-import splice.core.config.UserHome
-import splice.core.terminal.TerminalOutput
-import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.daemonclient.DaemonSettings
-import splice.topology.TopologyLoader
-import java.nio.file.Files
-import java.nio.file.Path
-import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.TimeoutException
 
 /** The environment selectors that make a shell's daemon its own (a harness, a second install) —
  *  any of them set, even to whitespace, and the supervisor unit could not serve this shell. */
@@ -77,116 +69,11 @@ internal fun interface SupervisorUnitName {
     operator fun invoke(): String
 }
 
-/** V4-395: the daemon a supervisor unit runs, as far as ownership goes: the HOME it lives under and the
- *  control port it resolves there. */
-internal data class UnitDaemon(val home: Path, val controlPort: Int)
-
-/** V4-395: the [UnitDaemon] behind [unit], or null when its environment cannot be read. A test names a
- *  unit's daemon with a lambda; [SystemdUnitDaemon] asks the unit manager. */
-internal fun interface UnitDaemonReader {
-    operator fun invoke(unit: String): UnitDaemon?
-}
-
-/** V4-395: whose the unit is, for one command that wants to act on it. */
-internal sealed class UnitOwnership {
-    /** The unit's daemon is this shell's home's: the same HOME and the same control port. */
-    data object Ours : UnitOwnership()
-
-    /** The unit runs another home's daemon, or cannot be shown to run this one's; [reason] says which. */
-    data class Foreign(val reason: String) : UnitOwnership()
-}
-
-/** V4-395: the unit manager's environment block as text, or null when it cannot be had. */
-internal fun interface ManagerEnvironmentBlock {
-    operator fun invoke(): String?
-}
-
-/** The real one: `systemctl --user show-environment`, bounded; null when there is no manager to ask, it
- *  answers non-zero, or it does not answer in time. */
-internal class SystemctlEnvironmentBlock(private val timeoutMs: Long = SYSTEMCTL_TIMEOUT_MS) :
-    ManagerEnvironmentBlock {
-    override fun invoke(): String? {
-        val process = Cancellables.runCatchingCancellable {
-            ProcessBuilder(listOf("systemctl", "--user", "show-environment"))
-                .redirectError(ProcessBuilder.Redirect.DISCARD)
-                .start()
-        }.getOrElse { return null }
-        return try {
-            val bytes = CompletableFuture.supplyAsync { process.inputStream.readAllBytes() }
-                .get(timeoutMs, TimeUnit.MILLISECONDS)
-            val answered = process.waitFor(timeoutMs, TimeUnit.MILLISECONDS) && process.exitValue() == 0
-            bytes.toString(Charsets.UTF_8).takeIf { answered }
-        } catch (_: TimeoutException) {
-            null
-        } finally {
-            process.destroyForcibly()
-        }
-    }
-}
-
-/** V4-395: the unit manager's environment block, the environment it hands every unit it starts. */
-internal object ManagerEnvironment {
-    private val escaped = Regex("""\\(.)""")
-    private val dollarQuoted = Regex("""\$'(.*)'""", RegexOption.DOT_MATCHES_ALL)
-
-    /** The block's `NAME=value` lines. systemd writes a value holding whitespace or shell metacharacters
-     *  as `NAME=$'value'` with backslash escapes; every other value is written bare. A line with no name
-     *  or no equals sign is not a variable. */
-    fun parse(text: String): Map<String, String> = text.lineSequence()
-        .mapNotNull { line ->
-            val at = line.indexOf('=')
-            if (at > 0) line.substring(0, at) to unquote(line.substring(at + 1)) else null
-        }
-        .toMap()
-
-    private fun unquote(value: String): String =
-        dollarQuoted.matchEntire(value)?.let { quoted ->
-            escaped.replace(quoted.groupValues[1]) { match ->
-                when (val char = match.groupValues[1]) {
-                    "n" -> "\n"
-                    "t" -> "\t"
-                    else -> char
-                }
-            }
-        } ?: value
-}
-
-/** V4-395: [UnitDaemonReader] over [ManagerEnvironment]: the daemon a unit starts lives under the manager's
- *  HOME and resolves its control port from that home's splice.toml, so both are read the way the daemon
- *  will read them. The block is the same for every unit, so [invoke] does not ask which one; a unit's own
- *  `Environment=` lines are beyond it. The unit's home is read, never written: an absent splice.toml is
- *  "no TOML layer", where [DaemonSettings.controlPort]'s one-argument form would create it. */
-internal class SystemdUnitDaemon(
-    private val settings: DaemonSettings,
-    private val environment: ManagerEnvironmentBlock = SystemctlEnvironmentBlock(),
-) : UnitDaemonReader {
-    override fun invoke(unit: String): UnitDaemon? {
-        val block = environment() ?: return null
-        return daemonUnder(ManagerEnvironment.parse(block))
-    }
-
-    private fun daemonUnder(manager: Map<String, String>): UnitDaemon? {
-        val env = EnvReader { manager[it] }
-        // No HOME in the block would let UserHome fall back to THIS JVM's, and the answer would be ours.
-        val home = UserHome.environmentHome(env) ?: return null
-        val topology = topologyAt(TopologyLoader.configPath(env)).getOrElse { return null }
-        return UnitDaemon(Path.of(home), settings.controlPort(topology, env))
-    }
-
-    /** The topology at [config]: success(null) when the file is absent, a failure when it is unreadable. */
-    private fun topologyAt(config: Path): Result<Topology?> =
-        if (Files.isRegularFile(config)) {
-            Cancellables.runCatchingCancellable { TopologyLoader.parse(Files.readString(config)) }
-        } else {
-            Result.success(null)
-        }
-}
-
 /** [restarter] runs `systemctl restart`, which blocks until the unit's daemon has drained and
  *  stopped, so it carries a longer deadline than [systemctl]'s millisecond verbs. [unitDaemon] names the
- *  daemon a unit runs so [ownership] can tell whose it is; null skips that check, which is the seam for a
- *  test that does not exercise it, and [DaemonColdStart] always supplies the real reader. The type is
- *  public so [DaemonColdStart]'s one constructor can take it; only this module can build one or call it. */
+ *  daemon a unit runs so [ownership] can tell whose it is (V4-395, UnitOwnership.kt); null skips that
+ *  check, and [HostSupervisedStart] always supplies the real reader. The type is public so
+ *  [DaemonColdStart]'s one constructor can take it; only this module can build one or call it. */
 public class SupervisedStart internal constructor(
     private val systemctl: Systemctl,
     private val envReader: EnvReader,
@@ -209,32 +96,12 @@ public class SupervisedStart internal constructor(
         return ColdStartRoute.Unit(unit)
     }
 
-    /** V4-395: whether [unit] runs the daemon this shell is about to act on, on [port]: the same HOME and
-     *  the same control port. [route] refuses a shell that names another daemon by an env selector, but a
-     *  home that sets none (a second profile under its own HOME) reaches the everyday unit through it, and
-     *  a restart then bounces a daemon that is nobody's business here (Marlin's walk, Sep 28, 12:40:45 PM CT).
-     *  A unit whose environment cannot be read is not shown to be ours, so it is not treated as ours. */
-    internal fun ownership(unit: String, port: Int): UnitOwnership {
-        val reader = unitDaemon ?: return UnitOwnership.Ours
-        val theirs = reader(unit) ?: return UnitOwnership.Foreign(
-            "its environment could not be read, so it cannot be shown to run this home's daemon",
-        )
-        val ours = UserHome.dir(envReader)
-        val differences = listOfNotNull(
-            "it runs the daemon of ${theirs.home}, and this shell's home is $ours"
-                .takeUnless { sameDirectory(ours, theirs.home) },
-            "it serves the control port :${theirs.controlPort}, and this home's is :$port"
-                .takeIf { theirs.controlPort != port },
-        )
-        return if (differences.isEmpty()) UnitOwnership.Ours else UnitOwnership.Foreign(differences.joinToString("; "))
-    }
+    private val owner = UnitOwner(unitDaemon, envReader)
 
-    /** The same directory under a symlinked or unnormalized spelling: two homes named differently are
-     *  not two homes. A path that does not resolve is compared as written. */
-    private fun sameDirectory(a: Path, b: Path): Boolean = resolved(a) == resolved(b)
-
-    private fun resolved(path: Path): Path =
-        Cancellables.runCatchingCancellable { path.toRealPath() }.getOrElse { path.toAbsolutePath().normalize() }
+    /** V4-395: whether [unit] runs the daemon this shell is about to act on, on [port]. [route] refuses a
+     *  shell that names another daemon by an env selector; a home that sets none reaches the everyday unit
+     *  through it, so a restart also asks this before it touches the unit. */
+    internal fun ownership(unit: String, port: Int): UnitOwnership = owner.of(unit, port)
 
     /** `systemctl --user start [unit]`: true when systemd accepted the start job. On a unit waiting
      *  out its restart backoff, systemd takes a manual start as "restart now" (service_start in
@@ -253,21 +120,9 @@ public class SupervisedStart internal constructor(
     internal fun restart(unit: String): Boolean = restarter(listOf("restart", unit)) == 0
 }
 
-/** V4-395: the shipped wiring of [SupervisedStart]: the real systemctl, a restarter with the long deadline,
- *  and the real [SystemdUnitDaemon], so no cold start reaches a unit without the ownership check. */
-internal object HostSupervisedStart {
-    fun of(env: EnvReader, errors: TerminalOutput): SupervisedStart = SupervisedStart(
-        JdkSystemctl(),
-        env,
-        DaemonSettings(errors),
-        restarter = JdkSystemctl(UNIT_RESTART_TIMEOUT_MS),
-        unitDaemon = SystemdUnitDaemon(DaemonSettings(errors)),
-    )
-}
-
 // why: `systemctl --user cat|start` answer in milliseconds; a manager that hangs longer than this is
 // not one to wait on, and the raw route is the answer a box without a manager already gets.
-private const val SYSTEMCTL_TIMEOUT_MS = 15_000L
+internal const val SYSTEMCTL_TIMEOUT_MS = 15_000L
 
 // why: `systemctl --user restart` returns only once the daemon has drained and stopped (its own halt
 // floor is 57 s) and the new one has started; 120 s sits above systemd's default 90 s stop timeout, so

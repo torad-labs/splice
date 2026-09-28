@@ -16,4 +16,5 @@ dependencies {
     implementation(project(":integrations-daemon-client"))
     implementation(project(":features-accounts"))
     implementation(libs.kotlinx.serialization.json)
+    testImplementation(testFixtures(project(":core"))) // TestPorts reserves below the kernel's ephemeral range.
 }

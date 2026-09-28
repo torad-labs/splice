@@ -29,8 +29,9 @@ internal class AddCommand(
     errors: TerminalOutput,
     private val checks: AddChecks,
     private val ports: AddPorts,
+    bindable: HeadPortBindable = jdkPortBindable,
 ) {
-    private val prepare = AddPrepare(output, checks, ports.prompt)
+    private val prepare = AddPrepare(output, checks, ports.prompt, bindable)
     private val settings = DaemonSettings(errors)
     private val texts = AddRefusalText()
 

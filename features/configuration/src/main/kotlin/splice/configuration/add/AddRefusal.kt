@@ -17,6 +17,9 @@ internal sealed class AddRefusal {
 
     data class BaseUrlRequired(val profile: String) : AddRefusal()
 
+    /** No available loopback listener port in the searched inclusive range. */
+    data class PortUnavailable(val from: Int, val to: Int) : AddRefusal()
+
     /** A base URL or a command carrying a quote, a backslash or a control character. */
     data object QuotedValue : AddRefusal()
 
@@ -43,6 +46,12 @@ internal class AddRefusalText {
 
     /** The CLI's sentence, printed after `splice add: `. */
     fun cli(r: AddRefusal): String = when (r) {
+        is AddRefusal.PortUnavailable -> "no free loopback head port in ${r.from}..${r.to}; free a port and retry"
+        is AddRefusal.Models -> cliModels(r.problem)
+        else -> cliStandard(r)
+    }
+
+    private fun cliStandard(r: AddRefusal): String = when (r) {
         is AddRefusal.KeyTaken -> "'${r.key}' is already configured; pick another --name"
         is AddRefusal.CommandTaken -> "command '${r.command}' already belongs to a head"
         is AddRefusal.Unparseable -> "the candidate topology does not parse: ${r.detail}"
@@ -52,11 +61,18 @@ internal class AddRefusalText {
         is AddRefusal.LiveUnsupported ->
             "--live is only supported for api-key profiles; '${r.profile}' is exercised by its first launch, " +
                 "then splice doctor; drop --live"
-        is AddRefusal.Models -> cliModels(r.problem)
+        else -> error("handled by cli: ${r::class.simpleName}")
     }
 
     /** The console form's sentence: no flag, no em-dash. */
     fun console(r: AddRefusal): String = when (r) {
+        is AddRefusal.PortUnavailable ->
+            "No free loopback head port in ${r.from}..${r.to}; free a port and try again."
+        is AddRefusal.Models -> consoleModels(r.problem)
+        else -> consoleStandard(r)
+    }
+
+    private fun consoleStandard(r: AddRefusal): String = when (r) {
         is AddRefusal.KeyTaken -> "'${r.key}' is already configured; pick another name."
         is AddRefusal.CommandTaken -> "The command '${r.command}' already belongs to a head; pick another command."
         is AddRefusal.Unparseable -> "The new head does not parse together with your splice.toml: ${r.detail}"
@@ -64,7 +80,7 @@ internal class AddRefusalText {
         is AddRefusal.BaseUrlRequired -> "'${r.profile}' needs a base URL."
         AddRefusal.QuotedValue -> "The base URL and the command must not contain quotes."
         is AddRefusal.LiveUnsupported -> "'${r.profile}' has no live turn to run: its first launch exercises it."
-        is AddRefusal.Models -> consoleModels(r.problem)
+        else -> error("handled by console: ${r::class.simpleName}")
     }
 
     /** The CLI's line after the file's path: nothing was written. */

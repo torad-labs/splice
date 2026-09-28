@@ -31,6 +31,10 @@ class AddRefusalTextTest {
             ),
         AddRefusal.BaseUrlRequired("api-key") to
             ("--base-url is required for 'api-key'" to "'api-key' needs a base URL."),
+        AddRefusal.PortUnavailable(3100, 65535) to (
+            "no free loopback head port in 3100..65535; free a port and retry" to
+                "No free loopback head port in 3100..65535; free a port and try again."
+            ),
         AddRefusal.QuotedValue to
             ("values must not contain quotes" to "The base URL and the command must not contain quotes."),
         AddRefusal.LiveUnsupported("codex") to (

@@ -332,15 +332,16 @@ names = [
 ]
 reason = """Both build headers for the responses-WebSocket handshake, and they are two LAYERS of it rather than two moments. HandshakeHeaders is the full handshake set — `Authorization` plus the `OpenAI-Beta: responses_websockets=…` opt-in the v2 backend gates on — and its KDoc records why it is not splice.upstream.CredentialHeaders despite the identical shape: it is read ONCE PER CONNECTION and is non-suspending, because a WebSocket handshake cannot be re-run without dropping the per-connection server context, whereas CredentialHeaders is rebuilt per ATTEMPT so a post-401 refresh reaches the wire. WsExtraHeaders is the per-handshake EXTRA set layered on top of that Authorization set — "the same role Provider.extraHeaders plays on the SSE path". The SEPARATION law keeps both in the dialect module that owns them; collapsing them would erase the once-per-connection contract that the whole WS path's session reuse depends on."""
 
-# ── 2 names, (Int) -> Boolean ─────────────────────────────────────────────────────────────────────
+# ── 3 names, (Int) -> Boolean ─────────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "(Int)->Boolean"
-dated = "2026-09-17"
+dated = "2026-09-28"
 names = [
     "DaemonUpProbe",
+    "HeadPortBindable",
     "PeerProbe",
 ]
-reason = """Both take a PORT and answer a Boolean, and the two falses mean different things to different callers. DaemonUpProbe is "whether a daemon answers on the control port", read by `splice add` before it offers a restart. PeerProbe (method `serving`, not `invoke`) is read by DaemonLockWait while losing a startup race: it exists to distinguish a LIVE WINNER that answers /health from a daemon that is merely leaving, so the loser yields at once to the former and waits out the latter's teardown floor. Confusing them either starts a second daemon against a live port or makes the loser yield to a daemon that is already going away."""
+reason = """All take a PORT and answer Boolean, but their roles differ: DaemonUpProbe asks whether a splice daemon responds at the control port before an add offers restart. PeerProbe asks whether a lock-winning peer is LIVE so startup may yield rather than race its teardown. HeadPortBindable opens and closes a TCP listener on IPv4 loopback to test a NEW head port before an add writes its topology; false means a foreign listener or unbindable port, not that a daemon is down. Substituting liveness for bindability would assign a new head the local runtime's occupied port, while substituting a bind probe for peer liveness would mistake a closing daemon for a fresh one."""
 
 # ── 2 names, (Int) -> Unit ────────────────────────────────────────────────────────────────────────
 [[groups]]

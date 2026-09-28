@@ -11,12 +11,33 @@ import splice.core.topology.Topology
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
 import splice.topology.TopologyLoader
+import java.net.InetSocketAddress
+import java.net.ServerSocket
+import java.net.URI
+import java.net.URISyntaxException
 import java.nio.file.Files
 import java.nio.file.Path
 
 private const val FIRST_HEAD_PORT = 3099
+
+// why: TCP listener port numbers are unsigned 16-bit; an exhausted range must refuse, never loop past it.
+private const val LAST_HEAD_PORT = 65_535
 private val KEY_RE = Regex("[a-z0-9][a-z0-9-]*")
 private const val OPENAI_CHAT_DIALECT = "openai-chat"
+
+/** Proves that the proposed head port binds on the same IPv4 loopback address heads use. */
+internal fun interface HeadPortBindable {
+    fun on(port: Int): Boolean
+}
+
+internal val jdkPortBindable = HeadPortBindable { port ->
+    try {
+        ServerSocket().use { socket -> socket.bind(InetSocketAddress("127.0.0.1", port)) }
+        true
+    } catch (_: java.io.IOException) {
+        false
+    }
+}
 
 /** Everything decided before the first side effect. */
 internal data class AddCandidate(
@@ -49,10 +70,13 @@ internal class AddPrepare(
     private val output: TerminalOutput,
     private val checks: AddChecks,
     prompt: AddPrompter,
+    private val bindable: HeadPortBindable = jdkPortBindable,
+    private val lastHeadPort: Int = LAST_HEAD_PORT,
 ) {
     private val profiles = AddProfiles()
     private val modelRows = AddModelRows(output, prompt)
     private val texts = AddRefusalText()
+    private val ports = AddPortChoice(bindable, lastHeadPort)
 
     /** The CLI's reading: the refusal or the usage printed, and null. */
     fun candidate(args: AddArgs, env: EnvReader): AddCandidate? = when (val prepared = prepare(args, env)) {
@@ -86,7 +110,10 @@ internal class AddPrepare(
         val conflict = keyConflict(resolved, current, key)
         val problem = conflict ?: keyProblem(resolved, key) ?: valueProblem(resolved) ?: liveProblem(args, resolved)
         if (problem != null) return AddPrepared.Refused(problem, conflict = conflict != null)
-        val appended = profiles.toml(resolved, key, nextPort(current))
+        val floor = ports.floor(current)
+        val port = ports.choose(current, resolved.baseUrl, floor)
+            ?: return AddPrepared.Refused(AddRefusal.PortUnavailable(floor, lastHeadPort), conflict = true)
+        val appended = profiles.toml(resolved, key, port)
         return checks.parses(existing + appended).fold(
             onSuccess = { topology ->
                 AddPrepared.Ready(
@@ -162,12 +189,38 @@ internal class AddPrepare(
             else -> null
         }
     }
+}
 
-    private fun nextPort(current: Topology): Int {
-        val taken = current.heads.values.map { it.port } + listOfNotNull(current.daemon.controlPort)
-        val floor = maxOf(taken.maxOrNull() ?: 0, FIRST_HEAD_PORT - 1) + 1
-        return generateSequence(floor) { it + 1 }.first { it !in taken }
+/** Selects a head port from the bounded range, excluding declared listeners and proving each
+ *  remaining candidate binds on the same IPv4 loopback address the head will use. */
+private class AddPortChoice(private val bindable: HeadPortBindable, private val lastHeadPort: Int) {
+    fun floor(current: Topology): Int {
+        val occupied = current.heads.values.map { it.port } + listOfNotNull(current.daemon.controlPort)
+        return maxOf(occupied.maxOrNull() ?: 0, FIRST_HEAD_PORT - 1) + 1
     }
+
+    fun choose(current: Topology, candidateUrl: String?, floor: Int): Int? {
+        val taken = current.heads.values.map { it.port }.toSet() +
+            listOfNotNull(current.daemon.controlPort) +
+            (current.providers.values.mapNotNull { localPort(it.baseUrl) } + listOfNotNull(localPort(candidateUrl)))
+        return (floor..lastHeadPort).firstOrNull { port -> port !in taken && bindable.on(port) }
+    }
+
+    private fun localPort(baseUrl: String?): Int? {
+        val uri = baseUrl?.let(::parsedUri) ?: return null
+        val host = uri.host?.lowercase() ?: return null
+        return uri.port.takeIf { it in 1..LAST_HEAD_PORT && loopbackHost(host) }
+    }
+
+    private fun parsedUri(baseUrl: String): URI? = try {
+        URI(baseUrl)
+    } catch (_: URISyntaxException) {
+        null // the topology parser names an invalid URL after the port decision
+    }
+
+    private fun loopbackHost(host: String): Boolean =
+        host == "localhost" || host == "localhost.localdomain" ||
+            host == "::1" || host == "[::1]" || host.startsWith("127.")
 }
 
 /** `splice add-model`'s refusal (HeadModelArray, AddModelVerb); its message is the whole explanation. `splice

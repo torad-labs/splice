@@ -73,6 +73,7 @@ class AddCommandTest {
             daemonUp = { daemonUp },
             prompt = { question, default -> answers[question]?.removeFirstOrNull()?.ifEmpty { default } ?: default },
         ),
+        bindable = HeadPortBindable { true }, // the verb's other steps, not host listener admission
     )
 
     private fun authFile(kind: String): Path {

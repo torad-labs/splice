@@ -225,7 +225,7 @@ class ToolSurfaceTest {
             ]},
             {"role":"developer","content":"hi"}
         ],"store":false,"stream":true}"""
-        val stripped = recovery.dropToolSearchTool(withSearch)
+        val stripped = recovery.dropToolSearchTool(withSearch, ToolSearchMode.CLIENT)
         assertTrue(stripped != null)
         val parsed = Json.parseToJsonElement(stripped!!).jsonObject
         val toolsArr = parsed["input"]!!.jsonArray[0].jsonObject["tools"]!!.jsonArray
@@ -238,7 +238,7 @@ class ToolSurfaceTest {
                 {"type":"function","name":"Bash","description":"d","parameters":{"type":"object","properties":{}}}
             ]}
         ],"store":false,"stream":true}"""
-        assertNull(recovery.dropToolSearchTool(withoutSearch))
+        assertNull(recovery.dropToolSearchTool(withoutSearch, ToolSearchMode.CLIENT))
     }
 
     // review 2026-07-24 (known HIGH): the first cut of this recovery stripped only the tool_search
@@ -258,7 +258,7 @@ class ToolSurfaceTest {
             {"type":"tool_search_call","call_id":"ts_1","execution":"client","arguments":"{}"},
             {"type":"tool_search_output","call_id":"ts_1","status":"completed","execution":"client","tools":[]}
         ],"store":false,"stream":true}"""
-        val stripped = recovery.dropToolSearchTool(withSearchRound)
+        val stripped = recovery.dropToolSearchTool(withSearchRound, ToolSearchMode.CLIENT)
         assertTrue(stripped != null)
         val input = Json.parseToJsonElement(stripped!!).jsonObject["input"]!!.jsonArray
 

@@ -27,11 +27,11 @@ internal class ResponsesToolPlan(
 
     // ── tools ────────────────────────────────────────────────────────────────
 
-    /** Non-null only when this request actually deferred something — a bare partition (deferral
-     *  off, non-lite, below the floor) yields an empty deferred list, so [ToolPartition.deferring]
-     *  is the single source both this and [ToolWireObjects.toolsSection] read. */
+    /** Only client mode needs a gateway search controller. Hosted searches finish inside Meta;
+     *  a bare partition (off, below the floor) still returns no controller. */
     internal fun toolSearchControllerFor(partition: ToolPartition?, opts: BuildOptions): ToolSearchController? {
-        val policy = quirks.toolSurface ?: return null
+        val policy = quirks.toolSurface
+        if (policy == null || policy.mode == ToolSearchMode.HOSTED) return null
         if (partition == null || !partition.deferring) return null
         return ResponsesToolSearchController(
             index = ToolSearchIndex(partition.deferred),
@@ -54,6 +54,7 @@ internal class ResponsesToolPlan(
      *  a dropped tool has no schema to declare — the degrade-to-status-quo path [appendToolUse]
      *  documents. */
     internal fun declarationCandidates(body: AnthropicRequest, partition: ToolPartition?): Map<String, ToolDefinition> {
+        if (quirks.toolSurface?.mode == ToolSearchMode.HOSTED) return emptyMap()
         val deferred = partition?.deferred
         if (deferred.isNullOrEmpty()) return emptyMap()
         val warm = partitioner.warmToolNames(body)

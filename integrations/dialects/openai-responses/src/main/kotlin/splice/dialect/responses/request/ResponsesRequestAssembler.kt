@@ -17,7 +17,6 @@ import splice.dialect.responses.ResponsesClientHints
 import splice.dialect.responses.ResponsesLiteShape
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.ResponsesReasoningKnobs
-import splice.dialect.responses.tools.DEFAULT_SEARCH_LIMIT
 import splice.dialect.responses.tools.ResponsesToolPlan
 import splice.dialect.responses.tools.ToolPartition
 import splice.dialect.responses.tools.ToolWireObjects
@@ -63,14 +62,13 @@ internal class ResponsesRequestAssembler(
         // knob (stream_options.include_usage — the codex-breaking incident) cannot be added without a
         // field on ResponsesRequest, a reviewable type change. Byte-identical to the old put() set
         // (ResponsesRequestBuilderTest pins it): fields in declaration order, null optionals omitted.
-        val searchLimit = quirks.toolSurface?.searchLimit ?: DEFAULT_SEARCH_LIMIT
         val tools = parts.partition?.let {
             toolWire.toolsSection(
                 it,
                 quirks.emitStrict,
                 quirks.forceStrictFalse,
-                searchLimit,
                 quirks.normalizeToolSchemas,
+                quirks.toolSurface,
             )
         }
         val lite = liteShape.isLite(opts)

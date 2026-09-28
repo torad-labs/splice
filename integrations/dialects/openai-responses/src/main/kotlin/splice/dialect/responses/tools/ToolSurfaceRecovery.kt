@@ -7,9 +7,9 @@
 // TOOL entry from the additional_tools item, leaving orphaned tool_search_call / tool_search_output
 // items in `input` — a rejection of THOSE invented items (the shape splice itself authors, not
 // codex's) could not be recovered, since the one-shot retry re-POSTed a body still carrying them.
-// [ToolSurfaceRecovery.dropToolSearchTool] now strips BOTH: the tool, and every search-call/output
-// item plus their now-dangling preceding reasoning items (a reasoning item with nothing after it is
-// itself a 400 — the same rule ResponsesFoldController.continuation guards).
+// Client recovery strips BOTH: the tool and every search-call/output item plus dangling preceding
+// reasoning. Hosted recovery instead strips the top-level search tool and defer_loading flags,
+// retaining all definitions for an all-eager retry on the same turn.
 package splice.dialect.responses.tools
 
 import kotlinx.serialization.json.Json
@@ -33,25 +33,62 @@ internal class ToolSurfaceRecovery {
 
     /** Deliberately broad (status-shape, not exact wording) — a narrower literal match is exactly
      *  what the 2026-07-24 review flagged as letting a backend wording drift skip the recovery. */
-    fun isToolSurfaceRejection(status: Int, responseText: String): Boolean {
+    fun isToolSurfaceRejection(
+        status: Int,
+        responseText: String,
+        mode: ToolSearchMode = ToolSearchMode.CLIENT,
+    ): Boolean {
         // V4-117: the two bounds read the shared HttpStatus members rather than re-typing 400 and
         // 422. The numbers were the same numbers, spelled twice — the class of duplicate
         // kt-http-status-single-source exists to catch, and these were two of the sites it named.
         if (status < HttpStatus.BAD_REQUEST || status > HttpStatus.UNPROCESSABLE_ENTITY) return false
         val lower = responseText.lowercase()
-        return lower.contains(TYPE_TOOL_SEARCH) || lower.contains(FIELD_DEFER_LOADING)
+        return lower.contains(TYPE_TOOL_SEARCH) || lower.contains(FIELD_DEFER_LOADING) ||
+            (mode == ToolSearchMode.HOSTED && lower.contains(FIELD_TOOLS))
     }
 
     /** RC-4-style shape recovery: decode the closed DTO, strip every invented tool-surface item, then
      *  re-encode. Null = nothing to strip (the rejection was not ours to fix; the caller's plain retry
      *  plan applies instead). */
-    fun dropToolSearchTool(bodyJson: String): String? {
+    fun dropToolSearchTool(bodyJson: String, mode: ToolSearchMode): String? {
         val parsed = Json.parseToJsonElement(bodyJson).jsonObject
         val base = responsesRequestJson.decodeFromJsonElement(ResponsesRequest.serializer(), parsed)
+        val next = when (mode) {
+            ToolSearchMode.CLIENT -> dropClientSearch(base)
+            ToolSearchMode.HOSTED -> dropHostedSearch(base)
+        } ?: return null
+        return responsesRequestJson.encodeToJsonElement(ResponsesRequest.serializer(), next).toString()
+    }
+
+    private fun dropClientSearch(base: ResponsesRequest): ResponsesRequest? {
         if (!hasToolSearchTool(base.input) && !hasToolSearchItems(base.input)) return null
         val toolStripped = buildJsonArray { base.input.forEach { add(stripToolSearchFromItem(it)) } }
-        val next = base.copy(input = stripToolSearchItems(toolStripped))
-        return responsesRequestJson.encodeToJsonElement(ResponsesRequest.serializer(), next).toString()
+        return base.copy(input = stripToolSearchItems(toolStripped))
+    }
+
+    /** Hosted search sends every definition, so a rejected shape can retry every tool eagerly. */
+    private fun dropHostedSearch(base: ResponsesRequest): ResponsesRequest? {
+        val tools = base.tools ?: return null
+        val deferred = tools.any { (it as? JsonObject)?.containsKey(FIELD_DEFER_LOADING) == true }
+        if (tools.none(::isToolSearchTool) && !deferred) return null
+        val eager = buildJsonArray {
+            tools.forEach { tool ->
+                if (isToolSearchTool(tool)) return@forEach
+                val fields = tool as? JsonObject
+                if (fields == null) {
+                    add(tool)
+                } else {
+                    add(
+                        buildJsonObject {
+                            fields.forEach { (key, value) ->
+                                if (key != FIELD_DEFER_LOADING) put(key, value)
+                            }
+                        },
+                    )
+                }
+            }
+        }
+        return base.copy(tools = eager)
     }
 
     private fun hasToolSearchTool(input: JsonArray): Boolean = input.any { item ->

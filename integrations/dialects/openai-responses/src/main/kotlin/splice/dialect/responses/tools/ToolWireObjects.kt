@@ -131,17 +131,22 @@ internal class ToolWireObjects(private val names: ToolNameShortener = ToolNameSh
         )
     }
 
-    /** The additional_tools array for this request: every eager tool, then (only when deferring) the
-     *  tool_search tool. The deferred tools themselves never ride here (search_tool.rs:723-741). */
+    /** Client mode sends eager tools and a local search in additional_tools; hosted mode sends eager
+     *  and deferred definitions with a server-side search in top-level tools. */
     fun toolsSection(
         partition: ToolPartition,
         emitStrict: Boolean,
         forceStrictFalse: Boolean,
-        searchLimit: Int,
         normalizeSchemas: Boolean,
+        policy: ToolDeferralPolicy?,
     ): JsonArray = buildJsonArray {
         partition.eager.forEach { add(functionToolObject(it, emitStrict, forceStrictFalse, normalizeSchemas)) }
-        if (partition.deferring) add(toolSearchToolObject(searchLimit))
+        if (policy?.mode == ToolSearchMode.HOSTED) {
+            partition.deferred.forEach { add(deferredToolObject(it, emitStrict, forceStrictFalse, normalizeSchemas)) }
+            if (partition.deferring) add(buildJsonObject { put(FIELD_TYPE, TYPE_TOOL_SEARCH) })
+        } else if (partition.deferring) {
+            add(toolSearchToolObject(policy?.searchLimit ?: DEFAULT_SEARCH_LIMIT))
+        }
     }
 }
 

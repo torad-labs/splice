@@ -6,6 +6,7 @@ import splice.core.util.LogSink
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.ReasoningCache
 import splice.dialect.responses.reasoning.ReasoningCachePolicy
+import splice.dialect.responses.tools.ToolSearchMode
 import splice.dialect.responses.tools.ToolSurfaceLatch
 import splice.dialect.responses.tools.ToolSurfaceRecovery
 import splice.upstream.failure.FailureRules
@@ -24,17 +25,18 @@ internal class ResponsesFailureAmend(
      *  latch so every LATER turn on this provider instance builds the full status-quo request.
      *  Keyed off the SAME classifier as the retry plan's GIVE_UP (review 2026-07-24: a narrower
      *  literal match here let any upstream wording drift skip the recovery entirely).
-     *  Honesty gap (review 2026-07-25, [ToolSurfaceLatch]'s KDoc has the full account): the amend
-     *  return value here is eager-only for THIS turn — this function only ever sees
-     *  (status, responseText, bodyJson), never the [ToolPartition] that would let it re-attach the
-     *  deferred tools' schemas, so the recovery turn runs one turn below full status quo before
-     *  the latch restores every later turn. [logToolSurfaceLatchClosed] makes that one-time degrade
-     *  observable instead of silent. */
+     *  Hosted definitions ride top-level tools, so its amend can retry all-eager immediately.
+     *  Client mode omits deferred schemas from the request and recovers eager-only for this turn;
+     *  the latch restores the full set on later turns. Both transitions are logged. */
     fun amendBodyOnFailure(status: Int, responseText: String, bodyJson: String): String? = when {
         FailureRules().isEncryptedContentError(status, responseText) ->
             cachePolicy.stripStaleReasoning(bodyJson, reasoningCache)
-        surfaceRecovery.isToolSurfaceRejection(status, responseText) ->
-            surfaceRecovery.dropToolSearchTool(bodyJson)?.also {
+        surfaceRecovery.isToolSurfaceRejection(
+            status,
+            responseText,
+            quirks.toolSurface?.mode ?: ToolSearchMode.CLIENT,
+        ) ->
+            surfaceRecovery.dropToolSearchTool(bodyJson, quirks.toolSurface?.mode ?: ToolSearchMode.CLIENT)?.also {
                 if (toolSurfaceLatch.close()) logToolSurfaceLatchClosed()
             }
         else -> null
@@ -46,10 +48,14 @@ internal class ResponsesFailureAmend(
      *  fires EXACTLY ONCE per provider instance — never once per turn, since every turn after the
      *  close reads the latch already-closed and never re-enters this branch. */
     private fun logToolSurfaceLatchClosed() {
+        val thisTurn = if (quirks.toolSurface?.mode == ToolSearchMode.HOSTED) {
+            "this turn retried with all tools eager"
+        } else {
+            "this turn recovered eager-only (one turn below status quo)"
+        }
         log(
             "[${quirks.providerTag}] tool-surface latch closed: backend rejected the tool_search " +
-                "shape; this turn recovered eager-only (one turn below status quo), every later turn " +
-                "on this provider instance builds the full eager surface.",
+                "shape; $thisTurn, every later turn on this provider instance builds the full eager surface.",
         )
     }
 }

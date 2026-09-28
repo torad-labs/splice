@@ -88,8 +88,8 @@ public data class ResponsesQuirks(
      *  harness staleness guard). From the 3rd identical failure the result's output gains an
      *  escalating directive; success or changed arguments reset. Off restores plain passthrough. */
     val loopGuard: Boolean = true,
-    /** Deferred tool surface (tool_search) for responses-lite turns. NULL = off, and off is the
-     *  shipped default for every provider — the request is byte-identical to today. */
+    /** Deferred tool surface. Null keeps non-Muse providers off; Muse supplies a hosted base.
+     *  CLIENT is responses-lite-only, HOSTED uses Meta's Responses tool search on normal turns. */
     val toolSurface: ToolDeferralPolicy? = null,
     /** stream_options.reasoning_summary_delivery, sent only when a summary is requested. The
      *  ChatGPT backend serves ~2.3x more titled summary sections with "sequential_cutoff"
@@ -151,11 +151,9 @@ public data class ResponsesQuirks(
     public fun withParallelToolCallsToml(parallelToolCalls: Boolean?): ResponsesQuirks =
         copy(liteParallelToolCalls = parallelToolCalls ?: this.liteParallelToolCalls)
 
-    /** Overlay the head's TOML `[providers.*.quirks.tool_surface]` table — a DIRECT set, not the
-     *  null-preserves-base merge [withReasoningCacheToml] uses: toolSurface's null means literally
-     *  OFF (the field's own KDoc), and no provider's defaultQuirks() ever presets a non-null base to
-     *  inherit from, so a direct set is both simpler and exactly as correct. Chained (not folded into
-     *  [withToml]) because that function already sits at detekt's complexity ceiling. */
+    /** Apply the assembly-resolved tool policy. An absent table preserves Muse's hosted base;
+     *  an explicit opt-out or daemon-wide kill switch passes null. Chained after [withToml]
+     *  because that function already sits at the complexity ceiling. */
     public fun withToolSurfaceToml(policy: ToolDeferralPolicy?): ResponsesQuirks =
         copy(toolSurface = policy)
 

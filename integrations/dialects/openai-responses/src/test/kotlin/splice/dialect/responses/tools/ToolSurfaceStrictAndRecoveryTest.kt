@@ -73,7 +73,7 @@ class ToolSurfaceStrictAndRecoveryTest {
             {"type":"tool_search_call","call_id":"ts_1","execution":"client","arguments":"{}"},
             {"type":"tool_search_output","call_id":"ts_1","status":"completed","execution":"client","tools":[]}
         ],"store":false,"stream":true}"""
-        val stripped = recovery.dropToolSearchTool(body)
+        val stripped = recovery.dropToolSearchTool(body, ToolSearchMode.CLIENT)
         assertTrue(stripped != null)
         val input = Json.parseToJsonElement(stripped!!).jsonObject["input"]!!.jsonArray
         assertEquals(2, input.size, "both reasoning items, the call, and the output are all gone")
@@ -101,7 +101,7 @@ class ToolSurfaceStrictAndRecoveryTest {
             {"type":"tool_search_call","call_id":"ts_2","execution":"client","arguments":"{}"},
             {"type":"tool_search_output","call_id":"ts_2","status":"completed","execution":"client","tools":[]}
         ],"store":false,"stream":true}"""
-        val stripped = recovery.dropToolSearchTool(body)
+        val stripped = recovery.dropToolSearchTool(body, ToolSearchMode.CLIENT)
         assertTrue(stripped != null)
         val input = Json.parseToJsonElement(stripped!!).jsonObject["input"]!!.jsonArray
         // survivors: the additional_tools scaffold, "hi", and "between rounds" — IN THAT ORDER —

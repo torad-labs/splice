@@ -8,6 +8,8 @@ import splice.core.util.LogSink
 import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.PromptCachePolicy
 import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.tools.ToolDeferralPolicy
+import splice.dialect.responses.tools.ToolSearchMode
 import splice.oauth.muse.MuseRefresh
 import splice.provider.muse.MuseKeyMintCall
 import splice.upstream.CredentialHeaders
@@ -67,6 +69,7 @@ internal class MuseResponsesArm(
             promptCache = PromptCachePolicy(CacheKeyStrategy.SESSION_OR_FIRST_MESSAGE_HASH, "24h"),
             supportsSummary = true,
             emitToolChoice = true,
+            toolSurface = ToolDeferralPolicy(mode = ToolSearchMode.HOSTED),
         ),
         ctx.cfg,
     ).let { overlaid ->

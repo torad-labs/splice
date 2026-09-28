@@ -27,10 +27,11 @@
 //     already named gets its full schema re-declared IN HISTORY, immediately before that
 //     function_call, which closes the same "replayed history references an undeclared tool" failure
 //     mode without ever touching additional_tools;
-//   - OFF (quirks.toolSurface == null), non-lite, compact, latch-closed, or below the minDeferred
+//   - OFF (quirks.toolSurface == null), client non-lite, latch-closed, or below the minDeferred
 //     floor => (all eager, none deferred), byte-identical to today (ResponsesContractTest pins it);
-//   - deferred tools are ABSENT from the request entirely — defer_loading never rides the request
-//     side, only the tool_search_output (codex core/tests/suite/search_tool.rs:723-741).
+//   - CLIENT deferred tools are ABSENT from the request entirely — defer_loading rides only the
+//     tool_search_output (codex core/tests/suite/search_tool.rs:723-741). HOSTED sends each schema
+//     with defer_loading:true and lets Meta load it within the same response.
 package splice.dialect.responses.tools
 
 import splice.core.wire.AnthropicRequest
@@ -41,14 +42,18 @@ import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.request.BuildOptions
 import java.util.concurrent.atomic.AtomicBoolean
 
+/** A provider's search execution contract: Codex answers locally; Meta loads hosted definitions. */
+public enum class ToolSearchMode { CLIENT, HOSTED }
+
 /** Per-provider deferred-tool-surface policy — governs whether/how a request's `tools` gets
- *  PARTITIONed into an eager set (declared normally in `additional_tools`) and a deferred set
- *  (answered on demand via `tool_search`; see this file's header). Overlaid from the operator-
+ *  partitioned into eager and deferred definitions. Client search omits deferred tools from the
+ *  request and answers locally; hosted search sends definitions for Meta to load. Overlaid from the operator-
  *  facing TOML `[providers.*.quirks.tool_surface]` table via [ResponsesQuirks.withToolSurfaceToml]
  *  into [ResponsesQuirks.toolSurface]. An ABSENT policy (`toolSurface == null`) means the feature is
  *  OFF — every request is byte-identical to pre-feature status quo (all tools eager, no
  *  tool_search object); there is no "configured but inert" state between off and active. */
 public data class ToolDeferralPolicy(
+    val mode: ToolSearchMode = ToolSearchMode.CLIENT,
     val deferPrefixes: List<String> = listOf(MCP_PREFIX),
     /** Names FORCED deferred regardless of prefix — the Agent/Task availability brake. */
     val defer: Set<String> = emptySet(),
@@ -124,7 +129,7 @@ internal class ToolPartitioner(private val quirks: ResponsesQuirks) {
         return when {
             policy == null -> allEager
             !opts.toolSurfaceOpen -> allEager // latch closed
-            !liteShape.isLite(opts) -> allEager
+            policy.mode == ToolSearchMode.CLIENT && !liteShape.isLite(opts) -> allEager
             else -> partitionWithPolicy(body, policy, allEager)
         }
     }
@@ -140,7 +145,7 @@ internal class ToolPartitioner(private val quirks: ResponsesQuirks) {
         val eager = body.tools.filter { it.name !in deferredNames }
         return when {
             deferred.size < policy.minDeferred -> allEager
-            eager.isEmpty() -> allEager // degenerate-config guard
+            eager.isEmpty() && policy.mode == ToolSearchMode.CLIENT -> allEager // client search needs an eager tool
             else -> ToolPartition(eager, deferred)
         }
     }

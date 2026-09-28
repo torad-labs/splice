@@ -14,6 +14,7 @@ import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.stream.DEFAULT_MARKER_TEXT
 import splice.dialect.responses.stream.FoldConfig
 import splice.dialect.responses.tools.ToolDeferralPolicy
+import splice.dialect.responses.tools.ToolSearchMode
 import splice.provider.grok.GrokQuirks
 
 private const val MIN_TOOL_SURFACE_FLOOR = 1
@@ -41,7 +42,7 @@ internal class QuirksOverlay {
     ).withReasoningCacheToml(providerCfg.quirks.reasoningCache)
         .withParallelToolCallsToml(providerCfg.quirks.parallelToolCalls)
         .withWebSocketToml(providerCfg.quirks.webSocket)
-        .withToolSurfaceToml(toolDeferralPolicy(providerCfg.quirks.toolSurface, cfg.toolSurfaceOff))
+        .withToolSurfaceToml(toolDeferralPolicy(providerCfg.quirks.toolSurface, cfg.toolSurfaceOff, base.toolSurface))
 
     /**
      * The chat dialect's base profile, chosen by AUTH KIND, with the head's TOML overlaid.
@@ -109,8 +110,9 @@ internal class QuirksOverlay {
     private fun toolNameCap(providerCfg: ProviderConfig, base: PassthroughQuirks): Int =
         providerCfg.quirks.toolNameCap ?: base.toolNameCap
 
-    /** TOML table -> dialect policy. Null (absent table, enabled=false, or the daemon-wide kill
-     *  switch) = feature off. The mapping lives HERE, at the assembly point, so the dialect never
+    /** TOML table -> dialect policy. Muse inherits its hosted default when the table is absent;
+     *  an explicit disabled table or the daemon-wide kill switch turns it off. The mapping lives HERE,
+     *  at the assembly point, so the dialect never
      *  imports a topology config type — the same reason withToml takes primitives.
      *
      *  Clamped (review 2026-07-24): ToolSurfaceConfig does no validation of its own, so an operator
@@ -119,11 +121,16 @@ internal class QuirksOverlay {
      *  round that searched, the one place this feature's own NEVER-BELOW-STATUS-QUO law broke.
      *  Clamping here (like every other numeric knob — ConfigService.normalize) makes a bad value
      *  un-armable instead of a live crash. */
-    internal fun toolDeferralPolicy(t: ToolSurfaceConfig?, globalOff: Boolean): ToolDeferralPolicy? = when {
-        t == null -> null
-        !t.enabled -> null
+    internal fun toolDeferralPolicy(
+        t: ToolSurfaceConfig?,
+        globalOff: Boolean,
+        base: ToolDeferralPolicy? = null,
+    ): ToolDeferralPolicy? = when {
         globalOff -> null
+        t == null -> base
+        !t.enabled -> null
         else -> ToolDeferralPolicy(
+            mode = base?.mode ?: ToolSearchMode.CLIENT,
             deferPrefixes = t.deferPrefixes,
             defer = t.defer.toSet(),
             eager = t.eager.toSet(),

@@ -2,6 +2,7 @@
 // themselves are plain data in rows.ts; this file only adds what a widget draws.
 import type { ReactNode } from 'react';
 import { ArrowsInSimpleIcon } from '@phosphor-icons/react/dist/csr/ArrowsInSimple';
+import { ArchiveIcon } from '@phosphor-icons/react/dist/csr/Archive';
 import { BellSimpleIcon } from '@phosphor-icons/react/dist/csr/BellSimple';
 import { ChartBarIcon } from '@phosphor-icons/react/dist/csr/ChartBar';
 import { CubeIcon } from '@phosphor-icons/react/dist/csr/Cube';
@@ -31,6 +32,7 @@ const ICON: Record<Address, ReactNode> = {
   accounts: <IdentificationCardIcon />,
   usage: <ChartBarIcon />,
   settings: <SlidersHorizontalIcon />,
+  kept: <ArchiveIcon />,
   mcp: <PlugsIcon />,
   logs: <ScrollIcon />,
   doctor: <StethoscopeIcon />,

@@ -29,7 +29,7 @@ const EFFECTIVE = {
   // Arrived with the per-head activity stores (f9e19d00). The values are Knob.kt's own defaults —
   // 90 days, every head — and both are restart-required, which the derived list below gets right
   // without an edit here.
-  activityRetentionDays: 90, activityStoreHeads: '*',
+  activityRetentionDays: 90, activityStoreHeads: '*', messageEdges: true,
   // V4-173: Knob.kt's default — off.
   wireTap: 0,
   // V4-174: Knob.kt's defaults — off, a week, 4 MiB of characters.

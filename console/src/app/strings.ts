@@ -24,6 +24,7 @@ export const PAGE = {
   accounts: 'Accounts',
   usage: 'Usage',
   settings: 'Settings',
+  kept: 'What splice keeps',
   mcp: 'MCP',
   logs: 'Logs',
   doctor: 'Doctor',

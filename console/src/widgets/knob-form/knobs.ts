@@ -209,6 +209,9 @@ export const KNOB_META: Record<string, KnobMeta> = {
   activityStoreHeads: {
     group: 'records',
   },
+  messageEdges: {
+    group: 'records',
+  },
   perfArchiveRetentionDays: {
     group: 'records',
     unit: 'days',

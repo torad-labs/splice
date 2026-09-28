@@ -25,6 +25,7 @@ export const ADDRESSES = [
   'accounts',
   'usage',
   'settings',
+  'kept',
   'mcp',
   'logs',
   'doctor',
@@ -39,7 +40,7 @@ export const NAV_GROUPS: ReadonlyArray<{ label: string; addresses: readonly Addr
   { label: S.inFlight, addresses: ['needs-you', 'sessions', 'turns', 'teams', 'projects'] },
   { label: S.routing, addresses: ['fleet', 'models', 'compaction'] },
   { label: S.plans, addresses: ['accounts', 'usage'] },
-  { label: S.daemon, addresses: ['settings', 'mcp', 'logs', 'doctor'] },
+  { label: S.daemon, addresses: ['settings', 'kept', 'mcp', 'logs', 'doctor'] },
 ];
 
 /** The row that will create each page directory, printed in its honest empty. */
@@ -53,6 +54,7 @@ export const PAGE_ROW: Record<Address, string> = {
   accounts: 'M2-04',
   usage: 'M2-06',
   settings: 'M2-05',
+  kept: 'V4-364',
   models: 'M2-06',
   logs: 'M2-03',
   compaction: 'M2-06',

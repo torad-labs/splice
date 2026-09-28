@@ -60,6 +60,7 @@ export const KNOB_HELP: Record<string, string> = {
   wireTap: 'Recent provider requests kept in memory for splice wire; 0 keeps none.',
   activityRetentionDays: 'Message history days, at least two; activity labels keep today and yesterday.',
   activityStoreHeads: 'Heads storing activity labels: * for all, empty for none, or keys.',
+  messageEdges: 'Keep conversation hand-off metadata; off stops new edges after restart.',
   perfArchiveRetentionDays: 'Days of past turn statistics kept; 0 keeps only the current file.',
   debug: 'Write detailed debug lines to the daemon log.',
 

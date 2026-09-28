@@ -56,6 +56,18 @@ Each page answers one question. An action with a row in brackets is not built ye
 - Restart the daemon
 - Add a backend
 
+## kept
+
+**Question.** What does splice keep about me, and how do I stop it?
+
+**Leaves knowing.** Each store, its contents, where it lives, how long it stays, and its controls.
+
+**Actions.**
+
+- Stop keeping new activity and message edges
+- Delete stored message edges, activity labels and per-head trace
+- Open per-head recording controls
+
 ## logs
 
 **Question.** What did a head just write to its log?

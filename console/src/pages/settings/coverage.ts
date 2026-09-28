@@ -42,7 +42,7 @@ const EDITABLE_KNOBS = [
   // parsed from Knob.kt, so the daemon growing a key is a red console until someone says what the
   // console does with it. Both are ordinary PATCH-able knobs; their restart-required flag reaches
   // the page from `restart_required_keys`, never from here.
-  'ACTIVITY_RETENTION_DAYS', 'ACTIVITY_STORE_HEADS',
+  'ACTIVITY_RETENTION_DAYS', 'ACTIVITY_STORE_HEADS', 'MESSAGE_EDGES',
   // V4-174: the trace's retention and body cap. Ordinary restart-required knobs; they turn nothing on.
   'TRACE_RETENTION_DAYS', 'TRACE_MAX_BODY_CHARS',
   // V4-133 (console daemon table stakes): the budget default action fills a bare PUT /api/budgets

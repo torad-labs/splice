@@ -22,7 +22,7 @@ import {
 import { PAGE_KEYS, pageFor } from '../src/app/pages';
 
 describe('the address table', () => {
-  test('is the fourteen addresses, in the sidebar order', () => {
+  test('is every address, in the sidebar order', () => {
     expect(ADDRESSES).toEqual([
       'needs-you',
       'sessions',
@@ -35,6 +35,7 @@ describe('the address table', () => {
       'accounts',
       'usage',
       'settings',
+      'kept',
       'mcp',
       'logs',
       'doctor',

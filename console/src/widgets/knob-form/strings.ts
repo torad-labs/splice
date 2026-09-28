@@ -67,6 +67,7 @@ export const GROUP_LABELS = {
 export const KNOB_LABELS = {
   activityRetentionDays: 'Message history',
   activityStoreHeads: 'Activity heads',
+  messageEdges: 'Message edges',
   authCacheMs: 'Login cache',
   budgetDefaultAction: 'Budget default',
   chatgptApiBase: 'ChatGPT API URL',

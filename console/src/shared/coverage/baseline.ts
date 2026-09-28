@@ -76,6 +76,7 @@ const PENDING: readonly PendingGroup[] = [
       'REQUEST_READ_TIMEOUT_MS',
       'MATERIALIZATION_PERMITS',
       'STATUSLINE_GIT_ROOTS',
+      'MESSAGE_EDGES',
     ],
   },
   {

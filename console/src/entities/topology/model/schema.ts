@@ -50,7 +50,7 @@ export const RUNTIME_KNOBS = [
   'quotaPollIntervalMs', 'retryBackoffBaseMs', 'retryBackoffCapMs', 'retryBackoffJitterPct',
   'stallReanchorMs', 'mcpIdleTimeoutMs', 'mcpMaxServers', 'mcpRequestTimeoutMs',
   'mcpInitializeTimeoutMs', 'maxRequestBytes', 'requestReadTimeoutMs', 'materializationPermits',
-  'supervisorUnit', 'mcpSlice', 'activityRetentionDays', 'activityStoreHeads', 'traceRetentionDays',
+  'supervisorUnit', 'mcpSlice', 'activityRetentionDays', 'activityStoreHeads', 'messageEdges', 'traceRetentionDays',
   'traceMaxBodyChars', 'budgetDefaultAction', 'perfArchiveRetentionDays',
 ] as const;
 

@@ -9015,5 +9015,8 @@ id = "V4-384"
 phase = "release"
 title = "splice add never gives a new head a port a local runtime already uses. Found by claude-builder's V4-365 live proof (Sep 27, ~11:50 PM CT): AddPrepare.nextPort (features/configuration/.../add/AddPrepare.kt:166-169) counts only head ports and the control port, so with control 31237, a head on 31238 and a local llama-server provider at 127.0.0.1:31239, add-save gave the new head 31239; the restart answered 200/draining and health settled at readyHeads 1/2 with nothing saying why. Fix: the taken set includes every loopback port the topology's providers name in base_url (existing and the candidate's own), and the chosen port is proven bindable on the host at add time (a process splice does not know about holds ports too), refusing in words if none is free in the range."
 files = ["features/configuration/src/main/kotlin/splice/configuration/add/AddPrepare.kt", "features/configuration/src/test/kotlin/splice/configuration/add/v4384/"]
-status = "todo"
+status = "in_flight"
 verify = "red first on today's tree (a provider base_url on the next port gets that port); green after; mutants: drop the provider ports (red), drop the bind probe with a foreign listener on the next port (red); live on a throwaway home: a local runtime on N+1, splice add, restart, readyHeads counts every head"
+claimed_by = "claude-builder"
+claimed_at = "2026-09-28T08:46:16.886Z"
+# [2026-09-28] CLAIM: owner=claude-builder at=2026-09-28T08:46:16Z

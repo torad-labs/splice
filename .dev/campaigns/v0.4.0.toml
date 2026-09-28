@@ -9269,8 +9269,11 @@ id = "V4-395"
 phase = "release"
 title = "splice restart from another home bounces the everyday daemon: at 12:40:45 PM CT Marlin ran the jar's restart with HOME=walk-desk (control_port 31210, no SPLICE_SUPERVISOR_UNIT) and it restarted splice.service (HOME=~, :3096). SupervisedStart.route() refuses only the harness selector env vars, so a different HOME or control port still routes to the default unit. restart and stop refuse a unit whose home or control port is not the invoking home's, and name the unit they would have hit."
 files = ["features/lifecycle/src/main/kotlin/splice/lifecycle/start/SupervisedStart.kt", "features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonLaunch.kt", "features/lifecycle/src/main/kotlin/splice/lifecycle/restart/RestartCommand.kt", "features/lifecycle/src/main/kotlin/splice/lifecycle/restart/DaemonStop.kt", "features/lifecycle/src/test/kotlin/splice/lifecycle/restart/v4395/"]
-status = "todo"
+status = "in_flight"
 verify = "red first: restart invoked for a home whose control port differs from the unit's daemon (and one whose HOME differs) exits non-zero, signals nothing, and names the unit; the unit's own home still restarts through it"
+claimed_by = "fin"
+claimed_at = "2026-09-28T17:57:29.361Z"
+# [2026-09-28] CLAIM: owner=fin at=2026-09-28T17:57:29Z
 
 [[items]]
 id = "V4-396"

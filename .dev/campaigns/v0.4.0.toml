@@ -7030,6 +7030,7 @@ claimed_at = "2026-09-27T04:42:55.408Z"
 # [2026-09-28] README.md lent to V4-365 (claude-builder: disk-write disposition for the restart-launch log) at 11:12 PM CT; restore it to this fence when V4-365 lands.
 # [2026-09-28] Restart (no install) 11:53 PM CT: splice.service pid 3263017 on b2464368b (fd sha 1dd76ab2... = SHA256SUMS-b2464368b), through ops/gated-restart.sh (8102 silent, no rig-glm53), to load splice-website's [projects."/var/tmp/viewing"] edit (backup ~/.config/splice/splice.toml.bak-20260927-pre-view-root); doctor 0 fails before.
 # [2026-09-28] amend by=splice-lead: files were ["CHANGELOG.md", "tools/release/src/lib/changelog.ts"]
+# [2026-09-28] README first screen (Marlin's cut-4f0bce0 brief, 3 of 5 viewers asked where logins/keys/requests go): ae7f0ef6d adds README.md:36, every fact sourced in the commit body. Unpushed until claude-builder's consoleE2e fix lands. 12:11 AM CT.
 
 [[items]]
 id = "V4-255"

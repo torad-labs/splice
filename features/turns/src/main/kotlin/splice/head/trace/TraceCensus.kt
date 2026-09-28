@@ -25,9 +25,11 @@ package splice.head.trace
 import kotlinx.serialization.json.Json
 import splice.core.storage.DayFiles
 import splice.core.storage.DayLine
+import splice.core.storage.FileVisit
 import splice.core.storage.LineFile
 import splice.core.storage.LineVisit
 import java.io.IOException
+import java.nio.file.Path
 import java.util.concurrent.Callable
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
@@ -47,10 +49,16 @@ private const val CORES_PER_LANE = 4
 // would take cores from the turns in flight for little
 private const val MAX_LANES = 4
 
+/** One file's read. A test can hold this boundary while a second page joins the same count. */
+internal open class TraceCountFileRead {
+    open fun <T : Any> read(days: DayFiles, file: Path, visit: FileVisit<T>): T? = days.open(file, visit)
+}
+
 /** One store's count, kept between reads; [processors] is how many cores the lanes are a share of. */
 internal class TraceCensus(
     private val json: Json,
     private val processors: Int = Runtime.getRuntime().availableProcessors(),
+    private val fileRead: TraceCountFileRead = TraceCountFileRead(),
 ) {
     /** What the store's files held at the last count, each by the first bytes it is known by. */
     @Volatile
@@ -76,7 +84,7 @@ internal class TraceCensus(
         val before = kept
         val files = days.files()
         val lanes = minOf(files.size, processors / CORES_PER_LANE, MAX_LANES)
-        val reads = files.map { file -> Callable { days.open(file) { counted(it, before, TraceStamps(json)) } } }
+        val reads = files.map { file -> Callable { fileRead.read(days, file) { counted(it, before, TraceStamps(json)) } } }
         val counts = (if (lanes < 2) reads.map { it.call() } else onLanes(lanes, reads)).filterNotNull()
         kept = counts.mapNotNull { it.kept }.associateBy { it.first }
         val placed = counts.flatMapTo(HashSet()) { it.placed }

@@ -311,6 +311,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
         "JsonlSink.appendLine(" to 1,
     ),
     "features/turns/src/main/kotlin/splice/head/perf/SessionTotals.kt" to mapOf("writeAtomic0600(" to 1),
+    "features/turns/src/main/kotlin/splice/head/perf/TurnKeptRoutes.kt" to mapOf("writeAtomic0600(" to 1),
     "features/turns/src/main/kotlin/splice/head/usage/EconomicsStore.kt" to mapOf("writeAtomic0600(" to 1),
     "features/turns/src/main/kotlin/splice/head/usage/QuotaTracker.kt" to mapOf("writeAtomic0600(" to 1),
     "features/turns/src/main/kotlin/splice/head/usage/RateLimitFile.kt" to mapOf("writeAtomic0600(" to 1),

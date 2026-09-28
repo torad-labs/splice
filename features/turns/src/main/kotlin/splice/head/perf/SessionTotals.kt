@@ -92,7 +92,7 @@ public class SessionTotals(
     private val json = Json { ignoreUnknownKeys = true }
     private val bornAt = clock()
     private val lock = Any()
-    private val writeLock = Any()
+    private val ioLock = Any()
 
     // Guarded by [lock]. Insertion order is recency: a tag is re-inserted on each of its rows.
     private val sessions = LinkedHashMap<String, Kept>()
@@ -103,11 +103,14 @@ public class SessionTotals(
     /** Set by [flushNow] (a head stop): the file is clean, and the next [add] must say it is not. */
     private var closed = false
 
+    /** A delete suppresses even a head-stop flush until a new priced turn is added. Guarded by [lock]. */
+    private var deleted = false
+
     @Volatile
     private var persistedVersion = -1L
     private val writeScheduled = AtomicBoolean(false)
 
-    /** Guarded by [writeLock]: the last write failed. The flush retries itself, so only the first failure of
+    /** Guarded by [ioLock]: the last write failed. The flush retries itself, so only the first failure of
      *  a streak is logged, and a write that lands ends the streak (V4-293). */
     private var failing = false
 
@@ -124,6 +127,7 @@ public class SessionTotals(
             sessions[sessionTag] = Kept(kept.total.copy(models = models), maxOf(kept.lastMs, rowTs))
             while (sessions.size > MAX_SESSION_TOTALS) dropUnderLock(sessions.keys.first())
             version += 1
+            deleted = false
             closed.also { closed = false }
         }
         if (reopened) persist(clean = false) else schedule()
@@ -143,6 +147,24 @@ public class SessionTotals(
     public fun flushNow() {
         synchronized(lock) { closed = true }
         persist(clean = true)
+    }
+
+    /** The IO-only monitor lets a pending flush finish before removing its file. After removal,
+     *  no captured pre-delete snapshot may restore a session the operator discarded. */
+    public fun deleteKept(): Boolean {
+        val at = clock()
+        return synchronized(ioLock) {
+            val removed = Files.deleteIfExists(file)
+            synchronized(lock) {
+                sessions.clear()
+                since = at
+                loaded = true
+                deleted = true
+                version += 1
+                persistedVersion = maxOf(persistedVersion, version)
+            }
+            removed
+        }
     }
 
     private fun folded(prev: PerfModelTotal?, counters: Map<String, Long>, usd: Double?): PerfModelTotal {
@@ -214,7 +236,9 @@ public class SessionTotals(
 
     private fun persist(clean: Boolean) {
         val (encoded, v) = synchronized(lock) { TotalsFile.encode(clean, since, sessions) to version }
-        synchronized(writeLock) {
+        synchronized(ioLock) {
+            // A snapshot captured before deletion is stale even if a head stop asked for clean.
+            if (synchronized(lock) { deleted || v < version }) return
             // A clean write goes out even at a version already written, because its mark is the news.
             if (v <= persistedVersion && !clean) return
             Cancellables.runCatchingCancellable { SecureFile.writeAtomic0600(file, encoded) }.fold(

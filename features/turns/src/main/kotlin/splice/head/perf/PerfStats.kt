@@ -164,6 +164,8 @@ public class PerfStats(
             Cancellables.runCatchingCancellable {
                 Files.createDirectories(file.parent)
                 JsonlSink.appendLine(file, row, maxBytes = maxBytes, archive = archive)
+                // The next successful row ends a prior explicit deletion, on the same file lane.
+                Files.deleteIfExists(file.parent.resolve(TURN_STATS_DELETED_MARKER))
             }
         }
         return ts

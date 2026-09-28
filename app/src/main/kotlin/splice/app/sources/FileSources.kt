@@ -13,6 +13,7 @@ import splice.head.compact.CompactStats
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
 import splice.head.perf.PerfStats
+import splice.head.perf.SessionTotals
 import splice.head.usage.EconomicsStore
 import splice.head.usage.QuotaTracker
 import splice.head.usage.UsageStore
@@ -94,6 +95,9 @@ public class PerfStatsSource(private val stats: PerfStats) :
     HeadPerfSource,
     HeadSessionPerfSource,
     HeadPerfSkipSource {
+    /** The same live totals instance the head's PerfStats feeds, never a second file reader. */
+    internal val sessionTotals: SessionTotals? get() = stats.totals
+
     override fun tailNumeric(n: Int): List<Map<String, Long>> = stats.tailNumeric(n)
 
     /** V4-37: the same rows narrowed to one session — what the statusline's cost segment sums. */

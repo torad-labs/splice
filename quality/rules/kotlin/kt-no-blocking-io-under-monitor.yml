@@ -29,16 +29,12 @@
 # instance above so the sibling fix row has it. Catching the transitive form needs a call-graph
 # check (:quality-architecture / Konsist) or the fix that removes it; both are outside a wall row's fence.
 #
-# THE CENSUS (measured 2026-09-17, gateway/*/src/main). Denominator from the source, both levels:
-# 112 `synchronized(` blocks in scope; of those, 3 lexical blocking-IO hits, all in one function,
-# ALL EXEMPT by the dated entry below, 0 RED. Measured with the exemption arm removed, to prove the
-# 3 are exempted and not merely unmatched:
-#   core/src/main/kotlin/splice/core/model/ClientWindows.kt:91,:93,:94 — inside
-#   `persist(path) = synchronized(ioLock) { … }`.
-# A wall landing at 0 red is the intended state for this one: the instance it was written for is
-# transitive and invisible here, so its whole job is to stop the next DIRECT one. It is red-proven
-# against a synthetic reconstruction of the AccountPool shape in the rule-test, which is what makes
-# the 0 a measurement and not a matcher that cannot fire (§24).
+# THE CENSUS (measured 2026-09-28, **/src/main/**/*.kt). Denominator from the source:
+# 187 `synchronized(` blocks; 4 lexical blocking-IO hits with the exemption arm removed:
+# ClientWindows.persist has 3, SessionTotals.deleteKept has 1. Both are IO-only monitors, so the
+# live rule has 0 RED; removing the exemption yields all 4 rather than a matcher that never fired.
+# The state-lock violation this wall stops is red-proven against the synthetic AccountPool shape
+# and a state monitor nested inside ioLock in the rule-test (§24).
 #
 # EXEMPTION (dated; by monitor NAME, with its weakness stated):
 #   2026-09-17: `synchronized(ioLock)` — a monitor whose only purpose is to SERIALIZE the IO it
@@ -50,6 +46,10 @@
 #     IDENTIFIER, so renaming a state monitor to `ioLock` would defeat it; that is a lie a reviewer
 #     sees in the diff, and the alternative (no exemption) is a permanently-red wall on correct code,
 #     which trains authors to reach for ast-grep-ignore instead.
+#   2026-09-28: `SessionTotals.ioLock` serializes only the totals file's persist and removal.
+#     `persist` snapshots the session map under `lock` before taking ioLock; `deleteKept` takes
+#     `lock` inside only to clear the map, advance its version and prevent a pending flush from
+#     restoring the old file. Neither holds the state lock across filesystem IO.
 #
 # SCOPE IS `synchronized`, as the audit row specifies. `ReentrantLock.withLock` and
 # `Mutex.withLock` carry the same hazard and are NOT matched here: neither appears with blocking IO

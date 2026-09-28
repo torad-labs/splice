@@ -4,6 +4,7 @@ package splice.app.control.mount
 
 import io.ktor.server.request.receiveText
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
@@ -12,6 +13,7 @@ import splice.app.control.ConsolePorts
 import splice.app.control.ManagedHead
 import splice.app.control.UsageHeadAdapter
 import splice.app.control.api.HeadResolver
+import splice.app.sources.PerfStatsSource
 import splice.core.config.ConfigService
 import splice.core.version.ClientVersionTracker
 import splice.head.perf.TurnKeptRoutes
@@ -38,6 +40,9 @@ internal class UsageMount(
     private val ports: ConsolePorts,
     private val guard: ControlGuard,
 ) {
+    private val liveTotals = heads.mapNotNull { (key, managed) ->
+        (managed.perf as? PerfStatsSource)?.sessionTotals?.let { key to it }
+    }.toMap()
     private val usageHeads = UsageHeadAdapter.heads(heads)
     private val usageLookup = UsageHeadAdapter.lookup(resolver)
     private val usagePayloads = UsagePayloads(usageHeads, config)
@@ -64,6 +69,11 @@ internal class UsageMount(
         route.get("/api/kept/turns") {
             guard.guarded(call) {
                 withContext(turnStatsIo) { TurnKeptRoutes(ports.turnStatistics).kept() }.send(call)
+            }
+        }
+        route.delete("/api/kept/turns") {
+            guard.guarded(call) {
+                withContext(turnStatsIo) { TurnKeptRoutes(ports.turnStatistics, liveTotals).delete() }.send(call)
             }
         }
         route.get("/api/economics") {

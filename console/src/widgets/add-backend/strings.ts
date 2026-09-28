@@ -33,6 +33,12 @@ export const S = {
   aboutChecks: 'About the checks',
   aboutSignIn: 'About sign-in',
   aboutProfile: 'About this profile',
+  connected: (plan: string): string => `${plan} connected`,
+  savedPlan: (plan: string): string => `${plan} saved`,
+  tryIt: 'Try it',
+  retryConnect: 'Retry connection',
+  modelUsed: 'Model used',
+  reply: 'Reply',
 } as const;
 
 /** How a head proves who it is, as a fact's value. */
@@ -54,4 +60,13 @@ export const H = {
   waiting: (count: number): string => `The restart waits for ${count} compaction(s) to finish.`,
   loading: 'Reading the profiles splice can add.',
   unavailable: 'This plan is unavailable in this splice build.',
+  noReply: 'The provider returned no readable reply.',
+  noModel: 'The provider returned no model name.',
+  providerStatus: (status: number): string => `The provider answered HTTP ${status}.`,
+  planName: (profile: string): string => ({ codex: 'ChatGPT', grok: 'Grok', kimi: 'Kimi', muse: 'Muse' } as Record<string, string>)[profile] ?? profile,
+  runCommand: (command: string): string => `Run ${command}.`,
+  finishConnection: 'Saving your signed-in plan and restarting splice.',
+  restartManually: 'Run splice restart, then return to try the plan.',
+  tryPrompt: 'Say hello and name your model.',
+  tryCost: 'This short real provider test used a tiny bit of your plan.',
 } as const;

@@ -13,7 +13,7 @@ import type { DoctorCheck, DoctorPayload } from '../src/entities/doctor';
 import type { SessionRow } from '../src/entities/session';
 import type { TeamRow, TeamSlot } from '../src/entities/team';
 import type { GateSnapshot, HeadStatus, UsagePayload } from '../src/shared/api';
-import { FixCell, NeedsYouBoard, needsOf, readingOf } from '../src/pages/needs-you';
+import { FixCell, NeedsYouBoard, needsOf, readingOf, setupForVisit } from '../src/pages/needs-you';
 import type { Need, NeedInputs, Read } from '../src/pages/needs-you';
 import { AccountsBoard } from '../src/pages/accounts';
 import { DoctorBoard } from '../src/pages/doctor';
@@ -121,6 +121,13 @@ describe('an input is read, still out, failed or not served, and only read count
 });
 
 describe('the first hour with zero connected heads', () => {
+  test('the connecting visit survives its own first head, while a new configured visit is ordinary', () => {
+    expect(setupForVisit(null, null)).toBeNull();
+    expect(setupForVisit(null, [])).toBe(true);
+    expect(setupForVisit(true, [head()])).toBe(true);
+    expect(setupForVisit(null, [head()])).toBe(false);
+  });
+
   test('offers one connection screen instead of claiming setup is already complete', () => {
     const list = needsOf(quiet({ heads: read([]), auth: read({}), accounts: read({ accounts: [] }) }), NOW);
     const html = renderToStaticMarkup(createElement(NeedsYouBoard, { list, now: NOW, setup: true }));

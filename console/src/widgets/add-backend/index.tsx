@@ -14,16 +14,18 @@
 //
 // A key-signed head's key is stored with the Accounts key form itself (features/api-key), and a
 // login's code or link prints with the account login's own ticket: one control per job.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { discardAdd, fetchAddProfiles, openAdd, readAdd, saveAdd, signInAdd, verifyAdd } from '@entities/add';
 import type { AddChecksFailed, AddCheck, AddProfile, AddView } from '@entities/add';
 import { fetchKeys, useKeys } from '@entities/auth';
+import { fetchHeads, useHeads } from '@entities/heads';
+import { runPlayground } from '@entities/playground';
 import { LoginTicket, pollDuringLogin, useLoginPage } from '@features/account-login';
 import { ApiKeyForm } from '@features/api-key';
 import { Blank, Choice, Confirm, Copy, Fault, Input, Key } from '@shared/controls';
 import { ABSENT, poll } from '@shared/lib';
 import { Badge, InfoTip, KeyValue, Section } from '@shared/ui';
-import { EMPTY_ROW, draftFor, firstDraft, live, ready, requestOf } from './model';
+import { EMPTY_ROW, autoSaveTarget, draftFor, firstDraft, live, ready, requestOf, tryReply } from './model';
 import type { AddDraft, ModelRow } from './model';
 import { H, S, SIGN_IN_BY } from './strings';
 import './add-backend.css';
@@ -140,12 +142,13 @@ function SignIn({ view, busy, onSignIn }: { view: AddView; busy: boolean; onSign
 }
 
 /** The open add: who it will be, how it signs in, its checks, and save or discard. */
-export function OpenAdd({ view, checks, busy, readFault = null, onSignIn, onVerify, onSave, onDiscard }: {
+export function OpenAdd({ view, checks, busy, readFault = null, saveFault = null, onSignIn, onVerify, onSave, onDiscard }: {
   view: AddView;
   checks: readonly AddCheck[] | null;
   busy: boolean;
   /** The last poll of this add failed, in the daemon's words: the view below is the last one read. */
   readFault?: string | null;
+  saveFault?: string | null;
   onSignIn: () => void;
   onVerify: (liveTurn: boolean) => void;
   onSave: () => void;
@@ -180,18 +183,48 @@ export function OpenAdd({ view, checks, busy, readFault = null, onSignIn, onVeri
         {checks === null ? null : <CheckRows checks={checks} />}
       </Section>
       <div className="myx-add-row">
-        <Confirm label={S.save} confirmLabel={S.saveArmed} busy={busy} onConfirm={onSave} />
+        {view.sign_in_by === 'login' ? (
+          saveFault === null ? (view.credential.present && (view.sign_in === null || view.sign_in.state === 'signed_in' || view.sign_in.state === 'live_after_restart')
+            ? <p className="myx-add-note" role="status">{H.finishConnection}</p> : null)
+            : <Key disabled={busy} onClick={onSave}>{S.retryConnect}</Key>
+        ) : <Confirm label={S.save} confirmLabel={S.saveArmed} busy={busy} onConfirm={onSave} />}
         <Key disabled={busy} onClick={onDiscard}>{S.discard}</Key>
       </div>
     </div>
   );
 }
 
-/** What the save wrote, the wrapper it linked, and the restart it took. */
-export function SavedAdd({ view }: { view: AddView }) {
+function TryPlan({ head }: { head: string }) {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ model: string; text: string } | { error: string } | null>(null);
+  const tryIt = () => {
+    setBusy(true);
+    setResult(null);
+    void runPlayground(head, H.tryPrompt).then(
+      (wire) => setResult(tryReply(wire)),
+      (error: unknown) => setResult({ error: messageOf(error) }),
+    ).finally(() => setBusy(false));
+  };
+  return (
+    <div className="myx-add-try">
+      <Key busy={busy} onClick={tryIt}>{S.tryIt}</Key>
+      {result === null ? null : 'error' in result ? <Fault message={result.error} /> : (
+        <>
+          <KeyValue rows={[[S.modelUsed, result.model], [S.reply, result.text]]} />
+          <p className="myx-add-note">{H.tryCost}</p>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** What the save wrote, the wrapper it linked, and whether that head is actually live. */
+export function SavedAdd({ view, live: headLive = false }: { view: AddView; live?: boolean }) {
   const saved = view.saved;
   if (saved === null) return null;
   const { restart, wrapper } = saved;
+  const ready = headLive && wrapper.linked;
+  const plan = H.planName(view.profile);
   return (
     <div className="myx-add">
       <KeyValue rows={[
@@ -202,15 +235,19 @@ export function SavedAdd({ view }: { view: AddView }) {
       ]} />
       {wrapper.linked ? (
         <p className="myx-add-command" role="status">
-          <span>{H.launch}</span>
+          <span>{ready ? S.connected(plan) : S.savedPlan(plan)}. {ready ? H.runCommand(view.command) : H.launch}</span>
           <code>{view.command}</code>
           <Copy value={view.command} />
         </p>
       ) : null}
       {wrapper.error === undefined ? null : <Fault message={wrapper.error} />}
-      {restart.status === 'draining' ? <p className="myx-add-note" role="status">{H.draining}</p>
+      {ready ? <TryPlan head={view.key} /> : restart.status === 'draining'
+        ? <p className="myx-add-note" role="status">{H.draining}</p>
         : restart.status === 'waiting' ? <p className="myx-add-note" role="status">{H.waiting(restart.compactions?.length ?? 0)}</p>
-        : <Fault message={restart.error ?? restart.status} />}
+          : <>
+            <p className="myx-add-note" role="status">{H.restartManually}</p>
+            {restart.error === undefined ? null : <Fault message={restart.error} />}
+          </>}
     </div>
   );
 }
@@ -227,6 +264,11 @@ export function readOpenAdd(id: string, onView: (view: AddView) => void, onFault
   );
 }
 
+/** A save owns the view only until it settles; failed saves must resume fresh credential reads. */
+export function polledAdd(current: AddView | null, next: AddView, saving: boolean): AddView | null {
+  return saving || current === null || current.id !== next.id || current.saved !== null ? current : next;
+}
+
 export function AddBackend({ onDone, initialProfile }: { onDone: () => void; initialProfile?: string }) {
   const [profiles, setProfiles] = useState<AddProfile[] | null>(null);
   const [draft, setDraft] = useState<AddDraft | null>(null);
@@ -236,6 +278,9 @@ export function AddBackend({ onDone, initialProfile }: { onDone: () => void; ini
   const [readFault, setReadFault] = useState<string | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const saveAttempt = useRef<string | null>(null);
+  const saveInFlight = useRef(false);
+  const heads = useHeads((state) => state.data);
   const openPage = useLoginPage(view?.sign_in ?? null, loginError);
 
   useEffect(() => {
@@ -254,7 +299,10 @@ export function AddBackend({ onDone, initialProfile }: { onDone: () => void; ini
   const loginActive = view?.sign_in?.state === 'starting' || view?.sign_in?.state === 'waiting';
   useEffect(() => {
     if (openId === null) return;
-    const read = () => readOpenAdd(openId, setView, setReadFault);
+    const read = () => readOpenAdd(openId, (next) => {
+      const saving = saveInFlight.current;
+      setView((current) => polledAdd(current, next, saving));
+    }, setReadFault);
     return loginActive ? pollDuringLogin(read, POLL_MS) : poll(read, POLL_MS);
   }, [openId, loginActive]);
 
@@ -272,6 +320,24 @@ export function AddBackend({ onDone, initialProfile }: { onDone: () => void; ini
       setFault(answer.failed.error);
     }
   };
+
+  const autoSave = autoSaveTarget(view, saveAttempt.current);
+  useEffect(() => {
+    if (autoSave === null || saveAttempt.current === autoSave) return;
+    saveAttempt.current = autoSave;
+    saveInFlight.current = true;
+    setBusy(true);
+    setFault(null);
+    void saveAdd(autoSave).then(settle, (error: unknown) => setFault(messageOf(error)))
+      .finally(() => {
+        saveInFlight.current = false;
+        setBusy(false);
+      });
+  }, [autoSave]);
+
+  useEffect(() => {
+    if (view?.saved !== null && view?.saved !== undefined) void fetchHeads();
+  }, [view?.saved]);
 
   if (profiles === null || draft === null) return fault === null ? <Blank strips={3} /> : <Fault message={fault} />;
 
@@ -298,8 +364,10 @@ export function AddBackend({ onDone, initialProfile }: { onDone: () => void; ini
         checks={checks}
         busy={busy}
         readFault={readFault}
+        saveFault={fault}
         onSignIn={() => {
           openPage();
+          saveAttempt.current = null;
           setLoginError(null);
           run(signInAdd(id).then(setView, (err: unknown) => {
             setLoginError(messageOf(err));
@@ -307,12 +375,15 @@ export function AddBackend({ onDone, initialProfile }: { onDone: () => void; ini
           }));
         }}
         onVerify={(liveTurn) => run(verifyAdd(id, liveTurn).then(settle))}
-        onSave={() => run(saveAdd(id).then(settle))}
+        onSave={() => {
+          saveInFlight.current = true;
+          run(saveAdd(id).then(settle).finally(() => { saveInFlight.current = false; }));
+        }}
         onDiscard={() => run(discardAdd(id).then(onDone))}
       />
     );
   } else {
-    body = <SavedAdd view={view} />;
+    body = <SavedAdd view={view} live={heads?.some((head) => head.key === view.key && head.running && head.healthy) ?? false} />;
   }
 
   return (

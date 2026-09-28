@@ -167,8 +167,17 @@ export function NeedsYouBoard({ list, now, setup = false }: { list: NeedsList; n
 
 const UNREAD: Read<boolean> = { data: null, error: null, lastUpdated: null };
 
+/** Fix the first visit's setup mode, so connecting its own head does not unmount the result. */
+export function setupForVisit(visit: boolean | null, heads: readonly unknown[] | null): boolean | null {
+  return visit === null && heads !== null ? heads.length === 0 : visit;
+}
+
 export function NeedsYouPage() {
   const heads = useHeads((state) => state);
+  const [setupVisit, setSetupVisit] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (heads.data !== null) setSetupVisit((was) => setupForVisit(was, heads.data));
+  }, [heads.data]);
   const auth = useAuth((state) => state);
   const accounts = useAccounts((state) => state);
   const usage = useUsage((state) => state);
@@ -192,7 +201,7 @@ export function NeedsYouPage() {
 
   const now = Date.now();
   const list = needsOf({ heads, auth, accounts, usage, sessions, teams, doctor, topology, restartPending }, now);
-  return <NeedsYouBoard list={list} now={now} setup={heads.data?.length === 0} />;
+  return <NeedsYouBoard list={list} now={now} setup={setupVisit === true} />;
 }
 
 export default NeedsYouPage;

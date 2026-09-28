@@ -4,6 +4,8 @@
 // else the operator types overrides the profile's default; a blank field sends nothing, so the
 // daemon's own default holds (AddRequestReader).
 import type { AddProfile, AddRequest, AddView } from '@entities/add';
+import type { PlaygroundWire } from '@entities/playground';
+import { H } from './strings';
 
 export interface ModelRow {
   id: string;
@@ -64,4 +66,40 @@ export function requestOf(draft: AddDraft): AddRequest {
 /** Whether the add is still moving, so the form keeps reading it: until it is saved. */
 export function live(view: AddView | null): boolean {
   return view !== null && view.saved === null;
+}
+
+/** An OAuth credential can already exist before this add opens; save it once per add id. */
+export function autoSaveTarget(view: AddView | null, attempted: string | null): string | null {
+  if (view === null || view.saved !== null || view.sign_in_by !== 'login' || attempted === view.id) return null;
+  return view.credential.present && (view.sign_in === null || view.sign_in.state === 'signed_in' || view.sign_in.state === 'live_after_restart')
+    ? view.id : null;
+}
+
+function object(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function firstText(value: unknown): string | null {
+  if (typeof value === 'string') return value.trim() === '' ? null : value;
+  if (Array.isArray(value)) return value.map(firstText).filter((text): text is string => text !== null).join('\n') || null;
+  const row = object(value);
+  if (row === null) return null;
+  for (const key of ['text', 'output_text', 'content', 'message', 'output', 'choices']) {
+    const text = firstText(row[key]);
+    if (text !== null) return text;
+  }
+  return null;
+}
+
+/** Interpret only vendor text and its model, never the echoed prompt or auth-bearing headers. */
+export function tryReply(wire: PlaygroundWire): { model: string; text: string } | { error: string } {
+  const response = object(wire.response.body);
+  const reason = object(response?.error)?.message;
+  if (typeof reason === 'string') return { error: reason };
+  if (wire.response.status >= 400) return { error: H.providerStatus(wire.response.status) };
+  const request = object(wire.request.body);
+  const model = response?.model ?? request?.model;
+  if (typeof model !== 'string' || model === '') return { error: H.noModel };
+  const text = firstText(response);
+  return text === null ? { error: H.noReply } : { model, text };
 }

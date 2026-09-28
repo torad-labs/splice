@@ -1,6 +1,7 @@
 // V4-346: the first hour in a browser, with fake profiles and a provider page intercepted locally.
 import { expect, test } from '@playwright/test';
 import type { AddProfile, AddView } from '../src/entities/add';
+import type { HeadStatus } from '../src/shared/api';
 
 const SIGN_IN = 'https://signin.fixture.invalid/authorize';
 const profiles: AddProfile[] = ['codex', 'grok', 'kimi', 'muse', 'openrouter', 'local', 'deepseek'].map((name) => ({
@@ -11,6 +12,11 @@ const profiles: AddProfile[] = ['codex', 'grok', 'kimi', 'muse', 'openrouter', '
   head_key: name, command: name === 'codex' ? 'claudex' : `claude-${name}`,
   models: [], asks: name === 'local' ? ['name', 'base_url', 'models'] : [],
 }));
+const connectedHead: HeadStatus = {
+  key: 'codex', label: 'claudex', name: 'codex', port: 3099, authKind: 'chatgpt-oauth',
+  wantVersion: '0.4.0', running: true, healthy: true, version: '0.4.0', versionMatch: true,
+  mode: null, gate: null, maxInflight: 4, health: { localOriginErrors: 0, providerErrors: 0 }, pids: [1],
+};
 const add: AddView = {
   id: 'add-1', profile: 'codex', key: 'codex', command: 'claudex', auth_kind: 'chatgpt-oauth',
   base_url: 'https://api.example.invalid', models: [], sign_in_by: 'login', key_env: null,
@@ -50,7 +56,8 @@ test('a fresh home connects ChatGPT in one browser gesture and returns a command
     if (host === '127.0.0.1' || host === 'localhost') return route.continue();
     return route.abort();
   });
-  await page.route((url) => url.pathname === '/api/heads', (route) => route.fulfill({ json: { heads: [] } }));
+  let headReady = false;
+  await page.route((url) => url.pathname === '/api/heads', (route) => route.fulfill({ json: { heads: headReady ? [connectedHead] : [] } }));
   await page.route((url) => url.pathname === '/api/auth', (route) => route.fulfill({ json: {} }));
   await page.route((url) => url.pathname === '/api/accounts', (route) => route.fulfill({ json: { accounts: [] } }));
   await page.route((url) => url.pathname === '/api/usage', (route) => route.fulfill({
@@ -67,24 +74,41 @@ test('a fresh home connects ChatGPT in one browser gesture and returns a command
   };
   const waiting: AddView = { ...add, sign_in: announced };
   const starting: AddView = { ...add, sign_in: { ...announced, state: 'starting', browser_url: null } };
+  const signedIn: AddView = { ...waiting, credential: { present: true, detail: 'Signed in' },
+    sign_in: { ...announced, state: 'signed_in' } };
   let loginStarted = false;
-  let polledOnce = false;
+  let loginPolls = 0;
+  let saves = 0;
   await page.route((url) => url.pathname === '/api/add/add-1/login', (route) => {
     loginStarted = true;
     return route.fulfill({ json: starting });
   });
   await page.route((url) => url.pathname === '/api/add/add-1', (route) => {
     if (!loginStarted) return route.fulfill({ json: add });
-    if (!polledOnce) {
-      polledOnce = true;
-      return route.fulfill({ json: starting });
-    }
-    return route.fulfill({ json: waiting });
+    loginPolls++;
+    return route.fulfill({ json: loginPolls === 1 ? starting : loginPolls === 2 ? waiting : signedIn });
   });
-  await page.route((url) => url.pathname === '/api/add/add-1/save', (route) => route.fulfill({
-    json: { ...waiting, credential: { present: true, detail: 'Signed in' },
+  await page.route((url) => url.pathname === '/api/add/add-1/save', (route) => {
+    saves++;
+    headReady = true;
+    return route.fulfill({ json: { ...signedIn,
       saved: { path: '/work/splice.toml', wrapper: { linked: true }, restart: { status: 'draining' } } },
-  }));
+    });
+  });
+  let tryRuns = 0;
+  await page.route((url) => url.pathname === '/api/playground', (route) => {
+    const body = route.request().postDataJSON() as { head: string; prompt: string };
+    if (body.head !== 'codex' || body.prompt !== 'Say hello and name your model.') {
+      return route.fulfill({ status: 400, json: { error: 'Wrong provider test target' } });
+    }
+    tryRuns++;
+    return route.fulfill({ json: {
+      request: { url: 'https://api.example.invalid/responses', method: 'POST', headers: {}, body: { model: 'gpt-6-sol' } },
+      response: tryRuns === 1
+        ? { status: 200, body: { model: 'gpt-6-sol', output: [{ content: [{ type: 'output_text', text: 'Hello from Sol' }] }] } }
+        : { status: 429, body: { error: { message: 'Limit reached' } } },
+    } });
+  });
 
   await page.goto(`${base}/#/needs-you`);
   await expect(page.getByRole('heading', { name: 'Connect a plan' })).toBeVisible();
@@ -112,8 +136,18 @@ test('a fresh home connects ChatGPT in one browser gesture and returns a command
   expect(pageErrors).toEqual([]);
   await expect(popup).toHaveURL(SIGN_IN);
   await expect(popup.getByRole('heading', { name: 'Provider sign-in' })).toBeVisible();
-  await page.getByRole('button', { name: 'Save backend', exact: true }).click();
-  await page.getByRole('button', { name: 'Save and restart', exact: true }).click();
-  await expect(page.getByText('Type this command in your terminal after the restart.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save backend', exact: true })).toHaveCount(0);
+  await expect.poll(() => saves, { timeout: 15_000 }).toBe(1);
+  await expect(page.locator('.myx-add-command')).toContainText('ChatGPT connected. Run claudex.');
   await expect(page.locator('.myx-add-command code')).toHaveText('claudex');
+  await page.getByRole('button', { name: 'Try it', exact: true }).click();
+  await expect(page.locator('.myx-add-try')).toContainText('Hello from Sol');
+  await expect(page.locator('.myx-add-try')).toContainText('gpt-6-sol');
+  await expect(page.locator('.myx-add-try')).toContainText('a tiny bit of your plan');
+  expect(saves).toBe(1);
+  expect(tryRuns).toBe(1);
+  await page.getByRole('button', { name: 'Try it', exact: true }).click();
+  await expect(page.locator('.myx-add-try').getByRole('alert')).toContainText('Limit reached');
+  await expect(page.locator('.myx-add-try')).not.toContainText('a tiny bit of your plan');
+  expect(tryRuns).toBe(2);
 });

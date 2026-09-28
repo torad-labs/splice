@@ -8476,6 +8476,7 @@ claimed_by = "claude-builder"
 claimed_at = "2026-09-28T10:09:52.503Z"
 # [2026-09-28] CLAIM: owner=claude-builder at=2026-09-28T10:09:52Z
 # [2026-09-28] amend by=splice-lead: files were ["app/src/main/kotlin/splice/app/provider/MusePassthroughArm.kt"]
+# [2026-09-28] Step 0 COMPLETE before any V4-351 code edit: existing minted Muse api_key in ~/.config/splice/auth/muse.json authenticated a synthetic POST /v1/responses. First medium/detailed stream HTTP 200 at captures/v4351-step0/response.sse had reasoning_tokens 183, encrypted reasoning, summary []. A high/detailed request hit subscription 429 with reset Sep 28, 5:43:59 AM CT; one retry after reset returned HTTP 200 in 9.81 s, one reasoning_summary_text.delta/done, one reasoning summary part, encrypted_content, reasoning_tokens 763 (captures/v4351-step0/reasoning-after-reset.sse). No credential or user transcript was printed or sent; only a synthetic mathematical prompt. Muse Responses implementation starts after V4-387. Required seam inventory sent to splice-lead, whose V4-351 fence was widened around Muse dispatch, Responses DTO/assembly/quirks/tools and test dirs. No worktree used.
 
 [[items]]
 id = "V4-352"

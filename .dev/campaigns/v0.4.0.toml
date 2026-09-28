@@ -9447,6 +9447,7 @@ verify = "red first (daemon), on fixtures shaped like the film home's Sep 25 rec
 claimed_by = "console"
 claimed_at = "2026-09-28T23:22:38.392Z"
 # [2026-09-28] CLAIM: owner=console at=2026-09-28T23:22:38Z
+# [2026-09-28] RECEIPT cmd=":features-sessions:test (108; v4402 5) + detekt; :quality-architecture:test 250; :app:test 700 (1 skipped); console vitest 95 files/1694; playwright v4402+v4391 3; gate typecheck; gate rules --prove-coverage; census 0" exit=0 tests=5 touched=features/sessions/src/main/kotlin/splice/sessions/activity/MessageEdgeStore.kt,features/sessions/src/main/kotlin/splice/sessions/http/TeamsEdges.kt,features/sessions/src/test/kotlin/splice/sessions/v4402/OldHandoffsTest.kt,console/src/pages/teams/board.ts,console/src/pages/teams/strings.ts,console/tests/team-recipients.test.ts,console/e2e/v4402/socket-recipient.spec.ts,.dev/restructure/capabilities.tsv tail="red first: film-shaped day showed 10 of 34; mutant (fallback resolves nothing): 2 of 5 red; restored 5/5"
 
 [[items]]
 id = "V4-403"

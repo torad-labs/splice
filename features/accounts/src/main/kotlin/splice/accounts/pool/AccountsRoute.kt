@@ -17,13 +17,20 @@ import splice.accounts.AccountHead
 import splice.core.auth.AuthDescription
 import splice.core.topology.AuthKindRegistry
 import splice.core.usage.QuotaView
+import splice.core.util.WallClock
+import splice.core.usage.QuotaWindowView as PlanWindow
 
-public class AccountsRoute(private val heads: Map<String, AccountHead>) {
+public class AccountsRoute(
+    private val heads: Map<String, AccountHead>,
+    /** Decides which windows are current (V4-407), by the rule /api/usage applies (V4-396). */
+    private val clock: WallClock = WallClock(System::currentTimeMillis),
+) {
     public suspend fun accountsJson(): String {
         val joined = LinkedHashMap<String, JoinedAccount>()
         heads.values.forEach { head -> fold(head, joined) }
+        val nowSeconds = clock() / MILLIS_PER_SECOND
         return buildJsonObject {
-            putJsonArray("accounts") { joined.values.forEach { row -> addJsonObject { write(this, row) } } }
+            putJsonArray("accounts") { joined.values.forEach { row -> addJsonObject { write(this, row, nowSeconds) } } }
         }.toString()
     }
 
@@ -140,7 +147,7 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
         }
     }
 
-    private fun write(into: JsonObjectBuilder, row: JoinedAccount) {
+    private fun write(into: JsonObjectBuilder, row: JoinedAccount, nowSeconds: Long) {
         into.put("credential_path", row.credentialPath)
         into.put("kind", row.kind)
         into.put("label", row.label)
@@ -150,9 +157,11 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
         into.put("five_hour_used_percent", row.fiveHour.usedPercent)
         into.put("five_hour_reset_epoch_seconds", row.fiveHour.resetEpochSeconds)
         into.put("five_hour_window_seconds", row.fiveHour.windowSeconds)
+        into.put("five_hour_current", current(row.fiveHour, row.observedAtEpochSeconds, nowSeconds))
         into.put("seven_day_used_percent", row.sevenDay.usedPercent)
         into.put("seven_day_reset_epoch_seconds", row.sevenDay.resetEpochSeconds)
         into.put("seven_day_window_seconds", row.sevenDay.windowSeconds)
+        into.put("seven_day_current", current(row.sevenDay, row.observedAtEpochSeconds, nowSeconds))
         into.put("observed_at_epoch_seconds", row.observedAtEpochSeconds)
         into.put("available", row.flags.available)
         into.put("credential_present", row.flags.credentialPresent)
@@ -163,7 +172,17 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
         into.put("next_target", row.flags.nextTarget)
         into.putJsonArray("heads") { row.heads.sorted().forEach { add(it) } }
     }
+
+    /** V4-407: whether a window may count as the plan's usage now. The figures still ship either way:
+     *  the Accounts page shows an old reading with its age, while the nearest limit reads current
+     *  windows only, so a reading hours old is never ranked as the fleet's limit. */
+    private fun current(window: QuotaWindowView, observedAt: Long?, nowSeconds: Long): Boolean {
+        val used = window.usedPercent ?: return false
+        return PlanWindow(used.toInt(), window.resetEpochSeconds, observedAt).currentAt(nowSeconds) != null
+    }
 }
+
+private const val MILLIS_PER_SECOND = 1000L
 
 /** One quota window's percent, reset and (V4-132) its own reported LENGTH — [AccountPool]'s own
  *  [splice.upstream.credentials.AccountView] carries the same three fields; this is the console-payload copy of

@@ -1,3 +1,4 @@
+// NEW: V4-368 — guarded per-head inventory and deletion of retained trace day files.
 package splice.head.wire
 
 import io.ktor.http.HttpStatusCode

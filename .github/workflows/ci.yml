@@ -66,6 +66,19 @@ jobs:
             **/build/test-results/**/*.xml
           retention-days: 14
           if-no-files-found: warn
+      # The jar this green gate built and ran (codeModePackagedMock depends on :app:shadowJar), kept so
+      # an install takes the exact sha's artifact from the gate of record instead of a local copy of
+      # the tree (operator, Sep 28: no worktrees, build trees included).
+      - name: keep the gate-built jar
+        if: ${{ success() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: splice-jar
+          path: |
+            app/build/libs/app-all.jar
+            app/src/main/dist/bin/splice-launch
+          retention-days: 14
+          if-no-files-found: error
 
   walls-annotate:
     # Annotation-only surface for ast-grep wall violations.

@@ -243,7 +243,7 @@ internal class ControlPlane(
                 AdminSupport.selfJar(),
                 UserHome.dir(),
                 topology.path,
-                statePaths.rootDir,
+                statePaths.stateDir,
                 controlPort,
                 statePaths.logsDir,
                 log,

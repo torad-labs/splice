@@ -12,7 +12,6 @@ import splice.core.config.RunningJar
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.daemonclient.DaemonHealth
-import splice.daemonclient.DaemonSettings
 import java.nio.file.Path
 import java.time.Duration
 
@@ -25,12 +24,7 @@ public class DaemonColdStart(
     errors: TerminalOutput,
     env: EnvReader,
     jar: RunningJar,
-    supervised: SupervisedStart = SupervisedStart(
-        JdkSystemctl(),
-        env,
-        DaemonSettings(errors),
-        restarter = JdkSystemctl(UNIT_RESTART_TIMEOUT_MS),
-    ),
+    supervised: SupervisedStart = SupervisedStart.system(env, errors),
     startupPolls: Int = STARTUP_POLLS,
 ) {
 
@@ -46,6 +40,11 @@ public class DaemonColdStart(
     /** V4-243: the supervisor unit a restart must go THROUGH, or null when this shell's daemon is its
      *  own (a selector is set), there is no unit on the box, or the unit is not running a daemon. */
     public fun activeUnit(): String? = launch.activeUnit()
+
+    /** V4-395: what a restart says when the supervisor unit runs another home's daemon (or cannot be shown
+     *  to run this one's) on [port], or null when the unit is this home's or this shell's daemon is its own.
+     *  A restart that gets a sentence stops there: nothing is signalled and no unit verb is run. */
+    public fun foreignUnitRefusal(port: Int): String? = launch.foreignUnitRefusal(port)
 
     /** V4-243: restart [unit] through systemd and wait until the daemon answers with [expectedVersion]. */
     public fun restartUnit(unit: String, port: Int, expectedVersion: String = GATEWAY_VERSION): Boolean =
@@ -119,6 +118,16 @@ internal class DaemonLaunch(
     /** V4-243: the unit whose running daemon a restart replaces, when the route is the unit's. */
     internal fun activeUnit(): String? =
         (supervised.route() as? ColdStartRoute.Unit)?.unit?.takeIf { supervised.active(it) }
+
+    /** V4-395: the refusal sentence, composed here from [SupervisedStart.ownership]'s reason. The remedy it
+     *  names is real: SPLICE_CONFIG is a harness selector, so [SupervisedStart.route] sends that shell's
+     *  daemon to the raw path, stopped and spawned here, and never to the unit. */
+    internal fun foreignUnitRefusal(port: Int): String? {
+        val unit = (supervised.route() as? ColdStartRoute.Unit)?.unit ?: return null
+        val foreign = supervised.ownership(unit, port) as? UnitOwnership.Foreign ?: return null
+        return "splice: not restarting $unit: ${foreign.reason}. Nothing was stopped or restarted. " +
+            "To run this home's own daemon apart from the unit, set SPLICE_CONFIG to its splice.toml."
+    }
 
     /** V4-243: systemd restarts [unit] (stop with SIGTERM, which drains, then start at once, the
      *  restart counter reset), and the daemon must then answer with [expectedVersion]. Stopping the

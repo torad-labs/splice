@@ -10,8 +10,8 @@ import type { ClaudeHeadActionResult, ClaudeHeadPayload } from '@entities/claude
 import { validateTopology } from '@entities/topology';
 import type { TopologyState, TopologyWriteResult } from '@entities/topology';
 import { TomlEditor, TomlMerge } from '@widgets/toml-editor';
-import { changedPaths, coerce, headOverrideOf, parseList, setAtPath, topologyTables, toToml, withDefaultInstructions } from './model';
-import type { TopologyField, TopologyTable } from './model';
+import { changedPaths, coerce, commandInstructionsOf, headOverrideOf, parseList, setAtPath, topologyTables, toToml, withCommandInstructions, withDefaultInstructions } from './model';
+import type { CommandInstruction, TopologyField, TopologyTable } from './model';
 import { H, S } from './strings';
 
 /** A list's line, edited as text and written back on leaving the box: parsing on every key would
@@ -94,7 +94,8 @@ export function TopologySection({ state, loaded, draft, onDraft, onWrite, busy, 
     groups.set(group, [...(groups.get(group) ?? []), table]);
   }
 
-  const changed = loaded === null ? [] : changedPaths(loaded, draft);
+  const changed = loaded === null ? [] : changedPaths(loaded, draft)
+    .filter((path) => scope === 'all' || (path.startsWith('compaction.') === (scope === 'instructions')));
   const findings = validateTopology(draft).filter((finding) => scope === 'all'
     || (finding.path.startsWith('compaction') === (scope === 'instructions')));
 
@@ -115,7 +116,7 @@ export function TopologySection({ state, loaded, draft, onDraft, onWrite, busy, 
           action={<Key onClick={() => onDraft(withDefaultInstructions(draft))}>{S.addInstructions}</Key>} />
       ) : null}
       {[...groups.entries()].map(([group, tables]) => (
-        <Bay key={group} label={group === 'compaction' && scope === 'instructions' ? S.instructions
+        <Bay key={group} label={group === 'compaction' && scope === 'instructions' ? S.compactionInstructions
           : group === '' ? S.topLevel : group} count={tables.length}>
           {tables.map((table) => (
             <section key={table.path} className="myx-topo-table" aria-label={table.path || S.topLevel}>
@@ -166,6 +167,82 @@ export function TopologySection({ state, loaded, draft, onDraft, onWrite, busy, 
           {result.backup_path === undefined ? null : <span className="myx-settings-path">{result.backup_path}</span>}
         </p>
       )}
+    </div>
+  );
+}
+
+/** A command's standing instructions, distinct from compaction instructions below it. */
+export function CommandInstructionsSection({ heads, labels, loaded, draft, onDraft, onWrite, busy, result }: {
+  heads: readonly string[];
+  labels?: Readonly<Record<string, string>>;
+  loaded: Record<string, unknown> | null;
+  draft: Record<string, unknown> | null;
+  onDraft: (next: Record<string, unknown>) => void;
+  onWrite: (head: string) => void;
+  busy: boolean;
+  result: TopologyWriteResult | null;
+}) {
+  const [picked, setPicked] = useState(heads[0] ?? '');
+  const selected = heads.includes(picked) ? picked : heads[0] ?? '';
+  if (draft === null) return <Empty text={S.topologyUnavailable} source={H.topologyUnavailable} />;
+  if (selected === '') return <Empty text={S.noHeads} source={H.noHeads} />;
+  const current = commandInstructionsOf(draft, selected);
+  const edit = (next: CommandInstruction | null) => onDraft(withCommandInstructions(draft, selected, next));
+  const changed = loaded === null ? [] : changedPaths(loaded, draft)
+    .filter((path) => path.startsWith(`heads.${selected}.system_prompt`));
+  const explanation = current === null ? H.previewUnchanged
+    : current.mode === 'replace' ? H.previewReplace
+      : current.mode === 'strip' ? H.previewStrip : H.previewAdd;
+
+  return (
+    <div className="myx-settings-command">
+      <h3 className="myx-settings-command-title">{S.commandInstructions}</h3>
+      <Choice label={S.command} value={selected}
+        options={heads.map((head) => ({ value: head, label: labels?.[head] ?? head }))} onChange={setPicked} />
+      {current === null ? (
+        <Key onClick={() => edit({ source: 'inline', text: '', mode: 'append' })}>{S.addCommandInstructions}</Key>
+      ) : (
+        <>
+          <div className="myx-settings-command-pickers">
+            <Choice label={S.instructionMode} value={current.mode} options={[
+              { value: 'append', label: S.addMode },
+              { value: 'replace', label: S.replaceMode },
+              { value: 'strip', label: S.stripMode },
+            ]} onChange={(mode) => edit({ ...current, mode: mode as CommandInstruction['mode'] })} />
+            <Choice label={S.instructionSource} value={current.source} options={[
+              { value: 'inline', label: S.inlineSource },
+              { value: 'file', label: S.fileSource },
+            ]} onChange={(source) => edit({ ...current, source: source as CommandInstruction['source'], text: '' })} />
+          </div>
+          {current.source === 'file' ? (
+            <Input label={S.instructionFile} value={current.text} onChange={(text) => edit({ ...current, text })} w={48} />
+          ) : (
+            <label className="myx-input myx-settings-instruction-lines">
+              <span className="myx-input-label">{current.mode === 'strip' ? S.matchingParagraphs : S.instructionText}</span>
+              <textarea className="myx-input-box" rows={4} value={current.text} spellCheck={false}
+                onChange={(event) => edit({ ...current, text: event.target.value })} />
+            </label>
+          )}
+          <Key onClick={() => edit(null)}>{S.removeCommandInstructions}</Key>
+        </>
+      )}
+      <section className="myx-settings-preview" role="region" aria-label={S.preview}>
+        <h4>{S.preview}</h4>
+        <p>{explanation}</p>
+        {current?.mode === 'replace' ? <p>{H.previewReplaceEffect}</p> : null}
+        {current === null ? null : current.source === 'file' ? (
+          <><code>{current.text}</code><p>{H.previewFile}</p></>
+        ) : <pre>{current.text}</pre>}
+        {current === null ? null : <p>{H.previewRuntime}</p>}
+      </section>
+      <div className="myx-settings-actions">
+        <Key busy={busy} disabled={changed.length === 0 || (current !== null && current.text.trim() === '')}
+          onClick={() => onWrite(selected)}>{S.saveCommandInstructions}</Key>
+        {result === null ? null : <Badge tone={result.ok ? 'ok' : 'danger'}>{result.ok ? S.written : S.refused}</Badge>}
+      </div>
+      {result?.findings?.map((finding) => (
+        <p key={finding.path} role="alert">{finding.path}: {finding.message}</p>
+      ))}
     </div>
   );
 }

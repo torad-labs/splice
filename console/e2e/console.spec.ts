@@ -254,6 +254,87 @@ test('Settings gives instructions their own editable group and retains model rul
   expect((saved as Record<string, unknown> | null)?.compaction).toEqual({ model, instructions: 'Prefer concise answers.' });
 });
 
+test('Settings previews each command instruction mode before writing it', async ({ page }) => {
+  const writes: Record<string, unknown>[] = [];
+  await page.route('**/api/topology', async (route) => {
+    if (route.request().method() === 'PUT') {
+      const body = route.request().postDataJSON() as { topology: Record<string, unknown> };
+      writes.push(body.topology);
+      return route.fulfill({ json: { ok: true, restart_required: true, findings: [] } });
+    }
+    const response = await route.fetch();
+    const body = await response.json() as { topology: Record<string, unknown> };
+    if (writes.length > 0) body.topology = writes[writes.length - 1];
+    return route.fulfill({ response, json: body });
+  });
+  await open(page, 'settings');
+  const section = page.locator('.myx-settings-section').filter({ has: page.getByRole('heading', { name: 'Instructions', exact: true }) });
+  const command = section.getByRole('combobox', { name: 'Command' });
+  await expect(command).toContainText(STACK.oauthHead);
+  await command.click();
+  await section.getByRole('option', { name: STACK.soloHead, exact: true }).click();
+  await expect(section.getByRole('button', { name: 'Add command instructions' })).toBeVisible();
+  await command.click();
+  await section.getByRole('option', { name: STACK.oauthHead, exact: true }).click();
+  await section.getByRole('button', { name: 'Add command instructions' }).click();
+  const preview = section.getByRole('region', { name: 'Preview' });
+  const mode = section.getByRole('combobox', { name: 'How to use' });
+  const choose = async (label: string) => {
+    await mode.click();
+    await section.getByRole('option', { name: label, exact: true }).click();
+  };
+  const savedHead = () => ((writes[writes.length - 1]?.heads as Record<string, Record<string, unknown>>)?.[STACK.oauthHead]);
+
+  const otherEditor = section.getByRole('region', { name: 'compaction', exact: true })
+    .getByRole('textbox', { name: 'instructions', exact: true });
+  const originalCompaction = await otherEditor.inputValue();
+  await otherEditor.fill('Pending only in another editor.');
+  await expect(section.getByRole('button', { name: 'Save instructions' })).toBeDisabled();
+  expect(writes).toHaveLength(0);
+
+  await section.getByRole('textbox', { name: 'Instruction text' }).fill('Keep answers brief.');
+  await expect(preview).toContainText('Claude Code instructions');
+  await expect(preview).toContainText('Keep answers brief.');
+  await section.getByRole('button', { name: 'Save instructions' }).click();
+  await expect.poll(() => writes.length).toBe(1);
+  expect((writes[0].compaction as { instructions: string }).instructions, 'Save instructions also wrote an unrelated pending edit')
+    .toBe(originalCompaction);
+  expect(savedHead()).toMatchObject({ system_prompt: 'Keep answers brief.', system_prompt_mode: 'append' });
+
+  await choose('Replace');
+  await expect(preview).toContainText('Replaces Claude Code instructions');
+  await expect(preview).toContainText('Removes Claude Code\'s operating instructions');
+  await section.getByRole('button', { name: 'Save instructions' }).click();
+  await expect.poll(() => writes.length).toBe(2);
+  expect(savedHead()).toMatchObject({ system_prompt: 'Keep answers brief.', system_prompt_mode: 'replace' });
+
+  await choose('Remove parts');
+  await section.getByRole('textbox', { name: 'Matching paragraphs' }).fill('^Private note');
+  await expect(preview).toContainText('^Private note');
+  await expect(preview).toContainText('Matching paragraphs are removed');
+  await section.getByRole('button', { name: 'Save instructions' }).click();
+  await expect.poll(() => writes.length).toBe(3);
+  expect(savedHead()).toMatchObject({ system_prompt: '^Private note', system_prompt_mode: 'strip' });
+
+  await section.getByRole('combobox', { name: 'Instruction source' }).click();
+  await section.getByRole('option', { name: 'Use file', exact: true }).click();
+  await section.getByRole('textbox', { name: 'Instruction file' }).fill('rules.txt');
+  await expect(preview).toContainText('rules.txt');
+  await expect(preview).toContainText('its text cannot be previewed here');
+  expect(writes).toHaveLength(3);
+
+  await section.getByRole('button', { name: 'Remove command instructions' }).click();
+  await expect(preview).toContainText('Claude Code instructions unchanged');
+  await section.getByRole('button', { name: 'Save instructions' }).click();
+  await expect.poll(() => writes.length).toBe(4);
+  expect(savedHead()).not.toHaveProperty('system_prompt');
+  expect(savedHead()).not.toHaveProperty('system_prompt_mode');
+  await expect(otherEditor).toHaveValue('Pending only in another editor.');
+  await expect(section.getByRole('button', { name: 'Save instructions' })).toBeDisabled();
+  expect(writes).toHaveLength(4);
+  expect(writes.every((topology) => (topology.compaction as { instructions: string }).instructions === originalCompaction)).toBe(true);
+});
+
 test('turns keeps full model names and cache figures readable at desktop width', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const longModel = 'claude-opus-5-1-20260928-thinking-extended';

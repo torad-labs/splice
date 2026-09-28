@@ -20,10 +20,10 @@ import { KnobRack } from '../src/widgets/knob-form';
 import { SOURCE_LABELS } from '../src/widgets/knob-form/strings';
 import { dispositions } from '../src/pages/settings/coverage';
 import { fixtureConfig, fixtureTopology } from '../src/pages/settings/fixtures/settings';
-import { DEFAULT_VIEWS, changedPaths, fileOverrideNote, flattenTopology, knobsForView, parseList, setAtPath, toToml, topologyTables, valueAtPath, withDefaultInstructions, withHeadOverride } from '../src/pages/settings/model';
+import { DEFAULT_VIEWS, changedPaths, fileOverrideNote, flattenTopology, knobsForView, parseList, setAtPath, toToml, topologyTables, valueAtPath, withCommandInstructions, withDefaultInstructions, withHeadOverride } from '../src/pages/settings/model';
 import { draftAfterKnobSave, saveGlobalKnob } from '../src/pages/settings';
 import { saveTopology } from '../src/entities/topology';
-import { ClaudeModeSection, TopologySection } from '../src/pages/settings/sections';
+import { ClaudeModeSection, CommandInstructionsSection, TopologySection } from '../src/pages/settings/sections';
 import { KNOB_SOURCE, TOPOLOGY_MANIFEST, parseKnobNames, parseTopologyManifest, topologyLeaves } from '../src/shared/coverage/denominator';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -122,6 +122,69 @@ describe('settings: the knob form', () => {
   });
 });
 
+describe('settings: command instructions', () => {
+  const topology = {
+    heads: {
+      claudex: { provider: 'codex', system_prompt_file: 'instructions.md', system_prompt_mode: 'append' },
+      muse: { provider: 'muse', system_prompt: 'Keep this rule.' },
+    },
+    compaction: { instructions: 'Keep decisions.' },
+  };
+
+  test('each edit keeps sibling plans and compaction while selecting exactly one source', () => {
+    const inline = withCommandInstructions(topology, 'claudex', { source: 'inline', text: 'Keep answers brief.', mode: 'replace' });
+    expect(valueAtPath(inline, 'heads.claudex.system_prompt')).toBe('Keep answers brief.');
+    expect(valueAtPath(inline, 'heads.claudex.system_prompt_file')).toBeUndefined();
+    expect(valueAtPath(inline, 'heads.claudex.system_prompt_mode')).toBe('replace');
+    expect(valueAtPath(inline, 'heads.muse.system_prompt')).toBe('Keep this rule.');
+    expect(valueAtPath(inline, 'compaction.instructions')).toBe('Keep decisions.');
+
+    const strip = withCommandInstructions(inline, 'claudex', { source: 'file', text: 'patterns.txt', mode: 'strip' });
+    expect(valueAtPath(strip, 'heads.claudex.system_prompt')).toBeUndefined();
+    expect(valueAtPath(strip, 'heads.claudex.system_prompt_file')).toBe('patterns.txt');
+    expect(valueAtPath(strip, 'heads.claudex.system_prompt_mode')).toBe('strip');
+    expect(valueAtPath(topology, 'heads.claudex.system_prompt_file')).toBe('instructions.md');
+  });
+
+  test('remove deletes the source and mode instead of choosing strip or an empty string', () => {
+    const cleared = withCommandInstructions(topology, 'claudex', null);
+    expect(changedPaths(topology, cleared)).toEqual(['heads.claudex.system_prompt_file', 'heads.claudex.system_prompt_mode']);
+    expect(valueAtPath(cleared, 'heads.claudex.provider')).toBe('codex');
+    expect(valueAtPath(cleared, 'heads.claudex.system_prompt_file')).toBeUndefined();
+    expect(valueAtPath(cleared, 'heads.claudex.system_prompt_mode')).toBeUndefined();
+  });
+
+  test('the command picker displays the runnable name, not its internal key', () => {
+    const document = { heads: { codex: { provider: 'codex' } } };
+    const html = render(h(CommandInstructionsSection, {
+      heads: ['codex'], labels: { codex: 'claudex' }, loaded: document, draft: document,
+      onDraft: () => undefined, onWrite: () => undefined, busy: false, result: null,
+    }));
+    expect(html).toContain('class="myx-choice-value">claudex</span>');
+    expect(html).not.toContain('class="myx-choice-value">codex</span>');
+  });
+
+  test('older topology endpoints never masquerade as no connected commands', () => {
+    const html = render(h(CommandInstructionsSection, {
+      heads: [], loaded: null, draft: null, onDraft: () => undefined,
+      onWrite: () => undefined, busy: false, result: null,
+    }));
+    expect(html).toContain('Topology unavailable');
+    expect(html).not.toContain('No plans declared');
+  });
+
+  test('a refused instruction write states why despite the draft still differing from disk', () => {
+    const draft = withCommandInstructions(topology, 'claudex', { source: 'inline', text: '[', mode: 'strip' });
+    const html = render(h(CommandInstructionsSection, {
+      heads: ['claudex', 'muse'], loaded: topology, draft, onDraft: () => undefined,
+      onWrite: () => undefined, busy: false,
+      result: { ok: false, restart_required: true, findings: [{ path: 'heads.claudex.system_prompt', message: 'invalid pattern' }] },
+    }));
+    expect(html).toContain('Refused');
+    expect(html).toContain('invalid pattern');
+  });
+});
+
 describe('settings: the topology section', () => {
   test('instructions have their own editable group, apart from the rest of the file', () => {
     const props = {
@@ -145,6 +208,11 @@ describe('settings: the topology section', () => {
     const added = withDefaultInstructions({ compaction: { model: [{ model: 'gpt-5.6-sol' }] } });
     expect(valueAtPath(added, 'compaction.instructions')).toBe('');
     expect(valueAtPath(added, 'compaction.model[0].model')).toBe('gpt-5.6-sol');
+
+    const commandEdit = withCommandInstructions(fixtureTopology, 'claudex', { source: 'inline', text: 'New rule.', mode: 'append' });
+    const compactionOnly = render(h(TopologySection, { ...props, draft: commandEdit, scope: 'instructions' }));
+    expect(compactionOnly).toContain('disabled=""');
+    expect(compactionOnly).toContain('>0</span>');
   });
 
   const draftWithTypo = { ...fixtureTopology, daemon: { ...(fixtureTopology.daemon as object), wibble: 1 } };

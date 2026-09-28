@@ -84,6 +84,36 @@ export function withDefaultInstructions(topology: Record<string, unknown>): Reco
   return { ...topology, compaction: { ...compaction, instructions: '' } };
 }
 
+export type CommandInstruction = { source: 'inline' | 'file'; text: string; mode: 'append' | 'replace' | 'strip' };
+
+/** A command has one source. The absent mode is append, not a separate "off" mode. */
+export function commandInstructionsOf(topology: Record<string, unknown>, key: string): CommandInstruction | null {
+  const heads = isTable(topology.heads) ? topology.heads : {};
+  const entry = isTable(heads[key]) ? heads[key] : {};
+  const source = typeof entry.system_prompt_file === 'string' ? 'file'
+    : typeof entry.system_prompt === 'string' ? 'inline' : null;
+  if (source === null) return null;
+  const mode = entry.system_prompt_mode;
+  return { source, text: entry[source === 'file' ? 'system_prompt_file' : 'system_prompt'] as string,
+    mode: mode === 'replace' || mode === 'strip' ? mode : 'append' };
+}
+
+/** Set exactly one source on one command, or remove all three keys to restore client instructions. */
+export function withCommandInstructions(topology: Record<string, unknown>, key: string, next: CommandInstruction | null): Record<string, unknown> {
+  const heads = isTable(topology.heads) ? topology.heads : {};
+  const entry = isTable(heads[key]) ? heads[key] : {};
+  const kept = { ...entry };
+  delete kept.system_prompt;
+  delete kept.system_prompt_file;
+  delete kept.system_prompt_mode;
+  const edited = next === null ? kept : {
+    ...kept,
+    [next.source === 'file' ? 'system_prompt_file' : 'system_prompt']: next.text,
+    system_prompt_mode: next.mode,
+  };
+  return { ...topology, heads: { ...heads, [key]: edited } };
+}
+
 /** Compare the declared head value to this boot's value, not to the console's saved-key list. */
 export function fileOverrideNote(topology: Record<string, unknown> | null, head: string, knob: KnobDisposition, config: ConfigPayload): string | null {
   if (topology === null || knob.hot || KNOB_META[knob.key]?.headOnly !== true || shadowOfOverride(knob.key, config) !== null) return null;

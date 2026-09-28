@@ -40,6 +40,7 @@ import {
 } from '@entities/topology';
 import type { TopologyWriteResult } from '@entities/topology';
 import { HeadAddForm, HeadEditRow, headRows } from '@features/head-edit';
+import { fetchHeads, useHeads } from '@entities/heads';
 import { useViews, ViewTabs } from '@features/views';
 import { HeadMark } from '@entities/control-status';
 import { cx, readFor } from '@shared/lib';
@@ -49,8 +50,8 @@ import { Badge, Bay, Empty, InfoTip, PageHeader, Section } from '@shared/ui';
 import { Blank, Fault, Input, KeyLink } from '@shared/controls';
 import { HEAD_WORDING, KnobRack, knobMatches } from '@widgets/knob-form';
 import { dispositions } from './coverage';
-import { changedPaths, DEFAULT_VIEWS, fileOverrideNote, knobsForView, withHeadOverride } from './model';
-import { ClaudeModeSection, TopologySection } from './sections';
+import { changedPaths, commandInstructionsOf, DEFAULT_VIEWS, fileOverrideNote, knobsForView, withCommandInstructions, withHeadOverride } from './model';
+import { ClaudeModeSection, CommandInstructionsSection, TopologySection } from './sections';
 import { H, S } from './strings';
 import './settings.css';
 
@@ -149,6 +150,7 @@ export function SettingsPage() {
   const config = useConfig((state) => state);
   const topology = useTopology((state) => state);
   const claude = useClaudeHead((state) => state);
+  const headStatus = useHeads((state) => state.data);
   const pendingRestart = useRestartPending((state) => state.pending);
 
   const [head, setHead] = useState('global');
@@ -157,6 +159,7 @@ export function SettingsPage() {
   const [knobFaults, setKnobFaults] = useState<ReadonlyMap<string, string>>(new Map());
   const [draft, setDraft] = useState<Record<string, unknown> | null>(null);
   const [writeResult, setWriteResult] = useState<TopologyWriteResult | null>(null);
+  const [commandResult, setCommandResult] = useState<TopologyWriteResult | null>(null);
   const [busyTopology, setBusyTopology] = useState(false);
   const [busyClaude, setBusyClaude] = useState(false);
   const [claudeResult, setClaudeResult] = useState<ClaudeHeadActionResult | null>(null);
@@ -164,6 +167,7 @@ export function SettingsPage() {
 
   useEffect(() => startTopologyPolling(POLL_MS), []);
   useEffect(() => startClaudeHeadPolling(POLL_MS), []);
+  useEffect(() => { void fetchHeads(); }, []);
   useEffect(() => {
     void fetchConfig(head === 'global' ? undefined : head);
   }, [head]);
@@ -267,17 +271,24 @@ export function SettingsPage() {
   /** What saving a knob reaches, with the restart link only when the file differs from this boot. */
   const scopeNote = (knob: KnobDisposition): ReactNode => scopeNoteOf(knob, configPayload, loaded, head, perHeadView);
 
-  const writeTopology = () => {
+  const writeTopology = (source: 'command' | 'topology', key?: string) => {
     if (draft === null) return;
+    let writing = draft;
+    if (source === 'command') {
+      if (loaded === null || key === undefined) return;
+      writing = withCommandInstructions(loaded, key, commandInstructionsOf(draft, key));
+    }
+    const report = source === 'command' ? setCommandResult : setWriteResult;
     setBusyTopology(true);
-    void saveTopology(draft)
+    report(null);
+    void saveTopology(writing)
       .then((result) => {
-        setWriteResult(result);
+        report(result);
         // The daemon writes a document it read itself; re-reading is how the page stops showing a
         // draft as if it were the file.
         return fetchTopology();
       })
-      .catch((err: unknown) => setWriteResult({ ok: false, restart_required: true, findings: [{ path: '', message: err instanceof Error ? err.message : String(err) }] }))
+      .catch((err: unknown) => report({ ok: false, restart_required: true, findings: [{ path: '', message: err instanceof Error ? err.message : String(err) }] }))
       .finally(() => setBusyTopology(false));
   };
 
@@ -309,9 +320,16 @@ export function SettingsPage() {
 
       <Section title={S.instructions} info={{ text: H.instructions, label: S.aboutInstructions }} className="myx-settings-section">
         {topologyState === null && fixture === null ? <Blank strips={2} /> : (
-          <TopologySection scope="instructions"
-            state={fixture === null ? topologyState ?? { pending: 'V4-128' } : { path: '~/.config/splice/splice.toml', topology: fixture.topology, stale: false }}
-            loaded={loaded} draft={draft} onDraft={setDraft} onWrite={writeTopology} busy={busyTopology} result={writeResult} />
+          <>
+            <CommandInstructionsSection heads={heads.map((row) => row.key)}
+              labels={Object.fromEntries((headStatus ?? []).map((row) => [row.key, row.label]))}
+              loaded={loaded} draft={draft}
+              onDraft={(next) => { setCommandResult(null); setDraft(next); }}
+              onWrite={(key) => writeTopology('command', key)} busy={busyTopology} result={commandResult} />
+            <TopologySection scope="instructions"
+              state={fixture === null ? topologyState ?? { pending: 'V4-128' } : { path: '~/.config/splice/splice.toml', topology: fixture.topology, stale: false }}
+              loaded={loaded} draft={draft} onDraft={setDraft} onWrite={() => writeTopology('topology')} busy={busyTopology} result={writeResult} />
+          </>
         )}
       </Section>
 
@@ -370,7 +388,7 @@ export function SettingsPage() {
               loaded={loaded}
               draft={draft}
               onDraft={setDraft}
-              onWrite={writeTopology}
+              onWrite={() => writeTopology('topology')}
               busy={busyTopology}
               result={writeResult}
             />

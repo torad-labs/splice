@@ -9467,6 +9467,9 @@ id = "V4-407"
 phase = "release"
 title = "The console's nearest limit still shows a plan reading hours old (Marlin walk of V4-396 on bb54736ea, film-home-team-walk): a 4.5 h-old codex 7d 100% reading shows in the header ('claudex 7d 100% in 6d 2h'), Fleet's Nearest limit and Needs you. V4-396 applied QuotaFreshness only to /api/usage; the console's nearest limit also reads /api/accounts (console/src/features/nearest-limit/index.ts:7-10), whose rows carry every window with no 15-minute rule. One freshness rule for both routes."
 files = ["features/accounts/src/main/kotlin/splice/accounts/pool/AccountsRoute.kt", "features/accounts/src/test/kotlin/splice/accounts/v4407/"]
-status = "todo"
+status = "in_flight"
 verify = "red first: /api/accounts for an account whose windows were read 4.5 h ago carries no current window (the same QuotaWindowView.currentAt rule /api/usage uses), and one read a minute ago keeps its windows; the console's nearest limit therefore names no stale window. Mutant: skip the rule on the accounts route and the stale test goes red. Marlin re-walks the header, Fleet and Needs you."
 # [2026-09-28] amend by=splice-lead: files were ["features/accounts/src/main/kotlin/splice/accounts/pool/HeadAccountPool.kt", "features/accounts/src/main/kotlin/splice/accounts/AccountHeads.kt", "features/accounts/src/test/kotlin/splice/accounts/v4407/"]
+claimed_by = "splice-lead"
+claimed_at = "2026-09-28T22:22:31.113Z"
+# [2026-09-28] CLAIM: owner=splice-lead at=2026-09-28T22:22:31Z

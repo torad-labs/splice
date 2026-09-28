@@ -49,6 +49,15 @@ public fun interface AuthJsonFromResponse {
 }
 
 /**
+ * Opens a sign-in link in a browser; true when one opened. [DeviceLoginFlow] hands its
+ * verification link here. Production is `LoginIo.openBrowser`, which refuses inside the test suite,
+ * so a test passes a recording fake instead of opening a window on the operator's desktop.
+ */
+public fun interface BrowserOpener {
+    public operator fun invoke(url: String): Boolean
+}
+
+/**
  * The refresh POST itself — one HTTP attempt, no retry policy and no classification.
  *
  * Deliberately the bare hop: `RefreshRetry` owns how many times it runs and how long it waits

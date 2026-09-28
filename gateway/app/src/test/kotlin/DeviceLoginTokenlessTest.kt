@@ -96,7 +96,9 @@ class DeviceLoginTokenlessTest {
     fun `the real browser refuses inside the suite`() {
         // Checked first: without the property the next line would open a real tab.
         assertNotNull(System.getProperty(NO_SYSTEM_BROWSER), "the shared Gradle test task must set $NO_SYSTEM_BROWSER")
-        val refused = assertThrows(IllegalStateException::class.java) { LoginIo().openBrowser("http://127.0.0.1/verify") }
+        val refused = assertThrows(IllegalStateException::class.java) {
+            LoginIo().openBrowser("http://127.0.0.1/verify")
+        }
         assertTrue(refused.message.orEmpty().contains("host=127.0.0.1"), refused.message)
     }
 

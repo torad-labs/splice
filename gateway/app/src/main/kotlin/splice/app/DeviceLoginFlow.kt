@@ -59,7 +59,7 @@ public object DeviceLoginFlow {
     public suspend fun run(
         spec: DeviceLoginSpec,
         waiter: Waiter = ProcessWaiter(),
-        openBrowser: (String) -> Boolean = loginIo::openBrowser,
+        openBrowser: BrowserOpener = BrowserOpener { loginIo.openBrowser(it) },
     ): Boolean {
         var restarts = 0
         while (true) {
@@ -77,7 +77,7 @@ public object DeviceLoginFlow {
         }
     }
 
-    private suspend fun attempt(spec: DeviceLoginSpec, waiter: Waiter, openBrowser: (String) -> Boolean): Outcome {
+    private suspend fun attempt(spec: DeviceLoginSpec, waiter: Waiter, openBrowser: BrowserOpener): Outcome {
         val client = authClients.create()
         return try {
             Cancellables.runCatchingCancellable {
@@ -106,7 +106,7 @@ public object DeviceLoginFlow {
         return kimiOAuth.parseKimiDeviceAuthorization(body)
     }
 
-    private fun announce(spec: DeviceLoginSpec, auth: KimiDeviceAuthorization, openBrowser: (String) -> Boolean) {
+    private fun announce(spec: DeviceLoginSpec, auth: KimiDeviceAuthorization, openBrowser: BrowserOpener) {
         val url = auth.verificationUriComplete.ifEmpty { auth.verificationUri }
         println("")
         println("  splice: sign in to ${spec.head} — enter this code in your browser:")

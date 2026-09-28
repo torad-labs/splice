@@ -15,7 +15,7 @@
 // WHAT IS ON DISK, CAPTURE ON OR OFF. The files outlive the knob: a head whose trace was turned off
 // keeps the days it recorded until retention deletes them, and the verb reads them either way, so this
 // does too. Whether capture is on NOW is GET /api/heads/{head}/capture's answer; the console reads both.
-// Deleting them (`splice trace --purge`) stays on the CLI.
+// The CLI and the guarded trace/kept route delete through the same per-head DayFiles store.
 package splice.head.trace
 
 import io.ktor.http.HttpStatusCode
@@ -28,6 +28,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.core.model.TurnPrice
 import splice.core.perf.PerfKeys
+import splice.core.storage.DayFiles
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
@@ -38,6 +39,8 @@ import splice.http.JsonReply
 import java.nio.file.Path
 
 internal const val TRACE_UNWIRED = "the daemon wired no trace directory; /api/heads/{head}/trace cannot read it"
+internal const val TRACE_DELETED_STATE = "deleted"
+internal const val TRACE_DELETED_REASON = "trace deleted"
 
 /** The daemon's trace directory, where every head's TraceStore writes; read per request because the
  *  control plane is handed it after construction. */
@@ -89,7 +92,11 @@ public class TraceRoute(
         val turns = withContext(io) { Cancellables.runCatchingCancellable { rows.turns(traceDir, key, ask) } }
             .getOrElse { return unreadable(key, traceDir, it) }
         return if (turns.isEmpty()) {
-            refuse(HttpStatusCode.BadRequest, "no turn $turn in $key's trace")
+            val reason = when {
+                DayFiles(traceDir, key).deleted() -> TRACE_DELETED_REASON
+                else -> "no turn $turn in $key's trace"
+            }
+            refuse(HttpStatusCode.BadRequest, reason)
         } else {
             JsonReply(HttpStatusCode.OK, turnJson(key, turns.single(), TurnPrice(head.catalog)))
         }
@@ -104,6 +111,10 @@ public class TraceRoute(
     private fun listJson(key: String, traceDir: Path, read: TraceRead): String =
         buildJsonObject {
             put("head", key)
+            if (read.onDisk == 0 && DayFiles(traceDir, key).deleted()) {
+                put("state", TRACE_DELETED_STATE)
+                put("reason", TRACE_DELETED_REASON)
+            }
             put("files", "$traceDir/$key-YYYY-MM-DD.jsonl")
             put("on_disk", read.onDisk)
             put("skipped_lines", read.skippedLines)

@@ -5,9 +5,11 @@ package splice.app.control.mount
 
 import io.ktor.server.request.receiveText
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
+import kotlinx.coroutines.withContext
 import splice.app.control.ConsolePorts
 import splice.app.control.ManagedHead
 import splice.app.control.SessionHeadAdapter
@@ -27,6 +29,7 @@ import splice.head.trace.TranscriptRoots
 import splice.head.turn.LiveTurnsRoutes
 import splice.head.turn.LiveTurnsSource
 import splice.head.wire.CaptureRoutes
+import splice.head.wire.TraceDeleteRoutes
 import splice.head.wire.WireRoutes
 import splice.head.wire.WireTapsSource
 import splice.sessions.transcript.SessionTranscriptViewEnabled
@@ -45,7 +48,9 @@ internal class TurnsMount(
     private val compactPayloads = CompactPayloads(TurnsHeadAdapter.heads(heads))
     private val compactionRoute = CompactionInstructionsRoute(turnsLookup)
     private val captureRoutes = CaptureRoutes(turnsLookup, config, TopologyWriterSource { ports.topology })
-    private val traceRoute = TraceRoute(turnsLookup, TraceDirPort { ports.traceDir }, ProcessDispatchers().io())
+    private val fileIo = ProcessDispatchers().io()
+    private val traceRoute = TraceRoute(turnsLookup, TraceDirPort { ports.traceDir }, fileIo)
+    private val traceDeleteRoutes = TraceDeleteRoutes(turnsLookup, TraceDirPort { ports.traceDir }, config)
     private val sessionHeads = SessionHeadAdapter.adapt(heads)
     private val transcriptRoute = TranscriptRequestRoute(
         TranscriptMessageLookup(),
@@ -61,7 +66,7 @@ internal class TurnsMount(
             }
         },
         SessionTranscriptViewEnabled { config.getConfig().transcriptView },
-        ProcessDispatchers().io(),
+        fileIo,
     )
     private val wireRoutes = WireRoutes(turnsLookup, WireTapsSource { ports.wires })
     private val liveTurnsRoutes = LiveTurnsRoutes(turnsLookup, LiveTurnsSource { ports.liveTurns })
@@ -84,6 +89,7 @@ internal class TurnsMount(
                 captureRoutes.write(call.parameters["head"].orEmpty(), call.receiveText()).send(call)
             }
         }
+        registerKeptTrace(route)
         // V4-239: the verbs' reads, the trace's files and the wire tap's ring, under the same key.
         route.get("/api/heads/{head}/trace") {
             guard.guarded(call) {
@@ -114,6 +120,20 @@ internal class TurnsMount(
         route.post("/api/heads/{head}/turns/{id}/stop") {
             guard.guarded(call) {
                 liveTurnsRoutes.stop(call.parameters["head"].orEmpty(), call.parameters["id"].orEmpty()).send(call)
+            }
+        }
+    }
+
+    /** The configured head names the only trace prefix these reads may count or delete. */
+    private fun registerKeptTrace(route: Route) {
+        route.get("/api/heads/{head}/trace/kept") {
+            guard.guarded(call) {
+                withContext(fileIo) { traceDeleteRoutes.kept(call.parameters["head"].orEmpty()) }.send(call)
+            }
+        }
+        route.delete("/api/heads/{head}/trace/kept") {
+            guard.guarded(call) {
+                withContext(fileIo) { traceDeleteRoutes.delete(call.parameters["head"].orEmpty()) }.send(call)
             }
         }
     }

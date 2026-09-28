@@ -49,6 +49,13 @@ public class TraceCommand(
     /** V4-338: only the table says how many turns are on disk, so only the table reads every line; --json
      *  and --turn stop once they hold their turns. Either way one line is held at a time. */
     private fun show(opts: TraceOpts, traceDir: Path): Boolean {
+        if (rows.days(traceDir, opts.head).deleted()) {
+            return if (opts.turn == null) {
+                view.printDeleted(opts.head, opts.json)
+            } else {
+                fail("$TRACE_DELETED_REASON for ${opts.head}; no turn ${opts.turn}")
+            }
+        }
         val ask = TraceAsk(opts.last, opts.session, opts.turn)
         return if (opts.json || opts.turn != null) records(opts, traceDir, ask) else table(opts.head, traceDir, ask)
     }

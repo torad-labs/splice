@@ -5,7 +5,9 @@
 package splice.head.trace
 
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 import splice.core.terminal.BOLD
 import splice.core.terminal.DIM
 import splice.core.terminal.RESET
@@ -35,6 +37,22 @@ internal class TraceView(private val output: TerminalOutput) {
         read.turns.forEach { turn -> output.line("  " + line(turn)) }
         if (read.skippedLines > 0) {
             output.line("  $YELLOW${read.skippedLines} line(s) skipped (not a trace record)$RESET")
+        }
+        return true
+    }
+
+    /** A deliberate delete is not the same as a head that has never traced a turn. */
+    fun printDeleted(head: String, json: Boolean): Boolean {
+        if (json) {
+            output.line(
+                buildJsonObject {
+                    put("head", head)
+                    put("state", TRACE_DELETED_STATE)
+                    put("reason", TRACE_DELETED_REASON)
+                }.toString(),
+            )
+        } else {
+            output.line("splice trace: $head $TRACE_DELETED_REASON")
         }
         return true
     }

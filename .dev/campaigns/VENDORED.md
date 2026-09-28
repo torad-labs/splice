@@ -203,6 +203,17 @@ behaviour a seat or a caller depends on. Unlike 1, 2, 3 and 5 they are permanent
     on the first two, and the boundary dropped is red on the siblings arm (195/198 and 196/198; the
     delta 20 arm is also red in both, only because the mutant copies run outside the repo and cannot
     see tools/gate).
+22. **A deletion committed before its receipt is recorded (2026-09-28).** On the shared branch a builder
+    commits its files by explicit path before filing the receipt, and every ledger write commits itself
+    after that, so a deleted path is tracked at neither HEAD nor HEAD^. `receipt --deleted` refused every
+    such path ("not tracked at HEAD"), and V4-351's receipt for 108bffab7 could not be filed. A path now
+    passes when it is tracked at HEAD (the canonical case, which `stage` removes) or when a commit
+    reachable from HEAD deleted it (`git log -1 --diff-filter=D HEAD -- <path>`); a path no commit ever
+    deleted stays refused. Three selftest arms (201 ledger): the committed deletion is recorded, `landed`
+    confirms it against the deleting commit, and a never-deleted path stays refused. Red first: 199/201
+    before the change. Mutant `deletedOnBranch` always true: red on both guards ("an untracked deletion
+    is refused" and the delta 22 guard), 198/201 against 200/201 for the unmutated copy outside the repo
+    (delta 20's arm, as noted above).
 
 **`fleet.ts` (splice-only, not vendored).** What `manifest.py` did that the canonical CLI does not:
 the fleet journal (`$TORAD_FLEET_ROOT/journal/events.jsonl`, byte-compatible with py's writer: the

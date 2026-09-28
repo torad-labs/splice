@@ -581,6 +581,12 @@ function headBlob(root: string, rel: string): string | null {
   return r.exitCode === 0 ? r.stdout.toString().trim() : null;
 }
 
+/** Delta 22: a commit reachable from HEAD deleted [rel], i.e. a deletion already committed before its receipt. */
+function deletedOnBranch(root: string, rel: string): boolean {
+  const r = Bun.spawnSync(["git", "-C", root, "log", "-1", "--diff-filter=D", "--format=%H", "HEAD", "--", rel], { stdout: "pipe", stderr: "pipe" });
+  return r.exitCode === 0 && r.stdout.toString().trim() !== "";
+}
+
 /** V4-271: an entry holds [rel] when it is that path or a path-ancestor of it, read through the SAME
  *  normalizer the seat law's [fenceOverlap] uses, so a `dir/**` (or `dir/`) entry holds the files under
  *  dir at receipt and stage exactly as it does at claim. The old test matched only an exact path or a
@@ -1385,11 +1391,12 @@ export async function main(argv: readonly string[] = Bun.argv.slice(2)): Promise
       const root = repoRootOf(ledgerPath);
       const missing = files.filter((p) => !existsSync(join(root, p)));
       if (missing.length > 0) throw new LedgerError(`receipt: touched files do not exist: ${missing.join(", ")}`);
-      // A deletion must be gone from disk and tracked at HEAD, so `stage` can stage the removal.
+      // A deletion must be gone from disk and either tracked at HEAD, so `stage` can stage the removal,
+      // or already removed by a commit on this branch (delta 22: the builder committed before filing).
       const stillThere = deleted.filter((p) => existsSync(join(root, p)));
       if (stillThere.length > 0) throw new LedgerError(`receipt: --deleted files still exist on disk: ${stillThere.join(", ")}`);
-      const untracked = deleted.filter((p) => headBlob(root, p) === null);
-      if (untracked.length > 0) throw new LedgerError(`receipt: --deleted files are not tracked at HEAD: ${untracked.join(", ")}`);
+      const untracked = deleted.filter((p) => headBlob(root, p) === null && !deletedOnBranch(root, p));
+      if (untracked.length > 0) throw new LedgerError(`receipt: --deleted files are not tracked at HEAD and no commit on this branch deleted them: ${untracked.join(", ")}`);
       const line =`RECEIPT cmd=${JSON.stringify(oneLine("cmd", cmd))} exit=${exit} tests=${tests} touched=${files.length > 0 ? files.join(",") : "-"}${deleted.length > 0 ? ` deleted=${deleted.join(",")}` : ""}${tail ? ` tail=${JSON.stringify(tail.slice(-400))}` : ""}`;
       await mutate(ledgerPath, (current) => withNote(current, findBlock(locateItems(current), id), line));
       console.log(`${id}: receipt recorded (exit ${exit}, ${tests} tests, ${files.length} files${deleted.length > 0 ? `, ${deleted.length} deleted` : ""})`);
@@ -3057,6 +3064,24 @@ async function selftest(): Promise<number> {
     check("an apparatus-only row is added, receipted and done by a builder seat (delta 17: MOD.45 inert)",
       added.includes("added MW1") && !receipt.includes("MACHINERY") && !done.includes("MACHINERY") && got.includes("[done]"),
       `${added}${receipt}${done}${got.split("\n")[0]}`);
+  }
+
+  // DELTA 22: a deletion the builder already committed. On a shared branch the builder commits its
+  // files by explicit path before filing the receipt, and every ledger write commits itself after
+  // that, so the path is tracked at neither HEAD nor HEAD^. A commit reachable from HEAD that
+  // deleted it is the proof; a path no commit ever deleted stays refused.
+  {
+    await Bun.write(join(repo, "src", "d22.ts"), "// d22\n");
+    sh("git", "add", "src/d22.ts"); sh("git", "commit", "-q", "-m", "add d22", "--", "src/d22.ts");
+    sh("git", "rm", "-q", "src/d22.ts"); sh("git", "commit", "-q", "-m", "delete d22", "--", "src/d22.ts");
+    const deleting = sh("git", "rev-parse", "HEAD").trim();
+    await run("add", "--id", "DL22", "--phase", "over", "--title", "a committed deletion", "--verify", "true", "--files", "src/d22.ts");
+    const receipt = await run("receipt", "DL22", "--cmd", "x", "--exit", "0", "--tests", "0", "--touched", "-", "--deleted", "src/d22.ts");
+    check("a deletion committed before its receipt is recorded (delta 22)", receipt.includes("1 deleted"), receipt.trim());
+    const landed = asOrchestrator("landed", "DL22", deleting);
+    check("landed confirms the committed deletion (delta 22)", landed.includes("receipt file(s) present") && !landed.includes("still present"), landed.trim());
+    const never = await run("receipt", "DL22", "--cmd", "x", "--exit", "0", "--tests", "0", "--touched", "-", "--deleted", "src/never22.ts");
+    check("a path no commit deleted stays refused (delta 22)", never.includes("not tracked"), never.trim());
   }
 
   rmSync(repo, { recursive: true, force: true });

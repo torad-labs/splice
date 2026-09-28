@@ -22,6 +22,7 @@ import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.usage.QuotaView
 import splice.core.usage.QuotaWindowView
+import splice.core.util.WallClock
 import splice.usage.UsageHead
 import splice.usage.UsageHeads
 import java.nio.file.Path
@@ -43,7 +44,12 @@ class UsagePayloadsTest {
             warnTokens5h = 0,
             accountPool = pool,
         )
-        val payloads = UsagePayloads(UsageHeads { listOf(head) }, ConfigService(StatePaths(baseOverride = tmp)))
+        // V4-396: a window shows only while current, so the payload reads a minute after OBSERVED.
+        val payloads = UsagePayloads(
+            UsageHeads { listOf(head) },
+            ConfigService(StatePaths(baseOverride = tmp)),
+            WallClock { (OBSERVED + 60) * 1_000 },
+        )
         val root = Json.parseToJsonElement(payloads.usageJson()).jsonObject
         return root.getValue("heads").jsonArray.single().jsonObject.getValue("usage").jsonObject
     }
@@ -71,9 +77,10 @@ class UsagePayloadsTest {
     fun `no observation is a present JSON null, never an absent key or 0`() {
         val quota = QuotaView(QuotaWindowView(40, null), null, null)
         val u = usage(UsageView(0L, 1, RateLimitView(1000, 100, null), quota))
-        val five = u.obj("quota").obj("five_hour")
-        assertTrue(five.containsKey("observed_at"), "the console reads a key, so it is always written")
-        assertEquals(JsonNull, five["observed_at"])
+        // V4-396: a window with no observation cannot be shown current (QuotaFreshness), so it is
+        // not shown, as the status line already hides it; the ratelimit keeps its null.
+        assertTrue(!u.containsKey("quota"), u.toString())
+        assertTrue(u.obj("ratelimit").containsKey("observed_at"), "the console reads a key, so it is always written")
         assertEquals(JsonNull, u.obj("ratelimit")["observed_at"])
         assertEquals(JsonNull, usage(UsageView(0L, 0, null))["ratelimit"], "no read at all stays a null ratelimit")
     }

@@ -26,6 +26,9 @@ class UsageWarnPayloadTest {
     private val nowMs = 1_788_000_000_000L
     private val nowS = nowMs / 1_000
 
+    /** V4-396: a window read a minute ago, so /api/usage treats it as current. */
+    private fun fresh(usedPct: Int, resetsAt: Long) = QuotaWindowView(usedPct, resetsAt, observedAt = nowS - 60)
+
     private fun warnOf(quota: QuotaView?): Map<String, String> {
         val head = UsageHead(
             key = "claudex",
@@ -47,7 +50,7 @@ class UsageWarnPayloadTest {
 
     @Test
     fun `a subscription head's warn speaks for its fullest live plan window`() {
-        val warn = warnOf(QuotaView(QuotaWindowView(10, nowS + 600), QuotaWindowView(99, nowS + 86_400), "max"))
+        val warn = warnOf(QuotaView(fresh(10, nowS + 600), fresh(99, nowS + 86_400), "max"))
         assertEquals("critical", warn["level"])
         assertEquals("99", warn["pct"])
         assertEquals("quota_7d", warn["source"])
@@ -55,7 +58,7 @@ class UsageWarnPayloadTest {
 
     @Test
     fun `the payload's clock decides which windows have already reset`() {
-        val warn = warnOf(QuotaView(QuotaWindowView(10, nowS + 600), QuotaWindowView(99, nowS - 1), "max"))
+        val warn = warnOf(QuotaView(fresh(10, nowS + 600), fresh(99, nowS - 1), "max"))
         assertEquals("ok", warn["level"])
         assertEquals("quota_5h", warn["source"])
     }

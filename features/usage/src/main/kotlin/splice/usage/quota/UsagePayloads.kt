@@ -45,13 +45,14 @@ public class UsagePayloads(
             put("warn_pct", cfg.usageWarnPct)
             put("warn_tokens_5h", cfg.usageWarnTokens5h)
             putJsonArray(HEADS) {
+                val nowSeconds = clock().milliseconds.inWholeSeconds
                 heads.all().forEach { m ->
                     val usage = m.usage.snapshot()
                     val pool = m.accountPool?.view(null)
-                    val selectedQuota = pool?.selectedQuota() ?: usage.quota
+                    val selectedQuota = current(pool?.selectedQuota(), nowSeconds) ?: current(usage.quota, nowSeconds)
                     val rlView = usage.ratelimit
                     val rl = rlView?.let { RateLimitState(it.limitTokens, it.remainingTokens, it.resetTokens) }
-                    val plan = selectedQuota?.let { PlanWindows(it, clock().milliseconds.inWholeSeconds) }
+                    val plan = selectedQuota?.let { PlanWindows(it, nowSeconds) }
                     val warn =
                         UsageWarnPolicy.computeUsageWarn(usage.outputTokens5h, rl, m.warnPct, m.warnTokens5h, plan)
                     addJsonObject {
@@ -83,6 +84,17 @@ public class UsagePayloads(
                 }
             }
         }.toString()
+    }
+
+    /** V4-396: the windows a surface may show at [nowSeconds], through [QuotaWindowView.currentAt]
+     *  (QuotaFreshness: read under 15 minutes ago and not yet reset), the rule the status line
+     *  already reads; null when neither is current, so a pooled head falls through to its tracked
+     *  quota and a head with no current reading shows none. */
+    private fun current(quota: QuotaView?, nowSeconds: Long): QuotaView? {
+        if (quota == null) return null
+        val fiveHour = quota.fiveHour?.currentAt(nowSeconds)
+        val sevenDay = quota.sevenDay?.currentAt(nowSeconds)
+        return if (fiveHour == null && sevenDay == null) null else QuotaView(fiveHour, sevenDay, quota.plan)
     }
 
     /** The head's tracked plan windows (see QuotaTracker): `{plan, five_hour, seven_day}`. */

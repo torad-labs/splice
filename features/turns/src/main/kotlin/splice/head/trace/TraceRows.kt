@@ -52,6 +52,7 @@ internal data class TracedTurn(val id: String, val attempts: List<JsonObject>, v
         val marks = record["perf"]?.jsonObject?.get("marks")?.jsonObject
         TurnEnding(
             outcome = JsonScalars.strOrEmpty(record["outcome"]),
+            failureSentence = JsonScalars.str(record, "failure_sentence"),
             rounds = JsonScalars.strOrEmpty(record["rounds"]),
             attempts = JsonScalars.strOrEmpty(record["attempts"]),
             totalMs = marks?.let { JsonScalars.str(it, PerfKeys.TOTAL) },
@@ -61,7 +62,13 @@ internal data class TracedTurn(val id: String, val attempts: List<JsonObject>, v
 
 /** A turn record's closing columns, as the record wrote them; [totalMs] is null when its perf carried
  *  no total. */
-internal data class TurnEnding(val outcome: String, val rounds: String, val attempts: String, val totalMs: String?)
+internal data class TurnEnding(
+    val outcome: String,
+    val failureSentence: String?,
+    val rounds: String,
+    val attempts: String,
+    val totalMs: String?,
+)
 
 /** What a reader asked for: the newest [last] turns, of the sessions starting with [session] when one is
  *  given, or the one turn whose id is [turn]. */

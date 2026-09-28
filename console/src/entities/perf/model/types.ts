@@ -259,6 +259,8 @@ export interface TracedTurnWire {
   compact: boolean;
   open: boolean;
   outcome: string | null;
+  /** Human failure text, present when the daemon recorded a failed turn's cause. */
+  failure_sentence: string | null;
   rounds: number | null;
   attempts: number | null;
   total_ms: number | null;
@@ -305,6 +307,7 @@ export interface TraceRecord {
   client?: TraceSide;
   answer?: TraceSide;
   outcome?: string;
+  failure_sentence?: string;
 }
 
 /** GET /api/heads/{head}/trace?turn=ID: that turn's summary and its records as written. */

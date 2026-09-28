@@ -20,9 +20,13 @@
 // file needs a dead-client one, and its Rig is private to it.
 package splice.head.turn
 
+import io.ktor.utils.io.ClosedWriteChannelException
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -35,6 +39,7 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
+import splice.core.storage.ActivityDays
 import splice.core.turn.ErrorType
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
@@ -43,6 +48,7 @@ import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
+import splice.core.util.WallClock
 import splice.head.HeadHealthCounters
 import splice.head.TestResponsesProvider
 import splice.head.admission.admittedSlot
@@ -52,7 +58,9 @@ import splice.head.pipeline.TurnPipeline
 import splice.head.round.RunnerSignals
 import splice.head.usage.OutputClamp
 import splice.head.wire.ClientChannel
+import splice.head.wire.ClientInbound
 import splice.head.wire.ImmediateSseWriter
+import splice.head.wire.TraceStore
 import splice.head.wire.TurnTerminal
 import splice.upstream.Provider
 import splice.upstream.ProviderTuning
@@ -60,10 +68,13 @@ import splice.upstream.failure.SseFrameTooLargeException
 import splice.upstream.retry.InflightGate
 import splice.upstream.retry.LiveLimit
 import splice.upstream.retry.TurnWatchdog
+import splice.upstream.transport.StreamTornBeforeClient
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.seconds
+
+private const val TRACE_DAY_EPOCH_MS = 1_789_725_600_000L
 
 /** Holds a credential so provider construction is honest; the surface under test never dials out. */
 private class ConnEndFakeAuth : RefreshableAuthProvider {
@@ -133,10 +144,11 @@ class TurnConnEndTest {
     )
 
     /** One TurnConnEnd plus the drive it is handed; [tag] isolates each case's perf file. */
-    private inner class Rig(private val tag: String) {
+    private inner class Rig(private val tag: String, private val traceEnabled: Boolean = false) {
         val log = LogSink { }
         val health = HeadHealthCounters()
         val perfFile: Path = tmp.resolve("perf-$tag.jsonl")
+        val traceDir: Path = tmp.resolve("trace-$tag")
         val telemetry = TurnTelemetry("codex", PerfStats(perfFile), log, ElapsedClock { 5L })
         val emitter = ConnEndRecordingTerminal()
         val connEnd: TurnConnEnd
@@ -145,9 +157,8 @@ class TurnConnEndTest {
             connEnd = TurnConnEnd(p, log, telemetry, TurnFailures(p), health)
         }
 
-        suspend fun drive(): TurnDrive = TurnDrive(
-            requestBody = buildJsonObject { },
-            meta = TurnMeta(
+        suspend fun drive(): TurnDrive {
+            val meta = TurnMeta(
                 compact = false,
                 showReasoning = ReasoningDisplay.TEXT,
                 stream = true,
@@ -157,27 +168,44 @@ class TurnConnEndTest {
                 effort = "high",
                 summary = "detailed",
                 budgetTokens = null,
+            )
+            return TurnDrive(
+                requestBody = buildJsonObject { },
+                meta = meta,
+                emitter = emitter,
+                watchdog = TurnWatchdog(WatchdogBudget(10.seconds, 10.seconds, 30.seconds)),
+                slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
+                pipeline = TurnPipeline(
+                    CompactStats(perfFile.resolveSibling("compact-$tag.jsonl")),
+                    log = log,
+                    clampOutput = OutputClamp { it },
+                ),
+                t0 = 0,
+                trace = if (traceEnabled) newTrace(meta) else null,
+                perf = TurnPerf(),
+                turnHeaders = emptyMap(),
+                signals = RunnerSignals(),
+                channel = ClientChannel(
+                    ImmediateSseWriter(writeRaw = { _ -> }, flushRaw = {}),
+                    Mutex(),
+                    AtomicBoolean(false),
+                ),
+                toolSearch = null,
+            )
+        }
+
+        private fun newTrace(meta: TurnMeta) = TraceStore(
+            ActivityDays(
+                traceDir,
+                "codex",
+                retentionDays = 7,
+                clock = WallClock { TRACE_DAY_EPOCH_MS },
+                ownerOnly = true,
             ),
-            emitter = emitter,
-            watchdog = TurnWatchdog(WatchdogBudget(10.seconds, 10.seconds, 30.seconds)),
-            slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
-            pipeline = TurnPipeline(
-                CompactStats(perfFile.resolveSibling("compact-$tag.jsonl")),
-                log = log,
-                clampOutput = OutputClamp { it },
-            ),
-            t0 = 0,
-            trace = null,
-            perf = TurnPerf(),
-            turnHeaders = emptyMap(),
-            signals = RunnerSignals(),
-            channel = ClientChannel(
-                ImmediateSseWriter(writeRaw = { _ -> }, flushRaw = {}),
-                Mutex(),
-                AtomicBoolean(false),
-            ),
-            toolSearch = null,
-        )
+            head = "codex",
+            maxBodyChars = 4096,
+            now = WallClock { TRACE_DAY_EPOCH_MS },
+        ).begin(meta, ClientInbound("POST", "/v1/messages", emptyMap(), "synthetic request"))
     }
 
     /** Drives the oversized-event arm with [contentFrames] frames already counted for the turn. */
@@ -251,6 +279,26 @@ class TurnConnEndTest {
             "codex: upstream connection failed (connection refused by 127.0.0.1:1: nothing is listening there; " +
                 "the server is down or still starting); retry",
             emitter.errorMessage,
+        )
+    }
+
+    @Test
+    fun `a conn reset trace keeps the spoken transport failure beside its outcome`() = runBlocking {
+        val rig = Rig("failure-sentence", traceEnabled = true)
+        val drive = rig.drive()
+        try {
+            val error = StreamTornBeforeClient(ClosedWriteChannelException())
+            assertEquals(true, rig.connEnd.tryEmit(drive, error))
+        } finally {
+            drive.slot.release()
+            assertEquals(true, AsyncFileIo.drain())
+        }
+        val day = rig.traceDir.resolve("codex-2026-09-18.jsonl")
+        val turn = Json.parseToJsonElement(Files.readAllLines(day).last()).jsonObject
+        assertEquals("error:conn-reset", turn.getValue("outcome").jsonPrimitive.content)
+        assertEquals(
+            "the connection to 127.0.0.1:1 closed mid-request; retry",
+            turn["failure_sentence"]?.jsonPrimitive?.content,
         )
     }
 }

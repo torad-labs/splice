@@ -63,6 +63,7 @@ internal fun interface Heartbeat {
 private const val CLIENT_PING_INTERVAL_MS = 2_000L
 
 private const val DETACHED_NOTE = "compaction continues detached; its answer is held for a retry"
+private const val KEEPALIVE_FAILURE = "client connection closed while writing a keepalive"
 
 /** Per-turn client write surface: the coalesced writer, a mutex serializing the emitter vs the
  *  keepalive pinger, and the clientGone flag a failed write flips. A class, not a `data class`:
@@ -226,21 +227,20 @@ internal class ClientChannel(
                     }
                 }.exceptionOrNull()
                 if (pingFailure != null) {
-                    pingFailed(pingFailure, turnJob, headKey, log, session)
+                    pingFailed(turnJob, headKey, log, session)
                     return@launch
                 }
             }
         }
 
-    private fun pingFailed(e: Throwable, turnJob: Job, headKey: String, log: LogSink, session: String?) {
+    private fun pingFailed(turnJob: Job, headKey: String, log: LogSink, session: String?) {
         clientGone.set(true)
-        // The class, not just the message: ClosedChannelException carries none, and
-        // "keepalive write failed: null" said nothing about who closed what (2026-09-02).
-        val why = e::class.simpleName + (e.message?.let { ": $it" } ?: "")
+        // Every failure in this path came from writing a keepalive to the downstream socket.
+        // Name that connection, not Ktor's message-free exception class or its unsafe text.
         if (detachIfRecording()) {
-            log("[$headKey] client gone (${who(session)}keepalive write failed: $why); $DETACHED_NOTE\n")
+            log("[$headKey] client gone (${who(session)}$KEEPALIVE_FAILURE); $DETACHED_NOTE\n")
         } else {
-            log("[$headKey] client gone (${who(session)}keepalive write failed: $why); cancelling turn\n")
+            log("[$headKey] client gone (${who(session)}$KEEPALIVE_FAILURE); cancelling turn\n")
             turnJob.cancel()
         }
     }

@@ -233,7 +233,12 @@ type Fetched = KeptTurn | { fault: string };
  * (CONTRACTS.md section 4): handed in, nothing is read. The page keys this by head and turn, so one
  * turn's read never shows under another's.
  */
-export function RequestDetail({ head, turn, read: handed }: { head: string; turn: string; read?: KeptTurn }) {
+export function RequestDetail({ head, turn, read: handed, onFailureSentence }: {
+  head: string;
+  turn: string;
+  read?: KeptTurn;
+  onFailureSentence?: (key: string, sentence: string | null) => void;
+}) {
   const [fetched, setFetched] = useState<Fetched | null>(handed ?? null);
   useEffect(() => {
     if (handed !== undefined) return undefined;
@@ -244,6 +249,10 @@ export function RequestDetail({ head, turn, read: handed }: { head: string; turn
     );
     return () => { live = false; };
   }, [head, turn, handed]);
+  useEffect(() => {
+    if (fetched === null) return;
+    onFailureSentence?.(`${head}:${turn}`, 'read' in fetched ? fetched.read.turn.failure_sentence ?? null : null);
+  }, [fetched, head, turn, onFailureSentence]);
   if (fetched === null) return <Section title={S.sent}><Empty text={S.loading} /></Section>;
   if ('gone' in fetched) return <Section title={S.sent}><Empty text={S.gone} source={H.gone} /></Section>;
   if ('fault' in fetched) return <Section title={S.sent}><Fault message={fetched.fault} /></Section>;

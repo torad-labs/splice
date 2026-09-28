@@ -14,6 +14,8 @@ import splice.upstream.failure.SseFrameTooLargeException
 import splice.upstream.transport.StreamTornBeforeClient
 import java.io.IOException
 
+private const val RETRY_HINT = "; retry"
+
 internal class TurnConnEnd(
     private val provider: Provider,
     private val log: LogSink,
@@ -60,7 +62,8 @@ internal class TurnConnEnd(
     /** One conn-reset surface for raw tears and reissue-exhausted [StreamTornBeforeClient]. */
     suspend fun emitConnReset(drive: TurnDrive, detail: String) {
         log(telemetry.errTurn(CONN_RESET_KIND, drive, ": $detail"))
-        val boundedDetail = detail.take(ERR_SNIPPET)
+        val boundedDetail = detail.take(ERR_SNIPPET - RETRY_HINT.length)
+        drive.trace?.failureSentence("$boundedDetail$RETRY_HINT")
         // DR-128: account BEFORE the emit — see the frame-too-large arm above.
         telemetry.recordPerf(drive, CONN_RESET_OUTCOME)
         health.local()

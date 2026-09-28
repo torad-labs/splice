@@ -24,7 +24,7 @@ const CLIENT_BODY = '{"messages":[{"role":"user","content":"client words"}]}';
 const OFF = 'wire tap is off for head claudex: set [heads.claudex.overrides] wireTap = N (bodies to keep) and restart';
 
 const ENDED: TracedTurnWire = {
-  id: 'turn-1', ts: 1_789_725_600_000, session: 'alpha-session', model: 'm1', compact: false, open: false, outcome: 'ok', rounds: 1, attempts: 1, total_ms: 120,
+  id: 'turn-1', ts: 1_789_725_600_000, session: 'alpha-session', model: 'm1', compact: false, open: false, outcome: 'ok', failure_sentence: null, rounds: 1, attempts: 1, total_ms: 120,
 };
 
 /** GET /api/heads/claudex/trace as TraceRoute answers it: an ended turn and an open one, no body. */
@@ -35,7 +35,7 @@ const LIST: TraceListWire = {
   skipped_lines: 0,
   turns: [
     ENDED,
-    { id: 'turn-2', ts: 1_789_725_660_000, session: null, model: 'm1', compact: false, open: true, outcome: null, rounds: 1, attempts: 1, total_ms: null },
+    { id: 'turn-2', ts: 1_789_725_660_000, session: null, model: 'm1', compact: false, open: true, outcome: null, failure_sentence: null, rounds: 1, attempts: 1, total_ms: null },
   ],
 };
 
@@ -210,8 +210,8 @@ describe('a trace turn read is the daemon\'s own keys', () => {
   // type is a compile error here until this list says it too.
   const TURN_KEYS: Record<keyof TraceTurnWire, true> = { head: true, turn: true, cost_usd: true, records: true };
   const SUMMARY_KEYS: Record<keyof TracedTurnWire, true> = {
-    id: true, ts: true, session: true, model: true, compact: true, open: true, outcome: true, rounds: true,
-    attempts: true, total_ms: true,
+    id: true, ts: true, session: true, model: true, compact: true, open: true, outcome: true, failure_sentence: true,
+    rounds: true, attempts: true, total_ms: true,
   };
   // A record's required keys only: the rest are optional, and the probe checks presence, never absence.
   const RECORD_REQUIRED: TraceRecord = { kind: 'turn', turn: 'turn-1', ts: 0 };

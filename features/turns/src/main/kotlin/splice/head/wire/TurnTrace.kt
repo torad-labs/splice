@@ -20,6 +20,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import splice.core.perf.PerfSnapshot
 import splice.core.turn.TurnMeta
+import splice.core.util.ERR_SNIPPET
 import splice.core.util.WallClock
 import splice.upstream.sse.WireAttempt
 import splice.upstream.sse.WireObserver
@@ -43,6 +44,7 @@ public class TurnTrace internal constructor(
     private val response = BoundedText(store.maxBodyChars)
     private val streamed = BoundedText(store.maxBodyChars)
     private var collected: ClientAnswerSource? = null
+    private var failureSentenceText: String? = null
     private var rounds = 0
     private var attempts = 0
     private var wsStartedAt = 0L
@@ -110,6 +112,12 @@ public class TurnTrace internal constructor(
         synchronized(lock) { collected = source }
     }
 
+    /** Human transport failure text from the ending that logged it, not the raw attempt exception.
+     *  The provider URL path and query were stripped by TransportFailureReason before this call. */
+    public fun failureSentence(sentence: String) {
+        synchronized(lock) { failureSentenceText = sentence.take(ERR_SNIPPET) }
+    }
+
     /** The turn ended with [outcomeTag]; [perf] is the row's snapshot. Writes the turn record. */
     public fun finish(outcomeTag: String, perf: PerfSnapshot) {
         val record = synchronized(lock) { turnRecord(outcomeTag, perf) }
@@ -164,6 +172,7 @@ public class TurnTrace internal constructor(
                 put(TRUNCATED, answerTruncated)
             }
             put("outcome", outcomeTag)
+            failureSentenceText?.let { put("failure_sentence", it) }
             put("rounds", rounds)
             put("attempts", attempts)
             putJsonObject("perf") {

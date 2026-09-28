@@ -24,7 +24,7 @@ import type { InflightTurn, TurnRow } from '../src/entities/perf';
 import { applyFilter, headOf, headsPresent, levelOf, levelsPresent, timeOf } from '../src/entities/logs';
 import type { LogFilter } from '../src/entities/logs';
 import { IdleHeads, TurnsBoard } from '../src/pages/turns';
-import { atText, badgesOf, landedKeysOf, readTurnsFor, shareText, slotsFrom, stageRowsOf, tokenRowsOf } from '../src/pages/turns/index';
+import { atText, badgesOf, failureFor, landedKeysOf, readTurnsFor, shareText, slotsFrom, stageRowsOf, tokenRowsOf } from '../src/pages/turns/index';
 import { isStalled } from '../src/entities/perf';
 import { LogsBoard, unseenAfter } from '../src/pages/logs';
 import { clockOf, rowKeyer, selectionOf, windowOf } from '../src/pages/turns/select';
@@ -220,6 +220,15 @@ describe('in-flight turns', () => {
 // ── the landed table ─────────────────────────────────────────────────────────
 
 describe('landed turns', () => {
+  test('a failed turn sentence disappears immediately when a different head or turn opens', () => {
+    const first = turn({ head: 'a', turn: 'turn-a', outcome: 'error:conn-reset' });
+    const sentence = { key: 'a:turn-a', sentence: 'the connection closed mid-request' };
+    expect(failureFor(first, sentence)).toBe(sentence.sentence);
+    expect(failureFor(turn({ head: 'a', turn: 'turn-b', outcome: 'error:conn-reset' }), sentence)).toBeNull();
+    expect(failureFor(turn({ head: 'b', turn: 'turn-a', outcome: 'error:conn-reset' }), sentence)).toBeNull();
+    expect(failureFor(first, { key: 'a:turn-a', sentence: null })).toBeNull();
+  });
+
   test('a turn wears its outcome, and the badges its row calls for', () => {
     expect(badgesOf(turn())).toEqual([{ key: 'outcome', tone: 'ok', text: 'ok' }]);
     expect(badgesOf(turn({ outcome: 'conn-reset', compact: true, retries: 2, async_io_drops: 3 })).map((b) => [b.tone, b.text])).toEqual([

@@ -17,7 +17,9 @@
 }
 .myx-tn-quiet { color: var(--fg-subtle); }
 .myx-tn-danger { color: var(--danger); }
+.myx-tn-status { display: grid; justify-items: start; }
 .myx-tn-badges { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.myx-tn-failure { margin: var(--space-2) 0 0; color: var(--danger); font-size: var(--text-2); overflow-wrap: anywhere; }
 .myx-tn-slots { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-3) var(--space-4); }
 
 /* each head's gate, a tile per head */

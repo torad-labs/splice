@@ -158,6 +158,7 @@ public class TraceRoute(
         put("compact", turn.compact)
         put("open", ending == null)
         put("outcome", ending?.outcome)
+        put("failure_sentence", ending?.failureSentence)
         put("rounds", if (ending == null) open.toLong() else ending.rounds.toLongOrNull())
         put("attempts", if (ending == null) open.toLong() else ending.attempts.toLongOrNull())
         put("total_ms", ending?.totalMs?.toLongOrNull())

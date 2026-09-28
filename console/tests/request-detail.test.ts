@@ -121,7 +121,7 @@ describe('an answer reads as what the model sent back', () => {
 
 const SUMMARY: TracedTurnWire = {
   id: '3f2a9c01d4e5', ts: 1_790_467_200_000, session: 'sess-1', model: 'claude-opus-4-8', compact: false, open: false,
-  outcome: 'ok', rounds: 1, attempts: 1, total_ms: 5200,
+  outcome: 'ok', failure_sentence: null, rounds: 1, attempts: 1, total_ms: 5200,
 };
 
 function turnRead(over: Partial<TraceTurnWire> = {}, messages: unknown[] = REQUEST.messages): TraceTurnWire {

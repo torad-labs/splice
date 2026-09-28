@@ -19,7 +19,7 @@
 // The waterfall answers "why was this slow" only as far as the daemon can: queue wait, upstream wait
 // and streaming as separate parts, because the daemon records where the time went and never why
 // (FEATURES.md 2.12).
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ViewTabs, useViews } from '@features/views';
 import type { View } from '@features/views';
@@ -309,6 +309,11 @@ export function IdleHeads({ summary }: { summary: PerfSummaryPayload }) {
 
 // -------------------------------------------------------------------------------------- board
 
+/** A late trace read belongs only to its head and turn, never the newly opened row. */
+export function failureFor(row: TurnRow, failure: { key: string; sentence: string | null } | null): string | null {
+  return failure?.key === `${row.head}:${row.turn}` ? failure.sentence : null;
+}
+
 export interface TurnsBoardProps {
   /** Each head's gate: slots in use, the limit and the queue. */
   slots?: readonly HeadSlots[];
@@ -330,6 +335,8 @@ export interface TurnsBoardProps {
 export function TurnsBoard({ slots = [], inflight, landed, summary, capture, locked = false, error = null, lastRead = null, sample }: TurnsBoardProps) {
   const { active } = useViews(PAGE_ID, DEFAULT_VIEWS);
   const [openKey, setOpenKey] = useState<string | null>(null);
+  const [failure, setFailure] = useState<{ key: string; sentence: string | null } | null>(null);
+  const onFailureSentence = useCallback((key: string, sentence: string | null) => setFailure({ key, sentence }), []);
   const [filter, setFilter] = useState<TurnFilter>(NO_FILTER);
 
   const pending = landed !== null && 'pending' in landed;
@@ -356,6 +363,7 @@ export function TurnsBoard({ slots = [], inflight, landed, summary, capture, loc
       : [...selection.timeline.buckets.flatMap((bucket) => bucket.rows), ...selection.timeline.undated];
   const keyOf = (row: TurnRow): string => keys.get(row) ?? `${row.head}:${row.ts}`;
   const open = listed.find((row) => keyOf(row) === openKey) ?? null;
+  const failureSentence = open === null ? null : failureFor(open, failure);
 
   // Re-read on every opened turn, not only on a new head: the settings the daemon runs change at a
   // restart, and the turn the operator just opened is the moment they are asking about.
@@ -529,9 +537,12 @@ export function TurnsBoard({ slots = [], inflight, landed, summary, capture, loc
             title={`${nameOf(open.head)} ${open.model ?? S.absent}`}
             label={S.detail}
             status={(
-              <span className="myx-tn-badges">
-                {badgesOf(open).map((badge) => <Badge key={badge.key} tone={badge.tone} quiet>{badge.text}</Badge>)}
-              </span>
+              <div className="myx-tn-status">
+                <span className="myx-tn-badges">
+                  {badgesOf(open).map((badge) => <Badge key={badge.key} tone={badge.tone} quiet>{badge.text}</Badge>)}
+                </span>
+                {failureSentence === null ? null : <p className="myx-tn-failure">{failureSentence}</p>}
+              </div>
             )}
             onClose={() => setOpenKey(null)}
             closeLabel={S.close}
@@ -546,7 +557,7 @@ export function TurnsBoard({ slots = [], inflight, landed, summary, capture, loc
                 conversation, joined by the response id splice sent it. A row with neither source
                 says why and offers capture. Each read is keyed to its turn, never to a time. */}
             {open.turn !== undefined ? (
-              <RequestDetail key={`${open.head}:${open.turn}`} head={open.head} turn={open.turn} />
+              <RequestDetail key={`${open.head}:${open.turn}`} head={open.head} turn={open.turn} onFailureSentence={onFailureSentence} />
             ) : open.session_id !== undefined && open.response_message_id !== undefined ? (
               <TranscriptRequestDetail
                 key={`${open.head}:${open.response_message_id}`}

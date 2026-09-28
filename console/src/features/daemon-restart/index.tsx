@@ -7,10 +7,9 @@
 // two-step for, and the armed key's own word says what the second press does.
 //
 // THE ANSWER IS THE DAEMON'S, VERBATIM. A taken restart is a badge holding the status word it
-// answered with (`draining`: the drain began, not that the daemon is back). A refused one prints the refusal's own
-// sentence in the fault strip, because on a daemon nothing supervises the refusal IS the answer
-// (DaemonRoutes.kt: "nothing will restart this daemon ..."), and a console that reported only a
-// failure would hide why nothing happened.
+// answered with (`draining`: the drain began, not that the daemon is back). A refused one prints
+// the refusal's own sentence in the fault strip: if no detached successor can be armed, the
+// daemon stays up and names why it cannot restart. A generic failure would hide that answer.
 import { useState } from 'react';
 import { restartDaemon } from '@entities/daemon';
 import { Confirm, Fault } from '@shared/controls';

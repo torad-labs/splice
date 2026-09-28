@@ -107,13 +107,12 @@ public class ConsolePorts {
      *  a named 503 on POST /api/upgrade and GET /api/upgrade/run, never a run that never started. */
     public var upgradeRuns: UpgradeRuns? = null
 
-    /** V4-137: whether anything would bring this daemon back after it drains. Assigned beside the
-     *  ports above, and read at CALL time by the routing lambda for the same reason they are.
+    /** V4-137: whether systemd owns this daemon. Assigned beside the ports above, and read at CALL
+     *  time by the routing lambda for the same reason they are. A supervised daemon drains into its
+     *  unit; an unsupervised one arms a detached successor before draining.
      *
-     *  NULL IS NOT "ASSUME SUPERVISED". The restart route REFUSES when this is unwired, because the
-     *  two possible defaults are both wrong in the same direction: assuming supervised turns the
-     *  console's restart button into a stop button on an unsupervised daemon, and assuming the
-     *  opposite would refuse a restart on the host that can actually perform one. */
+     *  NULL IS NOT "ASSUME SUPERVISED". The route refuses an unwired probe: choosing the unit for a
+     *  daemon started by hand would drain it without a successor. */
     public var supervised: DaemonSupervised? = null
 
     /** V4-128: the writer over splice.toml, assigned by ControlPlane after construction like [teams] and

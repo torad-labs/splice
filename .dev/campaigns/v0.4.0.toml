@@ -9226,3 +9226,11 @@ title = "An upgrade keeps claude-muse running: a config written before V4-351 (e
 files = ["app/src/main/kotlin/splice/app/provider/ProviderAssembly.kt", "app/src/test/kotlin/splice/app/provider/v4393/", "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/", "CHANGELOG.md"]
 status = "todo"
 verify = "red first: a topology with [providers.muse] dialect = anthropic-passthrough and muse-oauth builds claude-muse (today: incompatible auth kind) on the Responses arm, and the boot log carries the one stale-dialect line; a non-muse provider with muse-oauth still refuses; live: the operator's pre-V4-351 config restored from splice.toml.bak-20260928-pre-muse-responses-dialect on a throwaway home boots claude-muse ready"
+
+[[items]]
+id = "V4-394"
+phase = "release"
+title = "splice status says ready for a head the daemon skipped: at 12:22:39 PM CT /health reported ok:false, failedHeads 1 (claude-muse SKIPPED at boot), while splice status printed claude-muse 'ready' in the same minute. A head that did not build reads as down with its boot reason in status, as it does in /health."
+files = ["features/lifecycle/src/main/kotlin/splice/lifecycle/status/"]
+status = "todo"
+verify = "red first: status against a daemon whose topology has one head that fails its build prints that head as not running with the boot reason (today: ready); the other heads unchanged"

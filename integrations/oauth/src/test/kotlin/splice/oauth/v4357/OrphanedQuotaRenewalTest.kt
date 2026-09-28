@@ -41,7 +41,8 @@ class OrphanedQuotaRenewalTest {
         assertTrue(ok, printed.toString())
         val archived = account.setAsideQuota()
         assertTrue(archived != null && Files.isRegularFile(archived, LinkOption.NOFOLLOW_LINKS))
-        assertTrue(archived!!.fileName.toString().matches(Regex("work-quota\\.json\\.orphaned-\\d{8}-\\d{6}(?:-\\d+)?")))
+        val archiveName = Regex("work-quota\\.json\\.orphaned-\\d{8}-\\d{6}(?:-\\d+)?")
+        assertTrue(archived!!.fileName.toString().matches(archiveName))
         assertEquals("old-account-usage", Files.readString(archived))
         assertFalse(Files.exists(quota, LinkOption.NOFOLLOW_LINKS), "new account must never read the previous snapshot")
         val credential = Json.parseToJsonElement(Files.readString(pool.resolve("work.json"))).jsonObject

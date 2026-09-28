@@ -155,8 +155,11 @@ internal class LoginIo(
                 persistLabeled(path, account, parsed)
             }
         }.getOrElse { failure ->
-            val reason = if (failure is OAuthAccountRefused) failure.reason else
+            val reason = if (failure is OAuthAccountRefused) {
+                failure.reason
+            } else {
                 "credential persistence error: ${SafeFailureText.render(failure)}"
+            }
             account?.recordRefusal(reason)
             output.line("splice: $reason")
             null
@@ -198,7 +201,10 @@ internal class LoginIo(
             val written = files.writeLabeledRenewal(account.kind, path, label, parsed)
             account.recordSetAsideQuota(written.setAsideQuota)
             written.setAsideQuota?.let { archive ->
-                output.line("splice: renewed '$label'; old usage record set aside as ${archive.fileName}; usage is read again on the next request")
+                output.line(
+                    "splice: renewed '$label'; old usage record set aside as ${archive.fileName}; " +
+                        "usage is read again on the next request",
+                )
             }
             written.file
         } else {

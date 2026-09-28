@@ -208,7 +208,12 @@ public class OAuthAccountFiles(private val json: Json = Json { ignoreUnknownKeys
     public fun writeLabeled(kind: AuthKind.OAuth, primaryFile: Path, label: String, providerJson: JsonObject): Path =
         writes.writeLabeled(kind, poolDir(kind, primaryFile), label, providerJson)
 
-    public fun writeLabeledRenewal(kind: AuthKind.OAuth, primaryFile: Path, label: String, providerJson: JsonObject): OAuthAccountWrite =
+    public fun writeLabeledRenewal(
+        kind: AuthKind.OAuth,
+        primaryFile: Path,
+        label: String,
+        providerJson: JsonObject,
+    ): OAuthAccountWrite =
         writes.writeLabeledRenewal(kind, poolDir(kind, primaryFile), label, providerJson)
 
     /** Post-exchange collision handling is only for labels that cannot be resolved before OAuth. */

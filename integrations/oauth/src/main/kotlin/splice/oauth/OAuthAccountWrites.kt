@@ -33,13 +33,21 @@ internal class OAuthAccountWrites(private val json: Json, private val validation
 
     /** A quota without a regular credential has no owner proof. Move its own entry aside before
      *  writing: the new identity reads no old usage, including when the orphan was a symlink. */
-    fun writeLabeledRenewal(kind: AuthKind.OAuth, dir: Path, label: String, providerJson: JsonObject): OAuthAccountWrite {
+    fun writeLabeledRenewal(
+        kind: AuthKind.OAuth,
+        dir: Path,
+        label: String,
+        providerJson: JsonObject,
+    ): OAuthAccountWrite {
         validation.requireLabel(label)
         Files.createDirectories(dir)
         val target = dir.resolve("$label.json")
         val orphan = retainedQuota(dir, label)
         if (orphan != null && Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
-            throw OAuthAccountRefused("linked credential cannot claim retained usage for '$label'; sign in as '${unusedLabel(dir, label)}' instead")
+            throw OAuthAccountRefused(
+                "linked credential cannot claim retained usage for '$label'; " +
+                    "sign in as '${unusedLabel(dir, label)}' instead",
+            )
         }
         val archive = orphan?.let { quota ->
             val stamped = "$label-quota.json.orphaned-${archiveStamp.format(Instant.now())}"

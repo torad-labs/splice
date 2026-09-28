@@ -7,6 +7,7 @@ import splice.accounts.signin.ConsoleAccounts
 import splice.configuration.add.AddConsole
 import splice.core.compaction.CompactionInstructions
 import splice.core.config.KeyStore
+import splice.core.config.StatePaths
 import splice.core.topology.TopologyWriter
 import splice.diagnostics.doctor.DoctorFixes
 import splice.diagnostics.doctor.DoctorReport
@@ -154,6 +155,10 @@ public class ConsolePorts {
     /** V4-239: the trace directory every head's TraceStore writes, behind GET /api/heads/{head}/trace.
      *  Null answers a named 503, never "no turns traced". */
     public var traceDir: Path? = null
+
+    /** V4-381: the state paths this daemon's perf writers actually use. Null refuses the kept-turns
+     *  inventory, rather than telling the console no turn statistics exist on an unwired daemon. */
+    public var turnStatistics: StatePaths? = null
 
     /** V4-239: the daemon's ONE wire-tap registry, the one HeadServerFactory registers each head's tap
      *  in, behind GET /api/heads/{head}/wire. Null answers a named 503, never "the tap is off". */

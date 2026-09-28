@@ -158,6 +158,7 @@ internal object ConsoleWiring {
     ) {
         srv.ports.upstreamModels = topology.path?.let { ModelsWiring.reporter(it) }
         srv.ports.traceDir = statePaths.traceDir
+        srv.ports.turnStatistics = statePaths
         srv.ports.wires = console.wires
         srv.ports.liveTurns = console.liveTurns
     }

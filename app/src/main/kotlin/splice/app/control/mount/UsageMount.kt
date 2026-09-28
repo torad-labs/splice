@@ -7,12 +7,15 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
+import kotlinx.coroutines.withContext
 import splice.app.control.ConsolePorts
 import splice.app.control.ManagedHead
 import splice.app.control.UsageHeadAdapter
 import splice.app.control.api.HeadResolver
 import splice.core.config.ConfigService
 import splice.core.version.ClientVersionTracker
+import splice.head.perf.TurnKeptRoutes
+import splice.upstream.codemode.ProcessDispatchers
 import splice.usage.alerts.AlertRoutes
 import splice.usage.alerts.AlertSource
 import splice.usage.budgets.BudgetRoutes
@@ -32,7 +35,7 @@ internal class UsageMount(
     resolver: HeadResolver,
     config: ConfigService,
     clientVersions: ClientVersionTracker,
-    ports: ConsolePorts,
+    private val ports: ConsolePorts,
     private val guard: ControlGuard,
 ) {
     private val usageHeads = UsageHeadAdapter.heads(heads)
@@ -42,6 +45,7 @@ internal class UsageMount(
     private val economicsPayloads = EconomicsPayloads(usageHeads)
     private val perfRoutes = PerfRoutes(usageLookup)
     private val statuslineRoute = StatuslineRoute(usageLookup, config, clientVersions)
+    private val turnStatsIo = ProcessDispatchers().io()
 
     // V4-133 (FEATURES.md §5/§6): read at CALL time through the same BudgetSource/AlertSource
     // discipline every other console port keeps — see ConsolePorts.
@@ -57,6 +61,11 @@ internal class UsageMount(
         }
         route.get("/api/perf/summary") { guard.guarded(call) { perfPayloads.summary(call) } }
         route.get("/api/perf/turns") { guard.guarded(call) { perfRoutes.turns(call) } }
+        route.get("/api/kept/turns") {
+            guard.guarded(call) {
+                withContext(turnStatsIo) { TurnKeptRoutes(ports.turnStatistics).kept() }.send(call)
+            }
+        }
         route.get("/api/economics") {
             guard.guarded(call) { ControlReplies.respond(call, economicsPayloads.economicsJson()) }
         }

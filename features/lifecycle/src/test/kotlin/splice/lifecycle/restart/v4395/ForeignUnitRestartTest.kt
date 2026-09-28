@@ -19,6 +19,7 @@ import splice.core.util.EnvReader
 import splice.daemonclient.DaemonSettings
 import splice.lifecycle.restart.RestartCommand
 import splice.lifecycle.start.DaemonColdStart
+import splice.lifecycle.start.HostSupervisedStart
 import splice.lifecycle.start.ManagerEnvironment
 import splice.lifecycle.start.SupervisedStart
 import splice.lifecycle.start.Systemctl
@@ -203,7 +204,7 @@ class ForeignUnitRestartTest {
         @TempDir tmp: Path,
     ) {
         val env = EnvReader { name -> if (name == "HOME") tmp.toString() else null }
-        val ownership = SupervisedStart.system(env, TerminalOutput { lines += it }).ownership(UNIT, EVERYDAY_PORT)
+        val ownership = HostSupervisedStart.of(env, TerminalOutput { lines += it }).ownership(UNIT, EVERYDAY_PORT)
         // A manager that answers runs some other HOME than this temp dir, and none answering is unreadable:
         // both are foreign, and only a wiring with no reader says the unit is ours.
         assertTrue(ownership is UnitOwnership.Foreign, "the shipped wiring left the ownership check off: $ownership")

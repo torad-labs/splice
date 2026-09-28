@@ -96,14 +96,16 @@ internal sealed class UnitOwnership {
     data class Foreign(val reason: String) : UnitOwnership()
 }
 
-/** V4-395: the unit manager's environment block, the environment it hands every unit it starts. */
-internal object ManagerEnvironment {
-    private val escaped = Regex("""\\(.)""")
-    private val dollarQuoted = Regex("""\$'(.*)'""", RegexOption.DOT_MATCHES_ALL)
+/** V4-395: the unit manager's environment block as text, or null when it cannot be had. */
+internal fun interface ManagerEnvironmentBlock {
+    operator fun invoke(): String?
+}
 
-    /** `systemctl --user show-environment`, or null when there is no manager to ask, it answers non-zero,
-     *  or it does not answer in time. */
-    fun read(timeoutMs: Long = SYSTEMCTL_TIMEOUT_MS): String? {
+/** The real one: `systemctl --user show-environment`, bounded; null when there is no manager to ask, it
+ *  answers non-zero, or it does not answer in time. */
+internal class SystemctlEnvironmentBlock(private val timeoutMs: Long = SYSTEMCTL_TIMEOUT_MS) :
+    ManagerEnvironmentBlock {
+    override fun invoke(): String? {
         val process = Cancellables.runCatchingCancellable {
             ProcessBuilder(listOf("systemctl", "--user", "show-environment"))
                 .redirectError(ProcessBuilder.Redirect.DISCARD)
@@ -120,6 +122,12 @@ internal object ManagerEnvironment {
             process.destroyForcibly()
         }
     }
+}
+
+/** V4-395: the unit manager's environment block, the environment it hands every unit it starts. */
+internal object ManagerEnvironment {
+    private val escaped = Regex("""\\(.)""")
+    private val dollarQuoted = Regex("""\$'(.*)'""", RegexOption.DOT_MATCHES_ALL)
 
     /** The block's `NAME=value` lines. systemd writes a value holding whitespace or shell metacharacters
      *  as `NAME=$'value'` with backslash escapes; every other value is written bare. A line with no name
@@ -150,7 +158,7 @@ internal object ManagerEnvironment {
  *  "no TOML layer", where [DaemonSettings.controlPort]'s one-argument form would create it. */
 internal class SystemdUnitDaemon(
     private val settings: DaemonSettings,
-    private val environment: () -> String? = ManagerEnvironment::read,
+    private val environment: ManagerEnvironmentBlock = SystemctlEnvironmentBlock(),
 ) : UnitDaemonReader {
     override fun invoke(unit: String): UnitDaemon? {
         val block = environment() ?: return null
@@ -187,18 +195,6 @@ public class SupervisedStart internal constructor(
     private val unitName: SupervisorUnitName = SupervisorUnitName { settings.supervisorUnit(envReader) },
     private val unitDaemon: UnitDaemonReader? = null,
 ) {
-    internal companion object {
-        /** The shipped wiring: the real systemctl, a restarter with the long deadline, and the real
-         *  [SystemdUnitDaemon], so no cold start reaches a unit without the ownership check. */
-        fun system(env: EnvReader, errors: TerminalOutput): SupervisedStart = SupervisedStart(
-            JdkSystemctl(),
-            env,
-            DaemonSettings(errors),
-            restarter = JdkSystemctl(UNIT_RESTART_TIMEOUT_MS),
-            unitDaemon = SystemdUnitDaemon(DaemonSettings(errors)),
-        )
-    }
-
     /** [unit] is the operator's SPLICE_SUPERVISOR_UNIT (default splice.service), resolved at the
      *  call so a diagnostic that never cold-starts never loads the topology for it. */
     internal fun route(unit: String = unitName()): ColdStartRoute {
@@ -255,6 +251,18 @@ public class SupervisedStart internal constructor(
      *  once; a manual restart also resets the unit's restart counter, so no backoff is waited out.
      *  Returns when the restart job is done, which is why it runs on [restarter]. */
     internal fun restart(unit: String): Boolean = restarter(listOf("restart", unit)) == 0
+}
+
+/** V4-395: the shipped wiring of [SupervisedStart]: the real systemctl, a restarter with the long deadline,
+ *  and the real [SystemdUnitDaemon], so no cold start reaches a unit without the ownership check. */
+internal object HostSupervisedStart {
+    fun of(env: EnvReader, errors: TerminalOutput): SupervisedStart = SupervisedStart(
+        JdkSystemctl(),
+        env,
+        DaemonSettings(errors),
+        restarter = JdkSystemctl(UNIT_RESTART_TIMEOUT_MS),
+        unitDaemon = SystemdUnitDaemon(DaemonSettings(errors)),
+    )
 }
 
 // why: `systemctl --user cat|start` answer in milliseconds; a manager that hangs longer than this is

@@ -24,7 +24,7 @@ public class DaemonColdStart(
     errors: TerminalOutput,
     env: EnvReader,
     jar: RunningJar,
-    supervised: SupervisedStart = SupervisedStart.system(env, errors),
+    supervised: SupervisedStart = HostSupervisedStart.of(env, errors),
     startupPolls: Int = STARTUP_POLLS,
 ) {
 

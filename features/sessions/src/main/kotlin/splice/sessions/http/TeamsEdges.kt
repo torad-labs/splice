@@ -54,7 +54,11 @@ internal class TeamEdge(
 
 /** A team's members: every session its slots ever held, and the addresses the registry knows for
  *  them, so an edge's recipient (the session stored with a name, or an address) is matched to a slot. */
-internal class Members(team: Team, private val records: List<SessionRecord>, private val names: NameHolders? = null) {
+internal class Members(
+    private val team: Team,
+    private val records: List<SessionRecord>,
+    private val names: NameHolders? = null,
+) {
     val slotOfSession: Map<String, TeamSlot> = team.slots
         .flatMap { slot -> (slot.sessionsHistory + listOfNotNull(slot.session)).map { it to slot } }
         .distinctBy { it.first }
@@ -81,7 +85,11 @@ internal class Members(team: Team, private val records: List<SessionRecord>, pri
         val edge = addresses.reported(stored)
         val from = slotOfSession[edge.from]
         val held = heldSession(edge)
-        val to = if (held != null) slotOfSession[held] else slotOfAddress[edge.to] ?: slotOfSession[edge.to]
+        val to = if (held != null) {
+            slotOfSession[held]
+        } else {
+            slotOfAddress[edge.to] ?: slotOfSession[edge.to] ?: slotSpelledBy(edge, from)
+        }
         if (to == null && reachedNoSession(edge)) return@mapNotNull null
         direction(from, to)?.let { TeamEdge(edge, it, from, to, headOf(edge.from)) }
     }.sortedBy { it.edge.at }
@@ -91,6 +99,19 @@ internal class Members(team: Team, private val records: List<SessionRecord>, pri
         edge.recipient != RecipientResolution.Legacy -> edge.toSession
         ADDRESS_SCHEME_END in edge.to || edge.to in SUBAGENT_NAMES -> null
         else -> names?.sessionOf(edge.to, records)
+    }
+
+    /** V4-402: a row written before to_session existed, read after the sessions are gone. The registry
+     *  that could have named the holder emptied with them, and 24 of a walk's 34 hand-offs vanished. The
+     *  name is read as the team's own slot it spells, for a sender that is a member of the team and only
+     *  when no registry record carries the name: one holder outside the team, or two, is still that
+     *  session's or nobody's (V4-391), and an explicit null never reaches here. */
+    private fun slotSpelledBy(edge: MessageEdge, from: TeamSlot?): TeamSlot? {
+        val holders = names ?: return null
+        val name = holders.bare(edge.to)
+        val open = from != null && edge.recipient == RecipientResolution.Legacy &&
+            ADDRESS_SCHEME_END !in edge.to && edge.to !in SUBAGENT_NAMES
+        return if (open && records.none { it.name == name }) team.slots.singleOrNull { it.id == name } else null
     }
 
     /** A call to a name no session held when it was stored: an address carries its scheme. */

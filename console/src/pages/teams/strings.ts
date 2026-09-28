@@ -31,6 +31,8 @@ export const S = {
   unavailable: 'Teams unavailable',
   unreadable: 'Teams unreadable',
   noTeams: 'No teams yet',
+  /** A hand-off's recipient the board cannot name: a socket address is never printed (V4-402). */
+  otherSession: 'Another session',
   /** The prefix of a failed turn log read on the timeline. */
   turnLog: 'Turn log',
 } as const;

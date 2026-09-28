@@ -74,10 +74,12 @@ public class NameHolders(private val sessions: SessionSource) {
     )
 
     /** A displayed [ref] is not a session ID prefix. Strip it, then require one named holder. */
-    public fun sessionOf(name: String, records: List<SessionRecord>): String? {
-        val base = Regex("^(.+) \\[[^\\[\\]]+\\]$").matchEntire(name)?.groupValues?.get(1) ?: name
-        return records.filter { it.name == base }.mapNotNull { it.sessionId }.distinct().singleOrNull()
-    }
+    public fun sessionOf(name: String, records: List<SessionRecord>): String? =
+        records.filter { it.name == bare(name) }.mapNotNull { it.sessionId }.distinct().singleOrNull()
+
+    /** [name] without the `[ref]` a display appends to it. */
+    public fun bare(name: String): String =
+        Regex("^(.+) \\[[^\\[\\]]+\\]$").matchEntire(name)?.groupValues?.get(1) ?: name
 }
 
 public class MessageEdgeStore(

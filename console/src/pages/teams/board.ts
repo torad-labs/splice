@@ -24,7 +24,7 @@ import type {
 import { SESSION_TAG_CHARS, clockText, tokensIn } from '@widgets/team-board';
 import type { TeamHourPoint, TeamTurn, TeamViewData } from '@widgets/team-board';
 import { ABSENT } from '@shared/lib';
-import { H } from './strings';
+import { H, S } from './strings';
 
 const MINUTE_MS = 60_000;
 
@@ -114,6 +114,9 @@ export function membersOf(team: TeamRow, sessions: readonly SessionRow[], econom
   });
 }
 
+/** A SendMessage address (`uds:/run/…`): a scheme, then a path. A name has neither (V4-402). */
+const ADDRESS = /^[a-z]+:\//;
+
 /**
  * The day's messages as the board prints them. The sender is a session id, printed as its member's
  * name when a slot holds it now; the recipient is an address or a name the daemon resolved to a
@@ -138,7 +141,8 @@ export function messagesOf(members: readonly TeamMemberRow[], chat: TeamChatPayl
       at: message.at,
       time: hhmm(message.at),
       from: members.find((m) => m.sessionId === message.from)?.name ?? message.from,
-      to: (message.to_slot === null ? undefined : members.find((m) => m.slot === message.to_slot)?.name) ?? message.to,
+      to: (message.to_slot === null ? undefined : members.find((m) => m.slot === message.to_slot)?.name)
+        ?? (ADDRESS.test(message.to) ? S.otherSession : message.to),
       ...(fromRole === undefined ? {} : { fromRole }),
       ...(toRole === undefined ? {} : { toRole }),
       packet: ABSENT,

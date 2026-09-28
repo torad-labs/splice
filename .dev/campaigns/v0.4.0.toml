@@ -7013,7 +7013,7 @@ claimed_at = "2026-09-26T07:16:02.187Z"
 id = "V4-254"
 phase = "release"
 title = "RELEASE TEXT truth-read (Marlin, 2026-09-26, on 99244e63a): the v0.4.0 CHANGELOG section release.yml publishes, and the README. (1) The section title uses a colon, not an em dash, and the day it is cut (fix tools/release/src/lib/changelog.ts if it keys on the dash). (2) Money: 'estimated cost per role' in the Teams highlight, 'estimated dollars per role' in Added, and the highlights say every dollar figure is an API-rate estimate as V4-240's entry does; README:25 'what it would cost at API rates'. (3) Accounts: 'several accounts per provider' becomes OAuth heads named from source (README:283's scope, no Claude pool), in the highlight, README:65 and the README:281 heading. (4) A V4-216 entry (a compaction in flight runs to completion inside Claude Code's 600 s cap, the retry replays the saved recording), and the 45 s limitation narrowed to turns that are not compactions. (5) One highlight line: installing no longer needs a signed-in gh (Changed, lines 566-570). (6) No vendor's terms in the product: the Known limitations line and README:40 and :417 lead with splice's own caveat (unofficial, no vendor supports it, a Claude Code update can break it, at your own risk), keeping the 2.1.282 test, the doctor note and 417's version-handshake sentence."
-files = ["CHANGELOG.md", "tools/release/src/lib/changelog.ts"]
+files = ["CHANGELOG.md", "tools/release/src/lib/changelog.ts", "README.md"]
 status = "in_flight"
 verify = "release notes v0.4.0 on the release sha prints a section that passes all six points, and the README reads the same; Marlin reads both on that sha; bun test tools/release."
 claimed_by = "splice-lead"
@@ -7029,6 +7029,7 @@ claimed_at = "2026-09-27T04:42:55.408Z"
 # [2026-09-28] amend by=splice-lead: files were ["CHANGELOG.md", "README.md", "tools/release/src/lib/changelog.ts"]
 # [2026-09-28] README.md lent to V4-365 (claude-builder: disk-write disposition for the restart-launch log) at 11:12 PM CT; restore it to this fence when V4-365 lands.
 # [2026-09-28] Restart (no install) 11:53 PM CT: splice.service pid 3263017 on b2464368b (fd sha 1dd76ab2... = SHA256SUMS-b2464368b), through ops/gated-restart.sh (8102 silent, no rig-glm53), to load splice-website's [projects."/var/tmp/viewing"] edit (backup ~/.config/splice/splice.toml.bak-20260927-pre-view-root); doctor 0 fails before.
+# [2026-09-28] amend by=splice-lead: files were ["CHANGELOG.md", "tools/release/src/lib/changelog.ts"]
 
 [[items]]
 id = "V4-255"

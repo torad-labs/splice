@@ -41,6 +41,7 @@
  */
 
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import {
   findBlock,
@@ -2374,6 +2375,20 @@ async function selftest(): Promise<number> {
     check("laws prints nothing for a header without laws", r.exitCode === 0 && r.stdout.toString().trim() === "");
   }
   check("a note with a newline is refused (TOML injection)", (await run("note", "H1", "line one\n[[items]]\nid = \"GHOST\"")).includes("single line"));
+  // DELTA 21 ARMS: a machine's own paths never reach the ledger, on the line written and on older lines.
+  {
+    const home = homedir();
+    const root = sh("git", "rev-parse", "--show-toplevel").trim();
+    await Bun.write(path, `${readFileSync(path, "utf8").trimEnd()}\n# 2026-07-27 an older line naming ${root}/src/zz.ts and ${home}/.config/x\n`);
+    await run("note", "H1", `ran bun run --cwd ${root}/src test from ${root}; backup ${home}/.local/share/x.jar.bak; siblings ${root}-other ${home}X`);
+    const text = readFileSync(path, "utf8");
+    check("a written line stores the repository root relative and the home directory as ~ (delta 21)",
+      text.includes("ran bun run --cwd src test from .;") && text.includes("backup ~/.local/share/x.jar.bak"));
+    check("an older line is cleaned by the next write to its ledger (delta 21)",
+      text.includes("an older line naming src/zz.ts and ~/.config/x"));
+    check("delta 21 leaves a sibling of the root or the home directory alone",
+      text.includes(`siblings ${root}-other ${home}X`));
+  }
   check("packet is self-contained", (await run("packet", "H1")).includes("WRITABLE FENCE"));
   check("packet carries the laws", (await run("packet", "H1")).includes("manifest-is-memory"));
 

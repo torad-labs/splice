@@ -18,7 +18,7 @@ Vendored 2026-09-18 by V4-143 into `.dev/campaigns/` from:
 | file | source sha256 (12) | vendored sha256 (12) | state |
 |---|---|---|---|
 | `ledger.ts` | `5ad4e6117f50` | see `sha256sum` | deltas 4 to 15 + paths |
-| `ledger-core.ts` | `4240cbdf28a8` | see `sha256sum` | deltas 1, 2, 3 |
+| `ledger-core.ts` | `4240cbdf28a8` | see `sha256sum` | deltas 1, 2, 3, 21 |
 | `ledger-earn.ts` | `ac39fa88ea0a` | `ac39fa88ea0a` | untouched |
 | `earn-core.ts` | `8a4d4ad26bdb` | see `sha256sum` | paths only |
 | `review.ts` | `20f5db0a23cd` | see `sha256sum` | paths only |
@@ -192,6 +192,17 @@ behaviour a seat or a caller depends on. Unlike 1, 2, 3 and 5 they are permanent
     (tools/gate/src/commands/typecheck.ts). One selftest arm resolves the verb on the packet's plus
     line against tools/gate/src/commands/ (195 ledger); red on the old line (194/195), and a
     misspelled verb (`typechek`) is red on the same arm.
+21. **A machine's own paths never reach a ledger (2026-09-28).** splice's ledgers are tracked in a
+    public repository, and on feat/v0.4.0 13 lines across three ledgers carried the operator's home
+    directory: receipts whose `--cmd` was pasted with an absolute `--cwd`, and install notes naming a
+    backup under the home directory. `mutate`, the only write path, now passes the whole file through
+    `withoutMachinePaths`: the repository root becomes repo-relative (`.` when bare) and the home
+    directory becomes `~`, bounded so a sibling (`<root>-other`, `<home>X`) is untouched. A new line is
+    stored clean, and an older line is cleaned by the next write to its ledger. Three selftest arms
+    (198 ledger): the written line, an older line, and the siblings. Two mutants: redaction off is red
+    on the first two, and the boundary dropped is red on the siblings arm (195/198 and 196/198; the
+    delta 20 arm is also red in both, only because the mutant copies run outside the repo and cannot
+    see tools/gate).
 
 **`fleet.ts` (splice-only, not vendored).** What `manifest.py` did that the canonical CLI does not:
 the fleet journal (`$TORAD_FLEET_ROOT/journal/events.jsonl`, byte-compatible with py's writer: the

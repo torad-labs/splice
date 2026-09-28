@@ -37,6 +37,7 @@ import {
   unlinkSync,
   writeSync,
 } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 export type ItemStatus = "todo" | "in_flight" | "blocked" | "done" | "verified";
@@ -326,6 +327,29 @@ export function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/**
+ * VENDORING DELTA 21 (splice, 2026-09-28): a machine's own paths never reach a ledger. splice's
+ * ledgers are tracked in a public repository, and seats paste what they ran: a receipt's
+ * `bun run --cwd <absolute repo>/console test`, an install note's backup path under the home
+ * directory. Every write passes the whole file through here, so a new line is stored relative and an
+ * older line is cleaned the next time its ledger is written. The repository root becomes a
+ * repo-relative path (`.` when bare) and the home directory becomes `~`. Only those two literal
+ * prefixes, bounded so a sibling like `<root>-other` or `<home>X` is left alone.
+ */
+export function withoutMachinePaths(text: string, ledgerPath: string): string {
+  const top = Bun.spawnSync(["git", "-C", dirname(ledgerPath), "rev-parse", "--show-toplevel"], { stdout: "pipe", stderr: "pipe" });
+  const root = top.exitCode === 0 ? top.stdout.toString().trim() : "";
+  let out = text;
+  for (const [prefix, under, bare] of [[root, "", "."], [homedir(), "~/", "~"]] as const) {
+    if (prefix.length < 2) continue;
+    const literal = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    out = out
+      .replace(new RegExp(`${literal}/(?=[\\w.~-])`, "g"), under)
+      .replace(new RegExp(`${literal}/?(?![\\w.-])`, "g"), bare);
+  }
+  return out;
+}
+
 /** Every ledger this process wrote, committed once by the entry point (commitWrites). */
 const writtenLedgers = new Set<string>();
 
@@ -344,7 +368,7 @@ export async function mutate(
   const lockPath = await acquireLock(ledgerPath);
   try {
     const original = await Bun.file(ledgerPath).text();
-    const next = transform(original.split("\n")).join("\n");
+    const next = withoutMachinePaths(transform(original.split("\n")).join("\n"), ledgerPath);
 
     // Validate BEFORE writing: rollback is then simply "never wrote it".
     parseOrThrow(next, ledgerPath);

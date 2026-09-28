@@ -9149,3 +9149,11 @@ title = "Console Q42 (Teams, Marlin baseline walk Situation 4): the user reads t
 files = ["console/src/pages/teams/", "console/src/entities/team/api/index.ts", "console/src/widgets/team-chat/", "console/tests/teams-live.test.ts", "console/tests/team-board.test.ts", "console/e2e/v4391/"]
 status = "todo"
 verify = "red-first e2e picks the previous local day, asserts /chat gets that day's [from,to) and shows a seeded older hand-off under its sender; Marlin film-home normal-size walk reads the older messages on the built sha; CI gate on the exact sha"
+
+[[items]]
+id = "V4-392"
+phase = "release"
+title = "Installs take the gate's own jar: no build worktree. Operator, Sep 28 (relayed by claude-builder): 'WORKTREES ARE NOT FUCKING ALLOWED', build trees included, which retires repo CLAUDE.md step 1's detached build tree. ci.yml uploads the jar the green gate built and ran (codeModePackagedMock runs it) as artifact splice-jar; ops/install-sha.sh downloads it from the green ci run on the exact sha, archives it with its sha256, and installs it. Nothing is built from a copy of the repository."
+files = [".github/workflows/ci.yml"]
+status = "todo"
+verify = "actionlint + zizmor clean; the ci run on the pushed sha carries splice-jar; install-sha.sh installs it and the open fd's sha256 equals the artifact's"

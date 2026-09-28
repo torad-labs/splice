@@ -9336,6 +9336,7 @@ verify = "red first: restart invoked for a home whose control port differs from 
 claimed_by = "fin"
 claimed_at = "2026-09-28T17:57:29.361Z"
 # [2026-09-28] CLAIM: owner=fin at=2026-09-28T17:57:29Z
+# [2026-09-28] RECEIPT cmd="bun tools/gate slot V4-395 -- :features-lifecycle:test :features-lifecycle:detekt" exit=0 tests=79 touched=features/lifecycle/src/main/kotlin/splice/lifecycle/start/SupervisedStart.kt,features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonLaunch.kt,features/lifecycle/src/main/kotlin/splice/lifecycle/restart/RestartCommand.kt,features/lifecycle/src/test/kotlin/splice/lifecycle/restart/v4395/ForeignUnitRestartTest.kt,.dev/restructure/capabilities.tsv tail="sha 5bace5f67; 79 tests 0 failures before mutants; 5 mutants each killed; red on stub 5 of 7"
 
 [[items]]
 id = "V4-396"

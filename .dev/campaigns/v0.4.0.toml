@@ -8706,6 +8706,7 @@ verify = "ModuleLawsTest green with features/turns/build.gradle.kts back to its 
 claimed_by = "splice-lead"
 claimed_at = "2026-09-28T00:06:58.543Z"
 # [2026-09-28] CLAIM: owner=splice-lead at=2026-09-28T00:06:58Z
+# [2026-09-28] RECEIPT cmd="bun tools/gate slot v4373-green -- :app:test --tests 'splice.app.v4359.*' :quality-architecture:test --tests '*ModuleLawsTest*' :features-turns:compileTestKotlin; red: same :app:test with CaptureRoutes.kt from a920ae350~1; bun tools/gate typecheck (clean detached tree at da2b006bd)" exit=0 tests=16 touched=app/src/test/kotlin/splice/app/v4359/CaptureOffStaleTest.kt,features/turns/build.gradle.kts,console/e2e/console.spec.ts,.dev/restructure/capabilities.tsv tail="against pre-fix CaptureRoutes ({trace=false} left; boot-time true not stale; siblings carry trace=false). Typecheck: 568 files, none added. console.spec.ts capture journey: no trace key under the oauth head after Off, no literal false, /health topologyStale false before On, true while On, false after Off (runs in CI consoleE2e). Census 0 findings. Code commit da2b006bd, pushed; CI run 36361203151."
 
 [[items]]
 id = "V4-374"

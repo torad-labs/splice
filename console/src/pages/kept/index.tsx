@@ -34,7 +34,7 @@ function StoreInventory({ store, inventory, fault, onDelete }: {
           {expires === null ? null : <p>{H.agesOut(expires)}</p>}
           {inventory.days === 0 ? <Empty text={H.none} /> : (
             <>
-              {store === 'turns' ? <p>{H.turnDelete} {H.turnAfter} {H.turnStill}</p> : null}
+              {store === 'turns' ? <p>{H.turnDelete} {H.turnAfter} {H.turnSessionCost} {H.turnStill}</p> : null}
               <Confirm label={S.deleteKept} confirmLabel={S.deleteCount(inventory.days, inventory.rows)}
                 onConfirm={() => onDelete(store)} />
             </>

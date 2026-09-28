@@ -180,6 +180,8 @@ describe('what splice keeps', () => {
     expect(row).toContain('Delete what&#x27;s kept');
     expect(row).toContain('Delete removes every recorded turn time, model and session.');
     expect(row).toContain('The Turns timeline and per-turn costs restart with the next turn.');
+    expect(row).toContain('Open sessions start counting cost from zero after Delete.');
+    expect(row).toContain('session-totals.json');
     expect(row).toContain('Archive days');
     expect(row).toContain('Stop archiving');
   });

@@ -9225,11 +9225,14 @@ id = "V4-393"
 phase = "release"
 title = "An upgrade keeps claude-muse running: a config written before V4-351 (every existing install: [providers.muse] dialect = \"anthropic-passthrough\", auth muse-oauth) now fails requireCompatibleAuth (ProviderAssembly.kt:79 accepts muse-oauth only with openai-responses), so the head is SKIPPED at boot. Live Sep 28 12:22:39 PM CT on the operator's daemon after installing 4c3bc80d1: '[claude-muse][boot] SKIPPED (build failed): head claude-muse has incompatible auth kind muse-oauth for provider muse and dialect anthropic-passthrough', DEGRADED=[claude-muse] for 2.5 min until splice-lead set dialect = \"openai-responses\" in the operator's splice.toml (backup splice.toml.bak-20260928-pre-muse-responses-dialect). ProviderAssembly.kt:46 already routes every muse-oauth provider to the Muse Responses arm whatever the dialect, so the old value is accepted, the head runs on Responses, and boot and splice doctor say once that the line is stale and what to write instead (or splice upgrade rewrites it); a Muse head never goes down because of an upgrade."
 files = ["app/src/main/kotlin/splice/app/provider/ProviderAssembly.kt", "app/src/test/kotlin/splice/app/provider/v4393/", "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/"]
-status = "todo"
+status = "in_flight"
 verify = "red first: a topology with [providers.muse] dialect = anthropic-passthrough and muse-oauth builds claude-muse (today: incompatible auth kind) on the Responses arm, and the boot log carries the one stale-dialect line; a non-muse provider with muse-oauth still refuses; live: the operator's pre-V4-351 config restored from splice.toml.bak-20260928-pre-muse-responses-dialect on a throwaway home boots claude-muse ready"
 # [2026-09-28] amend by=splice-lead: files were ["app/src/main/kotlin/splice/app/provider/ProviderAssembly.kt", "app/src/test/kotlin/splice/app/provider/v4393/", "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/", "CHANGELOG.md"]
 # [2026-09-28] CHANGELOG line is splice-lead's under V4-254 (CHANGELOG.md is that row's fence).
 # [2026-09-28] amend by=splice-lead: files were ["app/src/main/kotlin/splice/app/provider/ProviderAssembly.kt", "app/src/test/kotlin/splice/app/provider/v4393/", "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/", ".dev/restructure/capabilities.tsv"]
+claimed_by = "claude-builder"
+claimed_at = "2026-09-28T17:26:30.938Z"
+# [2026-09-28] CLAIM: owner=claude-builder at=2026-09-28T17:26:30Z
 
 [[items]]
 id = "V4-394"

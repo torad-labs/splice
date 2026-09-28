@@ -142,6 +142,7 @@ export function KeptBoard({ inventories, faults = {}, heads = null, traces = {},
           <Section key={row.id} title={row.name}>
             <p>{row.holds}</p>
             <p>{row.window}</p>
+            {row.id === 'turns' ? <p>{H.turnArchive}</p> : null}
             <p className="myx-kept-path">{row.location}</p>
             <p>{row.switch}</p>
             {row.id === 'edges' || row.id === 'labels' || row.id === 'turns' ? (

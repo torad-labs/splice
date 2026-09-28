@@ -63,7 +63,7 @@ describe('what splice keeps', () => {
       return { ok: true, status: 200, json: async () => ({
         store: 'turns', state: deleted ? 'deleted' : 'on',
         days: deleted ? 0 : 2, rows: deleted ? 0 : 7,
-        oldest: deleted ? null : '2026-09-26', ages_out: deleted ? null : '2026-12-26',
+        oldest: deleted ? null : '2026-09-26', ages_out: null,
       }) };
     });
     expect((await fetchKept('turns')).rows).toBe(7);
@@ -170,13 +170,15 @@ describe('what splice keeps', () => {
   test('current and archived turns show their true count, expiry and Delete on this page', () => {
     const html = renderToStaticMarkup(createElement(KeptBoard, {
       inventories: { turns: { store: 'turns', state: 'on', days: 2, rows: 7,
-        oldest: '2026-09-26', ages_out: '2026-12-26' } },
+        oldest: '2026-09-26', ages_out: null } },
       onDelete: () => undefined, onSwitch: () => undefined,
       effective: { perfArchiveRetentionDays: 90 },
     }));
     const row = html.slice(html.indexOf('Turn statistics'));
     expect(row).toContain('7 entries kept');
-    expect(row).toContain('Dec 26');
+    expect(row).toContain('Current turn files have no automatic expiry.');
+    expect(row).toContain('Old archives clear after the chosen days, at the next rotation.');
+    expect(row).not.toContain('ages out on');
     expect(row).toContain('Delete what&#x27;s kept');
     expect(row).toContain('Delete removes every recorded turn time, model and session.');
     expect(row).toContain('The Turns timeline and per-turn costs restart with the next turn.');

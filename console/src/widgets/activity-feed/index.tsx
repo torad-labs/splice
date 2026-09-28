@@ -19,7 +19,7 @@ import './activity-feed.css';
 
 export interface ActivityFeedPayload {
   activity: TeamActivity[];
-  state?: 'on' | 'off' | 'deleted';
+  state?: 'on' | 'off' | 'deleted' | 'not_kept' | 'partially_kept';
   reason?: string;
   /** False when the sampler can no longer find the client the session was bound to. */
   clientMatching: boolean;
@@ -44,18 +44,22 @@ export function feedOrder(activity: readonly TeamActivity[]): TeamActivity[] {
 }
 
 /** The feed's empty, when it has one: the five answers the route can give that are not rows. */
-export function feedEmpty(state: ActivityFeedState): { text: string; source?: string } | null {
+export function feedEmpty(state: ActivityFeedState, current = true): { text: string; source?: string } | null {
   if (state === null) return { text: S.reading };
   if ('pending' in state) return { text: S.unavailable, source: H.unavailable };
   if ('error' in state) return { text: S.unreadable, source: state.error };
   if (state.state === 'deleted') return { text: S.deleted, source: H.deleted };
+  if (state.state === 'not_kept') return { text: S.notKept, ...(state.reason === undefined ? {} : { source: state.reason }) };
+  if (state.state === 'partially_kept' && state.activity.length === 0) {
+    return { text: S.partlyKept, ...(state.reason === undefined ? {} : { source: state.reason }) };
+  }
   if (state.activity.length > 0) return null;
   if (!state.clientMatching) return { text: S.notMatching, source: H.notMatching };
-  return { text: S.nothingSampled, source: H.nothingSampled };
+  return { text: current ? S.nothingSampled : S.nothingSampledOnDay, source: H.nothingSampled };
 }
 
-export function ActivityFeed({ state }: { state: ActivityFeedState }) {
-  const empty = feedEmpty(state);
+export function ActivityFeed({ state, current = true }: { state: ActivityFeedState; current?: boolean }) {
+  const empty = feedEmpty(state, current);
   const all = state !== null && 'activity' in state ? feedOrder(state.activity) : [];
   const rows = all.slice(0, FEED_ROWS);
   return (
@@ -73,6 +77,8 @@ export function ActivityFeed({ state }: { state: ActivityFeedState }) {
         </ol>
       )}
       {all.length > rows.length ? <p className="myx-feed-more">{`${fmtInt(all.length - rows.length)} ${U.older}`}</p> : null}
+      {state !== null && 'activity' in state && state.state === 'partially_kept' && all.length > 0
+        ? <Empty text={S.partlyKept} source={state.reason} /> : null}
       {/* A client that stopped matching while rows are on screen: the rows are still true, and
           the reason no new one will follow is printed under them. */}
       {empty === null && state !== null && 'activity' in state && !state.clientMatching

@@ -64,6 +64,7 @@ import splice.sessions.activity.ALL_HEADS
 import splice.sessions.activity.ActivityStores
 import splice.sessions.activity.MessageEdge
 import splice.sessions.activity.NameHolders
+import splice.sessions.activity.RecipientResolution
 import splice.sessions.prompt.SessionAddress
 import splice.sessions.prompt.SlotInstructions
 import splice.sessions.registry.RouteOfPid
@@ -293,7 +294,13 @@ internal class ConsoleEventPublisher(
 
         override fun messageSent(session: String, to: String, toolUseId: String) {
             val at = clock()
-            stores?.edges?.record(MessageEdge(session, to, at, toolUseId, names?.sessionOf(to)))
+            val holder = names?.sessionOf(to)
+            val recipient = when {
+                ':' in to -> RecipientResolution.Legacy
+                holder != null -> RecipientResolution.Held(holder)
+                else -> RecipientResolution.NoHolder
+            }
+            stores?.edges?.record(MessageEdge(session, to, at, toolUseId, holder, recipient))
             bus.publish { seq -> ConsoleEvent.EdgeEvent(seq, session, to, at) }
         }
 

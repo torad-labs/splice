@@ -426,6 +426,15 @@ describe('a head splice does not run (Marlin, 2026-09-25)', () => {
 });
 
 describe('the chat', () => {
+  test('a partly retained day shows surviving messages and warns about its missing beginning', () => {
+    const state = { messages: sampleBoard.messages, state: 'partially_kept' as const,
+      reason: 'Earlier messages on this day are past activityRetentionDays and are not kept.' };
+    const html = render(createElement(TeamChat, { state }));
+    expect(html).toContain('aria-label="api-lead to api-builder"');
+    expect(html).toContain('History partly kept');
+    expect(html).toContain('activityRetentionDays');
+    expect(render(createElement(TeamChat, { state: { ...state, messages: [] } }))).not.toContain('No messages today');
+  });
   test('a deleted edge store is named instead of an empty chat', () => {
     const html = render(createElement(TeamChat, { state: { messages: [], state: 'deleted', reason: 'edges deleted' } }));
     expect(html).toContain('Message history deleted');
@@ -463,6 +472,15 @@ describe('the chat', () => {
 });
 
 describe('the activity feed', () => {
+  test('a partly retained day keeps its samples and names the missing earlier part', () => {
+    const state = { activity: sampleBoard.activity, clientMatching: true, state: 'partially_kept' as const,
+      reason: 'Earlier activity on this day is no longer kept.' };
+    const html = render(createElement(ActivityFeed, { state, current: false }));
+    expect(html).toContain('myx-feed-row');
+    expect(html).toContain('Activity partly kept');
+    expect(html).toContain('Earlier activity on this day');
+    expect(feedEmpty({ ...state, activity: [] }, false)?.text).toBe('Activity partly kept');
+  });
   test('deleted labels are named instead of an empty sample feed', () => {
     const state = { activity: [], clientMatching: true, state: 'deleted' as const, reason: 'labels deleted' };
     const html = render(createElement(ActivityFeed, { state }));

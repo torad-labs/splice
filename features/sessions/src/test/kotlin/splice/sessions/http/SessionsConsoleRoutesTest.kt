@@ -183,18 +183,21 @@ class SessionsConsoleRoutesTest {
         assertEquals(
             json(
                 """{"from":"$BETA","to":"uds:/run/a.sock","at":${NOW - 20},"direction":"in",""" +
-                    """"text":null,"text_source":null,"missing_reason":"no transcript for the sender in /t"}""",
+                    """"text":null,"text_source":null,"missing_reason":"The sender transcript is no longer on this machine."}""",
             ),
             edges[1],
         )
         assertEquals(
             json(
                 """{"from":"$ALPHA","to":"uds:/run/b.sock","at":${NOW - 5},"direction":"out",""" +
-                    """"text":null,"text_source":null,"missing_reason":"the call is not in /t/alpha.jsonl"}""",
+                    """"text":null,"text_source":null,"missing_reason":"The message is not in the sender transcript."}""",
             ),
             edges[2],
         )
         assertEquals(3, edges.size)
+        for (edge in edges.drop(1)) {
+            assertFalse(edge.getValue("missing_reason").jsonPrimitive.content.contains("/t"))
+        }
         assertEquals(
             listOf("$ALPHA codex [toolu_1, toolu_9]", "$BETA .claude [toolu_2]"),
             asked.sorted(),
@@ -221,7 +224,7 @@ class SessionsConsoleRoutesTest {
      *  vanilla tree is the only one searched (V4-314). */
     private fun unread(): String =
         """"text":null,"text_source":null,""" +
-            """"missing_reason":"no transcript for the sender in ${tmp.resolve(".claude").resolve("projects")}""""
+            """"missing_reason":"The sender transcript is no longer on this machine.""""
 
     private fun rowsOf(routes: SessionsRoutes): Map<String, JsonObject> =
         json(routes.sessionsJson())["sessions"]!!.jsonArray.map { it.jsonObject }

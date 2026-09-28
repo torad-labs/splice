@@ -35,6 +35,8 @@ import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.WallClock
 import java.nio.file.Path
+import java.time.Instant
+import java.time.ZoneOffset
 
 /** The day-file prefix activity rows are written under. */
 internal const val ACTIVITY_PREFIX: String = "activity"
@@ -85,13 +87,14 @@ public class ActivityStores(
     activityDir: Path,
     retentionDays: Int,
     storeHeads: String,
-    clock: WallClock = WallClock(System::currentTimeMillis),
+    private val clock: WallClock = WallClock(System::currentTimeMillis),
     messageEdges: Boolean = true,
 ) {
+    private val edgeDays = retentionDays.coerceAtLeast(LOCAL_DAY_UTC_DAYS)
     public val edges: MessageEdgeStore = MessageEdgeStore(
-        ActivityDays(activityDir, EDGES_PREFIX, retentionDays.coerceAtLeast(LOCAL_DAY_UTC_DAYS), clock),
+        ActivityDays(activityDir, EDGES_PREFIX, edgeDays, clock),
         DayFiles(activityDir, EDGES_PREFIX),
-        retentionDays.coerceAtLeast(LOCAL_DAY_UTC_DAYS),
+        edgeDays,
         messageEdges,
     )
     public val activity: ActivityStore = ActivityStore(
@@ -99,6 +102,13 @@ public class ActivityStores(
         ActivityHeads(storeHeads),
         DayFiles(activityDir, ACTIVITY_PREFIX),
     )
+
+    /** UTC start of the oldest day the two stores can still read, from their actual pruning windows. */
+    public fun oldestEdgeDay(): Long = oldestDay(edgeDays)
+    public fun oldestLabelDay(): Long = oldestDay(LOCAL_DAY_UTC_DAYS)
+
+    private fun oldestDay(days: Int): Long = Instant.ofEpochMilli(clock()).atZone(ZoneOffset.UTC)
+        .toLocalDate().minusDays(days.toLong() - 1).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
 
     public fun edgeState(): KeptState = when {
         edges.deleted() -> KeptState.DELETED

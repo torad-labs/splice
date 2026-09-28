@@ -186,7 +186,8 @@ class TeamsRoutesTest {
         // Rows as the store wrote them: the name the call named, and the one live session that held it
         // then, if any. The registry has LEAD holding "lead" now.
         val row = { from: String, to: String, at: Long, tool: String, held: String? ->
-            val holder = held?.let { ""","to_session":"$it"""" } ?: ""
+            val holder = held?.let { ""","to_session":"$it"""" }
+                ?: if (':' !in to) ""","to_session":null""" else ""
             """{"from":"$from","to":"$to","at":$at,"id":"$tool"$holder}"""
         }
         val stored = listOf(
@@ -233,7 +234,7 @@ class TeamsRoutesTest {
                 rig.json("""{"at":$AT,$base,"text":"build row 7","text_source":"$source","missing_reason":null}"""),
                 rig.json(
                     """{"at":${AT + 1},$base,"text":null,"text_source":null,""" +
-                        """"missing_reason":"the call is not in $source"}""",
+                        """"missing_reason":"The message is not in the sender transcript."}""",
                 ),
             ),
             chat.getValue("messages").jsonArray.map { it.jsonObject },
@@ -334,7 +335,8 @@ class TeamsRoutesTest {
             """"label":"Reviewing","detail":null}"""
         assertEquals(
             rig.json(
-                """{"team_id":"$id","state":"on","day_start_epoch_millis":$DAY_START,"sample_interval_note":"$note",""" +
+                """{"team_id":"$id","state":"on","oldest_kept_epoch_millis":${DAY_START - DAY},""" +
+                    """"day_start_epoch_millis":$DAY_START,"sample_interval_note":"$note",""" +
                     """"upstream_label_queries":1,"entries":[$first,$second]}""",
             ),
             rig.json(routes().reads.activity(id, null).body),

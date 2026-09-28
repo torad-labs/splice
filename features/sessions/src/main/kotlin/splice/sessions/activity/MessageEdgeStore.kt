@@ -16,12 +16,13 @@
 // or a session's name, and a name moves: a later session can take it. A reader that resolved a stored
 // name through the live registry filed the call under whoever held the name at read time, so a fresh
 // team's board showed a rehearsal's message to its 'gpt'. The row carries `to_session`, the one live
-// session that held the name when it was stored, and readers attribute a name by it alone. A name no
-// live session held then, or more than one did, stores none and is attributed to no one. So is every
-// name row stored before V4-252, which carries none. An address row stores none and reads as before.
+// session that held the name when it was stored. A name with no unique live holder stores an explicit
+// null; a name row with no to_session key predates that marker and Teams may recover it from one named
+// member's registry record. An address still reads by its address, regardless of the marker.
 package splice.sessions.activity
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
@@ -32,31 +33,51 @@ import splice.core.storage.DayInventory
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.sessions.registry.SessionAvailability
+import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource
 
 /** The day-file prefix edges are written under. */
 internal const val EDGES_PREFIX: String = "edges"
+private const val TO_SESSION_KEY = "to_session"
 
 /** One observed SendMessage. [from] is the sending session id, [to] the address or name the call
  *  named, [at] epoch ms of the observation, [id] the tool_use id that makes the row unique, and
  *  [toSession] the session that held the name [to] when the edge was stored, null for an address. */
+public sealed class RecipientResolution {
+    public data object Legacy : RecipientResolution()
+    public data object NoHolder : RecipientResolution()
+    public data class Held(val session: String) : RecipientResolution()
+}
+
 public data class MessageEdge(
     val from: String,
     val to: String,
     val at: Long,
     val id: String,
     val toSession: String? = null,
-)
+    val recipient: RecipientResolution = toSession?.let(RecipientResolution::Held) ?: RecipientResolution.Legacy,
+) {
+    init {
+        require((recipient as? RecipientResolution.Held)?.session == toSession) {
+            "recipient resolution must agree with the stored session"
+        }
+    }
+}
 
 /** The session a SendMessage name reaches as its edge is stored, read from [sessions]. */
 public class NameHolders(private val sessions: SessionSource) {
     /** The one live registration holding [name]; null when none does, or more than one. A GONE
      *  registration holds nothing. */
-    public fun sessionOf(name: String): String? = sessions.read()
-        .filter { it.name == name && it.availability != SessionAvailability.GONE }
-        .mapNotNull { it.sessionId }
-        .distinct()
-        .singleOrNull()
+    public fun sessionOf(name: String): String? = sessionOf(
+        name,
+        sessions.read().filter { it.availability != SessionAvailability.GONE },
+    )
+
+    /** A displayed [ref] is not a session ID prefix. Strip it, then require one named holder. */
+    public fun sessionOf(name: String, records: List<SessionRecord>): String? {
+        val base = Regex("^(.+) \\[[^\\[\\]]+\\]$").matchEntire(name)?.groupValues?.get(1) ?: name
+        return records.filter { it.name == base }.mapNotNull { it.sessionId }.distinct().singleOrNull()
+    }
 }
 
 public class MessageEdgeStore(
@@ -79,7 +100,11 @@ public class MessageEdgeStore(
                 put("to", edge.to)
                 put("at", edge.at)
                 put("id", edge.id)
-                if (edge.toSession != null) put("to_session", edge.toSession)
+                when (val recipient = edge.recipient) {
+                    RecipientResolution.Legacy -> Unit
+                    RecipientResolution.NoHolder -> put(TO_SESSION_KEY, JsonNull)
+                    is RecipientResolution.Held -> put(TO_SESSION_KEY, recipient.session)
+                }
             }.toString(),
         )
     }
@@ -105,6 +130,12 @@ public class MessageEdgeStore(
         val id = JsonScalars.str(row, "id")
         if (from == null || to == null) return null
         if (at == null || id == null) return null
-        return MessageEdge(from, to, at, id, JsonScalars.str(row, "to_session"))
+        val session = JsonScalars.str(row, TO_SESSION_KEY)
+        val recipient = when {
+            session != null -> RecipientResolution.Held(session)
+            TO_SESSION_KEY in row -> RecipientResolution.NoHolder
+            else -> RecipientResolution.Legacy
+        }
+        return MessageEdge(from, to, at, id, session, recipient)
     }
 }

@@ -9,6 +9,9 @@ export const S = {
   unavailable: 'Activity unavailable',
   unreadable: 'Activity unreadable',
   nothingSampled: 'Nothing sampled today',
+  nothingSampledOnDay: 'Nothing sampled',
+  notKept: 'Activity not kept',
+  partlyKept: 'Activity partly kept',
   deleted: 'Activity history deleted',
   notMatching: 'Client not matching',
 } as const;

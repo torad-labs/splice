@@ -11,7 +11,7 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useLocation } from 'react-router';
-import { fetchTeamPanels, fetchTeams, isPending, readTeamChat, useTeamPanels, useTeams } from '@entities/team';
+import { fetchTeamPanels, fetchTeams, isPending, readTeamActivity, readTeamChat, useTeamPanels, useTeams } from '@entities/team';
 import { fetchSessions, sessionLabel, useSessionRegistry } from '@entities/session';
 import { useSpliceHeads } from '@entities/control-status';
 import { fetchHeads, useHeads } from '@entities/heads';
@@ -30,8 +30,8 @@ import { ABSENT, fmtInt, poll, useLinkedId, useOpen } from '@shared/lib';
 import type { Resource } from '@shared/lib';
 import { Badge, DataTable, Empty, KeyValue, PageHeader, Pips, Section } from '@shared/ui';
 import type { Column } from '@shared/ui';
-import type { TeamChatPayload, TeamPanels, TeamPayload, TeamRow, TeamsState } from '@entities/team';
-import { boardOf, dayOf, dayStartOf, messagesOf, viewDataOf } from './board';
+import type { TeamActivityPayload, TeamChatPayload, TeamPanels, TeamPayload, TeamRow, TeamsState } from '@entities/team';
+import { activityOf, boardOf, dayOf, dayStartOf, messagesOf, viewDataOf } from './board';
 import { H, S, U } from './strings';
 import './teams.css';
 
@@ -137,6 +137,7 @@ export function panelStates(board: TeamPayload, panels: TeamPanels | null): { ch
       : { messages: board.messages,
         ...(panels.chat.state === undefined ? {} : { state: panels.chat.state }),
         ...(panels.chat.reason === undefined ? {} : { reason: panels.chat.reason }),
+        ...(panels.chat.oldest_kept_epoch_millis === undefined ? {} : { oldest_kept_epoch_millis: panels.chat.oldest_kept_epoch_millis }),
       },
     feed: 'error' in panels.activity ? { error: panels.activity.error } : board.activity === null ? null
       : { activity: board.activity, clientMatching: true,
@@ -228,7 +229,7 @@ export function TeamView({ board, mode, data, faults, chat, chatDay, today, onCh
       <div className="myx-tm-pair">
         <TeamChat state={chat}
           {...(chatDay === undefined || today === undefined || onChatDay === undefined ? {} : { day: chatDay, today, onDayChange: onChatDay })} />
-        <ActivityFeed state={feed} />
+        <ActivityFeed state={feed} current={chatDay === undefined || today === undefined || chatDay === today} />
       </div>
       <CostPerRole board={board} data={data} />
     </div>
@@ -292,7 +293,8 @@ export function TeamsPage() {
   const [saved, setSaved] = useState<{ team: TeamRow; answer: string } | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [chatDay, setChatDay] = useState<number | null>(null);
-  const [olderChat, setOlderChat] = useState<{ teamId: string; day: number; state: TeamChatPayload | { error: string } | null } | null>(null);
+  const [olderPanels, setOlderPanels] = useState<{ teamId: string; day: number;
+    chat: TeamChatPayload | { error: string }; activity: TeamActivityPayload | { error: string } } | null>(null);
 
   // A fixture loads only in dev and only when the address asks for it by name
   // (CONTRACTS.md section 4). It is reached by a dynamic import inside the
@@ -360,11 +362,16 @@ export function TeamsPage() {
   useEffect(() => {
     if (fixture !== null || openId === null || chatDay === null) return undefined;
     let live = true;
-    setOlderChat({ teamId: openId, day: chatDay, state: null });
-    void readTeamChat(openId, dayOf(chatDay)).then(
-      (state) => { if (live) setOlderChat({ teamId: openId, day: chatDay, state }); },
-      (error: unknown) => { if (live) setOlderChat({ teamId: openId, day: chatDay, state: { error: error instanceof Error ? error.message : String(error) } }); },
-    );
+    setOlderPanels(null);
+    void Promise.allSettled([readTeamChat(openId, dayOf(chatDay)), readTeamActivity(openId, dayOf(chatDay))])
+      .then(([chat, activity]) => {
+        if (!live) return;
+        const fault = (error: unknown) => ({ error: error instanceof Error ? error.message : String(error) });
+        setOlderPanels({ teamId: openId, day: chatDay,
+          chat: chat.status === 'fulfilled' ? chat.value : fault(chat.reason),
+          activity: activity.status === 'fulfilled' ? activity.value : fault(activity.reason),
+        });
+      });
     return () => { live = false; };
   }, [fixture, openId, chatDay]);
 
@@ -385,13 +392,20 @@ export function TeamsPage() {
     : live === null ? { chat: null, feed: null } : panelStates(live, panels.data);
 
   const today = dayOf(now).from;
-  const history = olderChat?.teamId === openId && olderChat?.day === chatDay ? olderChat.state : null;
+  const history = olderPanels?.teamId === openId && olderPanels?.day === chatDay ? olderPanels : null;
   const selectedChat: TeamChatState = chatDay === null ? states.chat
-    : history !== null && 'messages' in history && live !== null
-      ? { messages: messagesOf(live.members, history) ?? [],
-        ...(history.state === undefined ? {} : { state: history.state }),
-        ...(history.reason === undefined ? {} : { reason: history.reason }) }
-      : history !== null && 'error' in history ? history : null;
+    : history !== null && 'messages' in history.chat && live !== null
+      ? { messages: messagesOf(live.members, history.chat, live.team) ?? [],
+        ...(history.chat.state === undefined ? {} : { state: history.chat.state }),
+        ...(history.chat.reason === undefined ? {} : { reason: history.chat.reason }),
+        ...(history.chat.oldest_kept_epoch_millis === undefined ? {} : { oldest_kept_epoch_millis: history.chat.oldest_kept_epoch_millis }) }
+      : history !== null && 'error' in history.chat ? history.chat : null;
+  const selectedFeed: ActivityFeedState = chatDay === null ? states.feed
+    : history !== null && 'entries' in history.activity && live !== null
+      ? { activity: activityOf(live.members, history.activity) ?? [], clientMatching: true,
+        ...(history.activity.state === undefined ? {} : { state: history.activity.state }),
+        ...(history.activity.reason === undefined ? {} : { reason: history.activity.reason }) }
+      : history !== null && 'error' in history.activity ? history.activity : null;
 
   const listed = fixture !== null ? [fixture.team] : list;
   const editing = composing === 'edit' ? (fixture?.team ?? open) : null;
@@ -406,6 +420,7 @@ export function TeamsPage() {
     faults: fixture === null ? log.faults : [],
     ...states,
     chat: selectedChat,
+    feed: selectedFeed,
     ...(fixture !== null || openId === null ? {} : {
       chatDay: chatDay ?? today, today,
       onChatDay: (day: number) => setChatDay(day === today ? null : day),

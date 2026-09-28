@@ -83,8 +83,8 @@ export interface TeamWrite {
 }
 
 /** One message of the day (TeamsEdges.kt message()). The text is read from the SENDER's transcript
- *  when asked for; when it could not be found `text` is null and `missing_reason` names the path
- *  read. `packet` has no wire source and is always null (`packet_note` says why). */
+ *  when asked for; when it could not be found `text` is null and `missing_reason` gives a
+ *  path-free explanation. `packet` has no wire source and is always null (`packet_note` says why). */
 export interface TeamChatMessage {
   at: number;
   from: string;
@@ -100,8 +100,9 @@ export interface TeamChatMessage {
 
 export interface TeamChatPayload {
   team_id: string;
-  state?: 'on' | 'off' | 'deleted';
+  state?: 'on' | 'off' | 'deleted' | 'not_kept' | 'partially_kept';
   reason?: string;
+  oldest_kept_epoch_millis?: number;
   day_start_epoch_millis: number;
   packet_note: string;
   messages: TeamChatMessage[];
@@ -119,8 +120,9 @@ export interface TeamActivityEntry {
 
 export interface TeamActivityPayload {
   team_id: string;
-  state?: 'on' | 'off' | 'deleted';
+  state?: 'on' | 'off' | 'deleted' | 'not_kept' | 'partially_kept';
   reason?: string;
+  oldest_kept_epoch_millis?: number;
   day_start_epoch_millis: number;
   /** Says the labels are samples, about one per 30 s while a session works. */
   sample_interval_note: string;
@@ -220,6 +222,9 @@ export interface TeamMessage {
   time: string;
   from: string;
   to: string;
+  /** Chat display labels; from/to retain member identity for lanes and the timeline. */
+  fromRole?: string;
+  toRole?: string;
   packet: string;
   text: string;
   /** The head the sender ran on, for the edge's colour on the board. */

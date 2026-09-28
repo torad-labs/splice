@@ -14,8 +14,9 @@ import './team-chat.css';
 
 export interface TeamChatPayload {
   messages: TeamMessage[];
-  state?: 'on' | 'off' | 'deleted';
+  state?: 'on' | 'off' | 'deleted' | 'not_kept' | 'partially_kept';
   reason?: string;
+  oldest_kept_epoch_millis?: number;
 }
 
 /** What the panel was handed: the chat, the honest empty naming its row, the daemon's refusal, or
@@ -41,17 +42,20 @@ function body(state: TeamChatState, today: boolean) {
   if ('pending' in state) return <Empty text={S.unavailable} source={H.unavailable} />;
   if ('error' in state) return <Empty text={S.unreadable} source={state.error} />;
   if (state.state === 'deleted') return <Empty text={S.deleted} source={H.deleted} />;
+  if (state.state === 'not_kept') return <Empty text={S.notKept} source={state.reason} />;
   if (state.state === 'off' && state.messages.length === 0) return <Empty text={S.off} source={state.reason} />;
+  if (state.state === 'partially_kept' && state.messages.length === 0) return <Empty text={S.partlyKept} source={state.reason} />;
   if (state.messages.length === 0) return <Empty text={today ? S.noMessages : S.noMessagesOnDay} source={H.noMessages} />;
   return (
+    <>
     <ol className="myx-chat">
       {chatOrder(state.messages).map((message, index) => (
-        <li key={`${message.at}-${message.from}-${message.to}-${index}`} className="myx-chat-row" aria-label={`${message.from} ${U.to} ${message.to}`}>
+        <li key={`${message.at}-${message.from}-${message.to}-${index}`} className="myx-chat-row" aria-label={`${message.fromRole ?? message.from} ${U.to} ${message.toRole ?? message.to}`}>
           <span className="myx-chat-time">{message.time}</span>
           <span className="myx-chat-route">
-            <span className="myx-chat-party">{message.from}</span>
+            <span className="myx-chat-party">{message.fromRole ?? message.from}</span>
             <ArrowRightIcon className="myx-chat-arrow" aria-hidden="true" />
-            <span className="myx-chat-party">{message.to}</span>
+            <span className="myx-chat-party">{message.toRole ?? message.to}</span>
           </span>
           <span className="myx-chat-text">
             <Reveal label={S.reveal}><p className="myx-chat-words">{message.text}</p></Reveal>
@@ -59,6 +63,8 @@ function body(state: TeamChatState, today: boolean) {
         </li>
       ))}
     </ol>
+    {state.state === 'partially_kept' ? <Empty text={S.partlyKept} source={state.reason} /> : null}
+    </>
   );
 }
 
@@ -77,12 +83,13 @@ export function TeamChat({ state, day, today, onDayChange }: {
 }) {
   const current = day === undefined || today === undefined || day === today;
   const count = state !== null && 'messages' in state ? state.messages.length : undefined;
+  const oldest = state !== null && 'messages' in state ? state.oldest_kept_epoch_millis : undefined;
   return (
     <Section title={S.chat} {...(count === undefined ? {} : { count })}
       info={{ text: current ? H.chat : H.older, label: S.chatWhy }}
       actions={day === undefined || today === undefined || onDayChange === undefined ? undefined : (
         <span className="myx-chat-days">
-          <Key onClick={() => onDayChange(nextDay(day, -1))}>{S.previousDay}</Key>
+          <Key disabled={oldest !== undefined && day <= oldest} onClick={() => onDayChange(nextDay(day, -1))}>{S.previousDay}</Key>
           <span className="myx-chat-day">{current ? S.today : new Date(day).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
           <Key disabled={current} onClick={() => onDayChange(nextDay(day, 1))}>{S.nextDay}</Key>
           {current ? null : <Key onClick={() => onDayChange(today)}>{S.today}</Key>}

@@ -1130,7 +1130,7 @@ test('teams composes the stack\'s two sessions, shows their hand-off and the sen
   // The day's chat carries the hand-off, sender to recipient, both resolved to their seats, and the
   // lanes draw it as the one arc between their cards once they are laid out. The hand-off was sent
   // after the team opened, so it reaches the chat on the panels' next read (every 10 s).
-  await expect(page.getByRole('listitem', { name: `${STACK.sender.name} to ${STACK.peer.name}` }).first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole('listitem', { name: 'lead to builder' }).first()).toBeVisible({ timeout: 15_000 });
   await expect(lanes.locator('path.myx-lanes-arc')).toHaveCount(1, { timeout: 15_000 });
   // The table is a view behind the lanes, where each seat's turns are counted.
   await page.getByRole('tab', { name: 'By plan' }).click();

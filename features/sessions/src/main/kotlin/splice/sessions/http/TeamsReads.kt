@@ -10,6 +10,8 @@ import kotlinx.serialization.json.put
 import splice.core.util.WallClock
 import splice.http.JsonReply
 import splice.sessions.activity.ActivityStores
+import splice.sessions.activity.KeptState
+import splice.sessions.activity.NameHolders
 import splice.sessions.registry.SessionSource
 import splice.sessions.teams.Team
 import splice.sessions.teams.TeamStore
@@ -20,6 +22,11 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeParseException
 
 internal const val TEAM_ID = "team_id"
+private const val OLDEST_KEPT = "oldest_kept_epoch_millis"
+private const val EDGE_STORE = "edges"
+private const val REASON_KEY = "reason"
+private const val NOT_KEPT = "not_kept"
+private const val PARTIALLY_KEPT = "partially_kept"
 internal const val PACKET_NOTE = "no wire source: a SendMessage call carries no dispatch unit"
 internal const val ACTIVITY_SAMPLE_NOTE = "labels are samples: at most one per session every 30 seconds, " +
     "from its latest tool call while it works or from its client's own activity query; a gap is a session " +
@@ -45,7 +52,7 @@ internal fun interface DayPanel {
 /** The team reads over the activity stores. A MEMBER is every session a slot ever held, as in the
  *  economics. CHAT TEXT is read on demand from the SENDER's transcript through [SentTextSource];
  *  the edge store never holds it, and a message whose text was not found carries text null and a
- *  missing_reason naming the path read, never an empty string. `packet` has no wire source, so every
+ *  missing_reason distinguishing a missing transcript from a missing call, without paths. `packet` has no wire source, so every
  *  message carries null and the payload says why (6.1: the honest empty, never an invented value).
  *  A day is the caller's own window when it sends one, `?from=&to=` in epoch millis (V4-249: the
  *  console sends its viewer's local day, so the board turns over at the viewer's midnight, not at
@@ -59,19 +66,19 @@ public class TeamReads internal constructor(
     private val clock: WallClock,
 ) {
     public fun edges(id: String): JsonReply = daily(id, null, null, null) { team, stores, _ ->
-        val members = Members(team, registry?.read().orEmpty())
+        val members = Members(team, registry?.read().orEmpty(), registry?.let(::NameHolders))
         buildJsonObject {
             put(TEAM_ID, team.id)
             val state = stores.edgeState()
             put("state", state.wire)
-            state.reason("edges")?.let { put("reason", it) }
-            put("edges", buildJsonArray { members.edges(stores.edges.edges()).forEach { add(it.json()) } })
+            state.reason(EDGE_STORE)?.let { put(REASON_KEY, it) }
+            put(EDGE_STORE, buildJsonArray { members.edges(stores.edges.edges()).forEach { add(it.json()) } })
         }
     }
 
     public fun chat(id: String, day: String?, from: String? = null, to: String? = null): JsonReply =
         daily(id, day, from, to) { team, stores, window ->
-            val members = Members(team, registry?.read().orEmpty())
+            val members = Members(team, registry?.read().orEmpty(), registry?.let(::NameHolders))
             val today = members.edges(stores.edges.edges()).filter { it.edge.at in window }
             val found = today.groupBy { it.edge.from }.mapValues { (sender, sent) ->
                 texts.read(sender, members.headOf(sender), sent.map { it.edge.id }.toSet())
@@ -79,8 +86,16 @@ public class TeamReads internal constructor(
             buildJsonObject {
                 put(TEAM_ID, team.id)
                 val state = stores.edgeState()
-                put("state", state.wire)
-                state.reason("edges")?.let { put("reason", it) }
+                val oldest = stores.oldestEdgeDay()
+                val retention = retentionState(state, oldest, window)
+                put("state", retention)
+                val reason = when (retention) {
+                    NOT_KEPT -> "Message history past activityRetentionDays is not kept."
+                    PARTIALLY_KEPT -> "Earlier messages on this day are past activityRetentionDays and are not kept."
+                    else -> state.reason(EDGE_STORE)
+                }
+                reason?.let { put(REASON_KEY, it) }
+                put(OLDEST_KEPT, oldest)
                 put("day_start_epoch_millis", window.first)
                 put("packet_note", PACKET_NOTE)
                 put("messages", buildJsonArray { today.forEach { add(it.message(found[it.edge.from])) } })
@@ -94,8 +109,16 @@ public class TeamReads internal constructor(
             buildJsonObject {
                 put(TEAM_ID, team.id)
                 val state = stores.labelState()
-                put("state", state.wire)
-                state.reason("labels")?.let { put("reason", it) }
+                val oldest = stores.oldestLabelDay()
+                val retention = retentionState(state, oldest, window)
+                put("state", retention)
+                val reason = when (retention) {
+                    NOT_KEPT -> "Activity labels for this day are no longer kept."
+                    PARTIALLY_KEPT -> "Earlier activity on this day is no longer kept."
+                    else -> state.reason("labels")
+                }
+                reason?.let { put(REASON_KEY, it) }
+                put(OLDEST_KEPT, oldest)
                 put("day_start_epoch_millis", window.first)
                 put("sample_interval_note", ACTIVITY_SAMPLE_NOTE)
                 put("upstream_label_queries", rows.count { it.upstream })
@@ -119,6 +142,14 @@ public class TeamReads internal constructor(
                 )
             }
         }
+
+    /** A local day may cross the UTC retention boundary; report the missing portion, not a full day. */
+    private fun retentionState(state: KeptState, oldest: Long, window: LongRange): String = when {
+        state != KeptState.ON -> state.wire
+        window.last < oldest -> NOT_KEPT
+        window.first < oldest -> PARTIALLY_KEPT
+        else -> state.wire
+    }
 
     /** One team read: the store, the team and the activity stores, each a named refusal when absent,
      *  and a query that names no day ([window]) a 400. */

@@ -96,7 +96,7 @@ const CHAT: TeamChatPayload = {
   packet_note: 'no packet on the wire',
   messages: [
     { at: NOW - 600_000, from: 'aaaaaaaa-1111', from_slot: 's-lead', from_head: 'claude', to: 'uds:/tmp/b.sock', to_slot: 's-build', packet: null, text: 'build it', text_source: '/t.jsonl', missing_reason: null },
-    { at: NOW - 300_000, from: 'cccccccc-9999', from_slot: null, from_head: null, to: 'someone-else', to_slot: null, packet: null, text: null, text_source: null, missing_reason: 'no transcript for the sender in ~/.claude/projects' },
+    { at: NOW - 300_000, from: 'cccccccc-9999', from_slot: null, from_head: null, to: 'someone-else', to_slot: null, packet: null, text: null, text_source: null, missing_reason: 'The sender transcript is no longer on this machine.' },
   ],
 };
 
@@ -175,7 +175,7 @@ describe('the messages and the activity', () => {
   const members = membersOf(TEAM, SESSIONS, ECONOMICS, NOW);
 
   test('the sender resolves by session and the recipient by slot; a stranger keeps its own string', () => {
-    const messages = messagesOf(members, CHAT) ?? [];
+    const messages = messagesOf(members, CHAT, TEAM) ?? [];
     expect(messages.map((m) => [m.time, m.from, m.to, m.fromHead])).toEqual([
       [hhmm(NOW - 600_000), 'lead-seat', 'bbbbbbbb-2222', 'claude'],
       [hhmm(NOW - 300_000), 'cccccccc-9999', 'someone-else', '–'],
@@ -183,9 +183,11 @@ describe('the messages and the activity', () => {
   });
 
   test('a text the daemon could not read prints its reason, and no packet is invented', () => {
-    const messages = messagesOf(members, CHAT) ?? [];
-    expect(messages[0].text).toBe('build it');
-    expect(messages[1].text).toBe('text not read: no transcript for the sender in ~/.claude/projects');
+    const messages = messagesOf(members, CHAT, TEAM) ?? [];
+    expect(messages[0]).toMatchObject({ fromRole: 'lead', toRole: 'builder', text: 'build it' });
+    const repeated = { ...TEAM, slots: [...TEAM.slots, slot('s-build-two', 'builder', 'eeeeeeee-4444')] };
+    expect(messagesOf(members, CHAT, repeated)?.[0].toRole).toBe('builder · s-build');
+    expect(messages[1].text).toBe('The sender transcript is no longer on this machine.');
     expect(messages.every((m) => m.packet === '–')).toBe(true);
   });
 

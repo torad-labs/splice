@@ -16,6 +16,8 @@ export const S = {
   nextDay: 'Next day',
   today: 'Today',
   deleted: 'Message history deleted',
+  notKept: 'History not kept',
+  partlyKept: 'History partly kept',
 } as const;
 
 export const H = {

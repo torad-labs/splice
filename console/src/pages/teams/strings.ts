@@ -41,6 +41,7 @@ export const H = {
   reading: 'Waiting for splice to answer.',
   noTeams: 'Name a team, point it at a repo, and seat its roles.',
   turnsPending: 'This splice version does not serve the turn log.',
+  missingText: 'The message text is unavailable.',
 } as const;
 
 export const U = {

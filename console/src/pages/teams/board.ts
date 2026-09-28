@@ -24,6 +24,7 @@ import type {
 import { SESSION_TAG_CHARS, clockText, tokensIn } from '@widgets/team-board';
 import type { TeamHourPoint, TeamTurn, TeamViewData } from '@widgets/team-board';
 import { ABSENT } from '@shared/lib';
+import { H } from './strings';
 
 const MINUTE_MS = 60_000;
 
@@ -120,19 +121,31 @@ export function membersOf(team: TeamRow, sessions: readonly SessionRow[], econom
  * string. The daemon has no packet for a message (`packet_note` says why), and a text it could not
  * read prints the reason it gave.
  */
-export function messagesOf(members: readonly TeamMemberRow[], chat: TeamChatPayload | null): TeamMessage[] | null {
+export function messagesOf(members: readonly TeamMemberRow[], chat: TeamChatPayload | null, team?: TeamRow): TeamMessage[] | null {
   // Unread is not none (Hitstop, 2026-09-25): an empty list here printed "Messages 0 today" for the
   // first moment of every open, and the lanes took it as their first read.
   if (chat === null) return null;
-  return chat.messages.map((message) => ({
-    at: message.at,
-    time: hhmm(message.at),
-    from: members.find((m) => m.sessionId === message.from)?.name ?? message.from,
-    to: (message.to_slot === null ? undefined : members.find((m) => m.slot === message.to_slot)?.name) ?? message.to,
-    packet: ABSENT,
-    text: message.text ?? `text not read: ${message.missing_reason ?? 'no reason given'}`,
-    fromHead: message.from_head ?? ABSENT,
-  }));
+  const role = (slot: string | null): string | undefined => {
+    const row = team?.slots.find((candidate) => candidate.id === slot);
+    if (row === undefined) return undefined;
+    return team?.slots.some((candidate) => candidate.id !== row.id && candidate.role === row.role)
+      ? `${row.role} · ${row.id}` : row.role;
+  };
+  return chat.messages.map((message) => {
+    const fromRole = role(message.from_slot);
+    const toRole = role(message.to_slot);
+    return {
+      at: message.at,
+      time: hhmm(message.at),
+      from: members.find((m) => m.sessionId === message.from)?.name ?? message.from,
+      to: (message.to_slot === null ? undefined : members.find((m) => m.slot === message.to_slot)?.name) ?? message.to,
+      ...(fromRole === undefined ? {} : { fromRole }),
+      ...(toRole === undefined ? {} : { toRole }),
+      packet: ABSENT,
+      text: message.text ?? message.missing_reason ?? H.missingText,
+      fromHead: message.from_head ?? ABSENT,
+    };
+  });
 }
 
 /** The day's activity samples, each under its member's name; null while they have not been read. */
@@ -152,7 +165,7 @@ export function boardOf(team: TeamRow, sessions: readonly SessionRow[], panels: 
   return {
     team,
     members,
-    messages: messagesOf(members, answered(panels, team, (p) => p.chat)),
+    messages: messagesOf(members, answered(panels, team, (p) => p.chat), team),
     activity: activityOf(members, answered(panels, team, (p) => p.activity)),
     spliceHeads,
   };

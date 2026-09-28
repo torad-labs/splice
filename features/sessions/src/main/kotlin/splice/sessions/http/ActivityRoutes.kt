@@ -236,8 +236,8 @@ internal object HandedText {
     }
 
     private fun missingReason(sent: SentTexts?): String = when {
-        sent == null -> "no transcript lookup ran"
-        sent.path == null -> "no transcript for the sender in " + sent.searched.joinToString()
-        else -> "the call is not in ${sent.path}"
+        sent == null -> "The sender transcript was not checked."
+        sent.path == null -> "The sender transcript is no longer on this machine."
+        else -> "The message is not in the sender transcript."
     }
 }

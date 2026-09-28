@@ -346,7 +346,8 @@ to that account with `/login` in `claude-splice`, then run `splice login claude-
 Everything splice writes stays on your machine, under your user account; nothing below is sent
 anywhere. Its own state lives in `~/.splice`: the state directory `~/.splice/state` and the logs in
 `~/.splice/logs`, which splice holds owner-only (0700) from the moment the daemon starts, so only
-your account can read what is inside. Config and credentials live in `~/.config/splice`, where every
+your account can read what is inside. Config and credentials live in `~/.config/splice`, except the
+copies of Claude logins you save under a label, which live in `~/.splice/state/claude-logins/`; every
 credential is written 0600. splice also writes into the Claude Code config directories it launches
 (`~/.claude-<head>/`), and the install lives in `~/.local/share/splice` and `~/.local/bin`.
 

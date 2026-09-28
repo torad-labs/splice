@@ -9112,5 +9112,8 @@ id = "V4-390"
 phase = "release"
 title = "GPT lite turns send the Responses shape codex-rs sends: (1) no role 'system' input item. codex never sends one; it uses developer (context/hook_additional_context.rs:21), while splice passed Claude Code's system messages through (ResponsesInputBuilder.kt appendMessage), 2,579 system items across 8 claudex sessions on Sep 28, 2,379 of them directly after a tool output. (2) function and freeform tools grouped into the 'functions' namespace as create_tools_json_for_responses_lite does (codex tools/src/tool_spec.rs:95-142, client.rs:893). The gpt-6-sol template names functions.exec; codex history carries namespace 'functions' on the exec call (core/tests/common/context_snapshot/context_snapshot_tests.rs:102)."
 files = ["integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesInputBuilder.kt", "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesLite.kt", "integrations/dialects/openai-responses/src/test/kotlin/splice/dialect/responses/v4390/"]
-status = "todo"
+status = "in_flight"
 verify = ""
+claimed_by = "splice-lead"
+claimed_at = "2026-09-28T10:44:01.987Z"
+# [2026-09-28] CLAIM: owner=splice-lead at=2026-09-28T10:44:01Z

@@ -18,11 +18,14 @@ export function initSession(): void {
   sessionStore.setState({ hasKey: Boolean(currentKey()), locked: !currentKey() });
 }
 
-/** Store the pasted management key and unlock; pollers retry on their next tick. A new attempt
- *  clears the refusal until the daemon answers it. */
+/** Store the pasted management key and unlock. A new attempt clears the refusal until the daemon
+ *  answers it, and moves `unlocks`, which re-draws the shell so every read the missing key refused
+ *  runs again at once instead of at its next tick. */
 export function unlock(key: string): void {
   storeKey(key);
-  sessionStore.setState({ locked: false, hasKey: Boolean(key.trim()), refused: false });
+  sessionStore.setState((state) => ({
+    locked: false, hasKey: Boolean(key.trim()), refused: false, unlocks: state.unlocks + 1,
+  }));
 }
 
 /** GET /api/sessions — the registry, re-read daemon-side on every request because Claude Code

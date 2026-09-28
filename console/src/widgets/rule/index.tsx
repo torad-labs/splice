@@ -273,8 +273,8 @@ export function Rule() {
     };
   }, []);
 
-  // A missing or refused key stops the stream. Reconnect on the unlock transition without
-  // remounting the strip, its pollers, or its event subscriptions.
+  // A missing or refused key stops the stream. Reconnect when a key arrives; an unlock also re-draws
+  // the strip (app/App.tsx), which starts its pollers and subscriptions afresh.
   useEffect(() => {
     if (hasKey && !locked) connect();
   }, [hasKey, locked]);

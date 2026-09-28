@@ -9,6 +9,7 @@
 // address through the redirect routes below.
 import { Suspense, useState } from 'react';
 import { Navigate, Outlet, RouterProvider, createHashRouter, useLocation } from 'react-router';
+import { useSession } from '@entities/session';
 import { useTheme } from '@features/theme';
 import { Palette } from '@features/palette';
 import { selectView, usePageViews } from '@features/views';
@@ -46,11 +47,15 @@ function Console() {
   const views = usePageViews(address);
   // The sidebar's "jump to" opens the same palette the keyboard does.
   const [palette, setPalette] = useState(false);
+  // A key handed over behind the gate re-draws the rail, the strip and the page: every read the
+  // missing key refused, polled or asked once on mount, runs again now rather than at its next tick
+  // (V4-401). The gate and the palette are not keyed, so neither loses what the operator typed.
+  const unlocks = useSession((state) => state.unlocks);
 
   return (
     <div className="myx-console">
-      <Rail active={address} groups={RAIL_GROUPS} theme={theme} onTheme={set} onJump={() => setPalette(true)} />
-      <div className="myx-console-main">
+      <Rail key={unlocks} active={address} groups={RAIL_GROUPS} theme={theme} onTheme={set} onJump={() => setPalette(true)} />
+      <div className="myx-console-main" key={unlocks}>
         <Rule />
         <main className="myx-console-page">
           <Outlet />

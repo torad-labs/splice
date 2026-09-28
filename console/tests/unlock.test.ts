@@ -39,6 +39,17 @@ describe('the key gate', () => {
     expect(useSession.getState()).toMatchObject({ locked: false, refused: false });
   });
 
+  // V4-401: the shell keys what it draws on this count, so a key that arrives re-runs every read the
+  // missing one refused. It moves on every unlock, the refused ones too: a wrong key is a new attempt
+  // whose reads must run again.
+  test('every unlock moves the count the shell is drawn on', () => {
+    const start = useSession.getState().unlocks;
+    unlock('first-try');
+    expect(useSession.getState().unlocks).toBe(start + 1);
+    unlock('second-try');
+    expect(useSession.getState().unlocks).toBe(start + 2);
+  });
+
   test('the modal prints the refusal in words, and only when there was one', () => {
     const refused = renderToStaticMarkup(h(UnlockForm, { refused: true }));
     expect(refused).toContain('That key was refused.');

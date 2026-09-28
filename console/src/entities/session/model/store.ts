@@ -14,12 +14,16 @@ export interface SessionState {
   /** The 401 that locked the console answered a request that CARRIED a key: the daemon refused the
    *  key, which is a different fact from never having been given one. Cleared by the next unlock. */
   refused: boolean;
+  /** How many times a key has been handed over this visit. The shell keys what it draws on it, so a
+   *  key that arrives re-runs every read the missing one refused (V4-401). */
+  unlocks: number;
 }
 
 export const sessionStore = create<SessionState>(() => ({
   locked: false,
   hasKey: false,
   refused: false,
+  unlocks: 0,
 }));
 
 /** The registry. Not a PendingRoute union: /api/sessions exists (ControlServer.kt:154), so a 404

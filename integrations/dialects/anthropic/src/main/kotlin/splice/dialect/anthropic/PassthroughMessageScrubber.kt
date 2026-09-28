@@ -40,6 +40,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.turn.SpliceNotice
 import splice.core.util.DaemonLog
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
@@ -110,7 +111,7 @@ internal class PassthroughMessageScrubber(
     private fun scrubBlock(block: JsonObject): JsonObject? {
         val type = JsonScalars.strOrEmpty(block[TYPE])
         quirks.blockAllowlist?.let { if (type !in it) return dropDisallowed(type) }
-        if (isEmptyThinking(type, block)) return null
+        if (isSpliceNotice(type, block) || isEmptyThinking(type, block)) return null
         return rebuildBlock(block, type)
     }
 
@@ -125,6 +126,10 @@ internal class PassthroughMessageScrubber(
         }
         return null
     }
+
+    /** Exact marker only: model thinking with notice-shaped text or another signature stays intact. */
+    private fun isSpliceNotice(type: String, block: JsonObject): Boolean =
+        type == TYPE_THINKING && JsonScalars.strIfString(block["signature"]) == SpliceNotice.SIGNATURE
 
     /** A whitespace-only thinking block holds nothing worth keeping, SIGNED OR NOT (V4-157 in the
      *  header). The shape has two possible authors and the rule must not care which: an upstream

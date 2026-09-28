@@ -24,6 +24,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
+import splice.core.turn.SpliceNotice
 import splice.core.turn.Usage
 import splice.core.wire.ErrorEnvelope
 import splice.upstream.sse.WireSink
@@ -145,7 +146,14 @@ internal class SseEmitter(
     /** Close the status-line block before a terminal, so nothing of ours sits open across the end.
      *  A no-op for the overwhelming majority of turns, which never went quiet enough to open one. */
     private suspend fun closeProgress() {
-        progressMutex.withLock { progressIndex?.let { progress.blocks.closeBlock(it) } }
+        progressMutex.withLock {
+            progressIndex?.let { index ->
+                // Sign only splice's own progress block after its last thinking delta. Claude Code
+                // stores this marker with the replayed block; upstream scrubbers discard it exactly.
+                progress.blocks.signatureDelta(index, SpliceNotice.SIGNATURE)
+                progress.blocks.closeBlock(index)
+            }
+        }
     }
 
     /** The ONLY clean ending — derives stop_reason internally (L3). */

@@ -621,8 +621,11 @@ test('Needs you opens each item on its page, and a link to another item opens it
   // The stack's key head has no key (a head item) and its wrappers are not linked (doctor items).
   const faults = await open(page, 'needs-you');
   const items = page.locator('main').getByRole('table', { name: 'Open items', exact: true });
-  const wrappers = items.getByRole('row').filter({ hasText: 'splice install --all' }).first();
+  const wrappers = items.getByRole('row').filter({ hasText: 'installation/wrapper' }).first();
   await expect(wrappers, 'the wrappers are not on Needs you').toBeVisible({ timeout: 15_000 });
+  await expect(wrappers.getByRole('button', { name: 'Run fix' })).toBeVisible();
+  await wrappers.getByRole('button', { name: 'If unavailable' }).click();
+  await expect(wrappers).toContainText('splice install --all');
   const check = (await wrappers.locator('th, td').first().innerText()).trim();
   await wrappers.getByRole('link', { name: 'Doctor', exact: true }).click();
   await expect(page).toHaveURL(/#\/doctor\?open=/);
@@ -655,10 +658,13 @@ test('a check the daemon fixes itself runs its fix from the detail, and the answ
   // refusal's path end to end. tests/doctor-fix.test.ts holds the applied one.
   const faults = await open(page, 'doctor');
   const rack = page.locator('main').getByRole('table', { name: 'Checks', exact: true });
-  const wrappers = rack.getByRole('row').filter({ hasText: 'splice install --all' });
+  const wrappers = rack.getByRole('row').filter({ hasText: 'installation/wrapper' });
   await expect(wrappers.first()).toBeVisible({ timeout: 15_000 });
   await wrappers.first().getByRole('button').click();
   const detail = page.getByRole('complementary', { name: 'Check detail' });
+  await expect(detail.getByRole('button', { name: 'Run fix', exact: true })).toBeVisible();
+  await detail.getByRole('button', { name: 'If unavailable' }).click();
+  await expect(detail).toContainText('splice install --all');
   await detail.getByRole('button', { name: 'Run fix', exact: true }).click();
   const answered = page.waitForResponse((response) => response.request().method() === 'POST'
     && new URL(response.url()).pathname === '/api/doctor/fix/install_all');

@@ -1080,6 +1080,11 @@ test('turns writes body capture for a head through the daemon, re-reads it, and 
     const at = calls.findIndex((call) => call.method === 'PUT' && call.body !== null && (JSON.parse(call.body) as { enabled?: unknown }).enabled === enabled);
     return at >= 0 && calls.slice(at + 1).some((call) => call.method === 'GET');
   };
+  // /health's topologyStale: splice.toml against the topology the daemon booted (V4-359, V4-373).
+  const stale = async (): Promise<unknown> =>
+    ((await (await page.request.get(`${env('CONSOLE_E2E_BASE')}/health`)).json()) as { topologyStale?: unknown }).topologyStale;
+  const oauthTrace = new RegExp(`\\[heads\\.${STACK.oauthHead}\\.overrides\\][^[]*trace =`);
+  expect(await stale(), 'the topology was stale before capture was touched').toBe(false);
 
   const turns = page.getByRole('button', { name: `Turn detail ${STACK.oauthHead} ${STACK.model}` });
   await expect(turns.first()).toBeVisible({ timeout: 15_000 });
@@ -1106,6 +1111,7 @@ test('turns writes body capture for a head through the daemon, re-reads it, and 
   await expect(detail).not.toContainText('Recording bodies');
   const toml = readFileSync(env('CONSOLE_E2E_CONFIG'), 'utf8');
   expect(toml, 'the write did not reach splice.toml').toMatch(new RegExp(`\\[heads\\.${STACK.oauthHead}\\.overrides\\][^[]*trace = "true"`));
+  await expect.poll(stale, { message: 'On is not in the booted topology, so it reads stale' }).toBe(true);
 
   // A turn driven AFTER the write: its bodies are not recorded until the daemon restarts, so its row
   // names no trace turn and opening it must not print one. The table lists the newest turn first.
@@ -1122,7 +1128,12 @@ test('turns writes body capture for a head through the daemon, re-reads it, and 
   await expect.poll(() => wroteThenReread(false), { message: 'the switch never wrote enabled=false and re-read' }).toBe(true);
   await expect(toggle).toHaveAttribute('aria-checked', 'false');
   await expect(detail).not.toContainText('Restart to apply');
-  expect(readFileSync(env('CONSOLE_E2E_CONFIG'), 'utf8')).toMatch(/trace = "false"/);
+  // Off is absence, not the literal false (V4-359): the head's overrides carry no trace key, and the
+  // file is the topology the daemon booted again.
+  const after = readFileSync(env('CONSOLE_E2E_CONFIG'), 'utf8');
+  expect(after, 'Off left a trace key under the head').not.toMatch(oauthTrace);
+  expect(after, 'Off wrote the literal false').not.toMatch(/trace = "false"/);
+  await expect.poll(stale, { message: 'Off left the topology stale' }).toBe(false);
   expect(faults.pageErrors, 'the capture journey threw').toEqual([]);
   expect([...new Set(faults.failedReads)], 'reads the daemon refused').toEqual([]);
 });

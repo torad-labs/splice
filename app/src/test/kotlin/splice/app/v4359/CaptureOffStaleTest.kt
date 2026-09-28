@@ -1,6 +1,8 @@
 // V4-359: capture Off is absence, not the literal false. A no-override boot must become identical
 // after On then Off; only the trace key is removed, not its retention or body-cap siblings.
-package splice.head.wire.v4359
+// In :app (V4-373) because it round-trips through the real parser: :integrations-topology is not a
+// test dependency :features-turns may take (ModuleLawsTest, HD-11), and :app depends on both.
+package splice.app.v4359
 
 import io.ktor.http.HttpStatusCode
 import org.junit.jupiter.api.Assertions.assertEquals

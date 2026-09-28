@@ -77,9 +77,14 @@ async function open(page: Page, name: string): Promise<Faults> {
  *  leaves. A tip takes no pointer, so it takes one for the probe; hit-testing still honours clips.
  *  With [subject], the tip must also leave clear the text it explains. */
 async function expectWholeTip(trigger: Locator, where: string, subject?: Locator): Promise<void> {
+  // Scrolling intentionally closes an open tip. Settle Playwright's auto-scroll before hover:
+  // otherwise the exit fade remains visible while the popover has left the top layer.
+  await trigger.scrollIntoViewIfNeeded();
   await trigger.hover();
   const tip = trigger.page().locator(`[id="${await trigger.getAttribute('aria-describedby')}"]`);
   await expect(tip, `${where}: the tip did not open`).toBeVisible();
+  await expect.poll(() => tip.evaluate((body) => body.matches(':popover-open')),
+    { message: `${where}: a fading-out tip is not an open popover` }).toBe(true);
   if (subject !== undefined) {
     // Both boxes from one layout: two reads apart compare one layout's tip with the next one's text
     // when a poll re-flows the page between them (fired once, CI run 36194751483, on a console that
@@ -100,11 +105,14 @@ async function expectWholeTip(trigger: Locator, where: string, subject?: Locator
     const inset = 2;
     const corners = [[box.left, box.top], [box.right, box.top], [box.left, box.bottom], [box.right, box.bottom]]
       .map(([x, y]) => [x + (x === box.left ? inset : -inset), y + (y === box.top ? inset : -inset)]);
-    const onTop = corners.every(([x, y]) => body.contains(document.elementFromPoint(x, y)));
+    const hits = corners.map(([x, y]) => {
+      const hit = document.elementFromPoint(x, y);
+      return { inside: body.contains(hit), tag: hit?.tagName ?? 'none', className: typeof hit?.className === 'string' ? hit.className : '' };
+    });
     body.style.pointerEvents = '';
-    return { inWindow, onTop };
+    return { inWindow, onTop: hits.every((hit) => hit.inside), open: body.matches(':popover-open'), hits };
   });
-  expect(seen, `${where}: the open tip must be whole in the window and on top`).toEqual({ inWindow: true, onTop: true });
+  expect({ inWindow: seen.inWindow, onTop: seen.onTop }, `${where}: tip open=${seen.open}, corner hits=${JSON.stringify(seen.hits)}`).toEqual({ inWindow: true, onTop: true });
 }
 
 /** Every stat figure on the page that its tile cuts, by its text: a figure is the point of its tile,

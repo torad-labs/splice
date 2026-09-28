@@ -9281,3 +9281,11 @@ verify = "red first: /api/usage for a window observed 16 min ago (resets_at in t
 claimed_by = "splice-lead"
 claimed_at = "2026-09-28T17:55:35.494Z"
 # [2026-09-28] CLAIM: owner=splice-lead at=2026-09-28T17:55:35Z
+
+[[items]]
+id = "V4-397"
+phase = "release"
+title = "A code-mode turn that cannot save its state says why (operator report, Sep 28: 'codemode is buggy', grail-codex at 11:00 AM CT). The root disk was full 10:57:31-11:03:43 AM CT (journal ENOSPC), and every claudex code-mode save in that window failed as '400 [SPLICE-INVALID-REQUEST] code-mode state persistence failed; source was not rerun' (daemon.log 10:57:34-11:03:22, none since). The message dropped the cause: CodexCodeModeStore.kt:34-36 wraps the IOException, and SafeFailureText withholds a plain IOException's text, so the user read a code-mode bug. When the save fails, the store reads the free space on the state file's disk, and a disk short of the bytes it tried to write is named as full in the turn's message and the log line; any other failure keeps its safe-rendered cause. The source stays not-rerun (400, CODE_MODE_PROTOCOL): unchanged."
+files = ["integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodeModePersistenceException.kt", "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeStore.kt", "integrations/providers/codex/src/test/kotlin/splice/provider/codex/v4397/"]
+status = "todo"
+verify = "red first: a store whose write throws IOException while its disk reports fewer free bytes than the state it wrote fails with a message naming the full disk and the not-rerun guarantee (today: the bare 'state persistence failed'); a failure with free space left keeps a cause-bearing message; :integrations-codex:test and detekt green; CI gate on the exact sha"

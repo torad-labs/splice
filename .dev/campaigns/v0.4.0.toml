@@ -8413,7 +8413,7 @@ claimed_at = "2026-09-28T07:14:50.677Z"
 id = "V4-348"
 phase = "release"
 title = "Every page uses my words (build order 5; acceptance Q0c, Q31, Q32, Q64): plans, sessions, requests, instructions, commands, ChatGPT; never head, knobs, daemon, backend, codex, registry, 'bound session', 'tiers filled'. Settings gets an instructions group a person would notice. Plus the baseline's craft faults: Fleet's Head and Provider headers print on top of each other, Add backend squeezes the heads table until the command name disappears, Turns truncates model names and cache percentages."
-files = ["console/src/"]
+files = ["console/src/", "console/e2e/console.spec.ts"]
 status = "in_flight"
 verify = "Marlin walks it by eye in a normal-size browser on a fresh home (or the film home where history is needed) at the built sha and approves; his walk log names the sha; CI gate on the train sha. A green gate is not approval."
 # depends:V4-344,V4-345,V4-346,V4-347
@@ -8426,6 +8426,7 @@ verify = "Marlin walks it by eye in a normal-size browser on a fresh home (or th
 claimed_by = "console"
 claimed_at = "2026-09-28T08:46:12.984Z"
 # [2026-09-28] CLAIM: owner=console at=2026-09-28T08:46:12Z
+# [2026-09-28] amend by=splice-lead: files were ["console/src/"]
 
 [[items]]
 id = "V4-349"

@@ -9227,6 +9227,7 @@ files = ["app/src/main/kotlin/splice/app/provider/ProviderAssembly.kt", "app/src
 status = "todo"
 verify = "red first: a topology with [providers.muse] dialect = anthropic-passthrough and muse-oauth builds claude-muse (today: incompatible auth kind) on the Responses arm, and the boot log carries the one stale-dialect line; a non-muse provider with muse-oauth still refuses; live: the operator's pre-V4-351 config restored from splice.toml.bak-20260928-pre-muse-responses-dialect on a throwaway home boots claude-muse ready"
 # [2026-09-28] amend by=splice-lead: files were ["app/src/main/kotlin/splice/app/provider/ProviderAssembly.kt", "app/src/test/kotlin/splice/app/provider/v4393/", "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/", "CHANGELOG.md"]
+# [2026-09-28] CHANGELOG line is splice-lead's under V4-254 (CHANGELOG.md is that row's fence).
 
 [[items]]
 id = "V4-394"

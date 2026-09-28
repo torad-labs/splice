@@ -14,6 +14,15 @@ layers exist exactly so a cut turn comes back on its own. The install is reversi
 backup is taken first (global rules §21). The only reasons to hold a restart are a red gate or a
 jar the seat did not build and verify itself.
 
+Never wait for a turn, a stop, or another seat's work (2026-09-28). Operator: "YOU CAN ALWAYS INSTALL
+AND RESTART SPLICE at anytime, never wait for a turn or for a stop. SPlice WAS BUIULT to recover, if
+you restart, and the session dont recover bythesmelvfes we have a bug." Restart with
+`splice restart --now` the moment the jar is installed. No gate on a local model server's load, a
+peer's GPU run, a peer's "hold the restart" message or an idle window. A session that does not come
+back on its own after a restart is a splice defect: file it as a row with the evidence, never wait
+the next restart around it. Scar: a gated restart waited 15 minutes for rig's 8102 to report idle
+while the green jar sat on disk.
+
 The procedure, every time, in this order:
 
 1. Clean build tree of the exact sha, never the dirty worktree:
@@ -46,7 +55,7 @@ The procedure, every time, in this order:
    ~/.local/share/splice/splice.jar.bak-<date>-pre-<sha>`.
 4. Atomic install: `cp` the built jar to a sibling path in the same directory, then `mv` it over
    `splice.jar`.
-5. `splice restart`.
+5. `splice restart --now`, at once, with no gate in front of it (see above).
 6. Verify the OPEN file, not the path: sha256 of the jar fd under `/proc/<pid>/fd/` equals the
    built jar's sha256. Print both beside the result in one command block.
 7. One ledger note naming the sha, the CI run, the pid, and the backup path. Announce "gradle busy"

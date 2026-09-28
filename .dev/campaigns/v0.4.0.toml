@@ -8608,6 +8608,7 @@ claimed_at = "2026-09-27T19:18:16.971Z"
 # [2026-09-27] amend by=orchestrator: files were ["console/src/pages/kept/", "console/src/app/pages.ts", "console/src/app/nav.tsx", "console/src/app/rows.ts", "console/src/app/strings.ts", "console/tests/v4364-kept.test.ts"]
 # [2026-09-27] Deferred before first edit: V4-369 is the first-hour Sign in blocker from Marlin F2. No V4-364 source file has been touched; resume after V4-369 has a tested automatic provider-tab handoff.
 # [2026-09-27] Route contract from claude-builder (V4-367/V4-368, Sep 27, ~3:08 PM CT): guarded GET/DELETE /api/kept/edges, /api/kept/labels, and per head /api/heads/{head}/trace/kept. GET names retained counts, the age-out day and state; DELETE names removed counts. The page's rows and confirms read these.
+# [2026-09-28] SLICE FIRST (orchestrator, 8:15 PM CT): V4-367's messageEdges knob and /api/kept/{edges,labels} routes turn 9 console parity tests red (settings coverage, knob-copy, coverage baseline; console's report). Per V4-367's verify the console copy is this row's. Console does that slice right after V4-369 and before V4-375; the page stays later in this row. V4-367 is pushed only together with the slice so the gate sees one tree.
 
 [[items]]
 id = "V4-365"

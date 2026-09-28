@@ -9450,9 +9450,12 @@ id = "V4-405"
 phase = "release"
 title = "A plan account whose credential is gone is invisible after a restart (Marlin, V4-357 walk on bb54736ea, walk-357): chatgpt-oauth/ with work-quota.json and no work.json lists only the primaries in /api/accounts after restart, so Needs you never offers 'Sign in again' and V4-357's renew path is unreachable after any restart. OAuthAccountFiles.discover (OAuthAccountFiles.kt:141-160) keeps only regular non-link *.json that are not -quota.json. A symlinked credential is dropped silently too (NOFOLLOW filter), so its refusal never reaches the console."
 files = ["integrations/oauth/src/main/kotlin/splice/oauth/OAuthAccountFiles.kt", "integrations/oauth/src/test/kotlin/splice/oauth/v4405/"]
-status = "todo"
+status = "in_flight"
 verify = "red first: a pool dir with <label>-quota.json and no <label>.json lists <label> with credential_present false after a fresh discover (so Needs you offers renew); a symlinked <label>.json lists as refused with its reason, never loaded as a credential; regular labeled credentials and the primary are unchanged. Mutant: drop the orphan branch and the listing test goes red. Marlin re-walks V4-357 on walk-357 up to the renew form (no real sign-in)."
 # [2026-09-28] amend by=splice-lead: files were ["integrations/oauth/src/main/kotlin/splice/oauth/OAuthAccountFiles.kt", "integrations/oauth/src/test/kotlin/splice/oauth/v4405/", "features/accounts/src/main/kotlin/splice/accounts/pool/AccountsRoute.kt"]
+claimed_by = "fin"
+claimed_at = "2026-09-28T22:22:31.410Z"
+# [2026-09-28] CLAIM: owner=fin at=2026-09-28T22:22:31Z
 
 [[items]]
 id = "V4-406"

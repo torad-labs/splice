@@ -8698,11 +8698,14 @@ id = "V4-373"
 phase = "release"
 title = "Gate red on 1feac41bb from V4-359 (CI run 36346415857, 3:16 PM CT), fix forward, two legs. (1) ModuleLawsTest.kt:655 MODULE DEPENDENCY DIRECTION (HD-11, V4-91): ':features-turns may not depend on :integrations-topology in a TEST configuration' (allowed: core, features-sessions, the three dialects, integrations-http, integrations-upstream); V4-359 added testImplementation(project(\":integrations-topology\")) to features/turns/build.gradle.kts, which the orchestrator approved and the law refuses. The real-parser round-trip moves to :app, which depends on both (claude-builder's first proposal), and the build line goes. (2) consoleE2e console.spec.ts:1072 'turns writes body capture ... re-reads it' asserts at :1126 that splice.toml holds trace = \"false\" after Off, which is the old behaviour V4-359 fixed; the e2e now asserts the head's overrides carry no trace key after Off and /health reads topologyStale=false."
 files = ["features/turns/build.gradle.kts", "features/turns/src/test/kotlin/splice/head/wire/v4359/", "app/src/test/kotlin/splice/app/v4359/", "console/e2e/console.spec.ts", ".dev/restructure/capabilities.tsv"]
-status = "todo"
+status = "in_flight"
 verify = "ModuleLawsTest green with features/turns/build.gradle.kts back to its pre-V4-359 test dependencies; the v4359 test runs from app/src/test/kotlin/splice/app/v4359/ and still fails 3 of 4 against pre-fix CaptureRoutes (red re-proven in a detached pre-fix tree) and passes 4 of 4 now; console.spec.ts:1072 asserts no trace key under [heads.<oauth>.overrides] after Off and topologyStale false; the census row moves to the new path; CI gate green on the pushed sha."
 # [2026-09-27] CLAIM: owner=claude-builder at=2026-09-27T20:17:59Z
 # [2026-09-28] HANDOVER (orchestrator, 7:10 PM CT): claude-builder has sat in shell state since at least 3:40 PM CT and processed none of the go (sent 3:49 PM CT); the row was unstarted at 7:06 PM CT (no touch of its files in the tree or history). splice-lead takes it, same plan: the V4-359 round trip moves to :app, features/turns/build.gradle.kts back to its pre-V4-359 test deps, console.spec.ts:1126 asserts the key absent after Off.
 # [2026-09-28] CLAIM-RELEASED (named): owner=claude-builder
+claimed_by = "splice-lead"
+claimed_at = "2026-09-28T00:06:58.543Z"
+# [2026-09-28] CLAIM: owner=splice-lead at=2026-09-28T00:06:58Z
 
 [[items]]
 id = "V4-374"

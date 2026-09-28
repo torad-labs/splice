@@ -2634,3 +2634,5 @@ console/src/pages/kept/strings.ts	9e4a6d0befc1bd845e36d6ad95296f53a31c0ff752d734
 console/src/pages/kept/kept.css	0d32fc7dc4c4527056ebd27e08a733ba21d15c029678093b40bfebfc2baf7e39	created		added by V4-364: the kept page's tokenized layout
 console/src/pages/kept/coverage.ts	5bece96a36041c992cef9d0b83b698f00bb157e8e711193c2e2b7262f9fb1da5	created		added by V4-364: the kept page's route dispositions and its job
 console/tests/v4364-kept.test.ts	797e7fafca7ffc4d22e3e28f58f04fa67ebeb89e3f4db64c5a560228fbdb0fcc	created		added by V4-364: red-first census, deletion and switch tests for the kept page
+features/turns/src/main/kotlin/splice/head/wire/TraceDeleteRoutes.kt	a2542526df4e6734f88ee6c544724270959825315ef7ac9d20207d57161e0c98	created		added by V4-368: guarded per-head trace inventory and file-lane delete
+features/turns/src/test/kotlin/splice/head/wire/v4368/TraceDeleteRoutesTest.kt	dfac528cb49fefd54895a02d8406c51e079cd8a03d4ba44e3fe3ec0f16d82758	created		added by V4-368: per-head deletion, path safety, active-writer and deleted-reader regressions

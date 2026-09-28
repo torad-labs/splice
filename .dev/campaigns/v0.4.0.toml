@@ -8727,6 +8727,7 @@ title = "A cleared head-override field in Settings' topology editor removes the 
 files = ["console/src/pages/settings/", "console/tests/settings.test.ts"]
 status = "todo"
 verify = "red first: a settings test clears the only [heads.local.overrides] key in the structured editor and asserts the PUT /api/topology body carries no heads.local.overrides.trace (and no empty overrides table), failing today with trace = \"\"; a cleared key among several keeps the others; console lint/typecheck/test green; CI gate green on the pushed sha."
+# [2026-09-28] Marlin, 7:48 PM CT: p22 (walks-2026-09-27-v4360/p22 step 5) removed the override with the head view's reset, the path that works; V4-375 should make removing a key that obvious in the structured editor too.
 
 [[items]]
 id = "V4-376"

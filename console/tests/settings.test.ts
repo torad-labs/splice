@@ -196,6 +196,39 @@ describe('settings: the topology section', () => {
 });
 
 describe('settings: the document model', () => {
+  test('clearing a lone head override removes the key and table from the topology PUT', async () => {
+    const original = { heads: { local: { provider: 'local', overrides: { trace: 'true' } } } };
+    const next = setAtPath(original, 'heads.local.overrides.trace', '');
+    expect(valueAtPath(next, 'heads.local.overrides.trace')).toBeUndefined();
+    expect(valueAtPath(next, 'heads.local.overrides')).toBeUndefined();
+    expect(valueAtPath(original, 'heads.local.overrides.trace')).toBe('true');
+    const html = render(h(TopologySection, {
+      state: { path: 'splice.toml', topology: original, stale: false }, loaded: original, draft: original,
+      onDraft: () => undefined, onWrite: () => undefined, busy: false, result: null,
+    }));
+    expect(html).toContain('aria-label="Remove trace override"');
+    let body: unknown = null;
+    vi.stubGlobal('fetch', async (_url: string, init?: RequestInit) => {
+      body = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({ ok: true, restart_required: true }), { status: 200 });
+    });
+    try {
+      await saveTopology(next);
+      expect(body).toEqual({ topology: next });
+      expect(JSON.stringify(body)).not.toContain('overrides');
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  test('clearing one head override preserves its siblings', () => {
+    const original = { heads: { local: { overrides: { trace: 'true', wireTap: '4' } } } };
+    const next = setAtPath(original, 'heads.local.overrides.trace', '');
+    expect(valueAtPath(next, 'heads.local.overrides.trace')).toBeUndefined();
+    expect(valueAtPath(next, 'heads.local.overrides.wireTap')).toBe('4');
+    const withoutNumber = setAtPath(original, 'heads.local.overrides.wireTap', '');
+    expect(valueAtPath(withoutNumber, 'heads.local.overrides.wireTap')).toBeUndefined();
+    expect(valueAtPath(withoutNumber, 'heads.local.overrides.trace')).toBe('true');
+  });
+
   test('a leaf can be read and written back without touching the original', () => {
     const next = setAtPath(fixtureTopology, 'heads.claudex.port', 3999);
     expect(valueAtPath(next, 'heads.claudex.port')).toBe(3999);

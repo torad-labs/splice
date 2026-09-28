@@ -28,6 +28,7 @@ export const S = {
   rawToml: 'Raw topology',
   showDiff: 'Show diff',
   write: 'Write topology',
+  removeOverride: 'Remove override',
   changed: 'Changed fields',
   written: 'Written',
   refused: 'Refused',

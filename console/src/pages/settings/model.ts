@@ -100,6 +100,12 @@ export function fileOverrideNote(topology: Record<string, unknown> | null, head:
   return `${word(desired)} in splice.toml, ${word(knob.value)} running; ${outcome} after restart.`;
 }
 
+/** Only these paths are per-head overrides whose blank value means the key is removed. */
+export function headOverrideOf(path: string): { head: string; key: string } | null {
+  const match = /^heads\.([^.]+)\.overrides\.([^.]+)$/.exec(path);
+  return match === null ? null : { head: match[1], key: match[2] };
+}
+
 /**
  * Write a value at a dotted path, returning a new document and never touching the old one.
  *
@@ -111,6 +117,8 @@ export function setAtPath(
   path: string,
   value: unknown,
 ): Record<string, unknown> {
+  const override = headOverrideOf(path);
+  if (override !== null && (value === '' || value === null)) return withHeadOverride(topology, override.head, override.key, null);
   const segments = segmentsOf(path);
   const clone = (node: unknown): unknown => {
     if (Array.isArray(node)) return [...node];

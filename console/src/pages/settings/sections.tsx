@@ -10,7 +10,7 @@ import type { ClaudeHeadActionResult, ClaudeHeadPayload } from '@entities/claude
 import { validateTopology } from '@entities/topology';
 import type { TopologyState, TopologyWriteResult } from '@entities/topology';
 import { TomlEditor, TomlMerge } from '@widgets/toml-editor';
-import { changedPaths, coerce, parseList, setAtPath, topologyTables, toToml } from './model';
+import { changedPaths, coerce, headOverrideOf, parseList, setAtPath, topologyTables, toToml } from './model';
 import type { TopologyField, TopologyTable } from './model';
 import { H, S } from './strings';
 
@@ -50,7 +50,8 @@ function TopologyControl({ field, onChange }: { field: TopologyField; onChange: 
       label={field.key}
       value={text}
       numeric={field.kind === 'number'}
-      onChange={(raw) => onChange(coerce(raw, field.value as string | number))}
+      onChange={(raw) => onChange(headOverrideOf(field.path) !== null && raw.trim() === ''
+        ? '' : coerce(raw, field.value as string | number))}
       w={Math.min(72, Math.max(field.kind === 'number' ? 10 : 16, text.length + 2))}
     />
   );
@@ -111,8 +112,14 @@ export function TopologySection({ state, loaded, draft, onDraft, onWrite, busy, 
             <section key={table.path} className="myx-topo-table" aria-label={table.path || S.topLevel}>
               {tableTitle(table, group) === '' ? null : <h4 className="myx-topo-title">{tableTitle(table, group)}</h4>}
               <div className="myx-topo-fields">
-                {table.fields.map((field) => (
+                {table.fields.map((field) => headOverrideOf(field.path) === null ? (
                   <TopologyControl key={field.path} field={field} onChange={(value) => onDraft(setAtPath(draft, field.path, value))} />
+                ) : (
+                  <span key={field.path} className="myx-settings-row myx-topo-override">
+                    <TopologyControl field={field} onChange={(value) => onDraft(setAtPath(draft, field.path, value))} />
+                    <Key ariaLabel={`Remove ${field.key} override`} disabled={busy}
+                      onClick={() => onDraft(setAtPath(draft, field.path, ''))}>{S.removeOverride}</Key>
+                  </span>
                 ))}
               </div>
             </section>

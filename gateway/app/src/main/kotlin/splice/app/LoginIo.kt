@@ -25,6 +25,10 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 
+/** Set by the shared Gradle test task. Its presence means "you are inside the suite", and the
+ *  system browser refuses rather than opening a window on the operator's desktop. */
+internal const val NO_SYSTEM_BROWSER = "splice.noSystemBrowser"
+
 /** The shared login I/O primitives, held as a collaborator by each flow (Kotlin style law,
  *  2026-08-15): a helper used by several types is a small named class they construct, not a pair
  *  of free functions. */
@@ -32,8 +36,25 @@ internal class LoginIo {
 
     private val loginJson = Json { ignoreUnknownKeys = true }
 
-    /** Best-effort open of a URL in the operator's default browser; false when unsupported/failed. */
-    internal fun openBrowser(url: String): Boolean = Cancellables.runCatchingCancellable {
+    /** Best-effort open of a URL in the operator's default browser; false when unsupported/failed.
+     *
+     *  WALL: a TEST must never launch the operator's browser. DeviceLoginTokenlessTest ran the real
+     *  device flow, so every local `:app:test` opened http://127.0.0.1/verify in the operator's
+     *  browser, four tabs a run. The shared Gradle test task sets [NO_SYSTEM_BROWSER], so a test that
+     *  reaches this path fails by name instead of opening a window on someone's desktop. */
+    internal fun openBrowser(url: String): Boolean {
+        check(System.getProperty(NO_SYSTEM_BROWSER) == null) {
+            "a test reached the real system browser (host=${host(url)}); inject a browser fake"
+        }
+        return launch(url)
+    }
+
+    /** Host only: an authorize URL carries the PKCE challenge and state, which never belong in a
+     *  failure message. */
+    private fun host(url: String): String =
+        Cancellables.runCatchingCancellable { java.net.URI.create(url).host }.getOrNull() ?: "unknown"
+
+    private fun launch(url: String): Boolean = Cancellables.runCatchingCancellable {
         val os = System.getProperty("os.name").lowercase()
         val cmd = when {
             os.contains("mac") -> listOf("open", url)

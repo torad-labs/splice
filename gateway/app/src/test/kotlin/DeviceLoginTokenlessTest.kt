@@ -7,12 +7,17 @@
 // path with nothing exercising it is exactly the unearned claim this campaign keeps finding.
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.runBlocking
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.DeviceLoginFlow
 import splice.app.DeviceLoginSpec
+import splice.app.LoginIo
+import splice.app.NO_SYSTEM_BROWSER
 import splice.spi.Waiter
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
@@ -59,6 +64,10 @@ class DeviceLoginTokenlessTest {
         },
     )
 
+    /** Every verification link the flow asked to open. The real opener refuses inside the suite
+     *  (LoginIo's wall): before it did, each run of this file opened four browser tabs. */
+    private val opened = mutableListOf<String>()
+
     private fun runFlow(server: HttpServer, authPath: Path, waiter: Waiter = Waiter { }): Pair<Boolean, String> {
         val savedOut = System.out
         val out = ByteArrayOutputStream()
@@ -66,11 +75,29 @@ class DeviceLoginTokenlessTest {
             System.setOut(PrintStream(out, true))
             // A no-op waiter: the RFC 8628 interval is not what this arm is about, and without the
             // seam the arm would spend real seconds sleeping.
-            runBlocking { DeviceLoginFlow.run(specFor(server, authPath), waiter = waiter) } to out.toString()
+            runBlocking {
+                DeviceLoginFlow.run(specFor(server, authPath), waiter = waiter) { url -> opened.add(url).let { false } }
+            } to out.toString()
         } finally {
             System.setOut(savedOut)
             server.stop(0)
         }
+    }
+
+    @Test
+    fun `the flow opens the verification link through its seam, never the real browser`(@TempDir tmp: Path) {
+        val (ok, printed) = runFlow(serving("""{"access_token":"tok_device"}"""), tmp.resolve("auth.json"))
+
+        assertTrue(ok, printed)
+        assertEquals(listOf("http://127.0.0.1/verify"), opened)
+    }
+
+    @Test
+    fun `the real browser refuses inside the suite`() {
+        // Checked first: without the property the next line would open a real tab.
+        assertNotNull(System.getProperty(NO_SYSTEM_BROWSER), "the shared Gradle test task must set $NO_SYSTEM_BROWSER")
+        val refused = assertThrows(IllegalStateException::class.java) { LoginIo().openBrowser("http://127.0.0.1/verify") }
+        assertTrue(refused.message.orEmpty().contains("host=127.0.0.1"), refused.message)
     }
 
     @Test

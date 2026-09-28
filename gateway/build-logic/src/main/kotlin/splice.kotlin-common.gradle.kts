@@ -54,6 +54,10 @@ tasks.withType<Test>().configureEach {
     // per-connection state, so the 1000-stream CEILING test needs the extra heap. Real load is tens
     // of streams (far under 1g either way); this only funds the stress ceiling.
     maxHeapSize = "2g"
+    // NO REAL BROWSER. LoginIo.openBrowser refuses while this is set, so a test that reaches a real
+    // sign-in fails by name instead of opening a login page (http://127.0.0.1/verify, four tabs a
+    // run) on the operator's desktop. See LoginIo.kt's wall.
+    systemProperty("splice.noSystemBrowser", "1")
     // A CI failure must carry its assertion MESSAGE, not only "AssertionFailedError at X.kt:274".
     // Gradle's default prints the location alone, so the two CI-only failures of the perf
     // telemetry integration arm (runs 33608202738 and 33928312116) left no way to read what was

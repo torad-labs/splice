@@ -53,11 +53,17 @@ public object DeviceLoginFlow {
      *
      *  HD-19: [waiter] is the RFC 8628 poll interval, threaded down to [poll] rather than reached
      *  for as a bare `delay`. This is an `object`, so the seam rides the call instead of a
-     *  constructor; the default is the production behaviour, and LoginCommand passes nothing. */
-    public suspend fun run(spec: DeviceLoginSpec, waiter: Waiter = ProcessWaiter()): Boolean {
+     *  constructor; the default is the production behaviour, and LoginCommand passes nothing.
+     *  [openBrowser] is the same kind of seam for the verification link: tests record it, because
+     *  the real one refuses inside the suite (LoginIo's wall). */
+    public suspend fun run(
+        spec: DeviceLoginSpec,
+        waiter: Waiter = ProcessWaiter(),
+        openBrowser: (String) -> Boolean = loginIo::openBrowser,
+    ): Boolean {
         var restarts = 0
         while (true) {
-            when (attempt(spec, waiter)) {
+            when (attempt(spec, waiter, openBrowser)) {
                 Outcome.SUCCESS -> return true
                 Outcome.ABORT -> return false
                 Outcome.EXPIRED -> {
@@ -71,12 +77,12 @@ public object DeviceLoginFlow {
         }
     }
 
-    private suspend fun attempt(spec: DeviceLoginSpec, waiter: Waiter): Outcome {
+    private suspend fun attempt(spec: DeviceLoginSpec, waiter: Waiter, openBrowser: (String) -> Boolean): Outcome {
         val client = authClients.create()
         return try {
             Cancellables.runCatchingCancellable {
                 val auth = requestDeviceAuth(client, spec) ?: return@runCatchingCancellable Outcome.ABORT
-                announce(spec, auth)
+                announce(spec, auth, openBrowser)
                 poll(client, spec, auth, waiter)
             }.getOrElse { e ->
                 println("splice: login error: ${SafeFailureText.render(e)}")
@@ -100,7 +106,7 @@ public object DeviceLoginFlow {
         return kimiOAuth.parseKimiDeviceAuthorization(body)
     }
 
-    private fun announce(spec: DeviceLoginSpec, auth: KimiDeviceAuthorization) {
+    private fun announce(spec: DeviceLoginSpec, auth: KimiDeviceAuthorization, openBrowser: (String) -> Boolean) {
         val url = auth.verificationUriComplete.ifEmpty { auth.verificationUri }
         println("")
         println("  splice: sign in to ${spec.head} — enter this code in your browser:")
@@ -109,7 +115,7 @@ public object DeviceLoginFlow {
         println("")
         println("  $url")
         println("")
-        if (!loginIo.openBrowser(url)) println("splice: open the URL above to finish signing in.")
+        if (!openBrowser(url)) println("splice: open the URL above to finish signing in.")
     }
 
     private suspend fun poll(

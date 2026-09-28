@@ -9473,6 +9473,7 @@ claimed_by = "claude-builder"
 claimed_at = "2026-09-28T22:46:15.797Z"
 # [2026-09-28] CLAIM: owner=claude-builder at=2026-09-28T22:46:15Z
 # [2026-09-28] RECEIPT cmd="bun tools/gate slot -- :app:test --tests 'splice.app.cli.status.*' :app:detekt" exit=0 tests=3 touched=app/src/main/kotlin/splice/app/cli/status/StatusTable.kt,app/src/test/kotlin/splice/app/cli/status/v4406/UnresolvedHeadStatusTest.kt,.dev/restructure/capabilities.tsv tail="sha c416476a7; 3 v4406 tests green counted before mutation, red 3/3 on unmodified source; whole status suite and app detekt green"
+# [2026-09-28] c416476a7: status rows now come from every configured head plus every head /health names failed; an unresolved provider reads 'not running: <daemon reason>' (config's own 'unknown provider' when the daemon is down). Mutation (drop the daemon-only rows) failed the one test aimed at it; restored.
 
 [[items]]
 id = "V4-407"

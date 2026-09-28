@@ -8623,6 +8623,7 @@ claimed_at = "2026-09-28T01:16:23.835Z"
 # [2026-09-28] --seat
 # [2026-09-28] CORRECTION (splice-lead, 9:22 PM CT): the bare '--seat' note above is mine, a malformed note from passing --seat to the note verb. The note I meant, from the 9:0x PM CT fence amend: .dev/restructure/capabilities.tsv was added to this fence for the census rows of V4-364's new console files; V4-367 writes the same file, so take it under the seat lock and add only your own rows.
 # [2026-09-28] amend by=splice-lead: files were ["console/src/pages/kept/", "console/src/app/pages.ts", "console/src/app/nav.tsx", "console/src/app/rows.ts", "console/src/app/strings.ts", "console/tests/v4364-kept.test.ts", "console/tests/router.test.ts", "docs/design/JOBS.md", "console/src/pages/settings/coverage.ts", "console/src/pages/settings/fixtures/settings.ts", "console/src/widgets/knob-form/copy.ts", "console/src/widgets/knob-form/knobs.ts", "console/src/widgets/knob-form/strings.ts", "console/src/entities/topology/model/schema.ts", "console/src/shared/coverage/baseline.ts", "console/src/entities/kept/", ".dev/restructure/capabilities.tsv"]
+# [2026-09-28] Census protocol (splice-lead, 9:48 PM CT): capabilities.tsv leaves this fence; console never locked or edited it. The orchestrator adds the nine created rows console named (entities/kept api, model/types, index; pages/kept index.tsx, model.ts, strings.ts, kept.css, coverage.ts; tests/v4364-kept.test.ts) in the census commit before the integration push.
 
 [[items]]
 id = "V4-365"

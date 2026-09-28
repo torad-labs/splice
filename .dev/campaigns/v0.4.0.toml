@@ -8637,6 +8637,7 @@ verify = "red first: an unsupervised daemon (no INVOCATION_ID) answers POST /api
 # [2026-09-27] Same directory, same seat (orchestrator, V4-355 live check 2:13 PM CT): RestartCommand.kt:54-60 says 'falling back to the running daemon for head ports' when splice.toml does not parse, even when no daemon runs (captures/v4355-live/100259df5/terminal.txt, first line). While V4-365 is in restart/, say the fallback only when a daemon answers /health; otherwise say the daemon cannot start until the file is fixed. Red first with the rest of the row.
 # [2026-09-27] amend by=orchestrator: files were ["features/lifecycle/src/main/kotlin/splice/lifecycle/restart/", "features/lifecycle/src/test/kotlin/splice/lifecycle/restart/v4365/"]
 # [2026-09-28] amend by=splice-lead: files were ["features/lifecycle/src/main/kotlin/splice/lifecycle/restart/", "features/lifecycle/src/test/kotlin/splice/lifecycle/restart/v4365/", "app/src/main/kotlin/splice/app/control/mount/LifecycleMount.kt", "app/src/main/kotlin/splice/app/control/ControlServer.kt", "app/src/main/kotlin/splice/app/Daemon.kt"]
+# [2026-09-28] Fence extended (splice-lead, 9:56 PM CT): app/src/main/kotlin/splice/app/ControlPlane.kt, the production seam claude-builder found. ControlServer is constructed at ControlPlane.kt:177-199 (not in Daemon.kt), which already holds home and controlPort, so the detached successor's jar/home bundle enters there. No open row fences it.
 
 [[items]]
 id = "V4-366"

@@ -9267,13 +9267,14 @@ claimed_at = "2026-09-28T17:26:30.938Z"
 id = "V4-394"
 phase = "release"
 title = "splice status says ready for a head the daemon skipped: at 12:22:39 PM CT /health reported ok:false, failedHeads 1 (claude-muse SKIPPED at boot), while splice status printed claude-muse 'ready' in the same minute. A head that did not build reads as down with its boot reason in status, as it does in /health."
-files = ["app/src/main/kotlin/splice/app/cli/status/", "app/src/test/kotlin/splice/app/cli/status/v4394/"]
+files = ["app/src/main/kotlin/splice/app/cli/status/", "app/src/test/kotlin/splice/app/cli/status/v4394/", "app/src/main/kotlin/splice/app/control/ControlPorts.kt", "app/src/main/kotlin/splice/app/control/api/ControlPayloads.kt", "app/src/main/kotlin/splice/app/Daemon.kt", "integrations/daemon-client/src/main/kotlin/splice/daemonclient/DaemonProbe.kt"]
 status = "in_flight"
 verify = "red first: status against a daemon whose topology has one head that fails its build prints that head as not running with the boot reason (today: ready); the other heads unchanged"
 # [2026-09-28] amend by=splice-lead: files were ["features/lifecycle/src/main/kotlin/splice/lifecycle/status/"]
 claimed_by = "splice-lead"
 claimed_at = "2026-09-28T18:16:41.828Z"
 # [2026-09-28] CLAIM: owner=splice-lead at=2026-09-28T18:16:41Z
+# [2026-09-28] amend by=splice-lead: files were ["app/src/main/kotlin/splice/app/cli/status/", "app/src/test/kotlin/splice/app/cli/status/v4394/"]
 
 [[items]]
 id = "V4-395"

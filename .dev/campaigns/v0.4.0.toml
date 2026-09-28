@@ -8560,7 +8560,7 @@ id = "V4-361"
 phase = "release"
 title = "Resume elsewhere says what stays behind (Marlin F2 finding 1, 0 of 3 walkers found it): one line on the panel, the conversation comes along and earlier reasoning shows as '[Thinking removed]' on the other head. Marlin's own run on film-home-3 at 1:34:42 PM CT opened on Grok 4.7 with the whole history and the reasoning as '[Thinking removed]'."
 files = ["console/src/pages/sessions/", "console/tests/v4344-limit-recovery.test.ts"]
-status = "done"
+status = "verified"
 verify = "red first: a sessions panel test renders the Resume elsewhere section and finds the line naming what carries (the conversation) and what does not (earlier reasoning, shown as [Thinking removed]) (fails today: strings.ts:102 says only 'splice copies nothing until that launch'); the words are true to what Claude Code shows on resume (cite the transcript line or Marlin's run); console lint/typecheck/test green; Marlin walks it."
 # [2026-09-27] Marlin's words, verbatim, for the Resume elsewhere panel (Sep 27, ~1:55 PM CT): "Your conversation comes with you. The earlier model's reasoning stays behind and shows as [Thinking removed]." Walked when it lands.
 claimed_by = "console"

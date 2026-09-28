@@ -123,7 +123,7 @@ val DISPOSITIONS: Map<String, Disposition> = mapOf(
     "ResumeHookTest" to Disposition("1 @ParameterizedTest expands to 2 cases (5 @Test + 2 = 7)", 7),
     // V4-336: an unanswered callback stops the script whether the late content is a system or a user
     // message, one case per role (@ValueSource system, user).
-    "CodeModeLateContentTest" to Disposition("1 @ParameterizedTest expands to 2 cases (5 @Test + 2 = 7)", 7),
+    "CodeModeLateContentTest" to Disposition("1 @ParameterizedTest expands to 2 cases (6 @Test + 2 = 8)", 8),
 )
 
 // Modules whose test task is disabled BY CONFIGURATION, so no XML can exist. The reason is the

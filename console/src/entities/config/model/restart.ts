@@ -14,14 +14,32 @@ import { create } from 'zustand';
 interface RestartState {
   /** Knob keys saved since the daemon last read the state file, sorted and deduped. */
   pending: string[];
-  mark: (keys: readonly string[]) => void;
+  bootedAtEpochMillis: number | null;
+  pendingAtEpochMillis: number | null;
+  mark: (keys: readonly string[], bootedAtEpochMillis: number | null) => void;
+  observe: (bootedAtEpochMillis: number) => void;
   clear: () => void;
 }
 
 const useStore = create<RestartState>((set) => ({
   pending: [],
-  mark: (keys) => set((state) => ({ pending: [...new Set([...state.pending, ...keys])].sort() })),
-  clear: () => set({ pending: [] }),
+  bootedAtEpochMillis: null,
+  pendingAtEpochMillis: null,
+  mark: (keys, bootedAtEpochMillis) => set((state) => ({
+    pending: [...new Set([
+      ...(state.pendingAtEpochMillis !== null && bootedAtEpochMillis !== null && state.pendingAtEpochMillis !== bootedAtEpochMillis
+        ? [] : state.pending),
+      ...keys,
+    ])].sort(),
+    pendingAtEpochMillis: bootedAtEpochMillis,
+  })),
+  observe: (bootedAtEpochMillis) => set((state) => {
+    if (state.pendingAtEpochMillis !== null && state.pendingAtEpochMillis !== bootedAtEpochMillis) {
+      return { pending: [], pendingAtEpochMillis: null, bootedAtEpochMillis };
+    }
+    return { bootedAtEpochMillis, pendingAtEpochMillis: state.pending.length > 0 ? state.pendingAtEpochMillis ?? bootedAtEpochMillis : null };
+  }),
+  clear: () => set({ pending: [], pendingAtEpochMillis: null }),
 }));
 
 /** The same `{ use, get, … }` shape every other store in the app exposes, so a page subscribes
@@ -31,9 +49,14 @@ export const restartStore = {
   get: (): RestartState => useStore.getState(),
 };
 
-/** Record the keys a patch reported as restart-required. An empty list changes nothing. */
-export function markRestartPending(keys: readonly string[]): void {
-  if (keys.length > 0) useStore.getState().mark(keys);
+/** Record the keys under the boot the write reached. An unknown boot cannot prove a restart. */
+export function markRestartPending(keys: readonly string[], bootedAtEpochMillis: number | null = useStore.getState().bootedAtEpochMillis): void {
+  if (keys.length > 0) useStore.getState().mark(keys, bootedAtEpochMillis);
+}
+
+/** Only a measured replacement boot can clear settings this console saved. */
+export function observeDaemonBoot(bootedAtEpochMillis: number): void {
+  useStore.getState().observe(bootedAtEpochMillis);
 }
 
 /** Drop the list — what a restart does to it, and the only thing that honestly can. */

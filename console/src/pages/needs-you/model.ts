@@ -174,7 +174,7 @@ function headNeeds(heads: readonly HeadStatus[], auth: AuthPayload | null): Need
 function daemonNeeds(topologyStale: boolean | null, pending: readonly string[]): Need[] {
   const parts = [
     topologyStale === true ? H.configChanged : null,
-    pending.length === 0 ? null : `${pending.length} ${U.waiting}`,
+    pending.length === 0 ? null : `${pending.length} ${pending.length === 1 ? U.oneWaiting : U.waiting}`,
   ].filter((part) => part !== null);
   if (parts.length === 0) return [];
   return [{ key: 'daemon', severity: 'warn', source: 'daemon', head: null, subject: S.daemon, finding: parts.join(' '), fix: { kind: 'restart-daemon' }, at: null }];

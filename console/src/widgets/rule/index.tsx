@@ -29,7 +29,7 @@ import type { AccountRow } from '@entities/account';
 import { startAuthPolling, useAuth } from '@entities/auth';
 import { headsReportingNone, planLevel, startUsagePolling, useUsage } from '@entities/usage';
 import { nearestLimit } from '@features/nearest-limit';
-import { useRestartPending } from '@entities/config';
+import { startDaemonBootPolling, useRestartPending } from '@entities/config';
 import { useSession } from '@entities/session';
 import { connect, useEvents } from '@entities/events';
 import { wireLive } from './wire';
@@ -257,6 +257,7 @@ export function Rule() {
     // ending arrives as an event (wire.ts), a turn starting only on the next read.
     const stops = [
       startControlStatusPolling(10_000),
+      startDaemonBootPolling(10_000),
       startUsagePolling(15_000),
       startAccountsPolling(15_000),
       startAuthPolling(30_000),

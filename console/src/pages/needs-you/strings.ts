@@ -95,6 +95,7 @@ export const U = {
   at: 'at',
   resets: 'resets',
   waiting: 'settings waiting',
+  oneWaiting: 'setting waiting',
   read: 'Read',
   seat: 'seat',
   /** Before what Doctor's checks found, on the head item they are about. */

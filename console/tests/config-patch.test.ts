@@ -31,22 +31,27 @@ function jsonResponse(status: number, body: unknown) {
 const patchResult = { applied: {}, restart_required: [], persisted: 'ok', targets: [] };
 const configPayload = { effective: {}, layers: { perHead: {} } };
 
+function answerPatch(patch: unknown, config: unknown): void {
+  fetchMock.mockResolvedValueOnce(jsonResponse(200, patch))
+    .mockResolvedValueOnce(jsonResponse(200, { topologyStale: false, bootedAtEpochMillis: 1_000 }))
+    .mockResolvedValueOnce(jsonResponse(200, config));
+}
+
 describe('applyConfigPatch (F142)', () => {
   test('refreshes the head-scoped view when a head is given', async () => {
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse(200, patchResult))
-      .mockResolvedValueOnce(jsonResponse(200, configPayload));
+    answerPatch(patchResult, configPayload);
     await applyConfigPatch({ effort: 'high' }, 'claudex');
     expect(fetchMock.mock.calls[0][0]).toBe('/api/config');
-    expect(fetchMock.mock.calls[1][0]).toBe('/api/config?head=claudex');
+    expect(fetchMock.mock.calls[1][0]).toBe('/health');
+    expect(fetchMock.mock.calls[2][0]).toBe('/api/config?head=claudex');
   });
 
   test('refreshes the global view when no head is given', async () => {
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse(200, patchResult))
-      .mockResolvedValueOnce(jsonResponse(200, configPayload));
+    answerPatch(patchResult, configPayload);
     await applyConfigPatch({ effort: 'high' });
-    expect(fetchMock.mock.calls[1][0]).toBe('/api/config');
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/config');
+    expect(fetchMock.mock.calls[1][0]).toBe('/health');
+    expect(fetchMock.mock.calls[2][0]).toBe('/api/config');
   });
 });
 
@@ -65,9 +70,7 @@ describe('a knob the daemon could not save to disk says so (V4-310)', () => {
   }
 
   test('persisted null prints the daemon\'s reason beside that knob, and under no other', async () => {
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse(200, { ...patchResult, rejected: {}, persisted: null, not_persisted: NOT_SAVED }))
-      .mockResolvedValueOnce(jsonResponse(200, fixtureConfig));
+    answerPatch({ ...patchResult, rejected: {}, persisted: null, not_persisted: NOT_SAVED }, fixtureConfig);
 
     const fault = await saveGlobalKnob('usageWarnPct', 90);
 
@@ -81,19 +84,15 @@ describe('a knob the daemon could not save to disk says so (V4-310)', () => {
   });
 
   test('a PATCH that reached config.json prints no warning', async () => {
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse(200, { ...patchResult, rejected: {}, persisted: 'state/config.json' }))
-      .mockResolvedValueOnce(jsonResponse(200, fixtureConfig));
+    answerPatch({ ...patchResult, rejected: {}, persisted: 'state/config.json' }, fixtureConfig);
 
     expect(await saveGlobalKnob('usageWarnPct', 90)).toBeNull();
   });
 
   test('a key the daemon refused prints its refusal, which says more than the write', async () => {
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse(200, {
-        ...patchResult, rejected: { usageWarnPct: 'usageWarnPct must be between 1 and 100' }, persisted: null, not_persisted: NOT_SAVED,
-      }))
-      .mockResolvedValueOnce(jsonResponse(200, fixtureConfig));
+    answerPatch({
+      ...patchResult, rejected: { usageWarnPct: 'usageWarnPct must be between 1 and 100' }, persisted: null, not_persisted: NOT_SAVED,
+    }, fixtureConfig);
 
     expect(await saveGlobalKnob('usageWarnPct', 900)).toBe('usageWarnPct must be between 1 and 100');
   });

@@ -34,6 +34,8 @@ internal class ControlPayloads(
     private val topologyStale: TopologyStale = TopologyStale { false },
     private val turnPathStalled: TurnPathStalled = TurnPathStalled { emptyList() },
     private val clientVersions: ClientVersionTracker = ClientVersionTracker(),
+    // Constructed by ControlPlane.start inside Daemon.start, once per daemon boot.
+    private val bootedAtEpochMillis: Long = System.currentTimeMillis(),
 ) {
 
     fun controlHealthJson(): String = buildJsonObject {
@@ -66,6 +68,7 @@ internal class ControlPayloads(
             )
         }
         put("version", GATEWAY_VERSION)
+        put("bootedAtEpochMillis", bootedAtEpochMillis)
         put("wantShimVersion", SHIM_VERSION)
         clientVersions.aggregateWarning()?.let { put("clientVersionWarning", it) }
         // Configured total, NOT heads.size (assembled only) — see the ControlServer ctor comment.

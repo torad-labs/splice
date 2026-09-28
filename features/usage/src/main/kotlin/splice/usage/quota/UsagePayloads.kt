@@ -26,6 +26,8 @@ private const val KEY = "key"
 private const val LABEL = "label"
 private const val HEADS = "heads"
 private const val USAGE_WINDOW_HOURS = 5
+
+// A provider refusal until a known instant is a fully spent window: the warn reads 100 percent.
 private const val FULL_PERCENT = 100
 
 /** When a quota window or the rate-limit read was observed, epoch SECONDS — the encoding the quota

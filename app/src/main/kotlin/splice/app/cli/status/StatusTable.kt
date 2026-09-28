@@ -17,6 +17,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 
 internal class StatusTable(
     private val palette: CliPalette = CliPalette(ColorDepthProbe(EnvReader(System::getenv)).depth()),
@@ -107,7 +108,7 @@ internal class StatusTable(
         // V4-398: a provider that refuses until a known instant is not ready however it is set up,
         // but a missing wrapper or login still names the command that fixes it first. A reset that
         // has already passed reads ready: the daemon drops it on its own once the provider recovers.
-        val quotaResetAt = daemon.quotaResetAtEpochSeconds?.takeIf { it * MS_PER_SECOND > clock() }
+        val quotaResetAt = daemon.quotaResetAtEpochSeconds?.takeIf { TimeUnit.SECONDS.toMillis(it) > clock() }
         // ONE actionable column, not two state columns. A row is ready or it names the single
         // command that would make it ready, so the operator never has to work out which of
         // "wrapper missing" and "not signed in" to act on first. V4-394: the running daemon's word
@@ -212,8 +213,6 @@ private val COLUMNS = listOf("head", "command", "port", "upstream")
 // whose own words are one space apart ("local runtime (OpenAI-compatible)", "codex / ChatGPT"). A
 // two-space gap is barely wider than a gap inside a cell; three reads as a column boundary.
 private const val GAP = 3
-
-private const val MS_PER_SECOND = 1_000L
 
 // The state glyphs. These are the reason colour can be confined to one character per row, and the
 // reason the table still reads with colour stripped — so they must stay visually distinct as SHAPES,

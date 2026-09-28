@@ -21,11 +21,11 @@ import splice.configuration.topology.TopologyStale
 import splice.core.GATEWAY_VERSION
 import splice.core.SHIM_VERSION
 import splice.core.version.ClientVersionTracker
+import java.util.concurrent.TimeUnit
 
 private const val KEY = "key"
 private const val LABEL = "label"
 private const val HEADS = "heads"
-private const val MS_PER_SECOND = 1_000L
 
 // internal (was private) so ControlHealthTest can pin the ok/stall contract
 internal class ControlPayloads(
@@ -112,7 +112,8 @@ internal class ControlPayloads(
      *  unchanged. Read per request, so a head that recovers drops out on the next probe. */
     private fun putQuotaResets(into: JsonObjectBuilder, runningKeys: Set<String>, nowEpochMillis: Long) {
         val resets = heads.filterKeys { it in runningKeys }.mapNotNull { (key, managed) ->
-            managed.head.providerResetForMs().takeIf { it > 0L }?.let { key to (nowEpochMillis + it) / MS_PER_SECOND }
+            managed.head.providerResetForMs().takeIf { it > 0L }
+                ?.let { key to TimeUnit.MILLISECONDS.toSeconds(nowEpochMillis + it) }
         }
         if (resets.isEmpty()) return
         into.putJsonObject("quotaResetAtEpochSeconds") { resets.forEach { (key, reset) -> put(key, reset) } }

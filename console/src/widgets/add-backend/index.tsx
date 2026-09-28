@@ -86,7 +86,7 @@ export function ProfileForm({ profiles, draft, onDraft, busy, onOpen, pinned = f
   return (
     <div className="myx-add">
       <div className="myx-add-row">
-        {pinned ? <p className="myx-add-note">{profile?.summary ?? H.unavailable}</p> : (
+        {pinned ? <p className="myx-add-note">{profile === null ? H.unavailable : H.selectedPlan(profile.name)}</p> : (
           <>
             <Choice label={S.profile} value={draft.profile} options={profiles.map((each) => ({ value: each.name, label: each.name }))} onChange={(name) => onDraft(draftFor(name))} w={20} />
             {profile === null ? null : <InfoTip text={profile.summary} label={S.aboutProfile} />}
@@ -269,7 +269,12 @@ export function polledAdd(current: AddView | null, next: AddView, saving: boolea
   return saving || current === null || current.id !== next.id || current.saved !== null ? current : next;
 }
 
-export function AddBackend({ onDone, initialProfile }: { onDone: () => void; initialProfile?: string }) {
+export function AddBackend({ onDone, initialProfile, initialTab = null, autoStart = false }: {
+  onDone: () => void;
+  initialProfile?: string;
+  initialTab?: Window | null;
+  autoStart?: boolean;
+}) {
   const [profiles, setProfiles] = useState<AddProfile[] | null>(null);
   const [draft, setDraft] = useState<AddDraft | null>(null);
   const [view, setView] = useState<AddView | null>(null);
@@ -280,8 +285,9 @@ export function AddBackend({ onDone, initialProfile }: { onDone: () => void; ini
   const [busy, setBusy] = useState(false);
   const saveAttempt = useRef<string | null>(null);
   const saveInFlight = useRef(false);
+  const autoStarted = useRef(false);
   const heads = useHeads((state) => state.data);
-  const openPage = useLoginPage(view?.sign_in ?? null, loginError);
+  const openPage = useLoginPage(view?.sign_in ?? null, loginError, initialTab);
 
   useEffect(() => {
     fetchAddProfiles().then(
@@ -289,9 +295,28 @@ export function AddBackend({ onDone, initialProfile }: { onDone: () => void; ini
         setProfiles(rows);
         setDraft(firstDraft(rows, initialProfile));
       },
-      (err: unknown) => setFault(messageOf(err)),
+      (err: unknown) => {
+        const message = messageOf(err);
+        setFault(message);
+        setLoginError(message);
+      },
     );
   }, [initialProfile]);
+
+  useEffect(() => {
+    if (!autoStart || draft === null || view !== null || autoStarted.current) return;
+    autoStarted.current = true;
+    setBusy(true);
+    void openAdd(requestOf(draft)).then(async (opened) => {
+      setView(opened);
+      setChecks(opened.checks);
+      if (opened.sign_in_by === 'login' && !opened.credential.present) setView(await signInAdd(opened.id));
+    }).catch((err: unknown) => {
+      const message = messageOf(err);
+      setFault(message);
+      setLoginError(message);
+    }).finally(() => setBusy(false));
+  }, [autoStart, draft, view]);
 
   // Read the open add again while it is unsaved: a failed read keeps the view it has and says so, and
   // the next good read clears it. Its own fault, because a good read must not clear a write's.
@@ -342,7 +367,9 @@ export function AddBackend({ onDone, initialProfile }: { onDone: () => void; ini
   if (profiles === null || draft === null) return fault === null ? <Blank strips={3} /> : <Fault message={fault} />;
 
   let body;
-  if (view === null) {
+  if (view === null && autoStart && fault === null) {
+    body = <Blank strips={2} />;
+  } else if (view === null) {
     body = (
       <ProfileForm
         profiles={profiles}

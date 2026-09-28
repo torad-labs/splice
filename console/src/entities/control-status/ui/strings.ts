@@ -4,9 +4,9 @@
 export const S = {
   /** The name of a head the registry does not list: a session splice did not start, or a team slot
    *  on plain `claude`. */
-  noHead: 'No splice head',
+  noHead: 'No connected plan',
 } as const;
 
 export const H = {
-  noHead: 'Splice did not start these, or cannot tell which head did.',
+  noHead: 'Splice did not start these sessions, or cannot identify their plan.',
 } as const;

@@ -188,9 +188,9 @@ describe('health', () => {
 
 describe('the health cell', () => {
   test('a fine daemon prints its name beside the check, a troubled one prints the trouble', () => {
-    expect(render(h(HealthCell, { health: 'green' }))).toContain('<span>Daemon</span>');
-    expect(render(h(HealthCell, { health: 'amber' }))).toContain('<span>Daemon degraded</span>');
-    expect(render(h(HealthCell, { health: 'red' }))).toContain('<span>Daemon unreachable</span>');
+    expect(render(h(HealthCell, { health: 'green' }))).toContain('<span>Splice</span>');
+    expect(render(h(HealthCell, { health: 'amber' }))).toContain('<span>Splice needs attention</span>');
+    expect(render(h(HealthCell, { health: 'red' }))).toContain('<span>Splice unavailable</span>');
   });
 });
 

@@ -3,18 +3,18 @@
 export const S = {
   local: 'Local',
   utc: 'UTC',
-  /** The daemon's health: the word printed when it is not fine, and the tip in every state. */
+  /** Splice's health: the word printed when it needs attention. */
   health: {
-    green: 'Daemon ok',
-    amber: 'Daemon degraded',
-    red: 'Daemon unreachable',
+    green: 'Splice ready',
+    amber: 'Splice needs attention',
+    red: 'Splice unavailable',
     grey: 'Key required',
     setup: 'Not set up',
-    reading: 'Checking heads',
-    unread: 'Heads unread',
+    reading: 'Checking plans',
+    unread: 'Plans unread',
   },
   /** Printed beside the check glyph while the daemon is fine. */
-  daemon: 'Daemon',
+  daemon: 'Splice',
   /** The plan limit closest to running out, across every head that reports one. */
   limit: 'Closest plan limit',
   /** Printed only after the usage and accounts reads both answered and neither reported a window. */
@@ -23,7 +23,7 @@ export const S = {
   readingLimits: 'Reading limits',
   /** A read that failed: whether a limit exists is unknown. */
   limitsUnread: 'Limits unread',
-  /** Saved knobs the running daemon has not read yet (a restart-only knob was patched). */
+  /** Saved settings the running splice has not read yet. */
   restartPending: 'Restart pending',
   /** The live connection. */
   live: 'Live',

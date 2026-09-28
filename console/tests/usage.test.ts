@@ -395,11 +395,11 @@ describe('a rack of like rows prints its column names once', () => {
   // instrument is .impeccable/review/compose/compose.mjs and the capture is beside it.
   test('usage\'s heads table prints its column names once, in its head row, and in no cell', () => {
     const markup = render(h(UsageBoard, { payload: fixtureEconomics, catalog: fixtureModels, now: FIXTURE_NOW }));
-    const table = /<table[^>]*aria-label="Heads"[^>]*>([\s\S]*?)<\/table>/.exec(markup);
+    const table = /<table[^>]*aria-label="Plans"[^>]*>([\s\S]*?)<\/table>/.exec(markup);
     expect(table).not.toBeNull();
     const [head, body] = (table?.[1] ?? '').split('</thead>');
     const names = [...(head ?? '').matchAll(/<th scope="col"[^>]*>([^<]*)</g)].map((m) => m[1]);
-    expect(names).toEqual(['Head', 'Share', 'Turns per hour', 'Turns', 'Input', 'Output', 'Tokens used', 'Limit', 'Runs out in', 'Rate limited']);
+    expect(names).toEqual(['Plan', 'Share', 'Turns per hour', 'Turns', 'Input', 'Output', 'Tokens used', 'Limit', 'Runs out in', 'Rate limited']);
     const rows = (body ?? '').split('<tr').slice(1);
     expect(rows.length).toBeGreaterThan(0); // the denominator: a table with no rows would pass vacuously
     for (const row of rows) {
@@ -426,7 +426,7 @@ describe('a column of dashes is not drawn', () => {
   // splice-lead at 2560, 2026-09-25: Limit and Runs out in were a dash on every row when no head has
   // a token ceiling, and the plan cards filled only the left half of their row.
   const names = (markup: string): string[] => {
-    const table = /<table[^>]*aria-label="Heads"[^>]*>([\s\S]*?)<\/thead>/.exec(markup)?.[1] ?? '';
+    const table = /<table[^>]*aria-label="Plans"[^>]*>([\s\S]*?)<\/thead>/.exec(markup)?.[1] ?? '';
     return [...table.matchAll(/<th scope="col"[^>]*>([^<]*)</g)].map((m) => m[1]);
   };
 

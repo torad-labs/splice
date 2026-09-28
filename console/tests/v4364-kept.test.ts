@@ -212,7 +212,7 @@ describe('what splice keeps', () => {
       inventories: {}, effective: { messageEdges: true, activityStoreHeads: 'local', transcriptView: true },
       onDelete: () => undefined, onSwitch: () => undefined,
     }));
-    expect(custom).toContain('Activity heads');
+    expect(custom).toContain('Activity plans');
     expect(custom).toContain('value="local"');
     expect(custom).not.toContain('value="*"');
     expect(html).toContain('Request capture');

@@ -21,7 +21,7 @@ export const S = {
   tokensOut: 'Tokens out',
   name: 'Name',
   role: 'Role',
-  head: 'Head',
+  head: 'Plan',
   model: 'Model',
   state: 'State',
   window: 'Window',
@@ -50,7 +50,7 @@ export const S = {
   instructions: 'Instructions',
   showInstructions: 'Show instructions',
   noInstructions: 'No instructions',
-  noSession: 'No session bound',
+  noSession: 'No session assigned',
   none: 'None',
   /** The day's timeline. */
   today: 'Today',
@@ -80,9 +80,9 @@ export const H = {
   openSeat: 'Bind a session to this slot in the team editor.',
   today: 'Each bar is one turn, over your local day.',
   economics: 'Lifetime totals, joined to slots on the session tag.',
-  untagged: "Turns on the team's heads that carried no session tag.",
+  untagged: "Turns on the team's plans that carried no session tag.",
   noTurns: "Turns show here once the team's sessions run them.",
-  unseen: 'Splice never sees turns on a head it does not run.',
+  unseen: 'Splice cannot see turns on a plan it does not run.',
 } as const;
 
 export const U = {

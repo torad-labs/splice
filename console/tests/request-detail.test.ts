@@ -216,7 +216,7 @@ describe('a turn that kept no request says why, and what changes it', () => {
     const written: CaptureWire = { ...RUNNING, enabled: true, restart_required: true };
     const out = notKept(capture({ written }), () => undefined);
     expect(out).toContain('Restart to apply');
-    expect(out).toContain('>Restart daemon<');
+    expect(out).toContain('>Restart splice<');
     expect(out).not.toContain('Turn on capture');
   });
 

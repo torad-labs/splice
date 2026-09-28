@@ -797,11 +797,10 @@ describe('how a head joins the fleet', () => {
     expect(rest).not.toContain(`aria-label="${S.addBackend}"`);
     const adding = render(h(FleetBoard, { heads: [head()], sources: NO_SOURCES, openKey: null, onOpen: () => undefined, adding: true, nowMs: BOARD_NOW }));
     expect(adding).toContain(`<aside class="myx-panel" aria-label="${S.addBackend}"`);
-    expect(adding).toContain('myx-fl-board-open');
-    // The narrowed board drops the identity columns for the add as for a head's detail: at 1600 the
-    // full set squeezed the head's name to nothing under an overprinted "Provider" (2026-09-25 render).
+    expect(adding).toContain('myx-fl-board-adding');
+    // Connecting gets its own full-width row; the table keeps provider identity and command names.
     expect(rest).toContain(`>${S.provider}<`);
-    expect(adding).not.toContain(`>${S.provider}<`);
+    expect(adding).toContain(`>${S.provider}<`);
     const both = render(h(FleetBoard, { heads: [head()], sources: NO_SOURCES, openKey: head().key, onOpen: () => undefined, adding: true, nowMs: BOARD_NOW }));
     expect(both).not.toContain(`aria-label="${S.addBackend}"`);
     expect(both).toContain(`aria-label="${S.detail}"`);
@@ -809,7 +808,7 @@ describe('how a head joins the fleet', () => {
 
   test('the empty fleet does not send the operator to a topology editor that cannot add a head', () => {
     expect(EMPTIES.noHeads.source).not.toContain('topology');
-    expect(EMPTIES.noHeads.source).toContain('splice add');
+    expect(EMPTIES.noHeads.source).toContain('Connect your first plan');
   });
 });
 

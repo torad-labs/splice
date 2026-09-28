@@ -45,7 +45,7 @@ describe('fixes the console can carry out itself', () => {
 
   test('restart and daemon-run install use controls; an unknown remedy keeps its CLI fallback', () => {
     const restart = render(createElement(FixLine, { fix: 'splice restart' }));
-    expect(restart).toContain('Restart daemon');
+    expect(restart).toContain('Restart splice');
     expect(restart).toContain('If unavailable');
     expect(restart).not.toContain('>splice restart<');
     const install = render(createElement(FixLine, { fix: 'splice install --all', fixId: 'install_all' }));

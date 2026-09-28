@@ -25,13 +25,13 @@ describe('a sign-in connects its plan', () => {
     expect(autoSaveTarget(connected, 'add-1')).toBeNull();
     const alreadySignedIn = { ...connected, sign_in: null };
     expect(autoSaveTarget(alreadySignedIn, null)).toBe('add-1');
-    expect(action(alreadySignedIn)).not.toContain('Save backend');
+    expect(action(alreadySignedIn)).not.toContain('Save provider');
     const signIn = connected.sign_in;
     if (signIn === null) throw new Error('missing login fixture');
     expect(autoSaveTarget({ ...connected, sign_in: { ...signIn, state: 'waiting' } }, null)).toBeNull();
     expect(autoSaveTarget({ ...connected, sign_in_by: 'key' }, null)).toBeNull();
-    expect(action(connected)).not.toContain('Save backend');
-    expect(action({ ...connected, sign_in_by: 'key' })).toContain('Save backend');
+    expect(action(connected)).not.toContain('Save provider');
+    expect(action({ ...connected, sign_in_by: 'key' })).toContain('Save provider');
     const failed = renderToStaticMarkup(createElement(OpenAdd, {
       view: connected, checks: null, busy: false, saveFault: 'save refused',
       onSignIn: () => undefined, onVerify: () => undefined,

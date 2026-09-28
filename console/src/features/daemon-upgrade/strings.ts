@@ -20,7 +20,7 @@ export const S = {
 } as const;
 
 export const H = {
-  away: 'The daemon is restarting; the run is read again once it answers.',
+  away: 'Splice is restarting; the run is read again once it answers.',
   reload: 'Reload the page to load the console the new release serves.',
   quiet: 'The run has printed nothing yet.',
   lost: 'The shell running it is gone, and it left no exit code.',

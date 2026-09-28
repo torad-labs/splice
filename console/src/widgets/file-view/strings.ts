@@ -16,5 +16,5 @@ export const S = {
 export const H = {
   /** Printed before the directories the reader looked in, when it found no file. */
   lookedIn: 'Looked in:',
-  noDirectory: 'The daemon reported no directory it looked in.',
+  noDirectory: 'Splice reported no directory it looked in.',
 } as const;

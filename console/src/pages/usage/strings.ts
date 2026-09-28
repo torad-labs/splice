@@ -8,11 +8,11 @@ export const S = {
   about: 'About usage',
   /** The stat row: the chosen window's sums across every head. */
   totals: 'Totals',
-  byHead: 'By head',
+  byHead: 'By plan',
   byModel: 'By model',
   window: 'Window',
-  heads: 'Heads',
-  head: 'Head',
+  heads: 'Plans',
+  head: 'Plan',
   models: 'Models',
   tokens: 'Tokens',
   turns: 'Turns',
@@ -44,8 +44,8 @@ export const S = {
   read: 'Read',
   cacheRead: 'Cache read',
   share: 'Share',
-  detail: 'Head detail',
-  openHead: 'Open head',
+  detail: 'Plan detail',
+  openHead: 'Open plan',
   slot: 'Slot',
   contextWindow: 'Context window',
   sourceLabel: 'Window source',
@@ -63,10 +63,10 @@ export const S = {
 } as const;
 
 export const H = {
-  about: 'Token sums from the daemon; cost is estimated from rate cards.',
-  noUsage: 'A head reports once it has run a turn.',
+  about: 'Splice totals tokens; costs are estimated from model prices.',
+  noUsage: 'A plan reports once it has run a turn.',
   noCatalog: 'This splice version does not serve the model catalog.',
-  noModels: 'The topology declares no models for this head.',
+  noModels: 'The configuration declares no models for this plan.',
   noPlan: "Plan windows come from each provider's response headers.",
   /** The cost figure when some turns carry no price: they are left out, never priced at zero. */
   unpriced: 'Left out: no rate card, or run before splice priced turns.',

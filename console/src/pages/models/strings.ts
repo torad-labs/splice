@@ -3,13 +3,13 @@
 export const S = {
   title: 'Models',
   sample: 'Sample data',
-  byHead: 'By head',
+  byHead: 'By plan',
   byProvider: 'By provider',
-  heads: 'Heads',
-  head: 'Head',
+  heads: 'Plans',
+  head: 'Plan',
   models: 'Models',
   model: 'Model',
-  tiersFilled: 'Tiers filled',
+  tiersFilled: 'Model slots used',
   widestWindow: 'Widest window',
   /** How many models carry a rate card. */
   priced: 'Priced',
@@ -25,7 +25,7 @@ export const S = {
   unresolved: 'Unresolved',
   reason: 'Reason',
   description: 'Description',
-  headWindow: 'Head window',
+  headWindow: 'Plan window',
   defaultWindow: 'Default window',
   extraWindows: 'Extra windows',
   windowRules: 'Window rules',
@@ -62,7 +62,7 @@ export const S = {
     excluded: 'Kept out',
   },
   noModels: 'No models',
-  noHeads: 'No heads',
+  noHeads: 'No plans',
   catalogPending: 'Catalog unavailable',
   providerUnknown: 'Not reported',
   /** The Claude Code tiers, as the client names them. */
@@ -76,7 +76,7 @@ export const S = {
    *  parse (ModelsRoute.kt WINDOW_FROM_*); a label missing here prints in the entity's words. */
   windowSource: {
     model: 'Model catalog',
-    head: 'Head setting',
+    head: 'Plan setting',
     rule: 'Prefix rule',
     'extra-window': 'Extra window',
     default: 'Provider default',
@@ -88,7 +88,7 @@ export const H = {
   rates: 'Prices are USD per million tokens.',
   tiers: 'A grey tier has no model; set its slot in splice.toml.',
   pending: 'This splice version does not serve the model catalog.',
-  noHeads: 'Heads declared in splice.toml appear here with their models.',
+  noHeads: 'Plans declared in splice.toml appear here with their models.',
   compare: 'Asks each provider for its model list now, with the stored credential.',
   noProviders: 'Providers declared in splice.toml are compared here.',
 } as const;

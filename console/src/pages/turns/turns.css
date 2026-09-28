@@ -88,6 +88,10 @@
 /* an opened turn's prompt: the split with its figures, then the totals */
 .myx-tn-turn-tokens { display: grid; gap: var(--space-5); }
 
+/* The summary has eight columns before the optional counts. Keep a cache bar and its full
+   percentage side by side; scroll the table rather than cut a figure at desktop width. */
+.myx-tn-summary .myx-dt { min-width: calc(88 * var(--u)); }
+
 /* the landed turns' filters over the table (Q47): each box keeps its own height, so one opened
    list pushes only its own column down */
 .myx-tn-filters {

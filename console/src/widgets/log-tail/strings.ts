@@ -3,7 +3,7 @@
 // printed beside a figure. tests/copy.test.ts holds all three.
 export const S = {
   title: 'Log tail',
-  head: 'Head',
+  head: 'Plan',
   tail: 'Tail',
   follow: 'Follow',
   paused: 'Paused',
@@ -30,7 +30,7 @@ export const S = {
 } as const;
 
 export const H = {
-  reading: "The last lines of this head's log show here.",
+  reading: "The last lines of this plan's log show here.",
   noLines: 'The log is empty, or no line matches the filters.',
 } as const;
 

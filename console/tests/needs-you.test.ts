@@ -184,7 +184,7 @@ describe('each head, by the cause Fleet prints', () => {
   test('a head that is down starts from here, and one that fails its health check restarts', () => {
     expect(needs([head({ running: false })])[0]).toMatchObject({ severity: 'danger', source: 'heads', fix: { kind: 'start', head: 'claudex' } });
     expect(needs([head({ healthy: false })])[0]).toMatchObject({ severity: 'danger', finding: H.unhealthy, fix: { kind: 'restart', head: 'claudex' } });
-    expect(needs([head({ versionMatch: false, version: '0.3.9' })])[0]).toMatchObject({ severity: 'warn', finding: 'Runs 0.3.9, daemon wants 0.4.0' });
+    expect(needs([head({ versionMatch: false, version: '0.3.9' })])[0]).toMatchObject({ severity: 'warn', finding: 'Runs 0.3.9, splice wants 0.4.0' });
   });
 
   test('a missing login signs in, and a missing key is the command that sets it', () => {
@@ -317,7 +317,7 @@ describe('one changed splice.toml, one Needs you item', () => {
     const out = needsOf(inputs, NOW).needs;
     expect(out).toHaveLength(1);
     expect(out[0]).toMatchObject({
-      source: 'daemon', subject: 'Daemon', fix: { kind: 'restart-daemon' },
+      source: 'daemon', subject: 'Splice', fix: { kind: 'restart-daemon' },
     });
     expect(out[0]?.finding).toContain('splice.toml');
     expect(out[0]?.finding).not.toContain('the config file');

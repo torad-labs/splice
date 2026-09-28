@@ -20,11 +20,11 @@ export const S = {
    *  now, on a page (mcp) that had changed nothing. */
   restart: 'Applies on restart',
   /** The list of knob groups the rack prints beside the knobs, to jump by. */
-  groups: 'Knob groups',
+  groups: 'Setting groups',
   /** The layer chip's name: which layer the value came from. */
   source: 'Source',
   /** A knob only a head's own overrides set, printed read-only in the global view. */
-  perHead: 'Per head',
+  perHead: 'Per plan',
   /** A knob the daemon forces, whatever is saved. */
   locked: 'Locked',
 } as const;
@@ -42,7 +42,7 @@ export const U = {
 export const SOURCE_LABELS = {
   default: 'Default',
   'defaults table': 'TOML',
-  'head override': 'Head override',
+  'head override': 'Plan setting',
   'state file': 'Console',
   env: 'Environment',
   patch: 'Console',
@@ -58,7 +58,7 @@ export const GROUP_LABELS = {
   mcp: 'Shared MCP servers',
   records: 'Recording and history',
   logins: 'ChatGPT and Grok',
-  daemon: 'Daemon',
+  daemon: 'Splice',
 } as const;
 
 /** Every knob's name as the operator reads it. The key stays visible beside it, small, because
@@ -66,7 +66,7 @@ export const GROUP_LABELS = {
  *  Knob.kt in both directions. */
 export const KNOB_LABELS = {
   activityRetentionDays: 'Message history',
-  activityStoreHeads: 'Activity heads',
+  activityStoreHeads: 'Activity plans',
   messageEdges: 'Message edges',
   authCacheMs: 'Login cache',
   budgetDefaultAction: 'Budget default',
@@ -83,7 +83,7 @@ export const KNOB_LABELS = {
   foldReasoningModels: 'Fold models',
   grokAuthPath: 'Grok login file',
   grokModel: 'Grok model',
-  grokPort: 'Grok head port',
+  grokPort: 'Grok plan port',
   materializationPermits: 'Parallel conversions',
   maxInflight: 'Concurrent turns',
   maxQueued: 'Queued turns',
@@ -96,7 +96,7 @@ export const KNOB_LABELS = {
   mirrorReasoning: 'Mirror reasoning',
   perfArchiveRetentionDays: 'Turn stats history',
   pinnedModel: 'ChatGPT model',
-  port: 'ChatGPT head port',
+  port: 'ChatGPT plan port',
   progressLine: 'Progress line',
   quotaPoll: 'Plan usage polling',
   quotaPollIntervalMs: 'Usage poll interval',

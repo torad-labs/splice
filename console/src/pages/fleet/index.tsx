@@ -230,7 +230,7 @@ function headColumns(fields: readonly string[], grouped: string | null, nowMs: n
   // figure, a sparkline with its median), so opening the panel narrows the names and never clips a
   // figure; the name shares whatever is left.
   const columns: (Column<HeadLine> | null)[] = [
-    { key: 'head', label: S.head, primary: true, cell: (line) => <HeadMark head={line.head.key} /> },
+    { key: 'head', label: S.head, width: 'calc(12 * var(--u))', primary: true, cell: (line) => <HeadMark head={line.head.key} /> },
     wanted.has('provider') && grouped !== 'provider'
       ? { key: 'provider', label: S.provider, width: 'calc(6.5 * var(--u))', cell: (line) => familyName(line.head.authKind) }
       : null,
@@ -426,18 +426,21 @@ export function FleetBoard({ heads, error = null, lastRead = null, sources, open
 
       {error === null ? null : <Fault message={error} lastRead={lastRead} />}
 
-      <div className={opened === null && !adding ? 'myx-fl-board' : 'myx-fl-board myx-fl-board-open'}>
+      <div className={adding && opened === null ? 'myx-fl-board myx-fl-board-adding'
+        : opened === null ? 'myx-fl-board' : 'myx-fl-board myx-fl-board-open'}>
         <div className="myx-fl-main">
           {heads === null ? <Blank strips={4} /> : heads.length === 0 ? (
             <Section title={S.addBackend}>
-              <ConnectPlan renderAdd={(profile, done) => <AddBackend key={profile ?? 'other'} {...(profile === null ? {} : { initialProfile: profile })} onDone={done} />} />
+              <ConnectPlan renderAdd={(profile, done, loginTab) => <AddBackend key={profile ?? 'other'}
+                {...(profile === null ? {} : { initialProfile: profile })}
+                {...(profile === 'codex' ? { initialTab: loginTab, autoStart: true } : {})} onDone={done} />} />
             </Section>
           ) : (
             <>
               <Figures lines={[...lines.values()]} landed={sources.landed} limit={nearestLimit({ accounts, usage: sources.usage, auth: sources.auth }, nowMs)} />
               <Section title={S.heads} count={all.length} info={{ text: H.firstByte, label: S.aboutFirstByte }}>
                 <DataTable
-                  columns={headColumns(columnsOf(active, HEAD_FIELDS), active.group, nowMs, opened !== null || adding)}
+                  columns={headColumns(columnsOf(active, HEAD_FIELDS), active.group, nowMs, opened !== null)}
                   {...(active.group === null ? { rows: groups.flatMap((group) => group.rows) } : { groups })}
                   rowKey={(line) => line.head.key}
                   label={S.heads}
@@ -458,7 +461,10 @@ export function FleetBoard({ heads, error = null, lastRead = null, sources, open
         {/* Unmounted at rest: no track and no empty panel until a head or the add is opened. */}
         {!adding || opened !== null ? null : (
           <DetailPanel title={S.addBackend} label={S.addBackend} onClose={() => onAdd(false)} closeLabel={S.close}>
-            <ConnectPlan renderAdd={(profile, done) => <AddBackend key={profile ?? 'other'} {...(profile === null ? {} : { initialProfile: profile })} onDone={() => { done(); onAdd(false); }} />} />
+            <ConnectPlan renderAdd={(profile, done, loginTab) => <AddBackend key={profile ?? 'other'}
+              {...(profile === null ? {} : { initialProfile: profile })}
+              {...(profile === 'codex' ? { initialTab: loginTab, autoStart: true } : {})}
+              onDone={() => { done(); onAdd(false); }} />} />
           </DetailPanel>
         )}
         {opened === null ? null : (

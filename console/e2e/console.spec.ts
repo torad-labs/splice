@@ -221,6 +221,77 @@ test('turns lists the turn the stack drove through a real head', async ({ page }
   await expect(page.locator('main')).toContainText(STACK.oauthHead);
 });
 
+test('Settings gives instructions their own editable group and retains model rules on write', async ({ page }) => {
+  const model = [{ model: 'gpt-5.6-sol', instructions: 'Keep this model concise.' }];
+  let saved: Record<string, unknown> | null = null;
+  await page.route('**/api/topology', async (route) => {
+    if (route.request().method() === 'PUT') {
+      const body = route.request().postDataJSON() as { topology: Record<string, unknown> };
+      saved = body.topology;
+      return route.fulfill({ json: { ok: true, restart_required: true, findings: [] } });
+    }
+    const response = await route.fetch();
+    const body = await response.json() as { topology: Record<string, unknown> };
+    body.topology.compaction = saved?.compaction ?? { model };
+    return route.fulfill({ response, json: body });
+  });
+  await open(page, 'settings');
+  const instructions = page.locator('.myx-settings-section').filter({ has: page.getByRole('heading', { name: 'Instructions', exact: true }) });
+  await expect(instructions.getByRole('button', { name: 'Add instructions' })).toBeVisible();
+  await instructions.getByRole('button', { name: 'Add instructions' }).click();
+  await instructions.getByRole('region', { name: 'compaction', exact: true })
+    .getByRole('textbox', { name: 'instructions', exact: true }).fill('Prefer concise answers.');
+  await instructions.getByRole('button', { name: 'Write topology' }).click();
+  await expect(instructions.getByRole('status')).toContainText('Written');
+  expect((saved as Record<string, unknown> | null)?.compaction).toEqual({ model, instructions: 'Prefer concise answers.' });
+});
+
+test('turns keeps full model names and cache figures readable at desktop width', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const longModel = 'claude-opus-5-1-20260928-thinking-extended';
+  await page.route('**/api/perf/summary?*', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json() as { heads: { cache_hit_ratio?: number | null }[] };
+    if (body.heads[0] !== undefined) body.heads[0].cache_hit_ratio = 1;
+    await route.fulfill({ response, json: body });
+  });
+  await page.route('**/api/perf/turns?*', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json() as { heads: { rows?: { model: string; in_tokens?: number; cached_tokens?: number }[] }[] };
+    const row = body.heads.flatMap((head) => head.rows ?? [])[0];
+    if (row !== undefined) {
+      row.model = longModel;
+      row.in_tokens = 100;
+      row.cached_tokens = 100;
+    }
+    await route.fulfill({ response, json: body });
+  });
+  await open(page, 'turns');
+  const table = page.locator('.myx-tn-table').first();
+  await expect(table.getByText(longModel)).toBeVisible({ timeout: 15_000 });
+  await expect(table.locator('tbody tr').filter({ hasText: longModel }).locator('.myx-meter-figure')).toHaveText('100%');
+  const cut = await table.locator('tbody tr').filter({ hasText: longModel }).evaluate((row) => {
+    const model = row.querySelector('.myx-dt-primary .myx-dt-opener');
+    const cache = row.querySelector('.myx-meter-figure');
+    if (model === null || cache === null) return { missing: true };
+    const modelCell = model.closest('td');
+    const cacheCell = cache.closest('td');
+    return {
+      missing: false,
+      model: model.scrollWidth > model.clientWidth + 1 || (modelCell !== null && model.scrollHeight > modelCell.clientHeight),
+      cache: cache.getBoundingClientRect().right > (cacheCell?.getBoundingClientRect().right ?? 0),
+    };
+  });
+  expect(cut, 'the model and the cache percent must fit their cells without clipping').toEqual({ missing: false, model: false, cache: false });
+  const summary = page.getByRole('table', { name: 'Last 24 hours' });
+  await expect(summary.locator('.myx-meter-figure').first()).toHaveText('100%');
+  const summaryCut = await summary.locator('.myx-meter-figure').first().evaluate((figure) => {
+    const cell = figure.closest('td');
+    return cell === null || figure.getBoundingClientRect().right > cell.getBoundingClientRect().right - 1;
+  });
+  expect(summaryCut, 'the summary cache percent must fit without clipping').toBe(false);
+});
+
 test('the in-flight table holds exactly the turns the gate lists, twins included, as they end', async ({ page }) => {
   // Marlin and Hitstop, 2026-09-25: a session's parallel turns share its label, the table keyed its
   // rows by head and label, and React kept the rows of turns that had ended: 10 streaming rows under
@@ -369,9 +440,12 @@ test('a table cell lets its open tip out, and twelve slots stand six and six', a
     await route.fulfill({ response, json: body });
   });
   await open(page, 'fleet');
-  const table = page.getByRole('table', { name: 'Heads', exact: true });
+  const table = page.getByRole('table', { name: 'Plans', exact: true });
   const running = table.getByText('Running', { exact: true }).first();
   await expect(running).toBeVisible({ timeout: 15_000 });
+  // The widened roster scrolls within its own edge; settle that scroll before opening a tip,
+  // since a scroll intentionally dismisses an open popover.
+  await running.scrollIntoViewIfNeeded();
   await running.hover();
   const tip = table.getByRole('tooltip').filter({ hasText: 'streaming 3.2s' });
   await expect(tip).toBeVisible();
@@ -391,16 +465,41 @@ test('a table cell lets its open tip out, and twelve slots stand six and six', a
   expect(rows, 'twelve pips in two even rows').toEqual([6, 6]);
 });
 
+test('Jump to focus spans the whole search field', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, 'needs-you');
+  await page.locator('.myx-side-jump').click();
+  const dialog = page.locator('.myx-palette');
+  const input = dialog.getByPlaceholder('Jump to');
+  await expect(input).toBeFocused();
+  const [frame, field] = await Promise.all([dialog.boundingBox(), input.boundingBox()]);
+  if (frame === null || field === null) throw new Error('Jump to did not draw');
+  expect(field.width, 'the focused field must use the whole dialog edge').toBeGreaterThan(frame.width * 0.9);
+});
+
 test('fleet shows each head\'s pinned model from the catalog', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, 'fleet');
   const main = page.locator('main');
   await expect(main).toContainText(STACK.model, { timeout: 15_000 });
   await expect(main).toContainText(STACK.soloModel);
+  const table = main.getByRole('table', { name: 'Plans', exact: true });
+  const headerOverlap = await table.evaluate((element) => {
+    const columns = [...element.querySelectorAll('thead th')];
+    const first = columns.find((cell) => cell.textContent?.trim() === 'Plan');
+    const next = columns.find((cell) => cell.textContent?.trim() === 'Provider');
+    if (first === undefined || next === undefined) return null;
+    const text = document.createRange();
+    text.selectNodeContents(first);
+    return text.getBoundingClientRect().right - next.getBoundingClientRect().left;
+  });
+  expect(headerOverlap, 'Fleet Head header must not draw over Provider').not.toBeNull();
+  expect(headerOverlap ?? 0).toBeLessThanOrEqual(0);
 });
 
 /** A head's open button in the heads table: the row's primary cell (pages/fleet). */
 function headRow(page: Page, head: string) {
-  return page.getByRole('button', { name: `Open head ${head}`, exact: true });
+  return page.getByRole('button', { name: `Open plan ${head}`, exact: true });
 }
 
 // V4-345: Fleet uses the same stretched row opener as Turns (pages/fleet/index.tsx:435-443).
@@ -417,7 +516,7 @@ test('a held press on a Fleet row state cell opens the head detail', async ({ pa
   await page.mouse.down();
   await page.waitForTimeout(PRESS_MS);
   await page.mouse.up();
-  const detail = page.getByRole('complementary', { name: 'Head detail' });
+  const detail = page.getByRole('complementary', { name: 'Plan detail' });
   await expect(detail, 'a press away from the name opened nothing').toHaveCount(1);
   await expect(detail.getByRole('heading', { level: 2 }).first()).toHaveText(STACK.oauthHead);
   expect(faults.pageErrors, 'the Fleet row press threw').toEqual([]);
@@ -433,7 +532,7 @@ function poolRow(detail: Locator, account: string): Locator {
 test('fleet opens a head with its account pool and the next target marked', async ({ page }) => {
   const faults = await open(page, 'fleet');
   await headRow(page, STACK.oauthHead).click();
-  const detail = page.getByRole('complementary', { name: 'Head detail' });
+  const detail = page.getByRole('complementary', { name: 'Plan detail' });
   // Both accounts of the pool, as account rows; the primary carries the windows the turn reported.
   const pool = detail.getByRole('table', { name: 'Account pool', exact: true });
   await expect(pool).toContainText(STACK.poolLabel, { timeout: 15_000 });
@@ -457,12 +556,17 @@ test('a backend is added from the fleet\'s detail panel through the daemon\'s ow
   // Nothing supplies its key, so the checks refuse (409, with the rows), and the add is discarded:
   // a save would write the stack's splice.toml and restart the daemon under the journeys after it.
   const faults = await open(page, 'fleet');
+  const boardWidth = (await page.locator('main .myx-fl-main').boundingBox())?.width ?? 0;
+  expect(boardWidth).toBeGreaterThan(0);
   await page.locator('main').getByRole('button', { name: 'Connect a plan', exact: true }).click();
   const panel = page.getByRole('complementary', { name: 'Connect a plan' });
+  await expect(panel).toBeVisible();
+  const widthWhileAdding = (await page.locator('main .myx-fl-main').boundingBox())?.width ?? 0;
+  expect(widthWhileAdding, 'connecting a plan must not squeeze the commands in the fleet table').toBeGreaterThanOrEqual(boardWidth * 0.9);
   await panel.getByRole('button', { name: 'Other providers', exact: true }).click();
-  await pick(panel, 'Profile', 'api-key');
-  await panel.getByLabel('Head name', { exact: true }).fill('claude-e2e-added');
-  await panel.getByLabel('Base URL', { exact: true }).fill('http://127.0.0.1:9/v1');
+  await pick(panel, 'Provider', 'api-key');
+  await panel.getByLabel('Plan name', { exact: true }).fill('claude-e2e-added');
+  await panel.getByLabel('Provider address', { exact: true }).fill('http://127.0.0.1:9/v1');
   await panel.getByLabel('Model id', { exact: true }).fill('e2e/added-model');
   const opened = page.waitForResponse((response) => response.request().method() === 'POST'
     && new URL(response.url()).pathname === '/api/add');
@@ -522,8 +626,8 @@ test('the draining restart confirms inline and the unsupervised successor keeps 
 
   await open(page, 'fleet');
   await headRow(page, STACK.oauthHead).click();
-  const detail = page.getByRole('complementary', { name: 'Head detail' });
-  await detail.getByRole('button', { name: 'Restart daemon', exact: true }).click();
+  const detail = page.getByRole('complementary', { name: 'Plan detail' });
+  await detail.getByRole('button', { name: 'Restart splice', exact: true }).click();
   const confirm = detail.getByRole('button', { name: 'Drain and restart', exact: true });
   await expect(confirm).toBeVisible();
   expect(posts, 'arming the key sent the restart').toEqual([]);
@@ -538,7 +642,7 @@ test('the draining restart confirms inline and the unsupervised successor keeps 
   // The doctor's version section mounts the same control and keeps the original management key.
   await open(page, 'doctor');
   const doctor = page.locator('main');
-  await doctor.getByRole('button', { name: 'Restart daemon', exact: true }).click();
+  await doctor.getByRole('button', { name: 'Restart splice', exact: true }).click();
   const second = page.waitForResponse((response) => response.request().method() === 'POST'
     && new URL(response.url()).pathname === '/api/daemon/restart');
   await doctor.getByRole('button', { name: 'Drain and restart', exact: true }).click();
@@ -637,17 +741,17 @@ test('Needs you opens each item on its page, and a link to another item opens it
   await keyItem.getByRole('link', { name: 'Fleet', exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`#/fleet\\?open=${STACK.keyHead}$`));
   // The panel's title is its first heading; the sections under it carry their own.
-  const head = page.getByRole('complementary', { name: 'Head detail' }).getByRole('heading', { level: 2 }).first();
+  const head = page.getByRole('complementary', { name: 'Plan detail' }).getByRole('heading', { level: 2 }).first();
   await expect(head).toHaveText(STACK.keyHead, { timeout: 15_000 });
 
   // A link to another head while Fleet is up: the route stays mounted, and the page opens that head.
   await page.evaluate((to) => { window.location.hash = to; }, `#/fleet?open=${encodeURIComponent(STACK.oauthHead)}`);
   await expect(head).toHaveText(STACK.oauthHead);
   // Closed from the page, it stays closed: the link opens an item once, it does not hold it open.
-  await page.getByRole('complementary', { name: 'Head detail' }).getByRole('button', { name: 'Close', exact: true }).click();
-  await expect(page.getByRole('complementary', { name: 'Head detail' })).toHaveCount(0);
+  await page.getByRole('complementary', { name: 'Plan detail' }).getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(page.getByRole('complementary', { name: 'Plan detail' })).toHaveCount(0);
   await page.waitForTimeout(2_500);
-  await expect(page.getByRole('complementary', { name: 'Head detail' })).toHaveCount(0);
+  await expect(page.getByRole('complementary', { name: 'Plan detail' })).toHaveCount(0);
   expect(faults.pageErrors, 'a page threw').toEqual([]);
 });
 
@@ -774,7 +878,7 @@ test('doctor\'s playground sends one prompt through a head to the upstream and s
   const faults = await open(page, 'doctor');
   // The playground is a section of the page, open at rest: one form, no reveal to press first.
   const playground = page.locator('main');
-  await pick(playground, 'Head', STACK.oauthHead);
+  await pick(playground, 'Plan', STACK.oauthHead);
   await playground.getByRole('textbox', { name: /^Prompt/ }).fill('one prompt from the console e2e');
   await playground.getByRole('button', { name: 'Send', exact: true }).click();
   // The mock upstream's own answer text, inside the raw response the daemon relayed.
@@ -813,7 +917,7 @@ test('Models offers the stack\'s OpenRouter head the catalogue models its roster
   await panel.getByRole('button', { name: 'Add 1 model', exact: true }).click();
   await panel.getByRole('button', { name: 'Add and restart', exact: true }).click();
   await expect.poll(() => sent, 'the add names the head and the picked id').toEqual([JSON.stringify({ head: STACK.keyHead, models: [id] })]);
-  await expect(panel.getByRole('status')).toHaveText('The daemon is restarting; the models appear once it is back.');
+  await expect(panel.getByRole('status')).toHaveText('Splice is restarting; the models appear once it is back.');
   await expect(panel).toContainText(id);
   expect(faults.pageErrors, 'the models page threw').toEqual([]);
 });
@@ -851,11 +955,11 @@ test('teams composes the stack\'s two sessions, shows their hand-off and the sen
   await field('Name').fill(name);
   await field('Repo').fill(env('CONSOLE_E2E_REPO'));
   await field('Role').fill('lead');
-  await pick(form, 'Head', STACK.oauthHead);
+  await pick(form, 'Plan', STACK.oauthHead);
   await pick(form, 'Session', STACK.sender.name);
   await form.getByRole('button', { name: 'Add slot' }).click();
   await field('Role', 1).fill('builder');
-  await pick(form, 'Head', STACK.oauthHead, 1);
+  await pick(form, 'Plan', STACK.oauthHead, 1);
   await pick(form, 'Session', STACK.peer.name, 1);
   await form.getByRole('button', { name: 'Create team' }).click();
 
@@ -884,7 +988,7 @@ test('teams composes the stack\'s two sessions, shows their hand-off and the sen
   await expect(page.getByRole('listitem', { name: `${STACK.sender.name} to ${STACK.peer.name}` }).first()).toBeVisible({ timeout: 15_000 });
   await expect(lanes.locator('path.myx-lanes-arc')).toHaveCount(1, { timeout: 15_000 });
   // The table is a view behind the lanes, where each seat's turns are counted.
-  await page.getByRole('tab', { name: 'By head' }).click();
+  await page.getByRole('tab', { name: 'By plan' }).click();
   const members = page.getByRole('table', { name: 'Members' });
   await expect(members).toContainText(STACK.sender.name, { timeout: 15_000 });
   await expect(members).toContainText(STACK.peer.name);
@@ -980,7 +1084,7 @@ test('sessions prints each session\'s peer from the fleet-wide edges read, unope
   // The board is a view behind the lanes. Neither row is opened: the peer column comes from GET
   // /api/sessions/edges for every row. Each row is found by its opener, and the peer is printed in
   // the row beside it.
-  await page.getByRole('tab', { name: 'By head' }).click();
+  await page.getByRole('tab', { name: 'By plan' }).click();
   const row = (name: string) => page.getByRole('row').filter({ has: page.getByRole('button', { name: `sessions ${name}` }) });
   const sender = row(STACK.sender.name);
   const peer = row(STACK.peer.name);

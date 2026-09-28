@@ -10,11 +10,11 @@ export const S = {
   locked: 'Console locked',
   /** The info mark beside the title: the daemon's own note on what the list holds. */
   about: 'About this list',
-  registry: 'Session registry',
+  registry: 'Session list',
   sample: 'Sample',
   detail: 'Session detail',
   close: 'Close',
-  openHead: 'Open head',
+  openHead: 'Open plan',
   openProject: 'Open project',
   openTeam: 'Open team',
   /** A session's head cell when it was started with `claude` directly, not through a head. */
@@ -27,7 +27,7 @@ export const S = {
   to: 'To',
   /** The board's columns, in the order the views declare them. */
   name: 'Name',
-  head: 'Head',
+  head: 'Plan',
   project: 'Project',
   team: 'Team',
   /** One bar per row on the board's shared time axis: started, last seen, now. */
@@ -72,7 +72,7 @@ export const S = {
   original: 'Original',
   stillLive: 'Still running',
   notRunning: 'Not running',
-  noHeads: 'No heads',
+  noHeads: 'No plans',
   noSessions: 'No sessions',
   noMatches: 'No matches',
   findSession: 'Find session',

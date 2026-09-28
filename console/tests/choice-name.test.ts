@@ -74,10 +74,10 @@ describe('the call sites that rendered nameless are named', () => {
       tail: 200,
       heads: [{ key: 'claudex', label: 'claudex' }],
     }));
-    // the head and the tail length are button groups now (a mark per head, a segmented tail), so
+    // the plan and the tail length are button groups now (a mark per head, a segmented tail), so
     // their name is the group's; the two that stayed choices are named comboboxes
     expect(comboboxNames(out)).toEqual(['Tag', 'Level']);
-    expect(out).toMatch(/role="group" aria-label="Head"/);
+    expect(out).toMatch(/role="group" aria-label="Plan"/);
     expect(out).toMatch(/role="group" aria-label="Lines"/);
   });
 

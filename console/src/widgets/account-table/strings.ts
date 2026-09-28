@@ -8,7 +8,7 @@ export const S = {
   /** The daemon's two window slots: up to six hours, and longer (AccountPool QuotaSlots). */
   short: '5h',
   long: '7d',
-  heads: 'Heads',
+  heads: 'Plans',
   next: 'Next',
   singleLogin: 'Single login',
   primary: 'Primary',

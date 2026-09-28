@@ -1,7 +1,7 @@
 // Every word this feature prints. S: labels, three words or fewer, sentence case. H: help, one
 // sentence of twelve words or fewer.
 export const S = {
-  head: 'Head',
+  head: 'Plan',
   /** The offered models, by name for a screen reader. */
   offered: 'Offered models',
   /** A model's switch: off, it is left out; on, it is in the add. */
@@ -12,7 +12,7 @@ export const S = {
   add: (count: number): string => (count === 1 ? 'Add 1 model' : `Add ${count} models`),
   /** The armed key: the add writes splice.toml and restarts the daemon. */
   addArmed: 'Add and restart',
-  noHeads: 'No OpenRouter head',
+  noHeads: 'No OpenRouter plan',
   allOffered: 'Nothing to add',
   added: 'Added',
   written: 'Written to',
@@ -20,8 +20,8 @@ export const S = {
 } as const;
 
 export const H = {
-  noHeads: 'Models are added to an OpenRouter head; add one from Fleet first.',
-  allOffered: 'Every catalogue model is on this head already.',
-  draining: 'The daemon is restarting; the models appear once it is back.',
+  noHeads: 'Models join an OpenRouter plan; connect one from Fleet first.',
+  allOffered: 'Every catalogue model is on this plan already.',
+  draining: 'Splice is restarting; the models appear once it is back.',
   waiting: (count: number): string => `The restart waits for ${count} compaction(s) to finish.`,
 } as const;

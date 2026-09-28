@@ -108,7 +108,7 @@ describe('the words', () => {
   test('the window source reads as words, whatever label the daemon sends', () => {
     // ModelsRoute.kt WINDOW_FROM_*, plus `head` from splice-lead's S15 change.
     expect(['model', 'head', 'rule', 'extra-window', 'default', 'unknown'].map(windowFromText)).toEqual([
-      'Model catalog', 'Head setting', 'Prefix rule', 'Extra window', 'Provider default', 'Unknown',
+      'Model catalog', 'Plan setting', 'Prefix rule', 'Extra window', 'Provider default', 'Unknown',
     ]);
     expect(windowFromText('some-new-label')).toBe(windowSourceText('some-new-label'));
     expect(render(h(ModelsBoard, { catalog: fixtureCatalog }))).not.toContain('extra-window');

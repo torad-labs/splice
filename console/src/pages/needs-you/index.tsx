@@ -140,7 +140,9 @@ export function NeedsYouBoard({ list, now, setup = false }: { list: NeedsList; n
       {setup ? (
         <Section title={S.connect}>
           <p className="myx-ny-setup">{H.setup}</p>
-          <ConnectPlan renderAdd={(profile, done) => <AddBackend key={profile ?? 'other'} {...(profile === null ? {} : { initialProfile: profile })} onDone={done} />} />
+          <ConnectPlan renderAdd={(profile, done, loginTab) => <AddBackend key={profile ?? 'other'}
+            {...(profile === null ? {} : { initialProfile: profile })}
+            {...(profile === 'codex' ? { initialTab: loginTab, autoStart: true } : {})} onDone={done} />} />
         </Section>
       ) : null}
       {!setup || list.needs.length > 0 ? <Section

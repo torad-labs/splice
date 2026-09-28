@@ -12,7 +12,7 @@ export const S = {
 } as const;
 
 export const H = {
-  about: 'Splice posts here when a head passes a warn budget.',
+  about: 'Splice posts here when a plan passes its warning budget.',
   unavailable: 'This splice version does not serve alerts.',
   /** Why the test key waits: the daemon tests the saved webhook, never the typed one. */
   saveFirst: 'Save a webhook to send a test.',

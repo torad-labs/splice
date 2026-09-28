@@ -171,7 +171,7 @@ describe('first-hour connection', () => {
     }));
     expect(html).not.toContain('Profile: codex');
     expect(html).not.toContain('myx-choice-label');
-    expect(html).toContain('codex profile');
+    expect(html).toContain('Connect your ChatGPT plan.');
   });
 
   test('a saved, linked head hands back the exact copyable command', () => {

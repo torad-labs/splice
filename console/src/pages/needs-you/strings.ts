@@ -26,7 +26,7 @@ export const S = {
   unserved: 'Not served',
   /** Each input by the object it reads. */
   inputs: {
-    heads: 'Heads',
+    heads: 'Plans',
     auth: 'Sign-ins',
     accounts: 'Accounts',
     usage: 'Plan usage',
@@ -38,7 +38,7 @@ export const S = {
   /** The page each item belongs to, as the sidebar names it. */
   sources: {
     heads: 'Fleet',
-    daemon: 'Daemon',
+    daemon: 'Splice',
     plans: 'Accounts',
     accounts: 'Accounts',
     turns: 'Turns',
@@ -46,7 +46,7 @@ export const S = {
     teams: 'Teams',
     doctor: 'Doctor',
   },
-  daemon: 'Daemon',
+  daemon: 'Splice',
   nearest: 'Nearest limit',
   singleLogin: 'Single login',
   /** The fixes. */
@@ -74,23 +74,23 @@ export const H = {
   unread: 'An input nobody could read hides what it would show.',
   down: 'Not running.',
   unhealthy: 'Running, but failing its health check.',
-  signedOut: 'No login on disk for this head.',
+  signedOut: 'No login is saved for this plan.',
   keyMissingBare: 'Its API key is not set.',
   loginExpired: 'Its login expired and the refresh is blocked.',
   queueFull: 'Every slot is busy and the queue is full.',
-  configChanged: 'The splice.toml file changed since the daemon booted.',
+  configChanged: 'The splice.toml file changed since splice started.',
   tracePending: (head: string): string => `Trace for ${head} in splice.toml applies after restart.`,
   checkPending: 'A change in splice.toml applies after restart.',
   accountSignedOut: 'Its login is gone; sign in with a new label.',
-  seatEnded: 'Its bound session ended; bind another in the team.',
-  seatUnlisted: 'Its bound session is not in the registry.',
+  seatEnded: 'Its assigned session ended; assign another in the team.',
+  seatUnlisted: 'Its assigned session is not in the session list.',
   quietSince: 'Alive, but never heard from since it registered.',
   masked: 'Part of this line is masked, so it will not run pasted.',
 } as const;
 
 export const U = {
   runs: 'Runs',
-  wants: 'daemon wants',
+  wants: 'splice wants',
   notSet: 'not set',
   idle: 'Idle',
   limit: 'limit',

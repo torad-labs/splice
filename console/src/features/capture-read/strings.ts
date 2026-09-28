@@ -47,8 +47,8 @@ export const S = {
 export const H = {
   recordedEarlier: 'Recorded while capture was on; capture is off now.',
   noTraced: 'Turn capture on and restart; traced turns land here.',
-  wire: 'The last request bodies this head sent upstream, kept in memory.',
-  noBodies: 'Nothing has left this head since the daemon started.',
+  wire: 'The last requests this plan sent, kept in memory.',
+  noBodies: 'This plan has sent nothing since splice started.',
 } as const;
 
 export const U = {

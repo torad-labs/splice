@@ -307,6 +307,14 @@ export function SettingsPage() {
       {claude.error === null ? null : <Fault message={claude.error} lastRead={sample === null ? claude.lastUpdated : null} />}
       {claudeFault === null ? null : <Fault message={claudeFault} />}
 
+      <Section title={S.instructions} info={{ text: H.instructions, label: S.aboutInstructions }} className="myx-settings-section">
+        {topologyState === null && fixture === null ? <Blank strips={2} /> : (
+          <TopologySection scope="instructions"
+            state={fixture === null ? topologyState ?? { pending: 'V4-128' } : { path: '~/.config/splice/splice.toml', topology: fixture.topology, stale: false }}
+            loaded={loaded} draft={draft} onDraft={setDraft} onWrite={writeTopology} busy={busyTopology} result={writeResult} />
+        )}
+      </Section>
+
       <Section title={S.knobs} {...(configPayload === null ? {} : { count: shown.length })} className="myx-settings-section">
         {/* The scope: every head's own values, or the global ones. Each head wears its colour mark
             (DESIGN.md section 5); which one is chosen is the pressed state and the active ground. */}
@@ -357,7 +365,7 @@ export function SettingsPage() {
           <Empty text={S.noConfig} source={H.noConfig} />
         ) : (
           <>
-            <TopologySection
+            <TopologySection scope="other"
               state={fixture === null ? topologyState ?? { pending: 'V4-128' } : { path: '~/.config/splice/splice.toml', topology: fixture.topology, stale: false }}
               loaded={loaded}
               draft={draft}

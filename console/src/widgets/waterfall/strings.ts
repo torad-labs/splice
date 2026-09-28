@@ -30,7 +30,7 @@ export const S = {
 } as const;
 
 export const H = {
-  noMarks: 'The daemon wrote no timing for this turn.',
+  noMarks: 'Splice recorded no timing for this turn.',
   capture: 'Records request and response bodies on local disk, off by default.',
 } as const;
 

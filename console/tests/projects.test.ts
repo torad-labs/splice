@@ -205,7 +205,7 @@ describe('a project edits its standing prompt and compaction rule', async () => 
     const html = renderToStaticMarkup(h(StandingForm, { topology: TOPOLOGY, root: ROOT, live }));
     expect(html).toContain('builder');
     expect(html).not.toContain('elsewhere');
-    expect(html).toContain('after the daemon restarts');
+    expect(html).toContain('after splice restarts');
   });
 
   test('the daemon\'s refusal prints verbatim, and a prompt read from a file offers no text box', () => {

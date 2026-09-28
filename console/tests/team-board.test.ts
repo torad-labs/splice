@@ -114,7 +114,7 @@ describe('the opened team', () => {
     ]);
     const html = render(teamsBodyFor({ view: BY_ROLE, teams: null, board: sampleBoard, data: sampleData }));
     // By role, the head is a column, so the open reviewer seat still says what it would run on.
-    expect(html).toContain('>Head<');
+    expect(html).toContain('>Plan<');
     expect(rowOf(html, 'reviewer')).toContain('claude-grok');
   });
 
@@ -122,7 +122,7 @@ describe('the opened team', () => {
     const open = seatsOf(sampleBoard).find((seat) => seat.member === null);
     if (open === undefined) throw new Error('the sample carries an open seat');
     const html = render(createElement(SeatDetail, { board: sampleBoard, seat: open }));
-    expect(html).toContain('No session bound');
+    expect(html).toContain('No session assigned');
     expect(html).toContain('claude-grok');
     expect(html).toContain('No instructions');
     expect(stateOf(open)).toEqual({ tone: 'neutral', word: 'Open' });
@@ -392,24 +392,24 @@ describe('a head splice does not run (Marlin, 2026-09-25)', () => {
   test('its seats share one lane, with the name and the tip Sessions gives a session with no head', () => {
     const html = render(createElement(TeamLanes, { board: plain }));
     expect(html.match(/class="myx-lane myx-hue-/g)?.length).toBe(2); // claudex, and one for both builders' heads
-    expect(html.match(/No splice head/g)?.length).toBeGreaterThan(0);
-    expect(html).toContain('Splice did not start these, or cannot tell which head did.');
+    expect(html.match(/No connected plan/g)?.length).toBeGreaterThan(0);
+    expect(html).toContain('Splice did not start these sessions, or cannot identify their plan.');
     expect(html).not.toContain('claude-grok');
     expect(seatGroups(plain, 'head').map((group) => group.seats.length)).toEqual([1, 3]);
   });
 
   test('its head cell on the members table and the seat detail is the same mark', () => {
     const members = render(createElement(TeamMembers, { board: plain, by: 'role' }));
-    expect(members).toContain('No splice head');
+    expect(members).toContain('No connected plan');
     expect(members).not.toContain('>claude-grok<');
     const builder = seatsOf(plain).find((seat) => seat.slot.head === 'claude-grok');
     if (builder === undefined) throw new Error('the sample seats a builder on claude-grok');
-    expect(render(createElement(SeatDetail, { board: plain, seat: builder }))).toContain('No splice head');
+    expect(render(createElement(SeatDetail, { board: plain, seat: builder }))).toContain('No connected plan');
   });
 
   test('a registry not read yet names every head as it is', () => {
     const unknown: TeamPayload = { ...sampleBoard, spliceHeads: null };
-    expect(render(createElement(TeamLanes, { board: unknown }))).not.toContain('No splice head');
+    expect(render(createElement(TeamLanes, { board: unknown }))).not.toContain('No connected plan');
     expect(seatGroups(unknown, 'head').map((group) => group.key)).toEqual(['claudex', 'claude-grok', 'bonsai-2-27b']);
   });
 
@@ -417,7 +417,7 @@ describe('a head splice does not run (Marlin, 2026-09-25)', () => {
     expect(costTable(unread.economics, plain.team.slots).unseen).toEqual(['builder']);
     const roles = render(createElement(CostPerRole, { board: plain, data: unread }));
     const row = /<tr[^>]*>(?:(?!<\/tr>)[\s\S])*>builder<(?:(?!<\/tr>)[\s\S])*<\/tr>/.exec(roles)?.[0] ?? '';
-    expect(row).toContain('Splice never sees turns on a head it does not run.');
+    expect(row).toContain('Splice cannot see turns on a plan it does not run.');
     expect(row).not.toMatch(/\$\d|>13</);
     expect(roles).toContain('$0.412'); // the lead's row, read, keeps its figures
     const stats = render(createElement(TeamStats, { board: plain, data: unread }));
@@ -502,7 +502,7 @@ describe('the activity feed', () => {
 
 describe('the composer', () => {
   test('it says what stops the draft being saved', () => {
-    expect(validateDraft(blankDraft('slot-a'))).toEqual(['No name', 'No repo', 'Slot 1 · No role', 'Slot 1 · No head']);
+    expect(validateDraft(blankDraft('slot-a'))).toEqual(['No name', 'No repo', 'Slot 1 · No role', 'Slot 1 · No plan']);
     const draft = draftOf(sampleBoard.team);
     expect(validateDraft(draft)).toEqual([]);
     expect(validateDraft({ ...draft, slots: draft.slots.map((slot) => ({ ...slot, lead: true })) }))
@@ -545,15 +545,15 @@ describe('the composer', () => {
     const heads = [{ value: 'claudex', label: 'claudex' }, { value: 'bonsai', label: 'claude-bonsai' }];
     const sessions = [{ value: 'sid-1', label: 'api-builder' }];
     const html = render(createElement(TeamCompose, { heads, sessions }));
-    expect(html).toContain('Choose a head');
+    expect(html).toContain('Choose a plan');
     expect(html).toContain('Open seat');
     // With nothing listed (not loaded yet, or a fixture) the fields fall back to typing.
-    expect(render(createElement(TeamCompose, {}))).not.toContain('Choose a head');
+    expect(render(createElement(TeamCompose, {}))).not.toContain('Choose a plan');
   });
 
   test('a slot keeps a value the list no longer has, so opening an old team rewrites nothing', () => {
     const listed = [{ value: 'claudex', label: 'claudex' }];
-    const blank = { value: '', label: 'Choose a head' };
+    const blank = { value: '', label: 'Choose a plan' };
     expect(optionsFor(listed, 'claudex', blank)).toEqual([blank, ...listed]);
     expect(optionsFor(listed, 'retired-head', blank)).toEqual([blank, ...listed, { value: 'retired-head', label: 'retired-head' }]);
     expect(optionsFor(listed, '', blank)).toEqual([blank, ...listed]);

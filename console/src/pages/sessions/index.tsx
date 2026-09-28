@@ -71,7 +71,7 @@ const PAGE_ID = 'sessions';
 export const DEFAULT_VIEWS: View[] = [
   { id: 'lanes', name: S.lanes, layout: 'lanes', filter: {}, sort: null, group: 'head', fields: [], introduced: '2026-09-25' },
   // A grouped view does not repeat its group as a column: the bay's own label already names it.
-  { id: 'by-head', name: 'By head', layout: 'rack', filter: {}, sort: null, group: 'head', fields: ['name', 'project', 'life', 'peer'] },
+  { id: 'by-head', name: 'By plan', layout: 'rack', filter: {}, sort: null, group: 'head', fields: ['name', 'project', 'life', 'peer'] },
   { id: 'by-project', name: 'By project', layout: 'rack', filter: {}, sort: null, group: 'repo', fields: ['name', 'head', 'life', 'peer'] },
   { id: 'by-team', name: 'By team', layout: 'rack', filter: {}, sort: null, group: 'team', fields: ['name', 'head', 'project', 'life', 'peer'] },
   { id: 'timeline', name: 'Timeline', layout: 'timeline', filter: { window: '24h', bucket: '1h' }, sort: null, group: null, fields: ['name', 'head', 'project', 'life', 'peer'] },

@@ -153,7 +153,7 @@ describe('the knob row', () => {
       const global = render(h(KnobForm, { disposition, pending: false, onSave: () => undefined }));
       expect(global, key).not.toContain('<input');
       expect(global, key).not.toContain('role="switch"');
-      expect(global, key).toContain('>Per head<');
+      expect(global, key).toContain('>Per plan<');
       const perHead = render(h(KnobForm, { disposition, pending: false, onSave: () => undefined, perHead: true }));
       expect(perHead, key).toMatch(/<input|role="switch"/);
     }

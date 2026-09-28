@@ -20,7 +20,7 @@ import { KnobRack } from '../src/widgets/knob-form';
 import { SOURCE_LABELS } from '../src/widgets/knob-form/strings';
 import { dispositions } from '../src/pages/settings/coverage';
 import { fixtureConfig, fixtureTopology } from '../src/pages/settings/fixtures/settings';
-import { DEFAULT_VIEWS, changedPaths, fileOverrideNote, flattenTopology, knobsForView, parseList, setAtPath, toToml, topologyTables, valueAtPath, withHeadOverride } from '../src/pages/settings/model';
+import { DEFAULT_VIEWS, changedPaths, fileOverrideNote, flattenTopology, knobsForView, parseList, setAtPath, toToml, topologyTables, valueAtPath, withDefaultInstructions, withHeadOverride } from '../src/pages/settings/model';
 import { draftAfterKnobSave, saveGlobalKnob } from '../src/pages/settings';
 import { saveTopology } from '../src/entities/topology';
 import { ClaudeModeSection, TopologySection } from '../src/pages/settings/sections';
@@ -96,7 +96,7 @@ describe('settings: the knob form', () => {
     // state file and the runtime layer are both what a save in the console writes, so they read
     // alike; every other layer keeps a word of its own.
     const source = (key: string) => /aria-label="Source: ([^"]*)"/.exec(rowOf(rack, key))?.[1];
-    expect(source('maxInflight')).toBe('Head override');
+    expect(source('maxInflight')).toBe('Plan setting');
     expect(source('usageWarnPct')).toBe('Console');
     expect(source('debug')).toBe('Environment');
     expect(source('quotaPoll')).toBe('Console');
@@ -123,6 +123,30 @@ describe('settings: the knob form', () => {
 });
 
 describe('settings: the topology section', () => {
+  test('instructions have their own editable group, apart from the rest of the file', () => {
+    const props = {
+      state: { path: 'splice.toml', topology: fixtureTopology, stale: false }, loaded: fixtureTopology,
+      draft: fixtureTopology, onDraft: () => undefined, onWrite: () => undefined, busy: false, result: null,
+    };
+    const instructions = render(h(TopologySection, { ...props, scope: 'instructions' }));
+    expect(instructions).toContain('compaction');
+    expect(instructions).toContain('instructions');
+    expect(instructions).toContain('Write topology');
+    expect(instructions).not.toContain('providers.codex');
+    const other = render(h(TopologySection, { ...props, scope: 'other' }));
+    expect(other).toContain('providers.codex');
+    expect(other).not.toContain('aria-label="compaction"');
+    const absent = render(h(TopologySection, { ...props, draft: { ...fixtureTopology, compaction: {} }, scope: 'instructions' }));
+    expect(absent).toContain('Add instructions');
+    const modelOnly = render(h(TopologySection, {
+      ...props, draft: { ...fixtureTopology, compaction: { model: [{ model: 'gpt-5.6-sol' }] } }, scope: 'instructions',
+    }));
+    expect(modelOnly).toContain('Add instructions');
+    const added = withDefaultInstructions({ compaction: { model: [{ model: 'gpt-5.6-sol' }] } });
+    expect(valueAtPath(added, 'compaction.instructions')).toBe('');
+    expect(valueAtPath(added, 'compaction.model[0].model')).toBe('gpt-5.6-sol');
+  });
+
   const draftWithTypo = { ...fixtureTopology, daemon: { ...(fixtureTopology.daemon as object), wibble: 1 } };
   const section = render(
     h(TopologySection, {
@@ -489,7 +513,7 @@ describe('settings: the Claude head modes', () => {
     const unread = render(
       h(ClaudeModeSection, { state: null, result: null, onWrap: () => undefined, onUnwrap: () => undefined, busy: false }),
     );
-    expect(unread).toContain('Waiting for the daemon to answer');
+    expect(unread).toContain('Waiting for splice to answer');
     expect(unread).not.toContain('/api/');
     expect(unread).not.toContain('V4-129');
   });

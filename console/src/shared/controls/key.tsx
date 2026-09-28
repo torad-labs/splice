@@ -24,7 +24,7 @@ import { S } from './strings';
 
 export type KeyVariant = 'plain' | 'armed';
 
-export function Key({ children, onClick, variant = 'plain', type = 'button', disabled, busy, ariaLabel, className }: {
+export function Key({ children, onClick, variant = 'plain', type = 'button', disabled, busy, ariaLabel, ariaDescribedBy, className }: {
   children: ReactNode;
   onClick?: () => void;
   /** `armed` is the cocked half of a two-step key: the lock is amber, it prints its own word, and
@@ -36,6 +36,7 @@ export function Key({ children, onClick, variant = 'plain', type = 'button', dis
   disabled?: boolean | undefined;
   busy?: boolean | undefined;
   ariaLabel?: string | undefined;
+  ariaDescribedBy?: string | undefined;
   className?: string | undefined;
 }) {
   const cocked = variant === 'armed';
@@ -53,6 +54,7 @@ export function Key({ children, onClick, variant = 'plain', type = 'button', dis
       aria-disabled={working ? true : undefined}
       aria-busy={working ? true : undefined}
       aria-label={ariaLabel}
+      aria-describedby={ariaDescribedBy}
     >
       {cocked ? <HolderEdge state="amber" label={S.armed} /> : null}
       <span className="myx-key-label">{children}</span>

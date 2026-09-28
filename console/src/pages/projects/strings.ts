@@ -32,7 +32,7 @@ export const S = {
   /** What governs the repo (FEATURES.md 4.14): its compaction rules and each head's statusline root. */
   compaction: 'Compaction rules',
   statusline: 'Statusline roots',
-  head: 'Head',
+  head: 'Plan',
   root: 'Root',
   /** Which entry of a head's trusted set covers the repo, as a badge; none, and its statusline
    *  shows no branch here. */
@@ -55,29 +55,29 @@ export const S = {
   unavailable: 'No topology route',
   noProjects: 'No projects yet',
   noRule: 'No rule here',
-  noHeads: 'No heads yet',
+  noHeads: 'No plans yet',
   settings: 'Settings',
   /** What any cell with no value prints. */
   absent: ABSENT,
 } as const;
 
 export const H = {
-  about: 'Every repo the daemon has seen a session run in.',
+  about: 'Every repo splice has seen a session run in.',
   noProjects: 'A repo shows here once a session runs in it.',
   /** Declared rates make a dollar figure an estimate; no rates is no figure, never zero. */
   cost: 'Estimated from declared rates; turns with none are counted, not priced.',
   /** The row's `compaction` is null: the daemon's failure to report, not "no rule". */
-  unwired: 'The daemon did not report its compaction table.',
+  unwired: 'Splice did not report its compaction rules.',
   clientOwn: "Claude Code's own instructions apply; rules go under [compaction] in splice.toml.",
-  compaction: "The rules a compaction here resolves to, in the daemon's precedence.",
-  statusline: "The trusted root each head's statusline finds this repo under.",
+  compaction: 'The instructions this project uses when conversations are shortened.',
+  statusline: "The trusted root each plan's statusline finds this repo under.",
   noHeads: 'Add one in Settings, under Topology.',
   standing: "This repo's prompt and compaction rule, as splice.toml holds them.",
   /** Both are read at boot (Daemon.kt), so no running session sees an edit before a restart. */
-  restart: 'Applies after the daemon restarts, at each session\'s next turn.',
+  restart: 'Applies after splice restarts, at each session\'s next turn.',
   reaches: 'Live sessions here get it at their first turn after a restart.',
   fromFile: 'Read from this file; edit the file, or clear it in Settings.',
-  unavailable: 'This daemon serves no topology to edit.',
+  unavailable: 'This splice version cannot edit the configuration file.',
 } as const;
 
 export const U = {

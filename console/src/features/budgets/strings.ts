@@ -3,7 +3,7 @@
 export const S = {
   title: 'Budgets',
   about: 'About budgets',
-  head: 'Head',
+  head: 'Plan',
   daily: 'Daily limit',
   action: 'Past limit',
   save: 'Save',
@@ -16,7 +16,7 @@ export const S = {
 } as const;
 
 export const H = {
-  about: 'A dollar limit per head for each UTC day.',
+  about: 'A dollar limit per plan for each UTC day.',
   unavailable: 'This splice version does not serve budgets.',
   notAmount: 'Not a dollar amount; nothing saved.',
 } as const;

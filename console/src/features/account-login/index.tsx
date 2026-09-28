@@ -97,8 +97,8 @@ export function advanceSignInTab(tab: Window | null, status: LoginView | null, e
 }
 
 /** The shared browser handoff for adding a head and renewing an account. */
-export function useLoginPage(status: LoginView | null, error: string | null): () => void {
-  const tab = useRef<Window | null>(null);
+export function useLoginPage(status: LoginView | null, error: string | null, initialTab: Window | null = null): () => void {
+  const tab = useRef<Window | null>(initialTab);
   useEffect(() => { tab.current = advanceSignInTab(tab.current, status, error); }, [status, error]);
   useEffect(() => () => { tab.current?.close(); }, []);
   return () => {

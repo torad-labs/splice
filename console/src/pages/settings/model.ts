@@ -78,6 +78,12 @@ export function valueAtPath(topology: Record<string, unknown>, path: string): un
   return cursor;
 }
 
+/** Add a global compaction rule without dropping existing per-model instructions. */
+export function withDefaultInstructions(topology: Record<string, unknown>): Record<string, unknown> {
+  const compaction = isTable(topology.compaction) ? topology.compaction : {};
+  return { ...topology, compaction: { ...compaction, instructions: '' } };
+}
+
 /** Compare the declared head value to this boot's value, not to the console's saved-key list. */
 export function fileOverrideNote(topology: Record<string, unknown> | null, head: string, knob: KnobDisposition, config: ConfigPayload): string | null {
   if (topology === null || knob.hot || KNOB_META[knob.key]?.headOnly !== true || shadowOfOverride(knob.key, config) !== null) return null;

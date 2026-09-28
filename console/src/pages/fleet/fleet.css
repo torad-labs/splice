@@ -50,6 +50,11 @@
 }
 .myx-fl-board-open { grid-template-columns: minmax(0, 1fr) minmax(calc(30 * var(--u)), 34%); }
 .myx-fl-board-open .myx-panel { position: sticky; top: 0; }
+/* A full roster scrolls within its own edge instead of painting Head over Provider. */
+.myx-fl-board:not(.myx-fl-board-open) .myx-fl-main .myx-dt { min-width: calc(85 * var(--u)); }
+/* Connecting a plan is a full-width task; the Fleet table keeps its command column readable. */
+.myx-fl-board-adding .myx-panel { grid-row: 1; }
+.myx-fl-board-adding .myx-fl-main { grid-row: 2; }
 
 @media (max-width: 1100px) {
   .myx-fl-board-open { grid-template-columns: minmax(0, 1fr); }

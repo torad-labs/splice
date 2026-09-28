@@ -4,12 +4,16 @@
 export const S = {
   title: 'Settings',
   about: 'About settings',
-  knobs: 'Runtime knobs',
-  /** The group of scope buttons: global, then one per head. */
-  scope: 'Knob scope',
+  instructions: 'Instructions',
+  aboutInstructions: 'About instructions',
+  addInstructions: 'Add instructions',
+  noInstructions: 'No shared instructions',
+  knobs: 'Runtime settings',
+  /** The group of scope buttons: global, then one per plan. */
+  scope: 'Setting scope',
   scopeWhy: 'About the scope',
   global: 'Global',
-  find: 'Find a knob',
+  find: 'Find a setting',
   findHint: 'Name or key',
   topology: 'Topology',
   topologyWhy: 'About writing',
@@ -17,7 +21,7 @@ export const S = {
   file: 'File',
   /** A value written at the top of splice.toml, outside any table. */
   topLevel: 'Top level',
-  claudeHead: 'Claude head',
+  claudeHead: 'Claude plan',
   modeWhy: 'About this mode',
   separate: 'Separate',
   wrapped: 'Wrapped',
@@ -32,7 +36,7 @@ export const S = {
   changed: 'Changed fields',
   written: 'Written',
   refused: 'Refused',
-  allKnobs: 'All knobs',
+  allKnobs: 'All settings',
   live: 'Applies live',
   /** The instruction after splice.toml is written or a knob saved: the daemon reads it on start. */
   restart: 'Restart to apply',
@@ -57,26 +61,28 @@ export const S = {
   overridden: 'Overridden by',
   /** The empties, one factual line each. */
   noConfig: 'No config yet',
-  noKnobs: 'No knobs here',
-  noHeads: 'No heads declared',
+  noKnobs: 'No settings here',
+  noHeads: 'No plans declared',
   topologyUnavailable: 'Topology unavailable',
   claudeUnread: 'Mode not read',
 } as const;
 
 export const H = {
-  about: 'Runtime knobs, the splice.toml topology, and the Claude head mode.',
-  globalScope: 'Saved values apply to every head; pick a head for its own.',
-  headScope: "Saved values become this head's overrides in splice.toml, after a restart.",
-  shadowConsole: 'A console value for every head outranks this; reset it globally.',
-  shadowEnv: 'The environment sets this for every head, outranking this override.',
-  overridden: 'Saving here replaces the value these heads set for themselves.',
+  about: 'Instructions, runtime settings, splice.toml, and the Claude plan mode.',
+  instructions: 'The rules splice follows when shortening conversations, globally or by model.',
+  noInstructions: 'Set rules for shortening conversations in splice.toml.',
+  globalScope: 'Saved values apply to every plan; pick one for its own.',
+  headScope: "Saved values become this plan's settings in splice.toml after a restart.",
+  shadowConsole: 'A console value for every plan wins; reset it globally.',
+  shadowEnv: 'The environment sets this for every plan, overriding this value.',
+  overridden: 'Saving here replaces the value these plans set for themselves.',
   topologyWrite: 'Writing backs the file up first and keeps comments and layout.',
   wrapped: 'Wrapping rewrote two ~/.claude files and shims claude; unwrap restores them.',
   // Not "touches nothing": by default a separate head shares ten items with ~/.claude and moves its
   // sessions and transcripts there so other heads can resume them (TopologySchema.kt ClaudeSharingDefaults,
   // ClaudeConfigMaterializer.linkShared). What it leaves alone is the claude command (Marlin, 2026-09-25).
   separate: 'Leaves claude on PATH alone; shares ~/.claude setup and sessions by default.',
-  noConfig: 'Waiting for the daemon to answer.',
+  noConfig: 'Waiting for splice to answer.',
   noKnobs: 'The other view tabs hold the rest.',
   noHeads: 'Add one below, or in splice.toml.',
   topologyUnavailable: 'This splice version does not serve splice.toml editing.',

@@ -10,7 +10,7 @@ import type { ClaudeHeadActionResult, ClaudeHeadPayload } from '@entities/claude
 import { validateTopology } from '@entities/topology';
 import type { TopologyState, TopologyWriteResult } from '@entities/topology';
 import { TomlEditor, TomlMerge } from '@widgets/toml-editor';
-import { changedPaths, coerce, headOverrideOf, parseList, setAtPath, topologyTables, toToml } from './model';
+import { changedPaths, coerce, headOverrideOf, parseList, setAtPath, topologyTables, toToml, withDefaultInstructions } from './model';
 import type { TopologyField, TopologyTable } from './model';
 import { H, S } from './strings';
 
@@ -71,7 +71,7 @@ function tableTitle(table: TopologyTable, group: string): string {
  * own writer re-validates and its refusal is the authority, so a console that refused first would
  * only be adding a second opinion to the same question.
  */
-export function TopologySection({ state, loaded, draft, onDraft, onWrite, busy, result }: {
+export function TopologySection({ state, loaded, draft, onDraft, onWrite, busy, result, scope = 'all' }: {
   state: TopologyState;
   loaded: Record<string, unknown> | null;
   draft: Record<string, unknown> | null;
@@ -79,6 +79,7 @@ export function TopologySection({ state, loaded, draft, onDraft, onWrite, busy, 
   onWrite: () => void;
   busy: boolean;
   result: TopologyWriteResult | null;
+  scope?: 'all' | 'instructions' | 'other';
 }) {
   if (typeof state === 'object' && state !== null && 'pending' in state) {
     return <Empty text={S.topologyUnavailable} source={H.topologyUnavailable} />;
@@ -88,11 +89,14 @@ export function TopologySection({ state, loaded, draft, onDraft, onWrite, busy, 
   const groups = new Map<string, TopologyTable[]>();
   for (const table of topologyTables(draft)) {
     const group = table.path.split(/[.[]/)[0] ?? '';
+    if (scope === 'instructions' && group !== 'compaction') continue;
+    if (scope === 'other' && group === 'compaction') continue;
     groups.set(group, [...(groups.get(group) ?? []), table]);
   }
 
   const changed = loaded === null ? [] : changedPaths(loaded, draft);
-  const findings = validateTopology(draft);
+  const findings = validateTopology(draft).filter((finding) => scope === 'all'
+    || (finding.path.startsWith('compaction') === (scope === 'instructions')));
 
   return (
     <div className="myx-settings-topology">
@@ -106,8 +110,13 @@ export function TopologySection({ state, loaded, draft, onDraft, onWrite, busy, 
         {state.stale ? <HolderEdge state="amber" label={S.restart} /> : null}
       </div>
 
+      {scope === 'instructions' && !topologyTables(draft).some((table) => table.fields.some((field) => field.path === 'compaction.instructions')) ? (
+        <Empty text={S.noInstructions} source={H.noInstructions}
+          action={<Key onClick={() => onDraft(withDefaultInstructions(draft))}>{S.addInstructions}</Key>} />
+      ) : null}
       {[...groups.entries()].map(([group, tables]) => (
-        <Bay key={group} label={group === '' ? S.topLevel : group} count={tables.length}>
+        <Bay key={group} label={group === 'compaction' && scope === 'instructions' ? S.instructions
+          : group === '' ? S.topLevel : group} count={tables.length}>
           {tables.map((table) => (
             <section key={table.path} className="myx-topo-table" aria-label={table.path || S.topLevel}>
               {tableTitle(table, group) === '' ? null : <h4 className="myx-topo-title">{tableTitle(table, group)}</h4>}

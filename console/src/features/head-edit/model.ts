@@ -148,7 +148,7 @@ export function validateNewHead(
   if (draft.key.trim() === '') {
     findings.push({ field: 'key', message: S.keyRequired });
   } else if (rows.some((row) => row.key === draft.key.trim())) {
-    findings.push({ field: 'key', message: `head ${draft.key.trim()} is already declared` });
+    findings.push({ field: 'key', message: S.keyDeclared(draft.key.trim()) });
   }
 
   if (draft.provider.trim() === '') {

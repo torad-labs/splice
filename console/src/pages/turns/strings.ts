@@ -41,7 +41,7 @@ export const S = {
   noMatch: 'No matching turns',
   /** The columns. */
   time: 'Time',
-  head: 'Head',
+  head: 'Plan',
   model: 'Model',
   outcome: 'Outcome',
   session: 'Session',
@@ -91,12 +91,12 @@ export const H = {
   about: "What runs now, what landed, and where each turn's time went.",
   summary: 'Solid bar is the median; the pale end reaches p95.',
   nothingInFlight: 'A turn shows here while it runs.',
-  noSummary: 'Waiting for the daemon to answer.',
-  noTurns: 'Turns land here as the heads serve them.',
+  noSummary: 'Waiting for splice to answer.',
+  noTurns: 'Turns land here as plans serve them.',
   historyUnavailable: 'This splice version does not serve turn history.',
-  stalled: "Idle past its head's stream idle limit: hung, or still reasoning.",
-  unlisted: 'This daemon counts turns in flight but does not list them yet.',
-  stages: 'The average landed turn below, in its parts, per head.',
+  stalled: 'Idle past its plan limit: hung, or still reasoning.',
+  unlisted: 'Splice counts these running turns but does not list them yet.',
+  stages: 'The average completed turn below, in its parts, per plan.',
   tokens: 'The landed turns below; the strong grey is priced in full.',
 } as const;
 

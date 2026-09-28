@@ -14,7 +14,7 @@ export const S = {
   slots: 'Slots',
   slot: 'Slot',
   role: 'Role',
-  head: 'Head',
+  head: 'Plan',
   lead: 'Lead',
   notLead: 'Not lead',
   instructions: 'Instructions',
@@ -22,7 +22,7 @@ export const S = {
   /** The session choice that binds no session: the seat stays on the team, empty. */
   open: 'Open seat',
   /** What an unset head choice prints until one is picked. */
-  pickHead: 'Choose a head',
+  pickHead: 'Choose a plan',
   addSlot: 'Add slot',
   removeSlot: 'Remove slot',
   archived: 'Archived',
@@ -34,7 +34,7 @@ export const S = {
   noRepo: 'No repo',
   noSlot: 'No slot',
   noRole: 'No role',
-  noHead: 'No head',
+  noHead: 'No plan',
   onTwoSlots: 'On two slots',
 } as const;
 

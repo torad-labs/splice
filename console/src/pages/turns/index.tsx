@@ -479,7 +479,7 @@ export function TurnsBoard({ slots = [], inflight, landed, summary, capture, loc
         ) : (
           <>
             {ran.length === 0 ? null : (
-              <DataTable columns={summaryColumns(ran)} rows={ran} rowKey={(head) => head.key} label={S.summary} />
+              <DataTable className="myx-tn-summary" columns={summaryColumns(ran)} rows={ran} rowKey={(head) => head.key} label={S.summary} />
             )}
             <IdleHeads summary={summary} />
           </>

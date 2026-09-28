@@ -115,16 +115,16 @@ test('a fresh home connects ChatGPT in one browser gesture and returns a command
   await expect(page.locator('.myx-dt-tone-danger')).toHaveCount(0);
   await expect(page.locator('.myx-rule-state')).toContainText('Not set up');
   await page.getByRole('button', { name: 'Other providers', exact: true }).click();
-  await expect(page.getByRole('combobox', { name: 'Profile' })).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Provider' })).toBeVisible();
   await page.getByRole('button', { name: 'All plans', exact: true }).click();
   await expect(page.getByRole('button', { name: 'ChatGPT', exact: true })).toBeVisible();
-  await page.getByText('Sign in with your ChatGPT plan.', { exact: true }).click();
-  await expect(page.getByText('ChatGPT subscription over the Responses API')).toBeVisible();
-  await expect(page.getByRole('combobox', { name: 'Profile' })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Continue', exact: true }).click();
   const popupReady = page.waitForEvent('popup');
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await page.getByText('Sign in with your ChatGPT plan.', { exact: true }).click();
   const popup = await popupReady;
+  await expect(page.getByRole('combobox', { name: 'Provider' })).toHaveCount(0);
+  await expect(page.getByLabel('Plan name')).toHaveCount(0);
+  await expect(page.getByText('ChatGPT subscription over the Responses API')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Continue', exact: true })).toHaveCount(0);
   // A real foreground sign-in tab hides the console. Keep that state even when a headless
   // browser happens to leave both tabs visible, so the late URL requires an unpaused poll.
   await page.evaluate(() => {
@@ -137,7 +137,7 @@ test('a fresh home connects ChatGPT in one browser gesture and returns a command
   expect(pageErrors).toEqual([]);
   await expect(popup).toHaveURL(SIGN_IN);
   await expect(popup.getByRole('heading', { name: 'Provider sign-in' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Save backend', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Save provider', exact: true })).toHaveCount(0);
   await expect.poll(() => saves, { timeout: 15_000 }).toBe(1);
   await expect(page.locator('.myx-add-command')).toContainText('ChatGPT connected. Run claudex.');
   await expect(page.locator('.myx-add-command code')).toHaveText('claudex');

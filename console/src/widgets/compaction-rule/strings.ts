@@ -5,7 +5,7 @@ export const S = {
   scope: 'Scope',
   source: 'Source',
   chars: 'Characters',
-  heads: 'Heads',
+  heads: 'Plans',
   /** A rule whose text is empty: the client's own instructions stand. */
   optOut: 'Client default',
   /** A rule whose file cannot be read. */

@@ -20,9 +20,9 @@ export const SOURCE: Readonly<Record<string, string>> = {
  *  shadows is said as shadowed, never as applied (KeyRoutes.kt). */
 export const H = {
   store: (head: string): string => `${head} uses the stored key from its next request.`,
-  environment: (head: string, name: string): string => `${head} still reads ${name} from the daemon's environment.`,
+  environment: (head: string, name: string): string => `${head} still reads ${name} from the service environment.`,
   file: (head: string): string => `${head} still reads the key in its key file.`,
   missing: (head: string): string => `${head} has no key now.`,
   other: (head: string, source: string): string => `${head} reads its key from: ${source}.`,
-  noReader: 'No head reads this key.',
+  noReader: 'No plan uses this key.',
 } as const;

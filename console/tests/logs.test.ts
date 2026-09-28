@@ -82,7 +82,7 @@ describe('the stream prints its column names once', () => {
 
   test('the column row prints its names in the line order, with no level column', () => {
     // The level is the dot's word; a column beside it printed it twice, and `-` on unmarked lines.
-    expect(cells(renderToStaticMarkup(React.createElement(LogColumns)))).toEqual(['Time', 'Head', 'Message']);
+    expect(cells(renderToStaticMarkup(React.createElement(LogColumns)))).toEqual(['Time', 'Plan', 'Message']);
   });
 
   test('a head\'s own log drops the head column from the names and from every row', () => {

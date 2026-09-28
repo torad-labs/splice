@@ -7,7 +7,7 @@ export const S = {
   sample: 'Sample data',
   /** The views. */
   lanes: 'Lanes',
-  byHead: 'By head',
+  byHead: 'By plan',
   byRole: 'By role',
   timeline: 'Timeline',
   /** The team list and the opened team. */
@@ -36,9 +36,9 @@ export const S = {
 } as const;
 
 export const H = {
-  about: 'Sessions on different heads working one goal, and their hand-offs.',
+  about: 'Sessions on different plans working one goal, and their hand-offs.',
   unavailable: 'This splice version does not serve teams.',
-  reading: 'Waiting for the daemon to answer.',
+  reading: 'Waiting for splice to answer.',
   noTeams: 'Name a team, point it at a repo, and seat its roles.',
   turnsPending: 'This splice version does not serve the turn log.',
 } as const;

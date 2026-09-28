@@ -25,6 +25,8 @@
 }
 
 .myx-palette-input {
+  width: 100%;
+  box-sizing: border-box;
   padding: var(--space-5);
   background: none;
   border: 0;

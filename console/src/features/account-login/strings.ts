@@ -27,7 +27,7 @@ export const H = {
   browser: 'Finish signing in at this link.',
   opening: 'Opening sign-in with your provider; return to splice when finished.',
   waiting: 'Starting the sign-in.',
-  afterRestart: 'Signed in; the head restarts to take the account.',
+  afterRestart: 'Signed in; the plan restarts to use this account.',
   added: 'Account added.',
   failed: 'Login failed; try again, or run splice login <head>.',
   switched: 'Takes effect on the next turn; a running turn keeps its account.',
@@ -36,5 +36,5 @@ export const H = {
   renamed: 'Account renamed.',
   removed: 'Account removed.',
   unsupported: 'This splice version cannot do that.',
-  refused: 'The daemon refused it.',
+  refused: 'Splice refused it.',
 } as const;

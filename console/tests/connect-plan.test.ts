@@ -23,4 +23,18 @@ describe('the first-hour plan chooser', () => {
     for (const card of cards) expect(card[2]).toContain('myx-connect-description');
     expect(cards[0]?.[2]).toContain('Sign in with your ChatGPT plan.');
   });
+
+  test('an unavailable plan announces why while keeping its exact button name', () => {
+    const html = renderToStaticMarkup(createElement(PlanPicker, {
+      choices: planChoices(profiles.filter((profile) => profile.name !== 'kimi')),
+      onSelect: () => undefined, onOther: () => undefined,
+    }));
+    const kimi = /<button[^>]*aria-label="Kimi"[^>]*>.*?<\/button>/s.exec(html)?.[0];
+    expect(kimi).toBeDefined();
+    expect(kimi).toContain('disabled=""');
+    const reasonId = /aria-describedby="([^"]+)"/.exec(kimi ?? '')?.[1];
+    expect(reasonId).toBeDefined();
+    expect(kimi).toContain(`id="${reasonId}"`);
+    expect(kimi).toContain('Unavailable in this splice build.');
+  });
 });

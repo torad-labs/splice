@@ -8,7 +8,7 @@ export const S = {
   /** The account window a turn spends: accounts, usage. */
   plans: 'Plans',
   /** The daemon under all of it: settings, mcp, logs, doctor. */
-  daemon: 'Daemon',
+  daemon: 'Splice',
 } as const;
 
 /** Every page's name, as the sidebar and the palette print it. The address stays the slug. */

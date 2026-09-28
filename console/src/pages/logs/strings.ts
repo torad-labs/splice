@@ -12,7 +12,7 @@ export const S = {
   drawer: 'Request capture',
   /** The tail restarted because the daemon rotated its log file. */
   rotated: 'Log rotated',
-  head: 'Head',
+  head: 'Plan',
   /** The tag and level filters. */
   tag: 'Tag',
   level: 'Level',
@@ -23,6 +23,6 @@ export const S = {
 } as const;
 
 export const H = {
-  about: "The tail of each head's log, as the daemon wrote it.",
+  about: "The latest lines from each plan's log, as splice wrote them.",
   locked: 'The management key unlocks this page.',
 } as const;

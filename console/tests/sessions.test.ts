@@ -227,9 +227,9 @@ describe('sessions board', () => {
 
   test('sessions the daemon ties to no head are one group that says why, with no head to open', () => {
     const out = render(h(SessionsBoard, { payload: payload([session({ head: 'unknown head' }), session({ session_id: 'b', head: 'claudex' })]) }));
-    expect(out).toContain('No splice head');
+    expect(out).toContain('No connected plan');
     // the reason rides in the group's tip, not on the page
-    expect(out).toMatch(/role="tooltip"[^>]*>Splice did not start these, or cannot tell which head did\.</);
+    expect(out).toMatch(/role="tooltip"[^>]*>Splice did not start these sessions, or cannot identify their plan\.</);
     expect(out).not.toContain('unknown head'); // the daemon's sentinel is never printed as a name
     expect(out).toContain('myx-hm-name">claudex<');
   });
@@ -243,7 +243,7 @@ describe('sessions board', () => {
     expect(noHeadWhy(rows)).toBe('2 started directly, 1 unreadable');
     expect(noHeadWhy([session({ head: 'unknown head' })])).toBe(NO_HEAD_WHY);
     expect(headText(session({ head: 'unknown head', route: 'direct' }))).toBe('Started directly');
-    expect(headText(session({ head: 'unknown head', route: 'unknown' }))).toBe('No splice head');
+    expect(headText(session({ head: 'unknown head', route: 'unknown' }))).toBe('No connected plan');
     expect(headText(session({ head: 'claudex', route: 'head' }))).toBe('claudex');
   });
 
@@ -591,7 +591,7 @@ describe('the opened session gives the command that resumes it on another head (
   test("the opened session's detail carries the section, and says so when no head is known", () => {
     const html = render(h(SessionsBoard, { payload: payload([session()]), view: BY_HEAD, linked: sessionKey(session()) }));
     expect(html).toContain('Resume elsewhere');
-    expect(html).toContain('No heads');
+    expect(html).toContain('No plans');
     const noId = render(h(SessionsBoard, { payload: payload([session({ session_id: null })]), view: BY_HEAD, linked: sessionKey(session({ session_id: null })) }));
     expect(noId).toContain('Resume elsewhere');
   });

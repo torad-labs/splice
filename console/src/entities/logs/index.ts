@@ -4,7 +4,7 @@ import { logsStore } from './model/store';
 // page or widget that reads this slice does not have to reach past it for the type.
 export type { LogsPayload } from '@shared/api';
 
-export { fetchLogs, startLogsPolling, setLogTail, currentLogTail, setLogHead, currentLogHead } from './api';
+export { fetchLogs, startLogsPolling, setLogRead, currentLogTail, setLogHead, currentLogHead } from './api';
 export {
   advance,
   applyFilter,

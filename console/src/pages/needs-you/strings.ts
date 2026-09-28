@@ -55,6 +55,7 @@ export const S = {
   confirmRestart: 'Confirm restart',
   signIn: 'Sign in',
   openLog: 'Open log',
+  fallback: 'If unavailable',
   openFleet: 'Open fleet',
   openTurns: 'Open turns',
   openSessions: 'Open sessions',

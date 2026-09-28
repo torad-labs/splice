@@ -7,11 +7,11 @@
 // warning with one, a passing check, an informational check with none, two sections so the
 // grouping shows, and — deliberately — a check whose detail carries a masked-shape string that is
 // NOT a credential, so the redaction gate is exercised without being tripped.
-import type { DoctorPayload } from '@entities/doctor';
+import type { DoctorCheck, DoctorPayload, DoctorWirePayload } from '@entities/doctor';
 
 const FIXTURE_NOW = '2026-09-18T07:45:00Z';
 
-const DEMO_REPORT: DoctorPayload = {
+const DEMO_REPORT: DoctorWirePayload = {
   schema_version: 1,
   generated_at: FIXTURE_NOW,
   splice: { version: '0.4.0' },
@@ -19,7 +19,7 @@ const DEMO_REPORT: DoctorPayload = {
   os: { name: 'Linux', version: '6.17.0-41-generic', arch: 'amd64' },
   jvm: { version: '21.0.11', vendor: 'Eclipse Adoptium' },
   topology: { stale: false },
-  checks: [
+  checks: ([
     { id: 'daemon/port', status: 'ok', detail: 'control plane is listening on 3096' },
     { id: 'daemon/topology', status: 'ok', detail: 'the booted splice.toml matches the file on disk' },
     { id: 'heads/running', status: 'warn', detail: '2 of 7 heads are stopped', fix: 'splice heads --start' },
@@ -30,7 +30,7 @@ const DEMO_REPORT: DoctorPayload = {
     { id: 'perf/perf-files', status: 'warn', detail: 'claudex-perf.jsonl.1 is a rolled generation at 67 MB', fix: 'splice doctor --json' },
     { id: 'env/path', status: 'info', detail: 'claude on PATH resolves to the versioned binary under ~/.local/share/claude' },
     { id: 'logs/tail', status: 'ok', detail: 'the daemon log tail holds 1200 lines' },
-  ],
+  ] satisfies DoctorCheck[]).map((check) => ({ ...check, pending_restart: false })),
   accounts: { pooled: true },
   perf: { window: '24h' },
 };

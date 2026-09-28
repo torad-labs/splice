@@ -12,7 +12,7 @@
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { checkFix, checkSection, isRedacted, leaksIn, leaksInText, upgradeVerdict } from '../src/entities/doctor';
+import { checkFix, checkSection, isRedacted, leaksIn, leaksInText, logsHrefOf, logsTargetOf, upgradeVerdict } from '../src/entities/doctor';
 import type { UpgradePayload } from '../src/entities/doctor';
 import type { DoctorCheck, DoctorPayload } from '../src/entities/doctor';
 import { budgetFor } from '../src/entities/budget';
@@ -31,7 +31,6 @@ import {
   claudeVersion,
   groupChecks,
   latestText,
-  logsHeadOf,
   playgroundNext,
   rollbackText,
   statusParts,
@@ -184,7 +183,7 @@ describe('every failing check carries its fix', () => {
     expect(new Set(rows.map((row) => row.key)).size).toBe(rows.length);
   });
 
-  test('a row carries the fix the daemon can run itself, and the detail offers it beside the copy', () => {
+  test('a daemon-run fix uses its action, while an unsupported port remedy keeps Copy', () => {
     // V4-220 item 4: `fix_id` names a fix POST /api/doctor/fix/{id} runs (install_all today).
     const [wrappers, port] = collapseChecks([
       { ...check('installation/wrapper', 'fail', `'claudex' missing`, 'splice install --all'), fix_id: 'install_all' },
@@ -194,9 +193,11 @@ describe('every failing check carries its fix', () => {
     expect([wrappers.fixId, port.fixId]).toEqual(['install_all', null]);
     const offered = renderToStaticMarkup(React.createElement(FixLine, { fix: wrappers.fix, fixId: wrappers.fixId }));
     expect(offered).toContain(`>${FIX_WORDS.run}<`);
-    expect(offered).toContain('Copy');
+    expect(offered).not.toContain('Copy');
+    expect(offered).not.toContain('splice install --all');
     const text = renderToStaticMarkup(React.createElement(FixLine, { fix: port.fix, fixId: port.fixId }));
     expect(text).not.toContain(FIX_WORDS.run);
+    expect(text).toContain('Copy');
   });
 
   test('checks whose fixes differ stay their own rows', () => {
@@ -209,10 +210,15 @@ describe('every failing check carries its fix', () => {
     expect(rows).toHaveLength(4);
   });
 
-  test('a splice logs remedy names the head whose log the page can open', () => {
-    expect(logsHeadOf('splice logs --head claude-kimi --tail 50')).toBe('claude-kimi');
-    expect(logsHeadOf('splice restart')).toBeNull();
-    expect(logsHeadOf(null)).toBeNull();
+  test('a splice logs remedy names its head and exact bounded tail for both console pages', () => {
+    expect(logsTargetOf('splice logs --head claude-kimi --tail 50')).toEqual({ head: 'claude-kimi', tail: 50 });
+    expect(logsHrefOf('splice logs --head claude-kimi --tail 50')).toBe('#/logs?head=claude-kimi&tail=50');
+    expect(logsTargetOf('splice restart')).toBeNull();
+    expect(logsTargetOf('splice logs --head claude-kimi --tail 1500')).toEqual({ head: 'claude-kimi', tail: 1500 });
+    expect(logsTargetOf('splice logs --head claude-kimi --tail 50000')).toBeNull();
+    expect(logsTargetOf('splice logs --head claude-kimi --tail 5')).toBeNull();
+    expect(logsTargetOf('splice logs --head <redacted:path> --tail 50')).toBeNull();
+    expect(logsTargetOf(null)).toBeNull();
   });
 
   test('warn and fail cock the strip; ok and info do not', () => {

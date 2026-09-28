@@ -284,7 +284,7 @@ describe('turns, sessions and team seats', () => {
 describe('one changed splice.toml, one Needs you item', () => {
   test('a pending trace joins the daemon restart without borrowing Doctor present-tense words', () => {
     const pending: DoctorCheck = {
-      id: 'trace:local', status: 'warn', detail: 'WRONG: local writes its FULL request/response trace',
+      id: 'configuration/trace:local', status: 'warn', detail: 'WRONG: local writes its FULL request/response trace',
       fix: 'splice restart', pending_restart: true,
     };
     const inputs = quiet({ topology: read(true), doctor: read(doctor([pending])) });
@@ -357,11 +357,21 @@ describe('the doctor', () => {
     // V4-220 item 4: the wrapper rows carry fix_id install_all, which POST /api/doctor/fix/{id} runs.
     const checks: DoctorCheck[] = [{ id: 'installation/wrapper', status: 'fail', detail: "'claudex' missing", fix: 'splice install --all', fix_id: 'install_all' }];
     const [need] = needsOf(quiet({ doctor: read(doctor(checks)) }), NOW).needs;
-    expect(need.fix).toEqual({ kind: 'doctor-fix', id: 'install_all', command: 'splice install --all', masked: false });
+    expect(need.fix).toEqual({ kind: 'doctor-fix', id: 'install_all', fallback: 'splice install --all' });
     const html = renderToStaticMarkup(createElement(FixCell, { fix: need.fix }));
-    expect(html).toContain('>splice install --all</code>');
-    expect(html).toContain('>Copy<');
     expect(html).toContain(`>${FIX_WORDS.run}<`);
+    expect(html).toContain('If unavailable');
+    expect(html).not.toContain('splice install --all');
+    expect(html).not.toContain('>Copy<');
+  });
+
+  test('a remedy without a console action keeps its honest CLI fallback', () => {
+    const checks: DoctorCheck[] = [{ id: 'daemon/manual', status: 'warn', detail: 'manual repair needed', fix: 'repair by hand' }];
+    const [need] = needsOf(quiet({ doctor: read(doctor(checks)) }), NOW).needs;
+    expect(need.fix).toEqual({ kind: 'copy', command: 'repair by hand' });
+    const html = renderToStaticMarkup(createElement(FixCell, { fix: need.fix }));
+    expect(html).toContain('repair by hand');
+    expect(html).toContain('Copy');
   });
 
   test('a head\'s sign-in check is said once, on the head', () => {

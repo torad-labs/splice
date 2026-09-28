@@ -19,8 +19,8 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, test } from 'vitest';
-import { headOf, levelOf, timeOf } from '../src/entities/logs';
+import { describe, expect, test, vi } from 'vitest';
+import { headOf, levelOf, setLogHead, setLogRead, timeOf } from '../src/entities/logs';
 import { cacheHitOf, LogColumns, LogLine, messageOf, partsOf, perfOfLine, rowsOf, scaleOf, toneOfLevel, totalOf, whenOf } from '../src/widgets/log-tail';
 
 const LINE = '[2026-09-18 01:14:02] [claude-deepseek] turn compact=false model=deepseek-flash ok';
@@ -356,5 +356,21 @@ describe('a turn prints its numbers once', () => {
     const open = renderToStaticMarkup(React.createElement(LogLine, { line: PERF_A, folded: [TURN_A, CACHE_A], open: true }));
     const raw = [...open.matchAll(/class="myx-lt-raw-line">(.*?)<\/span><\/span>(?=<span class="myx-lt-raw-line">|<\/span>)/g)];
     expect(raw.map((m) => textOf(m[1]))).toEqual([TURN_A, CACHE_A, PERF_A].map(messageOf));
+  });
+});
+
+describe('a linked log read selects its head and tail together', () => {
+  test('opening B at 50 lines after A never reads A at the new tail', () => {
+    const asked: string[] = [];
+    vi.stubGlobal('fetch', async (url: string) => {
+      asked.push(url);
+      return new Response(JSON.stringify({ head: 'beta', lines: [] }), { status: 200 });
+    });
+    try {
+      setLogHead('alpha');
+      asked.length = 0;
+      setLogRead('beta', 50);
+      expect(asked).toEqual(['/api/logs/beta?tail=50']);
+    } finally { vi.unstubAllGlobals(); }
   });
 });

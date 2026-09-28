@@ -10,7 +10,7 @@
 import { exclusionText } from '@entities/account';
 import type { AccountRow, AccountsState } from '@entities/account';
 import type { DoctorCheck, DoctorSlice } from '@entities/doctor';
-import { checkFinding, collapseChecks, fixMasked, wantsAttention } from '@entities/doctor';
+import { checkFinding, collapseChecks, fixMasked, logsHrefOf, wantsAttention } from '@entities/doctor';
 import { headAttention } from '@entities/heads';
 import { inflightFrom, isStalled } from '@entities/perf';
 import { sessionKey, sessionLabel, UNKNOWN_HEAD } from '@entities/session';
@@ -86,10 +86,9 @@ export type Fix =
   | { kind: 'copy'; command: string }
   /** A remedy the report's redaction reached: printed with why, never offered to copy. */
   | { kind: 'masked'; command: string }
-  /** A fix the daemon runs itself (V4-220 item 4): run from here, its command beside it to copy
-   *  (or printed with why, when masked). */
-  | { kind: 'doctor-fix'; id: string; command: string; masked: boolean }
-  | { kind: 'open'; href: string; label: string };
+  /** A fix the daemon runs itself (V4-220 item 4), without a terminal command. */
+  | { kind: 'doctor-fix'; id: string; fallback?: string }
+  | { kind: 'open'; href: string; label: string; fallback?: string };
 
 export interface Need {
   key: string;
@@ -175,7 +174,8 @@ function daemonNeeds(topologyStale: boolean | null, pending: readonly string[], 
   const parts = [
     topologyStale === true ? H.configChanged : null,
     pending.length === 0 ? null : `${pending.length} ${pending.length === 1 ? U.oneWaiting : U.waiting}`,
-    ...checks.map((check) => check.id.startsWith('trace:') ? H.tracePending(check.id.slice('trace:'.length)) : H.checkPending),
+    ...checks.map((check) => check.id.startsWith('configuration/trace:')
+      ? H.tracePending(check.id.slice('configuration/trace:'.length)) : H.checkPending),
   ].filter((part) => part !== null);
   if (parts.length === 0) return [];
   return [{ key: 'daemon', severity: 'warn', source: 'daemon', head: null, subject: S.daemon, finding: parts.join(' '), fix: { kind: 'restart-daemon' }, at: null }];
@@ -322,8 +322,11 @@ function withDoctor(need: Need, checks: readonly DoctorCheck[]): Need {
 /** A doctor row's one fix: the daemon runs it, or its command is copied (printed when masked), or,
  *  with no remedy in the row, Doctor is where to look. */
 function doctorFix(command: string | null, id: string | null): Fix {
+  if (id !== null) return command === null ? { kind: 'doctor-fix', id } : { kind: 'doctor-fix', id, fallback: command };
   if (command === null) return open('#/doctor', S.openDoctor);
-  if (id !== null) return { kind: 'doctor-fix', id, command, masked: fixMasked(command) };
+  if (command.trim() === 'splice restart') return { kind: 'restart-daemon' };
+  const logsHref = logsHrefOf(command);
+  if (logsHref !== null) return { kind: 'open', href: logsHref, label: S.openLog, fallback: command };
   return { kind: fixMasked(command) ? 'masked' : 'copy', command };
 }
 

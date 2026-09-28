@@ -121,12 +121,6 @@ export function subjectOf(check: DoctorCheck): string {
   return colon === -1 ? check.id : check.id.slice(colon + 1);
 }
 
-/** The head a `splice logs --head <head>` remedy names, so the page can open that log itself. */
-export function logsHeadOf(fix: string | null): string | null {
-  const match = fix === null ? null : /^splice logs --head (\S+)/.exec(fix);
-  return match === null ? null : match[1];
-}
-
 /** How many checks are not `ok`. The report's one number, and the one the page leads with. */
 export function attentionCount(checks: readonly DoctorCheck[]): number {
   return checks.filter((check) => wantsAttention(check.status)).length;

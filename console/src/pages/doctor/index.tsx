@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useLocation } from 'react-router';
-import { checkFinding, checkSection, collapseChecks, fetchUpgrade, fixMasked, startDoctorPolling, useDoctor, useUpgrade, upgradeVerdict } from '@entities/doctor';
+import { checkFinding, checkSection, collapseChecks, fetchUpgrade, fixMasked, logsHrefOf, startDoctorPolling, useDoctor, useUpgrade, upgradeVerdict } from '@entities/doctor';
 import type { CheckRow, DoctorCheck, DoctorPayload, UpgradePayload } from '@entities/doctor';
 import { fetchHeads, useHeads } from '@entities/heads';
 import { runPlayground } from '@entities/playground';
@@ -23,10 +23,10 @@ import { useViews, ViewTabs } from '@features/views';
 import type { View } from '@features/views';
 import { Blank, Choice, Copy, Fault, Input, Key, KeyLink } from '@shared/controls';
 import { ABSENT, fmtInt, timeAgo, useLinkedId, useOpen } from '@shared/lib';
-import { Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, PageHeader, Section, StackedBar, Stat, StatRow } from '@shared/ui';
+import { Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, PageHeader, Reveal, Section, StackedBar, Stat, StatRow } from '@shared/ui';
 import type { Column, RowGroup, Tone } from '@shared/ui';
 import {
-  EMPTIES, IDLE_PLAYGROUND, TONE, attentionCount, attentionParts, canSend, claudeVersion, gateReport, groupChecks, latestText, logsHeadOf,
+  EMPTIES, IDLE_PLAYGROUND, TONE, attentionCount, attentionParts, canSend, claudeVersion, gateReport, groupChecks, latestText,
   playgroundNext, reportFacts, rollbackText, rowTone, statusParts, subjectOf,
 } from './model';
 import type { PlaygroundEvent } from './model';
@@ -62,7 +62,8 @@ function checkColumns(): Column<CheckRow>[] {
     { key: 'check', label: S.check, width: '36%', primary: true, mono: true, cell: (row) => row.label },
     { key: 'state', label: S.state, width: 'calc(7 * var(--u))', cell: (row) => <StatusBadge row={row} quiet /> },
     // A check with nothing to fix prints the absence glyph; `No fix offered` is the opened check's.
-    { key: 'fix', label: S.fix, mono: true, cell: (row) => row.fix ?? ABSENT },
+    { key: 'fix', label: S.fix, mono: true, cell: (row) => row.fixId !== null ? S.runFix
+      : logsHrefOf(row.fix) !== null ? S.openLog : row.fix?.trim() === 'splice restart' ? S.restartDaemon : row.fix ?? ABSENT },
   ];
 }
 
@@ -83,24 +84,20 @@ function checkFacts(row: CheckRow): [string, ReactNode][] {
   return [section, [S.finding, checkFinding(first)]];
 }
 
-/** The opened check's fix with its copy key. A remedy that is a `splice logs --head` command also
- *  opens that log here, since this console has the page for it. A fix the report's redaction
- *  reached runs nothing as pasted, so it is printed with why and no copy key. The why opens below
- *  its mark: a long command wraps the mark under it, and a tip above would cover the masked part. */
+/** A fix the console can do stays here; only unknown remedies keep a terminal fallback. */
 export function FixLine({ fix, fixId = null }: { fix: string | null; fixId?: string | null }) {
-  if (fix === null) return <Empty text={S.noFix} />;
-  const logsHead = logsHeadOf(fix);
-  return (
-    <>
-      <p className="myx-dc-fix">
-        <code className="myx-dc-command">{fix}</code>
-        {fixMasked(fix) ? <InfoTip text={H.masked} label={S.maskedWhy} side="bottom" /> : <Copy value={fix} label={S.copyFix} />}
-        {logsHead === null ? null : <KeyLink href={`#/logs?head=${encodeURIComponent(logsHead)}`}>{S.openLog}</KeyLink>}
-      </p>
-      {/* A fix the daemon runs itself (V4-220 item 4) runs from here too; the command stays to copy. */}
-      {fixId === null ? null : <DoctorFix id={fixId} />}
-    </>
+  const command = fix === null ? null : (
+    <p className="myx-dc-fix">
+      <code className="myx-dc-command">{fix}</code>
+      {fixMasked(fix) ? <InfoTip text={H.masked} label={S.maskedWhy} side="bottom" /> : <Copy value={fix} label={S.copyFix} />}
+    </p>
   );
+  const logsHref = logsHrefOf(fix);
+  const action = fixId !== null ? <DoctorFix id={fixId} />
+    : fix?.trim() === 'splice restart' ? <DaemonRestart />
+      : logsHref === null ? null : <KeyLink href={logsHref}>{S.openLog}</KeyLink>;
+  if (action !== null) return <>{action}{command === null ? null : <Reveal label={S.fallback}>{command}</Reveal>}</>;
+  return command ?? <Empty text={S.noFix} />;
 }
 
 function verdictTone(upgrade: UpgradePayload): Tone {

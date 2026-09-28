@@ -34,6 +34,9 @@ export const S = {
   /** The tip on a fix the report masked, in place of its copy key. */
   maskedWhy: 'Why no copy',
   openLog: 'Open log',
+  runFix: 'Run fix',
+  restartDaemon: 'Restart daemon',
+  fallback: 'If unavailable',
   noFix: 'No fix offered',
   playground: 'Playground',
   aboutPlayground: 'About the playground',

@@ -3,7 +3,7 @@ import { MgmtError, pendingOf, request } from '@shared/api';
 import { poll } from '@shared/lib';
 import { doctorStore, upgradeStore } from '../model/store';
 import { PENDING_UPGRADE } from '../model/upgrade';
-import type { DoctorPayload } from '../model/types';
+import type { DoctorPayload, DoctorWirePayload } from '../model/types';
 import type { UpgradeAsk, UpgradePayload, UpgradeRun } from '../model/upgrade';
 
 /** The v0.4.0 item that will serve GET /api/doctor. */
@@ -16,7 +16,7 @@ export const PENDING_DOCTOR = 'V4-127';
 export async function fetchDoctor(): Promise<void> {
   doctorStore.startLoading();
   try {
-    doctorStore.setData(await request<DoctorPayload>('/api/doctor'));
+    doctorStore.setData(await request<DoctorWirePayload>('/api/doctor'));
   } catch (err) {
     const pending = pendingOf(err, PENDING_DOCTOR);
     if (pending !== null) {

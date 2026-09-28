@@ -7,11 +7,12 @@
 // on every page. This page adds the reads only it needs, at a pace for a list read at a glance: the
 // session registry, the teams, the doctor report and /health's topologyStale.
 import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useAccounts } from '@entities/account';
 import { useAuth } from '@entities/auth';
 import { HeadMark } from '@entities/control-status';
 import { probeTopologyStale, useRestartPending } from '@entities/config';
-import { startDoctorPolling, useDoctor } from '@entities/doctor';
+import { fixMasked, startDoctorPolling, useDoctor } from '@entities/doctor';
 import { restartHead, startHead, useHeads } from '@entities/heads';
 import { startSessionsPolling, useSessionRegistry } from '@entities/session';
 import { fetchTeams, useTeams } from '@entities/team';
@@ -24,7 +25,7 @@ import { AddBackend } from '@widgets/add-backend';
 import { ConnectPlan } from '@widgets/connect-plan';
 import { Confirm, Copy, Key, KeyLink } from '@shared/controls';
 import { poll, timeAgo } from '@shared/lib';
-import { Badge, DataTable, Empty, InfoTip, PageHeader, Section } from '@shared/ui';
+import { Badge, DataTable, Empty, InfoTip, PageHeader, Reveal, Section } from '@shared/ui';
 import type { Column, Tone } from '@shared/ui';
 import { needsOf } from './model';
 import type { Fix, Need, NeedsList, Read, Reading, ReadState } from './model';
@@ -75,27 +76,28 @@ function FixCommand({ command, masked }: { command: string; masked: boolean }) {
   );
 }
 
+function WithFallback({ action, command }: { action: ReactNode; command: string }) {
+  return <>{action}<Reveal label={S.fallback}><FixCommand command={command} masked={fixMasked(command)} /></Reveal></>;
+}
+
 export function FixCell({ fix }: { fix: Fix }) {
   switch (fix.kind) {
     case 'start':
     case 'restart':
       return <HeadWrite head={fix.head} kind={fix.kind} />;
     case 'restart-daemon':
-      return <DaemonRestart />;
+      return <WithFallback action={<DaemonRestart />} command="splice restart" />;
     case 'login':
       return <AccountLogin head={fix.head} purpose="renew" />;
     case 'copy':
     case 'masked':
       return <FixCommand command={fix.command} masked={fix.kind === 'masked'} />;
     case 'doctor-fix':
-      return (
-        <>
-          <FixCommand command={fix.command} masked={fix.masked} />
-          <DoctorFix id={fix.id} />
-        </>
-      );
+      return fix.fallback === undefined ? <DoctorFix id={fix.id} />
+        : <WithFallback action={<DoctorFix id={fix.id} />} command={fix.fallback} />;
     case 'open':
-      return <KeyLink href={fix.href}>{fix.label}</KeyLink>;
+      return fix.fallback === undefined ? <KeyLink href={fix.href}>{fix.label}</KeyLink>
+        : <WithFallback action={<KeyLink href={fix.href}>{fix.label}</KeyLink>} command={fix.fallback} />;
   }
 }
 

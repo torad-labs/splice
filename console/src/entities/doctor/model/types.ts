@@ -56,6 +56,15 @@ export interface DoctorPayload {
   logs_error?: string;
 }
 
+/** V4-371's current wire requires the flag on every check; the view accepts older reports too. */
+export interface DoctorWireCheck extends DoctorCheck {
+  pending_restart: boolean;
+}
+
+export interface DoctorWirePayload extends DoctorPayload {
+  checks: DoctorWireCheck[];
+}
+
 export type DoctorSlice = DoctorPayload | PendingRoute;
 
 /** The check id's section, or the whole id when it carries no slash. */
@@ -84,6 +93,21 @@ export function wantsAttention(status: DoctorStatus): boolean {
  */
 export function fixMasked(fix: string): boolean {
   return /<redacted(?::[a-z-]+)?>/.test(fix);
+}
+
+/** A logs remedy the console can serve itself, with its exact bounded tail. */
+export function logsTargetOf(fix: string | null): { head: string; tail: number | null } | null {
+  if (fix === null || fixMasked(fix)) return null;
+  const match = /^splice logs --head (\S+)(?: --tail (\d+))?$/.exec(fix.trim());
+  if (match === null) return null;
+  const tail = match[2] === undefined ? null : Number(match[2]);
+  if (tail !== null && (!Number.isSafeInteger(tail) || tail < 10 || tail > 2000)) return null;
+  return { head: match[1], tail };
+}
+
+export function logsHrefOf(fix: string | null): string | null {
+  const target = logsTargetOf(fix);
+  return target === null ? null : `#/logs?head=${encodeURIComponent(target.head)}${target.tail === null ? '' : `&tail=${target.tail}`}`;
 }
 
 /** What the check found, which a page prints on its own line apart from the remedy. */

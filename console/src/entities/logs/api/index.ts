@@ -8,18 +8,19 @@ import { logsStore } from '../model/store';
 let currentHead: string | null = null;
 let tailSize = 200;
 
-export function setLogHead(head: string): void {
+/** Select both parts of one read before sending it, so a linked tail cannot fetch the old head. */
+export function setLogRead(head: string, tail: number): void {
   currentHead = head;
+  tailSize = Math.min(2000, Math.max(10, tail));
   void fetchLogs();
+}
+
+export function setLogHead(head: string): void {
+  setLogRead(head, tailSize);
 }
 
 export function currentLogHead(): string | null {
   return currentHead;
-}
-
-export function setLogTail(n: number): void {
-  tailSize = Math.min(2000, Math.max(10, n));
-  void fetchLogs();
 }
 
 export function currentLogTail(): number {

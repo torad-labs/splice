@@ -13,7 +13,7 @@
 // the header says it restarted.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router';
-import { applyFilter, advance, headsPresent, levelsPresent, startLogsPolling, setLogHead, setLogTail, useLogs } from '@entities/logs';
+import { applyFilter, advance, headsPresent, levelsPresent, setLogRead, startLogsPolling, useLogs } from '@entities/logs';
 import type { LogFilter, LogLevel, LogTail as Tail, LogsPayload } from '@entities/logs';
 import type { CaptureCell } from '@entities/perf';
 import { useControlStatus } from '@entities/control-status';
@@ -29,6 +29,14 @@ import { H, S } from './strings';
 import './logs.css';
 
 const TAIL_SIZES = [50, 200, 500, 1000];
+
+/** A log remedy's requested line count, bounded to the page's own maximum. */
+export function tailFromSearch(search: string): number | null {
+  const raw = new URLSearchParams(search).get('tail');
+  if (raw === null || !/^\d+$/.test(raw)) return null;
+  const tail = Number(raw);
+  return Number.isSafeInteger(tail) && tail >= 10 && tail <= 2000 ? tail : null;
+}
 
 export interface LogsBoardProps {
   payload: LogsPayload | null;
@@ -124,7 +132,8 @@ export function LogsBoard({
             <p className="myx-lg-label">{S.tail}</p>
             <Segmented
               label={S.tail}
-              options={TAIL_SIZES.map((size) => ({ value: String(size), label: String(size) }))}
+              options={[...new Set([...TAIL_SIZES, tail])].sort((left, right) => left - right)
+                .map((size) => ({ value: String(size), label: String(size) }))}
               value={String(tail)}
               onChange={(next) => onTail?.(Number(next))}
             />
@@ -233,7 +242,16 @@ export default function LogsPage() {
   const [chosen, setChosen] = useState<string | null>(() => new URLSearchParams(search).get('head'));
   const heads = registry ?? [];
   const head = (heads.some((entry) => entry.key === chosen) ? chosen : null) ?? heads[0]?.key ?? null;
-  const [tail, setTail] = useState(200);
+  const [tail, setTail] = useState(() => tailFromSearch(search) ?? 200);
+  // The route's head and tail reach the entity as one read, before its first polling tick.
+  useEffect(() => { if (head !== null) setLogRead(head, tail); }, [head, tail]);
+  useEffect(() => {
+    const requested = new URLSearchParams(search);
+    const namedHead = requested.get('head');
+    if (namedHead !== null) setChosen(namedHead);
+    const namedTail = tailFromSearch(search);
+    if (namedTail !== null) setTail(namedTail);
+  }, [search]);
   const [filter, setFilter] = useState<LogFilter>({ head: null, level: null, substring: '' });
   const [follow, setFollow] = useState(true);
   // Read inside the payload effect, which must not re-run when follow flips.
@@ -247,13 +265,7 @@ export default function LogsPage() {
   const name = fixtureName();
   const fixture = sample === null ? null : sample.payload;
 
-  useEffect(() => startLogsPolling(5000), []);
-
-  // The slice polls a head of its own until this page names one, and an unknown head 404s: the
-  // page's head is set here, on mount as well as on every change.
-  useEffect(() => {
-    if (head !== null) setLogHead(head);
-  }, [head]);
+  useEffect(() => head === null ? undefined : startLogsPolling(5000), [head]);
 
   // The drawer asks about the head this page is tailing. There is no turn to ask about here: a log
   // line names its head and its outcome, not a turn id, and the address scheme that would link the
@@ -337,10 +349,7 @@ export default function LogsPage() {
         setChosen(next);
         setFilter((previous) => ({ ...previous, head: null, level: null }));
       }}
-      onTail={(next) => {
-        setTail(next);
-        setLogTail(next);
-      }}
+      onTail={setTail}
     />
   );
 }

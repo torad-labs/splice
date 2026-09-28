@@ -34,7 +34,7 @@ class CodexCodeModeRecoveryTest : CodeModeBridgeTestSupport() {
         val failed = manager.interceptor(turn(id, "A"), disableParallel = false)
             .intercept(requestWithResult(id, "A"), RecordingSink()) { error("must not post") }
         assertTrue(failed is TurnOutcome.Failure)
-        assertTrue((failed as TurnOutcome.Failure).message.contains("persist"))
+        assertTrue((failed as TurnOutcome.Failure).message.contains("could not be saved"))
         assertEquals(1, runtime.cell.advances)
         Files.delete(state)
         val retrySink = RecordingSink()

@@ -133,7 +133,7 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
 
     private fun assertPersistenceFailure(outcome: TurnOutcome) {
         assertTrue(outcome is TurnOutcome.Failure)
-        assertTrue((outcome as TurnOutcome.Failure).message.contains("persist"), outcome.message)
+        assertTrue((outcome as TurnOutcome.Failure).message.contains("could not be saved"), outcome.message)
     }
 
     private class FailingSaveRuntime(

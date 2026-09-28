@@ -84,7 +84,11 @@ internal class TraceCensus(
         val before = kept
         val files = days.files()
         val lanes = minOf(files.size, processors / CORES_PER_LANE, MAX_LANES)
-        val reads = files.map { file -> Callable { fileRead.read(days, file) { counted(it, before, TraceStamps(json)) } } }
+        val reads = files.map { file ->
+            Callable {
+                fileRead.read(days, file) { opened -> counted(opened, before, TraceStamps(json)) }
+            }
+        }
         val counts = (if (lanes < 2) reads.map { it.call() } else onLanes(lanes, reads)).filterNotNull()
         kept = counts.mapNotNull { it.kept }.associateBy { it.first }
         val placed = counts.flatMapTo(HashSet()) { it.placed }

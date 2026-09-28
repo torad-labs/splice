@@ -79,6 +79,10 @@ const ID_SOURCES: Record<string, IdSource> = {
   "entities/team|encodeURIComponent(id)": { route: "/api/teams", array: "teams", field: "id" },
   "entities/project|encodeURIComponent(id)": { route: "/api/projects", array: "projects", field: "id" },
 };
+const MS_PER_DAY = 86_400_000;
+const PROBE_NOW = new Date();
+/** Today's UTC midnight: the end of the previous UTC day, the day a history read asks for. */
+const PREVIOUS_DAY_TO = Date.UTC(PROBE_NOW.getUTCFullYear(), PROBE_NOW.getUTCMonth(), PROBE_NOW.getUTCDate());
 /** Query suffixes the console builds at runtime, filled as the console fills them by default:
  *  fetchPerfTurns asks ONE head per request (the route refuses an absent head, PerfRoutes.turns)
  *  and always sets n. A `{name}` token is an ID_SOURCES key, filled with a live value exactly as a
@@ -89,6 +93,10 @@ const QUERY_FILL: Record<string, string> = {
   "entities/session|params": "limit=50&query=",
   // fetchTeamPanels sends the viewer's day as ?from=&to=; the daemon's default day answers the same keys.
   "entities/team|query": "",
+  // readTeamChat (V4-391) asks for one earlier day's chat. The daemon refuses a window whose from is not
+  // before its to, or that spans more than 25 hours, so the fill is the previous UTC day's bounds.
+  "entities/team|day.from": String(PREVIOUS_DAY_TO - MS_PER_DAY),
+  "entities/team|day.to": String(PREVIOUS_DAY_TO),
 };
 
 /** A path expression that is a call to a local helper rather than a literal. Keyed by file and the
@@ -809,12 +817,14 @@ async function fillPath(
       path += part;
       continue;
     }
-    if (part.literal !== null) {
+    // An explicit fill for this call site wins over the type's first literal: a number-typed
+    // expression would otherwise read "20", which is no valid value for a bounded one like a day.
+    const entity = site.file.split("/").slice(0, 2).join("/");
+    const query = QUERY_FILL[`${entity}|${part.text}`];
+    if (query === undefined && part.literal !== null) {
       path += encodeURIComponent(part.literal);
       continue;
     }
-    const entity = site.file.split("/").slice(0, 2).join("/");
-    const query = QUERY_FILL[`${entity}|${part.text}`];
     if (query !== undefined) {
       let filled = query;
       for (const token of query.match(/\{[^}]+\}/g) ?? []) {

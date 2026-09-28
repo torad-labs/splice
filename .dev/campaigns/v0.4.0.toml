@@ -8806,6 +8806,7 @@ claimed_by = "console"
 claimed_at = "2026-09-28T07:06:50.312Z"
 # [2026-09-28] CLAIM: owner=console at=2026-09-28T07:06:50Z
 # [2026-09-28] Dependency resolved (2:06 AM CT, console's evidence, verified by splice-lead): GET /api/config?head=X is the BOOTED value. Daemon.kt:67-70 builds ConfigService once with the topology's perHeadOverrides, and ConfigService.kt:134-146 merges that held map on every read, excluding the mutable file layer for head-only knobs. GET /api/topology rereads the file each time (TopologyWriter.kt:133-135). So topology vs config is declared vs running, and this row does not wait for V4-371; V4-371 remains for Doctor's wording. V4-378's fileOverrideNote rests on the same verified contract.
+# [2026-09-28] RECEIPT cmd="bun run --cwd console test" exit=0 tests=1665 touched=console/src/pages/settings/index.tsx,console/src/widgets/knob-form/index.tsx,console/tests/v4372-pending-knob.test.ts tail="2-pending-knob.test.ts: red-first declared/running trace and actionable restart-link regression. Main.kt:84-85 and Daemon.kt:67-70 prove /api/config reads booted head overrides; TopologyWriter.kt:133-135 proves /api/topology reads current file. Green: 90 console files/1665 tests; build, lint, typecheck zero new diagnostics, rules 77 selftests. Marlin V4-360 re-walk and exact-sha CI remain pending."
 
 [[items]]
 id = "V4-373"

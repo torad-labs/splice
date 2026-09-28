@@ -41,7 +41,6 @@ public class DetachedDaemonSuccessor(
             val _ = SecureFile.ownerOnlyDirectory(logs)
             val builder = ProcessBuilder(command(jar))
                 .directory(home.toFile())
-                .redirectInput(ProcessBuilder.Redirect.DISCARD)
                 .redirectOutput(ProcessBuilder.Redirect.appendTo(logs.resolve("daemon-boot.log").toFile()))
                 .redirectErrorStream(true)
             builder.environment().putAll(selectors(jar))

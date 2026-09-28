@@ -76,6 +76,25 @@ class UnsupervisedRestartTest {
     }
 
     @Test
+    fun `the detached launcher can actually start its shell`(@TempDir home: Path) {
+        val jar = home.resolve("fake.jar")
+        Files.writeString(jar, "not a jar")
+        val logs = home.resolve("logs")
+        val failures = mutableListOf<String>()
+        val successor = DetachedDaemonSuccessor(
+            jar,
+            home,
+            null,
+            home.resolve("state"),
+            TestPorts.reserve(),
+            logs,
+            LogSink { failures += it },
+            Long.MAX_VALUE,
+        )
+        assertTrue(successor.start(), failures.toString())
+    }
+
+    @Test
     fun `a malformed config without a running daemon says it cannot start`(@TempDir home: Path) {
         val config = home.resolve("splice.toml")
         Files.writeString(config, "[heads\n")

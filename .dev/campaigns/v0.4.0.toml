@@ -9048,3 +9048,11 @@ title = "Muse reasoning summaries and continuity over Meta's Responses API. Evid
 files = ["app/src/main/kotlin/splice/app/provider/MusePassthroughArm.kt", "app/src/main/kotlin/splice/app/provider/ProviderAssembly.kt"]
 status = "todo"
 verify = "step 0 recorded (key accepted on /v1/responses, a non-empty reasoning summary received); red first: a muse head on the responses dialect is refused by requireCompatibleAuth today; green: live claude-muse turn shows summary text in Claude Code's thinking, and the next request replays the encrypted reasoning item (splice trace claude-muse); mutant: drop include reasoning.encrypted_content (red on the replay assertion)"
+
+[[items]]
+id = "V4-387"
+phase = "release"
+title = "Every head is traced by default, so any session can be replayed second by second. Operator Sep 28, 4:05 AM CT: 'we're a proxy, we should keep all the scripts, all the tool calls, there should never be a situation where we can't debug exactly what happened to a session, second by second'. This supersedes the Sep 20 'optin of course' ruling on V4-174. Today Knob.TRACE defaults false (Knob.kt TRACE), so only claudex was traced and a muse session could not be inspected. Also measured: the 4 Mi-char traceMaxBodyChars default truncated 14 claudex records on Sep 28 (1M-token sessions), so 'exactly' failed even where trace was on. Build: TRACE defaults true for every head (a head opts out with trace = \"false\"); traceMaxBodyChars defaults to 16 Mi; retention stays traceRetentionDays (7); splice doctor names the heads that are OFF instead of the ones that are on; README's disk section and DiskWritesLawTest carry the change."
+files = ["core/src/main/kotlin/splice/core/config/Knob.kt", "README.md"]
+status = "todo"
+verify = "red first: a fresh topology with no trace override writes no trace file today; green: every head writes <state>/trace/<head>-<day>.jsonl with no override; a head with trace = \"false\" writes none (mutant: ignore the override, red); a 5 Mi-char body is kept whole (mutant: the old 4 Mi cap, red)"

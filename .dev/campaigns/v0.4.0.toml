@@ -9493,3 +9493,11 @@ title = "The console's nearest limit counts a stale account window as current (t
 files = ["console/src/features/nearest-limit/index.ts", "console/src/entities/account/model/types.ts", "console/src/entities/account/model/wire.ts", "console/tests/nearest-limit.test.ts", "console/tests/rule.test.ts"]
 status = "todo"
 verify = "red first: an account whose seven_day_current is false with 100% and a reset 6 days out is not the nearest limit (header, Fleet and Needs you name none, or the next current window); a current one is; the Accounts page still shows the stale figure with its read age. Full console test/build/lint. Marlin re-walks the header, Fleet and Needs you on film-home-team-walk."
+
+[[items]]
+id = "V4-409"
+phase = "release"
+title = "splice dashboard from another home starts the everyday unit (fin, V4-395 receipt): dashboard reaches DaemonLaunch.ensureDaemon (DaemonLaunch.kt:37,94), which still runs systemctl start on the supervisor unit for a shell that sets no selector, so a scratch home with the everyday unit stopped starts Marcos's daemon. V4-395 made restart refuse a unit that runs another home's daemon; the start path must apply the same SupervisedStart.ownership check and refuse with the same sentence."
+files = ["features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonLaunch.kt", "features/lifecycle/src/test/kotlin/splice/lifecycle/start/v4409/"]
+status = "todo"
+verify = "red first: ensureDaemon from a home whose HOME or control port differs from the unit's calls no systemctl verb and returns the V4-395 refusal sentence; the unit's own home still starts through the unit; an unreadable unit environment refuses. Mutant: drop the ownership check and the no-verb test goes red."

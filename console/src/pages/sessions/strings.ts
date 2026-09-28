@@ -64,6 +64,7 @@ export const S = {
   resume: 'Resume elsewhere',
   resumeWhy: 'About resuming',
   resumeOn: 'Resume on',
+  spent: 'Spent',
   transcript: 'Transcript',
   landsIn: 'Lands in',
   inPlace: 'In place',

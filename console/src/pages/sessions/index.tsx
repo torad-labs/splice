@@ -32,6 +32,7 @@ import { ArrowRightIcon } from '@phosphor-icons/react/dist/csr/ArrowRight';
 import { ArrowUpRightIcon } from '@phosphor-icons/react/dist/csr/ArrowUpRight';
 import { HeadlessMark, HeadMark, hueClass, NO_SPLICE_HEAD, NO_SPLICE_HEAD_WHY, useControlStatus, useHues } from '@entities/control-status';
 import { useHeads } from '@entities/heads';
+import { planWindows, useUsage } from '@entities/usage';
 import {
   fetchResumeRecipe,
   fetchSessionHistory,
@@ -53,6 +54,7 @@ import { Conversation } from '@widgets/conversation';
 import { FileView } from '@widgets/file-view';
 import { Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Lanes, LifetimeBar, PageHeader, Reveal, Section, StackedBar } from '@shared/ui';
 import type { Column, Lane, LaneMessage, RowGroup } from '@shared/ui';
+import type { HeadStatus, UsagePayload } from '@shared/api';
 import { Choice, Copy, Fault, Input, Key } from '@shared/controls';
 import { readFor, timeAgo, useLinkedId, useOpen } from '@shared/lib';
 import type { Keyed } from '@shared/lib';
@@ -231,10 +233,43 @@ export function ResumeRecipeView({ recipe }: { recipe: ResumeRecipe }) {
   );
 }
 
-/** The head the resume offers before the operator picks one: the first that is not the session's own,
- *  since resuming where it runs is what the session already does; its own when it is the only one. */
-export function firstOtherHead(keys: readonly string[], own: string): string | null {
-  return keys.find((key) => key !== own) ?? keys[0] ?? null;
+/** The fullest binding window (5h or 7d) is the plan's actual remaining-room constraint. */
+function bindingUse(key: string, usage: UsagePayload | null, now: number): number | null {
+  const head = usage?.heads.find((entry) => entry.key === key)?.usage ?? null;
+  const windows = planWindows(head, now).filter((window) => !window.stale);
+  return windows.length === 0 ? null : Math.max(...windows.map((window) => window.pct));
+}
+
+/** Prefer a known plan with room; then unknown plans; spend a spent plan only if none remain. */
+export function firstOtherHead(keys: readonly string[], own: string, usage: UsagePayload | null = null, now = Date.now()): string | null {
+  const others = keys.filter((key) => key !== own);
+  const options = others.length > 0 ? others : keys;
+  if (usage === null) return options[0] ?? null;
+  const rank = (key: string): [number, number] => {
+    const pct = bindingUse(key, usage, now);
+    return pct === null ? [1, 0] : pct >= 100 ? [2, pct] : [0, pct];
+  };
+  return options.reduce<string | null>((best, key) => {
+    if (best === null) return key;
+    const [tier, pct] = rank(key);
+    const [bestTier, bestPct] = rank(best);
+    return tier < bestTier || (tier === bestTier && pct < bestPct) ? key : best;
+  }, null);
+}
+
+/** A link or a deliberate pick overrides the room-based default, even on a spent plan. */
+export function resumeTarget(keys: readonly string[], own: string, usage: UsagePayload | null,
+  target: string | null, picked: string | null, now = Date.now()): string | null {
+  return picked !== null && keys.includes(picked) ? picked
+    : target !== null && keys.includes(target) ? target : firstOtherHead(keys, own, usage, now);
+}
+
+/** Every plan stays pickable; a spent binding window is marked before it is chosen. */
+export function resumeChoices(heads: readonly Pick<HeadStatus, 'key' | 'label'>[], usage: UsagePayload | null, now = Date.now()): { value: string; label: string }[] {
+  return heads.map((head) => {
+    const pct = bindingUse(head.key, usage, now);
+    return { value: head.key, label: pct !== null && pct >= 100 ? `${head.label} (${S.spent})` : head.label };
+  });
 }
 
 /** The opened session resumed on a head the operator picks, first any head but its own. Splice
@@ -242,10 +277,11 @@ export function firstOtherHead(keys: readonly string[], own: string): string | n
  *  session, so a pick never outlives the session it was made for. */
 function ResumeElsewhere({ sessionId, own, target = null }: { sessionId: string; own: string; target?: string | null }) {
   const heads = useHeads((state) => state.data);
+  const usage = useUsage((state) => state.data);
   const [picked, setPicked] = useState<string | null>(null);
   const [answer, setAnswer] = useState<{ head: string; recipe: ResumeRecipe | null; fault: string | null } | null>(null);
   const keys = (heads ?? []).map((head) => head.key);
-  const head = picked ?? (target !== null && keys.includes(target) ? target : firstOtherHead(keys, own));
+  const head = resumeTarget(keys, own, usage, target, picked);
 
   useEffect(() => {
     if (head === null) return undefined;
@@ -265,7 +301,7 @@ function ResumeElsewhere({ sessionId, own, target = null }: { sessionId: string;
   const shown = answer?.head === head ? answer : null;
   return (
     <div className="myx-sx-resume">
-      <Choice label={S.resumeOn} value={head} options={(heads ?? []).map((row) => ({ value: row.key, label: row.label }))} onChange={setPicked} />
+      <Choice label={S.resumeOn} value={head} options={resumeChoices(heads ?? [], usage)} onChange={setPicked} />
       {shown?.fault == null ? null : <Fault message={shown.fault} />}
       {shown?.recipe == null ? null : <ResumeRecipeView recipe={shown.recipe} />}
     </div>
@@ -368,6 +404,22 @@ export function SessionsBoard({ payload, history = null, historyOff = null, view
   const liveIds = new Set(live.map((row) => row.session_id).filter((id) => id !== null));
   const rows = [...live, ...historyRows.filter((row) => row.session_id === null || !liveIds.has(row.session_id))];
   const open = rows.find((row) => sessionKey(row) === openId) ?? null;
+  const resumeSection = open === null ? null : (
+    <Section title={S.resume} info={{ text: H.resume, label: S.resumeWhy }}>
+      {open.source === 'history-only' || open.source === 'registry-only' ? (
+        <Empty text={S.noTranscript} source={H.noTranscript} />
+      ) : open.resumable === false ? (
+        <Empty text={S.emptyTranscript} source={H.emptyTranscript} />
+      ) : open.session_id === null ? (
+        <Empty text={S.noSessionId} />
+      ) : (
+        <div className="myx-sx-resume">
+          <p className="myx-sx-resume-intro">{H.resumeCarry} {H.resumeThinking}</p>
+          <ResumeElsewhere key={open.session_id} sessionId={open.session_id} own={open.head} target={resumeHead} />
+        </div>
+      )}
+    </Section>
+  );
 
   // The OPENED session's hand-offs bay reads its own edges route when it opens; the peer column of
   // every row comes from the one board-wide read (GET /api/sessions/edges, the route M2-02 asked
@@ -617,6 +669,7 @@ export function SessionsBoard({ payload, history = null, historyOff = null, view
             closeLabel={S.close}
           >
             <KeyValue rows={[[S.sessionId, open.session_id ?? S.absent], [S.account, open.account ?? S.accountUnknown]]} />
+            {open.availability === 'gone' ? resumeSection : null}
             <Section title={S.conversation}>
               {open.source === 'history-only' || open.source === 'registry-only' ? (
                 <Empty text={S.noTranscript} source={H.noTranscript} />
@@ -646,20 +699,7 @@ export function SessionsBoard({ payload, history = null, historyOff = null, view
             <Section title={S.sendTo} info={{ text: H.sendTo, label: S.sendWhy }}>
               <SendCall row={open} />
             </Section>
-            <Section title={S.resume} info={{ text: H.resume, label: S.resumeWhy }}>
-              {open.source === 'history-only' || open.source === 'registry-only' ? (
-                <Empty text={S.noTranscript} source={H.noTranscript} />
-              ) : open.resumable === false ? (
-                <Empty text={S.emptyTranscript} source={H.emptyTranscript} />
-              ) : open.session_id === null ? (
-                <Empty text={S.noSessionId} />
-              ) : (
-                <div className="myx-sx-resume">
-                  <p className="myx-sx-resume-intro">{H.resumeCarry} {H.resumeThinking}</p>
-                  <ResumeElsewhere key={open.session_id} sessionId={open.session_id} own={open.head} target={resumeHead} />
-                </div>
-              )}
-            </Section>
+            {open.availability === 'gone' ? null : resumeSection}
           </DetailPanel>
         )}
       </div>

@@ -9155,5 +9155,8 @@ id = "V4-392"
 phase = "release"
 title = "Installs take the gate's own jar: no build worktree. Operator, Sep 28 (relayed by claude-builder): 'WORKTREES ARE NOT FUCKING ALLOWED', build trees included, which retires repo CLAUDE.md step 1's detached build tree. ci.yml uploads the jar the green gate built and ran (codeModePackagedMock runs it) as artifact splice-jar; ops/install-sha.sh downloads it from the green ci run on the exact sha, archives it with its sha256, and installs it. Nothing is built from a copy of the repository."
 files = [".github/workflows/ci.yml"]
-status = "todo"
+status = "in_flight"
 verify = "actionlint + zizmor clean; the ci run on the pushed sha carries splice-jar; install-sha.sh installs it and the open fd's sha256 equals the artifact's"
+claimed_by = "splice-lead"
+claimed_at = "2026-09-28T11:53:51.693Z"
+# [2026-09-28] CLAIM: owner=splice-lead at=2026-09-28T11:53:51Z

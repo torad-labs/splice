@@ -1,5 +1,6 @@
-// NEW: V4-174 — keep an opted-in full trace visible, including a boot-vs-declaration mismatch.
-// A daemon that cannot answer contributes no running claim: only its next-start declaration is known.
+// NEW: V4-174 — show trace policy and boot-vs-declaration mismatches in doctor.
+// V4-387 defaults tracing ON: doctor names opted-out heads and pending restart mismatches, not
+// every head that is writing by default. A stopped daemon only supplies the next-start declaration.
 package splice.diagnostics.doctor
 
 import splice.core.config.Knob
@@ -20,12 +21,13 @@ internal class DoctorTraceChecks(private val statePaths: StatePaths) {
     ): List<DoctorCheck> = topology.heads.mapNotNull { (key, head) ->
         val raw = head.overrides[Knob.TRACE.key]
         val declared = when (raw?.trim()?.lowercase()) {
-            null, in FALSE_SPELLINGS -> false
+            null -> checkNotNull(Knob.TRACE.default as? Boolean)
+            in FALSE_SPELLINGS -> false
             in TRUE_SPELLINGS -> true
             else -> return@mapNotNull invalidRow(key)
         }
         val booted = running?.get(key)
-        if (!declared && booted?.enabled != true) return@mapNotNull null
+        if (declared && booted?.enabled != false) return@mapNotNull null
         val declaredDays = head.overrides[Knob.TRACE_RETENTION_DAYS.key]?.trim()?.toLongOrNull()
             ?: Knob.TRACE_RETENTION_DAYS.default as Long
         traceRow(key, declared, booted, declaredDays)
@@ -35,7 +37,7 @@ internal class DoctorTraceChecks(private val statePaths: StatePaths) {
         "trace:$key",
         CheckStatus.FAIL,
         "$key sets overrides.trace to a value that is neither true nor false; no value is echoed",
-        "set trace = true to write the head's full request/response trace, or remove it",
+        "set trace = true or remove the override; trace defaults on at the next start",
     )
 
     private fun traceRow(
@@ -46,21 +48,24 @@ internal class DoctorTraceChecks(private val statePaths: StatePaths) {
     ): DoctorCheck {
         val pending = booted != null && booted.enabled != declared
         val lead = when {
-            booted == null -> "$key will write its FULL request/response trace on the next start"
-            booted.enabled && declared -> "$key writes its FULL request/response trace (overrides.trace)"
+            booted == null -> "$key will not write its FULL request/response trace on the next start"
             booted.enabled -> "$key still writes until the next restart: its FULL request/response trace"
-            else -> "$key will write after the next restart; nothing is written now. Its FULL request/response trace"
+            declared ->
+                "$key will write after the next restart; nothing is written now. " +
+                    "Its FULL request/response trace"
+            else -> "$key does not write its FULL request/response trace (overrides.trace = false)"
         }
-        val detail = "$lead: every request it receives, every upstream attempt with the exact body " +
+        val tense = if (booted?.enabled == true) "It records" else "When enabled, it records"
+        val detail = "$lead. $tense every request it receives, every upstream attempt with the exact body " +
             "it sent (credentials redacted) and the raw response, and every frame it streamed back, " +
             "as one file per UTC day; the declared directory for the next start is " +
             "${statePaths.traceDir} (owner-only); declared files are kept $declaredDays day(s) " +
             "on the next start; read with `splice trace $key`"
         val fix = if (declared) {
-            "remove overrides.trace from [heads.$key] (and restart) when the investigation is over; " +
-                "`splice trace $key --purge` deletes what was written"
+            "restart to begin tracing $key; `splice trace $key --purge` deletes what was written"
         } else {
-            "restart to stop new trace writes; `splice trace $key --purge` deletes what was written"
+            "remove overrides.trace = false from [heads.$key] and restart to resume tracing; " +
+                "`splice trace $key --purge` deletes what was written"
         }
         return DoctorCheck("trace:$key", CheckStatus.WARN, detail, fix, pendingRestart = pending)
     }

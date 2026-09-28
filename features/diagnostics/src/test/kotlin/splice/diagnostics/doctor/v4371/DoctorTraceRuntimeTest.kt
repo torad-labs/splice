@@ -41,28 +41,24 @@ class DoctorTraceRuntimeTest {
     }
 
     @Test
-    fun `declared off but running on still warns and labels next-start retention`(@TempDir tmp: Path) {
-        for (declared in listOf("false", null)) {
-            val row = rows(tmp, declared, running = true).single()
-            assertEquals("trace:local", row.name)
-            assertTrue(row.detail.contains("still writes until the next restart"), row.detail)
-            assertTrue(row.detail.contains("kept 7 day(s) on the next start"), row.detail)
-            assertTrue(row.pendingRestart)
-        }
+    fun `explicit off but running on still warns and labels next-start retention`(@TempDir tmp: Path) {
+        val row = rows(tmp, "false", running = true).single()
+        assertEquals("trace:local", row.name)
+        assertTrue(row.detail.contains("still writes until the next restart"), row.detail)
+        assertTrue(row.detail.contains("kept 7 day(s) on the next start"), row.detail)
+        assertTrue(row.pendingRestart)
+        assertEquals(emptyList<String>(), rows(tmp, null, running = true).map { it.name })
     }
 
     @Test
-    fun `both running and declared on means the trace writes now without pending restart`(@TempDir tmp: Path) {
-        val row = rows(tmp, "true", running = true).single()
-        assertTrue(row.detail.contains("writes its FULL request/response trace"), row.detail)
-        assertFalse(row.pendingRestart)
+    fun `both running and declared on need no doctor warning`(@TempDir tmp: Path) {
+        assertEquals(emptyList<String>(), rows(tmp, "true", running = true).map { it.name })
     }
 
     @Test
-    fun `unanswered daemon reads only the declaration as the next start`(@TempDir tmp: Path) {
-        val row = rows(tmp, "true", running = null).single()
+    fun `unanswered daemon reports only an explicit opt-out as the next start`(@TempDir tmp: Path) {
+        val row = rows(tmp, "false", running = null).single()
         assertTrue(row.detail.contains("next start"), row.detail)
-        assertFalse(row.detail.contains("writes its FULL"), row.detail)
         assertFalse(row.pendingRestart)
         assertEquals(emptyList<String>(), rows(tmp, null, running = null).map { it.name })
     }

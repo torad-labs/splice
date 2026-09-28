@@ -1,13 +1,13 @@
-// V4-359: capture Off is absence, not the literal false. A no-override boot must become identical
-// after On then Off; only the trace key is removed, not its retention or body-cap siblings.
+// V4-359/V4-387: when trace defaults on, capture Off persists literal false. An absent
+// override means on, and only the trace key changes; retention and body-cap siblings survive.
 // In :app (V4-373) because it round-trips through the real parser: :integrations-topology is not a
 // test dependency :features-turns may take (ModuleLawsTest, HD-11), and :app depends on both.
 package splice.app.v4359
 
 import io.ktor.http.HttpStatusCode
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.ConfigService
@@ -65,34 +65,34 @@ class CaptureOffStaleTest {
     }
 
     @Test
-    fun `on then off returns to the boot topology with no overrides`(@TempDir root: Path) {
+    fun `on then off persists the opt-out instead of inheriting default on`(@TempDir root: Path) {
         val f = fixture(root)
         assertEquals(HttpStatusCode.OK, f.route.write("local", """{"enabled":true}""").status)
         assertEquals("true", f.current().heads.getValue("local").overrides[Knob.TRACE.key])
 
         assertEquals(HttpStatusCode.OK, f.route.write("local", """{"enabled":false}""").status)
-        assertEquals(emptyMap<String, String>(), f.current().heads.getValue("local").overrides)
-        assertEquals(f.boot.withoutWindows(), f.current().withoutWindows())
-        assertFalse(Files.readString(f.file).contains("trace = \"false\""))
+        assertEquals(mapOf(Knob.TRACE.key to "false"), f.current().heads.getValue("local").overrides)
+        assertNotEquals(f.boot.withoutWindows(), f.current().withoutWindows())
+        assertTrue(Files.readString(f.file).contains("trace = \"false\""))
     }
 
     @Test
-    fun `off removes a boot-time true and remains stale until restart`(@TempDir root: Path) {
+    fun `off overrides a boot-time true and remains stale until restart`(@TempDir root: Path) {
         val f = fixture(root, "[heads.local.overrides]\ntrace = \"true\"\n")
         assertEquals(HttpStatusCode.OK, f.route.write("local", """{"enabled":false}""").status)
-        assertFalse(Knob.TRACE.key in f.current().heads.getValue("local").overrides)
+        assertEquals("false", f.current().heads.getValue("local").overrides[Knob.TRACE.key])
         assertNotEquals(f.boot.withoutWindows(), f.current().withoutWindows())
     }
 
     @Test
-    fun `off keeps retention and body limits while removing trace`(@TempDir root: Path) {
+    fun `off keeps retention and body limits while setting trace false`(@TempDir root: Path) {
         val siblings = mapOf(Knob.TRACE_RETENTION_DAYS.key to "5", Knob.TRACE_MAX_BODY_CHARS.key to "4096")
         val extra = "[heads.local.overrides]\n" +
             "${Knob.TRACE.key} = \"true\"\n" +
             siblings.entries.joinToString("\n", postfix = "\n") { (key, value) -> "$key = \"$value\"" }
         val f = fixture(root, extra)
         assertEquals(HttpStatusCode.OK, f.route.write("local", """{"enabled":false}""").status)
-        assertEquals(siblings, f.current().heads.getValue("local").overrides)
+        assertEquals(siblings + (Knob.TRACE.key to "false"), f.current().heads.getValue("local").overrides)
     }
 
     @Test

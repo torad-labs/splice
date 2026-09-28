@@ -41,8 +41,8 @@ class KeptFilesLifetimeTest {
     private lateinit var paths: StatePaths
     private lateinit var daemon: Daemon
 
-    // claudex: code mode on (the chatgpt-oauth default), trace off. plain: code mode off, trace on.
-    // typo (V4-286): a trace value that is not a bool, which runs the head untraced and keeps its days.
+    // claudex: code mode on (the chatgpt-oauth default), trace explicitly off.
+    // plain: code mode off, trace on by default. typo (V4-286): an invalid trace value keeps its days.
     private fun topologyToml(authFile: String) = """
         [daemon]
         control_port = $controlPort
@@ -74,14 +74,14 @@ class KeptFilesLifetimeTest {
         discovery_prefix = "claude-codex--"
         pinned_model = "gpt-5.6-sol"
 
+        [heads.claudex.overrides]
+        trace = "false"
+
         [heads.plain]
         provider = "plain"
         port = $plainPort
         discovery_prefix = "claude-plain--"
         pinned_model = "gpt-5.6-sol"
-
-        [heads.plain.overrides]
-        trace = "true"
 
         [heads.typo]
         provider = "plain"

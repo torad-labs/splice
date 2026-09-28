@@ -32,18 +32,18 @@ class ConfigHeadOnlyKnobsTest {
     )
 
     @Test
-    fun `the environment cannot turn the trace or the wire tap on`() {
-        val config = service(env = mapOf("SPLICE_TRACE" to "1", "SPLICE_WIRE_TAP" to "4")).getConfig("kimi")
+    fun `the environment cannot turn default trace off or turn the wire tap on`() {
+        val config = service(env = mapOf("SPLICE_TRACE" to "0", "SPLICE_WIRE_TAP" to "4")).getConfig("kimi")
 
-        assertFalse(config.trace)
+        assertTrue(config.trace)
         assertEquals(0, config.wireTap)
     }
 
     @Test
-    fun `the global TOML layer cannot turn them on`() {
-        val config = service(global = mapOf("trace" to "true", "wireTap" to "4")).getConfig("kimi")
+    fun `the global TOML layer cannot turn trace off or wire tap on`() {
+        val config = service(global = mapOf("trace" to "false", "wireTap" to "4")).getConfig("kimi")
 
-        assertFalse(config.trace)
+        assertTrue(config.trace)
         assertEquals(0, config.wireTap)
     }
 
@@ -51,34 +51,34 @@ class ConfigHeadOnlyKnobsTest {
     fun `a PATCH is refused by name and never persisted`() {
         val svc = service()
 
-        val result = svc.patch(mapOf("trace" to true, "wireTap" to 4))
+        val result = svc.patch(mapOf("trace" to false, "wireTap" to 4))
 
         assertEquals(setOf("trace", "wireTap"), result.rejected.keys)
         assertTrue(result.rejected.values.all { it.contains("[heads.<key>.overrides]") }, "${result.rejected}")
-        assertFalse(svc.getConfig("kimi").trace)
+        assertTrue(svc.getConfig("kimi").trace)
         val file = StatePaths(baseOverride = tmp.resolve("state")).configFile
         assertFalse(Files.exists(file) && file.readText().contains("trace"), "a refused key is never written")
     }
 
     @Test
-    fun `a state file an older daemon wrote cannot turn them on`() {
+    fun `a state file cannot turn trace off or wire tap on`() {
         val file = StatePaths(baseOverride = tmp.resolve("state")).configFile
         Files.createDirectories(file.parent)
-        Files.writeString(file, """{"trace": true, "wireTap": 4}""")
+        Files.writeString(file, """{"trace": false, "wireTap": 4}""")
 
         val config = service().getConfig("kimi")
 
-        assertFalse(config.trace)
+        assertTrue(config.trace)
         assertEquals(0, config.wireTap)
     }
 
     @Test
-    fun `the head's own overrides turn them on for that head only`() {
-        val svc = service(perHead = mapOf("kimi" to mapOf("trace" to "true", "wireTap" to "5")))
+    fun `the head's own overrides turn its trace off and its wire tap on only there`() {
+        val svc = service(perHead = mapOf("kimi" to mapOf("trace" to "false", "wireTap" to "5")))
 
-        assertTrue(svc.getConfig("kimi").trace)
+        assertFalse(svc.getConfig("kimi").trace)
         assertEquals(5, svc.getConfig("kimi").wireTap)
-        assertFalse(svc.getConfig("claudex").trace)
+        assertTrue(svc.getConfig("claudex").trace)
         assertEquals(0, svc.getConfig("claudex").wireTap)
     }
 }

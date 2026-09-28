@@ -38,7 +38,7 @@ import java.nio.file.Path
 
 class DoctorTraceWiringTest {
     @Test
-    fun `in-process doctor reads booted trace after the declaration is removed`(@TempDir tmp: Path) = runBlocking {
+    fun `in-process doctor reads booted trace after an explicit opt-out`(@TempDir tmp: Path) = runBlocking {
         val file = tmp.resolve("splice.toml")
         val initial = topology()
         Files.writeString(file, initial)
@@ -59,7 +59,7 @@ class DoctorTraceWiringTest {
         server.start()
         val client = HttpClient(CIO) { expectSuccess = false }
         try {
-            Files.writeString(file, initial.replace("trace = \"true\"", ""))
+            Files.writeString(file, initial.replace("trace = \"true\"", "trace = \"false\""))
             val url = "http://127.0.0.1:${server.listeningPort}"
             val configBody = client.get("$url/api/config?head=local") {
                 header("Authorization", "Bearer ${mgmt.get()}")

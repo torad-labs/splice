@@ -506,18 +506,15 @@ public enum class Knob(
         headOnly = true,
     ),
 
-    // V4-174: the per-head FULL TRACE — every request the head receives, every upstream attempt it
-    // makes (headers redacted, bodies exact, the raw response text), and every frame it streams
-    // back, as one JSONL file per UTC day under <state>/trace/, owner-only. The Portkey/LiteLLM
-    // shape (operator 2026-09-20: "completely track all requests, everything ... optin of course").
-    // OFF BY DEFAULT: a trace line carries the user's whole conversation, so nothing is written for
-    // a head whose operator did not turn it on, and `splice doctor` names every head that is on.
-    // Set through [heads.KEY.overrides], never the global view.
+    // V4-174/V4-387: every head's FULL TRACE records each request, upstream attempt, response
+    // and client frame in owner-only UTC day files. On by default (operator 2026-09-28) so a
+    // failed session is replayable second by second. Only [heads.KEY.overrides] trace = false opts
+    // this head out; doctor names every head that is off. No global or env switch may silence it.
     TRACE(
         "trace",
         KnobKind.BOOL,
         listOf(), // head-only: no env alias
-        false,
+        true,
         restartRequired = true,
         headOnly = true,
     ),
@@ -533,15 +530,14 @@ public enum class Knob(
         restartRequired = true,
     ),
 
-    // V4-174: the longest body a trace record keeps whole, in characters — a request body, a
-    // response text or the client's inbound body past it is cut there and the record says so
-    // (`truncated: true`). The default is far above any real turn; it exists so a runaway body
-    // cannot make one line the size of the disk.
+    // V4-174/V4-387: the longest body a trace record keeps whole, in characters. Raising the
+    // default to 16 Mi keeps measured 1M-token turns whole; larger bodies remain explicitly
+    // truncated, so a runaway record cannot grow without bound.
     TRACE_MAX_BODY_CHARS(
         "traceMaxBodyChars",
         KnobKind.NUMBER,
         listOf("SPLICE_TRACE_MAX_BODY_CHARS"),
-        default = 4L shl 20,
+        default = 16L shl 20,
         restartRequired = true,
     ),
 

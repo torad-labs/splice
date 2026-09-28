@@ -1,12 +1,12 @@
-// NEW: V4-133, FEATURES.md §5/§6 — GET/PUT /api/heads/{head}/capture: "opt-in body capture per
-// head; off by default, local disk only, size capped, keys redacted; feeds the Logs request drawer
+// NEW: V4-133/V4-387 — GET/PUT /api/heads/{head}/capture: full body capture per head,
+// on by default, local disk only, size capped, keys redacted; feeds the Logs request drawer
 // and the transcript view for clients with no local transcript".
 //
 // THE CAPTURE SWITCH IS THE TRACE KNOB, NEVER A SECOND STORE. V4-174 already built exactly this
 // store (splice.head.wire.TraceStore/TurnTrace over ActivityDays, owner-only day files under
 // <state>/trace/, headers redacted at write time, size-capped per record) behind
-// `Knob.TRACE`/`TRACE_RETENTION_DAYS`/`TRACE_MAX_BODY_CHARS`, opt-in per head via
-// `[heads.<key>.overrides]`. This route is the console's read/write surface onto those three keys
+// `Knob.TRACE`/`TRACE_RETENTION_DAYS`/`TRACE_MAX_BODY_CHARS`, opt-out per head via
+// `[heads.<key>.overrides] trace = false`. This route is the console's read/write surface onto those three keys
 // for ONE head — it neither reads nor writes a trace file itself.
 //
 // RESTART REQUIRED, REPORTED HONESTLY. `HeadDeps.HeadStores.trace` (the TraceStore a head actually
@@ -96,11 +96,8 @@ public class CaptureRoutes(
         }
         val head = current.heads[key] ?: return unknownHead(key)
         val overrides = head.overrides.toMutableMap()
-        if (parsed.enabled) {
-            overrides[Knob.TRACE.key] = "true"
-        } else {
-            overrides.remove(Knob.TRACE.key)
-        }
+        // Absence now inherits the on-by-default policy; Off must persist an explicit false.
+        overrides[Knob.TRACE.key] = parsed.enabled.toString()
         parsed.retentionDays?.let { overrides[Knob.TRACE_RETENTION_DAYS.key] = it.toString() }
         parsed.maxBodyChars?.let { overrides[Knob.TRACE_MAX_BODY_CHARS.key] = it.toString() }
         val requested = current.copy(heads = current.heads + (key to head.copy(overrides = overrides)))

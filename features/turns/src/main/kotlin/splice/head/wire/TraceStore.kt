@@ -1,15 +1,11 @@
-// NEW: V4-174 (operator 2026-09-20: "we should completely track all requests, everything, just
-// like portkey, litellm and other proxies do, optin of course") — the durable, per-head trace of
-// everything the head does: the client's request as it arrived, every upstream attempt as it
-// left and came back, every frame streamed to the client, and the turn's outcome and perf. One
-// JSON record per line, one file per UTC day, under the state dir's `trace/` directory.
+// NEW: V4-174/V4-387 — durable per-head trace of the client's request, every upstream attempt,
+// each response and client frame, and the turn's outcome and perf. One record per JSONL line,
+// one file per UTC day under the state dir's `trace/` directory.
 //
-// OPT-IN BY CONSTRUCTION, the same law as V4-173's WireTap: a trace line carries the user's whole
-// conversation, so this store is built ONLY for a head whose config says `trace = true`
-// (ManagedHeadFactory hands every other head null), `splice doctor` names it on every run while it
-// is on, and `splice trace <head> --purge` deletes it. The files live in an OWNER-ONLY directory
-// (ActivityDays ownerOnly → SecureFile.ownerOnlyDirectory), because they are the one store here
-// whose content is private by definition.
+// ON BY DEFAULT (operator 2026-09-28): every head constructs this store unless its own override
+// explicitly says `trace = false`. `splice doctor` names opted-out heads, and `splice trace
+// <head> --purge` deletes retained days. The directory is OWNER-ONLY because records carry
+// whole conversations (ActivityDays ownerOnly → SecureFile.ownerOnlyDirectory).
 //
 // DERIVED FROM ActivityDays, not a second file store: UTC day files, the AsyncFileIo lane (a trace
 // append never blocks the turn), JsonlSink's per-row fsync and cross-process lock, and the

@@ -745,8 +745,8 @@ command = "claude-splice"
 # transcriptView = "true"                                  # HOT, global: read Claude Code's already-written
 #                                                           #     redacted conversation. The console switch sets
 #                                                           #     this false live; full request/response tracing
-#                                                           #     stays per-head opt-in (trace below). No env alias
-#                                                           #     can override the console's one off switch.
+#                                                           #     stays per-head and on by default (trace below).
+#                                                           #     No env alias can override the console's off switch.
 # upstreamRetries = "4"                                     # attempts; upstream re-POSTs per round before failing
 # wireTap = "0"                                             # bodies; how many of this head's most recent upstream
 #                                                           #     REQUEST BODIES to keep, in memory only, for
@@ -759,18 +759,17 @@ command = "claude-splice"
 #                                                           #     restart forgets it, and `splice doctor` names the
 #                                                           #     head on every run while it is on. PER HEAD ONLY:
 #                                                           #     in [defaults], env or a PATCH it is refused.
-# trace = "false"                                           # the FULL request/response trace of this head, on disk:
-#                                                           #     every request it receives, every upstream attempt
-#                                                           #     with the exact body it sent (credentials redacted)
-#                                                           #     and the raw response, every frame streamed back,
-#                                                           #     one JSONL per UTC day under <state>/trace/,
-#                                                           #     owner-only. The Portkey/LiteLLM shape. OFF BY
-#                                                           #     DEFAULT and opt-in per head for the same reason as
-#                                                           #     wireTap: a record carries whole conversations.
+# trace = "false"                                           # opt this head OUT of its FULL request/response trace:
+#                                                           #     by default, every request it receives, every upstream
+#                                                           #     attempt with the exact body it sent (credentials
+#                                                           #     redacted) and the raw response, and every frame
+#                                                           #     streamed back are written to one owner-only JSONL
+#                                                           #     per UTC day under <state>/trace/. A record carries
+#                                                           #     whole conversations; false disables new writes.
 #                                                           #     Read with `splice trace <head>`; `--purge` deletes.
 #                                                           #     PER HEAD ONLY, like wireTap.
 # traceRetentionDays = "7"                                  # days; whole day files older than this are deleted
-# traceMaxBodyChars = "4194304"                             # chars; a longer body is cut and the record says so
+# traceMaxBodyChars = "16777216"                            # chars; a longer body is cut and the record says so
 # retryBackoffBaseMs = "200"                                # ms; the generic retry curve's base, doubled each attempt
 # retryBackoffCapMs = "10000"                               # ms; the generic retry curve's ceiling
 # retryBackoffJitterPct = "10"                              # percent; the generic retry curve's plus-or-minus jitter

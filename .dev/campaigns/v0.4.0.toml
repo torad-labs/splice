@@ -8886,6 +8886,7 @@ claimed_at = "2026-09-28T06:01:28.932Z"
 # [2026-09-28] amend by=splice-lead: files were ["console/src/pages/needs-you/", "console/tests/needs-you.test.ts", "console/src/pages/settings/", "console/tests/settings.test.ts", "console/src/entities/doctor/", "console/src/entities/config/", "console/tests/v4379-restart-pending.test.ts", "console/tests/config-patch.test.ts"]
 # [2026-09-28] Released console/src/pages/settings/ and tests/settings.test.ts to V4-375 (1:37 AM CT, splice-lead). V4-378's edits are committed in e698eae58 and receipted; what remains is Marlin's walk. A Settings defect found on it goes to console under V4-375.
 # [2026-09-28] amend by=splice-lead: files were ["console/src/pages/needs-you/", "console/tests/needs-you.test.ts", "console/src/entities/doctor/", "console/src/entities/config/", "console/tests/v4379-restart-pending.test.ts", "console/tests/config-patch.test.ts"]
+# [2026-09-28] Released console/src/pages/needs-you/ to V4-347 (2:14 AM CT, splice-lead); V4-378's Needs you edits are committed in e698eae58. A defect in Needs you found on Marlin's walk goes to console under V4-347.
 
 [[items]]
 id = "V4-379"

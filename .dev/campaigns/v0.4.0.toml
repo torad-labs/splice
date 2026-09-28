@@ -9070,3 +9070,11 @@ files = ["core/src/main/kotlin/splice/core/config/Knob.kt", "README.md"]
 status = "todo"
 verify = "red first: a fresh topology with no trace override writes no trace file today; green: every head writes <state>/trace/<head>-<day>.jsonl with no override; a head with trace = \"false\" writes none (mutant: ignore the override, red); a 5 Mi-char body is kept whole (mutant: the old 4 Mi cap, red)"
 # [2026-09-28] Interaction: V4-354 (folded into V4-345) builds the request view from Claude Code's transcript BECAUSE trace was opt-in (the Sep 20 ruling this row supersedes). With trace on by default, the V4-345 owner decides whether the panel reads the trace directly; say which in V4-345's receipt.
+
+[[items]]
+id = "V4-388"
+phase = "release"
+title = "GPT code_mode_only turns carry Codex's exec surface: one exec tool whose manual is generated from every Claude Code tool's schema (codex-rs code-mode-protocol description.rs + json_schema_types.rs), no top-level client tools, the lark grammar format, and a runtime with tools.<Name>(), text(), exit(), ALL_TOOLS. Operator Sep 28: 'we're not sending tools upstream correctly', 'send the requests the way Codex does it'. Measured before: 31 direct function tools + a 478-char splice_exec with tools.call(), exec share 0-10%."
+files = ["integrations/upstream/src/main/kotlin/splice/upstream/codemode/", "integrations/codemode/src/main/kotlin/splice/codemode/", "integrations/providers/codex/src/main/kotlin/splice/provider/codex/", "integrations/providers/codex/src/main/resources/splice/provider/codex/", "integrations/providers/codex/src/test/kotlin/splice/provider/codex/", "integrations/upstream/src/test/kotlin/splice/upstream/codemode/v4388/", "integrations/codemode/src/test/kotlin/splice/codemode/v4388/", "core/src/main/kotlin/splice/core/topology/QuirksConfig.kt"]
+status = "todo"
+verify = "v4388 conformance test red on fdfcdb53f, green after; CI gate on the pushed sha; live claudex trace shows exec as the only top-level client surface"

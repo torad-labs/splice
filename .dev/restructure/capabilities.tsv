@@ -2625,3 +2625,12 @@ console/tests/v4369-signin-tab.test.ts	f43b5443b7b26390970dcde15b5917b55578f9afe
 core/src/test/kotlin/splice/core/storage/v4367/DayFilesDeletionTest.kt	55b1d695604c4b1f9c876db60dcf679f1a61222afc5a95a2e9de0e978961d7fd	created		added by V4-367: inventory and delete preserve unrelated files and symlink targets, including orphan day siblings, disguised directories and owner-only markers
 features/sessions/src/test/kotlin/splice/sessions/v4367/MessageEdgesKnobTest.kt	dbf5d7f6dc00d0a09dc3e8b4a67cf72643c341f1250412e15606ba83ad2a4829	created		added by V4-367: messageEdges defaults on and can be turned off by environment or configuration with a restart
 features/sessions/src/test/kotlin/splice/sessions/v4367/KeptActivityRoutesTest.kt	51d28e8b8b10371da0de68d8c4df1a0a3a605636117e6cdcfc4b85ce22f118a6	created		added by V4-367: edge and label inventories, deletion, and explicit off or deleted reader states
+console/src/entities/kept/api/index.ts	393826f460b37ed8f7eebb0c588ba7cb911555a92f873c069218527ead62a4ba	created		added by V4-364: guarded GET and DELETE for the kept stores, re-reading after a deletion
+console/src/entities/kept/model/types.ts	b1e333e2caec8defc0aa88573b156e641e9d5d26725ee4cc7751da5406cf35e1	created		added by V4-364: the kept stores' inventory and removal outcomes
+console/src/entities/kept/index.ts	9744e64276fb462ddf9ff3ccbdc930584ad1f30ad02ff1dc4c13811166a53cb2	created		added by V4-364: the kept entity's exports
+console/src/pages/kept/index.tsx	da13a80bd3962905c117370b4fd88d6b86690727eb668f5371e9804952ed2ce0	created		added by V4-364: one page that says what splice keeps, with a switch and a Delete per store
+console/src/pages/kept/model.ts	0bff49bdae2ca9a63faa29cf428619572f96446cb477246b7e9170cfaa0d8f89	created		added by V4-364: the kept stores, enumerated from source
+console/src/pages/kept/strings.ts	9e4a6d0befc1bd845e36d6ad95296f53a31c0ff752d7340addda636d09b1082e	created		added by V4-364: the kept page's retention words, copy-gated
+console/src/pages/kept/kept.css	0d32fc7dc4c4527056ebd27e08a733ba21d15c029678093b40bfebfc2baf7e39	created		added by V4-364: the kept page's tokenized layout
+console/src/pages/kept/coverage.ts	5bece96a36041c992cef9d0b83b698f00bb157e8e711193c2e2b7262f9fb1da5	created		added by V4-364: the kept page's route dispositions and its job
+console/tests/v4364-kept.test.ts	797e7fafca7ffc4d22e3e28f58f04fa67ebeb89e3f4db64c5a560228fbdb0fcc	created		added by V4-364: red-first census, deletion and switch tests for the kept page

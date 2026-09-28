@@ -5,7 +5,7 @@ import { pendingOf, request } from '@shared/api';
 import { poll } from '@shared/lib';
 import { topologyStore } from '../model/store';
 import { PENDING_TOPOLOGY } from '../model/types';
-import type { TopologyPayload, TopologyWriteResult } from '../model/types';
+import type { InstructionFilePreview, TopologyPayload, TopologyWriteResult } from '../model/types';
 
 function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -38,6 +38,14 @@ export async function saveTopology(topology: Record<string, unknown>): Promise<T
   return request<TopologyWriteResult>('/api/topology', {
     method: 'PUT',
     body: JSON.stringify({ topology }),
+  });
+}
+
+/** Read a draft file as splice would load it, without saving the draft. */
+export function previewInstructionFile(head: string, file: string, mode: string): Promise<InstructionFilePreview> {
+  return request<InstructionFilePreview>('/api/topology/preview', {
+    method: 'POST',
+    body: JSON.stringify({ head, file, mode }),
   });
 }
 

@@ -25,6 +25,8 @@ export const S = {
   replaceMode: 'Replace',
   stripMode: 'Remove parts',
   preview: 'Preview',
+  chars: 'Characters',
+  firstLines: 'First lines',
   knobs: 'Runtime settings',
   /** The group of scope buttons: global, then one per plan. */
   scope: 'Setting scope',
@@ -93,7 +95,7 @@ export const H = {
   previewReplaceEffect: "Removes Claude Code's operating instructions, including its tool guidance.",
   previewStrip: 'Matching paragraphs are removed from Claude Code instructions:',
   previewUnchanged: 'Claude Code instructions unchanged.',
-  previewFile: 'Splice reads this file after restart; its text cannot be previewed here.',
+  previewReading: 'Reading the file without saving your changes.',
   previewRuntime: "The full result depends on the session's project and client instructions.",
   globalScope: 'Saved values apply to every plan; pick one for its own.',
   headScope: "Saved values become this plan's settings in splice.toml after a restart.",

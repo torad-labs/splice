@@ -60,6 +60,7 @@ const REQUEST_HOME = join(WEBUI, "src/shared/api/index.ts");
 const FETCH_TIMEOUT_MS = 15_000;
 const BOOT_TIMEOUT_MS = 90_000;
 const MAX_DEPTH = 12;
+const PREVIEW_PATH = "/api/topology/preview";
 
 // ── input: how a templated path is filled ──────────────────────────────────────────────────────
 //
@@ -500,6 +501,8 @@ interface Daemon {
   key: string;
   /** The booted JVM's pid; null for a daemon this check attached to and does not own. */
   pid: number | null;
+  /** Synthetic prompt in the isolated boot; never read an attached daemon's operator files. */
+  previewFile: string | null;
   stop: () => Promise<void>;
 }
 
@@ -620,6 +623,8 @@ async function boot(jar: string): Promise<Daemon> {
   const headPort = await freePort();
   const config = join(home, ".config/splice/splice.toml");
   mkdirSync(dirname(config), { recursive: true });
+  const previewFile = join(dirname(config), "synthetic-preview.md");
+  writeFileSync(previewFile, "Synthetic instructions for the wire-key probe.\n");
   writeFileSync(config, [
     "[daemon]",
     `control_port = ${control}`,
@@ -710,7 +715,7 @@ async function boot(jar: string): Promise<Daemon> {
     await stop();
     throw err;
   }
-  return { base, key, pid: child.pid ?? null, stop };
+  return { base, key, pid: child.pid ?? null, previewFile, stop };
 }
 
 /** A fresh daemon has no team, so every per-team read would have no id and stay UNEXERCISED. One
@@ -735,7 +740,7 @@ async function seedTeam(base: string, key: string, home: string): Promise<void> 
 
 async function attach(base: string, keyFile: string): Promise<Daemon> {
   if (!(await answers(`${base}/health`))) throw new Error(`--control: nothing answers ${base}/health`);
-  return { base, key: readFileSync(keyFile, "utf8").trim(), pid: null, stop: async () => {} };
+  return { base, key: readFileSync(keyFile, "utf8").trim(), pid: null, previewFile: null, stop: async () => {} };
 }
 
 // ── reading ────────────────────────────────────────────────────────────────────────────────────
@@ -743,28 +748,35 @@ async function attach(base: string, keyFile: string): Promise<Daemon> {
 type Payloads = Map<string, unknown>;
 
 interface Source {
+  /** Attached daemons have no synthetic prompt to read. Replay captures and isolated boots do. */
+  previewReady: boolean;
   read(site: CallSite, path: string): Promise<{ ok: true; body: unknown } | { ok: false; why: string; status?: number }>;
 }
 
 function httpSource(daemon: Daemon, capture: Payloads): Source {
   return {
+    previewReady: daemon.previewFile !== null,
     async read(site, path) {
+      const preview = site.method === "POST" && path === PREVIEW_PATH && daemon.previewFile !== null;
+      const method = preview ? "POST" : "GET";
       try {
         const res = await fetch(`${daemon.base}${path}`, {
-          headers: { Authorization: `Bearer ${daemon.key}` },
+          method,
+          headers: { Authorization: `Bearer ${daemon.key}`, ...(preview ? { "Content-Type": "application/json" } : {}) },
+          ...(preview ? { body: JSON.stringify({ head: "openrouter", file: daemon.previewFile, mode: "append" }) } : {}),
           signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
         });
         const text = await res.text();
         if (!res.ok) {
           const said = errorMessageOf(text);
-          const why = `HTTP ${res.status} on GET ${path}${said === undefined ? "" : ` (the daemon said: ${said})`}`;
+          const why = `HTTP ${res.status} on ${method} ${path}${said === undefined ? "" : ` (the daemon said: ${said})`}`;
           return { ok: false, why, status: res.status };
         }
         const body: unknown = JSON.parse(text);
         capture.set(site.id, body);
         return { ok: true, body };
       } catch (err) {
-        return { ok: false, why: `GET ${path}: ${err instanceof Error ? err.message : String(err)}` };
+        return { ok: false, why: `${method} ${path}: ${err instanceof Error ? err.message : String(err)}` };
       }
     },
   };
@@ -787,6 +799,7 @@ function errorMessageOf(text: string): string | undefined {
 
 function replaySource(payloads: Payloads): Source {
   return {
+    previewReady: true,
     async read(site) {
       return payloads.has(site.id)
         ? { ok: true, body: payloads.get(site.id) }
@@ -891,8 +904,13 @@ async function run(checker: ts.TypeChecker, calls: CallSite[], fetches: FetchSit
       failLine(`${label}: its method is not a literal, so it cannot be told apart from a read; disposition it`);
       continue;
     }
-    if (site.method !== "GET") {
+    const preview = site.method === "POST" && site.pathText === `'${PREVIEW_PATH}'`;
+    if (site.method !== "GET" && !preview) {
       lines.push(`EXCLUDED ${label}: a ${site.method} write, not a read payload`);
+      continue;
+    }
+    if (preview && !source.previewReady) {
+      lines.push(`EXCLUDED ${label}: an attached daemon has no synthetic prompt file; the isolated boot checks this read-only POST`);
       continue;
     }
     if (site.templates === null) {
@@ -925,12 +943,12 @@ async function run(checker: ts.TypeChecker, calls: CallSite[], fetches: FetchSit
       const slots = [...result.failures.keys()];
       failSlots.set(site.id, slots);
       if (result.presentTop === 0) {
-        failLine(`${label} GET ${filled.path}: VACUOUS — none of the ${result.declared.size} declared keys is present`);
+        failLine(`${label} ${site.method} ${filled.path}: VACUOUS — none of the ${result.declared.size} declared keys is present`);
       }
       for (const message of result.failures.values()) failLine(`${label}: ${message}`);
       const unexercised = [...result.declared].filter((s) => !result.evaluated.has(s));
       lines.push(
-        `CHECKED ${label} GET ${filled.path}: ${[...result.evaluated].filter((s) => result.declared.has(s)).length} of ${result.declared.size} declared slots ` +
+        `CHECKED ${label} ${site.method} ${filled.path}: ${[...result.evaluated].filter((s) => result.declared.has(s)).length} of ${result.declared.size} declared slots ` +
           `read, ${result.failures.size} failing`,
       );
       for (const slot of unexercised) lines.push(`  UNEXERCISED ${slot}: no live value to read (empty array or absent optional parent)`);

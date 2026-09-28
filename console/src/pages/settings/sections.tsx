@@ -3,12 +3,13 @@
 // Both are exported standalone rather than inlined into the page so the tests can render them
 // directly with a fixture payload — a page that reads the router cannot be static-rendered, and a
 // section that has to be reached through one would be untestable for no reason.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Badge, Bay, Empty, Figure, HolderEdge, InfoTip, Reveal } from '@shared/ui';
-import { Choice, Confirm, Flag, Input, Key } from '@shared/controls';
+import { Choice, Confirm, Fault, Flag, Input, Key } from '@shared/controls';
+import { fmtInt } from '@shared/lib';
 import type { ClaudeHeadActionResult, ClaudeHeadPayload } from '@entities/claude-head';
-import { validateTopology } from '@entities/topology';
-import type { TopologyState, TopologyWriteResult } from '@entities/topology';
+import { previewInstructionFile, validateTopology } from '@entities/topology';
+import type { InstructionFilePreview, TopologyState, TopologyWriteResult } from '@entities/topology';
 import { TomlEditor, TomlMerge } from '@widgets/toml-editor';
 import { changedPaths, coerce, commandInstructionsOf, headOverrideOf, parseList, setAtPath, topologyTables, toToml, withCommandInstructions, withDefaultInstructions } from './model';
 import type { CommandInstruction, TopologyField, TopologyTable } from './model';
@@ -184,10 +185,29 @@ export function CommandInstructionsSection({ heads, labels, loaded, draft, onDra
 }) {
   const [picked, setPicked] = useState(heads[0] ?? '');
   const selected = heads.includes(picked) ? picked : heads[0] ?? '';
+  const current = draft === null || selected === '' ? null : commandInstructionsOf(draft, selected);
+  const asked = current?.source === 'file' && current.text.trim() !== ''
+    ? { head: selected, file: current.text, mode: current.mode,
+      key: JSON.stringify([selected, current.text, current.mode]) } : null;
+  const [fileRead, setFileRead] = useState<{
+    key: string; data: InstructionFilePreview | null; error: string | null;
+  } | null>(null);
+  useEffect(() => {
+    if (asked === null) return undefined;
+    let live = true;
+    setFileRead(null);
+    const timer = window.setTimeout(() => {
+      void previewInstructionFile(asked.head, asked.file, asked.mode).then(
+        (data) => { if (live) setFileRead({ key: asked.key, data, error: null }); },
+        (error: unknown) => { if (live) setFileRead({ key: asked.key, data: null, error: error instanceof Error ? error.message : String(error) }); },
+      );
+    }, 150);
+    return () => { live = false; window.clearTimeout(timer); };
+  }, [selected, current?.source, current?.text, current?.mode]);
   if (draft === null) return <Empty text={S.topologyUnavailable} source={H.topologyUnavailable} />;
   if (selected === '') return <Empty text={S.noHeads} source={H.noHeads} />;
-  const current = commandInstructionsOf(draft, selected);
   const edit = (next: CommandInstruction | null) => onDraft(withCommandInstructions(draft, selected, next));
+  const shown = asked === null || fileRead?.key !== asked.key ? null : fileRead;
   const changed = loaded === null ? [] : changedPaths(loaded, draft)
     .filter((path) => path.startsWith(`heads.${selected}.system_prompt`));
   const explanation = current === null ? H.previewUnchanged
@@ -229,10 +249,17 @@ export function CommandInstructionsSection({ heads, labels, loaded, draft, onDra
       <section className="myx-settings-preview" role="region" aria-label={S.preview}>
         <h4>{S.preview}</h4>
         <p>{explanation}</p>
-        {current?.mode === 'replace' ? <p>{H.previewReplaceEffect}</p> : null}
         {current === null ? null : current.source === 'file' ? (
-          <><code>{current.text}</code><p>{H.previewFile}</p></>
+          <>
+            <code>{current.text}</code>
+            {asked === null ? null : shown === null ? <p>{H.previewReading}</p>
+              : shown.error !== null ? <Fault message={shown.error} />
+                : shown.data === null ? null : (
+                  <><pre>{shown.data.text}</pre><p>{`${fmtInt(shown.data.chars)} ${S.chars}`}{shown.data.truncated ? ` · ${S.firstLines}` : ''}</p></>
+                )}
+          </>
         ) : <pre>{current.text}</pre>}
+        {current?.mode === 'replace' ? <p>{H.previewReplaceEffect}</p> : null}
         {current === null ? null : <p>{H.previewRuntime}</p>}
       </section>
       <div className="myx-settings-actions">

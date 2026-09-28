@@ -35,6 +35,7 @@ import splice.configuration.topology.TopologyStale
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
+import splice.core.config.UserHome
 import splice.core.model.ModelEntry
 import splice.core.topology.AuthConfig
 import splice.core.topology.Dialect
@@ -57,8 +58,11 @@ private const val FILE = "[providers.ex]\n$HEADERS\n[heads.ex]\nport = 8801\n"
 
 /** One request: method, body (null = none), and whether to send the mgmt key. */
 private fun interface Call {
-    suspend operator fun invoke(method: HttpMethod, body: String?, authorized: Boolean): HttpResponse
+    suspend operator fun invoke(method: HttpMethod, body: String?, authorized: Boolean, path: String): HttpResponse
 }
+
+private suspend operator fun Call.invoke(method: HttpMethod, body: String?, authorized: Boolean): HttpResponse =
+    this(method, body, authorized, ROUTE)
 
 class TopologyRoutesTest {
 
@@ -116,8 +120,8 @@ class TopologyRoutesTest {
             runBlocking {
                 withTimeout(TIMEOUT_MS) {
                     while (runCatching { Socket("127.0.0.1", port).close() }.isFailure) delay(POLL_MS)
-                    test { method, body, authorized ->
-                        client.request("http://127.0.0.1:$port$ROUTE") {
+                    test { method, body, authorized, path ->
+                        client.request("http://127.0.0.1:$port$path") {
                             this.method = method
                             if (authorized) header("Authorization", "Bearer ${mgmt.get()}")
                             body?.let { setBody(it) }
@@ -147,6 +151,83 @@ class TopologyRoutesTest {
 
     private fun findings(reply: JsonObject): List<String> =
         reply.getValue("findings").jsonArray.map { it.jsonObject.getValue("path").jsonPrimitive.content }
+
+    @Test
+    fun `a draft file preview reads bounded text through the guarded route without writing topology`() {
+        val content = "Synthetic first instruction.\n" + "Further context.\n".repeat(160)
+        Files.writeString(file.resolveSibling("prompt.md"), content)
+        serve(wired = true) { call ->
+            val request = """{"head":"ex","file":"prompt.md","mode":"replace"}"""
+            val path = "/api/topology/preview"
+            val response = call(HttpMethod.Post, request, true, path)
+            assertEquals(200, response.status.value, response.bodyAsText())
+            val read = json(response.bodyAsText())
+            assertTrue(read.getValue("text").jsonPrimitive.content.startsWith("Synthetic first instruction."))
+            assertEquals(content.length, read.getValue("chars").jsonPrimitive.content.toInt())
+            assertTrue(read.getValue("truncated").jsonPrimitive.boolean)
+            assertEquals(FILE, Files.readString(file), "preview must never edit splice.toml")
+            assertEquals(401, call(HttpMethod.Post, request, false, path).status.value)
+        }
+    }
+
+    @Test
+    fun `preview expands a home-relative path through the runtime resolver`() {
+        val home = Files.createDirectory(tmp.resolve("home"))
+        Files.writeString(home.resolve("prompt.md"), "From the isolated home.")
+        UserHome.within(home) {
+            serve(wired = true) { call ->
+                val request = """{"head":"ex","file":"~/prompt.md","mode":"append"}"""
+                val response = call(HttpMethod.Post, request, true, "/api/topology/preview")
+                assertEquals(200, response.status.value, response.bodyAsText())
+                assertEquals(
+                    "From the isolated home.",
+                    json(response.bodyAsText()).getValue("text").jsonPrimitive.content,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `preview refuses links, directories, oversized or non-text files without leaking contents`() {
+        val dir = Files.createDirectory(tmp.resolve("instructions"))
+        Files.writeString(dir.resolve("valid.md"), "Safe synthetic instruction.\n")
+        Files.createSymbolicLink(tmp.resolve("linked.md"), dir.resolve("valid.md"))
+        Files.write(tmp.resolve("large.md"), ByteArray(256 * 1024 + 1) { 'x'.code.toByte() })
+        Files.write(tmp.resolve("invalid.md"), byteArrayOf(0xC3.toByte(), 0x28))
+        Files.write(tmp.resolve("binary.md"), byteArrayOf('a'.code.toByte(), 0, 'b'.code.toByte()))
+        Files.writeString(tmp.resolve("bad.strip"), "(unclosed\n")
+        serve(wired = true) { call ->
+            suspend fun preview(name: String, mode: String = "append") = call(
+                HttpMethod.Post,
+                """{"head":"ex","file":"$name","mode":"$mode"}""",
+                true,
+                "/api/topology/preview",
+            )
+
+            val relative = preview("instructions/valid.md")
+            assertEquals(200, relative.status.value, relative.bodyAsText())
+            assertEquals(
+                "Safe synthetic instruction.\n",
+                json(relative.bodyAsText()).getValue("text").jsonPrimitive.content,
+            )
+            val absolute = preview(dir.resolve("valid.md").toString())
+            assertEquals(200, absolute.status.value, absolute.bodyAsText())
+            for ((name, reason) in listOf(
+                "linked.md" to "regular file",
+                "instructions" to "regular file",
+                "large.md" to "byte limit",
+                "invalid.md" to "UTF-8 text",
+                "binary.md" to "not text",
+                "bad.strip" to "matching patterns",
+            )) {
+                val reply = preview(name, if (name == "bad.strip") "strip" else "append")
+                assertEquals(400, reply.status.value, name)
+                assertTrue(reply.bodyAsText().contains(reason), "$name: ${reply.bodyAsText()}")
+                assertFalse(reply.bodyAsText().contains(dir.toString()), "refusal must not expose an absolute path")
+            }
+            assertEquals(FILE, Files.readString(file), "no preview may write topology")
+        }
+    }
 
     @Test
     fun `the read serves the file's path, its topology with every header masked, and the stale flag`() {

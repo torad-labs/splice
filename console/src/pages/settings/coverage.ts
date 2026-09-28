@@ -162,6 +162,7 @@ export const dispositions: readonly Disposition[] = [
   // a manifest describing an earlier tree, and nothing fails while it does.
   { kind: 'route', name: '/api/config', disposition: 'editable' },
   { kind: 'route', name: '/api/topology', disposition: 'editable' },
+  { kind: 'route', name: '/api/topology/preview', disposition: 'read-only', reason: 'the Settings command instruction editor reads a draft file without saving topology' },
   { kind: 'route', name: '/api/claude-head', disposition: 'read-only', reason: 'a status read; the mode changes through the two action routes beside it' },
   { kind: 'route', name: '/api/claude-head/wrap', disposition: 'editable' },
   { kind: 'route', name: '/api/claude-head/unwrap', disposition: 'editable' },

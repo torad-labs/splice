@@ -129,7 +129,7 @@ const PENDING: readonly PendingGroup[] = [
   {
     kind: 'route',
     where: 'M2-05',
-    names: ['/api/config', '/api/topology', '/api/claude-head', '/api/claude-head/wrap', '/api/claude-head/unwrap'],
+    names: ['/api/config', '/api/topology', '/api/topology/preview', '/api/claude-head', '/api/claude-head/wrap', '/api/claude-head/unwrap'],
   },
   {
     kind: 'route',

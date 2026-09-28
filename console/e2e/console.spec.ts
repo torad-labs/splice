@@ -11,7 +11,7 @@
 // every page instead of stopping at the first.
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { STACK, TURN_PROMPT, driveOneTurn, localDayWait, saveTranscript, sendHandOff, utcDayWait } from './stack';
@@ -320,7 +320,7 @@ test('Settings previews each command instruction mode before writing it', async 
   await section.getByRole('option', { name: 'Use file', exact: true }).click();
   await section.getByRole('textbox', { name: 'Instruction file' }).fill('rules.txt');
   await expect(preview).toContainText('rules.txt');
-  await expect(preview).toContainText('its text cannot be previewed here');
+  await expect(preview).toContainText('instruction file must be a regular file');
   expect(writes).toHaveLength(3);
 
   await section.getByRole('button', { name: 'Remove command instructions' }).click();
@@ -333,6 +333,38 @@ test('Settings previews each command instruction mode before writing it', async 
   await expect(section.getByRole('button', { name: 'Save instructions' })).toBeDisabled();
   expect(writes).toHaveLength(4);
   expect(writes.every((topology) => (topology.compaction as { instructions: string }).instructions === originalCompaction)).toBe(true);
+});
+
+test('Settings previews a file-backed replacement before Save without writing the draft', async ({ page }) => {
+  const first = 'Synthetic instructions for this plan.';
+  const content = `${first}\n${'Keep the answer precise.\n'.repeat(160)}`;
+  const dir = join(dirname(env('CONSOLE_E2E_CONFIG')), 'prompts');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'preview.md'), content);
+  const posts: { head: string; file: string; mode: string }[] = [];
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/api/topology/preview') {
+      posts.push(request.postDataJSON() as { head: string; file: string; mode: string });
+    }
+  });
+  await open(page, 'settings');
+  const section = page.locator('.myx-settings-section').filter({ has: page.getByRole('heading', { name: 'Instructions', exact: true }) });
+  await section.getByRole('button', { name: 'Add command instructions' }).click();
+  await section.getByRole('combobox', { name: 'How to use' }).click();
+  await section.getByRole('option', { name: 'Replace', exact: true }).click();
+  await section.getByRole('combobox', { name: 'Instruction source' }).click();
+  await section.getByRole('option', { name: 'Use file', exact: true }).click();
+  await section.getByRole('textbox', { name: 'Instruction file' }).fill('prompts/preview.md');
+  const preview = section.getByRole('region', { name: 'Preview' });
+  await expect(preview).toContainText(first);
+  await expect(preview).toContainText(`${content.length.toLocaleString()} Characters`);
+  const words = await preview.innerText();
+  expect(words.indexOf('prompts/preview.md')).toBeGreaterThan(words.indexOf('Replaces Claude Code instructions with:'));
+  expect(words.indexOf("Removes Claude Code's operating instructions")).toBeGreaterThan(words.indexOf('prompts/preview.md'));
+  expect(posts).toContainEqual({ head: STACK.oauthHead, file: 'prompts/preview.md', mode: 'replace' });
+  await expect(section.getByRole('button', { name: 'Save instructions' })).toBeEnabled();
+  // Preview is read-only: the topology file still has no reference to this draft path.
+  expect(readFileSync(env('CONSOLE_E2E_CONFIG'), 'utf8')).not.toContain('prompts/preview.md');
 });
 
 test('turns keeps full model names and cache figures readable at desktop width', async ({ page }) => {
@@ -584,6 +616,30 @@ test('fleet shows each head\'s pinned model from the catalog', async ({ page }) 
   });
   expect(headerOverlap, 'Fleet Head header must not draw over Provider').not.toBeNull();
   expect(headerOverlap ?? 0).toBeLessThanOrEqual(0);
+});
+
+test('fleet keeps a long command name whole at desktop width', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const command = 'claude-bonsai-secondary';
+  await page.route('**/api/status', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json() as { registry: { key: string; label: string }[] };
+    const first = body.registry.find((row) => row.key === STACK.oauthHead);
+    if (first !== undefined) first.label = command;
+    await route.fulfill({ response, json: body });
+  });
+  await open(page, 'fleet');
+  const table = page.getByRole('table', { name: 'Plans', exact: true });
+  const name = table.locator('tbody tr').filter({ has: headRow(page, STACK.oauthHead) }).locator('.myx-hm-name');
+  await expect(name).toHaveText(command, { timeout: 15_000 });
+  const cut = await name.evaluate((element) => {
+    const cell = element.closest('td');
+    const text = document.createRange();
+    text.selectNodeContents(element);
+    return cell === null || element.scrollWidth > element.clientWidth + 1
+      || text.getBoundingClientRect().right > cell.getBoundingClientRect().right;
+  });
+  expect(cut, 'Fleet has room but truncates the command name').toBe(false);
 });
 
 /** A head's open button in the heads table: the row's primary cell (pages/fleet). */

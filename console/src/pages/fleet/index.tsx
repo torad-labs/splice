@@ -230,7 +230,7 @@ function headColumns(fields: readonly string[], grouped: string | null, nowMs: n
   // figure, a sparkline with its median), so opening the panel narrows the names and never clips a
   // figure; the name shares whatever is left.
   const columns: (Column<HeadLine> | null)[] = [
-    { key: 'head', label: S.head, width: 'calc(12 * var(--u))', primary: true, cell: (line) => <HeadMark head={line.head.key} /> },
+    { key: 'head', label: S.head, width: 'calc(16 * var(--u))', primary: true, cell: (line) => <HeadMark head={line.head.key} /> },
     wanted.has('provider') && grouped !== 'provider'
       ? { key: 'provider', label: S.provider, width: 'calc(6.5 * var(--u))', cell: (line) => familyName(line.head.authKind) }
       : null,

@@ -63,6 +63,9 @@ public class TopologyRoutes(private val source: TopologyWriterSource, private va
         return JsonReply(HttpStatusCode.OK, body.toString())
     }
 
+    /** Resolve a draft head's instruction file without writing splice.toml. */
+    public fun preview(body: String): JsonReply = PromptPreview(source).reply(body)
+
     public fun write(body: String): JsonReply {
         val writer = source() ?: return error(HttpStatusCode.ServiceUnavailable, TOPOLOGY_UNWIRED)
         // ast-grep-ignore: kt-no-silent-result-collapse -- a body that is not JSON and a body without a topology object get the same answer, one 400 naming the shape expected, so the failure has nothing more to say

@@ -15,6 +15,8 @@ test("the relocated console probe discovers its sources from an unrelated cwd", 
     // An empty replay must reach the payload checks, then fail for missing captures.
     expect(child.exitCode).toBe(1);
     expect(child.stdout.toString()).toContain("console-wire-keys: FAIL");
+    expect(child.stdout.toString()).toContain("InstructionFilePreview '/api/topology/preview': no captured payload");
+    expect(child.stdout.toString()).not.toMatch(/EXCLUDED [^\n]*InstructionFilePreview/);
     expect(child.stderr.toString()).not.toContain("Cannot read file");
   } finally {
     rmSync(replay, { recursive: true, force: true });

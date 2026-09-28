@@ -45,6 +45,13 @@ export interface TopologyPayload {
   stale: boolean;
 }
 
+/** Read-only file-backed instruction preview, bounded by the daemon. */
+export interface InstructionFilePreview {
+  text: string;
+  chars: number;
+  truncated: boolean;
+}
+
 export interface TopologyWriteResult {
   ok: boolean;
   /** The backup taken before the write. FEATURES 4.7: "Backs the file up first". */

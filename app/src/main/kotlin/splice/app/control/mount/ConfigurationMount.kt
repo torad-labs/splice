@@ -6,6 +6,7 @@ import io.ktor.server.request.receiveText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.patch
+import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import splice.app.control.ConsolePorts
 import splice.configuration.knobs.ConfigRoutes
@@ -35,6 +36,9 @@ internal class ConfigurationMount(
         }
         route.patch("/api/config") { guard.guarded(call) { configRoutes.patchConfig(call) } }
         route.get("/api/topology") { guard.guarded(call) { topologyRoutes.read().send(call) } }
+        route.post("/api/topology/preview") {
+            guard.guarded(call) { topologyRoutes.preview(call.receiveText()).send(call) }
+        }
         route.put("/api/topology") { guard.guarded(call) { topologyRoutes.write(call.receiveText()).send(call) } }
     }
 }

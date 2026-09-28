@@ -15,7 +15,7 @@ import splice.dialect.responses.tools.ToolSurfaceLatch
 import splice.dialect.responses.tools.ToolSurfaceRecovery
 
 internal class ResponsesParts(input: ResponsesPartsInput) {
-    val builder = ResponsesRequestBuilder(input.quirks)
+    val builder = ResponsesRequestBuilder(input.quirks, input.toolNames)
     private val cachePolicy = ReasoningCachePolicy()
     private val surfaceRecovery = ToolSurfaceRecovery()
     private val ids = ResponsesStableIds()
@@ -62,6 +62,7 @@ internal class ResponsesParts(input: ResponsesPartsInput) {
             replayReasoning = input.replayReasoning,
             streamIdleMs = input.streamIdleMs,
             upstreamTimeoutMs = input.upstreamTimeoutMs,
+            toolNames = input.toolNames,
         ),
     )
     val failureAmend = ResponsesFailureAmend(

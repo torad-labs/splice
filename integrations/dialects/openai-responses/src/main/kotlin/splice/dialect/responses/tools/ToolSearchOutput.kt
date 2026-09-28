@@ -10,6 +10,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.wire.ToolDefinition
+import splice.upstream.ToolNameShortener
 
 /**
  * The tool_search_output shape (type, call_id, status, execution, tools[]) — the ONE builder for
@@ -20,7 +21,7 @@ import splice.core.wire.ToolDefinition
  * A type rather than a file-level function (Kotlin main sources carry no top-level functions); the
  * member keeps its old name and argument list.
  */
-internal class ToolSearchOutput(names: MuseToolNameCodec? = null) {
+internal class ToolSearchOutput(names: ToolNameShortener = ToolNameShortener()) {
 
     private val toolWire = ToolWireObjects(names)
 

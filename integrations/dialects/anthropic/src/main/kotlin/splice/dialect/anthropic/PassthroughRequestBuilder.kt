@@ -29,6 +29,7 @@ import kotlinx.serialization.json.put
 import splice.core.parse.AnthropicTurnBody
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
+import splice.upstream.ToolNameShortener
 
 internal class PassthroughRequestBuilder(
     private val quirks: PassthroughQuirks,

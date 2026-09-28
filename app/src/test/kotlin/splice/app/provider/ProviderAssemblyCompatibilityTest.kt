@@ -9,6 +9,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertDoesNotThrow
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -273,6 +274,50 @@ class ProviderAssemblyCompatibilityTest {
             )
         }
         assertEquals(0, fixture.museMintCalls)
+    }
+
+    @Test
+    fun `Muse gateway session header follows the same stable conversation key as prompt caching`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val fixture = Fixture(tmp, backgroundScope)
+        val wired = fixture.assembly.buildProvider(fixture.context(AuthKind.MuseOAuth.wire, Dialect.OPENAI_RESPONSES))
+        fun turn(text: String, session: String?) = wired.provider.buildTurn(
+            AnthropicParse.parseAnthropicBody(
+                """{"model":"muse-spark-1.3","messages":[{"role":"user","content":"$text"}]}""",
+            ),
+            compact = false,
+            sessionId = session,
+        )
+        val first = turn("one", "same-session")
+        val same = turn("two", "same-session")
+        val different = turn("one", "other-session")
+        val name = "x-meta-ai-gateway-session-id"
+        val id = requireNotNull(first.extraHeaders[name])
+        assertTrue(Regex("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}").matches(id))
+        assertEquals(id, same.extraHeaders[name])
+        assertNotEquals(id, different.extraHeaders[name])
+        assertEquals("muse:same-session", first.requestBody["prompt_cache_key"]?.jsonPrimitive?.content)
+        assertEquals(first.requestBody["prompt_cache_key"], same.requestBody["prompt_cache_key"])
+        assertNull(first.extraHeaders["x-client-id"])
+    }
+
+    @Test
+    fun `Muse cache opt-out removes both key and gateway affinity header`(@TempDir tmp: Path) = runTest {
+        val fixture = Fixture(tmp, backgroundScope)
+        val ctx = fixture.context(AuthKind.MuseOAuth.wire, Dialect.OPENAI_RESPONSES)
+        for (cacheKey in listOf("first-message-hash", "off")) {
+            val provider = fixture.assembly.buildProvider(
+                ctx.copy(providerCfg = ctx.providerCfg.copy(quirks = QuirksConfig(cacheKey = cacheKey))),
+            ).provider
+            val body = AnthropicParse.parseAnthropicBody(
+                """{"model":"muse-spark-1.3","messages":[{"role":"user","content":"synthetic"}]}""",
+            )
+            val turn = provider.buildTurn(body, compact = false, sessionId = "same-session")
+            val enabled = cacheKey != "off"
+            assertEquals(enabled, "prompt_cache_key" in turn.requestBody)
+            assertEquals(enabled, "x-meta-ai-gateway-session-id" in turn.extraHeaders)
+        }
     }
 
     @Test

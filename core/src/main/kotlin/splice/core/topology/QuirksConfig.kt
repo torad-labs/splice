@@ -123,11 +123,10 @@ public data class QuirksConfig(
      *  unmeasured vendor keeps exactly today's behaviour (the whole-stream restart still applies when
      *  nothing visible was salvaged) and measurement is what earns the upgrade. */
     @SerialName("reanchor_prefill") val reanchorPrefill: Boolean? = null,
-    /** anthropic-passthrough only: cap a forwarded tool NAME at this many characters, shortening
-     *  deterministically via ToolNameShortener. MUSE ONLY — api.meta.ai rejects a tool name over 64
-     *  characters where Anthropic accepts it (V4-32), and Claude Code's MCP names run past 80.
-     *  NULLABLE overlay — absent keeps the head's BASE profile (muse's built-in 64; 0 = no cap for
-     *  every other passthrough head), so the muse cap is overridable rather than hardcoded. */
+    /** Cap a forwarded tool name with the shared upstream ToolNameShortener. Muse's Responses arm
+     *  defaults to 64 because api.meta.ai rejects longer names (V4-32); other Responses providers
+     *  leave it off. The passthrough dialect retains its nullable overlay for vendor profiles.
+     *  Absent keeps the provider's base value; an explicit value overrides Muse's built-in cap. */
     @SerialName("tool_name_cap") val toolNameCap: Int? = null,
 ) {
     init {

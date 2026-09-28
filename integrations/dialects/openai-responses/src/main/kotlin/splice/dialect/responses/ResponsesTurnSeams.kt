@@ -66,9 +66,9 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
                     // envelope collected on a compaction would be carried and never read.
                     collectReasoningEnvelopes = !meta.compact ||
                         deps.cachePolicy.reasoningCacheActive(deps.quirks, meta.compact),
-                    toolNameCodec = deps.quirks.toolNameCodec,
                     onTurnReasoning = reasoningSink(meta),
                 ),
+                deps.toolNames,
             )
         }
 

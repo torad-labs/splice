@@ -44,6 +44,7 @@ import splice.core.turn.SpliceNotice
 import splice.core.util.DaemonLog
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
+import splice.upstream.ToolNameShortener
 import java.util.concurrent.ConcurrentHashMap
 
 internal class PassthroughMessageScrubber(

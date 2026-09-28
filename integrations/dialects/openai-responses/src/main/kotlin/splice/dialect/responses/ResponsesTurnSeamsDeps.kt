@@ -7,6 +7,7 @@ import splice.dialect.responses.reasoning.ReasoningCachePolicy
 import splice.dialect.responses.request.ResponsesStableIds
 import splice.dialect.responses.stream.ConversationSummaryParts
 import splice.dialect.responses.stream.FoldConfig
+import splice.upstream.ToolNameShortener
 
 /** Everything stream/fold/reanchor construction reads from the provider. */
 internal data class ResponsesTurnSeamsDeps(
@@ -20,4 +21,5 @@ internal data class ResponsesTurnSeamsDeps(
     val replayReasoning: Boolean,
     val streamIdleMs: Long,
     val upstreamTimeoutMs: Long,
+    val toolNames: ToolNameShortener = ToolNameShortener(),
 )

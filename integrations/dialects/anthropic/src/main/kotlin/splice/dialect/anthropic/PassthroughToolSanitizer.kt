@@ -14,6 +14,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.util.JsonScalars
+import splice.upstream.ToolNameShortener
 
 internal class PassthroughToolSanitizer(
     private val quirks: PassthroughQuirks,

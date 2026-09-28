@@ -12,7 +12,7 @@ import splice.core.turn.TurnOutcome
 import splice.dialect.responses.stream.RecordingSink
 import splice.dialect.responses.stream.ResponsesStreamTranslator
 import splice.dialect.responses.stream.ctx
-import splice.dialect.responses.tools.MuseToolNameCodec
+import splice.upstream.ToolNameShortener
 
 private const val MUSE_CAP = 64
 private const val TOOL_NAME = "mcp__plugin_some_long_server_name__a_long_tool_name_from_claude_code_123456789"
@@ -20,10 +20,10 @@ private const val TOOL_NAME = "mcp__plugin_some_long_server_name__a_long_tool_na
 class MuseResponsesStreamTest {
     @Test
     fun `Meta summary deltas are visible while encrypted reasoning and tool identity survive`() = runTest {
-        val names = MuseToolNameCodec(MUSE_CAP) { }
+        val names = ToolNameShortener(MUSE_CAP) { }
         val alias = names.shorten(TOOL_NAME)
         val sink = RecordingSink()
-        val outcome = ResponsesStreamTranslator(ctx(collect = true, names = names))
+        val outcome = ResponsesStreamTranslator(ctx(collect = true), names)
             .driveTurn(museEvents(alias).asFlow(), sink)
         val success = outcome as TurnOutcome.Success
         assertEquals("Checking the tool arguments", success.thinkingText)

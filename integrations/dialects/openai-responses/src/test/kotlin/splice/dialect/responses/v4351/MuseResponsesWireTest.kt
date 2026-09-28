@@ -12,13 +12,14 @@ import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplayParser
 import splice.core.wire.ToolDefinition
 import splice.dialect.responses.CacheKeyStrategy
+import splice.dialect.responses.PromptCachePolicy
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.RequestEncryptedReasoning
 import splice.dialect.responses.request.BuildOptions
 import splice.dialect.responses.request.ResponsesRequestBuilder
-import splice.dialect.responses.tools.MuseToolNameCodec
 import splice.dialect.responses.tools.ToolSearchOutput
+import splice.upstream.ToolNameShortener
 
 private const val MUSE_CAP = 64
 private const val LONG_NAME = "mcp__plugin_some_long_server_name__a_long_tool_name_from_claude_code_123456789"
@@ -38,7 +39,7 @@ private fun museOptions(sessionId: String? = "session-1") = BuildOptions(
 class MuseResponsesWireTest {
     @Test
     fun `native alias collision preserves both original names and replay stays stable`() {
-        val names = MuseToolNameCodec(MUSE_CAP) { }
+        val names = ToolNameShortener(MUSE_CAP) { }
         val first = names.shorten(LONG_NAME)
         assertTrue(first.length <= MUSE_CAP)
         assertEquals(first, names.shorten(LONG_NAME))
@@ -53,18 +54,24 @@ class MuseResponsesWireTest {
     @Test
     fun `a full alias namespace refuses overlong names instead of misrouting a tool`() {
         val logged = mutableListOf<String>()
-        val names = MuseToolNameCodec(MUSE_CAP, logged::add)
+        val names = ToolNameShortener(MUSE_CAP, logged::add)
         repeat(4096) { names.shorten("tool_$it") }
         val overflow = LONG_NAME + "_overflow"
         assertEquals(overflow, names.shorten(overflow))
         assertEquals(overflow, names.restore(overflow))
-        assertTrue(logged.any { it.contains("namespace full") })
+        assertTrue(logged.any { it.contains("map full") })
     }
 
     @Test
     fun `session cache identity survives a changed opening message and falls back when unkeyed`() {
         val builder = ResponsesRequestBuilder(
-            ResponsesQuirks(providerTag = "muse", cacheKeyStrategy = CacheKeyStrategy.SESSION_OR_FIRST_MESSAGE_HASH),
+            ResponsesQuirks(
+                providerTag = "muse",
+                promptCache = PromptCachePolicy(
+                    key = CacheKeyStrategy.SESSION_OR_FIRST_MESSAGE_HASH,
+                    retention = "24h",
+                ),
+            ),
         )
         val one = AnthropicParse.parseAnthropicBody("""{"model":"m","messages":[{"role":"user","content":"one"}]}""")
         val two = AnthropicParse.parseAnthropicBody("""{"model":"m","messages":[{"role":"user","content":"two"}]}""")
@@ -77,7 +84,7 @@ class MuseResponsesWireTest {
 
     @Test
     fun `deferred tool search answers use the same bounded alias`() {
-        val names = MuseToolNameCodec(MUSE_CAP) { }
+        val names = ToolNameShortener(MUSE_CAP) { }
         val output = ToolSearchOutput(names).toolSearchOutputItem(
             "call_1",
             listOf(ToolDefinition(LONG_NAME)),
@@ -101,15 +108,13 @@ class MuseResponsesWireTest {
                 "tool_choice":{"type":"tool","name":"$LONG_NAME"}}""",
         )
         val opts = museOptions()
-        val names = MuseToolNameCodec(MUSE_CAP) { }
+        val names = ToolNameShortener(MUSE_CAP) { }
         val quirks = ResponsesQuirks(
             providerTag = "muse",
-            cacheKeyStrategy = CacheKeyStrategy.SESSION_OR_FIRST_MESSAGE_HASH,
-            promptCacheRetention = "24h",
+            promptCache = PromptCachePolicy(key = CacheKeyStrategy.SESSION_OR_FIRST_MESSAGE_HASH, retention = "24h"),
             emitToolChoice = true,
-            toolNameCodec = names,
         )
-        val req = ResponsesRequestBuilder(quirks).build(parsed.typed, parsed.raw, opts).req
+        val req = ResponsesRequestBuilder(quirks, names).build(parsed.typed, parsed.raw, opts).req
         val alias = req.getValue("tools").jsonArray.first().jsonObject.getValue("name").jsonPrimitive.content
         assertTrue(alias.length <= MUSE_CAP)
         assertEquals(LONG_NAME, names.restore(alias))

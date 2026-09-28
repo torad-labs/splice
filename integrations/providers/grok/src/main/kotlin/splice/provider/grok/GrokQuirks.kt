@@ -5,6 +5,7 @@
 package splice.provider.grok
 
 import splice.dialect.responses.CacheKeyStrategy
+import splice.dialect.responses.PromptCachePolicy
 import splice.dialect.responses.ResponsesQuirks
 
 /** Holder for the grok quirk profile. Constructed by the daemon so TOML overlays a real table. */
@@ -12,7 +13,7 @@ public class GrokQuirks {
     public fun defaultQuirks(): ResponsesQuirks = ResponsesQuirks(
         providerTag = "claude-grok",
         store = false,
-        cacheKeyStrategy = CacheKeyStrategy.SESSION_ID,
+        promptCache = PromptCachePolicy(key = CacheKeyStrategy.SESSION_ID),
         effortVocabulary = GrokEffortVocabulary(),
         supportsSummary = true,
         summaryRejectModelRegex = null,

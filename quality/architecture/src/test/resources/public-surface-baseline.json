@@ -20,7 +20,6 @@
     ":integrations-dialects-anthropic splice.dialect.anthropic.PassthroughStreamTranslator",
     ":integrations-dialects-anthropic splice.dialect.anthropic.PassthroughSystemPrompt",
     ":integrations-dialects-anthropic splice.dialect.anthropic.PassthroughTurnContext",
-    ":integrations-dialects-anthropic splice.dialect.anthropic.ToolNameShortener",
     ":integrations-dialects-openai-responses splice.dialect.responses.request.BuildOptions",
     ":integrations-dialects-openai-responses splice.dialect.responses.request.BuiltRequest",
     ":integrations-dialects-openai-responses splice.dialect.responses.reasoning.EmitEncryptedReasoning",

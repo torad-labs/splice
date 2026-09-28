@@ -49,7 +49,7 @@
       "subsystems": 3
     },
     "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesRequest.kt ResponsesRequest": {
-      "params": 14,
+      "params": 15,
       "subsystems": 0
     },
     "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeState.kt CodeModeRecord": {

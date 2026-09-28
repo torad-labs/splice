@@ -10,9 +10,13 @@ import splice.core.wire.AnthropicRequest
 import splice.core.wire.ToolDefinition
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.request.BuildOptions
+import splice.upstream.ToolNameShortener
 import splice.upstream.ToolSearchController
 
-internal class ResponsesToolPlan(private val quirks: ResponsesQuirks) {
+internal class ResponsesToolPlan(
+    private val quirks: ResponsesQuirks,
+    private val toolNames: ToolNameShortener = ToolNameShortener(),
+) {
 
     private val partitioner = ToolPartitioner(quirks)
 
@@ -36,7 +40,7 @@ internal class ResponsesToolPlan(private val quirks: ResponsesQuirks) {
             forceStrictFalse = quirks.forceStrictFalse,
             normalizeSchemas = quirks.normalizeToolSchemas,
             decodeReasoningEnvelope = opts.decodeReasoningEnvelope,
-            names = quirks.toolNameCodec,
+            names = toolNames,
         )
     }
 

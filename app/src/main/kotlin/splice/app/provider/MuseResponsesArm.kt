@@ -1,21 +1,20 @@
-// Muse's Responses arm keeps the minted-key account pool while using Meta's reasoning wire.
+// NEW: Muse's Responses arm keeps the minted-key account pool while using Meta's reasoning wire.
 package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
 import splice.core.GATEWAY_VERSION
-import splice.core.auth.Credentials
 import splice.core.config.StatePaths
-import splice.core.turn.ReasoningDisplay
 import splice.core.util.LogSink
 import splice.dialect.responses.CacheKeyStrategy
-import splice.dialect.responses.ResponsesProvider
+import splice.dialect.responses.PromptCachePolicy
 import splice.dialect.responses.ResponsesQuirks
-import splice.dialect.responses.tools.MuseToolNameCodec
 import splice.oauth.muse.MuseRefresh
 import splice.provider.muse.MuseKeyMintCall
 import splice.upstream.CredentialHeaders
 import splice.upstream.ProviderTuning
+import splice.upstream.ToolNameShortener
 
+// why: Meta rejects tool names longer than 64 characters (measured on Muse, V4-32).
 private const val MUSE_TOOL_NAME_CAP = 64
 private val MUSE_BASE_HEADERS = mapOf("User-Agent" to "splice/$GATEWAY_VERSION")
 private val SSE_HEADERS = mapOf("Accept" to "text/event-stream")
@@ -33,6 +32,7 @@ internal class MuseResponsesArm(
         val accounts = museOAuth.museOauthAccounts(ctx)
         val default = museOAuth.providerAccount(accounts)
         val quirks = museQuirks(ctx)
+        val toolNames = ToolNameShortener(ctx.providerCfg.quirks.toolNameCap ?: MUSE_TOOL_NAME_CAP, log)
         val headers = SSE_HEADERS + MUSE_BASE_HEADERS + ctx.providerCfg.staticHeaders
         val provider = MuseResponsesProvider(
             tuning = ProviderTuning(
@@ -46,12 +46,15 @@ internal class MuseResponsesArm(
                 loginCommand = ctx.loginCommand,
                 stateDir = statePaths.headsDir.resolve(ctx.key),
             ),
-            showReasoning = ctx.cfg.showReasoning,
-            replayReasoning = ctx.cfg.replayReasoning,
-            configEffort = ctx.cfg.effort,
-            configSummary = ctx.cfg.summary,
-            quirks = quirks,
-            headers = headers,
+            options = MuseResponsesOptions(
+                showReasoning = ctx.cfg.showReasoning,
+                replayReasoning = ctx.cfg.replayReasoning,
+                configEffort = ctx.cfg.effort,
+                configSummary = ctx.cfg.summary,
+                quirks = quirks,
+                headers = headers,
+                toolNames = toolNames,
+            ),
         )
         return Wired(provider, default.auth, wiredAccounts(accounts, headers))
     }
@@ -61,11 +64,9 @@ internal class MuseResponsesArm(
         ResponsesQuirks(
             providerTag = "muse",
             store = false,
-            cacheKeyStrategy = CacheKeyStrategy.SESSION_OR_FIRST_MESSAGE_HASH,
+            promptCache = PromptCachePolicy(CacheKeyStrategy.SESSION_OR_FIRST_MESSAGE_HASH, "24h"),
             supportsSummary = true,
             emitToolChoice = true,
-            promptCacheRetention = "24h",
-            toolNameCodec = MuseToolNameCodec(ctx.providerCfg.quirks.toolNameCap ?: MUSE_TOOL_NAME_CAP, log),
         ),
         ctx.cfg,
     ).let { overlaid ->
@@ -73,7 +74,7 @@ internal class MuseResponsesArm(
         if (ctx.providerCfg.quirks.cacheKey == "off") {
             overlaid
         } else {
-            overlaid.copy(cacheKeyStrategy = CacheKeyStrategy.SESSION_OR_FIRST_MESSAGE_HASH)
+            overlaid.copy(promptCache = overlaid.promptCache.copy(key = CacheKeyStrategy.SESSION_OR_FIRST_MESSAGE_HASH))
         }
     }
 
@@ -88,16 +89,4 @@ internal class MuseResponsesArm(
                 extraHeaders = CredentialHeaders { headers },
             )
         }
-}
-
-private class MuseResponsesProvider(
-    tuning: ProviderTuning,
-    showReasoning: ReasoningDisplay,
-    replayReasoning: Boolean,
-    configEffort: String?,
-    configSummary: String?,
-    quirks: ResponsesQuirks,
-    private val headers: Map<String, String>,
-) : ResponsesProvider(tuning, showReasoning, replayReasoning, configEffort, configSummary, quirks) {
-    override fun extraHeaders(creds: Credentials): Map<String, String> = headers
 }

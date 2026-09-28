@@ -5,7 +5,6 @@
 package splice.dialect.responses
 
 import splice.dialect.responses.request.DefaultEffortVocabulary
-import splice.dialect.responses.tools.MuseToolNameCodec
 import splice.dialect.responses.tools.ToolDeferralPolicy
 import splice.upstream.EffortVocabulary
 
@@ -13,11 +12,7 @@ import splice.upstream.EffortVocabulary
 public data class ResponsesQuirks(
     val providerTag: String, // rides honest omission markers: "[image omitted by <tag> proxy: ...]"
     val store: Boolean = false,
-    val cacheKeyStrategy: CacheKeyStrategy = CacheKeyStrategy.FIRST_MESSAGE_HASH,
-    /** Meta's Responses-only extended prompt-cache hint; null preserves every other provider's bytes. */
-    val promptCacheRetention: String? = null,
-    /** One Muse head's shared request/stream alias map; null preserves other providers' tool names. */
-    val toolNameCodec: MuseToolNameCodec? = null,
+    val promptCache: PromptCachePolicy = PromptCachePolicy(),
     val effortVocabulary: EffortVocabulary = DefaultEffortVocabulary(),
     val supportsSummary: Boolean = true,
     /** Null omits the drop. A vendor whose models reject reasoning.summary sets the pattern
@@ -133,12 +128,14 @@ public data class ResponsesQuirks(
         toolChoice: Boolean? = null,
     ): ResponsesQuirks = copy(
         store = store ?: this.store,
-        cacheKeyStrategy = when (cacheKey) {
-            "session-id" -> CacheKeyStrategy.SESSION_ID
-            "off" -> CacheKeyStrategy.OFF
-            "first-message-hash" -> CacheKeyStrategy.FIRST_MESSAGE_HASH
-            else -> this.cacheKeyStrategy
-        },
+        promptCache = promptCache.copy(
+            key = when (cacheKey) {
+                "session-id" -> CacheKeyStrategy.SESSION_ID
+                "off" -> CacheKeyStrategy.OFF
+                "first-message-hash" -> CacheKeyStrategy.FIRST_MESSAGE_HASH
+                else -> promptCache.key
+            },
+        ),
         supportsSummary = summaryField ?: this.supportsSummary,
         emitToolChoice = toolChoice ?: this.emitToolChoice,
     )
@@ -168,5 +165,11 @@ public data class ResponsesQuirks(
     public fun withWebSocketToml(webSocket: Boolean?): ResponsesQuirks =
         copy(webSocket = webSocket ?: this.webSocket)
 }
+
+/** One provider's prompt-cache routing and retention contract, without mutable tool-name state. */
+public data class PromptCachePolicy(
+    val key: CacheKeyStrategy = CacheKeyStrategy.FIRST_MESSAGE_HASH,
+    val retention: String? = null,
+)
 
 public enum class CacheKeyStrategy { FIRST_MESSAGE_HASH, SESSION_ID, SESSION_OR_FIRST_MESSAGE_HASH, OFF }

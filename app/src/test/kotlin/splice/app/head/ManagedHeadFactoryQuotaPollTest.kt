@@ -293,8 +293,8 @@ class ManagedHeadFactoryQuotaPollTest {
                 claude = ClaudeWrapperConfig(command = "muse", configDir = statePaths.stateDir.toString()),
             ),
             providerCfg = ProviderConfig(
-                dialect = Dialect.ANTHROPIC_PASSTHROUGH,
-                baseUrl = "https://api.meta.ai",
+                dialect = Dialect.OPENAI_RESPONSES,
+                baseUrl = "https://api.meta.ai/v1",
                 auth = AuthConfig(kind = "muse-oauth", file = statePaths.stateDir.resolve("muse.json").toString()),
             ),
             catalog = ModelCatalog(

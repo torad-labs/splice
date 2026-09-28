@@ -24,6 +24,7 @@ import splice.dialect.responses.reasoning.ReasoningEnvelopeDecoder
 import splice.dialect.responses.request.AssistantPhase
 import splice.dialect.responses.request.ResponsesAssistantText
 import splice.dialect.responses.stream.ResponsesContinuation
+import splice.upstream.ToolNameShortener
 import splice.upstream.ToolSearchController
 import splice.upstream.ToolSearchRound
 
@@ -36,7 +37,7 @@ internal class ResponsesToolSearchController(
     private val forceStrictFalse: Boolean,
     private val normalizeSchemas: Boolean,
     private val decodeReasoningEnvelope: ReasoningEnvelopeDecoder,
-    names: MuseToolNameCodec? = null,
+    names: ToolNameShortener = ToolNameShortener(),
 ) : ToolSearchController {
 
     private val continuation = ResponsesContinuation()

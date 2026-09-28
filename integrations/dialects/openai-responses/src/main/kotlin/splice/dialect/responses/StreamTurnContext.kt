@@ -9,7 +9,6 @@ import splice.core.turn.SharedSummaryParts
 import splice.dialect.responses.reasoning.EmitEncryptedReasoning
 import splice.dialect.responses.reasoning.ReasoningEnvelopeEncoder
 import splice.dialect.responses.reasoning.TurnReasoningSink
-import splice.dialect.responses.tools.MuseToolNameCodec
 import splice.upstream.ClientGone
 import splice.upstream.WatchdogProbe
 
@@ -71,8 +70,6 @@ public data class StreamTurnContext(
      *  True for every fold- or re-anchor-eligible turn; off (compact) keeps the reducer
      *  collection-free. */
     val collectReasoningEnvelopes: Boolean = false,
-    /** Muse-only reversible tool names, shared with this provider's request builder. */
-    val toolNameCodec: MuseToolNameCodec? = null,
     /** Reasoning-cache capture (RC-1, 2026-07-24): called once at a successful tool-use terminal
      *  with the round's REAL upstream function_call ids and its ordered reasoning envelopes —
      *  codex-rs parity (store:false full replay, client.rs:888/:915) held GATEWAY-side so the

@@ -23,7 +23,6 @@ import splice.core.turn.SharedSummaryParts
 import splice.core.turn.TurnOutcome
 import splice.dialect.responses.StreamTurnContext
 import splice.dialect.responses.reasoning.EmitEncryptedReasoning
-import splice.dialect.responses.tools.MuseToolNameCodec
 import splice.upstream.retry.WatchdogFired
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.BufferCapacity
@@ -79,7 +78,6 @@ internal fun ctx(
     dedupe: Boolean = false,
     shared: SharedSummaryParts = SharedSummaryParts(),
     capture: ((List<String>, List<String>) -> Unit)? = null,
-    names: MuseToolNameCodec? = null,
 ) = StreamTurnContext(
     compact = compact,
     emitEncryptedReasoning = EmitEncryptedReasoning(emit),
@@ -92,7 +90,6 @@ internal fun ctx(
     dedupeRepeatedSummaryParts = dedupe,
     summaryPartsShared = shared,
     onTurnReasoning = capture ?: { _, _ -> },
-    toolNameCodec = names,
 )
 
 private fun ev(json: String): JsonObject = Json.parseToJsonElement(json).jsonObject

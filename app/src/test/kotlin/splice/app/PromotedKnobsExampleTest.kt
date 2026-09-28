@@ -21,7 +21,7 @@ class PromotedKnobsExampleTest {
     fun `the promoted tool_name_cap quirk reaches the parsed muse profile`() {
         val topology = TopologyLoader.parse(exampleToml())
         val muse = topology.providers[topology.heads["claude-muse"]!!.provider]!!
-        assertEquals(Dialect.ANTHROPIC_PASSTHROUGH, muse.dialect)
+        assertEquals(Dialect.OPENAI_RESPONSES, muse.dialect)
         assertEquals(64, muse.quirks.toolNameCap, "muse tool_name_cap must ride as a parsed value, not a comment")
     }
 

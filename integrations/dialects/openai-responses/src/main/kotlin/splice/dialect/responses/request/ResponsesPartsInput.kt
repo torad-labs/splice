@@ -7,6 +7,7 @@ import splice.core.util.LogSink
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.stream.FoldConfig
 import splice.upstream.ProviderTuning
+import splice.upstream.ToolNameShortener
 
 internal data class ResponsesPartsInput(
     val tuning: ProviderTuning,
@@ -19,4 +20,5 @@ internal data class ResponsesPartsInput(
     val log: LogSink,
     val streamIdleMs: Long,
     val upstreamTimeoutMs: Long,
+    val toolNames: ToolNameShortener = ToolNameShortener(),
 )

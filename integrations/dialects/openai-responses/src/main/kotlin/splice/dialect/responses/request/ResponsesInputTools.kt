@@ -16,14 +16,16 @@ import splice.core.wire.ToolUseBlock
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.ResponsesReasoningInject
 import splice.dialect.responses.tools.ToolSearchOutput
+import splice.upstream.ToolNameShortener
 
 internal class ResponsesInputTools(
     private val quirks: ResponsesQuirks,
     private val loopGuardDirectives: Map<String, String> = emptyMap(),
+    private val names: ToolNameShortener = ToolNameShortener(),
 ) {
 
     private val ids = ResponsesStableIds()
-    private val toolSearchOutput = ToolSearchOutput(quirks.toolNameCodec)
+    private val toolSearchOutput = ToolSearchOutput(names)
     private val media = ResponsesToolResultMedia(quirks)
     private val inject = ResponsesReasoningInject()
 
@@ -55,7 +57,7 @@ internal class ResponsesInputTools(
             buildJsonObject {
                 put("type", "function_call")
                 put("call_id", block.id)
-                put("name", quirks.toolNameCodec?.shorten(block.name) ?: block.name)
+                put("name", names.shorten(block.name))
                 put("arguments", block.input.toString())
             },
         )

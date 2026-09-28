@@ -34,10 +34,6 @@
       "features/diagnostics/src/main/kotlin/splice/diagnostics/logs/LogsCommand.kt",
       "features/turns/src/main/kotlin/splice/head/perf/PerfStats.kt"
     ],
-    "COLLISION DIGEST_BYTES": [
-      "integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/ToolNameShortener.kt",
-      "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/ResponsesWsIdentity.kt"
-    ],
     "COLLISION FIELD_CALL_ID": [
       "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesCodeModeProjection.kt",
       "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/ResponsesWsSession.kt",
@@ -84,7 +80,7 @@
       "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/ResponsesWsSession.kt"
     ],
     "COLLISION MAX_ENTRIES": [
-      "integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/ToolNameShortener.kt",
+      "integrations/upstream/src/main/kotlin/splice/upstream/ToolNameShortener.kt",
       "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/reasoning/ReasoningCache.kt"
     ],
     "COLLISION PERCENT": [
@@ -169,7 +165,7 @@
     "COPY BYTE_MASK": [
       "core/src/main/kotlin/splice/core/media/ImageBytes.kt",
       "core/src/main/kotlin/splice/core/util/FormEncoding.kt",
-      "integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/ToolNameShortener.kt",
+      "integrations/upstream/src/main/kotlin/splice/upstream/ToolNameShortener.kt",
       "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesStableIds.kt"
     ],
     "COPY CONTENT": [

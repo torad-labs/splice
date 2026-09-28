@@ -27,6 +27,7 @@ import splice.upstream.ProviderIdentity
 import splice.upstream.ProviderTuning
 import splice.upstream.ReanchorController
 import splice.upstream.StreamTranslator
+import splice.upstream.ToolNameShortener
 import splice.upstream.TurnSignals
 import splice.upstream.WsRoundRunner
 
@@ -46,6 +47,8 @@ public abstract class ResponsesProvider(
      *  kt-no-println, 2026-07-27). Defaults to a no-op so tests need not thread it; the daemon
      *  always injects the real sink. */
     private val log: LogSink = LogSink(DaemonLog::write),
+    /** One head's reversible tool aliases, shared between requests and every stream round. */
+    private val toolNames: ToolNameShortener = ToolNameShortener(),
 ) : Provider, ProviderIdentity by tuning {
 
     final override val upstreamUrl: String = "${tuning.baseUrl}/responses"
@@ -65,6 +68,7 @@ public abstract class ResponsesProvider(
             log = log,
             streamIdleMs = watchdog.streamIdle.inWholeMilliseconds,
             upstreamTimeoutMs = watchdog.totalCap.inWholeMilliseconds,
+            toolNames = toolNames,
         ),
     )
 

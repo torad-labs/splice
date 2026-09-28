@@ -49,16 +49,20 @@ import splice.dialect.responses.reasoning.ResponsesReasoningKnobs
 import splice.dialect.responses.stream.LoopGuard
 import splice.dialect.responses.stream.ResponsesLooseFields
 import splice.dialect.responses.tools.ResponsesToolPlan
+import splice.upstream.ToolNameShortener
 
-public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
+public class ResponsesRequestBuilder(
+    private val quirks: ResponsesQuirks,
+    private val toolNames: ToolNameShortener = ToolNameShortener(),
+) {
 
     // Collaborators that used to be file-level functions. Each is bound to THIS builder's quirks
     // where it needs them, so every relocated member kept its original argument list.
-    private val toolPlan = ResponsesToolPlan(quirks)
+    private val toolPlan = ResponsesToolPlan(quirks, toolNames)
     private val knobs = ResponsesReasoningKnobs(quirks)
     private val looseFields = ResponsesLooseFields(quirks)
     private val ids = ResponsesStableIds()
-    private val assembler = ResponsesRequestAssembler(quirks)
+    private val assembler = ResponsesRequestAssembler(quirks, toolNames)
 
     public fun build(body: AnthropicRequest, raw: JsonObject, opts: BuildOptions): BuiltRequest {
         // Partition FIRST, before the message walk: it is a pure function of (body.tools, policy)
@@ -72,7 +76,7 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         // streaks for a directive in that result's output.
         val loopGuardDirectives = if (quirks.loopGuard) LoopGuard.analyze(body.messages) else emptyMap()
         // Constructed per build (the field version predates per-build state) — cheap, race-free.
-        val inputBuilder = ResponsesInputBuilder(quirks, loopGuardDirectives)
+        val inputBuilder = ResponsesInputBuilder(quirks, loopGuardDirectives, toolNames)
         val input = buildJsonArray {
             for (msg in body.messages) {
                 inputBuilder.appendMessage(this, msg, opts, declareByName)

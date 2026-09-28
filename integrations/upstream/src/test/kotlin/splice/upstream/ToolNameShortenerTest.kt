@@ -1,13 +1,8 @@
 // NEW: V4-32 — the tool-name cap that unbroke claude-muse. The live failure is pinned by name:
 // api.meta.ai answered `name` must be at most 64 characters, got 68 for the operator's own
 // mcp__plugin_desktop-commander_desktop-commander__read_process_output.
-package splice.dialect.anthropic
+package splice.upstream
 
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
@@ -23,6 +18,7 @@ class ToolNameShortenerTest {
         val shortener = ToolNameShortener(MUSE_CAP)
         assertEquals(68, LIVE_FAILURE.length, "the reported length was 68; if this drifts the fixture is stale")
         val short = shortener.shorten(LIVE_FAILURE)
+        assertEquals("mcp__plugin_desktop-commander_desktop-commander__read_p_7ca92851", short)
         assertEquals(MUSE_CAP, short.length)
         assertEquals(LIVE_FAILURE, shortener.restore(short))
     }
@@ -68,31 +64,10 @@ class ToolNameShortenerTest {
         assertTrue(NAME_GRAMMAR.matches(short), "not a legal tool name: $short")
     }
 
-    @Test
-    fun `the tool sanitizer rewrites the declaration the upstream validates`() {
-        val shortener = ToolNameShortener(MUSE_CAP)
-        val sanitizer = PassthroughToolSanitizer(
-            PassthroughQuirks(providerTag = "muse", toolNameCap = MUSE_CAP),
-            PassthroughCacheControl(false),
-            shortener,
-        )
-        val tools = buildJsonArray {
-            add(
-                buildJsonObject {
-                    put("name", LIVE_FAILURE)
-                    put("description", "")
-                },
-            )
-        }
-        val name = (sanitizer.sanitizeTools(tools)[0] as JsonObject)["name"]!!.jsonPrimitive.content
-        assertEquals(MUSE_CAP, name.length, "the sanitizer must emit a name the upstream accepts")
-        assertEquals(LIVE_FAILURE, shortener.restore(name))
-    }
-
     // ---- V4-40: the two silent failures, walled -------------------------------------------------
 
     @Test
-    fun `a colliding digest is logged and the first name wins`() {
+    fun `a colliding digest gets a longer alias and both original names survive`() {
         // Two DIFFERENT names that shorten to the SAME string: identical 55-character prefix, and a
         // 4-byte digest that agrees. Searched here on the same one-way truncation the class uses, so
         // this is a REAL collision rather than a mocked one. The search deliberately does not go
@@ -118,10 +93,20 @@ class ToolNameShortenerTest {
         val shortFirst = shortener.shorten(first)
         val shortSecond = shortener.shorten(second)
 
-        assertEquals(shortFirst, shortSecond, "the fixture must collide through the real shortening")
+        assertNotEquals(shortFirst, shortSecond, "a digest collision must get a distinct longer alias")
         assertEquals(first, shortener.restore(shortFirst), "the first original must survive")
-        assertNotEquals(second, shortener.restore(shortSecond), "a collision must never overwrite the map")
-        assertTrue(lines.any { "collision" in it }, "a collision must be loud, not silent: $lines")
+        assertEquals(second, shortener.restore(shortSecond), "the second original must also survive")
+        assertTrue(lines.any { "collision" in it }, "a collision must be visible: $lines")
+    }
+
+    @Test
+    fun `a native name equal to an issued alias keeps both original names`() {
+        val shortener = ToolNameShortener(MUSE_CAP)
+        val alias = shortener.shorten(LIVE_FAILURE)
+        val native = shortener.shorten(alias)
+        assertNotEquals(alias, native)
+        assertEquals(LIVE_FAILURE, shortener.restore(alias))
+        assertEquals(alias, shortener.restore(native))
     }
 
     @Test

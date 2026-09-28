@@ -36,6 +36,7 @@ import splice.dialect.responses.StreamTurnContext
 import splice.dialect.responses.reasoning.ResponsesReasoningFold
 import splice.dialect.responses.reasoning.ResponsesReasoningReplay
 import splice.upstream.StreamTranslator
+import splice.upstream.ToolNameShortener
 import splice.upstream.failure.SseFrameTooLargeException
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.BufferCapacity
@@ -46,7 +47,10 @@ import java.util.concurrent.CancellationException
 // NF-06 runaway-upstream guard message; the cap lives in spi.BufferCapacity (one source, three dialects).
 private const val RUNAWAY_GUARD_MESSAGE = "upstream: response exceeded max buffered size; aborting"
 
-public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : StreamTranslator {
+public class ResponsesStreamTranslator(
+    private val ctx: StreamTurnContext,
+    private val names: ToolNameShortener = ToolNameShortener(),
+) : StreamTranslator {
 
     // NF-06: latched when BufferCapacity trips; never provider-reported (the verdict is local).
     private var runawayGuard: String? = null
@@ -77,7 +81,7 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
         val state = ResponsesTurnState()
         val reasoningFold = ResponsesReasoningFold(ctx, state, summaryParts)
         val replay = ResponsesReasoningReplay(ctx, state)
-        val itemFold = ResponsesItemFold(state, reasoningFold, replay, ctx.toolNameCodec)
+        val itemFold = ResponsesItemFold(state, reasoningFold, replay, names)
         val reducer = ResponsesEventReducer(state, itemFold, reasoningFold)
         // Stream read errors surface via the terminal decision, never a crash; only a genuine
         // cancellation (no watchdog fire) is allowed to propagate.

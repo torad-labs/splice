@@ -30,6 +30,7 @@ import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.upstream.StreamTranslator
+import splice.upstream.ToolNameShortener
 import splice.upstream.failure.SseFrameTooLargeException
 import splice.upstream.failure.TerminalStates
 import splice.upstream.retry.FIRST_OUTPUT_TIER

@@ -24,6 +24,7 @@ import splice.upstream.ProviderIdentity
 import splice.upstream.ProviderTuning
 import splice.upstream.ReanchorController
 import splice.upstream.StreamTranslator
+import splice.upstream.ToolNameShortener
 import splice.upstream.TurnSignals
 
 public class PassthroughProvider(

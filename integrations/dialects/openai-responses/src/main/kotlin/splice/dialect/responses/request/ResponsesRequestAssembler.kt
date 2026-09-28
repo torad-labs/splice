@@ -21,6 +21,7 @@ import splice.dialect.responses.tools.DEFAULT_SEARCH_LIMIT
 import splice.dialect.responses.tools.ResponsesToolPlan
 import splice.dialect.responses.tools.ToolPartition
 import splice.dialect.responses.tools.ToolWireObjects
+import splice.upstream.ToolNameShortener
 import splice.upstream.ToolSearchController
 
 /** [ResponsesRequestAssembler.buildRequestObject]'s internal return — the request bytes plus the
@@ -45,9 +46,12 @@ internal data class RequestParts(
     val partition: ToolPartition?,
 )
 
-internal class ResponsesRequestAssembler(private val quirks: ResponsesQuirks) {
+internal class ResponsesRequestAssembler(
+    private val quirks: ResponsesQuirks,
+    private val toolNames: ToolNameShortener = ToolNameShortener(),
+) {
 
-    private val toolWire = ToolWireObjects(quirks.toolNameCodec)
+    private val toolWire = ToolWireObjects(toolNames)
     private val liteShape = ResponsesLiteShape(quirks)
     private val hints = ResponsesClientHints()
     private val ids = ResponsesStableIds()
@@ -85,7 +89,7 @@ internal class ResponsesRequestAssembler(private val quirks: ResponsesQuirks) {
             stream = true,
             include = include,
             promptCacheKey = cacheKey(body, opts),
-            promptCacheRetention = quirks.promptCacheRetention,
+            promptCacheRetention = quirks.promptCache.retention,
             instructions = shape.instructions,
             tools = shape.tools,
             toolChoice = toolChoiceFor(emitToolChoice, lite, body),
@@ -118,7 +122,7 @@ internal class ResponsesRequestAssembler(private val quirks: ResponsesQuirks) {
             val choice = body.toolChoice
             val name = choice?.name
             val wireChoice = if (choice?.type == "tool" && name != null) {
-                choice.copy(name = quirks.toolNameCodec?.shorten(name) ?: name)
+                choice.copy(name = toolNames.shorten(name))
             } else {
                 choice
             }
@@ -154,7 +158,7 @@ internal class ResponsesRequestAssembler(private val quirks: ResponsesQuirks) {
         else -> null
     }
 
-    internal fun cacheKey(body: AnthropicRequest, opts: BuildOptions): String? = when (quirks.cacheKeyStrategy) {
+    internal fun cacheKey(body: AnthropicRequest, opts: BuildOptions): String? = when (quirks.promptCache.key) {
         CacheKeyStrategy.OFF -> null
         // Prefix from quirks.providerTag (not a hard-coded "claude-grok:") so TOML cache_key=session-id
         // on any Responses provider stays in its own cache namespace.

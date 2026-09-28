@@ -19,6 +19,7 @@ import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplayParser
 import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.GrokEffortFixture
+import splice.dialect.responses.PromptCachePolicy
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.RequestEncryptedReasoning
@@ -36,7 +37,7 @@ private val CODEX = ResponsesQuirks(
 private val OPENAI = ResponsesQuirks(providerTag = "openai")
 private val GROK = ResponsesQuirks(
     providerTag = "claude-grok",
-    cacheKeyStrategy = CacheKeyStrategy.SESSION_ID,
+    promptCache = PromptCachePolicy(key = CacheKeyStrategy.SESSION_ID),
     effortVocabulary = GrokEffortFixture(),
     supportsSummary = true,
     summaryRejectModelRegex = null,

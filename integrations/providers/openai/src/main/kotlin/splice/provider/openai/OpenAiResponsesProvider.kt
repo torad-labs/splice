@@ -8,6 +8,7 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
 import splice.dialect.responses.CacheKeyStrategy
+import splice.dialect.responses.PromptCachePolicy
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
 import splice.upstream.ProviderTuning
@@ -33,7 +34,7 @@ public class OpenAiQuirks {
     public fun defaultQuirks(): ResponsesQuirks = ResponsesQuirks(
         providerTag = "openai",
         store = false,
-        cacheKeyStrategy = CacheKeyStrategy.FIRST_MESSAGE_HASH,
+        promptCache = PromptCachePolicy(key = CacheKeyStrategy.FIRST_MESSAGE_HASH),
         supportsSummary = true,
     )
 }

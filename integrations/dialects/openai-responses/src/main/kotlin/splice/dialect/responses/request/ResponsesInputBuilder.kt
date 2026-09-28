@@ -27,14 +27,16 @@ import splice.core.wire.UnknownBlock
 import splice.dialect.responses.ResponsesLiteShape
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.ResponsesReasoningInject
+import splice.upstream.ToolNameShortener
 
 internal class ResponsesInputBuilder(
     private val quirks: ResponsesQuirks,
     private val loopGuardDirectives: Map<String, String> = emptyMap(),
+    names: ToolNameShortener = ToolNameShortener(),
 ) {
 
     private val parts = ResponsesInputParts(quirks.minImageEdgePx)
-    private val tools = ResponsesInputTools(quirks, loopGuardDirectives)
+    private val tools = ResponsesInputTools(quirks, loopGuardDirectives, names)
     private val inject = ResponsesReasoningInject()
     private val liteShape = ResponsesLiteShape(quirks)
 

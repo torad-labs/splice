@@ -9,6 +9,7 @@ package splice.dialect.anthropic
 import kotlinx.serialization.json.JsonObject
 import splice.core.index.WireBlockIndex
 import splice.core.util.JsonScalars
+import splice.upstream.ToolNameShortener
 import splice.upstream.sse.WireSink
 
 // Short stable constant — Kimi never verifies signatures; Claude Code only needs one present.

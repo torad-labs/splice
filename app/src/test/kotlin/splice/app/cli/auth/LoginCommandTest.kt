@@ -176,7 +176,7 @@ class LoginCommandTest {
         val head = topology.heads.getValue("claude-muse")
         val muse = topology.providers.getValue(head.provider)
         assertEquals("muse-oauth", muse.auth.kind)
-        assertEquals(Dialect.ANTHROPIC_PASSTHROUGH, muse.dialect)
+        assertEquals(Dialect.OPENAI_RESPONSES, muse.dialect)
         assertTrue(muse.staticHeaders.isEmpty())
         assertEquals(3106, head.port)
         assertEquals("claude-muse--", head.discoveryPrefix)

@@ -7028,6 +7028,7 @@ claimed_at = "2026-09-27T04:42:55.408Z"
 # [2026-09-28] Installed b2464368b (CI ci run 36365372479 success; carries V4-369's Sign in handoff and V4-373) on the everyday daemon at 10:03 PM CT: built from a clean detached tree with bun tools/gate slot, jar sha256 1dd76ab2b798f35e... equals /proc/1998794/fd/4 (pid 1998794); backup ~/.local/share/splice/splice.jar.bak-20260927-pre-b2464368b; archived captures/film/jars/splice-b2464368b.jar + SHA256SUMS-b2464368b for the V4-346 fresh-laptop walk. gated-restart: 8102 silent and no rig-glm53 on Vast at the stop.
 # [2026-09-28] amend by=splice-lead: files were ["CHANGELOG.md", "README.md", "tools/release/src/lib/changelog.ts"]
 # [2026-09-28] README.md lent to V4-365 (claude-builder: disk-write disposition for the restart-launch log) at 11:12 PM CT; restore it to this fence when V4-365 lands.
+# [2026-09-28] Restart (no install) 11:53 PM CT: splice.service pid 3263017 on b2464368b (fd sha 1dd76ab2... = SHA256SUMS-b2464368b), through ops/gated-restart.sh (8102 silent, no rig-glm53), to load splice-website's [projects."/var/tmp/viewing"] edit (backup ~/.config/splice/splice.toml.bak-20260927-pre-view-root); doctor 0 fails before.
 
 [[items]]
 id = "V4-255"

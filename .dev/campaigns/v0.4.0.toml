@@ -8401,6 +8401,7 @@ claimed_at = "2026-09-28T07:14:50.677Z"
 # [2026-09-28] amend by=splice-lead: files were ["console/src/pages/needs-you/", "console/src/pages/doctor/", "console/src/pages/logs/"]
 # [2026-09-28] Fence gains console/src/entities/doctor/ (the whole entity, released from V4-378 whose doctor edits are committed in e698eae58) (2:16 AM CT, splice-lead). Console's finding, verified: Doctor parses 'splice logs --head' at pages/doctor/model.ts:125 while Needs you copies the same CLI line, and ESLint forbids page-to-page imports (console/eslint.config.mjs:61-65). So the one parser moves into the doctor entity and both pages use it.
 # [2026-09-28] amend by=splice-lead: files were ["console/src/pages/needs-you/", "console/src/pages/doctor/", "console/src/pages/logs/", "console/src/entities/doctor/"]
+# [2026-09-28] Fence gains console/tests/needs-you.test.ts (released from V4-378, edits committed in e698eae58) and console/tests/v4347-console-actions.test.ts (2:18 AM CT, splice-lead). needs-you.test.ts:338-346 pin the copy-the-command fix that this row replaces with the console action where one exists; the CLI fallback stays only where no console action exists.
 
 [[items]]
 id = "V4-348"

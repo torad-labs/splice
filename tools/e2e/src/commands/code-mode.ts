@@ -1657,7 +1657,7 @@ export const EXPECTED: Record<string, string> = {
   "lookup-edit": "UPDATED", "independent-reads": "110", "optional-discovery": "0.4.0", "background-result": "56",
 };
 export const EXPECTED_ROUNDS: Record<string, number> = {
-  ...Object.fromEntries(PROBE_CASES.map(([c]) => [c, c === "optional-discovery" ? 3 : 2])),
+  ...Object.fromEntries(PROBE_CASES.map(([c]) => [c, 2])),
   "toggle-probe": 4,
 };
 export const PREFACE = "Checking the current settings before updating them.";
@@ -1746,16 +1746,15 @@ export function mockHandler(state: MockState): Methods {
           item = message("toggle-ok", TOGGLE_RESPONSE);
         } else {
           assertGuidance(body, CALLER_SYSTEM, true);
-          if (caseName === "optional-discovery" && counter(state, caseName) === 1) {
-            if (declared().some((t) => pyEq(get(t, "name"), "mcp__release__lookup"))) throw new ValueError("release lookup was not deferred");
-            if (!declared().some((t) => pyEq(get(t, "type"), "tool_search"))) throw new ValueError("missing native discovery declaration");
-            item = obj([["type", "tool_search_call"], ["id", "native-search-item"], ["call_id", "native-search"],
-              ["arguments", obj([["query", "release lookup"], ["limit", int(1)]])]]);
-          } else if (output.length === 0) {
-            if (caseName === "optional-discovery" && !iter(input).some((it) => pyEq(get(it, "type"), "tool_search_output")
-              && pyEq(get(it, "call_id"), "native-search")
-              && iter(get(it, "tools", [])).some((t) => pyEq(get(t, "name"), "mcp__release__lookup")))) {
-              throw new ValueError("native discovery did not expose release lookup");
+          if (output.length === 0) {
+            if (caseName === "optional-discovery") {
+              // codex's code_mode_only surface (V4-388): no tool_search beside exec; a deferred tool is
+              // named by the manual's deferred note and reached through ALL_TOOLS and tools.<Name>.
+              const manual = String(get(declared().find((t) => pyEq(get(t, "name"), EXEC_TOOL)) ?? obj([]), "description", ""));
+              if (declared().some((t) => pyEq(get(t, "type"), "tool_search"))) throw new ValueError("tool_search rode beside exec");
+              if (manual.includes("### `mcp__release__lookup`") || !manual.includes("Some deferred nested tools may be omitted")) {
+                throw new ValueError("release lookup was not deferred");
+              }
             }
             if (!declared().some((t) => pyEq(get(t, "type"), "custom") && pyEq(get(t, "name"), EXEC_TOOL))) {
               throw new ValueError("missing code-mode declaration");
@@ -1778,11 +1777,8 @@ export function mockHandler(state: MockState): Methods {
                 throw new ValueError("assistant continuity was lost, duplicated, or reordered");
               }
             }
-            if (caseName === "optional-discovery") {
-              const native = iter(input).filter((it) => pyEq(get(it, "call_id"), "native-search")).map((it) => get(it, "type"));
-              if (!(native.length === 2 && pyEq(native[0] as PyValue, "tool_search_call") && pyEq(native[1] as PyValue, "tool_search_output"))) {
-                throw new ValueError("native discovery history was lost or duplicated");
-              }
+            if (iter(input).some((it) => pyIn(get(it, "type"), ["tool_search_call", "tool_search_output"]))) {
+              throw new ValueError("tool_search history rode beside exec");
             }
             item = message("final-" + caseName, expected);
           }

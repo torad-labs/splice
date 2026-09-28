@@ -2,6 +2,7 @@ package splice.provider.codex
 
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -55,14 +56,10 @@ class CodexCodeModeHistoryTest : CodeModeBridgeTestSupport() {
         val searchItems = items.filter { item ->
             item.jsonObject["call_id"]?.jsonPrimitive?.content == searchId
         }
-        assertEquals(
-            listOf("tool_search_call", "tool_search_output"),
-            searchItems.map { it.jsonObject.getValue("type").jsonPrimitive.content },
-        )
-        val outerIndex = items.indexOfFirst { item ->
-            item.jsonObject["call_id"]?.jsonPrimitive?.content == "outer-call"
-        }
-        assertTrue(items.indexOf(searchItems.last()) < outerIndex)
+        // V4-388: the search is restored in the client's history and kept off the wire — exec declares no
+        // tool_search beside it, as codex declares none (CodeModeExecWireTest pins the strip itself).
+        assertEquals(emptyList<JsonElement>(), searchItems)
+        assertTrue(items.any { it.jsonObject["call_id"]?.jsonPrimitive?.content == "outer-call" })
         assertFalse(readId in finalPost)
         assertFalse(editId in finalPost)
     }

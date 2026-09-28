@@ -74,10 +74,12 @@ class CodeModeHistoryPlacementTest : CodeModeBridgeTestSupport() {
 
             assertTrue(logLines.none { ABANDONED in it }, logLines.joinToString("\n"))
             assertEquals(4, runtime.cell.advances, "the second script got its result")
+            // V4-388: the search leaves the wire (exec declares no tool_search, as codex declares none);
+            // the reasoning around it keeps upstream's order.
             assertEquals(
-                listOf("reasoning:rs_a", "tool_search_call:", "tool_search_output:", "reasoning:rs_b"),
+                listOf("reasoning:rs_a", "reasoning:rs_b"),
                 beforeCall(posted, "outer-1"),
-                "the first record's search before its reasoning, as upstream produced them",
+                "the first record's reasoning, in the order upstream produced it",
             )
         }
 

@@ -1,5 +1,6 @@
 package splice.provider.codex.v4388
 
+import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
@@ -11,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
+import splice.provider.codex.BASE_REQUEST
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeBridgeTestSupport
 import splice.provider.codex.CodexCodeModeTurnBuilder
@@ -19,11 +21,11 @@ import splice.provider.codex.CodexCodeModeValidation
 /** V4-388: what rides beside exec, when the manual says tools were withheld, and which outer names are ours. */
 class CodeModeExecWireTest : CodeModeBridgeTestSupport() {
     @Test
-    fun `a hosted tool stays beside exec and a withheld client tool gets the deferred note`() {
+    fun `exec rides alone as codex sends it, and a withheld client tool gets the deferred note`() {
         val bridge = bridge(ScriptedRuntime(ArrayDeque()))
         val eager = bridge.injectTool(REQUEST, setOf("Read"))
         val tools = eager.getValue("input").jsonArray[0].jsonObject.getValue("tools").jsonArray.map { it.jsonObject }
-        assertEquals(listOf("custom", "tool_search"), tools.map { it.getValue("type").jsonPrimitive.content })
+        assertEquals(listOf("custom"), tools.map { it.getValue("type").jsonPrimitive.content })
         assertEquals("exec", tools[0].getValue("name").jsonPrimitive.content)
         assertFalse(manual(eager).contains("Some deferred nested tools"), manual(eager))
         assertEquals(REQUEST.getValue("input").jsonArray.drop(1), eager.getValue("input").jsonArray.drop(1))
@@ -60,6 +62,24 @@ class CodeModeExecWireTest : CodeModeBridgeTestSupport() {
                 "declare const tools: { LSP(args: { line: number; }): Promise<unknown>; };\n```",
             builder.descriptions(body).getValue("LSP"),
         )
+    }
+
+    @Test
+    fun `a code-mode round posts no tool_search history, and an untouched body goes out byte for byte`() = runTest {
+        val posted = mutableListOf<String>()
+        val searched = """{"input":[{"role":"developer","content":"s"},
+            {"type":"tool_search_call","call_id":"ts-1","execution":"client","arguments":{"query":"LSP"}},
+            {"type":"tool_search_output","call_id":"ts-1","tools":[]},{"role":"user","content":"go"}]}"""
+        listOf(searched, BASE_REQUEST).forEach { body ->
+            bridge(ScriptedRuntime(ArrayDeque())).interceptor(turn(), disableParallel = false)
+                .intercept(body, RecordingSink()) {
+                    posted += it
+                    completedOutcome()
+                }
+        }
+        val input = Json.parseToJsonElement(posted[0]).jsonObject.getValue("input").jsonArray.map { it.jsonObject }
+        assertEquals(listOf("developer", "user"), input.map { it.getValue("role").jsonPrimitive.content })
+        assertEquals(BASE_REQUEST, posted[1])
     }
 
     @Test

@@ -28,9 +28,10 @@ internal class CodexCodeModeWire(private val json: Json, private val log: LogSin
 
     /** V4-388: codex's code_mode_only surface (codex-rs core/src/tools/spec_plan.rs
      *  is_hidden_by_code_mode_only): every client function tool leaves the top level and is rendered
-     *  into `exec`'s manual; a hosted tool (tool_search) stays beside it. [clientTools] is the whole
-     *  client catalog, so a tool the deferred surface withheld gets the manual's deferred note and
-     *  stays callable through `tools`. */
+     *  into `exec`'s manual, and tool_search leaves with them — codex's own test sends exec, wait,
+     *  request_user_input and web_search with deferred tools on (core/tests/suite/code_mode.rs:2805-2820).
+     *  [clientTools] is the whole client catalog, so a tool the deferred surface withheld gets the
+     *  manual's deferred note and is found and called through `ALL_TOOLS` and `tools`. */
     fun injectTool(request: JsonObject, clientTools: Set<String>): JsonObject {
         val input = request[FIELD_INPUT] as? JsonArray ?: return request
         val index = input.indexOfFirst { string(it as? JsonObject, FIELD_TYPE) == TYPE_ADDITIONAL_TOOLS }
@@ -43,10 +44,26 @@ internal class CodexCodeModeWire(private val json: Json, private val log: LogSin
             CodeModeManual.NestedTool(string(tool, FIELD_NAME), string(tool, FIELD_DESCRIPTION), tool[FIELD_PARAMETERS])
         }.filter { it.name in reachable }
         val deferred = (reachable - nested.map(CodeModeManual.NestedTool::name).toSet()).isNotEmpty()
-        val surface = JsonArray(listOf(execTool(CodeModeManual.description(nested, deferred))) + hosted)
+        val beside = hosted.filterNot { string(it as? JsonObject, FIELD_TYPE) == TYPE_TOOL_SEARCH }
+        val surface = JsonArray(listOf(execTool(CodeModeManual.description(nested, deferred))) + beside)
         val replaced = JsonObject(item + (FIELD_TOOLS to surface))
         val rebuilt = input.mapIndexed { position, element -> if (position == index) replaced else element }
         return JsonObject(request + (FIELD_INPUT to JsonArray(rebuilt)))
+    }
+
+    /** The body a code-mode round posts upstream: the client's history minus the tool_search pairs the
+     *  dialect replays for deferred tools and a record's native searches, since exec declares no
+     *  tool_search beside it. Records, digests and baselines keep reading the client's own history;
+     *  only the posted bytes change, the same way on every round, so the prompt cache prefix holds. */
+    fun upstream(bodyJson: String): String {
+        val request = json.parseToJsonElement(bodyJson) as? JsonObject ?: return bodyJson
+        val input = request[FIELD_INPUT] as? JsonArray ?: return bodyJson
+        val kept = input.filterNot { string(it as? JsonObject, FIELD_TYPE) in TOOL_SEARCH_ITEMS }
+        return if (kept.size == input.size) {
+            bodyJson
+        } else {
+            json.encodeToString(JsonObject.serializer(), JsonObject(request + (FIELD_INPUT to JsonArray(kept))))
+        }
     }
 
     /** The client tools `tools.<Name>` can reach: the worker dedupes the same whole catalog with the
@@ -182,3 +199,7 @@ private const val FIELD_TOOLS = "tools"
 private const val FIELD_PARAMETERS = "parameters"
 private const val TYPE_ADDITIONAL_TOOLS = "additional_tools"
 private const val TYPE_FUNCTION = "function"
+private const val TYPE_TOOL_SEARCH = "tool_search"
+private const val TYPE_TOOL_SEARCH_CALL = "tool_search_call"
+private const val TYPE_TOOL_SEARCH_OUTPUT = "tool_search_output"
+private val TOOL_SEARCH_ITEMS = setOf(TYPE_TOOL_SEARCH_CALL, TYPE_TOOL_SEARCH_OUTPUT)

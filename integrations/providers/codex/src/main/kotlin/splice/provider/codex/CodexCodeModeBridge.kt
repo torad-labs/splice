@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.GatewayCustomCall
 import splice.core.util.LogSink
+import splice.upstream.InterceptedRoundPost
 import splice.upstream.RoundInterceptor
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeRuntime
@@ -138,7 +139,9 @@ public class CodexCodeModeBridge(
             legacyResults = turn.legacyResults.map(validation::admit),
         )
         return RoundInterceptor { bodyJson, sink, post ->
-            controller.run(CodeModeRunInput(admitted, initialOuter, disableParallel, bodyJson, sink, post))
+            // Every round a code-mode turn posts leaves through here, so the wire projection has one seam.
+            val upstream = InterceptedRoundPost { body -> post(wire.upstream(body)) }
+            controller.run(CodeModeRunInput(admitted, initialOuter, disableParallel, bodyJson, sink, upstream))
         }
     }
 

@@ -16,6 +16,7 @@
 // type instead. The holder edge appears only on a row that is genuinely in a state worth flagging:
 // saved, and not yet in force.
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { ArrowClockwiseIcon } from '@phosphor-icons/react/dist/csr/ArrowClockwise';
 import { ArrowCounterClockwiseIcon } from '@phosphor-icons/react/dist/csr/ArrowCounterClockwise';
 import { LightningIcon } from '@phosphor-icons/react/dist/csr/Lightning';
@@ -197,8 +198,8 @@ export function KnobForm({ disposition, pending, busy, onSave, scopeNote, fault 
   pending: boolean;
   busy?: boolean;
   onSave: (key: string, value: ConfigValue) => void;
-  /** One sentence on what saving here reaches, when that is not simply "this knob". */
-  scopeNote?: string | null;
+  /** What saving reaches, with a contextual restart link when a file value is pending. */
+  scopeNote?: ReactNode;
   /** Why the last save of this knob did not land, in the daemon's words (V4-305). */
   fault?: string | null;
   /** The words for "differs from the reference" and "go back to it", when the reference is not
@@ -306,7 +307,7 @@ export function KnobRack({ dispositions, pending, busyKey, onSave, scopeNote, fa
   busyKey: string | null;
   onSave: (key: string, value: ConfigValue) => void;
   /** Per knob: what saving it reaches, when that needs saying. */
-  scopeNote?: (knob: KnobDisposition) => string | null;
+  scopeNote?: (knob: KnobDisposition) => ReactNode;
   /** Per knob: why its last save did not land, or landed live but not on disk (V4-310), printed
    *  under it as a fault. */
   faultOf?: (knob: KnobDisposition) => string | null;

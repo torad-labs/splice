@@ -14,6 +14,7 @@
 // A route that does not exist yet renders the honest empty naming its v0.4.0 row. Nothing on this
 // page is ever mocked.
 import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useLocation } from 'react-router';
 import {
   applyConfigPatch,
@@ -45,7 +46,7 @@ import { cx, readFor } from '@shared/lib';
 import type { Keyed, KeyedRead } from '@shared/lib';
 import type { ClaudeHeadPayload } from '@entities/claude-head';
 import { Badge, Bay, Empty, InfoTip, PageHeader, Section } from '@shared/ui';
-import { Blank, Fault, Input } from '@shared/controls';
+import { Blank, Fault, Input, KeyLink } from '@shared/controls';
 import { HEAD_WORDING, KnobRack, knobMatches } from '@widgets/knob-form';
 import { dispositions } from './coverage';
 import { changedPaths, DEFAULT_VIEWS, fileOverrideNote, knobsForView, withHeadOverride } from './model';
@@ -125,6 +126,21 @@ export async function saveHeadOverride(loaded: Record<string, unknown>, head: st
   const result = await saveTopology(withHeadOverride(loaded, head, key, override));
   if (result.ok) await markPendingAfterWrite([key]);
   return result;
+}
+
+/** The declared/running difference names its one restart action, not a terminal command. */
+export function scopeNoteOf(knob: KnobDisposition, config: ConfigPayload | null, loaded: Record<string, unknown> | null,
+  head: string, perHead: boolean): ReactNode {
+  if (config === null) return null;
+  if (perHead) {
+    const shadow = shadowOfOverride(knob.key, config);
+    if (shadow === 'console') return H.shadowConsole;
+    if (shadow === 'environment') return H.shadowEnv;
+    const note = fileOverrideNote(loaded, head, knob, config);
+    return note === null ? null : <>{note} <KeyLink href="#/needs-you">{S.restart}</KeyLink></>;
+  }
+  const by = knob.overriddenBy;
+  return by.length === 0 ? null : `${S.overridden} ${by.join(', ')}. ${H.overridden}`;
 }
 
 export function SettingsPage() {
@@ -248,18 +264,8 @@ export function SettingsPage() {
       .finally(() => setBusyKey(null));
   };
 
-  /** What saving a knob reaches, when that is more than the knob on this row. */
-  const scopeNote = (knob: KnobDisposition): string | null => {
-    if (configPayload === null) return null;
-    if (perHeadView) {
-      const shadow = shadowOfOverride(knob.key, configPayload);
-      if (shadow === 'console') return H.shadowConsole;
-      if (shadow === 'environment') return H.shadowEnv;
-      return fileOverrideNote(loaded, head, knob, configPayload);
-    }
-    const by = knob.overriddenBy;
-    return by.length === 0 ? null : `${S.overridden} ${by.join(', ')}. ${H.overridden}`;
-  };
+  /** What saving a knob reaches, with the restart link only when the file differs from this boot. */
+  const scopeNote = (knob: KnobDisposition): ReactNode => scopeNoteOf(knob, configPayload, loaded, head, perHeadView);
 
   const writeTopology = () => {
     if (draft === null) return;

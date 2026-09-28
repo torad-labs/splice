@@ -8751,6 +8751,7 @@ claimed_at = "2026-09-28T03:04:03.026Z"
 # [2026-09-28] amend by=splice-lead: files were ["console/src/widgets/add-backend/", "console/src/widgets/connect-plan/", "console/tests/v4370-signin-connects.test.ts", "console/e2e/v4346-first-hour.spec.ts"]
 # [2026-09-28] Fence extended (splice-lead, 10:38 PM CT), verified: NeedsYouPage passes setup={heads.data?.length === 0} (needs-you/index.tsx:195), so the save's restart makes /api/heads non-empty, NeedsYouBoard unmounts ConnectPlan and the saved view vanishes before it shows the command. The connected panel stays mounted until the user leaves it; a configured home still gets normal Needs you on the next visit. No live row fences these two.
 # [2026-09-28] RECEIPT cmd="bun run --cwd /home/marcos/Documents/dev/projects/mythos/repo/console test" exit=0 tests=1642 touched=console/e2e/v4346-first-hour.spec.ts,console/src/pages/needs-you/index.tsx,console/src/widgets/add-backend/add-backend.css,console/src/widgets/add-backend/index.tsx,console/src/widgets/add-backend/model.ts,console/src/widgets/add-backend/strings.ts,console/tests/needs-you.test.ts,console/tests/v4370-signin-connects.test.ts tail="87 test files passed; 1642 tests passed. lint, build, typecheck, rules and isolated first-hour browser passed; commit f07e0a528."
+# [2026-09-28] CI run 36376872896 on 1aead11d9: only :census red (console/tests/v4370-signin-connects.test.ts unclaimed); orchestrator added the created rows for V4-370 and V4-365 in 2c0362e0c (census 0 findings locally), pushed 11:30 PM CT.
 
 [[items]]
 id = "V4-371"

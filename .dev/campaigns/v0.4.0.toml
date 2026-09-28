@@ -9184,6 +9184,7 @@ status = "todo"
 verify = ""
 # [2026-09-28] amend by=splice-lead: files were ["integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/", "integrations/providers/muse/src/main/kotlin/splice/provider/muse/", "core/src/main/kotlin/splice/core/topology/QuirksOverlay.kt"]
 # [2026-09-28] Sep 28 CT: V4-351 moves claude-muse onto the Responses dialect (claude-builder's step 0 passed after the quota reset: summary parts + encrypted reasoning on muse-spark-1.3). Once that lands, Muse inherits responsesQuirks' ToolDeferralPolicy wiring (QuirksOverlay.kt:44), so this row's deferral half is done by V4-351; what remains here is the thinking-disabled 400 on the passthrough path and the Muse Code tool-contract comparison.
+# [2026-09-28] The thinking-disabled 400 is moot after V4-351. claude-muse now builds through the Responses dialect, and Muse keeps the default EffortVocabulary (integrations/upstream/.../EffortVocabulary.kt:13 omitWhenDisabled() = true; only Grok overrides it to false). So ResponsesReasoningKnobs.kt:29 returns no effort for a thinking-disabled turn, and no reasoning field is sent. What remains on this row is the tool surface: confirm live that Muse turns on Responses get responsesQuirks' ToolDeferralPolicy (QuirksOverlay.kt:44).
 
 [[items]]
 id = "V4-390"

@@ -1,0 +1,323 @@
+// NEW: V4-404 — a failed turn's trace has a sentence in words for EVERY outcome tag, not only the ones whose
+// connection ended. RED on the pre-fix telemetry: only TurnConnEnd wrote `failure_sentence`, so an
+// upstream-failed turn's detail read `error:upstream-failed · 3 retries` and then Timing (Marlin's walk of
+// V4-349 on bb54736ea). The tags are enumerated from their SOURCES, never from a hand list: OutcomeTag and
+// ErrorType are read as enums, and the open `error:<kind>` strings are read out of this module's own sources,
+// so a new tag without a sentence fails BY NAME and cannot be missed by a list nobody updated.
+package splice.head.v4404
+
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import splice.core.auth.AuthDescription
+import splice.core.auth.Credentials
+import splice.core.auth.RefreshableAuthProvider
+import splice.core.index.WireBlockIndex
+import splice.core.model.ModelCatalog
+import splice.core.model.ModelEntry
+import splice.core.perf.OutcomeTag
+import splice.core.perf.OutcomeTags
+import splice.core.perf.TurnPerf
+import splice.core.storage.ActivityDays
+import splice.core.turn.CONN_RESET_OUTCOME
+import splice.core.turn.ErrorType
+import splice.core.turn.ReasoningDisplay
+import splice.core.turn.TurnMeta
+import splice.core.turn.Usage
+import splice.core.turn.WatchdogBudget
+import splice.core.util.AsyncFileIo
+import splice.core.util.ERR_SNIPPET
+import splice.core.util.ElapsedClock
+import splice.core.util.LogSink
+import splice.core.util.WallClock
+import splice.head.HeadHealthCounters
+import splice.head.TestResponsesProvider
+import splice.head.admission.LocalRefusal
+import splice.head.admission.admittedSlot
+import splice.head.compact.CompactStats
+import splice.head.perf.PerfStats
+import splice.head.pipeline.TurnPipeline
+import splice.head.round.RunnerSignals
+import splice.head.turn.OutcomeSentences
+import splice.head.turn.TurnDrive
+import splice.head.turn.TurnFailures
+import splice.head.turn.TurnKnownEnd
+import splice.head.turn.TurnTelemetry
+import splice.head.usage.OutputClamp
+import splice.head.wire.ClientChannel
+import splice.head.wire.ClientInbound
+import splice.head.wire.ImmediateSseWriter
+import splice.head.wire.TraceStore
+import splice.head.wire.TurnTerminal
+import splice.upstream.Provider
+import splice.upstream.ProviderTuning
+import splice.upstream.retry.InflightGate
+import splice.upstream.retry.LiveLimit
+import splice.upstream.retry.TurnWatchdog
+import splice.upstream.transport.UpstreamFailed
+import java.nio.file.Files
+import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.time.Duration.Companion.seconds
+
+private const val TRACE_DAY_EPOCH_MS = 1_789_725_600_000L
+private const val TRACE_FILE = "codex-2026-09-18.jsonl"
+private const val SOURCE_ROOT = "features/turns/src/main/kotlin"
+
+/** The tags that are not failures, each with the reason it carries no sentence. Read with [OutcomeSentences]:
+ *  a tag on this list must answer null, so an exemption cannot outlive its reason unnoticed. */
+private val notFailures: Map<String, String> = mapOf(
+    OutcomeTag.OK.wire to "the turn succeeded",
+    OutcomeTag.CLIENT_ABORT.wire to "the client closed the connection: nobody is left to read a sentence",
+    OutcomeTag.EMPTY_MESSAGE.wire to "a finished answer that happened to be empty; StreamPromote ends it clean",
+)
+
+/** Holds a credential so provider construction is honest; the surfaces under test never dial out. */
+private class FakeAuth : RefreshableAuthProvider {
+    override suspend fun credentials() = Credentials.Bearer("tok", "acct")
+    override suspend fun refresh() = credentials()
+    override suspend fun describe() = AuthDescription(true, "fake")
+}
+
+private class RecordingTerminal : TurnTerminal {
+    override var hasEnded: Boolean = false
+        private set
+
+    override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean) {
+        hasEnded = true
+    }
+
+    override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) = Unit
+    override fun abandon() = Unit
+    override suspend fun openText() = WireBlockIndex(0)
+    override suspend fun openThinking() = WireBlockIndex(0)
+    override suspend fun openTool(id: String, name: String) = WireBlockIndex(0)
+    override suspend fun textDelta(index: WireBlockIndex, text: String) = Unit
+    override suspend fun thinkingDelta(index: WireBlockIndex, thinking: String) = Unit
+    override suspend fun inputJsonDelta(index: WireBlockIndex, partialJson: String) = Unit
+    override suspend fun closeBlock(index: WireBlockIndex) = Unit
+    override suspend fun closeAll() = Unit
+    override suspend fun addTextBlock(text: String) = Unit
+    override suspend fun addRedactedThinking(data: String) = Unit
+}
+
+class OutcomeSentenceTest {
+
+    // ── the tag sources ───────────────────────────────────────────────────────────────────────
+
+    /** Every `OutcomeTags.error(<arg>)` call in this module's main sources: the file and the argument text. */
+    private fun errorKindCalls(): List<Pair<String, String>> {
+        var dir = Path.of("").toAbsolutePath()
+        while (!Files.isDirectory(dir.resolve(SOURCE_ROOT)) && dir.parent != null) dir = dir.parent
+        val pattern = Regex("""OutcomeTags\.error\(\s*([^)]*?)\s*\)""")
+        val comments = Regex("""(?sm)/\*.*?\*/|^\s*//[^\n]*| //[^\n]*""")
+        return Files.walk(dir.resolve(SOURCE_ROOT)).use { files ->
+            files.filter { it.toString().endsWith(".kt") }.toList().flatMap { file ->
+                val code = comments.replace(Files.readString(file), "")
+                pattern.findAll(code).map { file.fileName.toString() to it.groupValues[1] }.toList()
+            }
+        }
+    }
+
+    private fun sourceKinds(): List<String> = errorKindCalls().map { (file, arg) ->
+        val literal = arg.startsWith("\"") && arg.endsWith("\"")
+        assertTrue(literal, "$file builds an error tag from `$arg`: name its kind as a literal")
+        arg.trim('"')
+    }.distinct()
+
+    /** Every tag a turn of this module can end on, from the tag sources. */
+    private fun everyTag(): List<String> =
+        OutcomeTag.entries.map { it.wire } +
+            ErrorType.entries.map { OutcomeTags.failure(it) } +
+            CONN_RESET_OUTCOME +
+            sourceKinds().map { OutcomeTags.error(it) }
+
+    // ── the table itself ──────────────────────────────────────────────────────────────────────
+
+    @Test
+    fun `every outcome tag has a sentence or a stated reason for none`() {
+        val tags = everyTag()
+        assertTrue(tags.size > OutcomeTag.entries.size, "the tag sources were not enumerated: $tags")
+        for (tag in tags) {
+            val sentence = OutcomeSentences.of(tag)
+            if (tag in notFailures) {
+                assertNull(sentence, "outcome tag $tag is exempt (${notFailures[tag]}) yet has a sentence")
+            } else {
+                assertNotNull(sentence, "outcome tag $tag has no failure sentence: add it to OutcomeSentences")
+            }
+        }
+    }
+
+    @Test
+    fun `every sentence says what to do in words and quotes no path or bytes`() {
+        for (tag in everyTag()) {
+            val sentence = OutcomeSentences.of(tag) ?: continue
+            assertTrue("; " in sentence, "$tag: `$sentence` must say what happened, then after a semicolon what to do")
+            assertTrue(sentence.length <= ERR_SNIPPET, "$tag: the sentence is cut at $ERR_SNIPPET characters")
+            val quoted = sentence.any { it in "/\\{}<>\"`" } || "://" in sentence || "~" in sentence
+            assertTrue(!quoted, "$tag: `$sentence` quotes a path or bytes")
+        }
+    }
+
+    // ── the trace it closes ───────────────────────────────────────────────────────────────────
+
+    private inner class Rig(private val tag: String, private val tmp: Path) {
+        val log = LogSink { }
+        val perfFile: Path = tmp.resolve("perf-$tag.jsonl")
+        val traceDir: Path = tmp.resolve("trace-$tag")
+        val telemetry = TurnTelemetry("codex", PerfStats(perfFile), log, ElapsedClock { 5L })
+        val meta = TurnMeta(
+            compact = false,
+            showReasoning = ReasoningDisplay.TEXT,
+            stream = true,
+            originalModel = "claude-codex--gpt-5.6-sol",
+            upstreamModel = "gpt-5.6-sol",
+            clientMaxTokens = 100,
+            effort = "high",
+            summary = "detailed",
+            budgetTokens = null,
+        )
+        val trace = TraceStore(
+            ActivityDays(
+                traceDir,
+                "codex",
+                retentionDays = 7,
+                clock = WallClock { TRACE_DAY_EPOCH_MS },
+                ownerOnly = true,
+            ),
+            head = "codex",
+            maxBodyChars = 4096,
+            now = WallClock { TRACE_DAY_EPOCH_MS },
+        ).begin(meta, ClientInbound("POST", "/v1/messages", emptyMap(), "synthetic request"))
+
+        suspend fun drive(): TurnDrive = TurnDrive(
+            requestBody = buildJsonObject { },
+            meta = meta,
+            emitter = RecordingTerminal(),
+            watchdog = TurnWatchdog(WatchdogBudget(10.seconds, 10.seconds, 30.seconds)),
+            slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
+            pipeline = TurnPipeline(
+                CompactStats(perfFile.resolveSibling("compact-$tag.jsonl")),
+                log = log,
+                clampOutput = OutputClamp { it },
+            ),
+            t0 = 0,
+            trace = trace,
+            perf = TurnPerf(),
+            turnHeaders = emptyMap(),
+            signals = RunnerSignals(),
+            channel = ClientChannel(
+                ImmediateSseWriter(writeRaw = { _ -> }, flushRaw = {}),
+                Mutex(),
+                AtomicBoolean(false),
+            ),
+            toolSearch = null,
+        )
+
+        /** The turn record the trace wrote, once the async writer has drained. */
+        fun turnRecord() = run {
+            assertTrue(AsyncFileIo.drain())
+            Json.parseToJsonElement(Files.readAllLines(traceDir.resolve(TRACE_FILE)).last()).jsonObject
+        }
+    }
+
+    private fun provider(): Provider = TestResponsesProvider(
+        tuning = ProviderTuning(
+            key = "codex",
+            label = "claudex",
+            catalog = ModelCatalog(
+                discoveryPrefix = "claude-codex--",
+                models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
+                defaultContextWindow = 272_000,
+            ),
+            pinnedModel = "gpt-5.6-sol",
+            auth = FakeAuth(),
+            baseUrl = "http://127.0.0.1:1",
+            watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
+            loginCommand = "claudex login",
+        ),
+        showReasoning = ReasoningDisplay.TEXT,
+        replayReasoning = false,
+        configEffort = "high",
+        configSummary = "detailed",
+    )
+
+    private fun sentenceOf(record: kotlinx.serialization.json.JsonObject): String? =
+        record["failure_sentence"]?.jsonPrimitive?.content
+
+    @Test
+    fun `every outcome tag closes its turn record with its sentence`(@TempDir tmp: Path) = runBlocking {
+        for ((at, tag) in everyTag().withIndex()) {
+            val rig = Rig("tag-$at", tmp)
+            val drive = rig.drive()
+            try {
+                rig.telemetry.recordPerf(drive, tag)
+            } finally {
+                drive.slot.release()
+            }
+            val record = rig.turnRecord()
+            assertEquals(tag, record.getValue("outcome").jsonPrimitive.content)
+            val said = sentenceOf(record)
+            assertEquals(OutcomeSentences.of(tag), said, "outcome tag $tag: the turn record's failure_sentence")
+        }
+    }
+
+    @Test
+    fun `a local refusal closes its trace with its sentence`(@TempDir tmp: Path) = runBlocking {
+        val refusals = listOf(OutcomeTag.RATE_LIMITED, OutcomeTag.ALL_ACCOUNTS_EXHAUSTED, OutcomeTag.BUDGET_BLOCKED)
+        for (tag in refusals) {
+            val rig = Rig("refusal-${tag.name}", tmp)
+            rig.telemetry.recordLocalRefusal(rig.meta, TurnPerf(), 0, LocalRefusal(tag.wire, "detail", rig.trace))
+            val record = rig.turnRecord()
+            assertEquals(tag.wire, record.getValue("outcome").jsonPrimitive.content)
+            val said = sentenceOf(record)
+            assertEquals(OutcomeSentences.of(tag.wire), said, "local refusal ${tag.wire}: failure_sentence")
+            assertNotNull(said, "local refusal ${tag.wire} left the turn without words")
+        }
+    }
+
+    @Test
+    fun `an upstream-failed turn after three retries reads in words, Marlin's walk`(@TempDir tmp: Path) = runBlocking {
+        val rig = Rig("upstream-failed", tmp)
+        val provider = provider()
+        val knownEnd = TurnKnownEnd(provider, rig.log, rig.telemetry, TurnFailures(provider), HeadHealthCounters())
+        val drive = rig.drive()
+        try {
+            val failure = UpstreamFailed("""{"error":{"message":"boom"}}""", status = 502, layers = 3)
+            assertTrue(knownEnd.tryEmit(drive, failure), "TurnKnownEnd owns an upstream failure")
+        } finally {
+            drive.slot.release()
+        }
+        val record = rig.turnRecord()
+        assertEquals("error:upstream-failed", record.getValue("outcome").jsonPrimitive.content)
+        val sentence = sentenceOf(record)
+        assertNotNull(sentence, "the upstream-failed turn's trace has no sentence")
+        assertEquals(OutcomeSentences.of(OutcomeTag.UPSTREAM_FAILED.wire), sentence)
+    }
+
+    @Test
+    fun `a sentence the ending's own surface spoke is kept, not replaced by the table's`(@TempDir tmp: Path) =
+        runBlocking {
+            val rig = Rig("spoken", tmp)
+            val drive = rig.drive()
+            try {
+                rig.trace.failureSentence("the connection to 127.0.0.1:1 closed mid-request; retry")
+                rig.telemetry.recordPerf(drive, CONN_RESET_OUTCOME)
+            } finally {
+                drive.slot.release()
+            }
+            assertEquals(
+                "the connection to 127.0.0.1:1 closed mid-request; retry",
+                sentenceOf(rig.turnRecord()),
+            )
+        }
+}

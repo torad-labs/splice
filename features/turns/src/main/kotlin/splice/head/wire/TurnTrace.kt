@@ -118,6 +118,12 @@ public class TurnTrace internal constructor(
         synchronized(lock) { failureSentenceText = sentence.take(ERR_SNIPPET) }
     }
 
+    /** V4-404: the wording for an ending whose own surface recorded none, so a turn record never closes on
+     *  a failed outcome without words. A sentence the surface already spoke, which knows the detail, stays. */
+    public fun failureSentenceUnlessSpoken(sentence: String) {
+        synchronized(lock) { if (failureSentenceText == null) failureSentenceText = sentence.take(ERR_SNIPPET) }
+    }
+
     /** The turn ended with [outcomeTag]; [perf] is the row's snapshot. Writes the turn record. */
     public fun finish(outcomeTag: String, perf: PerfSnapshot) {
         val record = synchronized(lock) { turnRecord(outcomeTag, perf) }

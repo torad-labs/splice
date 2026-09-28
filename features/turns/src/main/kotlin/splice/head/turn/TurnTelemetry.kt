@@ -23,6 +23,7 @@ import splice.head.perf.PerfRowMeta
 import splice.head.perf.PerfStats
 import splice.head.usage.EconomicsStore
 import splice.head.usage.TurnEconomics
+import splice.head.wire.TurnTrace
 import splice.upstream.retry.WatchdogFired
 import splice.upstream.retry.WatchdogHeld
 
@@ -67,7 +68,7 @@ internal class TurnTelemetry(
         val snap = drive.perf.snapshot()
         // V4-174: the turn record closes on the same snapshot the perf row carries — every ending
         // of a drive goes through here, so the trace never has a turn without its outcome.
-        drive.trace?.finish(outcomeTag, snap)
+        closeTrace(drive.trace, outcomeTag, snap)
         val session = drive.sessionTag()
         val account = drive.account
         val rowTs = perfStats.record(
@@ -101,6 +102,15 @@ internal class TurnTelemetry(
         log(snap.perfLine(headKey, outcomeTag, drive.meta.compact, drive.upstreamModel, session))
         recordEconomics(snap, drive.upstreamModel, rateLimited)
         recordSpend(rowTs, drive.upstreamModel, snap.counters)
+    }
+
+    /** V4-404: the one place a turn's trace is closed, from both endings (a drive's perf row and a local
+     *  refusal). The outcome's sentence is recorded beside its tag unless the ending's own surface already
+     *  spoke, so no failed turn's record closes without words (only TurnConnEnd used to speak). */
+    private fun closeTrace(trace: TurnTrace?, outcomeTag: String, snap: PerfSnapshot) {
+        if (trace == null) return
+        OutcomeSentences.of(outcomeTag)?.let(trace::failureSentenceUnlessSpoken)
+        trace.finish(outcomeTag, snap)
     }
 
     /** V4-133 review: the day's spend moves by THIS row — its own ts, model and counters, the same
@@ -168,7 +178,7 @@ internal class TurnTelemetry(
         val session = meta.sessionId?.take(SESSION_TAG_CHARS)
         perf.mark(PerfKeys.TOTAL)
         val snap = perf.snapshot()
-        trace?.finish(tag, snap)
+        closeTrace(trace, tag, snap)
         val rowMeta = PerfRowMeta(
             meta.upstreamModel,
             tag,

@@ -9061,3 +9061,4 @@ title = "Every head is traced by default, so any session can be replayed second 
 files = ["core/src/main/kotlin/splice/core/config/Knob.kt", "README.md"]
 status = "todo"
 verify = "red first: a fresh topology with no trace override writes no trace file today; green: every head writes <state>/trace/<head>-<day>.jsonl with no override; a head with trace = \"false\" writes none (mutant: ignore the override, red); a 5 Mi-char body is kept whole (mutant: the old 4 Mi cap, red)"
+# [2026-09-28] Interaction: V4-354 (folded into V4-345) builds the request view from Claude Code's transcript BECAUSE trace was opt-in (the Sep 20 ruling this row supersedes). With trace on by default, the V4-345 owner decides whether the panel reads the trace directly; say which in V4-345's receipt.

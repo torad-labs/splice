@@ -8,6 +8,7 @@ import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.dialect.responses.request.ResponsesCodeModeInput
+import splice.dialect.responses.request.ResponsesContextMessage
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.sse.WireSink
 
@@ -277,15 +278,15 @@ internal class CodeModeExtraContent(
     }
 
     /** A role=system message: how Claude Code sends a peer's message, a task notification or a hook's
-     *  output (the live claudex wire, 2026-09-26). */
+     *  output (the live claudex wire, 2026-09-26). V4-390: a lite turn sends it as the dialect's
+     *  context message; the role=system form stays recognized for requests built before that. */
     private fun isSystemMessage(element: JsonElement): Boolean {
         val item = element as? JsonObject
         val message = codec.string(item, CODE_MODE_FIELD_TYPE) in MESSAGE_TYPES
-        return message && codec.string(item, CODE_MODE_FIELD_ROLE) == ROLE_SYSTEM
+        return (message && codec.string(item, CODE_MODE_FIELD_ROLE) == ResponsesContextMessage.CLIENT_ROLE) ||
+            ResponsesContextMessage.isContext(item)
     }
 }
-
-private const val ROLE_SYSTEM = "system"
 
 /** The builder writes a plain {role, content} message with no `type`; an explicit one says message. */
 private val MESSAGE_TYPES = setOf("", "message")

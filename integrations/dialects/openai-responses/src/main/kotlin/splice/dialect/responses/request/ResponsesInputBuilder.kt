@@ -44,9 +44,16 @@ internal class ResponsesInputBuilder(
         opts: BuildOptions,
         declareByName: Map<String, ToolDefinition>,
     ) {
+        val context = msg.role == ResponsesContextMessage.CLIENT_ROLE && liteShape.isLite(opts)
         msg.content.forEachIndexed { at, block ->
             if (block is TextBlock) {
-                sink.add(parts.roleText(msg.role, block.text, phaseOf(msg, at, opts)))
+                sink.add(
+                    if (context) {
+                        ResponsesContextMessage.item(block.text)
+                    } else {
+                        parts.roleText(msg.role, block.text, phaseOf(msg, at, opts))
+                    },
+                )
             } else {
                 appendBlock(sink, block, opts, declareByName)
             }

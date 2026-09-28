@@ -10,6 +10,7 @@ import kotlinx.serialization.json.put
 import splice.core.util.JsonScalars
 import splice.dialect.responses.request.ResponsesCodeModeInput
 import splice.dialect.responses.request.ResponsesCodeModeProjection
+import splice.dialect.responses.request.ResponsesContextMessage
 import java.security.MessageDigest
 
 /**
@@ -98,7 +99,9 @@ internal class CodexCodeModeHistoryCodec(private val json: Json) {
 
     private fun isPreamble(element: JsonElement): Boolean {
         val item = element as? JsonObject ?: return false
-        return string(item, CODE_MODE_FIELD_ROLE) == ROLE_DEVELOPER && string(item, FIELD_CALL_ID).isEmpty()
+        // V4-390: a mid-conversation context message is developer-role too, but typed; it is history.
+        return string(item, CODE_MODE_FIELD_ROLE) == ROLE_DEVELOPER && string(item, FIELD_CALL_ID).isEmpty() &&
+            !ResponsesContextMessage.isContext(item)
     }
 
     private fun phaseless(element: JsonElement): JsonElement =

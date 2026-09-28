@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import splice.core.turn.TurnOutcome
+import splice.dialect.responses.request.ResponsesContextMessage
 import splice.provider.codex.BASE_REQUEST
 import splice.provider.codex.CodeModeBridgeTestSupport
 import splice.provider.codex.CodexCodeModeBridge
@@ -52,6 +53,24 @@ class CodeModeLateContentTest : CodeModeBridgeTestSupport() {
             val output = input.indexOfFirst { typeOf(it) == "custom_tool_call_output" }
             assertEquals("both done", input[output].jsonObject.getValue("output").jsonPrimitive.content)
             assertEquals(message("system", LATE), input.drop(output + 1).single(), "the new content follows the output")
+        }
+
+    @Test
+    fun `the lite context message a system message becomes also lets the finished script complete - V4-390`() =
+        runTest {
+            val runtime = runtime(CodeModeStep.Completed("both done"))
+            val manager = bridge(runtime)
+            val (read, edit) = start(manager)
+            val late = ResponsesContextMessage.item(LATE)
+            val body = appended(requestWithTwoResults(read, edit), late)
+
+            val (outcome, upstream) = resume(manager, body, CodeModeResult(read, "A"), CodeModeResult(edit, "B"))
+
+            assertTrue(outcome is TurnOutcome.Success, outcome.toString())
+            assertEquals(2, runtime.cell.advances, "a context message is not the operator steering the script")
+            val input = inputOf(upstream)
+            val output = input.indexOfFirst { typeOf(it) == "custom_tool_call_output" }
+            assertEquals(late, input.drop(output + 1).single(), "the context message follows the output")
         }
 
     @Test

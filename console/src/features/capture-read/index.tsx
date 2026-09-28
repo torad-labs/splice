@@ -92,7 +92,7 @@ export function TraceList({ list, capturing, onOpen }: {
   capturing: boolean;
   onOpen?: (turn: string) => void;
 }) {
-  if (list.on_disk === 0) return <Empty text={S.noTraced} source={H.noTraced} />;
+  if (list.on_disk === 0) return <Empty text={S.noTraced} source={capturing ? H.noTracedOn : H.noTraced} />;
   return (
     <div className="myx-cr-list">
       <div className="myx-cr-head">

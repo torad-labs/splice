@@ -162,10 +162,14 @@ describe('what the views print', () => {
     expect(render(h(TraceList, { list: LIST, capturing: true }))).not.toContain('Recorded earlier');
   });
 
-  test('a head with nothing on disk is an empty state naming what to do, never an empty table', () => {
-    const out = render(h(TraceList, { list: { ...LIST, on_disk: 0, turns: [] }, capturing: false }));
-    expect(out).toContain('No turns traced');
-    expect(out).not.toContain('<table');
+  test('a head with nothing on disk distinguishes a running recorder from one turned off', () => {
+    const empty = { ...LIST, on_disk: 0, turns: [] };
+    const off = render(h(TraceList, { list: empty, capturing: false }));
+    const on = render(h(TraceList, { list: empty, capturing: true }));
+    expect(off).toContain('Turn capture on and restart');
+    expect(on).toContain('No requests have been recorded yet.');
+    expect(on).not.toContain('Turn capture on');
+    expect(off).not.toContain('<table');
   });
 
   test('a turn\'s bodies and headers stay out of the document until revealed', () => {

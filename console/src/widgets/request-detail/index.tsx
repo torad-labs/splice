@@ -12,9 +12,9 @@
 // behind one key, and every tool call's input, tool result, thinking and schema waits behind its own
 // reveal with its size beside it. A text a person wrote shows, and scrolls inside its box.
 //
-// A TURN WITH NO REQUEST SAYS WHY, AND WHAT CHANGES IT. Capture is off by default, so on most setups
-// the first turn a person opens kept nothing: the detail names that state in one line and puts the
-// one control that changes it beside it (turn capture on, then restart), not an empty box.
+// A TURN WITH NO REQUEST SAYS WHY, AND WHAT CHANGES IT. A plan that opted out of default-on
+// capture may still have a locally saved Claude Code transcript. Without either, the detail
+// names that state and puts the control that changes it beside the empty request.
 import { useEffect, useState } from 'react';
 import { applyConfigPatch, fetchConfig, useConfig } from '@entities/config';
 import { captureView, readConversation, readKeptTurn } from '@entities/perf';
@@ -272,8 +272,8 @@ function TranscriptMessage({ message }: { message: ConversationMessageWire }) {
   );
 }
 
-/** The default-install view reads the client's own redacted transcript, not a reconstruction of
- *  the exact Messages request. The opt-in trace above remains the only exact-byte view. */
+/** A plan with capture off reads the client's own redacted transcript, not a reconstruction of
+ *  the exact Messages request. The default-on trace above remains the only exact-byte view. */
 export function TranscriptRequestRead({ read, viewOn, onSwitch, writing = false }: {
   read: TranscriptConversationWire | null;
   viewOn: boolean;
@@ -321,7 +321,7 @@ export function TranscriptRequestRead({ read, viewOn, onSwitch, writing = false 
 // global config while this detail is mounted, never its conversation body.
 const CONFIG_POLL_MS = 2_000;
 
-/** An untraced turn whose full session and response id let the console read Claude Code's saved
+/** An opted-out turn whose full session and response id let the console read Claude Code's saved
  *  conversation. The live daemon knob is the ONE switch for every browser, not localStorage. An
  *  accepted PATCH re-reads config before a GET of this response; while the write is in flight the
  *  old conversation leaves the document immediately. */

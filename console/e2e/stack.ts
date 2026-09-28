@@ -190,6 +190,11 @@ function config(ports: { control: number; mock: number; oauth: number; solo: num
     `pinned_model = "${STACK.model}"`,
     `context_window = ${STACK.headWindow}`,
     '',
+    // V4-387 records full requests by default. Keep one head explicitly off so the fallback to
+    // Claude Code's local transcript and the capture switch are exercised on a real turn.
+    `[heads.${STACK.oauthHead}.overrides]`,
+    'trace = "false"',
+    '',
     '[providers.codexsolo]',
     'dialect = "openai-responses"',
     `base_url = "http://127.0.0.1:${ports.mock}"`,
@@ -206,8 +211,8 @@ function config(ports: { control: number; mock: number; oauth: number; solo: num
     'discovery_prefix = "claude-e2e-solo--"',
     `pinned_model = "${STACK.soloModel}"`,
     '',
-    // V4-345: the solo head keeps its trace from boot, so a turn a journey drives through it opens with
-    // its request whole. The OAuth head keeps none: the capture journey turns its trace on and off.
+    // The solo head records by default; this explicit true also pins its booted state. A turn a
+    // journey drives through it opens with its request whole. The OAuth head is explicitly off.
     `[heads.${STACK.soloHead}.overrides]`,
     'trace = "true"',
     '',

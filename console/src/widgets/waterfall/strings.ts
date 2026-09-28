@@ -31,7 +31,7 @@ export const S = {
 
 export const H = {
   noMarks: 'Splice recorded no timing for this turn.',
-  capture: 'Records request and response bodies on local disk, off by default.',
+  capture: 'Records request and response bodies on local disk unless turned off.',
 } as const;
 
 export const U = {

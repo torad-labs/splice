@@ -1141,8 +1141,8 @@ test('a turn opens from a press on its time cell, with what the model received a
   expect([...new Set(faults.failedReads)], 'reads the daemon refused').toEqual([]);
 });
 
-// V4-354: the default OAuth head keeps no trace, but Claude Code's own saved conversation joins
-// through the response id the client saw. Off is a server answer before any transcript is read.
+// The OAuth test head explicitly opts out of the default-on trace, so Claude Code's own saved
+// conversation joins through the response id the client saw. Off is a server answer before a read.
 test('a default-install turn opens its saved prompt and reply, and the transcript switch turns it off', async ({ page }) => {
   const faults = await open(page, 'turns');
   const turns = page.getByRole('button', { name: `Turn detail ${STACK.oauthHead} ${STACK.model}` });
@@ -1230,7 +1230,8 @@ test('turns writes body capture for a head through the daemon, re-reads it, and 
   await turns.first().click();
   const detail = page.getByRole('complementary', { name: 'Turn detail' });
   const toggle = detail.getByRole('switch', { name: 'Body capture' });
-  // Off by default, and saying so (PRODUCT.md: nothing is recorded that the operator did not ask for).
+  // This head opted out explicitly; the default-on recorder is tested by the traced solo head.
+  expect(readFileSync(env('CONSOLE_E2E_CONFIG'), 'utf8')).toMatch(new RegExp(`${oauthTrace.source} "false"`));
   await expect(toggle).toHaveAttribute('aria-checked', 'false');
   await expect(detail).not.toContainText('Recording bodies');
   // The turn kept no request, and its detail says why beside the key that changes it (V4-345).
@@ -1262,11 +1263,10 @@ test('turns writes body capture for a head through the daemon, re-reads it, and 
   await expect.poll(() => wroteThenReread(false), { message: 'the switch never wrote enabled=false and re-read' }).toBe(true);
   await expect(toggle).toHaveAttribute('aria-checked', 'false');
   await expect(detail).not.toContainText('Restart to apply');
-  // Off is absence, not the literal false (V4-359): the head's overrides carry no trace key, and the
-  // file is the topology the daemon booted again.
+  // Off is explicit false now: absence inherits the new default-on policy. Returning to the
+  // booted value clears the topology stale flag without affecting the solo head.
   const after = readFileSync(env('CONSOLE_E2E_CONFIG'), 'utf8');
-  expect(after, 'Off left a trace key under the head').not.toMatch(oauthTrace);
-  expect(after, 'Off wrote the literal false').not.toMatch(/trace = "false"/);
+  expect(after, 'Off must persist the opt-out under this head').toMatch(new RegExp(`${oauthTrace.source} "false"`));
   await expect.poll(stale, { message: 'Off left the topology stale' }).toBe(false);
   expect(faults.pageErrors, 'the capture journey threw').toEqual([]);
   expect([...new Set(faults.failedReads)], 'reads the daemon refused').toEqual([]);

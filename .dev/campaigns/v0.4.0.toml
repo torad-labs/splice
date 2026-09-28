@@ -9406,3 +9406,11 @@ title = "Save writes an instruction file the preview refused (Marlin walk of V4-
 files = ["features/configuration/src/main/kotlin/splice/configuration/topology/TopologyRoutes.kt", "features/configuration/src/main/kotlin/splice/configuration/topology/PromptPreview.kt", "features/configuration/src/test/kotlin/splice/configuration/topology/v4400/", "console/src/pages/settings/", "console/e2e/v4400/", "console/tests/"]
 status = "todo"
 verify = "red first (daemon): PUT /api/topology setting a head's system_prompt_file to a missing path, a directory, a symlink and a non-UTF-8 file each returns refused with the preview's sentence and leaves splice.toml byte-identical; a missing path reads 'does not exist'; a write that leaves an already-stored system_prompt_file unchanged is not refused for it; a valid file writes. red first (console): while the preview refuses, Save is disabled. Mutant: drop the write-side check and the byte-identical test goes red. Marlin walks it."
+
+[[items]]
+id = "V4-401"
+phase = "release"
+title = "Unlock leaves every read that failed before it failed (Marlin walk of V4-399 on bb54736ea): /api/auth, /api/accounts and /api/usage are requested once before unlock (401) and /api/auth never again, so Needs you right after a form unlock says 'Open items 0' with Sign-ins, Accounts, Plan usage, Sessions, Teams and Doctor 'Failed · management key required' until a reload. A first-run user is told nothing needs them. Unlock must re-run every read that was refused for the key, not only the events stream."
+files = ["console/src/entities/session/", "console/src/widgets/rule/", "console/src/app/", "console/src/pages/needs-you/", "console/e2e/v4401/", "console/tests/"]
+status = "todo"
+verify = "red first e2e: fresh profile, unlock through the form, no reload: Needs you shows no 'management key required' source and /api/auth, /api/accounts, /api/usage are each requested again after unlock; the same holds on every page that loads before unlock. Full console test/build/lint."

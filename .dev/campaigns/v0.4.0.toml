@@ -9454,8 +9454,11 @@ id = "V4-403"
 phase = "release"
 title = "Settings and Fleet still use splice's words and cut text (Marlin walk of V4-348 on bb54736ea): Settings still shows 'Topology' (heading), 'Write topology', 'Raw topology' and a 'daemon' section; Fleet's State column cuts 'Signed ou[t]', Model cuts 'claude-fable-…' and 'muse-spark-1.…', the Window column runs off the right edge; Turns' Outcome cuts 'error:rate-limite[d]'. V4-348's promise: never head, knobs, daemon, backend, codex, registry on any page; no truncated model names."
 files = ["console/src/pages/settings/", "console/src/pages/fleet/", "console/src/pages/turns/", "console/e2e/v4403/", "console/tests/"]
-status = "todo"
+status = "in_flight"
 verify = "red first: a console test fails on HEAD for each word (topology, daemon) rendered on Settings and passes after; an e2e at 1440x900 asserts Fleet's State, Model and Window cells and Turns' Outcome show their full text with no overflow past the table edge. Marlin walks it."
+claimed_by = "console"
+claimed_at = "2026-09-28T23:35:32.218Z"
+# [2026-09-28] CLAIM: owner=console at=2026-09-28T23:35:32Z
 
 [[items]]
 id = "V4-404"

@@ -8748,6 +8748,7 @@ files = ["core/src/main/kotlin/splice/core/config/Knob.kt", "app/src/main/resour
 status = "todo"
 verify = "A head test in features/turns/src/test/kotlin/splice/head/v4374/ posts a Messages body of 9 MiB (base64 image blocks in tool_result content, the p20 shape) and a count_tokens body of 9 MiB: both are admitted with the default policy (red against the 8 MiB default, quoted), and a body of 32 MiB + 1 byte gets 413 with the limit named; the default is pinned to 32 * 1024 * 1024; the receipt carries the measured peak heap for one 32 MiB body and the permits x peak product against 2048 MiB; bun tools/gate typecheck green; CI gate green on the pushed sha."
 # [2026-09-28] amend by=splice-lead: files were ["core/src/main/kotlin/splice/core/config/Knob.kt", "app/src/main/resources/splice.example.toml", "features/turns/src/test/kotlin/splice/head/v4374/", ".dev/restructure/capabilities.tsv"]
+# [2026-09-28] Census protocol (splice-lead, 9:36 PM CT): .dev/restructure/capabilities.tsv leaves this fence. The orchestrator owns the census: list each file this row creates in the receipt's tail with a one-line reason, and the orchestrator adds its 'created' row (sha256 of the committed file) in one commit before the integration push. Every open row that fenced the census collided with every other (the ledger refuses a claim whose fence meets a live row's).
 
 [[items]]
 id = "V4-375"

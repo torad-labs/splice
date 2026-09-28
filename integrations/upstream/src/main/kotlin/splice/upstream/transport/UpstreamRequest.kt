@@ -150,7 +150,9 @@ internal class UpstreamRequest(
                     text,
                     retryAfter.retryAfterMs(resp.headers["Retry-After"]),
                     planLimit = if (status == HttpStatus.TOO_MANY_REQUESTS) {
-                        ctx.auth.planLimit({ name -> resp.headers[name] }, wallClock() / MS_PER_S)
+                        val nowSeconds = wallClock() / MS_PER_S
+                        ctx.auth.planLimit({ name -> resp.headers[name] }, nowSeconds)
+                            ?: ctx.auth.planLimitFromBody(text, nowSeconds)
                     } else {
                         null
                     },

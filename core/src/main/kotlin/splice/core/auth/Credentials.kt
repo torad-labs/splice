@@ -97,4 +97,14 @@ public interface RefreshableAuthProvider : AuthProvider {
      *  through a limit a re-send clears.
      */
     public fun planLimit(header: QuotaHeaderRead, nowEpochSeconds: Long): PlanLimit? = null
+
+    /**
+     * V4-377: the same question as [planLimit] for a provider that names its spent window in the
+     * 429 BODY rather than in headers (ChatGPT's `usage_limit_reached`). Asked only when the
+     * headers named none, with the error text and the wall time in epoch seconds.
+     *
+     *  Default null, for the reason [planLimit] gives: a provider that has not declared the shape
+     *  keeps V4-61's handling of a 429 exactly.
+     */
+    public fun planLimitFromBody(body: String, nowEpochSeconds: Long): PlanLimit? = null
 }

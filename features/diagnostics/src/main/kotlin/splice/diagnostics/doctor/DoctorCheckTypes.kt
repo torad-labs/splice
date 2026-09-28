@@ -22,6 +22,8 @@ internal data class DoctorCheck(
     val detail: String,
     val fix: String? = null,
     val fixId: DoctorFix? = null,
+    /** Declared restart-required value differs from the running daemon's value. */
+    val pendingRestart: Boolean = false,
 )
 
 /** V4-220 item 4: the fixes the console may ask the daemon to run, each one the CLI verb it runs.

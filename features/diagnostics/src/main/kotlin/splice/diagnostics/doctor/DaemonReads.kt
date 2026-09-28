@@ -9,6 +9,7 @@ import splice.core.util.EnvReader
 import splice.daemonclient.DaemonProbe
 import splice.daemonclient.MgmtKeyFile
 import splice.daemonclient.MgmtKeyRead
+import splice.daemonclient.TraceConfigProbe
 
 /** One read of the daemon past /health: what it answered, or why it was not asked. Each section
  *  words the misses its own way, so the cause stays a case rather than a sentence. */
@@ -33,11 +34,15 @@ internal interface DaemonReads {
 
     fun auth(port: Int, env: EnvReader): DaemonRead<Map<String, DaemonProbe.HeadAuthSeen>>
 
+    fun trace(port: Int, env: EnvReader, heads: Set<String>): DaemonRead<Map<String, DaemonProbe.HeadTrace>>
+
     fun accountPools(port: Int, env: EnvReader): AccountPoolsRead
 }
 
 /** The CLI's reads: over loopback, with the management key this shell's state dir holds. */
 internal class LoopbackDaemon(private val pools: AccountPoolRead) : DaemonReads {
+    private val traceConfig = TraceConfigProbe()
+
     override fun health(port: Int): DaemonProbe.HealthProbe = DaemonProbe.healthProbe(port)
 
     override fun heads(port: Int, env: EnvReader): DaemonRead<List<DaemonProbe.HeadRuntime>> =
@@ -50,6 +55,20 @@ internal class LoopbackDaemon(private val pools: AccountPoolRead) : DaemonReads 
     override fun auth(port: Int, env: EnvReader): DaemonRead<Map<String, DaemonProbe.HeadAuthSeen>> =
         when (val key = MgmtKeyFile().read(env)) {
             is MgmtKeyRead.Present -> answered(DaemonProbe.authSeen(port, key.key))
+            MgmtKeyRead.Absent -> DaemonRead.KeyAbsent
+            is MgmtKeyRead.Unreadable -> DaemonRead.KeyUnreadable(key.reason)
+        }
+
+    override fun trace(port: Int, env: EnvReader, heads: Set<String>): DaemonRead<Map<String, DaemonProbe.HeadTrace>> =
+        when (val key = MgmtKeyFile().read(env)) {
+            is MgmtKeyRead.Present -> {
+                val values = heads.associateWith { head -> traceConfig.read(port, key.key, head) }
+                if (values.values.any { it == null }) {
+                    DaemonRead.Unreachable
+                } else {
+                    DaemonRead.Answered(values.mapValues { (_, value) -> checkNotNull(value) })
+                }
+            }
             MgmtKeyRead.Absent -> DaemonRead.KeyAbsent
             is MgmtKeyRead.Unreadable -> DaemonRead.KeyUnreadable(key.reason)
         }
@@ -74,6 +93,9 @@ internal class AnsweredDaemon(private val answers: DaemonAnswers) : DaemonReads 
 
     override fun auth(port: Int, env: EnvReader): DaemonRead<Map<String, DaemonProbe.HeadAuthSeen>> =
         DaemonRead.Answered(DaemonProbe.parseAuthSeen(answers.auth))
+
+    override fun trace(port: Int, env: EnvReader, heads: Set<String>): DaemonRead<Map<String, DaemonProbe.HeadTrace>> =
+        DaemonRead.Answered(answers.trace)
 
     override fun accountPools(port: Int, env: EnvReader): AccountPoolsRead = AccountPoolProjection().read(answers.auth)
 }

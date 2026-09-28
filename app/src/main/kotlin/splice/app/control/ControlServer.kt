@@ -49,6 +49,7 @@ import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
+import splice.daemonclient.DaemonProbe
 import splice.diagnostics.doctor.DaemonAnswers
 import splice.diagnostics.doctor.DaemonAnswersSource
 import splice.launch.recipe.LaunchService
@@ -136,7 +137,17 @@ public class ControlServer(
         ports,
         guard,
         log,
-        DaemonAnswersSource { DaemonAnswers(payloads.controlHealthJson(), fleet.headsJson(), accounts.authJson()) },
+        DaemonAnswersSource {
+            DaemonAnswers(
+                payloads.controlHealthJson(),
+                fleet.headsJson(),
+                accounts.authJson(),
+                heads.mapValues { (key, _) ->
+                    val effective = config.getConfig(key)
+                    DaemonProbe.HeadTrace(effective.trace)
+                },
+            )
+        },
     )
 
     private val models = ModelsMount(heads, ports, guard)

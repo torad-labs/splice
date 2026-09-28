@@ -14,6 +14,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import splice.core.auth.CredentialVerdict
 import splice.core.auth.CredentialVerdictRead
 import splice.core.util.Cancellables
+import splice.core.util.FormEncoding
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
 import java.net.ConnectException
@@ -30,7 +31,7 @@ import java.net.URI
  */
 public object DaemonProbe {
 
-    private val json = Json { ignoreUnknownKeys = true }
+    internal val json = Json { ignoreUnknownKeys = true }
 
     /** JW-02: what /health actually says — the version AND the head counters the launch shim
      *  already waits on. */
@@ -54,6 +55,9 @@ public object DaemonProbe {
         public val localOriginErrors: Long,
         public val providerErrors: Long,
     )
+
+    /** The effective head-only trace switch this running head booted with. */
+    public data class HeadTrace(public val enabled: Boolean)
 
     internal fun interface ResponseRead<T> {
         operator fun invoke(connection: HttpURLConnection): T
@@ -230,6 +234,27 @@ public object DaemonProbe {
 
     internal fun body(connection: HttpURLConnection): String =
         connection.inputStream.bufferedReader().use { it.readText() }
+}
+
+/** One head's effective trace switch from the daemon's guarded config route. This is the same
+ *  request shape doctor uses for a stopped-versus-booted comparison, not a fresh topology read. */
+public class TraceConfigProbe {
+    /** Null means no trustworthy answer, never trace off. */
+    public fun read(port: Int, bearer: String, head: String): DaemonProbe.HeadTrace? =
+        Cancellables.runCatchingCancellable {
+            val key = FormEncoding.percentEncode(head)
+            DaemonProbe.request("http://127.0.0.1:$port/api/config?head=$key", bearer = bearer) {
+                parse(DaemonProbe.body(it))
+            }
+        }.fold(onSuccess = { it }, onFailure = { null })
+
+    /** Parse only the typed effective switch; a missing or non-Boolean trace is not "off". */
+    public fun parse(body: String): DaemonProbe.HeadTrace? {
+        val effective = DaemonProbe.json.parseToJsonElement(body).jsonObject["effective"] as? JsonObject ?: return null
+        val enabled = (effective["trace"] as? JsonPrimitive)?.takeUnless { it.isString }
+            ?.booleanOrNull ?: return null
+        return DaemonProbe.HeadTrace(enabled)
+    }
 }
 
 private const val PROBE_TIMEOUT_MS = 400

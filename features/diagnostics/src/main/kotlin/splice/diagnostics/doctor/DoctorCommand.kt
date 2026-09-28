@@ -223,11 +223,16 @@ public class DoctorCommand(
         val port = settings.controlPort(topology, envReader)
         val snapshot = DaemonSnapshot(port, reads.health(port))
         val pools = if (snapshot.unanswered == null) reads.accountPools(port, envReader) else null
+        val runningTrace = if (snapshot.unanswered == null && topology != null) {
+            (reads.trace(port, envReader, topology.heads.keys) as? DaemonRead.Answered)?.value
+        } else {
+            null
+        }
         val read = (pools as? AccountPoolsRead.Read)?.pools.orEmpty()
         val sections = listOf(
             "prerequisites" to guarded { probes.prerequisiteChecks(envReader) },
             "installation" to guarded { installProbes.installationChecks(topo, envReader) },
-            "configuration" to guarded { config.configurationChecks(topo, configPath, live) },
+            "configuration" to guarded { config.configurationChecks(topo, configPath, live, runningTrace) },
             CHECK_DAEMON to guarded { daemon.daemonChecks(snapshot, envReader, topology, configPath) },
             "auth" to guarded { auth.authChecks(topo, envReader, snapshot, reads) },
             // v0.4.0 (FEATURES.md §11): which account each pooled head is on, and when every one is out.

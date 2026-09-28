@@ -162,8 +162,9 @@ class DoctorReportTest {
         )
         val out = report(env, withLogs = false, run = failing)
         val check = out.getValue("checks").jsonArray.single().jsonObject
-        val five = setOf("id", "status", "detail", "fix", "fix_id")
-        assertEquals(five, check.keys, "schema 1: a check is exactly these five")
+        val six = setOf("id", "status", "detail", "fix", "fix_id", "pending_restart")
+        assertEquals(six, check.keys, "schema 1: a check is exactly these six")
+        assertEquals("false", check.getValue("pending_restart").toString())
         assertEquals(JsonNull, check.getValue("fix_id"), "a login is the operator's to run: no fix id")
         assertEquals("auth/codex", check.getValue("id").jsonPrimitive.content)
         assertEquals("fail", check.getValue("status").jsonPrimitive.content)

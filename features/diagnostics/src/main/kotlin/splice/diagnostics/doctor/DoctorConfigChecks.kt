@@ -11,6 +11,7 @@ import splice.core.topology.Topology
 import splice.core.topology.TopologyKnobLayer
 import splice.core.topology.TopologyMessages
 import splice.core.util.EnvReader
+import splice.daemonclient.DaemonProbe
 import splice.topology.TopologyStatePaths
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
@@ -49,6 +50,7 @@ internal class DoctorConfigChecks(
         topo: DoctorTopology,
         configPath: Path,
         live: Boolean = false,
+        runningTrace: Map<String, DaemonProbe.HeadTrace>? = null,
     ): List<DoctorCheck> = when (topo) {
         is DoctorTopology.Absent -> listOf(
             DoctorCheck(CHECK_TOPOLOGY, CheckStatus.INFO, "no topology yet at $configPath", "splice init"),
@@ -97,7 +99,7 @@ internal class DoctorConfigChecks(
             listOf(summary) + brokenRefs + portDupes + ignoredSettingChecks(topology, configPath) +
                 stateDirChecks(topology, configPath) + systemPromptChecks(topology) +
                 projectPrompts.projectPromptChecks(topology) + wireTaps.wireTapChecks(topology) +
-                traces.traceChecks(topology) + localRuntime.localChecks(topology, live)
+                traces.traceChecks(topology, runningTrace) + localRuntime.localChecks(topology, live)
         }
     }
 

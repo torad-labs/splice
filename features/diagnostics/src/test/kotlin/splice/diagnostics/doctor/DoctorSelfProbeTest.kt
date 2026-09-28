@@ -87,6 +87,7 @@ class DoctorSelfProbeTest {
             health = """{"version":"$version","heads":1,"readyHeads":1,"failedHeads":0}""",
             heads = """{"heads":[{"key":"codex","health":{"localOriginErrors":0,"providerErrors":0}}]}""",
             auth = POOLED,
+            trace = emptyMap(), // this fixture exercises pool and health, not a booted trace
         )
         val run = DoctorTestPorts.doctor().collect(env(port), answers = answers)
         val sections = run.sections.toMap()

@@ -2,6 +2,8 @@
 // route's port, moved beside the route that answers with it.
 package splice.diagnostics.doctor
 
+import splice.daemonclient.DaemonProbe
+
 /**
  * V4-127: the `doctor --json` report, as the CLI renders it (JSON TEXT, not a JsonObject, so these
  * ports stay free of a serialization import and the daemon decides the shape in the module that
@@ -18,13 +20,13 @@ public fun interface DoctorReport {
     public operator fun invoke(answers: DaemonAnswers): String
 }
 
-/** V4-230: what the running daemon answers on /health, /api/heads and /api/auth, as JSON text, read
- *  by the daemon itself for its own doctor. The same bodies the CLI would fetch, so both doctors
- *  parse one shape (DaemonProbe's parsers). */
+/** What the daemon's own doctor reads without making an HTTP call back into itself. [trace] is
+ *  derived from the same effective ConfigService GET /api/config serves to an external CLI. */
 public data class DaemonAnswers(
     public val health: String,
     public val heads: String,
     public val auth: String,
+    public val trace: Map<String, DaemonProbe.HeadTrace>,
 )
 
 /** Takes the daemon's [DaemonAnswers] at call time: two of the three are suspend reads, and a doctor

@@ -9168,3 +9168,4 @@ claimed_by = "splice-lead"
 claimed_at = "2026-09-28T11:53:51.693Z"
 # [2026-09-28] CLAIM: owner=splice-lead at=2026-09-28T11:53:51Z
 # [2026-09-28] Sep 28 7:46 AM CT: installed ece5cf591 (ci run 36422158870 success on that exact sha) from that run's splice-jar artifact, no local build. Jar sha256 4da07a447e750b9c3e98cdf38f5ecf264c1f084bb25673681b78e5dbfd89be56 equals /proc/2787369/fd/4. Daemon pid 2787369. Backup ~/.local/share/splice/splice.jar.bak-20260928-pre-ece5cf591418a339e36cb68e5dc021e9062f4d7f.
+# [2026-09-28] Verified: the first artifact install. ci.yml's splice-jar (67 MB) came from the green gate on ece5cf591, and install-sha.sh fetched, archived (SHA256SUMS + SOURCE files), installed and fd-verified it with no worktree anywhere.

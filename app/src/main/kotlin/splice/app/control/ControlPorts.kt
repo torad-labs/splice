@@ -33,6 +33,11 @@ public fun interface DashboardPage {
  */
 public fun interface FailedHeads {
     public operator fun invoke(): Int
+
+    /** V4-394: each failed head's key and its boot reason, so `/health` can say which head is down
+     *  and why; `splice status` read "ready" beside a skipped head without it. A count-only gauge
+     *  names none. */
+    public fun reasons(): Map<String, String> = emptyMap()
 }
 
 /**

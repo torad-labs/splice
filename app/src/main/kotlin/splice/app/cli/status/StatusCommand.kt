@@ -60,7 +60,8 @@ internal class StatusCommand(
         println("  " + palette.paint(palette.strong, "splice $GATEWAY_VERSION") + "     " + daemonLine)
         clientVersionWarning(health)?.let { println("  " + palette.paint(palette.strain, "! $it")) }
         println()
-        for (line in table.lines(topology, envReader)) println(line)
+        val failedHeads = health?.takeIf { up }?.failedHeadReasons.orEmpty()
+        for (line in table.lines(topology, envReader, failedHeads)) println(line)
         if (up) extras.printAccounts(port, envReader)
         println()
         // Paths sink below the table: they are reference, not the answer, and an operator who wants

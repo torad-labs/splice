@@ -6,11 +6,13 @@
 // config at all.
 package splice.app.control.api
 
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 import splice.app.control.FailedHeads
 import splice.app.control.ManagedHead
 import splice.app.control.TopologyDigest
@@ -79,6 +81,7 @@ internal class ControlPayloads(
         // (review 2026-07-22 round 3).
         put("readyHeads", running)
         put("failedHeads", failed)
+        putFailedHeadReasons(this)
         if (configuredHeads == 0 && running == 0) {
             if (failed == 0) {
                 put("setupState", "not_set_up")
@@ -93,6 +96,14 @@ internal class ControlPayloads(
         put("configPath", configPath)
         put("topologyStale", topologyStale())
     }.toString()
+
+    /** V4-394: which heads failed, and why, beside the count; absent on a healthy boot so the old
+     *  shape is unchanged for every reader that never asks. */
+    private fun putFailedHeadReasons(into: JsonObjectBuilder) {
+        val reasons = failedHeads.reasons()
+        if (reasons.isEmpty()) return
+        into.putJsonObject("failedHeadReasons") { reasons.forEach { (key, reason) -> put(key, reason) } }
+    }
 
     /** [families] is each head's vendor family by key (the declared roster's), null where splice
      *  names none; the console colours heads by it and falls back to registry order on a null. */

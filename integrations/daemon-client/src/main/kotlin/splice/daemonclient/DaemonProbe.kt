@@ -46,6 +46,8 @@ public object DaemonProbe {
         public val ok: Boolean? = null,
         public val turnPathStalled: List<String> = emptyList(),
         public val clientVersionWarning: String? = null,
+        /** V4-394: each failed head's key and boot reason; empty on a healthy boot or an older daemon. */
+        public val failedHeadReasons: Map<String, String> = emptyMap(),
     )
 
     /** JW-05: the per-head runtime counters from /api/heads (bearer-guarded) — the
@@ -130,6 +132,10 @@ public object DaemonProbe {
                 ?.mapNotNull { JsonScalars.str(it) }
                 .orEmpty(),
             clientVersionWarning = JsonScalars.str(obj, "clientVersionWarning"),
+            failedHeadReasons = (obj["failedHeadReasons"] as? JsonObject)
+                ?.mapNotNull { (key, reason) -> JsonScalars.str(reason)?.let { key to it } }
+                ?.toMap()
+                .orEmpty(),
         )
     }
 

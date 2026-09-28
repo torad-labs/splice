@@ -16,6 +16,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import splice.app.control.ControlServer
 import splice.app.control.DashboardPage
+import splice.app.control.FailedHeads
 import splice.app.control.ManagedHead
 import splice.app.daemon.BootedTopology
 import splice.app.daemon.HeadCatalogs
@@ -211,7 +212,11 @@ public class Daemon(
         val srv = controlPlane.start(
             controlPort = controlPort,
             heads = heads,
-            failedHeads = { failed.size },
+            failedHeads = object : FailedHeads {
+                override fun invoke(): Int = failed.size
+
+                override fun reasons(): Map<String, String> = failed.toMap()
+            },
             headCount = topology.heads.size,
             turnPathStalled = { headProbes.stalledKeys() },
         ) ?: return

@@ -35,9 +35,13 @@ internal class StatusTable(
      * short names, stayed green. Rows rendered one at a time cannot agree on a width at all:
      * alignment is a property of the table, so the table is the unit.
      */
-    internal fun lines(topology: Topology, envReader: EnvReader): List<String> {
+    internal fun lines(
+        topology: Topology,
+        envReader: EnvReader,
+        failedHeads: Map<String, String> = emptyMap(),
+    ): List<String> {
         val rows = topology.heads.mapNotNull { (key, head) ->
-            topology.providers[head.provider]?.let { row(key, head, it, envReader) }
+            topology.providers[head.provider]?.let { row(key, head, it, envReader, failedHeads[key]) }
         }
         // Each width is the larger of the header label and the widest cell, so it never maxes over
         // an empty list: zero heads still lays out its header before the setup action. DR-173 was that shape in doctor
@@ -72,6 +76,7 @@ internal class StatusTable(
         head: HeadConfig,
         provider: ProviderConfig,
         envReader: EnvReader,
+        bootFailure: String?,
     ): Row {
         val command = head.claude.command ?: key
         val selfManaged = AuthKindRegistry.from(provider.auth.kind) == AuthKind.Client
@@ -79,9 +84,12 @@ internal class StatusTable(
         val wrapped = signIn.wrapperInstalled(command, envReader)
         // ONE actionable column, not two state columns. A row is ready or it names the single
         // command that would make it ready, so the operator never has to work out which of
-        // "wrapper missing" and "not signed in" to act on first.
-        val action = action(selfManaged, authed, wrapped, command)
-        val glyph = if (authed && wrapped) {
+        // "wrapper missing" and "not signed in" to act on first. V4-394: the running daemon's word
+        // outranks both, because a head it could not build serves nothing however it is set up.
+        val action = bootFailure?.let { palette.paint(palette.strain, "not running: $it") }
+            ?: action(selfManaged, authed, wrapped, command)
+        val configured = authed && wrapped
+        val glyph = if (bootFailure == null && configured) {
             palette.paint(palette.live, LIVE_GLYPH)
         } else {
             palette.paint(palette.strain, STRAIN_GLYPH)

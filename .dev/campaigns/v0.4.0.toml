@@ -8466,6 +8466,7 @@ title = "claude-muse shows Muse's reasoning as it thinks, the way Muse Code does
 files = ["app/src/main/kotlin/splice/app/provider/MusePassthroughArm.kt"]
 status = "todo"
 verify = "red first: a dialect test over a recorded Meta Responses stream (reasoning_summary_text deltas) asserts Claude Code receives a thinking block with the summary text, failing on today's claude-muse wiring; live: a claude-muse turn shows its reasoning summary on the pane and the status line names the model; cache hit rate over 20 turns of a long session before and after; CI gate on the train sha"
+# [2026-09-28] Sep 28 evidence (splice-lead): the Messages endpoint still returns only redacted_thinking at output_config.effort xhigh with thinking {adaptive, display: summarized}, on muse-spark-1.2 AND 1.3 (live probes through :3106). All 153 readable thinking blocks under a muse model since Sep 16 are splice's own wait notice (V4-385), never Muse text. Muse Code 1.4.0 headless on this account: resp_6aba2e8e857ae36dac0646db, last wire event response.completed. Continuity on the Messages path is intact today (every redacted_thinking Muse sent reached Claude Code and rode back upstream, trace claude-muse), and rounds with no reasoning block carry thinking_tokens 0. Before code: prove splice's minted muse key is accepted at /v1/responses and that a summary arrives. Operator Sep 28: Muse sessions lose the thread and hallucinate; this row goes next after V4-384 and V4-385.
 
 [[items]]
 id = "V4-352"

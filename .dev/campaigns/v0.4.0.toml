@@ -9043,12 +9043,13 @@ claimed_at = "2026-09-28T08:46:16.886Z"
 id = "V4-385"
 phase = "release"
 title = "splice never replays its own wait notice upstream as the model's reasoning. Found Sep 28 (splice-lead, muse trace): TurnProgressLine.kt:30-32 streams '[splice] holding this turn open. 34s into the turn, no output from <model> yet.' as an UNSIGNED thinking block; Claude Code keeps it, resends it every turn, and PassthroughMessageScrubber.isEmptyThinking keeps any thinking block with text, so qgre's muse session (606b77cd) sent 130 of them to api.meta.ai as the model's own prior reasoning (all 153 readable thinking blocks under a muse model since Sep 16 are these notices; muse itself never returned readable reasoning). Fix: the notice block carries one splice-owned marker that the notice writer and the request scrubber share as ONE definition, and every passthrough dialect drops marked blocks from the upstream request (the client still shows the notice); never a text-prefix match."
-files = ["features/turns/src/main/kotlin/splice/head/turn/TurnProgressLine.kt", "integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughMessageScrubber.kt", "integrations/dialects/anthropic/src/test/kotlin/splice/dialect/anthropic/v4385/"]
+files = ["features/turns/src/main/kotlin/splice/head/turn/TurnProgressLine.kt", "features/turns/src/main/kotlin/splice/head/wire/SseEmitter.kt", "core/src/main/kotlin/splice/core/turn/SpliceNotice.kt", "integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughMessageScrubber.kt", "integrations/dialects/anthropic/src/test/kotlin/splice/dialect/anthropic/v4385/", "features/turns/src/test/kotlin/splice/head/wire/v4385/"]
 status = "in_flight"
 verify = "red first: a replayed history holding a notice block reaches the upstream body on today's tree; green after, with a real model thinking block beside it still riding verbatim (signature included); mutants: drop the scrubber rule (red), mark nothing at the writer (red); live: a muse turn past 34s, then the next request's trace (splice trace claude-muse) carries zero '[splice] holding' blocks"
 claimed_by = "claude-builder"
 claimed_at = "2026-09-28T09:41:24.317Z"
 # [2026-09-28] CLAIM: owner=claude-builder at=2026-09-28T09:41:24Z
+# [2026-09-28] amend by=splice-lead: files were ["features/turns/src/main/kotlin/splice/head/turn/TurnProgressLine.kt", "integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughMessageScrubber.kt", "integrations/dialects/anthropic/src/test/kotlin/splice/dialect/anthropic/v4385/"]
 
 [[items]]
 id = "V4-386"

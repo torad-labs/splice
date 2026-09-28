@@ -214,6 +214,16 @@ behaviour a seat or a caller depends on. Unlike 1, 2, 3 and 5 they are permanent
     before the change. Mutant `deletedOnBranch` always true: red on both guards ("an untracked deletion
     is refused" and the delta 22 guard), 198/201 against 200/201 for the unmutated copy outside the repo
     (delta 20's arm, as noted above).
+23. **A receipt names no file the census leaves unclaimed (2026-09-28).** splice's gate runs
+    `.dev/restructure/census.ts` as `:census`, and two rows in one day (V4-391, V4-357) committed new
+    files with no `capabilities.tsv` row, which only CI caught, after the push, one red run each. Where a
+    repository has that census script, `receipt` now runs it and refuses when a touched path is among its
+    `unclaimed:` lines, naming the path and the remedy; a repository without the script is unaffected, so
+    the source's behaviour is unchanged there. Under the shared-branch protocol the builder commits before
+    filing, so a new file is tracked and the census sees it. Two selftest arms (203 ledger) under a
+    stand-in census: a receipt naming the unclaimed file is refused, and one naming only claimed files is
+    recorded. Red first: 202/203. Mutant refusing on any unclaimed line rather than the receipt's own:
+    red on the second arm (201/203, with delta 20's out-of-repo arm).
 
 **`fleet.ts` (splice-only, not vendored).** What `manifest.py` did that the canonical CLI does not:
 the fleet journal (`$TORAD_FLEET_ROOT/journal/events.jsonl`, byte-compatible with py's writer: the

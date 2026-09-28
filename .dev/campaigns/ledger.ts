@@ -581,6 +581,18 @@ function headBlob(root: string, rel: string): string | null {
   return r.exitCode === 0 ? r.stdout.toString().trim() : null;
 }
 
+const CENSUS_SCRIPT = ".dev/restructure/census.ts";
+const CENSUS_TSV = ".dev/restructure/capabilities.tsv";
+
+/** Delta 23: the paths this repository's census reports unclaimed; none where the repository has no census. */
+function censusUnclaimed(root: string): string[] {
+  if (!existsSync(join(root, CENSUS_SCRIPT))) return [];
+  const r = Bun.spawnSync(["bun", CENSUS_SCRIPT], { cwd: root, stdout: "pipe", stderr: "pipe" });
+  return (r.stdout.toString() + r.stderr.toString()).split("\n")
+    .map((l) => /^unclaimed: (\S+)$/.exec(l.trim())?.[1])
+    .filter((p): p is string => p !== undefined);
+}
+
 /** Delta 22: a commit reachable from HEAD deleted [rel], i.e. a deletion already committed before its receipt. */
 function deletedOnBranch(root: string, rel: string): boolean {
   const r = Bun.spawnSync(["git", "-C", root, "log", "-1", "--diff-filter=D", "--format=%H", "HEAD", "--", rel], { stdout: "pipe", stderr: "pipe" });
@@ -1397,6 +1409,10 @@ export async function main(argv: readonly string[] = Bun.argv.slice(2)): Promise
       if (stillThere.length > 0) throw new LedgerError(`receipt: --deleted files still exist on disk: ${stillThere.join(", ")}`);
       const untracked = deleted.filter((p) => headBlob(root, p) === null && !deletedOnBranch(root, p));
       if (untracked.length > 0) throw new LedgerError(`receipt: --deleted files are not tracked at HEAD and no commit on this branch deleted them: ${untracked.join(", ")}`);
+      // Delta 23: refused here, at the builder, rather than by CI's :census after the push (V4-391's and
+      // V4-357's new files both reached CI unclaimed on 2026-09-28).
+      const unclaimed = censusUnclaimed(root).filter((p) => files.includes(p));
+      if (unclaimed.length > 0) throw new LedgerError(`receipt: the census claims no row for ${unclaimed.join(", ")} — add a \`created\` row (or the relocate that claims it) to ${CENSUS_TSV} and commit it with the files`);
       const line =`RECEIPT cmd=${JSON.stringify(oneLine("cmd", cmd))} exit=${exit} tests=${tests} touched=${files.length > 0 ? files.join(",") : "-"}${deleted.length > 0 ? ` deleted=${deleted.join(",")}` : ""}${tail ? ` tail=${JSON.stringify(tail.slice(-400))}` : ""}`;
       await mutate(ledgerPath, (current) => withNote(current, findBlock(locateItems(current), id), line));
       console.log(`${id}: receipt recorded (exit ${exit}, ${tests} tests, ${files.length} files${deleted.length > 0 ? `, ${deleted.length} deleted` : ""})`);
@@ -3082,6 +3098,22 @@ async function selftest(): Promise<number> {
     check("landed confirms the committed deletion (delta 22)", landed.includes("receipt file(s) present") && !landed.includes("still present"), landed.trim());
     const never = await run("receipt", "DL22", "--cmd", "x", "--exit", "0", "--tests", "0", "--touched", "-", "--deleted", "src/never22.ts");
     check("a path no commit deleted stays refused (delta 22)", never.includes("not tracked"), never.trim());
+  }
+
+  // DELTA 23: a repository with a census refuses a receipt whose files the census leaves unclaimed,
+  // at the builder, instead of CI's :census reddening after the push. A stand-in census reports one
+  // path; it is removed after this block so no other arm runs under it.
+  {
+    mkdirSync(join(repo, ".dev", "restructure"), { recursive: true });
+    await Bun.write(join(repo, ".dev", "restructure", "census.ts"), 'console.log("unclaimed: src/c23.ts"); process.exit(1);\n');
+    await Bun.write(join(repo, "src", "c23.ts"), "// c23\n");
+    await run("add", "--id", "CN23", "--phase", "over", "--title", "a file the census misses", "--verify", "true", "--files", "src/c23.ts,src/a.ts");
+    const refused = await run("receipt", "CN23", "--cmd", "x", "--exit", "0", "--tests", "0", "--touched", "src/c23.ts,src/a.ts");
+    check("a receipt naming a file the census leaves unclaimed is refused (delta 23)", refused.includes("census") && refused.includes("src/c23.ts") && !refused.includes("receipt recorded"), refused.trim());
+    const claimed = await run("receipt", "CN23", "--cmd", "x", "--exit", "0", "--tests", "0", "--touched", "src/a.ts");
+    check("a receipt whose files the census claims is recorded (delta 23)", claimed.includes("receipt recorded"), claimed.trim());
+    rmSync(join(repo, ".dev", "restructure"), { recursive: true });
+    rmSync(join(repo, "src", "c23.ts"));
   }
 
   rmSync(repo, { recursive: true, force: true });

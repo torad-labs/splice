@@ -8831,9 +8831,12 @@ id = "V4-375"
 phase = "release"
 title = "A cleared head-override field in Settings' topology editor removes the key; today it writes an empty string. Live, V4-360 walker p20 on walk-desk@47920066d (walks-2026-09-27-v4360/p20): Doctor and Needs you say 'remove overrides.trace from [heads.local] and restart'. The walker cleared the trace field in Settings' structured topology editor and pressed Write topology (shots/daily-032..035; 3:07:47 PM CT). The file then held [heads.local.overrides] trace = \"\" (walk-desk config-backups/splice.toml.bak-20260927T201820Z-3d0b9b6e6e10, the before-image of the next write), the restarted daemon logged '[config] ignoring heads.local.trace: not a valid bool; the knob keeps its default' and '[local] trace days kept: its trace value '' is not true or false' (walk-desk daemon.log 15:08:19), and the empty field stayed on screen (daily-035). The walker spent ~60 more actions in the raw editor and ended by typing \"false\" (15:18:20 write), so no console path did what the product's own advice says. The writer already deletes a key the request no longer carries (TopologyWriter.kt header, REMOVED), so the console sends the override table without the cleared key (and without the table when it empties)."
 files = ["console/src/pages/settings/", "console/tests/settings.test.ts"]
-status = "todo"
+status = "in_flight"
 verify = "red first: a settings test clears the only [heads.local.overrides] key in the structured editor and asserts the PUT /api/topology body carries no heads.local.overrides.trace (and no empty overrides table), failing today with trace = \"\"; a cleared key among several keeps the others; console lint/typecheck/test green; CI gate green on the pushed sha."
 # [2026-09-28] Marlin, 7:48 PM CT: p22 (walks-2026-09-27-v4360/p22 step 5) removed the override with the head view's reset, the path that works; V4-375 should make removing a key that obvious in the structured editor too.
+claimed_by = "console"
+claimed_at = "2026-09-28T06:49:49.036Z"
+# [2026-09-28] CLAIM: owner=console at=2026-09-28T06:49:49Z
 
 [[items]]
 id = "V4-376"

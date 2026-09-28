@@ -244,8 +244,10 @@ describe('the daemon, the plans and the accounts', () => {
     ];
     const out = needsOf(quiet({ accounts: read({ accounts }) }), NOW).needs.filter((need) => need.source === 'accounts');
     expect(out.map((need) => [need.subject, need.finding])).toEqual([['spare', H.accountSignedOut], ['main', 'refresh rejected']]);
-    expect(out[0]?.fix).toEqual({ kind: 'login', head: 'claudex' });
-    expect(out[0]?.finding).toContain('new label');
+    expect(out[0]?.fix).toEqual({ kind: 'login', head: 'claudex', label: 'spare' });
+    expect(out[0]?.finding).toContain('this label');
+    expect(out[0]?.finding).not.toContain('new label');
+    expect(renderToStaticMarkup(createElement(FixCell, { fix: out[0].fix }))).toContain('Sign in again');
   });
 });
 

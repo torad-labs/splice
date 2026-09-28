@@ -82,7 +82,7 @@ export type Fix =
   | { kind: 'start'; head: string }
   | { kind: 'restart'; head: string }
   | { kind: 'restart-daemon' }
-  | { kind: 'login'; head: string }
+  | { kind: 'login'; head: string; label?: string }
   | { kind: 'copy'; command: string }
   /** A remedy the report's redaction reached: printed with why, never offered to copy. */
   | { kind: 'masked'; command: string }
@@ -115,7 +115,8 @@ const open = (href: string, label: string): Fix => ({ kind: 'open', href, label 
 const ACCOUNTS = open('#/accounts', S.openAccounts);
 const SIGN_IN = open('#/accounts', S.signIn);
 const OAUTH_KINDS = new Set(['chatgpt-oauth', 'grok-oauth', 'kimi-oauth', 'muse-oauth']);
-const loginFix = (kind: string, head: string): Fix => OAUTH_KINDS.has(kind) ? { kind: 'login', head } : SIGN_IN;
+const loginFix = (kind: string, head: string, label?: string): Fix => OAUTH_KINDS.has(kind)
+  ? { kind: 'login', head, ...(label === undefined ? {} : { label }) } : SIGN_IN;
 
 /** A read's data, or null when it holds none or holds a route this daemon does not serve. */
 const answered = <T>(read: Read<T | { pending: string }>): T | null =>
@@ -219,7 +220,7 @@ function accountNeeds(accounts: readonly AccountRow[], now: number): Need[] {
     }];
     if (state === 'signedOut' && account.label !== null) {
       const head = account.heads[0];
-      return need(H.accountSignedOut, head === undefined ? SIGN_IN : loginFix(account.kind, head));
+      return need(H.accountSignedOut, head === undefined ? SIGN_IN : loginFix(account.kind, head, account.label));
     }
     if (state === 'excluded') return need(exclusionText(account), ACCOUNTS);
     return [];

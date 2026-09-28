@@ -58,6 +58,8 @@ public class LoginRoutes(
         put("verification_uri", status.verificationUri)
         put("browser_url", status.browserUrl)
         put("failure_reason", status.failureReason)
+        put("label", status.label)
+        put("usage_set_aside", status.usageSetAside)
     }.toString()
 }
 

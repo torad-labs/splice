@@ -155,7 +155,10 @@ internal class LoginIo(
                 persistLabeled(path, account, parsed)
             }
         }.getOrElse { failure ->
-            output.line("splice: credential persistence error: ${SafeFailureText.render(failure)}")
+            val reason = if (failure is OAuthAccountRefused) failure.reason else
+                "credential persistence error: ${SafeFailureText.render(failure)}"
+            account?.recordRefusal(reason)
+            output.line("splice: $reason")
             null
         } ?: return false
         output.line("splice: signed in; credentials written to $target")
@@ -192,7 +195,12 @@ internal class LoginIo(
         }
         val files = OAuthAccountFiles(loginJson)
         val target = if (!account.tokenDerivedLabel) {
-            files.writeLabeled(account.kind, path, label, parsed)
+            val written = files.writeLabeledRenewal(account.kind, path, label, parsed)
+            account.recordSetAsideQuota(written.setAsideQuota)
+            written.setAsideQuota?.let { archive ->
+                output.line("splice: renewed '$label'; old usage record set aside as ${archive.fileName}; usage is read again on the next request")
+            }
+            written.file
         } else {
             val written = files.writeTokenDerived(account.kind, path, label, parsed, account.identity)
             written.retainedQuota?.let { quota ->

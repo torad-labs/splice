@@ -30,6 +30,7 @@ import splice.provider.kimi.KimiDeviceIdentity
 import splice.upstream.credentials.AccountCredentialIdentitySource
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialPresence
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.util.Base64
 
@@ -251,13 +252,16 @@ class AccountLoginTest {
         Files.writeString(pool.resolve("grok-2-quota.json"), "{}")
 
         val automatic = requireNotNull(LoginGrok().spec("grok", primary, "auto").account)
-        val explicit = assertThrows<OAuthAccountRefused> {
-            store.loginAccount(AuthKind.GrokOAuth, primary, "grok-2")
-        }
+        val explicit = store.loginAccount(AuthKind.GrokOAuth, primary, "grok-2")
 
         assertEquals("grok-3", automatic.resolvedLabel())
-        assertTrue(explicit.reason.contains("retained quota state"))
-        assertFalse(explicit.reason.contains("grok-2"))
+        assertEquals("grok-2", explicit.resolvedLabel())
+        assertTrue(loginIo.persistIfSignedIn(primary, """{"access_token":"synthetic-grok"}""", explicit))
+        assertTrue(Files.exists(pool.resolve("grok-2.json")))
+        val archive = requireNotNull(explicit.setAsideQuota())
+        assertTrue(archive.fileName.toString().startsWith("grok-2-quota.json.orphaned-"))
+        assertEquals("{}", Files.readString(archive))
+        assertFalse(Files.exists(pool.resolve("grok-2-quota.json"), LinkOption.NOFOLLOW_LINKS))
     }
 
     @Test
@@ -271,10 +275,17 @@ class AccountLoginTest {
             Files.createSymbolicLink(pool.resolve("$base-2-quota.json"), dir.resolve("$base-gone"))
             Files.createSymbolicLink(pool.resolve("$base-3.json"), primary)
             Files.createSymbolicLink(pool.resolve("$base-4.json"), dir.resolve("$base-gone-credential"))
-            assertThrows<OAuthAccountRefused> { store.loginAccount(kind, primary, "$base-2") }
+            val explicit = store.loginAccount(kind, primary, "$base-2")
             val account = store.loginAccount(kind, primary, "auto")
             assertEquals("$base-5", account.resolvedLabel())
             assertFalse(account.tokenDerivedLabel)
+            assertEquals("$base-2", explicit.resolvedLabel())
+            assertTrue(loginIo.persistIfSignedIn(primary, """{"access_token":"synthetic"}""", explicit))
+            val archived = requireNotNull(explicit.setAsideQuota())
+            assertTrue(Files.isSymbolicLink(archived))
+            assertEquals(dir.resolve("$base-gone"), Files.readSymbolicLink(archived))
+            assertFalse(Files.exists(dir.resolve("$base-gone"), LinkOption.NOFOLLOW_LINKS))
+            assertFalse(Files.exists(pool.resolve("$base-2-quota.json"), LinkOption.NOFOLLOW_LINKS))
         }
         val primary = dir.resolve("kimi.json")
         val spec = LoginKimi().spec("kimi", primary, "auto")
@@ -286,7 +297,7 @@ class AccountLoginTest {
         val persistedIdentity = KimiDeviceIdentity(deviceIdPath = pool.resolve("kimi-5-device_id"))
         assertEquals(persistedIdentity.headers(), spec.identityHeaders)
         assertTrue(Files.exists(pool.resolve("kimi-5.json")))
-        assertTrue(Files.isSymbolicLink(pool.resolve("kimi-2-quota.json")))
+        assertFalse(Files.exists(pool.resolve("kimi-2-quota.json"), LinkOption.NOFOLLOW_LINKS))
         assertTrue(Files.isSymbolicLink(pool.resolve("kimi-3.json")))
         assertTrue(Files.isSymbolicLink(pool.resolve("kimi-4.json")))
         assertEquals("{}", Files.readString(primary))

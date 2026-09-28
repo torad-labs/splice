@@ -93,11 +93,13 @@ internal class LoginCommand(
         when (provider.auth.kind) {
             "kimi-oauth" -> {
                 val spec = kimi.spec(headKey, oauthAuthPath(provider), label)
-                LoginResult(DeviceLoginFlow(output).run(spec, observer = observer), spec.account)
+                val ok = DeviceLoginFlow(output).run(spec, observer = observer)
+                LoginResult(ok, spec.account, spec.account?.refusal())
             }
             "muse-oauth" -> {
                 val spec = muse.spec(headKey, oauthAuthPath(provider), label)
-                LoginResult(DeviceLoginFlow(output).run(spec, observer = observer), spec.account)
+                val ok = DeviceLoginFlow(output).run(spec, observer = observer)
+                LoginResult(ok, spec.account, spec.account?.refusal())
             }
             // DR-97: the HEAD key, not the provider key — the daemon reads
             // effectiveApiKeyEnv(ctx.key), so the prompt must store under that var.
@@ -112,20 +114,26 @@ internal class LoginCommand(
                 if (spec == null) {
                     LoginResult(false)
                 } else {
-                    LoginResult(OAuthLoginFlow(output).run(spec, observer), spec.account)
+                    val ok = OAuthLoginFlow(output).run(spec, observer)
+                    LoginResult(ok, spec.account, spec.account?.refusal())
                 }
             }
         }
     } catch (e: OAuthAccountRefused) {
         println("splice: ${e.reason}")
-        LoginResult(false)
+        LoginResult(false, refusal = e.reason)
     } catch (e: IllegalArgumentException) {
-        println("splice: ${SafeFailureText.render(e)}")
-        LoginResult(false)
+        val reason = SafeFailureText.render(e)
+        println("splice: $reason")
+        LoginResult(false, refusal = reason)
     }
 
     // internal (V4-132): LoginSessions (splice.app) reads .ok/.account off runLoginAttempt's result.
-    internal data class LoginResult(val ok: Boolean, val account: OAuthLoginAccount? = null)
+    internal data class LoginResult(
+        val ok: Boolean,
+        val account: OAuthLoginAccount? = null,
+        val refusal: String? = null,
+    )
 
     private fun resolveHeadKey(headArg: String?, topology: Topology): String? {
         if (headArg != null) {

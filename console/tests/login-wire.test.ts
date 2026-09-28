@@ -40,7 +40,7 @@ function stateWires(source: string): string[] {
 const VIEW: Required<LoginView> = {
   id: '', state: 'starting', user_code: null, verification_uri: null, browser_url: null, failure_reason: null,
 };
-const STATUS: Required<LoginStatusPayload> = { ...VIEW, head: '' };
+const STATUS: Required<LoginStatusPayload> = { ...VIEW, head: '', label: null, usage_set_aside: null };
 
 const SERIALIZERS = [
   { file: 'features/accounts/src/main/kotlin/splice/accounts/signin/LoginRoutes.kt', fn: 'loginStatusJson', type: 'LoginStatusPayload', declared: STATUS },

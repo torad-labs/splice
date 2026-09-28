@@ -27,6 +27,10 @@ export interface SwitchPayload {
  *  names the head the login is for. */
 export interface LoginStatusPayload extends LoginView {
   head: string;
+  /** The credential's actual saved label, null before it lands or for the primary. */
+  label: string | null;
+  /** The prior usage record archived before a labeled renewal, null otherwise. */
+  usage_set_aside: string | null;
 }
 
 /** DELETE and PATCH on one pooled account, as AccountEditRoutes.kt answers them: `ok`, and a

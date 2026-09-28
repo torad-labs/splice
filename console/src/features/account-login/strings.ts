@@ -29,6 +29,8 @@ export const H = {
   waiting: 'Starting the sign-in.',
   afterRestart: 'Signed in; the plan restarts to use this account.',
   added: 'Account added.',
+  renewed: (label: string): string => `${label} renewed; old usage set aside, read again next request.`,
+  renewedExisting: (label: string): string => `${label} signed in again.`,
   failed: 'Login failed; try again, or run splice login <head>.',
   switched: 'Takes effect on the next turn; a running turn keeps its account.',
   unpinned: 'The usual order picks again from the next turn.',

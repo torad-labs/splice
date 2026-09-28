@@ -46,6 +46,10 @@ public data class LoginStatus(
     val verificationUri: String? = null,
     val browserUrl: String? = null,
     val failureReason: String? = null,
+    /** The label actually written, which can differ from an automatic request's candidate. */
+    val label: String? = null,
+    /** Archived quota path for a labeled renewal, null when no record was set aside. */
+    val usageSetAside: String? = null,
 )
 
 public sealed class LoginStart {

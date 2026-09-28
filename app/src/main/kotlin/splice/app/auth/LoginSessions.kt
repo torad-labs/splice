@@ -92,10 +92,18 @@ internal class LoginSessions(
             null
         } ?: return
         if (!result.ok) {
-            update(cell) { it.copy(state = LoginState.FAILED, failureReason = "login did not complete") }
+            update(cell) {
+                it.copy(state = LoginState.FAILED, failureReason = result.refusal ?: "login did not complete")
+            }
             return
         }
-        update(cell) { it.copy(state = LoginState.SIGNED_IN) }
+        update(cell) {
+            it.copy(
+                state = LoginState.SIGNED_IN,
+                label = result.account?.persistedLabel(),
+                usageSetAside = result.account?.setAsideQuota()?.toString(),
+            )
+        }
         if (restart == null) return
         val restarted = Cancellables.runCatchingBestEffort { restart.restart() }.isSuccess
         if (restarted) update(cell) { it.copy(state = LoginState.LIVE_AFTER_RESTART) }

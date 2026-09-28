@@ -66,6 +66,8 @@ public class OAuthLoginAccount(
 ) {
     private val reservation = AtomicReference<OAuthLoginReservation.Lease?>(null)
     private val writtenLabel = AtomicReference<String?>(null)
+    private val setAsideQuota = AtomicReference<Path?>(null)
+    private val refusal = AtomicReference<String?>(null)
 
     /** A RE-PLANNED destination for a login that has not started: the reservation and the persisted
      *  label are deliberately NOT carried, because a lease belongs to exactly one account and the
@@ -96,6 +98,19 @@ public class OAuthLoginAccount(
 
     public fun persistedLabel(): String? = writtenLabel.get()
 
+    public fun setAsideQuota(): Path? = setAsideQuota.get()
+
+    /** Authored refusal, never a provider body. The console uses the same words as the CLI. */
+    public fun refusal(): String? = refusal.get()
+
+    internal fun recordSetAsideQuota(path: Path?) {
+        setAsideQuota.set(path)
+    }
+
+    internal fun recordRefusal(reason: String) {
+        refusal.set(reason)
+    }
+
     internal fun releaseReservation() {
         val lease = reservation.getAndSet(null) ?: return
         Cancellables.discard(
@@ -106,7 +121,11 @@ public class OAuthLoginAccount(
 }
 
 /** The persisted destination and any retained quota that required a different token-derived label. */
-public data class OAuthAccountWrite(public val file: Path, public val retainedQuota: Path? = null)
+public data class OAuthAccountWrite(
+    public val file: Path,
+    public val retainedQuota: Path? = null,
+    public val setAsideQuota: Path? = null,
+)
 
 /** Authored operator-facing refusal; [reason] contains no credential material. */
 public class OAuthAccountRefused(public val reason: String) : IllegalArgumentException(reason)
@@ -158,9 +177,6 @@ public class OAuthAccountFiles(private val json: Json = Json { ignoreUnknownKeys
         if (!primaryExists) {
             refuse("sign in without --label first to create the primary ${kind.wire} account")
         }
-        if (requestedLabel != AUTO && staleQuota(kind, primaryFile, requestedLabel)) {
-            refuse("OAuth account label has retained quota state; choose another label")
-        }
         if (requestedLabel == AUTO) {
             val resolver = defaultLabel ?: ordinalLabel(kind, primaryFile)
             return OAuthLoginAccount(
@@ -191,6 +207,9 @@ public class OAuthAccountFiles(private val json: Json = Json { ignoreUnknownKeys
 
     public fun writeLabeled(kind: AuthKind.OAuth, primaryFile: Path, label: String, providerJson: JsonObject): Path =
         writes.writeLabeled(kind, poolDir(kind, primaryFile), label, providerJson)
+
+    public fun writeLabeledRenewal(kind: AuthKind.OAuth, primaryFile: Path, label: String, providerJson: JsonObject): OAuthAccountWrite =
+        writes.writeLabeledRenewal(kind, poolDir(kind, primaryFile), label, providerJson)
 
     /** Post-exchange collision handling is only for labels that cannot be resolved before OAuth. */
     public fun writeTokenDerived(
@@ -251,9 +270,6 @@ public class OAuthAccountFiles(private val json: Json = Json { ignoreUnknownKeys
             primary,
             Files.isRegularFile(path),
         )
-
-    private fun staleQuota(kind: AuthKind.OAuth, primaryFile: Path, label: String): Boolean =
-        writes.retainedQuota(poolDir(kind, primaryFile), label) != null
 
     private fun ordinalLabel(kind: AuthKind.OAuth, primaryFile: Path): OAuthAccountLabel {
         // Silent on purpose: occupiedLabels below reserves every .json name, skipped or not, so a

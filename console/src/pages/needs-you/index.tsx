@@ -88,7 +88,7 @@ export function FixCell({ fix }: { fix: Fix }) {
     case 'restart-daemon':
       return <WithFallback action={<DaemonRestart />} command="splice restart" />;
     case 'login':
-      return <AccountLogin head={fix.head} purpose="renew" />;
+      return <AccountLogin head={fix.head} purpose="renew" {...(fix.label === undefined ? {} : { initialLabel: fix.label })} />;
     case 'copy':
     case 'masked':
       return <FixCommand command={fix.command} masked={fix.kind === 'masked'} />;

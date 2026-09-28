@@ -81,7 +81,7 @@ export const H = {
   configChanged: 'The splice.toml file changed since splice started.',
   tracePending: (head: string): string => `Trace for ${head} in splice.toml applies after restart.`,
   checkPending: 'A change in splice.toml applies after restart.',
-  accountSignedOut: 'Its login is gone; sign in with a new label.',
+  accountSignedOut: 'Its login is gone; sign in again under this label.',
   seatEnded: 'Its assigned session ended; assign another in the team.',
   seatUnlisted: 'Its assigned session is not in the session list.',
   quietSince: 'Alive, but never heard from since it registered.',

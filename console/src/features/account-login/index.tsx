@@ -10,7 +10,7 @@ import { fetchLoginStatus, refreshAuth, relabelAccount, removeAccount, startLogi
 import type { LoginView } from '@entities/auth';
 import { Empty, Reveal } from '@shared/ui';
 import { Confirm, Copy, Input, Key } from '@shared/controls';
-import { IDLE, LOGIN_PENDING_EMPTY, canStart, next, polling, stepMessage } from './model';
+import { LOGIN_PENDING_EMPTY, canStart, initialLoginState, next, polling, stepMessage } from './model';
 import type { LoginEvent, LoginFlowState } from './model';
 import { fetchAccounts } from '@entities/account';
 import { H, S } from './strings';
@@ -145,8 +145,8 @@ export function loginTabError(state: LoginFlowState): string | null {
 
 /** Start a login for a new account on one head. The form stays behind a Reveal, so the panel shows
  *  one "Add account" until the operator asks for the form. */
-export function AccountLogin({ head, purpose = 'add' }: { head: string; purpose?: 'add' | 'renew' }) {
-  const [state, dispatch] = useReducer(next, IDLE);
+export function AccountLogin({ head, purpose = 'add', initialLabel = '' }: { head: string; purpose?: 'add' | 'renew'; initialLabel?: string }) {
+  const [state, dispatch] = useReducer(next, initialLabel, initialLoginState);
   const openPage = useLoginPage(state.status, loginTabError(state));
   // Polled by the id the start answered with, from starting through the head's restart.
   const loginId = polling(state) ? state.status?.id ?? null : null;
@@ -165,7 +165,7 @@ export function AccountLogin({ head, purpose = 'add' }: { head: string; purpose?
     return <Empty text={LOGIN_PENDING_EMPTY.text} source={LOGIN_PENDING_EMPTY.source} />;
   }
 
-  const message = stepMessage(state);
+  const message = stepMessage(state, purpose);
 
   return (
     <Reveal label={purpose === 'renew' ? S.renew : S.add}>
@@ -175,7 +175,7 @@ export function AccountLogin({ head, purpose = 'add' }: { head: string; purpose?
           <Key disabled={!canStart(state)} onClick={() => { openPage(); void beginLogin(head, state.label.trim(), dispatch); }}>
             {S.start}
           </Key>
-          {state.step === 'idle' ? null : <Key onClick={() => dispatch({ kind: 'reset' })}>{S.cancel}</Key>}
+          {state.step === 'idle' ? null : <Key onClick={() => dispatch({ kind: 'reset', label: initialLabel })}>{S.cancel}</Key>}
         </div>
         {state.step !== 'awaiting' || state.status === null ? null : <LoginTicket status={state.status} />}
         {message === null ? null : <p className="myx-acct-note" role="status">{message}</p>}

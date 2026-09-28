@@ -43,6 +43,9 @@ export const IDLE: LoginFlowState = {
   note: null,
 };
 
+/** A renewal begins at its existing label, so the fix never asks for a different name. */
+export const initialLoginState = (label = ''): LoginFlowState => ({ ...IDLE, label });
+
 export type LoginEvent =
   | { kind: 'label'; value: string }
   | { kind: 'start' }
@@ -50,7 +53,7 @@ export type LoginEvent =
   | { kind: 'status'; payload: LoginStatusPayload }
   | { kind: 'pending'; row: string }
   | { kind: 'failed'; note: string }
-  | { kind: 'reset' };
+  | { kind: 'reset'; label?: string };
 
 /** Whether the flow is holding a label worth starting: a blank label would name the credential
  *  file nothing, so the start action stays closed until there is one. */
@@ -90,7 +93,7 @@ export function next(state: LoginFlowState, event: LoginEvent): LoginFlowState {
     case 'failed':
       return { ...state, step: 'failed', note: event.note };
     case 'reset':
-      return IDLE;
+      return initialLoginState(event.label);
     default:
       return state;
   }
@@ -109,16 +112,19 @@ export const LOGIN_PENDING_EMPTY = {
 
 /** The line the operator reads back. Kept here rather than in the component so the wording for
  *  each step is testable, and so no step can silently lose its sentence. */
-export function stepMessage(state: LoginFlowState): string | null {
+export function stepMessage(state: LoginFlowState, purpose: 'add' | 'renew' = 'add'): string | null {
+  const renewed = purpose === 'renew' && state.status?.label != null
+    ? state.status.usage_set_aside !== null ? H.renewed(state.status.label) : H.renewedExisting(state.status.label)
+    : null;
   switch (state.step) {
     case 'awaiting':
       if (state.status?.user_code != null) return H.device;
       if (state.status?.browser_url != null) return H.browser;
       return H.waiting;
     case 'landed':
-      return H.afterRestart;
+      return renewed === null ? H.afterRestart : `${renewed} ${H.afterRestart}`;
     case 'live':
-      return H.added;
+      return renewed ?? H.added;
     case 'failed':
       // the daemon's own words where it sent any: they say what failed
       return state.note ?? H.failed;

@@ -197,7 +197,8 @@ describe('the login flow machine', () => {
   // with it, and every poll does. The console first typed a plan (login_id, flow, a landed state)
   // the daemon never sent, so a login never polled and never finished against a real daemon.
   const view = (state: LoginStatusPayload['state'], extra: Partial<LoginStatusPayload> = {}): LoginStatusPayload => ({
-    id: 'L1', head: 'claudex', state, user_code: null, verification_uri: null, browser_url: null, failure_reason: null, ...extra,
+    id: 'L1', head: 'claudex', state, user_code: null, verification_uri: null, browser_url: null,
+    failure_reason: null, label: null, usage_set_aside: null, ...extra,
   });
 
   test('the start answers starting with no code, and the login is polled by the id it answered with', () => {

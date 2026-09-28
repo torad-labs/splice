@@ -8796,6 +8796,7 @@ claimed_at = "2026-09-28T03:04:03.026Z"
 # [2026-09-28] CI run 36376872896 on 1aead11d9: only :census red (console/tests/v4370-signin-connects.test.ts unclaimed); orchestrator added the created rows for V4-370 and V4-365 in 2c0362e0c (census 0 findings locally), pushed 11:30 PM CT.
 # [2026-09-28] amend by=splice-lead: files were ["console/src/widgets/add-backend/", "console/src/widgets/connect-plan/", "console/tests/v4370-signin-connects.test.ts", "console/e2e/v4346-first-hour.spec.ts", "console/src/pages/needs-you/index.tsx", "console/tests/needs-you.test.ts"]
 # [2026-09-28] Released console/src/pages/needs-you/index.tsx and console/tests/needs-you.test.ts to V4-379 (splice-lead, 12:21 AM CT). V4-370's edits to both are committed in f07e0a528 and its remaining step is Marlin's live walk. If that walk finds a Needs you defect, the fix goes through V4-379's holder (console) or back into this row after V4-379 lands.
+# [2026-09-28] Set done (3:45 AM CT, splice-lead): the builder slice is delivered with an exit-0 receipt. What remains is acceptance (Marlin's walk, and CI on the pushed sha), which moves the row to verified. A defect a walk finds goes to console under V4-348, which fences console/src/.
 
 [[items]]
 id = "V4-371"

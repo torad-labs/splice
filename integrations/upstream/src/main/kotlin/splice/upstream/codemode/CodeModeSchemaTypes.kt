@@ -7,11 +7,12 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.util.JsonScalars
+import java.util.HexFormat
 
 /** JSON Schema to the TypeScript type codex renders; a rendering past [MAX_RENDERED_SCHEMA_BYTES]
  *  becomes `unknown`, exactly as codex bounds it. */
-public object CodeModeSchemaTypes {
-    public fun render(schema: JsonElement): String {
+internal object CodeModeSchemaTypes {
+    fun render(schema: JsonElement): String {
         val rendered = SchemaTypeRenderer(schema).render(schema)
         return if (SchemaText.bytes(rendered) > MAX_RENDERED_SCHEMA_BYTES) UNKNOWN else rendered
     }
@@ -331,9 +332,8 @@ internal object SchemaText {
         var index = 0
         while (index < source.size) {
             if (source[index] == '%'.code.toByte()) {
-                val high = source.getOrNull(index + 1)?.let(::hexDigit) ?: return null
-                val low = source.getOrNull(index + 2)?.let(::hexDigit) ?: return null
-                decoded.write((high shl HEX_SHIFT) or low)
+                if (!isHexPair(source, index + 1)) return null
+                decoded.write(HexFormat.fromHexDigits(fragment, index + 1, index + PERCENT_TRIPLET))
                 index += PERCENT_TRIPLET
             } else {
                 decoded.write(source[index].toInt())
@@ -345,7 +345,11 @@ internal object SchemaText {
         return text.takeIf { it.toByteArray(Charsets.UTF_8).contentEquals(bytes) }
     }
 
-    private fun hexDigit(digit: Byte): Int? = Character.digit(digit.toInt().toChar(), HEX_RADIX).takeIf { it >= 0 }
+    /** Two ASCII hex digits at [at]; any other byte (or the end) makes the fragment undecodable. */
+    private fun isHexPair(source: ByteArray, at: Int): Boolean =
+        (at until at + 2).all { position ->
+            source.getOrNull(position)?.let { byte -> byte >= 0 && HexFormat.isHexDigit(byte.toInt()) } == true
+        }
 }
 
 private const val UNKNOWN = "unknown"
@@ -355,13 +359,21 @@ private const val MAX_LOCAL_REF_EXPANSIONS_PER_PATH = 2
 
 // Bound repeated refs and DAG fan-out separately from cycle depth.
 private const val MAX_TOTAL_LOCAL_REF_EXPANSIONS = 32
+
+// why: codex's MAX_RENDERED_SCHEMA_BYTES — one tool's declaration past this is `unknown`, not a wall of text.
 private const val MAX_RENDERED_SCHEMA_BYTES = 16_000
 private const val MAX_RENDER_WORK_BYTES = MAX_RENDERED_SCHEMA_BYTES * 4
+
+// why: codex charges `description_line.len() + 5` before pushing "  // " and the line.
 private const val COMMENT_PREFIX_BYTES = 5
+
+// why: codex's literal bound charges 4 bytes per object entry (quotes, colon, comma) beside its key and value.
 private const val OBJECT_ENTRY_BYTES = 4
+
+// why: JSON escaping widens one UTF-8 byte to at most a six-byte \uXXXX escape.
 private const val ESCAPE_WIDTH = 6
-private const val HEX_RADIX = 16
-private const val HEX_SHIFT = 4
+
+// why: a percent escape is `%` plus two hex digits.
 private const val PERCENT_TRIPLET = 3
 private val OBJECT_KEYS = listOf("properties", "additionalProperties", "required")
 private val REF_KEYS = setOf("\$ref", "\$defs", "definitions")

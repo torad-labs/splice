@@ -43,6 +43,8 @@ internal object CodeModeWire {
     const val maxCallsPerBatch: Int = 8
     const val maxCallsPerCell: Int = 32
     const val maxToolCatalog: Int = 2_048
+
+    // why: half of maxFrameBytes, so the descriptions plus a maximal source and tool list stay inside one frame.
     const val maxDescriptionBytes: Int = 524_288
 
     fun write(output: DataOutputStream, frame: JsonObject) {

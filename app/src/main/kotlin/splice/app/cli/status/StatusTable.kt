@@ -49,11 +49,21 @@ internal class StatusTable(
         failedHeads: Map<String, String> = emptyMap(),
         quotaResetAtEpochSeconds: Map<String, Long> = emptyMap(),
     ): List<String> {
-        val rows = topology.heads.mapNotNull { (key, head) ->
-            topology.providers[head.provider]?.let {
-                row(key, head, it, envReader, DaemonWord(failedHeads[key], quotaResetAtEpochSeconds[key]))
-            }
+        // V4-406: a row per configured head, and one per head the daemon names failed that this
+        // topology does not know — the join to providers used to DROP a head it could not resolve,
+        // hiding exactly the head whose boot failure the operator needs to read.
+        val configured = topology.heads.map { (key, head) ->
+            val word = DaemonWord(failedHeads[key], quotaResetAtEpochSeconds[key])
+            topology.providers[head.provider]?.let { row(key, head, it, envReader, word) }
+                ?: unresolvedRow(
+                    listOf(key, head.claude.command ?: key, head.port.toString(), "-"),
+                    word.bootFailure ?: "unknown provider '${head.provider}'",
+                )
         }
+        val unknown = failedHeads.filterKeys { it !in topology.heads }.toSortedMap().map { (key, reason) ->
+            unresolvedRow(listOf(key, "-", "-", "-"), reason)
+        }
+        val rows = configured + unknown
         // Each width is the larger of the header label and the widest cell, so it never maxes over
         // an empty list: zero heads still lays out its header before the setup action. DR-173 was that shape in doctor
         // — `maxOf` over an empty section threw on a running daemon with no heads.
@@ -112,6 +122,15 @@ internal class StatusTable(
         }
         return Row(glyph, listOf(key, command, head.port.toString(), backendLabel(provider)), action)
     }
+
+    /** A head whose provider the topology cannot resolve, or that only the daemon knows: it cannot
+     *  serve, so the row says not running with the daemon's reason, else the config's own. */
+    private fun unresolvedRow(cells: List<String>, reason: String): Row =
+        Row(
+            palette.paint(palette.strain, STRAIN_GLYPH),
+            cells,
+            palette.paint(palette.strain, "not running: $reason"),
+        )
 
     /** The one thing to do about this row, or a dim "ready" when there is nothing. The command is
      *  painted in splice's own tone because it is meant to be TYPED; the ready state is not.

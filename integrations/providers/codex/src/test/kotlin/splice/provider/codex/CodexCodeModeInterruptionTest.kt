@@ -44,7 +44,7 @@ class CodexCodeModeInterruptionTest : CodeModeBridgeTestSupport() {
         val output = items.single { it.jsonObject["type"] == JsonPrimitive("custom_tool_call_output") }
             .jsonObject.getValue("output").jsonPrimitive.content
         assertTrue(output.encodeToByteArray().size > 65_536)
-        val posted = Json.parseToJsonElement(output).jsonObject.getValue("results").jsonArray
+        val posted = terminatedEvidence(output).getValue("results").jsonArray
             .associate { it.jsonObject.getValue("id").jsonPrimitive.content to it.jsonObject }
         results.forEach { result ->
             assertEquals(result.output, posted.getValue(result.id)["output"]?.jsonPrimitive?.content)
@@ -76,7 +76,7 @@ class CodexCodeModeInterruptionTest : CodeModeBridgeTestSupport() {
         val items = Json.parseToJsonElement(upstream).jsonObject.getValue("input").jsonArray
         val output = items.single { it.jsonObject["type"] == JsonPrimitive("custom_tool_call_output") }
             .jsonObject.getValue("output").jsonPrimitive.content
-        val evidence = Json.parseToJsonElement(output).jsonObject
+        val evidence = terminatedEvidence(output)
         val completed = evidence.getValue("results").jsonArray.single().jsonObject
         assertEquals("finished", completed.getValue("output").jsonPrimitive.content)
         val unresolved = evidence.getValue("unresolved").jsonArray.single().jsonObject
@@ -145,7 +145,7 @@ class CodexCodeModeInterruptionTest : CodeModeBridgeTestSupport() {
         val items = Json.parseToJsonElement(upstream).jsonObject.getValue("input").jsonArray
         val output = items.single { it.jsonObject["type"] == JsonPrimitive("custom_tool_call_output") }
             .jsonObject.getValue("output").jsonPrimitive.content
-        val evidence = Json.parseToJsonElement(output).jsonObject
+        val evidence = terminatedEvidence(output)
         val completed = evidence.getValue("results").jsonArray.single().jsonObject
         assertEquals(result.output, completed.getValue("output").jsonPrimitive.content)
         assertEquals("true", completed.getValue("isError").jsonPrimitive.content)

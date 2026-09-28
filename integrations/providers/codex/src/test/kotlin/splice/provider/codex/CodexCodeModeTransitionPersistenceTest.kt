@@ -81,7 +81,11 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
         val items = Json.parseToJsonElement(upstreamBody).jsonObject.getValue("input").jsonArray
         val completed = items.single { it.jsonObject["type"] == JsonPrimitive("custom_tool_call_output") }
             .jsonObject
-        assertEquals(output, completed.getValue("output").jsonPrimitive.content)
+        // V4-388: the exact script output, under codex's exec header (the test clock does not move).
+        assertEquals(
+            "Script completed\nWall time 0.0 seconds\nOutput:\n$output",
+            completed.getValue("output").jsonPrimitive.content,
+        )
         assertEquals("outer-call", completed.getValue("call_id").jsonPrimitive.content)
         assertEquals(1, runtime.starts)
         assertEquals(1, runtime.cell.results.size)

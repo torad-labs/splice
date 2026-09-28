@@ -134,7 +134,7 @@ class CodexCodeModeRecoveryTest : CodeModeBridgeTestSupport() {
         assertFalse(items.any { it.jsonObject["type"] == JsonPrimitive("function_call_output") })
         val output = items.single { it.jsonObject["type"] == JsonPrimitive("custom_tool_call_output") }
             .jsonObject.getValue("output").jsonPrimitive.content
-        val evidence = Json.parseToJsonElement(output).jsonObject
+        val evidence = terminatedEvidence(output)
         assertEquals("interrupted", evidence.getValue("status").jsonPrimitive.content)
         assertEquals("false", evidence.getValue("sourceRerun").jsonPrimitive.content)
         val result = evidence.getValue("results").jsonArray.single().jsonObject

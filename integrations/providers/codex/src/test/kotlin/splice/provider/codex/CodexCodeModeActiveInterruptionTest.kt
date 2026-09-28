@@ -55,7 +55,7 @@ class CodexCodeModeActiveInterruptionTest : CodeModeBridgeTestSupport() {
             val output = Json.parseToJsonElement(upstream).jsonObject.getValue("input").jsonArray
                 .single { it.jsonObject["type"] == JsonPrimitive("custom_tool_call_output") }
                 .jsonObject.getValue("output").jsonPrimitive.content
-            val evidence = Json.parseToJsonElement(output).jsonObject
+            val evidence = terminatedEvidence(output)
             assertEquals(if (partial) 1 else 0, evidence.getValue("results").jsonArray.size)
             assertEquals(if (partial) 1 else 2, evidence.getValue("unresolved").jsonArray.size)
             if (partial) {

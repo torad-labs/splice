@@ -2,6 +2,7 @@ package splice.provider.codex
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
@@ -30,6 +31,14 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 
 internal const val BASE_REQUEST: String = """{"input":[{"role":"developer","content":"s"}]}"""
+
+private val TERMINATED_HEADER = Regex("^Script terminated\nWall time \\d+\\.\\d seconds\nOutput:\n")
+
+/** V4-388: an interruption's evidence JSON under codex's "Script terminated" exec header. */
+internal fun terminatedEvidence(output: String): JsonObject {
+    val header = checkNotNull(TERMINATED_HEADER.find(output)) { "not a terminated exec output: ${output.take(80)}" }
+    return Json.parseToJsonElement(output.substring(header.range.last + 1)).jsonObject
+}
 
 abstract class CodeModeBridgeTestSupport {
     @TempDir

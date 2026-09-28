@@ -224,24 +224,18 @@ internal class WorkerBridge(private val allowedTools: Set<String>) {
         if (kept.isNotEmpty()) logs.append(separator).append(kept)
     }
 
-    /** A failure carries its reason and the evidence logged before it; the model used to see only
+    /** A failure carries the evidence logged before it as its output and its reason as its error, apart,
+     *  so the bridge frames them as codex does (output, then "Script error:"); the model used to see only
      *  "Code execution failed" and rerun every call directly. */
     private fun complete(value: String, failed: Boolean) {
         completion = if (failed) {
-            WorkerCompletion(output = "", error = failureMessage(value))
+            WorkerCompletion(
+                output = fitBytes(logsWithMarker(), CodeModeWire.maxTextBytes),
+                error = fitBytes(value.ifBlank { EXECUTION_FAILURE }, CodeModeWire.maxTextBytes),
+            )
         } else {
             WorkerCompletion(output = finalOutput(value), error = null)
         }
-    }
-
-    private fun failureMessage(reason: String): String {
-        val evidence = logsWithMarker()
-        val detail = buildString {
-            append(EXECUTION_FAILURE)
-            if (reason.isNotBlank()) append(": ").append(reason)
-            if (evidence.isNotEmpty()) append("\nOutput before the failure:\n").append(evidence)
-        }
-        return fitBytes(detail, CodeModeWire.maxTextBytes)
     }
 
     private fun finalOutput(value: String): String {

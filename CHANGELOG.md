@@ -628,7 +628,10 @@ origin.
   runner on 0 to 10% of turns and read files one call at a time. In a script a tool is
   `await tools.Read({...})`, `text()` returns evidence, `ALL_TOOLS` lists every tool with its
   declaration (deferred ones too), and `exit()` ends early; `tools.call(name, args)` still runs for
-  scripts written before. The guidance batches independent reads in one `exec` with
+  scripts written before. No `tool_search` rides beside `exec`, as Codex sends none: a deferred tool
+  is found in `ALL_TOOLS`. A script's result reads the way Codex frames it: `Script completed` or
+  `Script failed`, the wall time, `Output:`, what the script returned, and on a failure
+  `Script error:` last. The guidance batches independent reads in one `exec` with
   `Promise.allSettled`; a client that disables parallel tool use gets the sequential variant.
 - **Claude Code's system messages reach GPT the way Codex sends context.** Peer messages, task
   notifications and hook output arrive from Claude Code as `system` messages; on a lite turn they

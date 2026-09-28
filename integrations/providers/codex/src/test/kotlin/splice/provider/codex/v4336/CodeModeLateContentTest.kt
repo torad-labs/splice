@@ -28,6 +28,7 @@ import splice.dialect.responses.request.ResponsesContextMessage
 import splice.provider.codex.BASE_REQUEST
 import splice.provider.codex.CodeModeBridgeTestSupport
 import splice.provider.codex.CodexCodeModeBridge
+import splice.provider.codex.terminatedEvidence
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 
@@ -51,7 +52,10 @@ class CodeModeLateContentTest : CodeModeBridgeTestSupport() {
             assertEquals(listOf("A", "B"), runtime.cell.results.last().map { it.output })
             val input = inputOf(upstream)
             val output = input.indexOfFirst { typeOf(it) == "custom_tool_call_output" }
-            assertEquals("both done", input[output].jsonObject.getValue("output").jsonPrimitive.content)
+            assertEquals(
+                "Script completed\nWall time 0.0 seconds\nOutput:\nboth done",
+                input[output].jsonObject.getValue("output").jsonPrimitive.content,
+            )
             assertEquals(message("system", LATE), input.drop(output + 1).single(), "the new content follows the output")
         }
 
@@ -187,7 +191,7 @@ class CodeModeLateContentTest : CodeModeBridgeTestSupport() {
     /** The interruption evidence's unresolved call ids; the output must be an interruption. */
     private fun unresolved(upstream: String): List<String> {
         val output = inputOf(upstream).single { typeOf(it) == "custom_tool_call_output" }
-        val evidence = Json.parseToJsonElement(output.jsonObject.getValue("output").jsonPrimitive.content).jsonObject
+        val evidence = terminatedEvidence(output.jsonObject.getValue("output").jsonPrimitive.content)
         assertEquals("interrupted", evidence.getValue("status").jsonPrimitive.content)
         return evidence.getValue("unresolved").jsonArray.map { idOf(it) }
     }

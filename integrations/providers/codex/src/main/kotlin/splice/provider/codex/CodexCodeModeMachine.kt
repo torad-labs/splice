@@ -15,6 +15,7 @@ import splice.upstream.failure.CodeModeTimeoutException
 import splice.upstream.sse.WireSink
 import java.io.IOException
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 private data class CodeModeAdvanceRequest(
     val record: CodeModeRecord,
@@ -29,6 +30,10 @@ internal class CodexCodeModeMachine(
     private val registry: CodexCodeModeRegistry,
     private val validation: CodexCodeModeValidation,
 ) {
+    /** When each running script first advanced, for codex's "Wall time" line. In memory only: a restored
+     *  ACTIVE record comes back LOST, so a script completes in the daemon that started it or not at all. */
+    private val started: MutableMap<String, Long> = ConcurrentHashMap()
+
     suspend fun advance(
         record: CodeModeRecord,
         turn: CodexCodeModeBridge.Turn,
@@ -36,6 +41,7 @@ internal class CodexCodeModeMachine(
         results: List<CodeModeResult>,
         sink: WireSink,
     ): TurnOutcome {
+        started.putIfAbsent(record.id, config.clock.millis())
         val request = CodeModeAdvanceRequest(record, turn, disableParallel, results, sink)
         return when {
             record.rounds >= config.maxRounds -> poison(record, "code-mode round limit exceeded")
@@ -62,11 +68,19 @@ internal class CodexCodeModeMachine(
     }
 
     fun interrupt(record: CodeModeRecord, detail: String = "additional client content arrived"): TurnOutcome {
-        registry.complete(record, CodeModeInterruption.output(record, detail, config.maxOutputChars))
+        val output = CodeModeExecOutput.terminated(record, detail, wallMillis(record), config.maxOutputChars)
+        registry.complete(record, output)
         return TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage())
     }
 
+    /** The script's wall time so far; its stamp goes with it, since the record is terminal after this. */
+    private fun wallMillis(record: CodeModeRecord): Long {
+        val now = config.clock.millis()
+        return now - (started.remove(record.id) ?: now)
+    }
+
     fun poison(record: CodeModeRecord, message: String): TurnOutcome.Failure {
+        started.remove(record.id)
         registry.lose(record, message)
         return TurnOutcome.Failure(
             message,
@@ -86,6 +100,7 @@ internal class CodexCodeModeMachine(
             is CodeModeStep.Completed -> complete(request.record, step)
         }
     } catch (error: CancellationException) {
+        started.remove(request.record.id)
         registry.lose(request.record, "code-mode cell cancelled: ${lostMessage(request.record)}", error)
         throw error
     } catch (error: CodeModePersistenceException) {
@@ -124,8 +139,10 @@ internal class CodexCodeModeMachine(
     }
 
     private fun complete(record: CodeModeRecord, step: CodeModeStep.Completed): TurnOutcome {
-        val output = step.error?.let { "code-mode error: $it" } ?: step.output
-        if (!validation.fitsOutput(output)) return poison(record, "code-mode output exceeds the size limit")
+        if (!validation.fitsOutput(step.output)) return poison(record, "code-mode output exceeds the size limit")
+        val wall = wallMillis(record)
+        val output = step.error?.let { CodeModeExecOutput.failed(step.output, it, wall, config.maxOutputChars) }
+            ?: CodeModeExecOutput.completed(step.output, wall, config.maxOutputChars)
         registry.complete(record, output)
         return TurnOutcome.Success(false, false, Usage())
     }

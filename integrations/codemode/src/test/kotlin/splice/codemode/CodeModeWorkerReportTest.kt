@@ -19,7 +19,7 @@ class CodeModeWorkerReportTest {
         runtime().use { runtime ->
             val cell = runtime.start("await tools.call(\"Write\", {});", setOf("Read"))
             val error = checkNotNull(completed(cell.advance()).error)
-            assertTrue(error.startsWith("Code execution failed: Error: Tool is not allowed"), error)
+            assertTrue(error.startsWith("Error: Tool is not allowed"), error)
         }
     }
 
@@ -30,10 +30,8 @@ class CodeModeWorkerReportTest {
             val calls = (cell.advance() as CodeModeStep.Calls).calls
             val result = splice.upstream.codemode.CodeModeResult(calls.single().id, "ENOENT: no such file", true)
             val completed = completed(cell.advance(listOf(result)))
-            assertEquals("", completed.output)
-            val error = checkNotNull(completed.error)
-            assertTrue(error.startsWith("Code execution failed: Error: ENOENT: no such file"), error)
-            assertTrue(error.endsWith("Output before the failure:\nbefore"), error)
+            assertEquals("before", completed.output, "the evidence logged before the failure is the output")
+            assertEquals("Error: ENOENT: no such file", completed.error)
         }
     }
 
@@ -44,7 +42,7 @@ class CodeModeWorkerReportTest {
             val completed = completed(cell.advance())
             assertEquals("", completed.output)
             val error = checkNotNull(completed.error)
-            assertTrue(error.startsWith("Code execution failed: SyntaxError"), error)
+            assertTrue(error.startsWith("SyntaxError"), error)
             assertFalse(error.contains("const = ;"), error)
         }
     }

@@ -41,6 +41,8 @@ import java.util.concurrent.TimeUnit
 
 private const val BRIDGE_BASE_REQUEST = """{"input":[{"role":"developer","content":"s"}]}"""
 
+private val COMPLETED_HEADER = Regex("^Script completed\nWall time \\d+\\.\\d seconds\nOutput:\n")
+
 // A hang guard, above SCRIPT_DEADLINE_MS so the runtime's own deadline is what ends a stuck script.
 @Timeout(60)
 class CodeModeBridgeRuntimeTest {
@@ -350,10 +352,13 @@ class CodeModeBridgeRuntimeTest {
         }
     }.toString()
 
+    /** V4-388: the script's own output, read under codex's "Script completed" exec header. */
     private fun completedOutput(body: String): String {
         val input = Json.parseToJsonElement(body).jsonObject.getValue("input").jsonArray
         val output = input.single { it.jsonObject["type"] == JsonPrimitive("custom_tool_call_output") }
-        return output.jsonObject.getValue("output").jsonPrimitive.content
+        val framed = output.jsonObject.getValue("output").jsonPrimitive.content
+        val header = checkNotNull(COMPLETED_HEADER.find(framed)) { "not a completed exec output: ${framed.take(80)}" }
+        return framed.substring(header.range.last + 1)
     }
 
     private fun runtime(timeoutMs: Long = SCRIPT_DEADLINE_MS) = JvmCodeModeRuntime(

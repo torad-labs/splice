@@ -21,6 +21,7 @@ import splice.core.topology.AuthKindRegistry
 import splice.sessions.http.ActivitySource
 import splice.sessions.http.CompactionSource
 import splice.sessions.http.KeptActivity
+import splice.sessions.http.ProjectSessions
 import splice.sessions.http.ProjectsRoutes
 import splice.sessions.http.RepoOf
 import splice.sessions.http.SentTextSource
@@ -69,14 +70,15 @@ internal class SessionsMount(
             accountOf = sessionAccounts,
         )
     }
+    private val historyIndex = TranscriptHistoryIndex()
+    private val historyRoots = listOf(SessionHistoryRoot(null, UserHome.dir().resolve(".claude"))) +
+        sessionHeads.mapNotNull { (head, source) -> source.transcriptRoot?.let { SessionHistoryRoot(head, it) } }
     private val historyRoutes = sessions?.let { registry ->
         val routes = checkNotNull(sessionsRoutes)
-        val roots = listOf(SessionHistoryRoot(null, UserHome.dir().resolve(".claude"))) +
-            sessionHeads.mapNotNull { (head, source) -> source.transcriptRoot?.let { SessionHistoryRoot(head, it) } }
         SessionHistoryRoute(
             registry,
-            TranscriptHistoryIndex(),
-            roots,
+            historyIndex,
+            historyRoots,
             SessionHistoryRowOf(routes::historyRow),
             SessionTranscriptViewEnabled { config.getConfig().transcriptView },
             SessionRepoNameOf { record -> routes.repoOf(record)?.root },
@@ -93,7 +95,12 @@ internal class SessionsMount(
     }
     private val projectsRoutes = sessionsRoutes?.let { routes ->
         ProjectsRoutes(
-            sessions,
+            ProjectSessions(
+                checkNotNull(sessions),
+                historyIndex,
+                historyRoots,
+                SessionTranscriptViewEnabled { config.getConfig().transcriptView },
+            ),
             sessionHeads,
             RepoOf(routes::repoOf),
             TeamSource { ports.teams },

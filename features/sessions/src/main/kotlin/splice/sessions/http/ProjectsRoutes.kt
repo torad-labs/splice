@@ -4,9 +4,9 @@
 //   GET /api/projects/{id}         one ProjectRow
 //   GET /api/projects/{id}/files   {id, files, looked_in, auto_memory_enabled?}
 //
-// A PROJECT IS A GIT ROOT and its id is that root. The roots are the registry sessions' repos (the
-// RepoResolver the sessions rows use: trusted roots only, worktrees folded into their repo) plus
-// every team's declared repo, so a team whose sessions have all ended still has its project.
+// A PROJECT IS A GIT ROOT and its id is that root. The roots include durable transcript/history
+// sessions as well as registry rows (using the Sessions route's RepoResolver: trusted roots only,
+// worktrees folded into their repo), plus each team's declared repo after its sessions have ended.
 //
 // TODAY IS THE UTC DAY, and the row says where it started (day_start) rather than letting the console
 // guess a boundary. turns_today and cost_today_usd join the perf rows of every head on the 8-character
@@ -54,14 +54,45 @@ import splice.sessions.query.SessionHead
 import splice.sessions.query.SessionPerfWindow
 import splice.sessions.registry.RepoRoot
 import splice.sessions.registry.SessionAvailability
+import splice.sessions.registry.SessionListing
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource
 import splice.sessions.registry.TrustedRoot
+import splice.sessions.transcript.SessionHistoryRoot
+import splice.sessions.transcript.SessionHistorySource
+import splice.sessions.transcript.SessionTranscriptViewEnabled
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.time.Instant
 import java.time.ZoneOffset
+
+/** The same durable history and live registry rows the Sessions listing draws, without paging.
+ *  A project must survive the registration of a headless session disappearing after its last turn. */
+public class ProjectSessions(
+    private val registry: SessionSource,
+    private val history: SessionHistorySource,
+    private val roots: List<SessionHistoryRoot>,
+    private val viewEnabled: SessionTranscriptViewEnabled = SessionTranscriptViewEnabled { true },
+) : SessionSource {
+    override fun read(): List<SessionRecord> = list().sessions
+
+    override fun list(): SessionListing {
+        val live = registry.list()
+        if (!viewEnabled()) return live
+        val joined = linkedMapOf<String, JoinedSession>()
+        history.scan(roots).sessions.forEach { entry -> joined[entry.sessionId] = JoinedSession(entry, null) }
+        live.sessions.forEach { record ->
+            val id = record.sessionId ?: return@forEach
+            val previous = joined[id]
+            if (previous?.live == null) joined[id] = JoinedSession(previous?.entry, record)
+        }
+        return SessionListing(
+            live.sessions.filter { it.sessionId == null } + joined.mapNotNull { (id, item) -> item.item(id)?.record },
+            live.error,
+        )
+    }
+}
 
 /** The repo files read as a project's own instructions, in the order they are listed. */
 private val INSTRUCTION_FILES = listOf("CLAUDE.md", "AGENTS.md")
@@ -170,8 +201,9 @@ public class ProjectsRoutes(
     private inner class ProjectView {
         private val records = registry?.read().orEmpty()
         private val allTeams = teams()?.teams().orEmpty()
-        private val byRoot = records.mapNotNull { record -> repoOf(record)?.let { it.root to record } }
-            .groupBy({ it.first }, { it.second })
+        private val byRoot = records.mapNotNull { record ->
+            repoOf(record)?.takeIf { it.reason == null }?.let { it.root to record }
+        }.groupBy({ it.first }, { it.second })
         private val dayStart = Instant.ofEpochMilli(clock()).atZone(ZoneOffset.UTC).toLocalDate()
             .atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
         private val today: List<Pair<SessionHead, SessionPerfWindow>> by lazy {

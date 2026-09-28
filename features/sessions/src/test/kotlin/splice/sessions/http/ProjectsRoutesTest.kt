@@ -35,6 +35,7 @@ class ProjectsRoutesTest {
     private val rig by lazy { TeamRig(tmp) }
 
     private fun routes(heads: Map<String, SessionHead>): ProjectsRoutes {
+        Files.createDirectories(rig.repo.resolve(".git"))
         val teams = TeamSource { rig.store }
         val sessions = SessionsRoutes(
             rig.registry,
@@ -62,8 +63,12 @@ class ProjectsRoutesTest {
         )
         val body = rig.json(routes(mapOf("codex" to codex)).list().body)
         val rows = body.getValue("projects").jsonArray.map { it.jsonObject }
-        val roots = listOf(rig.repo.toString(), tmp.resolve("elsewhere").toString()).sorted()
-        assertEquals(roots, rows.map { it.getValue("id").jsonPrimitive.content })
+        val roots = listOf(rig.repo.toString())
+        assertEquals(
+            roots,
+            rows.map { it.getValue("id").jsonPrimitive.content },
+            "a registry cwd outside git does not make a project",
+        )
         val repo = rows.single { it.getValue("id").jsonPrimitive.content == rig.repo.toString() }
         assertEquals(
             rig.json(
@@ -104,6 +109,8 @@ class ProjectsRoutesTest {
     @Test
     fun `the row names the compaction rules for its repo and each head's statusline root`() {
         rig.team()
+        Files.createDirectories(rig.repo.resolve(".git"))
+        Files.createDirectory(tmp.resolve("elsewhere/.git"))
         val heads = mapOf("codex" to rig.head("codex", emptyList()), "grok" to rig.head("grok", emptyList()))
         val config = ConfigService(
             StatePaths(baseOverride = tmp.resolve("state")),

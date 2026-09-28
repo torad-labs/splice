@@ -51,7 +51,7 @@ class ProviderAssemblyCompatibilityTest {
         AuthKind.ChatgptOAuth to setOf(Dialect.OPENAI_RESPONSES),
         AuthKind.GrokOAuth to setOf(Dialect.OPENAI_RESPONSES, Dialect.OPENAI_CHAT),
         AuthKind.KimiOAuth to setOf(Dialect.ANTHROPIC_PASSTHROUGH),
-        AuthKind.MuseOAuth to setOf(Dialect.OPENAI_RESPONSES),
+        AuthKind.MuseOAuth to setOf(Dialect.OPENAI_RESPONSES, Dialect.ANTHROPIC_PASSTHROUGH),
         AuthKind.Client to setOf(Dialect.ANTHROPIC_PASSTHROUGH),
     )
 
@@ -71,6 +71,10 @@ class ProviderAssemblyCompatibilityTest {
                         { fixture.assembly.buildProvider(ctx) },
                         "${kind.wire} must remain supported on ${DialectWires.name(dialect)}",
                     )
+                    if (kind == AuthKind.MuseOAuth && dialect == Dialect.ANTHROPIC_PASSTHROUGH) {
+                        val wired = fixture.assembly.buildProvider(ctx)
+                        assertEquals("https://example.invalid/v1/responses", wired.provider.upstreamUrl)
+                    }
                     accepted += 1
                 } else {
                     val error = assertThrows(IllegalArgumentException::class.java) {
@@ -85,8 +89,8 @@ class ProviderAssemblyCompatibilityTest {
             }
         }
 
-        assertEquals(6, accepted)
-        assertEquals(9, rejected)
+        assertEquals(7, accepted)
+        assertEquals(8, rejected)
     }
 
     @Test

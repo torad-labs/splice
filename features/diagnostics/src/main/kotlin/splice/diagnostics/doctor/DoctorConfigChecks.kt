@@ -45,6 +45,7 @@ internal class DoctorConfigChecks(
     /** V4-173: the row that keeps an opted-in wire tap visible on every run. */
     private val wireTaps = DoctorWireTapChecks()
     private val traces = DoctorTraceChecks(TopologyStatePaths(env).current())
+    private val museCompatibility = DoctorMuseCompatibilityChecks()
 
     internal fun configurationChecks(
         topo: DoctorTopology,
@@ -96,7 +97,8 @@ internal class DoctorConfigChecks(
                 )
             }
             // v0.4.0 (FEATURES.md §10): local runtimes answer for themselves, in their own words.
-            listOf(summary) + brokenRefs + portDupes + ignoredSettingChecks(topology, configPath) +
+            listOf(summary) + brokenRefs + portDupes + museCompatibility.checks(topology, configPath) +
+                ignoredSettingChecks(topology, configPath) +
                 stateDirChecks(topology, configPath) + systemPromptChecks(topology) +
                 projectPrompts.projectPromptChecks(topology) + wireTaps.wireTapChecks(topology) +
                 traces.traceChecks(topology, runningTrace) + localRuntime.localChecks(topology, live)

@@ -14,6 +14,7 @@ import splice.core.topology.Dialect
 import splice.core.topology.DialectWires
 import splice.core.util.LogSink
 import splice.oauth.grok.GrokRefresh
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * The dialect/auth/provider-ID dispatch: everything that turns one head's resolved [ProviderBuild]
@@ -36,6 +37,8 @@ internal class ProviderAssembly(
     private val apiKeyResponsesArm = ApiKeyResponsesArm(statePaths)
     private val codexResponsesArm = CodexResponsesArm(statePaths, probeScope, log, refreshCall)
     private val responsesArm = ResponsesArm(grokResponsesArm, apiKeyResponsesArm, codexResponsesArm)
+    private val legacyMuseDialectLogged = AtomicBoolean()
+    private val legacyMuseBaseLogged = AtomicBoolean()
 
     // The dispatch that makes the daemon genuinely multi-provider: codex (responses+oauth), grok
     // (responses or chat + grok-oauth), openai-platform (responses+api-key, hash cache key),
@@ -43,7 +46,7 @@ internal class ProviderAssembly(
     internal fun buildProvider(ctx: ProviderBuild): Wired {
         requireCompatibleAuth(ctx)
         val label = ctx.head.claude.command ?: ctx.key
-        if (ctx.providerCfg.auth.kind == MUSE_OAUTH) return museArm.museOauthProvider(ctx, label)
+        if (ctx.providerCfg.auth.kind == MUSE_OAUTH) return museArm.museOauthProvider(museCompatible(ctx), label)
         if (ctx.providerCfg.auth.kind == KIMI_OAUTH) return kimiArm.kimiOauthProvider(ctx, label)
         return when (ctx.providerCfg.dialect) {
             Dialect.OPENAI_RESPONSES -> responsesArm.responsesProvider(ctx, label)
@@ -57,6 +60,28 @@ internal class ProviderAssembly(
                     passthroughArm.passthroughProvider(ctx, label)
                 }
         }
+    }
+
+    /** Older Muse topology still boots on Responses while doctor names both declarations to fix. */
+    private fun museCompatible(ctx: ProviderBuild): ProviderBuild {
+        val declared = ctx.providerCfg
+        if (declared.dialect == Dialect.ANTHROPIC_PASSTHROUGH &&
+            legacyMuseDialectLogged.compareAndSet(false, true)
+        ) {
+            log(
+                "[muse][boot] stale dialect = \"anthropic-passthrough\"; serving Muse on Responses; " +
+                    "set dialect = \"openai-responses\" in [providers.muse]\n",
+            )
+        }
+        val base = declared.baseUrl.trimEnd('/')
+        val responsesBase = if (base.endsWith("/v1")) base else "$base/v1"
+        if (responsesBase != base && legacyMuseBaseLogged.compareAndSet(false, true)) {
+            log(
+                "[muse][boot] stale base_url without /v1; serving Muse at /v1/responses; " +
+                    "set base_url = \"$responsesBase\" in [providers.muse]\n",
+            )
+        }
+        return ctx.copy(providerCfg = declared.copy(dialect = Dialect.OPENAI_RESPONSES, baseUrl = responsesBase))
     }
 
     /** Registered auth kinds are promises with a finite compatibility matrix. Kimi OAuth also binds
@@ -76,7 +101,10 @@ internal class ProviderAssembly(
         AuthKind.ChatgptOAuth -> dialect == Dialect.OPENAI_RESPONSES
         AuthKind.GrokOAuth -> dialect == Dialect.OPENAI_RESPONSES || dialect == Dialect.OPENAI_CHAT
         AuthKind.KimiOAuth -> dialect == Dialect.ANTHROPIC_PASSTHROUGH && provider == "kimi"
-        AuthKind.MuseOAuth -> dialect == Dialect.OPENAI_RESPONSES && provider == "muse"
+        AuthKind.MuseOAuth -> museDialectAllowed(dialect, provider)
         AuthKind.Client -> dialect == Dialect.ANTHROPIC_PASSTHROUGH
     }
+
+    private fun museDialectAllowed(dialect: Dialect, provider: String): Boolean =
+        provider == "muse" && (dialect == Dialect.OPENAI_RESPONSES || dialect == Dialect.ANTHROPIC_PASSTHROUGH)
 }

@@ -8391,13 +8391,14 @@ claimed_at = "2026-09-27T14:55:29.469Z"
 id = "V4-347"
 phase = "release"
 title = "The console never sends me to the terminal for something it can do itself (build order 4). Needs you and Doctor print 'splice logs --head codex --tail 50' while the Logs page shows the same lines; install and restart are printed as commands. Each becomes the console's own action or link."
-files = ["console/src/pages/needs-you/", "console/src/pages/doctor/", "console/src/pages/logs/"]
+files = ["console/src/pages/needs-you/", "console/src/pages/doctor/", "console/src/pages/logs/", "console/src/entities/doctor/"]
 status = "in_flight"
 verify = "Marlin walks it by eye in a normal-size browser on a fresh home (or the film home where history is needed) at the built sha and approves; his walk log names the sha; CI gate on the train sha. A green gate is not approval."
 # depends:V4-344
 claimed_by = "console"
 claimed_at = "2026-09-28T07:14:50.677Z"
 # [2026-09-28] CLAIM: owner=console at=2026-09-28T07:14:50Z
+# [2026-09-28] amend by=splice-lead: files were ["console/src/pages/needs-you/", "console/src/pages/doctor/", "console/src/pages/logs/"]
 
 [[items]]
 id = "V4-348"

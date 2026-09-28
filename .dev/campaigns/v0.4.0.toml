@@ -8751,6 +8751,7 @@ title = "Needs you and Settings tell a pending trace change as pending, not as f
 files = ["console/src/pages/needs-you/", "console/tests/needs-you.test.ts", "console/src/pages/settings/", "console/tests/settings.test.ts", "console/src/entities/doctor/"]
 status = "todo"
 verify = "red first, two tests: needs-you with topologyStale true and a doctor trace row pending_restart true yields ONE item whose finding names splice.toml and the trace line (fails today: two items, the trace one in present tense); pending_restart false keeps the trace row its own item; settings with /api/topology heads.local.overrides.trace = \"true\" and /api/config running Full trace false shows both values and 'starts after restart' for claude-local (fails today: Off only); console lint/typecheck/test green; after V4-371 is installed, a walk-desk check: plant trace = \"true\" without restart, Needs you shows one item with the trace line, Settings shows both values."
+# [2026-09-28] Marlin, 7:48 PM CT: the V4-371/V4-378 live walk adds one leg covering V4-379: make a console write, restart from the terminal, and Needs you must read 0 with no Restart pending strip.
 
 [[items]]
 id = "V4-379"

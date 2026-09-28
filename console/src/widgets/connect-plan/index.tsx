@@ -18,16 +18,17 @@ export function PlanPicker({ choices, onSelect, onOther }: {
       <p>{H.intro}</p>
       <div className="myx-connect-options">
         {choices.map((choice) => (
-          <div className="myx-connect-option" key={choice.id}>
-            <Key disabled={choice.profile === null} onClick={() => onSelect(choice.id)}>{choice.label}</Key>
-            <p>{choice.profile === null ? H.unavailable : choice.description}</p>
-          </div>
+          <Key key={choice.id} className="myx-connect-card" ariaLabel={choice.label}
+            disabled={choice.profile === null} onClick={() => onSelect(choice.id)}>
+            <span className="myx-connect-name">{choice.label}</span>
+            <span className="myx-connect-description">{choice.profile === null ? H.unavailable : choice.description}</span>
+          </Key>
         ))}
       </div>
-      <div className="myx-connect-option">
-        <Key onClick={onOther}>{S.other}</Key>
-        <p>{H.other}</p>
-      </div>
+      <Key className="myx-connect-card" ariaLabel={S.other} onClick={onOther}>
+        <span className="myx-connect-name">{S.other}</span>
+        <span className="myx-connect-description">{H.other}</span>
+      </Key>
     </section>
   );
 }

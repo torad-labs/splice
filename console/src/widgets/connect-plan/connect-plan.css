@@ -2,5 +2,7 @@
 .myx-connect { display: grid; gap: var(--space-5); min-width: 0; }
 .myx-connect > .myx-key { justify-self: start; }
 .myx-connect-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(18 * var(--u))), 1fr)); gap: var(--space-4); }
-.myx-connect-option { display: grid; align-content: start; gap: var(--space-2); min-width: 0; }
-.myx-connect-option p { margin: 0; color: var(--fg-muted); font-size: var(--text-2); }
+.myx-connect-card { width: 100%; min-width: 0; align-items: stretch; text-align: start; }
+.myx-connect-card .myx-key-label { display: grid; align-content: start; gap: var(--space-2); min-width: 0; white-space: normal; }
+.myx-connect-description { color: var(--fg-muted); font-size: var(--text-2); font-weight: 400; }
+.myx-connect-card[disabled] .myx-connect-description { color: var(--fg-subtle); }

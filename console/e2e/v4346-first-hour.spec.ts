@@ -117,7 +117,8 @@ test('a fresh home connects ChatGPT in one browser gesture and returns a command
   await page.getByRole('button', { name: 'Other providers', exact: true }).click();
   await expect(page.getByRole('combobox', { name: 'Profile' })).toBeVisible();
   await page.getByRole('button', { name: 'All plans', exact: true }).click();
-  await page.getByRole('button', { name: 'ChatGPT', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'ChatGPT', exact: true })).toBeVisible();
+  await page.getByText('Sign in with your ChatGPT plan.', { exact: true }).click();
   await expect(page.getByText('ChatGPT subscription over the Responses API')).toBeVisible();
   await expect(page.getByRole('combobox', { name: 'Profile' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Continue', exact: true }).click();

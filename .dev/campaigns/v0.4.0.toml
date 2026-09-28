@@ -9278,6 +9278,7 @@ claimed_at = "2026-09-28T18:16:41.828Z"
 # [2026-09-28] CLAIM: owner=splice-lead at=2026-09-28T18:16:41Z
 # [2026-09-28] amend by=splice-lead: files were ["app/src/main/kotlin/splice/app/cli/status/", "app/src/test/kotlin/splice/app/cli/status/v4394/"]
 # [2026-09-28] RECEIPT cmd="bun tools/gate slot V4-394 -- :app:test --tests 'splice.app.cli.status.*' --tests 'splice.app.control.*' --tests 'splice.app.DaemonTest' :app:detekt :integrations-daemon-client:test :integrations-daemon-client:detekt (red first: v4394 failed to compile on HEAD, no failedHeads parameter, 'reasons' overrides nothing, no failedHeadReasons; mutation dropping the daemon's word from the row reddened the table test, restored byte-identical)" exit=0 tests=12 touched=app/src/main/kotlin/splice/app/cli/status/StatusTable.kt,app/src/main/kotlin/splice/app/cli/status/StatusCommand.kt,app/src/main/kotlin/splice/app/control/ControlPorts.kt,app/src/main/kotlin/splice/app/control/api/ControlPayloads.kt,app/src/main/kotlin/splice/app/Daemon.kt,integrations/daemon-client/src/main/kotlin/splice/daemonclient/DaemonProbe.kt,app/src/test/kotlin/splice/app/cli/status/v4394/FailedHeadStatusTest.kt tail="23027aa1d"
+# [2026-09-28] Receipt count correction: the receipt's 12 tests came from the filtered mutation run's result files. The full scoped command, rerun on 23027aa1d (source byte-identical after the restore), ran 231 tests, exit 0.
 
 [[items]]
 id = "V4-395"

@@ -1,7 +1,7 @@
 // NEW: V4-220 item 3 (2026-09-25) — `splice add` on the control plane (features/configuration's
 // AddRoutes) and `splice add-model` (AddModelRoutes), every route behind the management door. The
 // restart after either write is the console button's own: the SAME DaemonRestarts LifecycleMount
-// builds, so a compaction in flight is waited for and an unsupervised daemon is not drained.
+// builds, so a compaction in flight is waited for and an unsupervised daemon arms its successor.
 package splice.app.control.mount
 
 import io.ktor.server.routing.Route

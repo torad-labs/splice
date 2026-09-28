@@ -282,6 +282,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     ),
     "features/launch/src/main/kotlin/splice/launch/install/InstallLinker.kt" to mapOf("Files.createSymbolicLink(" to 1),
     "features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonLaunch.kt" to mapOf("a shell redirect" to 2),
+    "features/lifecycle/src/main/kotlin/splice/lifecycle/restart/DaemonSuccessor.kt" to mapOf("Redirect.appendTo(" to 1),
     "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/SystemdUpgradeLauncher.kt" to mapOf(
         "Redirect.appendTo(" to 1,
         "a shell redirect" to 3,

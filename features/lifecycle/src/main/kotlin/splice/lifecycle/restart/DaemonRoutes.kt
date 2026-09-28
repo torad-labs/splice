@@ -1,29 +1,10 @@
 // NEW: V4-137, split out of V4-127 — POST /api/daemon/restart, the V4-74 draining restart.
 //
-// THE RESTART IS THE EXISTING DRAIN, AND THIS ROUTE ADDS NO MECHANISM. It takes the `shutdownDaemon`
-// seam that POST /api/daemon/shutdown already uses (Main.kt:148 completes a signal the main coroutine
-// waits on), so the daemon stops taking turns, lets the in-flight ones finish in its own order, and
-// exits — drain 45s under a 50s head budget under a 55s cap. What brings it BACK is not this repo's:
-// the host's systemd unit carries Restart=always with RestartSec=2 and no start limit, so a
-// drain-and-exit returns in about two seconds.
-//
-// THAT IS WHY NOTHING HERE RELAUNCHES ANYTHING. A splice-side relauncher would be a SECOND supervisor
-// racing `Restart=always` on the same process, and two supervisors sharing one escalation state is a
-// measured failure shape, not a theoretical one: on this box's own host layer, two reapers sharing an
-// escalation file collapsed a 30s TERM-to-KILL grace to ~2s over two days. The unit belongs to
-// whatever supervises this install; a change to it is made there, never from here.
-//
-// AND THAT IS NOT TRUE OF EVERY DAEMON, WHICH IS THE ROW'S REAL CONTENT. Someone who ran
-// `splice.jar daemon` by hand is supervised by nothing: taking the drain there would STOP the daemon
-// for good, so a console restart button would be a console stop button — strictly worse than having no
-// button at all. The daemon can know, because systemd sets INVOCATION_ID in the environment of every
-// unit it starts. So the two arms are:
-//
-//   supervised   -> take the drain, answer 202 meaning the request was TAKEN ON, never that the
-//                   daemon came back. The drain outlives this response by as long as the slowest
-//                   in-flight turn, so a 200 would claim a completion nobody can promise yet.
-//   unsupervised -> REFUSE, named, and take no drain at all. Same family as V4-127's upgrade port:
-//                   a legitimate-looking answer from a mechanism that did not run.
+// Both restart arms use the existing drain, after the response. A systemd-owned daemon relies on
+// Restart=always; it must never start a second supervisor. A default install has no unit, so it
+// arms a detached successor BEFORE taking the drain. That successor waits until this process exits
+// and then uses the CLI's raw cold-start path. A failed arm refuses without draining. The 202 means
+// the request was taken on, never that the new process has already answered /health.
 //
 // NOTHING IS DRAINED BEFORE THE RESPONSE IS WRITTEN. The 202 goes out first and the drain is requested
 // after, which is the order POST /api/daemon/shutdown already uses and for the same reason: the daemon
@@ -70,8 +51,7 @@ internal const val RESTART_SUPERVISION_UNWIRED =
     "the daemon did not wire a supervision probe; /api/daemon/restart cannot tell whether anything " +
         "would bring it back, and refusing is the only honest answer"
 
-/** Refused because nothing will restart this process. NOT a 202, and not a drain: the daemon is up,
- *  serving, and was started in a way that gives it no relaunch half. */
+/** Refused only when no detached successor was wired for this unsupervised daemon. */
 internal const val RESTART_UNSUPERVISED =
     "nothing will restart this daemon: it was not started by systemd, so a drain would leave it down"
 
@@ -99,9 +79,7 @@ public class DaemonRoutes(private val restarts: DaemonRestarts) {
         supervised: DaemonSupervised?,
     ) {
         val now = call.request.queryParameters["now"] in NOW_VALUES
-        // THE DID-NOT-RUN, REFUSED (DaemonRestarts). Taking the drain on an unsupervised daemon would
-        // turn this route into a stop button on any daemon the operator started by hand, and the
-        // console would render a restart that never comes back.
+        // DaemonRestarts arms the detached successor before accepting an unsupervised drain.
         when (val taken = restarts.take(now, shutdown, supervised)) {
             is RestartTaken.Refused -> {
                 val status = if (taken.unwired) HttpStatusCode.ServiceUnavailable else HttpStatusCode.Conflict

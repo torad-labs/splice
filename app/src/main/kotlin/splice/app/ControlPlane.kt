@@ -7,6 +7,7 @@ package splice.app
 
 import kotlinx.coroutines.cancel
 import splice.app.auth.SignInPlanner
+import splice.app.cli.AdminSupport
 import splice.app.control.ControlServer
 import splice.app.control.DashboardPage
 import splice.app.control.FailedHeads
@@ -37,10 +38,12 @@ import splice.core.config.Knob
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.config.TurnKey
+import splice.core.config.UserHome
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
 import splice.launch.LaunchSpec
 import splice.launch.recipe.LaunchService
+import splice.lifecycle.restart.DetachedDaemonSuccessor
 import splice.lifecycle.restart.ShutdownDaemon
 import splice.oauth.codex.CodexRefresh
 import splice.sessions.prompt.SlotInstructions
@@ -198,6 +201,7 @@ internal class ControlPlane(
             clientVersions = clientVersions,
         )
         wireConsolePorts(srv)
+        wireRestartSuccessor(srv, controlPort)
         val controlBound = boundary.runCatchingDaemonBoundary { srv.start() }
             .onFailure {
                 // SAFE-RENDER-EXEMPT[2026-08-31]: srv.start() bind failure — a SocketException names a port and an address, never file bytes
@@ -230,6 +234,21 @@ internal class ControlPlane(
         srv.ports.teams = teams
         ConsoleWiring.wireV4133(srv, budgets, alerts, playground)
         ConsoleWiring.wireVerbReads(srv, topology, statePaths, console)
+    }
+
+    /** The cold successor reuses this daemon's jar, home, config, state, and bound control port. */
+    private fun wireRestartSuccessor(srv: ControlServer, controlPort: Int) {
+        srv.wireRestartSuccessor(
+            DetachedDaemonSuccessor(
+                AdminSupport.selfJar(),
+                UserHome.dir(),
+                topology.path,
+                statePaths.rootDir,
+                controlPort,
+                statePaths.logsDir,
+                log,
+            ),
+        )
     }
 
     /** The head whose Claude Code wrapper listens on [port] — the launcher's ANTHROPIC_BASE_URL. */

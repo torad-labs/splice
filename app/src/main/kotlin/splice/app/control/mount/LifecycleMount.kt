@@ -56,8 +56,8 @@ internal class LifecycleMount(
                 shutdownDaemon()
             }
         }
-        // The same drain POST /api/daemon/shutdown requests, offered as a restart because the host
-        // unit brings the daemon back. REFUSED when nothing would, and the refusal takes no drain.
+        // The same drain as shutdown: the unit or the armed detached successor brings it back.
+        // A failed successor arm refuses before this daemon drains.
         route.post("/api/daemon/restart") {
             guard.guarded(call) { daemonRoutes.restartJson(call, shutdownDaemon, ports.supervised) }
         }

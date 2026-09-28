@@ -3,9 +3,9 @@
 // until the add needed the same answer, and a second copy of it is how one of the two would come to
 // skip the compaction wait or drain a daemon nothing brings back.
 //
-// The order is DaemonRoutes': an unwired supervision probe refuses, an unsupervised daemon refuses,
-// and only then is the restart handed to RestartAfterCompactions, which waits for a compaction in
-// flight or answers that the caller may drain.
+// The order is DaemonRoutes': an unwired supervision probe refuses; a supervised daemon drains
+// under its unit, while an unsupervised daemon arms one detached successor before taking the drain.
+// Both routes then wait for a compaction in flight or answer that the caller may drain.
 package splice.lifecycle.restart
 
 /** Whether a restart the daemon was asked to take on was taken on. */
@@ -20,13 +20,30 @@ public sealed class RestartTaken {
 }
 
 public class DaemonRestarts(private val restart: RestartAfterCompactions) {
+    private val lock = Any()
+    private var successor: DaemonSuccessor? = null
+    private var successorArmed = false
+
+    /** Assigned after the control server exists, before it binds its listener. */
+    public fun wireSuccessor(value: DaemonSuccessor) {
+        synchronized(lock) { successor = value }
+    }
 
     /** Takes a restart on; [now] skips the compaction wait, as `splice restart --now` does. */
-    public fun take(now: Boolean, shutdown: ShutdownDaemon, supervised: DaemonSupervised?): RestartTaken = when {
-        supervised == null -> RestartTaken.Refused(RESTART_SUPERVISION_UNWIRED, unwired = true)
-        !supervised() -> RestartTaken.Refused(RESTART_UNSUPERVISED, unwired = false)
-        else -> RestartTaken.Accepted(restart.request(now, shutdown))
-    }
+    public fun take(now: Boolean, shutdown: ShutdownDaemon, supervised: DaemonSupervised?): RestartTaken =
+        synchronized(lock) {
+            when {
+                supervised == null -> RestartTaken.Refused(RESTART_SUPERVISION_UNWIRED, unwired = true)
+                supervised() -> RestartTaken.Accepted(restart.request(now, shutdown))
+                successor == null -> RestartTaken.Refused(RESTART_UNSUPERVISED, unwired = false)
+                !successorArmed && successor?.start() != true ->
+                    RestartTaken.Refused("could not arm a detached restart; the daemon remains up", unwired = false)
+                else -> {
+                    successorArmed = true
+                    RestartTaken.Accepted(restart.request(now, shutdown))
+                }
+            }
+        }
 
     /** Where a restart taken on stands. */
     public fun phase(): RestartPhase = restart.phase()

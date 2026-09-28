@@ -52,6 +52,7 @@ import splice.core.version.ClientVersionTracker
 import splice.diagnostics.doctor.DaemonAnswers
 import splice.diagnostics.doctor.DaemonAnswersSource
 import splice.launch.recipe.LaunchService
+import splice.lifecycle.restart.DaemonSuccessor
 import splice.lifecycle.restart.ShutdownDaemon
 import splice.sessions.registry.SessionSource
 
@@ -113,6 +114,11 @@ public class ControlServer(
     // ControlPlane assigns them after this server exists, so a captured port would be null forever.
     private val fleet = FleetMount(payloads, resolver, audit, dashboardHtml, guard, ports)
     private val lifecycle = LifecycleMount(payloads, shutdownDaemon, ports, guard, heads, log)
+
+    /** The control plane arms the raw successor before binding; both Restart and add-save share it. */
+    public fun wireRestartSuccessor(successor: DaemonSuccessor) {
+        lifecycle.restarts.wireSuccessor(successor)
+    }
 
     // V4-220 item 3: the add's save restarts through lifecycle's own restarts, never a second path.
     private val add = AddMount(ports, guard, lifecycle.restarts, shutdownDaemon, log)

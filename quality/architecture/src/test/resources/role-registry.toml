@@ -88,7 +88,7 @@ Teardown kills the process \
 where a component shutdown was meant, and RestoreStep for WsRoundAbort unwinds an upgrade in the \
 middle of a turn. These need MORE naming than a shared shape, not less."""
 
-# ── 13 names, () -> Boolean ───────────────────────────────────────────────────────────────────────
+# ── 14 names, () -> Boolean ───────────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "()->Boolean"
 dated = "2026-09-27"
@@ -98,6 +98,7 @@ names = [
     "ConsolePresence",
     "ContentReached",
     "DaemonRestart",
+    "DaemonSuccessor",
     "DaemonSupervised",
     "KeyPresenceProbe",
     "SessionTranscriptViewEnabled",
@@ -117,13 +118,13 @@ wire-type rule turns on), WatchdogTripped (did the turn watchdog fire), Terminal
 stream produced its terminal event), TopologyStale (has splice.toml changed under the running \
 daemon), KeyPresenceProbe (is a management key present right now), ConsolePresence (is a TTY \
 attached), UpgradeRun (does this process hold the upgrade lock), DaemonRestart (restart the daemon \
-and report whether it came back — the only one here that ACTS rather than asks), and DaemonSupervised \
-(V4-137: would anything bring this process back if it exited — read from INVOCATION_ID, which systemd \
-sets on every process it starts). DaemonSupervised and DaemonRestart are the pair this group must keep \
-apart most carefully, because they read as near-synonyms and sit on the same route: DaemonSupervised \
-ASKS whether a restart is survivable and DaemonRestart ACTS. Swapping them turns the console's restart \
-button into a stop button on an unsupervised daemon — the route refuses precisely so that cannot \
-happen, and collapsing the two types is the one edit that would make the refusal unreachable. \
+and report whether it came back), DaemonSuccessor (arm the detached CLI before this unsupervised \
+daemon drains; false keeps it serving), and DaemonSupervised (V4-137: was this process started \
+under systemd — read from INVOCATION_ID, which systemd sets on every process it starts). \
+DaemonSupervised ASKS whether the unit brings it back; DaemonSuccessor ACTS only when it does \
+not, while DaemonRestart is the external command that waits for the new health response. \
+Swapping their Boolean signatures would start a competing daemon under systemd or drain an \
+unsupervised daemon with no successor. \
 SessionTranscriptViewEnabled (V4-354, 2026-09-27) reads the live global transcript-view knob \
 before either the sessions or turns route opens a Claude Code transcript; one port owned by \
 sessions serves both routes, and confusing it with a client disconnect or daemon-state probe \

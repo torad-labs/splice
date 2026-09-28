@@ -52,22 +52,29 @@ public class RestartCommand(
         val topology = Cancellables
             .runCatchingCancellable { TopologyLoader.loadOrMaterialize(TopologyLoader.configPath(env)) }
             .onFailure { failure ->
+                val path = TopologyLoader.configPath(env)
+                val reason = SafeFailureText.render(failure)
+                if (DaemonProbe.healthVersion(settings.controlPort(null, env)) == null) {
+                    output.line("splice: cannot start the daemon until $path is fixed ($reason)")
+                    return false
+                }
                 output.line(
-                    "splice: could not read ${TopologyLoader.configPath(env)} " +
-                        "(${SafeFailureText.render(failure)}); " +
+                    "splice: could not read $path ($reason); " +
                         "falling back to the running daemon for head ports",
                 )
             }
             .getOrNull()
         val port = settings.controlPort(topology, env)
-        coldStart.activeUnit()?.let { unit ->
-            return restartThroughUnit(unit, port, expectedVersion, waitForCompactions)
-        }
+        val unit = coldStart.activeUnit()
+        if (unit != null) return restartThroughUnit(unit, port, expectedVersion, waitForCompactions)
         val tomlPorts = topology?.heads?.values?.map { it.port } ?: emptyList()
-        if (!stopIfRunning(port, tomlPorts, waitForCompactions)) return false
-        val started = coldStart.ensureDaemon(port, expectedVersion)
-        if (started) output.line("splice: daemon restarted")
-        return started
+        return if (stopIfRunning(port, tomlPorts, waitForCompactions)) {
+            coldStart.ensureDaemon(port, expectedVersion).also { started ->
+                if (started) output.line("splice: daemon restarted")
+            }
+        } else {
+            false
+        }
     }
 
     /** V4-243: the daemon is [unit]'s, so systemd restarts it. Stopping it here and then starting the

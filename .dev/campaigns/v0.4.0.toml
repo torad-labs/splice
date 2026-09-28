@@ -8840,6 +8840,7 @@ claimed_at = "2026-09-28T06:49:49.036Z"
 # [2026-09-28] CLAIM: owner=console at=2026-09-28T06:49:49Z
 # [2026-09-28] RECEIPT cmd="bun run --cwd console test" exit=0 tests=1663 touched=console/src/pages/settings/model.ts,console/src/pages/settings/sections.tsx,console/src/pages/settings/settings.css,console/src/pages/settings/strings.ts,console/tests/settings.test.ts tail="Commit 8975825f6. Red-first: cleared trace field wrote trace=\"\"; clearing one among several also retained empty value. Green: /api/topology PUT body omits removed trace and empty overrides table, keeps sibling keys; explicit Remove override control in the structured editor. 89 console files/1663 tests, build, lint, typecheck zero added, rules 77 selftests. CI on pushed sha is pending."
 # [2026-09-28] amend by=splice-lead: files were ["console/src/pages/settings/", "console/tests/settings.test.ts"]
+# [2026-09-28] Released console/src/pages/settings/ to V4-372 (2:04 AM CT, splice-lead); V4-375's edits are committed in 8975825f6 and pushed at 05989e7d0.
 
 [[items]]
 id = "V4-376"

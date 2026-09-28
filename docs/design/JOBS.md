@@ -65,7 +65,7 @@ Each page answers one question. An action with a row in brackets is not built ye
 **Actions.**
 
 - Stop keeping new activity and message edges
-- Delete stored message edges, activity labels and per-head trace
+- Delete stored message edges, activity labels, turn statistics and per-head trace
 - Open per-head recording controls
 
 ## logs

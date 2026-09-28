@@ -7,6 +7,7 @@ function path(store: KeptStore): string {
 
 /** The daemon's current physical census, including days written before a switch went off. */
 export function fetchKept(store: KeptStore): Promise<KeptInventory> {
+  if (store === 'turns') return request<KeptInventory>('/api/kept/turns');
   return request<KeptInventory>(path(store));
 }
 

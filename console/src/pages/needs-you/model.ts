@@ -171,10 +171,11 @@ function headNeeds(heads: readonly HeadStatus[], auth: AuthPayload | null): Need
 
 /** The daemon's one item: the config file changed since it started, or settings this console saved
  *  wait for it. Both are cleared by the same restart, so they are one item. */
-function daemonNeeds(topologyStale: boolean | null, pending: readonly string[]): Need[] {
+function daemonNeeds(topologyStale: boolean | null, pending: readonly string[], checks: readonly DoctorCheck[]): Need[] {
   const parts = [
     topologyStale === true ? H.configChanged : null,
     pending.length === 0 ? null : `${pending.length} ${pending.length === 1 ? U.oneWaiting : U.waiting}`,
+    ...checks.map((check) => check.id.startsWith('trace:') ? H.tracePending(check.id.slice('trace:'.length)) : H.checkPending),
   ].filter((part) => part !== null);
   if (parts.length === 0) return [];
   return [{ key: 'daemon', severity: 'warn', source: 'daemon', head: null, subject: S.daemon, finding: parts.join(' '), fix: { kind: 'restart-daemon' }, at: null }];
@@ -351,14 +352,14 @@ export function needsOf(inputs: NeedInputs, now: number): NeedsList {
   const about = new Map(wanted.map((check) => [check, headsOfCheck(check, said, down)] as const));
   const needs = [
     ...fromHeads.map((need) => withDoctor(need, wanted.filter((check) => need.head !== null && about.get(check)?.includes(need.head)))),
-    ...daemonNeeds(topologyStale, inputs.restartPending),
+    ...daemonNeeds(topologyStale, inputs.restartPending, wanted.filter((check) => check.pending_restart === true)),
     ...planNeeds(accounts, usage, auth, now),
     ...accountNeeds(accounts, now),
     ...turnNeeds(heads),
     ...(registry === null ? [] : sessionNeeds(registry.sessions, now)),
     ...(registry === null ? [] : teamNeeds(teams, registry.sessions)),
     ...(doctor === null ? [] : doctorNeeds(wanted.filter((check) =>
-      about.get(check)?.length === 0 &&
+      about.get(check)?.length === 0 && check.pending_restart !== true &&
       !(topologyStale === true && check.id === 'daemon/topology' && check.status === 'warn'),
     ))),
   ];

@@ -1,4 +1,4 @@
-import { control } from '@shared/api';
+import { control, request } from '@shared/api';
 import type { ConfigValue, PatchResult } from '@shared/api';
 import { poll } from '@shared/lib';
 import { markRestartPending, observeDaemonBoot, restartStore } from '../model/restart';
@@ -16,12 +16,15 @@ export async function fetchConfig(head?: string): Promise<void> {
 let healthRead = 0;
 let healthAccepted = 0;
 
+interface HealthRead {
+  topologyStale?: boolean;
+  bootedAtEpochMillis: number;
+}
+
 /** One health read says whether topology changed and which boot actually answered. */
 export async function probeTopologyStale(): Promise<boolean> {
   const read = ++healthRead;
-  const res = await fetch('/health');
-  if (!res.ok) throw new Error(`/health answered ${res.status}`);
-  const body = (await res.json()) as { topologyStale?: boolean; bootedAtEpochMillis?: unknown };
+  const body = await request<HealthRead>('/health');
   if (read >= healthAccepted) {
     healthAccepted = read;
     const boot = body.bootedAtEpochMillis;
@@ -35,6 +38,16 @@ export function startDaemonBootPolling(intervalMs: number): () => void {
   return poll(async () => { try { await probeTopologyStale(); } catch { /* Needs you and status report health failures. */ } }, intervalMs);
 }
 
+/** Mark a saved write under the daemon boot observed after it, never a stale pre-write boot. */
+export async function markPendingAfterWrite(keys: readonly string[]): Promise<void> {
+  let bootedAtEpochMillis: number | null = null;
+  try {
+    await probeTopologyStale();
+    bootedAtEpochMillis = restartStore.get().bootedAtEpochMillis;
+  } catch { /* no boot identity: keep pending keys until a measured replacement */ }
+  markRestartPending(keys, bootedAtEpochMillis);
+}
+
 /** PATCH /api/config, fanned out to every running head (runtime layer wins
  * over env), then refresh the layered view. The refresh must read the SAME
  * view the operator is looking at (review #94, F142): a bare fetchConfig()
@@ -45,17 +58,9 @@ export async function applyConfigPatch(
   head?: string,
 ): Promise<PatchResult> {
   const result = await control.patchConfig(patch);
-  // Read the boot AFTER PATCH: a restart before the write must not clear a setting B accepted.
-  // A restart between PATCH and this read can keep the strip pending too long, but never lie that
-  // an unapplied setting took effect. A health failure leaves the origin unknown.
-  let bootedAtEpochMillis: number | null = null;
-  try {
-    await probeTopologyStale();
-    bootedAtEpochMillis = restartStore.get().bootedAtEpochMillis;
-  } catch { /* no boot identity: keep pending keys until a measured replacement */ }
-  // The daemon names which keys it will not read until it restarts; that list is what cocks the
-  // daemon strip, so it is recorded here, from the daemon's answer and never from a hand list.
-  markRestartPending(result.restart_required, bootedAtEpochMillis);
+  // A restart between PATCH and the health read can keep the strip pending too long, never clear
+  // an unapplied setting. Only the daemon's restart_required keys cock the strip.
+  await markPendingAfterWrite(result.restart_required);
   await fetchConfig(head);
   return result;
 }

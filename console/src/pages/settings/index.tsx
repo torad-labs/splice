@@ -21,7 +21,7 @@ import {
   globalValueOf,
   headOptions,
   knobDispositions,
-  markRestartPending,
+  markPendingAfterWrite,
   shadowOfOverride,
   useConfig,
   useRestartPending,
@@ -48,7 +48,7 @@ import { Badge, Bay, Empty, InfoTip, PageHeader, Section } from '@shared/ui';
 import { Blank, Fault, Input } from '@shared/controls';
 import { HEAD_WORDING, KnobRack, knobMatches } from '@widgets/knob-form';
 import { dispositions } from './coverage';
-import { changedPaths, DEFAULT_VIEWS, knobsForView, withHeadOverride } from './model';
+import { changedPaths, DEFAULT_VIEWS, fileOverrideNote, knobsForView, withHeadOverride } from './model';
 import { ClaudeModeSection, TopologySection } from './sections';
 import { H, S } from './strings';
 import './settings.css';
@@ -118,6 +118,13 @@ export function draftAfterKnobSave(
  *  with that read's own failure and when it landed (V4-304). */
 export function viewedConfig(config: Keyed<string | null, ConfigPayload>, head: string): KeyedRead<ConfigPayload> {
   return readFor(config, head === 'global' ? null : head);
+}
+
+/** The head override's write and its pending restart belong to the same daemon boot. */
+export async function saveHeadOverride(loaded: Record<string, unknown>, head: string, key: string, override: ConfigValue): Promise<TopologyWriteResult> {
+  const result = await saveTopology(withHeadOverride(loaded, head, key, override));
+  if (result.ok) await markPendingAfterWrite([key]);
+  return result;
 }
 
 export function SettingsPage() {
@@ -231,10 +238,9 @@ export function SettingsPage() {
     const fallback = globalValueOf(key, configPayload);
     const override = value === null || value === fallback ? null : value;
     setBusyKey(key);
-    void saveTopology(withHeadOverride(loaded, head, key, override))
+    void saveHeadOverride(loaded, head, key, override)
       .then((result) => {
         setWriteResult(result);
-        if (result.ok) markRestartPending([key]);
         setDraft((current) => draftAfterKnobSave(loaded, current, head, key, override, result.ok));
         return Promise.all([fetchTopology(), fetchConfig(head)]);
       })
@@ -249,7 +255,7 @@ export function SettingsPage() {
       const shadow = shadowOfOverride(knob.key, configPayload);
       if (shadow === 'console') return H.shadowConsole;
       if (shadow === 'environment') return H.shadowEnv;
-      return null;
+      return fileOverrideNote(loaded, head, knob, configPayload);
     }
     const by = knob.overriddenBy;
     return by.length === 0 ? null : `${S.overridden} ${by.join(', ')}. ${H.overridden}`;

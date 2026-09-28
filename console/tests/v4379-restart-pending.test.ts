@@ -1,8 +1,10 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { applyConfigPatch, clearRestartPending, markRestartPending, probeTopologyStale, restartStore } from '../src/entities/config';
+import { applyConfigPatch, clearRestartPending, probeTopologyStale, restartStore } from '../src/entities/config';
+import { markRestartPending } from '../src/entities/config/model/restart';
 import { needsOf } from '../src/pages/needs-you';
+import { saveHeadOverride } from '../src/pages/settings';
 import type { NeedInputs, Read } from '../src/pages/needs-you';
 import { PendingRestartCell } from '../src/widgets/rule';
 
@@ -51,6 +53,26 @@ describe('a pending setting belongs to one daemon boot', () => {
     expect(calls).toEqual(['PATCH /api/config', 'GET /health', 'GET /api/config']);
     expect(restartStore.get().pending).toEqual(['trace']);
     expect(restartStore.get().pendingAtEpochMillis).toBe(3_000);
+  });
+
+  test('a restart before a topology PUT does not clear its new head override', async () => {
+    let stamp = 7_000;
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      calls.push(`${init?.method ?? 'GET'} ${url}`);
+      if (url === '/health') return { ok: true, json: async () => ({ topologyStale: false, bootedAtEpochMillis: stamp }) };
+      if (init?.method === 'PUT') {
+        stamp = 8_000;
+        return { ok: true, json: async () => ({ ok: true, restart_required: true, findings: [] }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    await probeTopologyStale();
+    await saveHeadOverride({ heads: { local: { overrides: { trace: false } } } }, 'local', 'trace', true);
+    await probeTopologyStale();
+    expect(restartStore.get().pending).toEqual(['trace']);
+    expect(restartStore.get().pendingAtEpochMillis).toBe(8_000);
+    expect(calls).toEqual(['GET /health', 'PUT /api/topology', 'GET /health', 'GET /health']);
   });
 
   test('a restart before PATCH does not clear a write accepted by the new boot', async () => {

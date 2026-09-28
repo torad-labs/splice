@@ -3,7 +3,10 @@
 // ships with. No React, no stores, no network — every one of these is a function of its argument,
 // which is what lets the tests exercise the page's whole data story without a DOM.
 import type { View } from '@features/views';
+import { globalValueOf, parseConfigInput, shadowOfOverride } from '@entities/config';
+import type { KnobDisposition } from '@entities/config';
 import { TOPOLOGY_CHOICES } from '@entities/topology';
+import type { ConfigPayload, ConfigValue } from '@shared/api';
 import { S } from './strings';
 
 /** The page's saved views. `All knobs` is first because it is the default (CONTRACTS.md section 3). */
@@ -72,6 +75,29 @@ export function valueAtPath(topology: Record<string, unknown>, path: string): un
     }
   }
   return cursor;
+}
+
+/** Compare the declared head value to this boot's value, not to the console's saved-key list. */
+export function fileOverrideNote(topology: Record<string, unknown> | null, head: string, knob: KnobDisposition, config: ConfigPayload): string | null {
+  if (topology === null || knob.hot || shadowOfOverride(knob.key, config) !== null) return null;
+  const heads = topology.heads;
+  const entry = isTable(heads) ? heads[head] : undefined;
+  const overrides = isTable(entry) ? entry.overrides : undefined;
+  const raw = isTable(overrides) ? overrides[knob.key] : undefined;
+  let desired: ConfigValue;
+  if (raw === undefined) desired = globalValueOf(knob.key, config);
+  else if (typeof raw === 'string' && typeof knob.value === 'boolean') {
+    const text = raw.trim().toLowerCase();
+    if (['1', 'true', 'yes', 'on'].includes(text)) desired = true;
+    else if (['0', 'false', 'no', 'off'].includes(text)) desired = false;
+    else return null;
+  } else if (typeof raw === 'string') desired = parseConfigInput(raw, knob.value);
+  else if (raw === null || typeof raw === 'boolean' || typeof raw === 'number') desired = raw;
+  else return null;
+  if (desired === knob.value) return null;
+  const word = (value: ConfigValue): string => value === null ? 'Unset' : typeof value === 'boolean' ? value ? 'On' : 'Off' : String(value);
+  const outcome = typeof desired === 'boolean' ? desired ? 'starts' : 'stops' : 'applies';
+  return `${word(desired)} in splice.toml, ${word(knob.value)} running; ${outcome} after restart.`;
 }
 
 /**

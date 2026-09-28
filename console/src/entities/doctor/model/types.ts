@@ -27,6 +27,8 @@ export interface DoctorCheck {
    * daemon older than the field, when the remedy is the operator's to make.
    */
   fix_id?: string | null;
+  /** V4-371: the declared trace value differs from what this daemon boot runs. */
+  pending_restart?: boolean;
 }
 
 export interface DoctorPayload {

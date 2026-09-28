@@ -282,6 +282,24 @@ describe('turns, sessions and team seats', () => {
 });
 
 describe('one changed splice.toml, one Needs you item', () => {
+  test('a pending trace joins the daemon restart without borrowing Doctor present-tense words', () => {
+    const pending: DoctorCheck = {
+      id: 'trace:local', status: 'warn', detail: 'WRONG: local writes its FULL request/response trace',
+      fix: 'splice restart', pending_restart: true,
+    };
+    const inputs = quiet({ topology: read(true), doctor: read(doctor([pending])) });
+    const out = needsOf(inputs, NOW).needs;
+    expect(out).toHaveLength(1);
+    expect(out[0]?.source).toBe('daemon');
+    expect(out[0]?.finding).toContain('splice.toml');
+    expect(out[0]?.finding).toContain('Trace for local');
+    expect(out[0]?.finding).toContain('applies after restart');
+    expect(out[0]?.finding).not.toContain('WRONG');
+    expect(needsOf(quiet({ topology: read(false), doctor: read(doctor([pending])) }), NOW).needs.map((need) => need.source)).toEqual(['daemon']);
+    const running = { ...pending, pending_restart: false };
+    expect(needsOf(quiet({ doctor: read(doctor([running])) }), NOW).needs.map((need) => need.source)).toEqual(['doctor']);
+  });
+
   test('a topology warning stays on Doctor when health does not report staleness', () => {
     const checks: DoctorCheck[] = [{
       id: 'daemon/topology', status: 'warn', detail: 'splice.toml changed since the daemon booted', fix: 'splice restart',

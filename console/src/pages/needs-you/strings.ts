@@ -78,6 +78,8 @@ export const H = {
   loginExpired: 'Its login expired and the refresh is blocked.',
   queueFull: 'Every slot is busy and the queue is full.',
   configChanged: 'The splice.toml file changed since the daemon booted.',
+  tracePending: (head: string): string => `Trace for ${head} in splice.toml applies after restart.`,
+  checkPending: 'A change in splice.toml applies after restart.',
   accountSignedOut: 'Its login is gone; sign in with a new label.',
   seatEnded: 'Its bound session ended; bind another in the team.',
   seatUnlisted: 'Its bound session is not in the registry.',

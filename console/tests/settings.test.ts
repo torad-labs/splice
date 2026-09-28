@@ -20,7 +20,7 @@ import { KnobRack } from '../src/widgets/knob-form';
 import { SOURCE_LABELS } from '../src/widgets/knob-form/strings';
 import { dispositions } from '../src/pages/settings/coverage';
 import { fixtureConfig, fixtureTopology } from '../src/pages/settings/fixtures/settings';
-import { DEFAULT_VIEWS, changedPaths, flattenTopology, knobsForView, parseList, setAtPath, toToml, topologyTables, valueAtPath, withHeadOverride } from '../src/pages/settings/model';
+import { DEFAULT_VIEWS, changedPaths, fileOverrideNote, flattenTopology, knobsForView, parseList, setAtPath, toToml, topologyTables, valueAtPath, withHeadOverride } from '../src/pages/settings/model';
 import { draftAfterKnobSave, saveGlobalKnob } from '../src/pages/settings';
 import { saveTopology } from '../src/entities/topology';
 import { ClaudeModeSection, TopologySection } from '../src/pages/settings/sections';
@@ -44,6 +44,30 @@ const knobs = knobDispositions(fixtureConfig, 'claudex');
 const rack = render(h(KnobRack, { dispositions: knobs, pending: [], busyKey: null, onSave: () => undefined }));
 
 describe('settings: the knob form', () => {
+  test('a head override saved in splice.toml is shown beside the still-running value', () => {
+    const config = { ...fixtureConfig, head: 'local', layers: {
+      ...fixtureConfig.layers,
+      defaults: { ...fixtureConfig.layers.defaults, trace: false },
+      perHead: { ...fixtureConfig.layers.perHead, local: { trace: false } },
+    } };
+    const trace = knobDispositions(config, 'local').find((knob) => knob.key === 'trace');
+    if (trace === undefined) throw new Error('trace knob absent');
+    const declared = { heads: { local: { overrides: { trace: 'true' } } } };
+    const html = render(h(KnobRack, {
+      dispositions: [trace], pending: [], busyKey: null, onSave: () => undefined, perHead: true,
+      scopeNote: (knob) => fileOverrideNote(declared, 'local', knob, config),
+    }));
+    expect(rowOf(html, 'trace')).toContain('On in splice.toml, Off running; starts after restart.');
+    expect(fileOverrideNote({ heads: { local: { overrides: { trace: false } } } }, 'local', { ...trace, value: true }, config))
+      .toBe('Off in splice.toml, On running; stops after restart.');
+    expect(fileOverrideNote(declared, 'local', { ...trace, value: true }, config)).toBeNull();
+    expect(fileOverrideNote({ heads: { local: { overrides: {} } } }, 'local', { ...trace, value: true }, config))
+      .toBe('Off in splice.toml, On running; stops after restart.');
+    expect(fileOverrideNote(declared, 'local', trace, { ...config, layers: {
+      ...config.layers, env: { trace: false },
+    } })).toBeNull();
+  });
+
   test('every knob the daemon reports appears in the markup', () => {
     // The FIXTURE is compared to Knob.kt, not to a number: this test's claim is about what the
     // daemon reports, so a fixture that lags the daemon must fail HERE rather than quietly prove

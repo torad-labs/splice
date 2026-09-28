@@ -18,7 +18,7 @@ import { useEffect, useState } from 'react';
 import { discardAdd, fetchAddProfiles, openAdd, readAdd, saveAdd, signInAdd, verifyAdd } from '@entities/add';
 import type { AddChecksFailed, AddCheck, AddProfile, AddView } from '@entities/add';
 import { fetchKeys, useKeys } from '@entities/auth';
-import { LoginTicket, useLoginPage } from '@features/account-login';
+import { LoginTicket, pollDuringLogin, useLoginPage } from '@features/account-login';
 import { ApiKeyForm } from '@features/api-key';
 import { Blank, Choice, Confirm, Copy, Fault, Input, Key } from '@shared/controls';
 import { ABSENT, poll } from '@shared/lib';
@@ -251,10 +251,12 @@ export function AddBackend({ onDone, initialProfile }: { onDone: () => void; ini
   // Read the open add again while it is unsaved: a failed read keeps the view it has and says so, and
   // the next good read clears it. Its own fault, because a good read must not clear a write's.
   const openId = live(view) && view !== null ? view.id : null;
+  const loginActive = view?.sign_in?.state === 'starting' || view?.sign_in?.state === 'waiting';
   useEffect(() => {
     if (openId === null) return;
-    return poll(() => readOpenAdd(openId, setView, setReadFault), POLL_MS);
-  }, [openId]);
+    const read = () => readOpenAdd(openId, setView, setReadFault);
+    return loginActive ? pollDuringLogin(read, POLL_MS) : poll(read, POLL_MS);
+  }, [openId, loginActive]);
 
   const run = (work: Promise<void>) => {
     setBusy(true);

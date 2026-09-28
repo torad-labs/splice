@@ -9,7 +9,6 @@ import { useEffect, useReducer, useRef, useState } from 'react';
 import { fetchLoginStatus, refreshAuth, relabelAccount, removeAccount, startLogin, switchAccount, unpinAccount } from '@entities/auth';
 import type { LoginView } from '@entities/auth';
 import { Empty, Reveal } from '@shared/ui';
-import { poll } from '@shared/lib';
 import { Confirm, Copy, Input, Key } from '@shared/controls';
 import { IDLE, LOGIN_PENDING_EMPTY, canStart, next, polling, stepMessage } from './model';
 import type { LoginEvent, LoginFlowState } from './model';
@@ -19,6 +18,13 @@ import './account-login.css';
 
 const POLL_MS = 2000;
 
+export function pollDuringLogin(fn: () => void | Promise<void>, intervalMs: number): () => void {
+  // The sign-in page takes focus, hiding the console. A visibility-paused poll would never
+  // receive the provider URL that tells the already-open tab where to go.
+  void fn();
+  const id = setInterval(() => { void fn(); }, intervalMs);
+  return () => clearInterval(id);
+}
 
 const LOGIN_STATUS = 'login-status';
 const LOGIN_START = 'login';
@@ -147,9 +153,7 @@ export function AccountLogin({ head, purpose = 'add' }: { head: string; purpose?
 
   useEffect(() => {
     if (loginId === null) return;
-    return poll(() => {
-      void pollLogin(head, loginId, dispatch);
-    }, POLL_MS);
+    return pollDuringLogin(() => pollLogin(head, loginId, dispatch), POLL_MS);
   }, [loginId, head]);
 
   // The account joined the pool: read the accounts now rather than on the page's next poll.

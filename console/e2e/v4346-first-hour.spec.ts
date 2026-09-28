@@ -29,7 +29,19 @@ test('a fresh home connects ChatGPT in one browser gesture and returns a command
   const base = process.env.CONSOLE_E2E_BASE;
   const key = process.env.CONSOLE_E2E_KEY;
   if (!base || !key) throw new Error('the isolated console stack did not start');
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.name));
   await page.addInitScript(([storage, value]) => localStorage.setItem(storage, value), ['myx-mgmt-key', key]);
+  await page.addInitScript(() => {
+    const actualOpen = window.open.bind(window);
+    const probe = window as Window & { __loginWindowReturned?: boolean };
+    probe.__loginWindowReturned = false;
+    window.open = (...args: Parameters<typeof window.open>) => {
+      const opened = actualOpen(...args);
+      probe.__loginWindowReturned = opened !== null;
+      return opened;
+    };
+  });
   await page.context().route('**/*', (route) => {
     const host = new URL(route.request().url()).hostname;
     if (host === 'signin.fixture.invalid') return route.fulfill({
@@ -49,19 +61,26 @@ test('a fresh home connects ChatGPT in one browser gesture and returns a command
   await page.route((url) => url.pathname === '/api/doctor', (route) => route.fulfill({ json: report() }));
   await page.route((url) => url.pathname === '/api/add/profiles', (route) => route.fulfill({ json: { profiles } }));
   await page.route((url) => url.pathname === '/api/add', (route) => route.fulfill({ json: add }));
-  const waiting: AddView = {
-    ...add,
-    sign_in: {
-      id: 'login-1', state: 'waiting', browser_url: SIGN_IN, verification_uri: null,
-      user_code: null, failure_reason: null,
-    },
+  const announced: NonNullable<AddView['sign_in']> = {
+    id: 'login-1', state: 'waiting', browser_url: SIGN_IN, verification_uri: null,
+    user_code: null, failure_reason: null,
   };
+  const waiting: AddView = { ...add, sign_in: announced };
+  const starting: AddView = { ...add, sign_in: { ...announced, state: 'starting', browser_url: null } };
   let loginStarted = false;
+  let polledOnce = false;
   await page.route((url) => url.pathname === '/api/add/add-1/login', (route) => {
     loginStarted = true;
+    return route.fulfill({ json: starting });
+  });
+  await page.route((url) => url.pathname === '/api/add/add-1', (route) => {
+    if (!loginStarted) return route.fulfill({ json: add });
+    if (!polledOnce) {
+      polledOnce = true;
+      return route.fulfill({ json: starting });
+    }
     return route.fulfill({ json: waiting });
   });
-  await page.route((url) => url.pathname === '/api/add/add-1', (route) => route.fulfill({ json: loginStarted ? waiting : add }));
   await page.route((url) => url.pathname === '/api/add/add-1/save', (route) => route.fulfill({
     json: { ...waiting, credential: { present: true, detail: 'Signed in' },
       saved: { path: '/work/splice.toml', wrapper: { linked: true }, restart: { status: 'draining' } } },
@@ -81,9 +100,18 @@ test('a fresh home connects ChatGPT in one browser gesture and returns a command
   const popupReady = page.waitForEvent('popup');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   const popup = await popupReady;
+  // A real foreground sign-in tab hides the console. Keep that state even when a headless
+  // browser happens to leave both tabs visible, so the late URL requires an unpaused poll.
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await expect(page.getByRole('link', { name: 'Open sign-in page' })).toBeVisible({ timeout: 10_000 });
+  expect(await page.evaluate(() => (window as Window & { __loginWindowReturned?: boolean }).__loginWindowReturned)).toBe(true);
+  expect(popup.isClosed()).toBe(false);
+  expect(pageErrors).toEqual([]);
   await expect(popup).toHaveURL(SIGN_IN);
   await expect(popup.getByRole('heading', { name: 'Provider sign-in' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Open sign-in page' })).toBeVisible();
   await page.getByRole('button', { name: 'Save backend', exact: true }).click();
   await page.getByRole('button', { name: 'Save and restart', exact: true }).click();
   await expect(page.getByText('Type this command in your terminal after the restart.')).toBeVisible();

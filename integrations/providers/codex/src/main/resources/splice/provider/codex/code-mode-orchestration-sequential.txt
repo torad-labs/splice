@@ -1,4 +1,4 @@
 <code_mode_orchestration>
-- The tools the instructions above name (Read, Grep, Glob, Bash, Edit, Write, Agent and the rest) are nested tools of `exec`: call them inside one functions.exec as `await tools.Read({...})`, and return what you need with `text(...)`.
+- The tools the instructions above name (Read, Bash, Edit, Write, Agent and the rest) are nested tools of `exec`: call them inside one functions.exec as `await tools.Read({...})`, and return what you need with `text(...)`.
 - The client has disabled parallel tool use: inside functions.exec, use sequential await for every tool call, and chain dependent calls in the same functions.exec when code can derive the next arguments. Avoid unnecessary output.
 </code_mode_orchestration>

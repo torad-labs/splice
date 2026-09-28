@@ -69,10 +69,14 @@ class CodeModeManualTest {
     @Test
     fun `the manual advertises only helpers the runtime provides and the deferred note when asked`() {
         val manual = CodeModeManual.description(emptyList(), deferred = true)
-        listOf("`exit()`", "`text(value:", "`ALL_TOOLS`", "// @exec:").forEach {
+        listOf("`exit()`", "`text(value:", "`ALL_TOOLS`", "`await tools.Bash(...)`").forEach {
             assertTrue(manual.contains(it), it)
         }
-        listOf("`image(", "`audio(", "`store(", "`load(", "`notify(", "`setTimeout(", "`yield_control(").forEach {
+        val absent = listOf(
+            "`image(", "`audio(", "`store(", "`load(", "`notify(", "`setTimeout(", "`yield_control(", "// @exec:",
+            "max_output_tokens", "exec_command", "either a string or an object",
+        )
+        absent.forEach {
             assertFalse(manual.contains(it), it)
         }
         assertTrue(manual.contains("Some deferred nested tools may be omitted from this description."))

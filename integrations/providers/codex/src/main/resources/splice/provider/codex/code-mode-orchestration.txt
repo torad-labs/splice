@@ -1,5 +1,5 @@
 <code_mode_orchestration>
-- The tools the instructions above name (Read, Grep, Glob, Bash, Edit, Write, Agent and the rest) are nested tools of `exec`: call them inside one functions.exec as `await tools.Read({...})`, and return what you need with `text(...)`.
+- The tools the instructions above name (Read, Bash, Edit, Write, Agent and the rest) are nested tools of `exec`: call them inside one functions.exec as `await tools.Read({...})`, and return what you need with `text(...)`.
 - Batch independent searches and reads in one functions.exec using await Promise.allSettled([...]); inspect every result. Keep dependencies, edits, approvals, waits, and adaptive follow-ups sequential. Avoid unnecessary output.
 - When calling `functions.exec`, parallelize independent tool calls by awaiting Promises. Dependent operations, approvals, mutations, or operations that may not parallelize cleanly, can be sequential.
 </code_mode_orchestration>

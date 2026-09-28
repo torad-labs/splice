@@ -8862,3 +8862,11 @@ title = "Port the Sep 21 stash's attribution-block drop: a translated head (open
 files = ["core/src/main/kotlin/splice/core/wire/AnthropicWireCodecs.kt", "core/src/test/kotlin/splice/core/parse/AnthropicParseTest.kt"]
 status = "todo"
 verify = "bun tools/gate slot v4382 -- :core:test"
+
+[[items]]
+id = "V4-383"
+phase = "release"
+title = "Tests stop leaking temp dirs into /tmp (tmpfs = RAM on the dev box): 223 bare Files.createTempDirectory/createTempFile call sites in 103 test files never delete what they make (427 leaked dirs found Sep 27, 11:15 PM CT: grok-*, control-gate*, console-routes*, claudex-test-state*). Move each to JUnit's @TempDir (auto-deleted), and add an ast-grep wall that refuses a bare Files.createTemp* in */src/test/, proven red on today's tree first."
+files = ["integrations/providers/grok/src/test/", "app/src/test/kotlin/splice/app/control/ConsoleRoutesTest.kt", "app/src/test/kotlin/splice/app/control/ControlServerGateTest.kt", "quality/ast-grep/"]
+status = "todo"
+verify = "bun tools/gate run (the new wall red on the pre-fix tree, green after)"

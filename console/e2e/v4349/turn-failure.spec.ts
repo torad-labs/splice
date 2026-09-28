@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
-import { STACK, driveOneTurn } from '../stack';
+import type { PerfTurnsWire, TurnRowWire } from '../../src/entities/perf';
+import { STACK } from '../stack';
 
 function env(name: string): string {
   const value = process.env[name];
@@ -8,25 +9,30 @@ function env(name: string): string {
 }
 
 test('a failed turn reads one trace and keeps its sentence under its own status', async ({ page }) => {
-  await driveOneTurn(Number(env('CONSOLE_E2E_SOLO_PORT')), env('CONSOLE_E2E_KEY'), undefined, STACK.soloModel);
+  const now = Date.now();
+  const synthetic: TurnRowWire = {
+    ts: now, model: STACK.soloModel, outcome: 'error:conn-reset', compact: false,
+    session: null, account: null, cache_cold: null, turn: 'v4349-a',
+    session_id: null, response_message_id: null,
+    recv: 1, first_byte: 10, finish: 20, total: 20,
+  };
   await page.addInitScript((key) => localStorage.setItem('myx-mgmt-key', key), env('CONSOLE_E2E_KEY'));
   await page.route('**/api/perf/turns?*', async (route) => {
-    const response = await route.fetch();
-    const body = await response.json() as {
-      heads: { key: string; rows?: { ts: number; model: string; turn?: string; outcome: string }[] }[];
-    };
-    const head = body.heads.find((entry) => entry.key === STACK.soloHead);
-    if (head === undefined) {
-      await route.fulfill({ response, json: body });
+    const query = new URL(route.request().url()).searchParams;
+    if (query.get('head') !== STACK.soloHead) {
+      await route.continue();
       return;
     }
-    const source = head.rows?.[0];
-    if (source === undefined) throw new Error('the solo turn did not land');
-    head.rows = [
-      { ...source, ts: source.ts + 2, turn: 'v4349-a', outcome: 'error:conn-reset' },
-      { ...source, ts: source.ts + 1, turn: 'v4349-b', outcome: 'error:conn-reset' },
-    ];
-    await route.fulfill({ response, json: body });
+    const body: PerfTurnsWire = {
+      since: Number(query.get('since') ?? now - 86_400_000),
+      n: Number(query.get('n') ?? 200),
+      heads: [{
+        key: STACK.soloHead, label: STACK.soloHead, count: 2, returned: 2,
+        truncated: false, oldest_held_ts: now - 1,
+        rows: [synthetic, { ...synthetic, ts: now - 1, turn: 'v4349-b' }],
+      }],
+    };
+    await route.fulfill({ json: body });
   });
   const reads: string[] = [];
   const settled: string[] = [];

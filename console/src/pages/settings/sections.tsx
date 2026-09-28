@@ -210,6 +210,8 @@ export function CommandInstructionsSection({ heads, labels, loaded, draft, onDra
   const shown = asked === null || fileRead?.key !== asked.key ? null : fileRead;
   const changed = loaded === null ? [] : changedPaths(loaded, draft)
     .filter((path) => path.startsWith(`heads.${selected}.system_prompt`));
+  // Save waits for the preview: a file not yet read, or one the preview refused, is not saved (V4-400).
+  const fileHeld = asked !== null && (shown === null || shown.error !== null);
   const explanation = current === null ? H.previewUnchanged
     : current.mode === 'replace' ? H.previewReplace
       : current.mode === 'strip' ? H.previewStrip : H.previewAdd;
@@ -263,7 +265,7 @@ export function CommandInstructionsSection({ heads, labels, loaded, draft, onDra
         {current === null ? null : <p>{H.previewRuntime}</p>}
       </section>
       <div className="myx-settings-actions">
-        <Key busy={busy} disabled={changed.length === 0 || (current !== null && current.text.trim() === '')}
+        <Key busy={busy} disabled={changed.length === 0 || fileHeld || (current !== null && current.text.trim() === '')}
           onClick={() => onWrite(selected)}>{S.saveCommandInstructions}</Key>
         {result === null ? null : <Badge tone={result.ok ? 'ok' : 'danger'}>{result.ok ? S.written : S.refused}</Badge>}
       </div>

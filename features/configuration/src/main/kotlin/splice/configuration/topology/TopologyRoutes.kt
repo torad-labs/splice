@@ -30,6 +30,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import splice.core.prompt.SystemPromptMode
 import splice.core.topology.Topology
 import splice.core.topology.TopologyFinding
 import splice.core.topology.TopologyWriteResult
@@ -93,15 +94,41 @@ public class TopologyRoutes(private val source: TopologyWriterSource, private va
         val unmasked = secrets.unmasked(requested, stored)
         if (secrets.findings.isNotEmpty()) return Attempt(TopologyWriteResult.Refused(secrets.findings))
         val topology = decode(unmasked).getOrThrow()
+        val before = decode(stored)
+        val unreadable = unreadableInstructions(writer, before.getOrNull(), topology)
         // V4-162: the running daemon re-reads context windows, so a write that moved nothing else
         // needs no restart. Compared the way the writer diffs: the file as it stood against what is
         // written, both holding their real secrets. A file that no longer decodes says restart.
-        val restart = decode(stored).fold(
-            onSuccess = { before -> before.withoutWindows() != topology.withoutWindows() },
+        val restart = before.fold(
+            onSuccess = { it.withoutWindows() != topology.withoutWindows() },
             onFailure = { true },
         )
-        return Attempt(writer.write(topology), restart)
+        return if (unreadable.isEmpty()) {
+            Attempt(writer.write(topology), restart)
+        } else {
+            Attempt(TopologyWriteResult.Refused(unreadable))
+        }
     }
+
+    /** V4-400: each head whose `system_prompt_file` this write sets or changes is read the way the
+     *  preview reads it, and a file the preview refuses is refused here with the preview's sentence. A
+     *  file the stored topology already names is left alone: it is not this write's, and an unrelated
+     *  edit must not be held by a file that has since moved. */
+    private fun unreadableInstructions(
+        writer: TopologyWriter,
+        stored: Topology?,
+        wanted: Topology,
+    ): List<TopologyFinding> =
+        wanted.heads.mapNotNull { (key, head) ->
+            val file = head.systemPromptFile?.takeIf(String::isNotBlank)
+            if (file == null || stored?.heads?.get(key)?.systemPromptFile == file) {
+                null
+            } else {
+                val mode = head.systemPromptMode ?: SystemPromptMode.APPEND
+                PromptPreview(source).refusal(writer, key, file, mode)
+                    ?.let { TopologyFinding("heads.$key.system_prompt_file", it) }
+            }
+        }
 
     private fun decode(tree: JsonObject): Result<Topology> =
         Cancellables.runCatchingCancellable { json.decodeFromJsonElement(Topology.serializer(), tree) }

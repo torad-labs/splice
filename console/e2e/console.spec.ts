@@ -320,7 +320,7 @@ test('Settings previews each command instruction mode before writing it', async 
   await section.getByRole('option', { name: 'Use file', exact: true }).click();
   await section.getByRole('textbox', { name: 'Instruction file' }).fill('rules.txt');
   await expect(preview).toContainText('rules.txt');
-  await expect(preview).toContainText('instruction file must be a regular file');
+  await expect(preview).toContainText('instruction file does not exist');
   expect(writes).toHaveLength(3);
 
   await section.getByRole('button', { name: 'Remove command instructions' }).click();

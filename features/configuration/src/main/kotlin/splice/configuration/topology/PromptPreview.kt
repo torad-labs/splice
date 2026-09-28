@@ -52,6 +52,13 @@ internal class PromptPreview(private val source: TopologyWriterSource) {
         return response(outcome)
     }
 
+    /** V4-400: the sentence [reply] would answer for this file, or null when it reads. A write asks the
+     *  same question so Save can never store a file the preview refused. */
+    fun refusal(writer: TopologyWriter, head: String, file: String, mode: SystemPromptMode): String? {
+        val dir = writer.path.parent ?: return "splice.toml has no parent directory"
+        return (resolved(dir, PreviewAsk(head, file, mode)) as? PreviewResult.Refused)?.reason
+    }
+
     private sealed class Selection {
         data class Ask(val value: PreviewAsk) : Selection()
         data class Refused(val reason: String) : Selection()
@@ -110,6 +117,7 @@ internal class PromptPreview(private val source: TopologyWriterSource) {
 
     /** NOFOLLOW both at the check and open: a planted link cannot redirect this read. */
     private fun file(path: Path): PreviewResult = when {
+        Files.notExists(path, LinkOption.NOFOLLOW_LINKS) -> PreviewResult.Refused("instruction file does not exist")
         !Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) ->
             PreviewResult.Refused("instruction file must be a regular file")
         else -> Cancellables.runCatchingCancellable {

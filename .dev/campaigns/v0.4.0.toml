@@ -8413,7 +8413,7 @@ claimed_at = "2026-09-28T07:14:50.677Z"
 id = "V4-348"
 phase = "release"
 title = "Every page uses my words (build order 5; acceptance Q0c, Q31, Q32, Q64): plans, sessions, requests, instructions, commands, ChatGPT; never head, knobs, daemon, backend, codex, registry, 'bound session', 'tiers filled'. Settings gets an instructions group a person would notice. Plus the baseline's craft faults: Fleet's Head and Provider headers print on top of each other, Add backend squeezes the heads table until the command name disappears, Turns truncates model names and cache percentages."
-files = ["console/src/", "console/e2e/console.spec.ts"]
+files = ["console/src/", "console/e2e/console.spec.ts", "console/tests/connect-plan.test.ts", "console/e2e/v4346-first-hour.spec.ts"]
 status = "in_flight"
 verify = "Marlin walks it by eye in a normal-size browser on a fresh home (or the film home where history is needed) at the built sha and approves; his walk log names the sha; CI gate on the train sha. A green gate is not approval."
 # depends:V4-344,V4-345,V4-346,V4-347
@@ -8428,6 +8428,7 @@ claimed_at = "2026-09-28T08:46:12.984Z"
 # [2026-09-28] CLAIM: owner=console at=2026-09-28T08:46:12Z
 # [2026-09-28] amend by=splice-lead: files were ["console/src/"]
 # [2026-09-28] CI run 36397866406 on b9208d802 red (3:46 AM CT): :consoleE2e journeys console.spec.ts:619 (Needs you: 'the wrappers are not on Needs you', :625) and :651 (Doctor: 'Checks' row with 'splice install --all', :659) locate their row by the CLI text 'splice install --all'. V4-347 (f37539d93) turned that remedy into a console Install control and put the command behind 'If unavailable', so the row no longer shows it. Fence gains console/e2e/console.spec.ts, released from V4-365 (its test-41 edits are committed). Fix forward: find the row by its check and assert the control plus the disclosed command, never loosen to a text-free row pick. Rows V4-347, V4-364, V4-370, V4-372, V4-375, V4-378, V4-379 and V4-380 were set done before this red. The red is V4-347's, and this row fixes it.
+# [2026-09-28] amend by=splice-lead: files were ["console/src/", "console/e2e/console.spec.ts"]
 
 [[items]]
 id = "V4-349"

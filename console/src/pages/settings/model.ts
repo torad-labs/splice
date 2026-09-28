@@ -7,6 +7,7 @@ import { globalValueOf, parseConfigInput, shadowOfOverride } from '@entities/con
 import type { KnobDisposition } from '@entities/config';
 import { TOPOLOGY_CHOICES } from '@entities/topology';
 import type { ConfigPayload, ConfigValue } from '@shared/api';
+import { KNOB_META } from '@widgets/knob-form';
 import { S } from './strings';
 
 /** The page's saved views. `All knobs` is first because it is the default (CONTRACTS.md section 3). */
@@ -79,7 +80,7 @@ export function valueAtPath(topology: Record<string, unknown>, path: string): un
 
 /** Compare the declared head value to this boot's value, not to the console's saved-key list. */
 export function fileOverrideNote(topology: Record<string, unknown> | null, head: string, knob: KnobDisposition, config: ConfigPayload): string | null {
-  if (topology === null || knob.hot || shadowOfOverride(knob.key, config) !== null) return null;
+  if (topology === null || knob.hot || KNOB_META[knob.key]?.headOnly !== true || shadowOfOverride(knob.key, config) !== null) return null;
   const heads = topology.heads;
   const entry = isTable(heads) ? heads[head] : undefined;
   const overrides = isTable(entry) ? entry.overrides : undefined;

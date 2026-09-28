@@ -68,6 +68,14 @@ describe('settings: the knob form', () => {
     } })).toBeNull();
   });
 
+  test('a restart-required global knob does not claim its merged value is running', () => {
+    const retained = knobDispositions(fixtureConfig, 'local').find((knob) => knob.key === 'traceRetentionDays');
+    if (retained === undefined) throw new Error('trace retention knob absent');
+    const declared = { heads: { local: { overrides: { traceRetentionDays: '9' } } } };
+    expect(retained.hot).toBe(false);
+    expect(fileOverrideNote(declared, 'local', retained, fixtureConfig)).toBeNull();
+  });
+
   test('every knob the daemon reports appears in the markup', () => {
     // The FIXTURE is compared to Knob.kt, not to a number: this test's claim is about what the
     // daemon reports, so a fixture that lags the daemon must fail HERE rather than quietly prove

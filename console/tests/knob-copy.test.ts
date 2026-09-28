@@ -40,6 +40,22 @@ function drift(keys: readonly string[], table: Record<string, unknown>): { missi
 const knobKeys = parseKnobKeys(readFileSync(path.join(repoRoot, KNOB_SOURCE), 'utf8'));
 
 describe('every knob Knob.kt declares has words', () => {
+  test('head-only knobs in copy match the daemon source, both ways', () => {
+    const source = readFileSync(path.join(repoRoot, KNOB_SOURCE), 'utf8');
+    const entries = [...source.matchAll(/^ {4}([A-Z][A-Z0-9_]*)\(\s*"([^"]+)"/gm)];
+    expect(entries.length).toBe(knobKeys.length);
+    const restricted = entries.flatMap((entry, at) => {
+      const part = source.slice(entry.index, entries[at + 1]?.index ?? source.lastIndexOf('}'));
+      return /headOnly\s*=\s*true/.test(part) ? [entry[2]] : [];
+    }).sort();
+    expect(Object.entries(KNOB_META).filter(([, meta]) => meta.headOnly === true).map(([key]) => key).sort()).toEqual(restricted);
+    expect(restricted).toEqual(['trace', 'wireTap']);
+    const withNew = source.replace('    TRACE_RETENTION_DAYS(', '    HEAD_NEW("headNew", KnobKind.BOOL, listOf(), false, headOnly = true),\n    TRACE_RETENTION_DAYS(');
+    const mutated = [...withNew.matchAll(/^ {4}([A-Z][A-Z0-9_]*)\(\s*"([^"]+)"/gm)].flatMap((entry, at, rows) =>
+      /headOnly\s*=\s*true/.test(withNew.slice(entry.index, rows[at + 1]?.index ?? withNew.lastIndexOf('}'))) ? [entry[2]] : []);
+    expect(mutated.filter((key) => KNOB_META[key]?.headOnly !== true)).toEqual(['headNew']);
+  });
+
   test('the parse found the catalogue', () => {
     // A zero means the regex broke, not that the daemon has no knobs.
     expect(knobKeys.length).toBeGreaterThan(40);

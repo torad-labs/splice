@@ -246,6 +246,7 @@ export function Rule() {
   const usageError = useUsage((state) => state.error);
   const pendingRestart = useRestartPending((state) => state.pending);
   const locked = useSession((state) => state.locked);
+  const hasKey = useSession((state) => state.hasKey);
   const connection = useEvents((state) => state);
   const hues = useHues();
   const { local, utc } = useClock();
@@ -263,10 +264,6 @@ export function Rule() {
       startAuthPolling(30_000),
       startHeadsPolling(5_000),
     ];
-    // The live stream is opened here because the strip is the chrome that outlives every page and
-    // the surface that prints the connection; connect() is idempotent, so whoever else asks for it
-    // gets the same one stream.
-    connect();
     // The entities follow the stream from here: one subscription per (entity, kind), refetching
     // through each entity's own api. See wire.ts for why the wiring is not inside the entities.
     const unwire = wireLive();
@@ -275,6 +272,12 @@ export function Rule() {
       unwire();
     };
   }, []);
+
+  // A missing or refused key stops the stream. Reconnect on the unlock transition without
+  // remounting the strip, its pollers, or its event subscriptions.
+  useEffect(() => {
+    if (hasKey && !locked) connect();
+  }, [hasKey, locked]);
 
   const anyHeadDown = heads !== null && heads.some((head) => !head.running || !head.healthy);
   const health = healthOf(status.error !== null, anyHeadDown, locked, heads === null ? null : heads.length, headsRead.error !== null);

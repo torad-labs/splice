@@ -10,23 +10,15 @@ import { H, S } from '../src/pages/kept/strings';
 import { ConfirmKeys } from '../src/shared/controls/confirm';
 
 const source = readFileSync(fileURLToPath(new URL('../../core/src/main/kotlin/splice/core/config/Knob.kt', import.meta.url)), 'utf8');
-const recordingBlock = source.split('    ACTIVITY_RETENTION_DAYS(')[1]?.split('    BUDGET_DEFAULT_ACTION(')[0];
-if (recordingBlock === undefined || !source.includes('    TRANSCRIPT_VIEW(')) throw new Error('Knob recording source moved');
-const recordingKnobs = [
-  'ACTIVITY_RETENTION_DAYS',
-  ...[...recordingBlock.matchAll(/^ {4}([A-Z_]+)\(/gm)].map((match) => match[1]),
-  'TRANSCRIPT_VIEW',
-];
-
-function sourceKey(row: (typeof keptRows)[number]): string[] {
-  return [...row.knobs];
+function recordingKnobs(sourceText: string): string[] {
+  return [...sourceText.matchAll(/^ {4}([A-Z_]+)\(/gm)]
+    .map((match) => match[1])
+    .filter((name) => /^(?:ACTIVITY_|PERF_ARCHIVE_|TRACE(?:_|$)|MESSAGE_EDGES$|WIRE_TAP$|TRANSCRIPT_VIEW$)/.test(name));
 }
 
 function unlisted(sourceText: string): string[] {
-  const block = sourceText.split('    ACTIVITY_RETENTION_DAYS(')[1]?.split('    BUDGET_DEFAULT_ACTION(')[0] ?? '';
-  const names = ['ACTIVITY_RETENTION_DAYS', ...[...block.matchAll(/^ {4}([A-Z_]+)\(/gm)].map((match) => match[1]), 'TRANSCRIPT_VIEW'];
-  const covered = new Set(keptRows.flatMap(sourceKey));
-  return names.filter((name) => !covered.has(name));
+  const covered = new Set(keptRows.flatMap((row) => row.knobs));
+  return recordingKnobs(sourceText).filter((name) => !covered.has(name));
 }
 
 describe('what splice keeps', () => {
@@ -47,17 +39,37 @@ describe('what splice keeps', () => {
   });
 
   test('every conversation store declared in Knob has a named disposition', () => {
-    const covered = keptRows.flatMap(sourceKey);
+    const covered = keptRows.flatMap((row) => row.knobs);
+    expect(recordingKnobs(source)).toContain('PERF_ARCHIVE_RETENTION_DAYS');
     expect(new Set(covered).size).toBe(covered.length);
-    expect(covered.sort()).toEqual([...recordingKnobs].sort());
+    expect(covered.sort()).toEqual(recordingKnobs(source).sort());
     expect(unlisted(source)).toEqual([]);
-    expect(keptRows.map((row) => row.id)).toEqual(['edges', 'labels', 'trace', 'wire-tap', 'transcripts']);
+    expect(keptRows.map((row) => row.id)).toEqual(['edges', 'labels', 'trace', 'wire-tap', 'transcripts', 'turns']);
     for (const row of keptRows) {
       expect(row.holds).not.toBe('');
       expect(row.window).not.toBe('');
       expect(row.location).not.toBe('');
       expect(row.switch).not.toBe('');
     }
+  });
+
+  test('turn statistics use their own guarded inventory and a post-delete census', async () => {
+    const calls: string[] = [];
+    let deleted = false;
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      const method = init?.method ?? 'GET';
+      calls.push(`${method} ${url}`);
+      if (method === 'DELETE') deleted = true;
+      return { ok: true, status: 200, json: async () => ({
+        store: 'turns', state: deleted ? 'deleted' : 'on',
+        days: deleted ? 0 : 2, rows: deleted ? 0 : 7,
+        oldest: deleted ? null : '2026-09-26', ages_out: deleted ? null : '2026-12-26',
+      }) };
+    });
+    expect((await fetchKept('turns')).rows).toBe(7);
+    const remaining = await removeKept('turns');
+    expect(calls).toEqual(['GET /api/kept/turns', 'DELETE /api/kept/turns', 'GET /api/kept/turns']);
+    expect(remaining.inventory).toMatchObject({ store: 'turns', state: 'deleted', days: 0, rows: 0 });
   });
 
   test('the age-out date belongs to the last kept day, not the oldest', () => {
@@ -155,6 +167,23 @@ describe('what splice keeps', () => {
     expect(html).toContain('Delete what&#x27;s kept');
   });
 
+  test('current and archived turns show their true count, expiry and Delete on this page', () => {
+    const html = renderToStaticMarkup(createElement(KeptBoard, {
+      inventories: { turns: { store: 'turns', state: 'on', days: 2, rows: 7,
+        oldest: '2026-09-26', ages_out: '2026-12-26' } },
+      onDelete: () => undefined, onSwitch: () => undefined,
+      effective: { perfArchiveRetentionDays: 90 },
+    }));
+    const row = html.slice(html.indexOf('Turn statistics'));
+    expect(row).toContain('7 entries kept');
+    expect(row).toContain('Dec 26');
+    expect(row).toContain('Delete what&#x27;s kept');
+    expect(row).toContain('Delete removes every recorded turn time, model and session.');
+    expect(row).toContain('The Turns timeline and per-turn costs restart with the next turn.');
+    expect(row).toContain('Archive days');
+    expect(row).toContain('Stop archiving');
+  });
+
   test('held edges and labels show real counts, expiry, switches and counted delete controls', () => {
     const html = renderToStaticMarkup(createElement(KeptBoard, {
       inventories: {
@@ -188,7 +217,9 @@ describe('what splice keeps', () => {
   });
 
   test('an empty unlisted recording knob fails the source comparison by name', () => {
-    const mutated = `${source.slice(0, source.indexOf('    BUDGET_DEFAULT_ACTION('))}    NEW_EMPTY_STORE("newEmptyStore", KnobKind.BOOL, listOf(), false),\n${source.slice(source.indexOf('    BUDGET_DEFAULT_ACTION('))}`;
-    expect(unlisted(mutated)).toEqual(['NEW_EMPTY_STORE']);
+    const marker = '    BUDGET_DEFAULT_ACTION(';
+    expect(source).toContain(marker);
+    const mutated = source.replace(marker, '    PERF_ARCHIVE_EMPTY("perfArchiveEmpty", KnobKind.NUMBER, listOf(), 0L),\n' + marker);
+    expect(unlisted(mutated)).toContain('PERF_ARCHIVE_EMPTY');
   });
 });

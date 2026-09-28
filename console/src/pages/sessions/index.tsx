@@ -164,6 +164,7 @@ export function HandoffText({ edge }: { edge: Edge }) {
 /** The opened session's hand-offs: which way each went, to whom, when, and what it said. */
 function EdgeRows({ edges, rows }: { edges: SessionEdgesPayload | null; rows: readonly SessionRow[] }) {
   if (edges === null) return null;
+  if (edges.state === 'deleted') return <Empty text={S.edgesDeleted} source={H.edgesDeleted} />;
   if (edges.edges.length === 0) return <Empty text={S.noHandoffs} />;
   const columns: Column<Edge>[] = [
     { key: 'way', label: S.way, width: '16%', cell: (edge) => (edge.direction === 'out' ? S.sent : S.received) },
@@ -291,7 +292,9 @@ function FleetHandoffs({ rows, board }: { rows: readonly SessionRow[]; board: Bo
   ];
   return (
     <Section title={S.handoffs} count={handoffs.length} className="myx-sx-handoffs">
-      {handoffs.length === 0 ? (
+      {board.state === 'deleted' ? (
+        <Empty text={S.edgesDeleted} source={H.edgesDeleted} />
+      ) : handoffs.length === 0 ? (
         <Empty text={S.noHandoffs} />
       ) : (
         <DataTable columns={columns} rows={handoffs.slice(0, HANDOFF_ROWS)} rowKey={(handoff) => handoff.key} label={S.handoffs} />

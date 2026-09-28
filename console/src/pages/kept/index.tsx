@@ -33,8 +33,11 @@ function StoreInventory({ store, inventory, fault, onDelete }: {
           {inventory.reason === undefined ? null : <p>{inventory.reason}</p>}
           {expires === null ? null : <p>{H.agesOut(expires)}</p>}
           {inventory.days === 0 ? <Empty text={H.none} /> : (
-            <Confirm label={S.deleteKept} confirmLabel={S.deleteCount(inventory.days, inventory.rows)}
-              onConfirm={() => onDelete(store)} />
+            <>
+              {store === 'turns' ? <p>{H.turnDelete} {H.turnAfter} {H.turnStill}</p> : null}
+              <Confirm label={S.deleteKept} confirmLabel={S.deleteCount(inventory.days, inventory.rows)}
+                onConfirm={() => onDelete(store)} />
+            </>
           )}
         </>
       )}
@@ -88,6 +91,26 @@ function LabelControl({ effective, onSwitch }: {
   );
 }
 
+function TurnControl({ effective, onSwitch }: {
+  effective: EffectiveConfig | null;
+  onSwitch?: ((key: string, value: ConfigValue) => void) | undefined;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const current = effective?.perfArchiveRetentionDays;
+  const selected = draft ?? (typeof current === 'number' ? String(current) : '');
+  const days = Number(selected.trim());
+  return (
+    <div className="myx-kept-actions">
+      <Input label={S.archiveDays} value={selected} onChange={setDraft} numeric w={8} />
+      <Key disabled={effective === null || onSwitch === undefined || !Number.isSafeInteger(days) || days <= 0}
+        onClick={() => { onSwitch?.('perfArchiveRetentionDays', days); setDraft(null); }}>{S.saveArchive}</Key>
+      <Key disabled={typeof current !== 'number' || onSwitch === undefined || current === 0}
+        onClick={() => { onSwitch?.('perfArchiveRetentionDays', 0); setDraft(null); }}>{S.stopArchive}</Key>
+      <span>{S.restart}: {H.restart}</span>
+    </div>
+  );
+}
+
 export function switchOf(row: KeptRow): { key: string; on: (value: ConfigValue) => boolean; off: ConfigValue; enabled: ConfigValue; restart: boolean } | null {
   switch (row.id) {
     case 'edges': return { key: 'messageEdges', on: (value) => value === true, off: false, enabled: true, restart: true };
@@ -121,13 +144,15 @@ export function KeptBoard({ inventories, faults = {}, heads = null, traces = {},
             <p>{row.window}</p>
             <p className="myx-kept-path">{row.location}</p>
             <p>{row.switch}</p>
-            {row.id === 'edges' || row.id === 'labels' ? (
+            {row.id === 'edges' || row.id === 'labels' || row.id === 'turns' ? (
               <StoreInventory store={row.id} inventory={inventories[row.id]} fault={faults[row.id]} onDelete={onDelete} />
             ) : row.id === 'trace' ? heads === null ? <Empty text={H.unknown} />
               : heads.length === 0 ? <Empty text={H.noHeads} />
                 : heads.map((head) => <TraceInventoryRow key={head} head={head} inventory={traces[head]}
                   fault={traceFaults[head]} onDelete={onDeleteTrace} />) : null}
-            {row.id === 'labels' ? <LabelControl effective={effective} onSwitch={onSwitch} /> : switcher === null ? <KeyLink href="#/settings">{S.openSettings}</KeyLink> : (
+            {row.id === 'labels' ? <LabelControl effective={effective} onSwitch={onSwitch} />
+              : row.id === 'turns' ? <TurnControl effective={effective} onSwitch={onSwitch} />
+                : switcher === null ? <KeyLink href="#/settings">{S.openSettings}</KeyLink> : (
               <div className="myx-kept-actions">
                 <Key disabled={effective === null || onSwitch === undefined}
                   onClick={() => onSwitch?.(switcher.key, storing ? switcher.off : switcher.enabled)}>
@@ -156,7 +181,7 @@ export default function KeptPage() {
   useEffect(() => {
     void fetchConfig();
     void fetchHeads();
-    for (const store of ['edges', 'labels'] as const) {
+    for (const store of ['edges', 'labels', 'turns'] as const) {
       void fetchKept(store).then(
         (inventory) => setInventories((was) => ({ ...was, [store]: inventory })),
         (error: unknown) => setFaults((was) => ({ ...was, [store]: error instanceof Error ? error.message : String(error) })),

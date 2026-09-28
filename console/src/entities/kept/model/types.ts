@@ -1,5 +1,5 @@
-/** The durable activity stores whose physical days splice can remove. */
-export type KeptStore = 'edges' | 'labels';
+/** Splice-owned stores whose physical days the daemon can remove. */
+export type KeptStore = 'edges' | 'labels' | 'turns';
 
 /** GET and DELETE /api/kept/{store}, from ActivityRoutes.inventoryJson. */
 export interface TraceInventory {

@@ -100,6 +100,8 @@ export interface TeamChatMessage {
 
 export interface TeamChatPayload {
   team_id: string;
+  state?: 'on' | 'off' | 'deleted';
+  reason?: string;
   day_start_epoch_millis: number;
   packet_note: string;
   messages: TeamChatMessage[];
@@ -117,6 +119,8 @@ export interface TeamActivityEntry {
 
 export interface TeamActivityPayload {
   team_id: string;
+  state?: 'on' | 'off' | 'deleted';
+  reason?: string;
   day_start_epoch_millis: number;
   /** Says the labels are samples, about one per 30 s while a session works. */
   sample_interval_note: string;

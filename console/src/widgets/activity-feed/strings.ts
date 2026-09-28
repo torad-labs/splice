@@ -9,6 +9,7 @@ export const S = {
   unavailable: 'Activity unavailable',
   unreadable: 'Activity unreadable',
   nothingSampled: 'Nothing sampled today',
+  deleted: 'Activity history deleted',
   notMatching: 'Client not matching',
 } as const;
 
@@ -16,6 +17,7 @@ export const H = {
   activity: 'What each session was doing, sampled about every 30 seconds.',
   unavailable: 'This splice version does not serve team activity.',
   nothingSampled: "Splice samples this team's sessions while they work.",
+  deleted: 'Stored activity labels were removed; new ones can be sampled.',
   notMatching: "This session's client is gone, so no new sample will come.",
 } as const;
 

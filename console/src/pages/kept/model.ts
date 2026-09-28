@@ -23,4 +23,5 @@ export const keptRows: readonly KeptRow[] = [
   { id: 'trace', name: S.trace, knobs: ['TRACE', 'TRACE_RETENTION_DAYS', 'TRACE_MAX_BODY_CHARS'], holds: H.trace, window: H.traceWindow, location: H.tracePath, switch: H.traceSwitch },
   { id: 'wire-tap', name: S.wireTap, knobs: ['WIRE_TAP'], holds: H.wireTap, window: H.wireWindow, location: H.wirePath, switch: H.wireSwitch },
   { id: 'transcripts', name: S.transcripts, knobs: ['TRANSCRIPT_VIEW'], holds: H.transcripts, window: H.transcriptWindow, location: H.transcriptPath, switch: H.transcriptSwitch },
+  { id: 'turns', name: S.turnStats, knobs: ['PERF_ARCHIVE_RETENTION_DAYS'], holds: H.turnStats, window: H.turnWindow, location: H.turnPath, switch: H.turnSwitch },
 ];

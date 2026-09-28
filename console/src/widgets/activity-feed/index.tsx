@@ -19,6 +19,8 @@ import './activity-feed.css';
 
 export interface ActivityFeedPayload {
   activity: TeamActivity[];
+  state?: 'on' | 'off' | 'deleted';
+  reason?: string;
   /** False when the sampler can no longer find the client the session was bound to. */
   clientMatching: boolean;
 }
@@ -46,6 +48,7 @@ export function feedEmpty(state: ActivityFeedState): { text: string; source?: st
   if (state === null) return { text: S.reading };
   if ('pending' in state) return { text: S.unavailable, source: H.unavailable };
   if ('error' in state) return { text: S.unreadable, source: state.error };
+  if (state.state === 'deleted') return { text: S.deleted, source: H.deleted };
   if (state.activity.length > 0) return null;
   if (!state.clientMatching) return { text: S.notMatching, source: H.notMatching };
   return { text: S.nothingSampled, source: H.nothingSampled };

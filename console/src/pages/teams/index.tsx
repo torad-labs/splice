@@ -128,8 +128,16 @@ function liveEmpty(teams: TeamsState | null, error: string | null, onNew?: () =>
 export function panelStates(board: TeamPayload, panels: TeamPanels | null): { chat: TeamChatState; feed: ActivityFeedState } {
   if (panels === null || panels.teamId !== board.team.id) return { chat: null, feed: null };
   return {
-    chat: 'error' in panels.chat ? { error: panels.chat.error } : board.messages === null ? null : { messages: board.messages },
-    feed: 'error' in panels.activity ? { error: panels.activity.error } : board.activity === null ? null : { activity: board.activity, clientMatching: true },
+    chat: 'error' in panels.chat ? { error: panels.chat.error } : board.messages === null ? null
+      : { messages: board.messages,
+        ...(panels.chat.state === undefined ? {} : { state: panels.chat.state }),
+        ...(panels.chat.reason === undefined ? {} : { reason: panels.chat.reason }),
+      },
+    feed: 'error' in panels.activity ? { error: panels.activity.error } : board.activity === null ? null
+      : { activity: board.activity, clientMatching: true,
+        ...(panels.activity.state === undefined ? {} : { state: panels.activity.state }),
+        ...(panels.activity.reason === undefined ? {} : { reason: panels.activity.reason }),
+      },
   };
 }
 

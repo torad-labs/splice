@@ -23,7 +23,7 @@ import { TeamChat, chatOrder } from '../src/widgets/team-chat';
 import { ActivityFeed, FEED_ROWS, feedEmpty, feedOrder } from '../src/widgets/activity-feed';
 import { TeamCompose, bindSession, blankDraft, draftOf, optionsFor, setArchived, unbindSession, validateDraft } from '../src/features/team-compose';
 import { sampleBoard, sampleData } from '../src/pages/teams/fixtures/hero';
-import { TeamList, modeOf, teamsBodyFor } from '../src/pages/teams';
+import { TeamList, modeOf, panelStates, teamsBodyFor } from '../src/pages/teams';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const read = (relative: string): string => readFileSync(path.join(repoRoot, relative), 'utf8');
@@ -426,6 +426,12 @@ describe('a head splice does not run (Marlin, 2026-09-25)', () => {
 });
 
 describe('the chat', () => {
+  test('a deleted edge store is named instead of an empty chat', () => {
+    const html = render(createElement(TeamChat, { state: { messages: [], state: 'deleted', reason: 'edges deleted' } }));
+    expect(html).toContain('Message history deleted');
+    expect(html).not.toContain('No messages today');
+  });
+
   test('the messages read down in time order, whatever order the route answered in', () => {
     const shuffled = [sampleBoard.messages[2], sampleBoard.messages[0], sampleBoard.messages[1]];
     expect(chatOrder(shuffled).map((message) => message.time)).toEqual(['13:41', '13:58', '14:01']);
@@ -447,6 +453,26 @@ describe('the chat', () => {
 });
 
 describe('the activity feed', () => {
+  test('deleted labels are named instead of an empty sample feed', () => {
+    const state = { activity: [], clientMatching: true, state: 'deleted' as const, reason: 'labels deleted' };
+    const html = render(createElement(ActivityFeed, { state }));
+    expect(html).toContain('Activity history deleted');
+    expect(html).not.toContain('Nothing sampled today');
+  });
+
+  test('team readers carry the backend deletion state into both widgets', () => {
+    const board = { ...sampleBoard, messages: [], activity: [] };
+    const panels = panelStates(board, {
+      teamId: sampleBoard.team.id,
+      chat: { team_id: sampleBoard.team.id, day_start_epoch_millis: 0, packet_note: '', messages: [], state: 'deleted', reason: 'edges deleted' },
+      activity: { team_id: sampleBoard.team.id, day_start_epoch_millis: 0, sample_interval_note: '', upstream_label_queries: 0,
+        entries: [], state: 'deleted', reason: 'labels deleted' },
+      economics: { error: 'unused in this test' },
+    });
+    expect(render(createElement(TeamChat, { state: panels.chat }))).toContain('Message history deleted');
+    expect(render(createElement(ActivityFeed, { state: panels.feed }))).toContain('Activity history deleted');
+  });
+
   test('nothing sampled and a client that stopped matching are different answers', () => {
     expect(feedEmpty({ activity: [], clientMatching: true })?.text).toBe('Nothing sampled today');
     expect(feedEmpty({ activity: [], clientMatching: false })?.text).toBe('Client not matching');

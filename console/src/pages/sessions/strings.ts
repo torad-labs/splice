@@ -86,6 +86,7 @@ export const S = {
   noTranscript: 'No transcript',
   emptyTranscript: 'Empty transcript',
   noHandoffs: 'No hand-offs',
+  edgesDeleted: 'Message history deleted',
   noSessionId: 'No session id',
   noCwd: 'No working directory',
   /** The tally bar's name. */
@@ -97,6 +98,7 @@ export const H = {
   noTranscript: 'History knows this session, but no resumable transcript was found.',
   emptyTranscript: 'Claude Code wrote a session file but no conversation bytes yet.',
   registry: 'Sessions Claude Code registered on this machine.',
+  edgesDeleted: 'Splice removed its hand-off records, not Claude Code transcripts.',
   sendTo: 'Paste into another Claude session; splice never writes to one.',
   notLive: 'A session that is not live may never answer.',
   resume: 'Run it in a terminal; splice copies nothing until that launch.',

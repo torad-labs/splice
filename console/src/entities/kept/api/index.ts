@@ -10,7 +10,7 @@ export function fetchKept(store: KeptStore): Promise<KeptInventory> {
   return request<KeptInventory>(path(store));
 }
 
-/** Delete only the named splice-owned store; the response counts what was removed. */
+/** Delete only the named splice-owned store; callers refresh the physical census afterward. */
 export function deleteKept(store: KeptStore): Promise<KeptInventory> {
   return request<KeptInventory>(path(store), { method: 'DELETE' });
 }
@@ -19,7 +19,7 @@ function failureOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** A DELETE counts removed rows, so even a partial failure must refresh physical truth. */
+/** DELETE responses differ across stores; always refresh physical truth, even after failure. */
 async function removeAndRead<T>(remove: () => Promise<T>, read: () => Promise<T>): Promise<KeptRemoval<T>> {
   let deleteError: string | null = null;
   try {

@@ -149,6 +149,8 @@ interface HandedEdge extends SessionEdge {
 /** GET /api/sessions/{id}/edges: one session's edges, oldest first, each with what it handed off. */
 export interface SessionEdgesPayload {
   session_id: string;
+  state?: 'on' | 'off' | 'deleted' | null;
+  reason?: string | null;
   edges: HandedEdge[];
 }
 
@@ -177,5 +179,7 @@ export interface ResumeRecipe {
 /** GET /api/sessions/edges (ActivityRoutes.boardEdges): every registry session's edges in one read,
  *  keyed by session id, empty arrays included, each in the per-session route's edge shape. */
 export interface BoardEdgesPayload {
+  state?: 'on' | 'off' | 'deleted' | null;
+  reason?: string | null;
   sessions: Record<string, SessionEdge[]>;
 }

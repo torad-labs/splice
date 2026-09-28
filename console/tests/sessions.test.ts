@@ -445,6 +445,21 @@ describe('a hand-off carries the text its sender handed off (V4-314)', () => {
     edges: { last: { key: 'sid-live', data: { session_id: 'sid-live', edges }, at: T0 }, failures: new Map<string, string>() },
   }));
 
+  test('deleted hand-offs are named in both the opened session and fleet reader', () => {
+    const detail = render(h(SessionsBoard, {
+      payload: payload([session()]), view: BY_HEAD, linked: sessionKey(session()),
+      edges: { last: { key: 'sid-live', data: { session_id: 'sid-live', state: 'deleted', reason: 'edges deleted', edges: [] }, at: T0 }, failures: new Map() },
+    }));
+    expect(detail).toContain('Message history deleted');
+    expect(detail).not.toContain('No hand-offs');
+    const fleet = render(h(SessionsBoard, {
+      payload: payload([session()]), view: BY_HEAD,
+      boardEdges: { state: 'deleted', reason: 'edges deleted', sessions: { 'sid-live': [] } },
+    }));
+    expect(fleet).toContain('Message history deleted');
+    expect(fleet).not.toContain('No hand-offs');
+  });
+
   test("the opened session's hand-offs print a message column, each text behind its own reveal", () => {
     const out = opened([said, unread]);
     expect(out).toContain('>Message<');

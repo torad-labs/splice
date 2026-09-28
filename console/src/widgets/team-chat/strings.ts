@@ -10,6 +10,7 @@ export const S = {
   unavailable: 'Chat unavailable',
   unreadable: 'Chat unreadable',
   noMessages: 'No messages today',
+  deleted: 'Message history deleted',
 } as const;
 
 export const H = {
@@ -18,6 +19,7 @@ export const H = {
   // A plain `claude` member's own messages never pass through splice, so they never show (README,
   // the Teams paragraph); an empty chat that did not say so read as nobody having talked (Marlin).
   noMessages: "Messages sent through splice show here; plain claude members' sends do not.",
+  deleted: 'Splice removed its hand-off records, not Claude Code transcripts.',
 } as const;
 
 export const U = {

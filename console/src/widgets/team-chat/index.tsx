@@ -13,6 +13,8 @@ import './team-chat.css';
 
 export interface TeamChatPayload {
   messages: TeamMessage[];
+  state?: 'on' | 'off' | 'deleted';
+  reason?: string;
 }
 
 /** What the panel was handed: the chat, the honest empty naming its row, the daemon's refusal, or
@@ -37,6 +39,7 @@ function body(state: TeamChatState) {
   if (state === null) return <Empty text={S.reading} />;
   if ('pending' in state) return <Empty text={S.unavailable} source={H.unavailable} />;
   if ('error' in state) return <Empty text={S.unreadable} source={state.error} />;
+  if (state.state === 'deleted') return <Empty text={S.deleted} source={H.deleted} />;
   if (state.messages.length === 0) return <Empty text={S.noMessages} source={H.noMessages} />;
   return (
     <ol className="myx-chat">

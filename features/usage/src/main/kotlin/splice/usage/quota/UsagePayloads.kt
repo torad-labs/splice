@@ -14,15 +14,19 @@ import splice.core.usage.PlanWindows
 import splice.core.usage.QuotaView
 import splice.core.usage.QuotaWindowView
 import splice.core.usage.RateLimitState
+import splice.core.usage.UsageWarn
 import splice.core.usage.UsageWarnPolicy
 import splice.core.util.WallClock
 import splice.usage.UsageHeads
+import java.time.Instant
+import java.time.temporal.ChronoUnit
 import kotlin.time.Duration.Companion.milliseconds
 
 private const val KEY = "key"
 private const val LABEL = "label"
 private const val HEADS = "heads"
 private const val USAGE_WINDOW_HOURS = 5
+private const val FULL_PERCENT = 100
 
 /** When a quota window or the rate-limit read was observed, epoch SECONDS — the encoding the quota
  *  windows' `resets_at` uses, on both objects, so the console reads one instant format. */
@@ -53,8 +57,8 @@ public class UsagePayloads(
                     val rlView = usage.ratelimit
                     val rl = rlView?.let { RateLimitState(it.limitTokens, it.remainingTokens, it.resetTokens) }
                     val plan = selectedQuota?.let { PlanWindows(it, nowSeconds) }
-                    val warn =
-                        UsageWarnPolicy.computeUsageWarn(usage.outputTokens5h, rl, m.warnPct, m.warnTokens5h, plan)
+                    val warn = refusal(m.key)
+                        ?: UsageWarnPolicy.computeUsageWarn(usage.outputTokens5h, rl, m.warnPct, m.warnTokens5h, plan)
                     addJsonObject {
                         put(KEY, m.key)
                         put(LABEL, m.label)
@@ -84,6 +88,14 @@ public class UsagePayloads(
                 }
             }
         }.toString()
+    }
+
+    /** V4-398: a provider that refuses until a known instant is fully spent whatever the headers or
+     *  plan windows last said, so it outranks every other tier; null once no reset is pending. */
+    private fun refusal(key: String): UsageWarn? {
+        val remainingMs = heads.providerResetForMs(key).takeIf { it > 0L } ?: return null
+        val reset = Instant.ofEpochMilli(clock() + remainingMs).truncatedTo(ChronoUnit.SECONDS)
+        return UsageWarn("critical", FULL_PERCENT, "provider_reset", reset.toString())
     }
 
     /** V4-396: the windows a surface may show at [nowSeconds], through [QuotaWindowView.currentAt]

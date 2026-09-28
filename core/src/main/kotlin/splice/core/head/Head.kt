@@ -17,6 +17,9 @@ public interface Head {
     }
 
     public fun healthSnapshot(): HeadHealth
+
+    /** Remaining provider-reported quota reset, zero when no current reset is known. */
+    public fun providerResetForMs(): Long = 0L
 }
 
 public data class HeadHealth(

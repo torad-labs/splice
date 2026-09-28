@@ -11,6 +11,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import splice.core.auth.CredentialVerdict
 import splice.core.auth.CredentialVerdictRead
 import splice.core.util.Cancellables
@@ -48,6 +49,8 @@ public object DaemonProbe {
         public val clientVersionWarning: String? = null,
         /** V4-394: each failed head's key and boot reason; empty on a healthy boot or an older daemon. */
         public val failedHeadReasons: Map<String, String> = emptyMap(),
+        /** Per-head upstream quota reset, epoch seconds; absent for ready or older daemons. */
+        public val quotaResetAtEpochSeconds: Map<String, Long> = emptyMap(),
     )
 
     /** JW-05: the per-head runtime counters from /api/heads (bearer-guarded) — the
@@ -134,6 +137,10 @@ public object DaemonProbe {
             clientVersionWarning = JsonScalars.str(obj, "clientVersionWarning"),
             failedHeadReasons = (obj["failedHeadReasons"] as? JsonObject)
                 ?.mapNotNull { (key, reason) -> JsonScalars.str(reason)?.let { key to it } }
+                ?.toMap()
+                .orEmpty(),
+            quotaResetAtEpochSeconds = (obj["quotaResetAtEpochSeconds"] as? JsonObject)
+                ?.mapNotNull { (key, reset) -> (reset as? JsonPrimitive)?.longOrNull?.let { key to it } }
                 ?.toMap()
                 .orEmpty(),
         )

@@ -102,6 +102,9 @@ public class HeadServer(
 
     override fun healthSnapshot(): HeadHealth = diagnostics.healthSnapshot(engine.isRunning, engine.port)
 
+    override fun providerResetForMs(): Long = deps.quotaBundle.accountPool?.providerResetForMs
+        ?: deps.upstream.providerResetForMs
+
     private suspend fun startLocked() {
         if (engine.isRunning) return
         // G20 contract: a control-plane restart promises a fresh diagnostic baseline; the counters

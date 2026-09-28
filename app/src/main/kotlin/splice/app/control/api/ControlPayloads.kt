@@ -25,6 +25,7 @@ import splice.core.version.ClientVersionTracker
 private const val KEY = "key"
 private const val LABEL = "label"
 private const val HEADS = "heads"
+private const val MS_PER_SECOND = 1_000L
 
 // internal (was private) so ControlHealthTest can pin the ok/stall contract
 internal class ControlPayloads(
@@ -40,7 +41,7 @@ internal class ControlPayloads(
     private val bootedAtEpochMillis: Long = System.currentTimeMillis(),
 ) {
 
-    fun controlHealthJson(): String = buildJsonObject {
+    fun controlHealthJson(nowEpochMillis: Long = System.currentTimeMillis()): String = buildJsonObject {
         // ok means "this gateway can serve", not "heads are configured" — the 91h wedge served
         // ok:true for its entire duration under the old hardcoded value (2026-08-12). Precisely: no
         // head is unresponsive at its request path, none failed to start, and at least one is up.
@@ -82,6 +83,7 @@ internal class ControlPayloads(
         put("readyHeads", running)
         put("failedHeads", failed)
         putFailedHeadReasons(this)
+        putQuotaResets(this, runningKeys, nowEpochMillis)
         if (configuredHeads == 0 && running == 0) {
             if (failed == 0) {
                 put("setupState", "not_set_up")
@@ -103,6 +105,17 @@ internal class ControlPayloads(
         val reasons = failedHeads.reasons()
         if (reasons.isEmpty()) return
         into.putJsonObject("failedHeadReasons") { reasons.forEach { (key, reason) -> put(key, reason) } }
+    }
+
+    /** V4-398: for each running head whose provider refuses turns until a known instant, that
+     *  instant in epoch seconds; absent when no head is refusing, so a healthy daemon's shape is
+     *  unchanged. Read per request, so a head that recovers drops out on the next probe. */
+    private fun putQuotaResets(into: JsonObjectBuilder, runningKeys: Set<String>, nowEpochMillis: Long) {
+        val resets = heads.filterKeys { it in runningKeys }.mapNotNull { (key, managed) ->
+            managed.head.providerResetForMs().takeIf { it > 0L }?.let { key to (nowEpochMillis + it) / MS_PER_SECOND }
+        }
+        if (resets.isEmpty()) return
+        into.putJsonObject("quotaResetAtEpochSeconds") { resets.forEach { (key, reset) -> put(key, reset) } }
     }
 
     /** [families] is each head's vendor family by key (the declared roster's), null where splice

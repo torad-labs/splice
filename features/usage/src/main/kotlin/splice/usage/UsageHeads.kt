@@ -40,6 +40,10 @@ public data class UsageHead(
 /** Every configured head, in topology order, read at CALL time. */
 public fun interface UsageHeads {
     public fun all(): List<UsageHead>
+
+    /** V4-398: milliseconds until the head's provider stops refusing turns, 0 when it is not
+     *  refusing or names no instant. Read at call time like [all], keyed by [UsageHead.key]. */
+    public fun providerResetForMs(key: String): Long = 0L
 }
 
 /** The heads a by-name usage route resolves to: a KEY match first, then every wrapper-command (label)

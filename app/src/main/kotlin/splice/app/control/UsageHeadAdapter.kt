@@ -10,7 +10,11 @@ import splice.usage.UsageHeads
 
 internal object UsageHeadAdapter {
     /** Adapted per call, never captured: a head's label follows a runtime rename (DR-22a). */
-    fun heads(heads: Map<String, ManagedHead>): UsageHeads = UsageHeads { heads.values.map(::adapt) }
+    fun heads(heads: Map<String, ManagedHead>): UsageHeads = object : UsageHeads {
+        override fun all(): List<UsageHead> = heads.values.map(::adapt)
+
+        override fun providerResetForMs(key: String): Long = heads[key]?.head?.providerResetForMs() ?: 0L
+    }
 
     /** The shared by-name lookup (key first, then every wrapper-command match). */
     fun lookup(resolver: HeadResolver): UsageHeadLookup =

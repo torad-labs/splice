@@ -127,6 +127,18 @@ public class AccountPool(
         )
     }
 
+    /** The earliest reset when every account reports a current provider quota hold. A pool with any
+     *  account free to try has no head-wide quota deadline; it can serve that account now. Reuse
+     *  selection's reset calculation, rather than re-deriving a second account horizon. A property,
+     *  not a function: the class sits at detekt's 15-function ceiling (see [AccountAvailability]). */
+    public val providerResetForMs: Long
+        get() {
+            if (accounts.any { it.cooldown.providerUnavailableForMs() <= 0L }) return 0L
+            val at = now()
+            val reset = AccountAvailability.earliestReset(accounts, at) ?: return 0L
+            return (reset * MS_PER_SECOND - at).coerceAtLeast(0L)
+        }
+
     /** Clears only runtime stickiness/cooldowns; persisted quota and credential files stay untouched. */
     public fun reset() {
         synchronized(sessions) { sessions.clear() }

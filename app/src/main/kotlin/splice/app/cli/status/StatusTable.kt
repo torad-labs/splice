@@ -12,10 +12,18 @@ import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
+import splice.core.util.WallClock
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 internal class StatusTable(
     private val palette: CliPalette = CliPalette(ColorDepthProbe(EnvReader(System::getenv)).depth()),
+    private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
+    private val chicago = DateTimeFormatter.ofPattern("MMM d, h:mm a", Locale.US)
+        .withZone(ZoneId.of("America/Chicago"))
 
     private val signIn = CliSignIn()
 
@@ -39,9 +47,12 @@ internal class StatusTable(
         topology: Topology,
         envReader: EnvReader,
         failedHeads: Map<String, String> = emptyMap(),
+        quotaResetAtEpochSeconds: Map<String, Long> = emptyMap(),
     ): List<String> {
         val rows = topology.heads.mapNotNull { (key, head) ->
-            topology.providers[head.provider]?.let { row(key, head, it, envReader, failedHeads[key]) }
+            topology.providers[head.provider]?.let {
+                row(key, head, it, envReader, DaemonWord(failedHeads[key], quotaResetAtEpochSeconds[key]))
+            }
         }
         // Each width is the larger of the header label and the widest cell, so it never maxes over
         // an empty list: zero heads still lays out its header before the setup action. DR-173 was that shape in doctor
@@ -76,19 +87,24 @@ internal class StatusTable(
         head: HeadConfig,
         provider: ProviderConfig,
         envReader: EnvReader,
-        bootFailure: String?,
+        daemon: DaemonWord,
     ): Row {
+        val bootFailure = daemon.bootFailure
         val command = head.claude.command ?: key
         val selfManaged = AuthKindRegistry.from(provider.auth.kind) == AuthKind.Client
         val authed = selfManaged || signIn.credentialConfigured(key, provider, envReader)
         val wrapped = signIn.wrapperInstalled(command, envReader)
+        // V4-398: a provider that refuses until a known instant is not ready however it is set up,
+        // but a missing wrapper or login still names the command that fixes it first. A reset that
+        // has already passed reads ready: the daemon drops it on its own once the provider recovers.
+        val quotaResetAt = daemon.quotaResetAtEpochSeconds?.takeIf { it * MS_PER_SECOND > clock() }
         // ONE actionable column, not two state columns. A row is ready or it names the single
         // command that would make it ready, so the operator never has to work out which of
         // "wrapper missing" and "not signed in" to act on first. V4-394: the running daemon's word
         // outranks both, because a head it could not build serves nothing however it is set up.
         val action = bootFailure?.let { palette.paint(palette.strain, "not running: $it") }
-            ?: action(selfManaged, authed, wrapped, command)
-        val configured = authed && wrapped
+            ?: action(selfManaged, authed, wrapped, command, quotaResetAt)
+        val configured = authed && wrapped && quotaResetAt == null
         val glyph = if (bootFailure == null && configured) {
             palette.paint(palette.live, LIVE_GLYPH)
         } else {
@@ -105,10 +121,17 @@ internal class StatusTable(
      *  fix was a command all along: the launch shim routes `<command> login` to LoginCommand for
      *  every head, and LoginCommand prompts an api-key head for its key and stores it where the
      *  daemon reads it. */
-    private fun action(selfManaged: Boolean, authed: Boolean, wrapped: Boolean, command: String): String = when {
+    private fun action(
+        selfManaged: Boolean,
+        authed: Boolean,
+        wrapped: Boolean,
+        command: String,
+        quotaResetAt: Long?,
+    ): String = when {
         !wrapped -> palette.paint(palette.signal, "splice install")
-        authed -> palette.paint(palette.quiet, if (selfManaged) "ready (your login)" else "ready")
-        else -> palette.paint(palette.signal, "$command login")
+        !authed -> palette.paint(palette.signal, "$command login")
+        quotaResetAt != null -> palette.paint(palette.strain, "out of quota until ${chicagoTime(quotaResetAt)} CT")
+        else -> palette.paint(palette.quiet, if (selfManaged) "ready (your login)" else "ready")
     }
 
     /** DR-175: the status table's backend column, and it named the wrong vendor for kimi.
@@ -141,6 +164,8 @@ internal class StatusTable(
             null -> dialectLabel(provider.dialect).let { if (provider.isLocal) "local runtime ($it)" else it }
         }
 
+    private fun chicagoTime(epochSeconds: Long): String = chicago.format(Instant.ofEpochSecond(epochSeconds))
+
     private fun dialectLabel(dialect: Dialect): String = when (dialect) {
         Dialect.OPENAI_CHAT -> "OpenAI-compatible"
         Dialect.OPENAI_RESPONSES -> "OpenAI platform"
@@ -157,6 +182,10 @@ internal class StatusTable(
  *  unpadded because nothing follows it on the line. */
 private data class Row(val glyph: String, val cells: List<String>, val action: String)
 
+/** What the running daemon said about one head: why it could not boot (V4-394) and the instant its
+ *  provider stops refusing turns, epoch seconds (V4-398). Both null for a head the daemon serves. */
+private data class DaemonWord(val bootFailure: String?, val quotaResetAtEpochSeconds: Long?)
+
 /** The labelled columns, in order. A row's cells line up with these by index. */
 private val COLUMNS = listOf("head", "command", "port", "upstream")
 
@@ -164,6 +193,8 @@ private val COLUMNS = listOf("head", "command", "port", "upstream")
 // whose own words are one space apart ("local runtime (OpenAI-compatible)", "codex / ChatGPT"). A
 // two-space gap is barely wider than a gap inside a cell; three reads as a column boundary.
 private const val GAP = 3
+
+private const val MS_PER_SECOND = 1_000L
 
 // The state glyphs. These are the reason colour can be confined to one character per row, and the
 // reason the table still reads with colour stripped — so they must stay visually distinct as SHAPES,

@@ -112,7 +112,7 @@ class SessionsRoutesWiringTest {
             assertEquals(200, board.status.value, board.bodyAsText())
             val edge = """{"from":"$ONE","to":"uds:/run/2.sock","at":$SESSIONS_AT"""
             assertEquals(
-                json("""{"sessions":{"$ONE":[$edge,"direction":"out"}],"$TWO":[$edge,"direction":"in"}]}}"""),
+                json("""{"state":"on","sessions":{"$ONE":[$edge,"direction":"out"}],"$TWO":[$edge,"direction":"in"}]}}"""),
                 json(board.bodyAsText()),
             )
             val two = get("/api/sessions/$TWO/edges")

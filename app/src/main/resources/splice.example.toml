@@ -829,6 +829,7 @@ command = "claude-splice"
 # requestReadTimeoutMs = "30000"                            # ms; how long one client request body read may take
 # materializationPermits = "16"                             # count; PROCESS-SHARED concurrent decode/translate permits
 # activityRetentionDays = "90"                              # days; message edges kept, whole days, at least 2 (activity labels: today and yesterday)
+# messageEdges = "true"                                    # bool; keep SendMessage edges; false stops new writes after restart, retained days stay until delete/retention
 # activityStoreHeads = "*"                                  # which heads store activity labels: "*", "" or "a,b"
 # budgetDefaultAction = "warn"                               # "warn" or "block"; PUT /api/budgets fills a bare row
 # perfArchiveRetentionDays = "90"                            # days; retired perf generations kept in <state>/perf-archive; 0 = off
@@ -872,6 +873,7 @@ command = "claude-splice"
 #   SPLICE_MAX_REQUEST_BYTES maxRequestBytes          SPLICE_REQUEST_READ_TIMEOUT_MS requestReadTimeoutMs
 #   SPLICE_MATERIALIZATION_PERMITS materializationPermits
 #   SPLICE_ACTIVITY_RETENTION_DAYS activityRetentionDays  SPLICE_ACTIVITY_STORE_HEADS activityStoreHeads
+#   SPLICE_MESSAGE_EDGES messageEdges
 #   SPLICE_BUDGET_DEFAULT_ACTION budgetDefaultAction      SPLICE_PERF_ARCHIVE_RETENTION_DAYS perfArchiveRetentionDays
 #   SPLICE_SUPERVISOR_UNIT supervisorUnit                 SPLICE_MCP_SLICE mcpSlice
 #

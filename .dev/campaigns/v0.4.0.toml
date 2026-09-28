@@ -9167,12 +9167,13 @@ claimed_at = "2026-09-28T10:44:01.987Z"
 id = "V4-391"
 phase = "release"
 title = "Console Q42 (Teams, Marlin baseline walk Situation 4): the user reads their sessions' messages as a conversation by repository, including yesterday's hand-offs. Today is hardcoded (console/src/pages/teams/index.tsx:345) and fetchTeamPanels scopes /chat and /activity to that day (console/src/entities/team/api/index.ts:44-56), so Marlin saw 'Messages 0 today' while 27 of yesterday's messages were hidden (Splice-CPO/product/walks/2026-09-27-console-baseline.md:54-60). Acceptance: the user can choose an earlier local day; /chat receives that day's [from,to); an older hand-off shows under its sender; an empty current day never claims the team has no messages at all."
-files = ["console/src/pages/teams/", "console/src/entities/team/api/index.ts", "console/src/widgets/team-chat/", "console/tests/teams-live.test.ts", "console/tests/team-board.test.ts", "console/e2e/v4391/"]
+files = ["console/src/pages/teams/", "console/src/entities/team/api/index.ts", "console/src/widgets/team-chat/", "console/tests/teams-live.test.ts", "console/tests/team-board.test.ts", "console/e2e/v4391/", "console/src/entities/team/index.ts"]
 status = "in_flight"
 verify = "red-first e2e picks the previous local day, asserts /chat gets that day's [from,to) and shows a seeded older hand-off under its sender; Marlin film-home normal-size walk reads the older messages on the built sha; CI gate on the exact sha"
 claimed_by = "console"
 claimed_at = "2026-09-28T14:16:30.378Z"
 # [2026-09-28] CLAIM: owner=console at=2026-09-28T14:16:30Z
+# [2026-09-28] amend by=splice-lead: files were ["console/src/pages/teams/", "console/src/entities/team/api/index.ts", "console/src/widgets/team-chat/", "console/tests/teams-live.test.ts", "console/tests/team-board.test.ts", "console/e2e/v4391/"]
 
 [[items]]
 id = "V4-392"

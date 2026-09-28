@@ -9051,6 +9051,7 @@ title = "Muse reasoning summaries and continuity over Meta's Responses API. Evid
 files = ["app/src/main/kotlin/splice/app/provider/MusePassthroughArm.kt", "app/src/main/kotlin/splice/app/provider/ProviderAssembly.kt"]
 status = "todo"
 verify = "step 0 recorded (key accepted on /v1/responses, a non-empty reasoning summary received); red first: a muse head on the responses dialect is refused by requireCompatibleAuth today; green: live claude-muse turn shows summary text in Claude Code's thinking, and the next request replays the encrypted reasoning item (splice trace claude-muse); mutant: drop include reasoning.encrypted_content (red on the replay assertion)"
+# [2026-09-28] Duplicate of V4-351 (filed Sep 27 with the same finding and more: prompt_cache_key, prompt_cache_retention 24h, the routing headers). Folded into V4-351; this row closes with V4-351's receipt. Filed by splice-lead without checking the open rows first.
 
 [[items]]
 id = "V4-387"

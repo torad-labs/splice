@@ -9218,6 +9218,7 @@ claimed_at = "2026-09-28T19:31:44.286Z"
 # [2026-09-28] CLAIM: owner=claude-builder at=2026-09-28T19:31:44Z
 # [2026-09-28] amend by=splice-lead: files were ["app/src/main/kotlin/splice/app/provider/MuseResponsesArm.kt", "app/src/main/kotlin/splice/app/provider/QuirksOverlay.kt", "app/src/test/kotlin/splice/app/provider/v4389/"]
 # [2026-09-28] Step 0 passed (claude-builder, Sep 28 CT): a direct synthetic POST https://api.meta.ai/v1/responses with a flat defer_loading function plus {type: tool_search} answered HTTP 200, completed. The existing surface cannot emit that wire: ToolSurface.kt:127 keeps non-lite Muse all-eager, ToolWireObjects.kt:134-145 omits deferred functions and emits execution:client (codex's client-side search), and ResponsesLite.kt:35-44 moves tools into additional_tools for lite only. So the fence widens to the Responses dialect's tool plan, to add a hosted (server-side tool_search) mode beside codex's client mode.
+# [2026-09-28] Sep 28, 2:40 PM CT: direct synthetic POST to https://api.meta.ai/v1/responses with a flat function carrying defer_loading:true and {type:tool_search} returned HTTP 200 completed. A follow-up shape probe received HTTP 429 rate_limit_exceeded with reset Oct 4, 7:00 PM CT; no second wire shape was validated. Meta docs dev.meta.ai/docs/tool-search.md confirm hosted search keeps deferred tool schemas in the request and executes server-side, unlike splice Codex client search that omits deferred definitions. No private traffic identifiers or prompt hashes recorded.
 
 [[items]]
 id = "V4-390"

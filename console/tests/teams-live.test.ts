@@ -11,7 +11,7 @@ import type { InflightTurn, TurnRow } from '../src/entities/perf';
 import { fetchPerfTurns } from '../src/entities/perf';
 import { perfTurnsStore } from '../src/entities/perf/model/store';
 import type { TeamActivityPayload, TeamChatPayload, TeamEconomicsPayload, TeamPanels, TeamRow, TeamSlot } from '../src/entities/team';
-import { fetchTeamPanels } from '../src/entities/team';
+import { fetchTeamPanels, readTeamChat } from '../src/entities/team';
 import { draftOf, keyFor, saveDraft, unbindSession, unbindsOf, writeOf } from '../src/features/team-compose';
 import { UNLISTED, activityOf, boardOf, dayOf, dayStartOf, hhmm, hhmmss, lastHourOf, liveTurnsOf, membersOf, messagesOf, turnsOf, viewDataOf } from '../src/pages/teams/board';
 import { dayAxis } from '../src/widgets/team-board';
@@ -325,6 +325,22 @@ describe("the day is the viewer's own (V4-249)", () => {
       `/api/teams/team-1/chat${day}`,
       `/api/teams/team-1/activity${day}`,
     ]);
+  });
+
+  test('selecting an older day reads only that chat, not today\'s activity or economics', async () => {
+    process.env.TZ = 'America/Chicago';
+    const urls: string[] = [];
+    vi.stubGlobal('fetch', (url: string) => {
+      urls.push(url);
+      return Promise.resolve(new Response(JSON.stringify(CHAT), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    });
+    try {
+      const yesterday = dayOf(Date.UTC(2026, 8, 24, 18, 0, 0));
+      expect((await readTeamChat('team-1', yesterday)).messages).toEqual(CHAT.messages);
+      expect(urls).toEqual([`/api/teams/team-1/chat?from=${yesterday.from}&to=${yesterday.to}`]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   test('a DST day is the calendar\'s, 25 hours on the fall-back, never 24', () => {

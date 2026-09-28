@@ -1,4 +1,6 @@
 /* The team chat: one row per hand-off, its time, who wrote to whom, and the text behind a reveal. */
+.myx-chat-days { display: inline-flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+.myx-chat-day { font-size: var(--text-2); color: var(--fg-muted); }
 .myx-chat { display: grid; margin: 0; padding: 0; list-style: none; }
 .myx-chat-row {
   display: grid;

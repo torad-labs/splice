@@ -9,12 +9,18 @@ export const S = {
   reading: 'Reading the chat',
   unavailable: 'Chat unavailable',
   unreadable: 'Chat unreadable',
+  off: 'Chat off',
   noMessages: 'No messages today',
+  noMessagesOnDay: 'No messages',
+  previousDay: 'Previous day',
+  nextDay: 'Next day',
+  today: 'Today',
   deleted: 'Message history deleted',
 } as const;
 
 export const H = {
   chat: "Today's hand-offs between members; each text is read on demand.",
+  older: 'Hand-offs on this local day; each text is read on demand.',
   unavailable: 'This splice version does not serve team chat.',
   // A plain `claude` member's own messages never pass through splice, so they never show (README,
   // the Teams paragraph); an empty chat that did not say so read as nobody having talked (Marlin).

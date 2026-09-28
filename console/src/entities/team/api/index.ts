@@ -56,6 +56,11 @@ export async function fetchTeamPanels(id: string, day: { from: number; to: numbe
   teamPanelsStore.setData({ teamId: id, chat, activity, economics });
 }
 
+/** Read only the selected day's chat; the live board keeps today's activity and economics. */
+export function readTeamChat(id: string, day: { from: number; to: number }): Promise<TeamChatPayload> {
+  return request<TeamChatPayload>(`/api/teams/${encodeURIComponent(id)}/chat?from=${day.from}&to=${day.to}`);
+}
+
 /** Creates a team. `key` is the Idempotency-Key: a retried create with the same key answers the
  *  team it already made rather than making a second one. */
 export function createTeam(team: TeamWrite, key: string): Promise<TeamRow> {

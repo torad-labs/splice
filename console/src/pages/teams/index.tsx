@@ -11,7 +11,7 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useLocation } from 'react-router';
-import { fetchTeamPanels, fetchTeams, isPending, useTeamPanels, useTeams } from '@entities/team';
+import { fetchTeamPanels, fetchTeams, isPending, readTeamChat, useTeamPanels, useTeams } from '@entities/team';
 import { fetchSessions, sessionLabel, useSessionRegistry } from '@entities/session';
 import { useSpliceHeads } from '@entities/control-status';
 import { fetchHeads, useHeads } from '@entities/heads';
@@ -30,8 +30,8 @@ import { ABSENT, fmtInt, poll, useLinkedId, useOpen } from '@shared/lib';
 import type { Resource } from '@shared/lib';
 import { Badge, DataTable, Empty, KeyValue, PageHeader, Pips, Section } from '@shared/ui';
 import type { Column } from '@shared/ui';
-import type { TeamPanels, TeamPayload, TeamRow, TeamsState } from '@entities/team';
-import { boardOf, dayOf, dayStartOf, viewDataOf } from './board';
+import type { TeamChatPayload, TeamPanels, TeamPayload, TeamRow, TeamsState } from '@entities/team';
+import { boardOf, dayOf, dayStartOf, messagesOf, viewDataOf } from './board';
 import { H, S, U } from './strings';
 import './teams.css';
 
@@ -94,20 +94,25 @@ export interface TeamsBodyInput {
   /** Why the day's turn log on the timeline is short or old (turnLogOf); none when it is whole. */
   faults?: readonly TimelineFault[];
   chat?: TeamChatState;
+  chatDay?: number;
+  today?: number;
+  onChatDay?: (day: number) => void;
   feed?: ActivityFeedState;
   /** The editor's key on the opened team, and the empty's action when there is no team. */
   onEdit?: () => void;
   onNew?: () => void;
 }
 
-export function teamsBodyFor({ view, teams, error = null, lastRead = null, board, data = null, faults = [], chat = null, feed = null, onEdit, onNew }: TeamsBodyInput) {
+export function teamsBodyFor({ view, teams, error = null, lastRead = null, board, data = null, faults = [], chat = null, chatDay, today, onChatDay, feed = null, onEdit, onNew }: TeamsBodyInput) {
   if (board === null) return liveEmpty(teams, error, onNew);
   // A list read that fails after a team was drawn keeps the team and says so above it, with the
   // age of what it shows, so a dead daemon's team does not read as a live one.
   return (
     <>
       {error === null ? null : <Fault message={error} lastRead={lastRead} />}
-      <TeamView board={board} mode={modeOf(view)} data={data} faults={faults} chat={chat} feed={feed} {...(onEdit === undefined ? {} : { onEdit })} />
+      <TeamView board={board} mode={modeOf(view)} data={data} faults={faults} chat={chat} feed={feed}
+        {...(chatDay === undefined || today === undefined || onChatDay === undefined ? {} : { chatDay, today, onChatDay })}
+        {...(onEdit === undefined ? {} : { onEdit })} />
     </>
   );
 }
@@ -180,12 +185,15 @@ export function turnLogOf(turns: Resource<TurnsState | PendingRoute>): TurnLog {
 
 /** One team, opened: who it is, its figures, then the view's seats or lanes, today's chat and
  *  activity, and the cost per role. */
-export function TeamView({ board, mode, data, faults, chat, feed, onEdit }: {
+export function TeamView({ board, mode, data, faults, chat, chatDay, today, onChatDay, feed, onEdit }: {
   board: TeamPayload;
   mode: 'lanes' | 'head' | 'role' | 'timeline';
   data: TeamViewData | null;
   faults: readonly TimelineFault[];
   chat: TeamChatState;
+  chatDay?: number;
+  today?: number;
+  onChatDay?: (day: number) => void;
   feed: ActivityFeedState;
   onEdit?: () => void;
 }) {
@@ -218,7 +226,8 @@ export function TeamView({ board, mode, data, faults, chat, feed, onEdit }: {
       {mode === 'timeline' ? <TeamTimeline board={board} data={data} faults={faults} /> : null}
       {mode === 'head' || mode === 'role' ? <TeamMembers board={board} by={mode} /> : null}
       <div className="myx-tm-pair">
-        <TeamChat state={chat} />
+        <TeamChat state={chat}
+          {...(chatDay === undefined || today === undefined || onChatDay === undefined ? {} : { day: chatDay, today, onDayChange: onChatDay })} />
         <ActivityFeed state={feed} />
       </div>
       <CostPerRole board={board} data={data} />
@@ -282,6 +291,8 @@ export function TeamsPage() {
    *  a new team lands after the save does, and until it does the page opens this row, not another. */
   const [saved, setSaved] = useState<{ team: TeamRow; answer: string } | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [chatDay, setChatDay] = useState<number | null>(null);
+  const [olderChat, setOlderChat] = useState<{ teamId: string; day: number; state: TeamChatPayload | { error: string } | null } | null>(null);
 
   // A fixture loads only in dev and only when the address asks for it by name
   // (CONTRACTS.md section 4). It is reached by a dynamic import inside the
@@ -347,6 +358,17 @@ export function TeamsPage() {
   }, [fixture, openId]);
 
   useEffect(() => {
+    if (fixture !== null || openId === null || chatDay === null) return undefined;
+    let live = true;
+    setOlderChat({ teamId: openId, day: chatDay, state: null });
+    void readTeamChat(openId, dayOf(chatDay)).then(
+      (state) => { if (live) setOlderChat({ teamId: openId, day: chatDay, state }); },
+      (error: unknown) => { if (live) setOlderChat({ teamId: openId, day: chatDay, state: { error: error instanceof Error ? error.message : String(error) } }); },
+    );
+    return () => { live = false; };
+  }, [fixture, openId, chatDay]);
+
+  useEffect(() => {
     if (fixture !== null || openId === null) return undefined;
     return poll(() => fetchPerfTurns(undefined, TURN_TAIL, dayStartOf(Date.now())), TURN_LOG_EVERY_MS);
   }, [fixture, openId]);
@@ -362,6 +384,15 @@ export function TeamsPage() {
     }
     : live === null ? { chat: null, feed: null } : panelStates(live, panels.data);
 
+  const today = dayOf(now).from;
+  const history = olderChat?.teamId === openId && olderChat?.day === chatDay ? olderChat.state : null;
+  const selectedChat: TeamChatState = chatDay === null ? states.chat
+    : history !== null && 'messages' in history && live !== null
+      ? { messages: messagesOf(live.members, history) ?? [],
+        ...(history.state === undefined ? {} : { state: history.state }),
+        ...(history.reason === undefined ? {} : { reason: history.reason }) }
+      : history !== null && 'error' in history ? history : null;
+
   const listed = fixture !== null ? [fixture.team] : list;
   const editing = composing === 'edit' ? (fixture?.team ?? open) : null;
 
@@ -374,6 +405,11 @@ export function TeamsPage() {
     data: sample !== null ? sample.data : live === null ? null : viewDataOf(live, log.rows, heads === null ? null : inflightFrom(heads), panels.data, now),
     faults: fixture === null ? log.faults : [],
     ...states,
+    chat: selectedChat,
+    ...(fixture !== null || openId === null ? {} : {
+      chatDay: chatDay ?? today, today,
+      onChatDay: (day: number) => setChatDay(day === today ? null : day),
+    }),
     onEdit: () => setComposing('edit'),
     onNew: () => setComposing('new'),
   });

@@ -5,6 +5,7 @@
 // and never stored by the daemon, so the list prints who wrote to whom and when, and shows the
 // words only when asked.
 import { ArrowRightIcon } from '@phosphor-icons/react/dist/csr/ArrowRight';
+import { Key } from '@shared/controls';
 import { Empty, Reveal, Section } from '@shared/ui';
 import type { PendingRoute } from '@shared/api';
 import type { TeamMessage } from '@entities/team';
@@ -35,16 +36,17 @@ export function chatOrder(messages: readonly TeamMessage[]): TeamMessage[] {
     .map(({ message }) => message);
 }
 
-function body(state: TeamChatState) {
+function body(state: TeamChatState, today: boolean) {
   if (state === null) return <Empty text={S.reading} />;
   if ('pending' in state) return <Empty text={S.unavailable} source={H.unavailable} />;
   if ('error' in state) return <Empty text={S.unreadable} source={state.error} />;
   if (state.state === 'deleted') return <Empty text={S.deleted} source={H.deleted} />;
-  if (state.messages.length === 0) return <Empty text={S.noMessages} source={H.noMessages} />;
+  if (state.state === 'off' && state.messages.length === 0) return <Empty text={S.off} source={state.reason} />;
+  if (state.messages.length === 0) return <Empty text={today ? S.noMessages : S.noMessagesOnDay} source={H.noMessages} />;
   return (
     <ol className="myx-chat">
-      {chatOrder(state.messages).map((message) => (
-        <li key={`${message.time}-${message.from}-${message.to}`} className="myx-chat-row" aria-label={`${message.from} ${U.to} ${message.to}`}>
+      {chatOrder(state.messages).map((message, index) => (
+        <li key={`${message.at}-${message.from}-${message.to}-${index}`} className="myx-chat-row" aria-label={`${message.from} ${U.to} ${message.to}`}>
           <span className="myx-chat-time">{message.time}</span>
           <span className="myx-chat-route">
             <span className="myx-chat-party">{message.from}</span>
@@ -60,11 +62,33 @@ function body(state: TeamChatState) {
   );
 }
 
-export function TeamChat({ state }: { state: TeamChatState }) {
+/** Move by calendar days, never by 24 hours: daylight-saving days are not fixed spans. */
+function nextDay(day: number, by: number): number {
+  const at = new Date(day);
+  return new Date(at.getFullYear(), at.getMonth(), at.getDate() + by).getTime();
+}
+
+export function TeamChat({ state, day, today, onDayChange }: {
+  state: TeamChatState;
+  /** Local midnight of the selected and current days; absent on a static board. */
+  day?: number;
+  today?: number;
+  onDayChange?: (day: number) => void;
+}) {
+  const current = day === undefined || today === undefined || day === today;
   const count = state !== null && 'messages' in state ? state.messages.length : undefined;
   return (
-    <Section title={S.chat} {...(count === undefined ? {} : { count })} info={{ text: H.chat, label: S.chatWhy }}>
-      {body(state)}
+    <Section title={S.chat} {...(count === undefined ? {} : { count })}
+      info={{ text: current ? H.chat : H.older, label: S.chatWhy }}
+      actions={day === undefined || today === undefined || onDayChange === undefined ? undefined : (
+        <span className="myx-chat-days">
+          <Key onClick={() => onDayChange(nextDay(day, -1))}>{S.previousDay}</Key>
+          <span className="myx-chat-day">{current ? S.today : new Date(day).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+          <Key disabled={current} onClick={() => onDayChange(nextDay(day, 1))}>{S.nextDay}</Key>
+          {current ? null : <Key onClick={() => onDayChange(today)}>{S.today}</Key>}
+        </span>
+      )}>
+      {body(state, current)}
     </Section>
   );
 }

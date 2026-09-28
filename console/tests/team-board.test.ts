@@ -432,6 +432,16 @@ describe('the chat', () => {
     expect(html).not.toContain('No messages today');
   });
 
+  test('a paused history is not described as an empty day', () => {
+    const html = render(createElement(TeamChat, { state: { messages: [], state: 'off', reason: 'recording stopped' }, day: 1, today: 2 }));
+    expect(html).toContain('Chat off');
+    expect(html).toContain('recording stopped');
+    expect(html).not.toContain('No messages</span>');
+    const retained = render(createElement(TeamChat, { state: { messages: sampleBoard.messages, state: 'off' }, day: 1, today: 2 }));
+    expect(retained).toContain('api-lead to api-builder');
+    expect(retained).not.toContain('Chat off');
+  });
+
   test('the messages read down in time order, whatever order the route answered in', () => {
     const shuffled = [sampleBoard.messages[2], sampleBoard.messages[0], sampleBoard.messages[1]];
     expect(chatOrder(shuffled).map((message) => message.time)).toEqual(['13:41', '13:58', '14:01']);

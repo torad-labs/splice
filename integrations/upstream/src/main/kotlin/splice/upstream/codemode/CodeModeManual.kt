@@ -58,6 +58,10 @@ public object CodeModeManual {
         return identifier.ifEmpty { "_" }.toString()
     }
 
+    /** augment_tool_definition: the description `ALL_TOOLS` carries — the tool's own description, then
+     *  its TypeScript declaration, so a deferred tool the manual omits still shows its arguments. */
+    public fun augmented(tool: NestedTool): String = sample(tool, identifier(tool.name))
+
     private fun section(tool: NestedTool): String {
         val global = identifier(tool.name)
         val heading = if (global == tool.name) "### `$global`" else "### `$global` (`${tool.name}`)"

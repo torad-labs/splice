@@ -311,21 +311,24 @@ private const val LAUNCHER: String = """
       reject(error);
     }
   });
-  // codex's globals: tools.<Name>(args) per nested tool, ALL_TOOLS, text() and exit(). tools.call
-  // stays for cells written against the splice_exec API before V4-388.
+  // codex's globals: tools.<Name>(args) per nested tool, ALL_TOOLS, text() and exit(). A call with no
+  // argument sends {} as codex does (code-mode-runtime callbacks.rs). tools.call stays for cells
+  // written against the splice_exec API before V4-388.
   const bound = {};
-  for (const tool of catalog.nested) bound[tool.global] = args => call(tool.name, args);
+  for (const tool of catalog.nested) bound[tool.global] = args => call(tool.name, args === undefined ? {} : args);
   if (!Object.prototype.hasOwnProperty.call(bound, "call")) bound.call = call;
   const tools = Object.freeze(bound);
   const ALL_TOOLS = Object.freeze(catalog.nested.map(tool =>
     Object.freeze({name: tool.global, description: tool.description})));
+  // codex's text() (code-mode-runtime value.rs): primitives as String(), anything else as JSON; a
+  // value JSON.stringify throws on (a cycle) throws into the script instead of printing
+  // "[object Object]".
   const render = value => {
-    if (typeof value === "string") return value;
-    try {
-      const encoded = JSON.stringify(value);
-      if (typeof encoded === "string") return encoded;
-    } catch (_) {}
-    return String(value);
+    const kind = typeof value;
+    if (value === null || kind === "undefined" || kind === "boolean" || kind === "number" ||
+        kind === "bigint" || kind === "string") return String(value);
+    const encoded = JSON.stringify(value);
+    return typeof encoded === "string" ? encoded : String(value);
   };
   const text = value => { host.log(render(value)); };
   const EXIT = Object.freeze({exit: true});

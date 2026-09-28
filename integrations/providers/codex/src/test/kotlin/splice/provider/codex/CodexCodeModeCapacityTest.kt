@@ -55,6 +55,7 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
             }
             .getValue("output").jsonPrimitive.content
         assertTrue("capacity reached" in output, output)
+        assertTrue("Call exec again" in output && "directly" !in output, output)
         assertTrue("\"sourceRerun\":false" in output)
         assertTrue(logLines.any { "capacity reached" in it })
     }

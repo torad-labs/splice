@@ -10,8 +10,10 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.parse.AnthropicParse
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeBridgeTestSupport
+import splice.provider.codex.CodexCodeModeTurnBuilder
 import splice.provider.codex.CodexCodeModeValidation
 
 /** V4-388: what rides beside exec, when the manual says tools were withheld, and which outer names are ours. */
@@ -28,6 +30,36 @@ class CodeModeExecWireTest : CodeModeBridgeTestSupport() {
 
         val withheld = bridge.injectTool(REQUEST, setOf("Read", "LSP"))
         assertTrue(manual(withheld).contains("Some deferred nested tools may be omitted"), manual(withheld))
+    }
+
+    @Test
+    fun `two client tools with one code-mode name document only the one the cell binds, and log the other`() {
+        val request = Json.parseToJsonElement(
+            """{"input":[{"type":"additional_tools","role":"developer","tools":[
+            {"type":"function","name":"mcp__foo_bar__x","description":"Underscored.","parameters":{"type":"object"}}]},
+            {"role":"user","content":"start"}]}""",
+        ).jsonObject
+        val bridge = bridge(ScriptedRuntime(ArrayDeque()))
+        repeat(2) { bridge.injectTool(request, setOf("mcp__foo-bar__x", "mcp__foo_bar__x")) }
+        val manual = manual(bridge.injectTool(request, setOf("mcp__foo-bar__x", "mcp__foo_bar__x")))
+        assertFalse(manual.contains("Underscored."), manual)
+        assertTrue(manual.contains("Some deferred nested tools may be omitted"), manual)
+        assertEquals(1, logLines.count { "skipping client tool 'mcp__foo_bar__x'" in it }, logLines.toString())
+    }
+
+    @Test
+    fun `a deferred tool's ALL_TOOLS description carries its declaration`() {
+        val body = AnthropicParse.parseAnthropicBody(
+            """{"model":"gpt-6-sol","messages":[{"role":"user","content":"start"}],"tools":[
+            {"name":"LSP","description":"Language server.","input_schema":{"type":"object",
+             "properties":{"line":{"type":"integer"}},"required":["line"]}}]}""",
+        )
+        val builder = CodexCodeModeTurnBuilder(bridge(ScriptedRuntime(ArrayDeque())), media())
+        assertEquals(
+            "Language server.\n\nexec tool declaration:\n```ts\n" +
+                "declare const tools: { LSP(args: { line: number; }): Promise<unknown>; };\n```",
+            builder.descriptions(body).getValue("LSP"),
+        )
     }
 
     @Test

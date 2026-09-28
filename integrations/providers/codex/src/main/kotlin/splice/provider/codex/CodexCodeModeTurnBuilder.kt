@@ -15,6 +15,7 @@ import splice.core.wire.ToolResultBlock
 import splice.dialect.responses.request.ImageDisposition
 import splice.dialect.responses.request.ResponsesToolResultMedia
 import splice.upstream.BuiltTurn
+import splice.upstream.codemode.CodeModeManual
 import splice.upstream.codemode.CodeModeResult
 
 /** [media] is the dialect's own tool_result image renderer (V4-179): the bridge renders a result's
@@ -50,7 +51,7 @@ internal class CodexCodeModeTurnBuilder(
             toolResults = toolResults(body),
             toolMedia = toolMedia(body),
             legacyResults = legacyResults(body),
-            descriptions = body.typed.tools.associate { it.name to it.description.orEmpty() },
+            descriptions = descriptions(body),
         )
         val disableParallel = body.typed.toolChoice?.disableParallelToolUse == true
         val surface = manager.injectTool(built.requestBody, turn.tools)
@@ -95,6 +96,14 @@ internal class CodexCodeModeTurnBuilder(
             id = block.toolUseId,
             output = block.content.joinToString("") { part -> resultText(block.toolUseId, part, dispositions) },
             isError = block.isError == true,
+        )
+    }
+
+    /** V4-388: each client tool's `ALL_TOOLS` description as codex's augment_tool_definition writes it —
+     *  with its TypeScript declaration, so a tool the manual defers still shows the cell its arguments. */
+    internal fun descriptions(body: AnthropicTurnBody): Map<String, String> = body.typed.tools.associate { tool ->
+        tool.name to CodeModeManual.augmented(
+            CodeModeManual.NestedTool(tool.name, tool.description.orEmpty(), tool.inputSchema),
         )
     }
 
@@ -185,15 +194,24 @@ private class CodeModeLegacyMarkers {
 }
 
 /**
- * The upstream models offered the runner. `gpt-5.6-sol` is listed beside the GPT-6 pair: the
- * previous `gpt-6-(astra|sol)` regex matched no model the backend then served and silently left
- * every 5.6 Sol turn, and with it every sonnet/haiku-tiered subagent, without code mode (measured
- * 2026-09-20: the runner was advertised on 938 of a session's 7,070 calls). gpt-6-sol has served
- * since, and `splice add codex` pins it (V4-224). The TOML `code_mode_models` list replaces this
- * default; an optional `[Nk|Nm]` context suffix on the model id is ignored.
+ * The upstream models offered the runner. V4-388: every model codex-rs's catalog runs
+ * `tool_mode = "code_mode_only"` (models-manager/models.json, Sep 21: gpt-6-astra, gpt-5.6-sol,
+ * gpt-5.6-terra, gpt-5.6-luna, codex-auto-review) plus the GPT-6 ids the backend has served since
+ * (gpt-6-sol, pinned by `splice add codex`, V4-224, and gpt-6-luna). Those models are trained on the
+ * one-`exec` surface; before this list, luna and terra subagents ran with direct tools (2026-09-28:
+ * 16 gpt-6-luna attempts, none offered exec). The TOML `code_mode_models` list replaces this default;
+ * an optional `[Nk|Nm]` context suffix on the model id is ignored.
  */
 public object CodexCodeModeModels {
-    public val DEFAULT: Set<String> = setOf("gpt-6-astra", "gpt-6-sol", "gpt-5.6-sol")
+    public val DEFAULT: Set<String> = setOf(
+        "gpt-6-astra",
+        "gpt-6-sol",
+        "gpt-6-luna",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna",
+        "codex-auto-review",
+    )
 
     private val contextSuffix = Regex("\\[\\d+[km]]$", RegexOption.IGNORE_CASE)
 

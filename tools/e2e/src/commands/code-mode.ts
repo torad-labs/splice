@@ -77,6 +77,8 @@ export const MAX_REQUESTS = 64;
 export const INPUT_BUDGET = 400_000;
 export const OUTPUT_BUDGET = 32_000;
 export const MAX_BODY = 1_048_576;
+/** The one code-mode tool a code_mode_only model sees (V4-388; codex-rs code-mode-protocol PUBLIC_TOOL_NAME). */
+export const EXEC_TOOL = "exec";
 
 const int = (n: number | bigint): PyValue => ({ __pyNum: String(n), isFloat: false });
 const isExactInt = (v: PyValue): v is { __pyNum: string; isFloat: false } =>
@@ -127,7 +129,7 @@ export class Budget {
       }
     }
     this.schema_bytes += dumps(declarations, ",", ":").length;
-    this.code_tool_requests += declarations.some((tool) => pyEq(get(tool, "name"), "splice_exec")) ? 1 : 0;
+    this.code_tool_requests += declarations.some((tool) => pyEq(get(tool, "name"), EXEC_TOOL)) ? 1 : 0;
     this.guidance_requests += dumps(payload).includes("<code_mode_orchestration>") ? 1 : 0;
   }
 
@@ -1643,13 +1645,13 @@ export const GUIDANCE_SCENARIO: Scenario = {
 // =============================================================================================
 
 export const SCRIPTS: Record<string, string> = {
-  "lookup-edit": 'const data = JSON.parse(await tools.call("Read", {file_path:"settings.json"})); ' +
-    'data.timeout = 20; await tools.call("Write", {file_path:"settings.json", content:JSON.stringify(data)}); ' +
+  "lookup-edit": 'const data = JSON.parse(await tools.Read({file_path:"settings.json"})); ' +
+    'data.timeout = 20; await tools.Write({file_path:"settings.json", content:JSON.stringify(data)}); ' +
     'return "UPDATED";',
   "independent-reads": 'const values = await Promise.all(["a.txt","b.txt","c.txt"].map(' +
-    "file_path => tools.call(\"Read\", {file_path}))); return values.reduce((s,v)=>s+Number(v),0);",
-  "optional-discovery": 'return await tools.call("mcp__release__lookup", {});',
-  "background-result": 'return await tools.call("Agent", {prompt:"7 times 8"});',
+    "file_path => tools.Read({file_path}))); return values.reduce((s,v)=>s+Number(v),0);",
+  "optional-discovery": 'return await tools.mcp__release__lookup({});',
+  "background-result": 'return await tools.Agent({prompt:"7 times 8"});',
 };
 export const EXPECTED: Record<string, string> = {
   "lookup-edit": "UPDATED", "independent-reads": "110", "optional-discovery": "0.4.0", "background-result": "56",
@@ -1689,7 +1691,7 @@ export function assertGuidance(body: PyValue, callerSystem: string, enabled: boo
     throw new ValueError("code-mode guidance section count was not exactly one when enabled");
   }
   const declarations = iter(get(inputItems[0] as PyValue, "tools", []));
-  const runners = declarations.filter((tool) => pyEq(get(tool, "name"), "splice_exec"));
+  const runners = declarations.filter((tool) => pyEq(get(tool, "name"), EXEC_TOOL));
   if (runners.length !== Number(enabled) || runners.some((tool) => !pyEq(get(tool, "type"), "custom"))) {
     throw new ValueError("code-mode runner and guidance were not coupled");
   }
@@ -1755,11 +1757,11 @@ export function mockHandler(state: MockState): Methods {
               && iter(get(it, "tools", [])).some((t) => pyEq(get(t, "name"), "mcp__release__lookup")))) {
               throw new ValueError("native discovery did not expose release lookup");
             }
-            if (!declared().some((t) => pyEq(get(t, "type"), "custom") && pyEq(get(t, "name"), "splice_exec"))) {
+            if (!declared().some((t) => pyEq(get(t, "type"), "custom") && pyEq(get(t, "name"), EXEC_TOOL))) {
               throw new ValueError("missing code-mode declaration");
             }
             item = obj([["type", "custom_tool_call"], ["id", "item-" + caseName], ["call_id", "outer-" + caseName],
-              ["name", "splice_exec"], ["input", SCRIPTS[caseName] as string], ["status", "completed"]]);
+              ["name", EXEC_TOOL], ["input", SCRIPTS[caseName] as string], ["status", "completed"]]);
           } else {
             const expected = EXPECTED[caseName] as string;
             const evidence = caseName === "background-result" ? wire : dumps(output);

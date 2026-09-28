@@ -199,7 +199,7 @@ describe("probe", () => {
 
   test("upstream shape counts guidance and script declaration separately", () => {
     const budget = new Budget();
-    const payload = P({ input: [{ type: "additional_tools", tools: [{ type: "custom", name: "splice_exec" }] }] }) as PyObj;
+    const payload = P({ input: [{ type: "additional_tools", tools: [{ type: "custom", name: "exec" }] }] }) as PyObj;
     budget.recordShape(payload);
     (get(payload, "input") as PyValue[]).push(P({ role: "developer", content: "<code_mode_orchestration>guide</code_mode_orchestration>" }));
     budget.recordShape(payload);
@@ -291,7 +291,7 @@ describe("probe", () => {
 
   test("streamed calls count once with sparse or repeated terminal output", async () => {
     const items = [
-      { type: "custom_tool_call", id: "script-item", call_id: "script", name: "splice_exec" },
+      { type: "custom_tool_call", id: "script-item", call_id: "script", name: "exec" },
       { type: "tool_search_call", id: "search-item", call_id: "search" },
     ];
     for (const terminalOutput of [[], items]) {

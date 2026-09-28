@@ -23,6 +23,9 @@ internal class CodexCodeModeWire(private val json: Json, private val log: LogSin
     /** Record ids whose omission was already logged — one line per record, not one per turn. */
     private val announced: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
+    /** Client tool names already logged as losing a code-mode name collision. */
+    private val announcedCollisions: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
     /** V4-388: codex's code_mode_only surface (codex-rs core/src/tools/spec_plan.rs
      *  is_hidden_by_code_mode_only): every client function tool leaves the top level and is rendered
      *  into `exec`'s manual; a hosted tool (tool_search) stays beside it. [clientTools] is the whole
@@ -35,14 +38,27 @@ internal class CodexCodeModeWire(private val json: Json, private val log: LogSin
         val tools = item?.get(FIELD_TOOLS) as? JsonArray
         require(item != null && tools != null) { "code mode requires the Responses lite additional_tools item" }
         val (functions, hosted) = tools.partition { string(it as? JsonObject, FIELD_TYPE) == TYPE_FUNCTION }
+        val reachable = reachable(clientTools)
         val nested = functions.mapNotNull { it as? JsonObject }.map { tool ->
             CodeModeManual.NestedTool(string(tool, FIELD_NAME), string(tool, FIELD_DESCRIPTION), tool[FIELD_PARAMETERS])
-        }
-        val deferred = (clientTools - nested.map(CodeModeManual.NestedTool::name).toSet()).isNotEmpty()
+        }.filter { it.name in reachable }
+        val deferred = (reachable - nested.map(CodeModeManual.NestedTool::name).toSet()).isNotEmpty()
         val surface = JsonArray(listOf(execTool(CodeModeManual.description(nested, deferred))) + hosted)
         val replaced = JsonObject(item + (FIELD_TOOLS to surface))
         val rebuilt = input.mapIndexed { position, element -> if (position == index) replaced else element }
         return JsonObject(request + (FIELD_INPUT to JsonArray(rebuilt)))
+    }
+
+    /** The client tools `tools.<Name>` can reach: the worker dedupes the same whole catalog with the
+     *  same rule, so the manual never documents a global the cell binds to another tool. A tool whose
+     *  normalized name another took is logged once, as codex warns (core/src/tools/spec_plan.rs). */
+    private fun reachable(clientTools: Set<String>): Set<String> {
+        val kept = CodeModeManual.nestedNames(clientTools).toSet()
+        (clientTools - kept).filter { announcedCollisions.add(it) }.forEach { name ->
+            val global = CodeModeManual.identifier(name)
+            log("[code-mode] skipping client tool '$name': its code-mode name $global is taken")
+        }
+        return kept
     }
 
     fun inputBoundary(bodyJson: String): CodeModeInputBoundary? = history.inputBoundary(bodyJson)

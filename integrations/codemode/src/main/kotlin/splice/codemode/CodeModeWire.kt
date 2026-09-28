@@ -35,6 +35,8 @@ private const val TYPE_READY: String = "ready"
 private const val TYPE_RESULTS: String = "results"
 private const val TYPE_START: String = "start"
 private const val TOO_MANY_TOOLS: String = "Too many code-mode tools"
+private const val DESCRIPTION_OVER_BUDGET: String =
+    "(description omitted: the client tool catalog exceeded the code-mode description budget)"
 
 /** Strict, bounded frames shared by the parent runtime and isolated worker. */
 internal object CodeModeWire {
@@ -43,9 +45,6 @@ internal object CodeModeWire {
     const val maxCallsPerBatch: Int = 8
     const val maxCallsPerCell: Int = 32
     const val maxToolCatalog: Int = 2_048
-
-    // why: half of maxFrameBytes, so the descriptions plus a maximal source and tool list stay inside one frame.
-    const val maxDescriptionBytes: Int = 524_288
 
     fun write(output: DataOutputStream, frame: JsonObject) {
         val bytes = CodeModeProtocol.encodeFrame(frame)
@@ -93,30 +92,35 @@ internal object CodeModeWire {
      *  reads the start frame, so the parent can time its start apart from the script's advance. */
     fun readyFrame(): JsonObject = buildJsonObject { put(FIELD_TYPE, TYPE_READY) }
 
-    /** V4-388: [descriptions] ride inside [maxDescriptionBytes] in name order; a description past the
-     *  budget is sent empty, so a large client catalog cannot push the frame over [maxFrameBytes]. */
+    /** V4-388: [descriptions] fill what the frame has left after the source and the tool names, in name
+     *  order and charged at their JSON-escaped size, so the encoded frame never passes [maxFrameBytes];
+     *  a description that no longer fits is sent as [DESCRIPTION_OVER_BUDGET], so the cell's
+     *  `ALL_TOOLS` says why the entry is bare. */
     fun startFrame(source: String, tools: Set<String>, descriptions: Map<String, String> = emptyMap()): JsonObject {
         CodeModeFrames.requireText(source, FIELD_SOURCE)
         require(tools.size <= maxToolCatalog) { TOO_MANY_TOOLS }
         tools.forEach(CodeModeFrames::requireToolName)
-        var budget = maxDescriptionBytes
-        return buildJsonObject {
+        val names = tools.sorted()
+        var budget = maxFrameBytes - CodeModeProtocol.encodeFrame(start(source, names, names.associateWith { "" })).size
+        val fitted = names.associateWith { name ->
+            val description = CodeModeLimits.boundedText(descriptions[name].orEmpty())
+            val entry = listOf(description, DESCRIPTION_OVER_BUDGET, "").firstOrNull { escaped(it) <= budget }.orEmpty()
+            budget -= escaped(entry)
+            entry
+        }
+        return start(source, names, fitted)
+    }
+
+    private fun start(source: String, names: List<String>, descriptions: Map<String, String>): JsonObject =
+        buildJsonObject {
             put(FIELD_TYPE, TYPE_START)
             put(FIELD_SOURCE, source)
-            put(FIELD_TOOLS, buildJsonArray { tools.sorted().forEach(::add) })
-            put(
-                FIELD_DESCRIPTIONS,
-                buildJsonObject {
-                    tools.sorted().forEach { name ->
-                        val description = CodeModeLimits.boundedText(descriptions[name].orEmpty())
-                        val size = description.encodeToByteArray().size
-                        put(name, if (size <= budget) description else "")
-                        if (size <= budget) budget -= size
-                    }
-                },
-            )
+            put(FIELD_TOOLS, buildJsonArray { names.forEach(::add) })
+            put(FIELD_DESCRIPTIONS, buildJsonObject { descriptions.forEach { (name, text) -> put(name, text) } })
         }
-    }
+
+    /** What [text] adds to a frame over an empty string: its JSON-escaped UTF-8 size, quotes excluded. */
+    private fun escaped(text: String): Int = JsonPrimitive(text).toString().encodeToByteArray().size - 2
 
     fun resultFrame(results: List<CodeModeResult>): JsonObject {
         results.forEach { result ->

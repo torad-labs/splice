@@ -187,6 +187,24 @@ SOURCE: /[\s\S]+/
         )
     }
 
+    @Test
+    fun `augmented is the manual's sample under the tool's code-mode name, as augment_tool_definition writes it`() {
+        val tool = NestedTool("mcp__ast-grep__find_code", "Find code.", json("""{"type":"object"}"""))
+        assertEquals(
+            "Find code.\n\nexec tool declaration:\n```ts\n" +
+                "declare const tools: { mcp__ast_grep__find_code(args: { [key: string]: unknown; }): Promise<unknown>; };\n```",
+            CodeModeManual.augmented(tool),
+        )
+        assertTrue(CodeModeManual.description(listOf(tool), false).contains(CodeModeManual.augmented(tool)))
+    }
+
+    @Test
+    fun `a percent-escape after a multibyte character decodes by byte, as codex decodes it`() {
+        val schema = """{"type":"object","properties":{"x":{"${'$'}ref":"#/${'$'}defs/é%20x"}},
+            "${'$'}defs":{"é x":{"type":"string"}}}"""
+        assertEquals("{ x?: string; }", render(schema))
+    }
+
     private fun render(schema: String): String = CodeModeSchemaTypes.render(json(schema))
 
     private fun json(value: String): JsonElement = Json.parseToJsonElement(value)

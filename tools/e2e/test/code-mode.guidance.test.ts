@@ -29,7 +29,7 @@ describe("guidance", () => {
     check.notIn('"consumer":"app/service.py:start"', prompts["config-consumer-trace"] as string);
     check.notIn('"bug":"normalize_timeout accepts 0"', prompts["timeout-boundary-bug"] as string);
     check.in("<code_mode_orchestration>", GUIDANCE);
-    check.in("tools.call('Read', args)", GUIDANCE);
+    check.in("await tools.Read({...})", GUIDANCE);
     check.notIn("Promise.all", GUIDANCE_SYSTEM);
   });
 

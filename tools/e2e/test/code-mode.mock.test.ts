@@ -36,7 +36,7 @@ describe("mock", () => {
   test("guidance keeps one original developer item and runner", () => {
     const callerTools = [{ type: "function", name: "Read" }];
     const body = P({ input: [
-      { type: "additional_tools", role: "developer", tools: [...callerTools, { type: "custom", name: "splice_exec" }] },
+      { type: "additional_tools", role: "developer", tools: [...callerTools, { type: "custom", name: "exec" }] },
       { role: "developer", content: CALLER_SYSTEM + "\n\n" + GUIDANCE },
       { role: "user", content: "synthetic" },
     ] });

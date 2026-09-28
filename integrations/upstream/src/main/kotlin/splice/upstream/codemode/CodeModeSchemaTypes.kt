@@ -328,12 +328,14 @@ internal object SchemaText {
 
     private fun percentDecode(fragment: String): String? {
         val source = fragment.toByteArray(Charsets.UTF_8)
+        // One char per byte, so a byte index reads the same hex digits here (codex decodes the bytes).
+        val byteChars = String(source, Charsets.ISO_8859_1)
         val decoded = java.io.ByteArrayOutputStream(source.size)
         var index = 0
         while (index < source.size) {
             if (source[index] == '%'.code.toByte()) {
                 if (!isHexPair(source, index + 1)) return null
-                decoded.write(HexFormat.fromHexDigits(fragment, index + 1, index + PERCENT_TRIPLET))
+                decoded.write(HexFormat.fromHexDigits(byteChars, index + 1, index + PERCENT_TRIPLET))
                 index += PERCENT_TRIPLET
             } else {
                 decoded.write(source[index].toInt())

@@ -219,5 +219,8 @@ internal class CodexCodeModeDriver(
 }
 
 private const val RECORD_ID_LOG_CHARS: Int = 8
+
+// V4-388: exec is the only tool a code_mode_only turn declares, so the detail cannot send the model to
+// direct calls; a running cell frees its worker when it finishes.
 private const val CAPACITY_DETAIL: String =
-    "code-mode worker capacity reached; nothing was executed. Call the tools directly this turn"
+    "code-mode worker capacity reached; nothing was executed. Call exec again once a running script finishes"

@@ -621,11 +621,19 @@ origin.
   model gate, codex effort normalisation and budget floors are identical input by input, and
   grok's and kimi's tables are byte-identical.
 
-- **Code-mode guidance rewritten as a rule with an example.** It states the cost it avoids (every
-  tool call re-sends the conversation), the trigger (two or more calls with known arguments), the
-  failure contract (`Promise.allSettled`, catch), and carries a worked cell; the hedges are gone. The
-  `splice_exec` tool description carries the trigger too. A client that disables parallel tool use
-  gets the sequential variant from its own resource file.
+- **Code mode sends the tool surface Codex sends.** A code-mode turn declares one tool, `exec`, the
+  way codex-rs does for a model its catalog marks `code_mode_only`: a freeform tool with Codex's lark
+  grammar, whose description is the manual of every Claude Code tool rendered as a TypeScript
+  declaration. Before, every client tool rode beside a small `splice_exec`, and the model called the
+  runner on 0 to 10% of turns and read files one call at a time. In a script a tool is
+  `await tools.Read({...})`, `text()` returns evidence, `ALL_TOOLS` lists every tool with its
+  declaration (deferred ones too), and `exit()` ends early; `tools.call(name, args)` still runs for
+  scripts written before. The guidance batches independent reads in one `exec` with
+  `Promise.allSettled`; a client that disables parallel tool use gets the sequential variant.
+- **Claude Code's system messages reach GPT the way Codex sends context.** Peer messages, task
+  notifications and hook output arrive from Claude Code as `system` messages; on a lite turn they
+  now ride as developer messages, as codex-rs sends mid-conversation context, and a script whose
+  results they follow still completes.
 - **`parallel_tool_calls = true` is documented as refused.** Tried live on 2026-09-20 against the
   ChatGPT lite backend: every turn answered 400 `X-OpenAI-Internal-Codex-Responses-Lite requires
   parallel_tool_calls to be false`. The knob stays for other Responses backends; on lite turns the
@@ -933,7 +941,9 @@ origin.
 - **Code mode now reaches Sol.** Eligibility matched `gpt-6-(astra|sol)`, a Sol id the catalog never
   had; the real `gpt-5.6-sol` and with it every sonnet/haiku-tiered subagent ran without the runner
   (measured 2026-09-20: advertised on 938 of 7,070 calls in one session). The default list is now
-  `gpt-6-astra`, `gpt-6-sol`, `gpt-5.6-sol`, and `code_mode_models` in the provider quirks replaces it.
+  every model Codex's catalog runs code-mode-only plus the GPT-6 family: `gpt-6-astra`, `gpt-6-sol`,
+  `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna` and `codex-auto-review`, and
+  `code_mode_models` in the provider quirks replaces it.
 - **A failed cell says why.** The JavaScript harness dropped the rejection reason, so a rejected tool
   call, a syntax error or an oversized `console.log` all surfaced as a bare `Code execution failed`
   and the model reran every call directly. The error now carries the reason (a SyntaxError keeps only

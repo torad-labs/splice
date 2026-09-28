@@ -80,7 +80,7 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
             assertEquals(original.requestBody.toString(), excluded.requestBody.toString())
             assertTrue(excluded.roundInterceptor == null)
         }
-        listOf("gpt-5.6-terra", "gpt-6-astra-preview", "other").forEach { model ->
+        listOf("gpt-5.5", "gpt-6-astra-preview", "other").forEach { model ->
             val excluded = original.copy(meta = original.meta.copy(upstreamModel = model))
             assertSame(excluded, builder.prepare(body, false, "session", excluded))
         }
@@ -92,7 +92,16 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
     fun `the default model list covers Sol in both families and TOML models replace it`() {
         val (body, original) = request("Caller")
         val default = CodexCodeModeTurnBuilder(bridge(ScriptedRuntime(ArrayDeque())), media())
-        listOf("gpt-6-astra", "gpt-6-sol", "gpt-5.6-sol", "GPT-5.6-Sol[1m]").forEach { model ->
+        listOf(
+            "gpt-6-astra",
+            "gpt-6-sol",
+            "gpt-6-luna",
+            "gpt-5.6-sol",
+            "gpt-5.6-terra",
+            "gpt-5.6-luna",
+            "codex-auto-review",
+            "GPT-5.6-Sol[1m]",
+        ).forEach { model ->
             val eligible = original.copy(meta = original.meta.copy(upstreamModel = model))
             val prepared = default.prepare(body, false, "session", eligible)
             assertTrue(instructions(prepared.requestBody).contains("functions.exec"), model)

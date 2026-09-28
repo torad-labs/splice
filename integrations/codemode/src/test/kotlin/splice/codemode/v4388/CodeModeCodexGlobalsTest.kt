@@ -64,6 +64,44 @@ class CodeModeCodexGlobalsTest {
         }
     }
 
+    @Test
+    fun `text throws what JSON dot stringify throws, as codex's text does`() = runBlocking {
+        runtime().use { runtime ->
+            val source = """
+                const cycle = {};
+                cycle.self = cycle;
+                try { text(cycle); } catch (error) { text("threw " + error.name); }
+                text(null);
+                text(7n);
+            """.trimIndent()
+            val completed = runtime.start(source, setOf("Read")).advance() as CodeModeStep.Completed
+            assertNull(completed.error)
+            assertEquals("threw TypeError\nnull\n7", completed.output)
+        }
+    }
+
+    @Test
+    fun `descriptions fill the frame at their escaped size and the rest reach ALL_TOOLS as a marker`() = runBlocking {
+        runtime().use { runtime ->
+            // \u0001 escapes to six bytes: five of these raw-fit any 512 KiB budget but encode to 1.8 MB.
+            val descriptions = (0..4).associate { "t$it" to "\u0001".repeat(60_000) }
+            val source = "const omitted = t => t.description.startsWith(\"(description omitted\");\n" +
+                "text(ALL_TOOLS.map(t => t.name + \":\" + (omitted(t) ? \"omitted\" : t.description.length)).join(\",\"));"
+            val completed = runtime.start(source, descriptions.keys, descriptions).advance() as CodeModeStep.Completed
+            assertNull(completed.error)
+            assertEquals("t0:60000,t1:60000,t2:omitted,t3:omitted,t4:omitted", completed.output)
+        }
+    }
+
+    @Test
+    fun `a nested tool called with no argument sends an empty object, as codex does`() = runBlocking {
+        runtime().use { runtime ->
+            val cell = runtime.start("await tools.TaskList();", setOf("TaskList"))
+            val call = (cell.advance() as CodeModeStep.Calls).calls.single()
+            assertEquals(Json.parseToJsonElement("{}"), call.arguments)
+        }
+    }
+
     private fun runtime(): JvmCodeModeRuntime =
         JvmCodeModeRuntime(advanceTimeoutMs = SCRIPT_DEADLINE_MS, workerClasspath = testClasspath)
 }

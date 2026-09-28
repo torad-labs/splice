@@ -2,6 +2,7 @@
 package splice.lifecycle.restart
 
 import splice.core.util.Cancellables
+import splice.core.util.EnvReader
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
@@ -27,6 +28,7 @@ public class DetachedDaemonSuccessor(
     private val logs: Path,
     private val log: LogSink,
     private val parentPid: Long = ProcessHandle.current().pid(),
+    private val env: EnvReader = EnvReader(System::getenv),
 ) : DaemonSuccessor {
     override fun start(): Boolean {
         if (jar == null || !Files.isRegularFile(jar)) {
@@ -70,7 +72,30 @@ public class DetachedDaemonSuccessor(
         put("SPLICE_CONTROL_PORT", controlPort.toString())
         // Forces SupervisedStart's Raw route even if this host has a unit for another install.
         put("SPLICE_JAR", jar.toString())
+        // JAVA_TOOL_OPTIONS is read by BOTH the CLI JVM and the daemon it cold-starts. Flags
+        // passed only to `java -jar ... restart` would disappear in DaemonLaunch's next JVM.
+        put(
+            "JAVA_TOOL_OPTIONS",
+            inheritedJvmOptions(
+                env("JAVA_TOOL_OPTIONS").orEmpty(),
+                home.toString(),
+                System.getProperty("splice.noSystemBrowser"),
+            ),
+        )
     }
+
+    /** Quote JVM arguments as data, including home paths with spaces or both quote characters.
+     *  A successor inherits these same options; do not append duplicates at every restart. */
+    internal fun inheritedJvmOptions(inherited: String, userHome: String, noBrowser: String?): String {
+        val flags = listOfNotNull(
+            "-Duser.home=${quoted(userHome)}",
+            noBrowser?.let { "-Dsplice.noSystemBrowser=${quoted(it)}" },
+        ).joinToString(" ")
+        val existing = inherited.trim()
+        return if (existing.endsWith(flags)) existing else "$existing $flags".trim()
+    }
+
+    private fun quoted(value: String): String = "\"${value.replace("\"", "\"'\"'\"")}\""
 }
 
 /** `ps` marks an orphan as Z before init reaps it. Waiting only on kill -0 hangs on that zombie. */

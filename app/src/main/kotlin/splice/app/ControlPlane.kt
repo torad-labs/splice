@@ -236,6 +236,10 @@ internal class ControlPlane(
         ConsoleWiring.wireVerbReads(srv, topology, statePaths, console)
     }
 
+    /** Pin the environment override to the live state directory, not its parent: the wrong parent
+     *  mints a second management key and strands the daemon's prior history after restart. */
+    internal fun successorStateDir(): Path = statePaths.stateDir
+
     /** The cold successor reuses this daemon's jar, home, config, state, and bound control port. */
     private fun wireRestartSuccessor(srv: ControlServer, controlPort: Int) {
         srv.wireRestartSuccessor(
@@ -243,7 +247,7 @@ internal class ControlPlane(
                 AdminSupport.selfJar(),
                 UserHome.dir(),
                 topology.path,
-                statePaths.stateDir,
+                successorStateDir(),
                 controlPort,
                 statePaths.logsDir,
                 log,

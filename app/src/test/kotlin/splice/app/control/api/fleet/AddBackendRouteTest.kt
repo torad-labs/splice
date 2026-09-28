@@ -284,7 +284,7 @@ class AddBackendRouteTest {
     }
 
     @Test
-    fun `a daemon nothing restarts saves the head and says the restart was refused`() = runBlocking {
+    fun `a daemon with no successor wired saves the head and names restart refusal`() = runBlocking {
         vars["FW_API_KEY"] = "k"
         control.ports.supervised = DaemonSupervised { false }
         val id = body(post("/api/add", fw))["id"]!!.jsonPrimitive.content

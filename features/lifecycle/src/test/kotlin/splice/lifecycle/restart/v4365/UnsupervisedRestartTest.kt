@@ -24,6 +24,7 @@ import splice.lifecycle.restart.RestartTaken
 import splice.lifecycle.restart.ShutdownDaemon
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.TimeUnit
 
 class UnsupervisedRestartTest {
     private fun restarts(): DaemonRestarts = DaemonRestarts(
@@ -115,6 +116,39 @@ class UnsupervisedRestartTest {
     }
 
     @Test
+    fun `successor JVM flags keep the browser guard and home without multiplying on restart`() {
+        val home = Path.of("/synthetic/home")
+        val successor = DetachedDaemonSuccessor(
+            null,
+            home,
+            null,
+            home.resolve("state"),
+            31999,
+            home.resolve("logs"),
+            LogSink {},
+            123L,
+        )
+        val quotedHome = "/synthetic/a'b\"c space"
+        val flags = successor.inheritedJvmOptions("-Xmx512m", quotedHome, "1")
+        assertEquals(
+            "-Xmx512m -Duser.home=\"/synthetic/a'b\"'\"'\"c space\" " +
+                "-Dsplice.noSystemBrowser=\"1\"",
+            flags,
+        )
+        assertEquals(flags, successor.inheritedJvmOptions(flags, quotedHome, "1"))
+        val java = ProcessBuilder("java", "-XshowSettings:properties", "-version").apply {
+            environment()["JAVA_TOOL_OPTIONS"] = flags
+        }.start()
+        val finished = java.waitFor(20, TimeUnit.SECONDS)
+        if (!finished) java.destroy()
+        assertTrue(finished, "JVM did not finish parsing the inherited options")
+        val properties = java.errorStream.bufferedReader().use { it.readText() }
+        assertEquals(0, java.exitValue(), properties)
+        assertTrue(properties.contains("user.home = $quotedHome"), properties)
+        assertTrue(properties.contains("splice.noSystemBrowser = 1"), properties)
+    }
+
+    @Test
     fun `the detached CLI inherits the boot home config state and control port`() {
         val home = Path.of("/synthetic/home")
         val jar = Path.of("/synthetic/install/splice.jar")
@@ -140,7 +174,8 @@ class UnsupervisedRestartTest {
                 "SPLICE_CONTROL_PORT" to "31999",
                 "SPLICE_JAR" to jar.toString(),
             ),
-            successor.selectors(jar),
+            successor.selectors(jar).filterKeys { it != "JAVA_TOOL_OPTIONS" },
         )
+        assertTrue(successor.selectors(jar).getValue("JAVA_TOOL_OPTIONS").contains("-Duser.home=\"$home\""))
     }
 }

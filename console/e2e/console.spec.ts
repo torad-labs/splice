@@ -398,12 +398,6 @@ test('fleet shows each head\'s pinned model from the catalog', async ({ page }) 
   await expect(main).toContainText(STACK.soloModel);
 });
 
-/** The daemon's refusal on a daemon nothing restarts, verbatim (DaemonRoutes.kt:64-65). The stack's
- *  daemon is unsupervised by construction: stack.ts spawns it with an explicit environment that
- *  carries no INVOCATION_ID, which is the one thing DrainingRestartAdapter reads. */
-const RESTART_UNSUPERVISED =
-  'nothing will restart this daemon: it was not started by systemd, so a drain would leave it down';
-
 /** A head's open button in the heads table: the row's primary cell (pages/fleet). */
 function headRow(page: Page, head: string) {
   return page.getByRole('button', { name: `Open head ${head}`, exact: true });
@@ -497,31 +491,61 @@ test('a backend is added from the fleet\'s detail panel through the daemon\'s ow
   expect(faults.pageErrors, 'the fleet page threw').toEqual([]);
 });
 
-test('the draining restart confirms inline and prints the daemon\'s refusal verbatim', async ({ page }) => {
+test('the draining restart confirms inline and the unsupervised successor keeps the same key', async ({ page }) => {
+  test.setTimeout(210_000); // Two cold starts may each wait out the daemon's bounded drain.
   const posts: string[] = [];
+  const base = env('CONSOLE_E2E_BASE');
+  const key = env('CONSOLE_E2E_KEY');
   page.on('request', (request) => {
     if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/daemon/restart') posts.push(request.url());
   });
+  const waitForSuccessor = async () => {
+    await expect.poll(async () => {
+      try {
+        const response = await page.request.get(`${base}/api/daemon/restart`, {
+          headers: { Authorization: `Bearer ${key}` }, timeout: 2_000,
+        });
+        return response.status() === 200 ? ((await response.json()) as { status: string }).status : null;
+      } catch {
+        return null;
+      }
+    }, { timeout: 90_000 }).toBe('idle');
+    const health = await (await page.request.get(`${base}/health`)).json() as {
+      ok: boolean; readyHeads: number; heads: number; topologyStale: boolean;
+    };
+    expect(health.ok, 'the successor was not healthy').toBe(true);
+    expect(health.readyHeads, 'heads were not ready after restart').toBe(health.heads);
+    expect(health.topologyStale, 'restart-pending was not cleared').toBe(false);
+    const authorized = await page.request.get(`${base}/api/status`, { headers: { Authorization: `Bearer ${key}` } });
+    expect(authorized.status(), 'the successor rejected the original management key').toBe(200);
+  };
+
   await open(page, 'fleet');
   await headRow(page, STACK.oauthHead).click();
   const detail = page.getByRole('complementary', { name: 'Head detail' });
-
   await detail.getByRole('button', { name: 'Restart daemon', exact: true }).click();
-  // Armed, in place: the confirm key is in the detail and nothing has been sent.
   const confirm = detail.getByRole('button', { name: 'Drain and restart', exact: true });
   await expect(confirm).toBeVisible();
   expect(posts, 'arming the key sent the restart').toEqual([]);
+  const first = page.waitForResponse((response) => response.request().method() === 'POST'
+    && new URL(response.url()).pathname === '/api/daemon/restart');
   await confirm.click();
-  await expect(detail).toContainText(RESTART_UNSUPERVISED);
+  expect((await first).status()).toBe(202);
+  await expect(detail).toContainText('draining');
   expect(posts).toHaveLength(1);
+  await waitForSuccessor();
 
-  // The doctor's version section mounts the same control, and the daemon answers it the same way.
-  await page.goto(`${env('CONSOLE_E2E_BASE')}/#/doctor`);
+  // The doctor's version section mounts the same control and keeps the original management key.
+  await open(page, 'doctor');
   const doctor = page.locator('main');
   await doctor.getByRole('button', { name: 'Restart daemon', exact: true }).click();
+  const second = page.waitForResponse((response) => response.request().method() === 'POST'
+    && new URL(response.url()).pathname === '/api/daemon/restart');
   await doctor.getByRole('button', { name: 'Drain and restart', exact: true }).click();
-  await expect(doctor).toContainText(RESTART_UNSUPERVISED);
+  expect((await second).status()).toBe(202);
+  await expect(doctor).toContainText('draining');
   expect(posts).toHaveLength(2);
+  await waitForSuccessor();
 });
 
 test('doctor renders the stack\'s report whole, the api-key row\'s fix included', async ({ page }) => {

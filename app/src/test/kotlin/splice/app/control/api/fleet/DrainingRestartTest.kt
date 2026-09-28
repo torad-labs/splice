@@ -1,11 +1,10 @@
 // NEW: V4-137 — POST /api/daemon/restart through a real ControlServer under the bearer.
 //
-// THE UNSUPERVISED ARM IS THE ROW, and the assertion that matters is not the status code: it is that a
-// REFUSED restart takes NO DRAIN. A route that refused with 409 and drained anyway would be the worst
-// of both — the console reads a refusal while the daemon stops, so the operator sees an error and a
-// dead daemon. So the rig counts shutdown requests and every refusal arm asserts the count is still
-// zero, which is the same expected-delta instrument the campaign uses elsewhere: a number that should
-// NOT move, checked.
+// THE NO-SUCCESSOR ARM IS THE ROW. This rig constructs ControlServer directly without wiring the
+// detached successor production supplies. The assertion that matters is not the status code: a
+// REFUSED restart takes NO DRAIN. A route that refused with 409 and drained anyway would leave the
+// operator with an error and a dead daemon. The rig counts shutdown requests and every refusal arm
+// asserts that count stays zero.
 //
 // The supervised arm asserts the opposite and with the same counter: the drain WAS requested, and the
 // payload says the phase the daemon is entering rather than one it has reached.
@@ -102,7 +101,7 @@ class DrainingRestartTest {
         awaitPort()
         // RESET FIRST. The counter is shared across the class and the supervised arm increments it, so
         // reading it without resetting makes this assertion depend on test ORDER — it passed only while
-        // JUnit happened to run this one first, and a mutation that drained in the unsupervised arm
+        // JUnit happened to run this one first, and a mutation that drained without a successor
         // turned it red for a reason that had nothing to do with the bearer.
         drains.set(0)
         val refused = withTimeout(TIMEOUT_MS) { client.post("$url/api/daemon/restart") }
@@ -128,7 +127,7 @@ class DrainingRestartTest {
     }
 
     @Test
-    fun `an unsupervised daemon is REFUSED and nothing is drained`() = runBlocking {
+    fun `a daemon with no successor wired refuses and takes no drain`() = runBlocking {
         awaitPort()
         supervised = false
         drains.set(0)
@@ -150,7 +149,7 @@ class DrainingRestartTest {
     }
 
     @Test
-    fun `an unwired supervision probe is refused by NAME, differently from unsupervised`() = runBlocking {
+    fun `an unwired supervision probe is refused by NAME, differently from no successor`() = runBlocking {
         awaitPort()
         drains.set(0)
         control.ports.supervised = null

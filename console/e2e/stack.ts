@@ -448,6 +448,7 @@ export async function startStack(): Promise<Stack> {
       XDG_CONFIG_HOME: join(home, '.config'),
       SPLICE_CONFIG: configFile,
       SPLICE_CONTROL_PORT: String(ports.control),
+      SPLICE_JVM_OPTS: '-Xmx512m', // the raw successor keeps this harness's original heap cap
       CLAUDEX_QUOTA_POLL: 'off',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -463,11 +464,35 @@ export async function startStack(): Promise<Stack> {
       while (child.exitCode === null && Date.now() < deadline) await new Promise((ok) => setTimeout(ok, 100));
       if (child.exitCode === null) child.kill('SIGKILL');
     }
+    if (await answers(`${base}/health`)) {
+      // The restart journey replaces the child this harness spawned. Stop its successor through
+      // the same management key, not by sending a signal to an untracked process on this machine.
+      // Include the wrong-parent location from the state-continuity regression: a red test must
+      // still stop the daemon it exposed, not leave an untracked JVM behind on the host.
+      for (const keyFile of [join(home, '.splice/state/mgmt-key'), join(home, '.splice/mgmt-key')]) {
+        if (!existsSync(keyFile)) continue;
+        const key = readFileSync(keyFile, 'utf8').trim();
+        try {
+          const answer = await fetch(`${base}/api/daemon/shutdown`, {
+            method: 'POST', headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(5_000),
+          });
+          if (answer.status !== 202) continue;
+          await until('the restarted daemon to release its control port', BOOT_TIMEOUT_MS, async () =>
+            (await answers(`${base}/health`)) ? null : true);
+          break;
+        } catch (failure) {
+          console.log(`console e2e: could not stop restarted daemon: ${String(failure)}`);
+        }
+      }
+    }
     await new Promise<void>((ok) => mock.close(() => ok()));
-    // A route that threw is logged by the daemon (RouteFailure) and nowhere else, and the home is
-    // about to go: the lines reach the run's own output, so a journey's 500 names its cause.
-    const failures = readFileSync(log, 'utf8').split('\n').filter((line) => /\[control\] \S+ \S+ failed: /.test(line));
+    // RouteFailure writes the daemon's persistent log, including after the original child exits
+    // and its detached successor takes over. The harness's boot-output log does not own those lines.
+    const routeLog = join(home, '.splice/logs/daemon.log');
+    const failures = (existsSync(routeLog) ? readFileSync(routeLog, 'utf8') : '').split('\n')
+      .filter((line) => /\[control\] \S+ \S+ failed: /.test(line));
     if (failures.length > 0) console.log(`console e2e: the daemon answered route failures:\n${failures.join('\n')}`);
+    if (await answers(`${base}/health`)) throw new Error(`console e2e: daemon still serves ${base}; kept ${home}`);
     if (process.env.CONSOLE_E2E_KEEP === undefined) rmSync(home, { recursive: true, force: true });
     else console.log(`console e2e: kept ${home}`);
   };

@@ -9020,6 +9020,7 @@ claimed_by = "claude-builder"
 claimed_at = "2026-09-28T22:50:25.599Z"
 # [2026-09-28] CLAIM: owner=claude-builder at=2026-09-28T22:50:25Z
 # [2026-09-28] amend by=splice-lead: files were ["core/src/main/kotlin/splice/core/auth/Credentials.kt", "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthProvider.kt", "integrations/upstream/src/main/kotlin/splice/upstream/transport/UpstreamRequest.kt", "integrations/upstream/src/test/kotlin/splice/upstream/v4377/"]
+# [2026-09-28] aebe60888: additive port method AuthProvider.planLimitFromBody (default null); UpstreamRequest asks headers first then the body; CodexAuthProvider reads ChatGPT usage_limit_reached (resets_at or resets_in_seconds, bounded by limit_window_minutes; 300 five_hour, 10080 seven_day). A spent window is sent once, held to the reset, client told the reset; burst 429s, V4-47's probe and Anthropic unified headers unchanged. Live check waits on the installed jar (claudex weekly limit holds to Oct 5, 3:37 AM CT).
 
 [[items]]
 id = "V4-378"

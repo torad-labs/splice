@@ -8824,7 +8824,7 @@ id = "V4-372"
 phase = "release"
 title = "Settings shows a per-head knob's pending value beside the running one when splice.toml changed it and a restart applies it (V4-360 walk, p19 steps 13-14, daily-011): the claude-local tab showed Full trace Off, the running value, while splice.toml said on and Needs you and Doctor spoke of it, and nothing on the knob said 'On in splice.toml, applies at restart'. Uses V4-371's running-versus-declared report; the knob row says both and points at the one restart."
 files = ["console/src/widgets/knob-form/", "console/src/pages/settings/", "console/tests/v4372-pending-knob.test.ts", "console/tests/settings.test.ts", "console/tests/knob-copy.test.ts"]
-status = "in_flight"
+status = "done"
 verify = "red first: a per-head knob whose declared value differs from its running value renders both ('On in splice.toml, Off until restart') and links the restart (fails today: only the running value); equal values render as today; console lint, test, bun tools/gate typecheck green; walked with V4-360's re-walk."
 # [2026-09-28] Dependency check (2:04 AM CT, splice-lead): this row names V4-371's running-versus-declared report, and V4-371 is todo. Console's plan derives pending from the loaded topology (the file) against the running config client-side. That is valid only if the 'running' value console reads is the daemon's boot snapshot and not the declaration V4-371 says /api/config reports today (DoctorTraceChecks.kt:9-12). Console proves its running source with file:line before building; if it is the declaration, this row waits for V4-371.
 claimed_by = "console"

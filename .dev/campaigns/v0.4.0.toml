@@ -8456,7 +8456,7 @@ id = "V4-349"
 phase = "release"
 title = "Every error reads in plain words with what to do (build order 6; acceptance Q52). The baseline's one failure reads 'io.ktor.utils.io.ClosedWriteChannelException from chatgpt.com:443, with no message'; a transport failure is named as what happened to the user's turn (the connection to ChatGPT closed while sending) and what splice did or what to do."
 files = ["integrations/upstream/src/main/kotlin/splice/upstream/transport/TransportFailureReason.kt", "integrations/upstream/src/test/kotlin/splice/upstream/transport/TransportFailureReasonTest.kt", "features/turns/src/main/kotlin/splice/head/wire/ClientChannel.kt", "features/turns/src/main/kotlin/splice/head/wire/TurnTrace.kt", "features/turns/src/main/kotlin/splice/head/trace/", "features/turns/src/test/kotlin/splice/head/v4349/", "console/src/widgets/request-detail/", "console/src/entities/perf/", "console/tests/v4349-turn-failure.test.ts", "console/e2e/v4349/"]
-status = "todo"
+status = "in_flight"
 verify = "Marlin walks it by eye in a normal-size browser on a fresh home (or the film home where history is needed) at the built sha and approves; his walk log names the sha; CI gate on the train sha. A green gate is not approval."
 # [2026-09-27] amend by=orchestrator: files were ["features/turns/src/main/kotlin/splice/head/pipeline/", "features/turns/src/test/kotlin/splice/head/pipeline/"]
 # [2026-09-27] CLAIM: owner=splice-lead at=2026-09-27T05:49:41Z
@@ -8464,6 +8464,9 @@ verify = "Marlin walks it by eye in a normal-size browser on a fresh home (or th
 # [2026-09-28] Marlin's walk at 4c3bc80d1 (Sep 28, 12:31-12:36 PM CT): FAIL from the user's side. The daemon writes the sentence (12:27:53 PM CT '[claudex] turn ERROR conn-reset ...: the connection to chatgpt.com:443 closed mid-request: Cannot write to channel'), but the console shows it only on Logs (1000 lines, search 'mid-request'); the failed turn's row on Turns reads 'error:conn-reset' and its detail panel (claudex gpt-6-sol, 46.6 s) reads 'error:conn-reset' with timings and sizes and no sentence. Fix: the failed turn's detail shows the sentence under the status (the turn record carries it if it does not today). Also a class name still in a log line after the install: 12:29:10 '[claude-muse] client gone (session ..., keepalive write failed: ClosedWriteChannelException); cancelling turn' reads in words.
 # [2026-09-28] amend by=splice-lead: files were ["integrations/upstream/src/main/kotlin/splice/upstream/transport/TransportFailureReason.kt", "integrations/upstream/src/test/kotlin/splice/upstream/transport/TransportFailureReasonTest.kt"]
 # [2026-09-28] CLAIM-RELEASED (named): owner=splice-lead
+claimed_by = "claude-builder"
+claimed_at = "2026-09-28T17:37:18.103Z"
+# [2026-09-28] CLAIM: owner=claude-builder at=2026-09-28T17:37:18Z
 
 [[items]]
 id = "V4-350"

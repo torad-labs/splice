@@ -8820,7 +8820,7 @@ claimed_at = "2026-09-28T07:15:31.501Z"
 id = "V4-372"
 phase = "release"
 title = "Settings shows a per-head knob's pending value beside the running one when splice.toml changed it and a restart applies it (V4-360 walk, p19 steps 13-14, daily-011): the claude-local tab showed Full trace Off, the running value, while splice.toml said on and Needs you and Doctor spoke of it, and nothing on the knob said 'On in splice.toml, applies at restart'. Uses V4-371's running-versus-declared report; the knob row says both and points at the one restart."
-files = ["console/src/widgets/knob-form/", "console/src/pages/settings/", "console/tests/v4372-pending-knob.test.ts"]
+files = ["console/src/widgets/knob-form/", "console/src/pages/settings/", "console/tests/v4372-pending-knob.test.ts", "console/tests/settings.test.ts", "console/tests/knob-copy.test.ts"]
 status = "in_flight"
 verify = "red first: a per-head knob whose declared value differs from its running value renders both ('On in splice.toml, Off until restart') and links the restart (fails today: only the running value); equal values render as today; console lint, test, bun tools/gate typecheck green; walked with V4-360's re-walk."
 # [2026-09-28] Dependency check (2:04 AM CT, splice-lead): this row names V4-371's running-versus-declared report, and V4-371 is todo. Console's plan derives pending from the loaded topology (the file) against the running config client-side. That is valid only if the 'running' value console reads is the daemon's boot snapshot and not the declaration V4-371 says /api/config reports today (DoctorTraceChecks.kt:9-12). Console proves its running source with file:line before building; if it is the declaration, this row waits for V4-371.
@@ -8829,6 +8829,7 @@ claimed_at = "2026-09-28T07:06:50.312Z"
 # [2026-09-28] CLAIM: owner=console at=2026-09-28T07:06:50Z
 # [2026-09-28] Dependency resolved (2:06 AM CT, console's evidence, verified by splice-lead): GET /api/config?head=X is the BOOTED value. Daemon.kt:67-70 builds ConfigService once with the topology's perHeadOverrides, and ConfigService.kt:134-146 merges that held map on every read, excluding the mutable file layer for head-only knobs. GET /api/topology rereads the file each time (TopologyWriter.kt:133-135). So topology vs config is declared vs running, and this row does not wait for V4-371; V4-371 remains for Doctor's wording. V4-378's fileOverrideNote rests on the same verified contract.
 # [2026-09-28] RECEIPT cmd="bun run --cwd console test" exit=0 tests=1665 touched=console/src/pages/settings/index.tsx,console/src/widgets/knob-form/index.tsx,console/tests/v4372-pending-knob.test.ts tail="2-pending-knob.test.ts: red-first declared/running trace and actionable restart-link regression. Main.kt:84-85 and Daemon.kt:67-70 prove /api/config reads booted head overrides; TopologyWriter.kt:133-135 proves /api/topology reads current file. Green: 90 console files/1665 tests; build, lint, typecheck zero new diagnostics, rules 77 selftests. Marlin V4-360 re-walk and exact-sha CI remain pending."
+# [2026-09-28] amend by=splice-lead: files were ["console/src/widgets/knob-form/", "console/src/pages/settings/", "console/tests/v4372-pending-knob.test.ts"]
 
 [[items]]
 id = "V4-373"

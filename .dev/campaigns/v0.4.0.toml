@@ -9375,3 +9375,11 @@ files = ["integrations/upstream/src/main/kotlin/splice/upstream/transport/Upstre
 status = "todo"
 verify = "red-first on unmodified HEAD, then green: a head whose upstream reports a provider reset 6 days out renders 'out of quota until <CT time>' in splice status (not 'ready'), /api/health carries the instant for that head, and /api/usage warn reads level exhausted with that reset; a head with no reset and one whose reset has passed still read ready. Live: on the installed jar, splice status for claude-muse reads 'out of quota until Oct 4, 7:00 PM CT' while Meta's weekly window holds."
 # [2026-09-28] amend by=splice-lead: files were ["integrations/upstream/src/main/kotlin/splice/upstream/transport/UpstreamClient.kt", "app/src/main/kotlin/splice/app/Daemon.kt", "app/src/main/kotlin/splice/app/control/ControlPorts.kt", "app/src/main/kotlin/splice/app/control/ControlPayloads.kt", "integrations/daemon-client/src/main/kotlin/splice/daemon/client/DaemonProbe.kt", "app/src/main/kotlin/splice/app/cli/status/StatusTable.kt", "app/src/main/kotlin/splice/app/cli/status/StatusCommand.kt", "features/usage/src/main/kotlin/splice/usage/quota/UsagePayloads.kt", "app/src/test/kotlin/splice/app/cli/status/v4398/", "features/usage/src/test/kotlin/splice/usage/quota/v4398/", ".dev/restructure/capabilities.tsv"]
+
+[[items]]
+id = "V4-399"
+phase = "release"
+title = "The console header reads 'Offline · No events yet' after a key-form unlock (Marlin reproduced it, Sep 28): unlocking with the management key never opens /api/events, so the live strip stays offline until a reload. After unlock the console must open the event stream in the same page."
+files = ["console/src/entities/events/api/index.ts", "console/src/widgets/rule/", "console/src/app/", "console/e2e/v4399/", "console/tests/", ".dev/restructure/capabilities.tsv"]
+status = "todo"
+verify = "red-first e2e on unmodified HEAD, then green: load the console with no stored key, unlock through the key form, and assert a /api/events request is made and the header reads Live without a reload; full console test/build/lint pass."

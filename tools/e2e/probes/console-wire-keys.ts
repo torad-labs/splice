@@ -99,6 +99,9 @@ const PATH_OF_CALL: Record<string, string> = {
   // V4-239: what `splice trace` and `splice wire` print, read live; the boot turns the tap on.
   "entities/perf/api/index.ts|headPath(head, 'trace')": "/api/heads/${encodeURIComponent(head)}/trace",
   "entities/perf/api/index.ts|headPath(head, 'wire')": "/api/heads/${encodeURIComponent(head)}/wire",
+  // Both activity stores have the same inventory serializer; one live route exercises the shape.
+  "entities/kept/api/index.ts|path(store)": "/api/kept/edges",
+  "entities/kept/api/index.ts|tracePath(head)": "/api/heads/${encodeURIComponent(head)}/trace/kept",
 };
 
 // ── input: call sites dispositioned rather than checked, each with its reason ─────────────────

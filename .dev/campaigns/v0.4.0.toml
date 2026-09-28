@@ -9176,6 +9176,7 @@ claimed_by = "console"
 claimed_at = "2026-09-28T14:16:30.378Z"
 # [2026-09-28] CLAIM: owner=console at=2026-09-28T14:16:30Z
 # [2026-09-28] amend by=splice-lead: files were ["console/src/pages/teams/", "console/src/entities/team/api/index.ts", "console/src/widgets/team-chat/", "console/tests/teams-live.test.ts", "console/tests/team-board.test.ts", "console/e2e/v4391/"]
+# [2026-09-28] RECEIPT cmd="bun tools/gate typecheck; bun run --cwd console lint; bun run --cwd console test tests/teams-live.test.ts tests/team-board.test.ts tests/copy.test.ts; bun run --cwd console build; CONSOLE_E2E_BUNDLE=dist bun run --cwd console e2e --project=journeys --no-deps e2e/v4391/day-history.spec.ts" exit=0 tests=99 touched=console/e2e/v4391/day-history.spec.ts,console/src/entities/team/api/index.ts,console/src/entities/team/index.ts,console/src/pages/teams/index.tsx,console/src/widgets/team-chat/index.tsx,console/src/widgets/team-chat/strings.ts,console/src/widgets/team-chat/team-chat.css,console/tests/team-board.test.ts,console/tests/teams-live.test.ts tail="through chat only, preserving live today panels; seeded older handoff appears under sender; empty older day is scoped, current day says only No messages today. Off/retained history red-first test prevents hiding preserved messages. Browser 1/1, focused Vitest 98/98, lint, build and workspace typecheck pass (0 added diagnostics). CI exact SHA and Marlin film-home normal-size walk remain acceptance."
 
 [[items]]
 id = "V4-392"

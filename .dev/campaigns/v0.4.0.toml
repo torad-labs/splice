@@ -8868,6 +8868,7 @@ claimed_by = "console"
 claimed_at = "2026-09-28T05:22:19.157Z"
 # [2026-09-28] CLAIM: owner=console at=2026-09-28T05:22:19Z
 # [2026-09-28] amend by=splice-lead: files were ["app/src/main/kotlin/splice/app/control/api/ControlPayloads.kt", "app/src/test/kotlin/splice/app/v4379/", "console/src/entities/config/", "console/src/pages/needs-you/", "console/tests/v4379-restart-pending.test.ts"]
+# [2026-09-28] Fence extended (splice-lead, 12:25 AM CT), from console's check, verified: Rule owns the chrome and starts the global polls (console/src/widgets/rule/index.tsx:253-265), and /health is read only inside NeedsYouPage, so Restart pending clears on every page only if the health/boot read starts in Rule. Added rule/index.tsx and tests/rule.test.ts; no in-flight row holds them (V4-348, todo, fences console/src/ and is last in console's queue). Backend: the boot stamp goes in ControlPayloads' construction during ControlPlane.start, with no ControlServer wiring change.
 
 [[items]]
 id = "V4-380"

@@ -53,11 +53,11 @@
 // V4-131: SENT TEXTS, for a team's chat (GET /api/teams/{id}/chat). The message edge store holds who
 // wrote to whom and the call's tool_use id, never the text (MessageEdges); the text is read here, on
 // demand, from the SENDER's transcript, found by the same locate the page uses so the tree order and
-// the realpath dedupe have one copy. One forward pass over the file, and a line is parsed only when
-// its bytes contain a wanted id that is not found yet, so the pass costs a byte scan, not a parse per
-// line. It stops as soon as every wanted id is found. An id it does not find is REPORTED missing with
-// the path it read: a lookup that silently answered fewer ids than it was asked for would read as a
-// complete chat.
+// the realpath dedupe have one copy. V4-427 holds every redacted send per file in SentTextLedger:
+// unchanged size/mtime reads zero bytes; growth resumes at the last whole line after checking the
+// old EOF; replacement, shrink or same-size rewrite scans from the start. Only SendMessage lines
+// are parsed. An id it does not find is REPORTED missing with the path it read: a lookup that
+// silently answered fewer ids than it was asked for would read as a complete chat.
 //
 // 2026-09-18 (V4-160, concentration): page assembly moved to TranscriptAssembly.kt and redaction to
 // TranscriptRedaction.kt. LAYOUT-01 later moved the public response vocabulary to :features-sessions.
@@ -79,8 +79,10 @@ import splice.sessions.transcript.TranscriptPage
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
+import java.nio.channels.Channels
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardOpenOption
 
 /** Bytes one page may read before it stops, whatever it found: a run of skipped records must not
  *  turn one page into a full-file read. */
@@ -95,7 +97,13 @@ private const val BAD_CURSOR = "not a cursor this daemon minted"
 
 /** The Claude Code implementation of the sessions feature's transcript port: the feature chooses root
  *  priority, this class owns only Claude Code's on-disk format. */
-public class TranscriptReader : SessionTranscripts {
+public class TranscriptReader(
+    opener: TranscriptOpener = TranscriptOpener { file, offset ->
+        Channels.newInputStream(Files.newByteChannel(file, StandardOpenOption.READ).position(offset))
+    },
+) : SessionTranscripts {
+    private val sent = SentTextLedger(opener, SentTextCollector(::collect))
+
     private val json = Json { ignoreUnknownKeys = true }
     private val validSessionId = Regex("[A-Za-z0-9_-]{1,128}")
     private val redaction = TranscriptRedaction()
@@ -115,34 +123,25 @@ public class TranscriptReader : SessionTranscripts {
     override fun sentTexts(sessionId: String, roots: List<Path>, ids: Set<String>): SentTexts {
         val file = if (validSessionId.matches(sessionId)) locate(roots, sessionId) else null
         if (file == null) return SentTexts(null, emptyMap(), ids, roots.map { it.resolve(Keys.PROJECTS).toString() })
-        val found = HashMap<String, String>()
-        Files.newInputStream(file).use { raw ->
-            val input = BufferedInputStream(raw)
-            while (found.size < ids.size) {
-                val line = nextLine(input) ?: break
-                collect(line, ids, found)
-            }
-        }
-        return SentTexts(file.toString(), found, ids - found.keys)
+        return sent.read(file, ids)
     }
 
-    /** One line's wanted sends into [found]. The line is parsed only when its bytes name an id that is
-     *  not found yet, so the pass costs a byte scan, not a parse per line. */
-    private fun collect(line: Line, ids: Set<String>, found: MutableMap<String, String>) {
-        val text = line.text() ?: return
-        if (ids.none { it !in found && text.contains(it) }) return
-        val record = parse(checkNotNull(line.bytes)) ?: return
-        sends(record, ids).forEach { (id, sent) -> found.putIfAbsent(id, redaction.shown(sent)) }
+    /** Only SendMessage candidates are parsed. All redacted sends are held, regardless of this caller's ids. */
+    private fun collect(bytes: ByteArray, found: MutableMap<String, String>) {
+        val text = bytes.toString(Charsets.UTF_8)
+        if (!text.contains(SEND_MESSAGE) && !text.contains("\\u")) return
+        val record = parse(bytes) ?: return
+        sends(record).forEach { (id, text) -> found.putIfAbsent(id, redaction.shown(text)) }
     }
 
-    /** The wanted SendMessage calls of one assistant record, id to message. A `message` that is not
+    /** The SendMessage calls of one assistant record, id to message. A `message` that is not
      *  a string (a structured request) is shown as its JSON. */
-    private fun sends(record: JsonObject, ids: Set<String>): List<Pair<String, String>> {
+    private fun sends(record: JsonObject): List<Pair<String, String>> {
         val message = record[MESSAGE] as? JsonObject
         val blocks = (message?.get("content") as? JsonArray)?.mapNotNull { it as? JsonObject }.orEmpty()
         return blocks
             .filter { JsonScalars.str(it, "type") == "tool_use" && JsonScalars.str(it, "name") == SEND_MESSAGE }
-            .mapNotNull { block -> JsonScalars.str(block, "id")?.takeIf { it in ids }?.let { it to block } }
+            .mapNotNull { block -> JsonScalars.str(block, "id")?.let { it to block } }
             .map { (id, block) ->
                 val sent = (block["input"] as? JsonObject)?.get(MESSAGE)
                 id to ((sent as? JsonPrimitive)?.takeIf { it.isString }?.content ?: sent?.toString().orEmpty())
@@ -232,8 +231,5 @@ public class TranscriptReader : SessionTranscripts {
 
     private data class Position(val offset: Long, val index: Long)
 
-    private class Line(val bytes: ByteArray?, val length: Long) {
-        /** The line as text, or null when it was read past for its length. */
-        fun text(): String? = bytes?.toString(Charsets.UTF_8)
-    }
+    private data class Line(val bytes: ByteArray?, val length: Long)
 }

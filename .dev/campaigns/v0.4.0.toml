@@ -9917,12 +9917,13 @@ verify = "red first: a head whose providerResetForMs is ahead carries its instan
 id = "V4-430"
 phase = "release"
 title = "The nearest limit prints the wrong window and a raw instant for a head's own warn (Marlin, 8aee53328, throwaway home): a client-auth head at a 7-day plan limit reads 'claude-gamma 5h 100% ⏱ 2026-10-02T04:12:47Z' in the header. console/src/entities/usage/model/derive.ts:101 names the window `${usage.window_hours}h` and passes warn.reset (ISO) as-is, and :55 counts source provider_reset as the head's own signal. claudex dodges it only because it has an account row; claude-splice or any key head at a plan limit would show 5h and UTC. A provider_reset warn names the window the provider named (or none), and every reset the header prints goes through the console's one time formatter."
-files = ["console/src/entities/usage/model/derive.ts", "console/tests/usage-derive-own-warn.test.ts"]
+files = ["console/src/entities/usage/model/derive.ts", "console/tests/usage-derive-own-warn.test.ts", "console/src/features/nearest-limit/index.ts", "console/src/widgets/rule/index.tsx", "console/src/pages/needs-you/model.ts", "console/tests/rule.test.ts"]
 status = "in_flight"
 verify = "red first: a head with warn {source provider_reset, pct 100, reset ISO 3 days out} and no account row reads its real window (or no window word) and a local-time reset, never '5h' or a T..Z form; the account-row path (V4-422) unchanged. vitest, lint, build."
 claimed_by = "claude-console"
 claimed_at = "2026-09-29T23:28:24.659Z"
 # [2026-09-29] CLAIM: owner=claude-console at=2026-09-29T23:28:24Z
+# [2026-09-29] amend by=claude-console: files were ["console/src/entities/usage/model/derive.ts", "console/tests/usage-derive-own-warn.test.ts"]
 
 [[items]]
 id = "V4-431"

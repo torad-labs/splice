@@ -14,6 +14,8 @@ import splice.core.util.FilesListing
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
+import splice.core.util.TopologyTypeFailure
+import splice.core.util.TopologyTypeFailure.Expected
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -213,11 +215,20 @@ internal class DaemonBoundary(private val listing: DirectoryListing = FilesListi
      *  would leave an operator whose daemon will not start with a single sentence that names
      *  nothing, which is precisely the /dev/null outcome JW-01 exists to end — and a frame is a
      *  class, a method and a line number produced by the VM, never a byte of the file that failed
-     *  to parse. Message and frames are separable here, so the law costs no diagnosis. */
+     *  to parse. Message and frames are separable here, so the law costs no diagnosis.
+     *
+     *  V4-366: a [TopologyTypeFailure] is the exception to the frames. It is the operator's own
+     *  splice.toml line, already reduced to a key, a line number and an expected type by the loader, so
+     *  the frames would only bury it (seven of them under one sentence, and no fix). It prints as that
+     *  sentence and what to write instead, on one line; no value can be in it because the class holds
+     *  none. Handled here rather than caught at the parse: the boot path keeps no catch clause. */
     internal fun bootFailureHandler(statePaths: StatePaths): Thread.UncaughtExceptionHandler =
         Thread.UncaughtExceptionHandler { thread, e ->
-            val line = "[${logStamp.format(LocalDateTime.now())}] [daemon] UNCAUGHT on " +
-                "${thread.name}: ${SafeFailureText.render(e)}\n" + bootFrames(e)
+            val stamp = "[${logStamp.format(LocalDateTime.now())}] [daemon] "
+            val line = when (e) {
+                is TopologyTypeFailure -> "$stamp${SafeFailureText.render(e)}. Fix: ${topologyFix(e)}\n"
+                else -> "${stamp}UNCAUGHT on ${thread.name}: ${SafeFailureText.render(e)}\n" + bootFrames(e)
+            }
             System.err.print(line)
             Cancellables.runCatchingCancellable {
                 // The crash line is this handler's one job; a logs dir left open was already said at
@@ -226,6 +237,20 @@ internal class DaemonBoundary(private val listing: DirectoryListing = FilesListi
                 Files.writeString(statePaths.logsDir.resolve("daemon.log"), line, CREATE, APPEND)
             }
         }
+
+    /** What to write for the key [failure] names, by the type it expects. The example uses the key's own
+     *  last segment and a placeholder, never the value that was there. */
+    private fun topologyFix(failure: TopologyTypeFailure): String {
+        val leaf = failure.key.substringAfterLast('.')
+        return when (failure.expected) {
+            Expected.QUOTED_STRING -> "put the value in double quotes, as in $leaf = \"...\""
+            Expected.INTEGER -> "write a whole number, with no quotes"
+            Expected.NUMBER -> "write a number, with no quotes"
+            Expected.BOOLEAN -> "write true or false, with no quotes"
+            Expected.TABLE -> "write it as a table, [${failure.key}], not as a single value"
+            Expected.ARRAY -> "write it as an array, [ ... ]"
+        }
+    }
 
     /** DR-170: the boot trace WITHOUT its message. A StackTraceElement is a declaring class, a
      *  method, a file and a line — all produced by the VM from the loaded class, none of them

@@ -265,7 +265,7 @@ example_heads() { # example.toml
   curl -s -m 3 "http://127.0.0.1:$CONTROL_PORT/health"; echo
   curl_mgmt "http://127.0.0.1:$CONTROL_PORT/api/heads" > "$OUT/example-heads.json" || return 1
   python3 - "$1" "$OUT/example-heads.json" "$CONTROL_PORT" "$(mgmt)" "$HOME" <<'EOF'
-import json, os, sys, tomllib, urllib.request
+import json, os, re, sys, tomllib, urllib.request
 example, heads_file, port, key, home = sys.argv[1:6]
 t = tomllib.load(open(example, "rb"))
 d = json.load(open(heads_file)); heads = d.get("heads", d)
@@ -281,6 +281,12 @@ def launch(head):
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"}, method="POST")
     with urllib.request.urlopen(req, timeout=30) as resp:
         return json.load(resp)
+
+# A window the client would compact too early on is presented as a `[1m]` selector (V4-358, ClientSpelling:
+# grok-4.7 launches as grok-4.7[1m]); the row is the same, so the model is compared without that hint and the
+# window, which the hint never moves, exactly.
+def selector_free(model):
+    return re.sub(r"\[1m\]$", "", model or "", flags=re.IGNORECASE)
 
 registry = os.path.realpath(os.path.join(home, ".claude", "sessions"))
 bad = []
@@ -298,7 +304,8 @@ for head, h in t["heads"].items():
     sessions = os.path.join(env.get("CLAUDE_CONFIG_DIR", ""), "sessions")
     linked = os.path.islink(sessions) and os.path.realpath(sessions) == registry
     # the env window is the pinned row's declared window on every head
-    ok = (env.get("ANTHROPIC_MODEL") == pinned and env.get("CLAUDE_CODE_MAX_CONTEXT_TOKENS") == str(want)
+    ok = (selector_free(env.get("ANTHROPIC_MODEL")) == selector_free(pinned)
+          and env.get("CLAUDE_CODE_MAX_CONTEXT_TOKENS") == str(want)
           and linked and wrapper)
     print(f"{head:14} {command:18} model={env.get('ANTHROPIC_MODEL')} window={env.get('CLAUDE_CODE_MAX_CONTEXT_TOKENS')}"
           f" example={pinned}@{want} sessions_link={linked} wrapper={wrapper} {'OK' if ok else 'MISMATCH'}")

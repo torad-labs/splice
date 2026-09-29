@@ -49,13 +49,15 @@ function Console() {
   const [palette, setPalette] = useState(false);
   // A key handed over behind the gate re-draws the rail, the strip and the page: every read the
   // missing key refused, polled or asked once on mount, runs again now rather than at its next tick
-  // (V4-401). The gate and the palette are not keyed, so neither loses what the operator typed.
+  // (V4-401). The gate and the palette are not keyed, so neither loses what the operator typed. The two
+  // keys are spelled apart because they are siblings: one count on both is a duplicate key, and React
+  // then keeps or doubles them on the next render (V4-416).
   const unlocks = useSession((state) => state.unlocks);
 
   return (
     <div className="myx-console">
-      <Rail key={unlocks} active={address} groups={RAIL_GROUPS} theme={theme} onTheme={set} onJump={() => setPalette(true)} />
-      <div className="myx-console-main" key={unlocks}>
+      <Rail key={`rail-${unlocks}`} active={address} groups={RAIL_GROUPS} theme={theme} onTheme={set} onJump={() => setPalette(true)} />
+      <div className="myx-console-main" key={`main-${unlocks}`}>
         <Rule />
         <main className="myx-console-page">
           <Outlet />

@@ -1154,7 +1154,7 @@ test('teams composes the stack\'s two sessions, shows their hand-off and the sen
   await expect(page.getByRole('table', { name: 'Per-role API cost' })).toContainText('lead');
   // The day's timeline lays the sender's turns on its lane, joined on the same session tag.
   await page.getByRole('tab', { name: 'Timeline' }).click();
-  await expect(page.getByRole('img', { name: new RegExp(`^${STACK.sender.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: [1-9]\\d* turns`) }))
+  await expect(page.getByRole('img', { name: new RegExp(`^${STACK.sender.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: [1-9]\\d* turns?`) }))
     .toBeVisible({ timeout: 15_000 });
 
   // Opening the seat is its own write: the replace keeps a binding its body leaves null.

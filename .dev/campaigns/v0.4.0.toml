@@ -8838,6 +8838,7 @@ verify = "red first: a boot over a splice.toml with a wrong-typed value writes t
 claimed_by = "console"
 claimed_at = "2026-09-29T02:08:06.624Z"
 # [2026-09-29] CLAIM: owner=console at=2026-09-29T02:08:06Z
+# [2026-09-29] RECEIPT cmd=":app:test 716 (1 skipped) 0 failed, v4366 4 + DaemonBootFailureTest 3; :app:detekt; :quality-architecture:test 250/0; gate rules --prove-coverage; gate typecheck; census 0; live: built jar over a scratch splice.toml with trace = true" exit=0 tests=4 touched=app/src/main/kotlin/splice/app/DaemonBoundary.kt,app/src/test/kotlin/splice/app/v4366/TypedBootFailureTest.kt,.dev/restructure/capabilities.tsv tail="trace = true, scratch HOME and state, no daemon or demo home touched) exits 1 and prints one line, sentence plus Fix, no UNCAUGHT, no frames; daemon.log holds the same line. Row asked the live check on the V4-355 home under splice restart; that home is read-only, so a scratch home stood in. Census row committed with the file in ff415cd82. Main.kt unchanged: the handler is where the change belongs."
 
 [[items]]
 id = "V4-367"

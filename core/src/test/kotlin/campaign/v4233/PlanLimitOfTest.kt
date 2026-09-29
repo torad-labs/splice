@@ -11,6 +11,8 @@ import splice.core.usage.PlanLimit
 import splice.core.usage.PlanLimits
 import splice.core.usage.QuotaHeaderRead
 import splice.core.usage.SEVEN_DAYS_SECONDS
+import splice.core.util.LocalTimeText
+import java.time.ZoneId
 
 class PlanLimitOfTest {
     private val now = 1_790_000_000L
@@ -101,17 +103,18 @@ class PlanLimitOfTest {
     @Test
     fun `every refusal of a spent window is one sentence, naming the window, the reset and any hold`() {
         val limit = PlanLimit("five_hour", now)
-        val reset = "2026-09-21T14:13:20Z"
+        val times = LocalTimeText(ZoneId.of("America/Chicago"))
+        val reset = "Sep 21, 9:13 AM CDT"
 
         assertEquals(
             "Rate limit exceeded: the upstream reports this plan's 5-hour window is used up until $reset. " +
                 "The session waits and resumes after the reset.",
-            limit.refusal(),
+            limit.refusal(times = times),
         )
         assertEquals(
             "Rate limit exceeded: the upstream reports this plan's 5-hour window is used up until $reset, " +
                 "and this gateway is holding retries for 90s. The session waits and resumes after the reset.",
-            limit.refusal(holding = "this gateway is holding retries for 90s"),
+            limit.refusal(holding = "this gateway is holding retries for 90s", times = times),
         )
     }
 }

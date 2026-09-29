@@ -4,8 +4,9 @@
 // way. In core so the trace (features/turns) and the CLI (app) read one declaration; a third place that
 // formats a reset for a person builds this type, it does not spell a zone.
 //
-// Not for the wire: a client or a file reads the ISO instant its consumer expects (PlanLimit.refusal), and
-// this type never touches those.
+// Not for the wire: a file or a header reads the ISO instant or epoch its consumer expects, and this type
+// never touches those. A sentence a person reads is another matter, so the refusal a client prints for a
+// spent plan window (PlanLimit.refusal, V4-425) says its reset through this type too.
 package splice.core.util
 
 import java.time.Instant

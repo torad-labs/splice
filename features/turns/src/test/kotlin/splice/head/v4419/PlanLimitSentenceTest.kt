@@ -60,6 +60,18 @@ class PlanLimitSentenceTest {
     }
 
     @Test
+    fun `the trace and the refusal the client is sent say the same reset the same way (V4-425)`() {
+        val times = LocalTimeText(ZoneId.of("Asia/Tokyo"))
+        val limit = PlanLimit("seven_day", RESET)
+
+        val trace = OutcomeSentences.planLimit(limit, times)
+        val refusal = limit.refusal(times = times)
+
+        assertTrue("7-day window is used up until Oct 5, 9:00 AM JST" in trace, trace)
+        assertTrue("7-day window is used up until Oct 5, 9:00 AM JST" in refusal, refusal)
+    }
+
+    @Test
     fun `the tag's own line names no instant and still says to wait for the reset`() {
         val line = requireNotNull(OutcomeSentences.of(OutcomeTag.PLAN_LIMIT.wire)) { "the tag has no line" }
         assertTrue("; " in line && "wait for the reset" in line, line)

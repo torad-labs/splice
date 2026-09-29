@@ -21,6 +21,7 @@ import splice.core.auth.ClientAuthProvider
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.usage.PlanLimit
 import splice.core.util.ElapsedClock
+import splice.core.util.LocalTimeText
 import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
 import splice.upstream.transport.PostContext
 import splice.upstream.transport.UpstreamClient
@@ -52,8 +53,9 @@ class UpstreamClientPlanLimitTest {
 
     private fun resetInAnHour(): Long = System.currentTimeMillis() / MS + HOUR_S
 
-    private fun assertOurSentence(body: String) {
-        assertTrue(body.contains("5-hour window is used up until"), body)
+    private fun assertOurSentence(body: String, reset: Long) {
+        assertTrue(body.contains("5-hour window is used up until ${LocalTimeText().at(reset)}"), body)
+        assertFalse(ISO_INSTANT.containsMatchIn(body), "the reset is said as a person reads it, not as ISO: $body")
         assertFalse(body.contains('—'), "no em dash in text the client shows: $body")
         CLIENT_STOP_PHRASES.forEach { phrase ->
             assertFalse(body.lowercase().contains(phrase), "'$phrase' would end a persistent client's wait: $body")
@@ -75,7 +77,7 @@ class UpstreamClientPlanLimitTest {
 
         assertEquals(1, calls.get(), "a spent plan window is not re-sent before the reset it named")
         assertEquals(429, failure.status)
-        assertOurSentence(failure.body)
+        assertOurSentence(failure.body, reset)
         assertEquals(PlanLimit("five_hour", reset), client.planHold, "the hold is the upstream's own reset, exactly")
         assertTrue(
             client.planHoldForMs in (HOUR_S - 10) * MS..HOUR_S * MS,
@@ -157,7 +159,7 @@ class UpstreamClientPlanLimitTest {
             client.posted(ctx(forwarded, notices), "{}") { "unreachable" }
         }
         assertEquals(1, calls.get(), "a follower inside the horizon never reaches upstream")
-        assertOurSentence(follower.body)
+        assertOurSentence(follower.body, reset)
 
         now.set(MAX_RATE_LIMIT_COOLDOWN_MS + 1)
         limited.set(false)
@@ -205,3 +207,4 @@ private val CLIENT_STOP_PHRASES = listOf(
 
 private const val HOUR_S = 3_600L
 private const val MS = 1_000L
+private val ISO_INSTANT = Regex("""\d{4}-\d{2}-\d{2}T\d{2}:\d{2}""")

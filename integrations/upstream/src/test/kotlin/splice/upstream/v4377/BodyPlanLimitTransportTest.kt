@@ -18,6 +18,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.usage.PlanLimit
 import splice.core.util.ElapsedClock
+import splice.core.util.LocalTimeText
 import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
 import splice.upstream.transport.PostContext
 import splice.upstream.transport.UpstreamClient
@@ -29,6 +30,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 private const val MS = 1_000L
 private const val SIX_DAYS_S = 6L * 24 * 3_600
+private val ISO_INSTANT = Regex("""\d{4}-\d{2}-\d{2}T\d{2}:\d{2}""")
 
 // The body ChatGPT sent on the live weekly limit (Sep 28, 5:11 PM CT), reset made relative.
 private fun liveBody(reset: Long) =
@@ -84,7 +86,11 @@ class BodyPlanLimitTransportTest {
 
         assertEquals(1, calls.get(), "today this is 4 attempts and about 45 s of holds")
         assertEquals(429, failure.status)
-        assertTrue(failure.body.contains("7-day window is used up until"), failure.body)
+        assertTrue(
+            failure.body.contains("7-day window is used up until ${LocalTimeText().at(reset)}"),
+            failure.body,
+        )
+        assertFalse(ISO_INSTANT.containsMatchIn(failure.body), "the reset is not an ISO instant: ${failure.body}")
         assertFalse(failure.body.contains('—'), "no em dash in text the client shows: ${failure.body}")
         assertEquals(PlanLimit("seven_day", reset), client.planHold)
         assertTrue(client.planHoldForMs > (SIX_DAYS_S - 10) * MS, "held to the named reset: ${client.planHoldForMs}")

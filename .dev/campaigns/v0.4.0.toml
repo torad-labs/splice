@@ -9893,3 +9893,11 @@ title = "The nearest limit prints the wrong window and a raw instant for a head'
 files = ["console/src/entities/usage/model/derive.ts", "console/tests/usage-derive-own-warn.test.ts"]
 status = "todo"
 verify = "red first: a head with warn {source provider_reset, pct 100, reset ISO 3 days out} and no account row reads its real window (or no window word) and a local-time reset, never '5h' or a T..Z form; the account-row path (V4-422) unchanged. vitest, lint, build."
+
+[[items]]
+id = "V4-431"
+phase = "release"
+title = "A plan-limit turn logs 'turn ERROR upstream-failed' while perf records plan-limit (Marlin, 8aee53328, throwaway home): TurnTelemetry.kt:201-208 prints the error line from the failure's kind before V4-419's ending tag is chosen, so daemon.log and the trace disagree about the same turn. The log line names the outcome the turn recorded."
+files = ["features/turns/src/main/kotlin/splice/head/turn/TurnTelemetry.kt", "features/turns/src/test/kotlin/splice/head/v4431/"]
+status = "todo"
+verify = "red first: a turn ended by a named plan window logs 'turn ERROR plan-limit' (the recorded tag), a burst 429 keeps its own tag, and an upstream failure keeps upstream-failed. :features-turns:test scope, detekt, :quality-architecture:test, rules wall."

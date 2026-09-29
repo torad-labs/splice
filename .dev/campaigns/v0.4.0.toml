@@ -9426,6 +9426,7 @@ claimed_by = "console"
 claimed_at = "2026-09-28T22:22:30.621Z"
 # [2026-09-28] CLAIM: owner=console at=2026-09-28T22:22:30Z
 # [2026-09-28] RECEIPT cmd=":features-configuration:test v4400 (10) + full module (86) + :app:test (700, 1 skipped) + detekt; console vitest 1689; playwright Settings journeys + v4400 (4)" exit=0 tests=10 touched=features/configuration/src/main/kotlin/splice/configuration/topology/TopologyRoutes.kt,features/configuration/src/main/kotlin/splice/configuration/topology/PromptPreview.kt,features/configuration/src/test/kotlin/splice/configuration/topology/v4400/InstructionWriteCheckTest.kt,console/src/pages/settings/sections.tsx,console/e2e/v4400/refused-instruction-file.spec.ts,console/e2e/console.spec.ts,.dev/restructure/capabilities.tsv tail="mutant (write-side check off): 8 of 10 red; restored, 10/10 green"
+# [2026-09-29] Sep 28, 8:40 PM CT: Marlin walked it on 3839fcc06 (jar 1017b278, checksum verified), scratch homes walk-desk, film-home-team-walk and walk-357: PASS.
 
 [[items]]
 id = "V4-401"

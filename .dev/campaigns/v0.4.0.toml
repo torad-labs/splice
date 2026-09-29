@@ -9493,6 +9493,7 @@ claimed_at = "2026-09-28T23:35:32.218Z"
 # [2026-09-28] CLAIM: owner=console at=2026-09-28T23:35:32Z
 # [2026-09-29] RECEIPT cmd="vitest 96 files/1696; playwright journeys 77 + renders 15 on rebuilt bundle (v4403 3); gate typecheck; eslint; census 0" exit=0 tests=5 touched=console/e2e/console.spec.ts,console/e2e/v4403/words-and-widths.spec.ts,console/src/pages/fleet/fleet.css,console/src/pages/fleet/index.tsx,console/src/pages/settings/index.tsx,console/src/pages/settings/sections.tsx,console/src/pages/settings/strings.ts,console/src/pages/turns/columns.tsx,console/src/pages/turns/turns.css,console/tests/settings-words.test.ts,console/tests/settings.test.ts,.dev/restructure/capabilities.tsv tail="red first: Settings words 1 of 1 red, Fleet cells red, Turns outcome red; mutant (old words back): 2 of 2 vitest red; restored green"
 # [2026-09-29] Sep 28, 8:35 PM CT: CI run 36507654717 on 17e921d84 went red on :census, 'created but not tracked' for three V4-405 files (OAuthPoolListing.kt and two v4405 tests). a22b40193 committed the shared capabilities.tsv whole while fin's rows for those files sat in it with the files only staged. The local census passed because it counts the index. My pre-push check now also runs against the pushed sha: every created row's path must exist in that sha (git cat-file -e), and it flags exactly these three. Fixing forward through fin's V4-405 commit, or by stripping the rows.
+# [2026-09-29] Sep 28, 9:40 PM CT: Marlin walked it on f7f1e9308 (jar b7e9fd12, sha256 -c OK): PASS.
 
 [[items]]
 id = "V4-404"

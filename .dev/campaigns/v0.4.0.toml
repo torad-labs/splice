@@ -9586,6 +9586,7 @@ verify = "red first: a test renders App, unlocks twice and moves by hash, and as
 claimed_by = "console"
 claimed_at = "2026-09-29T01:31:56.514Z"
 # [2026-09-29] CLAIM: owner=console at=2026-09-29T01:31:56Z
+# [2026-09-29] RECEIPT cmd="vitest 96 files/1696; eslint; npm run build (tsc + vite); playwright v4416 + v4401 + v4399 on the rebuilt dist bundle 17 passed; census 0" exit=0 tests=1 touched=console/src/app/App.tsx,console/e2e/v4416/one-shell-after-unlock.spec.ts,.dev/restructure/capabilities.tsv tail="red first: the new spec failed on the prior bundle (3 sidebars after two unlocks); mutant (shared keys) on a development bundle failed with React two-children-same-key, fixed green"
 
 [[items]]
 id = "V4-413"

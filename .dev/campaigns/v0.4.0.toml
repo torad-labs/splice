@@ -9579,3 +9579,11 @@ title = "The console can draw two sidebars after an unlock (Marlin, 3839fcc06, s
 files = ["console/src/app/App.tsx", "console/tests/", "console/e2e/v4416/"]
 status = "todo"
 verify = "red first: a test renders App, unlocks twice and moves by hash, and asserts exactly one Rail and one main column, with no React duplicate-key warning; the V4-401 and V4-399 e2e still pass (unlock re-reads, events Live). Full console test, build and lint."
+
+[[items]]
+id = "V4-413"
+phase = "release"
+title = "A refused topology write says a restart is required (Marlin, V4-400 walk on 3839fcc06): PUT /api/topology with a missing instruction file returns ok:false and splice.toml unchanged, but restart_required:true. TopologyRoutes.kt:109 builds Attempt(Refused(unreadable)) with the default restartRequired = true (:83), and so do the secrets-refusal and decode-refusal paths. A write that wrote nothing needs no restart."
+files = ["features/configuration/src/main/kotlin/splice/configuration/topology/TopologyRoutes.kt", "features/configuration/src/test/kotlin/splice/configuration/topology/v4413/"]
+status = "todo"
+verify = "red first: each refusal path (unreadable instruction file, masked-secret finding, decode failure) returns restart_required false, and a successful write that changes a head still returns true. :quality-architecture:test, rules wall."

@@ -9566,7 +9566,7 @@ claimed_at = "2026-09-29T02:09:35.936Z"
 id = "V4-409"
 phase = "release"
 title = "splice dashboard from another home starts the everyday unit (fin, V4-395 receipt): dashboard reaches DaemonLaunch.ensureDaemon (DaemonLaunch.kt:37,94), which still runs systemctl start on the supervisor unit for a shell that sets no selector, so a scratch home with the everyday unit stopped starts Marcos's daemon. V4-395 made restart refuse a unit that runs another home's daemon; the start path must apply the same SupervisedStart.ownership check and refuse with the same sentence."
-files = ["features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonLaunch.kt", "features/lifecycle/src/test/kotlin/splice/lifecycle/start/v4409/"]
+files = ["features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonLaunch.kt", "features/lifecycle/src/test/kotlin/splice/lifecycle/start/v4409/", "features/lifecycle/src/test/kotlin/splice/lifecycle/restart/v4395/"]
 status = "done"
 verify = "red first: ensureDaemon from a home whose HOME or control port differs from the unit's calls no systemctl verb and returns the V4-395 refusal sentence; the unit's own home still starts through the unit; an unreadable unit environment refuses. Mutant: drop the ownership check and the no-verb test goes red."
 claimed_by = "fin"
@@ -9574,6 +9574,7 @@ claimed_at = "2026-09-29T02:21:55.685Z"
 # [2026-09-29] CLAIM: owner=fin at=2026-09-29T02:21:55Z
 # [2026-09-29] RECEIPT cmd="bun tools/gate rules && bun tools/gate slot V4-409 -- :features-lifecycle:detekt :features-lifecycle:test && bun tools/gate slot V4-409 -- :quality-architecture:test" exit=0 tests=88 touched=features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonLaunch.kt,features/lifecycle/src/test/kotlin/splice/lifecycle/start/v4409/ForeignUnitStartTest.kt,.dev/restructure/capabilities.tsv tail="sha of the V4-409 commit is the one above this receipt; features-lifecycle 88 tests (v4409 6) counted before mutation; red on the unchanged launch 4 of 6 (each foreign case ran systemctl start); 6 mutants killed by name, file restored identical; rules, quality-architecture, census exit 0"
 # [2026-09-29] sha 0f09536d3 (the receipt's tail says 'the one above'; this is it)
+# [2026-09-29] amend by=splice-lead: files were ["features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonLaunch.kt", "features/lifecycle/src/test/kotlin/splice/lifecycle/start/v4409/"]
 
 [[items]]
 id = "V4-410"

@@ -9695,3 +9695,11 @@ title = "A spent plan window is recorded as upstream-failed and told to wait a m
 files = ["integrations/upstream/src/main/kotlin/splice/upstream/retry/RetryPolicy.kt", "features/turns/src/main/kotlin/splice/head/turn/OutcomeSentences.kt", "features/turns/src/main/kotlin/splice/head/turn/TurnTelemetry.kt", "integrations/upstream/src/test/kotlin/splice/upstream/v4419/", "features/turns/src/test/kotlin/splice/head/v4419/"]
 status = "todo"
 verify = "red first: a 429 usage_limit_reached with resets_at 6 days out ends the turn with a plan-limit outcome, not upstream-failed, and its trace sentence names the reset in CT; a following held turn's sentence names the same instant; a burst 429 with no reset keeps rate-limited and its sentence; V4-404's exhaustiveness test still enumerates every tag from its sources, the new one included. :quality-architecture:test, rules wall."
+
+[[items]]
+id = "V4-420"
+phase = "release"
+title = "Fleet's Last turn reads 'None' for a head that never ran a turn (Marlin, f7f1e9308): claude-bonsai-second reads None while the other rows read a dash or '2d ago'. A missing last turn reads the dash every other empty cell uses."
+files = ["console/src/pages/fleet/", "console/tests/fleet-last-turn.test.ts"]
+status = "todo"
+verify = "red first: a head with no last turn renders the empty-cell dash in Fleet's Last turn, never None, null or undefined. Console test, build, lint."

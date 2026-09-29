@@ -75,3 +75,8 @@ c361520c57ecdd3eb7c9ab2257a71f037f5a899d:app/src/test/kotlin/splice/app/cli/stat
 # prefix the regex spells.
 a7b4b778b66231d69bdcc446229febdb5605130d:integrations/dialects/openai-responses/src/test/kotlin/splice/dialect/responses/v4389/CodexWireGoldenTest.kt:generic-api-key:67
 a7b4b778b66231d69bdcc446229febdb5605130d:integrations/dialects/openai-responses/src/test/kotlin/splice/dialect/responses/v4389/CodexWireGoldenTest.kt:generic-api-key:78
+# 2026-09-29: V4-340 legacy-store fixture. KeptFilesLifetimeTest.singleFileWithOneConversation writes the JSON a
+# daemon before V4-340 kept a head's code-mode records in, and generic-api-key matched its field NAME `key` beside
+# the conversation id `"key":"conversation-1"`. Test-source literal, grants nothing; triaged by hand after the
+# scan went red on f37280280 (the last green scan was 63dfafbb3).
+f37280280b4768cf6c9f825e7fdee98145ccffc4:app/src/test/kotlin/splice/app/KeptFilesLifetimeTest.kt:generic-api-key:172

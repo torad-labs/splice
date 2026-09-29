@@ -9712,3 +9712,11 @@ title = "Fleet's Last turn reads 'None' for a head that never ran a turn (Marlin
 files = ["console/src/pages/fleet/", "console/tests/fleet-last-turn.test.ts"]
 status = "todo"
 verify = "red first: a head with no last turn renders the empty-cell dash in Fleet's Last turn, never None, null or undefined. Console test, build, lint."
+
+[[items]]
+id = "V4-421"
+phase = "release"
+title = "The console's wire probe is red on the everyday daemon: a listed session cannot be resumed (console, Sep 28, 9:45 PM CT). 'bun tools/e2e/probes/console-wire-keys.ts --control http://127.0.0.1:3096' exits 1. ResumeRecipe (entities/session/api/index.ts:113) got HTTP 404 on /api/sessions/<first listed session>/resume?head=claudex: 'the session is in no head's transcript tree' (all eleven searched). The probe fills sessionId with the first /api/sessions row (console-wire-keys.ts:79), so /api/sessions lists a session the resume route cannot serve, and the console's Resume action would 404 on that row the same way. Decide from the data why it is listed (a registry-only or perf-only session), then make the list say whether each session can be resumed, have the console offer Resume only where it can, and have the probe pick a resumable one."
+files = ["features/sessions/src/main/kotlin/splice/sessions/", "features/sessions/src/test/kotlin/splice/sessions/v4421/", "console/src/entities/session/", "console/src/pages/sessions/", "tools/e2e/probes/console-wire-keys.ts"]
+status = "todo"
+verify = "red first: a session listed with no transcript in any head tree carries a not-resumable field on /api/sessions, and the console's Sessions row for it offers no Resume; a session with a transcript still resumes; the wire probe picks a resumable session and exits 0 against the everyday daemon. :quality-architecture:test, rules wall, console test/build/lint."

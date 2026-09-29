@@ -735,6 +735,11 @@ origin.
   Fable 5.1, Sonnet 5 or Haiku 4.5, Claude Code's own background Haiku calls among them, counted as
   unpriced. Each now carries its card from Anthropic's pricing page, with cache writes at the 1-hour
   rate as for Opus 5.5 (V4-270).
+- **`splice add openrouter` prices its default models.** The ten models it writes carried no rate card,
+  so every turn on one of them read `no rate card` on the status line and the board, on the one route
+  where you pay per token. Each now carries OpenRouter's own published card, read from its models
+  listing on Sep 29, and GPT-6 Sol and Luna carry their over-272,000-token tier. `splice add-model`
+  writes its rows with the card too. A head added before this keeps the rows as it was written (V4-434).
 - **`splice restart` no longer waits out systemd's restart delay.** Where the daemon runs under its
   systemd unit, `splice restart` stopped the daemon itself and then asked systemd to start the unit
   while it was still shutting down, so the start did nothing and the daemon came back only after the

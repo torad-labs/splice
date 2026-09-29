@@ -173,6 +173,18 @@ class AddModelsTest {
         assertEquals(1_050_000L, row.contextWindow)
     }
 
+    /** V4-434, RED before: a curated row `splice add-model` had to emit (the provider table lacked it) came
+     *  out with no card, so a turn on it read "no rate card" although the profile prices the model. */
+    @Test
+    fun `an id the provider table lacks is emitted with its rate card - V4-434`(@TempDir dir: Path) {
+        val path = seedWith(dir) { withoutProviderRow(it, LUNA) }
+        assertTrue(addFirstRemaining(path), "add-model wrote nothing")
+        val provider = requireNotNull(TopologyLoader.loadOrMaterialize(path).providers["openrouter"])
+        val row = requireNotNull(provider.models.firstOrNull { it.id == LUNA }) { "emitted row never parsed back" }
+        val curated = requireNotNull(AddProfiles().find("openrouter")).models.first { it.id == LUNA }.rates
+        assertEquals(requireNotNull(curated) { "the profile ships $LUNA with no card" }, row.rates)
+    }
+
     // ---- V4-220: the file is read again before the rename -----------------------------------
 
     /** RED before V4-220: the verb read splice.toml before its prompts and renamed its composition over
@@ -300,7 +312,8 @@ private const val LUNA = "openai/gpt-6-luna"
 private const val ROSTER_OPEN = "models = ["
 private const val HEADER = "[heads.openrouter]"
 private const val PROVIDER_ROW = "[[providers.openrouter.models]]"
-private const val PROVIDER_ROW_LINES = 3
+// the `id =` line, label, context_window and the rates card: every openrouter row the profile ships is priced (V4-434)
+private const val PROVIDER_ROW_LINES = 4
 private const val FIRST_ROW = "  { id = \"anthropic/claude-sonnet-5\", slot = \"sonnet\" },"
 
 /** The selected profile's four slotted rows, plus the one this test adds. */

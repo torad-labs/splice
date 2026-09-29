@@ -6,6 +6,9 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.model.LongContextRates
+import splice.core.model.ModelEntry
+import splice.core.model.ModelRates
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
@@ -76,6 +79,63 @@ class OpenRouterProfileTest {
         assertEquals(latest.mapValues { it.value.first }, slots.filterKeys { it in latest })
         val windows = selected.providers.getValue("openrouter").models.associate { it.id to it.contextWindow }
         latest.values.forEach { (id, window) -> assertEquals(window, windows[id], id) }
+    }
+
+    /** V4-434, RED before: `splice add openrouter` wrote ten rows with no card, so every turn on a default
+     *  model printed "no rate card" on the one route where a user pays per token. The rows are read the way
+     *  a head boots them, from the profile's emitted TOML through the loader. */
+    private fun shippedRows(dir: Path): List<ModelEntry> {
+        val path = dir.resolve("splice.toml")
+        Files.writeString(path, DAEMON_BLOCK + AddProfiles().toml(profile, "openrouter", PORT))
+        return TopologyLoader.loadOrMaterialize(path).providers.getValue("openrouter").models
+    }
+
+    @Test
+    fun `every openrouter row carries a rate card - V4-434`(@TempDir dir: Path) {
+        val rows = shippedRows(dir)
+        assertEquals(PROFILE_MODELS, rows.size)
+        assertEquals(
+            emptyList<String>(),
+            rows.filter { it.rates == null }.map { it.id },
+            "openrouter rows `splice add` ships with no rate card",
+        )
+    }
+
+    /** OpenRouter's own cards, GET openrouter.ai/api/v1/models `pricing`, read 2026-09-29 2:05 PM CT
+     *  (464 models), per million tokens. Where a card lists no cache write the row has none, and where it
+     *  lists no cache read (Llama 4 Maverick) cached tokens bill at the input rate. GPT-6's `overrides`
+     *  entry, `min_prompt_tokens` 272000, applies to a request strictly greater than that, which is
+     *  LongContextRates' own reading. */
+    @Test
+    fun `each openrouter row carries OpenRouter's published card - V4-434`(@TempDir dir: Path) {
+        val card = { input: Double, read: Double, output: Double, write: Double? ->
+            ModelRates(input = input, cacheRead = read, output = output, cacheWrite = write)
+        }
+        val expected = mapOf(
+            "anthropic/claude-sonnet-5" to card(2.0, 0.2, 10.0, 2.5),
+            "anthropic/claude-opus-5.5" to card(4.0, 0.2, 20.0, 5.0),
+            "z-ai/glm-5.3-flash" to card(0.15, 0.03, 0.5, null),
+            "openai/gpt-6-sol" to ModelRates(
+                input = 2.0,
+                cacheRead = 0.2,
+                output = 10.0,
+                cacheWrite = 2.5,
+                longContext = LongContextRates(272_000, 4.0, 0.4, 15.0, cacheWrite = 5.0),
+            ),
+            "openai/gpt-6-luna" to ModelRates(
+                input = 0.1,
+                cacheRead = 0.01,
+                output = 0.5,
+                cacheWrite = 0.125,
+                longContext = LongContextRates(272_000, 0.2, 0.02, 0.75, cacheWrite = 0.25),
+            ),
+            "google/gemini-3.8-flash" to card(0.75, 0.075, 3.75, 0.0416667),
+            "deepseek/deepseek-v4.1-flash" to card(0.3, 0.006, 1.2, null),
+            "z-ai/glm-5.3" to card(1.4, 0.26, 4.4, null),
+            "meta-llama/llama-4-maverick" to card(0.1875, 0.1875, 0.6525, null),
+            "anthropic/claude-haiku-4.5" to card(1.0, 0.1, 5.0, 1.25),
+        )
+        assertEquals(expected, shippedRows(dir).associate { it.id to it.rates })
     }
 
     @Test

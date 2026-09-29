@@ -246,6 +246,21 @@ internal class AddProfileCatalog {
             // (1,000,000) takes opus from Opus 5, GPT-6 Sol and Luna (1,050,000) take GPT-5.6's rows, and
             // DeepSeek V4.1 Flash (1,048,576) replaces V4 Flash 0731. Sonnet 5, Haiku 4.5, Gemini 3.8
             // Flash, GLM 5.3 and 5.3 Flash, and Llama 4 Maverick are still their families' latest there.
+            //
+            // V4-434 RATES: every row carries OpenRouter's own card, the `pricing` block of the same listing
+            // (read 2026-09-29 2:05 PM CT, 464 models), USD per token there and per 1M tokens here: prompt,
+            // completion, input_cache_read and input_cache_write. OpenRouter's write price is its default
+            // 5-minute one (input_cache_write_1h is the 1-hour rate), and this dialect sends no cache_control
+            // and reads no write bucket from the usage, so a write bills only where OpenRouter reports one.
+            // Where a card lists no write (GLM 5.3 and 5.3 Flash, DeepSeek V4.1 Flash, Llama 4 Maverick) those
+            // tokens bill at input, as the Meta row does; Llama 4 Maverick lists no cache read either, so its
+            // cached tokens bill at input too (cacheRead = input). Gemini 3.8 Flash's listed write price is
+            // below its input price, kept as OpenRouter lists it. GPT-6 Sol and Luna list an `overrides` entry
+            // at min_prompt_tokens 272000, which OpenRouter's docs say applies strictly above it, so it is
+            // the long-context tier at 272,000, all four prices (their 1,050,000 window reaches it). Each
+            // route bills its own card: DeepSeek V4.1 Flash here is $0.30 / $1.20, the deepseek profile's
+            // direct off-peak card $0.15 / $0.60. Web search ($0.01 a call on the Claude and GPT rows) and
+            // Gemini's internal_reasoning are not per-token buckets and are not in a card.
             name = "openrouter",
             summary = "OpenRouter API-key route (many vendors, one key)",
             dialect = OPENAI_CHAT,
@@ -254,16 +269,94 @@ internal class AddProfileCatalog {
             headKey = "openrouter",
             command = "claude-openrouter",
             models = listOf(
-                AddModel("anthropic/claude-sonnet-5", "Claude Sonnet 5", WINDOW_1M, listOf("sonnet")),
-                AddModel("anthropic/claude-opus-5.5", "Claude Opus 5.5", WINDOW_1M, listOf("opus")),
-                AddModel("z-ai/glm-5.3-flash", "GLM 5.3 Flash", WINDOW_1310K, listOf("haiku")),
-                AddModel("openai/gpt-6-sol", "GPT-6 Sol", WINDOW_1050K, listOf("fable")),
-                AddModel("openai/gpt-6-luna", "GPT-6 Luna", WINDOW_1050K),
-                AddModel("google/gemini-3.8-flash", "Gemini 3.8 Flash", WINDOW_1048K),
-                AddModel("deepseek/deepseek-v4.1-flash", "DeepSeek V4.1 Flash", WINDOW_1048K),
-                AddModel("z-ai/glm-5.3", "GLM 5.3", WINDOW_1310K),
-                AddModel("meta-llama/llama-4-maverick", "Llama 4 Maverick", WINDOW_1048K),
-                AddModel("anthropic/claude-haiku-4.5", "Claude Haiku 4.5", WINDOW_200K),
+                AddModel(
+                    "anthropic/claude-sonnet-5",
+                    "Claude Sonnet 5",
+                    WINDOW_1M,
+                    listOf("sonnet"),
+                    rates = ModelRates(input = 2.0, cacheRead = 0.2, output = 10.0, cacheWrite = 2.5),
+                ),
+                AddModel(
+                    "anthropic/claude-opus-5.5",
+                    "Claude Opus 5.5",
+                    WINDOW_1M,
+                    listOf("opus"),
+                    rates = ModelRates(input = 4.0, cacheRead = 0.2, output = 20.0, cacheWrite = 5.0),
+                ),
+                AddModel(
+                    "z-ai/glm-5.3-flash",
+                    "GLM 5.3 Flash",
+                    WINDOW_1310K,
+                    listOf("haiku"),
+                    rates = ModelRates(input = 0.15, cacheRead = 0.03, output = 0.5),
+                ),
+                AddModel(
+                    "openai/gpt-6-sol",
+                    "GPT-6 Sol",
+                    WINDOW_1050K,
+                    listOf("fable"),
+                    rates = ModelRates(
+                        input = 2.0,
+                        cacheRead = 0.2,
+                        output = 10.0,
+                        cacheWrite = 2.5,
+                        longContext = LongContextRates(
+                            overInputTokens = 272_000,
+                            input = 4.0,
+                            cacheRead = 0.4,
+                            output = 15.0,
+                            cacheWrite = 5.0,
+                        ),
+                    ),
+                ),
+                AddModel(
+                    "openai/gpt-6-luna",
+                    "GPT-6 Luna",
+                    WINDOW_1050K,
+                    rates = ModelRates(
+                        input = 0.1,
+                        cacheRead = 0.01,
+                        output = 0.5,
+                        cacheWrite = 0.125,
+                        longContext = LongContextRates(
+                            overInputTokens = 272_000,
+                            input = 0.2,
+                            cacheRead = 0.02,
+                            output = 0.75,
+                            cacheWrite = 0.25,
+                        ),
+                    ),
+                ),
+                AddModel(
+                    "google/gemini-3.8-flash",
+                    "Gemini 3.8 Flash",
+                    WINDOW_1048K,
+                    rates = ModelRates(input = 0.75, cacheRead = 0.075, output = 3.75, cacheWrite = 0.0416667),
+                ),
+                AddModel(
+                    "deepseek/deepseek-v4.1-flash",
+                    "DeepSeek V4.1 Flash",
+                    WINDOW_1048K,
+                    rates = ModelRates(input = 0.3, cacheRead = 0.006, output = 1.2),
+                ),
+                AddModel(
+                    "z-ai/glm-5.3",
+                    "GLM 5.3",
+                    WINDOW_1310K,
+                    rates = ModelRates(input = 1.4, cacheRead = 0.26, output = 4.4),
+                ),
+                AddModel(
+                    "meta-llama/llama-4-maverick",
+                    "Llama 4 Maverick",
+                    WINDOW_1048K,
+                    rates = ModelRates(input = 0.1875, cacheRead = 0.1875, output = 0.6525),
+                ),
+                AddModel(
+                    "anthropic/claude-haiku-4.5",
+                    "Claude Haiku 4.5",
+                    WINDOW_200K,
+                    rates = ModelRates(input = 1.0, cacheRead = 0.1, output = 5.0, cacheWrite = 1.25),
+                ),
             ),
         ),
         AddProfile(

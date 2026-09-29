@@ -58,7 +58,7 @@ internal class AddModelCompose(private val roster: RosterEditor) {
                 "id = \"${model.id}\"",
                 "label = \"${model.label}\"",
                 "context_window = ${model.contextWindow}",
-            )
+            ) + model.ratesLine()
         }
         val extra = if (rows.isEmpty()) "\n" else rows.joinToString("\n", prefix = "\n", postfix = "\n")
         val rostered = if (plan.offer.headDeclaresModels) {

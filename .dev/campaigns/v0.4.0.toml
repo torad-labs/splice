@@ -6596,6 +6596,7 @@ verify = "bun tools/gate run --only console"
 # [2026-09-26] the operator-look clause is split to V4-331 (out-of-repo renders, no repo fence), because this row's console/src/pages/ fence overlaps in-flight V4-232's settings/coverage.ts; with V4-331 verified this row's remaining scope is none
 # [2026-09-27] Superseded 2026-09-27 by the operator's reset of the console: the console is defined by .dev/campaigns/web-console/acceptance/ACCEPTANCE.md (the user's questions in their own words, draft 2 approved by Marlin at 2711607f0), Marlin approves every screen and every page by walking it as a user (campaign law), and the work is rows V4-344..V4-349 in the order of Marlin's baseline walk (Splice-CPO/product/walks/2026-09-27-console-baseline.md). This row's earlier closure note ('remaining scope is none') was wrong: its actions step never shipped, and its jobs were declared in coverage.ts rather than walked.
 # [2026-09-29] amend by=splice-lead: files were ["docs/design/PRODUCT.md", "docs/design/JOBS.md", "console/src/pages/", "console/src/shared/coverage/"]
+# [2026-09-29] RECEIPT cmd="ledger get on every successor row of the 2026-09-27 console reset: V4-344, V4-345, V4-356 verified; V4-346, V4-347, V4-348, V4-349, V4-357, V4-364, V4-369, V4-370 done" exit=0 tests=0 touched=-
 
 [[items]]
 id = "V4-220"

@@ -22,7 +22,7 @@ export const S = {
   saveArchive: 'Save archive days',
   stopArchive: 'Stop archiving',
   traceFor: (head: string): string => `Capture on ${head}`,
-  traceCount: (records: number, bytes: number): string => `${records} ${records === 1 ? 'record' : 'records'}, ${bytes} bytes kept.`,
+  traceCount: (records: number, bytes: number): string => `${records} ${records === 1 ? 'record' : 'records'}, ${bytes} ${bytes === 1 ? 'byte' : 'bytes'} kept.`,
 } as const;
 
 export const H = {

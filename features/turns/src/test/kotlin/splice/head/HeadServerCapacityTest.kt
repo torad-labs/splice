@@ -19,6 +19,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
@@ -364,10 +365,13 @@ class HeadServerCapacityTest {
             val receivedAtSeconds = System.currentTimeMillis() / MS_PER_S
 
             assertEquals(RATE_LIMITED_STATUS, refused.status.value)
+            val said = refused.bodyAsText()
             assertTrue(
-                refused.bodyAsText().contains("all OAuth accounts are exhausted; earliest reset is"),
+                said.contains("all OAuth accounts are exhausted; earliest reset is"),
                 "the provider's own reset still rides in the message; only the wire deadline is bounded",
             )
+            // V4-433: said as a person reads it (LocalTimeText), never as the ISO instant the journal keeps.
+            assertFalse(Regex("""\d{4}-\d{2}-\d{2}T\d{2}:\d{2}""").containsMatchIn(said), said)
             assertBoundedRejectedRefusal(refused, sentAtSeconds, receivedAtSeconds)
         } finally {
             pooled.stop()

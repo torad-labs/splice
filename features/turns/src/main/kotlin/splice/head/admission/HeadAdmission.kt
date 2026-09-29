@@ -245,7 +245,8 @@ internal class HeadAdmission(
             "limited, so it is holding new turns for ${waitS}s. Retry after that."
         if (windowResetEpochSeconds == null) return base
         return "$base The upstream reports its quota window resets at " +
-            "${AccountResetText.format(windowResetEpochSeconds)}; if this keeps happening, that is the real deadline."
+            "${AccountResetText.forPerson(windowResetEpochSeconds)}; " +
+            "if this keeps happening, that is the real deadline."
     }
 
     /** V4-61'S LAW IN ONE PLACE, because it was written once and forgotten on the sibling branch

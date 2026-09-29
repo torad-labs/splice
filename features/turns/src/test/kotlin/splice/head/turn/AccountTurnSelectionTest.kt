@@ -25,6 +25,7 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
+import splice.core.util.LocalTimeText
 import splice.core.util.WallClock
 import splice.head.HeadDeps
 import splice.head.HeadServer
@@ -49,8 +50,10 @@ import splice.upstream.transport.UpstreamClient
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
+import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import java.util.TimeZone
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicLong
@@ -246,10 +249,12 @@ class AccountTurnSelectionTest(@param:TempDir private val root: Path) {
             rig.start()
             val resetEpochSeconds = 2_077_951_777L
             val reset = Instant.ofEpochSecond(rig.exhaustAll(resetEpochSeconds)).toString()
+            val said = LocalTimeText(ZoneId.of(TOKYO)).at(resetEpochSeconds)
             val sentAtSeconds = System.currentTimeMillis() / MS_PER_SECOND
 
-            val response = rig.messages().also { body ->
-                assertTrue(body.bodyAsText().contains("all OAuth accounts are exhausted; earliest reset is $reset"))
+            // V4-433: the client's sentence says the reset in the machine's zone; the journal keeps the ISO instant.
+            val response = inZone(TOKYO) { rig.messages() }.also { body ->
+                assertTrue(body.bodyAsText().contains("all OAuth accounts are exhausted; earliest reset is $said"))
             }
             val receivedAtSeconds = System.currentTimeMillis() / MS_PER_SECOND
 
@@ -281,12 +286,13 @@ class AccountTurnSelectionTest(@param:TempDir private val root: Path) {
             rig.exhaustAll(oversizedReset)
             val sentAtSeconds = System.currentTimeMillis() / MS_PER_SECOND
 
-            val response = rig.messages()
+            val response = inZone(TOKYO) { rig.messages() }
             val receivedAtSeconds = System.currentTimeMillis() / MS_PER_SECOND
 
             assertEquals(HttpStatusCode.TooManyRequests, response.status)
             assertBoundedHold(checkNotNull(response.headers["Retry-After"]), sentAtSeconds, receivedAtSeconds)
-            assertTrue(response.bodyAsText().contains("earliest reset is 9999-12-31T23:59:59Z"))
+            // The clamp is the 9999 instant; in Tokyo it reads as the morning of the next January 1.
+            assertTrue(response.bodyAsText().contains("earliest reset is Jan 1, 8:59 AM JST"))
             assertTrue(rig.authHeaders().isEmpty(), "an exhausted pool must not contact upstream")
         } finally {
             rig.close()
@@ -535,6 +541,20 @@ private class AccountAuth(private val token: String, private val accountId: Stri
 private const val SESSION = "session-1"
 
 private const val MS_PER_SECOND = 1_000L
+
+private const val TOKYO = "Asia/Tokyo"
+
+/** V4-433: runs [block] with the machine's zone set to [zone], and puts the old one back. Inline, so a request the
+ *  block sends can suspend. */
+private inline fun <T> inZone(zone: String, block: () -> T): T {
+    val saved = TimeZone.getDefault()
+    TimeZone.setDefault(TimeZone.getTimeZone(zone))
+    try {
+        return block()
+    } finally {
+        TimeZone.setDefault(saved)
+    }
+}
 
 // V4-61's ceiling on the CLIENT-FACING deadline. V4-100: READS the one declaration
 // (splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS, public as of this row) instead of restating 120 here. The

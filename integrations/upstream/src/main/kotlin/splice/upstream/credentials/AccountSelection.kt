@@ -4,6 +4,7 @@ package splice.upstream.credentials
 
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.usage.QuotaSnapshot
+import splice.core.util.LocalTimeText
 import splice.core.util.WallClock
 import splice.upstream.CredentialHeaders
 import splice.upstream.retry.RateLimitCooldown
@@ -160,13 +161,14 @@ public data class AccountPoolView(
     val lastSwitch: AccountSwitch?,
 )
 
-/** One reset timestamp vocabulary for operator responses and turn logs. */
+/** One reset timestamp vocabulary for operator responses and turn logs. [format] is the ISO instant a log or journal
+ *  line carries; [forPerson] says the same instant the way a person reads it, for a sentence a client prints. */
 public object AccountResetText {
     private val earliestWireInstant = Instant.parse("0000-01-01T00:00:00Z")
     private val latestWireInstant = Instant.parse("9999-12-31T23:59:59Z")
 
     internal fun exhausted(resetEpochSeconds: Long?): String =
-        "all OAuth accounts are exhausted; earliest reset is ${format(resetEpochSeconds)}"
+        "all OAuth accounts are exhausted; earliest reset is ${forPerson(resetEpochSeconds)}"
 
     /** Clamps reset evidence to the four-digit year range shared by prose and IMF-fixdate. */
     public fun normalizedInstant(resetEpochSeconds: Long): Instant =
@@ -177,5 +179,12 @@ public object AccountResetText {
     public fun format(resetEpochSeconds: Long?): String {
         if (resetEpochSeconds == null) return "unknown"
         return normalizedInstant(resetEpochSeconds).toString()
+    }
+
+    /** V4-433: [resetEpochSeconds] as "Oct 4, 7:00 PM CDT" in the machine's zone as of this call, or "unknown" when no
+     *  reset was named; clamped to the same year range as [format]. [times] names a zone for a test. */
+    public fun forPerson(resetEpochSeconds: Long?, times: LocalTimeText = LocalTimeText()): String {
+        if (resetEpochSeconds == null) return "unknown"
+        return times.at(normalizedInstant(resetEpochSeconds).epochSecond)
     }
 }

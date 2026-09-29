@@ -29,6 +29,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.RunningJar
@@ -58,8 +59,8 @@ class DoctorFixRouteTest {
     private lateinit var tmp: Path
 
     @BeforeAll
-    fun setUp() {
-        tmp = Files.createTempDirectory("doctor-fix")
+    fun setUp(@TempDir tempDir: Path) {
+        tmp = tempDir
         val paths = StatePaths(baseOverride = tmp.resolve("daemon-state"))
         val mgmt = MgmtKey(paths)
         key = mgmt.get()

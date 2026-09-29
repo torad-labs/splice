@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.RefreshAttempt
 import java.nio.file.Files
 import java.nio.file.Path
@@ -76,10 +77,10 @@ class GrokEntitlementTest {
     // ── rule 1: a 403 on a fresh credential is never an expiry ────────────────────────────
 
     @Test
-    fun `a 403 on a freshly refreshed token never allows a refresh, whatever the body says`() {
+    fun `a 403 on a freshly refreshed token never allows a refresh, whatever the body says`(@TempDir tempDir: Path) {
         val now = 1_000_000L
         // The operator's state: refreshed at 00:05, valid to 06:05 — hours outside the window.
-        val auth = provider(Files.createTempDirectory("grok-fresh"), now + 6 * 3_600_000L, now)
+        val auth = provider(tempDir, now + 6 * 3_600_000L, now)
 
         assertFalse(auth.allowRefreshAfterFailure(403, spendingLimit), "recognised billing 403")
         assertFalse(
@@ -97,21 +98,27 @@ class GrokEntitlementTest {
     }
 
     @Test
-    fun `a genuine expiry still refreshes exactly as before, so 2026-07-18 does not regress`() {
+    fun `a genuine expiry still refreshes exactly as before, so 2026-07-18 does not regress`(
+        @TempDir tempDir: Path,
+        @TempDir tempDir2: Path,
+    ) {
         val now = 1_000_000L
         // Inside the proactive window: the token is NOT demonstrably fine.
-        val inside = provider(Files.createTempDirectory("grok-window"), now + 60_000L, now)
+        val inside = provider(tempDir, now + 60_000L, now)
         assertTrue(inside.allowRefreshAfterFailure(403, genuineExpiry), "the dead-head incident's shape")
 
-        val longPast = provider(Files.createTempDirectory("grok-dead"), now - 3_600_000L, now)
+        val longPast = provider(tempDir2, now - 3_600_000L, now)
         assertTrue(longPast.allowRefreshAfterFailure(403, genuineExpiry), "an already-expired token")
     }
 
     @Test
-    fun `a SYNTHESIZED expiry never vetoes a refresh — only a real expires may`() {
+    fun `a SYNTHESIZED expiry never vetoes a refresh — only a real expires may`(
+        @TempDir tempDir: Path,
+        @TempDir tempDir2: Path,
+    ) {
         val now = 1_000_000L
-        val withExpires = provider(Files.createTempDirectory("grok-real-expiry"), now + 6 * 3_600_000L, now)
-        val withoutExpires = providerNoExpires(Files.createTempDirectory("grok-no-expiry"), now)
+        val withExpires = provider(tempDir, now + 6 * 3_600_000L, now)
+        val withoutExpires = providerNoExpires(tempDir2, now)
 
         // Same 403, same body, two files that differ ONLY in whether they declare `expires`.
         // readSnapshot answers BOTH with an expiry hours past the proactive window: the second one
@@ -135,9 +142,9 @@ class GrokEntitlementTest {
     }
 
     @Test
-    fun `an unreadable credential proves nothing, so the old behaviour stands`() {
+    fun `an unreadable credential proves nothing, so the old behaviour stands`(@TempDir tempDir: Path) {
         val now = 1_000_000L
-        val missing = Files.createTempDirectory("grok-absent").resolve("nope").resolve("auth.json")
+        val missing = tempDir.resolve("nope").resolve("auth.json")
         val auth = GrokAuthProvider(
             authPath = missing,
             authCacheMs = 30_000L,
@@ -190,8 +197,8 @@ class GrokEntitlementTest {
     // the only place that answers it with vendor spelling, and it answers with the SAME list V4-38
     // uses for the refresh veto, so the two can never disagree about what a quota wall looks like.
     @Test
-    fun `a billing 403 is declared quota-exhausted, and nothing else is - V4-73`() {
-        val auth = provider(Files.createTempDirectory("grok-quota"), expiresAtMs = 2_000_000L, now = 1_000_000L)
+    fun `a billing 403 is declared quota-exhausted, and nothing else is - V4-73`(@TempDir tempDir: Path) {
+        val auth = provider(tempDir, expiresAtMs = 2_000_000L, now = 1_000_000L)
 
         assertTrue(auth.isQuotaExhausted(403, spendingLimit), "the billing 403 IS a quota wall")
         assertFalse(auth.isQuotaExhausted(403, genuineExpiry), "an EXPIRY 403 is not a quota wall")

@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshAttempt
 import java.nio.file.Files
@@ -54,8 +55,9 @@ class GrokAuthRefreshRecoveryTest {
     // refresh. The freshly-read access token differs from what we last served, so the POST is skipped
     // and the peer's token is served — no wasted refresh, no double token burn.
     @Test
-    fun `peer already rotated while we were about to refresh - POST skipped, peer token served`() = runTest {
-        val dir = Files.createTempDirectory("grok-peer")
+    fun `peer already rotated while we were about to refresh - POST skipped, peer token served`(
+        @TempDir dir: Path,
+    ) = runTest {
         val now = 1_000_000L
         // prime the in-memory cache with token A (expiry outside the window so no refresh on read).
         val file = authFile(dir, access = "token-A", expiresAtMs = now + 3_600_000)
@@ -80,8 +82,9 @@ class GrokAuthRefreshRecoveryTest {
     // G1: the endpoint rejects R1, but disk shows a rotation to R2 landed underneath us between our
     // read and the POST — retry ONCE against R2, which succeeds. Exactly two POSTs, no more.
     @Test
-    fun `refresh rejected once but the disk-fresh refresh token succeeds - one bounded retry`() = runTest {
-        val dir = Files.createTempDirectory("grok-retry")
+    fun `refresh rejected once but the disk-fresh refresh token succeeds - one bounded retry`(
+        @TempDir dir: Path,
+    ) = runTest {
         val file = authFile(dir, access = "acc", refresh = "R1")
         val seen = mutableListOf<String>()
         val auth =
@@ -104,8 +107,7 @@ class GrokAuthRefreshRecoveryTest {
     // G1: the retry is bounded even when the disk token keeps rotating and every POST is rejected —
     // exactly two POSTs, then it gives up (the retry POSTs with allowRereadRetry=false, never loops).
     @Test
-    fun `refresh genuinely dead - bounded to two POSTs, no infinite retry`() = runTest {
-        val dir = Files.createTempDirectory("grok-bounded")
+    fun `refresh genuinely dead - bounded to two POSTs, no infinite retry`(@TempDir dir: Path) = runTest {
         val file = authFile(dir, access = "acc", refresh = "R1")
         val calls = AtomicInteger()
         val auth = GrokAuthProvider(authPath = file, authCacheMs = 30_000L, clock = { 1_000_000L }, refreshCall = {
@@ -120,11 +122,12 @@ class GrokAuthRefreshRecoveryTest {
     }
 
     @Test
-    fun `refresh response without expires_in synthesizes a new expires field - SH-02 rewrite`() = runTest {
+    fun `refresh response without expires_in synthesizes a new expires field - SH-02 rewrite`(
+        @TempDir dir: Path,
+    ) = runTest {
         // SH-02 REWRITE of the old keeps-the-old-expires pin: carrying the stale value was the
         // refresh-ineffective loop (every next call re-entered the blocking tier and burned a
         // rotating refresh token). A just-minted token synthesizes now+TTL instead.
-        val dir = Files.createTempDirectory("grok-noexp")
         val now = 1_000_000L
         val oldExpires = now - 1
         val file = authFile(dir, expiresAtMs = oldExpires)
@@ -145,8 +148,7 @@ class GrokAuthRefreshRecoveryTest {
     // G15: a confirmed invalid_grant (post-G1 re-read: disk untouched, so the retry-once check
     // finds no rotation and gives up) latches — the SECOND call must not re-POST the dead token.
     @Test
-    fun `latched invalid_grant skips the network POST on the next call`() = runTest {
-        val dir = Files.createTempDirectory("grok-latch")
+    fun `latched invalid_grant skips the network POST on the next call`(@TempDir dir: Path) = runTest {
         val file = authFile(dir, refresh = "dead-refresh")
         val calls = AtomicInteger()
         val auth = GrokAuthProvider(authPath = file, authCacheMs = 30_000L, clock = { 1_000_000L }, refreshCall = {
@@ -162,8 +164,7 @@ class GrokAuthRefreshRecoveryTest {
     // G15: the latch is keyed on the auth file's mtime — a re-login rewrite (fresh refresh token,
     // new mtime) clears it automatically, so the very next call attempts a real refresh again.
     @Test
-    fun `latch clears when the auth file's mtime changes`() = runTest {
-        val dir = Files.createTempDirectory("grok-unlatch")
+    fun `latch clears when the auth file's mtime changes`(@TempDir dir: Path) = runTest {
         val file = authFile(dir, refresh = "dead-refresh")
         val calls = AtomicInteger()
         var granted = false
@@ -188,8 +189,7 @@ class GrokAuthRefreshRecoveryTest {
 
     // G15: /mgmt/auth and /api/auth surface the suppressed state via describe().
     @Test
-    fun `describe surfaces refresh_latched after a confirmed invalid_grant`() = runTest {
-        val dir = Files.createTempDirectory("grok-latch-desc")
+    fun `describe surfaces refresh_latched after a confirmed invalid_grant`(@TempDir dir: Path) = runTest {
         val file = authFile(dir, refresh = "dead-refresh")
         val auth = GrokAuthProvider(authPath = file, authCacheMs = 30_000L, clock = { 1_000_000L }, refreshCall = {
             RefreshAttempt.InvalidGrant("dead")
@@ -204,8 +204,7 @@ class GrokAuthRefreshRecoveryTest {
     // breaking G15's own "one that survived that race check" contract. The composite reason
     // names the read failure and never latches (codex twin parity).
     @Test
-    fun `a failed confirming reread names the failure and never arms the latch`() = runTest {
-        val dir = Files.createTempDirectory("grok-reread")
+    fun `a failed confirming reread names the failure and never arms the latch`(@TempDir dir: Path) = runTest {
         val file = authFile(dir, refresh = "dead-refresh")
         val log = mutableListOf<String>()
         val auth = GrokAuthProvider(
@@ -236,9 +235,8 @@ class GrokAuthRefreshRecoveryTest {
     // DR-65 (codex security probe): a malformed auth.json still containing a live token must not
     // leak it through parse-exception text ("JSON input:" excerpts) into logs or describe fields.
     @Test
-    fun `diagnostics never quote credential bytes from a malformed auth file - DR-65`() = runTest {
+    fun `diagnostics never quote credential bytes from a malformed auth file - DR-65`(@TempDir dir: Path) = runTest {
         val sentinel = "xai-SENTINEL-LEAK-CANARY"
-        val dir = Files.createTempDirectory("grok-leak")
         val file = dir.resolve(".grok").resolve("auth.json")
         Files.createDirectories(file.parent)
         Files.writeString(file, """{"tokens":{"access_token":"$sentinel"""")
@@ -258,11 +256,12 @@ class GrokAuthRefreshRecoveryTest {
     }
 
     @Test
-    fun `granted refresh with no expires_in advances the expiry - one refresh across N calls - SH-02a`() = runTest {
+    fun `granted refresh with no expires_in advances the expiry - one refresh across N calls - SH-02a`(
+        @TempDir dir: Path,
+    ) = runTest {
         // Pre-fix: null expiresIn persisted a null expiry, the merge kept the stale on-disk value,
         // and every credentials() call below the stale floor blocked on ANOTHER refresh — each one
         // consuming a rotating refresh token. The synthesized now+TTL expiry kills the loop.
-        val dir = Files.createTempDirectory("grok-noexpin")
         var now = 1_000_000L
         val file = authFile(dir, expiresAtMs = now + 1_000) // inside the stale floor: blocking tier
         val calls = AtomicInteger(0)
@@ -276,11 +275,12 @@ class GrokAuthRefreshRecoveryTest {
     }
 
     @Test
-    fun `sub-floor grant trips the ineffective backoff - one refresh, logged once - SH-02b`() = runTest {
+    fun `sub-floor grant trips the ineffective backoff - one refresh, logged once - SH-02b`(
+        @TempDir dir: Path,
+    ) = runTest {
         // A grant whose expires_in cannot satisfy the stale floor is a SUCCESSFUL refresh the tier
         // logic will re-request forever. The guard logs, counts, and serves the current token
         // through the 30s backoff window instead.
-        val dir = Files.createTempDirectory("grok-subfloor")
         var now = 1_000_000L
         val file = authFile(dir, expiresAtMs = now + 1_000)
         val calls = AtomicInteger(0)

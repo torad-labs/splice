@@ -26,10 +26,11 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
-import java.nio.file.Files
+import java.nio.file.Path
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class ClaudeHeadRefusalTest {
@@ -40,8 +41,7 @@ class ClaudeHeadRefusalTest {
     private lateinit var control: ControlServer
 
     @BeforeAll
-    fun setUp() {
-        val tmp = Files.createTempDirectory("v4175")
+    fun setUp(@TempDir tmp: Path) {
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
         key = mgmt.get()

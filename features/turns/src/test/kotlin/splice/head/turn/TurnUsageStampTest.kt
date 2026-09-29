@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.ReasoningDisplay
@@ -44,7 +45,6 @@ import splice.head.wire.UsagePayloadBuilder
 import splice.upstream.retry.InflightGate
 import splice.upstream.retry.LiveLimit
 import splice.upstream.retry.TurnWatchdog
-import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.seconds
@@ -55,8 +55,8 @@ class TurnUsageStampTest {
     private lateinit var tmp: Path
 
     @BeforeAll
-    fun setUp() {
-        tmp = Files.createTempDirectory("turn-usage-stamp")
+    fun setUp(@TempDir tempDir: Path) {
+        tmp = tempDir
     }
 
     /** One stamp with an observable perf row; [tag] isolates each test's files. */

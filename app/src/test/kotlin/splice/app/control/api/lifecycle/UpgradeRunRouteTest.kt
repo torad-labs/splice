@@ -30,6 +30,7 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.app.control.ControlServer
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
@@ -72,8 +73,8 @@ class UpgradeRunRouteTest {
     }
 
     @BeforeAll
-    fun setUp() {
-        tmp = Files.createTempDirectory("upgrade-run")
+    fun setUp(@TempDir tempDir: Path) {
+        tmp = tempDir
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
         key = mgmt.get()
@@ -95,11 +96,11 @@ class UpgradeRunRouteTest {
     }
 
     @BeforeEach
-    fun reset() {
+    fun reset(@TempDir tempDir: Path) {
         launched.clear()
         logged.clear()
         launchFailure = null
-        share = Files.createTempDirectory(tmp, "share")
+        share = tempDir
         control.ports.upgradeRuns = runs()
     }
 

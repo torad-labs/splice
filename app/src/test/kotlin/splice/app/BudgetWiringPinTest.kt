@@ -14,6 +14,7 @@ package splice.app
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.app.control.DashboardPage
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
@@ -27,8 +28,10 @@ import java.nio.file.Paths
 class BudgetWiringPinTest {
 
     @Test
-    fun `a block budget saved into the control plane's store refuses that head through the plane's publisher`() {
-        val paths = StatePaths(baseOverride = Files.createTempDirectory("v4133-budget-wiring").resolve("state"))
+    fun `a block budget saved into the control plane's store refuses that head through the plane's publisher`(
+        @TempDir tempDir: Path,
+    ) {
+        val paths = StatePaths(baseOverride = tempDir.resolve("state"))
         val plane = ControlPlane(paths, ConfigService(paths), MgmtKey(paths), DashboardPage { "" }, { }, { })
         try {
             plane.budgets.replace(listOf(Budget("pinned-head", 0.0, BudgetActions.BLOCK)))

@@ -22,10 +22,12 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import java.nio.file.Files
+import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -38,8 +40,8 @@ class ConfigPersistRouteTest {
     private val json = Json { ignoreUnknownKeys = true }
 
     @BeforeAll
-    fun setUp() {
-        statePaths = StatePaths(baseOverride = Files.createTempDirectory("config-persist").resolve("state"))
+    fun setUp(@TempDir tempDir: Path) {
+        statePaths = StatePaths(baseOverride = tempDir.resolve("state"))
         val mgmt = MgmtKey(statePaths)
         key = mgmt.get()
         control = ControlServer(

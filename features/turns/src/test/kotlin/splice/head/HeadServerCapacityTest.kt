@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -44,6 +45,7 @@ import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
 import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.transport.UpstreamClient
 import java.nio.file.Files
+import java.nio.file.Path
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import kotlin.time.Duration.Companion.seconds
@@ -101,8 +103,8 @@ class HeadServerCapacityTest {
     )
 
     @BeforeAll
-    fun setUp() = runBlocking {
-        tmp = Files.createTempDirectory("head-cap")
+    fun setUp(@TempDir tempDir: Path) = runBlocking {
+        tmp = tempDir
         head = HeadServer(
             provider = capacityProvider(),
             listenPort = 0,

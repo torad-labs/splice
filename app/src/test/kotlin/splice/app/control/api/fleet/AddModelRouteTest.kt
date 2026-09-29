@@ -31,6 +31,7 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.accounts.signin.LoginStatus
 import splice.app.control.ControlServer
 import splice.configuration.add.AddConsole
@@ -74,8 +75,8 @@ class AddModelRouteTest {
     private val config: Path get() = Path.of(vars.getValue("SPLICE_CONFIG"))
 
     @BeforeAll
-    fun setUp() {
-        tmp = Files.createTempDirectory("add-model")
+    fun setUp(@TempDir tempDir: Path) {
+        tmp = tempDir
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
         key = mgmt.get()
@@ -99,11 +100,11 @@ class AddModelRouteTest {
     }
 
     @BeforeEach
-    fun reset() {
+    fun reset(@TempDir tempDir: Path) {
         drains.set(0)
         logged.clear()
         vars.clear()
-        vars["SPLICE_CONFIG"] = Files.createTempDirectory(tmp, "config").resolve("splice.toml").toString()
+        vars["SPLICE_CONFIG"] = tempDir.resolve("splice.toml").toString()
         Files.writeString(
             config,
             """

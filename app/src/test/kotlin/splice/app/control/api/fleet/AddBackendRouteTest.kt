@@ -34,6 +34,7 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.accounts.signin.LoginState
 import splice.accounts.signin.LoginStatus
 import splice.app.control.ControlServer
@@ -101,8 +102,8 @@ class AddBackendRouteTest {
     private val config: Path get() = Path.of(vars.getValue("SPLICE_CONFIG"))
 
     @BeforeAll
-    fun setUp() {
-        tmp = Files.createTempDirectory("add-backend")
+    fun setUp(@TempDir tempDir: Path) {
+        tmp = tempDir
         endpoint = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
             createContext("/v1") { exchange ->
                 val body = if (exchange.requestURI.path == "/v1/models") """{"data":[{"id":"m"}]}""" else "{}"
@@ -135,14 +136,14 @@ class AddBackendRouteTest {
     }
 
     @BeforeEach
-    fun reset() {
+    fun reset(@TempDir tempDir: Path) {
         inFlight = null
         drains.set(0)
         logged.clear()
         linked.clear()
         signIns.clear()
         vars.clear()
-        vars["SPLICE_CONFIG"] = Files.createTempDirectory(tmp, "config").resolve("splice.toml").toString()
+        vars["SPLICE_CONFIG"] = tempDir.resolve("splice.toml").toString()
         control.ports.keys = KeyStore(KeyStorePath.defaultPath(env))
         control.ports.supervised = DaemonSupervised { true }
     }

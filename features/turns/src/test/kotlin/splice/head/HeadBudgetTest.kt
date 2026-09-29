@@ -28,6 +28,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -43,6 +44,7 @@ import splice.provider.codex.CodexProvider
 import splice.upstream.ProviderTuning
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration.Companion.seconds
@@ -65,7 +67,7 @@ private class RecordingBudget(private val answer: BudgetBlock?) : HeadBudget {
     }
 }
 
-class HeadBudgetTest {
+class HeadBudgetTest(@param:TempDir private val root: Path) {
 
     @Test
     fun `a reached block budget refuses the turn with its sentence as a 403, before any upstream call`() =
@@ -74,7 +76,7 @@ class HeadBudgetTest {
                 message = "head 'codex' has spent \$2.00 today (UTC) against its \$2.00 daily budget",
                 detail = "spent_usd=2.00 limit_usd=2.00 unpriced_turns=0",
             )
-            val rig = BudgetRig(RecordingBudget(block))
+            val rig = BudgetRig(root, RecordingBudget(block))
             try {
                 rig.start()
                 val response = rig.turn()
@@ -99,7 +101,7 @@ class HeadBudgetTest {
 
     @Test
     fun `a served turn reports its spend with its own perf row's ts, model and token counters`() = runBlocking {
-        val rig = BudgetRig(RecordingBudget(null))
+        val rig = BudgetRig(root, RecordingBudget(null))
         try {
             rig.start()
             val response = rig.turn()
@@ -119,8 +121,8 @@ class HeadBudgetTest {
 }
 
 /** One codex head on a mock upstream, weighed against [budget]. */
-private class BudgetRig(val budget: RecordingBudget) {
-    private val tmp: Path = Files.createTempDirectory("v4133-head-budget")
+private class BudgetRig(root: Path, val budget: RecordingBudget) {
+    private val tmp: Path = Files.createDirectory(root.resolve(UUID.randomUUID().toString()))
     private val mock = MockChatGptUpstream()
     private val perfFile = tmp.resolve("perf.jsonl")
     private val auth = BudgetRigAuth()

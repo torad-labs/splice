@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.GATEWAY_VERSION
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
@@ -34,7 +35,7 @@ import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.UsageView
-import java.nio.file.Files
+import java.nio.file.Path
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class ClientVersionSurfaceTest {
@@ -45,8 +46,8 @@ class ClientVersionSurfaceTest {
     fun tearDown() = client.close()
 
     @Test
-    fun `health stays aggregate while statusline warns once for its session`() = runTest {
-        val paths = StatePaths(baseOverride = Files.createTempDirectory("client-version-surface").resolve("state"))
+    fun `health stays aggregate while statusline warns once for its session`(@TempDir tempDir: Path) = runTest {
+        val paths = StatePaths(baseOverride = tempDir.resolve("state"))
         val versions = ClientVersionTracker(testedVersion = "2.1.257")
         versions.observe("session-new", "claude-cli/2.1.258")
         versions.observe("session-equal", "claude-cli/2.1.257")

@@ -32,6 +32,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.compaction.CompactionConfig
@@ -48,7 +49,7 @@ import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.RateLimitView
 import splice.usage.quota.UsageView
 import java.net.ServerSocket
-import java.nio.file.Files
+import java.nio.file.Path
 
 private const val TIMEOUT_MS = 10_000L
 private const val POLL_MS = 25L
@@ -66,8 +67,8 @@ class CompactionInstructionsRouteTest {
     private lateinit var key: String
 
     @BeforeAll
-    fun setUp() {
-        val paths = StatePaths(baseOverride = Files.createTempDirectory("compaction-route").resolve("state"))
+    fun setUp(@TempDir tempDir: Path) {
+        val paths = StatePaths(baseOverride = tempDir.resolve("state"))
         val mgmt = MgmtKey(paths)
         key = mgmt.get()
         control = ControlServer(

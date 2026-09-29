@@ -6,11 +6,12 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.core.config.ConfigService
 import splice.core.config.Knob
 import splice.core.config.StatePaths
 import splice.core.model.ModelEntry
-import java.nio.file.Files
+import java.nio.file.Path
 
 class TopologyConfigOverridesTest {
 
@@ -72,8 +73,8 @@ class TopologyConfigOverridesTest {
     }
 
     @Test
-    fun `environment wins over topology for restart-applied settings`() {
-        val paths = StatePaths(baseOverride = Files.createTempDirectory("topology-config"))
+    fun `environment wins over topology for restart-applied settings`(@TempDir tempDir: Path) {
+        val paths = StatePaths(baseOverride = tempDir)
         val service = ConfigService(
             paths,
             headOverrides = TopologyKnobLayer(topology).configOverrides(),

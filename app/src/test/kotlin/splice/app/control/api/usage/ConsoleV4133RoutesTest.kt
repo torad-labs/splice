@@ -39,6 +39,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.app.control.ControlServer
 import splice.app.control.ManagedHead
 import splice.core.auth.AuthDescription
@@ -69,6 +70,7 @@ import splice.usage.quota.RateLimitView
 import splice.usage.quota.UsageView
 import java.net.ServerSocket
 import java.nio.file.Files
+import java.nio.file.Path
 import io.ktor.server.routing.post as serverPost
 
 private const val TIMEOUT_MS = 10_000L
@@ -87,8 +89,8 @@ class ConsoleV4133RoutesTest {
     private lateinit var key: String
 
     @BeforeAll
-    fun setUp() {
-        val paths = StatePaths(baseOverride = Files.createTempDirectory("v4133-routes").resolve("state"))
+    fun setUp(@TempDir tempDir: Path) {
+        val paths = StatePaths(baseOverride = tempDir.resolve("state"))
         val mgmt = MgmtKey(paths)
         key = mgmt.get()
         control = ControlServer(
@@ -120,9 +122,11 @@ class ConsoleV4133RoutesTest {
     }
 
     @Test
-    fun `a PUT with no action fills the Knob default, and GET reports what was saved`() = runBlocking {
+    fun `a PUT with no action fills the Knob default, and GET reports what was saved`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
         awaitPort()
-        control.ports.budgets = BudgetStore(Files.createTempDirectory("budgets1").resolve("budgets.json"))
+        control.ports.budgets = BudgetStore(tempDir.resolve("budgets.json"))
         val put = req {
             put("$url/api/budgets") {
                 auth()
@@ -140,9 +144,9 @@ class ConsoleV4133RoutesTest {
     }
 
     @Test
-    fun `a refused budget write is a 400 naming why, and unauthorized is 401`() = runBlocking {
+    fun `a refused budget write is a 400 naming why, and unauthorized is 401`(@TempDir tempDir: Path) = runBlocking {
         awaitPort()
-        control.ports.budgets = BudgetStore(Files.createTempDirectory("budgets2").resolve("budgets.json"))
+        control.ports.budgets = BudgetStore(tempDir.resolve("budgets.json"))
         val bad = req {
             put("$url/api/budgets") {
                 auth()
@@ -167,9 +171,9 @@ class ConsoleV4133RoutesTest {
     }
 
     @Test
-    fun `alerts round-trip, and a bad webhook_url is refused with the reason`() = runBlocking {
+    fun `alerts round-trip, and a bad webhook_url is refused with the reason`(@TempDir tempDir: Path) = runBlocking {
         awaitPort()
-        control.ports.alerts = AlertStore(Files.createTempDirectory("alerts1").resolve("alerts.json"))
+        control.ports.alerts = AlertStore(tempDir.resolve("alerts.json"))
         val put = req {
             put("$url/api/alerts") {
                 auth()
@@ -194,9 +198,11 @@ class ConsoleV4133RoutesTest {
     }
 
     @Test
-    fun `test send with no saved webhook is a 409, and a real send reaches a real socket`() = runBlocking {
+    fun `test send with no saved webhook is a 409, and a real send reaches a real socket`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
         awaitPort()
-        val store = AlertStore(Files.createTempDirectory("alerts2").resolve("alerts.json"))
+        val store = AlertStore(tempDir.resolve("alerts.json"))
         control.ports.alerts = store
 
         val noHook = req { post("$url/api/alerts/test") { auth() } }
@@ -271,7 +277,9 @@ class ConsoleV4133RoutesTest {
     // proves the WHOLE wired path — decode current, build the overrides map, call the real writer —
     // reaches a 200, which is what CaptureRoutes itself is answerable for.
     @Test
-    fun `a wired capture PUT decodes the topology, builds the overrides map, and lands a real write`() =
+    fun `a wired capture PUT decodes the topology, builds the overrides map, and lands a real write`(
+        @TempDir tmp: Path,
+    ) =
         runBlocking {
             awaitPort()
             val captureFile = "[heads.$HEAD_KEY]\nport = 9001\noverrides = { trace = \"true\" }\n"
@@ -294,7 +302,6 @@ class ConsoleV4133RoutesTest {
                     ),
                 ),
             )
-            val tmp = Files.createTempDirectory("capture-write")
             val file = tmp.resolve("splice.toml").also { Files.writeString(it, captureFile) }
             control.ports.topology = TopologyWriter(
                 file,

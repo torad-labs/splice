@@ -26,6 +26,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.config.ConfigService
@@ -39,7 +40,7 @@ import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.UsageView
-import java.nio.file.Files
+import java.nio.file.Path
 
 private class GateFakeHead(
     override val key: String,
@@ -80,8 +81,10 @@ class ControlServerGateTest {
      *  35881955038). Red if listeningPort reports the configured 0 instead of what the connector
      *  bound, or keeps a stale bound port after stop. */
     @Test
-    fun `a control plane started on port 0 reports the port it bound and serves on it`() = runTest {
-        val paths = StatePaths(baseOverride = Files.createTempDirectory("control-port-zero").resolve("state"))
+    fun `a control plane started on port 0 reports the port it bound and serves on it`(
+        @TempDir tempDir: Path,
+    ) = runTest {
+        val paths = StatePaths(baseOverride = tempDir.resolve("state"))
         val server = ControlServer(0, emptyMap(), ConfigService(paths), MgmtKey(paths), { "" }, {})
         server.start()
         try {
@@ -95,8 +98,7 @@ class ControlServerGateTest {
     }
 
     @Test
-    fun `lowercase bearer scheme is accepted on a guarded control route`() = runTest {
-        val tmp = Files.createTempDirectory("control-bearer")
+    fun `lowercase bearer scheme is accepted on a guarded control route`(@TempDir tmp: Path) = runTest {
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
         val server = ControlServer(0, emptyMap(), ConfigService(paths), mgmt, { "" }, {})
@@ -117,8 +119,8 @@ class ControlServerGateTest {
     }
 
     @Test
-    fun `an unauthorized start never reaches the extracted feature`() = runTest {
-        val paths = StatePaths(baseOverride = Files.createTempDirectory("control-start-guard").resolve("state"))
+    fun `an unauthorized start never reaches the extracted feature`(@TempDir tempDir: Path) = runTest {
+        val paths = StatePaths(baseOverride = tempDir.resolve("state"))
         val mgmt = MgmtKey(paths)
         val server = ControlServer(
             port = 0,
@@ -158,8 +160,7 @@ class ControlServerGateTest {
     }
 
     @Test
-    fun `api heads emits numeric gate values, and unlimited mode as string-or-null`() = runTest {
-        val tmp = Files.createTempDirectory("control-gate")
+    fun `api heads emits numeric gate values, and unlimited mode as string-or-null`(@TempDir tmp: Path) = runTest {
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
         val server = ControlServer(

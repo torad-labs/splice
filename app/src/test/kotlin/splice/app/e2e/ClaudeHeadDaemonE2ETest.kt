@@ -28,6 +28,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.app.Daemon
 import splice.core.auth.RefreshAttempt
 import splice.core.config.MgmtKey
@@ -37,7 +38,7 @@ import splice.core.util.Cancellables
 import splice.head.awaitListening
 import splice.topology.TopologyLoader
 import java.net.InetSocketAddress
-import java.nio.file.Files
+import java.nio.file.Path
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executors
@@ -136,8 +137,7 @@ class ClaudeHeadDaemonE2ETest {
     private val headPort = TestPorts.reserve()
 
     @BeforeAll
-    fun setUp() {
-        val tmp = Files.createTempDirectory("claude-head-e2e")
+    fun setUp(@TempDir tmp: Path) {
         val statePaths = StatePaths(baseOverride = tmp.resolve("state"))
         mgmtKey = MgmtKey(statePaths).get()
         daemon = Daemon(

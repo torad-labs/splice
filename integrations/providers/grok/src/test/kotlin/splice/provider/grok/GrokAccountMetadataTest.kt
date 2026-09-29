@@ -11,14 +11,15 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.RefreshAttempt
 import java.nio.file.Files
+import java.nio.file.Path
 
 class GrokAccountMetadataTest {
     @Test
-    fun `refresh preserves labeled metadata and never decorates the legacy primary`() = runTest {
+    fun `refresh preserves labeled metadata and never decorates the legacy primary`(@TempDir dir: Path) = runTest {
         for (labeled in listOf(false, true)) {
-            val dir = Files.createTempDirectory("grok-account-metadata")
             val file = dir.resolve("auth.json")
             val metadata = if (labeled) {
                 ""","splice_auth_kind":"grok-oauth","splice_account_label":"backup""""

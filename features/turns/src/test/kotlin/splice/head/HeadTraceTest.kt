@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -152,8 +153,8 @@ class HeadTraceTest {
     }
 
     @BeforeAll
-    fun setUp() {
-        tmp = Files.createTempDirectory("head-trace-test")
+    fun setUp(@TempDir tempDir: Path) {
+        tmp = tempDir
         upstream.start()
     }
 

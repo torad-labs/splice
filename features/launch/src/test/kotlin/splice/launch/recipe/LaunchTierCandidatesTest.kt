@@ -7,16 +7,16 @@ import kotlinx.serialization.json.buildJsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
 import splice.launch.HeadTrees
 import splice.launch.LaunchSpec
 import splice.launch.ModelTiers
-import java.nio.file.Files
+import java.nio.file.Path
 
-class LaunchTierCandidatesTest {
+class LaunchTierCandidatesTest(@param:TempDir private val tmp: Path) {
 
-    private val tmp = Files.createTempDirectory("launch-tier-candidates-test")
     private val service = LaunchService(ClaudeConfigMaterializer(tmp))
 
     private fun spec(available: List<String>, tiers: ModelTiers, pinned: String = available.first()) = LaunchSpec(

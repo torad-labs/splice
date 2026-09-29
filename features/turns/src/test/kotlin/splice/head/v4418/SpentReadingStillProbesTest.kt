@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -36,7 +37,6 @@ import splice.head.headDeps
 import splice.head.quotaFor
 import splice.head.usage.QuotaTracker
 import splice.upstream.ProviderTuning
-import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 
@@ -62,8 +62,8 @@ class SpentReadingStillProbesTest {
     private lateinit var tmp: Path
 
     @BeforeAll
-    fun setUp() = runBlocking {
-        tmp = Files.createTempDirectory("head-v4418")
+    fun setUp(@TempDir tempDir: Path) = runBlocking {
+        tmp = tempDir
         val now = System.currentTimeMillis()
         val week = QuotaWindow(100.0, now / 1_000L + SIX_DAYS_S, SEVEN_DAY_S)
         val quota = QuotaTracker(tmp.resolve("quota.json"))

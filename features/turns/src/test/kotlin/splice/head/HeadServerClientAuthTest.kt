@@ -29,6 +29,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.ClientAuthProvider
 import splice.core.auth.Credentials
@@ -44,7 +45,7 @@ import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
 import java.net.InetSocketAddress
 import java.net.Socket
-import java.nio.file.Files
+import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.time.Duration.Companion.seconds
 
@@ -161,8 +162,8 @@ class HeadServerClientAuthTest {
     }
 
     @BeforeAll
-    fun setUp() {
-        tmp = Files.createTempDirectory("client-auth-test")
+    fun setUp(@TempDir tempDir: Path) {
+        tmp = tempDir
         upstream.start()
     }
 

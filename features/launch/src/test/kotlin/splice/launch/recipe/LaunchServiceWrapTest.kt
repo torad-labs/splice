@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
 import splice.client.wrap.WrapState
@@ -19,15 +20,13 @@ import splice.client.wrap.WrapStateStore
 import splice.client.wrap.WrappedHead
 import splice.launch.HeadTrees
 import splice.launch.LaunchSpec
-import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
 
-class LaunchServiceWrapTest {
-
-    private val tmp = Files.createTempDirectory("launch-service-wrap-test")
+class LaunchServiceWrapTest(@param:TempDir private val tmp: Path) {
 
     private fun spec(head: String, forwardClientAuth: Boolean = false) = LaunchSpec(
         trees = HeadTrees(tmp.resolve(".claude-$head")),

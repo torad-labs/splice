@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.core.config.RunningJar
 import splice.core.terminal.TerminalOutput
 import splice.core.testing.TestPorts
@@ -94,7 +95,7 @@ class SupervisedStartTest {
     // ── DaemonLaunch, the composer ────────────────────────────────────────────────────────────
 
     /** A spawn that must never happen: records the attempt, starts nothing. */
-    private class RecordingSpawn(health: DaemonHealth) :
+    private class RecordingSpawn(health: DaemonHealth, private val logs: Path) :
         DaemonSpawn(TerminalOutput(::println), health, RunningJar { null }) {
         var spawns = 0
         override fun startableJar(port: Int): Path? = Path.of("/nonexistent/splice.jar")
@@ -103,7 +104,7 @@ class SupervisedStartTest {
             return false
         }
         override fun printBootLogTail() = Unit
-        override fun logsDir(): Path = Files.createTempDirectory("splice-launch-test")
+        override fun logsDir(): Path = logs
     }
 
     private fun captured(block: () -> Unit): String {
@@ -119,10 +120,10 @@ class SupervisedStartTest {
     }
 
     @Test
-    fun `with the unit on the box the CLI starts it, waits, and never spawns beside it`() {
+    fun `with the unit on the box the CLI starts it, waits, and never spawns beside it`(@TempDir logs: Path) {
         val ctl = FakeSystemctl()
         val health = DaemonHealth()
-        val spawn = RecordingSpawn(health)
+        val spawn = RecordingSpawn(health, logs)
         val launch = DaemonLaunch(out, health, spawn, SupervisedStart(ctl, env(), settings), startupPolls = 2)
         var up = true
         val out = captured { up = launch.ensureDaemon(TestPorts.reserve()) }
@@ -135,14 +136,14 @@ class SupervisedStartTest {
     }
 
     @Test
-    fun `a selector override or no unit takes the raw spawn, and systemctl start is never run`() {
+    fun `a selector override or no unit takes the raw spawn, and systemctl start is never run`(@TempDir logs: Path) {
         val arms = listOf(
             FakeSystemctl() to env("SPLICE_STATE_DIR" to "/tmp/x"),
             FakeSystemctl(unitPresent = false) to env(),
         )
         for ((ctl, reader) in arms) {
             val health = DaemonHealth()
-            val spawn = RecordingSpawn(health)
+            val spawn = RecordingSpawn(health, logs)
             val launch = DaemonLaunch(out, health, spawn, SupervisedStart(ctl, reader, settings), startupPolls = 1)
             val out = captured { assertFalse(launch.ensureDaemon(TestPorts.reserve())) }
             assertEquals(1, spawn.spawns, "the raw spawn is still the cold start here:\n$out")

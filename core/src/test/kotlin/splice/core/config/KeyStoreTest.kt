@@ -134,8 +134,7 @@ class KeyStoreTest {
     }
 
     @Test
-    fun `unreadable store aborts the write and the file is byte-identical after - SH-11`() {
-        val dir = Files.createTempDirectory("keys-unreadable")
+    fun `unreadable store aborts the write and the file is byte-identical after - SH-11`(@TempDir dir: Path) {
         val path = dir.resolve("keys.toml")
         val store = KeyStore(path)
         store.write("OPENROUTER_API_KEY", "sk-a")
@@ -165,8 +164,7 @@ class KeyStoreTest {
     // misdiagnosis while the keys sat intact one parse error away. Corrupt-vs-empty now differ by
     // ONE daemon-log line per file version (mtime-gated, or auth paths would firehose the log).
     @Test
-    fun `an unreadable store logs corrupt-vs-empty once per file version`() {
-        val dir = Files.createTempDirectory("keys-corrupt-log")
+    fun `an unreadable store logs corrupt-vs-empty once per file version`(@TempDir dir: Path) {
         val path = dir.resolve("keys.toml")
         val log = mutableListOf<String>()
         val store = KeyStore(path, log = LogSink { log += it })
@@ -186,8 +184,7 @@ class KeyStoreTest {
     // DR-9 race; their 64-reader probe logged 29 warnings across 20 versions. CAS now: barriered
     // reader rounds, one distinct mtime each, must produce exactly one line per broken version.
     @Test
-    fun `concurrent readers of an unreadable store warn exactly once per version - DR-40`() {
-        val dir = Files.createTempDirectory("keys-concurrent-warn")
+    fun `concurrent readers of an unreadable store warn exactly once per version - DR-40`(@TempDir dir: Path) {
         val path = dir.resolve("keys.toml")
         val log = java.util.concurrent.ConcurrentLinkedQueue<String>()
         val store = KeyStore(path, log = LogSink { log += it })
@@ -311,8 +308,7 @@ class KeyStoreTest {
     // read "empty", found nothing to remove and returned false; had it found the key it would have
     // persisted a map missing every sibling. The refusal is the same sentence write() gives.
     @Test
-    fun `unreadable store aborts unset the same way and the file is byte-identical after - SH-11`() {
-        val dir = Files.createTempDirectory("keys-unreadable-unset")
+    fun `unreadable store aborts unset the same way and the file is byte-identical after - SH-11`(@TempDir dir: Path) {
         val path = dir.resolve("keys.toml")
         val store = KeyStore(path)
         store.write("OPENROUTER_API_KEY", "sk-a")
@@ -330,8 +326,7 @@ class KeyStoreTest {
     }
 
     @Test
-    fun `two concurrent writers of different names both land - SH-11`() {
-        val dir = Files.createTempDirectory("keys-concurrent")
+    fun `two concurrent writers of different names both land - SH-11`(@TempDir dir: Path) {
         val path = dir.resolve("keys.toml")
         // two INSTANCES (distinct channels — the cross-process shape, same-JVM variant)
         val a = KeyStore(path)

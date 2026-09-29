@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.SHIM_VERSION
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
@@ -48,7 +49,7 @@ import splice.usage.perf.PerfRowsWindow
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.RateLimitView
 import splice.usage.quota.UsageView
-import java.nio.file.Files
+import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -105,8 +106,7 @@ class ControlServerTest {
     }
 
     @BeforeAll
-    fun setUp() {
-        val tmp = Files.createTempDirectory("control-test")
+    fun setUp(@TempDir tmp: Path) {
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
         key = mgmt.get()
@@ -223,11 +223,12 @@ class ControlServerTest {
     }
 
     @Test
-    fun `degraded health denominator counts configured heads so ready plus failed equals heads`() = runTest {
+    fun `degraded health denominator counts configured heads so ready plus failed equals heads`(
+        @TempDir tmp: Path,
+    ) = runTest {
         // An ASSEMBLY-failed head never enters the `heads` map but IS counted in failedHeads;
         // reporting heads.size (assembled only) broke the readyHeads + failedHeads == heads
         // invariant a launch shim waits on. Report the configured total (review 2026-07-23).
-        val tmp = Files.createTempDirectory("control-degraded")
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val degraded = ControlServer(
             port = 0,
@@ -582,10 +583,9 @@ class ControlServerPerHeadConfigTest {
     fun tearDown() = client.close()
 
     @Test
-    fun `config head param folds that head's override layer into effective - JW-06`() = runTest {
+    fun `config head param folds that head's override layer into effective - JW-06`(@TempDir tmp: Path) = runTest {
         // [heads.<key>.overrides] was a real precedence layer that /api/config could not show:
         // "why is kimi's maxInflight 8 when the panel says 100" was unanswerable.
-        val tmp = Files.createTempDirectory("control-perhead")
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
         val svc = ConfigService(

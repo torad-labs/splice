@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshAttempt
 import java.nio.file.Files
@@ -46,8 +47,7 @@ class GrokBackoffExpiryTest {
     // "backoff armed" and the +31s arm holds "token lapsed"; neither holds BOTH at once, which is
     // the only state where this is visible.
     @Test
-    fun `an armed backoff never serves a token past its own expiry - DR-146`() = runTest {
-        val dir = Files.createTempDirectory("grok-backoff-expired")
+    fun `an armed backoff never serves a token past its own expiry - DR-146`(@TempDir dir: Path) = runTest {
         var now = 1_000_000L
         val file = authFile(dir, expiresAtMs = now + 1_000)
         val calls = AtomicInteger(0)

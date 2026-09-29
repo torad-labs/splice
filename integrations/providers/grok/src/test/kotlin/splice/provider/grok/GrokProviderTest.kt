@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshAttempt
 import splice.core.budget.NoHeadBudget
@@ -100,8 +101,8 @@ class GrokProviderTest {
     }
 
     @BeforeAll
-    fun setUp() = runBlocking {
-        tmp = Files.createTempDirectory("grok-it")
+    fun setUp(@TempDir tempDir: Path) = runBlocking {
+        tmp = tempDir
         head = HeadServer(
             provider = provider(oauthAuth(tmp)),
             listenPort = 0,
@@ -138,11 +139,13 @@ class GrokProviderTest {
     }
 
     @Test
-    fun `grok quirks - xhigh passes through (upstream clamps pre-4_6), detailed summary, session cache key`() = runBlocking {
+    fun `grok quirks - xhigh passes through (upstream clamps pre-4_6), detailed summary, session cache key`(
+        @TempDir tempDir: Path,
+    ) = runBlocking {
         val parsed = AnthropicParse.parseAnthropicBody(
             """{"model":"grok-4.5","effort":"xhigh","messages":[{"role":"user","content":"first"}]}""",
         )
-        val grokProvider = provider(oauthAuth(Files.createTempDirectory("q")))
+        val grokProvider = provider(oauthAuth(tempDir))
         val built = grokProvider.buildTurn(parsed, compact = false, sessionId = "s1")
         val reasoning = built.requestBody["reasoning"]!!.jsonObject
         // 2026-08-13: xhigh is native on grok-4.6+; on 4.5 xAI clamps it to high server-side.
@@ -161,13 +164,13 @@ class GrokProviderTest {
     }
 
     @Test
-    fun `conv-id affinity rides the per-turn BuiltTurn, never shared provider state`() {
+    fun `conv-id affinity rides the per-turn BuiltTurn, never shared provider state`(@TempDir tempDir: Path) {
         // A @Volatile lastSessionId raced concurrent sessions into each other's affinity header
         // (audit 2026-07-18) — the header now travels with the turn it belongs to.
         val parsed = AnthropicParse.parseAnthropicBody(
             """{"model":"grok-4.5","messages":[{"role":"user","content":"hi"}]}""",
         )
-        val grokProvider = provider(oauthAuth(Files.createTempDirectory("hdr")))
+        val grokProvider = provider(oauthAuth(tempDir))
         val turnA = grokProvider.buildTurn(parsed, compact = false, sessionId = "conv-abc")
         val turnB = grokProvider.buildTurn(parsed, compact = false, sessionId = "conv-xyz")
         assertEquals("conv-abc", turnA.extraHeaders["x-grok-conv-id"])
@@ -181,8 +184,7 @@ class GrokProviderTest {
     }
 
     @Test
-    fun `oauth auth - reads access token, refresh rotates it, masked describe`() = runBlocking {
-        val dir = Files.createTempDirectory("oauth")
+    fun `oauth auth - reads access token, refresh rotates it, masked describe`(@TempDir dir: Path) = runBlocking {
         val auth = oauthAuth(dir, access = "first-access", refresh = "first-refresh")
         assertEquals("first-access", (auth.credentials() as Credentials.Bearer).token)
         assertNull((auth.credentials() as Credentials.Bearer).accountId) // grok carries no account id
@@ -212,8 +214,7 @@ class GrokProviderTest {
     // pre-gate flattened it to "no credential file — not logged in" while intact tokens sat
     // unreadable one chmod away. ReadFailed's flatten line says NOT-logged-out.
     @Test
-    fun `an inaccessible auth file is read-failed, never logged-out - DR-59`(): Unit = runBlocking {
-        val dir = Files.createTempDirectory("grok-dr59")
+    fun `an inaccessible auth file is read-failed, never logged-out - DR-59`(@TempDir dir: Path): Unit = runBlocking {
         val lockedDir = Files.createDirectories(dir.resolve("locked"))
         val lockedAuth = lockedDir.resolve("auth.json")
         Files.writeString(lockedAuth, """{"tokens":{"access_token":"tok"},"expires":1}""")

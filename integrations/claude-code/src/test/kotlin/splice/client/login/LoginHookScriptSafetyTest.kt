@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardWatchEventKinds
@@ -179,9 +180,7 @@ private object LoginProcesses {
 private const val SPAWN_VISIBLE_MS = 10_000L
 private const val SPAWN_POLL_MS = 10L
 
-class LoginHookScriptSafetyTest {
-
-    private val tmp: Path = Files.createTempDirectory("login-hook-safety")
+class LoginHookScriptSafetyTest(@param:TempDir private val tmp: Path) {
 
     private fun spec(outcomeFile: String = "/nonexistent/receipt") = LoginHookSpec(
         loginCommand = "claude-splice login",
@@ -633,9 +632,7 @@ class LoginHookScriptSafetyTest {
 // age — the 10-minute freshness contract lived only in LoginOutcomeFile.consume, which nothing in
 // production calls. A stale failure receipt from days ago announced "sign-in did not complete" on
 // a fresh session long after auth was fixed by another path. These run the real script.
-class LoginHookReceiptAgeTest {
-
-    private val tmp: Path = Files.createTempDirectory("login-hook-age")
+class LoginHookReceiptAgeTest(@param:TempDir private val tmp: Path) {
 
     private fun freshSpec(outcomeFile: String) = LoginHookSpec(
         loginCommand = "claude-splice login",

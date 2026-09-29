@@ -14,9 +14,11 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import org.junit.jupiter.api.io.TempDir
 import splice.upstream.PollRuntime
 import splice.upstream.Waiter
 import java.nio.file.Files
+import java.nio.file.Path
 
 // DR-186: the backstop InflightGateTest already puts on its racing arm ("a genuine leak hangs, and
 // must FAIL the suite, never wedge it"), applied to the other unbounded spin-wait. JUnit's
@@ -28,8 +30,10 @@ private const val HANG_BACKSTOP_S = 60L
 class CredentialLockTest {
 
     @Test
-    fun `withLock returns the block's result and releases the lock for the next caller`() = runTest {
-        val path = Files.createTempDirectory("credlock-rt").resolve("auth.json")
+    fun `withLock returns the block's result and releases the lock for the next caller`(
+        @TempDir tempDir: Path,
+    ) = runTest {
+        val path = tempDir.resolve("auth.json")
         Files.writeString(path, "{}")
         assertEquals(1, CredentialLock.withLock(path) { 1 })
         // A second sequential acquisition only succeeds if the first actually released.
@@ -38,8 +42,8 @@ class CredentialLockTest {
 
     @Test
     @Timeout(HANG_BACKSTOP_S) // DR-186: the wait below is a SPIN, and a spin that never ends wedges the suite
-    fun `withLock serializes two concurrent same-JVM callers`() = runBlocking {
-        val path = Files.createTempDirectory("credlock-serial").resolve("auth.json")
+    fun `withLock serializes two concurrent same-JVM callers`(@TempDir tempDir: Path) = runBlocking {
+        val path = tempDir.resolve("auth.json")
         Files.writeString(path, "{}")
         val order = mutableListOf<String>()
         val aReleased = CompletableDeferred<Unit>()
@@ -69,8 +73,8 @@ class CredentialLockTest {
     }
 
     @Test
-    fun `withLock never touches the credential file - it locks a sibling lock file`() = runTest {
-        val path = Files.createTempDirectory("credlock-sibling").resolve("auth.json")
+    fun `withLock never touches the credential file - it locks a sibling lock file`(@TempDir tempDir: Path) = runTest {
+        val path = tempDir.resolve("auth.json")
         Files.writeString(path, """{"token":"secret"}""")
         val lockPath = path.resolveSibling("auth.json.lock")
         assertFalse(Files.exists(lockPath)) // not created until first use
@@ -82,11 +86,10 @@ class CredentialLockTest {
     }
 
     @Test
-    fun `a peer holding the lock past the budget degrades to unlocked - SH-06`() = runBlocking {
+    fun `a peer holding the lock past the budget degrades to unlocked - SH-06`(@TempDir dir: Path) = runBlocking {
         // The live-slow-peer case: a second channel holds the sibling .lock for LONGER than the
         // budget. withLock must return within budget+slack, log the honest degrade line, and the
         // block must still have run (bounded-and-unlocked beats hung; G1's layers own the race).
-        val dir = Files.createTempDirectory("credlock-degrade")
         val path = dir.resolve("auth.json")
         Files.writeString(path, "{}")
         val lockPath = dir.resolve("auth.json.lock")
@@ -119,8 +122,7 @@ class CredentialLockTest {
     }
 
     @Test
-    fun `a peer releasing inside the budget hands the lock over normally - SH-06`() = runBlocking {
-        val dir = Files.createTempDirectory("credlock-handover")
+    fun `a peer releasing inside the budget hands the lock over normally - SH-06`(@TempDir dir: Path) = runBlocking {
         val path = dir.resolve("auth.json")
         Files.writeString(path, "{}")
         val lockPath = dir.resolve("auth.json.lock")

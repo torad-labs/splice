@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.client.mcp.DirectoryProbe
 import splice.client.mcp.McpAccessKey
 import splice.client.mcp.McpSharing
@@ -30,7 +31,7 @@ import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.config.TurnKey
 import java.net.Socket
-import java.nio.file.Files
+import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -54,8 +55,8 @@ class ControlServerAccessTest {
     private val port: Int get() = control.listeningPort
 
     @BeforeAll
-    fun setUp() {
-        val paths = StatePaths(baseOverride = Files.createTempDirectory("control-access").resolve("state"))
+    fun setUp(@TempDir tempDir: Path) {
+        val paths = StatePaths(baseOverride = tempDir.resolve("state"))
         val mgmt = MgmtKey(paths, log = {})
         mgmtKey = mgmt.get()
         turnKey = TurnKey(mgmt).get()

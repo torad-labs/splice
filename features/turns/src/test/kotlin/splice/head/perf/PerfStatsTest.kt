@@ -6,6 +6,7 @@ package splice.head.perf
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.model.ModelRates
@@ -14,12 +15,12 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSnapshot
 import splice.core.perf.TurnPerf
 import java.nio.file.Files
+import java.nio.file.Path
 
 class PerfStatsTest {
 
     @Test
-    fun `record then tailNumeric roundtrips numeric fields`() {
-        val tmp = Files.createTempDirectory("perf-stats")
+    fun `record then tailNumeric roundtrips numeric fields`(@TempDir tmp: Path) {
         val stats = PerfStats(tmp.resolve("perf.jsonl"), clock = { 123L })
         val perf = TurnPerf { 0L }
         perf.setCount(PerfKeys.OUT_TOKENS, 850)
@@ -36,8 +37,8 @@ class PerfStatsTest {
     }
 
     @Test
-    fun `a row names the client session when the turn carried one`() {
-        val file = Files.createTempDirectory("perf-stats").resolve("perf.jsonl")
+    fun `a row names the client session when the turn carried one`(@TempDir tempDir: Path) {
+        val file = tempDir.resolve("perf.jsonl")
         val stats = PerfStats(file, clock = { 5L })
         val tagged = PerfRowMeta("m", "client_abort", compact = false, session = "a6b15bd7")
         stats.record(tagged, TurnPerf { 0L }.snapshot())
@@ -52,8 +53,8 @@ class PerfStatsTest {
     }
 
     @Test
-    fun `a switched turn records its account and cold cache`() {
-        val file = Files.createTempDirectory("perf-stats").resolve("perf.jsonl")
+    fun `a switched turn records its account and cold cache`(@TempDir tempDir: Path) {
+        val file = tempDir.resolve("perf.jsonl")
         val stats = PerfStats(file, clock = { 7L })
         val meta = PerfRowMeta("m", "ok", compact = false, account = "backup", cacheCold = true)
 
@@ -66,8 +67,7 @@ class PerfStatsTest {
     }
 
     @Test
-    fun `tailNumeric bounds to tailN newest-last and skips corrupt lines`() {
-        val tmp = Files.createTempDirectory("perf-stats")
+    fun `tailNumeric bounds to tailN newest-last and skips corrupt lines`(@TempDir tmp: Path) {
         val file = tmp.resolve("perf.jsonl")
         val stats = PerfStats(file, clock = { 1L })
         repeat(5) { i ->
@@ -92,8 +92,8 @@ class PerfStatsTest {
      *  same silent-undercount class this campaign keeps finding. The control-plane reader already
      *  counted its rejects; this one did not. */
     @Test
-    fun `a NUL hole between two valid rows yields the two rows and reports one skipped`() {
-        val file = Files.createTempDirectory("perf-stats").resolve("perf.jsonl")
+    fun `a NUL hole between two valid rows yields the two rows and reports one skipped`(@TempDir tempDir: Path) {
+        val file = tempDir.resolve("perf.jsonl")
         val logged = mutableListOf<String>()
         val stats = PerfStats(file, clock = { 7L }, log = { logged += it })
         val hole = "\u0000".repeat(300)
@@ -115,8 +115,8 @@ class PerfStatsTest {
      *  bury the signal the count carries. Both halves matter — the latch must not suppress the COUNT
      *  (the magnitude lives there) and must not repeat the LOG. */
     @Test
-    fun `many torn rows are counted in full and logged only once`() {
-        val file = Files.createTempDirectory("perf-stats").resolve("perf.jsonl")
+    fun `many torn rows are counted in full and logged only once`(@TempDir tempDir: Path) {
+        val file = tempDir.resolve("perf.jsonl")
         val logged = mutableListOf<String>()
         val stats = PerfStats(file, clock = { 7L }, log = { logged += it })
         val hole = "\u0000".repeat(64)
@@ -141,8 +141,8 @@ class PerfStatsTest {
      *  the same time — it is keyed on the INSTANCE, so a second episode of damage adds to the count
      *  and does NOT add a second line. */
     @Test
-    fun `the count survives a healthy read and a second episode adds no second log line`() {
-        val file = Files.createTempDirectory("perf-stats").resolve("perf.jsonl")
+    fun `the count survives a healthy read and a second episode adds no second log line`(@TempDir tempDir: Path) {
+        val file = tempDir.resolve("perf.jsonl")
         val logged = mutableListOf<String>()
         val stats = PerfStats(file, clock = { 7L }, log = { logged += it })
         val hole = "\u0000".repeat(64)
@@ -164,8 +164,7 @@ class PerfStatsTest {
     }
 
     @Test
-    fun `missing file reads empty`() {
-        val tmp = Files.createTempDirectory("perf-stats")
+    fun `missing file reads empty`(@TempDir tmp: Path) {
         assertTrue(PerfStats(tmp.resolve("absent.jsonl")).tailNumeric(5).isEmpty())
     }
 
@@ -175,8 +174,10 @@ class PerfStatsTest {
      *  session always begins before its first row is written, so a start reported for a file read
      *  whole would mark every fresh session's figure `≥` over nothing cut. */
     @Test
-    fun `sessionTail carries each turn's model, and the tail's start only when history was cut`() {
-        val file = Files.createTempDirectory("perf-stats").resolve("perf.jsonl")
+    fun `sessionTail carries each turn's model, and the tail's start only when history was cut`(
+        @TempDir tempDir: Path,
+    ) {
+        val file = tempDir.resolve("perf.jsonl")
         val session = "a6b15bd7"
         fun row(ts: Long, model: String, pad: Int = 0) =
             "{\"ts\":$ts,\"model\":\"$model\",\"outcome\":\"ok\",\"compact\":false," +
@@ -204,8 +205,7 @@ class PerfStatsTest {
      *  it with the very row it appends, so the total is the sum of the session's rows by construction,
      *  and a session of any length is priced whole. */
     @Test
-    fun `record feeds each session's running total with the row it appends, past the tail's bound`() {
-        val dir = Files.createTempDirectory("perf-stats")
+    fun `record feeds each session's running total with the row it appends, past the tail's bound`(@TempDir dir: Path) {
         val opus = "claude-opus-5-5"
         val price = TurnPrice(
             ModelCatalog(

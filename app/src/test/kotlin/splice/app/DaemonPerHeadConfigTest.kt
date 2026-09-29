@@ -9,10 +9,12 @@ package splice.app
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.RefreshAttempt
 import splice.core.config.StatePaths
 import splice.topology.TopologyLoader
 import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.time.Duration.Companion.milliseconds
 
 class DaemonPerHeadConfigTest {
@@ -53,8 +55,7 @@ class DaemonPerHeadConfigTest {
     """.trimIndent()
 
     @Test
-    fun `each head resolves its OWN overrides, not one shared view`() {
-        val tmp = Files.createTempDirectory("daemon-perhead-test")
+    fun `each head resolves its OWN overrides, not one shared view`(@TempDir tmp: Path) {
         val authFile = tmp.resolve("auth.json")
         Files.writeString(authFile, """{"tokens":{"access_token":"t","account_id":"a","refresh_token":"r"}}""")
         val topology = TopologyLoader.parse(topologyToml(authFile.toString().replace("\\", "/")))

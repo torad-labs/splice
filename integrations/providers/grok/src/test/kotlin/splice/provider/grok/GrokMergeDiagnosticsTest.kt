@@ -9,8 +9,10 @@ package splice.provider.grok
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.RefreshAttempt
 import java.nio.file.Files
+import java.nio.file.Path
 
 // DR-73 (invariant audit): the persist-side merge re-read is the one credential parse DR-65 did
 // not seal on grok — a file gone malformed between the pre-refresh read and the persist quoted
@@ -19,9 +21,8 @@ import java.nio.file.Files
 class GrokMergeDiagnosticsTest {
 
     @Test
-    fun `merge diagnostics never quote credential bytes - DR-73`() = runTest {
+    fun `merge diagnostics never quote credential bytes - DR-73`(@TempDir dir: Path) = runTest {
         val sentinel = "xai-SENTINEL-MERGE-LEAK"
-        val dir = Files.createTempDirectory("grok-merge-leak")
         val file = dir.resolve(".grok").resolve("auth.json")
         Files.createDirectories(file.parent)
         Files.writeString(file, """{"tokens":{"access_token":"acc","refresh_token":"R1"}}""")

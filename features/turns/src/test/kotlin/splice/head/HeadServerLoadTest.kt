@@ -30,6 +30,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -46,7 +47,7 @@ import java.io.InputStreamReader
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
-import java.nio.file.Files
+import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -193,9 +194,8 @@ class HeadServerLoadTest {
     }
 
     @BeforeAll
-    fun setUp() = runBlocking {
+    fun setUp(@TempDir tmp: Path) = runBlocking {
         mock = HoldingSseUpstream()
-        val tmp = Files.createTempDirectory("head-load")
         val catalog = ModelCatalog(
             discoveryPrefix = "claude-codex--",
             models = listOf(ModelEntry("gpt-5.6-sol", "Codex 5.6 Sol", contextWindow = 272000)),

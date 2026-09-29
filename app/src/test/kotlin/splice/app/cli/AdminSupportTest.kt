@@ -6,7 +6,9 @@ package splice.app.cli
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
+import java.nio.file.Path
 
 class AdminSupportTest {
 
@@ -17,8 +19,8 @@ class AdminSupportTest {
     // so a daemon cold start can never become `java -jar <someone-else's>.jar daemon` and doctor can
     // never report OK on a jar that has no splice Main-Class.
     @Test
-    fun `selfJar ignores a single-entry launcher classpath`() {
-        val launcher = Files.createTempDirectory("selfjar").resolve("launcher.jar")
+    fun `selfJar ignores a single-entry launcher classpath`(@TempDir tempDir: Path) {
+        val launcher = tempDir.resolve("launcher.jar")
         Files.writeString(launcher, "not a splice build")
         val saved = System.getProperty("java.class.path")
         try {

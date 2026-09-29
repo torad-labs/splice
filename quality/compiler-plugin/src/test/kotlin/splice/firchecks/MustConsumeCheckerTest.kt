@@ -8,12 +8,14 @@ import org.jetbrains.kotlin.cli.jvm.K2JVMCompiler
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.io.path.writeText
 
-class MustConsumeCheckerTest {
+class MustConsumeCheckerTest(@param:TempDir private val workDir: Path) {
 
     @Test
     fun `a discarded MustConsume value is a compile error`() {
@@ -102,7 +104,6 @@ class MustConsumeCheckerTest {
             "fixture resource not found on the test classpath: $resource"
         }.bufferedReader().use { it.readText() }
 
-        val workDir = Files.createTempDirectory("must-consume-fixture")
         val srcFile = workDir.resolve(fileName)
         srcFile.writeText(source)
         val outDir = Files.createDirectories(workDir.resolve("out"))

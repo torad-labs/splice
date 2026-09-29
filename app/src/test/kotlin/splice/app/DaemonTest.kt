@@ -31,6 +31,7 @@ import org.junit.jupiter.api.Assertions.fail
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.app.daemon.DaemonLock
 import splice.core.auth.RefreshAttempt
 import splice.core.config.Knob
@@ -80,8 +81,7 @@ class DaemonTest {
     """.trimIndent()
 
     @BeforeAll
-    fun setUp() {
-        val tmp = Files.createTempDirectory("daemon-test")
+    fun setUp(@TempDir tmp: Path) {
         val authFile = tmp.resolve("auth.json")
         Files.writeString(authFile, """{"tokens":{"access_token":"tok-1","account_id":"acct-1","refresh_token":"r"}}""")
         statePaths = StatePaths(baseOverride = tmp.resolve("state"))
@@ -260,13 +260,14 @@ class DaemonTest {
     """.trimIndent()
 
     @Test
-    fun `degraded boot - an unknown-provider head is failed while the valid head serves`() = runBlocking {
+    fun `degraded boot - an unknown-provider head is failed while the valid head serves`(
+        @TempDir tmp: Path,
+    ) = runBlocking {
         // finding 3 (review 2026-07-23): a head whose provider does not exist never enters the `heads`
         // map — assembleDaemonHeads routes it to `failed` — so /health must report the CONFIGURED total
         // as `heads`, else the launch shim's readyHeads + failedHeads == heads never converges. The
         // discriminating case: heads.size (=1, assembled only) gives 1 == 1+1 (false); topology.heads.size
         // (=2) gives 2 == 1+1 (true). One real head + one ghost, on their own ports.
-        val tmp = Files.createTempDirectory("daemon-degraded")
         val authFile = tmp.resolve("auth.json")
         Files.writeString(authFile, """{"tokens":{"access_token":"tok-1","account_id":"acct-1","refresh_token":"r"}}""")
         val degradedControl = TestPorts.reserve()
@@ -311,8 +312,7 @@ class DaemonTest {
     }
 
     @Test
-    fun `topology materializes daemon defaults without selecting a plan on first run`() {
-        val tmp = Files.createTempDirectory("topo")
+    fun `topology materializes daemon defaults without selecting a plan on first run`(@TempDir tmp: Path) {
         val path: Path = tmp.resolve("splice.toml")
         val topo = TopologyLoader.loadOrMaterialize(path)
         assertTrue(Files.exists(path))
@@ -322,8 +322,7 @@ class DaemonTest {
     }
 
     @Test
-    fun `dashboard loader prefers a checkout build and falls back to the packaged resource`() {
-        val tmp = Files.createTempDirectory("dashboard-loader")
+    fun `dashboard loader prefers a checkout build and falls back to the packaged resource`(@TempDir tmp: Path) {
         val dist = tmp.resolve("index.html")
         var packagedReads = 0
         val dashboard = DashboardHtml().source(dist) {

@@ -30,6 +30,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.app.control.ControlServer
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
@@ -37,7 +38,7 @@ import splice.core.config.StatePaths
 import splice.events.bus.ConsoleEvent
 import splice.events.bus.EventBus
 import java.net.ServerSocket
-import java.nio.file.Files
+import java.nio.file.Path
 
 private const val TIMEOUT_MS = 10_000L
 private const val POLL_MS = 25L
@@ -58,8 +59,8 @@ class EventsRouteTest {
     private val bus = EventBus()
 
     @BeforeAll
-    fun setUp() {
-        val paths = StatePaths(baseOverride = Files.createTempDirectory("events-route").resolve("state"))
+    fun setUp(@TempDir tempDir: Path) {
+        val paths = StatePaths(baseOverride = tempDir.resolve("state"))
         val mgmt = MgmtKey(paths)
         key = mgmt.get()
         control = ControlServer(

@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -32,7 +33,6 @@ import splice.head.TestResponsesProvider
 import splice.head.awaitListening
 import splice.head.headDeps
 import splice.upstream.ProviderTuning
-import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 
@@ -64,8 +64,8 @@ class DefaultRequestCapTest {
     private val port: Int get() = head.port
 
     @BeforeAll
-    fun setUp() = runBlocking {
-        tmp = Files.createTempDirectory("head-v4374")
+    fun setUp(@TempDir tempDir: Path) = runBlocking {
+        tmp = tempDir
         val catalog = ModelCatalog(
             discoveryPrefix = "claude-codex--",
             models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),

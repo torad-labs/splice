@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
 import splice.client.resume.SessionOwnership
@@ -23,9 +24,8 @@ import splice.launch.LaunchSpec
 import java.nio.file.Files
 import java.nio.file.Path
 
-class LaunchResumeSpellingsTest {
+class LaunchResumeSpellingsTest(@param:TempDir private val tmp: Path) {
 
-    private val tmp = Files.createTempDirectory("launch-resume-spellings-test")
     private val service = LaunchService(ClaudeConfigMaterializer(tmp))
 
     private fun spec(

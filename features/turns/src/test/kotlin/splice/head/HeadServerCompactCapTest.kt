@@ -35,6 +35,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -45,6 +46,7 @@ import splice.core.turn.WatchdogBudget
 import splice.upstream.ProviderTuning
 import splice.upstream.transport.UpstreamClient
 import java.nio.file.Files
+import java.nio.file.Path
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.time.Duration.Companion.seconds
 
@@ -55,9 +57,10 @@ private class CapFakeAuth : RefreshableAuthProvider {
 }
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-class HeadServerCompactCapTest {
+class HeadServerCompactCapTest(@param:TempDir private val root: Path) {
 
     private val mock = MockChatGptUpstream()
+    private var built = 0
     private val client = HttpClient(CIO) {
         defaultRequest { bearerAuth("test-inference-token") }
     }
@@ -77,7 +80,7 @@ class HeadServerCompactCapTest {
     }
 
     private fun head(watchdog: WatchdogBudget): HeadServer {
-        val tmp = Files.createTempDirectory("head-compact-cap")
+        val tmp = Files.createDirectory(root.resolve("head-${built++}"))
         return HeadServer(
             provider = TestResponsesProvider(
                 tuning = ProviderTuning(

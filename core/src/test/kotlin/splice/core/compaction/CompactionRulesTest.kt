@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -19,9 +20,8 @@ private const val MODEL_TEXT = "model instructions"
 private const val PROJECT_TEXT = "project instructions"
 private const val PROJECT_MODEL_TEXT = "project model instructions"
 
-class CompactionRulesTest {
+class CompactionRulesTest(@param:TempDir private val dir: Path) {
 
-    private val dir: Path = Files.createTempDirectory("v4136")
     private val projectA: Path = Files.createDirectories(dir.resolve("work/alpha"))
     private val projectB: Path = Files.createDirectories(dir.resolve("work/beta"))
 

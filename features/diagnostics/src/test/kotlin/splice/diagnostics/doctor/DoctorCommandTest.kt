@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.core.SHIM_VERSION
 import splice.core.testing.TestPorts
 import splice.core.util.EnvReader
@@ -68,8 +69,7 @@ class DoctorCommandTest {
     // and doctor said "no topology yet — splice init" over a PRESENT operator config. Only
     // proven absence is first-run; indeterminate access is a Broken FAIL naming the path.
     @Test
-    fun `an inaccessible config parent reports broken, never first-run - DR-69`() {
-        val tmp = Files.createTempDirectory("doctor-dr69")
+    fun `an inaccessible config parent reports broken, never first-run - DR-69`(@TempDir tmp: Path) {
         val bin = Files.createDirectories(tmp.resolve("bin"))
         val share = Files.createDirectories(tmp.resolve("share"))
         val configDir = Files.createDirectories(tmp.resolve("config").resolve("splice"))
@@ -153,8 +153,7 @@ class DoctorCommandTest {
     """.trimIndent()
 
     @Test
-    fun `a client-auth head reads as configured, never as a missing api key`() {
-        val tmp = Files.createTempDirectory("doctor-client-auth")
+    fun `a client-auth head reads as configured, never as a missing api key`(@TempDir tmp: Path) {
         val bin = Files.createDirectories(tmp.resolve("bin"))
         val share = Files.createDirectories(tmp.resolve("share"))
         val configDir = Files.createDirectories(tmp.resolve("config").resolve("splice"))
@@ -175,8 +174,7 @@ class DoctorCommandTest {
     }
 
     @Test
-    fun `an api-key head with no explicit env resolves the derived KEY_API_KEY`() {
-        val tmp = Files.createTempDirectory("doctor-derived")
+    fun `an api-key head with no explicit env resolves the derived KEY_API_KEY`(@TempDir tmp: Path) {
         val bin = Files.createDirectories(tmp.resolve("bin"))
         val share = Files.createDirectories(tmp.resolve("share"))
         val configDir = Files.createDirectories(tmp.resolve("config").resolve("splice"))
@@ -194,8 +192,7 @@ class DoctorCommandTest {
     }
 
     @Test
-    fun `a complete install with auth passes`() {
-        val tmp = Files.createTempDirectory("doctor-green")
+    fun `a complete install with auth passes`(@TempDir tmp: Path) {
         val bin = Files.createDirectories(tmp.resolve("bin"))
         val share = Files.createDirectories(tmp.resolve("share"))
         val configDir = Files.createDirectories(tmp.resolve("config").resolve("splice"))
@@ -214,8 +211,7 @@ class DoctorCommandTest {
     }
 
     @Test
-    fun `an absent mgmt-key with the daemon stopped is an INFO, never a failure`() {
-        val tmp = Files.createTempDirectory("doctor-mgmtkey")
+    fun `an absent mgmt-key with the daemon stopped is an INFO, never a failure`(@TempDir tmp: Path) {
         val bin = Files.createDirectories(tmp.resolve("bin"))
         val share = Files.createDirectories(tmp.resolve("share"))
         val configDir = Files.createDirectories(tmp.resolve("config").resolve("splice"))
@@ -235,8 +231,7 @@ class DoctorCommandTest {
     }
 
     @Test
-    fun `a readable zero-head topology offers setup without a false ready verdict`() {
-        val tmp = Files.createTempDirectory("doctor-unconfigured")
+    fun `a readable zero-head topology offers setup without a false ready verdict`(@TempDir tmp: Path) {
         val bin = Files.createDirectories(tmp.resolve("bin"))
         val share = Files.createDirectories(tmp.resolve("share"))
         val configDir = Files.createDirectories(tmp.resolve("config/splice"))
@@ -250,8 +245,7 @@ class DoctorCommandTest {
     }
 
     @Test
-    fun `a fresh machine names every fix`() {
-        val tmp = Files.createTempDirectory("doctor-fresh")
+    fun `a fresh machine names every fix`(@TempDir tmp: Path) {
         val bin = Files.createDirectories(tmp.resolve("bin"))
         val share = Files.createDirectories(tmp.resolve("share"))
 
@@ -265,8 +259,7 @@ class DoctorCommandTest {
     }
 
     @Test
-    fun `a foreign non-symlink wrapper file gets a move-aside fix`() {
-        val tmp = Files.createTempDirectory("doctor-foreignwrapper")
+    fun `a foreign non-symlink wrapper file gets a move-aside fix`(@TempDir tmp: Path) {
         val bin = Files.createDirectories(tmp.resolve("bin"))
         val share = Files.createDirectories(tmp.resolve("share"))
         val configDir = Files.createDirectories(tmp.resolve("config").resolve("splice"))
@@ -285,12 +278,11 @@ class DoctorCommandTest {
     }
 
     @Test
-    fun `NO_COLOR in doctor's own environment reaches the report`() {
+    fun `NO_COLOR in doctor's own environment reaches the report`(@TempDir tmp: Path) {
         // The palette used to resolve from System::getenv while every check read the env handed to
         // doctor(), so NO_COLOR set in that env changed nothing and no test could prove otherwise.
         // The control arm is what makes this one able to fail: a doctor that never coloured
         // anything would pass the first assertion for free.
-        val tmp = Files.createTempDirectory("doctor-nocolor")
         val bin = Files.createDirectories(tmp.resolve("bin"))
         val share = Files.createDirectories(tmp.resolve("share"))
         val coloured = env(tmp, bin, share, mapOf("TERM" to "xterm-256color"))
@@ -301,8 +293,7 @@ class DoctorCommandTest {
     }
 
     @Test
-    fun `a probe that blocks on its inherited stdin cannot hang doctor`() {
-        val tmp = Files.createTempDirectory("doctor-hang")
+    fun `a probe that blocks on its inherited stdin cannot hang doctor`(@TempDir tmp: Path) {
         val bin = Files.createDirectories(tmp.resolve("bin"))
         val share = Files.createDirectories(tmp.resolve("share"))
         // `cat` with a never-closed, never-written stdin pipe blocks forever — exactly the
@@ -320,8 +311,7 @@ class DoctorCommandTest {
     }
 
     @Test
-    fun `a broken topology reports the parse error with a fix`() {
-        val tmp = Files.createTempDirectory("doctor-broken")
+    fun `a broken topology reports the parse error with a fix`(@TempDir tmp: Path) {
         val bin = Files.createDirectories(tmp.resolve("bin"))
         val share = Files.createDirectories(tmp.resolve("share"))
         val configDir = Files.createDirectories(tmp.resolve("config").resolve("splice"))
@@ -333,8 +323,7 @@ class DoctorCommandTest {
     }
 
     @Test
-    fun `a missing api key is the failure and the fix names splice key set`() {
-        val tmp = Files.createTempDirectory("doctor-nokey")
+    fun `a missing api key is the failure and the fix names splice key set`(@TempDir tmp: Path) {
         val bin = Files.createDirectories(tmp.resolve("bin"))
         val share = Files.createDirectories(tmp.resolve("share"))
         val configDir = Files.createDirectories(tmp.resolve("config").resolve("splice"))
@@ -353,8 +342,7 @@ class DoctorCommandTest {
     }
 
     @Test
-    fun `a daemon with failed heads is a FAIL, never everything-checks-out - JW-02`() {
-        val tmp = Files.createTempDirectory("doctor-degraded")
+    fun `a daemon with failed heads is a FAIL, never everything-checks-out - JW-02`(@TempDir tmp: Path) {
         val bin = Files.createDirectories(tmp.resolve("bin"))
         val share = Files.createDirectories(tmp.resolve("share"))
         val configDir = Files.createDirectories(tmp.resolve("config").resolve("splice"))
@@ -404,8 +392,7 @@ class DoctorCommandTest {
     }
 
     @Test
-    fun `an edited splice_toml shows a stale-topology WARN with the restart fix - JW-04`() {
-        val tmp = Files.createTempDirectory("doctor-stale-topo")
+    fun `an edited splice_toml shows a stale-topology WARN with the restart fix - JW-04`(@TempDir tmp: Path) {
         val bin = Files.createDirectories(tmp.resolve("bin"))
         val share = Files.createDirectories(tmp.resolve("share"))
         val configDir = Files.createDirectories(tmp.resolve("config").resolve("splice"))
@@ -454,8 +441,7 @@ class DoctorCommandTest {
     }
 
     @Test
-    fun `doctor names the logs path in the logs dir, not the state dir - JW-08`() {
-        val tmp = Files.createTempDirectory("doctor-logs")
+    fun `doctor names the logs path in the logs dir, not the state dir - JW-08`(@TempDir tmp: Path) {
         val bin = Files.createDirectories(tmp.resolve("bin"))
         val share = Files.createDirectories(tmp.resolve("share"))
         fakeBinaries(bin, "claude", "node", "curl", "bash")
@@ -466,8 +452,7 @@ class DoctorCommandTest {
     }
 
     @Test
-    fun `two heads on one port is a config FAIL naming both - JW-13`() {
-        val tmp = Files.createTempDirectory("doctor-dupport")
+    fun `two heads on one port is a config FAIL naming both - JW-13`(@TempDir tmp: Path) {
         val bin = Files.createDirectories(tmp.resolve("bin"))
         val share = Files.createDirectories(tmp.resolve("share"))
         val configDir = Files.createDirectories(tmp.resolve("config").resolve("splice"))
@@ -488,8 +473,7 @@ class DoctorCommandTest {
 class DoctorWritableDirsTest {
 
     @Test
-    fun `an unwritable state dir is a FAIL with a chmod fix, and the probe is cleaned up - JW-17`() {
-        val tmp = Files.createTempDirectory("doctor-unwritable")
+    fun `an unwritable state dir is a FAIL with a chmod fix, and the probe is cleaned up - JW-17`(@TempDir tmp: Path) {
         val bin = Files.createDirectories(tmp.resolve("bin"))
         val share = Files.createDirectories(tmp.resolve("share"))
         fakeBinaries(bin, "claude", "node", "curl", "bash")
@@ -527,8 +511,7 @@ class DoctorWritableDirsTest {
     // never be written. The arm above proves the state dir is probed; this one proves the logs dir
     // is too, and that it fails the run rather than printing a path nobody can write to.
     @Test
-    fun `an unwritable logs dir is a FAIL of its own - JW-17`() {
-        val tmp = Files.createTempDirectory("doctor-unwritable-logs")
+    fun `an unwritable logs dir is a FAIL of its own - JW-17`(@TempDir tmp: Path) {
         val bin = Files.createDirectories(tmp.resolve("bin"))
         val share = Files.createDirectories(tmp.resolve("share"))
         fakeBinaries(bin, "claude", "node", "curl", "bash")
@@ -569,8 +552,7 @@ class DoctorTopologyLeakTest {
     // The sentinel IS the value the parser trips on (an invalid Dialect), so a verbatim
     // e.message render must leak it — red on the raw-message shape, green through render().
     @Test
-    fun `a broken topology's parse text never quotes config bytes - DR-92`() {
-        val tmp = Files.createTempDirectory("doctor-dr92")
+    fun `a broken topology's parse text never quotes config bytes - DR-92`(@TempDir tmp: Path) {
         val configDir = Files.createDirectories(tmp.resolve("config").resolve("splice"))
         Files.writeString(
             configDir.resolve("splice.toml"),
@@ -612,8 +594,7 @@ class DoctorTopologyLeakTest {
  *  failure to start read "present (version probe failed: ...)" (CI run 36184525303). */
 class DoctorClaudeVersionTest {
     @Test
-    fun `the report's claude version is the claude on the doctor's PATH`() {
-        val tmp = Files.createTempDirectory("doctor-claude-version")
+    fun `the report's claude version is the claude on the doctor's PATH`(@TempDir tmp: Path) {
         val bin = Files.createDirectories(tmp.resolve("bin"))
         Files.writeString(bin.resolve("claude"), "#!/bin/sh\necho '9.9.9 (Claude Code)'\n")
         bin.resolve("claude").toFile().setExecutable(true)
@@ -621,8 +602,7 @@ class DoctorClaudeVersionTest {
     }
 
     @Test
-    fun `a claude missing from the doctor's PATH reads not found, never present`() {
-        val tmp = Files.createTempDirectory("doctor-claude-absent")
+    fun `a claude missing from the doctor's PATH reads not found, never present`(@TempDir tmp: Path) {
         val bin = Files.createDirectories(tmp.resolve("bin"))
         assertEquals("not found on PATH", claudeVersionIn(tmp, bin))
     }

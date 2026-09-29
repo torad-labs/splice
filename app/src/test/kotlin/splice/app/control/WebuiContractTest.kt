@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.config.ConfigService
@@ -43,7 +44,7 @@ import splice.usage.economics.HeadEconomicsSource
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.RateLimitView
 import splice.usage.quota.UsageView
-import java.nio.file.Files
+import java.nio.file.Path
 
 private class ContractHead(override val key: String, override val port: Int) : Head {
     override val label = key
@@ -68,8 +69,7 @@ class WebuiContractTest {
     private val json = Json { ignoreUnknownKeys = true }
 
     @BeforeAll
-    fun setUp() {
-        val tmp = Files.createTempDirectory("contract")
+    fun setUp(@TempDir tmp: Path) {
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
         key = mgmt.get()

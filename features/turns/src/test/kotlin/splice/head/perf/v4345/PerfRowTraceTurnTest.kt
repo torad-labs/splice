@@ -26,6 +26,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -95,8 +96,8 @@ class PerfRowTraceTurnTest {
     )
 
     @BeforeAll
-    fun setUp() {
-        tmp = Files.createTempDirectory("perf-row-trace-turn")
+    fun setUp(@TempDir tempDir: Path) {
+        tmp = tempDir
         upstream.createContext("/v1/messages") { ex: HttpExchange ->
             ex.requestBody.readAllBytes()
             val body = ANSWER.toByteArray()

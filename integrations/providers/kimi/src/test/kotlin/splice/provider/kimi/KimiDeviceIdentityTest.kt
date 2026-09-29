@@ -6,14 +6,15 @@ package splice.provider.kimi
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
+import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
 
 class KimiDeviceIdentityTest {
 
     @Test
-    fun `headers carry the five X-Msh values and platform is splice`() {
-        val dir = Files.createTempDirectory("kimi-id")
+    fun `headers carry the five X-Msh values and platform is splice`(@TempDir dir: Path) {
         val id = KimiDeviceIdentity(
             deviceIdPath = dir.resolve("device_id"),
             version = "kt-1",
@@ -31,8 +32,7 @@ class KimiDeviceIdentityTest {
     }
 
     @Test
-    fun `non-ASCII header values are stripped and empty becomes unknown`() {
-        val dir = Files.createTempDirectory("kimi-id-cjk")
+    fun `non-ASCII header values are stripped and empty becomes unknown`(@TempDir dir: Path) {
         val id = KimiDeviceIdentity(
             deviceIdPath = dir.resolve("device_id"),
             rawHostname = "主机名", // pure CJK -> stripped to empty -> "unknown"
@@ -48,8 +48,7 @@ class KimiDeviceIdentityTest {
     }
 
     @Test
-    fun `device id is a stable uuid persisted at 0600`() {
-        val dir = Files.createTempDirectory("kimi-id-persist")
+    fun `device id is a stable uuid persisted at 0600`(@TempDir dir: Path) {
         val path = dir.resolve("device_id")
         val id = KimiDeviceIdentity(deviceIdPath = path)
         val first = id.deviceId()
@@ -63,8 +62,7 @@ class KimiDeviceIdentityTest {
     // to the operator's session — an unreadable file must throw, never regenerate. True absence
     // (a first run) still mints.
     @Test
-    fun `an unreadable device id file never regenerates the identity - DR-59`() {
-        val dir = Files.createTempDirectory("kimi-id-locked")
+    fun `an unreadable device id file never regenerates the identity - DR-59`(@TempDir dir: Path) {
         val locked = Files.createDirectories(dir.resolve("locked"))
         val path = locked.resolve("device_id")
         Files.writeString(path, "11111111-1111-1111-1111-111111111111")

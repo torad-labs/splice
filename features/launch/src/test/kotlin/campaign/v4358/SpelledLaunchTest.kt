@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
 import splice.core.model.CLAUDE_CODE_ONE_MILLION
@@ -26,9 +27,9 @@ import splice.launch.LaunchSpec
 import splice.launch.ModelTiers
 import splice.launch.recipe.LaunchService
 import java.nio.file.Files
+import java.nio.file.Path
 
-class SpelledLaunchTest {
-    private val tmp = Files.createTempDirectory("v4358-launch")
+class SpelledLaunchTest(@param:TempDir private val tmp: Path) {
     private val service = LaunchService(ClaudeConfigMaterializer(tmp))
 
     private val sol = ModelEntry("gpt-6-sol", "Sol", contextWindow = 872_000L)

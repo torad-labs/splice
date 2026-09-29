@@ -26,6 +26,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -39,6 +40,7 @@ import splice.head.compact.ShadowClassifier
 import splice.upstream.ProviderTuning
 import splice.upstream.transport.UpstreamClient
 import java.nio.file.Files
+import java.nio.file.Path
 import java.security.MessageDigest
 import kotlin.time.Duration.Companion.seconds
 
@@ -78,8 +80,8 @@ class HeadServerIntegrationTest {
     )
 
     @BeforeAll
-    fun setUp() = runTest {
-        tmp = Files.createTempDirectory("head-it")
+    fun setUp(@TempDir tempDir: Path) = runTest {
+        tmp = tempDir
         val provider = TestResponsesProvider(
             tuning = ProviderTuning(
                 key = "codex",

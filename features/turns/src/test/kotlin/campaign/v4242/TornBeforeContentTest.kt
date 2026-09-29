@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -57,7 +58,7 @@ import splice.upstream.retry.LiveLimit
 import splice.upstream.retry.TurnWatchdog
 import splice.upstream.sse.WireSink
 import java.io.IOException
-import java.nio.file.Files
+import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.seconds
 
@@ -94,8 +95,7 @@ private class TerminalsOnly : WsRoundRunner {
     override fun roundBypassed(meta: TurnMeta) = Unit
 }
 
-class TornBeforeContentTest {
-    private val tmp = Files.createTempDirectory("v4242-torn")
+class TornBeforeContentTest(@param:TempDir private val tmp: Path) {
 
     private val provider = TestResponsesProvider(
         tuning = ProviderTuning(

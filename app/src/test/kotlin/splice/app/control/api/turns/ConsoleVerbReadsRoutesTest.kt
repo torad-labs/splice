@@ -28,6 +28,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.app.control.ControlServer
 import splice.app.control.ManagedHead
 import splice.core.auth.AuthDescription
@@ -56,6 +57,7 @@ import splice.usage.quota.RateLimitView
 import splice.usage.quota.UsageView
 import java.net.ServerSocket
 import java.nio.file.Files
+import java.nio.file.Path
 
 private const val TIMEOUT_MS = 10_000L
 private const val POLL_MS = 25L
@@ -69,6 +71,7 @@ class ConsoleVerbReadsRoutesTest {
     private val client = HttpClient(CIO) { expectSuccess = false }
     private lateinit var control: ControlServer
     private lateinit var key: String
+    private lateinit var traceDir: Path
 
     /** Every read this row added, as the console calls it. */
     private val reads: List<String> get() = listOf(
@@ -78,8 +81,9 @@ class ConsoleVerbReadsRoutesTest {
     )
 
     @BeforeAll
-    fun setUp() {
-        val paths = StatePaths(baseOverride = Files.createTempDirectory("v4239-routes").resolve("state"))
+    fun setUp(@TempDir tempDir: Path) {
+        traceDir = Files.createDirectory(tempDir.resolve("trace"))
+        val paths = StatePaths(baseOverride = tempDir.resolve("state"))
         val mgmt = MgmtKey(paths)
         key = mgmt.get()
         control = ControlServer(
@@ -181,7 +185,7 @@ class ConsoleVerbReadsRoutesTest {
             },
             ModelCredentialSource { _, _, _ -> null },
         )
-        control.ports.traceDir = Files.createTempDirectory("v4239-trace")
+        control.ports.traceDir = traceDir
         val tap = WireTap(keep = 4)
         listOf("""{"n":0}""", """{"n":1}""").forEach { tap.record(meta(), it) }
         control.ports.wires = WireTaps().apply { put(HEAD_KEY, tap) }

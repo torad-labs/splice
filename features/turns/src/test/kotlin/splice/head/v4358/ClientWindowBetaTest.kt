@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -35,7 +36,7 @@ import splice.head.TestResponsesProvider
 import splice.head.awaitListening
 import splice.head.headDeps
 import splice.upstream.ProviderTuning
-import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 
 private const val ROW_WINDOW = 500_000L
@@ -62,7 +63,7 @@ class ClientWindowBetaTest {
     private val windows = ClientWindows()
 
     @BeforeAll
-    fun setUp() = runBlocking {
+    fun setUp(@TempDir tmp: Path) = runBlocking {
         val catalog = ModelCatalog(
             discoveryPrefix = "claude-codex--",
             models = listOf(ModelEntry("gpt-6-sol", "Sol", contextWindow = ROW_WINDOW)),
@@ -85,7 +86,6 @@ class ClientWindowBetaTest {
             configEffort = "high",
             configSummary = "detailed",
         )
-        val tmp = Files.createTempDirectory("v4358")
         val deps = headDeps(tmp = tmp).let { it.copy(stores = it.stores.copy(clientWindows = windows)) }
         head = HeadServer(provider = provider, listenPort = 0, deps = deps)
         head.start()

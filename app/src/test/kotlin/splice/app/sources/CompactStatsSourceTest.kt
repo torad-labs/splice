@@ -6,14 +6,16 @@ package splice.app.sources
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.head.compact.CompactStats
 import java.nio.file.Files
+import java.nio.file.Path
 
 class CompactStatsSourceTest {
 
     @Test
-    fun `compact tail rows carry a string's content, not its quoted JSON text`() {
-        val file = Files.createTempDirectory("splice-compact-source").resolve("compact.jsonl")
+    fun `compact tail rows carry a string's content, not its quoted JSON text`(@TempDir tempDir: Path) {
+        val file = tempDir.resolve("compact.jsonl")
         Files.writeString(
             file,
             """{"ts":1790199390460,"outcome":"model_text","ms":171490,"chars":20532,"instructions_source":"client","error":null}""" + "\n",

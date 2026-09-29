@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.perf.TurnPerf
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
@@ -61,8 +62,8 @@ class TurnFinishTest {
     private lateinit var tmp: Path
 
     @BeforeAll
-    fun setUp() {
-        tmp = Files.createTempDirectory("turn-finish")
+    fun setUp(@TempDir tempDir: Path) {
+        tmp = tempDir
     }
 
     private class VirtualTicks {

@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -55,7 +56,6 @@ import splice.upstream.WsRoundRunner
 import splice.upstream.transport.UpstreamClient
 import java.net.http.WebSocket
 import java.nio.ByteBuffer
-import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CopyOnWriteArrayList
@@ -141,10 +141,9 @@ private class ClosingWsProvider(private val inner: Provider, private val runner:
 }
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-class PeerCloseTest {
+class PeerCloseTest(@param:TempDir private val tmp: Path) {
     private val mock = MockChatGptUpstream()
     private val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
-    private val tmp: Path = Files.createTempDirectory("v4242-peer-close")
     private var built = 0
 
     @AfterAll

@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -26,7 +27,7 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.upstream.ProviderTuning
 import splice.upstream.transport.UpstreamClient
-import java.nio.file.Files
+import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.time.Duration.Companion.seconds
 
@@ -48,8 +49,7 @@ class HeadServerLocalAnswerTest {
     }
 
     @BeforeAll
-    fun setUp() = runBlocking {
-        val tmp = Files.createTempDirectory("head-local-answer")
+    fun setUp(@TempDir tmp: Path) = runBlocking {
         head = HeadServer(
             provider = TestResponsesProvider(
                 tuning = ProviderTuning(

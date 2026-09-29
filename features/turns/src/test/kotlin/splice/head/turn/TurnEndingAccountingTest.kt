@@ -18,6 +18,7 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.assertThrows
+import org.junit.jupiter.api.io.TempDir
 import splice.core.index.WireBlockIndex
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
@@ -130,8 +131,8 @@ class TurnEndingAccountingTest {
     private lateinit var tmp: Path
 
     @BeforeAll
-    fun setUp() {
-        tmp = Files.createTempDirectory("turn-ending-acct")
+    fun setUp(@TempDir tempDir: Path) {
+        tmp = tempDir
     }
 
     private fun provider(): Provider = TestResponsesProvider(

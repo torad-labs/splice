@@ -33,6 +33,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.app.control.DashboardPage
 import splice.app.control.TurnPathStalled
 import splice.core.config.ConfigService
@@ -49,8 +50,8 @@ private const val PIN_POLL_MS = 25L
 class OneEventBusPinTest {
 
     @Test
-    fun `the control plane streams the same bus its producers publish to`() = runBlocking {
-        val paths = StatePaths(baseOverride = Files.createTempDirectory("v4134-one-bus").resolve("state"))
+    fun `the control plane streams the same bus its producers publish to`(@TempDir tempDir: Path) = runBlocking {
+        val paths = StatePaths(baseOverride = tempDir.resolve("state"))
         val mgmt = MgmtKey(paths)
         val plane = ControlPlane(
             paths,

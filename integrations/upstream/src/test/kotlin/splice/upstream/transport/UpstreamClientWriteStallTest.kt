@@ -23,6 +23,7 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.core.util.LogSink
 import splice.upstream.RetryNotice
 import java.io.BufferedInputStream
@@ -82,9 +83,10 @@ private const val SLOW_SEND_BUFFER = 64 * 1024
 /** A turn cap short enough to wait out, for the request the watch must not guess at. */
 private const val SHORT_TOTAL_MS = 4 * WRITE_TIMEOUT_MS
 
-class UpstreamClientWriteStallTest {
+class UpstreamClientWriteStallTest(@TempDir tmp: Path) {
 
     private val upstreams = mutableListOf<Upstream>()
+    private val loopback = LoopbackTls(tmp)
 
     @AfterEach
     fun close() {
@@ -92,7 +94,7 @@ class UpstreamClientWriteStallTest {
     }
 
     private fun upstream(vararg first: Serving, then: Serving, tls: Boolean = false): Upstream =
-        Upstream(first.toList(), then, if (tls) LoopbackTls.server else null).also(upstreams::add)
+        Upstream(first.toList(), then, if (tls) loopback.server else null).also(upstreams::add)
 
     @Test
     fun `a request the upstream never reads is cut at the write timeout, named, and retried on a fresh connection`() {
@@ -138,7 +140,7 @@ class UpstreamClientWriteStallTest {
     fun `a TLS write the upstream never takes is cut, and holds up no other connection's cut - V4-289 (2)`() {
         val tlsUpstream = upstream(then = Serving.Reads(0), tls = true)
         val plainUpstream = upstream(then = Serving.Reads(0))
-        val tls = client(attempts = 1, sockets = UpstreamSockets(trust = LoopbackTls.trust))
+        val tls = client(attempts = 1, sockets = UpstreamSockets(trust = loopback.trust))
         val plain = client(attempts = 1)
 
         val (tlsCut, plainCut) = runBlocking(Dispatchers.IO) {
@@ -192,7 +194,7 @@ class UpstreamClientWriteStallTest {
         val missing = SendQueues { null }
         val tlsUpstream = upstream(then = Serving.Reads(0), tls = true)
         val plainUpstream = upstream(then = Serving.Reads(0))
-        val tls = client(attempts = 1, sockets = UpstreamSockets(trust = LoopbackTls.trust, queues = missing))
+        val tls = client(attempts = 1, sockets = UpstreamSockets(trust = loopback.trust, queues = missing))
         val plain = client(attempts = 1, totalMs = SHORT_TOTAL_MS, sockets = UpstreamSockets(queues = missing))
 
         val waiting = runBlocking { timedFailure { tls.posted(context(tlsUpstream, tls = true), BIG_BODY) { "ok" } } }
@@ -205,7 +207,7 @@ class UpstreamClientWriteStallTest {
     private fun assertCutAndRetried(upstream: Upstream, body: String, tls: Boolean = false) {
         val retries = CopyOnWriteArrayList<String>()
         val started = System.nanoTime()
-        val sockets = if (tls) UpstreamSockets(trust = LoopbackTls.trust) else UpstreamSockets()
+        val sockets = if (tls) UpstreamSockets(trust = loopback.trust) else UpstreamSockets()
 
         val thrown = runCatching {
             runBlocking { client(sockets = sockets).posted(context(upstream, retries, tls), body) { "ok" } }
@@ -357,32 +359,29 @@ private class Upstream(private val first: List<Serving>, private val then: Servi
     }
 }
 
-/** A self-signed certificate for 127.0.0.1, made once per run by the JDK's own keytool, never checked in. */
-private object LoopbackTls {
-    private const val PASS = "v4-289-loopback-only"
+private const val LOOPBACK_TLS_PASS = "v4-289-loopback-only"
+
+/** A self-signed certificate for 127.0.0.1, made on first use by the JDK's own keytool inside [dir] (the test's
+ *  own @TempDir, deleted with it), never checked in. */
+private class LoopbackTls(private val dir: Path) {
 
     private val keys: KeyStore by lazy {
-        val dir = Files.createTempDirectory("v4-289-tls")
         val file = dir.resolve("upstream.p12")
         val keytool = Path.of(System.getProperty("java.home"), "bin", "keytool").toString()
         val process = ProcessBuilder(
             keytool, "-genkeypair", "-alias", "upstream", "-keyalg", "EC", "-groupname", "secp256r1",
             "-dname", "CN=127.0.0.1", "-ext", "SAN=ip:127.0.0.1", "-validity", "2", "-storetype", "PKCS12",
-            "-keystore", file.toString(), "-storepass", PASS, "-keypass", PASS,
+            "-keystore", file.toString(), "-storepass", LOOPBACK_TLS_PASS, "-keypass", LOOPBACK_TLS_PASS,
         ).redirectErrorStream(true).start()
         val output = process.inputStream.readAllBytes().decodeToString()
         check(process.waitFor() == 0) { "keytool failed: $output" }
-        try {
-            KeyStore.getInstance("PKCS12").apply { Files.newInputStream(file).use { load(it, PASS.toCharArray()) } }
-        } finally {
-            Files.deleteIfExists(file)
-            Files.deleteIfExists(dir)
-        }
+        val pass = LOOPBACK_TLS_PASS.toCharArray()
+        KeyStore.getInstance("PKCS12").apply { Files.newInputStream(file).use { load(it, pass) } }
     }
 
     val server: SSLContext by lazy {
         val managers = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
-            .apply { init(keys, PASS.toCharArray()) }.keyManagers
+            .apply { init(keys, LOOPBACK_TLS_PASS.toCharArray()) }.keyManagers
         SSLContext.getInstance("TLS").apply { init(managers, null, null) }
     }
 

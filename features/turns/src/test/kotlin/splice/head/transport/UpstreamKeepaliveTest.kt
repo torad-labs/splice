@@ -39,6 +39,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -53,7 +54,6 @@ import splice.head.awaitListening
 import splice.head.headDeps
 import splice.upstream.ProviderTuning
 import splice.upstream.transport.UpstreamClient
-import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 
@@ -132,8 +132,7 @@ class UpstreamKeepaliveTest {
     }.bodyAsText()
 
     @Test
-    fun `a silent-but-alive upstream past the tier completes the turn when it speaks`() = runTest {
-        val tmp = Files.createTempDirectory("head-keepalive")
+    fun `a silent-but-alive upstream past the tier completes the turn when it speaks`(@TempDir tmp: Path) = runTest {
         // The upstream stays silent until the watchdog has held it, so a 1s first-output cap is
         // passed while the connection stays open and un-errored, however slowly the machine runs.
         val server = head(tmp, WatchdogBudget(1.seconds, 1.seconds, 30.seconds))

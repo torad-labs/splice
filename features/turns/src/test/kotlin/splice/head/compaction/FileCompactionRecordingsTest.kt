@@ -7,14 +7,16 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.core.util.WallClock
 import splice.head.wire.FrameRecording
 import java.nio.file.Files
+import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
 
-class FileCompactionRecordingsTest {
+class FileCompactionRecordingsTest(@TempDir tempDir: Path) {
 
-    private val dir = Files.createTempDirectory("compaction-recordings").resolve("claudex")
+    private val dir = tempDir.resolve("claudex")
     private val lines = mutableListOf<String>()
     private var wallMs = 1_000_000L
     private fun store() =

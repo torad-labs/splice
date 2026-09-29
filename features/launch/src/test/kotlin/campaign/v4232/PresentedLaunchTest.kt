@@ -14,6 +14,7 @@ import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
 import splice.client.wrap.WrapState
@@ -29,8 +30,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
 
-class PresentedLaunchTest {
-    private val tmp = Files.createTempDirectory("v4232-launch")
+class PresentedLaunchTest(@param:TempDir private val tmp: Path) {
     private val service = LaunchService(ClaudeConfigMaterializer(tmp))
 
     private fun catalog(window: Long, clientModel: String? = "claude-sonnet-4-6") = ModelCatalog(

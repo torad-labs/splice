@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -46,14 +47,16 @@ import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
 import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.transport.UpstreamClient
 import java.nio.file.Files
+import java.nio.file.Path
 import java.time.Instant
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.seconds
 
-class AccountTurnSelectionTest {
+class AccountTurnSelectionTest(@param:TempDir private val root: Path) {
     private val imfFixdate = Regex("""[A-Z][a-z]{2}, \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT""")
 
     /** V4-77: a client deadline is a HOLD FROM NOW — positive, and inside V4-61's clamp — never the
@@ -82,7 +85,7 @@ class AccountTurnSelectionTest {
 
     @Test
     fun `the next turn switches credentials and quota while the session routing stays intact`() = runTest {
-        val rig = AccountTurnRig()
+        val rig = AccountTurnRig(root)
         try {
             rig.start()
             val first = rig.messages().also { it.bodyAsText() }
@@ -104,7 +107,7 @@ class AccountTurnSelectionTest {
 
     @Test
     fun `terminal 401 keeps the current turn on one account and evicts it from the next turn`() = runTest {
-        val rig = AccountTurnRig()
+        val rig = AccountTurnRig(root)
         try {
             rig.start()
             rig.messages(scenario = "authfail").also { it.bodyAsText() }
@@ -124,7 +127,7 @@ class AccountTurnSelectionTest {
 
     @Test
     fun `failed refresh evicts the selected account only after its turn fails`() = runTest {
-        val rig = AccountTurnRig()
+        val rig = AccountTurnRig(root)
         try {
             rig.start()
             rig.failPrimaryRefresh()
@@ -142,7 +145,7 @@ class AccountTurnSelectionTest {
 
     @Test
     fun `a nonclean normal return releases the probe without clearing its failure count`() = runTest {
-        val rig = AccountTurnRig()
+        val rig = AccountTurnRig(root)
         try {
             rig.start()
             rig.holdPrimaryUntilProbe()
@@ -160,7 +163,7 @@ class AccountTurnSelectionTest {
 
     @Test
     fun `deleted selected credential fails its turn and the next turn uses the backup`() = runTest {
-        val rig = AccountTurnRig()
+        val rig = AccountTurnRig(root)
         try {
             rig.start()
             rig.deletePrimaryCredential()
@@ -178,7 +181,7 @@ class AccountTurnSelectionTest {
 
     @Test
     fun `an empty session header is treated as no session`() = runTest {
-        val rig = AccountTurnRig()
+        val rig = AccountTurnRig(root)
         try {
             rig.start()
             val response = rig.messages(sessionId = "").also { it.bodyAsText() }
@@ -207,7 +210,7 @@ class AccountTurnSelectionTest {
      *  reset and this fails. */
     @Test
     fun `an exhausted refusal carries the SELECTED account's quota windows, not the primary's`() = runTest {
-        val rig = AccountTurnRig()
+        val rig = AccountTurnRig(root)
         try {
             rig.start()
             rig.messages().also { it.bodyAsText() } // session selects primary
@@ -238,7 +241,7 @@ class AccountTurnSelectionTest {
 
     @Test
     fun `all exhausted refuses with an IMF-fixdate Retry-After bounded by the clamp`() = runTest {
-        val rig = AccountTurnRig()
+        val rig = AccountTurnRig(root)
         try {
             rig.start()
             val resetEpochSeconds = 2_077_951_777L
@@ -271,7 +274,7 @@ class AccountTurnSelectionTest {
     // formatter-safe 9999 instant is still asserted where it now lives, in the message.
     @Test
     fun `oversized exhausted reset stays rate limited with a bounded Retry-After`() = runTest {
-        val rig = AccountTurnRig()
+        val rig = AccountTurnRig(root)
         try {
             rig.start()
             val oversizedReset = Long.MAX_VALUE - 10_000_000_000_000_000L
@@ -297,7 +300,7 @@ class AccountTurnSelectionTest {
 
     @Test
     fun `all exhausted without reset evidence does not invent Retry-After`() = runTest {
-        val rig = AccountTurnRig(credentialPresent = false)
+        val rig = AccountTurnRig(root, credentialPresent = false)
         try {
             rig.start()
 
@@ -315,7 +318,7 @@ class AccountTurnSelectionTest {
 
     @Test
     fun `head restart clears the cooldown authority used by pooled turns`() = runTest {
-        val rig = AccountTurnRig()
+        val rig = AccountTurnRig(root)
         try {
             rig.start()
             rig.markPrimaryUnavailable()
@@ -330,8 +333,8 @@ class AccountTurnSelectionTest {
     }
 }
 
-private class AccountTurnRig(private val credentialPresent: Boolean = true) {
-    private val tmp = Files.createTempDirectory("account-turn")
+private class AccountTurnRig(root: Path, private val credentialPresent: Boolean = true) {
+    private val tmp = Files.createDirectory(root.resolve(UUID.randomUUID().toString()))
     private val mock = MockChatGptUpstream()
 
     // A getter: the head binds port 0, and restart() rebinds a fresh one the rig must follow.

@@ -10,10 +10,12 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshAttempt
 import splice.core.util.LogSink
 import java.nio.file.Files
+import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
 
 // DR-151: BS-2's arm above proves the FALLBACK — a lost write still serves the current token — but
@@ -34,8 +36,7 @@ import java.nio.file.attribute.PosixFilePermissions
 class GrokPersistLinePrivacyTest {
 
     @Test
-    fun `a failed persist logs its line without ever quoting the credential - DR-151`() = runTest {
-        val dir = Files.createTempDirectory("grok-persist-line")
+    fun `a failed persist logs its line without ever quoting the credential - DR-151`(@TempDir dir: Path) = runTest {
         val now = 1_000_000L
         val file = dir.resolve(".grok").resolve("auth.json")
         Files.createDirectories(file.parent)

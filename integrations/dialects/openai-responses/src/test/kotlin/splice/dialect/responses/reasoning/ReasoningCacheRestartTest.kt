@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -163,8 +164,7 @@ private fun reasoningBefore(provider: ResponsesProvider, session: String?, callI
     return before?.get("encrypted_content")?.jsonPrimitive?.content
 }
 
-class ReasoningCacheRestartTest {
-    private val state: Path = Files.createTempDirectory("v4334-state")
+class ReasoningCacheRestartTest(@param:TempDir private val state: Path) {
 
     @Test
     fun `a restarted daemon injects the reasoning the last one recorded, for the same session`() = runTest {
@@ -283,8 +283,8 @@ class ReasoningCacheRestartTest {
 }
 
 // The store under the provider: what a restart restores, and what the disk may never hold.
-class ReasoningCacheFilesTest {
-    private val dir: Path = Files.createTempDirectory("v4334-files").resolve("reasoning")
+class ReasoningCacheFilesTest(@TempDir tempDir: Path) {
+    private val dir: Path = tempDir.resolve("reasoning")
     private val logs = mutableListOf<String>()
 
     private fun cache(maxTotalBytes: Long = 64L * 1024 * 1024) = ReasoningCache(

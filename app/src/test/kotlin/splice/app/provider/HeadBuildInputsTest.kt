@@ -2,6 +2,7 @@ package splice.app.provider
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.app.auth.SignInPlanner
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
@@ -10,14 +11,14 @@ import splice.core.topology.ClaudeWrapperConfig
 import splice.core.topology.Dialect
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
-import java.nio.file.Files
+import java.nio.file.Path
 
 class HeadBuildInputsTest {
 
     @Test
-    fun `head key text cannot opt an unrelated provider into Grok overrides`() {
+    fun `head key text cannot opt an unrelated provider into Grok overrides`(@TempDir tempDir: Path) {
         val config = ConfigService(
-            statePaths = StatePaths(baseOverride = Files.createTempDirectory("head-build-inputs")),
+            statePaths = StatePaths(baseOverride = tempDir),
             headOverrides = mapOf(
                 "grokPort" to "4999",
                 "grokModel" to "grok-override",
@@ -48,9 +49,9 @@ class HeadBuildInputsTest {
     // port/model/base with the knob DEFAULTS (and with first-head-wins seeding, with the first
     // head's values). The resolve side now gates on sole-head-of-kind.
     @Test
-    fun `a non-sole legacy head keeps its declared port, model and base - DR-80`() {
+    fun `a non-sole legacy head keeps its declared port, model and base - DR-80`(@TempDir tempDir: Path) {
         val config = ConfigService(
-            statePaths = StatePaths(baseOverride = Files.createTempDirectory("head-build-inputs")),
+            statePaths = StatePaths(baseOverride = tempDir),
             headOverrides = emptyMap(), // what the shared layer holds when a kind has two heads
             envReader = { null },
         )
@@ -74,9 +75,9 @@ class HeadBuildInputsTest {
      *  request; `<wrapper> login` only asked for the same key through a terminal prompt. An OAuth head
      *  keeps its browser login. RED before: the api-key head's build carried "claude-router login". */
     @Test
-    fun `a 401 on an api-key head names splice key set, an OAuth head keeps its login`() {
+    fun `a 401 on an api-key head names splice key set, an OAuth head keeps its login`(@TempDir tempDir: Path) {
         val config = ConfigService(
-            statePaths = StatePaths(baseOverride = Files.createTempDirectory("head-build-inputs")),
+            statePaths = StatePaths(baseOverride = tempDir),
             headOverrides = emptyMap(),
             envReader = { null },
         )

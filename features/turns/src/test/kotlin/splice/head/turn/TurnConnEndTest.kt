@@ -31,6 +31,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -118,8 +119,8 @@ class TurnConnEndTest {
     private lateinit var tmp: Path
 
     @BeforeAll
-    fun setUp() {
-        tmp = Files.createTempDirectory("turn-conn-end")
+    fun setUp(@TempDir tempDir: Path) {
+        tmp = tempDir
     }
 
     private fun provider(): Provider = TestResponsesProvider(

@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -38,7 +39,7 @@ import splice.dialect.responses.stream.FoldConfig
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
-import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 
 private fun countOf(haystack: String, needle: String): Int =
@@ -77,8 +78,8 @@ class HeadServerFoldTest {
     )
 
     @BeforeAll
-    fun setUp() = runTest {
-        tmp = Files.createTempDirectory("head-fold")
+    fun setUp(@TempDir tempDir: Path) = runTest {
+        tmp = tempDir
         val provider = TestResponsesProvider(
             tuning = ProviderTuning(
                 key = "codex",

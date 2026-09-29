@@ -35,6 +35,7 @@ import kotlinx.serialization.json.long
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -57,6 +58,7 @@ import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.transport.UpstreamClient
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.time.Duration.Companion.seconds
 
@@ -99,11 +101,11 @@ private class RecordingEvents : HeadEvents {
     fun turnCalls(): List<String> = calls.filterNot { it.startsWith("lifecycle") }
 }
 
-class HeadEventsTest {
+class HeadEventsTest(@param:TempDir private val root: Path) {
 
     @Test
     fun `a head reports its lifecycle once per real transition, draining before stopped`() = runBlocking {
-        val rig = Rig()
+        val rig = Rig(root)
         try {
             rig.start()
             rig.head.stop()
@@ -121,7 +123,7 @@ class HeadEventsTest {
     @Test
     fun `a served turn is announced with its session and ends with its own perf row's key and outcome`() =
         runBlocking {
-            val rig = Rig()
+            val rig = Rig(root)
             try {
                 rig.start()
                 rig.turn()
@@ -138,7 +140,7 @@ class HeadEventsTest {
 
     @Test
     fun `a switch to another account is reported with the accounts the pool actually used`() = runBlocking {
-        val rig = Rig()
+        val rig = Rig(root)
         try {
             rig.start()
             rig.turn()
@@ -163,7 +165,7 @@ class HeadEventsTest {
 
     @Test
     fun `a turn refused locally still starts and ends, keyed by its refusal row`() = runBlocking {
-        val rig = Rig()
+        val rig = Rig(root)
         try {
             rig.start()
             rig.exhaustAll()
@@ -179,7 +181,7 @@ class HeadEventsTest {
     @Test
     fun `edges, a local label and a near-miss label query are reported from the request that carries them`() =
         runBlocking {
-            val rig = Rig()
+            val rig = Rig(root)
             try {
                 rig.start()
                 rig.turn(afterSendMessage("carry on"))
@@ -222,9 +224,9 @@ private fun afterSendMessage(lastUser: String): String =
         """{"type":"tool_result","tool_use_id":"toolu_b","content":"sent"},{"type":"text","text":"$lastUser"}]}]"""
 
 /** One codex head on a mock upstream with a two-account pool, reporting to [events]. */
-private class Rig {
+private class Rig(root: Path) {
     val events = RecordingEvents()
-    private val tmp: Path = Files.createTempDirectory("v4134-head-events")
+    private val tmp: Path = Files.createDirectory(root.resolve(UUID.randomUUID().toString()))
     private val mock = MockChatGptUpstream()
     private val port: Int get() = head.port
     private val perfFile = tmp.resolve("perf.jsonl")

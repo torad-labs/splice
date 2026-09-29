@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.RefreshAttempt
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
@@ -145,8 +146,7 @@ class MultiProviderDaemonTest {
     private lateinit var orCfgDir: Path
 
     @BeforeAll
-    fun setUp() {
-        val tmp = Files.createTempDirectory("multi")
+    fun setUp(@TempDir tmp: Path) {
         val codexAuth = tmp.resolve("codex.json")
         Files.writeString(codexAuth, """{"tokens":{"access_token":"codex-tok","account_id":"a","refresh_token":"r"}}""")
         val grokKey = tmp.resolve("grok.json")

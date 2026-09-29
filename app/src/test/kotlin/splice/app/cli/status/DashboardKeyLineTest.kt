@@ -8,9 +8,11 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.daemonclient.MgmtKeyRead
 import splice.terminal.ConsolePresence
 import java.nio.file.Files
+import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
 
 private const val KEY = "0123456789abcdef0123456789abcdef"
@@ -44,9 +46,7 @@ class DashboardKeyLineTest {
     // the operator alone can read, in the address's fragment (which never reaches the daemon), so no
     // HTTP answer and no argv ever carries it.
     @Test
-    fun `the launch page hands the key over in the fragment, and only its owner can read it`() {
-        val dir = Files.createTempDirectory("dashboard-launch")
-
+    fun `the launch page hands the key over in the fragment, and only its owner can read it`(@TempDir dir: Path) {
         val page = DashboardCommand(ConsolePresence { false }).launchPage(dir, "http://127.0.0.1:3096", KEY)
 
         assertEquals(dir.resolve(LAUNCH_PAGE), page)

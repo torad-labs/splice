@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.budget.NoHeadBudget
 import splice.core.model.ClientWindows
 import splice.core.model.ModelCatalog
@@ -37,7 +38,7 @@ import splice.head.usage.UsageStore
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
-import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -51,8 +52,7 @@ class OpenAiResponsesTest {
     private lateinit var head: HeadServer
 
     @BeforeAll
-    fun setUp() = runBlocking {
-        val tmp = Files.createTempDirectory("oai-it")
+    fun setUp(@TempDir tmp: Path) = runBlocking {
         val provider = OpenAiResponsesProvider(
             tuning = ProviderTuning(
                 key = "openai",

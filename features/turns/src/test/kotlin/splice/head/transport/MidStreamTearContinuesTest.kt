@@ -42,6 +42,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -63,6 +64,7 @@ import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.nio.file.Files
+import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.SynchronousQueue
 import java.util.concurrent.ThreadPoolExecutor
@@ -333,8 +335,8 @@ class MidStreamTearContinuesTest {
     private var stallHonestPort = 0
 
     @BeforeAll
-    fun setUp() = runBlocking {
-        tmp = Files.createTempDirectory("head-mid-stream-tear")
+    fun setUp(@TempDir tempDir: Path) = runBlocking {
+        tmp = tempDir
         upstream.start()
         prefillPort = startHead(prefill = true)
         honestPort = startHead(prefill = false)

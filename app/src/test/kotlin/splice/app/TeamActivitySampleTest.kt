@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.RefreshAttempt
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
@@ -35,6 +36,7 @@ import splice.sessions.teams.Team
 import splice.sessions.teams.TeamSlot
 import splice.topology.TopologyLoader
 import java.nio.file.Files
+import java.nio.file.Path
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -83,8 +85,7 @@ class TeamActivitySampleTest {
     """.trimIndent()
 
     @BeforeAll
-    fun setUp() {
-        val tmp = Files.createTempDirectory("v4265-team-activity")
+    fun setUp(@TempDir tmp: Path) {
         val authFile = tmp.resolve("auth.json")
         Files.writeString(authFile, """{"tokens":{"access_token":"tok-1","account_id":"acct-1","refresh_token":"r"}}""")
         val statePaths = StatePaths(baseOverride = tmp.resolve("state"))

@@ -4,12 +4,14 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
+import java.nio.file.Path
 
 class FileSourcesTest {
     @Test
-    fun `log source filters a shared bounded tail without reading the whole file`() {
-        val file = Files.createTempFile("splice-log-source", ".log")
+    fun `log source filters a shared bounded tail without reading the whole file`(@TempDir dir: Path) {
+        val file = dir.resolve("splice-log-source.log")
         val rows = buildString {
             repeat(3_000) { index ->
                 append(if (index % 2 == 0) "[codex]" else "[grok]")
@@ -30,8 +32,8 @@ class FileSourcesTest {
     }
 
     @Test
-    fun `missing log and non-positive tail are empty`() {
-        val missing = Files.createTempDirectory("splice-log-source").resolve("missing.log")
+    fun `missing log and non-positive tail are empty`(@TempDir tempDir: Path) {
+        val missing = tempDir.resolve("missing.log")
         val source = LogFileSource(missing)
         assertEquals("", source.tail(10))
 

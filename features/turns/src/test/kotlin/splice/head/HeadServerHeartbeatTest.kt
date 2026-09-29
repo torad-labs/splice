@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -29,7 +30,7 @@ import splice.upstream.transport.UpstreamClient
 import java.io.IOException
 import java.io.InputStream
 import java.net.Socket
-import java.nio.file.Files
+import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.concurrent.thread
 import kotlin.time.Duration.Companion.seconds
@@ -54,8 +55,7 @@ class HeadServerHeartbeatTest {
     private lateinit var head: HeadServer
 
     @BeforeAll
-    fun setUp() = runBlocking {
-        val tmp = Files.createTempDirectory("head-heartbeat")
+    fun setUp(@TempDir tmp: Path) = runBlocking {
         head = HeadServer(
             provider = TestResponsesProvider(
                 tuning = ProviderTuning(

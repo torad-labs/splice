@@ -36,6 +36,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthProvider
 import splice.core.config.ConfigService
 import splice.core.config.KeyStore
@@ -54,6 +55,7 @@ import splice.usage.quota.RateLimitView
 import splice.usage.quota.UsageView
 import java.net.ServerSocket
 import java.nio.file.Files
+import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermission
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
@@ -83,8 +85,7 @@ class KeysRouteTest {
     private val bodies = CopyOnWriteArrayList<String>()
 
     @BeforeAll
-    fun setUp() {
-        val tmp = Files.createTempDirectory("keys-route")
+    fun setUp(@TempDir tmp: Path) {
         store = KeyStore(tmp.resolve("config/splice/keys.toml"), log)
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)

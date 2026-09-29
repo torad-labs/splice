@@ -7,9 +7,11 @@ package splice.provider.grok
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshAttempt
 import java.nio.file.Files
+import java.nio.file.Path
 
 // DR-148 (provider sweep F5, 2026-08-31): GrokAuthJson keyed its cache on mtime ALONE while the
 // codex twin also compared sizeBytes. This file is written concurrently by the official grok CLI by
@@ -19,8 +21,7 @@ import java.nio.file.Files
 class GrokTornReadCacheTest {
 
     @Test
-    fun `a same-mtime rewrite is not served from the cache - DR-148`() = runTest {
-        val dir = Files.createTempDirectory("grok-torn-read")
+    fun `a same-mtime rewrite is not served from the cache - DR-148`(@TempDir dir: Path) = runTest {
         val now = 5_000_000_000L
         val file = dir.resolve(".grok").resolve("auth.json")
         Files.createDirectories(file.parent)

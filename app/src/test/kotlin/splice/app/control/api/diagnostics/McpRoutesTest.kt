@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.app.control.ControlServer
 import splice.client.mcp.DirectoryProbe
 import splice.client.mcp.GlobalMcpServersReader
@@ -44,6 +45,7 @@ import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.io.path.writeText
 
 /** The HTTP face of shared MCP hosting: bearer-guarded, session header on initialize, JSON answers,
@@ -62,8 +64,7 @@ class McpRoutesTest {
     private lateinit var host: McpHost
 
     @BeforeAll
-    fun setUp() {
-        val tmp = Files.createTempDirectory("mcp-routes")
+    fun setUp(@TempDir tmp: Path) {
         val script = tmp.resolve("fake_mcp.py")
         script.writeText(FAKE_MCP_SCRIPT)
         val paths = StatePaths(baseOverride = tmp.resolve("state"))

@@ -8,13 +8,13 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
 
-class ClientWindowsTest {
+class ClientWindowsTest(@param:TempDir private val tmp: Path) {
 
-    private fun store(): Path =
-        Files.createTempDirectory("client-windows").resolve("state").resolve("codex-client-windows.json")
+    private fun store(): Path = tmp.resolve("state").resolve("codex-client-windows.json")
 
     @Test
     fun `a recorded session answers with its window and an unknown one with null`() {

@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -47,6 +48,8 @@ import splice.upstream.transport.UpstreamClient
 import java.io.OutputStream
 import java.net.InetSocketAddress
 import java.nio.file.Files
+import java.nio.file.Path
+import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.seconds
@@ -80,8 +83,8 @@ private class SignInToken(private val token: String, private val accountId: Stri
 }
 
 /** A head with a primary and a backup account, in front of [upstream]. */
-private class PoolRig(val upstream: RejectingUpstream) {
-    private val tmp = Files.createTempDirectory("v4242-foreign-key")
+private class PoolRig(root: Path, val upstream: RejectingUpstream) {
+    private val tmp = Files.createDirectory(root.resolve(UUID.randomUUID().toString()))
     private val primaryQuota = QuotaTracker(tmp.resolve("primary-quota.json"))
     private val backupQuota = QuotaTracker(tmp.resolve("backup-quota.json"))
     private val primaryAuth = SignInToken(PRIMARY_TOKEN, "primary-id")
@@ -168,10 +171,10 @@ private class PoolRig(val upstream: RejectingUpstream) {
     )
 }
 
-class ForeignKeyRejectionTest {
+class ForeignKeyRejectionTest(@param:TempDir private val root: Path) {
     @Test
     fun `a 401 naming a key the account never sent is reported as the upstream's failure`() {
-        val rig = PoolRig(RejectingUpstream(rejection(FOREIGN_MASKED_KEY)))
+        val rig = PoolRig(root, RejectingUpstream(rejection(FOREIGN_MASKED_KEY)))
         try {
             val first = rig.turn()
             assertTrue("Incorrect API key provided" in first, "the upstream's own words reach the client: $first")
@@ -184,7 +187,7 @@ class ForeignKeyRejectionTest {
 
     @Test
     fun `a 401 naming a key the account never sent leaves the account's credential usable`() {
-        val rig = PoolRig(RejectingUpstream(rejection(FOREIGN_MASKED_KEY)))
+        val rig = PoolRig(root, RejectingUpstream(rejection(FOREIGN_MASKED_KEY)))
         try {
             rig.turn()
             rig.turn()
@@ -200,7 +203,7 @@ class ForeignKeyRejectionTest {
 
     @Test
     fun `a 401 naming the account's own key is still its sign-in failing`() {
-        val rig = PoolRig(RejectingUpstream(rejection(OWN_MASKED_KEY)))
+        val rig = PoolRig(root, RejectingUpstream(rejection(OWN_MASKED_KEY)))
         try {
             val first = rig.turn()
             assertTrue("authentication_error" in first, "the credential this account sent was refused: $first")

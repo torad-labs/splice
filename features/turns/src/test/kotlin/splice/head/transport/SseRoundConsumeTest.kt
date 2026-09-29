@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -61,7 +62,6 @@ import splice.upstream.retry.TurnWatchdog
 import splice.upstream.retry.WatchdogFired
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.UpstreamResponse
-import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.seconds
@@ -90,8 +90,8 @@ class SseRoundConsumeTest {
     private lateinit var tmp: Path
 
     @BeforeAll
-    fun setUp() {
-        tmp = Files.createTempDirectory("sse-consume")
+    fun setUp(@TempDir tempDir: Path) {
+        tmp = tempDir
     }
 
     @AfterAll

@@ -115,7 +115,7 @@ class ClaudeHeadRoutesWiringTest {
     // ── wired: through a REAL ControlServer — proves registration + the bearer guard ─────────────
 
     private fun serveWired(
-        tmp: Path = Files.createTempDirectory("claude-head-routes-wired"),
+        tmp: Path,
         launchService: LaunchService? = null,
         test: suspend (port: Int, key: String) -> Unit,
     ) {
@@ -151,8 +151,8 @@ class ClaudeHeadRoutesWiringTest {
     }
 
     @Test
-    fun `every claude-head route is registered and needs the bearer`() {
-        serveWired { port, _ ->
+    fun `every claude-head route is registered and needs the bearer`(@TempDir tmp: Path) {
+        serveWired(tmp) { port, _ ->
             val client = HttpClient(CIO) { expectSuccess = false }
             try {
                 val url = "http://127.0.0.1:$port"
@@ -166,8 +166,8 @@ class ClaudeHeadRoutesWiringTest {
     }
 
     @Test
-    fun `an authorized GET answers 200 with a mode field`() {
-        serveWired { port, key ->
+    fun `an authorized GET answers 200 with a mode field`(@TempDir tmp: Path) {
+        serveWired(tmp) { port, key ->
             val client = HttpClient(CIO) { expectSuccess = false }
             try {
                 val response = client.get("http://127.0.0.1:$port/api/claude-head") {

@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshAttempt
 import java.nio.file.Files
@@ -59,8 +60,7 @@ class GrokAuthProviderTest {
     }
 
     @Test
-    fun `token outside the proactive window serves without refreshing`() = runTest {
-        val dir = Files.createTempDirectory("grok-fresh")
+    fun `token outside the proactive window serves without refreshing`(@TempDir dir: Path) = runTest {
         val now = 1_000_000L
         val file = authFile(dir, expiresAtMs = now + 3_600_000)
         val calls = AtomicInteger()
@@ -73,8 +73,7 @@ class GrokAuthProviderTest {
     }
 
     @Test
-    fun `file without expires serves as-is (legacy shape)`() = runTest {
-        val dir = Files.createTempDirectory("grok-legacy")
+    fun `file without expires serves as-is (legacy shape)`(@TempDir dir: Path) = runTest {
         val file = authFile(dir, expiresAtMs = null)
         val auth = GrokAuthProvider(
             authPath = file,
@@ -90,8 +89,7 @@ class GrokAuthProviderTest {
     // three tests pin mtime directly (Files.setLastModifiedTime) to land the synthesized value in
     // each of the three credentials() tiers.
     @Test
-    fun `synthesized expiry from mtime outside proactive window serves as-is`() = runTest {
-        val dir = Files.createTempDirectory("grok-synth-fresh")
+    fun `synthesized expiry from mtime outside proactive window serves as-is`(@TempDir dir: Path) = runTest {
         val now = 1_000_000L
         val file = authFile(dir, expiresAtMs = null)
         // mtime + 4h lands far outside the 5-minute proactive window.
@@ -110,8 +108,9 @@ class GrokAuthProviderTest {
     // `now` is scaled up from the 1_000_000L convention used elsewhere so subtracting most of the
     // 4h TTL doesn't push mtime before the epoch.
     @Test
-    fun `synthesized expiry from mtime inside proactive window triggers proactive refresh`() = runTest {
-        val dir = Files.createTempDirectory("grok-synth-inside")
+    fun `synthesized expiry from mtime inside proactive window triggers proactive refresh`(
+        @TempDir dir: Path,
+    ) = runTest {
         val now = 100_000_000L
         val file = authFile(dir, expiresAtMs = null)
         Files.setLastModifiedTime(file, FileTime.fromMillis(now - (4 * 3_600_000L - 10_000)))
@@ -136,8 +135,7 @@ class GrokAuthProviderTest {
     // past) and the refresh comes back dead — mirrors `fully expired token with dead refresh yields
     // null` but for the synthesized-TTL path instead of an explicit `expires` field.
     @Test
-    fun `synthesized expiry fully elapsed with dead refresh yields null`() = runTest {
-        val dir = Files.createTempDirectory("grok-synth-dead")
+    fun `synthesized expiry fully elapsed with dead refresh yields null`(@TempDir dir: Path) = runTest {
         val now = 100_000_000L
         val file = authFile(dir, expiresAtMs = null)
         Files.setLastModifiedTime(file, FileTime.fromMillis(now - (4 * 3_600_000L + 1)))
@@ -151,8 +149,7 @@ class GrokAuthProviderTest {
     }
 
     @Test
-    fun `expired token refreshes proactively and persists rotation plus new expires`() = runTest {
-        val dir = Files.createTempDirectory("grok-expired")
+    fun `expired token refreshes proactively and persists rotation plus new expires`(@TempDir dir: Path) = runTest {
         val now = 1_000_000L
         val file = authFile(dir, expiresAtMs = now - 1) // already past expiry
         val auth = GrokAuthProvider(
@@ -177,8 +174,9 @@ class GrokAuthProviderTest {
     // this lands in the prefetch tier — the background refresh is fire-and-forget, so a failed
     // refreshCall never affects the return value; the current token comes back immediately either way.
     @Test
-    fun `above the stale floor (prefetch tier), a failed background refresh still serves the current token`() = runTest {
-        val dir = Files.createTempDirectory("grok-graceful")
+    fun `above the stale floor (prefetch tier), a failed background refresh still serves the current token`(
+        @TempDir dir: Path,
+    ) = runTest {
         val now = 1_000_000L
         val file = authFile(dir, expiresAtMs = now + 60_000) // < 5 min window, >= 30s floor
         val auth = GrokAuthProvider(
@@ -195,8 +193,7 @@ class GrokAuthProviderTest {
     // returns the FRESH token. The old single-tier suite only exercised blocking via already-past-
     // expiry fixtures; this isolates the "still valid but below the floor" case.
     @Test
-    fun `below the stale floor, credentials() blocks and returns the refreshed token`() = runTest {
-        val dir = Files.createTempDirectory("grok-floor")
+    fun `below the stale floor, credentials() blocks and returns the refreshed token`(@TempDir dir: Path) = runTest {
         val now = 1_000_000L
         val file = authFile(dir, expiresAtMs = now + 10_000) // < 30s floor
         val auth = GrokAuthProvider(
@@ -214,8 +211,9 @@ class GrokAuthProviderTest {
     // throw through SingleFlight/credentials() — the endpoint already burned the old refresh_token
     // (Granted), so a lost write must still serve the not-yet-expired CURRENT token, never an exception.
     @Test
-    fun `write failure during persist serves the current not-yet-expired token, never throws`() = runTest {
-        val dir = Files.createTempDirectory("grok-persist-fail")
+    fun `write failure during persist serves the current not-yet-expired token, never throws`(
+        @TempDir dir: Path,
+    ) = runTest {
         val now = 1_000_000L
         val file = authFile(dir, expiresAtMs = now + 10_000) // < 30s floor, still valid
         val auth = GrokAuthProvider(
@@ -246,8 +244,7 @@ class GrokAuthProviderTest {
     // runTest, for deterministic real-dispatcher async proof).
     @Test
     @Timeout(HANG_BACKSTOP_S) // DR-186: two SPINS below, and a spin that never ends wedges the suite
-    fun `prefetch tier does not block on a slow background refresh`() = runBlocking {
-        val dir = Files.createTempDirectory("grok-prefetch-async")
+    fun `prefetch tier does not block on a slow background refresh`(@TempDir dir: Path) = runBlocking {
         val now = 1_000_000L
         val file = authFile(dir, expiresAtMs = now + 120_000) // inside window, above the floor
         val calls = AtomicInteger()
@@ -274,8 +271,7 @@ class GrokAuthProviderTest {
     }
 
     @Test
-    fun `fully expired token with dead refresh yields null`() = runTest {
-        val dir = Files.createTempDirectory("grok-dead")
+    fun `fully expired token with dead refresh yields null`(@TempDir dir: Path) = runTest {
         val now = 1_000_000L
         val file = authFile(dir, expiresAtMs = now - 1)
         val auth = GrokAuthProvider(

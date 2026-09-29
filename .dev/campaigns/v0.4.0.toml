@@ -9596,7 +9596,7 @@ id = "V4-413"
 phase = "release"
 title = "A refused topology write says a restart is required (Marlin, V4-400 walk on 3839fcc06): PUT /api/topology with a missing instruction file returns ok:false and splice.toml unchanged, but restart_required:true. TopologyRoutes.kt:109 builds Attempt(Refused(unreadable)) with the default restartRequired = true (:83), and so do the secrets-refusal and decode-refusal paths. A write that wrote nothing needs no restart."
 files = ["features/configuration/src/main/kotlin/splice/configuration/topology/TopologyRoutes.kt", "features/configuration/src/test/kotlin/splice/configuration/topology/v4413/"]
-status = "todo"
+status = "in_flight"
 verify = "red first: each refusal path (unreadable instruction file, masked-secret finding, decode failure) returns restart_required false, and a successful write that changes a head still returns true. :quality-architecture:test, rules wall."
 
 [[items]]

@@ -1243,6 +1243,44 @@ test('projects opens the stack repository with the detail its own route reports'
   expect([...new Set(faults.failedReads)], 'reads the daemon refused').toEqual([]);
 });
 
+// The lanes at 1440 (splice-website's shot on demo data, 2026-09-29): every card cut its project to
+// "storefro…". Cards sit at their floor, 11u, once the board holds five columns, and the project shared its row
+// with the state, so it had 55px of the card's 142 when the state was "Working". A clone of the page's own card
+// stands in a hidden box at that floor with a 12-character project and that state, so the layout is what is
+// judged: the twelve read whole, thirty still ellipsize, and the three rows fit inside the card.
+test('a lane card at its narrowest reads a 12-character project whole beside the widest state, at 1440', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const faults = await open(page, 'sessions');
+  const lanes = page.getByRole('group', { name: 'Sessions', exact: true });
+  await expect(lanes.getByRole('button', { name: new RegExp(` ${STACK.sender.name}, `) })).toBeVisible({ timeout: 15_000 });
+  const fit = await page.evaluate(() => {
+    const card = document.querySelector<HTMLElement>('.myx-lane-card');
+    const board = card?.closest<HTMLElement>('.myx-lanes');
+    if (card == null || board == null) return null;
+    const measure = (project: string) => {
+      const box = document.createElement('div');
+      box.style.cssText = 'position:absolute;visibility:hidden;width:var(--lane-card-min)';
+      const clone = card.cloneNode(true) as HTMLElement;
+      const meta = clone.querySelector('.myx-lane-card-meta');
+      const state = clone.querySelector('.myx-badge');
+      if (meta === null || state?.lastChild == null) return null;
+      meta.textContent = project;
+      state.lastChild.textContent = 'Working';
+      box.append(clone);
+      board.append(box);
+      const result = { cut: meta.scrollWidth - meta.clientWidth, rowsCut: clone.scrollHeight - clone.clientHeight };
+      box.remove();
+      return result;
+    };
+    return { twelve: measure('tally-resume'), thirty: measure('a-project-name-of-thirty-chars') };
+  });
+  expect(fit?.twelve, 'the card has a project and a state to stand in').not.toBeNull();
+  expect(fit?.twelve?.cut, 'the 12-character project is cut').toBeLessThanOrEqual(1);
+  expect(fit?.twelve?.rowsCut, 'the card clips a row').toBeLessThanOrEqual(1);
+  expect(fit?.thirty?.cut, 'a 30-character project ellipsizes').toBeGreaterThan(1);
+  expect(faults.pageErrors, 'the lanes threw').toEqual([]);
+});
+
 test('sessions draws the stack\'s hand-off as an arc from the sender\'s card to the peer\'s, on their head\'s lane', async ({ page }) => {
   const faults = await open(page, 'sessions');
   // The lanes are the page's default view: each session a card on its head's strand, named by its

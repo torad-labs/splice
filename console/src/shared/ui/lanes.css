@@ -2,7 +2,9 @@
    Paint order, bottom up: the strand, the arcs, the cards. A hand-off that passes a card goes under
    it, so no card and no word on one is ever crossed; it shows again where it leaves the card. */
 .myx-lanes {
-  --lane-card-h: calc(4.75 * var(--u));
+  /* the name, the project and the state, a row each: at the narrowest a card gets (11u) the project has the
+     card's whole inner width, where beside the state it had 55 to 77px of it (V4-437) */
+  --lane-card-h: calc(6 * var(--u));
   --lane-card-w: calc(17 * var(--u));
   /* the narrowest a card gets before the board scrolls instead */
   --lane-card-min: calc(11 * var(--u));
@@ -96,10 +98,9 @@
   /* The card's ground: opaque, so an arc passing under the card does not show through it. */
   --lane-ground: var(--bg-raised);
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-rows: auto auto;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto auto;
   align-content: center;
-  column-gap: var(--space-3);
   row-gap: var(--space-1);
   box-sizing: border-box;
   width: min(100%, var(--lane-card-w));
@@ -130,10 +131,10 @@ button.myx-lane-card:focus-visible { outline: var(--focus-width) solid var(--foc
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* The name takes the card's whole width; the project and the state share the line under it. */
-.myx-lane-card-title { grid-column: 1 / -1; font-size: var(--text-3); font-weight: 600; }
+/* The name, the project and the state each take a line and the card's whole width. */
+.myx-lane-card-title { grid-column: 1; font-size: var(--text-3); font-weight: 600; }
 .myx-lane-card-meta { grid-column: 1; align-self: center; font-size: var(--text-1); color: var(--fg-muted); }
-.myx-lane-card > .myx-badge { grid-column: 2; grid-row: 2; align-self: center; }
+.myx-lane-card > .myx-badge { grid-column: 1; grid-row: 3; justify-self: start; }
 
 .myx-lanes-arcs {
   position: absolute;

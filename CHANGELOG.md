@@ -564,6 +564,11 @@ origin.
   request path, and a rate-limited mint is held rather than retried.
 
 ### Changed
+- **A screenshot-heavy session on a large-window model keeps its images.** Claude Code keeps at
+  most 100 images in a request, or 600 when it counts the session as 1M-context, and strips the
+  oldest past that. splice now hands Claude Code the 1M form of any model whose configured window
+  is at least 425,000 tokens, and scales the token counts it reports so Claude Code still compacts
+  at the model's real window. Smaller models keep their names.
 - **Every dollar figure says it is an API-rate estimate, and the film's four models have rate
   cards.** The status line printed a bare `$0.85`, and on a subscription head no token is billed at
   all, so it read as a charge. It now reads `API est. $0.85`, and a budget's refusal and warning say
@@ -656,6 +661,18 @@ origin.
   judged each row by its credential and its wrapper alone, so a head skipped at boot read "ready"
   while `/health` counted it failed. The row now reads "not running" with the daemon's own boot
   reason, and `/health` names each failed head and its reason beside the count.
+- **`splice status` no longer calls a head ready when it cannot answer a turn.** A head whose
+  provider refuses every turn until a reset (a spent weekly plan) reads `out of quota until` that
+  reset, in the machine's own time zone, and `/health` and the usage view carry the same instant.
+  splice learns it from the refusal, keeps it across a restart, and also reads it from the
+  provider's own quota figure at 100% before any turn has been refused. A local head whose runtime
+  does not answer reads `runtime not answering on :<port>`, and the console's Fleet shows it down.
+  The first turn after a restart still goes to the provider, so a plan that resets early is used
+  at once.
+- **`splice doctor` gives the daemon's own fix for a splice.toml value of the wrong type.** It
+  pointed at a file inside splice's source tree and suggested deleting the config; it now names the
+  key, the line and the expected type, and says what to write, in the words the daemon prints when
+  it refuses to start.
 - **A code-mode turn that cannot save its state says why.** When the disk holding splice's state
   filled, every code-mode turn failed as "code-mode state persistence failed", which read as a
   code-mode bug. The message now says the disk is full, and any other save failure names its cause.

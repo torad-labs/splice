@@ -12,8 +12,10 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 
-/** What Claude Code returns for a "[1m]" id — the literal it hardcodes, NOT 1024*1024. */
-private const val CLAUDE_CODE_ONE_MILLION = 1_000_000L
+/** What Claude Code returns for a "[1m]" id — the literal it hardcodes, NOT 1024*1024. Public since V4-358:
+ *  the launch and the head both need the number a spelled row's client holds, and a copy is a second
+ *  source that can drift. */
+public const val CLAUDE_CODE_ONE_MILLION: Long = 1_000_000L
 
 /** Claude Code's own id-keyed window hook, matched anywhere in the client id. */
 // UNANCHORED on purpose, unlike the strip rule (DR-27): this predicate exists to predict what the

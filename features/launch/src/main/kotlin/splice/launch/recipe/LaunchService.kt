@@ -85,12 +85,14 @@ public class LaunchService(
         val keyed = if (keyPresentNow) spec.copy(tokenCapture = null, advertiseKeySetup = false) else spec
         val effective = wrapped?.let { keyed.copy(trees = keyed.trees.copy(own = it.configDir)) } ?: keyed
         val slots = aliasSlots(effective)
+        // V4-358: every choice above is made on the rows' own ids; what the client is HANDED is spelled here.
+        val held = effective.heldByClient()
         val materialize = MaterializeSpec(
             configDir = effective.trees.own,
             policy = effective.policy,
-            availableModelIds = effective.availableModelIds,
-            defaultModel = effective.pinnedModel,
-            modelOptionsCache = effective.modelOptionsCache,
+            availableModelIds = held.availableModelIds,
+            defaultModel = held.pinnedModel,
+            modelOptionsCache = held.modelOptionsCache,
             statuslineCommand = effective.statuslineCommand,
             loginCommand = effective.loginCommand,
             signInLabel = effective.signInLabel,
@@ -121,8 +123,8 @@ public class LaunchService(
         // V4-183 BEFORE the adoption: a bounded -c becomes a named resume, and a named resume is what
         // adoptResume judges.
         val bounded = headBoundedContinue.resolve(effective.trees.own, extraArgs, cwd)
-        val adoption = adoptResume(effective, bounded.args)
-        val env = buildEnv(effective, slots)
+        val adoption = adoptResume(held, bounded.args)
+        val env = buildEnv(held, slots)
         val unset = staleEnvUnsets(effective, slots)
         val argv = buildList {
             // V4-129: the real absolute path when `claude` on PATH is currently the wrap shim itself
@@ -294,7 +296,7 @@ public class LaunchService(
             val planted = mutableSetOf<String>()
             slots.forEach { (slot, model) ->
                 val spelling = when {
-                    planted.add(model) -> model
+                    planted.add(model) -> spec.tiers.clientId(model)
                     model in presentedAs -> presentedAs.getValue(model)
                     spec.discoveryPrefix.isNotBlank() -> spec.discoveryPrefix + model
                     else -> model
@@ -313,7 +315,13 @@ public class LaunchService(
             // V4-232: and no lower than the client's own window for a presented row, which ignores the
             // env above: 2.1.283 compacts at min(window, this), so a presented row on a runtime under
             // 200k would otherwise compact at a sixth of it. An env row's own window still wins min().
-            val compactWindow = maxOf(AUTO_COMPACT_FLOOR, spec.contextWindow, spec.tiers.presentedWindow)
+            // V4-358: and no lower than the client's 1M window when any row is spelled 1M, for the same reason.
+            val compactWindow = maxOf(
+                AUTO_COMPACT_FLOOR,
+                spec.contextWindow,
+                spec.tiers.presentedWindow,
+                spec.tiers.spelledWindow,
+            )
             put("CLAUDE_CODE_AUTO_COMPACT_WINDOW", compactWindow.toString())
             put("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "85")
             put("MAX_THINKING_TOKENS", "128000")

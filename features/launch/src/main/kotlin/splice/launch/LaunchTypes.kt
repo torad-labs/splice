@@ -10,7 +10,9 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.client.ClaudePolicy
 import splice.client.login.TokenCaptureSpec
+import splice.core.model.CLAUDE_CODE_ONE_MILLION
 import splice.core.model.CLIENT_TABLE_WINDOW
+import splice.core.model.ClientSpelling
 import splice.core.model.ModelCatalog
 import splice.core.util.JsonScalars
 import java.nio.file.Path
@@ -44,12 +46,26 @@ public data class ModelTiers(
     /** V4-232: settings.json `modelOverrides` (ModelCatalog.presented): each Claude model a presented row
      *  is resolved as -> the row's id. Empty for a head that presents none. */
     val modelOverrides: Map<String, String> = emptyMap(),
+    /** V4-358: row id -> the id the CLIENT is handed for it ([ClientSpelling]: the 1M hint), for the rows
+     *  that differ. Every id decision here (tier names, slots, labels, the resume rewrite) stays on the
+     *  row's own id; only what the client is handed is spelled, at the last step ([LaunchSpec.heldByClient],
+     *  [clientId]). Empty for a head that spells none, which is every head under 425k and every
+     *  client-auth one. */
+    val spelled: Map<String, String> = emptyMap(),
 ) {
     /** V4-232: the client's window for the presented rows, [CLIENT_TABLE_WINDOW], or 0 when there are
      *  none. The client compacts at min(window, CLAUDE_CODE_AUTO_COMPACT_WINDOW), so the launch plants
      *  that env no lower (LaunchService.buildEnv), or a presented row on a small runtime would compact
      *  at a fraction of its window. */
     val presentedWindow: Long get() = if (modelOverrides.isEmpty()) 0L else CLIENT_TABLE_WINDOW
+
+    /** V4-358: the client's window for the spelled rows, 1e6, or 0 when there are none: the same cap on
+     *  the auto-compact env as [presentedWindow], for the same reason. Without it a row spelled 1M on an
+     *  872k head would compact at min(1e6, 872k) reported tokens, 13% early once scaled. */
+    val spelledWindow: Long get() = if (spelled.isEmpty()) 0L else CLAUDE_CODE_ONE_MILLION
+
+    /** The id the client is handed for row [id]. */
+    public fun clientId(id: String): String = spelled[id] ?: id
 }
 
 /** What a head needs to produce a launch recipe (supplied by :app at wiring time). */
@@ -110,7 +126,41 @@ public data class LaunchSpec(
     public fun withWindows(catalog: ModelCatalog): LaunchSpec {
         val windows = catalog.live().models.associate { it.id to it.contextWindow }
         val options = (modelOptionsCache as? JsonArray)?.let { rows -> JsonArray(rows.map { withWindow(it, windows) }) }
-        return copy(contextWindow = catalog.clientLaunchWindow, modelOptionsCache = options ?: modelOptionsCache)
+        return copy(
+            contextWindow = catalog.clientLaunchWindow,
+            modelOptionsCache = options ?: modelOptionsCache,
+            tiers = tiers.copy(spelled = spelledIn(catalog)),
+        )
+    }
+
+    /** V4-358: this spec as the client is handed it: the pinned row, the allowlist and each picker row
+     *  under [ModelTiers.clientId]. The allowlist keeps the row's own id BESIDE its spelled one, so a
+     *  session written before the row was spelled (its transcript names the bare id) still resumes on
+     *  it instead of being retagged onto the pinned model, which drops the thinking of every row it
+     *  moves. The picker is drawn from the tier slots and the options cache, never from the allowlist,
+     *  so the extra id adds no row. This very spec when nothing is spelled. */
+    public fun heldByClient(): LaunchSpec {
+        if (tiers.spelled.isEmpty()) return this
+        val options = (modelOptionsCache as? JsonArray)?.let { rows -> JsonArray(rows.map(::heldRow)) }
+        return copy(
+            pinnedModel = tiers.clientId(pinnedModel),
+            availableModelIds = availableModelIds.flatMap { listOfNotNull(tiers.spelled[it], it) },
+            modelOptionsCache = options ?: modelOptionsCache,
+        )
+    }
+
+    private fun spelledIn(catalog: ModelCatalog): Map<String, String> {
+        if (forwardClientAuth) return emptyMap()
+        val spelling = ClientSpelling(catalog)
+        return (listOf(pinnedModel) + availableModelIds).distinct()
+            .associateWith(spelling::of)
+            .filter { (id, held) -> held != id }
+    }
+
+    private fun heldRow(row: JsonElement): JsonElement {
+        val option = row as? JsonObject ?: return row
+        val value = JsonScalars.str(option, "value") ?: return row
+        return JsonObject(option + ("value" to JsonPrimitive(tiers.clientId(value))))
     }
 
     private fun withWindow(row: JsonElement, windows: Map<String, Long>): JsonElement {

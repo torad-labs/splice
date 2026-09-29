@@ -29,6 +29,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import splice.core.perf.PerfKeys
+import splice.head.ClientWindowWitness
 import splice.head.HeadDeps
 import splice.head.compaction.CompactionReplay
 import splice.head.wire.ClientChannel
@@ -56,6 +57,7 @@ internal class TurnStreamer(
 ) {
     private val emitters = SseEmitterFactory()
     private val wiring = TurnWiring()
+    private val clientWindow = ClientWindowWitness(deps.stores.clientWindows)
 
     // The drive handles every turn failure itself; anything that still escapes a detached
     // compaction is a bug, logged by class (safe-failure-render) rather than lost to stderr.
@@ -113,7 +115,7 @@ internal class TurnStreamer(
                 usagePayload = wiring.usagePayloadBuilder(
                     provider.catalog,
                     built.meta,
-                    deps.stores.clientWindows.windowFor(built.meta.sessionId),
+                    clientWindow.of(call, built.meta.sessionId),
                 ),
             )
             val drive = driveFactory.assembleDrive(inputs, emitter, channel)

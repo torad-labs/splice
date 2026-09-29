@@ -24,6 +24,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import splice.core.model.ClientWindows
+import splice.head.ClientWindowWitness
 import splice.head.admission.TurnQuota
 import splice.head.wire.ClientAnswer
 import splice.head.wire.ClientChannel
@@ -42,6 +43,7 @@ internal class CollectTurn(
     private val clientWindows: ClientWindows = ClientWindows(),
 ) {
     private val wiring = TurnWiring()
+    private val clientWindow = ClientWindowWitness(clientWindows)
 
     /** Non-stream sibling of TurnDriver.stream: Claude Code sends stream:false on some internal
      *  calls (the Node predecessor served them by collecting the terminal object). Drives the SAME
@@ -51,7 +53,7 @@ internal class CollectTurn(
         val built = inputs.built
         val terminal = CollectingTerminal(
             built.meta.originalModel,
-            wiring.usagePayloadBuilder(provider.catalog, built.meta, clientWindows.windowFor(built.meta.sessionId)),
+            wiring.usagePayloadBuilder(provider.catalog, built.meta, clientWindow.of(call, built.meta.sessionId)),
         )
         // Inert writer: collect never writes SSE frames. clientGone is flipped by Netty
         // closeFuture (HD-29), not by a failed write.

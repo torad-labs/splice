@@ -41,6 +41,11 @@ test('Settings says neither topology nor daemon in anything the operator reads',
   });
   const read = (await page.locator('main').innerText()).split('\n').map((line) => line.trim()).filter((line) => line !== '');
   expect(read.filter((line) => /\b(topology|daemon)\b/i.test(line))).toEqual([]);
+  // Two bays or regions of one name read as one to a person and to a screen reader (V4-403 follow-up).
+  const named = await page.locator('main .myx-bay-label').allTextContents();
+  const regions = await page.locator('main section[aria-label], main [role="region"]').evaluateAll((all) => all.map((el) => el.getAttribute('aria-label') ?? ''));
+  const repeated = (names: string[]) => names.filter((name, at) => name !== '' && names.indexOf(name) !== at);
+  expect({ bays: repeated(named), regions: repeated(regions) }).toEqual({ bays: [], regions: [] });
 });
 
 test('Fleet shows each plan\'s state, model and window whole at desktop width', async ({ page }) => {

@@ -37,8 +37,8 @@ export const S = {
   /** splice.toml as the operator edits it: the file's name, not the word for its shape (V4-403). */
   topology: 'Config file',
   plans: 'Plans',
-  /** A top-level table of splice.toml as its bay is labeled: the operator's words for the two whose key is ours. */
-  groupName: { daemon: 'Splice', heads: 'Plans' } as Readonly<Record<string, string>>,
+  /** A top-level table of splice.toml as its bay is labeled: the operator's words for the two whose key is ours, each apart from the knob group 'Splice' and the plans bay 'Plans'. */
+  groupName: { daemon: 'Splice options', heads: 'Plan options' } as Readonly<Record<string, string>>,
   topologyWhy: 'About writing',
   /** The topology file's path, printed once for the section. */
   file: 'File',

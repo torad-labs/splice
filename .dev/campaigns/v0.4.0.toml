@@ -9826,3 +9826,11 @@ verify = "red first: a refusal for a window resetting at a fixed instant reads t
 claimed_by = "fin"
 claimed_at = "2026-09-29T03:56:37.494Z"
 # [2026-09-29] CLAIM: owner=fin at=2026-09-29T03:56:37Z
+
+[[items]]
+id = "V4-426"
+phase = "release"
+title = "The gradle slot is held while buildgate holds its build for memory (hostshield-lead, from eli-gh-manager's buildgate analysis, Sep 28): tools/gate/src/lib/slot.ts takes the worktree's flock (:113) and only then spawns buildgate gradlew (:190-196), so a memory hold keeps the slot for up to GRADLE_SLOT_WAIT_S (3600 s) with no JVM running, and every other seat's gate queues behind a build that has not started. Latent: buildgate has made 0 memory holds in 1,957 admissions since the 7:43 PM CT boot. The slot is taken once buildgate has admitted the build, without collapsing buildgate's per-kind footprint key (it measures by build kind) and without an admitted-but-waiting build counting against other projects."
+files = ["tools/gate/src/lib/slot.ts", "tools/gate/test/slot.test.ts"]
+status = "todo"
+verify = "red first: with a fake buildgate on PATH that holds its first command until a release file appears and admits a second at once, a second slot run completes while the first is still held; today's tree makes it wait on the flock. Two admitted runs in one worktree still never run gradle at once (the slot's reason: shared build/ outputs, the test-results collisions of Sep 28). The holder line names a build that is running, not one that is held. bun test tools/gate; CI's gate job green."

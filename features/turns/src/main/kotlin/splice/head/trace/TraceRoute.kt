@@ -34,6 +34,7 @@ import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
 import splice.head.TurnsHead
 import splice.head.TurnsHeadLookup
+import splice.head.turn.OutcomeSentences
 import splice.head.wire.BAD_LAST
 import splice.http.JsonReply
 import java.nio.file.Path
@@ -158,7 +159,10 @@ public class TraceRoute(
         put("compact", turn.compact)
         put("open", ending == null)
         put("outcome", ending?.outcome)
-        put("failure_sentence", ending?.failureSentence)
+        // V4-414: a turn recorded before V4-404 stored no sentence, so an ending with none answers the table's
+        // sentence for its outcome (the one closeTrace records today); a stored one, spoken by a surface that
+        // knew more, keeps its place. Derived here: the record on disk is served exactly as written.
+        put("failure_sentence", ending?.let { it.failureSentence ?: OutcomeSentences.of(it.outcome) })
         put("rounds", if (ending == null) open.toLong() else ending.rounds.toLongOrNull())
         put("attempts", if (ending == null) open.toLong() else ending.attempts.toLongOrNull())
         put("total_ms", ending?.totalMs?.toLongOrNull())

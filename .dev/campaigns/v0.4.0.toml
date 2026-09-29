@@ -10115,6 +10115,7 @@ verify = "red first: an e2e test at 1440 (and scrolled sideways) measures every 
 claimed_by = "claude-console"
 claimed_at = "2026-09-29T23:49:42.137Z"
 # [2026-09-29] CLAIM: owner=claude-console at=2026-09-29T23:49:42Z
+# [2026-09-29] Sep 29 CT: superseded by V4-444. The operator rejected the whole console on sight at ~7:00 PM CT, and the Sessions lanes this row polishes are replaced by the redesign.
 
 [[items]]
 id = "V4-443"

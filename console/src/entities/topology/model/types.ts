@@ -58,8 +58,8 @@ export interface TopologyWriteResult {
   backup_path?: string;
   /** The writer's own diagnostics; empty on a clean write. */
   findings?: TopologyFinding[];
-  /** Always true. A topology edit cannot reach running sessions, so a write that reported
-   *  `restart_required: false` would be lying about the daemon's own boot behaviour. */
+  /** True when the write moved a key only boot reads. False for a refusal, which wrote nothing (V4-413),
+   *  and for a write that changed nothing but context windows, which the daemon re-reads (V4-162). */
   restart_required: boolean;
 }
 

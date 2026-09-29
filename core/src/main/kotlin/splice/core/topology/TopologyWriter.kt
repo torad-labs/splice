@@ -51,10 +51,13 @@ package splice.core.topology
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import splice.core.config.ConfigService
+import splice.core.config.StatePaths
 import splice.core.model.HeadDiscoveredModels
 import splice.core.util.Cancellables
 import splice.core.util.DirectoryListing
 import splice.core.util.FilesListing
+import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
@@ -139,7 +142,7 @@ public class TopologyWriter(
         keys.canonical(json.encodeToJsonElement(Topology.serializer(), topology)).jsonObject
 
     public fun write(requested: Topology): TopologyWriteResult {
-        val findings = TopologyChecks(requested, discovered).findings()
+        val findings = TopologyChecks(requested, discovered, backups).findings()
         if (findings.isNotEmpty()) return TopologyWriteResult.Refused(findings)
         val existing = Files.readString(path)
         val held = Cancellables.runCatchingCancellable { tree(parse(existing)) }.getOrElse { failure ->
@@ -222,9 +225,13 @@ public class TopologyWriter(
 }
 
 /** The checks the loader does not make at decode time but the daemon would trip on at boot. */
-private class TopologyChecks(private val topology: Topology, private val discovered: HeadDiscoveredModels) {
+private class TopologyChecks(
+    private val topology: Topology,
+    private val discovered: HeadDiscoveredModels,
+    private val stateBase: Path,
+) {
 
-    fun findings(): List<TopologyFinding> = references() + ports() + rosters()
+    fun findings(): List<TopologyFinding> = references() + ports() + rosters() + knobs()
 
     private fun references(): List<TopologyFinding> = topology.heads
         .filter { (_, head) -> head.provider !in topology.providers }
@@ -254,5 +261,29 @@ private class TopologyChecks(private val topology: Topology, private val discove
                 TopologyFinding("heads.$key.models", failure.message ?: "the head's model list is invalid")
             }
         }
+    }
+
+    /** V4-376: an override the daemon would ignore at boot. The daemon's own [ConfigService] is asked
+     *  what it ignores ([ConfigService.coerceRejects], the call the boot log and the doctor make), so
+     *  the reason is boot's own sentence and no coercion rule is copied here. [Topology.defaults] is the
+     *  global layer's free-form table and a head's `overrides` is its own; both are the operator's text.
+     *  [stateBase] only satisfies the constructor: nothing here reads state, and an explicit base keeps
+     *  the check off the filesystem. */
+    private fun knobs(): List<TopologyFinding> {
+        val ignored = ConfigService(
+            StatePaths(baseOverride = stateBase),
+            headOverrides = TopologyKnobLayer(topology).configOverrides(),
+            perHeadOverrides = topology.heads.mapValues { (_, head) -> head.overrides },
+            log = LogSink {},
+        ).coerceRejects()
+        val global = topology.defaults.keys.mapNotNull { key ->
+            ignored[key]?.let { TopologyFinding("defaults.$key", it) }
+        }
+        val perHead = topology.heads.flatMap { (head, config) ->
+            config.overrides.keys.mapNotNull { key ->
+                ignored["heads.$head.$key"]?.let { TopologyFinding("heads.$head.overrides.$key", it) }
+            }
+        }
+        return global + perHead
     }
 }

@@ -103,6 +103,12 @@ internal class DaemonLaunch(
      *  thing that may start a daemon here. A unit that never answers is reported with its journal;
      *  a second daemon is never spawned beside it (that is how every squatter of 2026-09-21 was born). */
     private fun startUnit(unit: String, port: Int, expectedVersion: String): Boolean {
+        // V4-409: the unit is only this shell's to start when it runs this home's daemon; `splice dashboard`
+        // from a scratch home used to start the everyday daemon here and then wait on its own port.
+        refusalFor(unit, port)?.let { refusal ->
+            output.line(refusal)
+            return false
+        }
         output.line("splice: starting $unit…")
         val up = supervised.start(unit) && waitUntilUp(port, expectedVersion)
         if (!up) {
@@ -124,6 +130,11 @@ internal class DaemonLaunch(
      *  daemon to the raw path, stopped and spawned here, and never to the unit. */
     internal fun foreignUnitRefusal(port: Int): String? {
         val unit = (supervised.route() as? ColdStartRoute.Unit)?.unit ?: return null
+        return refusalFor(unit, port)
+    }
+
+    /** V4-409: one composer for the sentence, so a start and a restart refuse in the same words. */
+    private fun refusalFor(unit: String, port: Int): String? {
         val foreign = supervised.ownership(unit, port) as? UnitOwnership.Foreign ?: return null
         return "splice: not restarting $unit: ${foreign.reason}. Nothing was stopped or restarted. " +
             "To run this home's own daemon apart from the unit, set SPLICE_CONFIG to its splice.toml."

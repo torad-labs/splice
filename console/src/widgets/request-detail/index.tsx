@@ -21,7 +21,7 @@ import { captureView, readConversation, readKeptTurn } from '@entities/perf';
 import type { CaptureState, ConversationMessageWire, KeptTurn, TraceRecord, TraceTurnWire, TranscriptConversationWire } from '@entities/perf';
 import { DaemonRestart } from '@features/daemon-restart';
 import { Fault, Flag, Key, KeyLink } from '@shared/controls';
-import { fmtInt, fmtUsd, readFor } from '@shared/lib';
+import { fmtInt, fmtUsd, noun, readFor } from '@shared/lib';
 import { Badge, Empty, InfoTip, KeyValue, Reveal, Section } from '@shared/ui';
 import { readAnswer, readRequest } from './model';
 import type { Message, Part, RequestView } from './model';
@@ -37,7 +37,11 @@ const NEWEST_SHOWN = 6;
 
 const ROLE: Record<string, string> = { user: S.user, assistant: S.assistant };
 
-const size = (text: string): string => `${fmtInt(text.length)} ${U.chars}`;
+const size = (text: string): string => `${fmtInt(text.length)} ${noun(text.length, U.char, U.chars)}`;
+
+/** "1 message, 1 tool" beside the section's title: how much the model was handed. */
+const countsOf = ({ messages, tools }: RequestView): string =>
+  `${fmtInt(messages.length)} ${noun(messages.length, U.message, U.messages)}, ${fmtInt(tools.length)} ${noun(tools.length, U.tool, U.tools)}`;
 
 function PartView({ part }: { part: Part }) {
   switch (part.kind) {
@@ -155,7 +159,7 @@ export function RequestRead({ read }: { read: TraceTurnWire }) {
   return (
     <div className="myx-rq">
       {cost === null ? null : <KeyValue rows={[[S.cost, cost]]} />}
-      <Section title={S.sent} {...(request !== null && 'view' in request ? { meta: `${fmtInt(request.view.messages.length)} ${U.messages}, ${fmtInt(request.view.tools.length)} ${U.tools}` } : {})}>
+      <Section title={S.sent} {...(request !== null && 'view' in request ? { meta: countsOf(request.view) } : {})}>
         {request === null ? <Empty text={S.notKept} source={H.notKept} /> : 'view' in request ? <Request view={request.view} /> : (
           <>
             <Empty text={request.unread === 'cut' ? S.cut : S.unreadable} source={request.unread === 'cut' ? H.cut : H.unreadable} />

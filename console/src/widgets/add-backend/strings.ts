@@ -57,7 +57,7 @@ export const H = {
   live: 'A live check sends one short turn through the new plan.',
   draining: 'Splice is restarting; the new plan appears once it is back.',
   launch: 'Type this command in your terminal after the restart.',
-  waiting: (count: number): string => `The restart waits for ${count} compaction(s) to finish.`,
+  waiting: (count: number): string => `The restart waits for ${count} ${count === 1 ? 'compaction' : 'compactions'} to finish.`,
   loading: 'Reading the profiles splice can add.',
   unavailable: 'This plan is unavailable in this splice build.',
   noReply: 'The provider returned no readable reply.',

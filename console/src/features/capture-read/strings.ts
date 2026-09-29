@@ -54,5 +54,6 @@ export const H = {
 
 export const U = {
   of: 'of',
+  char: 'char',
   chars: 'chars',
 } as const;

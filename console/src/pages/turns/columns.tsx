@@ -8,7 +8,7 @@ import { isStalled, STAGE_MARKS, waterfall } from '@entities/perf';
 import type { InflightTurn, PerfStats, PerfSummaryHead, TurnRow } from '@entities/perf';
 import type { HeadStatus } from '@shared/api';
 import { HeadMark } from '@entities/control-status';
-import { fmtMs, fmtShare, fmtTokens } from '@shared/lib';
+import { fmtMs, fmtShare, fmtTokens, noun } from '@shared/lib';
 import { Badge, Meter, Pips, StackedBar, Tip, Waterfall } from '@shared/ui';
 import type { Column } from '@shared/ui';
 import { H, S, U } from './strings';
@@ -82,7 +82,7 @@ export function badgesOf(row: TurnRow): { key: string; tone: 'ok' | 'warn' | 'da
     { key: 'outcome', tone: row.outcome === 'ok' ? 'ok' : 'danger', text: row.outcome },
   ];
   if (row.compact === true) badges.push({ key: 'compact', tone: 'neutral', text: S.compaction });
-  if ((row.retries ?? 0) > 0) badges.push({ key: 'retries', tone: 'warn', text: `${row.retries} ${U.retries}` });
+  if ((row.retries ?? 0) > 0) badges.push({ key: 'retries', tone: 'warn', text: `${row.retries} ${noun(row.retries ?? 0, U.retry, U.retries)}` });
   if ((row.async_io_drops ?? 0) > 0) badges.push({ key: 'dropped', tone: 'warn', text: S.dropped });
   return badges;
 }

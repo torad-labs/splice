@@ -16,7 +16,7 @@ import { captureView } from '@entities/perf';
 import type { CaptureState } from '@entities/perf';
 import { CaptureRead } from '@features/capture-read';
 import { Fault, Flag } from '@shared/controls';
-import { fmtInt } from '@shared/lib';
+import { fmtInt, noun } from '@shared/lib';
 import { Badge, InfoTip, KeyValue } from '@shared/ui';
 import { S, H, U } from './strings';
 import './waterfall.css';
@@ -61,7 +61,7 @@ export function RequestDrawer({ capture, error = null, onSwitch }: {
       <KeyValue
         rows={[
           [S.retention, `${settings.retention_days} ${U.days}`],
-          [S.bodyCap, `${fmtInt(settings.max_body_chars)} ${U.chars}`],
+          [S.bodyCap, `${fmtInt(settings.max_body_chars)} ${noun(settings.max_body_chars, U.char, U.chars)}`],
         ]}
       />
       {capture.refused === null ? null : <Fault message={capture.refused} />}

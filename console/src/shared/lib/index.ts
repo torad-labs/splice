@@ -105,6 +105,13 @@ export function fmtInt(n: number): string {
   return new Intl.NumberFormat('en-US').format(n);
 }
 
+/** The noun that agrees with a count: [one] for exactly one, [many] for every other count, zero
+ *  included (`0 messages`). A count printed beside a plural-only word read `1 messages`; the sentence
+ *  keeps its own number formatting and asks only for the word. */
+export function noun(n: number, one: string, many: string): string {
+  return n === 1 ? one : many;
+}
+
 /** A byte count as a person reads it, in binary units: `512 B`, `1.5 KiB`, `54.1 MiB`. */
 export function fmtBytes(n: number): string {
   const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];

@@ -16,7 +16,7 @@ import { useState } from 'react';
 import { readTrace, readTraceTurn, readWire } from '@entities/perf';
 import type { TraceListWire, TraceRecord, TraceSide, TracedTurnWire, TraceTurnWire, WireRead, WireRecordWire } from '@entities/perf';
 import { Fault, Key } from '@shared/controls';
-import { ABSENT, fmtInt, fmtMs } from '@shared/lib';
+import { ABSENT, fmtInt, fmtMs, noun } from '@shared/lib';
 import { Badge, DataTable, Empty, InfoTip, KeyValue, Reveal } from '@shared/ui';
 import type { Column } from '@shared/ui';
 import { H, S, U } from './strings';
@@ -124,7 +124,7 @@ function Side({ label, side, text }: { label: string; side: TraceSide | undefine
   if (side === undefined) return null;
   const content = side[text] ?? '';
   return (
-    <Reveal label={`${label} · ${fmtInt(content.length)} ${U.chars}`}>
+    <Reveal label={`${label} · ${fmtInt(content.length)} ${noun(content.length, U.char, U.chars)}`}>
       {side.headers === undefined ? null : (
         <KeyValue rows={Object.entries(side.headers).map(([name, value]) => [name, value] as const)} />
       )}
@@ -197,7 +197,7 @@ function WireBody({ record }: { record: WireRecordWire }) {
         {record.session === undefined ? null : <code>{record.session.slice(0, SESSION_CHARS)}</code>}
         {record.compact ? <Badge tone="neutral" quiet>{S.compact}</Badge> : null}
       </div>
-      <Reveal label={`${S.request} · ${fmtInt(record.body.length)} ${U.chars}`}>
+      <Reveal label={`${S.request} · ${fmtInt(record.body.length)} ${noun(record.body.length, U.char, U.chars)}`}>
         <pre className="myx-cr-body">{record.body}</pre>
       </Reveal>
     </li>

@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react';
 import { Badge, Bay, Empty, Figure, HolderEdge, InfoTip, Reveal } from '@shared/ui';
 import { Choice, Confirm, Fault, Flag, Input, Key } from '@shared/controls';
-import { fmtInt } from '@shared/lib';
+import { fmtInt, noun } from '@shared/lib';
 import type { ClaudeHeadActionResult, ClaudeHeadPayload } from '@entities/claude-head';
 import { previewInstructionFile, validateTopology } from '@entities/topology';
 import type { InstructionFilePreview, TopologyState, TopologyWriteResult } from '@entities/topology';
@@ -258,7 +258,7 @@ export function CommandInstructionsSection({ heads, labels, loaded, draft, onDra
             {asked === null ? null : shown === null ? <p>{H.previewReading}</p>
               : shown.error !== null ? <Fault message={shown.error} />
                 : shown.data === null ? null : (
-                  <><pre>{shown.data.text}</pre><p>{`${fmtInt(shown.data.chars)} ${S.chars}`}{shown.data.truncated ? ` · ${S.firstLines}` : ''}</p></>
+                  <><pre>{shown.data.text}</pre><p>{`${fmtInt(shown.data.chars)} ${noun(shown.data.chars, S.char, S.chars)}`}{shown.data.truncated ? ` · ${S.firstLines}` : ''}</p></>
                 )}
           </>
         ) : <pre>{current.text}</pre>}

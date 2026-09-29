@@ -54,7 +54,7 @@ import { RequestDrawer, TurnWaterfall } from '@widgets/waterfall';
 import { Badge, DataTable, DetailPanel, Empty, InfoTip, KeyValue, Legend, Meter, PageHeader, Section, StackedBar } from '@shared/ui';
 import type { Column, RowGroup } from '@shared/ui';
 import { Fault } from '@shared/controls';
-import { fmtMs, fmtShare, fmtTokens, fmtUsd, poll, timeAgo } from '@shared/lib';
+import { fmtMs, fmtShare, fmtTokens, fmtUsd, noun, poll, timeAgo } from '@shared/lib';
 import { atText, badgesOf, Gates, inflightColumns, landedColumns, landedKeysOf, lengthOf, slotsFrom, summaryColumns } from './columns';
 import type { HeadSlots } from './columns';
 import { TurnFilters } from './filters';
@@ -415,7 +415,7 @@ export function TurnsBoard({ slots = [], inflight, landed, summary, capture, loc
   // An hour is idle only where every head was read: a head that could not be read may have served
   // turns in any of them, and it is named above the table (V4-300). Under a filter an empty hour
   // held no MATCHING turn, which is not idle either.
-  const idleText = unread.length > 0 || filtered ? '' : `, ${idleHours} ${U.idle}`;
+  const idleText = unread.length > 0 || filtered ? '' : `, ${idleHours} ${noun(idleHours, U.idleHour, U.idle)}`;
   const windowText = selection.kind === 'timeline' ? `${selection.window.hours}h ${U.window}${cutText}${idleText}` : null;
   const ofText = filtered ? `${U.of} ${loaded.length}` : null;
   const landedMeta = [ofText, windowText].filter((part) => part !== null).join(', ');

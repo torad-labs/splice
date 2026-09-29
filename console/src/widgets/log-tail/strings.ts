@@ -36,6 +36,7 @@ export const H = {
 
 export const U = {
   /** After the count of lines that arrived while the reader was not following. */
+  newLine: 'new line',
   newLines: 'new lines',
   cached: 'cached',
   in: 'in',

@@ -25,6 +25,7 @@ export const S = {
   replaceMode: 'Replace',
   stripMode: 'Remove parts',
   preview: 'Preview',
+  char: 'Character',
   chars: 'Characters',
   firstLines: 'First lines',
   knobs: 'Runtime settings',

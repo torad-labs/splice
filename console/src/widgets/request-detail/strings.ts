@@ -69,7 +69,10 @@ export const H = {
 } as const;
 
 export const U = {
+  char: 'char',
   chars: 'chars',
+  message: 'message',
   messages: 'messages',
+  tool: 'tool',
   tools: 'tools',
 } as const;

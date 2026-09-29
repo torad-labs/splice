@@ -90,6 +90,7 @@ export const U = {
   today: 'today',
   untagged: 'untagged',
   since: 'since',
+  turn: 'turn',
   turns: 'turns',
   running: 'running',
   kb: 'KB',

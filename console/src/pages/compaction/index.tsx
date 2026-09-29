@@ -16,7 +16,7 @@ import { startCompactPolling, startInstructionsPolling, useCompact, useInstructi
 import type { InstructionsState } from '@entities/compact-stats';
 import { HeadMark, hueClass, useHues } from '@entities/control-status';
 import { Blank, Fault } from '@shared/controls';
-import { ABSENT, fmtInt, fmtMs, fmtShare, ratio, timeAgo } from '@shared/lib';
+import { ABSENT, fmtInt, fmtMs, fmtShare, noun, ratio, timeAgo } from '@shared/lib';
 import {
   Badge, DataTable, DetailPanel, Empty, KeyValue, Meter, PageHeader, Section, Sparkline, StackedBar, Stat, StatRow,
 } from '@shared/ui';
@@ -76,7 +76,7 @@ function eventFacts(row: CompactRow): [string, string][] {
   return [
     [S.when, timeAgo(row.ts)],
     [S.took, row.ms === undefined ? ABSENT : fmtMs(row.ms)],
-    [S.summary, row.chars === undefined ? ABSENT : `${fmtInt(row.chars)} ${U.chars}`],
+    [S.summary, row.chars === undefined ? ABSENT : `${fmtInt(row.chars)} ${noun(row.chars, U.char, U.chars)}`],
     [S.instructions, row.instructions_source === 'client' ? S.clientDefault : row.instructions_source ?? ABSENT],
     [S.error, row.error ?? ABSENT],
   ];
@@ -228,7 +228,7 @@ function Figures({ stats }: { stats: CompactPayload['stats'] }) {
       <Stat
         label={S.summary}
         value={chars === null ? ABSENT : fmtInt(chars)}
-        {...(chars === null ? {} : { unit: U.chars })}
+        {...(chars === null ? {} : { unit: noun(chars, U.char, U.chars) })}
         chart={<Sparkline values={seriesOf(stats.tail, 'chars')} label={S.summary} format={fmtInt} />}
       />
       {/* Beside a dated week, every row the stats files still hold, undated: its own tile and its

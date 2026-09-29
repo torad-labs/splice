@@ -23,5 +23,5 @@ export const H = {
   noHeads: 'Models join an OpenRouter plan; connect one from Fleet first.',
   allOffered: 'Every catalogue model is on this plan already.',
   draining: 'Splice is restarting; the models appear once it is back.',
-  waiting: (count: number): string => `The restart waits for ${count} compaction(s) to finish.`,
+  waiting: (count: number): string => `The restart waits for ${count} ${count === 1 ? 'compaction' : 'compactions'} to finish.`,
 } as const;

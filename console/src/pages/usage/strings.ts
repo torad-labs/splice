@@ -77,6 +77,7 @@ export const H = {
 /** Words printed beside a figure. */
 export const U = {
   cached: 'cached',
+  turn: 'turn',
   turns: 'turns',
   unpriced: 'turns unpriced',
   unpricedOne: 'turn unpriced',

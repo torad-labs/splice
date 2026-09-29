@@ -48,5 +48,6 @@ export const H = {
 
 export const U = {
   ms: 'ms',
+  char: 'char',
   chars: 'chars',
 } as const;

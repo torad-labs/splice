@@ -25,6 +25,7 @@ export const H = {
 } as const;
 
 export const U = {
+  char: 'char',
   chars: 'chars',
   turn: 'turn',
 } as const;

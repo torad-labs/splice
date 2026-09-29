@@ -19,7 +19,7 @@ import {
 } from '@shared/ui';
 import type { Column, Lane, LaneMessage, RowGroup, Tone } from '@shared/ui';
 import { Fault } from '@shared/controls';
-import { cx, fmtInt, fmtMs, fmtTokens } from '@shared/lib';
+import { cx, fmtInt, fmtMs, fmtTokens, noun } from '@shared/lib';
 import { clockText, costTable, dayAxis, lanesOf, lastReceived, roleName, seatGroups, seatsOf, slotName } from './model';
 import type { RoleCost, Seat, TeamViewData } from './model';
 import { H, S, U } from './strings';
@@ -434,7 +434,7 @@ export function TeamTimeline({ board, data, faults = [] }: { board: TeamPayload;
           <span
             className="myx-tt-track"
             role="img"
-            aria-label={`${member.name}: ${turns.length} ${U.turns}, ${turns.filter((turn) => turn.live).length} ${U.running}`}
+            aria-label={`${member.name}: ${turns.length} ${noun(turns.length, U.turn, U.turns)}, ${turns.filter((turn) => turn.live).length} ${U.running}`}
           >
             {grid}
             {turns.map((turn) => (

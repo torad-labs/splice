@@ -49,5 +49,6 @@ export const H = {
 export const U = {
   of: 'of',
   /** After "2,000 of 2,345": a head the route clamped, its earliest turns missing. */
+  turnRead: 'turn read',
   turnsRead: 'turns read',
 } as const;

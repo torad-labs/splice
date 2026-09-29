@@ -26,7 +26,7 @@ import { dateOf, headOf, levelOf, timeOf } from '@entities/logs';
 import type { LogLevel, LogsPayload } from '@entities/logs';
 import { HeadMark, hueClass, useHue } from '@entities/control-status';
 import { Fault, Flag } from '@shared/controls';
-import { cx, MONTHS } from '@shared/lib';
+import { cx, MONTHS, noun } from '@shared/lib';
 import { Badge, Empty, Legend } from '@shared/ui';
 import type { Tone } from '@shared/ui';
 import { LEGEND, PerfCells, perfOf, scaleOf } from './perf-line';
@@ -291,7 +291,7 @@ export function LogTail({ payload, appended, reset, follow, tagged = true, head 
         <span className="myx-lt-path">{payload?.path ?? ''}</span>
         {scale.ms > 0 ? <Legend items={LEGEND} label={S.legend} /> : null}
         {/* Only while paused: following, every line is already in view. */}
-        {follow ? null : <Badge tone="neutral">{`${appended} ${U.newLines}`}</Badge>}
+        {follow ? null : <Badge tone="neutral">{`${appended} ${noun(appended, U.newLine, U.newLines)}`}</Badge>}
         {onFollow === undefined ? null : (
           <Flag on={follow} onLabel={S.follow} offLabel={S.paused} onChange={onFollow} />
         )}

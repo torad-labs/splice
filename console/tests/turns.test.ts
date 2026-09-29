@@ -667,13 +667,13 @@ describe("the timeline says where its window's turns start (V4-290)", () => {
     });
     await fetchPerfTurns();
     // The hours before three hours ago are unread, not idle; of the three since, the middle is idle.
-    expect(metaOn(pageView('timeline'))).toBe(`24h window, complete from ${atText(NOW - 3 * HOUR)}, 1 idle hours`);
+    expect(metaOn(pageView('timeline'))).toBe(`24h window, complete from ${atText(NOW - 3 * HOUR)}, 1 idle hour`);
   });
 
   test('one head past 200 turns in a day: the route kept its newest 200, and the timeline starts there', async () => {
     daemon({ claude: spaced(201, NOW - 5 * HOUR, MINUTE) });
     await fetchPerfTurns();
-    expect(metaOn(pageView('timeline'))).toBe(`24h window, complete from ${atText(NOW - 5 * HOUR + MINUTE)}, 1 idle hours`);
+    expect(metaOn(pageView('timeline'))).toBe(`24h window, complete from ${atText(NOW - 5 * HOUR + MINUTE)}, 1 idle hour`);
   });
 
   test('200 turns in a day are the whole window: no mark, and every empty hour is idle', async () => {

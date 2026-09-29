@@ -36,5 +36,6 @@ export const H = {
 
 export const U = {
   days: 'd',
+  char: 'char',
   chars: 'chars',
 } as const;

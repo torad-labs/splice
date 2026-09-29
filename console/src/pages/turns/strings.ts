@@ -104,7 +104,9 @@ export const U = {
   window: 'window',
   /** Before the clock where a cut timeline starts holding every turn. */
   completeFrom: 'complete from',
+  idleHour: 'idle hour',
   idle: 'idle hours',
+  retry: 'retry',
   retries: 'retries',
   queued: 'queued',
   unlisted: 'not listed',

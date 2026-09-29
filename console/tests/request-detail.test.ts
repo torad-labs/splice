@@ -189,6 +189,17 @@ describe('an opened request', () => {
     expect(render(h(RequestRead, { read: open }))).not.toContain('>Cost<');
   });
 
+  // V4-435: "Model received" said "1 messages, 1 tools" because the counts were followed by plural-only
+  // words. One of a thing is singular; every other count stays plural.
+  test('the counts beside "Model received" read singular for one and plural for the rest', () => {
+    const one = render(h(RequestRead, { read: turnRead({}, [{ role: 'user', content: PROMPT }]) }));
+    expect(one).toContain('1 message, 1 tool<');
+    const four = render(h(RequestRead, { read: turnRead() }));
+    expect(four).toContain('4 messages, 1 tool<');
+    const none = render(h(RequestRead, { read: turnRead({}, []) }));
+    expect(none).toContain('0 messages, 1 tool<');
+  });
+
   test('a turn the trace no longer holds says so, and a read in flight says it is reading', () => {
     const gone = render(h(RequestDetail, { head: 'claudex', turn: SUMMARY.id, read: { gone: 'no turn 3f2a9c01d4e5 in claudex\'s trace' } }));
     expect(gone).toContain('No longer kept');

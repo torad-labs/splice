@@ -10,7 +10,7 @@ import { useEffect, useState } from 'react';
 import { loadMoreTranscript, loadTranscript, useTranscript } from '@entities/transcript';
 import type { TranscriptRole, TranscriptSlice } from '@entities/transcript';
 import { Fault, Key } from '@shared/controls';
-import { readFor } from '@shared/lib';
+import { noun, readFor } from '@shared/lib';
 import type { Keyed } from '@shared/lib';
 import { Badge, Empty, KeyValue, Reveal } from '@shared/ui';
 import { H, S, U } from './strings';
@@ -77,7 +77,7 @@ export function Conversation({ sessionId, slice }: { sessionId: string; slice?: 
               {message.ts === undefined ? null : <span className="myx-cv-at">{atClock(message.ts)}</span>}
               {message.tool === undefined ? null : <span className="myx-cv-tool">{message.tool}</span>}
               {message.result === true ? <Badge tone="neutral" quiet>{S.result}</Badge> : null}
-              <span className="myx-cv-size">{message.text.length.toLocaleString('en-US')} {U.chars}</span>
+              <span className="myx-cv-size">{message.text.length.toLocaleString('en-US')} {noun(message.text.length, U.char, U.chars)}</span>
             </div>
             <Reveal label={S.body}>
               <pre className="myx-cv-text">{message.text}</pre>

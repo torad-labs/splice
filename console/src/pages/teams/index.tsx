@@ -26,7 +26,7 @@ import { ActivityFeed } from '@widgets/activity-feed';
 import type { ActivityFeedState } from '@widgets/activity-feed';
 import { TeamCompose, draftOf } from '@features/team-compose';
 import { Fault, Key } from '@shared/controls';
-import { ABSENT, fmtInt, poll, useLinkedId, useOpen } from '@shared/lib';
+import { ABSENT, fmtInt, noun, poll, useLinkedId, useOpen } from '@shared/lib';
 import type { Resource } from '@shared/lib';
 import { Badge, DataTable, Empty, KeyValue, PageHeader, Pips, Section } from '@shared/ui';
 import type { Column } from '@shared/ui';
@@ -177,7 +177,7 @@ export function turnLogOf(turns: Resource<TurnsState | PendingRoute>): TurnLog {
     ...(isPending(data) ? [{ message: H.turnsPending, lastRead: null }] : []),
     ...(read?.unread ?? []).map(({ head, reason }) => ({ message: `${head}: ${reason}`, lastRead: null })),
     ...(read?.truncated ?? []).map(({ head, count, returned }) => ({
-      message: `${head}: ${fmtInt(returned)} ${U.of} ${count === null ? ABSENT : fmtInt(count)} ${U.turnsRead}`,
+      message: `${head}: ${fmtInt(returned)} ${U.of} ${count === null ? ABSENT : fmtInt(count)} ${noun(count ?? 0, U.turnRead, U.turnsRead)}`,
       lastRead: null,
     })),
   ];

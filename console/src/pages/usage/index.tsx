@@ -31,7 +31,7 @@ import { useViews, ViewTabs } from '@features/views';
 import { AlertsPanel } from '@features/alerts';
 import { BudgetsPanel } from '@features/budgets';
 import { HeadMark, hueClass, useHues } from '@entities/control-status';
-import { cx, fmtDurationS, fmtInt, fmtShare, fmtTokens, timeAgo } from '@shared/lib';
+import { cx, fmtDurationS, fmtInt, fmtShare, fmtTokens, noun, timeAgo } from '@shared/lib';
 import { Badge, DataTable, Empty, InfoTip, KeyValue, PageHeader, Ring, Section, Segmented, Sparkline, StackedBar, Stat, StatRow } from '@shared/ui';
 import type { Column, RowGroup } from '@shared/ui';
 import { Blank, Fault } from '@shared/controls';
@@ -330,7 +330,7 @@ export function UsageBoard({ payload, usage = null, accounts = [], usageError = 
                 {...(read === null ? {} : { figure: <Ring value={read} label={S.cacheRead}>{''}</Ring> })}
                 sub={<>{`${fmtTokens(all.cachedTokens)} ${U.cached}`}<InfoTip text={H.cacheRead} label={S.cacheRead} /></>}
               />
-              <Stat label={S.limited} value={fmtInt(all.rateLimited)} {...(all.rateLimited > 0 ? { tone: 'warn' as const } : {})} sub={U.turns} />
+              <Stat label={S.limited} value={fmtInt(all.rateLimited)} {...(all.rateLimited > 0 ? { tone: 'warn' as const } : {})} sub={noun(all.rateLimited, U.turn, U.turns)} />
             </StatRow>
           </Section>
 

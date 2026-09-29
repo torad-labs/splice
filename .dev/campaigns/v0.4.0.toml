@@ -9938,10 +9938,13 @@ id = "V4-431"
 phase = "release"
 title = "A plan-limit turn logs 'turn ERROR upstream-failed' while perf records plan-limit (Marlin, 8aee53328, throwaway home): TurnTelemetry.kt:201-208 prints the error line from the failure's kind before V4-419's ending tag is chosen, so daemon.log and the trace disagree about the same turn. The log line names the outcome the turn recorded."
 files = ["features/turns/src/main/kotlin/splice/head/turn/TurnTelemetry.kt", "features/turns/src/main/kotlin/splice/head/turn/TurnKnownEnd.kt", "features/turns/src/test/kotlin/splice/head/v4431/"]
-status = "todo"
+status = "in_flight"
 verify = "red first: a turn ended by a named plan window logs 'turn ERROR plan-limit' (the recorded tag), a burst 429 keeps its own tag, and an upstream failure keeps upstream-failed. :features-turns:test scope, detekt, :quality-architecture:test, rules wall."
 # [2026-09-29] amend by=unattributed: files were ["features/turns/src/main/kotlin/splice/head/turn/TurnTelemetry.kt", "features/turns/src/test/kotlin/splice/head/v4431/"]
 # [2026-09-29] Sep 29, 7:00 PM CT, splice-lead: premise corrected by claude-builder and checked in the code: the fixed 'upstream-failed' is at TurnKnownEnd.kt:56 (log(telemetry.errTurn("upstream-failed", drive, detail))) and the perf tag is chosen after it at :76 (endingTag(drive, e.planLimit)); TurnTelemetry.errTurn (:207) only formats the kind it is handed. Fence widened to TurnKnownEnd.kt, where one tag is chosen before both the log line and recordPerf.
+claimed_by = "claude-builder"
+claimed_at = "2026-09-29T23:39:55.858Z"
+# [2026-09-29] CLAIM: owner=claude-builder at=2026-09-29T23:39:55Z
 
 [[items]]
 id = "V4-432"

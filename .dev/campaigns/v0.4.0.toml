@@ -9550,8 +9550,11 @@ id = "V4-408"
 phase = "release"
 title = "The console's nearest limit counts a stale account window as current (the console half of V4-407): nearest-limit fromAccounts (console/src/features/nearest-limit/index.ts:58-72) ranks every account window that has not reset, so a 4.5 h-old codex 7d 100% reading on a home with no ChatGPT sign-in becomes the header's, Fleet's and Needs you's nearest limit. After V4-407 each /api/accounts row carries five_hour_current and seven_day_current; the nearest limit reads only current windows, while the Accounts page keeps showing old readings with their age."
 files = ["console/src/features/nearest-limit/index.ts", "console/src/entities/account/model/types.ts", "console/src/entities/account/model/wire.ts", "console/tests/nearest-limit.test.ts", "console/tests/rule.test.ts"]
-status = "todo"
+status = "in_flight"
 verify = "red first: an account whose seven_day_current is false with 100% and a reset 6 days out is not the nearest limit (header, Fleet and Needs you name none, or the next current window); a current one is; the Accounts page still shows the stale figure with its read age. Full console test/build/lint. Marlin re-walks the header, Fleet and Needs you on film-home-team-walk."
+claimed_by = "console"
+claimed_at = "2026-09-29T02:09:35.936Z"
+# [2026-09-29] CLAIM: owner=console at=2026-09-29T02:09:35Z
 
 [[items]]
 id = "V4-409"

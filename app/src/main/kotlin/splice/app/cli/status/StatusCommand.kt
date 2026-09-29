@@ -31,6 +31,7 @@ internal fun interface HealthProbe {
 internal class StatusCommand(
     private val healthProbe: HealthProbe = HealthProbe { port -> DaemonHealth().healthView(port) },
     private val accountPools: AccountPoolRead = JdkAccountPoolRead(),
+    private val localRuntimes: LocalRuntimeReach = LocalRuntimeReach(),
 ) {
 
     private val signIn = CliSignIn()
@@ -62,7 +63,10 @@ internal class StatusCommand(
         println()
         val failedHeads = health?.takeIf { up }?.failedHeadReasons.orEmpty()
         val quotaResets = health?.takeIf { up }?.quotaResetAtEpochSeconds.orEmpty()
-        for (line in table.lines(topology, envReader, failedHeads, quotaResets)) println(line)
+        // V4-415: probed whether or not the daemon is up, since the runtime is the operator's own
+        // process and a stopped daemon says nothing about it.
+        val notAnswering = localRuntimes.notAnswering(topology)
+        for (line in table.lines(topology, envReader, failedHeads, quotaResets, notAnswering)) println(line)
         if (up) extras.printAccounts(port, envReader)
         println()
         // Paths sink below the table: they are reference, not the answer, and an operator who wants

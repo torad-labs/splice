@@ -49,12 +49,13 @@ internal class StatusTable(
         envReader: EnvReader,
         failedHeads: Map<String, String> = emptyMap(),
         quotaResetAtEpochSeconds: Map<String, Long> = emptyMap(),
+        runtimeNotAnswering: Map<String, String> = emptyMap(),
     ): List<String> {
         // V4-406: a row per configured head, and one per head the daemon names failed that this
         // topology does not know — the join to providers used to DROP a head it could not resolve,
         // hiding exactly the head whose boot failure the operator needs to read.
         val configured = topology.heads.map { (key, head) ->
-            val word = DaemonWord(failedHeads[key], quotaResetAtEpochSeconds[key])
+            val word = HeadWord(failedHeads[key], quotaResetAtEpochSeconds[key], runtimeNotAnswering[key])
             topology.providers[head.provider]?.let { row(key, head, it, envReader, word) }
                 ?: unresolvedRow(
                     listOf(key, head.claude.command ?: key, head.port.toString(), "-"),
@@ -98,30 +99,40 @@ internal class StatusTable(
         head: HeadConfig,
         provider: ProviderConfig,
         envReader: EnvReader,
-        daemon: DaemonWord,
+        word: HeadWord,
     ): Row {
-        val bootFailure = daemon.bootFailure
+        val bootFailure = word.bootFailure
         val command = head.claude.command ?: key
         val selfManaged = AuthKindRegistry.from(provider.auth.kind) == AuthKind.Client
         val authed = selfManaged || signIn.credentialConfigured(key, provider, envReader)
         val wrapped = signIn.wrapperInstalled(command, envReader)
-        // V4-398: a provider that refuses until a known instant is not ready however it is set up,
-        // but a missing wrapper or login still names the command that fixes it first. A reset that
-        // has already passed reads ready: the daemon drops it on its own once the provider recovers.
-        val quotaResetAt = daemon.quotaResetAtEpochSeconds?.takeIf { TimeUnit.SECONDS.toMillis(it) > clock() }
+        val refusal = refusal(word)
         // ONE actionable column, not two state columns. A row is ready or it names the single
         // command that would make it ready, so the operator never has to work out which of
         // "wrapper missing" and "not signed in" to act on first. V4-394: the running daemon's word
         // outranks both, because a head it could not build serves nothing however it is set up.
         val action = bootFailure?.let { palette.paint(palette.strain, "not running: $it") }
-            ?: action(selfManaged, authed, wrapped, command, quotaResetAt)
-        val configured = authed && wrapped && quotaResetAt == null
+            ?: action(selfManaged, authed, wrapped, command, refusal)
+        val configured = authed && wrapped && refusal == null
         val glyph = if (bootFailure == null && configured) {
             palette.paint(palette.live, LIVE_GLYPH)
         } else {
             palette.paint(palette.strain, STRAIN_GLYPH)
         }
         return Row(glyph, listOf(key, command, head.port.toString(), backendLabel(provider)), action)
+    }
+
+    /** What stops a turn on a head that is otherwise set up, or null. A missing wrapper or login still
+     *  names the command that fixes it first ([action]).
+     *
+     *  V4-398: a provider that refuses until a known instant is not ready however it is set up; a
+     *  reset that has already passed reads ready, since the daemon drops it on its own once the
+     *  provider recovers. V4-415: the same for a local runtime that does not answer, whose word
+     *  outranks a quota it has none of. */
+    private fun refusal(word: HeadWord): String? {
+        word.runtimeEndpoint?.let { return "runtime not answering on $it" }
+        val resetAt = word.quotaResetAtEpochSeconds?.takeIf { TimeUnit.SECONDS.toMillis(it) > clock() }
+        return resetAt?.let { "out of quota until ${chicagoTime(it)} CT" }
     }
 
     /** A head whose provider the topology cannot resolve, or that only the daemon knows: it cannot
@@ -146,11 +157,11 @@ internal class StatusTable(
         authed: Boolean,
         wrapped: Boolean,
         command: String,
-        quotaResetAt: Long?,
+        refusal: String?,
     ): String = when {
         !wrapped -> palette.paint(palette.signal, "splice install")
         !authed -> palette.paint(palette.signal, "$command login")
-        quotaResetAt != null -> palette.paint(palette.strain, "out of quota until ${chicagoTime(quotaResetAt)} CT")
+        refusal != null -> palette.paint(palette.strain, refusal)
         else -> palette.paint(palette.quiet, if (selfManaged) "ready (your login)" else "ready")
     }
 
@@ -202,9 +213,14 @@ internal class StatusTable(
  *  unpadded because nothing follows it on the line. */
 private data class Row(val glyph: String, val cells: List<String>, val action: String)
 
-/** What the running daemon said about one head: why it could not boot (V4-394) and the instant its
- *  provider stops refusing turns, epoch seconds (V4-398). Both null for a head the daemon serves. */
-private data class DaemonWord(val bootFailure: String?, val quotaResetAtEpochSeconds: Long?)
+/** What status learned about one head beyond its config: why the daemon could not boot it (V4-394),
+ *  the instant its provider stops refusing turns, epoch seconds (V4-398), and the endpoint of its
+ *  local runtime when that does not answer (V4-415). All null for a head that is fine. */
+private data class HeadWord(
+    val bootFailure: String?,
+    val quotaResetAtEpochSeconds: Long?,
+    val runtimeEndpoint: String?,
+)
 
 /** The labelled columns, in order. A row's cells line up with these by index. */
 private val COLUMNS = listOf("head", "command", "port", "upstream")

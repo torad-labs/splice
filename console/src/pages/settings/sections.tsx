@@ -118,9 +118,10 @@ export function TopologySection({ state, loaded, draft, onDraft, onWrite, busy, 
       ) : null}
       {[...groups.entries()].map(([group, tables]) => (
         <Bay key={group} label={group === 'compaction' && scope === 'instructions' ? S.compactionInstructions
-          : group === '' ? S.topLevel : group} count={tables.length}>
+          : group === '' ? S.topLevel : S.groupName[group] ?? group} count={tables.length}>
           {tables.map((table) => (
-            <section key={table.path} className="myx-topo-table" aria-label={table.path || S.topLevel}>
+            <section key={table.path} className="myx-topo-table"
+              aria-label={table.path === group ? S.groupName[group] ?? group : table.path || S.topLevel}>
               {tableTitle(table, group) === '' ? null : <h4 className="myx-topo-title">{tableTitle(table, group)}</h4>}
               <div className="myx-topo-fields">
                 {table.fields.map((field) => headOverrideOf(field.path) === null ? (

@@ -19,6 +19,8 @@
 .myx-tn-danger { color: var(--danger); }
 .myx-tn-status { display: grid; justify-items: start; }
 .myx-tn-badges { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+/* An outcome is read whole: a long tag breaks inside its cell instead of clipping (V4-403). */
+.myx-tn-badges .myx-badge { white-space: normal; overflow-wrap: anywhere; }
 .myx-tn-failure { margin: var(--space-2) 0 0; color: var(--danger); font-size: var(--text-2); overflow-wrap: anywhere; }
 .myx-tn-slots { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-3) var(--space-4); }
 

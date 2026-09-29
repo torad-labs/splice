@@ -249,7 +249,7 @@ test('Settings gives instructions their own editable group and retains model rul
   await instructions.getByRole('button', { name: 'Add instructions' }).click();
   await instructions.getByRole('region', { name: 'compaction', exact: true })
     .getByRole('textbox', { name: 'instructions', exact: true }).fill('Prefer concise answers.');
-  await instructions.getByRole('button', { name: 'Write topology' }).click();
+  await instructions.getByRole('button', { name: 'Write file' }).click();
   await expect(instructions.getByRole('status')).toContainText('Written');
   expect((saved as Record<string, unknown> | null)?.compaction).toEqual({ model, instructions: 'Prefer concise answers.' });
 });

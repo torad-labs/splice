@@ -393,7 +393,7 @@ export function SettingsPage() {
               result={writeResult}
             />
             <Bay
-              label={S.topology}
+              label={S.plans}
               count={heads.length}
               empty={{ text: S.noHeads, source: H.noHeads }}
             >

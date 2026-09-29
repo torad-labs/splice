@@ -194,7 +194,7 @@ describe('settings: the topology section', () => {
     const instructions = render(h(TopologySection, { ...props, scope: 'instructions' }));
     expect(instructions).toContain('compaction');
     expect(instructions).toContain('instructions');
-    expect(instructions).toContain('Write topology');
+    expect(instructions).toContain('Write file');
     expect(instructions).not.toContain('providers.codex');
     const other = render(h(TopologySection, { ...props, scope: 'other' }));
     expect(other).toContain('providers.codex');

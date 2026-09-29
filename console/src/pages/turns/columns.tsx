@@ -94,14 +94,14 @@ const figure = (value: number | undefined, format: (n: number) => string): strin
 export function landedColumns(keys: readonly LandedKey[], scale: number, nameOf: (key: string) => string): Column<TurnRow>[] {
   const all: Record<LandedKey, Column<TurnRow>> = {
     time: { key: 'time', label: S.time, width: '8%', mono: true, cell: (row) => atText(row.ts) ?? S.absent },
-    head: { key: 'head', label: S.head, width: '12%', cell: (row) => <HeadMark head={row.head}>{nameOf(row.head)}</HeadMark> },
+    head: { key: 'head', label: S.head, width: '11%', cell: (row) => <HeadMark head={row.head}>{nameOf(row.head)}</HeadMark> },
     // A model is read whole: `claude-opu…` named no model (Marlin's walk, Q47), so a long id breaks.
     model: { key: 'model', label: S.model, width: '15%', primary: true, wrap: true, cell: (row) => row.model ?? S.absent },
     session: { key: 'session', label: S.session, width: '8%', mono: true, cell: (row) => row.session ?? S.absent },
     outcome: {
       key: 'outcome',
       label: S.outcome,
-      width: '10%',
+      width: '12.5%',
       cell: (row) => (
         <span className="myx-tn-badges">
           {badgesOf(row).map((badge) => <Badge key={badge.key} tone={badge.tone} quiet>{badge.text}</Badge>)}
@@ -111,7 +111,7 @@ export function landedColumns(keys: readonly LandedKey[], scale: number, nameOf:
     timing: {
       key: 'timing',
       label: S.timing,
-      width: '16%',
+      width: '14.5%',
       cell: (row) => {
         const length = lengthOf(row);
         return (

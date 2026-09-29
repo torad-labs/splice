@@ -230,19 +230,19 @@ function headColumns(fields: readonly string[], grouped: string | null, nowMs: n
   // figure, a sparkline with its median), so opening the panel narrows the names and never clips a
   // figure; the name shares whatever is left.
   const columns: (Column<HeadLine> | null)[] = [
-    { key: 'head', label: S.head, width: 'calc(16 * var(--u))', primary: true, cell: (line) => <HeadMark head={line.head.key} /> },
+    { key: 'head', label: S.head, width: 'calc(13.5 * var(--u))', primary: true, cell: (line) => <HeadMark head={line.head.key} /> },
     wanted.has('provider') && grouped !== 'provider'
-      ? { key: 'provider', label: S.provider, width: 'calc(6.5 * var(--u))', cell: (line) => familyName(line.head.authKind) }
+      ? { key: 'provider', label: S.provider, width: 'calc(4.5 * var(--u))', wrap: true, cell: (line) => familyName(line.head.authKind) }
       : null,
-    { key: 'state', label: S.state, width: 'calc(6 * var(--u))', cell: (line) => <StateBadge attention={line.attention} quiet /> },
-    wanted.has('model') ? { key: 'model', label: S.model, width: 'calc(10 * var(--u))', mono: true, cell: (line) => line.model ?? ABSENT } : null,
-    wanted.has('account') ? { key: 'account', label: S.account, width: 'calc(7.5 * var(--u))', mono: true, cell: (line) => line.account ?? ABSENT } : null,
-    wanted.has('inflight') ? { key: 'inflight', label: S.inflight, width: 'calc(12 * var(--u))', cell: (line) => <InFlight head={line.head} /> } : null,
+    { key: 'state', label: S.state, width: 'calc(5.25 * var(--u))', wrap: true, cell: (line) => <StateBadge attention={line.attention} quiet /> },
+    wanted.has('model') ? { key: 'model', label: S.model, width: 'calc(9 * var(--u))', mono: true, wrap: true, cell: (line) => line.model ?? ABSENT } : null,
+    wanted.has('account') ? { key: 'account', label: S.account, width: 'calc(6.75 * var(--u))', mono: true, cell: (line) => line.account ?? ABSENT } : null,
+    wanted.has('inflight') ? { key: 'inflight', label: S.inflight, width: 'calc(8.5 * var(--u))', cell: (line) => <InFlight head={line.head} /> } : null,
     wanted.has('window')
-      ? { key: 'window', label: S.window, width: 'calc(9 * var(--u))', cell: (line) => <WindowFigure window={line.window} label={`${S.window} ${line.head.label}`} /> }
+      ? { key: 'window', label: S.window, width: 'calc(7.5 * var(--u))', cell: (line) => <WindowFigure window={line.window} label={`${S.window} ${line.head.label}`} /> }
       : null,
-    wanted.has('latency') ? { key: 'latency', label: S.firstByte, width: 'calc(9.5 * var(--u))', cell: (line) => <Latency line={line} /> } : null,
-    wanted.has('turn') ? { key: 'turn', label: S.lastTurn, width: 'calc(6.5 * var(--u))', cell: (line) => <LastTurnCell last={line.last} nowMs={nowMs} /> } : null,
+    wanted.has('latency') ? { key: 'latency', label: S.firstByte, width: 'calc(6.5 * var(--u))', cell: (line) => <Latency line={line} /> } : null,
+    wanted.has('turn') ? { key: 'turn', label: S.lastTurn, width: 'calc(5.25 * var(--u))', cell: (line) => <LastTurnCell last={line.last} nowMs={nowMs} /> } : null,
   ];
   return columns.filter((column): column is Column<HeadLine> => column !== null);
 }
@@ -440,6 +440,7 @@ export function FleetBoard({ heads, error = null, lastRead = null, sources, open
               <Figures lines={[...lines.values()]} landed={sources.landed} limit={nearestLimit({ accounts, usage: sources.usage, auth: sources.auth }, nowMs)} />
               <Section title={S.heads} count={all.length} info={{ text: H.firstByte, label: S.aboutFirstByte }}>
                 <DataTable
+                  className="myx-fl-table"
                   columns={headColumns(columnsOf(active, HEAD_FIELDS), active.group, nowMs, opened !== null)}
                   {...(active.group === null ? { rows: groups.flatMap((group) => group.rows) } : { groups })}
                   rowKey={(line) => line.head.key}

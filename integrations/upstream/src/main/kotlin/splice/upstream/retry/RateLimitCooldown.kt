@@ -36,6 +36,7 @@ package splice.upstream.retry
 
 import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock
+import splice.core.util.LocalTimeText
 import splice.core.util.WallClock
 import splice.core.wire.ErrorEnvelope
 import splice.core.wire.HttpStatus
@@ -62,6 +63,9 @@ public class RateLimitCooldown public constructor(
     /** V4-412: where the provider's word (its reset, the plan window it named spent) survives a
      *  restart; null keeps it in memory only, as before. The armed horizon is never stored. */
     store: ProviderHoldStore? = null,
+    /** V4-428: how a reset reads in the sentence a fail-fast turn hands the client (the machine's own
+     *  month, day, clock time and zone, as [PlanLimit.refusal] says it); tests name a zone. */
+    private val times: LocalTimeText = LocalTimeText(),
 ) {
     // Armed by any attempt that observes a 429; while armed, every post() fails fast with a
     // synthesized 429 and ZERO upstream calls. Benign write race: concurrent arms only differ by
@@ -225,11 +229,12 @@ public class RateLimitCooldown public constructor(
         // V4-233: a held PLAN window is the upstream's own statement, not a burst's stamp, so its
         // reset is stated as the deadline. No em dash, and none of the client's stop phrases.
         val detail = when {
-            plan != null -> plan.refusal(holding = gatewayClause)
+            plan != null -> plan.refusal(holding = gatewayClause, times = times)
             providerResetMs > 0 -> {
                 // WALL base, not elapsed: providerResetMs is a DELAY, and printing it against the
-                // elapsed clock would name a 1970-era instant to the operator.
-                val resetsAt = Instant.ofEpochMilli(wallClock() + providerResetMs)
+                // elapsed clock would name a 1970-era instant to the operator. V4-428: said as the
+                // person reads it (machine zone), never as the ISO instant the provider's body carried.
+                val resetsAt = times.at((wallClock() + providerResetMs) / MS_PER_S)
                 // V4-61: the window is REPORTED, not asserted as the deadline. muse stamps its 5h-window
                 // reset on burst 429s that clear in seconds (the operator's own re-send succeeded), so
                 // "waiting will not help" was a claim this turn could not support.

@@ -17,6 +17,7 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.util.ElapsedClock
+import splice.core.util.LocalTimeText
 import splice.core.util.WallClock
 import splice.upstream.RetryNotice
 import splice.upstream.Waiter
@@ -29,6 +30,7 @@ import splice.upstream.transport.UpstreamPost
 import splice.upstream.transport.fakeAuth
 import splice.upstream.transport.posted
 import java.time.Instant
+import java.time.ZoneId
 import java.util.concurrent.atomic.AtomicInteger
 
 class RateLimitCooldownTest {
@@ -332,7 +334,11 @@ class RateLimitCooldownTest {
     fun `the live muse episode names the provider reset so 120s cannot read as a retry schedule`() {
         var elapsed = 0L
         val wall = Instant.parse("2026-09-16T13:34:32Z").toEpochMilli()
-        val cooldown = RateLimitCooldown(ElapsedClock { elapsed }, WallClock { wall })
+        val cooldown = RateLimitCooldown(
+            ElapsedClock { elapsed },
+            WallClock { wall },
+            times = LocalTimeText(ZoneId.of("America/Chicago")),
+        )
         val body = """{"error":{"message":"Subscription quota exhausted. Your usage window resets """ +
             """at 2026-09-16T20:02:52Z","type":"rate_limit_error"},"type":"error"}"""
 
@@ -355,7 +361,7 @@ class RateLimitCooldownTest {
         assertTrue(failure.body.contains("this gateway is holding retries"), failure.body)
         assertTrue(failure.body.contains("holding retries for 120s"), failure.body)
         assertTrue(
-            failure.body.contains("2026-09-16T20:02:52Z"),
+            failure.body.contains("resets at Sep 16, 3:02 PM CDT."),
             "the provider horizon must be named on the WALL base, not the elapsed one: ${failure.body}",
         )
         // V4-61: the window is reported, never asserted as the deadline (the operator's re-send

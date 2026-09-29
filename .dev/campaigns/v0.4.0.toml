@@ -9439,6 +9439,7 @@ claimed_by = "console"
 claimed_at = "2026-09-28T23:12:30.346Z"
 # [2026-09-28] CLAIM: owner=console at=2026-09-28T23:12:30Z
 # [2026-09-28] RECEIPT cmd="vitest 94 files/1690; playwright journeys 73 + renders 15 on rebuilt bundle (v4401: 15 pages); gate typecheck; eslint; census 0" exit=0 tests=15 touched=console/src/app/App.tsx,console/src/entities/session/model/store.ts,console/src/entities/session/api/index.ts,console/src/widgets/rule/index.tsx,console/tests/unlock.test.ts,console/e2e/v4401/unlock-rereads.spec.ts,.dev/restructure/capabilities.tsv tail="red first: 15 of 15 pages failed on /api/auth not read again; green after keying the shell on unlocks"
+# [2026-09-29] Sep 28, 8:40 PM CT: Marlin walked it on 3839fcc06 (jar 1017b278, checksum verified), scratch homes walk-desk, film-home-team-walk and walk-357: PASS.
 
 [[items]]
 id = "V4-402"

@@ -27,8 +27,9 @@ export const ATTENTION_CAUSES = [
 
 export type AttentionCause = (typeof ATTENTION_CAUSES)[number];
 
-/** The printed cause, or 'down' for a struck head, or 'ok'. */
-export type HeadState = AttentionCause | 'down' | 'ok';
+/** The printed cause, or 'down' for a struck head, 'runtime not answering' for a running head whose
+ *  local runtime is silent (V4-417), or 'ok'. */
+export type HeadState = AttentionCause | 'down' | 'runtime not answering' | 'ok';
 
 /** The word a state prints on the strip's edge. The edge holds 8ch (ui.css), and the causes run to
  *  16: `account excluded` printed as `account…` and `signed out` as `signed o…` (walkthrough S1).
@@ -43,6 +44,7 @@ export const EDGE_WORDS: Record<HeadState, string> = {
   'queue full': 'full',
   'restart needed': 'restart',
   down: 'down',
+  'runtime not answering': 'down',
   ok: 'ok',
 };
 
@@ -91,6 +93,12 @@ export function queueAtMax(head: HeadStatus): boolean {
 export function headAttention(head: HeadStatus, signals: HeadSignals = NO_SIGNALS): HeadAttention {
   if (!head.running) {
     return { edge: 'grey', cocked: false, struck: true, label: EDGE_WORDS.down, cause: 'down' };
+  }
+  // A local head boots and runs whether or not its runtime is up, so its own health says nothing about
+  // whether a turn would work; the daemon's probe does (V4-417). It reads down like a stopped head, but
+  // is not struck: the head runs, and it is the runtime that has to be started.
+  if (head.runtimeNotAnswering !== undefined) {
+    return { edge: 'grey', cocked: false, struck: false, label: EDGE_WORDS['runtime not answering'], cause: 'runtime not answering' };
   }
   // Unhealthy is the only red: every other cause is a warning the operator can act on, while an
   // unhealthy head has already broken a promise it made.
@@ -154,6 +162,12 @@ export const FAMILY_NAME: Record<ProviderFamily, string> = {
  *  key`): every page that names a provider says it the same way. */
 export function familyName(authKind: string): string {
   return FAMILY_NAME[providerFamily(authKind)];
+}
+
+/** What a running head's silent local runtime says, the sentence `splice status` prints for it too
+ *  (V4-417), or null when the daemon reported none. One spelling, so Fleet and Needs you cannot drift. */
+export function runtimeSilentText(head: HeadStatus): string | null {
+  return head.runtimeNotAnswering === undefined ? null : `runtime not answering on ${head.runtimeNotAnswering}`;
 }
 
 /** A head's in-flight count as printed: `n/max`, or `n` when the gate reports no ceiling. */

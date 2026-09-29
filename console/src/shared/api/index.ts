@@ -228,6 +228,10 @@ export interface HeadStatus {
   maxInflight: number | null;
   health: HeadHealthCounters;
   pids: number[];
+  /** V4-417: for a local head whose runtime did not answer at the daemon's last background probe, the
+   *  endpoint it was asked on (`:8099`). Absent when it answers, when the head is not a local runtime,
+   *  and before the first probe: absence claims nothing, so it never reads as OK by itself. */
+  runtimeNotAnswering?: string;
 }
 
 /** The lifecycle endpoints return the fresh head status plus a transient note. */

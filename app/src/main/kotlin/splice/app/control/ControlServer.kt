@@ -106,6 +106,7 @@ public class ControlServer(
             topologyStale,
             turnPathStalled,
             clientVersions,
+            runtimeNotAnswering = RuntimeNotAnswering { ports.runtimeNotAnswering?.invoke().orEmpty() },
         )
     private val resolver = HeadResolver(heads, payloads)
     private val audit = ControlAudit(log)

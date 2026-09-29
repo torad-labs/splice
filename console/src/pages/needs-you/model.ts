@@ -11,7 +11,7 @@ import { exclusionText, refusalText } from '@entities/account';
 import type { AccountRow, AccountsState } from '@entities/account';
 import type { DoctorCheck, DoctorSlice } from '@entities/doctor';
 import { checkFinding, collapseChecks, fixMasked, logsHrefOf, wantsAttention } from '@entities/doctor';
-import { headAttention } from '@entities/heads';
+import { headAttention, runtimeSilentText } from '@entities/heads';
 import { inflightFrom, isStalled } from '@entities/perf';
 import { sessionKey, sessionLabel, UNKNOWN_HEAD } from '@entities/session';
 import type { SessionRow, SessionsPayload } from '@entities/session';
@@ -144,6 +144,8 @@ function headNeeds(heads: readonly HeadStatus[], auth: AuthPayload | null): Need
     switch (attention.cause) {
       case 'down':
         return need('danger', H.down, { kind: 'start', head: head.key });
+      case 'runtime not answering':
+        return need('danger', `${runtimeSilentText(head) ?? attention.cause}. ${H.runtimeSilent}`, open('#/fleet', S.openFleet));
       case 'unhealthy':
         return need('danger', H.unhealthy, { kind: 'restart', head: head.key });
       case 'version mismatch':

@@ -73,6 +73,7 @@ export const H = {
   nothingYet: 'An input below has not answered, so this is not all clear.',
   unread: 'An input nobody could read hides what it would show.',
   down: 'Not running.',
+  runtimeSilent: 'Start the runtime; the plan reads OK once it answers.',
   unhealthy: 'Running, but failing its health check.',
   signedOut: 'No login is saved for this plan.',
   keyMissingBare: 'Its API key is not set.',

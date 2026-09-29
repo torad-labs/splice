@@ -64,6 +64,19 @@ public fun interface TurnPathStalled {
 }
 
 /**
+ * V4-417: each local head whose runtime did not answer at the daemon's last probe, head key to the
+ * endpoint (`:8099`) it was asked on. Empty means every runtime answered, or none has been measured
+ * yet or any more: a reader must not turn empty into a claim either way.
+ *
+ * Read per request from a background probe (LocalRuntimeWatch), never asked on the request path, so
+ * `/health` and `/api/heads` answer in their usual time with a runtime down. It says nothing about the
+ * daemon's own readiness, which is why `ok`, `readyHeads` and `failedHeads` never read it.
+ */
+public fun interface RuntimeNotAnswering {
+    public operator fun invoke(): Map<String, String>
+}
+
+/**
  * The body of one authenticated `/mgmt` route, run only AFTER the bearer key matched.
  *
  * That ordering is the type's whole content: everything mutating on the control plane is wrapped in

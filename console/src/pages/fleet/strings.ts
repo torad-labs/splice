@@ -63,6 +63,7 @@ export const S = {
   stateName: {
     ok: 'OK',
     down: 'Down',
+    'runtime not answering': 'Down',
     unhealthy: 'Failing',
     'version mismatch': 'Mismatch',
     'signed out': 'Signed out',
@@ -94,6 +95,7 @@ export const H = {
   local: 'This plan needs no login.',
   noneAvailable: 'Every account is signed out, excluded or at its limit.',
   down: 'This plan is not running; start it below.',
+  runtimeSilent: 'Start the runtime; this plan reads OK once it answers.',
   unhealthy: 'It runs but fails its health check; the log says why.',
   mismatch: 'It runs a different splice version; restart it.',
   signedOut: 'No login is saved for this plan.',

@@ -9,9 +9,11 @@ import kotlinx.coroutines.CoroutineScope
 import splice.app.DaemonBoundary
 import splice.app.auth.AuthProbeLoop
 import splice.app.control.ManagedHead
+import splice.app.probe.LocalRuntimeWatch
 import splice.app.probe.TurnPathProbeLoop
 import splice.core.auth.AuthProvider
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.topology.Topology
 import splice.core.util.LogSink
 import java.util.concurrent.ConcurrentHashMap
 
@@ -27,6 +29,10 @@ internal class HeadProbes {
     // CONFIGURATION are different facts.
     private val turnPathStalled = ConcurrentHashMap<String, Boolean>()
 
+    // V4-417: which local runtimes answer, held by the watch this class starts and read by /health and
+    // the heads route through [runtimeNotAnswering]. Null until [startRuntimeWatch] runs.
+    private var runtimeWatch: LocalRuntimeWatch? = null
+
     internal suspend fun startDaemonHeads(
         heads: Map<String, ManagedHead>,
         failed: MutableMap<String, String>,
@@ -41,6 +47,12 @@ internal class HeadProbes {
             startAuthProbeIfRefreshable(key, managed.auth, probeScope, log)
             TurnPathProbeLoop(key, managed.head.port, turnPathStalled, log).start(probeScope)
         }
+    }
+
+    /** V4-417: starts the background probe of every local head's runtime. Off the request path: nothing
+     *  that reads the answer ever asks a runtime. */
+    internal fun startRuntimeWatch(topology: Topology, probeScope: CoroutineScope, log: LogSink) {
+        runtimeWatch = LocalRuntimeWatch(topology, log).also { it.start(probeScope) }
     }
 
     /**
@@ -65,4 +77,6 @@ internal class HeadProbes {
     }
 
     internal fun stalledKeys(): List<String> = turnPathStalled.filterValues { it }.keys.sorted()
+
+    internal fun runtimeNotAnswering(): Map<String, String> = runtimeWatch?.notAnswering().orEmpty()
 }

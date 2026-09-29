@@ -2,7 +2,7 @@
 // state is and which colour says it, the latency series each head draws, how the two field sources
 // are read when they exist, and which accounts an opened head rides.
 import type { AccountRow } from '@entities/account';
-import { headAttention, providerFamily } from '@entities/heads';
+import { headAttention, providerFamily, runtimeSilentText } from '@entities/heads';
 import type { HeadSignals, HeadState, ProviderFamily } from '@entities/heads';
 import type { TurnRow } from '@entities/perf';
 import type { HeadWindow } from '@entities/usage';
@@ -26,6 +26,7 @@ export interface HeadGroup {
  */
 const SEVERITY: Record<HeadState, number> = {
   down: 7,
+  'runtime not answering': 7,
   unhealthy: 6,
   'version mismatch': 5,
   'signed out': 5,
@@ -48,7 +49,7 @@ export type Health = keyof typeof S.healthName;
  *  while an unhealthy head has already broken a promise it made (the entity's red). */
 export function healthOf(cause: HeadState): Health {
   if (cause === 'ok') return 'ok';
-  if (cause === 'down') return 'down';
+  if (cause === 'down' || cause === 'runtime not answering') return 'down';
   return cause === 'unhealthy' ? 'failing' : 'attention';
 }
 
@@ -237,6 +238,8 @@ export function causeHelp(head: HeadStatus, cause: HeadState, auth: ProviderAuth
       return null;
     case 'down':
       return { text: H.down };
+    case 'runtime not answering':
+      return { text: `${S.stateName.down}: ${runtimeSilentText(head) ?? cause}. ${H.runtimeSilent}` };
     case 'unhealthy':
       return { text: H.unhealthy, href: `#/logs?head=${encodeURIComponent(head.key)}`, link: S.openLog };
     case 'version mismatch':

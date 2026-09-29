@@ -10,6 +10,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respondText
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import splice.app.control.ManagedHead
 import splice.core.topology.TopologyMessages
 import splice.heads.HeadStatus
@@ -65,5 +66,14 @@ internal class HeadResolver(
         return headByName(name).filter { it.launchSpec != null }
     }
 
-    fun headStatuses(): List<JsonObject> = heads.values.map { HeadStatus.json(it.head, it.authKind) }
+    /** Each head's status, and for a local head whose runtime is silent (V4-417) the endpoint it was asked
+     *  on as `runtimeNotAnswering`, from the daemon's held probe: the console reads it as down. */
+    fun headStatuses(): List<JsonObject> {
+        val silent = payloads.silentRuntimes()
+        return heads.values.map { managed ->
+            val status = HeadStatus.json(managed.head, managed.authKind)
+            val endpoint = silent[managed.head.key] ?: return@map status
+            JsonObject(status + ("runtimeNotAnswering" to JsonPrimitive(endpoint)))
+        }
+    }
 }

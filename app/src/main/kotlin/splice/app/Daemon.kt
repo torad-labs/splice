@@ -18,6 +18,7 @@ import splice.app.control.ControlServer
 import splice.app.control.DashboardPage
 import splice.app.control.FailedHeads
 import splice.app.control.ManagedHead
+import splice.app.control.RuntimeNotAnswering
 import splice.app.daemon.BootedTopology
 import splice.app.daemon.HeadCatalogs
 import splice.app.daemon.TopologyWindows
@@ -209,6 +210,7 @@ public class Daemon(
         // running) — headProbes.startDaemonHeads binds every head's port; controlPlane.start below
         // binds the control port, so it must run after.
         headProbes.startDaemonHeads(heads, failed, controlPlane.probeScope, log)
+        headProbes.startRuntimeWatch(topology, controlPlane.probeScope, log)
         val srv = controlPlane.start(
             controlPort = controlPort,
             heads = heads,
@@ -220,6 +222,10 @@ public class Daemon(
             headCount = topology.heads.size,
             turnPathStalled = { headProbes.stalledKeys() },
         ) ?: return
+        // V4-417: assigned here, right after the control plane binds, because ControlPlane.start is at
+        // its parameter ceiling. Until this line runs /health and /api/heads carry no runtime claim,
+        // which is what a daemon that has measured nothing says.
+        srv.ports.runtimeNotAnswering = RuntimeNotAnswering { headProbes.runtimeNotAnswering() }
         control = srv
         val degraded = if (failed.isEmpty()) "" else " DEGRADED=${failed.keys}"
         log("[daemon] up: control :$controlPort, heads ${heads.keys}$degraded\n")

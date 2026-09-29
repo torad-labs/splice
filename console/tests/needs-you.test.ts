@@ -248,6 +248,14 @@ describe('the daemon, the plans and the accounts', () => {
     expect(plans).toMatchObject({ finding: '5h at 99%, resets in 1h 0m', fix: { kind: 'open', href: '#/accounts' } });
   });
 
+  test('a running local head whose runtime is silent is a danger item with the sentence and Fleet as its fix (V4-417)', () => {
+    const silent = head({ key: 'bonsai', label: 'bonsai', authKind: 'api-key', runtimeNotAnswering: ':8099' });
+    const item = needsOf(quiet({ heads: read([head(), silent]) }), NOW).needs.find((need) => need.source === 'heads');
+    expect(item).toMatchObject({ severity: 'danger', head: 'bonsai', fix: { kind: 'open', href: '#/fleet' } });
+    expect(item?.finding).toContain('runtime not answering on :8099');
+    expect(needsOf(quiet({ heads: read([head()]) }), NOW).needs.find((need) => need.source === 'heads')).toBeUndefined();
+  });
+
   test('a pooled login gone and an excluded account are their own items; a single login gone is its head\'s', () => {
     const accounts = [
       account({ label: 'spare', credential_present: false }),

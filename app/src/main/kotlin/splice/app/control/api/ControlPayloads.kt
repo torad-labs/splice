@@ -15,6 +15,7 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.app.control.FailedHeads
 import splice.app.control.ManagedHead
+import splice.app.control.RuntimeNotAnswering
 import splice.app.control.TopologyDigest
 import splice.app.control.TurnPathStalled
 import splice.configuration.topology.TopologyStale
@@ -39,7 +40,11 @@ internal class ControlPayloads(
     private val clientVersions: ClientVersionTracker = ClientVersionTracker(),
     // Constructed by ControlPlane.start inside Daemon.start, once per daemon boot.
     private val bootedAtEpochMillis: Long = System.currentTimeMillis(),
+    private val runtimeNotAnswering: RuntimeNotAnswering = RuntimeNotAnswering { emptyMap() },
 ) {
+
+    /** V4-417: the local heads whose runtime is silent, from the daemon's held probe. */
+    fun silentRuntimes(): Map<String, String> = runtimeNotAnswering()
 
     fun controlHealthJson(nowEpochMillis: Long = System.currentTimeMillis()): String = buildJsonObject {
         // ok means "this gateway can serve", not "heads are configured" — the 91h wedge served
@@ -83,6 +88,7 @@ internal class ControlPayloads(
         put("readyHeads", running)
         put("failedHeads", failed)
         putFailedHeadReasons(this)
+        putRuntimeNotAnswering(this)
         putQuotaResets(this, runningKeys, nowEpochMillis)
         if (configuredHeads == 0 && running == 0) {
             if (failed == 0) {
@@ -105,6 +111,17 @@ internal class ControlPayloads(
         val reasons = failedHeads.reasons()
         if (reasons.isEmpty()) return
         into.putJsonObject("failedHeadReasons") { reasons.forEach { (key, reason) -> put(key, reason) } }
+    }
+
+    /** V4-417: each local head whose runtime did not answer at the last background probe, beside the
+     *  ready count that does not change for it; absent when none, so a healthy daemon's shape is
+     *  unchanged and a daemon that has not probed yet claims nothing. */
+    private fun putRuntimeNotAnswering(into: JsonObjectBuilder) {
+        val silent = silentRuntimes()
+        if (silent.isEmpty()) return
+        into.putJsonObject("runtimeNotAnswering") {
+            silent.toSortedMap().forEach { (key, endpoint) -> put(key, endpoint) }
+        }
     }
 
     /** V4-398: for each running head whose provider refuses turns until a known instant, that

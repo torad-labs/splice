@@ -30,7 +30,7 @@ import type { HeadSignals } from '../src/entities/heads';
 import type { TurnRow } from '../src/entities/perf';
 import { headWindow, headsReportingNone, nearestWindow } from '../src/entities/usage';
 import {
-  EMPTIES, arrangeHeads, causeHelp, columnsOf, dialectOf, firstBytes, healthOf, healthParts, inflightTotals,
+  EMPTIES, arrangeHeads, attentionRank, causeHelp, columnsOf, dialectOf, firstBytes, healthOf, healthParts, inflightTotals,
   lastTurnOf, median, noneAvailable, poolEmpty, rowTone, stateTone,
 } from '../src/pages/fleet/model';
 import { poolOf, selectedExcluded } from '../src/entities/account';
@@ -820,5 +820,50 @@ describe('the first-byte cell', () => {
     expect(sheet).toMatch(/\.myx-fl-lat \.myx-spark \{ min-width: 0; \}/);
     expect(sheet).toMatch(/\.myx-fl-lat \.myx-fl-figure \{ min-width: 5ch; text-align: end; \}/);
     expect(sheet).toMatch(/\.myx-fl-figure \{[^}]*font-variant-numeric: tabular-nums;/);
+  });
+});
+
+// V4-417: Marlin's walk of f7f1e9308. `splice status` said "runtime not answering on :8099-:8102" for four
+// local heads while Fleet read them OK and its Plans card counted 11 OK, 0 Down: a local head boots and
+// runs whether or not its runtime is up, so nothing the console read said a turn would fail. The daemon
+// now marks such a head (`runtimeNotAnswering`, from its background probe) and the console reads it Down.
+describe('a running local head whose runtime is silent reads Down (V4-417)', () => {
+  const local = (key: string, port: number, over: Partial<HeadStatus> = {}): HeadStatus =>
+    head({ key, label: key, name: key, authKind: 'api-key', port: 3100 + port, ...over });
+  const silent = (key: string, port: number): HeadStatus => local(key, port, { runtimeNotAnswering: `:${port}` });
+
+  test('it prints Down like a stopped head, and is not struck: the head runs, the runtime has to be started', () => {
+    const state = headAttention(silent('bonsai', 8099), signals());
+    expect(state).toMatchObject({ cause: 'runtime not answering', label: 'down', struck: false, edge: 'grey' });
+    expect(healthOf(state.cause)).toBe('down');
+    expect(stateTone(state.cause)).toBe('neutral');
+    expect(headAttention(local('glml53', 8101), signals()).cause).toBe('ok');
+  });
+
+  test('a stopped head is down first, and an unhealthy one that is also silent reads by the runtime', () => {
+    expect(headAttention({ ...silent('bonsai', 8099), running: false }, signals())).toMatchObject({ cause: 'down', struck: true });
+    expect(headAttention({ ...silent('bonsai', 8099), healthy: false }, signals()).cause).toBe('runtime not answering');
+  });
+
+  test('the opened head says which runtime and what to do, in the sentence `splice status` prints', () => {
+    const help = causeHelp(silent('bonsai', 8099), 'runtime not answering', undefined);
+    expect(help?.text).toContain('runtime not answering on :8099');
+    expect(help?.text).toContain(H.runtimeSilent);
+  });
+
+  test('the Plans card counts the four silent heads Down and the seven that answer OK', () => {
+    const heads = [
+      ...['bonsai', 'bonsai-vast', 'glml53', 'bonsai-second'].map((key, at) => silent(key, 8099 + at)),
+      ...Array.from({ length: 7 }, (_, at) => local(`plan-${at}`, 8200 + at)),
+    ];
+    const out = board(heads);
+    expect(out).toContain(`${S.heads}: ${S.healthName.ok} 7, ${S.healthName.attention} 0, ${S.healthName.failing} 0, ${S.healthName.down} 4`);
+    const rows = tableOf(out, S.heads).rows;
+    expect(rows.filter((row) => row.includes(`>${S.stateName.down}<`))).toHaveLength(4);
+  });
+
+  test('it sorts with the stopped heads under Attention first, above an unhealthy one', () => {
+    expect(attentionRank(silent('bonsai', 8099), NO_SIGNALS)).toBe(attentionRank(head({ running: false }), NO_SIGNALS));
+    expect(attentionRank(silent('bonsai', 8099), NO_SIGNALS)).toBeGreaterThan(attentionRank(head({ healthy: false }), NO_SIGNALS));
   });
 });

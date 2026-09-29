@@ -9420,7 +9420,7 @@ id = "V4-400"
 phase = "release"
 title = "Save writes an instruction file the preview refused (Marlin walk of V4-348 on bb54736ea): with the preview showing a refusal, Save stayed enabled; pressing it on a missing path wrote system_prompt_file = \"<missing path>\" into splice.toml, dropped the existing system_prompt, and printed 'Written' beside the red alert. TopologyRoutes.write (TopologyRoutes.kt:69-104) runs no instruction-file check; only PromptPreview does (PromptPreview.kt:114,145). The daemon must refuse a write whose changed system_prompt_file the preview would refuse, with the preview's own sentence, and the console must disable Save while the preview refuses. A missing path says the file does not exist (today 'must be a regular file')."
 files = ["features/configuration/src/main/kotlin/splice/configuration/topology/TopologyRoutes.kt", "features/configuration/src/main/kotlin/splice/configuration/topology/PromptPreview.kt", "features/configuration/src/test/kotlin/splice/configuration/topology/v4400/", "console/src/pages/settings/", "console/e2e/v4400/", "console/tests/"]
-status = "done"
+status = "verified"
 verify = "red first (daemon): PUT /api/topology setting a head's system_prompt_file to a missing path, a directory, a symlink and a non-UTF-8 file each returns refused with the preview's sentence and leaves splice.toml byte-identical; a missing path reads 'does not exist'; a write that leaves an already-stored system_prompt_file unchanged is not refused for it; a valid file writes. red first (console): while the preview refuses, Save is disabled. Mutant: drop the write-side check and the byte-identical test goes red. Marlin walks it."
 claimed_by = "console"
 claimed_at = "2026-09-28T22:22:30.621Z"

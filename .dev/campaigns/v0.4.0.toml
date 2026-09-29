@@ -8731,6 +8731,7 @@ verify = "live leg on a throwaway home (captures/, never the operator's): claude
 # [2026-09-27] Marlin accepted the fixture reading (Sep 27, ~1:55 PM CT): he checked LaunchService.kt:103-105 carries trust. The film home recipe now says the first session is started interactively, never -p (captures/film/film-home-3/make-home.sh header, backup make-home.sh.bak-20260927-pre-trust-note). Walked when it lands.
 # [2026-09-28] Live proof from Marlin's V4-361 check (Sep 27 evening, film-home-3 at da2b006bd): with the tally conversation started interactively (trust granted on claude-splice), claude-muse -r 64eefd61-… asked no trust question, so V4-283's trust carry works live on an interactive fixture.
 # [2026-09-29] amend by=splice-lead: files were ["features/launch/src/test/kotlin/splice/launch/recipe/v4362/"]
+# [2026-09-29] RECEIPT cmd="Marlin live walk on captures/v4362-20260928-2235 (throwaway home, ef86845f3): claude-alpha interactive in a git repo, trust yes, one turn; claude-beta -r <id> in tmux; R3 with the trust records removed" exit=0 tests=0 touched=-
 
 [[items]]
 id = "V4-363"

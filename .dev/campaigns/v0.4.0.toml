@@ -9937,6 +9937,9 @@ id = "V4-433"
 phase = "release"
 title = "Two more client-facing sentences say a reset as a raw UTC instant (fin, V4-428 followup): the armed burst hold (HeadAdmission.kt:247-248, 'The upstream reports its quota window resets at ${AccountResetText.format(...)}') and every account exhausted (AccountResetText.exhausted, AccountSelection.kt:169-170, surfaced as AccountPool's message at AccountPool.kt:32), both built from AccountResetText.format, which prints the ISO instant. That format is also the log spelling (HeadAdmission.kt:201 provider_reset=, :301 earliest_reset=), where ISO is right and stays. The person-facing sentences say the reset through LocalTimeText (the machine's zone and abbreviation), keeping V4-61's wording (the window is reported, not asserted), V4-234's constraints (no em dash, no stop-waiting phrasing), and the null case."
 files = ["features/turns/src/main/kotlin/splice/head/admission/HeadAdmission.kt", "integrations/upstream/src/main/kotlin/splice/upstream/credentials/AccountSelection.kt", "features/turns/src/test/kotlin/splice/head/HeadServerCapacityTest.kt", "features/turns/src/test/kotlin/splice/head/turn/AccountTurnSelectionTest.kt", "features/turns/src/test/kotlin/splice/head/v4433/", "integrations/upstream/src/test/kotlin/splice/upstream/v4433/"]
-status = "todo"
+status = "in_flight"
 verify = "red first: under an explicit non-UTC zone the armed-hold sentence and the all-accounts-exhausted message read the reset as LocalTimeText's form with no ISO 'T..Z'; the perf/journal fields provider_reset= and earliest_reset= keep the ISO instant; a null reset still reads as before; mutants (ISO again, UTC always, log field moved to local) killed by name. detekt on both modules, :quality-architecture:test, rules wall."
 # [2026-09-29] Sep 28, 11:44 PM CT: queued for fin after V4-383. AccountTurnSelectionTest.kt:286 pins 'earliest reset is 9999-12-31T23:59:59Z' and sits inside V4-383's fence, so this row waits for that one to land.
+claimed_by = "fin"
+claimed_at = "2026-09-29T16:59:42.929Z"
+# [2026-09-29] CLAIM: owner=fin at=2026-09-29T16:59:42Z

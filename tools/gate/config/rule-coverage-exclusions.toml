@@ -78,6 +78,17 @@ Production binds the port its topology configures, and had 0 lease sites when th
 """
 
 [[exclusion]]
+rule = "kt-no-bare-temp-in-tests"
+sourceSets = ["main", "testFixtures"]
+date = "2026-09-29"
+reason = """
+A test-hygiene law: a test takes JUnit's @TempDir instead of making a directory nothing deletes, and
+the rule binds src/test by design (V4-383). Production's temp use is not what it grades, and no
+testFixtures source makes a bare temp directory or file today (git grep, Sep 29), so those roots are
+excused here rather than widened.
+"""
+
+[[exclusion]]
 rule = "kt-no-emdash-cli-text"
 sourceSets = ["test", "testFixtures"]
 date = "2026-09-25"

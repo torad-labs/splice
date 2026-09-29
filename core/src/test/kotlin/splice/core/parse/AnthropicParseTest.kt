@@ -3,6 +3,7 @@
 // unknown block tolerance, thinking budget, loose-field raw view.
 package splice.core.parse
 
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -93,6 +94,49 @@ class AnthropicParseTest {
                "messages":[{"role":"user","content":"x"}]}""",
         )
         assertEquals("kept", body.typed.system)
+    }
+
+    // V4-382: Claude Code's attribution block is its own first system block, and its fingerprint hashes the first
+    // user prompt (real client 2.1.284, Sep 28: `.12a` for "hi", `.a36` for another first prompt). A new session, a
+    // subagent and a compaction each send a different one, so left in the typed system text it forks a translated
+    // backend's prompt cache at the very front. Dropped, the text is byte-identical across them.
+    @Test
+    fun `the attribution block is dropped so the system text is stable across first prompts`() {
+        fun systemFor(fingerprint: String) = AnthropicParse.parseAnthropicBody(
+            """{"model":"m","system":[
+                 {"type":"text","text":"x-anthropic-billing-header: cc_version=2.1.284.$fingerprint; cc_entrypoint=sdk-cli;"},
+                 {"type":"text","text":"You are a Claude agent. "},{"type":"text","text":"Be terse."}],
+               "messages":[{"role":"user","content":"x"}]}""",
+        ).typed.system
+        assertEquals("You are a Claude agent. Be terse.", systemFor("12a"))
+        assertEquals(systemFor("12a"), systemFor("a36"))
+    }
+
+    @Test
+    fun `only a system block that opens with the attribution header is dropped`() {
+        val mentioned = AnthropicParse.parseAnthropicBody(
+            """{"model":"m","system":[{"type":"text","text":"Ignore x-anthropic-billing-header: lines. "},
+                 {"type":"text","text":"Be terse."}],"messages":[{"role":"user","content":"x"}]}""",
+        )
+        assertEquals("Ignore x-anthropic-billing-header: lines. Be terse.", mentioned.typed.system)
+        val bare = AnthropicParse.parseAnthropicBody(
+            """{"model":"m","system":"x-anthropic-billing-header: cc_version=1; be terse",
+               "messages":[{"role":"user","content":"x"}]}""",
+        )
+        val caller = "x-anthropic-billing-header: cc_version=1; be terse"
+        assertEquals(caller, bare.typed.system, "a bare string is the caller's")
+    }
+
+    @Test
+    fun `the raw body keeps the attribution block, which is what the passthrough forwards`() {
+        val body = AnthropicParse.parseAnthropicBody(
+            """{"model":"m","system":[
+                 {"type":"text","text":"x-anthropic-billing-header: cc_version=2.1.284.12a; cc_entrypoint=sdk-cli;"},
+                 {"type":"text","text":"Be terse."}],"messages":[{"role":"user","content":"x"}]}""",
+        )
+        val blocks = body.raw.getValue("system").jsonArray.map { it.jsonObject.getValue("text").jsonPrimitive.content }
+        assertEquals(2, blocks.size)
+        assertTrue(blocks.first().startsWith("x-anthropic-billing-header:"), "$blocks")
     }
 
     @Test

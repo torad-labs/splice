@@ -74,8 +74,17 @@ internal object SystemTextSerializer : KSerializer<String?> {
             // SCH-004: JsonNull IS a JsonPrimitive (content == "null") — a null "text" field must
             // read as absent, not as the literal word "null" injected into the system prompt.
             (obj["text"] as? JsonPrimitive)?.takeUnless { it is JsonNull }?.content
+                ?.takeUnless { it.startsWith(ATTRIBUTION_BLOCK_PREFIX) }
         }.joinToString("")
     }
+
+    // Claude Code's attribution block, `x-anthropic-billing-header: cc_version=<ver>.<fp>; cc_entrypoint=<ep>;`, is
+    // its own first system block: billing metadata that Anthropic's endpoint reads for attribution. This is the TYPED
+    // text every translated dialect builds its instructions from; the passthrough builds from the raw body and keeps
+    // the block. <fp> hashes the session's first user prompt, so the block differs per session, per subagent and at
+    // every compaction, and on any other backend it is prompt text that forks the cache at the very front of the
+    // request (bonsai 2026-09-18: the post-compaction prompt forked at token 47,374, right after the tools).
+    private const val ATTRIBUTION_BLOCK_PREFIX = "x-anthropic-billing-header:"
 }
 
 public object ContentBlockSerializer : JsonContentPolymorphicSerializer<ContentBlock>(ContentBlock::class) {

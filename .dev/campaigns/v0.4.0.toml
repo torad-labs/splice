@@ -9219,6 +9219,7 @@ verify = "step 0 recorded (key accepted on /v1/responses, a non-empty reasoning 
 # [2026-09-28] Duplicate of V4-351 (filed Sep 27 with the same finding and more: prompt_cache_key, prompt_cache_retention 24h, the routing headers). Folded into V4-351; this row closes with V4-351's receipt. Filed by splice-lead without checking the open rows first.
 # [2026-09-29] Sep 28, 8:55 PM CT: folded into V4-351, which is done; it closes with V4-351.
 # [2026-09-29] amend by=splice-lead: files were ["app/src/main/kotlin/splice/app/provider/MusePassthroughArm.kt", "app/src/main/kotlin/splice/app/provider/ProviderAssembly.kt"]
+# [2026-09-29] RECEIPT cmd="duplicate of V4-351; closes on V4-351's receipt (ledger get V4-351: done)" exit=0 tests=0 touched=-
 
 [[items]]
 id = "V4-387"

@@ -10083,8 +10083,11 @@ id = "V4-440"
 phase = "release"
 title = "A model a provider publishes while the daemon runs joins its heads' pickers without a restart (operator, Sep 29 ~6:15 PM CT: 'Why isn't GPT 6.1 Sol available on Splice yet? I thought we moved from getting the models from the respective provider API instead of hardcoded. GPT 6.1 Sol was released today'). ModelRosters.kt asks each head's provider once, at daemon start, and holds the answer for the daemon's life (its header: 'a model that appears upstream while the daemon runs joins the picker at the next start'). The daemon started Sep 29, 10:47 AM CT; OpenRouter's created for openai/gpt-6.1-sol is 12:28 PM CT and the Codex backend listed gpt-6.1-sol the same afternoon; ~/.claude-codex/state/claudex-models.json from the start held 7 ids and neither head offered 6.1 Sol until splice-lead restarted at 6:22 PM CT. FIX: the rosters are asked again on an interval while the daemon runs (hourly), the kept list is rewritten each time, and every reader of a head's catalog (its /v1/models, the launch picker, the status line and board rates V4-438 adds) sees the new list on its next read without a restart; a refresh that fails keeps the last list (never below the status quo) and says so once in daemon.log. The catalog each head builds at start (HeadServerFactory/ManagedHeadFactory ctx.catalog from Topology.catalogFor) is where a snapshot would hide the refresh; find it and read it live. Follows V4-438 for RosterCache, which V4-438 holds. @splice-lead"
 files = ["app/src/main/kotlin/splice/app/provider/ModelRosters.kt", "app/src/test/kotlin/splice/app/v4440/"]
-status = "todo"
+status = "in_flight"
 verify = "red first: a fake HeadModelsSource that adds a model after start, and the head's /v1/models lists it within one refresh with no restart; a source that fails on the refresh keeps the previous list and logs one line; the V4-438 rates of a model that joins by refresh price its turns. :app:test scope, detekt, :quality-architecture:test, rules wall; CI gate on the pushed sha"
+claimed_by = "claude-builder"
+claimed_at = "2026-09-29T23:53:57.626Z"
+# [2026-09-29] CLAIM: owner=claude-builder at=2026-09-29T23:53:57Z
 
 [[items]]
 id = "V4-441"

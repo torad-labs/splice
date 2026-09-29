@@ -14,8 +14,8 @@
 //          environment is read. `head` itself is unchanged and still folds the last two into
 //          "unknown head".
 //   resumable  V4-421: whether a transcript with conversation bytes sits in some head's tree, which is
-//          what GET /api/sessions/{id}/resume needs. A registry entry can exist with none (Eli's
-//          Telegram bridge registers and never writes one). Left off a row when nothing was measured:
+//          what GET /api/sessions/{id}/resume needs. A registry entry can exist with none (a
+//          messaging bridge registers and never writes one). Left off a row when nothing was measured:
 //          no id, no head tree, or the transcript view is off.
 // and GET /api/sessions/{id}/transcript, one page through the injected SessionTranscripts port.
 //

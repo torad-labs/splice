@@ -1,5 +1,5 @@
 // V4-421: the Sessions page offers Resume only where the daemon says a session can be resumed. Found by
-// the wire probe on the everyday daemon: /api/sessions listed Eli's Telegram bridge (it registers in
+// the wire probe on the everyday daemon: /api/sessions listed a messaging bridge (it registers in
 // Claude Code's session registry and never writes a transcript) and the resume route answered 404 for it,
 // so the row's Resume would have failed the same way. Rows from /api/sessions now carry `resumable`.
 // What is pinned: a live row that cannot be resumed offers no Resume and says why without claiming a

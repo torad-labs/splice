@@ -1,6 +1,6 @@
 // NEW: V4-421 — /api/sessions says, per session, whether it has a transcript to resume. Found by the
 // console's wire probe on the everyday daemon: it took the first listed session and the resume route
-// answered 404 "the session is in no head's transcript tree". That row was Eli's Telegram bridge, which
+// answered 404 "the session is in no head's transcript tree". That row was a messaging bridge, which
 // registers itself in Claude Code's session registry (a session id, a pid, a socket) and never writes a
 // transcript, so the list carried a session nothing could resume. The rule is the resume route's: a
 // regular file with conversation bytes in some head's own tree. The fixtures here are real files.

@@ -1,6 +1,6 @@
 // NEW: V4-421 — which listed sessions have a transcript to resume. /api/sessions lists what Claude
-// Code's registry lists, and a process can register there without ever writing a transcript (Eli's
-// Telegram bridge does), so a listed session is not a resumable one. The rule is the resume route's
+// Code's registry lists, and a process can register there without ever writing a transcript (a
+// messaging bridge does), so a listed session is not a resumable one. The rule is the resume route's
 // (ResumeAcrossHeads.plan): a regular file with conversation bytes in some HEAD's own tree, the trees the
 // launch searches. The vanilla tree is not among them unless a head links to it, because a resume that
 // is refused for it is the 404 this exists to keep off the row.

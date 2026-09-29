@@ -1,6 +1,6 @@
 // V4-421: which listed session the console wire probe reads the id-keyed session routes with. It took the
 // first row of /api/sessions, and on the everyday daemon that row was a session nothing could resume
-// (Eli's Telegram bridge registers and writes no transcript), so the resume read answered 404 and the
+// (a messaging bridge registers and writes no transcript), so the resume read answered 404 and the
 // probe went red for a listing defect, not a wire one. Rows now say `resumable`; the probe prefers one
 // that does. A daemon older than the field is judged as before, and one that measured every row and found
 // none resumable leaves the resume read unexercised instead of failed.

@@ -11,8 +11,9 @@
 // A REFUSAL IS AN ANSWER, NOT AN ERROR. A body that is not {topology: {...}} is a 400. A topology that
 // does not decode, fails a check, or cannot be written faithfully answers 200 with ok false and
 // findings, which the console renders beside the editor, and splice.toml is byte-identical after it.
-// restart_required is false only for a write that changed nothing but context windows: the running
-// daemon re-reads those (V4-162, TopologyWindows) and every other key is boot-only.
+// restart_required is false for a refusal, which wrote nothing, and for a write that changed nothing but
+// context windows: the running daemon re-reads those (V4-162, TopologyWindows) and every other key is
+// boot-only.
 //
 // SECRETS ARE NEVER READ BACK. Every `extra_headers` value is served as [MASK], since a header can
 // carry a key and nothing here can tell which does. On PUT the mask means "keep the stored value";
@@ -79,8 +80,11 @@ public class TopologyRoutes(private val source: TopologyWriterSource, private va
         return JsonReply(HttpStatusCode.OK, outcome(attempt).toString())
     }
 
-    /** What a PUT did, and whether the running daemon needs a restart to serve it (V4-162). */
-    private data class Attempt(val result: TopologyWriteResult, val restartRequired: Boolean = true)
+    /** What a PUT did, and whether the running daemon needs a restart to serve it (V4-162). Only a
+     *  write that moved a boot-only key needs one: a refusal wrote nothing (V4-413). */
+    private data class Attempt(val result: TopologyWriteResult, val movedBootKeys: Boolean = true) {
+        val restartRequired: Boolean = result is TopologyWriteResult.Written && movedBootKeys
+    }
 
     /** Decode the MASKED request first, so a decoder message can only ever quote the mask; then put
      *  the stored secrets back, decode again, and write. */

@@ -14,9 +14,11 @@
 // still shows it, with its age. A window the daemon made no claim about (an older daemon) counts.
 //
 // An account that cannot serve a turn (refused by its pool, no credential, or spent) ranks after
-// every account that can: a spent account beside one with room is not the limit the fleet is nearest,
-// the pool has already stepped past it. When none can serve, the fullest of the rest is the limit the
-// fleet has reached, and it is named rather than hidden.
+// every account that can, when its head has one that can: a spent account beside a sibling with room is
+// not the limit the fleet is nearest, the pool has already stepped past it (V4-422: that holds inside a
+// head's pool only). A head with no account that can serve, a single login included, has nothing to step
+// to: it is a limit the fleet has reached, and ranks by its own reading with every other. When no head
+// can serve, the fullest of them is the limit, and it is named rather than hidden.
 //
 // A feature because the strip is a widget and the entity model segments are fenced: this is the
 // lowest layer a widget and a page may both import that may read two entities.
@@ -57,7 +59,8 @@ export function windowName(window: AccountWindow): string {
   return window.model === undefined ? length : `${window.model} ${length}`;
 }
 
-type Candidate = Omit<NearestLimit, 'level'> & { serving: boolean };
+/** [heads] are every head the reading rides, which a pool's step-past is judged against. */
+type Candidate = Omit<NearestLimit, 'level'> & { serving: boolean; heads: readonly string[] };
 
 function fromAccounts(accounts: readonly AccountRow[], nowMs: number): Candidate[] {
   const out: Candidate[] = [];
@@ -67,6 +70,7 @@ function fromAccounts(accounts: readonly AccountRow[], nowMs: number): Candidate
     out.push({
       serving: !isExcluded(account, nowMs) && account.credential_present && window.used_percent < EXHAUSTED_AT_PERCENT,
       head: account.heads[0] ?? null,
+      heads: account.heads,
       account: account.label,
       window: windowName(window),
       pct: window.used_percent,
@@ -84,15 +88,21 @@ function fromHeads({ accounts, usage, auth }: LimitSources, nowMs: number): Cand
     if (covered.has(entry.key)) continue;
     const own = headWindow({ ...usage, heads: [entry] }, auth, nowMs);
     if (own === null) continue;
-    out.push({ ...own, serving: own.pct < EXHAUSTED_AT_PERCENT });
+    out.push({ ...own, serving: own.pct < EXHAUSTED_AT_PERCENT, heads: [entry.key] });
   }
   return out;
 }
 
 /** The nearest limit, or null when no account and no head reports a window. */
 export function nearestLimit(sources: LimitSources, nowMs: number): NearestLimit | null {
-  const best = [...fromAccounts(sources.accounts, nowMs), ...fromHeads(sources, nowMs)].reduce<Candidate | null>(
-    (held, next) => (held === null || (next.serving !== held.serving ? next.serving : next.pct > held.pct) ? next : held),
+  const candidates = [...fromAccounts(sources.accounts, nowMs), ...fromHeads(sources, nowMs)];
+  const served = new Set(candidates.filter((candidate) => candidate.serving).flatMap((candidate) => candidate.heads));
+  // Stepped past: it cannot serve and every head it rides has another account that can. An account no
+  // head rides blocks nothing, so it is stepped past whatever the heads do.
+  const steppedPast = (candidate: Candidate): boolean =>
+    !candidate.serving && !candidate.heads.some((key) => !served.has(key));
+  const best = candidates.reduce<Candidate | null>(
+    (held, next) => (held === null || (steppedPast(next) !== steppedPast(held) ? steppedPast(held) : next.pct > held.pct) ? next : held),
     null,
   );
   if (best === null) return null;

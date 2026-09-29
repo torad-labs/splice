@@ -199,3 +199,67 @@ describe('the nearest limit reads only the windows the daemon calls current (V4-
     expect(readAgeText(old, NOW)).toMatch(/^windows read 4h/);
   });
 });
+
+// V4-422: the nearest limit named a head that could serve. Marlin's re-walk of V4-408 (ef86845f3): the
+// header and Fleet's Nearest limit read "claude-grok 7d 1%" while claudex's one login sat at 7d 100%,
+// current, read a minute before, so one of the operator's commands was out for six days behind a calm 1%.
+// The serving rule ranks an account that cannot serve after every one that can because a POOL steps past
+// it. That holds inside one head's pool only: a single login has nothing to step to. A head with no
+// account that can serve has reached a limit, and ranks by its own reading with every other one.
+describe('a head with no account that can serve is a limit the fleet has reached (V4-422)', () => {
+  const claudexLogin = account('claudex', [current(DAY_7, 100, 6 * 86_400 + 5 * 3600)], {
+    label: null, single_login: true, heads: ['claudex'],
+  });
+  const grokLogin = account('grok', [current(DAY_7, 1, 6 * 3600 + 51 * 60)], {
+    kind: 'grok-oauth', label: null, single_login: true, heads: ['grok'],
+  });
+
+  test('a single login at 7d 100% current names its head, critical, with its reset, before another head at 1%', () => {
+    const sources = { accounts: [grokLogin, claudexLogin], usage: QUIET, auth: null };
+    const limit = nearestLimit(sources, NOW);
+    expect(limit).toMatchObject({ head: 'claudex', window: '7d', pct: 100, level: 'critical' });
+    expect(limit?.reset).toMatch(/^in 6d /);
+    expect(nearestLimit({ ...sources, accounts: [claudexLogin, grokLogin] }, NOW)).toEqual(limit);
+    const out = printed(sources);
+    expect([out.strip, out.fleet?.value, out.accounts?.value]).toEqual(['100%', '100%', '100%']);
+    expect(out.fleet?.sub).toBe(limitText(limit as NonNullable<typeof limit>));
+    expect(out.accounts?.sub).toBe(out.fleet?.sub);
+  });
+
+  test('a pooled head whose spent account has a serving sibling still ranks the sibling, and not the spent one', () => {
+    const pooled = [
+      account('spent', [current(DAY_7, 100, 6 * 86_400)], { heads: ['claudex'] }),
+      account('sibling', [current(DAY_7, 40, 3 * 86_400)], { heads: ['claudex'] }),
+    ];
+    expect(nearestLimit({ accounts: [...pooled, grokLogin], usage: QUIET, auth: null }, NOW))
+      .toMatchObject({ head: 'claudex', account: 'sibling', pct: 40 });
+    expect(nearestLimit({ accounts: [...pooled], usage: QUIET, auth: null }, NOW)).toMatchObject({ account: 'sibling', pct: 40 });
+  });
+
+  test('a stale 100% stays out, so the head that can serve is named (V4-407)', () => {
+    const staleLogin = account('claudex', [stale(DAY_7, 100, 6 * 86_400)], { label: null, single_login: true, heads: ['claudex'] });
+    expect(nearestLimit({ accounts: [staleLogin, grokLogin], usage: QUIET, auth: null }, NOW))
+      .toMatchObject({ head: 'grok', pct: 1 });
+  });
+
+  test('an account two heads ride is stepped past only when both have another that serves', () => {
+    const shared = account('shared', [current(DAY_7, 100, 6 * 86_400)], { heads: ['claudex', 'grok'] });
+    const claudexSpare = account('spare', [current(DAY_7, 20, 6 * 86_400)], { heads: ['claudex'] });
+    const grokSpare = account('grok-spare', [current(DAY_7, 5, 6 * 86_400)], { kind: 'grok-oauth', heads: ['grok'] });
+    expect(nearestLimit({ accounts: [shared, claudexSpare], usage: QUIET, auth: null }, NOW))
+      .toMatchObject({ account: 'shared', pct: 100 });
+    expect(nearestLimit({ accounts: [shared, claudexSpare, grokSpare], usage: QUIET, auth: null }, NOW))
+      .toMatchObject({ account: 'spare', pct: 20 });
+  });
+
+  test('a spent account no head rides blocks nothing, so it still ranks after one that can serve', () => {
+    const orphan = account('orphan', [current(DAY_7, 100, 6 * 86_400)], { heads: [] });
+    expect(nearestLimit({ accounts: [orphan, grokLogin], usage: QUIET, auth: null }, NOW)).toMatchObject({ head: 'grok', pct: 1 });
+  });
+
+  test('a head only /api/usage reports, spent, is a limit reached beside another head at 1%', () => {
+    const spentHead: UsagePayload = { window_hours: 5, warn_pct: 80, warn_tokens_5h: 0, heads: [planHead('claude', 100, 10)] };
+    expect(nearestLimit({ accounts: [grokLogin], usage: spentHead, auth: null }, NOW))
+      .toMatchObject({ head: 'claude', window: '5h', pct: 100, level: 'critical' });
+  });
+});

@@ -10019,9 +10019,10 @@ claimed_at = "2026-09-29T22:22:23.827Z"
 id = "V4-439"
 phase = "release"
 title = "A late 401 from a key no longer held re-locks the console after the right key is entered (found as the gate's red on 4850ac2bc, Sep 29 6:15 PM CT: console/e2e/v4416/one-shell-after-unlock.spec.ts:54, the 'Management key required' dialog still visible 5 s after the right key was unlocked; the same test passed on 1e3566df7 and 8121d8d08, and no code between them touches the console). Cause, read in the code: shared/api request<T> sends currentKey() at send time (index.ts:128) but on ANY 401 sets locked and calls onUnauthorized (index.ts:136-139), and storeKey (index.ts:53-59) unlocks for the new key; a read sent with the WRONG key that is still in flight when the right key is stored answers 401 late, locks the client again and reopens the gate, and every later request short-circuits on 'locked' until the key is typed a third time. Loaded machines (CI) widen the window; a slow daemon on an operator's box does the same. FIX: a request remembers the key it carried, and a 401 for a key that is no longer the held one locks nothing (the read still fails); the events stream's 401 (entities/events/api) passes its own key the same way. Red-first vitest: request A in flight with key one, key two stored, A answers 401: the gate is not reopened and the next request goes out with key two. @splice-lead"
-files = ["console/src/shared/api/index.ts", "console/src/entities/events/api/index.ts", "console/tests/api-client.test.ts"]
+files = ["console/src/shared/api/index.ts", "console/src/entities/events/api/index.ts", "console/tests/api-client.test.ts", "console/tests/events.test.ts"]
 status = "in_flight"
 verify = "vitest red on current code and green; the e2e v4416 spec passes in CI's gate on the pushed sha"
 claimed_by = "splice-lead"
 claimed_at = "2026-09-29T23:20:53.918Z"
 # [2026-09-29] CLAIM: owner=splice-lead at=2026-09-29T23:20:53Z
+# [2026-09-29] amend by=unattributed: files were ["console/src/shared/api/index.ts", "console/src/entities/events/api/index.ts", "console/tests/api-client.test.ts"]

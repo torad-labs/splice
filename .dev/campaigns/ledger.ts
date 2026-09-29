@@ -714,11 +714,11 @@ function assertFenceShape(root: string, files: readonly string[]): void {
   );
 }
 
-function assertReceipt(id: string, notes: readonly string[]): void {
+function assertReceipt(id: string, notes: readonly string[], status: "done" | "verified"): void {
   const r = latestReceipt(notes);
-  if (r === undefined) throw new LedgerError(`${id}: "done" needs a receipt first — record your verify run with \`receipt ${id} --cmd ... --exit 0 --tests N --touched a,b\``);
-  if (r.exit === null) throw new LedgerError(pyReceiptRefusal(id, "done"));
-  if (r.exit !== 0) throw new LedgerError(`${id}: the latest receipt exited ${r.exit}; a row is done only on a green run`);
+  if (r === undefined) throw new LedgerError(`${id}: "${status}" needs a receipt first — record your verify run with \`receipt ${id} --cmd ... --exit 0 --tests N --touched a,b\``);
+  if (r.exit === null) throw new LedgerError(pyReceiptRefusal(id, status));
+  if (r.exit !== 0) throw new LedgerError(`${id}: the latest receipt exited ${r.exit}; a row is ${status} only on a green run`);
 }
 
 /** A manifest.py receipt names the files, never the run, so a gate that needs a green run cannot read one as green. */
@@ -1343,7 +1343,7 @@ export async function main(argv: readonly string[] = Bun.argv.slice(2)): Promise
         const block = findBlock(locateItems(current), id);
         assertMachinerySeat(id, block.item, rest, "set-status");
         assertItemMandates(id, status, notesOf(current, block));
-        if (status === "done") assertReceipt(id, notesOf(current, block));
+        if (status === "done" || status === "verified") assertReceipt(id, notesOf(current, block), status);
         return withStatus(current, block, status);
       });
       console.log(`${id} → ${status}`);
@@ -2051,6 +2051,11 @@ export async function main(argv: readonly string[] = Bun.argv.slice(2)): Promise
         .filter((piece) => piece !== "");
       const status = flag(rest, "status") ?? "todo";
       if (!isItemStatus(status)) throw new LedgerError(`"${status}" is not a status`);
+      // A new row has no notes, so it has no receipt: born done or verified it is the "closed with NO
+      // receipt" state validate reports. Closing goes through receipt, then set-status.
+      if (status === "done" || status === "verified") {
+        throw new LedgerError(`${id}: a row is born open (todo, in_flight or blocked); record its receipt, then set-status ${status}`);
+      }
       assertFenceShape(repoRootOf(ledgerPath), files);
 
       await mutate(ledgerPath, (current) => {
@@ -2593,6 +2598,14 @@ async function selftest(): Promise<number> {
   };
   check("verify-phase refuses a half-done phase", asOrchestrator("verify-phase", "m1", "gate").includes("not ready"));
   check("done without a receipt is refused", (await run("set-status", "M1", "done")).includes("needs a receipt"));
+  // splice-lead, 2026-09-28: set-status checked the receipt for `done` only, so the orchestrator's
+  // `verified` closed a receipt-less row in one step — the state validate reports as "closed with NO receipt".
+  check("verified without a receipt is refused, even for the orchestrator",
+    asOrchestrator("set-status", "M1", "verified").includes('"verified" needs a receipt'));
+  check("a row is not born closed: add --status done or verified is refused, a row has no receipt at birth",
+    ["done", "verified"].every((status) =>
+      asOrchestrator("add", "--id", `BORN-${status}`, "--phase", "m1", "--title", "born closed", "--verify", "", "--files", "src/born.ts", "--status", status)
+        .includes("is born open")) && !asOrchestrator("get", "BORN-done").includes("[done]"));
   await run("receipt", "M1", "--cmd", "bun test tests/x", "--exit", "1", "--tests", "3", "--touched", "src/a.ts");
   check("done on a red receipt is refused", (await run("set-status", "M1", "done")).includes("exited 1"));
   // DELTA 13: manifest.py's receipt (the form of 252 of the 262 receipt-shaped notes in splice's

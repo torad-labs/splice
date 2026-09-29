@@ -9913,12 +9913,13 @@ claimed_at = "2026-09-29T04:14:12.439Z"
 id = "V4-429"
 phase = "release"
 title = "Fleet reads a head OK while splice says it is out of quota (Marlin, 8aee53328): claudex reads OK in Fleet's State cell, its panel and the Plans card's OK count, while splice status, /health (quotaResetAtEpochSeconds) and usage (critical, provider_reset) all say out of quota until Oct 5. The heads route carries the out-of-quota instant per head, as V4-417 did for a silent runtime, and Fleet reads such a head 'Out of quota until <reset>' in the machine's zone, counted outside OK on the Plans card. /health's readyHeads and failedHeads stay as they are (launch shims rely on readyHeads + failedHeads == heads)."
-files = ["app/src/main/kotlin/splice/app/control/api/HeadResolver.kt", "app/src/main/kotlin/splice/app/control/api/ControlPayloads.kt", "app/src/test/kotlin/splice/app/v4429/", "console/src/entities/heads/model/derive.ts", "console/src/entities/heads/index.ts", "console/src/pages/fleet/model.ts", "console/src/pages/fleet/strings.ts", "console/src/shared/api/index.ts", "console/tests/fleet-out-of-quota.test.ts", "console/e2e/v4429/"]
+files = ["app/src/main/kotlin/splice/app/control/api/HeadResolver.kt", "app/src/main/kotlin/splice/app/control/api/ControlPayloads.kt", "app/src/test/kotlin/splice/app/v4429/", "console/src/entities/heads/model/derive.ts", "console/src/entities/heads/index.ts", "console/src/pages/fleet/model.ts", "console/src/pages/fleet/strings.ts", "console/src/pages/fleet/index.tsx", "console/src/pages/needs-you/model.ts", "console/src/shared/api/index.ts", "console/tests/fleet-out-of-quota.test.ts", "console/e2e/v4429/"]
 status = "in_flight"
 verify = "red first: a head whose providerResetForMs is ahead carries its instant on /api/heads, Fleet's State cell and panel read out of quota with the reset in local time, and the Plans card counts it outside OK; a head at 99% or with a passed reset reads OK; runtimeNotAnswering still wins Down. vitest, lint, build, Playwright, :app:test scope, :quality-architecture:test, rules wall. Live: claudex reads out of quota on the everyday Fleet."
 claimed_by = "claude-console"
 claimed_at = "2026-09-29T23:33:19.162Z"
 # [2026-09-29] CLAIM: owner=claude-console at=2026-09-29T23:33:19Z
+# [2026-09-29] amend by=claude-console: files were ["app/src/main/kotlin/splice/app/control/api/HeadResolver.kt", "app/src/main/kotlin/splice/app/control/api/ControlPayloads.kt", "app/src/test/kotlin/splice/app/v4429/", "console/src/entities/heads/model/derive.ts", "console/src/entities/heads/index.ts", "console/src/pages/fleet/model.ts", "console/src/pages/fleet/strings.ts", "console/src/shared/api/index.ts", "console/tests/fleet-out-of-quota.test.ts", "console/e2e/v4429/"]
 
 [[items]]
 id = "V4-430"

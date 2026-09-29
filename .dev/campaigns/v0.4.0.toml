@@ -7443,6 +7443,7 @@ verify = "red first: restoring V4-277's filterNot in ChatSystemPrompt reds the s
 claimed_by = "claude-builder"
 claimed_at = "2026-09-29T04:01:32.478Z"
 # [2026-09-29] CLAIM: owner=claude-builder at=2026-09-29T04:01:32Z
+# [2026-09-29] RECEIPT cmd="bun tools/gate slot v4282 -- :conformance :conformanceSelftest" exit=0 tests=28 touched=tools/e2e/src/commands/conformance.ts,tools/e2e/test/conformance.test.ts,fixtures/conformance/_manifest.json,fixtures/conformance/task-notification.json,fixtures/conformance/session-start-hook.json,fixtures/conformance/cross-session-message.json,fixtures/conformance/date-and-token-notices.json,fixtures/conformance/free-form-tool-schema.json,fixtures/conformance/reasoning-blocks.json,tools/gate/config/ladder.json,tools/e2e/index.ts,.dev/restructure/capabilities.tsv tail="t: V4-277 undone in a mutated jar (good jar restored, source hash e839a213 before and after) -> 59/63, the 4 openai-chat x replace cells FAIL by name. Deviations: tools/e2e/index.ts and 9 census rows are outside the row fence; unshare -rn refused here (uid_map EPERM) so the no-network run was not done, the rig binds only 127.0.0.1 ports. The conformance leg needs :app:shadowJar in the CI gate job."
 
 [[items]]
 id = "V4-283"

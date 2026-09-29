@@ -10005,5 +10005,8 @@ id = "V4-437"
 phase = "release"
 title = "A lane card reads its project whole at 1440 (Marlin, from splice-website's lanes screenshot on demo data, Sep 29 ~5:20 PM CT): every card cut its project to 'storefro…' with five cards on the board, and four of five fresh viewers in round 7 read it as unfinished. Reproduced at 1440 on the live daemon's 50 cards: cards sit at the 11u floor (176 px) when the board holds five or more columns, the card's inner width is 142 px, and the project shares its row with the state (54 to 77 px), so the project got 55 to 77 px and 16 of 50 names were cut, 'qgre-main' (9 chars) among them. Widening the floor makes a five-card board scroll at 1440 and 1536, so the fix is inside the card: the state gets its own row and the project the whole 142 px. FIX: lanes.css lays the card out in three rows (name, project, state) at 6u; an e2e test measures a clone at the card floor with a 12-character project beside the widest state word and fails on the shared row. Growth ceiling raised 214 to 217 by splice-lead (recorded in the header): three release-blocking console defects came from Marlin's screenshots on one afternoon. @splice-lead"
 files = ["console/src/shared/ui/lanes.css", "console/e2e/console.spec.ts"]
-status = "todo"
+status = "in_flight"
 verify = "console e2e test red on the shared row and green on three rows; 1440 before/after screenshots; CI gate on the pushed sha"
+claimed_by = "splice-lead"
+claimed_at = "2026-09-29T22:22:23.827Z"
+# [2026-09-29] CLAIM: owner=splice-lead at=2026-09-29T22:22:23Z

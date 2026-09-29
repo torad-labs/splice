@@ -388,11 +388,14 @@ public enum class Knob(
     // ── request materialization (v0.4.0) ───────────────────────────────────────────────────────
     // The largest request BODY splice will decode/translate, in bytes; past it the client gets a
     // 413 rather than splice reading an unbounded body. Read per head from getConfig (HeadDeps).
+    // Why 32 MiB (V4-374): the Messages API's own limit (platform.claude.com/docs/en/api/errors,
+    // "Request size limits"), so splice is never the tighter hop for an Anthropic-shaped request; at
+    // 8 MiB a screenshot-heavy session died with the client's canned "Request too large (max 32MB)".
     MAX_REQUEST_BYTES(
         "maxRequestBytes",
         KnobKind.NUMBER,
         listOf("SPLICE_MAX_REQUEST_BYTES"),
-        default = 8 * 1024 * 1024L,
+        default = 32 * 1024 * 1024L,
         restartRequired = true,
     ),
     REQUEST_READ_TIMEOUT_MS(
@@ -405,11 +408,16 @@ public enum class Knob(
 
     // PROCESS-SHARED, not per head: the count of requests concurrently decoding/translating across
     // the whole daemon (RequestMaterializationGate). One value for every head, read at daemon boot.
+    // Why 8 (V4-374): permits times the heap one request at MAX_REQUEST_BYTES costs must fit the
+    // daemon's -Xmx2048m beside what else it holds. Measured Sep 28: one 32 MiB body needs a heap of
+    // 208 MiB (fails at 192), 8 of them at once fit 1664 MiB (2048 less the everyday daemon's 384 MiB
+    // resident), 12 fit only the full 2048 and 14 or 16 do not: at 16 a burst of full-size bodies was an
+    // OutOfMemoryError for the whole daemon. RequestHeapBudgetTest holds the product.
     MATERIALIZATION_PERMITS(
         "materializationPermits",
         KnobKind.NUMBER,
         listOf("SPLICE_MATERIALIZATION_PERMITS"),
-        default = 16L,
+        default = 8L,
         restartRequired = true,
     ),
 

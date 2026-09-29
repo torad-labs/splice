@@ -824,9 +824,9 @@ command = "claude-splice"
 #   asking systemd for its MemoryMax; a slice with no ceiling is reported as no containment, never
 #   treated as some. Supply either host resource yourself if you use it, and change its name here
 #   only if your unit or slice is called something else.
-# maxRequestBytes = "8388608"                               # bytes; largest request body the gateway decodes (413 past this)
+# maxRequestBytes = "33554432"                              # bytes; largest request body the gateway decodes (413 past this); the Messages API's own 32 MiB
 # requestReadTimeoutMs = "30000"                            # ms; how long one client request body read may take
-# materializationPermits = "16"                             # count; PROCESS-SHARED concurrent decode/translate permits
+# materializationPermits = "8"                              # count; PROCESS-SHARED concurrent decode/translate permits (8 x a 32 MiB body fits the daemon heap)
 # activityRetentionDays = "90"                              # days; message edges kept, whole days, at least 2 (activity labels: today and yesterday)
 # messageEdges = "true"                                    # bool; keep SendMessage edges; false stops new writes after restart, retained days stay until delete/retention
 # activityStoreHeads = "*"                                  # which heads store activity labels: "*", "" or "a,b"

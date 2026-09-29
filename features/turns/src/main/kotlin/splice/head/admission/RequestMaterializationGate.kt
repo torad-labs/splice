@@ -9,7 +9,7 @@ import splice.head.turn.MaterializedRequest
 /** Default permits. Was `RequestMaterializationGate.DEFAULT_MAX_CONCURRENT` (a companion const),
  *  then a file-scope const of that name. `internal` (V4-210): its one reader is the constructor default
  *  below, and a default is not contract, so nothing outside this module can bind it. It READS
- *  Knob.MATERIALIZATION_PERMITS, whose own comment names this gate: the same 16, one source. */
+ *  Knob.MATERIALIZATION_PERMITS, whose own comment names this gate: one source. */
 internal val defaultMaxConcurrent: Int = (Knob.MATERIALIZATION_PERMITS.default as Long).toInt()
 
 /**

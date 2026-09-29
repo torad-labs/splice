@@ -102,8 +102,12 @@ public class HeadServer(
 
     override fun healthSnapshot(): HeadHealth = diagnostics.healthSnapshot(engine.isRunning, engine.port)
 
-    override fun providerResetForMs(): Long = deps.quotaBundle.accountPool?.providerResetForMs
-        ?: deps.upstream.providerResetForMs
+    /** A refusal's instant first (V4-398), else the provider's own current reading (V4-418). Reporting only:
+     *  nothing here reaches admission, which still lets the first turn probe the upstream (V4-47). */
+    override fun providerResetForMs(): Long {
+        val refused = deps.quotaBundle.accountPool?.providerResetForMs ?: deps.upstream.providerResetForMs
+        return if (refused > 0L) refused else deps.turnQuota.spentForMs()
+    }
 
     private suspend fun startLocked() {
         if (engine.isRunning) return

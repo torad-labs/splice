@@ -19,7 +19,12 @@ import splice.core.util.WallClock
 import splice.upstream.retry.QuotaHeaderFamily
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+
+// why: the providers report a full window as exactly 100 (AccountPool's own gate reads the same line), and a
+// figure under it is not a statement that the plan is spent
+private const val FULLY_USED_PERCENT = 100.0
 
 public class QuotaTracker(
     private val file: Path,
@@ -39,6 +44,18 @@ public class QuotaTracker(
         latest.set(snapshot)
         Cancellables.runCatchingCancellable { SecureFile.writeAtomic0600(file, codec.encode(snapshot)) }
             .onFailure { log("[quota] $file write FAILED (${SafeFailureText.render(it)})\n") }
+    }
+
+    /** V4-418: milliseconds until every window the CURRENT reading ([QuotaSnapshot.currentAt]) names spent has
+     *  reset, 0 when none is spent. Reporting only: the provider says its plan is full until an instant, which is
+     *  what a refusal would say, so status, /health and usage may say it before any turn has been refused. A spent
+     *  window that names no reset names no instant, so it reads 0 rather than another window's deadline. */
+    public fun spentForMs(): Long {
+        val now = clock()
+        val current = latest.get()?.currentAt(now) ?: return 0L
+        val spent = listOfNotNull(current.fiveHour, current.sevenDay).filter { it.usedPercent >= FULLY_USED_PERCENT }
+        val resets = spent.map { it.resetsAt ?: return 0L }
+        return resets.maxOrNull()?.let { TimeUnit.SECONDS.toMillis(it) - now }?.coerceAtLeast(0L) ?: 0L
     }
 
     /** Upstream response headers of the round that just completed. A no-op for the common case

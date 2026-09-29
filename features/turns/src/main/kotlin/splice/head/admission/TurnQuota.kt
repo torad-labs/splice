@@ -24,4 +24,12 @@ internal class TurnQuota(
         val label = account?.account?.label ?: accountPool?.view(sessionId)?.selectedLabel
         return label?.let(accountQuotas::get) ?: primary
     }
+
+    /** V4-418: milliseconds until the head is out of quota by the providers' own CURRENT readings, 0 when it is
+     *  not. A head is out when every account it holds is, so a pool needs all of its trackers spent and answers
+     *  with the earliest reset; a head with no tracker is never out. Head-wide, so no session or selection is asked. */
+    fun spentForMs(): Long {
+        val remaining = accountQuotas.values.ifEmpty { listOfNotNull(primary) }.map(QuotaTracker::spentForMs)
+        return if (remaining.any { it <= 0L }) 0L else remaining.minOrNull() ?: 0L
+    }
 }

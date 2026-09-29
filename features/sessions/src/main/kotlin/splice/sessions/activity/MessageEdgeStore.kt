@@ -73,6 +73,14 @@ public class NameHolders(private val sessions: SessionSource) {
         sessions.read().filter { it.availability != SessionAvailability.GONE },
     )
 
+    /** V4-411: the one live registration whose socket is [address] (`uds:<socket>`); null when none is,
+     *  or more than one. A GONE registration holds nothing, as it holds no name. */
+    public fun sessionAt(address: String): String? = sessions.read()
+        .filter { it.availability != SessionAvailability.GONE && it.address == address }
+        .mapNotNull { it.sessionId }
+        .distinct()
+        .singleOrNull()
+
     /** A displayed [ref] is not a session ID prefix. Strip it, then require one named holder. */
     public fun sessionOf(name: String, records: List<SessionRecord>): String? =
         records.filter { it.name == bare(name) }.mapNotNull { it.sessionId }.distinct().singleOrNull()

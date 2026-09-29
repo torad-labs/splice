@@ -294,10 +294,14 @@ internal class ConsoleEventPublisher(
 
         override fun messageSent(session: String, to: String, toolUseId: String) {
             val at = clock()
-            val holder = names?.sessionOf(to)
+            // V4-411: an address is filed under the one live session that holds the socket, so the row
+            // keeps its holder after the registry forgets it. None or several leave it as it was written
+            // before the marker, which reads by the address; only a name says explicitly that nobody held it.
+            val address = ':' in to
+            val holder = if (address) names?.sessionAt(to) else names?.sessionOf(to)
             val recipient = when {
-                ':' in to -> RecipientResolution.Legacy
                 holder != null -> RecipientResolution.Held(holder)
+                address -> RecipientResolution.Legacy
                 else -> RecipientResolution.NoHolder
             }
             stores?.edges?.record(MessageEdge(session, to, at, toolUseId, holder, recipient))

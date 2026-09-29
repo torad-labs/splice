@@ -283,7 +283,7 @@ class TopologyRoutesTest {
             assertTrue(unknown.toString().contains("wibble"), "the finding names the unknown key: $unknown")
             val port = put(call, edited(call) { it.replace("\"port\":8801", "\"port\":0") })
             assertEquals(listOf("heads.ex.port"), findings(port))
-            assertTrue(port.getValue("restart_required").jsonPrimitive.boolean)
+            assertFalse(port.getValue("restart_required").jsonPrimitive.boolean, "a refusal wrote nothing (V4-413)")
             assertEquals(400, call(HttpMethod.Put, "{\"not\":1}", true).status.value)
             assertEquals(FILE, Files.readString(file))
         }

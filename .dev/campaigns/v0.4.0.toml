@@ -9548,3 +9548,11 @@ title = "A hand-off to a socket records who held it (console, V4-402): ConsoleWi
 files = ["app/src/main/kotlin/splice/app/ConsoleWiring.kt", "app/src/test/kotlin/splice/app/ConsoleActivityPublishTest.kt"]
 status = "todo"
 verify = "red first: messageSent to a socket address with one live registry holder stores that session, and after the registry forgets it the day's /chat still files the row under the holder's slot and prints its role; an address with no or two holders stays Legacy; the two ConsoleActivityPublishTest pins updated to the new contract. :quality-architecture:test, rules wall, :app:test."
+
+[[items]]
+id = "V4-412"
+phase = "release"
+title = "A provider's refusal-until instant survives a restart (live, Sep 28 8:05 PM CT on 6dfa693bd): after the install, splice status read claudex and claude-muse 'ready' although OpenAI's weekly window holds until Oct 5, 3:37 AM CT and Meta's until Oct 4, 7:00 PM CT, because the hold V4-398 reads lives only in memory (RateLimitCooldown.providerUnavailableUntilMs, RateLimitCooldown.kt:107) and V4-377's plan hold likewise. Every restart (the operator restarts on every green jar) forgets what the provider said, so status lies until the next refused turn, and that turn is sent upstream again. The hold is a provider's statement about a wall instant: persist it per head and per pool account in the head's state, load it at boot, and drop it once passed."
+files = ["integrations/upstream/src/main/kotlin/splice/upstream/retry/RateLimitCooldown.kt", "integrations/upstream/src/test/kotlin/splice/upstream/v4412/"]
+status = "todo"
+verify = "red first: a cooldown told 'unavailable until T' (T 6 days out) by a 429, then rebuilt from the same state dir as after a restart, reports providerUnavailableForMs > 0 and the plan hold still in force, so splice status reads out of quota and the next turn is refused locally with no upstream attempt; a hold whose instant has passed loads as none; a corrupt or missing state file loads as none, with one safe diagnostic. Live: after the next install, splice status for claudex and claude-muse reads out of quota with no turn in between. :quality-architecture:test, rules wall."

@@ -9936,9 +9936,10 @@ claimed_at = "2026-09-29T23:28:24.659Z"
 id = "V4-431"
 phase = "release"
 title = "A plan-limit turn logs 'turn ERROR upstream-failed' while perf records plan-limit (Marlin, 8aee53328, throwaway home): TurnTelemetry.kt:201-208 prints the error line from the failure's kind before V4-419's ending tag is chosen, so daemon.log and the trace disagree about the same turn. The log line names the outcome the turn recorded."
-files = ["features/turns/src/main/kotlin/splice/head/turn/TurnTelemetry.kt", "features/turns/src/test/kotlin/splice/head/v4431/"]
+files = ["features/turns/src/main/kotlin/splice/head/turn/TurnTelemetry.kt", "features/turns/src/main/kotlin/splice/head/turn/TurnKnownEnd.kt", "features/turns/src/test/kotlin/splice/head/v4431/"]
 status = "todo"
 verify = "red first: a turn ended by a named plan window logs 'turn ERROR plan-limit' (the recorded tag), a burst 429 keeps its own tag, and an upstream failure keeps upstream-failed. :features-turns:test scope, detekt, :quality-architecture:test, rules wall."
+# [2026-09-29] amend by=unattributed: files were ["features/turns/src/main/kotlin/splice/head/turn/TurnTelemetry.kt", "features/turns/src/test/kotlin/splice/head/v4431/"]
 
 [[items]]
 id = "V4-432"

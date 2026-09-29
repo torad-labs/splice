@@ -9857,3 +9857,11 @@ title = "A session's hand-offs take half a minute to load (splice-lead, 8aee5332
 files = ["features/sessions/src/main/kotlin/splice/sessions/http/ActivityRoutes.kt", "features/sessions/src/main/kotlin/splice/sessions/http/SessionsRoutes.kt", "features/sessions/src/main/kotlin/splice/sessions/transcript/SessionTranscripts.kt", "features/sessions/src/test/kotlin/splice/sessions/v4427/"]
 status = "todo"
 verify = "red first: a transcript of tens of MB with a handful of hand-offs: the second edges call reads no transcript bytes (a counting reader) and answers in well under a second; appending a new hand-off to the file shows it on the next call without re-reading the prefix; a rewritten or shrunk file is read again from the start; the texts stay redacted as team chat's read. Live: the same session's edges under 2 s on the everyday daemon, and console-wire-keys passes with its 15 s timeout on whichever session it picks. :quality-architecture:test, rules wall."
+
+[[items]]
+id = "V4-428"
+phase = "release"
+title = "A burst 429 names the provider's quota reset to the user as a raw UTC instant (fin, V4-425): RateLimitCooldown.kt:233-236 prints 'the upstream reports its quota window resets at $resetsAt' with resetsAt an Instant, so the body Claude Code shows reads '2026-10-05T00:00:00Z'. The same class V4-419 and V4-425 fixed: it says the instant through LocalTimeText, keeping V4-61's wording (the window is reported, not asserted as the deadline) and V4-234's constraints (no em dash, no stop-waiting phrasing)."
+files = ["integrations/upstream/src/main/kotlin/splice/upstream/retry/RateLimitCooldown.kt", "integrations/upstream/src/test/kotlin/splice/upstream/v4428/"]
+status = "todo"
+verify = "red first: a burst 429 with a provider reset delay renders the reset through LocalTimeText under an explicit non-UTC zone and no ISO 'T..Z' form; the plan branch (V4-425) and the no-reset branch unchanged; existing pins of this sentence move to the explicit-zone form. :quality-architecture:test, rules wall."

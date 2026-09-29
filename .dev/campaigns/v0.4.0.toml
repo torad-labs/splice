@@ -9625,7 +9625,7 @@ id = "V4-416"
 phase = "release"
 title = "The console can draw two sidebars after an unlock (Marlin, 3839fcc06, seen twice): after unlocking and then moving by hash change (a turn's detail on Turns, and Teams), the page showed two Rails and a main column about 280 px wide, with Activity wrapping one letter per line; a reload fixed it. Cause in V4-401: App.tsx:57-58 gives two siblings the same key, <Rail key={unlocks}> and <div className=\"myx-console-main\" key={unlocks}>, and React keeps or duplicates siblings that share a key. Each keyed sibling needs a key of its own, or both go in one keyed wrapper."
 files = ["console/src/app/App.tsx", "console/tests/", "console/e2e/v4416/"]
-status = "done"
+status = "verified"
 verify = "red first: a test renders App, unlocks twice and moves by hash, and asserts exactly one Rail and one main column, with no React duplicate-key warning; the V4-401 and V4-399 e2e still pass (unlock re-reads, events Live). Full console test, build and lint."
 claimed_by = "console"
 claimed_at = "2026-09-29T01:31:56.514Z"

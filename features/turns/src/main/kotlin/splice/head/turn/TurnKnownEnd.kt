@@ -53,7 +53,8 @@ internal class TurnKnownEnd(
             val read = UpstreamFailureClassifier.classify(FailureSource.HTTP, e.body, e.status)
             val failure = ForeignCredential.upstreamsOwn(read, e.body, sent)
             val detail = "type=${failure.type.wireName} status=${e.status} msg=${failure.message.take(ERR_SNIPPET)}"
-            log(telemetry.errTurn("upstream-failed", drive, detail))
+            val outcome = endingTag(drive, e.planLimit)
+            log(telemetry.errTurn(outcome.wire, drive, detail))
             // V4-59: the code rides OUTSIDE the snippet bound on purpose. Bounding the presented
             // line instead pushed the appended login hint past ERR_SNIPPET, silently dropping the
             // one part of this message that tells the operator what to DO — caught by the existing
@@ -73,7 +74,7 @@ internal class TurnKnownEnd(
             // attempt count actually exists, because this is the arm the retry loop exits through.
             telemetry.recordPerf(
                 drive,
-                endingTag(drive, e.planLimit).wire,
+                outcome.wire,
                 failure.type == ErrorType.RATE_LIMIT,
                 cause = failure.cause.name,
                 layers = e.layers,

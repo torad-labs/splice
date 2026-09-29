@@ -9959,3 +9959,4 @@ claimed_by = "splice-lead"
 claimed_at = "2026-09-29T19:08:20.716Z"
 # [2026-09-29] CLAIM: owner=splice-lead at=2026-09-29T19:08:20Z
 # [2026-09-29] Sep 29, 2:20 PM CT, splice-lead: prices read Sep 29, 2:05 PM CT (2026-09-19T19:05Z) from GET openrouter.ai/api/v1/models, 464 models. The CHANGELOG bullet is written under V4-254's fence, which this seat holds and which already owns CHANGELOG.md (the claim refused the overlap), so it is not in this row's files. Static rows chosen over discovery-time pricing; a discovered OpenRouter model stays unpriced and the 2026-09-26 FOLLOW-UP names that class.
+# [2026-09-29] correction: the price read was 2026-09-29T19:05Z (Sep 29, 2:05 PM CT); the note above misprints the day as 09-19.

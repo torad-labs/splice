@@ -10068,3 +10068,11 @@ title = "A Codex model the backend marks tool_mode code_mode_only runs in code m
 files = ["features/models/src/main/kotlin/splice/models/list/UpstreamRoster.kt", "core/src/main/kotlin/splice/core/model/DiscoveredModel.kt", "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeTurnBuilder.kt", "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexProvider.kt", "app/src/main/kotlin/splice/app/provider/CodexResponsesArm.kt", "integrations/providers/codex/src/test/kotlin/splice/provider/codex/v4441/"]
 status = "todo"
 verify = "red first: a discovered gpt-6.1-sol marked code_mode_only gets the exec surface with code_mode_models unset and with a list that omits it; gpt-5.5 (no tool_mode) does not; a model the list names but the backend does not mark still does. codex provider tests, :app:test scope, detekt, :quality-architecture:test, rules wall; CI gate on the pushed sha"
+
+[[items]]
+id = "V4-442"
+phase = "release"
+title = "No lane label is drawn over a card on the Sessions lanes (Marlin, promised after V4-438, relayed by splice-lead [d1f679] Sep 29 6:28 PM CT): at 1440, the bottom lane's label 'No connected plan ⓘ ·46' is painted over its first card (x 320-540, y 515-540 in the seat's lanes-after-1440.png and lanes-before-1440.png, so it predates V4-437). Reproduce first on the live console at 1440 and at a width where the lane scrolls sideways; find why the label overlaps (a label wider than the names column, or a label that stays in place while the track scrolls); fix so every lane's label and count sit clear of its cards at every width, scrolled or not. The wording of 'No connected plan' stays as it is: Marlin's call, after 0.4.0. Plan raised 217 to 219 by splice-lead [063360]: V4-440 and V4-441 (the operator's GPT-6.1 Sol question) and this row filled the ceiling. @splice-lead"
+files = ["console/src/shared/ui/lanes.css", "console/src/shared/ui/lanes.tsx", "console/e2e/v4442/"]
+status = "todo"
+verify = "red first: an e2e test at 1440 (and scrolled sideways) measures every lane label's box against every card box in its lane and fails on an overlap; green after; before/after screenshots at 1440; vitest, tsc, eslint; CI consoleE2e on the pushed sha"

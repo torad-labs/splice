@@ -9989,6 +9989,7 @@ claimed_at = "2026-09-29T20:10:44.070Z"
 # [2026-09-29] Sep 29, 4:35 PM CT, splice-lead: GATE OF RECORD: CI ci run 36629727979, gate job success, headSha a59f8da21 (2e5cd4a9d the fix, 6304b4337 the e2e pattern).
 # [2026-09-29] Sep 29, 4:55 PM CT, splice-lead: the row's FIX line promised a sweep test and the first commit shipped only the helper's unit test; closed here. console/tests/count-noun.test.ts now reads every .ts/.tsx under src/ (denominator = the tree, >200 files asserted), resolves `${n} ${U.key}` words from the strings module beside each file, and fails on any plural-looking word after a count; five exemptions each carry a reason and a stale one fails (proven with a planted key, restored by sha256). Red run on the tree as committed in 2e5cd4a9d found one real site: pages/kept/strings.ts traceCount printed '1 bytes kept', now '1 byte kept'. Detector proven on planted plural/lawful-twin pairs. Local: vitest 1745 passed, tsc 0, eslint (CI's command) 0.
 # [2026-09-29] Sep 29, 5:10 PM CT, splice-lead: GATE OF RECORD for the sweep commit d0661d4c1: CI ci run 36631844714, gate job success, headSha 9d44c00ad (d0661d4c1 plus this ledger note's parent).
+# [2026-09-29] correction (splice-lead, 6:26 PM CT): the times on my dated notes on this row ran late. Commit times are the record: 5c9ce57dc 3:54 PM CT, 11925773e 4:08 PM CT and 9d44c00ad 4:13 PM CT (the sweep note, stamped 4:55 PM CT above), bc183db65 4:30 PM CT (the gate-of-record note, stamped 5:10 PM CT above).
 
 [[items]]
 id = "V4-436"

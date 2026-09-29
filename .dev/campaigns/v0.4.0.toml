@@ -9735,3 +9735,11 @@ title = "The console's wire probe is red on the everyday daemon: a listed sessio
 files = ["features/sessions/src/main/kotlin/splice/sessions/", "features/sessions/src/test/kotlin/splice/sessions/v4421/", "console/src/entities/session/", "console/src/pages/sessions/", "tools/e2e/probes/console-wire-keys.ts"]
 status = "todo"
 verify = "red first: a session listed with no transcript in any head tree carries a not-resumable field on /api/sessions, and the console's Sessions row for it offers no Resume; a session with a transcript still resumes; the wire probe picks a resumable session and exits 0 against the everyday daemon. :quality-architecture:test, rules wall, console test/build/lint."
+
+[[items]]
+id = "V4-422"
+phase = "release"
+title = "The nearest limit names a head that cannot serve (Marlin, ef86845f3, V4-408 re-walk): the header and Fleet's Nearest limit card read 'claude-grok 7d 1% in 6h 51m' while /api/accounts has chatgpt-oauth seven_day_used_percent 100, seven_day_current true, read 1 minute ago. console/src/features/nearest-limit/index.ts:18-20 and :89-90 rank an account that cannot serve (or is spent) after every account that can, because the pool has stepped past it. That holds inside one head's pool only: claudex is a single login, nothing steps past it, and one of the user's commands is out for six days behind a calm 1%. The serving rule ranks accounts within a head's pool; a head with no account that can serve (a single login included) is a limit the fleet has reached and ranks first, critical: 'claudex 7d 100% in 6d 5h'."
+files = ["console/src/features/nearest-limit/index.ts", "console/src/features/nearest-limit/nearest-limit.test.ts"]
+status = "todo"
+verify = "red first: a fixture with a single-login head at 7d 100% current and another head at 1% names the spent head first, critical, with its reset; a pooled head whose spent account has a serving sibling still ranks the sibling (the in-pool rule unchanged); a stale 100% stays out (V4-407). vitest, lint, build, Playwright on the rebuilt dist. Live: the header names claudex 7d 100% on the everyday console."

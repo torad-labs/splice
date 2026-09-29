@@ -18,16 +18,18 @@ internal const val FIELD_LABEL = "splice_account_label"
 internal const val PRIMARY = "primary"
 internal const val AUTO = "auto"
 private const val HASH_CHARS = 8
-private const val JSON_SUFFIX = ".json"
+internal const val JSON_SUFFIX = ".json"
 internal const val MAX_LABEL_CHARS = 48
 
-/** One credential's non-secret durable identity. */
+/** One credential's non-secret durable identity. [refusal] is set only for an entry splice will not load,
+ *  in words for the operator. */
 public data class OAuthAccountFile(
     public val label: String,
     public val credentialFile: Path,
     public val quotaFile: Path,
     public val primary: Boolean,
     public val credentialPresent: Boolean,
+    public val refusal: String? = null,
 )
 
 /** Provider-specific resolver for a safe default label. Ordinal providers can resolve before
@@ -134,30 +136,38 @@ public class OAuthAccountRefused(public val reason: String) : IllegalArgumentExc
 public class OAuthAccountFiles(private val json: Json = Json { ignoreUnknownKeys = true }) {
     private val validation = OAuthAccountValidation(json)
     private val writes = OAuthAccountWrites(json, validation)
+    private val unloaded = OAuthPoolListing(validation)
 
     /** Every account of [primaryFile]'s pool, the primary first. [log] receives each pool file skipped
      *  as not a credential: the daemon hands in the head's log, so the line reaches /mgmt/logs. It
-     *  was a constructor default of `System.err::print`, which reached stderr only (LAYOUT-01). */
+     *  was a constructor default of `System.err::print`, which reached stderr only (LAYOUT-01).
+     *
+     *  A label is named by any `.json` entry, credential or quota, so an account whose credential is
+     *  gone still lists (V4-405, [OAuthPoolListing.orphanedQuota]) and a linked credential lists as refused
+     *  ([OAuthPoolListing.refusedLink]) instead of vanishing after a restart. Entries sort by their
+     *  credential file name, as they always did. */
     public fun discover(kind: AuthKind.OAuth, primaryFile: Path, log: LogSink): List<OAuthAccountFile> {
         val poolDir = poolDir(kind, primaryFile)
         val found = mutableListOf(account(PRIMARY, primaryFile, poolDir, primary = true))
-        if (!Files.isDirectory(poolDir)) return found
-        Files.list(poolDir).use { paths ->
-            // Labeled entries use the writer's NOFOLLOW policy; legacy primary resolution is unchanged.
-            paths.filter { Files.isRegularFile(it, LinkOption.NOFOLLOW_LINKS) }
-                .filter { it.fileName.toString().endsWith(JSON_SUFFIX) }
-                .filter { !it.fileName.toString().endsWith("-quota.json") }
-                .sorted()
-                .forEach { path ->
-                    validation.validatedLabel(kind, path, log)?.let { label ->
-                        found += account(label, path, poolDir, primary = false)
-                    }
-                }
+        occupiedLabels(kind, primaryFile).sortedBy { "$it$JSON_SUFFIX" }.forEach { label ->
+            listing(kind, label, poolDir, log)?.let(found::add)
         }
         require(found.map(OAuthAccountFile::label).distinct().size == found.size) {
             "duplicate OAuth account label for ${kind.wire}"
         }
         return found
+    }
+
+    /** Labeled entries use the writer's NOFOLLOW policy; legacy primary resolution is unchanged. */
+    private fun listing(kind: AuthKind.OAuth, label: String, poolDir: Path, log: LogSink): OAuthAccountFile? {
+        val credential = poolDir.resolve("$label$JSON_SUFFIX")
+        return when {
+            Files.isRegularFile(credential, LinkOption.NOFOLLOW_LINKS) ->
+                validation.validatedLabel(kind, credential, log)?.let { account(it, credential, poolDir, false) }
+            Files.isSymbolicLink(credential) -> unloaded.refusedLink(label, poolDir)
+            !Files.exists(credential, LinkOption.NOFOLLOW_LINKS) -> unloaded.orphanedQuota(label, poolDir)
+            else -> null
+        }
     }
 
     /** Resolves the destination before OAuth starts, so an invalid label never burns a login. */

@@ -37,7 +37,10 @@ class AccountRestartTest {
 
         val restarted = OAuthAccountFiles().discover(AuthKind.ChatgptOAuth, primary, LogSink {})
 
-        assertEquals(listOf("primary", "plus-12345678"), restarted.map { it.label })
+        // V4-405: a quota with no credential beside it lists, with no credential, so its sign-in can be renewed.
+        assertEquals(listOf("primary", "ignored", "plus-12345678"), restarted.map { it.label })
+        assertFalse(restarted.single { it.label == "ignored" }.credentialPresent)
+        assertEquals(null, restarted.single { it.label == "ignored" }.refusal)
         assertEquals(primary, restarted.single { it.primary }.credentialFile)
         assertEquals("plus-12345678-quota.json", restarted.last().quotaFile.fileName.toString())
         assertFalse(restarted.toString().contains("secret"))
@@ -119,7 +122,10 @@ class AccountRestartTest {
 
         val accounts = store.discover(AuthKind.ChatgptOAuth, primary, logs::add)
 
-        assertEquals(listOf("primary", "work"), accounts.map { it.label })
+        // V4-405: the link lists as refused instead of vanishing; the one log line shows it was never read.
+        assertEquals(listOf("primary", "linked", "work"), accounts.map { it.label })
+        assertFalse(accounts.single { it.label == "linked" }.credentialPresent)
+        assertTrue(accounts.single { it.label == "linked" }.refusal != null)
         assertEquals(listOf("splice: skipped OAuth pool file notes.json (not a credential)\n"), logs)
         assertEquals("{private-secret", Files.readString(stray))
         assertTrue(Files.isSymbolicLink(pool.resolve("linked.json")))

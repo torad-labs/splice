@@ -156,9 +156,10 @@ class LoginCollisionTest {
         val second = exchange(LoginCodex().spec("codex", primary, "auto"), tokenResponse("renewed-refresh"))
 
         assertTrue(second.first, second.second)
+        // The orphaned base quota now lists (V4-405) with no credential; the pool grew no credentialed account.
         assertEquals(
             listOf("primary", "$label-2", "$label-3"),
-            store.discover(AuthKind.ChatgptOAuth, primary, LogSink {}).map { it.label },
+            store.discover(AuthKind.ChatgptOAuth, primary, LogSink {}).filter { it.credentialPresent }.map { it.label },
         )
         assertTrue(Files.readString(pool.resolve("$label-3.json")).contains("renewed-refresh"))
         assertTrue(Files.readString(pool.resolve("$label-2.json")).contains("other-token"))
@@ -207,9 +208,10 @@ class LoginCollisionTest {
         assertEquals("orphaned quota", Files.readString(pool.resolve("$label-quota.json")))
         assertTrue(Files.exists(pool.resolve("$label-2.json")))
         assertFalse(Files.exists(pool.resolve("$label-2-quota.json")))
+        // The linked base credential now lists as refused (V4-405); only $label-2 was added with a credential.
         assertEquals(
             listOf("primary", "$label-2"),
-            store.discover(AuthKind.ChatgptOAuth, primary, LogSink {}).map { it.label },
+            store.discover(AuthKind.ChatgptOAuth, primary, LogSink {}).filter { it.credentialPresent }.map { it.label },
         )
     }
 

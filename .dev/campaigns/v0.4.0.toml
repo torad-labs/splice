@@ -9571,3 +9571,11 @@ claimed_by = "claude-builder"
 claimed_at = "2026-09-29T01:06:13.052Z"
 # [2026-09-29] CLAIM: owner=claude-builder at=2026-09-29T01:06:13Z
 # [2026-09-29] amend by=splice-lead: verify was "red first: a cooldown told 'unavailable until T' (T 6 days out) by a 429, then rebuilt from the same state dir as after a restart, reports providerUnavailableForMs > 0 and the plan hold still in force, so splice status reads out of quota and the next turn is refused locally with no upstream attempt; a hold whose instant has passed loads as none; a corrupt or missing state file loads as none, with one safe diagnostic. Live: after the next install, splice status for claudex and claude-muse reads out of quota with no turn in between. :quality-architecture:test, rules wall."; files were ["integrations/upstream/src/main/kotlin/splice/upstream/retry/RateLimitCooldown.kt", "integrations/upstream/src/test/kotlin/splice/upstream/v4412/"]
+
+[[items]]
+id = "V4-416"
+phase = "release"
+title = "The console can draw two sidebars after an unlock (Marlin, 3839fcc06, seen twice): after unlocking and then moving by hash change (a turn's detail on Turns, and Teams), the page showed two Rails and a main column about 280 px wide, with Activity wrapping one letter per line; a reload fixed it. Cause in V4-401: App.tsx:57-58 gives two siblings the same key, <Rail key={unlocks}> and <div className=\"myx-console-main\" key={unlocks}>, and React keeps or duplicates siblings that share a key. Each keyed sibling needs a key of its own, or both go in one keyed wrapper."
+files = ["console/src/app/App.tsx", "console/tests/", "console/e2e/v4416/"]
+status = "todo"
+verify = "red first: a test renders App, unlocks twice and moves by hash, and asserts exactly one Rail and one main column, with no React duplicate-key warning; the V4-401 and V4-399 e2e still pass (unlock re-reads, events Live). Full console test, build and lint."

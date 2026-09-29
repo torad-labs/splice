@@ -184,8 +184,8 @@ function asTable(value: unknown): Record<string, unknown> | null {
 
 /**
  * The last-turn cell: the turn in flight if there is one, else how long ago the head's newest turn
- * was (the perf summary's `last_ts`), `None` when it has never run one, and null when the daemon
- * does not say. Its only source used to be `gate.live`, which the daemon serves empty, so a head
+ * was (the perf summary's `last_ts`), `none` when it has never run one, and `unknown` when the
+ * daemon does not say. The cell prints the empty-cell dash for both. Its only source used to be `gate.live`, which the daemon serves empty, so a head
  * with forty turns behind it said none.
  */
 export type LastTurn =

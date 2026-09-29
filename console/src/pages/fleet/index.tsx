@@ -210,7 +210,6 @@ function LastTurnCell({ last, nowMs }: { last: LastTurn; nowMs: number }) {
     case 'ago':
       return <>{timeAgo(last.ts, nowMs)}</>;
     case 'none':
-      return <>{S.none}</>;
     case 'unknown':
       return <>{ABSENT}</>;
   }

@@ -49,7 +49,6 @@ export const S = {
   next: 'Next',
   openLog: 'Open log',
   signIn: 'Sign in',
-  none: 'None',
   /** The last turn of a head with one running now: the word the team timeline gives a live turn. */
   running: 'Running',
   noHeads: 'No plans yet',

@@ -423,7 +423,8 @@ describe('what one head row prints', () => {
   test('an idle head prints when its last turn was, from the perf summary, not a bare none', () => {
     // gate.live is served empty, so this cell read `none` on every head, busy afternoon or not.
     expect(row({}, { lastTs: new Map([['claudex', BOARD_NOW - 3 * 3_600_000]]) })).toContain('>3h ago<');
-    expect(row({}, { lastTs: new Map([['claudex', null]]) })).toContain(`>${S.none}<`);
+    // a head that never ran a turn reads the empty-cell dash, never the word (V4-420; fleet-last-turn.test.ts)
+    expect(row({}, { lastTs: new Map([['claudex', null]]) })).not.toContain('>None<');
     const live = row({ gate: gate({ live: [{ label: 'x', compact: false, phase: 'streaming', age_ms: 1500, idle_ms: 10 }] }) });
     // The column holds a word: the cell says Running, and the phase and age stand in its tip.
     expect(live).toContain(`>${S.running}<`);

@@ -10087,3 +10087,11 @@ title = "No lane label is drawn over a card on the Sessions lanes (Marlin, promi
 files = ["console/src/shared/ui/lanes.css", "console/src/shared/ui/lanes.tsx", "console/e2e/v4442/"]
 status = "todo"
 verify = "red first: an e2e test at 1440 (and scrolled sideways) measures every lane label's box against every card box in its lane and fails on an overlap; green after; before/after screenshots at 1440; vitest, tsc, eslint; CI consoleE2e on the pushed sha"
+
+[[items]]
+id = "V4-443"
+phase = "release"
+title = "A working session reads differently from a waiting one on a lane card (Marlin, Sep 29 ~7:05 PM CT; the tmux persona in product/walks r9 and r10: 'An idle agent and a busy one look the same, which is exactly my problem'): 'Waiting' and 'Working' carry the same green dot on the Sessions lanes (rig-glm 'Live', splice-website 'Waiting', marlin 'Working', all green in lanes-after-1440.png, and in the page's demo lanes). Reproduce first. Outcome: at a glance a working session and a waiting one read differently on a lane card, in the console's existing tones, with the tone per state written down for Marlin, and no collision with the Needs-you and stale tones. @splice-lead"
+files = ["console/src/pages/sessions/index.tsx", "console/src/pages/sessions/strings.ts", "console/tests/v4443-lane-state-tone.test.ts"]
+status = "todo"
+verify = "red first: a vitest render of a waiting and a working session reads two different tones, and neither is the stale or needs-you tone; 1440 before/after screenshots; vitest, tsc, eslint; CI consoleE2e on the pushed sha"

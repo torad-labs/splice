@@ -9582,6 +9582,7 @@ claimed_at = "2026-09-29T02:21:55.685Z"
 # [2026-09-29] sha 0f09536d3 (the receipt's tail says 'the one above'; this is it)
 # [2026-09-29] amend by=splice-lead: files were ["features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonLaunch.kt", "features/lifecycle/src/test/kotlin/splice/lifecycle/start/v4409/"]
 # [2026-09-29] RECEIPT cmd="bun tools/gate rules && bun tools/gate slot V4-409 -- :features-lifecycle:detekt :features-lifecycle:test && bun tools/gate slot V4-409 -- :quality-architecture:test" exit=0 tests=88 touched=features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonLaunch.kt,features/lifecycle/src/test/kotlin/splice/lifecycle/start/v4409/ForeignUnitStartTest.kt,features/lifecycle/src/test/kotlin/splice/lifecycle/restart/v4395/ForeignUnitRestartTest.kt tail="follow-up: the refusal names the verb of what was refused (starting or restarting), one composer; features-lifecycle 88 tests counted before mutation; 3 verb mutants killed by name (a start saying restarting, a restart saying starting, the check dropped), file restored identical; rules, quality-architecture exit 0"
+# [2026-09-29] follow-up sha e61497cd4: the verb follows the action
 
 [[items]]
 id = "V4-410"

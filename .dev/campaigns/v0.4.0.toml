@@ -10093,6 +10093,7 @@ claimed_by = "splice-builder2"
 claimed_at = "2026-09-29T23:46:44.482Z"
 # [2026-09-29] CLAIM: owner=splice-builder2 at=2026-09-29T23:46:44Z
 # [2026-09-29] amend by=unattributed: files were ["features/models/src/main/kotlin/splice/models/list/UpstreamRoster.kt", "core/src/main/kotlin/splice/core/model/DiscoveredModel.kt", "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeTurnBuilder.kt", "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexProvider.kt", "app/src/main/kotlin/splice/app/provider/CodexResponsesArm.kt", "integrations/providers/codex/src/test/kotlin/splice/provider/codex/v4441/"]
+# [2026-09-29] Sep 29 CT orchestrator: ProviderBuild.kt and HeadBuildInputs.kt added for splice-builder2. The flag reaches CodexResponsesArm as a port (CodeModeOnlyModels) read at turn time, never a start-time set, so V4-440's refresh reaches it. Premise accepted: gpt-reserve and codex-auto-review are hidden, discovery drops them, and with DEFAULT gone only code_mode_models names them; the operator's live list and splice.example.toml already carry codex-auto-review.
 
 [[items]]
 id = "V4-442"

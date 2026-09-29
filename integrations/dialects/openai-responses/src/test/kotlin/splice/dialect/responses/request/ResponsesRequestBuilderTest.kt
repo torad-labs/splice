@@ -201,7 +201,10 @@ class ResponsesRequestBuilderTest {
         val input = req["input"]!!.jsonArray.map { it.jsonObject }
         assertEquals("additional_tools", input[0]["type"]?.jsonPrimitive?.content)
         assertEquals("developer", input[0]["role"]?.jsonPrimitive?.content)
-        assertEquals("Task", input[0]["tools"]!!.jsonArray[0].jsonObject["name"]?.jsonPrimitive?.content)
+        // V4-390: the client's tools ride inside codex's `functions` namespace.
+        val functions = input[0]["tools"]!!.jsonArray[0].jsonObject
+        assertEquals("functions", functions["name"]?.jsonPrimitive?.content)
+        assertEquals("Task", functions["tools"]!!.jsonArray[0].jsonObject["name"]?.jsonPrimitive?.content)
         assertEquals("developer", input[1]["role"]?.jsonPrimitive?.content)
         assertEquals("harness prompt", input[1]["content"]?.jsonPrimitive?.content)
         assertEquals("x", input[2]["content"]?.jsonPrimitive?.content)

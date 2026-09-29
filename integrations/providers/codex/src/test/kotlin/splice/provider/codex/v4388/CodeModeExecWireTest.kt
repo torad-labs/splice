@@ -24,7 +24,10 @@ class CodeModeExecWireTest : CodeModeBridgeTestSupport() {
     fun `exec rides alone as codex sends it, and a withheld client tool gets the deferred note`() {
         val bridge = bridge(ScriptedRuntime(ArrayDeque()))
         val eager = bridge.injectTool(REQUEST, setOf("Read"))
-        val tools = eager.getValue("input").jsonArray[0].jsonObject.getValue("tools").jsonArray.map { it.jsonObject }
+        // V4-390: alone inside the functions namespace, as codex's lite list carries it.
+        val entries = eager.getValue("input").jsonArray[0].jsonObject.getValue("tools").jsonArray.map { it.jsonObject }
+        assertEquals(listOf("namespace"), entries.map { it.getValue("type").jsonPrimitive.content })
+        val tools = entries[0].getValue("tools").jsonArray.map { it.jsonObject }
         assertEquals(listOf("custom"), tools.map { it.getValue("type").jsonPrimitive.content })
         assertEquals("exec", tools[0].getValue("name").jsonPrimitive.content)
         assertFalse(manual(eager).contains("Some deferred nested tools"), manual(eager))
@@ -93,7 +96,8 @@ class CodeModeExecWireTest : CodeModeBridgeTestSupport() {
     }
 
     private fun manual(request: JsonObject): String = request.getValue("input").jsonArray[0].jsonObject
-        .getValue("tools").jsonArray[0].jsonObject.getValue("description").jsonPrimitive.content
+        .getValue("tools").jsonArray[0].jsonObject.getValue("tools").jsonArray[0].jsonObject
+        .getValue("description").jsonPrimitive.content
 
     private companion object {
         val REQUEST: JsonObject = Json.parseToJsonElement(

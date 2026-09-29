@@ -50,6 +50,8 @@ class CodexWireGoldenTest {
     // including order, code-mode exec, and the client-executed search shape on lite turns.
     private val codeModeTool = """{"type":"function","name":"splice_exec","description":"Code mode",""" +
         """"strict":false,"parameters":{"type":"object","properties":{}}}"""
+    // V4-390: a lite turn's function tools ride inside codex's `functions` namespace.
+    private val liteFunctions = """{"type":"namespace","name":"functions","description":"","tools":[$codeModeTool]}"""
     private val mcpTool = """{"type":"function","name":"mcp__synthetic_0","description":"Synthetic tool 0",""" +
         """"strict":false,"parameters":{"type":"object","properties":{"value":{"type":"string"}}}}"""
     private val searchTool = """{"type":"tool_search","execution":"client","description":"# Tool discovery\n\n""" +
@@ -73,7 +75,7 @@ class CodexWireGoldenTest {
     @Test
     fun `Codex lite request keeps client tool search byte exact`() {
         val expected = """{"model":"gpt-5.6-sol","input":[{"type":"additional_tools","role":"developer",""" +
-            """"tools":[$codeModeTool,$searchTool]},{"role":"developer","content":"Use tools as needed."},""" +
+            """"tools":[$liteFunctions,$searchTool]},{"role":"developer","content":"Use tools as needed."},""" +
             """{"role":"user","content":"synthetic prompt"}],"store":false,"stream":true,""" +
             """"prompt_cache_key":"splice-721967fb7fd9f346d20833536b34a1c1","instructions":"",""" +
             """"tool_choice":"auto","parallel_tool_calls":false,""" +

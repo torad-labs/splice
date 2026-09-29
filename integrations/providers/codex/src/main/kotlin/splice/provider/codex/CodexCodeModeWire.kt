@@ -11,6 +11,7 @@ import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.TurnOutcome
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
+import splice.dialect.responses.ResponsesFunctionNamespace
 import splice.dialect.responses.request.AssistantPhase
 import splice.dialect.responses.request.ResponsesAssistantText
 import splice.dialect.responses.request.ResponsesCodeModeProjection
@@ -19,6 +20,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 internal class CodexCodeModeWire(private val json: Json, private val log: LogSink) {
     private val history = CodexCodeModeHistory(json)
+    private val namespace = ResponsesFunctionNamespace()
 
     /** Record ids whose omission was already logged — one line per record, not one per turn. */
     private val announced: MutableSet<String> = ConcurrentHashMap.newKeySet()
@@ -31,21 +33,23 @@ internal class CodexCodeModeWire(private val json: Json, private val log: LogSin
      *  into `exec`'s manual, and tool_search leaves with them — codex's own test sends exec, wait,
      *  request_user_input and web_search with deferred tools on (core/tests/suite/code_mode.rs:2805-2820).
      *  [clientTools] is the whole client catalog, so a tool the deferred surface withheld gets the
-     *  manual's deferred note and is found and called through `ALL_TOOLS` and `tools`. */
+     *  manual's deferred note and is found and called through `ALL_TOOLS` and `tools`. The lite list
+     *  arrives grouped into the `functions` namespace and leaves grouped the same way (V4-390): exec
+     *  rides inside it, as codex's does. */
     fun injectTool(request: JsonObject, clientTools: Set<String>): JsonObject {
         val input = request[FIELD_INPUT] as? JsonArray ?: return request
         val index = input.indexOfFirst { string(it as? JsonObject, FIELD_TYPE) == TYPE_ADDITIONAL_TOOLS }
         val item = input.getOrNull(index) as? JsonObject
         val tools = item?.get(FIELD_TOOLS) as? JsonArray
         require(item != null && tools != null) { "code mode requires the Responses lite additional_tools item" }
-        val (functions, hosted) = tools.partition { string(it as? JsonObject, FIELD_TYPE) == TYPE_FUNCTION }
+        val (functions, hosted) = namespace.members(tools).partition { string(it as? JsonObject, FIELD_TYPE) == TYPE_FUNCTION }
         val reachable = reachable(clientTools)
         val nested = functions.mapNotNull { it as? JsonObject }.map { tool ->
             CodeModeManual.NestedTool(string(tool, FIELD_NAME), string(tool, FIELD_DESCRIPTION), tool[FIELD_PARAMETERS])
         }.filter { it.name in reachable }
         val deferred = (reachable - nested.map(CodeModeManual.NestedTool::name).toSet()).isNotEmpty()
         val beside = hosted.filterNot { string(it as? JsonObject, FIELD_TYPE) == TYPE_TOOL_SEARCH }
-        val surface = JsonArray(listOf(execTool(CodeModeManual.description(nested, deferred))) + beside)
+        val surface = namespace.group(JsonArray(listOf(execTool(CodeModeManual.description(nested, deferred))) + beside))
         val replaced = JsonObject(item + (FIELD_TOOLS to surface))
         val rebuilt = input.mapIndexed { position, element -> if (position == index) replaced else element }
         return JsonObject(request + (FIELD_INPUT to JsonArray(rebuilt)))

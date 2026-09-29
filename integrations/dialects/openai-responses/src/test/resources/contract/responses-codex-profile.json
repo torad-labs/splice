@@ -6,24 +6,31 @@
             "role": "developer",
             "tools": [
                 {
-                    "type": "function",
-                    "name": "Read",
+                    "type": "namespace",
+                    "name": "functions",
                     "description": "",
-                    "strict": false,
-                    "parameters": {
-                        "type": "object",
-                        "properties": {}
-                    }
-                },
-                {
-                    "type": "function",
-                    "name": "Bash",
-                    "description": "",
-                    "strict": false,
-                    "parameters": {
-                        "type": "object",
-                        "properties": {}
-                    }
+                    "tools": [
+                        {
+                            "type": "function",
+                            "name": "Read",
+                            "description": "",
+                            "strict": false,
+                            "parameters": {
+                                "type": "object",
+                                "properties": {}
+                            }
+                        },
+                        {
+                            "type": "function",
+                            "name": "Bash",
+                            "description": "",
+                            "strict": false,
+                            "parameters": {
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    ]
                 }
             ]
         },

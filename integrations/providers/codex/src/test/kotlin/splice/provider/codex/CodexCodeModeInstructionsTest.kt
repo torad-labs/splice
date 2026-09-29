@@ -18,6 +18,7 @@ import splice.core.parse.AnthropicTurnBody
 import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnOutcome
+import splice.dialect.responses.ResponsesFunctionNamespace
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.request.BuildOptions
@@ -48,8 +49,10 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
                 val batching = "Batch independent searches and reads in one functions.exec"
                 assertTrue(instructions(prepared.requestBody).contains(batching))
                 assertTrue(instructions(prepared.requestBody).contains("Promise.all"))
-                val originalTools = before.first().jsonObject.getValue("tools").jsonArray
-                val augmentedTools = after.first().jsonObject.getValue("tools").jsonArray
+                // V4-390: both lists ride grouped in the functions namespace; compare their members.
+                val namespace = ResponsesFunctionNamespace()
+                val originalTools = namespace.members(before.first().jsonObject.getValue("tools").jsonArray)
+                val augmentedTools = namespace.members(after.first().jsonObject.getValue("tools").jsonArray)
                 // V4-388: the client tools leave the top level and are declared inside exec's manual.
                 val exec = augmentedTools.single().jsonObject
                 assertEquals("exec", exec.getValue("name").jsonPrimitive.content)

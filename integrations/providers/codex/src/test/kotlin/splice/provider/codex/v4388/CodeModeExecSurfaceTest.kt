@@ -31,8 +31,14 @@ class CodeModeExecSurfaceTest : CodeModeBridgeTestSupport() {
     @Test
     fun `exec is the only top-level tool and its manual declares every client tool`() {
         val prepared = prepare()
-        val tools = prepared.getValue("input").jsonArray[0].jsonObject.getValue("tools").jsonArray
-        assertEquals(1, tools.size, "top-level tools: ${tools.map { it.jsonObject["name"] }}")
+        val entries = prepared.getValue("input").jsonArray[0].jsonObject.getValue("tools").jsonArray
+        assertEquals(1, entries.size, "top-level tools: ${entries.map { it.jsonObject["name"] }}")
+        // V4-390: the one top-level entry is codex's functions namespace, and exec is its only member.
+        val functions = entries.single().jsonObject
+        assertEquals("namespace", functions.getValue("type").jsonPrimitive.content)
+        assertEquals("functions", functions.getValue("name").jsonPrimitive.content)
+        val tools = functions.getValue("tools").jsonArray
+        assertEquals(1, tools.size, "functions members: ${tools.map { it.jsonObject["name"] }}")
         val exec = tools.single().jsonObject
         assertEquals("custom", exec.getValue("type").jsonPrimitive.content)
         assertEquals("exec", exec.getValue("name").jsonPrimitive.content)

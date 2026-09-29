@@ -22,6 +22,7 @@ internal data class WireShape(val input: JsonArray, val instructions: String?, v
  * list exactly, so no call site can silently reorder arguments.
  */
 internal class ResponsesLiteShape(private val quirks: ResponsesQuirks) {
+    private val namespace = ResponsesFunctionNamespace()
 
     /** Lite gate: every turn on a responses-lite model, compaction included — lite is a property
      *  of the MODEL, and a compaction built in the non-lite shape shares no prefix with the
@@ -44,7 +45,8 @@ internal class ResponsesLiteShape(private val quirks: ResponsesQuirks) {
         }
 
     /** codex-rs responses-lite input: [additional_tools (developer), developer base-instructions,
-     *  ...history]. Shape read from codex-rs core/src/client.rs and accepted by the live backend. */
+     *  ...history]. Shape read from codex-rs core/src/client.rs and accepted by the live backend. The
+     *  tools ride grouped into the `functions` namespace (V4-390, [ResponsesFunctionNamespace]). */
     private fun liteInput(input: JsonArray, tools: JsonArray?, instructions: String): JsonArray =
         buildJsonArray {
             if (tools != null) {
@@ -52,7 +54,7 @@ internal class ResponsesLiteShape(private val quirks: ResponsesQuirks) {
                     buildJsonObject {
                         put("type", "additional_tools")
                         put("role", "developer")
-                        put("tools", tools)
+                        put("tools", namespace.group(tools))
                     },
                 )
             }

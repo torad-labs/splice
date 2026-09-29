@@ -9907,5 +9907,8 @@ id = "V4-432"
 phase = "release"
 title = "claude-grok -p prints '[claude-code:unrecognized_model] {\"model\":\"grok-4.7[1m]\",\"query_source\":\"sdk\"}' before its answer (Marlin, 8aee53328, two print-mode sessions). V4-358 now hands the client grok-4.7[1m] (a 500k row past the 425k floor). Claude Code 2.1.284 carries the notice with tengu_api_unrecognized_model and an 'unrecognized-model-signal:' path; what fires it, which stream it goes to, and whether the bare id printed it before V4-358 are unknown. If it is new, or reaches stdout of -p (scripts parse that), it is a regression: find the trigger in the bundle and, since splice authors both the id and the response (project CLAUDE.md s22), remove it at the value splice writes."
 files = ["core/src/main/kotlin/splice/core/model/ClientSpelling.kt", "features/launch/src/main/kotlin/splice/launch/LaunchTypes.kt", "features/launch/src/main/kotlin/splice/launch/recipe/LaunchService.kt", "features/launch/src/test/kotlin/campaign/v4432/"]
-status = "todo"
+status = "in_flight"
 verify = "first the facts, written on the row: the bundle's trigger for the notice (function and condition), its stream, and a real Claude Code 2.1.284 print-mode run against a local stub with the bare id and with the [1m] id. If the [1m] id introduces it: a red-first test pins the value splice writes that removes it, and a stub run shows no notice on either stream with the 600-image cap kept. If it predates V4-358 and goes to stderr only, close with that evidence."
+claimed_by = "claude-builder"
+claimed_at = "2026-09-29T04:18:45.654Z"
+# [2026-09-29] CLAIM: owner=claude-builder at=2026-09-29T04:18:45Z

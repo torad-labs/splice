@@ -87,11 +87,12 @@ class ForeignUnitStartTest {
         assertTrue(acted.isEmpty(), "a refused start acted on the unit: $acted\n${said()}")
     }
 
-    /** The refusal is V4-395's sentence, printed once, naming the unit. */
-    private fun assertRefusedWithTheRestartSentence(cold: DaemonColdStart, port: Int) {
-        val sentence = requireNotNull(cold.foreignUnitRefusal(port)) { "the unit read as this home's" }
-        assertEquals(listOf(sentence), lines.toList(), "one refusal, the same words the restart gives")
-        assertTrue(UNIT in sentence, sentence)
+    /** The refusal is V4-395's sentence with the verb of what was refused (a start, not a restart), printed once. */
+    private fun assertRefusedInTheRestartWords(cold: DaemonColdStart, port: Int) {
+        val restart = requireNotNull(cold.foreignUnitRefusal(port)) { "the unit read as this home's" }
+        assertTrue("not restarting $UNIT:" in restart, "a restart says what it refused: $restart")
+        val sentence = restart.replace("not restarting", "not starting")
+        assertEquals(listOf(sentence), lines.toList(), "one refusal, the restart's words with a start's verb")
     }
 
     @Test
@@ -104,7 +105,7 @@ class ForeignUnitStartTest {
 
         assertFalse(up, "another home's unit must not be started for this shell:\n${said()}")
         assertUnitUntouched(ctl)
-        assertRefusedWithTheRestartSentence(cold, port)
+        assertRefusedInTheRestartWords(cold, port)
         assertTrue(EVERYDAY_HOME in said() && tmp.resolve("walk-desk").toString() in said(), said())
     }
 
@@ -117,7 +118,7 @@ class ForeignUnitStartTest {
 
         assertFalse(cold.ensureDaemon(port, NEW), said())
         assertUnitUntouched(ctl)
-        assertRefusedWithTheRestartSentence(cold, port)
+        assertRefusedInTheRestartWords(cold, port)
     }
 
     @Test
@@ -128,7 +129,7 @@ class ForeignUnitStartTest {
 
         assertFalse(cold.ensureDaemon(port, NEW), said())
         assertUnitUntouched(ctl)
-        assertRefusedWithTheRestartSentence(cold, port)
+        assertRefusedInTheRestartWords(cold, port)
     }
 
     @Test
@@ -139,7 +140,7 @@ class ForeignUnitStartTest {
 
         assertFalse(cold.ensureDaemon(port, NEW), said())
         assertUnitUntouched(ctl)
-        assertRefusedWithTheRestartSentence(cold, port)
+        assertRefusedInTheRestartWords(cold, port)
         assertTrue("could not be read" in said(), said())
     }
 

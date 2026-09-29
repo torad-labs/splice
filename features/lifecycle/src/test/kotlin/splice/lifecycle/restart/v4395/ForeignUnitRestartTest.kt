@@ -119,6 +119,7 @@ class ForeignUnitRestartTest {
             assertNothingSignalled(ctl, daemon)
             val unitAndPorts = UNIT in said() && ":${daemon.port + 1}" in said() && ":${daemon.port}" in said()
             assertTrue(unitAndPorts, "the refusal must name the unit and both ports:\n${said()}")
+            assertTrue("not restarting $UNIT:" in said(), "a restart refuses as a restart:\n${said()}")
         } finally {
             daemon.close()
         }

@@ -9879,6 +9879,7 @@ verify = "red first: a burst 429 with a provider reset delay renders the reset t
 claimed_by = "fin"
 claimed_at = "2026-09-29T04:14:12.439Z"
 # [2026-09-29] CLAIM: owner=fin at=2026-09-29T04:14:12Z
+# [2026-09-29] RECEIPT cmd="bun tools/gate rules && bun tools/gate typecheck && bun tools/gate slot V4-428 -- :integrations-upstream:detekt :integrations-upstream:test --tests 'splice.upstream.v4428.*' --tests 'splice.upstream.retry.*' --tests 'splice.upstream.transport.*' --tests 'campaign.v4233.*' --tests 'splice.upstream.v4377.*' --tests 'splice.upstream.v4412.*' && bun tools/gate slot V4-428 -- :quality-architecture:test" exit=0 tests=241 touched=integrations/upstream/src/main/kotlin/splice/upstream/retry/RateLimitCooldown.kt,integrations/upstream/src/test/kotlin/splice/upstream/retry/RateLimitCooldownTest.kt,integrations/upstream/src/test/kotlin/splice/upstream/v4428/BurstResetZoneTest.kt,.dev/restructure/capabilities.tsv tail="6 identical after; B3/B4 first survived because my helper always passed times, fixed and rerun. rules 77 passed, typecheck none added, :quality-architecture:test green (the peer's codex red from V4-425 is gone), census 0 findings. The constructor gained times: LocalTimeText = LocalTimeText() as its 4th parameter, so every caller is unchanged, and the plan branch now passes it to PlanLimit.refusal."
 
 [[items]]
 id = "V4-429"

@@ -13,6 +13,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import splice.core.config.StatePaths
 import splice.core.model.DiscoveredModel
+import splice.core.model.ModelRates
 import splice.core.topology.ProviderConfig
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
@@ -55,7 +56,7 @@ public class RosterCache(
         json.decodeFromString(CachedRoster.serializer(), Files.readString(file))
 
     private fun cached(model: DiscoveredModel): CachedModel =
-        CachedModel(model.id, model.label, model.contextWindow, model.aliases)
+        CachedModel(model.id, model.label, model.contextWindow, model.aliases, model.rates)
 }
 
 /** A head's kept list, or why there is none to stand in for its endpoint. */
@@ -82,6 +83,9 @@ private data class CachedModel(
     val label: String = "",
     @SerialName("context_window") val contextWindow: Long? = null,
     val aliases: List<String> = emptyList(),
+    /** V4-438: the card the endpoint listed, kept so a start with the vendor down still prices the model.
+     *  A file written before it decodes to null, which is "no card listed". */
+    val rates: ModelRates? = null,
 ) {
-    fun model(): DiscoveredModel = DiscoveredModel(id, label, contextWindow, aliases)
+    fun model(): DiscoveredModel = DiscoveredModel(id, label, contextWindow, aliases, rates)
 }

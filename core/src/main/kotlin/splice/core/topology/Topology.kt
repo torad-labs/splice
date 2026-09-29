@@ -226,7 +226,10 @@ public data class ProviderConfig(
         contextWindowOverride: Long? = null,
         discovered: List<DiscoveredModel> = emptyList(),
     ): ModelCatalog {
-        val selectedModels = withHeadRates(modelsFor(head, rosterWith(discovered)), head.rates)
+        val selectedModels = withListedRates(
+            withHeadRates(modelsFor(head, rosterWith(discovered)), head.rates),
+            discovered,
+        )
         head.contextWindow?.let { require(it > 0) { "head context_window must be positive" } }
         val window = contextWindowOverride?.takeIf { it > 0 } ?: head.contextWindow
         return ModelCatalog(
@@ -261,6 +264,23 @@ public data class ProviderConfig(
     private fun withHeadRates(entries: List<ModelEntry>, rates: Map<String, ModelRates>?): List<ModelEntry> {
         if (rates == null) return entries
         return entries.map { entry -> rates[entry.id]?.let { rate -> entry.copy(rates = rate) } ?: entry }
+    }
+
+    /** V4-438: a row with no card of its own takes the one the provider LISTS for its model, under the bare
+     *  id or any alias, so a model an operator added by id is priced like one splice.toml carries. Last in
+     *  the order head, row, listing: a card somebody wrote is never replaced by one an endpoint published,
+     *  and a model the endpoint lists no price for keeps null, which every reader renders as "no rate card". */
+    private fun withListedRates(entries: List<ModelEntry>, discovered: List<DiscoveredModel>): List<ModelEntry> {
+        val listed = HashMap<String, ModelRates>()
+        for (model in discovered) {
+            val card = model.rates ?: continue
+            for (spelling in model.spellings) listed.putIfAbsent(spelling, card)
+        }
+        if (listed.isEmpty()) return entries
+        return entries.map { entry ->
+            val card = if (entry.rates == null) listed[ModelTierSuffix.strip(entry.id)] else null
+            if (card == null) entry else entry.copy(rates = card)
+        }
     }
 
     /** The declared rows, then each [discovered] model that no declared row covers under any of its

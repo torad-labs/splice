@@ -13,10 +13,15 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.model.DiscoveredModel
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.model.ModelRates
 import splice.core.perf.PerfKeys
+import splice.core.topology.AuthConfig
+import splice.core.topology.Dialect
+import splice.core.topology.HeadConfig
+import splice.core.topology.ProviderConfig
 import splice.core.util.WallClock
 import splice.usage.perf.PerfRow
 import splice.usage.perf.PerfRowsSource
@@ -201,6 +206,38 @@ class BudgetEnforcementTest {
         head.spent(rig.now, MODEL, turnOf(0.1))
         val block = head.admit()
         assertNotNull(block)
+        assertTrue(block!!.message.contains("1 turn today ran on a model with no rate card"), block.message)
+    }
+
+    // V4-438: a model priced only by the provider's list counts against a budget like a declared one, and one
+    // the list gives no price is named, never guessed.
+    @Test
+    fun `a budget counts the turns of a model only the provider's list prices, and names one it does not`(
+        @TempDir tmp: Path,
+    ) {
+        val provider = ProviderConfig(
+            dialect = Dialect.OPENAI_CHAT,
+            baseUrl = "https://openrouter.ai/api/v1",
+            auth = AuthConfig("api-key", env = "OPENROUTER_API_KEY"),
+        )
+        val catalog = provider.catalogFor(
+            HeadConfig("openrouter", 4104, "claude-openrouter--", "acme/listed"),
+            discovered = listOf(
+                DiscoveredModel("acme/listed", rates = ModelRates(1.0, 0.1, 4.0)),
+                DiscoveredModel("acme/router"),
+            ),
+        )
+        val rig = Rig(tmp)
+        rig.budget("h", 0.25, BudgetActions.BLOCK)
+        val head = rig.enforcement.forHead("h", catalog)
+
+        head.spent(rig.now, "acme/router", turnOf(100.0))
+        assertNull(head.admit(), "the list gives the router no price, so there is nothing to count")
+        assertTrue(rig.logs.any { it.startsWith("[h][budget]") && it.contains("acme/router") }, "${rig.logs}")
+
+        head.spent(rig.now, "acme/listed", turnOf(0.3))
+        val block = head.admit()
+        assertNotNull(block, "a turn on the listed model counts at the price its provider lists")
         assertTrue(block!!.message.contains("1 turn today ran on a model with no rate card"), block.message)
     }
 }

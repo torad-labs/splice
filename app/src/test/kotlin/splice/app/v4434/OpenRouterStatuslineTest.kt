@@ -9,6 +9,11 @@
 //
 // The second test is the proof this one can fail: the same run with the emitted rates lines cut out
 // reads "no rate card", which is what every default model printed before V4-434.
+//
+// V4-438 adds the models OUTSIDE the ten. The fake endpoint lists two more with a `pricing` block, and a row
+// the user adds by id (the head's roster names it, no rates line) is priced from that listing: the card
+// OpenRouter published, read at daemon start. A model it lists no price for still reads "no rate card", and a
+// rates line written on the row wins over the listing.
 package splice.app.v4434
 
 import com.sun.net.httpserver.HttpExchange
@@ -70,7 +75,64 @@ class OpenRouterStatuslineTest {
         assertFalse("API est." in line, line)
     }
 
-    private fun statusLineAfterTurn(tmp: Path, keepRates: Boolean): String {
+    @Test
+    fun `a row added by id outside the ten reads API est at the price OpenRouter lists - V4-438`(@TempDir tmp: Path) {
+        val line = statusLineAfterTurn(tmp, keepRates = true, model = ADDED, edit = rostering(ADDED))
+        // The same 800,000 / 200,000 / 100,000 tokens at the listed $2 / $0.20 / $10 per million.
+        assertTrue("API est. $2.64" in line, line)
+        assertFalse("no rate card" in line, line)
+    }
+
+    @Test
+    fun `a model OpenRouter lists no price for still reads no rate card - V4-438`(@TempDir tmp: Path) {
+        val line = statusLineAfterTurn(
+            tmp,
+            keepRates = true,
+            model = UNPRICED,
+            edit = rostering(UNPRICED),
+            expectFigure = false,
+        )
+        assertTrue("no rate card" in line, line)
+        assertFalse("API est." in line, line)
+    }
+
+    @Test
+    fun `a rates line written on the row wins over the listed price - V4-438`(@TempDir tmp: Path) {
+        val written = """
+            [[providers.openrouter.models]]
+            id = "$ADDED"
+            label = "Added"
+            context_window = 200000
+            rates = { input = 1.0, cache_read = 0.1, output = 5.0 }
+        """.trimIndent()
+        val line = statusLineAfterTurn(
+            tmp,
+            keepRates = true,
+            model = ADDED,
+            edit = { config -> rostering(ADDED)(config).trimEnd('\n') + "\n\n" + written + "\n" },
+        )
+        // 800,000 at $1, 200,000 at $0.10, 100,000 at $5 per million; the listing's $2.64 is not used.
+        assertTrue("API est. $1.32" in line, line)
+    }
+
+    /** The head's roster with [id] named in it and no row for it, which is what adding a model by id leaves.
+     *  The fake endpoint is on loopback, which splice reads as a local runtime and never asks for a list, so
+     *  the provider says `local = false`: the daemon then asks it, as it asks the real one. */
+    private fun rostering(id: String): (String) -> String = { config ->
+        val header = "[providers.openrouter]\n"
+        require("models = [" in config && header in config) { "the shipped head names no model roster:\n$config" }
+        config
+            .replaceFirst("models = [", "models = [{ id = \"$id\" }, ")
+            .replaceFirst(header, header + "local = false\n")
+    }
+
+    private fun statusLineAfterTurn(
+        tmp: Path,
+        keepRates: Boolean,
+        model: String = MODEL,
+        edit: (String) -> String = { it },
+        expectFigure: Boolean = keepRates,
+    ): String {
         val upstream = FakeOpenRouter()
         val client = HttpClient(CIO)
         try {
@@ -78,7 +140,8 @@ class OpenRouterStatuslineTest {
             Files.writeString(keyFile, """{"api_key":"or-e2e-key"}""")
             val controlPort = TestPorts.reserve()
             val headPort = TestPorts.reserve()
-            val config = bootable(shippedConfig(tmp, upstream.baseUrl), controlPort, headPort, keyFile, keepRates)
+            val shipped = shippedConfig(tmp, upstream.baseUrl)
+            val config = edit(bootable(shipped, controlPort, headPort, keyFile, keepRates))
             val statePaths = StatePaths(baseOverride = tmp.resolve("state"))
             val daemon = Daemon(
                 topology = TopologyLoader.parse(config),
@@ -91,7 +154,8 @@ class OpenRouterStatuslineTest {
             try {
                 awaitListening(controlPort, headPort)
                 val key = MgmtKey(statePaths).get()
-                return runBlocking { turnThenStatusLine(client, key, controlPort, headPort, awaitFigure = keepRates) }
+                val turn = Turn(model, awaitFigure = expectFigure)
+                return runBlocking { turnThenStatusLine(client, key, controlPort, headPort, turn) }
             } finally {
                 runBlocking { daemon.stop() }
             }
@@ -148,22 +212,25 @@ class OpenRouterStatuslineTest {
         key: String,
         controlPort: Int,
         headPort: Int,
-        awaitFigure: Boolean,
+        turn: Turn,
     ): String {
         val sse = client.post("http://127.0.0.1:$headPort/v1/messages") {
             header("Content-Type", "application/json")
             header("Authorization", "Bearer $key")
             header("x-claude-code-session-id", SESSION)
-            setBody("""{"model":"$MODEL","stream":true,"max_tokens":100,"messages":[{"role":"user","content":"hi"}]}""")
+            setBody(
+                """{"model":"${turn.model}","stream":true,"max_tokens":100,""" +
+                    """"messages":[{"role":"user","content":"hi"}]}""",
+            )
         }.bodyAsText()
         assertTrue("event: message_stop" in sse, sse)
-        var line = statusLine(client, key, controlPort)
+        var line = statusLine(client, key, controlPort, turn.model)
         // The perf row lands just after the stream closes; a priced model reads nothing until it does.
-        if (awaitFigure) {
+        if (turn.awaitFigure) {
             val deadline = System.nanoTime() + SETTLE_NANOS
             while ("API est." !in line && System.nanoTime() < deadline) {
                 delay(POLL_MS)
-                line = statusLine(client, key, controlPort)
+                line = statusLine(client, key, controlPort, turn.model)
             }
         }
         return line
@@ -171,12 +238,12 @@ class OpenRouterStatuslineTest {
 
     /** The line Claude Code's status-line hook gets back for this session, colour codes stripped. The blob
      *  carries the client's own Anthropic-priced total, which a non-Anthropic head must never show. */
-    private suspend fun statusLine(client: HttpClient, key: String, controlPort: Int): String =
+    private suspend fun statusLine(client: HttpClient, key: String, controlPort: Int, model: String): String =
         client.post("http://127.0.0.1:$controlPort/statusline/openrouter") {
             header("Content-Type", "application/json")
             header("Authorization", "Bearer $key")
             setBody(
-                """{"session_id":"$SESSION","model":{"id":"$MODEL","display_name":"Claude Sonnet 5"},""" +
+                """{"session_id":"$SESSION","model":{"id":"$model","display_name":"Claude Sonnet 5"},""" +
                     """"cost":{"total_cost_usd":9.99}}""",
             )
         }.bodyAsText().replace(ANSI, "")
@@ -184,6 +251,14 @@ class OpenRouterStatuslineTest {
 
 private const val SESSION = "v4434e2e-0000-4000-8000-000000000001"
 private const val MODEL = "anthropic/claude-sonnet-5"
+
+/** The model a turn runs on, and whether its status line settles on a figure ([awaitFigure]) or on none. */
+private data class Turn(val model: String, val awaitFigure: Boolean)
+
+/** Two models outside the ten, as OpenRouter lists them (V4-438): one with a card, one whose price depends
+ *  on the route it picks, which it lists as -1. */
+private const val ADDED = "acme/added-model"
+private const val UNPRICED = "acme/router-model"
 private const val POLL_MS = 200L
 private const val SETTLE_NANOS = 10_000_000_000L
 private val ANSI = Regex("\u001b\\[[0-9;]*m")
@@ -201,6 +276,13 @@ private val LISTED = listOf(
     "z-ai/glm-5.3",
     "meta-llama/llama-4-maverick",
     "anthropic/claude-haiku-4.5",
+)
+
+/** The two V4-438 models with the `pricing` block OpenRouter puts on every row of GET /models: per TOKEN, as
+ *  decimal strings. The first is priced at Sonnet 5's card, so the figure is the same 2.64. */
+private val PRICED_ROWS = listOf(
+    """{"id":"$ADDED","pricing":{"prompt":"0.000002","completion":"0.00001","input_cache_read":"0.0000002"}}""",
+    """{"id":"$UNPRICED","pricing":{"prompt":"-1","completion":"-1"}}""",
 )
 
 /** OpenRouter's two routes the run reaches: GET /models, and a chat completion that reports one turn's
@@ -228,7 +310,8 @@ private class FakeOpenRouter {
             chat(ex)
         } else {
             val body = if (path.endsWith("/models")) {
-                LISTED.joinToString(",", """{"data":[""", "]}") { """{"id":"$it"}""" }
+                val rows = LISTED.map { """{"id":"$it"}""" } + PRICED_ROWS
+                rows.joinToString(",", """{"data":[""", "]}")
             } else {
                 "{}"
             }

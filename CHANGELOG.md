@@ -740,6 +740,14 @@ origin.
   where you pay per token. Each now carries OpenRouter's own published card, read from its models
   listing on Sep 29, and GPT-6 Sol and Luna carry their over-272,000-token tier. `splice add-model`
   writes its rows with the card too. A head added before this keeps the rows as it was written (V4-434).
+- **A model you add by id is priced from OpenRouter's own list.** Only the ten models `splice add
+  openrouter` writes carried a rate card, so a turn on any other OpenRouter model read `no rate card`
+  on the status line and counted as unpriced against a budget. splice now reads the price OpenRouter
+  lists for each model when the daemon starts, keeps it with the model list it saves for the next
+  start, and gives it to every model whose row carries no card of its own, the models the daemon
+  discovers among them. A `rates` line you write on the row wins, and a model OpenRouter lists no price
+  for, such as its `auto` router, whose price depends on the route it picks, still reads `no rate card`
+  (V4-438).
 - **`splice restart` no longer waits out systemd's restart delay.** Where the daemon runs under its
   systemd unit, `splice restart` stopped the daemon itself and then asked systemd to start the unit
   while it was still shutting down, so the start did nothing and the daemon came back only after the

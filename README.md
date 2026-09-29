@@ -156,6 +156,8 @@ claude-openrouter                          # Claude Code through OpenRouter on l
 
 Any OpenRouter model works, not only the curated ones: add a `[[providers.openrouter.models]]` row with its OpenRouter `id` to `~/.config/splice/splice.toml`, shaped like the ten in [`splice.example.toml`](app/src/main/resources/splice.example.toml), and add the id to the head's `models` list if it declares one, then `splice restart`. Or run `splice add-model` to pick from the curated list.
 
+A model you add this way is priced from the card OpenRouter lists for it, read when the daemon starts, so its turns read `API est.` on the status line and count against a budget. A model OpenRouter lists no price for reads `no rate card`. A `rates = { input = …, cache_read = …, output = … }` line on the row wins over the listed price.
+
 No export handy? There are two other ways to get the key in — both land in
 `~/.config/splice/keys.toml` (0600), which every later daemon start reads from any shell:
 

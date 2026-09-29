@@ -6,12 +6,15 @@ package splice.core.model
 
 /** One published model, before splice decides its window. [contextWindow] is null when the endpoint
  *  publishes none, never zero. [aliases] are the other spellings the endpoint says resolve to [id]:
- *  a declared row under any of them already covers this model, so it is not offered twice. */
+ *  a declared row under any of them already covers this model, so it is not offered twice. [rates] is the
+ *  card the endpoint lists for it (OpenRouter's `pricing`), null when it lists none or a price splice cannot
+ *  read (V4-438): a row with no card of its own takes it, so a model is priced wherever it is listed. */
 public data class DiscoveredModel(
     val id: String,
     val label: String = "",
     val contextWindow: Long? = null,
     val aliases: List<String> = emptyList(),
+    val rates: ModelRates? = null,
 ) {
     /** [id] and every alias. */
     public val spellings: List<String> get() = listOf(id) + aliases

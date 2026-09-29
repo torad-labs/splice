@@ -11,6 +11,8 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.StatePaths
 import splice.core.model.DiscoveredModel
+import splice.core.model.LongContextRates
+import splice.core.model.ModelRates
 import splice.core.topology.AuthConfig
 import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
@@ -87,6 +89,47 @@ class ModelDiscoveryTest {
         val moved = cache.read("test", remote.copy(modelsUrl = "https://elsewhere.test/models"))
         assertEquals(KeptRoster.OtherUrl(LIST_URL), moved, "and the line names the endpoint the kept list came from")
         assertEquals(KeptRoster.None, cache.read("other-head", remote), "each head keeps its own list")
+    }
+
+    // V4-438: the card the endpoint lists rides the same answer, so the catalog can price the model.
+    @Test
+    fun `a listed price reaches the discovered model, and a model with no price stays without a card`() {
+        val body = """
+            {"data":[
+              {"id":"m-priced","pricing":{"prompt":"0.000002","completion":"0.00001"}},
+              {"id":"m-router","pricing":{"prompt":"-1","completion":"-1"}}
+            ]}
+        """.trimIndent()
+        val found = answered(body) as Discovery.Found
+        val card = ModelRates(input = 2.0, cacheRead = 2.0, output = 10.0)
+        assertEquals(listOf(DiscoveredModel("m-priced", rates = card), DiscoveredModel("m-router")), found.models)
+    }
+
+    @Test
+    fun `a kept list keeps each model's listed card, tier and all`(@TempDir tmp: Path) {
+        val cache = RosterCache(StatePaths(baseOverride = tmp))
+        val tiered = ModelRates(
+            input = 2.0,
+            cacheRead = 0.2,
+            output = 10.0,
+            cacheWrite = 2.5,
+            longContext = LongContextRates(272_000, input = 4.0, cacheRead = 0.4, output = 15.0, cacheWrite = 5.0),
+        )
+        val models = listOf(DiscoveredModel("m-tiered", rates = tiered), DiscoveredModel("m-plain"))
+        cache.write("test", Discovery.Found(LIST_URL, models))
+        assertEquals(KeptRoster.Kept(models), cache.read("test", remote))
+    }
+
+    @Test
+    fun `a list kept before prices were read still loads, with no card`(@TempDir tmp: Path) {
+        val paths = StatePaths(baseOverride = tmp)
+        Files.createDirectories(paths.modelRosterFile("test").parent)
+        Files.writeString(
+            paths.modelRosterFile("test"),
+            """{"url":"$LIST_URL","models":[{"id":"m-old","label":"Old","context_window":128000}]}""",
+        )
+        val kept = RosterCache(paths).read("test", remote)
+        assertEquals(KeptRoster.Kept(listOf(DiscoveredModel("m-old", "Old", 128_000))), kept)
     }
 
     // 2026-09-23 (review): this read as "nothing kept", and daemon.log said the same for a missing file,

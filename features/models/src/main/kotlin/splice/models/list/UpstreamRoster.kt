@@ -33,6 +33,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.core.model.ModelEntry
+import splice.core.model.ModelRates
 import splice.core.model.ModelTierSuffix
 import splice.core.topology.AuthKind
 import splice.core.topology.Dialect
@@ -57,6 +58,8 @@ internal data class UpstreamModel(
      *  nothing against it. Only an affirmative statement counts (see [UpstreamRosterParser]): a row
      *  that publishes no capabilities at all is not presumed unusable. */
     public val unusable: String? = null,
+    /** The card the endpoint lists for it, per million tokens ([ListedPricing]), or null (V4-438). */
+    public val rates: ModelRates? = null,
 ) {
     /** The id and every spelling the endpoint says resolves to it. */
     public val spellings: List<String> get() = listOf(id) + aliases
@@ -160,6 +163,7 @@ internal class UpstreamRosterParser(private val json: Json = Json { ignoreUnknow
         maxContextWindow = JsonScalars.firstLong(row, "max_context_window"),
         aliases = strings(row["aliases"]),
         unusable = unusable(row),
+        rates = ListedPricing.of(row),
     )
 
     /** What the row itself says against serving a Claude Code turn, in the three forms endpoints use

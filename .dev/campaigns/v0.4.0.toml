@@ -9547,8 +9547,11 @@ id = "V4-411"
 phase = "release"
 title = "A hand-off to a socket records who held it (console, V4-402): ConsoleWiring.messageSent (ConsoleWiring.kt:295) stores Legacy for any address recipient (the ':' in to branch), so a message sent to uds:/…/cc-socks/<n>.sock keeps no session once the registry forgets it; V4-402 could only print 'Another session' for Sep 25's 10 socket rows because nothing on disk named the holder. At send time an address with exactly one live registry holder stores Held(holder); none or several stays Legacy."
 files = ["app/src/main/kotlin/splice/app/ConsoleWiring.kt", "app/src/test/kotlin/splice/app/ConsoleActivityPublishTest.kt"]
-status = "todo"
+status = "in_flight"
 verify = "red first: messageSent to a socket address with one live registry holder stores that session, and after the registry forgets it the day's /chat still files the row under the holder's slot and prints its role; an address with no or two holders stays Legacy; the two ConsoleActivityPublishTest pins updated to the new contract. :quality-architecture:test, rules wall, :app:test."
+claimed_by = "console"
+claimed_at = "2026-09-29T01:19:18.472Z"
+# [2026-09-29] CLAIM: owner=console at=2026-09-29T01:19:18Z
 
 [[items]]
 id = "V4-412"

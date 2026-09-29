@@ -234,6 +234,30 @@ describe('connect', () => {
     expect(urls).toEqual(['/api/events']);
   });
 
+  // V4-439: the stream's 401 answers the key it sent. When the operator has typed the right key since, the
+  // refusal is for a key nobody holds, and the stream connects again with the held one instead of stopping
+  // (connect() is a no-op while it runs, so a stream that stopped here would stay off after the unlock).
+  test('a 401 for a key no longer held reconnects with the held one - V4-439', async () => {
+    vi.useFakeTimers();
+    let held = 'wrong';
+    vi.stubGlobal('localStorage', { getItem: () => held, setItem: () => undefined });
+    const open = openStream();
+    const sent: string[] = [];
+    vi.stubGlobal('fetch', (_url: unknown, init?: RequestInit) => {
+      sent.push((init?.headers as Record<string, string>).Authorization);
+      if (sent.length > 1) return Promise.resolve(new Response(open.body, { status: 200 }));
+      held = 'right';
+      return Promise.resolve(new Response('nope', { status: 401 }));
+    });
+
+    connect();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(sent).toEqual(['Bearer wrong', 'Bearer right']);
+    expect(eventsStore.get().status).toBe('live');
+  });
+
   test('with no management key it does not open a stream at all', async () => {
     vi.stubGlobal('localStorage', { getItem: () => '', setItem: () => undefined });
     const urls: string[] = [];

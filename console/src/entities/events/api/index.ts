@@ -125,10 +125,14 @@ async function loop(): Promise<void> {
       const res = await fetch(STREAM_PATH, { headers, signal: controller.signal });
 
       if (res.status === 401) {
+        // The key it sent has been replaced since (V4-439): this refusal is not the held key's, so the
+        // stream connects again with the held one. connect() does nothing while it runs, so stopping
+        // here would leave it off after the unlock.
+        if (key !== currentKey()) continue;
         // The management key is stale. The lock and the listener the shell's gate reacts to both
         // live in the shared client, so the stream hands it the 401 rather than arming a second
         // lock of its own: a lock the key gate did not own is one the gate could not clear.
-        noteUnauthorized();
+        noteUnauthorized(key);
         running = false;
         eventsStore.set({ status: 'off' });
         return;

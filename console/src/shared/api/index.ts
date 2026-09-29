@@ -73,8 +73,11 @@ export function bindUnauthorized(fn: UnauthorizedListener): void {
   onUnauthorized = fn;
 }
 
-/** A 401 seen outside request<T> (the events stream reads its own response) lands the same lock. */
-export function noteUnauthorized(): void {
+/** A 401 seen outside request<T> (the events stream reads its own response) lands the same lock. [carried] is
+ *  the key the refused request sent: a refusal of a key that is no longer the held one is the late answer of a
+ *  request from before the last unlock, and locks nothing (V4-439). */
+export function noteUnauthorized(carried: string = currentKey()): void {
+  if (carried !== currentKey()) return;
   locked = true;
   onUnauthorized?.();
 }
@@ -118,13 +121,14 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     noteUnauthorized();
     throw new MgmtError(401, 'management key required');
   }
+  const carried = currentKey();
   let res: Response;
   try {
     res = await fetch(path, {
       ...init,
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${currentKey()}`,
+        Authorization: `Bearer ${carried}`,
         ...(init?.headers ?? {}),
       },
     });
@@ -134,8 +138,7 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new MgmtError(0, NOT_ANSWERING);
   }
   if (res.status === 401) {
-    locked = true;
-    onUnauthorized?.();
+    noteUnauthorized(carried);
     throw new MgmtError(401, 'management key required');
   }
   const body = (await res.json().catch(() => null)) as T | ErrorBody | null;

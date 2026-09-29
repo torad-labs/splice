@@ -124,4 +124,37 @@ describe('control client', () => {
     await control.logs('codex', 200);
     expect(fetchMock.mock.calls[1][0]).toBe('/api/logs/codex?tail=200');
   });
+
+  // V4-439. The gate's red on 4850ac2bc: a wrong key is an unlock, its reads are still in flight when the
+  // right key is typed, and one of them answering 401 LATE re-locked the client and reopened the gate on a
+  // key the daemon had not refused. A refusal only counts against the key the request carried.
+  test('a 401 answering a key that is no longer held locks nothing - V4-439', async () => {
+    const onUnauthorized = vi.fn();
+    bindUnauthorized(onUnauthorized);
+    storeKey('wrong');
+    let answerLate: (response: ReturnType<typeof jsonResponse>) => void = () => undefined;
+    fetchMock.mockReturnValueOnce(new Promise((resolve) => { answerLate = resolve; }));
+    const inFlight = control.status();
+
+    storeKey('right');
+    answerLate(jsonResponse(401, { error: 'nope' }));
+    await expect(inFlight).rejects.toThrow(MgmtError);
+    expect(onUnauthorized, 'the gate was reopened on the right key').not.toHaveBeenCalled();
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { server: 'control', version: '1', heads: [], registry: [] }));
+    await control.status();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect((fetchMock.mock.calls[1][1].headers as Record<string, string>).Authorization).toBe('Bearer right');
+  });
+
+  test('a 401 answering the key that is held still locks the client - V4-439 bound', async () => {
+    const onUnauthorized = vi.fn();
+    bindUnauthorized(onUnauthorized);
+    storeKey('held');
+    fetchMock.mockResolvedValueOnce(jsonResponse(401, { error: 'nope' }));
+    await expect(control.status()).rejects.toThrow(MgmtError);
+    expect(onUnauthorized).toHaveBeenCalledOnce();
+    await expect(control.usage()).rejects.toThrow(MgmtError);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
 });

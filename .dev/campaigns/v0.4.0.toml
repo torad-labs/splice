@@ -9570,6 +9570,7 @@ claimed_by = "fin"
 claimed_at = "2026-09-29T02:21:55.685Z"
 # [2026-09-29] CLAIM: owner=fin at=2026-09-29T02:21:55Z
 # [2026-09-29] RECEIPT cmd="bun tools/gate rules && bun tools/gate slot V4-409 -- :features-lifecycle:detekt :features-lifecycle:test && bun tools/gate slot V4-409 -- :quality-architecture:test" exit=0 tests=88 touched=features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonLaunch.kt,features/lifecycle/src/test/kotlin/splice/lifecycle/start/v4409/ForeignUnitStartTest.kt,.dev/restructure/capabilities.tsv tail="sha of the V4-409 commit is the one above this receipt; features-lifecycle 88 tests (v4409 6) counted before mutation; red on the unchanged launch 4 of 6 (each foreign case ran systemctl start); 6 mutants killed by name, file restored identical; rules, quality-architecture, census exit 0"
+# [2026-09-29] sha 0f09536d3 (the receipt's tail says 'the one above'; this is it)
 
 [[items]]
 id = "V4-410"

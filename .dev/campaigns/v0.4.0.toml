@@ -9474,6 +9474,7 @@ claimed_by = "fin"
 claimed_at = "2026-09-28T22:22:30.863Z"
 # [2026-09-28] CLAIM: owner=fin at=2026-09-28T22:22:30Z
 # [2026-09-28] RECEIPT cmd="bun tools/gate rules && bun tools/gate slot V4-404 -- :features-turns:detekt :features-turns:test --tests 'splice.head.v4404.*' --tests 'splice.head.turn.*' --tests 'splice.head.wire.*' --tests 'splice.head.v4349.*' --tests 'splice.head.admission.*' --tests 'splice.head.HeadServerFailureBranchTest' && bun tools/gate slot V4-404 -- :quality-architecture:test && bun tools/gate typecheck" exit=0 tests=204 touched=features/turns/src/main/kotlin/splice/head/turn/OutcomeSentences.kt,features/turns/src/main/kotlin/splice/head/turn/TurnTelemetry.kt,features/turns/src/main/kotlin/splice/head/wire/TurnTrace.kt,features/turns/src/test/kotlin/splice/head/v4404/OutcomeSentenceTest.kt,.dev/restructure/capabilities.tsv tail="sha 887a16aa1; v4404 6 tests; red on HEAD behaviour 3 tests; 9 mutants killed by name; rules, quality-architecture, typecheck exit 0"
+# [2026-09-29] Sep 28 8:22 PM CT: installed 3839fcc06 (V4-404, V4-402) from ci run 36506364493, success on that exact sha. Jar sha256 1017b278373191a65a56fad0ebd7bf8e7028ce0eaf07282a090f274069bd4959 equals /proc/1417776/fd/4. Daemon pid 1417776. Backup ~/.local/share/splice/splice.jar.bak-20260928-pre-3839fcc06681b9853547e0115098f7d28a036f43.
 
 [[items]]
 id = "V4-405"

@@ -80,3 +80,8 @@ a7b4b778b66231d69bdcc446229febdb5605130d:integrations/dialects/openai-responses/
 # the conversation id `"key":"conversation-1"`. Test-source literal, grants nothing; triaged by hand after the
 # scan went red on f37280280 (the last green scan was 63dfafbb3).
 f37280280b4768cf6c9f825e7fdee98145ccffc4:app/src/test/kotlin/splice/app/KeptFilesLifetimeTest.kt:generic-api-key:172
+# 2026-09-29: the two findings the entry above caused. Its own comment and V4-340's ledger note quoted the
+# fixture's JSON field beside its value, which the same rule matches. Prose, grants nothing; triaged by hand.
+# The history is not rewritten, so each commit that carries the quote is fingerprinted here.
+5319b63131cfe0ff25ba6ad85264cd741ba92fbd:.gitleaksignore:generic-api-key:80
+36a22e1a5821273c4592a592bf474e6441f55e30:.dev/campaigns/v0.4.0.toml:generic-api-key:8297

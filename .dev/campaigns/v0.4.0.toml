@@ -9186,6 +9186,7 @@ claimed_by = "fin"
 claimed_at = "2026-09-29T02:32:38.634Z"
 # [2026-09-29] CLAIM: owner=fin at=2026-09-29T02:32:38Z
 # [2026-09-29] amend by=splice-lead: files were ["integrations/providers/grok/src/test/", "app/src/test/kotlin/splice/app/control/ConsoleRoutesTest.kt", "app/src/test/kotlin/splice/app/control/ControlServerGateTest.kt", "quality/ast-grep/"]
+# [2026-09-29] Fence derived from source (Sep 28, ~11:20 PM CT): git grep of Files.createTempDirectory/createTempFile( under every */src/test gives 107 files, 227 call sites. 105 are in this fence; app/src/test/kotlin/splice/app/KeptFilesLifetimeTest.kt and quality/architecture/src/test/kotlin/splice/quality/DiskWritesLawTest.kt are held by V4-340 (console) and join this row when V4-340 lands. The wall's rule and its rule-tests live under quality/rules/kotlin/ and quality/rules/rule-tests/.
 
 [[items]]
 id = "V4-384"

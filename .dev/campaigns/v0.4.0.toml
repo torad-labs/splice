@@ -9171,7 +9171,7 @@ id = "V4-382"
 phase = "release"
 title = "Port the Sep 21 stash's attribution-block drop: a translated head (openai-chat, openai-responses) removes Claude Code's per-session 'x-anthropic-billing-header: cc_version=...; cc_entrypoint=...;' system block, whose fingerprint hashes the first user prompt, so the system + tools prefix stays byte-identical across sessions, subagents and compactions and the backend's prompt cache holds (bonsai 2026-09-18: the post-compaction prompt forked at token 47,374). The passthrough head keeps it (Anthropic reads it). Source: mythos/backups/splice-branch-archive-2026-09-27/stash-20260921-marcos-wip-pre-v0.4.0-switch.patch (AnthropicWireCodecs.kt + AnthropicParseTest)."
 files = ["core/src/main/kotlin/splice/core/wire/AnthropicWireCodecs.kt", "core/src/test/kotlin/splice/core/parse/AnthropicParseTest.kt", "integrations/dialects/anthropic/src/test/kotlin/splice/dialect/anthropic/v4382/", "integrations/dialects/openai-chat/src/test/kotlin/splice/dialect/chat/v4382/", "integrations/dialects/openai-responses/src/test/kotlin/splice/dialect/responses/v4382/"]
-status = "done"
+status = "verified"
 verify = "bun tools/gate slot v4382 -- :core:test"
 claimed_by = "claude-builder"
 claimed_at = "2026-09-29T03:50:31.263Z"

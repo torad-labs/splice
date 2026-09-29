@@ -312,7 +312,8 @@ private const val LUNA = "openai/gpt-6-luna"
 private const val ROSTER_OPEN = "models = ["
 private const val HEADER = "[heads.openrouter]"
 private const val PROVIDER_ROW = "[[providers.openrouter.models]]"
-// the `id =` line, label, context_window and the rates card: every openrouter row the profile ships is priced (V4-434)
+
+// why: the `id =` line, label, context_window and the rates card, since every openrouter row is priced (V4-434)
 private const val PROVIDER_ROW_LINES = 4
 private const val FIRST_ROW = "  { id = \"anthropic/claude-sonnet-5\", slot = \"sonnet\" },"
 

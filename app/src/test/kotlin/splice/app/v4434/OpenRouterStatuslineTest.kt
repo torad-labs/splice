@@ -159,10 +159,12 @@ class OpenRouterStatuslineTest {
         assertTrue("event: message_stop" in sse, sse)
         var line = statusLine(client, key, controlPort)
         // The perf row lands just after the stream closes; a priced model reads nothing until it does.
-        val deadline = System.nanoTime() + SETTLE_NANOS
-        while (awaitFigure && "API est." !in line && System.nanoTime() < deadline) {
-            delay(POLL_MS)
-            line = statusLine(client, key, controlPort)
+        if (awaitFigure) {
+            val deadline = System.nanoTime() + SETTLE_NANOS
+            while ("API est." !in line && System.nanoTime() < deadline) {
+                delay(POLL_MS)
+                line = statusLine(client, key, controlPort)
+            }
         }
         return line
     }

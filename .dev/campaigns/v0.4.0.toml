@@ -9777,6 +9777,7 @@ files = ["console/src/pages/fleet/", "console/tests/fleet-last-turn.test.ts"]
 status = "done"
 verify = "red first: a head with no last turn renders the empty-cell dash in Fleet's Last turn, never None, null or undefined. Console test, build, lint."
 # [2026-09-29] RECEIPT cmd="console: npx vitest run, npm run lint, npm run build; bun tools/gate typecheck" exit=0 tests=1720 touched=console/src/pages/fleet/index.tsx,console/src/pages/fleet/model.ts,console/src/pages/fleet/strings.ts,console/tests/fleet-last-turn.test.ts,console/tests/fleet.test.ts tail="vitest 98 files 1720/0; lint clean; build ok; typecheck 0 added; red first: fleet-last-turn.test.ts failed 2 of 4 on the unfixed cell (never-ran head read \"None\"), green after; sha f003d2003"
+# [2026-09-29] Marlin walk on 8aee53328 (Sep 28, 11:10-11:17 PM CT, jar 4a177e2d): bonsai-second's Last turn reads the dash on Fleet.
 
 [[items]]
 id = "V4-421"

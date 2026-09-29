@@ -67,3 +67,11 @@ c361520c57ecdd3eb7c9ab2257a71f037f5a899d:app/src/test/kotlin/splice/app/cli/stat
 # `abcdefghijklmnopqrstuvwxyz123456` as api_key= to prove the history index redacts it
 # (asserts `api_key=[redacted]`). Test-source literal, grants nothing; triaged by hand.
 3d0eb88804977ccaa6bcfd9cb20b6fbc83a2a89e:integrations/claude-code/src/test/kotlin/splice/client/transcript/v4344/TranscriptHistoryIndexTest.kt:generic-api-key:46
+# 2026-09-28: V4-389 wire golden. CodexWireGoldenTest asserts the byte-exact Codex request and its
+# `prompt_cache_key: "splice-<md5>"` is the deterministic cache key of the test's synthetic session,
+# the same class as the 13 oracle fixture keys above. Test-source literal, grants nothing; triaged by
+# hand. The `.gitleaks.toml` regex for this shape does not clear it: gitleaks applies an allowlist
+# regex to the captured secret (the bare md5), never to the line that carries the `"prompt_cache_key":`
+# prefix the regex spells.
+a7b4b778b66231d69bdcc446229febdb5605130d:integrations/dialects/openai-responses/src/test/kotlin/splice/dialect/responses/v4389/CodexWireGoldenTest.kt:generic-api-key:67
+a7b4b778b66231d69bdcc446229febdb5605130d:integrations/dialects/openai-responses/src/test/kotlin/splice/dialect/responses/v4389/CodexWireGoldenTest.kt:generic-api-key:78

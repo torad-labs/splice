@@ -9885,3 +9885,11 @@ title = "Fleet reads a head OK while splice says it is out of quota (Marlin, 8ae
 files = ["app/src/main/kotlin/splice/app/control/api/HeadResolver.kt", "app/src/main/kotlin/splice/app/control/api/ControlPayloads.kt", "app/src/test/kotlin/splice/app/v4429/", "console/src/entities/heads/model/derive.ts", "console/src/entities/heads/index.ts", "console/src/pages/fleet/model.ts", "console/src/pages/fleet/strings.ts", "console/src/shared/api/index.ts", "console/tests/fleet-out-of-quota.test.ts", "console/e2e/v4429/"]
 status = "todo"
 verify = "red first: a head whose providerResetForMs is ahead carries its instant on /api/heads, Fleet's State cell and panel read out of quota with the reset in local time, and the Plans card counts it outside OK; a head at 99% or with a passed reset reads OK; runtimeNotAnswering still wins Down. vitest, lint, build, Playwright, :app:test scope, :quality-architecture:test, rules wall. Live: claudex reads out of quota on the everyday Fleet."
+
+[[items]]
+id = "V4-430"
+phase = "release"
+title = "The nearest limit prints the wrong window and a raw instant for a head's own warn (Marlin, 8aee53328, throwaway home): a client-auth head at a 7-day plan limit reads 'claude-gamma 5h 100% ⏱ 2026-10-02T04:12:47Z' in the header. console/src/entities/usage/model/derive.ts:101 names the window `${usage.window_hours}h` and passes warn.reset (ISO) as-is, and :55 counts source provider_reset as the head's own signal. claudex dodges it only because it has an account row; claude-splice or any key head at a plan limit would show 5h and UTC. A provider_reset warn names the window the provider named (or none), and every reset the header prints goes through the console's one time formatter."
+files = ["console/src/entities/usage/model/derive.ts", "console/tests/usage-derive-own-warn.test.ts"]
+status = "todo"
+verify = "red first: a head with warn {source provider_reset, pct 100, reset ISO 3 days out} and no account row reads its real window (or no window word) and a local-time reset, never '5h' or a T..Z form; the account-row path (V4-422) unchanged. vitest, lint, build."

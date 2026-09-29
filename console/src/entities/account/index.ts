@@ -12,6 +12,7 @@ export {
   nextRuleOf,
   poolOf,
   readAgeText,
+  refusalText,
   resetText,
   selectedExcluded,
   sevenDayUsed,

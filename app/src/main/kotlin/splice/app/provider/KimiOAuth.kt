@@ -24,6 +24,8 @@ internal data class KimiOAuthAccount(
     val quotaFile: Path,
     val credentialPresent: Boolean,
     val identity: KimiDeviceIdentity,
+    /** V4-410: why splice will not load this account's credential, in words; null for one it can. */
+    val refusal: String? = null,
 )
 
 /** Kimi's device-flow OAuth construction, repeated once per discovered account file. */
@@ -52,6 +54,7 @@ internal class KimiOAuth(
                 quotaFile = file.quotaFile,
                 credentialPresent = file.credentialPresent,
                 identity = identity,
+                refusal = file.refusal,
             )
         }
     }

@@ -21,6 +21,8 @@ internal data class MuseOAuthAccount(
     val auth: RefreshableAuthProvider,
     val quotaFile: Path,
     val credentialPresent: Boolean,
+    /** V4-410: why splice will not load this account's credential, in words; null for one it can. */
+    val refusal: String? = null,
 )
 
 /** Discovery follows the same primary/backup policy as the other splice-owned OAuth pools. */
@@ -52,6 +54,7 @@ internal class MuseOAuth(
                 ),
                 quotaFile = file.quotaFile,
                 credentialPresent = file.credentialPresent,
+                refusal = file.refusal,
             )
         }
     }

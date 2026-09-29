@@ -3,7 +3,7 @@
 // disagree about the same account: a window is a meter with its share and its reset, a stale reading
 // says so, and an unreported window prints the absence and never a zero.
 import type { ReactNode } from 'react';
-import { exclusionText, nextRuleOf, NOT_REREAD, slotWindows } from '@entities/account';
+import { exclusionText, nextRuleOf, NOT_REREAD, refusalText, slotWindows } from '@entities/account';
 import type { AccountRow, AccountWindow } from '@entities/account';
 import { HeadMark } from '@entities/control-status';
 import { familyName } from '@entities/heads';
@@ -30,10 +30,10 @@ export function accountKey(account: AccountRow): string {
   return `${account.kind}:${account.label ?? account.credential_path ?? account.heads.join(',')}`;
 }
 
-/** A row's tint: danger when spent, warn when near its limit or signed out; the state cell says which. */
+/** A row's tint: danger when spent, warn when near its limit, signed out or refused; the state cell says which. */
 export function accountTone(account: AccountRow, nowMs: number): Tone | null {
   const state = stateOf(account, nowMs);
-  return state === 'spent' ? 'danger' : state === 'warn' || state === 'signedOut' ? 'warn' : null;
+  return state === 'spent' ? 'danger' : state === 'warn' || state === 'signedOut' || state === 'refused' ? 'warn' : null;
 }
 
 export function AccountStateBadge({ account, nowMs, quiet = false }: { account: AccountRow; nowMs: number; quiet?: boolean }) {
@@ -135,7 +135,8 @@ export function accountColumns({ fields, grouped, nowMs, accounts, compact = fal
 }
 
 /** Every fact an opened account carries: its provider and plan, every window it reported, when the
- *  windows were read, and the pool's reason where it refuses the account. */
+ *  windows were read, and the pool's reason where it refuses the account (or, for a credential the
+ *  daemon will not load at all, its sentence). */
 export function AccountFacts({ account, nowMs }: { account: AccountRow; nowMs: number }) {
   const rows: [string, ReactNode][] = [
     [S.provider, familyName(account.kind)],
@@ -148,6 +149,7 @@ export function AccountFacts({ account, nowMs }: { account: AccountRow; nowMs: n
     [S.windowsRead, account.observed_at_epoch_seconds === null || account.observed_at_epoch_seconds === undefined
       ? ABSENT : timeAgo(account.observed_at_epoch_seconds * 1000, nowMs)],
     ...(stateOf(account, nowMs) === 'excluded' ? [[S.reason, exclusionText(account)] as [string, ReactNode]] : []),
+    ...(stateOf(account, nowMs) === 'refused' ? [[S.reason, refusalText(account)] as [string, ReactNode]] : []),
   ];
   return <KeyValue rows={rows} />;
 }

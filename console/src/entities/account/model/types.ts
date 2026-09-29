@@ -76,6 +76,10 @@ export interface AccountRow {
   auth_excluded_until_epoch_millis?: number | null;
   /** The daemon's own sentence for the exclusion, printed as-is. */
   auth_exclusion_reason?: string | null;
+  /** Why the daemon will not load this account's credential at all (a symlinked credential file), in its own
+   *  words; null or absent when it can. Unlike a missing credential this is not renewed by signing in: the
+   *  writer refuses the label until the link is gone. */
+  refusal?: string | null;
   /** Every window the provider reported, at its reported length. Empty, never missing: an account
    *  whose provider reports nothing shows its empty, it does not vanish. */
   windows: AccountWindow[];
@@ -116,6 +120,8 @@ export interface AccountWire {
   credential_present: boolean;
   auth_excluded_until_epoch_millis: number | null;
   auth_exclusion_reason: string | null;
+  /** Absent from a daemon older than V4-410; the daemon that has it always sends it, null when there is none. */
+  refusal?: string | null;
   selected: boolean | null;
   pinned: boolean | null;
   next_target: boolean | null;

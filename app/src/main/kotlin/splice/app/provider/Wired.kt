@@ -15,6 +15,8 @@ internal data class WiredAccount(
     val quotaFile: Path,
     val credentialPresent: Boolean = true,
     val extraHeaders: CredentialHeaders? = null,
+    /** V4-410: why splice will not load this account's credential (a symlinked file), in words. */
+    val refusal: String? = null,
 )
 
 /** Chooses the legacy primary when readable, otherwise the first readable labeled credential. */

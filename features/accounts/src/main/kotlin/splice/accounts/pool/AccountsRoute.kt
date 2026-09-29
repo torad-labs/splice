@@ -42,8 +42,7 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
             foldSingleLogin(head.key, description, head.quota?.quota(), joined)
             return
         }
-        val authPaths = head.accountAuth?.descriptions().orEmpty().mapValues { (_, d) -> d.fields["auth_path"] }
-        foldPooled(head.key, description.kind, pool.view(null), authPaths, joined)
+        foldPooled(head.key, description.kind, pool.view(null), head.accountAuth?.descriptions().orEmpty(), joined)
     }
 
     private fun foldSingleLogin(
@@ -83,24 +82,27 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
         headKey: String,
         kind: String,
         view: HeadAccountPoolView,
-        authPaths: Map<String, String?>,
+        described: Map<String, AuthDescription>,
         joined: MutableMap<String, JoinedAccount>,
     ) {
         view.accounts.forEach { account ->
-            val authPath = authPaths[account.label]
-            merge(joined, authPath ?: "$headKey:${account.label}", headKey) {
-                pooledAccount(kind, account, view, authPath)
+            val fields = described[account.label]?.fields.orEmpty()
+            merge(joined, fields["auth_path"] ?: "$headKey:${account.label}", headKey) {
+                pooledAccount(kind, account, view, fields)
             }
         }
     }
 
+    /** [fields] is the account's own [AuthDescription] fields: its credential path, and (V4-410) `refusal`
+     *  for a credential splice will not load. That lives there, not on [HeadAccountView], whose width the
+     *  constructor-width ratchet has recorded. */
     private fun pooledAccount(
         kind: String,
         account: HeadAccountView,
         view: HeadAccountPoolView,
-        authPath: String?,
+        fields: Map<String, String>,
     ): JoinedAccount = JoinedAccount(
-        credentialPath = authPath,
+        credentialPath = fields["auth_path"],
         kind = kind,
         label = account.label,
         primary = account.primary,
@@ -117,7 +119,11 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
             account.sevenDayWindowSeconds,
         ),
         observedAtEpochSeconds = account.quotaObservedAtEpochSeconds,
-        authExclusion = AuthExclusionView(account.authExcludedUntilEpochMillis, account.authExclusionReason),
+        authExclusion = AuthExclusionView(
+            account.authExcludedUntilEpochMillis,
+            account.authExclusionReason,
+            fields["refusal"],
+        ),
         flags = AccountFlags(
             available = account.available,
             credentialPresent = account.credentialPresent,
@@ -165,6 +171,7 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
         into.put("credential_present", row.flags.credentialPresent)
         into.put("auth_excluded_until_epoch_millis", row.authExclusion.untilEpochMillis)
         into.put("auth_exclusion_reason", row.authExclusion.reason)
+        into.put("refusal", row.authExclusion.refusal)
         into.put("selected", row.flags.selected)
         into.put("pinned", row.flags.pinned)
         into.put("next_target", row.flags.nextTarget)
@@ -186,8 +193,9 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
  *  ceiling with five-hour and seven-day as ONE field each instead of three. */
 private data class QuotaWindowView(val usedPercent: Double?, val resetEpochSeconds: Long?, val windowSeconds: Long?)
 
-/** Why a pooled or single-login account cannot be selected right now, or both null when it can. */
-private data class AuthExclusionView(val untilEpochMillis: Long?, val reason: String?)
+/** Why a pooled or single-login account cannot be selected right now, or all null when it can. [refusal]
+ *  (V4-410) is the permanent kind: splice will not load that credential at all, so it is not a renewal. */
+private data class AuthExclusionView(val untilEpochMillis: Long?, val reason: String?, val refusal: String? = null)
 
 /** The five yes/no/unknown facts a console row renders as booleans — grouped for the same
  *  constructor-width reason as [QuotaWindowView]. */

@@ -8,6 +8,8 @@ import splice.accounts.pool.HeadAccountPoolView
 import splice.accounts.pool.HeadAccountSwitchView
 import splice.accounts.pool.HeadAccountView
 import splice.app.provider.Wired
+import splice.app.provider.WiredAccount
+import splice.core.auth.AuthDescription
 import splice.core.util.WallClock
 import splice.head.usage.QuotaTracker
 import splice.upstream.codemode.ProcessElapsedNow
@@ -57,9 +59,17 @@ internal class HeadAccountPools {
     fun authSource(wired: Wired): HeadAccountAuthSource? = wired.accounts.takeIf { pooled(wired) }
         ?.let { accounts ->
             HeadAccountAuthSource {
-                accounts.associate { account -> account.label to account.auth.describe() }
+                accounts.associate { account -> account.label to described(account) }
             }
         }
+
+    /** A refused credential (V4-410) says why in its own description, beside `auth_path`, so /api/accounts and
+     *  /api/auth show the sentence. Its reader already points at a name splice never creates, so this opens nothing. */
+    private suspend fun described(account: WiredAccount): AuthDescription {
+        val description = account.auth.describe()
+        return account.refusal?.let { description.copy(fields = description.fields + ("refusal" to it)) }
+            ?: description
+    }
 
     private fun pooled(wired: Wired): Boolean = wired.accounts.size > 1
 

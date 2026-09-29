@@ -191,6 +191,16 @@ export function isExcluded(account: AccountRow, nowMs: number): boolean {
   return until !== null && until > nowMs;
 }
 
+/**
+ * The daemon's sentence for a credential it refuses to load at all (V4-410: a symlinked credential file),
+ * or null when it refuses none. A refused account has no credential either, but signing in cannot renew
+ * it, so it is never the same state as a credential that is simply gone.
+ */
+export function refusalText(account: AccountRow): string | null {
+  const text = account.refusal?.trim() ?? '';
+  return text === '' ? null : text;
+}
+
 /** The exclusion's reason, in the daemon's own words where it sent any. */
 export function exclusionText(account: AccountRow): string {
   const reason = account.auth_exclusion_reason ?? '';

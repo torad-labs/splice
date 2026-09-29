@@ -90,6 +90,7 @@ internal class CodexResponsesArm(
                 auth = codexAuth(ctx, file.credentialFile, tokenUrl),
                 quotaFile = file.quotaFile,
                 credentialPresent = file.credentialPresent,
+                refusal = file.refusal,
             )
         }
     }

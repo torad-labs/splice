@@ -24,6 +24,8 @@ export const S = {
     unknown: 'Unknown',
     /** The login's credential file is gone: the pool cannot take it, whatever its last window read. */
     signedOut: 'Signed out',
+    /** The daemon will not load the login's credential file (a symlink): signing in does not renew it. */
+    refused: 'Refused',
   },
   /** Why the daemon takes an account next, in the order its selector walks (AccountPool.kt:163). */
   ruleName: {

@@ -2,7 +2,7 @@
 // pool): its state as a tone and a mark, and its windows as figures and countdowns. Pure, so the
 // thresholds and the stale rule are pinned without a renderer.
 import {
-  COCK_AT_PERCENT, EXHAUSTED_AT_PERCENT, isExcluded, isStale, nearestWindow,
+  COCK_AT_PERCENT, EXHAUSTED_AT_PERCENT, isExcluded, isStale, nearestWindow, refusalText,
 } from '@entities/account';
 import type { AccountRow, AccountWindow } from '@entities/account';
 import { windowName } from '@features/nearest-limit';
@@ -11,8 +11,8 @@ import type { BarPart, Mark, Tone } from '@shared/ui';
 import { S } from './strings';
 
 /** What an account is, for the selector: takeable with room, near its limit, spent, refused by the
- *  pool, unknown because its provider reported no figure, or signed out because its credential is
- *  gone. */
+ *  pool, unknown because its provider reported no figure, signed out because its credential is
+ *  gone, or refused because the daemon will not load its credential file at all (a symlink). */
 export type AccountStateKey = keyof typeof S.stateName;
 
 /** Order matters and is the whole design: an excluded account is excluded even when a window is
@@ -20,6 +20,9 @@ export type AccountStateKey = keyof typeof S.stateName;
  *  point the operator at an account the daemon is already refusing. The thresholds are the entity's
  *  (COCK_AT_PERCENT, EXHAUSTED_AT_PERCENT). */
 export function stateOf(account: AccountRow, nowMs: number): AccountStateKey {
+  // A refused credential has no credential to read either, but signing in cannot renew it: the writer
+  // refuses the label while the link stands. It is said as refused, ahead of signed out (V4-410).
+  if (refusalText(account) !== null) return 'refused';
   // A login with no credential file serves nothing, so its last window is history, not a state
   // (Marlin, 2026-09-25: it read OK beside a missing credential). Signing in is the fix, and it
   // comes before any exclusion the pool made while it could not authenticate.
@@ -34,13 +37,13 @@ export function stateOf(account: AccountRow, nowMs: number): AccountStateKey {
 
 /** A state's badge tone and chart mark, from one mapping each. Unknown is never green: green would
  *  claim a health nobody measured. */
-export const TONE: Record<AccountStateKey, Tone> = { ok: 'ok', warn: 'warn', spent: 'danger', excluded: 'neutral', unknown: 'neutral', signedOut: 'warn' };
-export const MARK: Record<AccountStateKey, Mark> = { ok: 'ok', warn: 'warn', spent: 'danger', excluded: 'series-3', unknown: 'series-2', signedOut: 'warn' };
+export const TONE: Record<AccountStateKey, Tone> = { ok: 'ok', warn: 'warn', spent: 'danger', excluded: 'neutral', unknown: 'neutral', signedOut: 'warn', refused: 'warn' };
+export const MARK: Record<AccountStateKey, Mark> = { ok: 'ok', warn: 'warn', spent: 'danger', excluded: 'series-3', unknown: 'series-2', signedOut: 'warn', refused: 'warn' };
 
 /** The bar's order: the two amber states stand apart so they never read as one part. Signed out is
  *  amber, as a signed-out head is on the fleet (heads derive: only unhealthy is red) and a signed-out
  *  head is on this page: a warning the operator can act on. */
-const STATES: readonly AccountStateKey[] = ['ok', 'warn', 'spent', 'excluded', 'unknown', 'signedOut'];
+const STATES: readonly AccountStateKey[] = ['ok', 'warn', 'spent', 'excluded', 'unknown', 'signedOut', 'refused'];
 
 /** The accounts by state as bar parts, in a fixed order so the colours never swap places. */
 export function stateParts(accounts: readonly AccountRow[], nowMs: number): BarPart[] {

@@ -7,7 +7,7 @@
 //   - "Nothing needs you" only when every input was read, as of the oldest of those reads.
 // Pure: no React, no store and no clock (the caller passes `now`), so each rule is held in a test
 // against plain payloads.
-import { exclusionText } from '@entities/account';
+import { exclusionText, refusalText } from '@entities/account';
 import type { AccountRow, AccountsState } from '@entities/account';
 import type { DoctorCheck, DoctorSlice } from '@entities/doctor';
 import { checkFinding, collapseChecks, fixMasked, logsHrefOf, wantsAttention } from '@entities/doctor';
@@ -218,6 +218,9 @@ function accountNeeds(accounts: readonly AccountRow[], now: number): Need[] {
       fix,
       at: itemHref('accounts', accountKey(account)),
     }];
+    // A credential the daemon refuses to load says why and opens Accounts: signing in again is not its fix.
+    const refusal = refusalText(account);
+    if (refusal !== null) return need(refusal, ACCOUNTS);
     if (state === 'signedOut' && account.label !== null) {
       const head = account.heads[0];
       return need(H.accountSignedOut, head === undefined ? SIGN_IN : loginFix(account.kind, head, account.label));

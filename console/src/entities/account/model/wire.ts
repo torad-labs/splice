@@ -38,6 +38,7 @@ function accountFromWire(wire: AccountWire): AccountRow {
     credential_present: wire.credential_present,
     auth_excluded_until_epoch_millis: wire.auth_excluded_until_epoch_millis,
     auth_exclusion_reason: wire.auth_exclusion_reason,
+    refusal: wire.refusal ?? null,
     windows,
     heads: wire.heads,
     observed_at_epoch_seconds: wire.observed_at_epoch_seconds,

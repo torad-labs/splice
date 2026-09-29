@@ -51,6 +51,7 @@ internal class KimiPassthroughArm(
                 extraHeaders = CredentialHeaders {
                     SSE_HEADERS + staticHeaders + account.identity.headers()
                 },
+                refusal = account.refusal,
             )
         }
         return Wired(provider, default.auth, wiredAccounts)

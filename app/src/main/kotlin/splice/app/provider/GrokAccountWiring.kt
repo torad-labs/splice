@@ -36,6 +36,7 @@ internal class GrokAccountWiring(
                 auth = auth(ctx, file.credentialFile, tokenUrl),
                 quotaFile = file.quotaFile,
                 credentialPresent = file.credentialPresent,
+                refusal = file.refusal,
             )
         }
     }

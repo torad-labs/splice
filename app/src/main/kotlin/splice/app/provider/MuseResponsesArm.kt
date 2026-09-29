@@ -90,6 +90,7 @@ internal class MuseResponsesArm(
                 quotaFile = account.quotaFile,
                 credentialPresent = account.credentialPresent,
                 extraHeaders = CredentialHeaders { headers },
+                refusal = account.refusal,
             )
         }
 }

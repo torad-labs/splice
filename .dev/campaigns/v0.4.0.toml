@@ -9951,6 +9951,7 @@ claimed_at = "2026-09-29T23:39:55.858Z"
 # [2026-09-29] CLAIM: owner=claude-builder at=2026-09-29T23:39:55Z
 # [2026-09-29] Red-first: real synthetic head tests failed 3/3 on journal/perf mismatch (plan: expected error:plan-limit, journal upstream-failed; burst/500: expected error:upstream-failed, journal upstream-failed). After choosing endingTag once and reusing its wire: same tests pass 3/3. Logs /tmp/claude-builder-v4431/red.log and green.log. Scoped module/detekt/architecture running; rules awaits correction of V4-441 companion object in shared tree.
 # [2026-09-29] Committed bf97ef3e0. Scoped features-turns:test 652/652, detekt PASS; rules 78/78, routing/config PASS; typecheck no added debt. Architecture 248/250 with V4-441 CodexCodeModeTurnBuilder HIGH 3.22 and unjustified public CodexCodeModeModels. Owner splice-builder2 notified; architecture rerun awaits their fix-forward. Logs /tmp/claude-builder-v4431/scoped.log and rules-final.log.
+# [2026-09-29] RECEIPT cmd="bun tools/gate slot v4431 -- :features-turns:test :features-turns:detekt; bun tools/gate rules; bun tools/gate typecheck" exit=0 tests=652 touched=features/turns/src/main/kotlin/splice/head/turn/TurnKnownEnd.kt,features/turns/src/test/kotlin/splice/head/v4431/ErrorOutcomeLogTest.kt,.dev/restructure/capabilities.tsv
 
 [[items]]
 id = "V4-432"

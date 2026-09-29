@@ -8263,9 +8263,12 @@ id = "V4-340"
 phase = "release"
 title = "The code-mode store saves one conversation, not the whole head: today CodexCodeModeStore rewrites one file holding every record on each save (live 2026-09-26: 8.8 MB for 128 records, several saves per script round), so a save's cost grows with every other conversation on the head. One owner-only file per conversation, as V4-334's reasoning store does; found by claude-builder during V4-337"
 files = ["integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeStore.kt"]
-status = "todo"
+status = "in_flight"
 verify = "red first: a test that saves one record on a head holding N other conversations asserts only that conversation's file is written (bytes written or file mtimes), failing on today's tree; green: passes, restart restores every conversation, a corrupt file drops only its conversation, files 0600 in a 0700 dir, disk-writes law and README name the new layout; depends on V4-337's retention"
 # depends:V4-337
+claimed_by = "console"
+claimed_at = "2026-09-29T03:51:22.520Z"
+# [2026-09-29] CLAIM: owner=console at=2026-09-29T03:51:22Z
 
 [[items]]
 id = "V4-341"

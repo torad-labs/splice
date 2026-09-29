@@ -126,7 +126,10 @@ export function accountColumns({ fields, grouped, nowMs, accounts, compact = fal
       ? {
         key: 'next',
         label: S.next,
-        width: '12%',
+        // In the cell's own type, like Heads: "Most weekly room" is the longest rule name and its pill
+        // needs 11.2em with the cell's padding. 12% of the table was 129px at 1440 and cut it at every
+        // width under about 1720 (V4-436).
+        width: '12em',
         cell: (account) => <NextRule account={account} accounts={accounts} />,
       }
       : null,

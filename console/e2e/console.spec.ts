@@ -528,6 +528,38 @@ for (const viewport of [{ width: 1600, height: 1000 }, { width: 3840, height: 20
   }
 }
 
+// A laptop's width (splice-website's dashboard shoot, 2026-09-29): "Most weekly room", the longest rule the
+// Next column prints, was cut at the table's edge under about 1720px. The column was 12% of the table, 129px
+// at 1440, and the pill needs 179px with its cell's padding. The stack's pool has its primary as next target,
+// so the payload is bent to the daemon's other answer: the roomiest account flagged, no primary, no pin.
+for (const width of [1440, 1536]) {
+  test(`accounts prints the Next pill whole at ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.route('**/api/accounts', async (route) => {
+      const response = await route.fetch();
+      const body = await response.json() as { accounts: { label: string | null; primary: boolean | null; pinned: boolean | null; next_target: boolean | null; seven_day_used_percent: number | null; seven_day_window_seconds: number | null }[] };
+      for (const account of body.accounts) {
+        if (account.label === null) continue;
+        const roomiest = account.label === STACK.poolLabel;
+        Object.assign(account, { primary: false, pinned: false, next_target: roomiest, seven_day_used_percent: roomiest ? 1 : 50, seven_day_window_seconds: 604_800 });
+      }
+      await route.fulfill({ response, json: body });
+    });
+    const faults = await open(page, 'accounts');
+    const pill = page.locator('main table td .myx-badge', { hasText: 'Most weekly room' });
+    await expect(pill).toBeVisible({ timeout: 15_000 });
+    const fit = await pill.evaluate((badge) => {
+      const cell = badge.closest('td');
+      if (cell === null) return null;
+      return { cut: cell.scrollWidth - cell.clientWidth, past: badge.getBoundingClientRect().right - cell.getBoundingClientRect().right };
+    });
+    expect(fit, 'the pill sits in a table cell').not.toBeNull();
+    expect(fit?.cut, 'the Next cell is cut').toBeLessThanOrEqual(1);
+    expect(fit?.past, 'the pill ends past its cell').toBeLessThanOrEqual(0);
+    expect(faults.pageErrors, 'the accounts page threw').toEqual([]);
+  });
+}
+
 test('accounts shows the OAuth account with the windows its provider reported', async ({ page }) => {
   await open(page, 'accounts');
   const main = page.locator('main');

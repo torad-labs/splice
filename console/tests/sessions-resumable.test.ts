@@ -22,8 +22,8 @@ const RESUME = 'myx-sx-resume-intro';
 
 function row(over: Partial<SessionRow> = {}): SessionRow {
   return {
-    pid: 3105, session_id: 'a282960a-1111-4222-8333-444455556666', name: 'bridge', kind: 'interactive',
-    version: 'eli-telegram/0.2.0', cwd: '/work/eli', status: 'idle', status_updated_at: NOW, started_at: NOW - 60_000,
+    pid: 4242, session_id: 'bbbbbbbb-1111-4222-8333-444455556666', name: 'bridge', kind: 'interactive',
+    version: 'bridge/0.2.0', cwd: '/work/bridge', status: 'idle', status_updated_at: NOW, started_at: NOW - 60_000,
     updated_at: NOW, address: null, head: 'unknown head', availability: 'live', ...over,
   };
 }

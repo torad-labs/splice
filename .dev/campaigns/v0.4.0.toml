@@ -10084,6 +10084,7 @@ title = "A Codex model the backend marks tool_mode code_mode_only runs in code m
 files = ["features/models/src/main/kotlin/splice/models/list/UpstreamRoster.kt", "core/src/main/kotlin/splice/core/model/DiscoveredModel.kt", "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeTurnBuilder.kt", "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexProvider.kt", "app/src/main/kotlin/splice/app/provider/CodexResponsesArm.kt", "integrations/providers/codex/src/test/kotlin/splice/provider/codex/v4441/"]
 status = "todo"
 verify = "red first: a discovered gpt-6.1-sol marked code_mode_only gets the exec surface with code_mode_models unset and with a list that omits it; gpt-5.5 (no tool_mode) does not; a model the list names but the backend does not mark still does. codex provider tests, :app:test scope, detekt, :quality-architecture:test, rules wall; CI gate on the pushed sha"
+# [2026-09-29] Sep 29 CT evidence for the class: gpt-6.1-sol shipped today with tool_mode code_mode_only in the backend catalog and would have run with direct tools but for a hand edit of code_mode_models at 6:22 PM CT. The fix reads the backend flag so the next release needs no edit.
 
 [[items]]
 id = "V4-442"

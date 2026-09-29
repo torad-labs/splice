@@ -43,6 +43,17 @@
       "command": ["bun", "test", "tools/e2e/test/oracle.test.ts"]
     },
     {
+      "task": "conformance",
+      "why": "Every message class a Claude Code session depends on (background-subagent task notifications, SessionStart hook context, cross-session messages, the date and <total_tokens> notices, free-form MCP tool schemas, reasoning blocks) through every dialect x system_prompt_mode of the built fat jar against a loopback fake upstream, one asserted cell each plus the system seam of each dialect x mode, and a census whose dialects and modes are read from the Kotlin source. V4-277 (a replace-mode chat head dropped every mid-conversation role=system message, so a subagent's result never reached the model) passed every unit test and only a request through the whole head could have caught it. No network, no quota; it judges the fat jar, so it depends on :app:shadowJar for the reason oracleReplay does.",
+      "command": ["bun", "tools/e2e", "conformance"],
+      "dependsOn": [":app:shadowJar"]
+    },
+    {
+      "task": "conformanceSelftest",
+      "why": "The conformance verb's own net: the corpus complete against the source's dialects and modes, the census failing BY NAME on a missing dialect, mode, class, fixture or check, and every grader passing a faithful upstream request and failing a mutated one, so the leg above cannot stay green because its checker lost the ability to find anything.",
+      "command": ["bun", "test", "tools/e2e/test/conformance.test.ts"]
+    },
+    {
       "task": "e2eHeadsSelftest",
       "why": "Local, no quota: skip / fake-token / FATAL-mgmt-key against a loopback control+head. The live `e2e:heads` lane is billed and stays out of the ladder.",
       "command": ["bun", "tools/e2e", "heads", "--selftest"]

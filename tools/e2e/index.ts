@@ -4,11 +4,13 @@
 // src/lib/. Exit codes come back from the verb; a signalled child reports as a shell would
 // (128+signum, tools/gate/src/lib/status.ts), never `exitCode ?? 1`.
 import { codeMode, usage as codeModeUsage } from "./src/commands/code-mode.ts";
+import { conformance, usage as conformanceUsage } from "./src/commands/conformance.ts";
 import { heads, usage as headsUsage } from "./src/commands/heads.ts";
 import { oracle, usage as oracleUsage } from "./src/commands/oracle.ts";
 
 const VERBS = {
   "code-mode": { usage: codeModeUsage, exec: (argv: string[]) => codeMode(argv) },
+  conformance: { usage: conformanceUsage, exec: (argv: string[]) => conformance(argv) },
   heads: { usage: headsUsage, exec: (argv: string[]) => heads(argv) },
   oracle: { usage: oracleUsage, exec: (argv: string[]) => oracle(argv) },
 } satisfies Record<string, { usage: string; exec: (argv: string[]) => number | Promise<number> }>;

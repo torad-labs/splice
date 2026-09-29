@@ -9677,8 +9677,11 @@ id = "V4-417"
 phase = "release"
 title = "The console calls a local head OK while its runtime is down (Marlin, f7f1e9308): at the minute splice status reads bonsai, bonsai-vast, glml53 and bonsai-second 'runtime not answering on :8099-8102', Fleet reads them OK and its Plans card counts 11 OK, 0 Down, and /health says 11 ready, 0 failed. V4-415 reached only the CLI (LocalRuntimeReach.kt, StatusTable.kt). I accepted skipping the health field; that was wrong, because the console is where a user looks. The daemon keeps each local runtime's reach from a background probe, off the request path, so /health never waits on it; /health and the heads route carry it per local head; Fleet and its Plans card read Down with the same sentence."
 files = ["app/src/main/kotlin/splice/app/cli/status/LocalRuntimeReach.kt", "app/src/main/kotlin/splice/app/control/api/ControlPayloads.kt", "integrations/daemon-client/src/main/kotlin/splice/daemonclient/DaemonProbe.kt", "app/src/test/kotlin/splice/app/v4417/", "console/src/pages/fleet/", "console/src/entities/heads/", "console/e2e/v4417/"]
-status = "todo"
+status = "in_flight"
 verify = "red first: with a local runtime refusing connections, /api/health carries that head's reach as not answering (served from the background probe, so /health answers within its usual time with the runtime down), the heads route marks it, and Fleet shows it Down with 'runtime not answering on :<port>' and the Plans card counts it Down; a runtime that answers reads OK; splice status still agrees. Live: the four local heads read Down on Fleet while their runtimes are down. :quality-architecture:test, rules wall, console test/build/lint."
+claimed_by = "console"
+claimed_at = "2026-09-29T02:35:16.412Z"
+# [2026-09-29] CLAIM: owner=console at=2026-09-29T02:35:16Z
 
 [[items]]
 id = "V4-418"

@@ -10,6 +10,7 @@ import splice.accounts.pool.HeadAccountView
 import splice.app.provider.Wired
 import splice.app.provider.WiredAccount
 import splice.core.auth.AuthDescription
+import splice.core.auth.REFUSAL_FIELD
 import splice.core.util.WallClock
 import splice.head.usage.QuotaTracker
 import splice.upstream.codemode.ProcessElapsedNow
@@ -67,7 +68,7 @@ internal class HeadAccountPools {
      *  /api/auth show the sentence. Its reader already points at a name splice never creates, so this opens nothing. */
     private suspend fun described(account: WiredAccount): AuthDescription {
         val description = account.auth.describe()
-        return account.refusal?.let { description.copy(fields = description.fields + ("refusal" to it)) }
+        return account.refusal?.let { description.copy(fields = description.fields + (REFUSAL_FIELD to it)) }
             ?: description
     }
 

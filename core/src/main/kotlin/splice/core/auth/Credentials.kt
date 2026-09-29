@@ -48,6 +48,11 @@ public data class AuthDescription(
     val verdict: CredentialVerdict = CredentialVerdict.Held,
 )
 
+/** The key an account's refusal sentence rides under in [AuthDescription.fields] (V4-410: a credential splice
+ *  will not load). The head's account pools write it, /api/accounts and the switch route (V4-423) read it: one
+ *  spelling for every end, because a rename on one side would silently take the sentence off the console. */
+public const val REFUSAL_FIELD: String = "refusal"
+
 /** Provider auth SPI: resolve credentials (cached) + masked introspection. */
 public interface AuthProvider {
     public suspend fun credentials(): Credentials?

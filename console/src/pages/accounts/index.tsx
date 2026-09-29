@@ -37,7 +37,7 @@ import {
 } from '@widgets/account-table';
 import { fixtureAccounts, fixtureNow } from './fixtures/accounts';
 import { dispositions } from './coverage';
-import { arrangeAccounts, columnsOf, fixtureName, headNote, keyHelp, keyTarget, orderText } from './model';
+import { arrangeAccounts, columnsOf, fixtureName, headNote, keyHelp, keyTarget, orderText, servesTurns } from './model';
 import type { HeadRow } from './model';
 import { H, S, U } from './strings';
 import './accounts.css';
@@ -282,7 +282,7 @@ export function AccountsBoard({ payload, linked = null, headRows = [], usage = n
       <>
         <AccountFacts account={opened} nowMs={nowMs} />
         {/* Relabel and remove act on a POOL; a single-login head has none. */}
-        {opened.label === null ? null : <AccountActions kind={opened.kind} label={opened.label} heads={opened.heads} pinned={opened.pinned === true} />}
+        {opened.label === null ? null : <AccountActions kind={opened.kind} label={opened.label} heads={opened.heads} pinned={opened.pinned === true} serves={servesTurns(opened)} />}
         {hasRoom ? (
           <div className="myx-ac-recover">
             {opened.heads.map((head) => (

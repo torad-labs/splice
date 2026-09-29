@@ -11,4 +11,8 @@ dependencies {
     api(libs.ktor.server.core)
     implementation(libs.kotlinx.serialization.json)
     testImplementation(libs.kotlinx.coroutines.core)
+    // V4-423: SwitchRoute takes an ApplicationCall, so the refusal is proven through the route itself.
+    testImplementation(libs.ktor.server.test.host) {
+        exclude(group = "io.ktor", module = "ktor-client-apache5")
+    }
 }

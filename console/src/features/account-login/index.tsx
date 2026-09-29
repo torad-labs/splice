@@ -201,12 +201,16 @@ export function refusalOf(outcome: unknown): string | null {
  * switch and a refresh name a HEAD, because selection is per head and several heads can ride the
  * same login; remove and relabel name the KIND, because the pool belongs to the kind.
  */
-export function AccountActions({ kind, label, heads, pinned = false }: {
+export function AccountActions({ kind, label, heads, pinned = false, serves = true }: {
   kind: string;
   label: string;
   heads: readonly string[];
   /** The daemon pinned this account (a manual switch). Only then is there a pin to drop. */
   pinned?: boolean;
+  /** The daemon can take this account for a turn: a credential it loads and finds. False drops Switch, which
+   *  the daemon refuses, and Refresh, which reads a file that is not there (V4-423). An account an earlier switch
+   *  pinned keeps its Unpin. */
+  serves?: boolean;
 }) {
   const [nextLabel, setNextLabel] = useState(label);
   const [note, setNote] = useState<{ text: string; failed: boolean } | null>(null);
@@ -235,13 +239,13 @@ export function AccountActions({ kind, label, heads, pinned = false }: {
 
   return (
     <div className="myx-acct-actions">
-      {heads.map((head) => (
+      {serves || pinned ? heads.map((head) => (
         <div className="myx-acct-row" key={head}>
-          <Key onClick={() => run(switchAccount(head, label), H.switched)}>{`${S.switch} ${head}`}</Key>
+          {serves ? <Key onClick={() => run(switchAccount(head, label), H.switched)}>{`${S.switch} ${head}`}</Key> : null}
           {pinned ? <Key onClick={() => run(unpinAccount(head), H.unpinned)}>{`${S.unpin} ${head}`}</Key> : null}
-          <Key onClick={() => run(refreshAuth(head), H.refreshed)}>{`${S.refresh} ${head}`}</Key>
+          {serves ? <Key onClick={() => run(refreshAuth(head), H.refreshed)}>{`${S.refresh} ${head}`}</Key> : null}
         </div>
-      ))}
+      )) : null}
 
       <div className="myx-acct-row myx-acct-row-field">
         <Input label={S.relabel} value={nextLabel} onChange={setNextLabel} />

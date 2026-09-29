@@ -2,7 +2,7 @@
 // api-key head gets, and how a capture fixture is selected. An account's state and its windows are
 // widgets/account-table's, shared with the fleet's pool. Kept out of the component so all of it is
 // testable without a renderer, and so the sort rule below is pinned rather than eyeballed.
-import { SELECTOR_ORDER_TEXT, nearestWindow } from '@entities/account';
+import { SELECTOR_ORDER_TEXT, nearestWindow, refusalText } from '@entities/account';
 import { isClientLogin, signInOf } from '@entities/auth';
 import type { AccountRow } from '@entities/account';
 import type { View } from '@features/views';
@@ -15,6 +15,13 @@ import { H, S, U, clientSignIn } from './strings';
  *  cannot drift from the daemon's order. */
 export function orderText(): string {
   return `${SELECTOR_ORDER_TEXT.charAt(0).toUpperCase()}${SELECTOR_ORDER_TEXT.slice(1)}.`;
+}
+
+/** Whether the daemon can take this account for a turn: a credential it loads and finds. A refused link and
+ *  an account whose credential file is gone cannot, so the panel offers no Switch and no Refresh for them
+ *  (V4-423); the daemon refuses the switch either way, and names why. */
+export function servesTurns(account: AccountRow): boolean {
+  return account.credential_present && refusalText(account) === null;
 }
 
 export interface AccountGroup {

@@ -15,6 +15,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.accounts.AccountHead
 import splice.core.auth.AuthDescription
+import splice.core.auth.REFUSAL_FIELD
 import splice.core.topology.AuthKindRegistry
 import splice.core.usage.QuotaView
 import java.util.concurrent.TimeUnit
@@ -122,7 +123,7 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
         authExclusion = AuthExclusionView(
             account.authExcludedUntilEpochMillis,
             account.authExclusionReason,
-            fields["refusal"],
+            fields[REFUSAL_FIELD],
         ),
         flags = AccountFlags(
             available = account.available,

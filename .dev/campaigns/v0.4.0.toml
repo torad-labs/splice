@@ -9925,6 +9925,7 @@ claimed_at = "2026-09-29T23:28:24.659Z"
 # [2026-09-29] CLAIM: owner=claude-console at=2026-09-29T23:28:24Z
 # [2026-09-29] amend by=claude-console: files were ["console/src/entities/usage/model/derive.ts", "console/tests/usage-derive-own-warn.test.ts"]
 # [2026-09-29] RECEIPT cmd="cd console && vitest run && tsc --noEmit -p . && eslint src tests" exit=0 tests=1754 touched=console/src/entities/usage/model/derive.ts,console/tests/usage-derive-own-warn.test.ts,console/src/features/nearest-limit/index.ts,console/src/widgets/rule/index.tsx,console/src/pages/needs-you/model.ts,console/tests/rule.test.ts,.dev/restructure/capabilities.tsv tail="102 files, 1754 tests passed; tsc and eslint clean; new test red 4 failed/2 passed on the old derive.ts, green 6/6 after (bb76965d1)"
+# [2026-09-29] the header's reset is the console's one time formatter, resetsInText ('in 3d 0h'), the same one every other header reset uses; the console has no absolute local-time formatter. NearestLimit.window is now string|null (a provider_reset that matches no plan window names none), which needed rule/index.tsx, needs-you/model.ts, features/nearest-limit and tests/rule.test.ts. headWindow (Fleet's per-head strip) had the same raw reset and reads the same now.
 
 [[items]]
 id = "V4-431"

@@ -9631,6 +9631,7 @@ claimed_by = "console"
 claimed_at = "2026-09-29T01:31:56.514Z"
 # [2026-09-29] CLAIM: owner=console at=2026-09-29T01:31:56Z
 # [2026-09-29] RECEIPT cmd="vitest 96 files/1696; eslint; npm run build (tsc + vite); playwright v4416 + v4401 + v4399 on the rebuilt dist bundle 17 passed; census 0" exit=0 tests=1 touched=console/src/app/App.tsx,console/e2e/v4416/one-shell-after-unlock.spec.ts,.dev/restructure/capabilities.tsv tail="red first: the new spec failed on the prior bundle (3 sidebars after two unlocks); mutant (shared keys) on a development bundle failed with React two-children-same-key, fixed green"
+# [2026-09-29] Sep 28, 9:40 PM CT: Marlin walked it on f7f1e9308 (jar b7e9fd12, sha256 -c OK): PASS.
 
 [[items]]
 id = "V4-413"

@@ -13,6 +13,10 @@
 //   route  `head` | `direct` | `unknown`: the registry's SessionRoute, decided where the process
 //          environment is read. `head` itself is unchanged and still folds the last two into
 //          "unknown head".
+//   resumable  V4-421: whether a transcript with conversation bytes sits in some head's tree, which is
+//          what GET /api/sessions/{id}/resume needs. A registry entry can exist with none (Eli's
+//          Telegram bridge registers and never writes one). Left off a row when nothing was measured:
+//          no id, no head tree, or the transcript view is off.
 // and GET /api/sessions/{id}/transcript, one page through the injected SessionTranscripts port.
 //
 // WHICH TREES THE TRANSCRIPT ROUTE SEARCHES, in order: the head's own CLAUDE_CONFIG_DIR (the registry
@@ -77,14 +81,23 @@ public class SessionsRoutes(
     /** One resolver per distinct root set: statuslineGitRoots is per-head overridable. */
     private val resolvers = ConcurrentHashMap<List<String>, RepoResolver>()
 
+    /** V4-421: the head trees a resume searches, asked once per listing and held (ResumableSessions). */
+    private val resumableSessions = ResumableSessions(
+        transcripts,
+        heads.values.mapNotNull { it.transcriptRoot }.distinct(),
+    )
+
     public fun sessionsJson(): String = buildJsonObject {
         val listing = registry.list()
         val edges = edgeRoutes.index(listing.sessions)
+        // The transcript-view switch is consulted before any reader opens a file, so off means no claim.
+        val ids = listing.sessions.mapNotNull { it.sessionId }.toSet()
+        val resumable = if (viewEnabled()) resumableSessions.among(ids) else Resumability(null)
         addEdgeState(this)
         put("note", HEADLESS_NOTE)
         // An unreadable directory is not an empty one: the error rides beside the (empty) list.
         listing.error?.let { put("error", it) }
-        put("sessions", buildJsonArray { listing.sessions.forEach { add(row(it, edges)) } })
+        put("sessions", buildJsonArray { listing.sessions.forEach { add(row(it, edges, resumable)) } })
     }.toString()
 
     /** GET /api/sessions/{id}/transcript?cursor=&limit= */
@@ -110,7 +123,7 @@ public class SessionsRoutes(
     }
 
     /** The exact same row projection for a durable-history entry after the live overlay. */
-    public fun historyRow(record: SessionRecord): JsonObject = row(record, null)
+    public fun historyRow(record: SessionRecord): JsonObject = row(record, null, Resumability(null))
 
     private fun addEdgeState(body: JsonObjectBuilder) {
         val state = edgeRoutes.state() ?: return
@@ -118,7 +131,7 @@ public class SessionsRoutes(
         state.reason("edges")?.let { body.put("edges_reason", it) }
     }
 
-    private fun row(s: SessionRecord, edges: EdgeIndex?): JsonObject = buildJsonObject {
+    private fun row(s: SessionRecord, edges: EdgeIndex?, resumable: Resumability): JsonObject = buildJsonObject {
         put("pid", s.pid)
         put("session_id", s.sessionId)
         put("name", if (viewEnabled()) s.name else null)
@@ -133,6 +146,7 @@ public class SessionsRoutes(
         put("head", s.head ?: UNKNOWN_HEAD)
         put("route", routeName(s.route))
         put("availability", JsonPrimitive(s.availability.name.lowercase()))
+        resumable.mark(this, s.sessionId)
         repoOf(s)?.let { put("repo", repoJson(it)) }
         put("team", s.sessionId?.let { teamOf(it) })
         put("account", s.sessionId?.let { accountOf.label(s.head, it) })

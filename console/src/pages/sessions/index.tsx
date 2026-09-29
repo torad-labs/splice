@@ -205,6 +205,18 @@ export function shellWord(word: string): string {
   return /^[\w./=-]+$/.test(word) ? word : `'${word.replaceAll("'", `'\\''`)}'`;
 }
 
+/** Why a session has no conversation to open or resume, or null when it has one or the daemon did not
+ *  say. A durable row names the source that found it; a row from the live registry carries only
+ *  `resumable`, and false there means no head's tree holds a transcript with conversation (V4-421), which
+ *  is not the same as an empty file, so it does not say a file exists. */
+export function noConversation(row: SessionRow): { text: string; source: string } | null {
+  if (row.source === 'history-only' || row.source === 'registry-only') return { text: S.noTranscript, source: H.noTranscript };
+  if (row.resumable !== false) return null;
+  return row.source === undefined
+    ? { text: S.nothingToResume, source: H.nothingToResume }
+    : { text: S.emptyTranscript, source: H.emptyTranscript };
+}
+
 /** What resuming on the picked head does (V4-320): the command with its copy key, then the launch's
  *  own resolution of it. Exported so a test can hand it a recipe. */
 export function ResumeRecipeView({ recipe }: { recipe: ResumeRecipe }) {
@@ -404,12 +416,11 @@ export function SessionsBoard({ payload, history = null, historyOff = null, view
   const liveIds = new Set(live.map((row) => row.session_id).filter((id) => id !== null));
   const rows = [...live, ...historyRows.filter((row) => row.session_id === null || !liveIds.has(row.session_id))];
   const open = rows.find((row) => sessionKey(row) === openId) ?? null;
+  const note = open === null ? null : noConversation(open);
   const resumeSection = open === null ? null : (
     <Section title={S.resume} info={{ text: H.resume, label: S.resumeWhy }}>
-      {open.source === 'history-only' || open.source === 'registry-only' ? (
-        <Empty text={S.noTranscript} source={H.noTranscript} />
-      ) : open.resumable === false ? (
-        <Empty text={S.emptyTranscript} source={H.emptyTranscript} />
+      {note !== null ? (
+        <Empty text={note.text} source={note.source} />
       ) : open.session_id === null ? (
         <Empty text={S.noSessionId} />
       ) : (
@@ -671,10 +682,8 @@ export function SessionsBoard({ payload, history = null, historyOff = null, view
             <KeyValue rows={[[S.sessionId, open.session_id ?? S.absent], [S.account, open.account ?? S.accountUnknown]]} />
             {open.availability === 'gone' ? resumeSection : null}
             <Section title={S.conversation}>
-              {open.source === 'history-only' || open.source === 'registry-only' ? (
-                <Empty text={S.noTranscript} source={H.noTranscript} />
-              ) : open.resumable === false ? (
-                <Empty text={S.emptyTranscript} source={H.emptyTranscript} />
+              {note !== null ? (
+                <Empty text={note.text} source={note.source} />
               ) : open.session_id === null ? (
                 <Empty text={S.noSessionId} />
               ) : (

@@ -75,7 +75,10 @@ export interface SessionRow {
   /** Which durable sources found a historical session. Absent on live registry-only rows. */
   source?: 'history+transcript' | 'history-only' | 'transcript-only' | 'registry-only';
   /** A primary file may exist but have no conversation bytes yet. Such a row is counted, not offered
-   *  as a resumable session. Absent on older daemons that did not measure it. */
+   *  as a resumable session. Live rows carry it too (V4-421): false when no head's tree holds a
+   *  transcript with conversation, which a registry-only session such as a bridge process never has.
+   *  Absent on older daemons that did not measure it, with no head tree to ask, or with the transcript
+   *  view off: absence claims nothing, so the row keeps its Resume. */
   resumable?: boolean;
 }
 

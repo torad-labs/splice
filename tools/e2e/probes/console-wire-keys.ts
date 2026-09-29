@@ -66,17 +66,28 @@ const PREVIEW_PATH = "/api/topology/preview";
 //
 // A `${...}` in a route path is filled by the TEXT of its expression. Numbers and string-literal
 // unions are filled from the expression's own type (the first literal), so they need no entry.
-// An identifier here names a LIST route and the field of its first row that supplies the value.
+// An identifier here names a LIST route and the field of its first row that supplies the value. A
+// `where` prefers the first row whose own field holds the given value: a session id feeds the transcript,
+// edges and resume reads, and a listed session that cannot be resumed answers the resume read with a 404
+// (V4-421), so the id comes from a row the list says is resumable. A daemon whose rows carry no such
+// field at all (one older than the field) keeps the first row, so it is judged by what it does; rows that
+// carry the field with none holding the value leave the call site UNEXERCISED, not failed.
 // A placeholder that matches nothing below and has no literal type fails the call site by name.
 interface IdSource {
   route: string;
   array: string;
   field: string;
+  where?: { field: string; equals: unknown };
 }
 const ID_SOURCES: Record<string, IdSource> = {
   head: { route: "/api/heads", array: "heads", field: "key" },
   "encodeURIComponent(head)": { route: "/api/heads", array: "heads", field: "key" },
-  "encodeURIComponent(sessionId)": { route: "/api/sessions", array: "sessions", field: "session_id" },
+  "encodeURIComponent(sessionId)": {
+    route: "/api/sessions",
+    array: "sessions",
+    field: "session_id",
+    where: { field: "resumable", equals: true },
+  },
   "entities/team|encodeURIComponent(id)": { route: "/api/teams", array: "teams", field: "id" },
   "entities/project|encodeURIComponent(id)": { route: "/api/projects", array: "projects", field: "id" },
 };
@@ -859,6 +870,20 @@ async function fillPath(
   return { path };
 }
 
+/** The id an ID source takes from its list route's rows (see IdSource.where for the preference), or why
+ *  there is none. */
+export function pickId(rows: unknown, idSource: IdSource): string | { empty: string } {
+  const { where } = idSource;
+  const listed = Array.isArray(rows) ? rows.filter(isRecord) : [];
+  const measured = where !== undefined && listed.some((r) => where.field in r);
+  const candidates = where !== undefined && measured ? listed.filter((r) => r[where.field] === where.equals) : listed;
+  const value = candidates.map((r) => r[idSource.field]).find((v) => typeof v === "string" && v !== "");
+  const narrowed = where === undefined || !measured ? "" : ` with ${where.field} = ${String(where.equals)}`;
+  return typeof value === "string"
+    ? value
+    : { empty: `${idSource.route} has no ${idSource.array}[]${narrowed}.${idSource.field}` };
+}
+
 /** The first live value an ID source's list route reports, read once per run and cached in `lists`. */
 async function liveId(
   idSource: IdSource,
@@ -871,11 +896,7 @@ async function liveId(
     const read = lister ? await source.read(lister, idSource.route) : { ok: false as const, why: "" };
     lists.set(idSource.route, read.ok ? read.body : null);
   }
-  const rows = (lists.get(idSource.route) as Record<string, unknown> | null)?.[idSource.array];
-  const value = Array.isArray(rows)
-    ? rows.map((r) => (isRecord(r) ? r[idSource.field] : null)).find((v) => typeof v === "string" && v !== "")
-    : undefined;
-  return typeof value === "string" ? value : { empty: `${idSource.route} has no ${idSource.array}[].${idSource.field}` };
+  return pickId((lists.get(idSource.route) as Record<string, unknown> | null)?.[idSource.array], idSource);
 }
 
 async function run(checker: ts.TypeChecker, calls: CallSite[], fetches: FetchSite[], source: Source): Promise<Outcome> {

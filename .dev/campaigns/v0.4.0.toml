@@ -10058,6 +10058,7 @@ verify = "the tests above red first then green; a real daemon against a stubbed 
 claimed_by = "splice-lead"
 claimed_at = "2026-09-29T23:26:04.009Z"
 # [2026-09-29] CLAIM: owner=splice-lead at=2026-09-29T23:26:04Z
+# [2026-09-29] Sep 29, 6:52 PM CT, splice-lead [063360]: the seat that claimed this row as splice-lead (session d1f679, tmux splice-lead:1.1) is now named splice-builder2 by the operator, so two sessions no longer share a name. The claim stands; splice-lead [063360] orchestrates 0.4.0.
 
 [[items]]
 id = "V4-440"

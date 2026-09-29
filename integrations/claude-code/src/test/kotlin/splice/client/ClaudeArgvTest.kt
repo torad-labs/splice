@@ -63,6 +63,14 @@ class ClaudeArgvTest {
         )
     }
 
+    // 2.1.285's --help added --desktop, a switch. Listed, it is logged whole in every spelling, where an
+    // unlisted flag would have its inline `=value` withheld, and the word after it is placed as usual.
+    @Test
+    fun `a switch 2_1_285 added is listed, so it is logged whole`() {
+        assertEquals(listOf("claude", "--desktop=x", "-p", "<3 chars withheld>"), logged("--desktop=x", "-p", "fix"))
+        assertEquals(listOf("claude", "--desktop", "-c"), logged("--desktop", "-c"))
+    }
+
     @Test
     fun `a flag the client does not list fails closed`() {
         assertEquals(listOf("claude", "--x-unlisted", "<3 chars withheld>"), logged("--x-unlisted", "fix"))

@@ -3,9 +3,10 @@
 // positional prompt, a system prompt, an agent definition) reached daemon.log and daemon-boot.log.
 //
 // Which words are prompt text is the CLIENT's grammar, so it is read the way the client reads it:
-// commander, as `claude --help` of 2.1.284 declares each option (read 2026-09-26 on 2.1.283: 2.1.282's
+// commander, as `claude --help` of 2.1.285 declares each option (read 2026-09-26 on 2.1.283: 2.1.282's
 // list plus --client-data-url, the only line the two versions' --help differ by; re-read 2026-09-28 on
-// 2.1.284, whose --help differs from 2.1.283's only in --model's description text). That version is
+// 2.1.284, whose --help differs from 2.1.283's only in --model's description text, and 2026-09-29 on
+// 2.1.285, whose --help adds --desktop, a switch, and nothing else). That version is
 // [ClaudeArgv.GRAMMAR_FROM], and a test holds it equal to TESTED_CLAUDE_CODE: when V4-256 moves the pin,
 // the table is re-read from the new version's --help before the test goes green again.
 // A switch takes no value, so the bare word after `-p` is the prompt; `<x>` takes the next word;
@@ -17,7 +18,7 @@ package splice.client
 public object ClaudeArgv {
 
     /** The Claude Code release whose `--help` [OPTIONS] was read from. */
-    public const val GRAMMAR_FROM: String = "2.1.284"
+    public const val GRAMMAR_FROM: String = "2.1.285"
 
     /** [argv] with every prompt's text, and every word it cannot place, replaced by its length. The
      *  program (argv[0]), every flag and every listed option's non-prompt value are kept verbatim, so
@@ -105,7 +106,7 @@ private val MANY = OptionSpec(Takes.MANY)
 private val PROMPT_ONE = OptionSpec(Takes.ONE, prompt = true)
 private val PROMPT_OPTIONAL = OptionSpec(Takes.OPTIONAL, prompt = true)
 
-/** Every option `claude --help` of 2.1.284 declares, by spelling. The prompt options: --system-prompt
+/** Every option `claude --help` of 2.1.285 declares, by spelling. The prompt options: --system-prompt
  *  and --append-system-prompt (<prompt>), --agents (its JSON carries each agent's prompt) and --cloud
  *  (a session's description, free text). --client-data-url is withheld the same way though it is no
  *  prompt: its value is a signed URL, which the client's own help keeps out of the process list. */
@@ -133,6 +134,7 @@ private val OPTIONS: Map<String, OptionSpec> = mapOf(
     "-d" to OPTIONAL,
     "--debug" to OPTIONAL,
     "--debug-file" to ONE,
+    "--desktop" to SWITCH,
     "--disable-slash-commands" to SWITCH,
     "--disallowedTools" to MANY,
     "--disallowed-tools" to MANY,

@@ -9587,3 +9587,11 @@ title = "A refused topology write says a restart is required (Marlin, V4-400 wal
 files = ["features/configuration/src/main/kotlin/splice/configuration/topology/TopologyRoutes.kt", "features/configuration/src/test/kotlin/splice/configuration/topology/v4413/"]
 status = "todo"
 verify = "red first: each refusal path (unreadable instruction file, masked-secret finding, decode failure) returns restart_required false, and a successful write that changes a head still returns true. :quality-architecture:test, rules wall."
+
+[[items]]
+id = "V4-414"
+phase = "release"
+title = "A failure recorded before V4-404 still shows no sentence (Marlin, 3839fcc06): the sentence is written only when a turn is recorded (TurnTelemetry.kt:112), so all 23 upstream-failed turns on the everyday Turns page show the badge and then Timing, with no words. TraceRoute.kt:161 passes the stored failure_sentence through as-is. When a row has no stored sentence, the trace route answers OutcomeSentences.of(outcome), the same table, so a user's whole failure history is explained."
+files = ["features/turns/src/main/kotlin/splice/head/trace/TraceRoute.kt", "features/turns/src/test/kotlin/splice/head/v4414/"]
+status = "todo"
+verify = "red first: a trace record with an error outcome and no failure_sentence answers the table's sentence for that outcome; a record that has one keeps it; ok, client_abort and empty_message answer none. :quality-architecture:test, rules wall. Marlin re-walks an older upstream-failed turn."

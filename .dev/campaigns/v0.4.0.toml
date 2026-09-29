@@ -8833,7 +8833,7 @@ id = "V4-366"
 phase = "release"
 title = "A splice.toml mistake at boot reads as one sentence and its fix, not UNCAUGHT and a stack trace (found by the orchestrator's V4-355 live check, Sep 27, 2:13 PM CT, captures/v4355-live/100259df5/terminal.txt). V4-355's typed diagnostic ('splice.toml: heads.local.overrides.trace at line 17 expects quoted string') is a known config error, yet it reaches the uncaught handler (DaemonBoundary.kt:217-227, bootFailureHandler) and the terminal shows '[daemon] UNCAUGHT on main:' plus seven frames (TopologyLoader.parse ... MainKt.main), with no fix. DR-170's frames stay for unknown boot failures; a typed topology diagnostic is caught before the handler and printed as the sentence plus what to do (quote it, e.g. trace = \"true\"), exit non-zero, no frames, no value."
 files = ["app/src/main/kotlin/splice/app/DaemonBoundary.kt", "app/src/main/kotlin/splice/app/Main.kt", "app/src/test/kotlin/splice/app/v4366/"]
-status = "in_flight"
+status = "done"
 verify = "red first: a boot over a splice.toml with a wrong-typed value writes to stderr and daemon.log one line naming the key, the line and the expected type with a fix, and no 'UNCAUGHT' and no '    at ' frame (fails today); an unknown boot failure (a planted RuntimeException) still prints UNCAUGHT with its frames (DR-170 unchanged); the planted value never appears (mutant: render the raw parser text, red); live: the V4-355 home (trace = true) under splice restart shows the sentence and fix in the terminal and no frames."
 claimed_by = "console"
 claimed_at = "2026-09-29T02:08:06.624Z"

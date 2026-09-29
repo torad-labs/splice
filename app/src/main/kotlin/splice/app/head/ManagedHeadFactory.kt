@@ -66,6 +66,7 @@ internal class ManagedHeadFactory(
 ) {
     private val quotaProbes by lazy { QuotaProbes(AuthHttpClientFactory().create()) }
     private val accountPools = HeadAccountPools()
+    private val providerHolds = ProviderHoldFiles(statePaths, log)
     private val traceStores = HeadTraceStores(statePaths)
     private val keptFiles = HeadKeptFiles(statePaths, log)
 
@@ -153,10 +154,11 @@ internal class ManagedHeadFactory(
         // V4-221: each turn priced at its own model's card, against the same catalog the budget uses.
         economics = EconomicsStore(statePaths.economicsFile(ctx.key), TurnPrice(ctx.catalog)),
         quota = primaryQuota,
-        accountPool = accountPools.build(wired, accountQuotas),
+        accountPool = accountPools.build(wired, accountQuotas, providerHolds.forAccounts(ctx.key, wired)),
         accountQuotas = accountQuotas,
         clientWindows = ClientWindows(store = statePaths.clientWindowsFile(ctx.key), log = log),
         trace = traceStores.forHead(ctx.key, ctx.cfg),
+        providerHold = providerHolds.forHead(ctx.key),
     )
 
     /** V4-216: the head's kept compaction answers. Not in [HeadStores]: only the head reads them, no

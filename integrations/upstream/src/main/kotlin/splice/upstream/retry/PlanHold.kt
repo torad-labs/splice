@@ -24,6 +24,8 @@ import java.util.concurrent.atomic.AtomicReference
 public class PlanHold internal constructor(
     private val clock: ElapsedClock,
     private val wallClock: WallClock,
+    /** V4-412: where the hold is kept between restarts; the default remembers nothing on disk. */
+    private val holds: ProviderHolds = ProviderHolds(null),
 ) {
     private val held = AtomicReference<Held?>(null)
 
@@ -33,9 +35,10 @@ public class PlanHold internal constructor(
         val delayMs = limit.resetEpochSeconds * MS_PER_S - wallClock()
         if (delayMs <= 0L) return null
         val candidate = Held(clock() + delayMs, limit)
-        held.updateAndGet { current ->
+        val kept = held.updateAndGet { current ->
             if (current == null || candidate.untilMs > current.untilMs) candidate else current
         }
+        holds.plan(kept?.limit)
         onRetry(
             "429 plan limit: the upstream names its ${limit.claim} window spent until " +
                 "${Instant.ofEpochSecond(limit.resetEpochSeconds)}; clients are told to come back then, " +
@@ -50,10 +53,19 @@ public class PlanHold internal constructor(
     /** The held window, exactly as the upstream named it, while the hold is live; null otherwise. */
     public fun live(): PlanLimit? = held.get()?.takeIf { it.untilMs > clock() }?.limit
 
-    /** An answered turn or a restart ends the hold: either the window is open again (a top-up, or
-     *  a reset that came early) or the operator chose to ask the upstream afresh. */
+    /** An answered turn ends the hold: the window is open again (a top-up, or a reset that came
+     *  early). A restart does not (V4-412): the upstream's statement outlives the process, and the
+     *  first turn after it probes anyway. */
     internal fun clear() {
         held.set(null)
+        holds.plan(null)
+    }
+
+    /** V4-412: brings back a hold a restart interrupted, silently and without writing it again;
+     *  a reset that has already passed restores nothing. */
+    internal fun restore(limit: PlanLimit) {
+        val delayMs = limit.resetEpochSeconds * MS_PER_S - wallClock()
+        if (delayMs > 0L) held.set(Held(clock() + delayMs, limit))
     }
 
     /** V4-234: what a client is told when the upstream named a spent plan window. Our sentence

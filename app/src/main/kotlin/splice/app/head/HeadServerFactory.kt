@@ -66,7 +66,7 @@ internal class HeadServerFactory(
             provider = provider,
             listenPort = ctx.head.port,
             deps = HeadDeps(
-                upstream = upstreamFactory.upstreamFor(ctx, cfg, log),
+                upstream = upstreamFactory.upstreamFor(ctx, cfg, log, stores.providerHold),
                 inferenceToken = turnKey.get(),
                 operatorToken = mgmtKey.get(),
                 // NO DEFAULTS on these two bundles (V4-105 items 1 and 2): the NULLABILITY is the

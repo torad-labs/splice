@@ -15,6 +15,7 @@ import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.AccountPoolView
 import splice.upstream.credentials.AccountQuotaSource
 import splice.upstream.credentials.PoolAccount
+import splice.upstream.retry.ProviderHoldStore
 import splice.upstream.retry.RateLimitCooldown
 
 internal class HeadAccountPools {
@@ -24,7 +25,11 @@ internal class HeadAccountPools {
     /** A pool is a CHOICE. Discovery always yields the primary, so a head holding one account keeps
      *  the pre-0.4.0 path end to end (no per-turn selection, no account segment on the statusline,
      *  no account_pool on /api/auth) and renders byte-identical to a head that never had a pool. */
-    fun build(wired: Wired, trackers: Map<String, QuotaTracker>): AccountPool? {
+    fun build(
+        wired: Wired,
+        trackers: Map<String, QuotaTracker>,
+        holds: Map<String, ProviderHoldStore> = emptyMap(),
+    ): AccountPool? {
         if (!pooled(wired)) return null
         val accounts = wired.accounts.map { account ->
             val tracker = trackers.getValue(account.label)
@@ -33,7 +38,7 @@ internal class HeadAccountPools {
                 primary = account.primary,
                 auth = account.auth,
                 quota = AccountQuotaSource { tracker.snapshot() },
-                cooldown = RateLimitCooldown(elapsedNow),
+                cooldown = RateLimitCooldown(elapsedNow, store = holds[account.label]),
                 credentialPresent = account.credentialPresent,
                 extraHeaders = account.extraHeaders,
             )

@@ -395,6 +395,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "integrations/upstream/src/main/kotlin/splice/upstream/credentials/CredentialLock.kt" to mapOf(
         "FileChannel.open(" to 1,
     ),
+    "integrations/upstream/src/main/kotlin/splice/upstream/retry/ProviderHoldStore.kt" to mapOf("writeAtomic0600(" to 1),
 )
 
 class DiskWritesLawTest {

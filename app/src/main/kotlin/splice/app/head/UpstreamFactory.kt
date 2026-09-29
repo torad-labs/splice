@@ -7,11 +7,17 @@ import splice.app.provider.ProviderBuild
 import splice.core.config.Knob
 import splice.core.config.SpliceConfig
 import splice.core.util.LogSink
+import splice.upstream.retry.ProviderHoldStore
 import splice.upstream.transport.UpstreamClient
 import splice.upstream.transport.UpstreamTransport
 
 internal class UpstreamFactory {
-    internal fun upstreamFor(ctx: ProviderBuild, cfg: SpliceConfig, log: LogSink): UpstreamClient = UpstreamClient(
+    internal fun upstreamFor(
+        ctx: ProviderBuild,
+        cfg: SpliceConfig,
+        log: LogSink,
+        providerHold: ProviderHoldStore?,
+    ): UpstreamClient = UpstreamClient(
         cfg.upstreamTimeoutMs,
         cfg.upstreamRetries,
         // CX-03: zstd request bodies — a TOML quirk, absent = plaintext. A quirk and
@@ -34,5 +40,6 @@ internal class UpstreamFactory {
         backoffBaseMs = cfg.asMap()[Knob.RETRY_BACKOFF_BASE_MS.key] as Long,
         backoffCapMs = cfg.asMap()[Knob.RETRY_BACKOFF_CAP_MS.key] as Long,
         backoffJitterPct = (cfg.asMap()[Knob.RETRY_BACKOFF_JITTER_PCT.key] as Long).toInt(),
+        holdStore = providerHold,
     )
 }

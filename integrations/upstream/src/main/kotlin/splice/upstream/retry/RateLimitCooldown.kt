@@ -22,8 +22,9 @@
 // "simplify" the re-probe away, and do not read the cycling as waste. Two reasons, hardest first.
 //  1. Restart is this file's ONLY escape hatch, so a fail-fast gate must live on state clear() can
 //     reach. Gate it on a horizon restart cannot clear and you rebuild the permanent poisoning
-//     NF-01 exists to prevent, with no operator escape short of killing the daemon. V4-233's plan
-//     hold is cleared by the same call for the same reason.
+//     NF-01 exists to prevent, with no operator escape short of killing the daemon. V4-412: the
+//     provider's reset and V4-233's plan hold GATE nothing, so they are persisted and survive that
+//     call; only what gates (the horizon) lives on state clear() reaches.
 //  2. The bounded re-probe is what DETECTS THE OPERATOR TOPPING UP. Extending the horizon to the
 //     provider reset makes a head ignore a restored quota for hours — the head would refuse to try
 //     the very fix the message asks him to apply. One upstream request per two minutes, on a head
@@ -58,6 +59,9 @@ public class RateLimitCooldown public constructor(
      *  speaks wall time, and comparing an epoch millisecond against an elapsed one reads as a reset
      *  ~50 years out. Defaulted, so every existing caller and test is unchanged. */
     private val wallClock: WallClock = WallClock(System::currentTimeMillis),
+    /** V4-412: where the provider's word (its reset, the plan window it named spent) survives a
+     *  restart; null keeps it in memory only, as before. The armed horizon is never stored. */
+    store: ProviderHoldStore? = null,
 ) {
     // Armed by any attempt that observes a 429; while armed, every post() fails fast with a
     // synthesized 429 and ZERO upstream calls. Benign write race: concurrent arms only differ by
@@ -66,23 +70,50 @@ public class RateLimitCooldown public constructor(
     private val unavailableUntilMs = AtomicLong(0L)
     private val providerUnavailableUntilMs = AtomicLong(0L)
 
+    private val holds = ProviderHolds(store)
+
     /** V4-233: the plan window the upstream named as spent, held until the reset it named. Its own
-     *  class, so this one keeps its function budget; [clear] ends it with the horizon. */
-    public val planHold: PlanHold = PlanHold(clock, wallClock)
+     *  class, so this one keeps its function budget; an answered turn ends it ([answered]). */
+    public val planHold: PlanHold = PlanHold(clock, wallClock, holds)
+
+    init {
+        val stored = holds.stored()
+        val wallNow = wallClock()
+        val resetAt = stored.providerResetAtEpochSeconds?.takeIf { it * MS_PER_S > wallNow }
+        val plan = stored.plan?.takeIf { it.resetEpochSeconds * MS_PER_S > wallNow }
+        resetAt?.let { at ->
+            providerUnavailableUntilMs.set(clock() + minOf(at * MS_PER_S - wallNow, MAX_PROVIDER_RESET_MS))
+        }
+        plan?.let(planHold::restore)
+        holds.restored(stored, ProviderHold(resetAt, plan))
+    }
+
+    /** The provider's reset as a wall instant in epoch seconds, or null when none is pending. */
+    private val providerResetAt: Long?
+        get() = maxOf(0L, providerUnavailableUntilMs.get() - clock()).takeIf { it > 0L }
+            ?.let { (wallClock() + it) / MS_PER_S }
 
     /** NF-01: head restart is a real escape hatch — HeadServer.startLocked() clears the armed
      *  horizon alongside driver.resetHealth(), instead of the cooldown outliving the restart.
-     *  V4-233: the plan hold goes with it, so a restart is still the operator's way past any hold:
-     *  the next turn asks the upstream, which answers or names the reset again. */
+     *  V4-412: only the horizon. The provider's own statement (its reset, the plan window it named
+     *  spent) is not splice's to forget: it outlives the restart, and the first turn after it probes
+     *  upstream anyway, so nothing here can poison a head. */
     public fun clear() {
         rateLimitedUntilMs.set(0L)
-        planHold.clear()
     }
 
-    /** Account-pool restart escape hatch; separate so NF-01's legacy [clear] wall stays exact. */
+    /** Account-pool restart escape hatch; separate so NF-01's legacy [clear] wall stays exact. Clears
+     *  the selection cooldown only: the provider's reset is a report, and outlives the restart (V4-412). */
     internal fun clearUnavailable() {
         unavailableUntilMs.set(0L)
+    }
+
+    /** V4-412: an ANSWERED turn is the provider saying it serves again (a top-up, or a reset that
+     *  came early), so it ends both statements, in memory and on disk. */
+    public fun answered() {
         providerUnavailableUntilMs.set(0L)
+        holds.providerReset(null)
+        planHold.clear()
     }
 
     /** Marks the account unavailable to future turns, bounded by NF-01's recovery ceiling. */
@@ -96,6 +127,7 @@ public class RateLimitCooldown public constructor(
         val providerUntil = now + minOf(providerDelay, providerDelayLimit)
         unavailableUntilMs.accumulateAndGet(boundedUntil) { current, candidate -> maxOf(current, candidate) }
         providerUnavailableUntilMs.accumulateAndGet(providerUntil) { current, candidate -> maxOf(current, candidate) }
+        holds.providerReset(providerResetAt)
     }
 
     /** Remaining bounded account-selection cooldown (0 when the account may be selected). */
@@ -103,8 +135,11 @@ public class RateLimitCooldown public constructor(
 
     /** Provider reset for reporting, capped at seven days; never used to keep an account unavailable.
      *  PUBLIC since V4-50: the admission plane reads it to put a real deadline on the wire, which is
-     *  the only place a client can act on it. Still never gates selection. */
-    public fun providerUnavailableForMs(): Long = maxOf(0L, providerUnavailableUntilMs.get() - clock())
+     *  the only place a client can act on it. Still never gates selection.
+     *  V4-412: a held PLAN window is the provider naming its reset too (ChatGPT does it in the 429
+     *  body, before any reset capture runs), so it counts: status and usage read the longer of the two. */
+    public fun providerUnavailableForMs(): Long =
+        maxOf(0L, providerUnavailableUntilMs.get() - clock(), planHold.forMs())
 
     /** V4-47: capture the provider's own reset from the 429 body, at ARM time and NOT gated on
      *  pooledAccount — markUnavailable is the only other writer and it fires only for pooled turns
@@ -139,6 +174,7 @@ public class RateLimitCooldown public constructor(
         providerUnavailableUntilMs.accumulateAndGet(clock() + minOf(delayMs, MAX_PROVIDER_RESET_MS)) { c, n ->
             maxOf(c, n)
         }
+        holds.providerReset(providerResetAt)
     }
 
     /** NF-01: remaining armed cooldown (0 when idle) — surfaced so doctor/status views can name
@@ -147,15 +183,11 @@ public class RateLimitCooldown public constructor(
 
     /** UP-001's arming site: a retryable status carrying an absurd Retry-After arms the same
      *  horizon a 429 does. Reads the clock at the call, exactly as the inline
-     *  `val until = clock() + minOf(...)` it replaced. */
-    public fun arm(pushbackMs: Long): Unit = armAt(clock(), pushbackMs)
-
-    /** NF-01: arm at most MAX_RATE_LIMIT_COOLDOWN_MS — the full pushback is not lost, it rides in
-     *  the upstream body the caller's GIVE_UP surfaces; only the fail-fast horizon clamps. The
-     *  clamp and the latest-max accumulate are ONE method because they were two copies, and a
-     *  clamp that one copy forgets is how a multi-day pushback poisons a head permanently. */
-    private fun armAt(nowMs: Long, pushbackMs: Long) {
-        val until = nowMs + minOf(pushbackMs, MAX_RATE_LIMIT_COOLDOWN_MS)
+     *  `val until = clock() + minOf(...)` it replaced. NF-01: at most MAX_RATE_LIMIT_COOLDOWN_MS — the
+     *  full pushback rides in the upstream body the caller's GIVE_UP surfaces; only the fail-fast
+     *  horizon clamps, and the clamp and the latest-max accumulate live in this one place. */
+    public fun arm(pushbackMs: Long) {
+        val until = clock() + minOf(pushbackMs, MAX_RATE_LIMIT_COOLDOWN_MS)
         rateLimitedUntilMs.accumulateAndGet(until) { current, candidate -> maxOf(current, candidate) }
     }
 

@@ -170,7 +170,7 @@ class UpstreamClientPlanLimitTest {
     }
 
     @Test
-    fun `a restart clears the plan hold with the horizon`() = runTest {
+    fun `a restart clears the horizon but the provider's plan hold outlives it (V4-412)`() = runTest {
         val engine = MockEngine { respond(PLAN_BODY, HttpStatusCode.TooManyRequests, planHeaders(resetInAnHour())) }
         val client = client(engine)
         assertThrows<UpstreamFailed> { client.posted(ctx(forwarded, mutableListOf()), "{}") { "unreachable" } }
@@ -178,8 +178,8 @@ class UpstreamClientPlanLimitTest {
 
         client.clearRateLimitCooldown()
 
-        assertEquals(0L, client.planHoldForMs)
-        assertEquals(0L, client.rateLimitedForMs)
+        assertTrue(client.planHoldForMs > 0L, "the upstream's statement is not splice's to forget")
+        assertEquals(0L, client.rateLimitedForMs, "the gating horizon is what a restart clears")
     }
 
     private fun planHeaders(reset: Long) = headersOf(

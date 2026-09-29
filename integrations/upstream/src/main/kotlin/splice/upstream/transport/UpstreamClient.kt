@@ -45,6 +45,7 @@ import splice.upstream.Waiter
 import splice.upstream.codemode.ProcessElapsedNow
 import splice.upstream.codemode.ProcessWaiter
 import splice.upstream.retry.MAX_STREAM_REISSUES
+import splice.upstream.retry.ProviderHoldStore
 import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.retry.RateLimitTurn
 import splice.upstream.retry.ReissueRules
@@ -87,6 +88,9 @@ public class UpstreamClient(
     // extend its deadline (backward). Same base as TurnWatchdog/InflightGate: two authorities
     // enforce cfg.upstreamTimeoutMs and MUST NOT split-brain across clock bases (review 2026-07-22).
     private val clock: ElapsedClock = ProcessElapsedNow(),
+    /** V4-412: where this head's provider hold (its reset, the plan window it named spent) survives a
+     *  restart; null keeps it in memory only. Pool accounts each carry their own. */
+    holdStore: ProviderHoldStore? = null,
 ) {
     // The stateless collaborators the loop delegates to. Constructed once per client (not per call)
     // so the transport/request/failure/retry rules cost nothing per attempt. [cooldown] is the one
@@ -94,7 +98,7 @@ public class UpstreamClient(
     // never a second one.
     private val transportFailures = TransportFailures()
     private val request = UpstreamRequest(client, zstdRequestBody)
-    private val cooldown = RateLimitCooldown(clock)
+    private val cooldown = RateLimitCooldown(clock, store = holdStore)
     private val retryRules = RetryRules(maxRetries)
     private val reissueRules = ReissueRules()
 
@@ -273,8 +277,9 @@ public class UpstreamClient(
         // unchanged: only the Done arm skips `lastErr`, exactly as the early return did.
         return when (outcome) {
             is RetryOutcome.Done -> {
-                // V4-233: an answered turn is the upstream saying the plan window is open again.
-                activeCooldown(ctx).planHold.clear()
+                // V4-233, V4-412: an answered turn is the upstream saying it serves again, so both
+                // its statements end: the plan window it named spent and the reset it reported.
+                activeCooldown(ctx).answered()
                 LoopStep.Done(outcome.value)
             }
             is RetryOutcome.Failed -> {

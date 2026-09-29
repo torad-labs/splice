@@ -11,6 +11,7 @@ import splice.head.usage.QuotaTracker
 import splice.head.usage.UsageStore
 import splice.head.wire.TraceStore
 import splice.upstream.credentials.AccountPool
+import splice.upstream.retry.ProviderHoldStore
 
 internal data class HeadStores(
     val usageStore: UsageStore,
@@ -29,4 +30,7 @@ internal data class HeadStores(
     /** V4-174: the head's opt-in full trace; null is off. No default (the V4-105 law on the gateway
      *  twin): the one construction site decides from the head's own config, never by omission. */
     val trace: TraceStore?,
+    /** V4-412: the head's provider hold on disk, so status and usage still read out of quota after a
+     *  restart. Null keeps it in memory only. */
+    val providerHold: ProviderHoldStore? = null,
 )

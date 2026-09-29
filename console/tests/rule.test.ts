@@ -54,7 +54,7 @@ function expectedWindowParts(payload: UsagePayload | null): string[] {
   if (nearest === null) return ['No plan limits'];
   return [
     ...(nearest.head === null ? [] : [nearest.head]),
-    nearest.window,
+    ...(nearest.window === null ? [] : [nearest.window]),
     `${nearest.pct}%`,
     ...(nearest.account === null ? [] : [nearest.account]),
     ...(nearest.reset === null ? [] : [nearest.reset]),

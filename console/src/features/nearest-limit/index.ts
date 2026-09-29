@@ -35,8 +35,9 @@ export interface NearestLimit {
   head: string | null;
   /** The pool's label, or the masked id a head reports; null for a single login or an unnamed one. */
   account: string | null;
-  /** The window's reported length (5h, 7d, 30d), model-scoped where the provider scopes it. */
-  window: string;
+  /** The window's reported length (5h, 7d, 30d), model-scoped where the provider scopes it; null where
+   *  the daemon names none (a provider's own "out until"), and no window word is printed. */
+  window: string | null;
   pct: number;
   /** When the window resets (`in 2h 3m`); null where the provider sent none. */
   reset: string | null;

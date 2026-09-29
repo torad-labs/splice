@@ -135,9 +135,9 @@ export function WindowCell({ accounts, usage, auth, limits }: {
       {glyph}
       {nearest.head !== null ? <HeadMark head={nearest.head} /> : null}
       {nearest.account !== null ? <span className="myx-rule-account">{nearest.account}</span> : null}
-      <span className="myx-rule-period">{nearest.window}</span>
+      {nearest.window !== null ? <span className="myx-rule-period">{nearest.window}</span> : null}
       <span className="myx-rule-meter">
-        <Meter value={nearest.pct / 100} tone={tone === 'neutral' ? 'accent' : tone} label={`${nearest.window} ${nearest.pct}%`} />
+        <Meter value={nearest.pct / 100} tone={tone === 'neutral' ? 'accent' : tone} label={[nearest.window, `${nearest.pct}%`].filter((part) => part !== null).join(' ')} />
       </span>
       <span className={`myx-rule-figure myx-rule-pct-${tone}`}>{nearest.pct}%</span>
       {nearest.reset !== null ? (

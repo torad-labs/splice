@@ -196,7 +196,7 @@ function planNeeds(accounts: readonly AccountRow[], usage: UsagePayload | null, 
     source: 'plans',
     head: nearest.head,
     subject: nearest.account ?? S.nearest,
-    finding: `${nearest.window} ${U.at} ${nearest.pct}%${reset}`,
+    finding: `${nearest.window === null ? '' : `${nearest.window} `}${U.at} ${nearest.pct}%${reset}`,
     fix: ACCOUNTS,
     // The nearest limit is the fleet's, read across every account: its page, not one row.
     at: '#/accounts',

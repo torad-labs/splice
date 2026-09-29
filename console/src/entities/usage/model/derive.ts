@@ -55,6 +55,34 @@ function warnIsOwn(head: HeadUsage): boolean {
   return head.warn.source !== 'none' && !head.warn.source.startsWith('quota_');
 }
 
+/** A `warn.reset` the daemon wrote as an instant (`provider_reset`, the quota sources): ISO-8601 with a
+ *  date and a time. The header sources write a duration (`6m0s`) or a clock (`16:40`) instead. */
+const INSTANT = /^\d{4}-\d{2}-\d{2}T/;
+
+/** The epoch SECONDS of a warn's reset when it is an instant; null for a duration, a clock or nothing. */
+function instantSeconds(reset: string | null): number | null {
+  if (reset === null || !INSTANT.test(reset)) return null;
+  const ms = Date.parse(reset);
+  return Number.isNaN(ms) ? null : Math.floor(ms / 1000);
+}
+
+/** A head's own warn reset as printed: an instant goes through the one formatter, anything else is
+ *  the daemon's own text and passes through. */
+function warnResetText(reset: string | null, nowMs: number): string | null {
+  const seconds = instantSeconds(reset);
+  return seconds === null ? reset : resetsInText(seconds, nowMs);
+}
+
+/** The window a head's own warn is about. The header sources read the 5h token window; a
+ *  `provider_reset` names none, so it takes the plan window that resets at its instant, and where no
+ *  plan window does it names none rather than borrowing the 5h of a source it did not come from. */
+function warnWindowName(head: HeadUsage, windowHours: number, nowMs: number): string | null {
+  if (head.warn.source !== 'provider_reset') return `${windowHours}h`;
+  const at = instantSeconds(head.warn.reset);
+  const plan = planWindows(head, nowMs).find((held) => at !== null && held.resetsAt !== null && Math.abs(held.resetsAt - at) <= 1);
+  return plan?.window ?? null;
+}
+
 /** How long until a window resets, as the rule bar prints it after `resets`. */
 export function resetsInText(resetsAt: number | null, nowMs: number): string | null {
   if (resetsAt === null) return null;
@@ -72,8 +100,9 @@ export interface NearestWindow {
    *  account: its `login` is HOW the head signed in (browser, device, manual), not who, and a
    *  login method printed where an account belongs read as one ("claude-grok browser 5h"). */
   account: string | null;
-  /** The window's reported length, printed as the daemon reports it (`5h`). */
-  window: string;
+  /** The window's reported length, printed as the daemon reports it (`5h`). Null where the daemon
+   *  names none (a provider's own "out until"): the caller prints no window word. */
+  window: string | null;
   pct: number;
   reset: string | null;
 }
@@ -98,7 +127,14 @@ export function nearestWindow(
     if (head === null) continue;
     const account = auth?.[entry.key]?.account_id_masked ?? null;
     if (warnIsOwn(head)) {
-      candidates.push({ head: entry.key, account, window: `${usage.window_hours}h`, pct: head.warn.pct, reset: head.warn.reset, order: 0 });
+      candidates.push({
+        head: entry.key,
+        account,
+        window: warnWindowName(head, usage.window_hours, nowMs),
+        pct: head.warn.pct,
+        reset: warnResetText(head.warn.reset, nowMs),
+        order: 0,
+      });
     }
     for (const plan of planWindows(head, nowMs)) {
       if (plan.stale) continue;
@@ -162,7 +198,7 @@ export function headWindow(usage: UsagePayload | null, key: string, nowMs = Date
   let best: HeadWindow = { pct: null, level: 'none', reset: null };
   if (entry === null || usage === null) return best;
   if (warnIsOwn(entry)) {
-    best = { pct: entry.warn.pct, level: entry.warn.level, reset: entry.warn.reset };
+    best = { pct: entry.warn.pct, level: entry.warn.level, reset: warnResetText(entry.warn.reset, nowMs) };
   }
   for (const plan of planWindows(entry, nowMs)) {
     if (plan.stale || (best.pct !== null && plan.pct <= best.pct)) continue;

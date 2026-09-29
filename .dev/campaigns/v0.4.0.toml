@@ -9145,8 +9145,11 @@ id = "V4-383"
 phase = "release"
 title = "Tests stop leaking temp dirs into /tmp (tmpfs = RAM on the dev box): 223 bare Files.createTempDirectory/createTempFile call sites in 103 test files never delete what they make (427 leaked dirs found Sep 27, 11:15 PM CT: grok-*, control-gate*, console-routes*, claudex-test-state*). Move each to JUnit's @TempDir (auto-deleted), and add an ast-grep wall that refuses a bare Files.createTemp* in */src/test/, proven red on today's tree first."
 files = ["integrations/providers/grok/src/test/", "app/src/test/kotlin/splice/app/control/ConsoleRoutesTest.kt", "app/src/test/kotlin/splice/app/control/ControlServerGateTest.kt", "quality/ast-grep/"]
-status = "todo"
+status = "in_flight"
 verify = "bun tools/gate run (the new wall red on the pre-fix tree, green after)"
+claimed_by = "fin"
+claimed_at = "2026-09-29T02:32:38.634Z"
+# [2026-09-29] CLAIM: owner=fin at=2026-09-29T02:32:38Z
 
 [[items]]
 id = "V4-384"

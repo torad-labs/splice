@@ -9954,3 +9954,6 @@ files = ["features/configuration/src/main/kotlin/splice/configuration/add/AddPro
 status = "in_flight"
 verify = "red first: a test that every openrouter row carries rates, shown red with one row's rates removed and naming that row; green after, each card pinned to OpenRouter's figures at the read date, the two GPT-6 rows with their over-272000 tier; a claude-openrouter session whose perf row is a turn on a default model renders 'API est.' on the status line and not 'no rate card' (app test, real 'splice add openrouter' output through catalogFor into StatuslineRenderer); :features-configuration:test, :quality-architecture:test (ModelCatalogsSingleSourceLawTest), detekt, rules wall; CI gate on the pushed sha."
 # [2026-09-29] amend by=unattributed: files were ["features/configuration/src/main/kotlin/splice/configuration/add/AddProfileCatalog.kt", "features/configuration/src/test/kotlin/splice/configuration/add/OpenRouterProfileTest.kt", "app/src/test/kotlin/splice/app/v4434/", "CHANGELOG.md"]
+claimed_by = "splice-lead"
+claimed_at = "2026-09-29T19:08:20.716Z"
+# [2026-09-29] CLAIM: owner=splice-lead at=2026-09-29T19:08:20Z

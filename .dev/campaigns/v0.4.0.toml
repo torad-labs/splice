@@ -10124,6 +10124,7 @@ title = "A working session reads differently from a waiting one on a lane card (
 files = ["console/src/pages/sessions/index.tsx", "console/src/pages/sessions/strings.ts", "console/tests/v4443-lane-state-tone.test.ts"]
 status = "todo"
 verify = "red first: a vitest render of a waiting and a working session reads two different tones, and neither is the stale or needs-you tone; 1440 before/after screenshots; vitest, tsc, eslint; CI consoleE2e on the pushed sha"
+# [2026-09-29] Sep 29 CT: superseded by V4-444. The operator rejected the whole console on sight at ~7:00 PM CT, and the Sessions lanes this row polishes are replaced by the redesign.
 
 [[items]]
 id = "V4-444"

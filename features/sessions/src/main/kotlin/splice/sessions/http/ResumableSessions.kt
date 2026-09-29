@@ -18,9 +18,17 @@ import java.util.concurrent.ConcurrentHashMap
 // next poll; the durable history index holds its own scan for the same ten seconds.
 private const val MISSING_MS = 10_000L
 
-// why: a transcript with bytes keeps them, so a held yes is trusted longer; a deleted file still
-// stops reading resumable within the minute.
-private const val FOUND_MS = 60_000L
+// why: a transcript with bytes keeps them, so a held yes is trusted for minutes; a deleted file still
+// stops reading resumable within six. Measured on the everyday daemon, all 29 listed sessions cost
+// about a second to look at together, and the first poll looks at all of them.
+private const val FOUND_MS = 300_000L
+
+// why: the sessions first measured in one poll would otherwise all expire in one request, a second-long
+// stall on every renewal; each id's own spread walks their renewals apart.
+private const val FOUND_SPREAD_MS = 60_000L
+
+// why: Knuth's multiplicative-hash constant, 2654435761 as a signed Int, which scatters neighbouring integers.
+private const val GOLDEN = -1_640_531_535
 
 /** What one listing measured: the ids that can be resumed, or null when nothing was measured. */
 internal class Resumability(private val resumable: Set<String>?) {
@@ -53,11 +61,16 @@ internal class ResumableSessions(
 
     private fun resumable(id: String, now: Long): Boolean {
         val known = held[id]
-        if (known != null && now - known.at in 0 until lifetime(known)) return known.resumable
+        if (known != null && now - known.at in 0 until lifetime(id, known)) return known.resumable
         return measure(id).also { held[id] = Verdict(it, now) }
     }
 
-    private fun lifetime(verdict: Verdict): Long = if (verdict.resumable) FOUND_MS else MISSING_MS
+    private fun lifetime(id: String, verdict: Verdict): Long =
+        if (verdict.resumable) FOUND_MS + spread(id) else MISSING_MS
+
+    /** An id's own offset within [FOUND_SPREAD_MS]. The hash is mixed first: ids that differ in a
+     *  character or two have hashes a few units apart, which would put them all in the same instant. */
+    private fun spread(id: String): Long = Math.floorMod((id.hashCode() * GOLDEN).toLong(), FOUND_SPREAD_MS)
 
     /** A lookup that refuses the id (not a session id) is a session the resume route also refuses. */
     private fun measure(id: String): Boolean = when (val lookup = transcripts.page(id, roots, null, 1)) {

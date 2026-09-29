@@ -9984,3 +9984,11 @@ claimed_at = "2026-09-29T20:10:44.070Z"
 # [2026-09-29] Sep 29, 4:35 PM CT, splice-lead: GATE OF RECORD: CI ci run 36629727979, gate job success, headSha a59f8da21 (2e5cd4a9d the fix, 6304b4337 the e2e pattern).
 # [2026-09-29] Sep 29, 4:55 PM CT, splice-lead: the row's FIX line promised a sweep test and the first commit shipped only the helper's unit test; closed here. console/tests/count-noun.test.ts now reads every .ts/.tsx under src/ (denominator = the tree, >200 files asserted), resolves `${n} ${U.key}` words from the strings module beside each file, and fails on any plural-looking word after a count; five exemptions each carry a reason and a stale one fails (proven with a planted key, restored by sha256). Red run on the tree as committed in 2e5cd4a9d found one real site: pages/kept/strings.ts traceCount printed '1 bytes kept', now '1 byte kept'. Detector proven on planted plural/lawful-twin pairs. Local: vitest 1745 passed, tsc 0, eslint (CI's command) 0.
 # [2026-09-29] Sep 29, 5:10 PM CT, splice-lead: GATE OF RECORD for the sweep commit d0661d4c1: CI ci run 36631844714, gate job success, headSha 9d44c00ad (d0661d4c1 plus this ledger note's parent).
+
+[[items]]
+id = "V4-436"
+phase = "release"
+title = "The Accounts page's Next pill reads whole at a laptop's width (Marlin, from splice-website's dashboard shoot, Sep 29 ~5 PM CT): 'Most weekly room' is cut at the table's right edge at every width under about 1720 px. Reproduced at 1440 on a pooled payload: the Next column is 12% of a fixed-layout table (129 px at 1440), the pill needs 178.6 px (150.6 badge + 14 px cell padding each side), cell scrollWidth 191 > clientWidth 129. FIX: the column's width in em like Heads (12em), so the longest rule name holds at every scale; an e2e test at 1440 and 1536 asserts the pill's cell is not cut and the pill ends inside it (red on 12%). @splice-lead"
+files = ["console/src/widgets/account-table/index.tsx", "console/e2e/console.spec.ts"]
+status = "todo"
+verify = "console e2e test red on the 12% column and green on 12em; 1440 before/after screenshots; CI gate on the pushed sha"

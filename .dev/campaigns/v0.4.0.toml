@@ -9761,12 +9761,13 @@ verify = "red first: a fixture with a single-login head at 7d 100% current and a
 id = "V4-423"
 phase = "release"
 title = "Switching to an account that cannot serve is accepted (Marlin, ef86845f3, V4-410 walk): on a refused account (a symlinked credential) the Accounts panel still offers Switch and Refresh; POST /api/auth/codex/switch {label: linked} answers ok:true, pins it, and the console says 'Takes effect on the next turn'; the same for an account with no credential file. Refresh answers 'refresh failed; sign in again' and splice logs gets five 'failed to stat … NoSuchFileException' lines per click. The daemon refuses a switch to an account that is refused or has no credential, and names why in the response; the console drops Switch and Refresh on such a row and keeps its reason and sign-in path."
-files = ["features/accounts/src/main/kotlin/splice/accounts/pool/SwitchRoute.kt", "features/accounts/src/test/kotlin/splice/accounts/v4423/", "console/src/pages/accounts/index.tsx", "console/src/pages/accounts/model.ts", "console/src/pages/accounts/strings.ts", "console/tests/accounts-switch-refused.test.ts"]
+files = ["features/accounts/src/main/kotlin/splice/accounts/pool/SwitchRoute.kt", "features/accounts/src/test/kotlin/splice/accounts/v4423/", "console/src/features/account-login/index.tsx", "console/src/features/account-login/strings.ts", "console/src/pages/accounts/index.tsx", "console/src/pages/accounts/model.ts", "console/src/pages/accounts/strings.ts", "console/tests/accounts-switch-refused.test.ts", "console/e2e/v4423/"]
 status = "in_flight"
 verify = "red first: POST switch to a refused label and to a label with no credential answers a 4xx with the refusal sentence and leaves the pin unchanged; a serving label still switches; the Accounts panel of a refused row shows no Switch or Refresh button, and a serving row keeps both. :features-accounts test, :quality-architecture:test, rules wall, vitest, Playwright."
 claimed_by = "fin"
 claimed_at = "2026-09-29T03:31:37.935Z"
 # [2026-09-29] CLAIM: owner=fin at=2026-09-29T03:31:37Z
+# [2026-09-29] amend by=splice-lead: files were ["features/accounts/src/main/kotlin/splice/accounts/pool/SwitchRoute.kt", "features/accounts/src/test/kotlin/splice/accounts/v4423/", "console/src/pages/accounts/index.tsx", "console/src/pages/accounts/model.ts", "console/src/pages/accounts/strings.ts", "console/tests/accounts-switch-refused.test.ts"]
 
 [[items]]
 id = "V4-424"

@@ -32,6 +32,11 @@ public enum class OutcomeTag(public val wire: String) {
     CANCELLED("error:cancelled"),
     UNEXPECTED("error:unexpected"),
     RATE_LIMITED("error:rate-limited"),
+
+    /** V4-419: the upstream named a PLAN window spent until a reset that is still ahead (a 429 body or the
+     *  unified headers), and the turn ended on that: the one that met it, and every one held behind it. A burst
+     *  429 with no named reset is [RATE_LIMITED] or [UPSTREAM_FAILED], never this. */
+    PLAN_LIMIT("error:plan-limit"),
     ALL_ACCOUNTS_EXHAUSTED("error:all-accounts-exhausted"),
 
     /** V4-133 review: the head's daily spend budget is reached and its action is `block`. */

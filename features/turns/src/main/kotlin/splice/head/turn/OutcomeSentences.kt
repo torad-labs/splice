@@ -17,6 +17,15 @@ import splice.core.perf.OutcomeTag
 import splice.core.perf.OutcomeTags
 import splice.core.turn.CONN_RESET_OUTCOME
 import splice.core.turn.ErrorType
+import splice.core.usage.PlanLimit
+import splice.core.util.LocalTimeText
+
+/** The window's name comes from upstream text (any `seven_day…` claim), and the trace keeps [ERR_SNIPPET] characters:
+ *  a name past this is cut, so the reset and the advice behind it always fit. */
+private const val MAX_WINDOW_WORDS = 40
+
+/** What a plan-limit sentence tells the reader to do: a re-send before the reset meets the same refusal. */
+private const val WAIT_FOR_RESET = "retrying sooner cannot succeed, so wait for the reset, then retry"
 
 internal object OutcomeSentences {
 
@@ -40,6 +49,10 @@ internal object OutcomeSentences {
         OutcomeTag.RATE_LIMITED to
             "the provider kept rate limiting this account, so splice held the turn without contacting it; " +
             "wait for the limit to clear, then retry",
+        // V4-419: the row's own words when its ending spoke none (a record older than the ending). A turn that
+        // ends this way speaks the window and the reset instead: [planLimit].
+        OutcomeTag.PLAN_LIMIT to
+            "the provider says this plan's usage window is used up until its reset; $WAIT_FOR_RESET",
         OutcomeTag.ALL_ACCOUNTS_EXHAUSTED to
             "every account on this head is out of quota, so splice refused the turn without contacting the " +
             "provider; wait for the earliest quota reset or add an account, then retry",
@@ -74,6 +87,13 @@ internal object OutcomeSentences {
             else -> kinds[tag]
         }
     }
+
+    /** V4-419: what a turn ended by a spent plan window says: the window in words and the reset the provider
+     *  named, in [times]'s zone (the machine's), then what to do. The turn that met the 429 and every turn held
+     *  behind it speak through this one, so they name the same instant in the same words. */
+    fun planLimit(limit: PlanLimit, times: LocalTimeText = LocalTimeText()): String =
+        "this plan's ${limit.windowWords.take(MAX_WINDOW_WORDS)} window is used up until " +
+            "${times.at(limit.resetEpochSeconds)}; $WAIT_FOR_RESET"
 
     private fun typed(type: ErrorType): String = when (type) {
         ErrorType.INVALID_REQUEST ->

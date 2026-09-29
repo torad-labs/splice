@@ -25,6 +25,7 @@ import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
+import splice.core.util.LocalTimeText
 import splice.core.util.WallClock
 import splice.daemonclient.DaemonProbe
 import splice.diagnostics.logs.HeadLogSource
@@ -35,6 +36,7 @@ import splice.usage.quota.UsageView
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
+import java.time.ZoneId
 
 private const val SIX_DAYS_MS = 6L * 24 * 60 * 60 * 1_000
 private val NOW_MS = Instant.parse("2026-09-29T00:00:00Z").toEpochMilli()
@@ -68,13 +70,15 @@ class ProviderResetStatusTest {
     )
 
     @Test
-    fun `a six-day provider reset replaces ready with its Chicago deadline`(@TempDir bin: Path) {
+    fun `a six-day provider reset replaces ready with its deadline in the machine's zone`(@TempDir bin: Path) {
         Files.createSymbolicLink(bin.resolve("claude-muse"), bin.resolve("target"))
         val vars = mapOf("SPLICE_BIN_DIR" to bin.toString(), "TEST_MUSE_KEY" to "synthetic-key")
         val env = EnvReader(vars::get)
-        val table = StatusTable(CliPalette(ColorDepth.NONE), WallClock { NOW_MS })
+        // V4-419: the zone is the machine's, so this pins Chicago explicitly instead of hoping the runner is there.
+        val chicago = LocalTimeText(ZoneId.of("America/Chicago"))
+        val table = StatusTable(CliPalette(ColorDepth.NONE), WallClock { NOW_MS }, chicago)
         val limited = table.lines(topology, env, quotaResetAtEpochSeconds = mapOf("claude-muse" to RESET_SECONDS))[1]
-        assertTrue(limited.contains("out of quota until Oct 4, 7:00 PM CT"), limited)
+        assertTrue(limited.contains("out of quota until Oct 4, 7:00 PM CDT"), limited)
         assertFalse(limited.contains("ready"), limited)
         val ready = table.lines(topology, env)[1]
         assertTrue(ready.trimEnd().endsWith("ready"), ready)

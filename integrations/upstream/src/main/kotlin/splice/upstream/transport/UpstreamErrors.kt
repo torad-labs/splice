@@ -13,6 +13,8 @@
 // Same package, so every existing `import splice.upstream.transport.UpstreamFailed` resolves unchanged.
 package splice.upstream.transport
 
+import splice.core.usage.PlanLimit
+
 // V4-114 disposition: no caller recovers. Every catch site ends the turn in an error terminal —
 // TurnFailures.kt:26 (the per-turn boundary, same chain as IOException), TurnKnownEnd.kt:31
 // (emitError AUTHENTICATION + login hint), TurnDriver.kt:149 (marks the credential missing, then
@@ -60,4 +62,10 @@ public class UpstreamFailed(
      *  entitled to four layers and the loop might have spent one. Zero when no retry was tried (the
      *  fail-fast and deadline paths), which is a real answer rather than a missing one. */
     public val layers: Int = 0,
+    /** V4-419: the spent PLAN window this failure is about, when the upstream named one and its reset is
+     *  still ahead: the 429 that met it (RetryRules.giveUp) and the followers held behind it
+     *  (RateLimitCooldown.failFastIfArmed). Stamped here because the exception is the only thing that
+     *  crosses to the turn's ending, which records a plan-limit outcome and speaks the reset. Null for
+     *  every other failure, a burst 429 with no named reset included. */
+    public val planLimit: PlanLimit? = null,
 ) : RuntimeException("upstream failed after retries (status=$status)")

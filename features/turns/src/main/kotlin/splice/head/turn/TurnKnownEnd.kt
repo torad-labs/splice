@@ -4,6 +4,7 @@ package splice.head.turn
 
 import splice.core.perf.OutcomeTag
 import splice.core.turn.ErrorType
+import splice.core.usage.PlanLimit
 import splice.core.util.ERR_SNIPPET
 import splice.core.util.LogSink
 import splice.head.HeadHealthCounters
@@ -72,7 +73,7 @@ internal class TurnKnownEnd(
             // attempt count actually exists, because this is the arm the retry loop exits through.
             telemetry.recordPerf(
                 drive,
-                OutcomeTag.UPSTREAM_FAILED.wire,
+                endingTag(drive, e.planLimit).wire,
                 failure.type == ErrorType.RATE_LIMIT,
                 cause = failure.cause.name,
                 layers = e.layers,
@@ -98,5 +99,14 @@ internal class TurnKnownEnd(
             true
         }
         else -> false
+    }
+
+    /** V4-419: the tag an upstream failure ends the turn on. One caused by a spent plan window ends
+     *  [OutcomeTag.PLAN_LIMIT] and speaks the window and its reset on the trace before the record closes (a surface
+     *  that spoke first wins over the table's sentence); every other one is [OutcomeTag.UPSTREAM_FAILED]. */
+    private fun endingTag(drive: TurnDrive, plan: PlanLimit?): OutcomeTag {
+        if (plan == null) return OutcomeTag.UPSTREAM_FAILED
+        drive.trace?.failureSentence(OutcomeSentences.planLimit(plan))
+        return OutcomeTag.PLAN_LIMIT
     }
 }

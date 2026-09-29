@@ -12,20 +12,15 @@ import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.util.EnvReader
+import splice.core.util.LocalTimeText
 import splice.core.util.WallClock
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 internal class StatusTable(
     private val palette: CliPalette = CliPalette(ColorDepthProbe(EnvReader(System::getenv)).depth()),
     private val clock: WallClock = WallClock(System::currentTimeMillis),
+    private val times: LocalTimeText = LocalTimeText(),
 ) {
-    private val chicago = DateTimeFormatter.ofPattern("MMM d, h:mm a", Locale.US)
-        .withZone(ZoneId.of("America/Chicago"))
-
     private val signIn = CliSignIn()
 
     // Class member is fine here: doctor no longer builds this type to reach
@@ -132,7 +127,7 @@ internal class StatusTable(
     private fun refusal(word: HeadWord): String? {
         word.runtimeEndpoint?.let { return "runtime not answering on $it" }
         val resetAt = word.quotaResetAtEpochSeconds?.takeIf { TimeUnit.SECONDS.toMillis(it) > clock() }
-        return resetAt?.let { "out of quota until ${chicagoTime(it)} CT" }
+        return resetAt?.let { "out of quota until ${times.at(it)}" }
     }
 
     /** A head whose provider the topology cannot resolve, or that only the daemon knows: it cannot
@@ -194,8 +189,6 @@ internal class StatusTable(
             // own process.
             null -> dialectLabel(provider.dialect).let { if (provider.isLocal) "local runtime ($it)" else it }
         }
-
-    private fun chicagoTime(epochSeconds: Long): String = chicago.format(Instant.ofEpochSecond(epochSeconds))
 
     private fun dialectLabel(dialect: Dialect): String = when (dialect) {
         Dialect.OPENAI_CHAT -> "OpenAI-compatible"

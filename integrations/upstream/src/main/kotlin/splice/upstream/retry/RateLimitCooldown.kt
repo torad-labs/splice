@@ -249,7 +249,8 @@ public class RateLimitCooldown public constructor(
         // :upstream cannot import :daemon-head, so our own fail-fast body was free to drift from the
         // shape the classifier reads. It no longer can.
         val body = ErrorEnvelope.of("rate_limit_error", detail).toString()
-        throw UpstreamFailed(body, HttpStatus.TOO_MANY_REQUESTS)
+        // V4-419: a follower held behind a named plan window carries it, as the turn that met the 429 does.
+        throw UpstreamFailed(body, HttpStatus.TOO_MANY_REQUESTS, planLimit = plan)
     }
 
     /** Every 429 with retry budget left is WAITED OUT and retried here in splice — a short

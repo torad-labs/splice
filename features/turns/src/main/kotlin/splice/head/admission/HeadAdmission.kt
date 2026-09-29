@@ -16,6 +16,7 @@ import splice.core.usage.PlanLimit
 import splice.core.util.WallClock
 import splice.head.ClientAuth
 import splice.head.HeadDeps
+import splice.head.turn.OutcomeSentences
 import splice.head.turn.Preparation
 import splice.head.turn.SESSION_TAG_CHARS
 import splice.head.turn.TurnDriver
@@ -188,12 +189,15 @@ internal class HeadAdmission(
         // V4-55: recorded BEFORE responding, mirroring the pooled sibling below. A refusal that
         // leaves no perf row and no journal line is a turn that, from splice's own telemetry, never
         // happened — which is how three reports of this exact failure went unfalsifiable in a day.
+        // V4-419: a turn refused while a plan window is named spent ends plan-limit and says the reset, in the same
+        // words the turn that met the 429 spoke; a burst hold keeps rate-limited and its table sentence.
+        plan?.let { trace?.failureSentence(OutcomeSentences.planLimit(it)) }
         driver.recordLocalRefusal(
             prepared.built.meta,
             admitted.perf,
             admitted.t0,
             LocalRefusal(
-                OutcomeTag.RATE_LIMITED.wire,
+                (if (plan == null) OutcomeTag.RATE_LIMITED else OutcomeTag.PLAN_LIMIT).wire,
                 "provider_reset=${AccountResetText.format(windowResetEpochSeconds)} gateway_hold=${armedMs}ms",
                 trace,
             ),

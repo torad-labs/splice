@@ -15,7 +15,6 @@ import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import splice.core.util.TopologyTypeFailure
-import splice.core.util.TopologyTypeFailure.Expected
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -226,7 +225,7 @@ internal class DaemonBoundary(private val listing: DirectoryListing = FilesListi
         Thread.UncaughtExceptionHandler { thread, e ->
             val stamp = "[${logStamp.format(LocalDateTime.now())}] [daemon] "
             val line = when (e) {
-                is TopologyTypeFailure -> "$stamp${SafeFailureText.render(e)}. Fix: ${topologyFix(e)}\n"
+                is TopologyTypeFailure -> "$stamp${SafeFailureText.render(e)}. Fix: ${e.fix()}\n"
                 else -> "${stamp}UNCAUGHT on ${thread.name}: ${SafeFailureText.render(e)}\n" + bootFrames(e)
             }
             System.err.print(line)
@@ -237,20 +236,6 @@ internal class DaemonBoundary(private val listing: DirectoryListing = FilesListi
                 Files.writeString(statePaths.logsDir.resolve("daemon.log"), line, CREATE, APPEND)
             }
         }
-
-    /** What to write for the key [failure] names, by the type it expects. The example uses the key's own
-     *  last segment and a placeholder, never the value that was there. */
-    private fun topologyFix(failure: TopologyTypeFailure): String {
-        val leaf = failure.key.substringAfterLast('.')
-        return when (failure.expected) {
-            Expected.QUOTED_STRING -> "put the value in double quotes, as in $leaf = \"...\""
-            Expected.INTEGER -> "write a whole number, with no quotes"
-            Expected.NUMBER -> "write a number, with no quotes"
-            Expected.BOOLEAN -> "write true or false, with no quotes"
-            Expected.TABLE -> "write it as a table, [${failure.key}], not as a single value"
-            Expected.ARRAY -> "write it as an array, [ ... ]"
-        }
-    }
 
     /** DR-170: the boot trace WITHOUT its message. A StackTraceElement is a declaring class, a
      *  method, a file and a line — all produced by the VM from the loaded class, none of them

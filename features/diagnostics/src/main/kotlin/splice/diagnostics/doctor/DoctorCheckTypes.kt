@@ -59,9 +59,10 @@ internal data class DaemonSnapshot(val port: Int, val probe: DaemonProbe.HealthP
     }
 }
 
-/** The topology as doctor sees it: not written yet, readable, or broken (with the parse error). */
+/** The topology as doctor sees it: not written yet, readable, or broken (with the parse error, and for a
+ *  type error the fix boot prints, V4-424). */
 internal sealed class DoctorTopology {
     data object Absent : DoctorTopology()
     data class Parsed(val topology: Topology) : DoctorTopology()
-    data class Broken(val message: String) : DoctorTopology()
+    data class Broken(val message: String, val fix: String? = null) : DoctorTopology()
 }

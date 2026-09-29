@@ -18,6 +18,11 @@ import java.nio.file.Path
 import java.nio.file.Paths
 
 private const val CHECK_TOPOLOGY = "topology"
+
+/** V4-424: a syntax error carries no key or line to fix (its parser text is withheld, DR-92), so this points
+ *  at the sample a release user can reach, and never at a source-tree path or deleting their config. */
+private const val SYNTAX_FIX =
+    "fix the TOML syntax; the sample topology, splice.example.toml, is linked from splice's README"
 private const val REPLACE_FIX =
     "set system_prompt_mode = \"append\" to add your text beside the client's own instructions instead"
 
@@ -62,7 +67,7 @@ internal class DoctorConfigChecks(
                 CheckStatus.FAIL,
                 // SAFE-RENDER-EXEMPT[2026-08-31]: topo.message is not a throwable — DoctorTopology.Broken is CONSTRUCTED at DoctorCommand.loadTopology from SafeFailureText.render(e) under DR-92, so this renders an already-sanitized String
                 "$configPath does not parse: ${topo.message}",
-                "fix the TOML (compare app/src/main/resources/splice.example.toml), or delete it and run: splice init",
+                topo.fix ?: SYNTAX_FIX,
             ),
         )
         is DoctorTopology.Parsed -> {

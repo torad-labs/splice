@@ -15,6 +15,7 @@ import splice.core.terminal.TerminalOutput
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
+import splice.core.util.TopologyTypeFailure
 import splice.daemonclient.DaemonSettings
 import splice.diagnostics.doctor.report.DOCTOR_USAGE
 import splice.diagnostics.doctor.report.DoctorJsonReport
@@ -273,7 +274,11 @@ public class DoctorCommand(
             // DR-92: parse text can quote the offending value, and splice.toml legally carries
             // credential-like values (extra_headers Authorization on non-client topologies) —
             // render() keeps fs-failure diagnostics and withholds parser excerpts.
-            if (genuinelyAbsent) DoctorTopology.Absent else DoctorTopology.Broken(SafeFailureText.render(e))
+            if (genuinelyAbsent) {
+                DoctorTopology.Absent
+            } else {
+                DoctorTopology.Broken(SafeFailureText.render(e), (e as? TopologyTypeFailure)?.fix())
+            }
         }
 }
 

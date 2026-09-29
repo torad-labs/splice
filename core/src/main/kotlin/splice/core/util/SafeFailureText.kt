@@ -28,6 +28,21 @@ public class TopologyTypeFailure(
         require(key.none { Character.isISOControl(it) })
         require(line > 0)
     }
+
+    /** What to write for the key this names, by the type it expects (V4-366): the one fix that boot and
+     *  `splice doctor` both print (V4-424). The example uses the key's own last segment and a
+     *  placeholder, never the value that was there. */
+    public fun fix(): String {
+        val leaf = key.substringAfterLast('.')
+        return when (expected) {
+            Expected.QUOTED_STRING -> "put the value in double quotes, as in $leaf = \"...\""
+            Expected.INTEGER -> "write a whole number, with no quotes"
+            Expected.NUMBER -> "write a number, with no quotes"
+            Expected.BOOLEAN -> "write true or false, with no quotes"
+            Expected.TABLE -> "write it as a table, [$key], not as a single value"
+            Expected.ARRAY -> "write it as an array, [ ... ]"
+        }
+    }
 }
 
 public object SafeFailureText {

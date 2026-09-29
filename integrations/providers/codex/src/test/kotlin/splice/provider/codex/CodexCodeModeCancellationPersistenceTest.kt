@@ -13,14 +13,12 @@ import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeRuntime
 import splice.upstream.codemode.CodeModeStep
-import java.nio.file.Files
-import java.nio.file.Path
 
 class CodexCodeModeCancellationPersistenceTest : CodeModeBridgeTestSupport() {
     @Test
     fun `runtime startup cancellation survives failed lost-state save`() = runTest {
         val cancellation = CancellationException("original startup cancellation")
-        val runtime = CancellingRuntime(tempDir.resolve("bridge.json"), cancellation, cancelAt = 0)
+        val runtime = CancellingRuntime(stateFiles, cancellation, cancelAt = 0)
         val manager = bridge(runtime)
         var caught: CancellationException? = null
         try {
@@ -38,7 +36,7 @@ class CodexCodeModeCancellationPersistenceTest : CodeModeBridgeTestSupport() {
     @Test
     fun `initial cell cancellation survives failed save and closes attached cell`() = runTest {
         val cancellation = CancellationException("original initial advance cancellation")
-        val runtime = CancellingRuntime(tempDir.resolve("bridge.json"), cancellation, cancelAt = 1)
+        val runtime = CancellingRuntime(stateFiles, cancellation, cancelAt = 1)
         val manager = bridge(runtime)
         var caught: CancellationException? = null
         try {
@@ -55,7 +53,7 @@ class CodexCodeModeCancellationPersistenceTest : CodeModeBridgeTestSupport() {
     @Test
     fun `resumed cell cancellation survives failed save and closes attached cell`() = runTest {
         val cancellation = CancellationException("original resumed advance cancellation")
-        val runtime = CancellingRuntime(tempDir.resolve("bridge.json"), cancellation, cancelAt = 2)
+        val runtime = CancellingRuntime(stateFiles, cancellation, cancelAt = 2)
         val manager = bridge(runtime)
         val sink = RecordingSink()
         manager.interceptor(turn(), disableParallel = false)
@@ -75,7 +73,7 @@ class CodexCodeModeCancellationPersistenceTest : CodeModeBridgeTestSupport() {
     }
 
     private class CancellingRuntime(
-        private val state: Path,
+        private val state: CodeModeStateFiles,
         private val cancellation: CancellationException,
         private val cancelAt: Int,
     ) : CodeModeRuntime {
@@ -102,8 +100,7 @@ class CodexCodeModeCancellationPersistenceTest : CodeModeBridgeTestSupport() {
         override fun close() = cell.close()
 
         private fun failSaveAndCancel(): Nothing {
-            Files.delete(state)
-            Files.createDirectory(state)
+            state.block()
             throw cancellation
         }
 

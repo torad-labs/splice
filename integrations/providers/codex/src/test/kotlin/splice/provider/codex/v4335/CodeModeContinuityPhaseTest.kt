@@ -38,7 +38,6 @@ import splice.provider.codex.CodexCodeModeWire
 import splice.provider.codex.CodexQuirks
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
-import java.nio.file.Files
 
 private const val PREFACE = "I'll read the config first."
 private const val MODEL = "gpt-6-astra"
@@ -205,21 +204,14 @@ class CodeModeContinuityPhaseTest : CodeModeBridgeTestSupport() {
     }
 
     /** The state file as a v3 daemon left it: the version it stamped, its continuity with no phase. */
-    private fun writtenByV3() {
-        val file = tempDir.resolve("bridge.json")
-        val state = Json.parseToJsonElement(Files.readString(file)).jsonObject
-        val records = state.getValue("records").jsonArray.map { record ->
-            val continuity = record.jsonObject.getValue("continuity").jsonArray.map {
-                JsonObject(it.jsonObject - "phase")
-            }
-            JsonObject(
-                record.jsonObject + mapOf(
-                    "metadataVersion" to JsonPrimitive(V3),
-                    "continuity" to JsonArray(continuity),
-                ),
-            )
-        }
-        Files.writeString(file, JsonObject(state + ("records" to JsonArray(records))).toString())
+    private fun writtenByV3() = stateFiles.rewriteRecords { record ->
+        val continuity = record.getValue("continuity").jsonArray.map { JsonObject(it.jsonObject - "phase") }
+        JsonObject(
+            record + mapOf(
+                "metadataVersion" to JsonPrimitive(V3),
+                "continuity" to JsonArray(continuity),
+            ),
+        )
     }
 
     private fun prefaces(body: String): Int =

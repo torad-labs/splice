@@ -50,9 +50,15 @@ internal const val STATE_DIR_ENV: String = "SPLICE_STATE_DIR"
 internal const val LEGACY_STATE_DIR_ENV: String = "CLAUDEX_STATE_DIR"
 
 /** V4-260: a Codex head's code-mode records (CodexCodeModeStore: the model's scripts, tool calls and
- *  their results) are `<head key>` plus this, in the state dir. One spelling for the arm that writes
- *  the file and the sweep that removes it when code mode is off or the head is gone. */
+ *  their results) were `<head key>` plus this, in the state dir. Since V4-340 that single file is only
+ *  read, once, and its conversations carried into [CODE_MODE_DIR]; the sweep still removes one it finds
+ *  when code mode is off or the head is gone. */
 public const val CODE_MODE_STATE_SUFFIX: String = "-code-mode.json"
+
+/** V4-340: a head's code-mode records, one owner-only file per conversation, are in this directory of the
+ *  head's own `heads/<key>/`. One spelling for the arm that writes them and the sweep that removes them
+ *  when code mode is off. */
+public const val CODE_MODE_DIR: String = "code-mode"
 
 private const val STATE_LEAF: String = "state"
 

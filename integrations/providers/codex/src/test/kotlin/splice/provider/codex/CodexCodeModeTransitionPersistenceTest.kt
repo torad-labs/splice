@@ -16,15 +16,12 @@ import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeRuntime
 import splice.upstream.codemode.CodeModeStep
-import java.nio.file.Files
-import java.nio.file.Path
 
 class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
     @Test
     fun `initial calls save failure retries captured callback without rerunning worker`() = runTest {
-        val state = tempDir.resolve("bridge.json")
         val runtime = FailingSaveRuntime(
-            state,
+            stateFiles,
             listOf(CodeModeStep.Calls(listOf(call("read", "Read")))),
             failAt = 1,
         )
@@ -38,7 +35,7 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
         assertEquals(listOf(emptyList<CodeModeResult>()), runtime.cell.results)
         assertFalse(runtime.cell.closed)
 
-        Files.delete(state)
+        stateFiles.unblock()
         val retriedSink = RecordingSink()
         val retried = manager.interceptor(turn(), disableParallel = false)
             .intercept(BASE_REQUEST, retriedSink) { error("retry must not post upstream") }
@@ -53,9 +50,8 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
 
     @Test
     fun `completed save failure retries exact output without rerunning worker`() = runTest {
-        val state = tempDir.resolve("bridge.json")
         val output = "completed with \"quotes\"\nand Unicode é"
-        val runtime = FailingSaveRuntime(state, listOf(CodeModeStep.Completed(output)), failAt = 1)
+        val runtime = FailingSaveRuntime(stateFiles, listOf(CodeModeStep.Completed(output)), failAt = 1)
         val manager = bridge(runtime)
         val failed = manager.interceptor(turn(), disableParallel = false)
             .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome() }
@@ -64,7 +60,7 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
         assertEquals(listOf(emptyList<CodeModeResult>()), runtime.cell.results)
         assertTrue(runtime.cell.closed)
 
-        Files.delete(state)
+        stateFiles.unblock()
         var upstreamBody = ""
         var posts = 0
         val retriedSink = RecordingSink()
@@ -94,9 +90,8 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
 
     @Test
     fun `followup calls save failure retries new callback without redelivering accepted results`() = runTest {
-        val state = tempDir.resolve("bridge.json")
         val runtime = FailingSaveRuntime(
-            state,
+            stateFiles,
             listOf(
                 CodeModeStep.Calls(listOf(call("read", "Read"))),
                 CodeModeStep.Calls(listOf(call("edit", "Edit"))),
@@ -117,7 +112,7 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
         assertEquals(delivered, runtime.cell.results)
         assertFalse(runtime.cell.closed)
 
-        Files.delete(state)
+        stateFiles.unblock()
         val retriedSink = RecordingSink()
         val retried = manager.interceptor(turn(firstId, "original result"), disableParallel = false)
             .intercept(requestWithResult(firstId, "original result"), retriedSink) { error("must not post") }
@@ -137,7 +132,7 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
     }
 
     private class FailingSaveRuntime(
-        private val state: Path,
+        private val state: CodeModeStateFiles,
         private val steps: List<CodeModeStep>,
         private val failAt: Int,
     ) : CodeModeRuntime {
@@ -163,8 +158,7 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
                 this.results += results.toList()
                 val step = steps[this.results.lastIndex]
                 if (this.results.size == failAt) {
-                    Files.delete(state)
-                    Files.createDirectory(state)
+                    state.block()
                 }
                 return step
             }

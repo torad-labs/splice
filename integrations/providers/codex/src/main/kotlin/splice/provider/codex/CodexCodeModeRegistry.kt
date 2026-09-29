@@ -25,7 +25,7 @@ internal class CodexCodeModeRegistry(
     private val sweepInterval: Duration,
 ) {
     private val monitor = Any()
-    private val store = CodexCodeModeStore(config.stateFile, json)
+    private val store = CodexCodeModeStore(config.state, json, config.log)
     private val loaded = store.load()
     private val records = loaded.records.map(CodeModeRecordSnapshot::restore).toMutableList()
     private val history = CodeModeExpiredHistory(loaded.expired.toMutableList(), config.retention.records)

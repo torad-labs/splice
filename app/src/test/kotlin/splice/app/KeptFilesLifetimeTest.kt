@@ -9,12 +9,14 @@ package splice.app
 
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import splice.core.auth.RefreshAttempt
+import splice.core.config.CODE_MODE_DIR
 import splice.core.config.StatePaths
 import splice.core.testing.TestPorts
 import splice.head.MockChatGptUpstream
@@ -106,6 +108,12 @@ class KeptFilesLifetimeTest {
             seed(paths.stateDir.resolve("$head-code-mode.json"))
             seed(paths.traceDir.resolve("$head-$today.jsonl"))
         }
+        // V4-340: claudex's single file holds one real conversation, which its first start carries into
+        // `heads/claudex/code-mode/`; the other two heads have conversation files of their own to go.
+        Files.writeString(paths.stateDir.resolve("claudex-code-mode.json"), singleFileWithOneConversation())
+        listOf("plain", "removed").forEach { head ->
+            seed(paths.headsDir.resolve(head).resolve(CODE_MODE_DIR).resolve("conversation.json"))
+        }
         seed(paths.traceDir.resolve("removed-$today.jsonl.lock"))
         seed(paths.traceDir.resolve("typo-$today.jsonl"))
         daemon = Daemon(
@@ -135,9 +143,15 @@ class KeptFilesLifetimeTest {
 
     @Test
     fun `code-mode state is gone for a head with code mode off and a removed head, and kept where it is on`() {
-        assertTrue(Files.exists(paths.stateDir.resolve("claudex-code-mode.json")), "code mode is on for claudex")
+        val claudex = paths.headsDir.resolve("claudex").resolve(CODE_MODE_DIR)
+        val kept = Files.list(claudex).use { it.count() }
+        assertEquals(1L, kept, "code mode is on for claudex: its conversation is kept")
+        val legacy = paths.stateDir.resolve("claudex-code-mode.json")
+        assertFalse(Files.exists(legacy), "and carried out of the single file")
         assertFalse(Files.exists(paths.stateDir.resolve("plain-code-mode.json")), "code mode is off for plain")
+        assertFalse(Files.exists(paths.headsDir.resolve("plain").resolve(CODE_MODE_DIR)), "plain's conversations stay")
         assertFalse(Files.exists(paths.stateDir.resolve("removed-code-mode.json")), "that head is removed")
+        assertFalse(Files.exists(paths.headsDir.resolve("removed")), "a removed head's state dir stays")
     }
 
     @Test
@@ -152,6 +166,12 @@ class KeptFilesLifetimeTest {
     fun `a trace value that is not a bool keeps the head's trace days - V4-286`() {
         assertTrue(Files.exists(paths.traceDir.resolve("typo-$today.jsonl")), "trace = \"enabled\" was read as off")
     }
+
+    /** What a daemon before V4-340 kept a head's code-mode records in: one finished record of one conversation. */
+    private fun singleFileWithOneConversation(): String =
+        """{"records":[{"id":"r1","key":"conversation-1","outer":{},"outerCallId":"o1","source":"1",""" +
+            """"phase":"COMPLETED","pending":[],"results":{},"output":"out","error":null,"totalCalls":0,""" +
+            """"rounds":0,"updatedAt":${System.currentTimeMillis()},"lastDigest":"d"}],"expired":[]}"""
 
     private fun seed(file: Path, ageMs: Long = 0) {
         Files.createDirectories(file.parent)

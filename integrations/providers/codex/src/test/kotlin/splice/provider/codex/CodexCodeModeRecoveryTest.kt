@@ -15,7 +15,6 @@ import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
-import java.nio.file.Files
 
 class CodexCodeModeRecoveryTest : CodeModeBridgeTestSupport() {
     @Test
@@ -28,15 +27,13 @@ class CodexCodeModeRecoveryTest : CodeModeBridgeTestSupport() {
         val first = RecordingSink()
         manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, first) { outerOutcome() }
         val id = first.tools.single().id
-        val state = tempDir.resolve("bridge.json")
-        Files.delete(state)
-        Files.createDirectory(state)
+        stateFiles.block()
         val failed = manager.interceptor(turn(id, "A"), disableParallel = false)
             .intercept(requestWithResult(id, "A"), RecordingSink()) { error("must not post") }
         assertTrue(failed is TurnOutcome.Failure)
         assertTrue((failed as TurnOutcome.Failure).message.contains("could not be saved"))
         assertEquals(1, runtime.cell.advances)
-        Files.delete(state)
+        stateFiles.unblock()
         val retrySink = RecordingSink()
         val retried = manager.interceptor(turn(id, "A"), disableParallel = false)
             .intercept(requestWithResult(id, "A"), retrySink) { completedOutcome() }
@@ -58,13 +55,11 @@ class CodexCodeModeRecoveryTest : CodeModeBridgeTestSupport() {
         val first = RecordingSink()
         manager.interceptor(turn(), disableParallel = true).intercept(BASE_REQUEST, first) { outerOutcome() }
         val firstId = first.tools.single().id
-        val state = tempDir.resolve("bridge.json")
-        Files.delete(state)
-        Files.createDirectory(state)
+        stateFiles.block()
         val failed = manager.interceptor(turn(firstId, "A"), disableParallel = true)
             .intercept(requestWithResult(firstId, "A"), RecordingSink()) { error("must not post") }
         assertTrue(failed is TurnOutcome.Failure)
-        Files.delete(state)
+        stateFiles.unblock()
         val next = RecordingSink()
         manager.interceptor(turn(firstId, "A"), disableParallel = true)
             .intercept(requestWithResult(firstId, "A"), next) { error("must not post") }

@@ -22,7 +22,6 @@ import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.core.turn.TurnOutcome
 import splice.upstream.codemode.CodeModeStep
-import java.nio.file.Files
 
 class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
 
@@ -191,7 +190,7 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
         assertEquals(1, imageMessages(items).size, items.toString())
         assertTrue(logLines.none { it.contains("history rewrite skipped") }, logLines.toString())
         // And a v3 result is unchanged: no media entry is minted for it on reload.
-        assertFalse(Files.readString(tempDir.resolve("bridge.json")).contains("\"media\""))
+        assertFalse(stateFiles.text().contains("\"media\""))
     }
 
     @Test
@@ -369,14 +368,9 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
         return Triple(bridge(ScriptedRuntime(ArrayDeque())), first, second)
     }
 
-    private fun rewriteSavedResults(rewrite: (JsonObject) -> JsonObject) {
-        val file = tempDir.resolve("bridge.json")
-        val state = Json.parseToJsonElement(Files.readString(file)).jsonObject
-        val records = state.getValue("records").jsonArray.map { record ->
-            val results = record.jsonObject.getValue("results").jsonObject.mapValues { (_, r) -> rewrite(r.jsonObject) }
-            JsonObject(record.jsonObject + ("results" to JsonObject(results)))
-        }
-        Files.writeString(file, JsonObject(state + ("records" to JsonArray(records))).toString())
+    private fun rewriteSavedResults(rewrite: (JsonObject) -> JsonObject) = stateFiles.rewriteRecords { record ->
+        val results = record.getValue("results").jsonObject.mapValues { (_, r) -> rewrite(r.jsonObject) }
+        JsonObject(record + ("results" to JsonObject(results)))
     }
 
     private fun savedResult(id: String): JsonObject =
@@ -430,8 +424,7 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
         put("image_url", "data:image/png;base64,$data")
     }
 
-    private fun savedRecord(): JsonObject = Json.parseToJsonElement(Files.readString(tempDir.resolve("bridge.json")))
-        .jsonObject.getValue("records").jsonArray.single().jsonObject
+    private fun savedRecord(): JsonObject = stateFiles.records().single()
 }
 
 private const val IMAGE_A = "AAAA"

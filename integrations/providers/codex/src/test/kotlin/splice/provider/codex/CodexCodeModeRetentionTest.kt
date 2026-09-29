@@ -11,8 +11,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.util.LogSink
 import splice.upstream.codemode.CodeModeStep
-import java.nio.file.Files
-import java.nio.file.Path
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneId
@@ -33,47 +31,52 @@ class CodexCodeModeRetentionTest : CodeModeBridgeTestSupport() {
     @Test
     fun `an idle head's record leaves the disk within the sweep interval of its 24 hours`() = runTest {
         val clock = WallTime(START)
-        val (bridge, state) = recording(clock, "idle.json", sweepInterval = 50.milliseconds)
+        val (bridge, state) = recording(clock, "idle", sweepInterval = 50.milliseconds)
         startScript(bridge)
-        assertTrue(SOURCE in Files.readString(state), "the script is recorded")
+        assertTrue(SOURCE in state.text(), "the script is recorded")
 
         clock.now = START + 24.hours.inWholeMilliseconds + 1
         awaitUntil("the record 24 hours past its last use left the disk, with no turn") {
-            SOURCE !in Files.readString(state)
+            SOURCE !in state.text()
         }
     }
 
     @Test
     fun `closing a record's idle cell and stopping its head do not restart its 24 hours`() = runTest {
         val clock = WallTime(START)
-        val (parked, parkedState) = recording(clock, "parked.json")
+        val (parked, parkedState) = recording(clock, "parked")
         startScript(parked)
         clock.now = START + 31.minutes.inWholeMilliseconds
         touch(parked)
         assertTrue(logLines.any { "closed after 31 min" in it }, "the idle cell was closed: $logLines")
         clock.now = START + 24.hours.inWholeMilliseconds + 1
         touch(parked)
-        assertFalse(SOURCE in Files.readString(parkedState), "closing the idle cell restarted the record's 24 hours")
+        assertFalse(SOURCE in parkedState.text(), "closing the idle cell restarted the record's 24 hours")
 
         clock.now = START
-        val (stopped, stoppedState) = recording(clock, "stopped.json")
+        val (stopped, stoppedState) = recording(clock, "stopped")
         startScript(stopped)
         clock.now = START + 23.hours.inWholeMilliseconds
         stopped.onHeadStop()
         clock.now = START + 24.hours.inWholeMilliseconds + 1
         touch(stopped)
-        assertFalse(SOURCE in Files.readString(stoppedState), "a head stop restarted the record's 24 hours")
+        assertFalse(SOURCE in stoppedState.text(), "a head stop restarted the record's 24 hours")
     }
 
-    /** A bridge over its own state [file], whose one script waits on a client call that never returns. */
+    /** A bridge over its own state directory [name], whose one script waits on a client call that never returns. */
     private fun recording(
         clock: Clock,
-        file: String,
+        name: String,
         sweepInterval: Duration = 5.minutes,
-    ): Pair<CodexCodeModeBridge, Path> {
-        val state = tempDir.resolve(file)
+    ): Pair<CodexCodeModeBridge, CodeModeStateFiles> {
+        val state = CodeModeStateFiles(tempDir.resolve(name))
         val runtime = ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Calls(listOf(call("r1", "Read"))))))
-        val config = CodeModeBridgeConfig({ runtime }, state, clock = clock, log = LogSink { logLines += it })
+        val config = CodeModeBridgeConfig(
+            { runtime },
+            CodeModeStateLocation(state.dir, tempDir.resolve("$name.json")),
+            clock = clock,
+            log = LogSink { logLines += it },
+        )
         return CodexCodeModeBridge(config, sweepInterval) to state
     }
 

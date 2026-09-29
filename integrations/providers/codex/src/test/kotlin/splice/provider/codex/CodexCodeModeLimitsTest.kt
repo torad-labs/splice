@@ -2,13 +2,12 @@ package splice.provider.codex
 
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
 import splice.upstream.codemode.CodeModeLimits
 import splice.upstream.codemode.CodeModeStep
-import java.nio.file.Files
+import java.nio.file.Path
 
 class CodexCodeModeLimitsTest : CodeModeBridgeTestSupport() {
     @Test
@@ -20,7 +19,7 @@ class CodexCodeModeLimitsTest : CodeModeBridgeTestSupport() {
             }
         assertTrue(outcome is TurnOutcome.Failure)
         assertEquals(0, runtime.starts)
-        assertFalse(Files.exists(tempDir.resolve("bridge.json")))
+        assertEquals(emptyList<Path>(), stateFiles.files(), "an oversized script left nothing on disk")
     }
 
     @Test

@@ -376,6 +376,9 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexAuthProvider.kt" to mapOf(
         "writeAtomic0600(" to 1,
     ),
+    // V4-340: one file per conversation, `heads/<head>/code-mode/<hash>.json` (README row of the same name).
+    // A save and the carry-forward of the pre-V4-340 single file share one private write(), so the call
+    // count stays 1; a second call site is a second way a conversation reaches the disk.
     "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeStore.kt" to mapOf(
         "writeAtomic0600(" to 1,
     ),

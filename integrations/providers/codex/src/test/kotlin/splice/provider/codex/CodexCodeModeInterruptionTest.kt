@@ -15,7 +15,6 @@ import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
-import java.nio.file.Files
 
 class CodexCodeModeInterruptionTest : CodeModeBridgeTestSupport() {
     @Test
@@ -50,8 +49,7 @@ class CodexCodeModeInterruptionTest : CodeModeBridgeTestSupport() {
             assertEquals(result.output, posted.getValue(result.id)["output"]?.jsonPrimitive?.content)
             assertEquals("true", posted.getValue(result.id)["isError"]?.jsonPrimitive?.content)
         }
-        val saved = Json.parseToJsonElement(Files.readString(tempDir.resolve("bridge.json"))).jsonObject
-            .getValue("records").jsonArray.single().jsonObject
+        val saved = stateFiles.records().single()
         assertEquals("COMPLETED", saved.getValue("phase").jsonPrimitive.content)
         assertTrue(runtime.cell.closed)
         assertEquals(1, runtime.starts)
@@ -93,8 +91,8 @@ class CodexCodeModeInterruptionTest : CodeModeBridgeTestSupport() {
         val sink = RecordingSink()
         manager.interceptor(turn(), disableParallel = true).intercept(BASE_REQUEST, sink) { outerOutcome() }
         manager.onHeadStop()
-        val state = Files.readString(tempDir.resolve("bridge.json"))
-        val pending = Json.parseToJsonElement(state).jsonObject.getValue("records").jsonArray.single().jsonObject
+        val state = stateFiles.text()
+        val pending = stateFiles.records().single()
             .getValue("pending").jsonArray.last().jsonObject.getValue("clientId").jsonPrimitive.content
         val result = CodeModeResult(pending, "never executed")
         val outcome = manager.interceptor(turn(results = listOf(result)), disableParallel = true)
@@ -102,7 +100,7 @@ class CodexCodeModeInterruptionTest : CodeModeBridgeTestSupport() {
         assertTrue(outcome is TurnOutcome.Failure)
         assertTrue((outcome as TurnOutcome.Failure).message.contains("not exposed"))
         assertTrue(outcome.deterministic, "a bridge verdict is the same on every retry")
-        assertEquals(state, Files.readString(tempDir.resolve("bridge.json")))
+        assertEquals(state, stateFiles.text())
         assertEquals(1, runtime.cell.advances)
     }
 
@@ -117,13 +115,13 @@ class CodexCodeModeInterruptionTest : CodeModeBridgeTestSupport() {
         manager.interceptor(turn(id, "original"), disableParallel = true)
             .intercept(requestWithResult(id, "original"), RecordingSink()) { error("must not post") }
         manager.onHeadStop()
-        val before = Files.readString(tempDir.resolve("bridge.json"))
+        val before = stateFiles.text()
         val changed = CodeModeResult(id, "conflict")
         val outcome = manager.interceptor(turn(results = listOf(changed)), disableParallel = true)
             .intercept(siblingResults(listOf(changed)), RecordingSink()) { error("must not post conflict") }
         assertTrue(outcome is TurnOutcome.Failure)
         assertTrue((outcome as TurnOutcome.Failure).message.contains("conflicting replay"))
-        assertEquals(before, Files.readString(tempDir.resolve("bridge.json")))
+        assertEquals(before, stateFiles.text())
         assertFalse(runtime.starts > 1)
     }
 

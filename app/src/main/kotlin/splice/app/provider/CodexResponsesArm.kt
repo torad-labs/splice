@@ -8,6 +8,7 @@ import splice.codemode.DEFAULT_HEAP_MB
 import splice.codemode.DEFAULT_MAX_WORKERS
 import splice.codemode.JvmCodeModeRuntime
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.config.CODE_MODE_DIR
 import splice.core.config.CODE_MODE_STATE_SUFFIX
 import splice.core.config.StatePaths
 import splice.core.topology.AuthKind
@@ -15,6 +16,7 @@ import splice.core.util.HeadScopedLogs
 import splice.core.util.LogSink
 import splice.oauth.OAuthAccountFiles
 import splice.provider.codex.CodeModeBridgeConfig
+import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexAuthProvider
 import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexOAuthEndpoints
@@ -118,7 +120,10 @@ internal class CodexResponsesArm(
                             heapMb = ctx.providerCfg.quirks.codeModeHeapMb ?: DEFAULT_HEAP_MB,
                         )
                     },
-                    stateFile = statePaths.stateDir.resolve("${ctx.key}$CODE_MODE_STATE_SUFFIX"),
+                    state = CodeModeStateLocation(
+                        dir = statePaths.headsDir.resolve(ctx.key).resolve(CODE_MODE_DIR),
+                        legacyFile = statePaths.stateDir.resolve("${ctx.key}$CODE_MODE_STATE_SUFFIX"),
+                    ),
                     log = HeadScopedLogs.headScopedLog(ctx.key, log),
                 ),
             )

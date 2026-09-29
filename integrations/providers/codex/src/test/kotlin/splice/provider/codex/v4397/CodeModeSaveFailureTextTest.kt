@@ -6,8 +6,12 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
+import splice.core.util.LogSink
 import splice.provider.codex.CodeModePersistenceException
+import splice.provider.codex.CodeModeRecords
+import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexCodeModeStore
+import splice.provider.codex.StateDiskSpace
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -17,18 +21,27 @@ import java.nio.file.Path
 class CodeModeSaveFailureTextTest {
     private val json = Json
 
-    /** A state file under a regular file: the write fails with an IOException on any disk. */
+    /** A state directory under a regular file: the write fails with an IOException on any disk. */
     private fun unwritable(dir: Path): Path {
         val blocker = dir.resolve("not-a-dir")
         Files.writeString(blocker, "")
-        return blocker.resolve("code-mode.json")
+        return blocker.resolve("code-mode")
     }
+
+    private fun storeOn(dir: Path, freeBytes: StateDiskSpace) = CodexCodeModeStore(
+        CodeModeStateLocation(unwritable(dir), dir.resolve("legacy.json")),
+        json,
+        LogSink { },
+        freeBytes,
+    )
+
+    private val oneRecord = listOf(CodeModeRecords.of("conversation-1", 1))
 
     @Test
     fun `a save on a full disk names the full disk and keeps the not-rerun guarantee`(@TempDir dir: Path) {
-        val store = CodexCodeModeStore(unwritable(dir), json, freeBytes = { 0L })
+        val store = storeOn(dir) { 0L }
 
-        val failure = assertThrows<CodeModePersistenceException> { store.save(emptyList(), emptyList()) }
+        val failure = assertThrows<CodeModePersistenceException> { store.save(oneRecord, emptyList()) }
 
         val text = failure.outcome().message
         assertTrue(text.contains("disk") && text.contains("full"), text)
@@ -37,9 +50,9 @@ class CodeModeSaveFailureTextTest {
 
     @Test
     fun `a save that fails with room left names its cause, not a full disk`(@TempDir dir: Path) {
-        val store = CodexCodeModeStore(unwritable(dir), json, freeBytes = { Long.MAX_VALUE })
+        val store = storeOn(dir) { Long.MAX_VALUE }
 
-        val failure = assertThrows<CodeModePersistenceException> { store.save(emptyList(), emptyList()) }
+        val failure = assertThrows<CodeModePersistenceException> { store.save(oneRecord, emptyList()) }
 
         val text = failure.outcome().message
         assertFalse(text.contains("full"), text)
@@ -49,9 +62,9 @@ class CodeModeSaveFailureTextTest {
 
     @Test
     fun `an unreadable free-space answer never claims a full disk`(@TempDir dir: Path) {
-        val store = CodexCodeModeStore(unwritable(dir), json, freeBytes = { null })
+        val store = storeOn(dir) { null }
 
-        val failure = assertThrows<CodeModePersistenceException> { store.save(emptyList(), emptyList()) }
+        val failure = assertThrows<CodeModePersistenceException> { store.save(oneRecord, emptyList()) }
 
         assertFalse(failure.outcome().message.contains("full"), failure.outcome().message)
     }

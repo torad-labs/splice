@@ -31,6 +31,7 @@ import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.provider.codex.CodeModeBridgeConfig
+import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexCodeModeBridge
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
@@ -164,7 +165,10 @@ class CodeModeBridgeRuntimeTest {
     fun `code mode survives a head restart on the real runtime`() = runBlocking<Unit> {
         val opened = mutableListOf<JvmCodeModeRuntime>()
         val bridge = CodexCodeModeBridge(
-            CodeModeBridgeConfig({ runtime().also(opened::add) }, tempDir.resolve("restart.json")),
+            CodeModeBridgeConfig(
+                { runtime().also(opened::add) },
+                CodeModeStateLocation(tempDir.resolve("restart"), tempDir.resolve("restart.json")),
+            ),
         )
         try {
             assertTrue(script(bridge, "return 'before';", "outer-1") is TurnOutcome.Success)
@@ -227,13 +231,13 @@ class CodeModeBridgeRuntimeTest {
                 .intercept(BRIDGE_BASE_REQUEST, sink) { outer(threeCallsSource()) }
             assertEquals(3, sink.ids.size)
             val oversized = sink.ids.map { CodeModeResult(it, 0.toChar().toString().repeat(65_536)) }
-            val stateBefore = Files.readString(tempDir.resolve("bridge.json"))
+            val stateBefore = saved()
             val rejected = bridge.interceptor(turn().copy(toolResults = oversized), disableParallel = false)
                 .intercept(requestWithResults(oversized), Sink()) { error("must not post oversized results") }
             assertTrue(rejected is TurnOutcome.Failure)
             assertEquals(ErrorType.INVALID_REQUEST, (rejected as TurnOutcome.Failure).type)
             assertEquals("code-mode result frame exceeds the size limit", rejected.message)
-            assertEquals(stateBefore, Files.readString(tempDir.resolve("bridge.json")))
+            assertEquals(stateBefore, saved())
 
             val corrected = sink.ids.map { CodeModeResult(it, "corrected") }
             var upstream = ""
@@ -264,14 +268,14 @@ class CodeModeBridgeRuntimeTest {
                 assertTrue(exposed is TurnOutcome.Success)
                 nextId = next.ids.single()
             }
-            val stateBefore = Files.readString(tempDir.resolve("bridge.json"))
+            val stateBefore = saved()
             val oversized = accepted + CodeModeResult(nextId, 0.toChar().toString().repeat(65_536))
             val rejected = bridge.interceptor(turn().copy(toolResults = oversized), disableParallel = true)
                 .intercept(requestWithResults(oversized), Sink()) { error("must not post oversized results") }
             assertTrue(rejected is TurnOutcome.Failure)
             assertEquals(ErrorType.INVALID_REQUEST, (rejected as TurnOutcome.Failure).type)
             assertEquals("code-mode result frame exceeds the size limit", rejected.message)
-            assertEquals(stateBefore, Files.readString(tempDir.resolve("bridge.json")))
+            assertEquals(stateBefore, saved())
 
             val corrected = accepted + CodeModeResult(nextId, "corrected")
             var upstream = ""
@@ -368,7 +372,16 @@ class CodeModeBridgeRuntimeTest {
     )
 
     private fun bridge(runtime: JvmCodeModeRuntime, filename: String = "bridge.json") =
-        CodexCodeModeBridge(CodeModeBridgeConfig({ runtime }, tempDir.resolve(filename)))
+        CodexCodeModeBridge(
+            CodeModeBridgeConfig({ runtime }, CodeModeStateLocation(savedDir(filename), tempDir.resolve(filename))),
+        )
+
+    /** Where [bridge] keeps the records it was given [filename] for: one file per conversation (V4-340). */
+    private fun savedDir(filename: String = "bridge.json") = tempDir.resolve("$filename.d")
+
+    /** Everything [bridge] has saved: each conversation's file, in name order. */
+    private fun saved(): String =
+        Files.list(savedDir()).use { files -> files.sorted().map(Files::readString).toList() }.joinToString("\n")
 
     private fun turn(id: String? = null, output: String = "") = CodexCodeModeBridge.Turn(
         "session",

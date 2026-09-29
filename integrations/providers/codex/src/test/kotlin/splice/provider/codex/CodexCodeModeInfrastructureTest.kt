@@ -1,9 +1,6 @@
 package splice.provider.codex
 
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -17,7 +14,6 @@ import splice.upstream.codemode.CodeModeStep
 import splice.upstream.failure.CodeModeInfrastructureCategory
 import splice.upstream.failure.CodeModeInfrastructureClass
 import splice.upstream.failure.CodeModeInfrastructureException
-import java.nio.file.Files
 
 class CodexCodeModeInfrastructureTest : CodeModeBridgeTestSupport() {
     @ParameterizedTest
@@ -48,8 +44,7 @@ class CodexCodeModeInfrastructureTest : CodeModeBridgeTestSupport() {
         }
         assertTrue(result is TurnOutcome.Failure)
         assertTrue((result as TurnOutcome.Failure).message.contains("PROTOCOL/IO"))
-        val record = Json.parseToJsonElement(Files.readString(tempDir.resolve("bridge.json"))).jsonObject
-            .getValue("records").jsonArray.single().jsonObject
+        val record = stateFiles.records().single()
         assertEquals("LOST", record.getValue("phase").jsonPrimitive.content)
         var retryPost = ""
         manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, RecordingSink()) { body ->

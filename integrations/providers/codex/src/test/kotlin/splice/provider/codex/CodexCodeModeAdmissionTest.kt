@@ -1,29 +1,25 @@
 package splice.provider.codex
 
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
 import splice.upstream.codemode.CodeModeStep
-import java.nio.file.Files
 
 class CodexCodeModeAdmissionTest : CodeModeBridgeTestSupport() {
     @Test
     fun `failed initial admission can retry before any execution`() = runTest {
         val runtime = ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Completed("done"))))
         val manager = bridge(runtime)
-        val state = tempDir.resolve("bridge.json")
-        Files.createDirectory(state)
+        stateFiles.block()
         val failed = manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, RecordingSink()) {
             outerOutcome()
         }
         assertTrue(failed is TurnOutcome.Failure)
         assertEquals(0, runtime.starts)
-        Files.delete(state)
+        stateFiles.unblock()
         var posts = 0
         val retried = manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, RecordingSink()) {
             if (posts++ == 0) outerOutcome() else completedOutcome()
@@ -48,21 +44,19 @@ class CodexCodeModeAdmissionTest : CodeModeBridgeTestSupport() {
         manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, RecordingSink()) {
             if (posts++ == 0) outerOutcome() else completedOutcome()
         }
-        val state = tempDir.resolve("bridge.json")
-        val before = Json.parseToJsonElement(Files.readString(state)).jsonObject
-        Files.delete(state)
-        Files.createDirectory(state)
+        val before = stateFiles.state()
+        stateFiles.block()
         val other = turn(sessionId = "session-b")
         val failed = manager.interceptor(other, disableParallel = false).intercept(BASE_REQUEST, RecordingSink()) {
             outerOutcome("second")
         }
         assertTrue(failed is TurnOutcome.Failure)
         assertEquals(1, runtime.starts)
-        Files.delete(state)
+        stateFiles.unblock()
         manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, RecordingSink()) {
             completedOutcome()
         }
-        val after = Json.parseToJsonElement(Files.readString(state)).jsonObject
+        val after = stateFiles.state()
         assertEquals(before.getValue("records").jsonArray, after.getValue("records").jsonArray)
         assertEquals(before["expired"], after["expired"])
         assertEquals(1, runtime.starts)

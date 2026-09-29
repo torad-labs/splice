@@ -88,7 +88,7 @@ class CodeModeExecWireTest : CodeModeBridgeTestSupport() {
     @Test
     fun `exec and the pre-V4-388 splice_exec are both this bridge's outer call`() {
         val validation = CodexCodeModeValidation(
-            CodeModeBridgeConfig({ ScriptedRuntime(ArrayDeque()) }, tempDir.resolve("bridge.json")),
+            CodeModeBridgeConfig({ ScriptedRuntime(ArrayDeque()) }, stateLocation()),
         )
         assertNull(validation.outer(outer(name = "exec")))
         assertNull(validation.outer(outer(name = "splice_exec")))

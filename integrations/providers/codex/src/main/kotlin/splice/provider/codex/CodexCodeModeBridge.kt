@@ -58,7 +58,7 @@ public data class CodeModeRetention(
 
 public data class CodeModeBridgeConfig(
     val runtimes: CodeModeRuntimes,
-    val stateFile: Path,
+    val state: CodeModeStateLocation,
     /** V4-337: per conversation and by total size; was 128 records for the whole head. */
     val retention: CodeModeRetention = CodeModeRetention(),
     val ttl: Duration = 24.hours,
@@ -77,6 +77,11 @@ public data class CodeModeBridgeConfig(
      *  younger than this is presumed mid-call (a long Bash command, a permission prompt). */
     val cellEvictionFloor: Duration = 2.minutes,
 )
+
+/** V4-340: where a head keeps its code-mode records: one owner-only file per conversation in [dir]. [legacyFile]
+ *  is the single file every daemon before V4-340 kept the whole head in: read once, on the first load, its
+ *  conversations carried into [dir], and deleted. */
+public data class CodeModeStateLocation(val dir: Path, val legacyFile: Path)
 
 // why: how often a head's code-mode records are swept with no turn (V4-287). A record goes within
 // this long of its ttl, and a parked cell within this long of cellIdleTimeout (30 min).

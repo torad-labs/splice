@@ -19,6 +19,7 @@
 package splice.app.head
 
 import splice.core.config.BoolKnobWords
+import splice.core.config.CODE_MODE_DIR
 import splice.core.config.CODE_MODE_STATE_SUFFIX
 import splice.core.config.StatePaths
 import splice.core.storage.DayFileStores
@@ -69,19 +70,25 @@ internal class HeadKeptFiles(private val statePaths: StatePaths, private val log
             .forEach { dir -> dropHeadState(dir, "the head is no longer in splice.toml") }
     }
 
-    /** [dir] and everything under it, deepest first; each path that stays is named with why. */
-    private fun dropHeadState(dir: Path, why: String) {
-        val key = dir.fileName.toString()
+    /** [dir] and everything under it, deepest first; each path that stays is named with why. [what] is
+     *  what the log calls it: the head's whole state dir, or one store inside it. */
+    private fun dropHeadState(
+        dir: Path,
+        why: String,
+        key: String = dir.fileName.toString(),
+        what: String = "head state",
+    ) {
         val paths = listed(dir) { root -> Files.walk(root).use { walk -> walk.toList() } }.sortedDescending()
         val failed = paths.mapNotNull { path ->
             Cancellables.runCatchingCancellable { Files.deleteIfExists(path) }.exceptionOrNull()?.let { path to it }
         }
         failed.forEach { (path, failure) ->
-            log("[$key] head state $path could not be deleted (${SafeFailureText.render(failure)}): $why\n")
+            log("[$key] $what $path could not be deleted (${SafeFailureText.render(failure)}): $why\n")
         }
-        if (failed.isEmpty() && paths.isNotEmpty()) log("[$key] head state deleted: $why\n")
+        if (failed.isEmpty() && paths.isNotEmpty()) log("[$key] $what deleted: $why\n")
     }
 
+    /** The head's single file from before V4-340, and its conversations' directory (V4-340). */
     private fun dropCodeMode(key: String, why: String) {
         val file = statePaths.stateDir.resolve("$key$CODE_MODE_STATE_SUFFIX")
         Cancellables.runCatchingCancellable { Files.deleteIfExists(file) }.fold(
@@ -90,6 +97,8 @@ internal class HeadKeptFiles(private val statePaths: StatePaths, private val log
                 log("[$key] code-mode state could not be deleted (${SafeFailureText.render(failure)}): $why\n")
             },
         )
+        val conversations = statePaths.headsDir.resolve(key).resolve(CODE_MODE_DIR)
+        if (Files.isDirectory(conversations)) dropHeadState(conversations, why, key, "code-mode conversations")
     }
 
     private fun dropTrace(key: String, why: String) {

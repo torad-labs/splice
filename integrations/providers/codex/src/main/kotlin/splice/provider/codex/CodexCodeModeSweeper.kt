@@ -73,7 +73,7 @@ internal class CodeModeTimedSweep(
             }
         }.exceptionOrNull()?.let { failure ->
             config.log(
-                "[code-mode] the timed sweep could not save ${config.stateFile} " +
+                "[code-mode] the timed sweep could not save into ${config.state.dir} " +
                     "(${SafeFailureText.render(failure)}); it saves again at the next sweep",
             )
         }

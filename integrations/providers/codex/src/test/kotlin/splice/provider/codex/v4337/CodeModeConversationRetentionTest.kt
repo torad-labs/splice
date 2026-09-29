@@ -18,6 +18,7 @@ import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModePhase
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRetention
+import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexCodeModeRegistry
 import java.nio.file.Path
 import java.time.Clock
@@ -49,7 +50,7 @@ class CodeModeConversationRetentionTest {
         CodexCodeModeRegistry(
             CodeModeBridgeConfig(
                 { error("no script runs in a registry test") },
-                tempDir.resolve("state.json"),
+                CodeModeStateLocation(tempDir.resolve("code-mode"), tempDir.resolve("state.json")),
                 retention = retention,
                 clock = clock,
                 log = LogSink { logs += it },

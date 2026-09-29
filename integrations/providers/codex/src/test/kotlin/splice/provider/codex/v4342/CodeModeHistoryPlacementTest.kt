@@ -24,7 +24,6 @@ import splice.core.reasoning.ReasoningReplay
 import splice.provider.codex.CodeModeBridgeTestSupport
 import splice.provider.codex.CodexCodeModeBridge
 import splice.upstream.codemode.CodeModeStep
-import java.nio.file.Files
 
 private const val DEVELOPER = """{"role":"developer","content":"s"}"""
 private const val ABANDONED = "abandoned record"
@@ -121,7 +120,7 @@ class CodeModeHistoryPlacementTest : CodeModeBridgeTestSupport() {
         val read1 = startFirst(manager)
         manager.interceptor(turn(read1, "A"), disableParallel = false)
             .intercept(body(abandoning(read1)), RecordingSink()) { completedOutcome() }
-        val stored = Files.readString(tempDir.resolve("bridge.json"))
+        val stored = stateFiles.text()
         assertTrue("code-mode history no longer places the running script" in stored, "the store keeps the detail")
 
         val restored = bridge(ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Completed("must not run")))))

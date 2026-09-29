@@ -18,7 +18,6 @@ import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeRuntime
 import splice.upstream.codemode.CodeModeStep
 import splice.upstream.failure.CodeModeCapacityException
-import java.nio.file.Files
 import kotlin.time.Duration.Companion.minutes
 
 /**
@@ -155,7 +154,7 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
         val manager = CodexCodeModeBridge(
             CodeModeBridgeConfig(
                 { runtime },
-                tempDir.resolve("bridge.json"),
+                stateLocation(),
                 clock = clock,
                 maxOutputChars = SMALL_BUDGET_CHARS,
                 log = LogSink { logLines += it },
@@ -213,8 +212,7 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
             .also { assertTrue("\"status\":\"interrupted\"" in it, it) }
 
     private fun phaseOf(outerCallId: String): String =
-        Json.parseToJsonElement(Files.readString(tempDir.resolve("bridge.json"))).jsonObject
-            .getValue("records").jsonArray.map { it.jsonObject }
+        stateFiles.records()
             .single { it.getValue("outerCallId").jsonPrimitive.content == outerCallId }
             .getValue("phase").jsonPrimitive.content
 

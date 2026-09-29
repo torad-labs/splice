@@ -3,6 +3,8 @@ package splice.provider.codex
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -12,7 +14,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
 import splice.upstream.codemode.CodeModeStep
-import java.nio.file.Files
 
 /**
  * The environment around a conversation moves while the conversation stands still: Claude Code grows
@@ -102,10 +103,7 @@ class CodexCodeModeEnvironmentTest : CodeModeBridgeTestSupport() {
         val readId = sink.tools.single().id
         manager.interceptor(turn(readId, "A"), null, disableParallel = false)
             .intercept(liteBody(listOf("Read"), "s", callback(readId)), RecordingSink()) { completedOutcome() }
-        val stateFile = tempDir.resolve("bridge.json")
-        val persisted = Files.readString(stateFile)
-        val current = "\"metadataVersion\":$CODE_MODE_METADATA_VERSION"
-        Files.writeString(stateFile, persisted.replace(current, "\"metadataVersion\":2"))
+        stateFiles.rewriteRecords { record -> JsonObject(record + ("metadataVersion" to JsonPrimitive(2))) }
 
         val restored = bridge(ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Completed("must not run")))))
         var posted = ""

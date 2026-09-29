@@ -47,6 +47,12 @@ abstract class CodeModeBridgeTestSupport {
     /** Every line the bridge logged through its head-scoped sink, across every bridge built here. */
     protected val logLines = mutableListOf<String>()
 
+    /** The code-mode state [bridge] keeps: one file per conversation (V4-340). */
+    protected val stateFiles by lazy { CodeModeStateFiles(tempDir.resolve("code-mode")) }
+
+    /** [stateFiles]'s directory, and the single file an older daemon kept it in. */
+    protected fun stateLocation() = CodeModeStateLocation(stateFiles.dir, tempDir.resolve("bridge.json"))
+
     /** [maxRecords] is the head's record count (V4-337's [CodeModeRetention.records]). */
     protected fun bridge(
         runtime: CodeModeRuntime,
@@ -58,7 +64,7 @@ abstract class CodeModeBridgeTestSupport {
     ) = CodexCodeModeBridge(
         CodeModeBridgeConfig(
             { runtime },
-            tempDir.resolve("bridge.json"),
+            stateLocation(),
             retention = retention,
             ttl = ttl,
             maxRounds = maxRounds,

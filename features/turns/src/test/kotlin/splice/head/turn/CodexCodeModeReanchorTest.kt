@@ -22,6 +22,7 @@ import splice.head.round.RoundStrategy
 import splice.head.round.RunnerSignals
 import splice.head.wire.SseEmitterFactory
 import splice.provider.codex.CodeModeBridgeConfig
+import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexCodeModeBridge
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
@@ -87,7 +88,8 @@ class CodexCodeModeReanchorTest {
         finish: suspend (TurnOutcome) -> Unit,
         post: suspend (String) -> TurnOutcome,
     ): RoundStrategy {
-        val bridge = CodexCodeModeBridge(CodeModeBridgeConfig({ runtime }, tempDir.resolve("state.json")))
+        val state = CodeModeStateLocation(tempDir.resolve("code-mode"), tempDir.resolve("state.json"))
+        val bridge = CodexCodeModeBridge(CodeModeBridgeConfig({ runtime }, state))
         val turn = CodexCodeModeBridge.Turn("session", "conversation", "gpt-6-astra", setOf("Read"), emptyList())
         val emitter = SseEmitterFactory().create({}, "model", { buildJsonObject { } })
         return RoundStrategy(

@@ -62,7 +62,7 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
     }
 
     private fun restartableBridge(opened: MutableList<TerminalRuntime>) = CodexCodeModeBridge(
-        CodeModeBridgeConfig({ TerminalRuntime().also(opened::add) }, tempDir.resolve("bridge.json")),
+        CodeModeBridgeConfig({ TerminalRuntime().also(opened::add) }, stateLocation()),
     )
 
     private suspend fun runScript(bridge: CodexCodeModeBridge, callId: String): TurnOutcome {

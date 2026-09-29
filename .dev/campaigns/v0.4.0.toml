@@ -9766,7 +9766,7 @@ id = "V4-424"
 phase = "release"
 title = "doctor and boot give different fixes for the same splice.toml type error (Marlin, ef86845f3, V4-366 walk): boot prints 'splice.toml: heads.local.overrides.trace at line 25 expects quoted string. Fix: put the value in double quotes, as in trace = \"...\"'; splice doctor on the same file says 'fix the TOML (compare app/src/main/resources/splice.example.toml), or delete it and run: splice init', a source-tree path a release install lacks, and it tells a user to delete their config over two missing quotes. One sentence and one fix for a TopologyTypeFailure, authored once and printed by boot and doctor. Also: PUT /api/topology with a JSON true for a string key answers the raw parser text; it answers the same sentence."
 files = ["core/src/main/kotlin/splice/core/util/SafeFailureText.kt", "app/src/main/kotlin/splice/app/DaemonBoundary.kt", "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/DoctorConfigChecks.kt", "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/DoctorCheckTypes.kt", "features/diagnostics/src/main/kotlin/splice/diagnostics/doctor/DoctorCommand.kt", "features/diagnostics/src/test/kotlin/splice/diagnostics/v4424/"]
-status = "in_flight"
+status = "done"
 verify = "red first: splice doctor on a splice.toml with trace = true under a head's overrides prints the key, the line, the expected type and the same Fix sentence boot prints, and never a source-tree path or 'delete it'; boot's line is byte-identical to before; a TOML syntax error (not a type error) keeps doctor's existing advice minus the source path. :quality-architecture:test, rules wall."
 claimed_by = "splice-lead"
 claimed_at = "2026-09-29T03:07:21.439Z"

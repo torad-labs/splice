@@ -9889,6 +9889,7 @@ claimed_by = "claude-builder"
 claimed_at = "2026-09-29T04:32:09.447Z"
 # [2026-09-29] CLAIM: owner=claude-builder at=2026-09-29T04:32:09Z
 # [2026-09-29] amend by=unattributed: files were ["features/sessions/src/main/kotlin/splice/sessions/http/ActivityRoutes.kt", "features/sessions/src/main/kotlin/splice/sessions/http/SessionsRoutes.kt", "features/sessions/src/main/kotlin/splice/sessions/transcript/SessionTranscripts.kt", "features/sessions/src/test/kotlin/splice/sessions/v4427/"]
+# [2026-09-29] Sep 29, 6:35 PM CT, splice-lead [063360]: fence widened at claude-builder's ask (the incremental read sits beside TranscriptReader, which owns the format): + TranscriptReader.kt, TranscriptOpener.kt, SentTextLedger.kt (new) and the claude-code v4427/ test dir; the sessions files stay. Checked before widening: no open row fences these paths or a parent directory (V4-345 names neighbouring transcript files and is verified), no commit touched them in the last 12 hours, no seat lock; the only edits in the tree are this row's own uncommitted ones.
 
 [[items]]
 id = "V4-428"

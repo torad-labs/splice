@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.RefreshAttempt
 import splice.core.config.CODE_MODE_DIR
 import splice.core.config.StatePaths
@@ -96,8 +97,7 @@ class KeptFilesLifetimeTest {
     """.trimIndent()
 
     @BeforeAll
-    fun setUp() {
-        val tmp = Files.createTempDirectory("v4260-kept-files")
+    fun setUp(@TempDir tmp: Path) {
         val authFile = tmp.resolve("auth.json")
         Files.writeString(authFile, """{"tokens":{"access_token":"tok-1","account_id":"acct-1","refresh_token":"r"}}""")
         paths = StatePaths(baseOverride = tmp.resolve("state"))

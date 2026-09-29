@@ -8655,8 +8655,11 @@ id = "V4-358"
 phase = "release"
 title = "A screenshot-heavy session on a large-window head keeps its images (found by splice-website, 2026-09-27). Claude Code 2.1.283 caps media per request at 100, or 600 only when it counts the session as 1M-context (a [1m] model id, a native-1M model, or the 1M beta), and strips the oldest past the cap to cap-20 with '[media removed: request limit]' in each stripped tool_result (bOt / XEo(msgs, w?600:100, 20, ...) in ~/.local/share/claude/versions/2.1.283; byte cap tengu_media_byte_cap). A claudex trace showed one request with 100 input_image parts, the next with 80 and the marker text, while the backend window was 872k (gpt-6-sol). splice authors the model id (project CLAUDE.md s22: the id is a selector splice strips), so a head whose real window is past the 100-image regime can be presented as 1M-context to lift the cap to 600, with reported token counts scaled client/declared so compaction still fires at the backend's real ceiling (never spell [1m] past the ceiling without the scale). Measure first which heads' windows and image budgets justify it."
 files = []
-status = "todo"
+status = "in_flight"
 verify = "red first: a launch recipe test for a head declared at 872k shows the model id Claude Code receives is not 1M-context today; after, it is, and the scaled usage makes the client compact at the backend's ceiling (the same window proof V4-232 uses). Live: a claudex session reading 150 images keeps them all on the wire (no '[media removed: request limit]' in the trace) and compacts before the backend rejects."
+claimed_by = "claude-builder"
+claimed_at = "2026-09-29T01:57:25.527Z"
+# [2026-09-29] CLAIM: owner=claude-builder at=2026-09-29T01:57:25Z
 
 [[items]]
 id = "V4-359"

@@ -235,6 +235,11 @@ export interface HeadStatus {
    *  endpoint it was asked on (`:8099`). Absent when it answers, when the head is not a local runtime,
    *  and before the first probe: absence claims nothing, so it never reads as OK by itself. */
   runtimeNotAnswering?: string;
+  /** V4-429: for a running head whose provider refuses turns until a known instant (usage's
+   *  `provider_reset`), that instant in epoch SECONDS: the figure /health carries as
+   *  `quotaResetAtEpochSeconds`. Absent when the provider is not refusing; a value already past is a
+   *  refusal that is over. */
+  quotaResetAtEpochSeconds?: number;
 }
 
 /** The lifecycle endpoints return the fresh head status plus a transient note. */

@@ -66,14 +66,21 @@ internal class HeadResolver(
         return headByName(name).filter { it.launchSpec != null }
     }
 
-    /** Each head's status, and for a local head whose runtime is silent (V4-417) the endpoint it was asked
-     *  on as `runtimeNotAnswering`, from the daemon's held probe: the console reads it as down. */
-    fun headStatuses(): List<JsonObject> {
+    /** Each head's status. Two readings ride on it that the head's own health does not say: for a local
+     *  head whose runtime is silent (V4-417) the endpoint it was asked on as `runtimeNotAnswering`, from
+     *  the daemon's held probe; and for a running head whose provider refuses turns until a known instant
+     *  (V4-429) that instant in epoch seconds as `quotaResetAtEpochSeconds`, the figure /health carries.
+     *  The console reads the first as down and the second as out of quota. */
+    fun headStatuses(nowEpochMillis: Long = System.currentTimeMillis()): List<JsonObject> {
         val silent = payloads.silentRuntimes()
+        val quotaResets = payloads.quotaResets(nowEpochMillis)
         return heads.values.map { managed ->
-            val status = HeadStatus.json(managed.head, managed.authKind)
-            val endpoint = silent[managed.head.key] ?: return@map status
-            JsonObject(status + ("runtimeNotAnswering" to JsonPrimitive(endpoint)))
+            val key = managed.head.key
+            val marks = listOfNotNull(
+                silent[key]?.let { "runtimeNotAnswering" to JsonPrimitive(it) },
+                quotaResets[key]?.let { "quotaResetAtEpochSeconds" to JsonPrimitive(it) },
+            )
+            JsonObject(HeadStatus.json(managed.head, managed.authKind) + marks)
         }
     }
 }

@@ -28,8 +28,9 @@ export const ATTENTION_CAUSES = [
 export type AttentionCause = (typeof ATTENTION_CAUSES)[number];
 
 /** The printed cause, or 'down' for a struck head, 'runtime not answering' for a running head whose
- *  local runtime is silent (V4-417), or 'ok'. */
-export type HeadState = AttentionCause | 'down' | 'runtime not answering' | 'ok';
+ *  local runtime is silent (V4-417), 'out of quota' for one whose provider refuses turns until a
+ *  reset that is still ahead (V4-429), or 'ok'. */
+export type HeadState = AttentionCause | 'down' | 'runtime not answering' | 'out of quota' | 'ok';
 
 /** The word a state prints on the strip's edge. The edge holds 8ch (ui.css), and the causes run to
  *  16: `account excluded` printed as `account…` and `signed out` as `signed o…` (walkthrough S1).
@@ -45,6 +46,7 @@ export const EDGE_WORDS: Record<HeadState, string> = {
   'restart needed': 'restart',
   down: 'down',
   'runtime not answering': 'down',
+  'out of quota': 'no quota',
   ok: 'ok',
 };
 
@@ -90,7 +92,15 @@ export function queueAtMax(head: HeadStatus): boolean {
   return gate.queued >= gate.max;
 }
 
-export function headAttention(head: HeadStatus, signals: HeadSignals = NO_SIGNALS): HeadAttention {
+/** The instant (epoch SECONDS) a running head's provider refuses turns until, while it is still ahead of
+ *  [nowMs]; null when the provider is not refusing or the reset has passed. The daemon carries the
+ *  instant only while it holds, and a page open across the reset must not keep reading it. */
+export function quotaRefusedUntil(head: HeadStatus, nowMs: number): number | null {
+  const until = head.quotaResetAtEpochSeconds;
+  return until !== undefined && until * 1000 > nowMs ? until : null;
+}
+
+export function headAttention(head: HeadStatus, signals: HeadSignals = NO_SIGNALS, nowMs: number = Date.now()): HeadAttention {
   if (!head.running) {
     return { edge: 'grey', cocked: false, struck: true, label: EDGE_WORDS.down, cause: 'down' };
   }
@@ -107,6 +117,10 @@ export function headAttention(head: HeadStatus, signals: HeadSignals = NO_SIGNAL
   }
   // An api-key head has no login to sign out of: its credential is a key in a variable, and
   // `signed out` sent the operator to the accounts page, which cannot set one (walkthrough S2).
+  // The provider has said turns fail until a known instant: not the operator's to fix, but not OK either.
+  if (quotaRefusedUntil(head, nowMs) !== null) {
+    return { edge: 'amber', cocked: true, struck: false, label: EDGE_WORDS['out of quota'], cause: 'out of quota' };
+  }
   const noCredential: AttentionCause = head.authKind === 'api-key' ? 'key missing' : 'signed out';
   const cause: AttentionCause | null =
     head.versionMatch === false ? 'version mismatch'
@@ -162,6 +176,14 @@ export const FAMILY_NAME: Record<ProviderFamily, string> = {
  *  key`): every page that names a provider says it the same way. */
 export function familyName(authKind: string): string {
   return FAMILY_NAME[providerFamily(authKind)];
+}
+
+/** An instant as the operator's machine reads it (`Oct 5, 2:13 PM`), in the machine's zone unless a
+ *  test names one. */
+export function localInstantText(epochSeconds: number, zone?: string): string {
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', ...(zone === undefined ? {} : { timeZone: zone }),
+  }).format(new Date(epochSeconds * 1000));
 }
 
 /** What a running head's silent local runtime says, the sentence `splice status` prints for it too

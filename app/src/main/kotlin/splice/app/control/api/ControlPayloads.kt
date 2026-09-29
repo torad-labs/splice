@@ -89,7 +89,7 @@ internal class ControlPayloads(
         put("failedHeads", failed)
         putFailedHeadReasons(this)
         putRuntimeNotAnswering(this)
-        putQuotaResets(this, runningKeys, nowEpochMillis)
+        putQuotaResets(this, nowEpochMillis)
         if (configuredHeads == 0 && running == 0) {
             if (failed == 0) {
                 put("setupState", "not_set_up")
@@ -125,13 +125,18 @@ internal class ControlPayloads(
     }
 
     /** V4-398: for each running head whose provider refuses turns until a known instant, that
-     *  instant in epoch seconds; absent when no head is refusing, so a healthy daemon's shape is
-     *  unchanged. Read per request, so a head that recovers drops out on the next probe. */
-    private fun putQuotaResets(into: JsonObjectBuilder, runningKeys: Set<String>, nowEpochMillis: Long) {
-        val resets = heads.filterKeys { it in runningKeys }.mapNotNull { (key, managed) ->
+     *  instant in epoch seconds. Read per request, so a head that recovers drops out on the next probe.
+     *  /health puts it in `quotaResetAtEpochSeconds` and the heads route (V4-429) on each head. */
+    fun quotaResets(nowEpochMillis: Long = System.currentTimeMillis()): Map<String, Long> =
+        heads.filterValues { it.head.healthSnapshot().running }.mapNotNull { (key, managed) ->
             managed.head.providerResetForMs().takeIf { it > 0L }
                 ?.let { key to TimeUnit.MILLISECONDS.toSeconds(nowEpochMillis + it) }
-        }
+        }.toMap()
+
+    /** V4-398: [quotaResets] as /health's object; absent when no head is refusing, so a healthy daemon's
+     *  shape is unchanged. */
+    private fun putQuotaResets(into: JsonObjectBuilder, nowEpochMillis: Long) {
+        val resets = quotaResets(nowEpochMillis)
         if (resets.isEmpty()) return
         into.putJsonObject("quotaResetAtEpochSeconds") { resets.forEach { (key, reset) -> put(key, reset) } }
     }

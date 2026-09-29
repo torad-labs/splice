@@ -63,6 +63,7 @@ export const S = {
     ok: 'OK',
     down: 'Down',
     'runtime not answering': 'Down',
+    'out of quota': 'Out of quota',
     unhealthy: 'Failing',
     'version mismatch': 'Mismatch',
     'signed out': 'Signed out',
@@ -94,6 +95,7 @@ export const H = {
   local: 'This plan needs no login.',
   noneAvailable: 'Every account is signed out, excluded or at its limit.',
   down: 'This plan is not running; start it below.',
+  outOfQuota: 'The provider refuses turns until then; it reads OK after.',
   runtimeSilent: 'Start the runtime; this plan reads OK once it answers.',
   unhealthy: 'It runs but fails its health check; the log says why.',
   mismatch: 'It runs a different splice version; restart it.',
@@ -104,4 +106,10 @@ export const H = {
   accountExcluded: 'The next account is excluded; the pool below says why.',
   queueFull: 'Every slot is busy and the queue is at its limit.',
   restartNeeded: 'The config changed since this plan started; restart it.',
+} as const;
+
+/** Unit fragments, joined to a figure. */
+export const U = {
+  /** Between an out-of-quota head's state word and its reset: `Out of quota until Oct 5, 2:13 PM`. */
+  until: 'until',
 } as const;

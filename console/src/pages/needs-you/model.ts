@@ -163,6 +163,8 @@ function headNeeds(heads: readonly HeadStatus[], auth: AuthPayload | null): Need
         return need('warn', H.loginExpired, loginFix(head.authKind, head.key));
       case 'queue full':
         return need('warn', H.queueFull, open('#/turns', S.openTurns));
+      // The provider's refusal is already the nearest limit's item (its provider_reset warn), with the reset.
+      case 'out of quota':
       case 'account excluded':
       case 'restart needed':
       case 'ok':

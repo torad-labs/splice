@@ -4,9 +4,11 @@ export { fetchHeads, fetchLiveTurns, startHeadsPolling, startHead, stopHead, sto
 export {
   headAttention,
   inflightText,
+  localInstantText,
   liveTurnText,
   runtimeSilentText,
   providerFamily,
+  quotaRefusedUntil,
   queueAtMax,
   ATTENTION_CAUSES,
   EDGE_WORDS,

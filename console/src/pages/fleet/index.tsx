@@ -50,7 +50,7 @@ import { dispositions } from './coverage';
 import { LiveTurns } from './live-turns';
 import {
   EMPTIES, HEAD_FIELDS, arrangeHeads, canSignIn, causeHelp, columnsOf, dialectOf, firstBytes, healthParts,
-  inflightTotals, lastTurnOf, median, noneAvailable, poolEmpty, rowTone, stateTone, windowTone,
+  inflightTotals, lastTurnOf, median, noneAvailable, poolEmpty, rowTone, stateText, stateTone, windowTone,
 } from './model';
 import type { CauseHelp, LastTurn } from './model';
 import { H, S } from './strings';
@@ -215,8 +215,8 @@ function LastTurnCell({ last, nowMs }: { last: LastTurn; nowMs: number }) {
   }
 }
 
-function StateBadge({ attention, quiet = false }: { attention: HeadAttention; quiet?: boolean }) {
-  return <Badge tone={stateTone(attention.cause)} quiet={quiet}>{S.stateName[attention.cause]}</Badge>;
+function StateBadge({ line, quiet = false }: { line: HeadLine; quiet?: boolean }) {
+  return <Badge tone={stateTone(line.attention.cause)} quiet={quiet}>{stateText(line.attention, line.head)}</Badge>;
 }
 
 /** The columns an opened head's facts repeat, so an open panel takes their width and the figures
@@ -233,7 +233,7 @@ function headColumns(fields: readonly string[], grouped: string | null, nowMs: n
     wanted.has('provider') && grouped !== 'provider'
       ? { key: 'provider', label: S.provider, width: 'calc(4.5 * var(--u))', wrap: true, cell: (line) => familyName(line.head.authKind) }
       : null,
-    { key: 'state', label: S.state, width: 'calc(5.25 * var(--u))', wrap: true, cell: (line) => <StateBadge attention={line.attention} quiet /> },
+    { key: 'state', label: S.state, width: 'calc(5.25 * var(--u))', wrap: true, cell: (line) => <StateBadge line={line} quiet /> },
     wanted.has('model') ? { key: 'model', label: S.model, width: 'calc(9 * var(--u))', mono: true, wrap: true, cell: (line) => line.model ?? ABSENT } : null,
     wanted.has('account') ? { key: 'account', label: S.account, width: 'calc(6.75 * var(--u))', mono: true, cell: (line) => line.account ?? ABSENT } : null,
     wanted.has('inflight') ? { key: 'inflight', label: S.inflight, width: 'calc(8.5 * var(--u))', cell: (line) => <InFlight head={line.head} /> } : null,
@@ -394,7 +394,7 @@ export function FleetBoard({ heads, error = null, lastRead = null, sources, open
     const pinned = sources.catalogs?.find((entry) => entry.head === head.key)?.pinned_model ?? '';
     return {
       head,
-      attention: headAttention(head, signalsFor(head)),
+      attention: headAttention(head, signalsFor(head), nowMs),
       window: headWindow(sources.usage, head.key, nowMs),
       account: sources.auth?.[head.key]?.account_id_masked ?? null,
       // The catalog writes "" for a head that pins no model: that is an absence, not a name.
@@ -471,7 +471,7 @@ export function FleetBoard({ heads, error = null, lastRead = null, sources, open
           <DetailPanel
             title={opened.head.label}
             label={S.detail}
-            status={<StateBadge attention={opened.attention} />}
+            status={<StateBadge line={opened} />}
             onClose={() => onOpen(null)}
             closeLabel={S.close}
           >

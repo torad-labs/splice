@@ -2,14 +2,14 @@
 // state is and which colour says it, the latency series each head draws, how the two field sources
 // are read when they exist, and which accounts an opened head rides.
 import type { AccountRow } from '@entities/account';
-import { headAttention, providerFamily, runtimeSilentText } from '@entities/heads';
-import type { HeadSignals, HeadState, ProviderFamily } from '@entities/heads';
+import { headAttention, localInstantText, providerFamily, runtimeSilentText } from '@entities/heads';
+import type { HeadAttention, HeadSignals, HeadState, ProviderFamily } from '@entities/heads';
 import type { TurnRow } from '@entities/perf';
 import type { HeadWindow } from '@entities/usage';
 import type { HeadStatus, ProviderAuth } from '@shared/api';
 import type { BarPart, Mark, Tone } from '@shared/ui';
 import type { View } from '@features/views';
-import { H, S } from './strings';
+import { H, S, U } from './strings';
 
 export interface HeadGroup {
   /** The provider family in the `By provider` view, and '' for the one run of every other. */
@@ -28,6 +28,7 @@ const SEVERITY: Record<HeadState, number> = {
   down: 7,
   'runtime not answering': 7,
   unhealthy: 6,
+  'out of quota': 5,
   'version mismatch': 5,
   'signed out': 5,
   'key missing': 5,
@@ -38,8 +39,19 @@ const SEVERITY: Record<HeadState, number> = {
   ok: 0,
 };
 
-export function attentionRank(head: HeadStatus, signals: HeadSignals): number {
-  return SEVERITY[headAttention(head, signals).cause];
+export function attentionRank(head: HeadStatus, signals: HeadSignals, nowMs: number = Date.now()): number {
+  return SEVERITY[headAttention(head, signals, nowMs).cause];
+}
+
+/** A head's state as the State cell and the panel's badge print it: the page's word for the cause, and for
+ *  an out-of-quota head the reset in the machine's zone (V4-429). */
+export function stateText(attention: HeadAttention, head: HeadStatus): string {
+  return attention.cause === 'out of quota' ? outOfQuotaText(head) : S.stateName[attention.cause];
+}
+
+function outOfQuotaText(head: HeadStatus): string {
+  const until = head.quotaResetAtEpochSeconds;
+  return until === undefined ? S.stateName['out of quota'] : `${S.stateName['out of quota']} ${U.until} ${localInstantText(until)}`;
 }
 
 /** The four buckets the fleet's split bar counts: healthy, needing the operator, failing, stopped. */
@@ -240,6 +252,9 @@ export function causeHelp(head: HeadStatus, cause: HeadState, auth: ProviderAuth
       return { text: H.down };
     case 'runtime not answering':
       return { text: `${S.stateName.down}: ${runtimeSilentText(head) ?? cause}. ${H.runtimeSilent}` };
+    case 'out of quota': {
+      return { text: `${outOfQuotaText(head)}. ${H.outOfQuota}` };
+    }
     case 'unhealthy':
       return { text: H.unhealthy, href: `#/logs?head=${encodeURIComponent(head.key)}`, link: S.openLog };
     case 'version mismatch':

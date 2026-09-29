@@ -38,6 +38,7 @@ function wireRow(over: Partial<AccountWire> = {}): AccountWire {
     seven_day_used_percent: null, seven_day_reset_epoch_seconds: null, seven_day_window_seconds: null, available: false,
     credential_present: false, auth_excluded_until_epoch_millis: null, auth_exclusion_reason: null, selected: false,
     pinned: false, next_target: false, heads: ['claudex'], observed_at_epoch_seconds: null,
+    five_hour_current: false, seven_day_current: false,
     ...over,
   };
 }

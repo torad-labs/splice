@@ -23,6 +23,11 @@ export interface AccountWindow {
   used_percent: number | null;
   /** Epoch SECONDS (not ms) as the providers send it, or null where none is reported. */
   reset_epoch_seconds: number | null;
+  /** Whether the daemon says this reading may count as the plan's usage now (V4-407): false for a reading
+   *  too old to say what the plan holds, though its reset is still ahead. The Accounts page shows such a
+   *  reading with its age; the nearest limit skips it. Absent on a window that did not come from
+   *  /api/accounts (a head's own report, a fixture): it carries no claim, so it counts. */
+  current?: boolean;
   /** Claude only: the model this window is scoped to, from the statusline `rate_limits` payload
    *  (`seven_day_opus`, `seven_day_sonnet`, `model_scoped`). Absent on every probed kind, whose
    *  snapshot holds exactly two windows filed by length (Quota.kt:17-34). */
@@ -116,6 +121,10 @@ export interface AccountWire {
   seven_day_used_percent: number | null;
   seven_day_reset_epoch_seconds: number | null;
   seven_day_window_seconds: number | null;
+  /** V4-407: whether each window's reading may count as the plan's usage now. Required, so the wire probe
+   *  fails a daemon that stops sending it: the nearest limit would otherwise count every stale reading again. */
+  five_hour_current: boolean;
+  seven_day_current: boolean;
   available: boolean | null;
   credential_present: boolean;
   auth_excluded_until_epoch_millis: number | null;

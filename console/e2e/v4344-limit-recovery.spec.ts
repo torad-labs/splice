@@ -18,9 +18,11 @@ const account = (label: string, used: number): AccountWire => ({
   five_hour_used_percent: used,
   five_hour_reset_epoch_seconds: Math.floor(NOW / 1000),
   five_hour_window_seconds: 18_000,
+  five_hour_current: true,
   seven_day_used_percent: null,
   seven_day_reset_epoch_seconds: null,
   seven_day_window_seconds: null,
+  seven_day_current: false,
   observed_at_epoch_seconds: Math.floor(Date.now() / 1000),
 });
 

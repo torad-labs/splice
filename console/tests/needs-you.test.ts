@@ -222,6 +222,18 @@ describe('the daemon, the plans and the accounts', () => {
     expect(out.find((need) => need.source === 'plans')).toMatchObject({ severity: 'danger', subject: 'work', finding: '5h at 99%' });
   });
 
+  test('a window the daemon calls not current is no limit, however full and however far its reset (V4-408)', () => {
+    const old = account({
+      windows: [{ seconds: 604_800, used_percent: 100, reset_epoch_seconds: NOW / 1000 + 6 * 86_400, current: false }],
+    });
+    expect(needsOf(quiet({ accounts: read({ accounts: [old] }) }), NOW).needs.find((need) => need.source === 'plans')).toBeUndefined();
+    const held = account({
+      windows: [{ seconds: 604_800, used_percent: 100, reset_epoch_seconds: NOW / 1000 + 6 * 86_400, current: true }],
+    });
+    expect(needsOf(quiet({ accounts: read({ accounts: [held] }) }), NOW).needs.find((need) => need.source === 'plans'))
+      .toMatchObject({ severity: 'danger', finding: expect.stringContaining('100%') });
+  });
+
   test('a future reset still leaves a near limit visible beside a spare head', () => {
     const near = account({
       label: 'near', heads: ['e2e-codex'],

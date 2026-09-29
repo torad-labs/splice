@@ -9,6 +9,10 @@
 // account row names (the Claude head builds no pool; a key head has no login). A head that rides an
 // account row is read from the rows, which hold every account of its pool, not only the selected one.
 //
+// Only windows the daemon calls current count (V4-407/V4-408): a reading hours old whose reset is still
+// ahead says nothing about what the plan holds now, so it is no limit, however full. The Accounts page
+// still shows it, with its age. A window the daemon made no claim about (an older daemon) counts.
+//
 // An account that cannot serve a turn (refused by its pool, no credential, or spent) ranks after
 // every account that can: a spent account beside one with room is not the limit the fleet is nearest,
 // the pool has already stepped past it. When none can serve, the fullest of the rest is the limit the
@@ -58,7 +62,7 @@ type Candidate = Omit<NearestLimit, 'level'> & { serving: boolean };
 function fromAccounts(accounts: readonly AccountRow[], nowMs: number): Candidate[] {
   const out: Candidate[] = [];
   for (const account of accounts) {
-    const window = accountWindow(account, nowMs);
+    const window = accountWindow({ ...account, windows: account.windows.filter((held) => held.current !== false) }, nowMs);
     if (window === null || window.used_percent === null) continue;
     out.push({
       serving: !isExcluded(account, nowMs) && account.credential_present && window.used_percent < EXHAUSTED_AT_PERCENT,

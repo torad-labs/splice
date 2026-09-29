@@ -132,9 +132,11 @@ function wireRow(over: Partial<AccountWire> = {}): AccountWire {
     five_hour_used_percent: 42,
     five_hour_reset_epoch_seconds: 1_800_003_600,
     five_hour_window_seconds: HOUR_5,
+    five_hour_current: true,
     seven_day_used_percent: 7,
     seven_day_reset_epoch_seconds: 1_800_086_400,
     seven_day_window_seconds: DAY_7,
+    seven_day_current: true,
     available: true,
     credential_present: true,
     auth_excluded_until_epoch_millis: null,
@@ -159,6 +161,8 @@ const SINGLE_LOGIN = wireRow({
   seven_day_used_percent: null,
   seven_day_reset_epoch_seconds: null,
   seven_day_window_seconds: null,
+  five_hour_current: false,
+  seven_day_current: false,
   available: null,
   selected: null,
   pinned: null,
@@ -169,8 +173,8 @@ describe('the accounts wire becomes the page model', () => {
   test('each reported slot becomes a window at the length the provider reported', () => {
     const [row] = accountsFromWire({ accounts: [wireRow({ seven_day_window_seconds: DAY_30 })] }).accounts;
     expect(row?.windows).toEqual([
-      { seconds: HOUR_5, used_percent: 42, reset_epoch_seconds: 1_800_003_600 },
-      { seconds: DAY_30, used_percent: 7, reset_epoch_seconds: 1_800_086_400 },
+      { seconds: HOUR_5, used_percent: 42, reset_epoch_seconds: 1_800_003_600, current: true },
+      { seconds: DAY_30, used_percent: 7, reset_epoch_seconds: 1_800_086_400, current: true },
     ]);
   });
 

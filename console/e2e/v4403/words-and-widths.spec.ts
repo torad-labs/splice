@@ -80,7 +80,8 @@ test('Turns shows an outcome whole at desktop width', async ({ page }) => {
   });
   await open(page, 'turns');
   const table = page.locator('.myx-tn-table').first();
-  await expect(table.getByText('error:rate-limited')).toBeVisible({ timeout: 15_000 });
+  // .first(): an earlier journey in the shared stack can leave a real rate-limited turn beside the one rewritten here
+  await expect(table.getByText('error:rate-limited').first()).toBeVisible({ timeout: 15_000 });
   const heads = await table.locator('thead th').allTextContents();
   const at = heads.findIndex((label) => label.trim() === 'Outcome');
   expect(at, 'Outcome column present').toBeGreaterThanOrEqual(0);

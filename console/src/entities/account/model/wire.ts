@@ -14,15 +14,21 @@ function slot(
   resetEpochSeconds: number | null,
   windowSeconds: number | null,
   fallbackSeconds: number,
+  current: boolean,
 ): AccountWindow | null {
   if (usedPercent === null && resetEpochSeconds === null && windowSeconds === null) return null;
-  return { seconds: windowSeconds ?? fallbackSeconds, used_percent: usedPercent, reset_epoch_seconds: resetEpochSeconds };
+  return {
+    seconds: windowSeconds ?? fallbackSeconds,
+    used_percent: usedPercent,
+    reset_epoch_seconds: resetEpochSeconds,
+    current,
+  };
 }
 
 function accountFromWire(wire: AccountWire): AccountRow {
   const windows = [
-    slot(wire.five_hour_used_percent, wire.five_hour_reset_epoch_seconds, wire.five_hour_window_seconds, FIVE_HOUR_SECONDS),
-    slot(wire.seven_day_used_percent, wire.seven_day_reset_epoch_seconds, wire.seven_day_window_seconds, SEVEN_DAY_SECONDS),
+    slot(wire.five_hour_used_percent, wire.five_hour_reset_epoch_seconds, wire.five_hour_window_seconds, FIVE_HOUR_SECONDS, wire.five_hour_current),
+    slot(wire.seven_day_used_percent, wire.seven_day_reset_epoch_seconds, wire.seven_day_window_seconds, SEVEN_DAY_SECONDS, wire.seven_day_current),
   ].filter((window): window is AccountWindow => window !== null);
   return {
     kind: wire.kind,

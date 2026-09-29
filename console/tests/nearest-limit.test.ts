@@ -8,7 +8,8 @@
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
-import type { AccountRow, AccountWindow } from '../src/entities/account';
+import { accountsFromWire, readAgeText } from '../src/entities/account';
+import type { AccountRow, AccountWindow, AccountWire } from '../src/entities/account';
 import { nearestWindow } from '../src/entities/usage';
 import { limitText, nearestLimit } from '../src/features/nearest-limit';
 import type { LimitSources } from '../src/features/nearest-limit';
@@ -18,6 +19,7 @@ import { FleetBoard } from '../src/pages/fleet';
 import type { FleetSources } from '../src/pages/fleet';
 import { S as FLEET } from '../src/pages/fleet/strings';
 import type { AuthPayload, HeadStatus, HeadUsageEntry, UsagePayload } from '../src/shared/api';
+import { ABSENT } from '../src/shared/lib';
 import { WindowCell } from '../src/widgets/rule';
 import { cellText, statOf } from './lib/markup';
 
@@ -126,5 +128,74 @@ describe('the nearest limit is one number on the strip, the fleet and the accoun
 
   test('nothing reported anywhere is no limit, never a zero', () => {
     expect(nearestLimit({ accounts: [account('quiet', [])], usage: null, auth: null }, NOW)).toBeNull();
+  });
+});
+
+// V4-408: the console half of V4-407. A codex 7d reading at 100%, read 4.5 h earlier on a home with no
+// ChatGPT sign-in, was the header's, Fleet's and Needs you's nearest limit for as long as its reset was
+// ahead. The daemon now says per window whether the reading may count as the plan's usage now
+// (`five_hour_current`, `seven_day_current`); the nearest limit reads only those, while the Accounts
+// page keeps the old reading and its age.
+const ago = (seconds: number): number => at(-seconds);
+const stale = (seconds: number, used: number, resetIn: number): AccountWindow => ({ ...win(seconds, used, resetIn), current: false });
+const current = (seconds: number, used: number, resetIn: number): AccountWindow => ({ ...win(seconds, used, resetIn), current: true });
+const QUIET: UsagePayload = { window_hours: 5, warn_pct: 80, warn_tokens_5h: 0, heads: [] };
+
+/** A daemon row in the shape /api/accounts sends it, its windows and their flags set by [over]. */
+function wireRow(over: Partial<AccountWire>): AccountWire {
+  return {
+    credential_path: '/home/op/.codex/auth.json', kind: 'chatgpt-oauth', label: 'work', primary: false, single_login: false,
+    plan: 'plus', five_hour_used_percent: null, five_hour_reset_epoch_seconds: null, five_hour_window_seconds: null,
+    seven_day_used_percent: null, seven_day_reset_epoch_seconds: null, seven_day_window_seconds: null, available: true,
+    credential_present: true, auth_excluded_until_epoch_millis: null, auth_exclusion_reason: null, selected: false, pinned: false,
+    next_target: false, heads: ['claudex'], observed_at_epoch_seconds: null, five_hour_current: true, seven_day_current: true, ...over,
+  };
+}
+
+describe('the nearest limit reads only the windows the daemon calls current (V4-408)', () => {
+  const old = account('old', [stale(DAY_7, 100, 6 * 86_400)], { credential_present: false, observed_at_epoch_seconds: ago(4.5 * 3600) });
+
+  test('a 100% weekly reading that is not current is no limit on the strip, Fleet or Accounts', () => {
+    const sources = { accounts: [old], usage: QUIET, auth: null };
+    expect(nearestLimit(sources, NOW)).toBeNull();
+    const out = printed(sources);
+    expect(out.strip).toBe('');
+    expect([out.fleet?.value, out.accounts?.value]).toEqual([ABSENT, ABSENT]);
+  });
+
+  test('the next current window is the limit: a stale 90% on an account that can serve beside a current 60%', () => {
+    const serving = account('serving', [stale(DAY_7, 90, 6 * 86_400)], { observed_at_epoch_seconds: ago(4.5 * 3600) });
+    const sources = { accounts: [serving, account('work', [current(DAY_7, 60, 3 * 86_400)])], usage: QUIET, auth: null };
+    expect(nearestLimit(sources, NOW)).toMatchObject({ account: 'work', window: '7d', pct: 60 });
+    const out = printed(sources);
+    expect([out.strip, out.fleet?.value, out.accounts?.value]).toEqual(['60%', '60%', '60%']);
+  });
+
+  test('within one account only the current window counts', () => {
+    const both = account('both', [current(HOUR_5, 30, 3600), stale(DAY_7, 100, 6 * 86_400)]);
+    expect(nearestLimit({ accounts: [both], usage: QUIET, auth: null }, NOW)).toMatchObject({ window: '5h', pct: 30, level: 'ok' });
+  });
+
+  test('a current window counts, and so does one the daemon made no claim about', () => {
+    const now = account('now', [current(DAY_7, 100, 6 * 86_400)]);
+    expect(nearestLimit({ accounts: [now], usage: QUIET, auth: null }, NOW)).toMatchObject({ pct: 100, level: 'critical' });
+    const undated = account('undated', [win(DAY_7, 55, 3 * 86_400)]);
+    expect(nearestLimit({ accounts: [undated], usage: QUIET, auth: null }, NOW)).toMatchObject({ account: 'undated', pct: 55 });
+  });
+
+  test('the flags ride the wire into the model, and the ranking follows them', () => {
+    const flagged = wireRow({
+      five_hour_used_percent: 30, five_hour_reset_epoch_seconds: at(3600), five_hour_window_seconds: HOUR_5, five_hour_current: true,
+      seven_day_used_percent: 100, seven_day_reset_epoch_seconds: at(6 * 86_400), seven_day_window_seconds: DAY_7, seven_day_current: false,
+    });
+    const [row] = accountsFromWire({ accounts: [flagged] }).accounts;
+    expect(row?.windows.map((window) => window.current)).toEqual([true, false]);
+    expect(nearestLimit({ accounts: [row as AccountRow], usage: QUIET, auth: null }, NOW)).toMatchObject({ window: '5h', pct: 30 });
+  });
+
+  test('the Accounts page keeps the old reading and says how old it is', () => {
+    const html = render(h(AccountsBoard, { payload: { accounts: [old] }, usage: QUIET, auth: null, nowMs: NOW }));
+    expect(html).toContain('100%');
+    expect(readAgeText(old, NOW)).toMatch(/^windows read 4h/);
   });
 });

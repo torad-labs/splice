@@ -9559,6 +9559,7 @@ verify = "red first: messageSent to a socket address with one live registry hold
 claimed_by = "console"
 claimed_at = "2026-09-29T01:19:18.472Z"
 # [2026-09-29] CLAIM: owner=console at=2026-09-29T01:19:18Z
+# [2026-09-29] RECEIPT cmd=":features-sessions:test 108/0; :app:test 703 (1 skipped) 0 failed; ConsoleActivityPublishTest 9/9; gate rules --prove-coverage; gate typecheck; gate title; :quality-architecture:test 250, 4 red in peer V4-412 files" exit=0 tests=2 touched=app/src/main/kotlin/splice/app/ConsoleWiring.kt,app/src/test/kotlin/splice/app/ConsoleActivityPublishTest.kt,features/sessions/src/main/kotlin/splice/sessions/activity/MessageEdgeStore.kt tail="red first: both new tests red on HEAD before the change, green after; MessageEdgeStore.kt (NameHolders.sessionAt) is outside the fence"
 
 [[items]]
 id = "V4-412"

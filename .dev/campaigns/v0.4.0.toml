@@ -9724,7 +9724,7 @@ id = "V4-420"
 phase = "release"
 title = "Fleet's Last turn reads 'None' for a head that never ran a turn (Marlin, f7f1e9308): claude-bonsai-second reads None while the other rows read a dash or '2d ago'. A missing last turn reads the dash every other empty cell uses."
 files = ["console/src/pages/fleet/", "console/tests/fleet-last-turn.test.ts"]
-status = "todo"
+status = "in_flight"
 verify = "red first: a head with no last turn renders the empty-cell dash in Fleet's Last turn, never None, null or undefined. Console test, build, lint."
 
 [[items]]

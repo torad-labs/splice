@@ -8726,7 +8726,7 @@ id = "V4-362"
 phase = "release"
 title = "Folder trust on resume, proved live (Marlin F2 finding 2). Found: film-home-3's tally session was started with claude -p (daemon.log 9:53:27 AM CT, launch claude-splice -> [claude, -p, ...]); print mode never asks about trust, so no head held a trust record for ~/tally (.claude-claude-splice/.claude.json has no tally project) and V4-283 (LaunchService.kt:103-105, TrustedLaunch over sibling config dirs) had nothing to carry. The walk fixture made the question appear, not a missing carry; the carry itself has only unit proof (LaunchFolderTrustTest)."
 files = []
-status = "done"
+status = "verified"
 verify = "live leg on a throwaway home (captures/, never the operator's): claude-splice run interactively in a git repo, trust answered yes, one turn; then claude-grok -r <that id> in tmux: capture-pane shows no trust dialog before the resumed conversation (R3: the same leg with the trust record removed shows the dialog); if the live leg reds, the fix lands with a red-first test in v4362/."
 # [2026-09-27] Marlin accepted the fixture reading (Sep 27, ~1:55 PM CT): he checked LaunchService.kt:103-105 carries trust. The film home recipe now says the first session is started interactively, never -p (captures/film/film-home-3/make-home.sh header, backup make-home.sh.bak-20260927-pre-trust-note). Walked when it lands.
 # [2026-09-28] Live proof from Marlin's V4-361 check (Sep 27 evening, film-home-3 at da2b006bd): with the tally conversation started interactively (trust granted on claude-splice), claude-muse -r 64eefd61-… asked no trust question, so V4-283's trust carry works live on an interactive fixture.

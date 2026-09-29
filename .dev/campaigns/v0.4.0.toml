@@ -7092,6 +7092,7 @@ claimed_at = "2026-09-26T03:02:47.649Z"
 # [2026-09-29] amend by=splice-lead: files were ["core/src/main/kotlin/splice/core/Versions.kt", "integrations/claude-code/src/main/kotlin/splice/client/ClaudeArgv.kt", "integrations/claude-code/src/test/kotlin/splice/client/ClaudeArgvTest.kt", "tools/e2e/docker/Dockerfile", "integrations/claude-code/src/main/kotlin/splice/client/resume/TranscriptModelRewrite.kt", "features/turns/src/main/kotlin/splice/head/ActivityLabel.kt", "features/configuration/src/main/kotlin/splice/configuration/add/AddProfileCatalog.kt", "README.md", "CHANGELOG.md", "tools/e2e/docker/inside.sh"]
 # [2026-09-29] README.md lent to V4-340 (console: the code-mode store's new layout row) at 11:10 PM CT; this row's README edit (2.1.284) is committed in cde88416b. Restore it to this fence when V4-340 lands.
 # [2026-09-29] correction: README.md was lent to V4-340 at about 10:54 PM CT, not 11:10 PM CT as the lend note says.
+# [2026-09-29] correction: cde88416b is at 10:32 PM CT (git's commit time), not ~10:50 PM CT as the pin note says.
 
 [[items]]
 id = "V4-257"

@@ -8994,6 +8994,7 @@ verify = "A head test in features/turns/src/test/kotlin/splice/head/v4374/ posts
 claimed_by = "claude-builder"
 claimed_at = "2026-09-29T01:57:25.318Z"
 # [2026-09-29] CLAIM: owner=claude-builder at=2026-09-29T01:57:25Z
+# [2026-09-29] RECEIPT cmd="bun tools/gate slot -- :features-turns:test --tests 'splice.head.v4374.*'; :features-turns:detekt :core:detekt :quality-architecture:test; bun tools/gate rules (77 passed); bun tools/gate typecheck (none added)" exit=0 tests=5 touched=core/src/main/kotlin/splice/core/config/Knob.kt,app/src/main/resources/splice.example.toml,features/turns/src/main/kotlin/splice/head/admission/RequestMaterializationGate.kt,features/turns/src/test/kotlin/splice/head/v4374/DefaultRequestCapTest.kt,features/turns/src/test/kotlin/splice/head/v4374/HeadHeapProbe.kt,features/turns/src/test/kotlin/splice/head/v4374/RequestHeapBudgetTest.kt,features/turns/src/test/kotlin/splice/head/v4374/ScreenshotBody.kt tail="d core detekt green; the first quality-architecture run of the session failed once with no log kept and passed on both reruns with nothing changed. Outside the fence: RequestMaterializationGate.kt comment 'the same 16' (orphaned by the permits change). New files: features/turns/src/test/kotlin/splice/head/v4374/DefaultRequestCapTest.kt, HeadHeapProbe.kt, RequestHeapBudgetTest.kt, ScreenshotBody.kt"
 
 [[items]]
 id = "V4-375"

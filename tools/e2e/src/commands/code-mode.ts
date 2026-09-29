@@ -80,6 +80,21 @@ export const MAX_BODY = 1_048_576;
 /** The one code-mode tool a code_mode_only model sees (V4-388; codex-rs code-mode-protocol PUBLIC_TOOL_NAME). */
 export const EXEC_TOOL = "exec";
 
+/** V4-390: a lite tool list as the backend reads it. codex groups every function and custom tool into one
+ *  `functions` namespace (create_tools_json_for_responses_lite), so a namespace entry stands for its members. */
+function declaredTools(list: PyValue): PyValue[] {
+  return [...iter(list)].flatMap((tool) =>
+    isPyObj(tool) && pyEq(get(tool, "type"), "namespace") ? [...iter(get(tool, "tools", []))] : [tool]);
+}
+
+/** V4-390: whether [list] declares exec inside the `functions` namespace; the backend then names that
+ *  namespace on the call, as codex's history carries it. */
+function execNamespaced(list: PyValue): boolean {
+  return [...iter(list)].some((tool) =>
+    isPyObj(tool) && pyEq(get(tool, "type"), "namespace") && pyEq(get(tool, "name"), "functions") &&
+    [...iter(get(tool, "tools", []))].some((member) => pyEq(get(member, "name"), EXEC_TOOL)));
+}
+
 const int = (n: number | bigint): PyValue => ({ __pyNum: String(n), isFloat: false });
 const isExactInt = (v: PyValue): v is { __pyNum: string; isFloat: false } =>
   typeof v === "object" && v !== null && "__pyNum" in v && !(v as { isFloat: boolean }).isFloat;
@@ -129,7 +144,7 @@ export class Budget {
       }
     }
     this.schema_bytes += dumps(declarations, ",", ":").length;
-    this.code_tool_requests += declarations.some((tool) => pyEq(get(tool, "name"), EXEC_TOOL)) ? 1 : 0;
+    this.code_tool_requests += declaredTools(declarations).some((tool) => pyEq(get(tool, "name"), EXEC_TOOL)) ? 1 : 0;
     this.guidance_requests += dumps(payload).includes("<code_mode_orchestration>") ? 1 : 0;
   }
 
@@ -1690,7 +1705,7 @@ export function assertGuidance(body: PyValue, callerSystem: string, enabled: boo
   if (countOf(instructions, "<code_mode_orchestration>") !== Number(enabled)) {
     throw new ValueError("code-mode guidance section count was not exactly one when enabled");
   }
-  const declarations = iter(get(inputItems[0] as PyValue, "tools", []));
+  const declarations = declaredTools(get(inputItems[0] as PyValue, "tools", []));
   const runners = declarations.filter((tool) => pyEq(get(tool, "name"), EXEC_TOOL));
   if (runners.length !== Number(enabled) || runners.some((tool) => !pyEq(get(tool, "type"), "custom"))) {
     throw new ValueError("code-mode runner and guidance were not coupled");
@@ -1735,7 +1750,7 @@ export function mockHandler(state: MockState): Methods {
         // .get("tools", []) alone: the iteration that can raise TypeError happens at each any(),
         // after assert_guidance, so it must not be hoisted here.
         const declaredValue = get(at(input, 0), "tools", []);
-        const declared = () => iter(declaredValue);
+        const declared = () => declaredTools(declaredValue);
         let item: PyObj;
         if (caseName === "auth-preflight") item = message("auth-ok", "AUTH_OK");
         else if (caseName === "toggle-probe") {
@@ -1760,6 +1775,7 @@ export function mockHandler(state: MockState): Methods {
               throw new ValueError("missing code-mode declaration");
             }
             item = obj([["type", "custom_tool_call"], ["id", "item-" + caseName], ["call_id", "outer-" + caseName],
+              ...(execNamespaced(declaredValue) ? [["namespace", "functions"] as [string, PyValue]] : []),
               ["name", EXEC_TOOL], ["input", SCRIPTS[caseName] as string], ["status", "completed"]]);
           } else {
             const expected = EXPECTED[caseName] as string;

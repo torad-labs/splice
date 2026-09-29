@@ -50,6 +50,7 @@ class CodexWireGoldenTest {
     // including order, code-mode exec, and the client-executed search shape on lite turns.
     private val codeModeTool = """{"type":"function","name":"splice_exec","description":"Code mode",""" +
         """"strict":false,"parameters":{"type":"object","properties":{}}}"""
+
     // V4-390: a lite turn's function tools ride inside codex's `functions` namespace.
     private val liteFunctions = """{"type":"namespace","name":"functions","description":"","tools":[$codeModeTool]}"""
     private val mcpTool = """{"type":"function","name":"mcp__synthetic_0","description":"Synthetic tool 0",""" +

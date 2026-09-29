@@ -42,14 +42,17 @@ internal class CodexCodeModeWire(private val json: Json, private val log: LogSin
         val item = input.getOrNull(index) as? JsonObject
         val tools = item?.get(FIELD_TOOLS) as? JsonArray
         require(item != null && tools != null) { "code mode requires the Responses lite additional_tools item" }
-        val (functions, hosted) = namespace.members(tools).partition { string(it as? JsonObject, FIELD_TYPE) == TYPE_FUNCTION }
+        val (functions, hosted) = namespace.members(tools).partition {
+            string(it as? JsonObject, FIELD_TYPE) == TYPE_FUNCTION
+        }
         val reachable = reachable(clientTools)
         val nested = functions.mapNotNull { it as? JsonObject }.map { tool ->
             CodeModeManual.NestedTool(string(tool, FIELD_NAME), string(tool, FIELD_DESCRIPTION), tool[FIELD_PARAMETERS])
         }.filter { it.name in reachable }
         val deferred = (reachable - nested.map(CodeModeManual.NestedTool::name).toSet()).isNotEmpty()
         val beside = hosted.filterNot { string(it as? JsonObject, FIELD_TYPE) == TYPE_TOOL_SEARCH }
-        val surface = namespace.group(JsonArray(listOf(execTool(CodeModeManual.description(nested, deferred))) + beside))
+        val exec = execTool(CodeModeManual.description(nested, deferred))
+        val surface = namespace.group(JsonArray(listOf(exec) + beside))
         val replaced = JsonObject(item + (FIELD_TOOLS to surface))
         val rebuilt = input.mapIndexed { position, element -> if (position == index) replaced else element }
         return JsonObject(request + (FIELD_INPUT to JsonArray(rebuilt)))

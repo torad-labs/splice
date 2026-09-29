@@ -32,7 +32,8 @@ public class ResponsesFunctionNamespace {
             when {
                 type in MEMBER_TYPES -> members += tool
                 isFunctions(item) -> {
-                    JsonScalars.str(item, NAMESPACE_FIELD_DESCRIPTION)?.takeIf { it.isNotBlank() }?.let { description = it }
+                    val own = JsonScalars.str(item, NAMESPACE_FIELD_DESCRIPTION).orEmpty()
+                    if (own.isNotBlank()) description = own
                     members += (item?.get(NAMESPACE_FIELD_TOOLS) as? JsonArray).orEmpty()
                 }
                 else -> {

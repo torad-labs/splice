@@ -34,14 +34,18 @@ class FunctionNamespaceTest {
     @Test
     fun `function and custom tools share one functions namespace where the first stood, hosted tools keep their places`() {
         val grouped = namespace.group(
-            tools("""[{"type":"web_search"},{"type":"function","name":"Read"},{"type":"custom","name":"exec"},
-                {"type":"tool_search","execution":"client"},{"type":"function","name":"Bash"}]"""),
+            tools(
+                """[{"type":"web_search"},{"type":"function","name":"Read"},{"type":"custom","name":"exec"},
+                {"type":"tool_search","execution":"client"},{"type":"function","name":"Bash"}]""",
+            ),
         )
         assertEquals(
-            tools("""[{"type":"web_search"},
+            tools(
+                """[{"type":"web_search"},
                 {"type":"namespace","name":"functions","description":"","tools":[
                   {"type":"function","name":"Read"},{"type":"custom","name":"exec"},{"type":"function","name":"Bash"}]},
-                {"type":"tool_search","execution":"client"}]"""),
+                {"type":"tool_search","execution":"client"}]""",
+            ),
             grouped,
         )
         // codex's serde order, byte for byte: the tag, then name, description, tools.
@@ -54,12 +58,16 @@ class FunctionNamespaceTest {
     @Test
     fun `an incoming functions namespace is merged and keeps its description, and grouping twice changes nothing`() {
         val grouped = namespace.group(
-            tools("""[{"type":"namespace","name":"functions","description":"Client tools.","tools":[
-                {"type":"function","name":"Read"}]},{"type":"function","name":"Bash"}]"""),
+            tools(
+                """[{"type":"namespace","name":"functions","description":"Client tools.","tools":[
+                {"type":"function","name":"Read"}]},{"type":"function","name":"Bash"}]""",
+            ),
         )
         assertEquals(
-            tools("""[{"type":"namespace","name":"functions","description":"Client tools.","tools":[
-                {"type":"function","name":"Read"},{"type":"function","name":"Bash"}]}]"""),
+            tools(
+                """[{"type":"namespace","name":"functions","description":"Client tools.","tools":[
+                {"type":"function","name":"Read"},{"type":"function","name":"Bash"}]}]""",
+            ),
             grouped,
         )
         assertEquals(grouped, namespace.group(grouped))
@@ -71,7 +79,8 @@ class FunctionNamespaceTest {
 
     @Test
     fun `a list with nothing to group is returned as it came, and another namespace is left alone`() {
-        val hosted = tools("""[{"type":"web_search"},{"type":"namespace","name":"slack","description":"x","tools":[]}]""")
+        val hosted =
+            tools("""[{"type":"web_search"},{"type":"namespace","name":"slack","description":"x","tools":[]}]""")
         assertEquals(hosted, namespace.group(hosted))
         assertEquals(hosted.toList(), namespace.members(hosted))
     }

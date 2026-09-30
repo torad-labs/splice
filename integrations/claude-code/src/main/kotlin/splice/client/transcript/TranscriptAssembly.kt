@@ -17,7 +17,7 @@ import splice.sessions.transcript.TranscriptRole
 
 private const val UNTYPED = "untyped"
 
-/** The most messages one record may make: a record's messages share its offset, told apart by this many slots. */
+// why: the most messages one record may make; they share its offset and are told apart by this many slots.
 internal const val PER_RECORD: Long = 1024
 
 /** Folds records into conversation messages for one page. [accept] answers false when the page is

@@ -21,9 +21,10 @@ import splice.sessions.transcript.TranscriptMessage
 import splice.sessions.transcript.TranscriptPage
 import java.nio.file.Path
 
+// why: a page from the end reads the file backwards in windows this size, so a short tail never walks the whole file.
 private const val BLOCK_BYTES = 64 shl 10
 
-/** The same ceiling a forward page reads before it stops. */
+// why: the ceiling a forward page reads before it stops, so one page from the end costs no more than one from the start.
 private const val MAX_BACK_BYTES = 16L shl 20
 
 internal class TranscriptBackPage(

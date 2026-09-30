@@ -205,11 +205,49 @@ const bytesStrip = (b: Uint8Array): Uint8Array => {
 const startsWith = (b: Uint8Array, prefix: string) =>
   b.length >= prefix.length && [...prefix].every((ch, i) => b[i] === ch.charCodeAt(0));
 
-export function proxyHandler(budget: Budget): Methods & { GET(h: ProxyRequest): void; POST(h: ProxyRequest): Promise<void> } {
+export function proxyHandler(budget: Budget): Methods & { GET(h: ProxyRequest): Promise<void>; POST(h: ProxyRequest): Promise<void> } {
   return {
     // Request and credential details must not enter logs: http.server's log_message is silenced,
     // and python-http never logs a request.
-    GET(h: ProxyRequest): void {
+    async GET(h: ProxyRequest): Promise<void> {
+      // Discovery must see the backend's tool_mode, not an eligibility override in the A/B config.
+      if (/^\/models\?client_version=[\d.]+$/.test(h.path)) {
+        const bearer = h.headers.get("Authorization", "") as string;
+        const localBearer = process.env.SPLICE_PROBE_BEARER ?? "";
+        if (!bearer.startsWith("Bearer ") || (localBearer && bearer === "Bearer " + localBearer)) {
+          h.sendError(400, "invalid probe credential boundary");
+          return;
+        }
+        if (!budget.reserve(0)) {
+          h.sendError(429, "probe budget exhausted or halted");
+          return;
+        }
+        const upstream = probeSeams.httpsConnection("chatgpt.com", 120);
+        try {
+          const headers: [string, string][] = [["Authorization", bearer]];
+          const account = h.headers.get("ChatGPT-Account-Id");
+          if (account) headers.push(["ChatGPT-Account-Id", account]);
+          headers.push(["Accept-Encoding", "identity"]);
+          upstream.request("GET", "/backend-api/codex" + h.path, new Uint8Array(0), headers);
+          const response = await upstream.getresponse();
+          const data = await response.read(MAX_BODY + 1);
+          budget.response_bytes += data.length;
+          if (data.length > MAX_BODY) throw new ValueError("oversized model list");
+          if (response.status !== 200) budget.error = "vendor HTTP " + response.status;
+          h.sendResponse(response.status);
+          h.sendHeader("Content-Type", response.getheader("Content-Type", "application/json") as string);
+          h.sendHeader("Content-Length", String(data.length));
+          h.endHeaders();
+          h.wfile.write(data);
+        } catch (error) {
+          if (!(isOSError(error) || isValueError(error) || isHTTPException(error))) throw error;
+          budget.error = pyName(error);
+          h.sendError(502, "model discovery failed");
+        } finally {
+          upstream.close();
+        }
+        return;
+      }
       const payload = Buffer.from(dumps(budget.snapshot()), "utf8");
       h.sendResponse(h.path === "/metrics" ? 200 : 404);
       h.sendHeader("Content-Type", "application/json");
@@ -1724,6 +1762,20 @@ function message(id: string, text: string): PyObj {
 
 export function mockHandler(state: MockState): Methods {
   return {
+    GET(h: Request): void {
+      if (!/^\/models\?client_version=[\d.]+$/.test(h.path)) {
+        h.sendError(404, "unexpected mock route");
+        return;
+      }
+      const data = Buffer.from(JSON.stringify({
+        models: [{ slug: "gpt-6-astra", display_name: "Astra (mock)", context_window: 400000, tool_mode: "code_mode_only" }],
+      }), "utf8");
+      h.sendResponse(200);
+      h.sendHeader("Content-Type", "application/json");
+      h.sendHeader("Content-Length", String(data.length));
+      h.endHeaders();
+      h.wfile.write(data);
+    },
     async POST(h: Request): Promise<void> {
       try {
         const size = pyInt(h.headers.get("Content-Length", "0") as string);

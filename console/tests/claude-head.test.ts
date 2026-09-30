@@ -130,7 +130,7 @@ describe('the claude-head slice reads the daemon, not an expectation', () => {
     storeKey('k');
     // The daemon's own sentence, read from the route that writes it: a copy kept here kept the em
     // dash V4-238 took out of the daemon's (#312).
-    const reason = "the 'claude-splice' head is not configured, and wrap needs its catalog to materialize";
+    const reason = "the 'claude-splice' head is not configured, and a wrapped claude launches it";
     const routes = readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../features/launch/src/main/kotlin/splice/launch/wrap/ClaudeHeadRoutes.kt'), 'utf8');
     expect(routes).toContain(reason.replace("'claude-splice'", "'$CLAUDE_HEAD_KEY'"));
     vi.stubGlobal('fetch', serves({ error: reason }, { ok: false, status: 503 }));

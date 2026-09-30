@@ -17,7 +17,7 @@ import { join, resolve } from "node:path";
 import { obj, type PyValue } from "../src/compat/python-json.ts";
 import { check, get, ValueError } from "../src/compat/python-values.ts";
 import {
-  assertGuidance, CALLER_SYSTEM, GUIDANCE, mockConfigure, mockSeams, PROBE_TOOLS, runToggleProbe, TOGGLE_PROMPT,
+  assertGuidance, CALLER_SYSTEM, GUIDANCE, mockConfigure, mockHandler, mockSeams, PROBE_TOOLS, runToggleProbe, TOGGLE_PROMPT,
   TOGGLE_RESPONSE, TOGGLE_SYSTEM,
 } from "../src/commands/code-mode.ts";
 
@@ -33,6 +33,28 @@ const P = (v: unknown): PyValue => {
 };
 
 describe("mock", () => {
+  test("discovery publishes the backend code-mode mark without an operator override", async () => {
+    const handlers = mockHandler(new Map());
+    let status = 0;
+    const writes: Uint8Array[] = [];
+    const h = {
+      path: "/models?client_version=999.0.0",
+      sendResponse: (code: number) => { status = code; },
+      sendHeader: () => {},
+      endHeaders: () => {},
+      sendError: (code: number) => { status = code; },
+      wfile: { write: (data: Uint8Array) => { writes.push(data); } },
+    };
+    await handlers.GET!(h as never);
+    expect(status).toBe(200);
+    expect(JSON.parse(Buffer.concat(writes).toString())).toEqual({
+      models: [{ slug: "gpt-6-astra", display_name: "Astra (mock)", context_window: 400000, tool_mode: "code_mode_only" }],
+    });
+    h.path = "/unexpected";
+    await handlers.GET!(h as never);
+    expect(status).toBe(404);
+  });
+
   test("guidance keeps one original developer item and runner", () => {
     const callerTools = [{ type: "function", name: "Read" }];
     const body = P({ input: [
@@ -64,6 +86,7 @@ describe("mock", () => {
         const quirks = (Bun.TOML.parse(readFileSync(env.SPLICE_CONFIG as string, "utf8")) as
           { providers: { code_mode: { quirks: Record<string, unknown> } } }).providers.code_mode.quirks;
         check.equal(expected, quirks.code_mode ?? null);
+        expect(quirks.code_mode_models).toBeUndefined();
       }
     } finally {
       rmSync(directory, { recursive: true, force: true });

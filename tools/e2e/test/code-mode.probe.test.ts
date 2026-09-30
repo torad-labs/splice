@@ -126,6 +126,98 @@ async function withTempDir<T>(fn: (dir: string) => Promise<T> | T): Promise<T> {
 const snapGet = (b: Budget, k: string) => get(b.snapshot(), k);
 
 describe("probe", () => {
+  test("model discovery forwards the backend roster and credentials within the request budget", async () => {
+    const roster = enc('{"models":[{"slug":"gpt-6-astra","tool_mode":"code_mode_only"}]}');
+    const budget = new Budget();
+    const h = fakeHandler(enc(""));
+    h.path = "/models?client_version=999.0.0";
+    const originalGet = h.headers.get;
+    h.headers.get = (key, fallback = null) => key === "ChatGPT-Account-Id" ? "synthetic-account" : originalGet(key, fallback);
+    const requested: unknown[][] = [];
+    let readLimit = 0;
+    let closed = false;
+    const old = probeSeams.httpsConnection;
+    probeSeams.httpsConnection = (() => ({
+      request: (...args: unknown[]) => { requested.push(args); },
+      getresponse: async () => ({
+        status: 200, getheader: () => "application/json", read: async (limit: number) => { readLimit = limit; return roster; },
+      }),
+      close: () => { closed = true; },
+    })) as never;
+    try {
+      await proxyHandler(budget).GET(h as never);
+      expect(requested).toEqual([[
+        "GET", "/backend-api/codex/models?client_version=999.0.0", new Uint8Array(0),
+        [["Authorization", "Bearer synthetic-upstream"], ["ChatGPT-Account-Id", "synthetic-account"], ["Accept-Encoding", "identity"]],
+      ]]);
+      expect(Buffer.concat(h.writes)).toEqual(roster);
+      expect(closed).toBe(true);
+      expect(budget.requests).toBe(1);
+      expect(budget.response_bytes).toBe(roster.length);
+      expect(budget.error).toBeNull();
+      expect(readLimit).toBe(1_048_577);
+      budget.requests = MAX_REQUESTS;
+      await proxyHandler(budget).GET(h as never);
+      expect(requested).toHaveLength(1);
+      expect(h.sendErrorCalls).toBe(1);
+      h.path = "/unapproved";
+      await proxyHandler(budget).GET(h as never);
+      expect(requested).toHaveLength(1);
+    } finally {
+      probeSeams.httpsConnection = old;
+    }
+  });
+
+  test("model discovery records vendor refusal and bounds the catalog response", async () => {
+    const old = probeSeams.httpsConnection;
+    try {
+      for (const [status, data, expected] of [
+        [403, enc('{"error":"synthetic refusal"}'), "vendor HTTP 403"],
+        [200, new Uint8Array(1_048_577), "ValueError"],
+      ] as const) {
+        let closed = false;
+        probeSeams.httpsConnection = (() => ({
+          request: () => {},
+          getresponse: async () => ({
+            status, getheader: () => "application/json", read: async () => data,
+          }),
+          close: () => { closed = true; },
+        })) as never;
+        const budget = new Budget();
+        const h = fakeHandler(enc(""));
+        h.path = "/models?client_version=999.0.0";
+        await proxyHandler(budget).GET(h as never);
+        expect(budget.error).toBe(expected);
+        expect(budget.requests).toBe(1);
+        expect(closed).toBe(true);
+        expect(h.sendErrorCalls).toBe(status === 200 ? 1 : 0);
+      }
+    } finally {
+      probeSeams.httpsConnection = old;
+    }
+  });
+
+  test("model discovery never forwards the management bearer", async () => {
+    const previous = process.env.SPLICE_PROBE_BEARER;
+    process.env.SPLICE_PROBE_BEARER = "synthetic-upstream";
+    const budget = new Budget();
+    const h = fakeHandler(enc(""));
+    h.path = "/models?client_version=999.0.0";
+    const old = probeSeams.httpsConnection;
+    let opened = false;
+    probeSeams.httpsConnection = (() => { opened = true; throw new Error("credential escaped"); }) as never;
+    try {
+      await proxyHandler(budget).GET(h as never);
+      expect(h.sendErrorCalls).toBe(1);
+      expect(opened).toBe(false);
+      expect(budget.requests).toBe(0);
+    } finally {
+      probeSeams.httpsConnection = old;
+      if (previous === undefined) delete process.env.SPLICE_PROBE_BEARER;
+      else process.env.SPLICE_PROBE_BEARER = previous;
+    }
+  });
+
   test("prompt only experiment rejects auto injection before launch", async () => {
     await withTempDir(async (directory) => {
       const artifact = join(directory, "app.jar");

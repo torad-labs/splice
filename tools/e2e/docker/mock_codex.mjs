@@ -60,9 +60,16 @@ m.mock.on('request', (req, res) => {
     res.end(USAGE);
     return;
   }
-  // The vendored handler JSON-parses every body, so any other GET (the daemon's model discovery
-  // asks /models at boot) would throw inside it and, under node, kill this process. It serves only
-  // POSTs: answer the rest 404 here, and the codex head keeps its declared rows.
+  // This legacy direct-tool fixture publishes no code_mode_only mark. The packaged code-mode
+  // mock owns the exec fixture; discovery here must not invent a capability the vendored wire lacks.
+  if (req.method === 'GET' && /^\/models\?client_version=[\d.]+$/.test(req.url)) {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({
+      models: [{ slug: 'gpt-5-codex', display_name: 'Codex (mock)', context_window: 272000 }],
+    }));
+    return;
+  }
+  // The vendored handler JSON-parses every body: refuse remaining GETs before they reach it.
   if (req.method === 'GET') {
     res.writeHead(404);
     res.end();

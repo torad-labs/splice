@@ -50,25 +50,27 @@ class ClaudeLaneTest {
         assertEquals(listOf(ClaudeLane.SEPARATE, ClaudeLane.WRAP), asked.single().map { it.value })
     }
 
-    // The row asks for "one line on what Wrap takes over". A hint the operator cannot act on is
-    // the same as no hint, so the two files it rewrites are named in it.
+    // Mutant: promise file takeover, omit preserved MCP/state, or omit persistence across updates.
+    // Wrapping takes over the command, never the operator's vanilla configuration.
     @Test
-    fun `the wrap option says what it takes over, by name`() {
+    fun `the wrap option explains routing preserved state and update persistence`() {
         val (lane, asked) = lanes({ options, index -> SelectOutcome.Chosen(options[index].value) })
         lane.ask(listOf(CLAUDE))
 
         val wrapHint = asked.single().single { it.value == ClaudeLane.WRAP }.hint.orEmpty()
-        assertTrue("settings.json" in wrapHint, wrapHint)
-        assertTrue(".claude.json" in wrapHint, wrapHint)
-        assertTrue("shim" in wrapHint, wrapHint)
-        assertTrue("backed up" in wrapHint, wrapHint)
+        assertTrue("claude itself goes through splice" in wrapHint, wrapHint)
+        assertTrue("wrapped across updates" in wrapHint, wrapHint)
+        assertTrue("settings" in wrapHint, wrapHint)
+        assertTrue("MCP servers" in wrapHint, wrapHint)
+        assertTrue("Claude state stay untouched" in wrapHint, wrapHint)
+        assertFalse("rewrites" in wrapHint || "backed up" in wrapHint, wrapHint)
 
         val separateHint = asked.single().single { it.value == ClaudeLane.SEPARATE }.hint.orEmpty()
         assertTrue("nothing in ~/.claude is touched" in separateHint, separateHint)
     }
 
     // Mutant: treat a cancelled prompt as an answer. Escaping out of a menu is not consent to
-    // rewrite two files in the operator's home.
+    // take over the operator's claude command.
     @Test
     fun `cancelling the lane prompt leaves the head separate`() {
         val (lane, _) = lanes({ _, _ -> SelectOutcome.Cancelled })
@@ -155,7 +157,7 @@ class ClaudeWrapReplyTest {
 
     @Test
     fun `the unconfigured-head refusal reaches the operator verbatim`() {
-        val reason = "the 'claude-splice' head is not configured, and wrap needs its catalog to materialize"
+        val reason = "the 'claude-splice' head is not configured, and a wrapped claude launches it"
         val said = DaemonClaudeWrap().replyLine(ControlReply(503, """{"error":"$reason"}"""))
 
         assertEquals("not wrapping: $reason", said)

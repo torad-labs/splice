@@ -124,6 +124,12 @@ val DISPOSITIONS: Map<String, Disposition> = mapOf(
     // V4-336: an unanswered callback stops the script whether the late content is a system or a user
     // message, one case per role (@ValueSource system, user).
     "CodeModeLateContentTest" to Disposition("1 @ParameterizedTest expands to 2 cases (6 @Test + 2 = 8)", 8),
+    // V4-254 (36dbee23d): every declared row is capped by the provider list whichever field the list
+    // carries its window in, one case per field (@ValueSource context_length, context_window).
+    "AddChecksWordingTest" to Disposition("1 @ParameterizedTest expands to 2 cases (2 @Test + 2 = 4)", 4),
+    // V4-254 (4e7601053): yes to the live check keeps the saved head for every subscription and
+    // client-auth profile, one case per profile (@ValueSource codex, grok, kimi, muse, claude).
+    "AddLiveCommandTest" to Disposition("1 @ParameterizedTest expands to 5 cases (1 @Test + 5 = 6)", 6),
 )
 
 // Modules whose test task is disabled BY CONFIGURATION, so no XML can exist. The reason is the

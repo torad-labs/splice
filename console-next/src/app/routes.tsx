@@ -13,8 +13,8 @@ import { SettingsPage } from '../pages/settings/SettingsPage';
 /** Retired address -> where it went (DIRECTION.md, "Nav"). */
 export const RETIRED: Readonly<Record<string, string>> = {
   accounts: '/fleet',
-  models: '/fleet?open=models',
-  logs: '/fleet?open=log',
+  models: '/fleet',
+  logs: '/fleet',
   teams: '/sessions?group=team',
   projects: '/sessions?group=repo',
   compaction: '/settings/conversation',

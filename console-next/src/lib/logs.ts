@@ -155,3 +155,10 @@ export function levelsPresent(lines: readonly string[]): LogLevel[] {
   }
   return LEVELS.filter((level) => seen.has(level));
 }
+
+/** What the view shows after a read: the window as it stands when it restarted, else what was shown with the new lines
+ *  after it, trimmed to the newest [cap] so a head left open all day holds a bounded page. */
+export function shownAfter(shown: readonly string[], step: TailAdvance, cap = 2000): string[] {
+  const next = step.reset ? [...step.appended] : [...shown, ...step.appended];
+  return next.length > cap ? next.slice(next.length - cap) : next;
+}

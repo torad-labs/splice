@@ -23,3 +23,16 @@
 .add-checks li { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: var(--space-5); align-items: baseline; font: 400 var(--text-2) var(--read); }
 .add-checks b { font-weight: 600; }
 .user-code.cmd { font-size: var(--text-3); letter-spacing: 0; }
+.tab-section { display: grid; gap: var(--space-5); }
+.models { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-7); }
+.models li { display: grid; gap: var(--space-1); }
+.models li > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2) var(--space-5); }
+.models b { font: 600 var(--text-3) var(--read); color: var(--ink); }
+.models span { font: 400 var(--text-2) var(--read); color: var(--body); }
+.models small { font: 400 var(--text-1) var(--read); color: var(--mute); }
+.models .id { font: 500 var(--text-1) var(--mono); color: var(--mute); }
+.chip { padding: var(--space-1) var(--space-4); border-radius: var(--r1); background: color-mix(in srgb, var(--ink) 8%, transparent); font: 600 var(--text-1) var(--read); color: var(--ink); }
+.chip.warn { color: var(--wait); }
+.log-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-5); }
+.glass.log { display: block; max-height: 34rem; overflow-y: auto; margin: 0; padding: var(--space-6) var(--space-7); }
+.glass.log p { white-space: pre-wrap; overflow: visible; text-overflow: clip; word-break: break-word; }

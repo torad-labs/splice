@@ -526,7 +526,7 @@ describe('the doctor', () => {
   test('a splice logs remedy opens the requested head and tail instead of copying the command, and restart restarts', () => {
     const command = 'splice logs --head codex --tail 50';
     const logs: DoctorCheck[] = [{ id: 'daemon/logs', status: 'warn', detail: 'look at the head log', fix: command }];
-    expect(needsIn({ doctor: read(doctor(logs)) })[0]?.fix).toEqual({ kind: 'open', href: '#/logs?head=codex&tail=50', label: S.openLog, fallback: command });
+    expect(needsIn({ doctor: read(doctor(logs)) })[0]?.fix).toEqual({ kind: 'open', href: '#/fleet/codex?tab=log&tail=50', label: S.openLog, fallback: command });
     const restart: DoctorCheck[] = [{ id: 'daemon/x', status: 'warn', detail: 'stale', fix: ' splice restart ' }];
     expect(needsIn({ doctor: read(doctor(restart)) })[0]?.fix).toEqual({ kind: 'restart-daemon' });
   });

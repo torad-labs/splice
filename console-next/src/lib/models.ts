@@ -1,6 +1,8 @@
 // Pure derivations over a head's catalog. No rendering, no store.
 import { MODEL_SLOTS } from '../types/models';
-import type { CatalogModel, HeadCatalog, SlotTier } from '../types/models';
+import type { CatalogModel, HeadCatalog, ModelRates, SlotTier } from '../types/models';
+import { fmtUsd } from './format';
+import { M } from './words-models';
 
 /**
  * The head's four tiers, in the daemon's slot order, each with the model that fills it or null.
@@ -36,4 +38,10 @@ const WINDOW_SOURCE_WORDS: Record<string, string> = {
 
 export function windowSourceText(source: string): string {
   return WINDOW_SOURCE_WORDS[source] ?? source.replaceAll('-', ' ');
+}
+
+/** A model's price as a person reads it, or the plain fact that none is declared: an absent rate is not a rate of zero. */
+export function rateText(rates: ModelRates | null | undefined): string {
+  if (rates === null || rates === undefined) return M.noRate;
+  return M.rate(fmtUsd(rates.input), fmtUsd(rates.output));
 }

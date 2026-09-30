@@ -4,7 +4,7 @@
 // built inline with the same shape (claudex-like: opus pinned, fable undeclared). The rest of that
 // file renders ModelsBoard or tests the page's own model and is not ported.
 import { describe, expect, test } from 'vitest';
-import { slotTiers, windowSourceText } from '../src/lib/models';
+import { rateText, slotTiers, windowSourceText } from '../src/lib/models';
 import type { CatalogModel, HeadCatalog } from '../src/types/models';
 
 function model(over: Partial<CatalogModel> & { id: string }): CatalogModel {
@@ -51,5 +51,14 @@ describe('the words', () => {
     expect(windowSourceText('some-new-label')).toBe('some new label');
     expect(windowSourceText('extra-window')).toBe('extra window');
     expect(windowSourceText('default')).toBe('provider default');
+  });
+});
+
+describe('a price as a person reads it', () => {
+  test('a declared rate prints in and out per million tokens; no rate is said to be undeclared, never zero', () => {
+    expect(rateText({ input: 3, cache_read: 0.3, output: 15 })).toBe('$3.00 in, $15.00 out per million tokens');
+    expect(rateText(null)).toBe('No price declared');
+    expect(rateText(undefined)).toBe('No price declared');
+    expect(rateText({ input: 0.5, cache_read: 0.05, output: 2 })).toBe('$0.500 in, $2.00 out per million tokens');
   });
 });

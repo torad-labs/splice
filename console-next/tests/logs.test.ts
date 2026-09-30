@@ -3,7 +3,7 @@
 // The old logs.test.ts renders the log-tail widget (messageOf, perfOfLine, rowsOf, LogLine, ...) and
 // its store (setLogHead, setLogRead), none of which is in this layer, so it is not ported.
 import { describe, expect, test } from 'vitest';
-import { advance, applyFilter, headOf, headsPresent, levelOf, levelsPresent, NO_FILTER, tailOf, timeOf } from '../src/lib/logs';
+import { advance, applyFilter, headOf, headsPresent, levelOf, levelsPresent, NO_FILTER, shownAfter, tailOf, timeOf } from '../src/lib/logs';
 import type { LogsPayload, LogTail } from '../src/types/logs';
 
 function logs(lines: string[], over: Partial<LogsPayload> = {}): LogsPayload {
@@ -105,5 +105,18 @@ describe('the filter model reads tags, levels and substrings', () => {
     expect(headsPresent([line])).toEqual(['claude-deepseek']);
     expect(levelsPresent([line])).toEqual(['error']);
     expect(levelsPresent(['[2026-09-18 01:14:01] [claudex] ok'])).toEqual([]);
+  });
+});
+
+describe('what the view shows after a read', () => {
+  const tail = { key: 'k', path: 'p', lines: [] };
+  test('new lines follow what was shown; a restarted window replaces it', () => {
+    expect(shownAfter(['a', 'b'], { tail, appended: ['c'], reset: false })).toEqual(['a', 'b', 'c']);
+    expect(shownAfter(['a', 'b'], { tail, appended: ['x', 'y'], reset: true })).toEqual(['x', 'y']);
+    expect(shownAfter([], { tail, appended: ['a'], reset: false })).toEqual(['a']);
+  });
+  test('the page keeps the newest lines only, past the cap', () => {
+    expect(shownAfter(['a', 'b', 'c'], { tail, appended: ['d', 'e'], reset: false }, 4)).toEqual(['b', 'c', 'd', 'e']);
+    expect(shownAfter([], { tail, appended: ['a', 'b', 'c'], reset: true }, 2)).toEqual(['b', 'c']);
   });
 });

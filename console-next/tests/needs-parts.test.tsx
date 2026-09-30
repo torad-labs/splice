@@ -58,7 +58,7 @@ describe('a need card', () => {
     expect(html).not.toContain('redacted');
   });
   test('a fix that opens a page also prints the command the row carries', () => {
-    const html = render(need({ fix: { kind: 'open', href: '#/logs?head=x', label: 'Open log', fallback: 'splice logs --head x' }, at: null }));
+    const html = render(need({ fix: { kind: 'open', href: '#/fleet/x?tab=log', label: 'Open log', fallback: 'splice logs --head x' }, at: null }));
     expect(html).toContain('splice logs --head x');
   });
 });

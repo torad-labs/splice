@@ -70,7 +70,7 @@ export function logsTargetOf(fix: string | null): { head: string; tail: number |
 
 export function logsHrefOf(fix: string | null): string | null {
   const target = logsTargetOf(fix);
-  return target === null ? null : `#/logs?head=${encodeURIComponent(target.head)}${target.tail === null ? '' : `&tail=${target.tail}`}`;
+  return target === null ? null : `#/fleet/${encodeURIComponent(target.head)}?tab=log${target.tail === null ? '' : `&tail=${target.tail}`}`;
 }
 
 /** What the check found, which a page prints on its own line apart from the remedy. */

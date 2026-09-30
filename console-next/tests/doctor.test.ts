@@ -194,7 +194,7 @@ describe('every failing check carries its fix', () => {
 
   test('a splice logs remedy names its head and exact bounded tail for both console pages', () => {
     expect(logsTargetOf('splice logs --head claude-kimi --tail 50')).toEqual({ head: 'claude-kimi', tail: 50 });
-    expect(logsHrefOf('splice logs --head claude-kimi --tail 50')).toBe('#/logs?head=claude-kimi&tail=50');
+    expect(logsHrefOf('splice logs --head claude-kimi --tail 50')).toBe('#/fleet/claude-kimi?tab=log&tail=50');
     expect(logsTargetOf('splice restart')).toBeNull();
     expect(logsTargetOf('splice logs --head claude-kimi --tail 1500')).toEqual({ head: 'claude-kimi', tail: 1500 });
     expect(logsTargetOf('splice logs --head claude-kimi --tail 50000')).toBeNull();

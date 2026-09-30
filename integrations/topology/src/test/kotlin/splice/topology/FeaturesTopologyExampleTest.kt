@@ -7,6 +7,8 @@ package splice.topology
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.nio.file.Path
 import kotlin.io.path.readText
@@ -25,6 +27,77 @@ class FeaturesTopologyExampleTest {
         assertEquals(listOf("projects"), head.claude.isolate)
         assertNotNull(topology.providers.getValue("codex").models.single().rates, "a model row carries its rates")
         assertNotNull(topology.projects["/home/me/app"]?.systemPrompt, "[projects] holds a repo's standing prompt")
+    }
+
+    @Test
+    fun `release documentation snippets parse with real topology keys`() {
+        val root = Path.of(checkNotNull(System.getProperty("splice.releaseDocs")))
+        listOf("README.md", "CHANGELOG.md").forEach { name ->
+            assertTrue(DocumentationTopologySnippets.checkDocument(root.resolve(name).readText()) > 0, name)
+        }
+        assertTrue(
+            DocumentationTopologySnippets.checkExample(
+                root.resolve("app/src/main/resources/splice.example.toml").readText(),
+            ) > 0,
+        )
+    }
+
+    @Test
+    fun `snippet census refuses bad types and unknown keys without filtering them out`() {
+        listOf(
+            "[defaults] messageEdges = false",
+            "[defaults] mcp_max_servers = \"64\"",
+            "invented_setting = \"value\"",
+            "[daemon] invented_setting = true",
+        ).forEach { snippet ->
+            assertThrows(
+                Exception::class.java,
+                { DocumentationTopologySnippets.checkDocument("```toml\n$snippet\n```") },
+                snippet,
+            )
+        }
+        val head = """
+            [heads.example]
+            provider = "example"
+            port = 3105
+            discovery_prefix = "claude-example--"
+            pinned_model = "example-model"
+            [heads.example.overrides]
+            trace = "false"
+        """.trimIndent()
+        DocumentationTopologySnippets.checkKnobs(head)
+        assertThrows(Exception::class.java) {
+            DocumentationTopologySnippets.checkKnobs(head.replace("trace = \"false\"", "trace = false"))
+        }
+        assertEquals(
+            1,
+            DocumentationTopologySnippets.checkDocument("```toml\n[defaults]\nmcpMaxServers = \"64\"\n```"),
+        )
+        assertThrows(Exception::class.java) {
+            DocumentationTopologySnippets.checkDocument("```toml\n[defaults]\nunlisted = \"1\"\n```")
+        }
+    }
+
+    @Test
+    fun `indented fences array tables and optional example blocks are checked`() {
+        assertEquals(
+            1,
+            DocumentationTopologySnippets.checkDocument(
+                "   ```toml\n[daemon]\nmcp_hosting = false\n   ```",
+            ),
+        )
+        assertThrows(Exception::class.java) {
+            DocumentationTopologySnippets.checkDocument("   ```toml\n[daemon]\nunknown = true\n   ```")
+        }
+        assertEquals(
+            1,
+            DocumentationTopologySnippets.checkDocument(
+                "```toml\n[[compaction.model]]\nmodel = \"example\"\ninstructions = \"Keep state.\"\n```",
+            ),
+        )
+        assertThrows(Exception::class.java) {
+            DocumentationTopologySnippets.checkExample("# [daemon]\n# unknown = true\n")
+        }
     }
 
     /** The one toml block in FEATURES.md section 2.3. */

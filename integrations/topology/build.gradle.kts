@@ -14,5 +14,11 @@ dependencies {
 val featuresDoc = rootProject.layout.projectDirectory.file(".dev/campaigns/web-console/FEATURES.md")
 tasks.withType<Test>().configureEach {
     inputs.file(featuresDoc)
+    inputs.files(
+        rootProject.file("README.md"),
+        rootProject.file("CHANGELOG.md"),
+        rootProject.file("app/src/main/resources/splice.example.toml"),
+    )
+    systemProperty("splice.releaseDocs", rootProject.projectDir.absolutePath)
     systemProperty("splice.featuresDoc", featuresDoc.asFile.absolutePath)
 }

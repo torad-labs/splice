@@ -371,12 +371,19 @@ a shell redirect to an unquoted or literal path, reflection, and files written b
 | --- | --- | --- | --- | --- |
 | `~/.splice/state/activity/activity-<day>.jsonl`, `.jsonl.lock` and `.jsonl.1` | Activity labels: the file a session read, the program it ran or the pattern it searched, 32 characters of each, about one every 30 seconds while it works; `activityStoreHeads = ""` stops new labels after restart | Only you | Today and yesterday (UTC), so the Teams page can show your whole local day: a day's file is deleted at the second UTC midnight after it (within 10 minutes of waking, if the computer slept through it), or at the next daemon start if splice was stopped. Retained rows can be deleted from the Kept page | `ActivityStore.kt` |
 | `~/.splice/state/heads/<head>/code-mode/<hash>.json` | A Codex head's code mode, one file per conversation (named by a hash of the conversation's key): the model's scripts, tool calls with their arguments and results, script output and the model's reasoning summaries | Only you (0600, in a 0700 directory) | Kept per conversation: a conversation's records go together 24 hours after its last use, checked every 5 minutes whether or not the head is used again; at the start of its turn once it holds 128 records or more than 32 MiB on its own; or when the head passes 1024 records or 32 MiB, least recently used conversation first. A save rewrites only the conversations that changed. The whole directory goes at the next daemon start once code mode is off for the head or the head leaves `splice.toml`. Before this release the same records were one file, `~/.splice/state/<head>-code-mode.json`: the first start carries its conversations into the directory and deletes it | `CodexCodeModeStore.kt` |
-| `~/.splice/state/trace/<head>-<day>.jsonl`, `.jsonl.lock` and `.jsonl.1` | Every head records requests (credentials removed), upstream bodies and responses, and client frames by default. Each body is kept whole up to `traceMaxBodyChars` (default 16 Mi characters), with longer bodies marked truncated. A head with `[heads.<key>.overrides] trace = false`, or capture switched off in the console, stops new writes after restart. | Only you (owner-only directory) | `traceRetentionDays` (default 7): whole UTC days age out at midnight or the next daemon start; `splice trace <head> --purge` or the Kept page deletes retained days now. Removed heads and heads switched off have their days removed on the next start. | `HeadTraceStores.kt` |
+| `~/.splice/state/trace/<head>-<day>.jsonl`, `.jsonl.lock` and `.jsonl.1` | Every head records requests with sign-in headers removed, upstream bodies and responses, and client frames by default. Each body is kept whole up to `traceMaxBodyChars` (default 16 Mi characters), with longer bodies marked truncated. A head with `[heads.<key>.overrides] trace = "false"`, or capture switched off in the console, stops new writes after restart. | Only you (owner-only directory) | `traceRetentionDays` (default 7): whole UTC days age out at midnight or the next daemon start; `splice trace <head> --purge` or the Kept page deletes retained days now. Removed heads and heads switched off have their days removed on the next start. | `HeadTraceStores.kt` |
 | `~/.splice/state/compactions/<head>/<hash>.json` | The answer of a finished compaction whose client hung up, kept so its retry gets the same bytes | Only you (0600) | Until the retry takes it, 2 hours at most: an expired one goes at the head's next save or the next daemon start, and a head removed from `splice.toml` loses the whole directory at the next start | `CompactionRecordings.kt` |
 | `~/.splice/state/heads/<head>/reasoning/<conversation>.jsonl` (and an empty `.lock` beside each) | The provider's encrypted reasoning for each tool call plus its readable summary, on ChatGPT, OpenAI Responses and Muse heads by default. Base64 JSON does not encrypt the summary. A restarted daemon can send the envelope back to that provider | Only you (0600, in a 0700 directory) | No inactivity expiry; survives restart. Removed when the conversation compacts, when the provider rejects it as stale, or when the head holds more than 8192 rounds or 64 MB across its conversations (the least recently used conversation goes first). Its conversations go at the next daemon start once the head's `reasoning_cache` is off, and the whole directory once the head leaves `splice.toml` | `ReasoningCacheFiles.kt` |
 | `~/.splice/logs/daemon.log` (and `daemon.log.1`) | The daemon's log. Most lines are about the daemon itself, but some quote short pieces of content: an upstream error body (up to 200 characters), a provider's failure message, a stream frame splice could not read, and the activity labels | Only you | Rotated at 64 MB, one older copy kept | `DaemonBoundary.kt` |
 | `~/.splice/logs/daemon-boot.log` (and `.1`) | The JVM's own output when splice starts the daemon itself (`splice dashboard`, `splice restart` or a launch's cold start): lines from before the logger exists, a boot crash's message and stack, JVM warnings, and any line `daemon.log` could not take. An unsupervised console restart also writes its detached CLI result here. Under `splice.service` it is not written; that output goes to the systemd journal | Only you | Rolled at the next start once past 1 MB, one older copy kept | `DaemonLaunch.kt`, `DaemonSuccessor.kt`, `splice-launch` |
 | Claude Code's transcripts (`projects/…/<session>.jsonl`) | No new text. When a session resumes on a head that serves other models, splice rewrites assistant rows whose model the head does not serve, including subagent transcripts. Their thinking is removed; only a row left empty gets `[Thinking removed]`, in one atomic replace that keeps the file's permissions | Whoever could read it before | They are Claude Code's files; splice changes them in place | `TranscriptModelRewrite.kt` |
+
+To stop trace capture, use your existing head's key in place of `example`, then restart:
+
+```toml
+[heads.example.overrides]
+trace = "false"
+```
 
 ### Content kept only when you turn it on
 
@@ -411,7 +418,7 @@ These files hold settings and statistics. Custom compaction instructions and tea
 | `~/.splice/state/config.json` | Settings changed at runtime from the console | Only you (0600) | Until changed | `ConfigService.kt` |
 | `~/.splice/state/teams.json` (and `.bak`) | Your teams: their slots, heads, bound sessions and each slot's standing instructions | Only you (0600) | Kept; an archived team is flagged, not deleted. `.bak` is the version before the last write | `TeamStore.kt` |
 | `~/.splice/state/budgets.json`, `alerts.json` (and their `.bak`) | Daily spend budgets per head; alert settings, including a webhook URL, which can carry its own secret | Only you (0600) | Until changed; `.bak` is the version before | `BudgetStore.kt`, `AlertStore.kt` |
-| `~/.splice/state/activity/edges-<day>.jsonl`, `.jsonl.lock` and `.jsonl.1` | Which session sent a message to which, and when; never the message's text. `messageEdges = false` stops new edges after restart | Only you | `activityRetentionDays` (default 90, at least 2): a day is deleted at the UTC midnight it leaves that window (within 10 minutes of waking, if the computer slept through it), or at the next daemon start if splice was stopped. Retained rows can be deleted from the Kept page | `ActivityStore.kt` |
+| `~/.splice/state/activity/edges-<day>.jsonl`, `.jsonl.lock` and `.jsonl.1` | Which session sent a message to which, and when; never the message's text. `messageEdges = "false"` stops new edges after restart | Only you | `activityRetentionDays` (default 90, at least 2): a day is deleted at the UTC midnight it leaves that window (within 10 minutes of waking, if the computer slept through it), or at the next daemon start if splice was stopped. Retained rows can be deleted from the Kept page | `ActivityStore.kt` |
 | `~/.splice/state/<head>-perf.jsonl`, `.jsonl.lock`, `.jsonl.1` and `perf-archive/<head>-perf.jsonl-<yyyyMMddTHHmmssZ>` | One row per turn: model, outcome, timings and token counts | Only you | Rolled at 64 MB into the archive; archived files older than `perfArchiveRetentionDays` (default 90) are deleted at the next rotation; Delete under Turn statistics on the console's Kept page removes all of it now | `PerfStats.kt` |
 | `~/.splice/<head>-compact-stats.jsonl`, `.jsonl.lock` and `.jsonl.1` (codex: `claudex-compact-stats.jsonl`; grok: `claude-grok-compact-stats.jsonl`) | One row per compaction: outcome, duration, summary length, failure type, and the custom compaction instructions in force with their source | Only you | Rolled at 64 MB, one older copy kept | `Compact.kt` |
 | `~/.splice/state/<head>-session-totals.json` | Tokens and dollars per session, by model | Only you (0600) | A session idle 30 days is dropped; 256 sessions at most; Delete under Turn statistics removes it now, and an open session's cost counts again from zero | `SessionTotals.kt` |
@@ -511,7 +518,7 @@ directory or `${VAR}` keeps launching per session (its reason is on `/api/mcp`);
 server runs in your home directory, so one that reads its working directory without naming it
 (`mcp-server-git` with no `--repository`) belongs in `mcp_hosting_exclude`;
 `http`/`sse`/`ws` servers pass through untouched. Hosted servers start on first use and are reaped when idle. When a new server would exceed
-`mcp_max_servers` (32 by default), the longest-idle one is evicted. A crash fails pending calls;
+`mcpMaxServers` under `[defaults]` (32 by default, or `SPLICE_MCP_MAX_SERVERS`), the longest-idle one is evicted. A crash fails pending calls;
 the next call restarts the server. Repeated crashes wait five seconds, doubling to a minute,
 while calls during that wait report the failure. `[daemon] mcp_hosting = false` turns hosting off,
 `mcp_hosting_exclude = ["name"]` keeps named servers per session.
@@ -522,6 +529,14 @@ section additionally censuses the other four places a server can be declared on 
 project-scoped override inside `.claude.json`, a repo's own `.mcp.json`, and a plugin's own
 `.mcp.json` or inline `plugin.json`) so you can see what is not hosted and why, even though
 splice does not rewrite those kinds yet.
+
+The shared server limit and activity-edge setting belong under defaults:
+
+```toml
+[defaults]
+mcpMaxServers = "64"
+messageEdges = "false"
+```
 
 ### Compaction instructions
 

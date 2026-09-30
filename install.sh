@@ -442,7 +442,7 @@ if [ -n "$PROVENANCE_DEFERRED" ]; then
 fi
 
 # 5. Verify, don't assume: run the same checkup a user would. Its findings are NEXT STEPS
-#    (a missing API key is expected before `splice setup`), never an installer failure —
+#    (a missing API key is expected before `splice add openrouter`), never an installer failure —
 #    everything above already validated the artifacts that this script is responsible for.
 echo
 echo "splice: verifying the install (splice doctor)…"
@@ -463,13 +463,13 @@ case ":$PATH:" in
   *":$BIN_DIR:"*)
     echo
     echo "Next:  export OPENROUTER_API_KEY=…   # create one at https://openrouter.ai/keys"
-    echo "       splice setup      # install the supported API-key starter"
+    echo "       splice add openrouter     # save the head and install its command"
     echo "       claude-openrouter          # Claude Code through OpenRouter"
     echo "       splice doctor     # if anything misbehaves — every check prints its fix"
     ;;
   *)
     echo
-    echo "Add $BIN_DIR to your PATH (export PATH=\"$BIN_DIR:\$PATH\"), then run:  splice setup"
+    echo "Add $BIN_DIR to your PATH (export PATH=\"$BIN_DIR:\$PATH\"), then run:  splice add openrouter"
     echo "(splice doctor checks the install and prints the fix for anything wrong)"
     ;;
 esac

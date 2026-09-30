@@ -2,6 +2,13 @@
 
 ## splice v0.4.0: a rebuilt console, teams across models, resume on another model, and one-command setup - 2026-09-24
 
+To opt a head out of trace capture, use its existing key in place of `example`, then restart:
+
+```toml
+[heads.example.overrides]
+trace = "false"
+```
+
 ### Highlights
 - **Sessions can run turns without the key that controls splice.** In 0.3.x, sessions other than
   `claude-splice` held that management key. Upgrade, rotate the key, then relaunch your sessions ([Security](#security), [Upgrading from 0.3.x](#upgrading-from-03x)).
@@ -20,7 +27,7 @@
   its one fix. Every setting is a typed control under a plain name, and the cards on
   Sessions and Fleet reorder by drag. The console signs accounts in, switches, removes and
   relabels them, and adds per-head body-capture controls, budgets, alerts, a playground and a
-  per-project view of the rules that govern a repo. splice keeps each request and reply, credentials removed, on your disk for seven UTC days,
+  per-project view of the rules that govern a repo. splice keeps each request and reply, with sign-in headers removed, on your disk for seven UTC days,
   readable only by you. Turn capture off per head and restart; deleting kept files is separate.
 - **One-command setup.** `splice add codex`, or `grok`, `kimi`, `muse`, `deepseek`, `openrouter`,
   `claude` or `local`, signs in, saves the head and installs its command. An optional turn checks
@@ -932,7 +939,7 @@ origin.
   list, and `splice doctor` shows an information row for every strip layer, as it does for
   replace, because it changes the instructions Claude Code sends.
 - **Every head records its full request/response trace by default.**
-  `[heads.KEY.overrides] trace = false` turns it off for that head after a restart. The files are
+  `[heads.KEY.overrides] trace = "false"` turns it off for that head after a restart. The files are
   `<state>/trace/KEY-YYYY-MM-DD.jsonl` — every request it receives (method, path, headers, exact
   body), every upstream attempt as it actually left (the body byte for byte, the headers with every
   credential-class value redacted, the status and headers that came back or the transport failure

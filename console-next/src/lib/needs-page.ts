@@ -16,7 +16,7 @@ export type NeedTone = 'wait' | 'stuck' | 'quota';
 export function toneOf(need: Need): NeedTone {
   if (need.kind === K.waiting) return 'wait';
   if (need.kind === K.quota) return 'quota';
-  return need.severity === 'danger' || need.kind === K.stuck || need.kind === K.signedOut ? 'stuck' : 'wait';
+  return need.severity === 'danger' || need.kind === K.stuck || need.kind === K.signedOut || need.kind === K.keyMissing ? 'stuck' : 'wait';
 }
 
 /** A hash address (`#/fleet/claudex`) as the router path it names. */

@@ -99,7 +99,7 @@ const WORDS = ['One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', '
 
 export function turnsLede(rows: readonly PlanRow[], window: PerfWindowLabel): string {
   const turns = rows.reduce((n, row) => n + row.turns, 0);
-  if (turns === 0) return `No plan has answered a turn in ${T.windowSpoken[window]}.`;
+  if (turns === 0) return `No command has answered a turn in ${T.windowSpoken[window]}.`;
   const failed = rows.reduce((n, row) => n + row.failed, 0);
   const count = `${turns.toLocaleString('en-US')} ${turns === 1 ? 'turn' : 'turns'} in ${T.windowSpoken[window]}`;
   const fails = failed === 0 ? 'None failed' : `${failed <= WORDS.length ? WORDS[failed - 1] : failed} failed`;

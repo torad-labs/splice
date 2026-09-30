@@ -121,8 +121,8 @@ export const KNOB_HELP: Record<string, string> = {
   // usage and budgets
   quotaPoll: 'Subscription plans ask their provider for usage; off relies on turns.',
   quotaPollIntervalMs: 'How often subscription plans ask for usage, above a floor.',
-  usageWarnPct: 'Warn when a plan window passes this share of its limit.',
-  usageWarnTokens5h: 'Warn past this many tokens per plan in five hours; 0 disables.',
+  usageWarnPct: 'Warn when a command’s window passes this share of its limit.',
+  usageWarnTokens5h: 'Warn past this many tokens per command in five hours; 0 disables.',
   budgetDefaultAction: 'What a new budget does when reached: warn, or block turns.',
 
   // shared mcp servers

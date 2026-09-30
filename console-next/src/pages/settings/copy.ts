@@ -25,8 +25,8 @@ export const T = {
   openAtWhy: 'This address only opens on this computer.',
   copy: 'Copy',
   copied: 'Copied',
-  warn: 'Warn me when a plan is this full',
-  warnWhy: 'splice flags a plan window once it passes this share of its limit.',
+  warn: 'Warn me when a command is this full',
+  warnWhy: 'splice flags a command’s window once it passes this share of its limit.',
   debug: 'Detailed log',
   debugWhy: 'Writes extra lines to the splice log. Turn it on while chasing a problem.',
   // Conversation
@@ -34,7 +34,7 @@ export const T = {
   effortWhy: 'Used when Claude Code sets nothing of its own; each model keeps its default until you pick.',
   effortElsewhere: (value: string): string => `Set to ${value} in Advanced.`,
   inflight: 'Turns at once, per command',
-  inflightWhy: 'More turns at once finish sooner but use the plan’s limit faster. Zero means no limit.',
+  inflightWhy: 'More turns at once finish sooner but use the provider’s limit faster. Zero means no limit.',
   reasoning: 'Show the model’s reasoning',
   reasoningWhy: 'Some models think before they answer. Choose how Claude Code shows that.',
   // Storage

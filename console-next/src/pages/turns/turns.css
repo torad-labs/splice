@@ -8,8 +8,8 @@
 .running-list .say { padding: 0 var(--space-9) var(--space-7); font: 400 1.0625rem/1.5 var(--read); color: var(--body); }
 .running-list .say b { color: var(--ink); font-weight: 650; }
 .plans { list-style: none; margin: var(--space-11) 0 0; padding: 0; display: grid; }
-.plan { display: grid; grid-template-columns: 13.75rem 5.625rem 5.625rem minmax(16.25rem, 1fr) 7.5rem; align-items: center; gap: var(--space-10); padding: var(--space-9) 0; border-top: 2px solid var(--hair); }
-.plan.cols { padding: 0 0 var(--space-5); border-top: 0; font: 600 0.875rem var(--meta); color: var(--mute); }
+.plan { display: grid; grid-template-columns: 13.75rem 5.625rem 5.625rem minmax(16.25rem, 1fr) 7.5rem; align-items: center; gap: var(--space-10); padding: var(--space-9) 0; }
+.plan.cols { padding: 0 0 var(--space-5); font: 600 0.875rem var(--meta); color: var(--mute); }
 .plan b { display: flex; align-items: center; gap: var(--space-5); font: 600 1.1875rem var(--meta); color: var(--ink); }
 .plan b i { width: 0.875rem; height: 0.875rem; border-radius: 50%; background: var(--c); }
 .plan .n { font: 500 1.5rem var(--display); color: var(--ink); }
@@ -24,8 +24,7 @@
 .plan-first span b { display: inline; font: 650 0.96rem var(--meta); }
 .filters { display: flex; align-items: center; gap: var(--space-6); margin-top: var(--space-10); }
 .list { list-style: none; margin: var(--space-8) 0 0; padding: 0; display: grid; }
-.turn { display: grid; grid-template-columns: 5.625rem minmax(0, 1fr) 11.875rem 5.625rem 7.5rem 5rem; gap: var(--space-9) var(--space-8); align-items: center; padding: var(--space-8) 0; border-top: 2px solid var(--hair); }
-.turn:first-child { border-top: 0; }
+.turn { display: grid; grid-template-columns: 5.625rem minmax(0, 1fr) 11.875rem 5.625rem 7.5rem 5rem; gap: var(--space-9) var(--space-8); align-items: center; padding: var(--space-8) 0; }
 .turn h3 { font: 560 1.1875rem/1.25 var(--display); color: var(--ink); }
 .turn h3 a { color: inherit; text-decoration: none; }
 .turn h3 a:hover { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 0.25rem; }

@@ -88,7 +88,8 @@ export function ProjectPage() {
                 {files.data.files.map((file) => (
                   <li key={file.path}>
                     <details>
-                      <summary>{file.head === null ? file.kind : `${file.kind} · ${labelOf(file.head)}`}<small>{file.path}</small></summary>
+                      <summary>{file.head === null ? P.fileName(file.kind) : `${P.fileName(file.kind)} · ${labelOf(file.head)}`}</summary>
+                      <OnRequest label={P.showPath}>{file.path}</OnRequest>
                       <pre>{file.text}</pre>
                     </details>
                   </li>
@@ -106,7 +107,11 @@ export function ProjectPage() {
           <p className="why">{P.statuslineWhy}</p>
           <ul className="proj-list">
             {rootGroups(project.statusline_roots, labelOf).map((group) => (
-              <li key={group.text}><b>{group.names.join(', ')}</b><small>{group.text}</small></li>
+              <li key={`${group.root ?? ''}${group.kind}`}>
+                <b>{group.names.join(', ')}</b>
+                <small>{group.kind}</small>
+                {group.root === null ? null : <OnRequest label={P.showPath}>{group.root}</OnRequest>}
+              </li>
             ))}
           </ul>
         </section>

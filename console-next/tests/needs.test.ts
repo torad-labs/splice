@@ -586,7 +586,7 @@ describe('the doctor', () => {
     const [alone] = needsIn(inputs);
     const checks: DoctorCheck[] = [{ id: 'auth/openrouter', status: 'fail', detail: 'OPENROUTER_API_KEY is not set' }];
     const [folded] = needsIn({ ...inputs, doctor: read(doctor(checks)) });
-    expect(alone?.finding).toBe('OPENROUTER_API_KEY not set');
+    expect(alone).toMatchObject({ kind: K.keyMissing, finding: 'OPENROUTER_API_KEY not set' });
     // The same fact said twice is said once; what Doctor adds beyond it still follows as its own sentence.
     expect(folded?.finding).toBe('OPENROUTER_API_KEY not set');
     const [more] = needsIn({ ...inputs, doctor: read(doctor([{ id: 'auth/openrouter', status: 'fail', detail: 'OPENROUTER_API_KEY is not set' }, { id: 'auth/openrouter', status: 'warn', detail: 'the key store is locked' }])) });

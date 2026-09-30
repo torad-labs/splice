@@ -184,11 +184,13 @@ describe('what a card says', () => {
 
   test('a card line is the say or do, else the state\'s own sentence, and a waiting card shows only the question it asked', () => {
     const withLast = (role: 'user' | 'assistant', text: string, tool: string | null = null) => row({ last: { role, tool, text, ts: NOW } });
-    expect(cardLine(withLast('assistant', 'Done. It is green.'), 'working', 3 * 60_000, null)).toEqual({ line: 'Done.', note: 'Working 3 min' });
-    expect(cardLine(withLast('assistant', 'Done.'), 'idle', null, null)).toEqual({ line: 'Done.', note: null });
-    expect(cardLine(withLast('assistant', 'Run the release build', 'Bash'), 'working', 3 * 60_000, null)).toEqual({ line: 'Bash · Run the release build', note: 'Working 3 min' });
-    expect(cardLine(withLast('assistant', 'I built it. Should I push it or hold for review?'), 'waiting', 4 * 3_600_000, null)).toEqual({ line: 'Should I push it or hold for review?', note: 'Waiting 4 h' });
+    expect(cardLine(withLast('assistant', 'Done. It is green.'), 'working', 3 * 60_000, null)).toEqual({ line: 'Done.', note: 'Working 3 min', agent: true });
+    expect(cardLine(withLast('assistant', 'Done.'), 'idle', null, null)).toEqual({ line: 'Done.', note: null, agent: true });
+    expect(cardLine(withLast('assistant', 'Run the release build', 'Bash'), 'working', 3 * 60_000, null)).toEqual({ line: 'Bash · Run the release build', note: 'Working 3 min', agent: true });
+    expect(cardLine(withLast('assistant', 'I built it. Should I push it or hold for review?'), 'waiting', 4 * 3_600_000, null)).toEqual({ line: 'Should I push it or hold for review?', note: 'Waiting 4 h', agent: true });
     expect(cardLine(withLast('assistant', 'The box run failed and used up the credit, my mistake.'), 'waiting', 8 * 3_600_000, null).line).toBe('Waiting for your answer for 8 h');
+    // A state's own sentence is splice's words about the card, not the session's: no terminal for it.
+    expect(cardLine(withLast('assistant', 'The box run failed and used up the credit, my mistake.'), 'waiting', 8 * 3_600_000, null).agent).toBe(false);
     expect(cardLine(withLast('user', '<system-reminder>A process claiming the address uds:/run/user/1000/cc-socks/1.sock</system-reminder>'), 'waiting', 4 * 3_600_000, null).line).toBe('Waiting for your answer for 4 h');
     expect(cardLine(withLast('assistant', 'Which plan should take the session?', 'AskUserQuestion'), 'waiting', null, null).line).toBe('Which plan should take the session?');
   });
@@ -196,7 +198,7 @@ describe('what a card says', () => {
   test('with no newest message the card says what the state means, and the note is empty', () => {
     for (const last of [undefined, null, { role: 'assistant' as const, tool: null, text: '  ', ts: null }]) {
       expect(cardSays(last)).toBeNull();
-      expect(cardLine(row(last === undefined ? {} : { last }), 'idle', null, null)).toEqual({ line: 'Waiting for your next message', note: null });
+      expect(cardLine(row(last === undefined ? {} : { last }), 'idle', null, null)).toEqual({ line: 'Waiting for your next message', note: null, agent: false });
     }
   });
 

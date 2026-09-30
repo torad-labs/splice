@@ -21,7 +21,9 @@
 .gauge .track { height: 0.875rem; border-radius: 0.4375rem; background: var(--glass-track); overflow: hidden; }
 .gauge .track i { display: block; height: 100%; border-radius: 0.4375rem 0 0 0.4375rem; background: var(--glass-ink); }
 .gauge .track.full i { background: repeating-linear-gradient(135deg, var(--glass-ink) 0 8px, var(--glass-hatch) 8px 16px); border-radius: 0.4375rem; }
-.glass .none { white-space: normal; }
 .add-card { display: grid; place-items: center; align-content: center; gap: var(--space-4); min-height: 15.625rem; padding: var(--space-10); border: 3px dashed var(--hair); border-radius: var(--r2); background: transparent; color: var(--mute); text-align: center; cursor: pointer; font: inherit; }
 .add-card b { font: 520 1.625rem/1.15 var(--display); color: var(--ink); }
 .add-card span { font: 400 1rem/1.5 var(--read); max-width: 30ch; }
+
+/* splice's own sentence about a card: serif, outside the glass, which is the terminal's and holds only what a session or a gauge says */
+.card .quiet-line { padding: 0 var(--space-7) var(--space-5); font: 400 1.0625rem/1.45 var(--read); color: var(--body); }

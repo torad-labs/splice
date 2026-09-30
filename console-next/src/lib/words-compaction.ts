@@ -1,7 +1,7 @@
 // What the compaction block says. Copy lives in modules like this one, never inline in a component.
 export const W = {
   title: 'Compaction',
-  why: 'When a session’s context fills, its plan writes a summary and carries on from it. This is how those went, and which instructions they ran under.',
+  why: 'When a session’s context fills, its command writes a summary and carries on from it. This is how those went, and which instructions they ran under.',
   reading: 'Reading the compactions.',
   none: 'No compaction has run yet.',
   count: (total: number, week: boolean): string => `${total} ${total === 1 ? 'compaction' : 'compactions'}${week ? ' in the last 7 days' : ''}.`,
@@ -29,6 +29,6 @@ export const W = {
     tooled_no_text: 'Tool call instead',
     empty_model: 'Empty reply',
     stream_error: 'Stream failed',
-    upstream_error: 'Plan error',
+    upstream_error: 'Command error',
   },
 } as const;

@@ -69,19 +69,19 @@ describe('the standing prompt and rule', () => {
   });
 });
 
-describe('where each plan looks for a branch', () => {
+describe('where each command looks for a branch', () => {
   const entry = (head: string, root: string | null, kind: 'home' | 'tmp' | null = 'home') => ({ head, root, entry: kind });
-  test('plans that find the repo under the same folder are one line, in the order they were first named', () => {
+  test('commands that find the repo under the same folder are one line, in the order they were first named', () => {
     const groups = rootGroups([entry('a', '/home/x'), entry('b', '/tmp/y', 'tmp'), entry('c', '/home/x')], (key) => key.toUpperCase());
     expect(groups).toEqual([
-      { names: ['A', 'C'], text: '/home/x · Home folder' },
-      { names: ['B'], text: '/tmp/y · Temp folder' },
+      { names: ['A', 'C'], kind: 'Home folder', root: '/home/x' },
+      { names: ['B'], kind: 'Temp folder', root: '/tmp/y' },
     ]);
   });
-  test('a plan that finds it under no trusted folder says so, apart from those that do', () => {
+  test('a command that finds it under no trusted folder says so, apart from those that do', () => {
     const groups = rootGroups([entry('a', null, null), entry('b', '/home/x')], (key) => key);
     expect(groups.map((group) => group.names)).toEqual([['a'], ['b']]);
-    expect(groups[0]?.text).not.toContain('/home');
+    expect(groups[0]).toMatchObject({ root: null });
   });
 });
 

@@ -48,10 +48,12 @@ export function FleetCardView({ facts, fix, sortable = true }: { facts: Facts; f
           </button>
         ) : null}
       </div>
-      {facts.line === null ? null : (
+      {facts.line === null ? null : facts.line.kind === 'gauge' ? (
         <div className="glass one">
-          {facts.line.kind === 'gauge' ? <Gauge line={facts.line} /> : <p className="none">{facts.line.text}</p>}
+          <Gauge line={facts.line} />
         </div>
+      ) : (
+        <p className="quiet-line">{facts.line.text}</p>
       )}
       <div className="quiet-meta">
         {facts.meta.map((part) => (

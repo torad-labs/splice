@@ -33,7 +33,7 @@ export function SessionCard({ facts, sortable = true }: { facts: CardFacts; sort
   const key = sessionKey(row);
   const drag = useSortable({ id: key, disabled: !sortable });
   const needs = needsPerson(state);
-  const { line, note } = cardLine(row, state, since, quiet);
+  const { line, note, agent } = cardLine(row, state, since, quiet);
   const meta = [note, repoName(row), handText(hand)].filter((part): part is string => part !== null);
   return (
     <Window
@@ -58,9 +58,13 @@ export function SessionCard({ facts, sortable = true }: { facts: CardFacts; sort
           </button>
         ) : null}
       </div>
-      <div className="glass one">
-        <p className={state === 'working' ? 'cur' : undefined}>{line}</p>
-      </div>
+      {agent ? (
+        <div className="glass one">
+          <p className={state === 'working' ? 'cur' : undefined}>{line}</p>
+        </div>
+      ) : (
+        <p className="quiet-line">{line}</p>
+      )}
       <div className="quiet-meta">
         {/* the head's own dot, in the hue the card's shadow wears: that is the key to it */}
         {head === null ? null : <ModelMark colour={colour}>{head}</ModelMark>}

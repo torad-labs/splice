@@ -127,8 +127,9 @@ function headNeeds(heads: readonly HeadStatus[], auth: AuthPayload | null, accou
         // `splice key set` writes the key store and the next request reads it: no restart (Fleet).
         const variable = card?.env_var;
         return variable === undefined
-          ? need('warn', K.signedOut, H.keyMissingBare, open(hrefOf('heads'), S.openFleet))
-          : need('warn', K.signedOut, `${variable} ${U.notSet}`, { kind: 'copy', command: `splice key set ${variable}` });
+          ? need('warn', K.keyMissing, H.keyMissingBare, open(hrefOf('heads'), S.openFleet))
+          
+          : need('warn', K.keyMissing, `${variable} ${U.notSet}`, { kind: 'copy', command: `splice key set ${variable}` });
       }
       case 'login expired':
         return need('warn', K.signedOut, H.loginExpired, loginFix(head.authKind, head.key));

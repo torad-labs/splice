@@ -13,6 +13,8 @@ export const P = {
   costToday: (usd: string): string => `About ${usd} of API cost.`,
   costUnpriced: 'No turn here was priced today.',
   showFolder: 'Show the folder',
+  showPath: 'Show the path',
+  fileName: (kind: string): string => (kind === 'instructions' ? 'This project’s CLAUDE.md' : kind === 'memory' ? 'This project’s memory' : kind),
   sessionsTitle: 'Sessions here',
   sessionsNone: 'No session is running in this repo.',
   teamsTitle: 'Teams',

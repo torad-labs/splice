@@ -45,7 +45,7 @@ describe('a record splice answered itself', () => {
     expect(localStepsOf([])).toBe(0);
   });
   test('its page says the plan was not asked', () => {
-    expect(turnLede(local, [])).toBe('The plan was not asked. splice answered this step itself, from a script the model had already written.');
+    expect(turnLede(local, [])).toBe('The command was not asked. splice answered this step itself, from a script the model had already written.');
   });
 });
 
@@ -61,7 +61,7 @@ describe('plan rows', () => {
   });
   test('the lede counts turns, failures and the typical first word', () => {
     expect(turnsLede(planRows([summary()], none), '1h')).toBe('10 turns in the last hour. One failed, and the typical first word came back in 1.4 s.');
-    expect(turnsLede([], '24h')).toBe('No plan has answered a turn in the last 24 hours.');
+    expect(turnsLede([], '24h')).toBe('No command has answered a turn in the last 24 hours.');
   });
 });
 

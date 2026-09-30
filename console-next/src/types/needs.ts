@@ -56,8 +56,8 @@ export type Source = 'heads' | 'daemon' | 'plans' | 'accounts' | 'turns' | 'sess
 
 /** The word a card prints as its state. */
 export type NeedKind =
-  | 'Waiting on you' | 'Stuck' | 'Out of quota' | 'Signed out' | 'Failing' | 'Version mismatch' | 'Queue full'
-  | 'Restart needed' | 'Plan near its limit' | 'Account' | 'Turn stalled' | 'Team seat' | 'Doctor';
+  | 'Waiting on you' | 'Stuck' | 'Out of quota' | 'Signed out' | 'Key missing' | 'Failing' | 'Version mismatch' | 'Queue full'
+  | 'Restart needed' | 'Command near its limit' | 'Account' | 'Turn stalled' | 'Team seat' | 'Doctor';
 
 /** The one fix an item offers: a write the console makes here, a command to copy, or the page
  *  where the fix is. */

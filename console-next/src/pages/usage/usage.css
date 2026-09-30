@@ -8,8 +8,7 @@
 .totals h3 { margin-top: var(--space-5); font: 600 1.0625rem var(--meta); color: var(--ink); }
 .totals p { margin-top: var(--space-2); font: 400 0.96rem/1.45 var(--read); color: var(--mute); max-width: 26ch; }
 .uplans { list-style: none; margin: var(--space-11) 0 0; padding: 0; display: grid; }
-.uplan { display: grid; grid-template-columns: 12.5rem minmax(15rem, 1fr) 9.375rem 10rem 7.5rem; gap: var(--space-11); align-items: center; padding: var(--space-9) 0; border-top: 2px solid var(--hair); }
-.uplan:first-child { border-top: 0; }
+.uplan { display: grid; grid-template-columns: 12.5rem minmax(15rem, 1fr) 9.375rem 10rem 7.5rem; gap: var(--space-11); align-items: center; padding: var(--space-9) 0; }
 .uplan b { display: flex; align-items: center; gap: var(--space-5); font: 600 1.1875rem var(--meta); color: var(--ink); }
 .uplan b i { width: 0.875rem; height: 0.875rem; border-radius: 50%; background: var(--c); }
 .use { display: grid; gap: var(--space-4); }
@@ -24,8 +23,7 @@
 .uplan .cost { font: 500 1.375rem var(--display); color: var(--ink); text-align: right; }
 .uplan .cost small { display: block; font: 500 0.875rem var(--meta); color: var(--mute); }
 .usrows { list-style: none; margin: var(--space-10) 0 0; padding: 0; display: grid; max-width: 61.25rem; }
-.usrow { display: grid; grid-template-columns: 13.75rem minmax(0, 1fr) auto; gap: var(--space-10); align-items: center; padding: var(--space-7) 0; border-top: 2px solid var(--hair); }
-.usrow:first-child { border-top: 0; }
+.usrow { display: grid; grid-template-columns: 13.75rem minmax(0, 1fr) auto; gap: var(--space-10); align-items: center; padding: var(--space-7) 0; }
 .usrow b { font: 600 1.125rem var(--meta); color: var(--ink); }
 .usrow > span, .usrow > div > span { font: 400 1rem/1.5 var(--read); color: var(--body); }
 .usrow .hint { display: block; margin-top: var(--space-2); font: 400 0.875rem/1.4 var(--read); color: var(--mute); }

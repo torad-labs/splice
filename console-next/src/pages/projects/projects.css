@@ -8,6 +8,7 @@
 .proj-list li { font: 500 1.0625rem var(--meta); color: var(--body); display: flex; gap: var(--space-6); align-items: baseline; flex-wrap: wrap; }
 .proj-list a { color: var(--ink); font-weight: 650; text-decoration: none; }
 .proj-list a:hover { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 0.25rem; }
+.proj-list li .on-request { margin: 0 0 0 auto; }
 .proj-list small { font: 500 0.875rem var(--meta); color: var(--mute); }
 .standing { display: grid; gap: var(--space-8); margin-top: var(--space-9); max-width: 47.5rem; }
 .standing .field { display: grid; gap: var(--space-3); }
@@ -15,5 +16,4 @@
 .standing .fromfile code { font: 500 0.875rem var(--mono); color: var(--body); overflow-wrap: anywhere; }
 .proj-files { list-style: none; margin: var(--space-9) 0 0; padding: 0; display: grid; gap: var(--space-8); }
 .proj-files summary { cursor: pointer; font: 600 1.0625rem var(--meta); color: var(--ink); }
-.proj-files summary small { margin-left: var(--space-5); font: 500 0.875rem var(--mono); color: var(--mute); overflow-wrap: anywhere; }
 .proj-files pre { margin: var(--space-5) 0 0; padding: var(--space-6) var(--space-7); max-height: 22.5rem; overflow: auto; background: var(--glass); color: var(--glass-ink); border-radius: 0.625rem; font: 400 0.8125rem/1.55 var(--mono); white-space: pre-wrap; word-break: break-word; }

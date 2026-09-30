@@ -20,13 +20,17 @@ export function projectLede(row: ProjectRow): string {
 
 export const costText = (row: ProjectRow): string => (row.cost_today_usd === null ? ABSENT : fmtUsd(row.cost_today_usd));
 
-/** Plans that find the repo under the same trusted folder, as one line each: eleven plans under one home folder are one fact, not eleven. */
-export function rootGroups(entries: readonly ProjectStatuslineRoot[], labelOf: (head: string) => string): { names: string[]; text: string }[] {
-  const groups = new Map<string, { names: string[]; text: string }>();
+/** Commands that find the repo under the same trusted folder, as one line each: eleven commands under one home folder are one fact, not eleven. The folder's path is kept apart, for the page to show on request. */
+export function rootGroups(
+  entries: readonly ProjectStatuslineRoot[],
+  labelOf: (head: string) => string,
+): { names: string[]; kind: string; root: string | null }[] {
+  const groups = new Map<string, { names: string[]; kind: string; root: string | null }>();
   for (const entry of entries) {
-    const text = entry.root === null ? P.noBranch : `${entry.root} · ${entry.entry === null ? '' : P.trusted[entry.entry]}`;
-    const held = groups.get(text);
-    if (held === undefined) groups.set(text, { names: [labelOf(entry.head)], text });
+    const kind = entry.root === null ? P.noBranch : entry.entry === null ? '' : P.trusted[entry.entry];
+    const key = `${entry.root ?? ''}\n${kind}`;
+    const held = groups.get(key);
+    if (held === undefined) groups.set(key, { names: [labelOf(entry.head)], kind, root: entry.root });
     else held.names.push(labelOf(entry.head));
   }
   return [...groups.values()];

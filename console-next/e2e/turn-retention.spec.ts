@@ -77,7 +77,7 @@ test('a late trace for the previous turn cannot replace the current whole failur
     await expect(page.locator('main .failure-sentence')).toHaveText(sentence);
     release?.();
     await expect.poll(() => settled).toContain('synthetic-failure-0');
-    for (const tab of ['Request and answer', 'Sent to the plan', 'Conversation']) {
+    for (const tab of ['Request and answer', 'Sent to the command', 'Conversation']) {
       await page.getByRole('link', { name: tab, exact: true }).click();
       await expect(page.locator('main .failure-sentence')).toHaveText(sentence);
       await expect(page.getByRole('main')).not.toContainText('The connection for synthetic-failure-0');

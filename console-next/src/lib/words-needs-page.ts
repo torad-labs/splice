@@ -28,7 +28,7 @@ export const N = {
     heads: 'the commands',
     auth: 'the sign-ins',
     accounts: 'the accounts',
-    usage: 'plan usage',
+    usage: 'command usage',
     sessions: 'the sessions',
     teams: 'the teams',
     doctor: 'the doctor checks',

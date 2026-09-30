@@ -40,7 +40,11 @@ import splice.app.control.mount.LaunchMount
 import splice.app.control.mount.LifecycleMount
 import splice.app.control.mount.McpMount
 import splice.app.control.mount.ModelsMount
+import splice.app.control.mount.ProjectsMount
 import splice.app.control.mount.SessionsMount
+import splice.app.control.mount.SessionsWiring
+import splice.app.control.mount.TeamsMount
+import splice.app.control.mount.TraceMount
 import splice.app.control.mount.TurnsMount
 import splice.app.control.mount.UsageMount
 import splice.configuration.topology.TopologyStale
@@ -128,7 +132,11 @@ public class ControlServer(
     private val usage = UsageMount(heads, resolver, config, clientVersions, ports, guard)
     private val accounts = AccountsMount(heads, resolver, ports, guard, log)
     private val turns = TurnsMount(heads, resolver, config, ports, guard)
-    private val sessionMount = SessionsMount(sessions, heads, config, ports, guard)
+    private val trace = TraceMount(heads, resolver, config, ports, guard)
+    private val sessionWiring = SessionsWiring(sessions, heads, config, ports)
+    private val sessionMount = SessionsMount(sessions, sessionWiring, config, guard)
+    private val teams = TeamsMount(sessionWiring, sessions, ports, guard)
+    private val projects = ProjectsMount(sessionWiring, sessions, config, ports, guard)
     private val events = EventsMount(ports, guard)
 
     // V4-230: the daemon's doctor reads these three answers in process; over loopback, from inside the
@@ -203,7 +211,10 @@ public class ControlServer(
                 usage.register(this)
                 accounts.register(this)
                 turns.register(this)
+                trace.register(this)
                 sessionMount.register(this)
+                teams.register(this)
+                projects.register(this)
                 events.register(this)
                 diagnostics.register(this)
                 models.register(this)

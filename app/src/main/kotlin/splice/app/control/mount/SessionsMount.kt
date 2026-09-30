@@ -1,120 +1,47 @@
-// NEW: LAYOUT-01 — the sessions capability's routes: the Claude Code session registry, its edges and
-// transcripts, and the team and project reads over the same registry (features/sessions).
+// NEW: LAYOUT-01 — the sessions capability's routes: the Claude Code session registry, its history, edges and
+// transcripts (features/sessions). V4-444: the team and project routes moved to TeamsMount and ProjectsMount.
 package splice.app.control.mount
 
-import io.ktor.server.application.ApplicationCall
-import io.ktor.server.request.receiveText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
-import io.ktor.server.routing.post
-import io.ktor.server.routing.put
 import kotlinx.coroutines.withContext
-import splice.app.control.ConsolePorts
-import splice.app.control.ManagedHead
-import splice.app.control.SessionHeadAdapter
-import splice.client.transcript.TranscriptHistoryIndex
-import splice.client.transcript.TranscriptReader
 import splice.core.config.ConfigService
-import splice.core.config.UserHome
-import splice.core.topology.AuthKindRegistry
-import splice.sessions.http.ActivitySource
-import splice.sessions.http.CompactionSource
 import splice.sessions.http.KeptActivity
-import splice.sessions.http.ProjectSessions
-import splice.sessions.http.ProjectsRoutes
-import splice.sessions.http.RepoOf
-import splice.sessions.http.SentTextSource
-import splice.sessions.http.SessionAccountOf
 import splice.sessions.http.SessionHistoryRoute
 import splice.sessions.http.SessionHistoryRowOf
 import splice.sessions.http.SessionRepoNameOf
 import splice.sessions.http.SessionsRoutes
-import splice.sessions.http.StatuslineRootOf
-import splice.sessions.http.TeamSource
-import splice.sessions.http.TeamsRoutes
 import splice.sessions.registry.SessionSource
-import splice.sessions.transcript.SessionHistoryRoot
 import splice.sessions.transcript.SessionTranscriptViewEnabled
 import splice.upstream.codemode.ProcessDispatchers
 
-/** Every route here is registered only when a session registry is wired, as /api/sessions always was.
- *  [ports] is read at CALL time: ControlPlane assigns the activity and team stores after construction. */
+/** Every route here is registered only when a session registry is wired, as /api/sessions always was. The team and
+ *  project routes over the same registry are [TeamsMount] and [ProjectsMount]. */
 internal class SessionsMount(
     sessions: SessionSource?,
-    heads: Map<String, ManagedHead>,
+    private val wiring: SessionsWiring,
     config: ConfigService,
-    ports: ConsolePorts,
     private val guard: ControlGuard,
 ) {
-    private val sessionHeads = SessionHeadAdapter.adapt(heads)
     private val fileIo = ProcessDispatchers().io()
-    private val sessionAccounts = SessionAccountOf { head, id ->
-        val managed = head?.let(heads::get)
-        val pool = managed?.accountPool
-        when {
-            pool != null -> pool.view(id).selectedLabel
-            managed != null && AuthKindRegistry.isOAuth(managed.authKind) -> "Only login on $head"
-            else -> null
-        }
-    }
-
-    private val sessionsRoutes = sessions?.let {
-        SessionsRoutes(
-            it,
-            TranscriptReader(),
-            sessionHeads,
-            config,
-            ActivitySource { ports.activity },
-            teams = TeamSource { ports.teams },
-            accountOf = sessionAccounts,
-        )
-    }
-    private val historyIndex = TranscriptHistoryIndex()
-    private val historyRoots = listOf(SessionHistoryRoot(null, UserHome.dir().resolve(".claude"))) +
-        sessionHeads.mapNotNull { (head, source) -> source.transcriptRoot?.let { SessionHistoryRoot(head, it) } }
     private val historyRoutes = sessions?.let { registry ->
-        val routes = checkNotNull(sessionsRoutes)
+        val routes = checkNotNull(wiring.routes)
         SessionHistoryRoute(
             registry,
-            historyIndex,
-            historyRoots,
+            wiring.historyIndex,
+            wiring.historyRoots,
             SessionHistoryRowOf(routes::historyRow),
             SessionTranscriptViewEnabled { config.getConfig().transcriptView },
             SessionRepoNameOf { record -> routes.repoOf(record)?.root },
         )
     }
-    private val teamsRoutes = sessionsRoutes?.let { routes ->
-        TeamsRoutes(
-            TeamSource { ports.teams },
-            sessionHeads,
-            sessions,
-            ActivitySource { ports.activity },
-            SentTextSource(routes::sentTexts),
-        )
-    }
-    private val projectsRoutes = sessionsRoutes?.let { routes ->
-        ProjectsRoutes(
-            ProjectSessions(
-                checkNotNull(sessions),
-                historyIndex,
-                historyRoots,
-                SessionTranscriptViewEnabled { config.getConfig().transcriptView },
-            ),
-            sessionHeads,
-            RepoOf(routes::repoOf),
-            TeamSource { ports.teams },
-            statuslineRoot = StatuslineRootOf(routes::statuslineRootOf),
-            compaction = CompactionSource { ports.compaction },
-        )
-    }
 
     fun register(route: Route) {
-        sessionsRoutes?.let { sessionRoutes(route, it) }
+        wiring.routes?.let { sessionRoutes(route, it) }
     }
 
-    /** v0.4.0 /api/sessions, V4-130's three session reads beside it, and V4-131's team and project
-     *  routes, which read the same registry. */
+    /** v0.4.0 /api/sessions and V4-130's three session reads beside it. */
     private fun sessionRoutes(route: Route, routes: SessionsRoutes) {
         route.get("/api/sessions") { guard.guarded(call) { ControlReplies.respond(call, routes.sessionsJson()) } }
         historyRoutes?.let { history ->
@@ -148,49 +75,5 @@ internal class SessionsMount(
                 routes.transcript(id, query["cursor"], query["limit"]?.toIntOrNull()).send(call)
             }
         }
-        teamsRoutes?.let { teamRoutes(route, it) }
-        projectsRoutes?.let { projects ->
-            route.get("/api/projects") { guard.guarded(call) { projects.list().send(call) } }
-            route.get("/api/projects/{id}") { guard.guarded(call) { projects.project(id(call)).send(call) } }
-            route.get("/api/projects/{id}/files") { guard.guarded(call) { projects.files(id(call)).send(call) } }
-        }
     }
-
-    /** V4-131 (FEATURES.md 6.1): the SPLIT team reads and the team writes. There is deliberately no
-     *  GET /api/teams/{id}; the board composes from these and /api/sessions. */
-    private fun teamRoutes(route: Route, teams: TeamsRoutes) {
-        route.get("/api/teams") { guard.guarded(call) { teams.list().send(call) } }
-        route.put("/api/teams") {
-            guard.guarded(call) {
-                teams.create(call.receiveText(), call.request.headers["Idempotency-Key"]).send(call)
-            }
-        }
-        route.put("/api/teams/{id}") { guard.guarded(call) { teams.replace(id(call), call.receiveText()).send(call) } }
-        route.put("/api/teams/{id}/sessions") {
-            guard.guarded(call) { teams.bind(id(call), call.receiveText()).send(call) }
-        }
-        route.put("/api/teams/{id}/slots/{slot}/instructions") {
-            guard.guarded(call) {
-                teams.instruct(id(call), call.parameters["slot"].orEmpty(), call.receiveText()).send(call)
-            }
-        }
-        route.post("/api/teams/{id}/archive") { guard.guarded(call) { teams.archive(id(call)).send(call) } }
-        route.get("/api/teams/{id}/edges") { guard.guarded(call) { teams.reads.edges(id(call)).send(call) } }
-        // V4-249: ?from=&to= is the caller's own day (the console's local one), beside ?day=, a UTC date.
-        route.get("/api/teams/{id}/chat") {
-            guard.guarded(call) {
-                val query = call.request.queryParameters
-                teams.reads.chat(id(call), query["day"], query["from"], query["to"]).send(call)
-            }
-        }
-        route.get("/api/teams/{id}/activity") {
-            guard.guarded(call) {
-                val query = call.request.queryParameters
-                teams.reads.activity(id(call), query["day"], query["from"], query["to"]).send(call)
-            }
-        }
-        route.get("/api/teams/{id}/economics") { guard.guarded(call) { teams.economics(id(call)).send(call) } }
-    }
-
-    private fun id(call: ApplicationCall): String = call.parameters["id"].orEmpty()
 }

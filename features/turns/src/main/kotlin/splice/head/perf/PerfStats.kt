@@ -32,7 +32,6 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSessionTail
 import splice.core.perf.PerfSessionTurn
 import splice.core.perf.PerfSnapshot
-import splice.core.perf.PromptTokenEstimate
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
@@ -84,10 +83,10 @@ public data class PerfRowMeta(
 
 private const val DEFAULT_TAIL = 200
 
-// why: bound in-memory sizing witnesses for live conversations; a missing one falls back to request size.
+// why: bound in-memory sizing witnesses; a missing one passes through to the provider.
 private const val MAX_PREFLIGHT_WITNESSES = 512
 
-/** What supports a preflight estimate: a verified prefix bound or the local count_tokens heuristic. */
+/** A token upper bound backed by upstream-measured input and a byte-level bound on added text. */
 internal data class InputEstimate(val tokens: Long, val basis: String)
 
 /** Latest observed upstream input for one session, conversation and model; no prompt bytes persist. */
@@ -114,20 +113,14 @@ internal class MeasuredInputs {
         }
     }
 
-    fun estimate(session: String?, conversation: String?, model: String, request: JsonObject): InputEstimate {
-        val requestBytes = request.toString().toByteArray(Charsets.UTF_8).size.toLong()
-        val fresh = PromptTokenEstimate.fromBytes(requestBytes)
-        val measured = if (session != null && conversation != null) {
-            synchronized(lock) { samples[Key(session, conversation, model)] }
+    fun estimate(session: String?, conversation: String?, model: String, request: JsonObject): InputEstimate? {
+        val key = if (session != null && conversation != null) Key(session, conversation, model) else null
+        val measured = key?.let { synchronized(lock) { samples[it] } }
+        val growth = measured?.prefix?.textGrowthBytes(request)
+        return if (measured != null && growth != null) {
+            InputEstimate(measured.input + growth, "measured-text-prefix")
         } else {
             null
-        }
-        // A UTF-8 byte of appended request cannot carry more than one byte-level BPE token.
-        // Prove the measured input and every other request property stayed byte-identical first.
-        return if (measured != null && measured.prefix.extendedBy(request)) {
-            InputEstimate(maxOf(fresh, measured.input + requestBytes - measured.prefix.requestBytes), "measured-prefix")
-        } else {
-            InputEstimate(fresh, "local-bytes-3")
         }
     }
 }

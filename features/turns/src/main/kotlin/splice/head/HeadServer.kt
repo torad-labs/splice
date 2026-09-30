@@ -167,24 +167,28 @@ public class HeadServer(
 }
 
 /** The client compacts reactively only when a size refusal is HTTP 400 before SSE commits 200.
- * Input is bounded only when a measured prefix is proven preserved; new or rewritten history uses
- * the weaker local count_tokens estimate. The output allowance is audited p99, never a hard cap. */
+ * A refusal needs a preserved, backend-measured prefix and a text-only growth bound. Cold, rewritten
+ * or media-bearing histories go upstream; bytes/3 cannot justify blocking a real conversation. */
 internal class CompactionPreflight(private val catalog: ModelCatalog, private val perf: PerfStats) {
     fun refusal(meta: TurnMeta, request: JsonObject, hasPriorExchange: Boolean): String? {
         val budget = CompactionBudgets.forRow(catalog, meta.originalModel) ?: return null
         val window = catalog.contextWindowFor(meta.originalModel)
         val estimate = perf.measuredInputs.estimate(meta.sessionId, meta.conversationKey, meta.upstreamModel, request)
+            ?: return null
         // An ordinary continuation asks the client to compact before the whole R is consumed.
         // The compact turn itself must fit only its generated output; rejecting it at W−R loops.
-        // A first exchange cannot compact, so it is sent while its input fits W.
+        // A measured first exchange cannot compact, so refuse it only above W.
         val allowance = when {
             meta.compact -> budget.generationTokens
             hasPriorExchange -> budget.totalTokens
             else -> 0L
         }
-        if (estimate.tokens <= window - allowance) return null
-        return "prompt is too long: estimated ${estimate.tokens} input tokens plus $allowance " +
-            "reserved context tokens exceed the $window token model maximum " +
-            "(estimate basis ${estimate.basis}, compaction generation p99 ${budget.generationTokens})"
+        return if (estimate.tokens > window - allowance) {
+            "prompt is too long: estimated ${estimate.tokens} input tokens plus $allowance " +
+                "reserved context tokens exceed the $window token model maximum " +
+                "(estimate basis ${estimate.basis}, compaction generation p99 ${budget.generationTokens})"
+        } else {
+            null
+        }
     }
 }

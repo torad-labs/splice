@@ -6,6 +6,7 @@ package splice.head.perf
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -15,7 +16,6 @@ import splice.core.model.ModelRates
 import splice.core.model.TurnPrice
 import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSnapshot
-import splice.core.perf.PromptTokenEstimate
 import splice.core.perf.TurnPerf
 import java.nio.file.Files
 import java.nio.file.Path
@@ -38,17 +38,29 @@ class PerfStatsTest {
             previous,
         )
         val expected = 200 + appended.toString().toByteArray().size - previous.toString().toByteArray().size
-        assertEquals(expected.toLong(), stats.measuredInputs.estimate("session", "first", "m", appended).tokens)
-        assertEquals("measured-prefix", stats.measuredInputs.estimate("session", "first", "m", appended).basis)
+        val estimated = requireNotNull(stats.measuredInputs.estimate("session", "first", "m", appended))
+        assertEquals(expected.toLong(), estimated.tokens)
+        assertEquals("measured-text-prefix", estimated.basis)
+        val lite = body(
+            """{"model":"m","input":[{"role":"user","content":"a"},""" +
+                """{"role":"assistant","content":"thinking","phase":"commentary"}]}""",
+        )
+        assertTrue(
+            stats.measuredInputs.estimate("session", "first", "m", lite) != null,
+            "Codex lite assistant phase preserves a text-only measured prefix",
+        )
         for (candidate in listOf(rewritten, shrunk)) {
-            val estimated = stats.measuredInputs.estimate("session", "first", "m", candidate)
-            assertEquals(
-                PromptTokenEstimate.fromBytes(candidate.toString().toByteArray().size.toLong()),
-                estimated.tokens,
-            )
-            assertEquals("local-bytes-3", estimated.basis)
+            assertNull(stats.measuredInputs.estimate("session", "first", "m", candidate))
         }
-        assertEquals("local-bytes-3", stats.measuredInputs.estimate("session", "fork", "m", appended).basis)
+        assertNull(stats.measuredInputs.estimate("session", "fork", "m", appended))
+        val image = body(
+            """{"model":"m","input":[{"role":"user","content":"a"},""" +
+                """{"role":"user","content":[{"type":"image","source":{"type":"base64","data":"${"x".repeat(500_000)}"}}]}]}""",
+        )
+        assertNull(
+            stats.measuredInputs.estimate("session", "first", "m", image),
+            "a base64 image has no safe token bound from its encoded byte length",
+        )
     }
 
     @Test

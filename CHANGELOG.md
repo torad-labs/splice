@@ -15,8 +15,12 @@
 - **Local models are first-class** on the `openai-chat` dialect. splice asks the runtime what it
   serves and refuses a row it doesn't. llama-server conversations keep their own slot. Local heads
   report token usage, so Claude Code auto-compacts, and their errors say what happened.
-- **The console** signs accounts in, switches, removes and relabels them. It adds opt-in body
-  capture, budgets, alerts, a playground and a per-project view of the rules that govern a repo.
+- **A rebuilt console.** Each session opens on its own page, its messages set as formatted text
+  and its tool calls and code as blocks. Needs you lists only what is live and waiting on you, each
+  item with its one fix. Settings are switches, choices and steppers under plain names, and the
+  cards on Sessions and Fleet reorder by drag. The console signs accounts in, switches, removes and
+  relabels them, and adds opt-in body capture, budgets, alerts, a playground and a per-project view
+  of the rules that govern a repo.
 - **New commands:** `splice add <profile>`, `splice add-model`, `splice sessions`,
   `splice perf`, and `splice doctor --json` (a shareable, redacted report).
 - **New heads and modes:** `claude-muse` (a Meta Muse Code subscription); Claude head mode (wrap
@@ -277,8 +281,8 @@ origin.
   `splice.toml` (a model's `context_window`, `extra_windows`, `window_rules`,
   `default_context_window`, a head's `context_window`) when the file changes, so running sessions
   compact at the new window through usage scaling, the next launch plants it as
-  `CLAUDE_CODE_MAX_CONTEXT_TOKENS`, and the console's models page shows it. A local runtime is
-  asked about a new window the way boot asks it, off the request path, and a window it refuses is
+  `CLAUDE_CODE_MAX_CONTEXT_TOKENS`, and a plan's Models tab in the console's Fleet shows it. A
+  local runtime is asked about a new window the way boot asks it, off the request path, and a window it refuses is
   not applied; a file that does not parse, or a head it no longer declares, keeps the windows in
   force. Each outcome is one daemon.log line. `/health`'s `topologyDigest` now names the version the
   daemon runs: a window-only or comment-only edit leaves `splice doctor` with nothing to restart
@@ -567,6 +571,13 @@ origin.
   request path, and a rate-limited mint is held rather than retried.
 
 ### Changed
+- **The console is rebuilt, and the daemon serves the copy packaged in its jar.** The old console
+  is removed. The daemon no longer looks for a console build beside the directory it was started
+  from, a lookup that broke once a restart started the daemon from the home directory. To serve
+  another build, set `SPLICE_CONSOLE_HTML` to that file's absolute path. A relative or unreadable
+  path serves a page that says so, never a silent fallback. The console scales with the window:
+  text is 16 px up to 1920 wide and grows to 20 px at 3840. A session's card says what it last said
+  or did, never a tool's output or a command, and a repo is named from its git remote, never its full path.
 - **A screenshot-heavy session on a large-window model keeps its images.** Claude Code keeps at
   most 100 images in a request, or 600 when it counts the session as 1M-context, and strips the
   oldest past that. splice now hands Claude Code the 1M form of any model whose configured window
@@ -751,16 +762,22 @@ origin.
 - **A model you add by id is priced from OpenRouter's own list.** Only the ten models `splice add
   openrouter` writes carried a rate card, so a turn on any other OpenRouter model read `no rate card`
   on the status line and counted as unpriced against a budget. splice now reads the price OpenRouter
-  lists for each model when the daemon starts, keeps it with the model list it saves for the next
+  lists for each model when the daemon starts and every hour after, keeps it with the model list it saves for the next
   start, and gives it to every model whose row carries no card of its own, the models the daemon
   discovers among them. A `rates` line you write on the row wins, and a model OpenRouter lists no price
   for, such as its `auto` router, whose price depends on the route it picks, still reads `no rate card`
   (V4-438).
+- **A model a provider publishes while the daemon runs joins its heads within the hour.** Each
+  head's provider was asked for its models once, at daemon start, so `gpt-6.1-sol`, released on
+  Sep 29 while the daemon ran, reached no picker until a restart. splice now asks every head's
+  provider again each hour and keeps the answer on disk. A head's `/v1/models`, the launch picker,
+  the status line and a team board's rates read the new list with no restart. A refresh that fails
+  keeps the last list, and `daemon.log` says so (V4-440).
 - **A Codex model the backend runs code-mode-only gets `exec` without an edit.** `gpt-6.1-sol` shipped
   marked `code_mode_only` in the ChatGPT backend's model list, but required a manual addition to
   `code_mode_models` to enable the runner. New releases no longer depend on that copied list.
-  splice now reads each model's `tool_mode` from that list at start, keeps it for the next start, and
-  checks it on every turn. The built-in list is gone; `code_mode_models` adds to what the backend marks and
+  splice now reads each model's `tool_mode` from that list at start and every hour after, keeps it
+  for the next start, and checks it on every turn. The built-in list is gone; `code_mode_models` adds to what the backend marks and
   is the way to name a model the backend hides from its list, such as `codex-auto-review`. With no list
   known at start (no answer and none kept), only `code_mode_models` runs code mode and the head's log says
   so once (V4-441).

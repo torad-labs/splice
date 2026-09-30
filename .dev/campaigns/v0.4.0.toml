@@ -10134,6 +10134,7 @@ files = ["console/src/pages/sessions/index.tsx", "console/src/pages/sessions/str
 status = "blocked"
 verify = "red first: a vitest render of a waiting and a working session reads two different tones, and neither is the stale or needs-you tone; 1440 before/after screenshots; vitest, tsc, eslint; CI consoleE2e on the pushed sha"
 # [2026-09-29] Sep 29 CT: superseded by V4-444. The operator rejected the whole console on sight at ~7:00 PM CT, and the Sessions lanes this row polishes are replaced by the redesign.
+# [2026-09-30] Sep 30, 4:40 AM CT splice-lead: superseded by V4-444. A card reads Working in the work tone and Waiting on you in the wait tone, with Stuck and Idle apart (console-next/src/lib/sessions.ts:160-166), live in 79c16ced4.
 
 [[items]]
 id = "V4-444"

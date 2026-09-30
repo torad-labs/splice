@@ -23,13 +23,21 @@ internal object SessionActivity {
         return json(sessionId?.let { source.last(it, roots) })
     }
 
+    /** A call is shown as what it was for, read from its whole input before any clip, so a long command in front of its
+     *  description cannot push the description out; what was said is shown as it was said. */
+    private fun shown(message: TranscriptMessage): String {
+        val tool = message.tool
+        if (message.role != TranscriptRole.ASSISTANT || tool == null) return message.text
+        return CallSummary.of(tool, message.text)
+    }
+
     /** The port supplies redacted text; collapse and clip only after that redaction. */
     private fun json(message: TranscriptMessage?): JsonElement {
         if (message == null) return JsonNull
         return buildJsonObject {
             put("role", message.role.name.lowercase())
             put("tool", message.tool)
-            put("text", message.text.replace(whitespace, " ").trim().take(ACTIVITY_TEXT_CHARS))
+            put("text", shown(message).replace(whitespace, " ").trim().take(ACTIVITY_TEXT_CHARS))
             put("ts", message.ts)
         }
     }

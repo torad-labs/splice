@@ -13,7 +13,7 @@ import java.nio.file.attribute.FileTime
 
 class TranscriptTailEdgeTest {
     @Test
-    fun `tool results share the page's preceding call name`(@TempDir tmp: Path) {
+    fun `a tail that ends in a tool result yields the call before it`(@TempDir tmp: Path) {
         val fixture = ActivityTranscript(tmp)
         fixture.write(
             listOf(
@@ -23,9 +23,25 @@ class TranscriptTailEdgeTest {
             ),
         )
         val last = fixture.reader.last(ACTIVITY_ID, listOf(tmp))
-        assertEquals(TranscriptRole.TOOL, last?.role)
+        assertEquals(TranscriptRole.ASSISTANT, last?.role)
         assertEquals("SyntheticTool", last?.tool)
-        assertEquals("synthetic result", last?.text)
+        assertEquals("{}", last?.text, "the call, never its result")
+    }
+
+    @Test
+    fun `a tail that ends in results yields the text said before the call`(@TempDir tmp: Path) {
+        val fixture = ActivityTranscript(tmp)
+        fixture.write(
+            listOf(
+                ACTIVITY_USER,
+                """{"type":"assistant","message":{"id":"synthetic-said","content":[{"type":"text","text":"Checking the build."}]}}""",
+                """{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"synthetic-absent","content":"synthetic result"}]}}""",
+                """{"type":"system","subtype":"note","content":"a system note"}""",
+            ),
+        )
+        val last = fixture.reader.last(ACTIVITY_ID, listOf(tmp))
+        assertEquals(TranscriptRole.ASSISTANT, last?.role)
+        assertEquals("Checking the build.", last?.text)
     }
 
     @Test
@@ -43,12 +59,12 @@ class TranscriptTailEdgeTest {
         )
         val last = fixture.reader.last(ACTIVITY_ID, listOf(tmp))
         assertEquals("SyntheticTool", last?.tool, "a partial preceding reply must not hide the call")
-        assertEquals("synthetic result", last?.text)
+        assertEquals(TranscriptRole.ASSISTANT, last?.role)
         assertTrue(fixture.bytes in 1..262_144)
     }
 
     @Test
-    fun `a complete result remains visible with unknown tool when its call is outside the ceiling`(@TempDir tmp: Path) {
+    fun `a result is never activity, so a tail of only results beyond the ceiling has none`(@TempDir tmp: Path) {
         val fixture = ActivityTranscript(tmp)
         fixture.write(emptyList())
         Files.newBufferedWriter(fixture.file).use { out ->
@@ -60,9 +76,7 @@ class TranscriptTailEdgeTest {
             )
         }
         val last = fixture.reader.last(ACTIVITY_ID, listOf(tmp))
-        assertEquals(TranscriptRole.TOOL, last?.role)
-        assertEquals("synthetic result", last?.text)
-        assertEquals(null, last?.tool)
+        assertEquals(null, last)
         assertEquals(16_777_216L, fixture.bytes, "the hard ceiling remains bounded")
         val read = fixture.bytes
         assertEquals(last, fixture.reader.last(ACTIVITY_ID, listOf(tmp)))
@@ -94,7 +108,7 @@ class TranscriptTailEdgeTest {
     }
 
     @Test
-    fun `a three megabyte image result keeps its role and preceding tool instead of disappearing`(@TempDir tmp: Path) {
+    fun `a three megabyte image result is read past to the call before it`(@TempDir tmp: Path) {
         val fixture = ActivityTranscript(tmp)
         val image = "A".repeat(3 * 1024 * 1024)
         fixture.write(
@@ -105,9 +119,9 @@ class TranscriptTailEdgeTest {
             ),
         )
         val last = fixture.reader.last(ACTIVITY_ID, listOf(tmp))
-        assertEquals(TranscriptRole.TOOL, last?.role)
+        assertEquals(TranscriptRole.ASSISTANT, last?.role)
         assertEquals("SyntheticScreenshot", last?.tool)
-        assertEquals("", last?.text, "image data is not transcript text")
+        assertEquals("{}", last?.text)
         assertTrue(fixture.bytes in 1..4_194_304, "read ${fixture.bytes} bytes")
         val read = fixture.bytes
         assertEquals(last, fixture.reader.last(ACTIVITY_ID, listOf(tmp)))

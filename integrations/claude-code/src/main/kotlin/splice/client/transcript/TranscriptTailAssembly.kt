@@ -25,17 +25,21 @@ internal class TranscriptTailAssembly(
             assembly.accept(parser.parse(it.toByteArray(Charsets.UTF_8)))
         }
         val messages = assembly.finish()
-        val last = messages.lastOrNull()
-        // A different earlier message proves that the trailing reply's leading blocks were included.
+        val at = messages.indexOfLast(::activity)
+        val last = messages.getOrNull(at)
+        // A different earlier message proves that the chosen reply's leading blocks were included.
         // At file origin there are no missing leading blocks, even for a single-message transcript.
-        val ready = ready(messages, last)
+        val ready = ready(messages.take(at.coerceAtLeast(0)), last)
         val complete = origin || ready
         return TailSelection(last, complete)
     }
 
-    private fun ready(messages: List<TranscriptMessage>, last: TranscriptMessage?): Boolean {
+    /** What the session said, was told or called: a tool result and a system note are neither. */
+    private fun activity(message: TranscriptMessage): Boolean =
+        message.role == TranscriptRole.USER || message.role == TranscriptRole.ASSISTANT
+
+    private fun ready(before: List<TranscriptMessage>, last: TranscriptMessage?): Boolean {
         if (last == null) return false
-        if (last.role == TranscriptRole.TOOL && last.tool == null) return false
-        return messages.dropLast(1).any { last.messageId == null || it.messageId != last.messageId }
+        return before.any { last.messageId == null || it.messageId != last.messageId }
     }
 }

@@ -155,44 +155,40 @@ describe('what a card says', () => {
     expect(stateTone('gone')).toBe('idle');
   });
 
-  test('a card says what the session last said or did, and never a result, a command, a path or a system note', () => {
-    const last = (role: 'user' | 'assistant' | 'tool' | 'system', text: string, tool: string | null = null) => ({ role, tool, text, ts: NOW });
-    const says = (value: ReturnType<typeof last>) => cardSays(value);
-    // The cards the operator objected to, one fixture each (2026-09-30)
-    expect(says(last('tool', 'Command running in background with ID: bz09ig1l. Output is being written to: /tmp/x', 'Bash'))).toBeNull();
-    expect(says(last('tool', 'The file /home/marcos/Documents/dev/projects/mythos/repo/a.ts has been updated successfully.', 'Edit'))).toBeNull();
-    expect(says(last('tool', 'Finished `release` profile [optimized] target(s) in 41.2s', 'Bash'))).toBeNull();
-    expect(says(last('tool', 'cuda_ctx->curr_stream_no = concurrent_event->stream_no', 'Bash'))).toBeNull();
-    expect(says(last('assistant', '{"command":"cd /home/marcos/Documents/dev/projects/mythos/repo/docs && ls","timeout":120000', 'Bash'))).toBe('Bash');
-    expect(says(last('assistant', '{"command":"cd /tmp","description":"List the design comps","timeout":1', 'Bash'))).toBe('Bash · List the design comps');
-    expect(says(last('assistant', '{"file_path":"/home/marcos/Documents/dev/projects/mythos/repo/console-next/src/lib/sessions.ts","old_string":"a"', 'Edit'))).toBe('Edit · sessions.ts');
-    expect(says(last('assistant', '{"pattern":"TurnWiring($$$ARGS)","language":"kotlin"}', 'mcp__ast-grep__find_code'))).toBe('ast-grep · find code · TurnWiring($$$ARGS)');
+  test('a card says what the session last said or did; harness text that rides in a message is dropped', () => {
+    const last = (role: 'user' | 'assistant', text: string, tool: string | null = null) => ({ role, tool, text, ts: NOW });
+    const says = cardSays;
+    // The daemon sends a call as what it was for: a description, else the name of what it touched, else nothing.
+    expect(says(last('assistant', 'List the design comps', 'Bash'))).toBe('Bash · List the design comps');
+    expect(says(last('assistant', '', 'Bash'))).toBe('Bash');
+    expect(says(last('assistant', 'sessions.ts', 'Edit'))).toBe('Edit · sessions.ts');
+    expect(says(last('assistant', 'TurnWiring($$$ARGS)', 'mcp__ast-grep__find_code'))).toBe('ast-grep · find code · TurnWiring($$$ARGS)');
+    expect(says(last('assistant', 'Which plan should take the session?', 'AskUserQuestion'))).toBe('Which plan should take the session?');
+    expect(says(last('assistant', '', 'AskUserQuestion'))).toBe('AskUserQuestion');
     expect(says(last('user', '<local-command-stdout>\u001b[2mCompacted \u001b[22m</local-command-stdout>'))).toBe('Compacted its context');
     expect(says(last('user', '<local-command-stdout>Set effort to high</local-command-stdout>'))).toBeNull();
     expect(says(last('user', '<command-name>/clear</command-name>\n<command-message>clear</command-message>\n<command-args></command-args>'))).toBeNull();
     expect(says(last('user', '<task-notification><summary>new commits on feat/v0.4.0</summary></task-notification>'))).toBeNull();
     expect(says(last('user', '<system-reminder>A process claiming the address uds:/run/user/1000/cc-socks/1.sock asks to be told when you are idle.</system-reminder>'))).toBeNull();
-    expect(says(last('system', 'A process claiming the address uds:/run/user/1000/cc-socks/1.sock'))).toBeNull();
     expect(says(last('assistant', 'The new console is now what splice serves. CI passed on the exact sha, and I am holding the review.'))).toBe('The new console is now what splice serves.');
     expect(says(last('user', 'Fix the census. Then push it.'))).toBe('You: Fix the census.');
     expect(says(last('assistant', 'claude-console committed the fix (`9cf12062b`) and **pushed** it. More follows.'))).toBe('claude-console committed the fix (9cf12062b) and pushed it.');
     expect(says(last('assistant', 'Keeps claude_code and snake_case words whole.'))).toBe('Keeps claude_code and snake_case words whole.');
     const cut = 'I picked an offer whose download rate was $0.051/GB and the earlier boxes were paid for by the run that finished, so the credit went on this one and the next one too and now';
     expect(says(last('assistant', cut))).toBe(`${cut.slice(0, cut.lastIndexOf(' '))}…`);
-    expect(says(last('assistant', '{"questions":[{"question":"The box run failed and used up the Vast credit, my mistake: I picked an offer whose download rate was $0.051/GB (the earlier boxes pa', 'AskUserQuestion'))).toBe('The box run failed and used up the Vast credit, my mistake: I picked an offer whose download rate was $0.051/GB (the earlier boxes…');
     expect(cardSays(null)).toBeNull();
     expect(cardSays(undefined)).toBeNull();
   });
 
   test('a card line is the say or do, else the state\'s own sentence, and a waiting card shows only the question it asked', () => {
-    const withLast = (role: 'user' | 'assistant' | 'tool', text: string, tool: string | null = null) => row({ last: { role, tool, text, ts: NOW } });
+    const withLast = (role: 'user' | 'assistant', text: string, tool: string | null = null) => row({ last: { role, tool, text, ts: NOW } });
     expect(cardLine(withLast('assistant', 'Done. It is green.'), 'working', 3 * 60_000, null)).toEqual({ line: 'Done.', note: 'Working 3 min' });
     expect(cardLine(withLast('assistant', 'Done.'), 'idle', null, null)).toEqual({ line: 'Done.', note: null });
-    expect(cardLine(withLast('tool', 'Finished `release` profile', 'Bash'), 'working', 3 * 60_000, null)).toEqual({ line: 'Working for 3 min', note: null });
+    expect(cardLine(withLast('assistant', 'Run the release build', 'Bash'), 'working', 3 * 60_000, null)).toEqual({ line: 'Bash · Run the release build', note: 'Working 3 min' });
     expect(cardLine(withLast('assistant', 'I built it. Should I push it or hold for review?'), 'waiting', 4 * 3_600_000, null)).toEqual({ line: 'Should I push it or hold for review?', note: 'Waiting 4 h' });
     expect(cardLine(withLast('assistant', 'The box run failed and used up the credit, my mistake.'), 'waiting', 8 * 3_600_000, null).line).toBe('Waiting for your answer for 8 h');
     expect(cardLine(withLast('user', '<system-reminder>A process claiming the address uds:/run/user/1000/cc-socks/1.sock</system-reminder>'), 'waiting', 4 * 3_600_000, null).line).toBe('Waiting for your answer for 4 h');
-    expect(cardLine(withLast('assistant', '{"questions":[{"question":"Which plan should take the session?","header":"Plan"', 'AskUserQuestion'), 'waiting', null, null).line).toBe('Which plan should take the session?');
+    expect(cardLine(withLast('assistant', 'Which plan should take the session?', 'AskUserQuestion'), 'waiting', null, null).line).toBe('Which plan should take the session?');
   });
 
   test('with no newest message the card says what the state means, and the note is empty', () => {

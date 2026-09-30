@@ -30,11 +30,11 @@ class SessionsActivityTest {
     @Test
     fun `a row carries the one line role tool text and epoch milliseconds`(@TempDir tmp: Path) {
         val source = LastSource(
-            TranscriptMessage(0, TranscriptRole.ASSISTANT, 7L, "   redacted\n\t" + "x ".repeat(120), "SyntheticTool"),
+            TranscriptMessage(0, TranscriptRole.ASSISTANT, 7L, "   redacted\n\t" + "x ".repeat(120)),
         )
         val last = row(tmp, source).getValue("last").jsonObject
         assertEquals("assistant", last.getValue("role").jsonPrimitive.content)
-        assertEquals("SyntheticTool", last.getValue("tool").jsonPrimitive.content)
+        assertEquals(JsonNull, last.getValue("tool"))
         assertEquals("7", last.getValue("ts").jsonPrimitive.content)
         val text = last.getValue("text").jsonPrimitive.content
         assertTrue(text.startsWith("redacted x x "))
@@ -42,6 +42,44 @@ class SessionsActivityTest {
         assertFalse(text.any { it == '\n' || it == '\t' })
         assertEquals(1, source.calls)
         assertEquals(listOf(tmp.resolve("vanilla")), source.roots)
+    }
+
+    @Test
+    fun `a call is its tool and its description, even when a long command comes first`(@TempDir tmp: Path) {
+        val command = "cd /home/marcos/Documents/dev/projects/mythos/repo && " + "./gradlew check ".repeat(20)
+        val input = """{"command":"$command","description":"Run every check in the repo","timeout":120000}"""
+        val last = row(tmp, LastSource(call("Bash", input))).getValue("last").jsonObject
+        assertEquals("Bash", last.getValue("tool").jsonPrimitive.content)
+        assertEquals("Run every check in the repo", last.getValue("text").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `a call with no description names its target and never its command or path`(@TempDir tmp: Path) {
+        fun text(tool: String, input: String): String {
+            val last = row(tmp, LastSource(call(tool, input))).getValue("last").jsonObject
+            return last.getValue("text").jsonPrimitive.content
+        }
+        val pattern = "TurnWiring(" + "$" + "$" + "$" + "ARGS)"
+        assertEquals("", text("Bash", """{"command":"cd /home/marcos/secret && ls"}"""))
+        assertEquals("sessions.ts", text("Edit", """{"file_path":"/home/marcos/repo/src/lib/sessions.ts"}"""))
+        assertEquals(pattern, text("mcp__ast-grep__find_code", """{"pattern":"$pattern"}"""))
+        assertEquals("kotlin coroutines", text("WebSearch", """{"query":"kotlin coroutines"}"""))
+        assertEquals("example.com", text("WebFetch", """{"url":"https://example.com/a/b?x=1"}"""))
+        assertEquals("", text("Bash", "{not json"))
+    }
+
+    @Test
+    fun `an ask-the-user call carries its question`(@TempDir tmp: Path) {
+        val input = """{"questions":[{"question":"Which plan should take the session?","header":"Plan"}]}"""
+        val last = row(tmp, LastSource(call("AskUserQuestion", input))).getValue("last").jsonObject
+        assertEquals("Which plan should take the session?", last.getValue("text").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `what a person or the model said is passed through as text`(@TempDir tmp: Path) {
+        val said = TranscriptMessage(0, TranscriptRole.ASSISTANT, 7L, "I built it. {\"command\":\"x\"}")
+        val last = row(tmp, LastSource(said)).getValue("last").jsonObject
+        assertEquals("I built it. {\"command\":\"x\"}", last.getValue("text").jsonPrimitive.content)
     }
 
     @Test
@@ -79,6 +117,9 @@ class SessionsActivityTest {
         val body = Json.parseToJsonElement(route.sessionsJson()).jsonObject
         return body.getValue("sessions").jsonArray.single().jsonObject
     }
+
+    private fun call(tool: String, input: String) =
+        TranscriptMessage(0, TranscriptRole.ASSISTANT, 7L, input, tool, result = false)
 
     private class LastSource(private val message: TranscriptMessage?) : SessionTranscripts {
         var calls = 0

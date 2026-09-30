@@ -64,9 +64,9 @@ internal class TranscriptTail(
                 nextAssembly *= 2
             }
         }
-        // A fully parsed result stays visible even if its call lies beyond the ceiling.
-        // Only the name is unknown; never return a partial assistant reply.
-        return last?.takeIf { it.role == TranscriptRole.TOOL }
+        // A user message is one whole line, so it stays visible even when nothing earlier fits under the ceiling;
+        // never return a partial assistant reply.
+        return last?.takeIf { it.role == TranscriptRole.USER }
     }
 
     private fun join(chunks: ArrayDeque<ByteArray>, size: Int): ByteArray {

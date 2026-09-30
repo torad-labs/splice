@@ -1,30 +1,35 @@
 /* Needs you in D: one column of cards, twice the room, one vermilion act each. The calm summary sits beside it on a wide screen. */
 .stack { list-style: none; margin: 0; padding: 0 var(--space-8) 0 0; display: grid; gap: var(--space-14); }
-.needs-layout { display: grid; grid-template-columns: minmax(0, 1040px); }
+.needs-layout { display: grid; grid-template-columns: minmax(0, 65rem); }
 .need { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-4) var(--space-13); align-items: center; padding: var(--space-11) var(--space-12) var(--space-11); }
 .need-body { display: grid; gap: var(--space-6); justify-items: start; }
-.need h2 { font: 540 30px/1.12 var(--display); font-variation-settings: 'opsz' 72; letter-spacing: -.018em; color: var(--ink); }
-.need p { max-width: 62ch; font: 400 18px/1.6 var(--read); color: var(--body); }
+.need h2 { font: 540 1.875rem/1.12 var(--display); font-variation-settings: 'opsz' 72; letter-spacing: -.018em; color: var(--ink); }
+.need p { max-width: 62ch; font: 400 1.125rem/1.6 var(--read); color: var(--body); }
 /* a finding is one card's sentence; a long one (a doctor check naming eleven heads) is cut at four lines and read in full where Open goes */
 .need-body p { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
-.need-do { display: grid; gap: var(--space-6); justify-items: stretch; min-width: 200px; }
-.need-do .btn { justify-content: center; min-height: 46px; font-size: var(--text-1); }
-.need-do .btn.sm { min-height: 32px; }
-.need-do .hint { font: 400 14px/1.4 var(--read); color: var(--mute); }
+.need-do { display: grid; gap: var(--space-6); justify-items: stretch; min-width: 12.5rem; }
+.need-do .btn { justify-content: center; min-height: 2.875rem; font-size: var(--text-1); }
+.need-do .btn.sm { min-height: 2rem; }
+.need-do .hint { font: 400 0.875rem/1.4 var(--read); color: var(--mute); }
 .need-do .hint.alert { color: var(--stuck); }
-.need-do .fallback { font: 500 13px var(--mono); color: var(--mute); word-break: break-all; }
+.need-do .fallback { font: 500 0.8125rem var(--mono); color: var(--mute); word-break: break-all; }
 .calm { margin-top: var(--space-17); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-13); }
-.calm h3 { font: 520 22px/1.15 var(--display); color: var(--ink); }
-.calm p { margin-top: var(--space-3); font: 400 16px/1.5 var(--read); color: var(--body); }
-.calm .n { font: 500 44px/1 var(--display); color: var(--ink); letter-spacing: -.03em; }
-.calm .as-of { grid-column: 1 / -1; font: 500 14px var(--meta); color: var(--mute); }
+.calm h3 { font: 520 1.375rem/1.15 var(--display); color: var(--ink); }
+.calm p { margin-top: var(--space-3); font: 400 1rem/1.5 var(--read); color: var(--body); }
+.calm .n { font: 500 2.75rem/1 var(--display); color: var(--ink); letter-spacing: -.03em; }
+.calm .as-of { grid-column: 1 / -1; font: 500 0.875rem var(--meta); color: var(--mute); }
 .needs-unread { margin-top: var(--space-14); display: grid; gap: var(--space-5); }
-.needs-unread h3 { font: 520 22px/1.15 var(--display); color: var(--ink); }
+.needs-unread h3 { font: 520 1.375rem/1.15 var(--display); color: var(--ink); }
 .needs-unread ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
-.needs-unread li { font: 400 16px/1.5 var(--read); color: var(--body); }
+.needs-unread li { font: 400 1rem/1.5 var(--read); color: var(--body); }
 @media (min-width: 1500px) {
-  .needs-layout { grid-template-columns: minmax(0, 1040px) minmax(280px, 1fr); gap: var(--space-17); align-items: start; }
+  .needs-layout { grid-template-columns: minmax(0, 65rem) minmax(17.5rem, 1fr); gap: var(--space-17); align-items: start; }
   .calm { margin-top: 0; grid-template-columns: 1fr; gap: var(--space-12); position: sticky; top: var(--space-13); }
+}
+/* On his 3840 panel the column of cards would be a strip with the summary beside it: two columns of cards instead. */
+@media (min-width: 2400px) {
+  .needs-layout { grid-template-columns: minmax(0, 1fr) minmax(22rem, 28rem); }
+  .stack { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
 }
 @media (max-width: 900px) {
   .need { grid-template-columns: minmax(0, 1fr); padding: var(--space-9) var(--space-9); }

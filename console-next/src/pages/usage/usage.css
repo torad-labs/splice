@@ -1,37 +1,37 @@
 /* Usage in D: four plain totals, each plan as one row against its limit, then the two settings that act on it. */
 .section { margin-top: var(--space-17); }
 .section:first-of-type { margin-top: 0; }
-.section > h2 { font: 520 26px/1.15 var(--display); color: var(--ink); letter-spacing: -.01em; }
-.section > .why { margin-top: var(--space-4); font: 400 16px/1.5 var(--read); color: var(--mute); max-width: 70ch; }
-.totals { margin-top: var(--space-11); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-13); max-width: 1200px; }
-.totals .n { font: 500 56px/1 var(--display); color: var(--ink); letter-spacing: -.03em; }
-.totals h3 { margin-top: var(--space-5); font: 600 17px var(--meta); color: var(--ink); }
-.totals p { margin-top: var(--space-2); font: 400 15px/1.45 var(--read); color: var(--mute); max-width: 26ch; }
+.section > h2 { font: 520 1.625rem/1.15 var(--display); color: var(--ink); letter-spacing: -.01em; }
+.section > .why { margin-top: var(--space-4); font: 400 1rem/1.5 var(--read); color: var(--mute); max-width: 70ch; }
+.totals { margin-top: var(--space-11); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-13); max-width: 75rem; }
+.totals .n { font: 500 3.5rem/1 var(--display); color: var(--ink); letter-spacing: -.03em; }
+.totals h3 { margin-top: var(--space-5); font: 600 1.0625rem var(--meta); color: var(--ink); }
+.totals p { margin-top: var(--space-2); font: 400 0.9375rem/1.45 var(--read); color: var(--mute); max-width: 26ch; }
 .uplans { list-style: none; margin: var(--space-11) 0 0; padding: 0; display: grid; }
-.uplan { display: grid; grid-template-columns: 200px minmax(240px, 1fr) 150px 160px 120px; gap: var(--space-11); align-items: center; padding: var(--space-9) 0; border-top: 2px solid var(--hair); }
+.uplan { display: grid; grid-template-columns: 12.5rem minmax(15rem, 1fr) 9.375rem 10rem 7.5rem; gap: var(--space-11); align-items: center; padding: var(--space-9) 0; border-top: 2px solid var(--hair); }
 .uplan:first-child { border-top: 0; }
-.uplan b { display: flex; align-items: center; gap: var(--space-5); font: 600 19px var(--meta); color: var(--ink); }
-.uplan b i { width: 14px; height: 14px; border-radius: 50%; background: var(--c); }
+.uplan b { display: flex; align-items: center; gap: var(--space-5); font: 600 1.1875rem var(--meta); color: var(--ink); }
+.uplan b i { width: 0.875rem; height: 0.875rem; border-radius: 50%; background: var(--c); }
 .use { display: grid; gap: var(--space-4); }
-.use .track { height: 12px; border-radius: 6px; background: color-mix(in srgb, var(--ink) 7%, transparent); overflow: hidden; }
-.use .track i { display: block; height: 100%; background: var(--c); border-radius: 6px; }
-.use .track.full i { background: repeating-linear-gradient(135deg, var(--c) 0 8px, color-mix(in srgb, var(--c) 45%, transparent) 8px 16px); border-radius: 6px; }
-.use span { font: 500 15px var(--meta); color: var(--body); }
-.use span b { display: inline; font: 650 15px var(--meta); }
-.uplan .tok { font: 500 15px var(--meta); color: var(--mute); }
-.uplan .tok strong { display: block; font: 500 22px var(--display); color: var(--ink); }
+.use .track { height: 0.75rem; border-radius: 0.375rem; background: color-mix(in srgb, var(--ink) 7%, transparent); overflow: hidden; }
+.use .track i { display: block; height: 100%; background: var(--c); border-radius: 0.375rem; }
+.use .track.full i { background: repeating-linear-gradient(135deg, var(--c) 0 8px, color-mix(in srgb, var(--c) 45%, transparent) 8px 16px); border-radius: 0.375rem; }
+.use span { font: 500 0.9375rem var(--meta); color: var(--body); }
+.use span b { display: inline; font: 650 0.9375rem var(--meta); }
+.uplan .tok { font: 500 0.9375rem var(--meta); color: var(--mute); }
+.uplan .tok strong { display: block; font: 500 1.375rem var(--display); color: var(--ink); }
 .uplan svg rect { fill: var(--c); opacity: .85; }
-.uplan .cost { font: 500 22px var(--display); color: var(--ink); text-align: right; }
-.uplan .cost small { display: block; font: 500 14px var(--meta); color: var(--mute); }
-.usrows { list-style: none; margin: var(--space-10) 0 0; padding: 0; display: grid; max-width: 980px; }
-.usrow { display: grid; grid-template-columns: 220px minmax(0, 1fr) auto; gap: var(--space-10); align-items: center; padding: var(--space-7) 0; border-top: 2px solid var(--hair); }
+.uplan .cost { font: 500 1.375rem var(--display); color: var(--ink); text-align: right; }
+.uplan .cost small { display: block; font: 500 0.875rem var(--meta); color: var(--mute); }
+.usrows { list-style: none; margin: var(--space-10) 0 0; padding: 0; display: grid; max-width: 61.25rem; }
+.usrow { display: grid; grid-template-columns: 13.75rem minmax(0, 1fr) auto; gap: var(--space-10); align-items: center; padding: var(--space-7) 0; border-top: 2px solid var(--hair); }
 .usrow:first-child { border-top: 0; }
-.usrow b { font: 600 18px var(--meta); color: var(--ink); }
-.usrow > span, .usrow > div > span { font: 400 16px/1.5 var(--read); color: var(--body); }
-.usrow .hint { display: block; margin-top: var(--space-2); font: 400 14px/1.4 var(--read); color: var(--mute); }
+.usrow b { font: 600 1.125rem var(--meta); color: var(--ink); }
+.usrow > span, .usrow > div > span { font: 400 1rem/1.5 var(--read); color: var(--body); }
+.usrow .hint { display: block; margin-top: var(--space-2); font: 400 0.875rem/1.4 var(--read); color: var(--mute); }
 .usrow .alert { color: var(--stuck); }
 .usrow .acts { display: flex; align-items: center; gap: var(--space-5); }
-.usrow .input { min-width: 320px; }
+.usrow .input { min-width: 20rem; }
 .budget-form { display: grid; gap: var(--space-7); margin-top: var(--space-6); }
 .budget-form .field { display: grid; gap: var(--space-3); }
 @media (max-width: 1100px) {
@@ -40,4 +40,4 @@
   .uplan .use { grid-column: 1 / -1; }
   .usrow { grid-template-columns: minmax(0, 1fr) auto; }
 }
-.idle-plans { margin-top: var(--space-9); max-width: 70ch; font: 400 16px/1.5 var(--read); color: var(--mute); }
+.idle-plans { margin-top: var(--space-9); max-width: 70ch; font: 400 1rem/1.5 var(--read); color: var(--mute); }

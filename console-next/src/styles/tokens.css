@@ -35,6 +35,7 @@
   /* The wall's side padding follows the window between 40 and 72. */
   --gutter: clamp(2.5rem, 4.5vw, 4.5rem);
   /* Type sizes for the places a size is set on its own (the rest set theirs in a `font` shorthand). */
+  --text-0: clamp(16px, calc(16px + (100vw - 1920px) * 0.0020833), 24px); /* the root: 16 through 1920, 20 at 3840, 24 at most */
   --text-1: .875rem;    /* 14  captions, meta */
   --text-2: 1rem;       /* 16  controls, inputs */
   --text-3: 1.0625rem;  /* 17  reading */

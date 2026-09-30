@@ -106,7 +106,7 @@ describe('a session card', () => {
     pid: 1, session_id: 'sess-1', name: 'Write the tests', kind: 'interactive', version: null, cwd: '/home/ava/work/tally', status: 'busy',
     status_updated_at: 0, started_at: 0, updated_at: 0, address: null, head: 'claude-grok', availability: 'live', ...over,
   });
-  const facts = (over: Partial<CardFacts> = {}): CardFacts => ({ row: row(), state: 'working', colour: 'grok', head: 'claude-grok', hand: null, now: 42 * 60_000, ...over });
+  const facts = (over: Partial<CardFacts> = {}): CardFacts => ({ row: row(), state: 'working', colour: 'grok', head: 'claude-grok', hand: null, since: 42 * 60_000, quiet: null, ...over });
   const render = (f: CardFacts) =>
     renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>

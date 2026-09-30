@@ -1,6 +1,7 @@
 // Pure derivations over the session registry: a session's key and label, what state it is in, and how a
 // list of them groups. No rendering, no store; the clock is passed in.
 import type { SessionEdge, SessionRow } from '../types/sessions';
+import type { LiveTurn } from '../types/turns';
 import { UNKNOWN_HEAD } from '../types/sessions';
 
 /** A session's key: its session id, else its pid. A registration with no session id still has to be
@@ -25,22 +26,31 @@ export function repoName(row: SessionRow): string | null {
   return root === null || root === undefined || root === '' ? null : lastSegment(root);
 }
 
-/** Where a session stands, in the words the board groups by. `waiting` and `stuck` are the two that need a
- *  person: the client's own `waiting` status, and a session that is busy but has not moved for
- *  STUCK_AFTER_MS (or that the daemon calls stale). `gone` is a registration whose process exited. */
+/** Where a session stands, in the words the board groups by. `waiting` is the client's own status; `stuck` is a busy
+ *  session whose live turn has gone quiet upstream past STUCK_IDLE_MS. `gone` is a registration whose process exited. */
 export type SessionState = 'waiting' | 'stuck' | 'working' | 'idle' | 'gone';
 
-/** Busy with no status change for this long is stuck: the console's rule, the daemon has no such field. */
-export const STUCK_AFTER_MS = 10 * 60_000;
+/** A turn silent this long, with no byte from upstream, is stuck.
+ *  // why: splice's own watchdog asks after a silent path at STREAM_IDLE_MS / FIRST_BYTE_TIMEOUT_MS (90 s, Knob.kt:225-268)
+ *  and holds a path that answers, so the proxy is already healing at 90 s; five minutes of that is what the operator
+ *  experiences as a hang (the knob's own comment: "five minutes of the former is experienced as a hang"). */
+export const STUCK_IDLE_MS = 5 * 60_000;
 
-export function stateOf(row: SessionRow, now: number): SessionState {
+/** The live turn a session runs, when the caller has read its head's turns: undefined = not read (unknown),
+ *  null = the head runs none for it. */
+export type TurnOf = (row: SessionRow) => LiveTurn | null | undefined;
+
+/** A session's state. Busy is Working unless its live turn reports itself quiet past STUCK_IDLE_MS: a busy session
+ *  with no live turn is Claude Code running a tool locally (a long Bash, a monitor wait), and the registry's
+ *  `status_updated_at` only moves when the client changes status, so its age proves nothing (measured 2026-09-29: six
+ *  busy seats on this machine, every one working, all with an old timestamp). A daemon that does not send `idle_ms`
+ *  yet leaves every busy session Working: absence claims nothing. */
+export function stateOf(row: SessionRow, turn?: LiveTurn | null): SessionState {
   if (row.availability === 'gone') return 'gone';
-  if (row.availability === 'stale') return 'stuck';
   const status = row.status ?? '';
   if (status === 'waiting') return 'waiting';
   if (status === 'busy' || status === 'shell') {
-    const since = row.status_updated_at ?? row.updated_at;
-    return since !== null && now - since > STUCK_AFTER_MS ? 'stuck' : 'working';
+    return turn !== undefined && turn !== null && !turn.stopped && turn.idle_ms !== undefined && turn.idle_ms > STUCK_IDLE_MS ? 'stuck' : 'working';
   }
   return 'idle';
 }
@@ -52,10 +62,10 @@ export type GroupBy = 'state' | 'repo' | 'head' | 'team';
 /** What a session with no value for the grouping field is filed under, so no row is dropped from a count. */
 export const UNATTRIBUTED = 'unattributed';
 
-export function groupKeyOf(row: SessionRow, by: GroupBy, now: number): string {
+export function groupKeyOf(row: SessionRow, by: GroupBy, turnOf?: TurnOf): string {
   switch (by) {
     case 'state': {
-      const state = stateOf(row, now);
+      const state = stateOf(row, turnOf?.(row));
       return needsPerson(state) ? 'needs' : state;
     }
     case 'head':
@@ -76,10 +86,10 @@ const STATE_ORDER = ['needs', 'working', 'idle', 'gone'];
 
 /** The rows filed by [by]. State groups keep their fixed order; the others put the biggest group first,
  *  ties broken by key so the order is stable. */
-export function groupSessions(rows: readonly SessionRow[], by: GroupBy, now: number): SessionGroup[] {
+export function groupSessions(rows: readonly SessionRow[], by: GroupBy, turnOf?: TurnOf): SessionGroup[] {
   const groups = new Map<string, SessionGroup>();
   for (const row of rows) {
-    const key = groupKeyOf(row, by, now);
+    const key = groupKeyOf(row, by, turnOf);
     const group = groups.get(key) ?? { key, sessions: [] };
     group.sessions.push(row);
     groups.set(key, group);
@@ -117,10 +127,11 @@ export function handoffOf(rows: readonly SessionRow[], edges: readonly SessionEd
   return peers.size >= 2 ? { kind: 'lead', peers: peers.size } : { kind: 'from', peer: peerLabel(rows, newest) };
 }
 
-/** How long a session has been in its state, in ms, or null when the registry gave no time. Waiting and
- *  stuck count from the last status change; working from when it started; idle from the last update. */
-export function sinceOf(row: SessionRow, state: SessionState, now: number): number | null {
-  const from = state === 'working' ? (row.started_at ?? row.status_updated_at) : (row.status_updated_at ?? row.updated_at);
+/** How long a session has been in its state, in ms, or null when the registry gave no time. Every state counts from its
+ *  last status change (a busy session's is when its turn began, which is what "working for" means; the session's own
+ *  age would read 8 h for a seat that began a turn a minute ago), else from the last update. */
+export function sinceOf(row: SessionRow, now: number): number | null {
+  const from = row.status_updated_at ?? row.updated_at ?? row.started_at;
   return from === null ? null : Math.max(0, now - from);
 }
 
@@ -156,9 +167,12 @@ export function spanText(ms: number): string {
   return hours < 48 ? `${hours} h` : `${Math.floor(hours / 24)} d`;
 }
 
+/** How long a busy session with no live turn may sit before its line says it is running a tool, quietly. */
+export const QUIET_AFTER_MS = 2 * 60_000;
+
 /** The one activity line of a card. The daemon has no last-message field yet (V4-444 daemon work), so the
  *  line says what the state means and for how long, and nothing it cannot know. */
-export function activityText(state: SessionState, since: number | null): string {
+export function activityText(state: SessionState, since: number | null, quiet: number | null = null): string {
   const span = since === null ? null : spanText(since);
   switch (state) {
     case 'waiting':
@@ -166,6 +180,7 @@ export function activityText(state: SessionState, since: number | null): string 
     case 'stuck':
       return span === null ? 'Quiet for a while' : `Quiet for ${span}`;
     case 'working':
+      if (quiet !== null && quiet >= QUIET_AFTER_MS) return `Running a tool, quiet for ${spanText(quiet)}`;
       return span === null ? 'Working' : `Working for ${span}`;
     case 'idle':
       return span === null ? 'Waiting for your next message' : `Idle for ${span}, waiting for your next message`;
@@ -188,9 +203,9 @@ const capital = (text: string): string => text.charAt(0).toUpperCase() + text.sl
 
 /** The page's one-sentence summary: what is working, what needs a person, what finished. A registry with no
  *  live session says so. Counts are words up to twelve, digits after. */
-export function sessionsLede(rows: readonly SessionRow[], now: number): string {
+export function sessionsLede(rows: readonly SessionRow[], turnOf?: TurnOf): string {
   const count = { working: 0, waiting: 0, stuck: 0, idle: 0, gone: 0 };
-  for (const row of rows) count[stateOf(row, now)] += 1;
+  for (const row of rows) count[stateOf(row, turnOf?.(row))] += 1;
   const parts: string[] = [];
   if (count.working > 0) parts.push(`${numberWord(count.working)} ${count.working === 1 ? 'is' : 'are'} working`);
   if (count.waiting > 0) parts.push(`${numberWord(count.waiting)} ${count.waiting === 1 ? 'is' : 'are'} waiting on you`);
@@ -199,4 +214,13 @@ export function sessionsLede(rows: readonly SessionRow[], now: number): string {
   const first = parts.length === 0 ? '' : `${capital(parts.join(', '))}.`;
   const last = finished === 0 ? '' : `${capital(numberWord(finished))} finished earlier.`;
   return [first, last].filter((sentence) => sentence !== '').join(' ');
+}
+
+/** The two durations a card's line needs. `since` is how long the session has been in its state (a stuck one counts
+ *  its live turn's own silence); `quiet` is set only for a busy session the head confirms runs no turn, which is
+ *  Claude Code running a tool locally: how long the registry has heard nothing from it. */
+export function timingOf(row: SessionRow, state: SessionState, turn: LiveTurn | null | undefined, now: number): { since: number | null; quiet: number | null } {
+  const since = state === 'stuck' && turn?.idle_ms !== undefined ? turn.idle_ms : sinceOf(row, now);
+  const quiet = state === 'working' && turn === null && row.status_updated_at !== null ? Math.max(0, now - row.status_updated_at) : null;
+  return { since, quiet };
 }

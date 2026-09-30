@@ -11,6 +11,9 @@ export interface LiveTurn {
   /** A compaction turn. */
   compact: boolean;
   age_ms: number;
+  /** Ms since the last byte from upstream. Absent: the daemon does not send it yet (daemon work on V4-444), and a turn
+   *  with no figure is never called stuck. */
+  idle_ms?: number;
   /** Stopped and still ending: the few milliseconds between the stop and the slot's release. */
   stopped: boolean;
 }

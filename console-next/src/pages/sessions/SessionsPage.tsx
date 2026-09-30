@@ -5,12 +5,12 @@ import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { failureText } from '../../api/client';
 import { useHeads, useSessions } from '../../api/queries';
-import { useBoardEdges, useSessionHistory } from '../../api/sessions';
+import { useBoardEdges, useSessionHistory, useTurnOf } from '../../api/sessions';
 import { colourOfHead } from '../../lib/model';
 import type { ModelColour } from '../../lib/model';
 import { moveKey, setOrder, sortByOrder, useOrder } from '../../lib/order';
 import type { GroupBy } from '../../lib/sessions';
-import { UNATTRIBUTED, groupSessions, handoffOf, matchesQuery, sessionKey, sessionsLede, stateOf } from '../../lib/sessions';
+import { UNATTRIBUTED, groupSessions, handoffOf, matchesQuery, sessionKey, sessionsLede, stateOf, timingOf } from '../../lib/sessions';
 import type { SessionRow } from '../../types/sessions';
 import { UNKNOWN_HEAD } from '../../types/sessions';
 import { Button, Empty, Fault, GroupHead, PageHead, SearchField, Segmented } from '../../ui';
@@ -44,20 +44,27 @@ export function SessionsPage() {
   const q = query.trim();
   const live = useMemo(() => (sessions.data?.sessions ?? []).filter((row) => matchesQuery(row, q)), [sessions.data, q]);
   const history = useSessionHistory(q, q.length >= 2);
+  const turnOf = useTurnOf(
+    (sessions.data?.sessions ?? []).filter((row) => row.head !== UNKNOWN_HEAD && (row.status === 'busy' || row.status === 'shell')).map((row) => row.head),
+  );
 
   const headOf = (row: SessionRow) => (row.head === UNKNOWN_HEAD ? undefined : heads.data?.heads.find((candidate) => candidate.key === row.head));
   const colourOf = (row: SessionRow): ModelColour => {
     const head = headOf(row);
     return head === undefined ? 'none' : colourOfHead(head.authKind);
   };
-  const factsOf = (row: SessionRow): CardFacts => ({
+  const factsOf = (row: SessionRow): CardFacts => {
+    const turn = turnOf(row);
+    const state = stateOf(row, turn);
+    return {
     row,
-    state: stateOf(row, now),
+    state,
+    ...timingOf(row, state, turn, now),
     colour: colourOf(row),
     head: row.head === UNKNOWN_HEAD ? null : (headOf(row)?.label ?? row.head),
     hand: handoffOf(sessions.data?.sessions ?? [], row.session_id === null ? [] : (edges.data?.sessions[row.session_id] ?? [])),
-    now,
-  });
+    };
+  };
 
   const allKeys = live.map(sessionKey);
   const onDragEnd = (event: DragEndEvent): void => {
@@ -76,7 +83,7 @@ export function SessionsPage() {
     );
   }
 
-  const groups = groupSessions(live, by, now);
+  const groups = groupSessions(live, by, turnOf);
   const liveKeys = new Set(allKeys);
   const pages = history.data?.pages ?? [];
   const found = pages.flatMap((page) => ('sessions' in page ? page.sessions : []));
@@ -88,7 +95,7 @@ export function SessionsPage() {
     <>
       <PageHead
         title={P.title}
-        {...(sessionsLede(sessions.data.sessions, now) === '' ? {} : { lede: sessionsLede(sessions.data.sessions, now) })}
+        {...(sessionsLede(sessions.data.sessions, turnOf) === '' ? {} : { lede: sessionsLede(sessions.data.sessions, turnOf) })}
         tools={
           <>
             <Segmented label={P.groupBy} value={by} options={GROUPS} onChange={setBy} />

@@ -1,7 +1,9 @@
 // What the session pages read, and the two things they do to a session: copy how to resume it, stop its turn.
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQueries, useQuery } from '@tanstack/react-query';
 import { MgmtError, request } from './client';
 import { keys, read, useLiveTurns } from './queries';
+import type { TurnOf } from '../lib/sessions';
+import type { LiveTurnsPayload } from '../types/turns';
 import type {
   BoardEdgesPayload,
   ResumeRecipe,
@@ -97,4 +99,19 @@ export const fetchResume = (session: string, head: string): Promise<ResumeRecipe
 export function useLiveTurnOf(head: string | null, session: string | null): string | null {
   const live = useLiveTurns(head ?? '', head !== null && session !== null);
   return live.data?.turns.find((turn) => turn.session === session && !turn.stopped)?.id ?? null;
+}
+
+/** The live turn each session runs, read from its head's live turns: one read per head that has a busy session.
+ *  A head not read yet (or none) gives undefined = unknown; a head that runs none for the session gives null. */
+export function useTurnOf(heads: readonly string[]): TurnOf {
+  const unique = [...new Set(heads)];
+  const results = useQueries({
+    queries: unique.map((head) => read<LiveTurnsPayload>(keys.liveTurns, `/api/heads/${id(head)}/turns/live`)),
+  });
+  const byHead = new Map(unique.map((head, i) => [head, results[i]?.data] as const));
+  return (row) => {
+    const payload = byHead.get(row.head);
+    if (payload === undefined) return undefined;
+    return payload.turns.find((turn) => turn.session === row.session_id && !turn.stopped) ?? null;
+  };
 }

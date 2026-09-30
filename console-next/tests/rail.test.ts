@@ -21,12 +21,12 @@ const team = (over: Partial<TeamRow> = {}): TeamRow => ({
 describe('the rail of a session bound to a team', () => {
   const rows = [row('me', { team: 't1' }), row('lead'), row('muse')];
   test('shows the team\'s bound seats, the lead first, this session marked; an open seat is not a seat', () => {
-    const rail = railOf(rows[0] as SessionRow, rows, [], [team()], NOW);
+    const rail = railOf(rows[0] as SessionRow, rows, [], [team()]);
     expect(rail.team).toBe('Rate limiter');
     expect(rail.seats.map((seat) => [seat.key, seat.here, seat.lead])).toEqual([['lead', false, true], ['muse', false, false], ['me', true, false]]);
   });
   test('a bound session the registry does not list still holds its seat, with no state to claim', () => {
-    const rail = railOf(rows[0] as SessionRow, [rows[0] as SessionRow], [], [team()], NOW);
+    const rail = railOf(rows[0] as SessionRow, [rows[0] as SessionRow], [], [team()]);
     expect(rail.seats.find((seat) => seat.key === 'lead')).toMatchObject({ state: null, role: 'lead', head: 'claude-splice' });
   });
 });
@@ -34,7 +34,7 @@ describe('the rail of a session bound to a team', () => {
 describe('the rail of a session with no team', () => {
   const rows = [row('me'), row('lead')];
   test('is this session and the sessions it exchanged hand-offs with', () => {
-    const rail = railOf(rows[0] as SessionRow, rows, [edge({ text: 'build it' }), edge({ direction: 'in', from: 'lead', to: 'uds:/me', at: 2, text: 'ready' })], [], NOW);
+    const rail = railOf(rows[0] as SessionRow, rows, [edge({ text: 'build it' }), edge({ direction: 'in', from: 'lead', to: 'uds:/me', at: 2, text: 'ready' })], []);
     expect(rail.team).toBeNull();
     expect(rail.seats.map((seat) => seat.key)).toEqual(['me', 'lead']);
     expect(rail.rides).toEqual([
@@ -43,9 +43,9 @@ describe('the rail of a session with no team', () => {
     ]);
   });
   test('a peer the registry no longer holds is a seat named by what the edge carries', () => {
-    const rail = railOf(rows[0] as SessionRow, [rows[0] as SessionRow], [edge({ to: 'uds:/gone' })], [], NOW);
+    const rail = railOf(rows[0] as SessionRow, [rows[0] as SessionRow], [edge({ to: 'uds:/gone' })], []);
     expect(rail.seats.at(-1)).toMatchObject({ key: 'uds:/gone', label: 'uds:/gone', state: null });
   });
   test('a session with no hand-offs is alone on its rail', () =>
-    expect(railOf(rows[0] as SessionRow, rows, [], [], NOW).seats).toHaveLength(1));
+    expect(railOf(rows[0] as SessionRow, rows, [], []).seats).toHaveLength(1));
 });

@@ -4,6 +4,7 @@
 import type { HandedEdge, SessionRow } from '../types/sessions';
 import type { TeamRow } from '../types/teams';
 import { peerLabel, sessionKey, sessionLabel, stateOf } from './sessions';
+import type { TurnOf } from './sessions';
 import type { SessionState } from './sessions';
 
 export interface Seat {
@@ -33,8 +34,8 @@ export interface Rail {
   rides: Ride[];
 }
 
-const seatOf = (row: SessionRow, here: boolean, now: number, slot?: { role: string; lead: boolean }): Seat => ({
-  key: sessionKey(row), label: sessionLabel(row), head: row.head, state: stateOf(row, now), here, role: slot?.role ?? null, lead: slot?.lead ?? false,
+const seatOf = (row: SessionRow, here: boolean, turnOf: TurnOf | undefined, slot?: { role: string; lead: boolean }): Seat => ({
+  key: sessionKey(row), label: sessionLabel(row), head: row.head, state: stateOf(row, turnOf?.(row)), here, role: slot?.role ?? null, lead: slot?.lead ?? false,
 });
 
 /** The peer on the other end of one edge, as a registry row when one answers to it. */
@@ -42,7 +43,7 @@ export function peerRow(rows: readonly SessionRow[], edge: HandedEdge): SessionR
   return edge.direction === 'out' ? rows.find((row) => row.address === edge.to) : rows.find((row) => row.session_id === edge.from);
 }
 
-export function railOf(here: SessionRow, rows: readonly SessionRow[], edges: readonly HandedEdge[], teams: readonly TeamRow[], now: number): Rail {
+export function railOf(here: SessionRow, rows: readonly SessionRow[], edges: readonly HandedEdge[], teams: readonly TeamRow[], turnOf?: TurnOf): Rail {
   const team = here.team === undefined || here.team === null ? undefined : teams.find((candidate) => candidate.id === here.team);
   const seats: Seat[] = [];
   const seen = new Set<string>();
@@ -56,17 +57,17 @@ export function railOf(here: SessionRow, rows: readonly SessionRow[], edges: rea
     const ordered = [...team.slots].sort((a, b) => Number(b.lead) - Number(a.lead));
     for (const slot of ordered) {
       const row = slot.session === null ? undefined : rows.find((candidate) => candidate.session_id === slot.session);
-      if (row !== undefined) add(seatOf(row, row.session_id === here.session_id, now, slot));
+      if (row !== undefined) add(seatOf(row, row.session_id === here.session_id, turnOf, slot));
       else if (slot.session !== null) add({ key: slot.session, label: slot.role, head: slot.head, state: null, here: false, role: slot.role, lead: slot.lead });
     }
   }
-  add(seatOf(here, true, now));
+  add(seatOf(here, true, turnOf));
 
   const rides: Ride[] = [];
   for (const edge of [...edges].sort((a, b) => a.at - b.at)) {
     const row = peerRow(rows, edge);
     const key = row === undefined ? (edge.direction === 'out' ? edge.to : edge.from) : sessionKey(row);
-    if (row !== undefined) add(seatOf(row, false, now));
+    if (row !== undefined) add(seatOf(row, false, turnOf));
     else add({ key, label: peerLabel(rows, edge), head: null, state: null, here: false, role: null, lead: false });
     rides.push({ seat: key, direction: edge.direction, at: edge.at, text: edge.text });
   }

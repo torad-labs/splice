@@ -2,14 +2,14 @@ import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { failureText } from '../../api/client';
 import { useHeads, useSessions, useTeams } from '../../api/queries';
-import { useSessionEdges, useTranscript } from '../../api/sessions';
+import { useSessionEdges, useTranscript, useTurnOf } from '../../api/sessions';
 import { clockTime } from '../../lib/format';
 import { foldTranscript, interleave } from '../../lib/conversation';
 import { colourOfHead } from '../../lib/model';
 import type { ModelColour } from '../../lib/model';
 import { peerRow, railOf } from '../../lib/rail';
 import type { Seat } from '../../lib/rail';
-import { peerLabel, sessionKey, sessionLabel, sinceOf, spanText, stateOf, stateTone, stateWord, repoName } from '../../lib/sessions';
+import { peerLabel, sessionKey, sessionLabel, spanText, stateOf, stateTone, stateWord, repoName, timingOf } from '../../lib/sessions';
 import type { SessionRow } from '../../types/sessions';
 import { UNKNOWN_HEAD } from '../../types/sessions';
 import { Back, Button, Empty, Fault, Markdown, Segmented, State, Window } from '../../ui';
@@ -53,9 +53,10 @@ export function SessionPage() {
     return interleave(items, handed);
   }, [transcript.view, handed]);
 
-  const state = row === undefined ? null : stateOf(row, now);
-  const since = row === undefined || state === null ? null : sinceOf(row, state, now);
-  const rail = row === undefined ? null : railOf(row, rows, handed, teams.data?.teams ?? [], now);
+  const turnOf = useTurnOf(row === undefined || row.head === UNKNOWN_HEAD ? [] : [row.head]);
+  const state = row === undefined ? null : stateOf(row, turnOf(row));
+  const timing = row === undefined || state === null ? null : timingOf(row, state, turnOf(row), now);
+  const rail = row === undefined ? null : railOf(row, rows, handed, teams.data?.teams ?? [], turnOf);
   const seatColour = (seat: Seat): ModelColour => colourOfKey(seat.head);
   const seatPath = (seat: Seat): string | null => {
     const found = rows.find((candidate) => sessionKey(candidate) === seat.key);
@@ -66,7 +67,7 @@ export function SessionPage() {
   const facts = row === undefined || state === null ? [] : [
     repoName(row),
     headLabel,
-    since === null ? null : `${P.elapsed} ${spanText(since)}`,
+    timing?.since == null ? null : `${P.elapsed} ${spanText(timing.since)}`,
   ].filter((part): part is string => part !== null);
 
   const shown = timeline.filter((entry) => {

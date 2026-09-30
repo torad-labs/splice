@@ -129,10 +129,11 @@ internal class RetryRules(private val maxRetries: Int) {
      *    when the refresh is itself rejected, EVICT and rotate (pooled — AccountTurnSelectionTest
      *    pins [primary, backup]) or surface (single).
      *  - A CONTEXT OVERFLOW (V4-164): the identical bytes are the identical token count against the
-     *    identical window. Its escalation is the CLIENT's — Claude Code compacts on the "prompt is
-     *    too long" line — and every re-send only delays that. Measured live on the bonsai head at
-     *    upstreamRetries=10: ten 1.4 MB re-sends, each re-tokenized by llama-server, 43 s before the
-     *    client could compact.
+     *    identical window. Its escalation is the CLIENT's — Claude Code compacts on an HTTP 400 "prompt
+     *    is too long" that arrives before the answer starts, which the turn head now returns for an
+     *    overflow classified before the first model frame (PendingSse) — and every re-send only delays
+     *    that. Measured live on the bonsai head at upstreamRetries=10: ten 1.4 MB re-sends, each
+     *    re-tokenized by llama-server, 43 s spent re-sending before the turn could end on that 400.
      *  - A CONTENT-POLICY REFUSAL named by the vendor's own code ([policyRefused]): the same bytes
      *    are refused again, and the retry matrix entitles CONTENT_FILTERED to no layer.
      *

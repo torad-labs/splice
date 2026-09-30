@@ -272,8 +272,8 @@ internal class SseEmitter(
  *  A [permanent] failure is not one of those: the identical bytes produce the identical verdict, so
  *  a retry is not a heal but a bill. RetryPolicy arms a cooldown only for RATE_LIMITED, so with
  *  CLAUDE_CODE_RETRY_WATCHDOG=1 a relabelled permanent failure costs up to 300 client re-sends at
- *  six upstream attempts each. A permanent failure therefore KEEPS ITS REAL TYPE and the client
- *  ends the session on the honest verdict instead of grinding.
+ *  four upstream attempts each (the upstreamRetries default). A permanent failure therefore KEEPS ITS
+ *  REAL TYPE and the client ends the session on the honest verdict instead of grinding.
  *
  *  THE BOUNDS, all four deliberate: after content the type is left ALONE (the client finalizes
  *  whatever it holds, and relabelling would misdescribe what it is reading); [permanent] failures

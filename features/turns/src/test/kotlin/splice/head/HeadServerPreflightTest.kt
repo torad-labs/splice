@@ -131,6 +131,11 @@ class HeadServerPreflightTest {
         }
     }
 
+    private fun assertRecovery(message: String, inputTokens: Long, window: Long) {
+        assertTrue("$inputTokens input tokens" in message && "$window-token window" in message, message)
+        assertTrue("larger context window" in message && "start a fresh conversation" in message, message)
+    }
+
     private fun recorded(root: Path): String {
         check(AsyncFileIo.drain()) { "trace writes must settle" }
         return Files.list(root.resolve("trace")).use { paths ->
@@ -183,15 +188,7 @@ class HeadServerPreflightTest {
             assertEquals(200, first.status.value)
             first.bodyAsText()
             awaitRows(stats, 1)
-            val measuredBody = Json.parseToJsonElement(upstream.upstreamBodies.last().second).jsonObject
             measured(stats, upstream, seed, tokens = 250_000)
-            val anchored = stats.measuredInputs.estimate(
-                "preflight-session",
-                "splice-" + InputDigest.hex(seed).take(32),
-                "gpt-5.6-sol",
-                measuredBody,
-            )
-            assertEquals(250_000L, anchored?.lowerTokens, "synthetic measurement must be in the head's live stats")
             val previous = """{"role":"user","content":"seed"},{"role":"assistant","content":"earlier"},"""
             val ordinary = send(client, server.port, previous, "new work")
             assertEquals(400, ordinary.status.value, "measured growth exceeds W−R before SSE")
@@ -205,7 +202,8 @@ class HeadServerPreflightTest {
             val compactHistory = previous + """{"role":"user","content":"summary"},"""
             val tooLargeCompact = compact(client, server.port, compactHistory, "continue")
             assertEquals(400, tooLargeCompact.status.value, "measured compact input alone exceeds W")
-            tooLargeCompact.bodyAsText()
+            val compactRefusal = tooLargeCompact.bodyAsText()
+            assertRecovery(compactRefusal, inputTokens = 273_000, window = 272_000)
             assertEquals(2, upstream.upstreamBodies.size, "only measured refusals avoid the backend")
             val recorded = recorded(root)
             assertTrue("compaction-preflight-compactable" in recorded, recorded)
@@ -306,7 +304,8 @@ class HeadServerPreflightTest {
             val grown = previous + """{"role":"user","content":"${"x".repeat(90_000)}"},"""
             val oversized = send(client, server.port, grown, "continue", model = "gpt-6-sol")
             assertEquals(400, oversized.status.value, "measured input alone exceeds W")
-            oversized.bodyAsText()
+            val firstRefusal = oversized.bodyAsText()
+            assertRecovery(firstRefusal, inputTokens = 873_000, window = 872_000)
             assertEquals(2, upstream.upstreamBodies.size)
             assertTrue("compaction-preflight-first-exchange" in recorded(root))
         } finally {

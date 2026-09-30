@@ -181,12 +181,16 @@ internal class CompactionPreflight(private val catalog: ModelCatalog, private va
         val ordinary = hasPriorExchange && !meta.compact
         val allowance = if (ordinary) budget.totalTokens else 0L
         val bound = if (ordinary) estimate.upperTokens else estimate.lowerTokens
-        return if (bound > window - allowance) {
-            "prompt is too long: estimated $bound input tokens plus $allowance " +
-                "reserved context tokens exceed the $window token model maximum " +
+        val explanation = if (ordinary) {
+            "estimated $bound input tokens plus $allowance reserved context tokens " +
+                "exceed the $window-token window of ${meta.upstreamModel} " +
                 "(estimate basis ${estimate.basis}, compaction generation p99 ${budget.generationTokens})"
         } else {
-            null
+            val request = if (meta.compact) "This compaction" else "This first request"
+            "at least $bound input tokens exceed the $window-token window of ${meta.upstreamModel}. " +
+                "$request cannot fit here. Resume on a model with a larger context window, " +
+                "or start a fresh conversation."
         }
+        return if (bound > window - allowance) "prompt is too long: $explanation" else null
     }
 }

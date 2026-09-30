@@ -171,8 +171,9 @@ section:first-of-type > .group-head { margin-top: var(--space-11); }
 .hint { font: 400 15px/1.5 var(--read); color: var(--mute); }
 .unlock-card .btn { justify-self: start; min-height: 44px; }
 
-/* ---------- a menu that opens from a control (Radix DropdownMenu content) ---------- */
-.menu { min-width: 200px; padding: var(--space-4); background: var(--obj); border: 2px solid var(--hair); border-radius: 10px; box-shadow: 6px 7px 0 var(--tan); z-index: 10; }
+/* ---------- a menu that opens from a control (Radix DropdownMenu content) ----------
+   Portaled to <body>, so it stacks above the dialog (.scrim 20, .dialog 21): a Select inside a dialog must take the click. */
+.menu { min-width: 200px; padding: var(--space-4); background: var(--obj); border: 2px solid var(--hair); border-radius: 10px; box-shadow: 6px 7px 0 var(--tan); z-index: 30; }
 .menu-label, .menu-empty { padding: var(--space-4) var(--space-5); font: 600 14px var(--meta); color: var(--mute); }
 .menu-item { padding: var(--space-5) var(--space-5); border-radius: 6px; font: 600 15px var(--meta); color: var(--ink); cursor: pointer; outline: 0; }
 .menu-item[data-highlighted] { background: var(--sel); }

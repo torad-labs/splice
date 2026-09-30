@@ -12,20 +12,32 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import java.nio.file.Files
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 
 class CodeModeStateFiles(val dir: Path) {
 
-    /** Every conversation file, in name order. Empty when nothing has been saved. */
+    /** Every conversation file, in name order. Empty when nothing has been saved. A dot-named file is a
+     *  save in flight (SecureFile writes `.secure*.tmp`, then renames it over its target), not state. */
     fun files(): List<Path> = if (Files.isDirectory(dir)) {
-        Files.list(dir).use { entries -> entries.filter(Files::isRegularFile).sorted().toList() }
+        Files.list(dir).use { entries ->
+            entries.filter { Files.isRegularFile(it) && !it.fileName.toString().startsWith(".") }.sorted().toList()
+        }
     } else {
         emptyList()
     }
 
-    /** The state as the single file held it: every conversation's records, then every marker, one object. */
+    /** The state as the single file held it: every conversation's records, then every marker, one object.
+     *  A file the sweep deletes between the listing and the read is gone, not an error: the retention tests
+     *  poll this while the store deletes (CI run 36662545049 read a save's temp file after its rename). */
     fun state(): JsonObject {
-        val conversations = files().map { Json.parseToJsonElement(Files.readString(it)).jsonObject }
+        val conversations = files().mapNotNull { file ->
+            try {
+                Json.parseToJsonElement(Files.readString(file)).jsonObject
+            } catch (_: NoSuchFileException) {
+                null
+            }
+        }
         return JsonObject(
             mapOf(
                 "version" to JsonPrimitive(1),

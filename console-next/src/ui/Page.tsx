@@ -12,12 +12,13 @@ export function PageHead({ title, lede, tools }: { title: string; lede?: string;
   );
 }
 
-export function GroupHead({ title, count, why }: { title: string; count?: number; why?: string }) {
+export function GroupHead({ title, count, why, action }: { title: string; count?: number; why?: string; action?: ReactNode }) {
   return (
     <div className="group-head">
       <h2>{title}</h2>
       {count === undefined ? null : <span className="n">{count}</span>}
       {why === undefined ? null : <span className="why">{why}</span>}
+      {action === undefined ? null : <span className="group-action">{action}</span>}
     </div>
   );
 }

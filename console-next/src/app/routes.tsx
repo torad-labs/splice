@@ -8,6 +8,7 @@ import { FleetPage } from '../pages/fleet/FleetPage';
 import { NeedsPage } from '../pages/needs/NeedsPage';
 import { SessionPage } from '../pages/session/SessionPage';
 import { SessionsPage } from '../pages/sessions/SessionsPage';
+import { TeamPage } from '../pages/teams/TeamPage';
 import { UsagePage } from '../pages/usage/UsagePage';
 import { TurnPage } from '../pages/turns/TurnPage';
 import { TurnsPage } from '../pages/turns/TurnsPage';
@@ -16,9 +17,9 @@ import { SettingsPage } from '../pages/settings/SettingsPage';
 /** Retired address -> where it went (DIRECTION.md, "Nav"). */
 export const RETIRED: Readonly<Record<string, string>> = {
   accounts: '/fleet',
+  teams: '/sessions?group=team',
   models: '/fleet',
   logs: '/fleet',
-  teams: '/sessions?group=team',
   projects: '/sessions?group=repo',
   compaction: '/settings/conversation',
   mcp: '/settings/tools',
@@ -44,6 +45,7 @@ export const router = createHashRouter([
       { path: 'fleet/:head', element: <FleetHeadPage /> },
       { path: 'sessions', element: <SessionsPage /> },
       { path: 'sessions/:id', element: <SessionPage /> },
+      { path: 'teams/:id', element: <TeamPage /> },
       { path: 'turns', element: <TurnsPage /> },
       { path: 'usage', element: <UsagePage /> },
       { path: 'turns/:head/:ts', element: <TurnPage /> },

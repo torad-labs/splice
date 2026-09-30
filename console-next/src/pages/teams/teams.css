@@ -1,0 +1,38 @@
+/* One team in D: its goal, the seats as rows, then what was said and done today. Void, not outlines. */
+.crumb { display: flex; gap: var(--space-5); margin-bottom: var(--space-7); font: 600 15px var(--meta); color: var(--mute); }
+.crumb a { color: var(--ink); text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 2px; text-decoration-color: var(--hair); }
+.hero { max-width: 1080px; }
+.chips { margin-top: var(--space-7); display: flex; flex-wrap: wrap; gap: var(--space-4); }
+.team-section { margin-top: var(--space-16); max-width: 1080px; }
+.team-section:first-of-type { margin-top: 0; }
+.team-section > h2 { font: 520 26px/1.15 var(--display); color: var(--ink); }
+.team-section > .why { margin-top: var(--space-4); font: 400 16px/1.5 var(--read); color: var(--mute); }
+.seatrows { list-style: none; margin: var(--space-10) 0 0; padding: 0; display: grid; }
+.seatrow { display: grid; grid-template-columns: 210px minmax(0, 1fr) 240px; gap: var(--space-10); align-items: start; padding: var(--space-9) 0; border-top: 2px solid var(--hair); }
+.seatrow:first-child { border-top: 0; }
+.seatrow h3 { display: flex; align-items: center; gap: var(--space-5); font: 600 19px var(--meta); color: var(--ink); }
+.seatrow h3 i { width: 14px; height: 14px; border-radius: 50%; background: var(--c); }
+.seatrow .cmd { margin-top: var(--space-2); font: 500 15px var(--meta); color: var(--mute); }
+.seatrow .who { font: 560 19px var(--display); color: var(--ink); }
+.seatrow .who a { color: inherit; text-decoration: none; }
+.seatrow .who a:hover { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; }
+.seatrow .who.none { color: var(--mute); }
+.seatrow .note { margin-top: var(--space-3); font: 400 16px/1.5 var(--read); color: var(--body); max-width: 60ch; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.seatrow .stat { margin-top: var(--space-5); font: 500 15px var(--meta); color: var(--mute); }
+.day { margin-top: var(--space-7); display: inline-flex; gap: var(--space-6); align-items: center; font: 600 15px var(--meta); color: var(--ink); }
+.talk { list-style: none; margin: var(--space-9) 0 0; padding: 0; display: grid; gap: var(--space-9); max-width: 760px; }
+.talk p { font: 400 17px/1.6 var(--read); color: var(--body); white-space: pre-wrap; }
+.talk small { display: block; margin-bottom: var(--space-2); font: 600 14px var(--meta); color: var(--mute); }
+.talk .missing { color: var(--mute); }
+.team-note { margin-top: var(--space-8); font: 400 16px/1.5 var(--read); color: var(--mute); max-width: 70ch; }
+.compose { display: grid; gap: var(--space-8); margin-top: var(--space-7); max-height: 70vh; overflow: auto; padding-right: var(--space-4); }
+.compose .field { display: grid; gap: var(--space-3); }
+.compose textarea.input { min-height: 96px; resize: vertical; font: 400 16px/1.5 var(--read); }
+.seatform { display: grid; gap: var(--space-6); padding-top: var(--space-8); border-top: 2px solid var(--hair); }
+.seatform .line { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-6); }
+.seatform .acts-row { display: flex; gap: var(--space-5); align-items: center; }
+.problems { margin: 0; padding-left: var(--space-7); font: 400 15px/1.5 var(--read); color: var(--stuck); }
+@media (max-width: 900px) { .seatrow { grid-template-columns: minmax(0, 1fr); gap: var(--space-4); } }
+.dialog.wide { width: min(720px, 92vw); }
+.compose .input, .compose .select { width: 100%; box-sizing: border-box; }
+.compose .select { justify-content: space-between; }

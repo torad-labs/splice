@@ -143,3 +143,9 @@ export interface TeamEconomicsPayload {
   roles: TeamRoleTally[];
   slots: TeamSlotTally[];
 }
+
+/** The viewer's local day, epoch ms: [from, to). */
+export interface TeamDay {
+  from: number;
+  to: number;
+}

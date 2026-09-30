@@ -51,6 +51,7 @@ svg { display: block; flex: none; }
 .page-head h1 { font: 500 clamp(44px, 3.6vw, 60px)/1 var(--display); font-variation-settings: 'opsz' 144; letter-spacing: -.025em; color: var(--ink); }
 .page-head .lede { margin-top: var(--space-7); font: 400 italic 20px/1.35 var(--display); color: var(--body); max-width: 60ch; }
 .page-head .tools { margin-left: auto; display: flex; align-items: center; gap: var(--space-5); padding-bottom: var(--space-3); }
+.page-head .tools .btn { white-space: nowrap; flex: none; }
 
 /* ---------- controls: familiar, in the film's paper; only the charged act is a filled button ---------- */
 .btn {
@@ -132,6 +133,10 @@ svg { display: block; flex: none; }
 .group-head h2 { font: 520 28px/1.1 var(--display); font-variation-settings: 'opsz' 72; letter-spacing: -.015em; color: var(--ink); }
 .group-head .n { font: 600 14px var(--meta); color: var(--mute); }
 .group-head .why { margin-left: auto; font: 400 italic 16px var(--display); color: var(--mute); }
+.group-head .group-action { font: 600 15px var(--meta); }
+.group-head .group-action a { color: var(--ink); text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; text-decoration-color: var(--hair); }
+.group-head .why + .group-action { margin-left: var(--space-8); }
+.group-head .n + .group-action { margin-left: auto; }
 .mono { font-family: var(--mono); }
 .model { display: inline-flex; align-items: center; gap: var(--space-4); font: 600 14px/1 var(--meta); color: var(--ink); }
 .model::before { content: ''; width: 10px; height: 10px; border-radius: 50%; background: var(--m); }

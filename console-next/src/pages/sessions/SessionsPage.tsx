@@ -2,9 +2,9 @@ import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, us
 import type { DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, rectSortingStrategy, sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import { failureText } from '../../api/client';
-import { useHeads, useSessions } from '../../api/queries';
+import { useHeads, useSessions, useTeams } from '../../api/queries';
 import { useBoardEdges, useSessionHistory, useTurnOf } from '../../api/sessions';
 import { colourOfHead } from '../../lib/model';
 import type { ModelColour } from '../../lib/model';
@@ -14,6 +14,8 @@ import { UNATTRIBUTED, groupSessions, handoffOf, matchesQuery, sessionKey, sessi
 import type { SessionRow } from '../../types/sessions';
 import { UNKNOWN_HEAD } from '../../types/sessions';
 import { Button, Empty, Fault, GroupHead, PageHead, SearchField, Segmented } from '../../ui';
+import { M } from '../../lib/words-teams';
+import { TeamDialog } from '../teams/TeamDialog';
 import { P } from './copy';
 import { SessionCard } from './SessionCard';
 import type { CardFacts } from './SessionCard';
@@ -32,6 +34,9 @@ export function SessionsPage() {
   const [params, setParams] = useSearchParams();
   const by = groupFrom(params.get('group'));
   const [query, setQuery] = useState('');
+  const [composing, setComposing] = useState(false);
+  const navigate = useNavigate();
+  const teams = useTeams();
   const sessions = useSessions();
   const heads = useHeads();
   const edges = useBoardEdges();
@@ -100,6 +105,7 @@ export function SessionsPage() {
           <>
             <Segmented label={P.groupBy} value={by} options={GROUPS} onChange={setBy} />
             <SearchField value={query} onChange={setQuery} label={P.search} hint={P.search} />
+            {by === 'team' ? <Button onClick={() => setComposing(true)}>{M.newTeam}</Button> : null}
           </>
         }
       />
@@ -109,10 +115,11 @@ export function SessionsPage() {
         {groups.map((group) => {
           const rows = sortByOrder(group.sessions, sessionKey, order);
           const text = by === 'state' ? STATE_HEAD[group.key] : undefined;
-          const title = text?.title ?? (group.key === UNATTRIBUTED ? P.unattributed : group.key === UNKNOWN_HEAD ? P.unknownHead : group.key);
+          const team = by === 'team' ? teams.data?.teams.find((candidate) => candidate.id === group.key) : undefined;
+          const title = text?.title ?? team?.name ?? (group.key === UNATTRIBUTED ? P.unattributed : group.key === UNKNOWN_HEAD ? P.unknownHead : group.key);
           return (
             <section key={group.key} aria-label={title}>
-              <GroupHead title={title} count={rows.length} {...(text === undefined ? {} : { why: text.why })} />
+              <GroupHead title={title} count={rows.length} {...(text === undefined ? {} : { why: text.why })} {...(team === undefined ? {} : { action: <Link to={`/teams/${encodeURIComponent(team.id)}`}>{M.openTeam}</Link> })} />
               <SortableContext items={rows.map(sessionKey)} strategy={rectSortingStrategy}>
                 <ul className={by === 'state' && group.key === 'needs' ? 'grid first' : 'grid'}>
                   {rows.map((row) => (
@@ -124,6 +131,7 @@ export function SessionsPage() {
           );
         })}
       </DndContext>
+      {composing ? <TeamDialog team={null} onClose={() => setComposing(false)} onSaved={(saved) => { setComposing(false); void navigate(`/teams/${encodeURIComponent(saved.id)}`); }} /> : null}
       {q.length < 2 ? null : (
         <section aria-label={P.earlier}>
           <GroupHead title={P.earlier} count={earlier.length} why={P.earlierWhy} />

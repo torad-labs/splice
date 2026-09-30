@@ -13,6 +13,7 @@ import { keys, read } from './queries';
 import type {
   TeamActivityPayload,
   TeamChatPayload,
+  TeamDay,
   TeamEconomicsPayload,
   TeamRow,
   TeamWrite,
@@ -22,12 +23,6 @@ import type {
 export const TEAM_PANELS_POLL_MS = 10_000;
 
 export const teamPanelsKey = ['team-panels'] as const;
-
-/** The viewer's local day, epoch ms: [from, to). */
-export interface TeamDay {
-  from: number;
-  to: number;
-}
 
 const seg = encodeURIComponent;
 

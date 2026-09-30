@@ -29,6 +29,14 @@ private val FORWARDED_CLIENT_HEADERS: Map<String, String> = mapOf(
     "anthropic-beta" to "ANTHROPIC_CUSTOM_HEADERS",
 )
 
+/** Identity authored by the client, not by splice. SDK metadata is forwarded as the x-stainless- family. */
+private val CLIENT_IDENTITY_HEADERS: Set<String> = setOf(
+    "user-agent",
+    "x-app",
+    "x-claude-code-session-id",
+    "anthropic-dangerous-direct-browser-access",
+)
+
 /** The allowlisted names whose value is a COMMA-SEPARATED LIST, so repeated field lines are one
  *  value split across lines and must be rejoined rather than have all but the first dropped.
  *
@@ -141,7 +149,8 @@ internal class ClientAuth(
         }.keys
         if (carriers.isEmpty()) return true
         val headers = carriers.joinToString(", ")
-        val variables = carriers.map { FORWARDED_CLIENT_HEADERS.getValue(it) }.distinct().joinToString(" and ")
+        val variables = carriers.map { FORWARDED_CLIENT_HEADERS[it] ?: "ANTHROPIC_CUSTOM_HEADERS" }
+            .distinct().joinToString(" and ")
         deps.log(
             "[auth] refused a turn on a client-auth head that presented one of splice's own keys (the " +
                 "management key or the turn key) in $headers: " +
@@ -174,12 +183,16 @@ internal class ClientAuth(
      *
      *  An allowlist, never "forward everything": Host, Content-Length, Accept-Encoding and friends
      *  describe the hop to the gateway, not the hop to the vendor, and copying them corrupts the
-     *  upstream request. What rides is the caller's credential and the two Anthropic wire knobs it
-     *  chose — exactly what Claude Code would have sent had it called the vendor directly. */
-    fun forwardedClientHeaders(call: ApplicationCall): Map<String, String> =
-        FORWARDED_CLIENT_HEADERS.keys.mapNotNull { name ->
+     *  upstream request. What rides is the caller's credential, Anthropic wire knobs and genuine
+     *  client identity, exactly as chosen by the client, never synthesized from splice's version. */
+    fun forwardedClientHeaders(call: ApplicationCall): Map<String, String> {
+        val identity = call.request.headers.names().filter {
+            it.lowercase() in CLIENT_IDENTITY_HEADERS || it.startsWith("x-stainless-", ignoreCase = true)
+        }
+        return (FORWARDED_CLIENT_HEADERS.keys + identity).mapNotNull { name ->
             forwardedValue(call, name)?.let { name to it }
         }.toMap()
+    }
 
     /** One allowlisted header's value as it should ride upstream.
      *

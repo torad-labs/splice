@@ -58,10 +58,11 @@ export function body() {
 <div><div class="n">14M</div><h3>Tokens written out</h3><p>Answers, tools and thinking.</p></div>
 <div><div class="n">$184</div><h3>API cost, estimated</h3><p>At each model’s public prices. 41 turns left out: no price.</p></div></div></section>
 <section class="section"><h2>Each plan against its limit</h2><p class="why">The limit is the provider’s own. The pace is the last day’s, so it moves when you do.</p><div class="plans">${plans}</div></section>
-<section class="section"><h2>Budgets</h2><p class="why">A budget is your own ceiling, lower than the provider’s. Splice tells you when a plan reaches it.</p>
-<div class="rows"><div class="row"><b>Kimi</b><span>40M tokens a week. 34M used. Tell me at 80%.</span><button class="btn sm">Change</button></div>
-<div class="row"><b>ChatGPT</b><span>No budget set.</span><button class="btn sm">Set a budget</button></div></div></section>
+<section class="section"><h2>Budgets</h2><p class="why">A budget is your own daily ceiling in dollars. Splice tells you, or stops the turn, when a plan reaches it.</p>
+<div class="rows"><div class="row"><b>Kimi</b><span>$20 a day. $7.40 spent in the last 24 hours. Splice stops turns once it is reached.</span><button class="btn sm">Change</button></div>
+<div class="row"><span></span><span></span><button class="btn sm">Add a budget</button></div></div></section>
 <section class="section"><h2>Alerts</h2><p class="why">Where splice sends a message when a plan nears a limit or a budget.</p>
-<div class="rows"><div class="row"><b>Webhook</b><span>https://hooks.example.com/…9f2a</span><span class="onoff"><i></i>On</span></div>
-<div class="row"><b>Send a test</b><span>Checks that the webhook answers, and tells you what it said.</span><button class="btn sm">Send a test</button></div></div></section>`;
+<div class="rows"><div class="row"><b>Desktop notifications</b><span>A notification on this computer.</span><span class="onoff"><i></i>On</span></div>
+<div class="row"><b>Webhook</b><span>https://hooks.example.com/…9f2a</span><button class="btn sm">Save the webhook</button></div>
+<div class="row"><b>Send a test</b><span>Posts to the saved webhook and tells you what it said.</span><button class="btn sm">Send a test</button></div></div></section>`;
 }

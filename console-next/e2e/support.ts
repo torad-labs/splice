@@ -1,0 +1,66 @@
+// NEW: V4-444 — browser failure observations and page census derived from the router's source.
+import { expect, type Page } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import ts from 'typescript';
+
+const source = ts.createSourceFile('routes.tsx',
+  readFileSync(new URL('../src/app/routes.tsx', import.meta.url), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const place = source.statements.filter(ts.isVariableStatement)
+  .flatMap((statement) => [...statement.declarationList.declarations])
+  .find((declaration) => ts.isIdentifier(declaration.name) && declaration.name.text === 'PLACES');
+const initializer = place?.initializer;
+const array = initializer !== undefined && ts.isAsExpression(initializer) ? initializer.expression : initializer;
+if (array === undefined || !ts.isArrayLiteralExpression(array) || array.elements.length === 0) {
+  throw new Error('router PLACES must declare a non-empty page census');
+}
+export const PAGES = array.elements.map((element) => {
+  if (!ts.isStringLiteral(element)) throw new Error('router PLACES contains a non-literal page');
+  return element.text;
+});
+
+export function env(name: string): string {
+  const value = process.env[name];
+  if (value === undefined || value === '') throw new Error(name + ' is unset: shared stack did not start');
+  return value;
+}
+
+export function watch(page: Page) {
+  const faults = { pageErrors: [] as string[], consoleErrors: [] as string[], failedReads: [] as string[] };
+  page.on('pageerror', (error) => faults.pageErrors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error') faults.consoleErrors.push(message.text());
+  });
+  page.on('response', (response) => {
+    const path = new URL(response.url()).pathname;
+    if (path.startsWith('/api/') && response.status() >= 400) faults.failedReads.push(response.status() + ' ' + path);
+  });
+  return faults;
+}
+
+export async function open(page: Page, path: string): Promise<ReturnType<typeof watch>> {
+  const faults = watch(page);
+  await page.addInitScript((key) => localStorage.setItem('myx-mgmt-key', key), env('CONSOLE_E2E_KEY'));
+  // The canary throws in the actual loaded document, not in a test-side mock checker.
+  if (process.env.CONSOLE_NEXT_E2E_MUTANT === 'throw') {
+    await page.addInitScript(() => { throw new Error('synthetic replacement page threw'); });
+  }
+  await page.goto(env('CONSOLE_E2E_BASE') + '/#/' + path);
+  await expect(page.getByRole('navigation', { name: 'Pages', exact: true })).toBeVisible();
+  return faults;
+}
+
+export async function assertHealthy(page: Page, faults: ReturnType<typeof watch>): Promise<void> {
+  await expect(page.getByRole('main')).not.toBeEmpty();
+  expect(await page.getByRole('main').innerText()).not.toMatch(/\bundefined\b|\bNaN\b|\[object Object\]/);
+  expect(faults.pageErrors, 'uncaught page errors').toEqual([]);
+  expect(faults.consoleErrors, 'console errors').toEqual([]);
+  expect(faults.failedReads, 'daemon refused reads').toEqual([]);
+}
+
+export async function read<T>(page: Page, path: string): Promise<T> {
+  const response = await page.request.get(env('CONSOLE_E2E_BASE') + path, {
+    headers: { Authorization: 'Bearer ' + env('CONSOLE_E2E_KEY') },
+  });
+  expect(response.ok(), path + ' should be served by the real daemon').toBe(true);
+  return response.json() as Promise<T>;
+}

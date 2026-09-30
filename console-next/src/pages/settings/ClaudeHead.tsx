@@ -1,5 +1,6 @@
 import { failureText } from '../../api/client';
 import { useClaudeHead, useUnwrapClaudeHead, useWrapClaudeHead } from '../../api/claude-head';
+import { proseOf } from '../../lib/settings';
 import { C } from '../../lib/words-claude';
 import { Button, Confirm, State } from '../../ui';
 import { T } from './copy';
@@ -28,7 +29,7 @@ export function ClaudeHead() {
       <Row title={C.onPath} why="" control={<Path>{card.resolves_to ?? C.notFound}</Path>} />
       <Row title={C.shim} why="" control={<Path>{card.shim_path}</Path>} />
       {wrapped ? <Row title={C.realBinary} why="" control={<Path>{card.real_binary_path ?? C.unknown}</Path>} /> : null}
-      <Row title={C.logins} why={logins.constraint} control={<span>{logins.count === 0 ? C.noLogins : logins.labels.join(', ')}</span>} />
+      <Row title={C.logins} why={proseOf(logins.constraint)} control={<span>{logins.count === 0 ? C.noLogins : logins.labels.join(', ')}</span>} />
       <Row title={C.selected} why="" control={<span>{logins.selected ?? C.noneSelected}</span>} />
       {backups.map((path) => <Row key={path} title={C.backups} why="" control={<Path>{path}</Path>} />)}
     </>

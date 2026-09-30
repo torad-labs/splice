@@ -41,6 +41,11 @@ describe('the claude command row', () => {
     expect(html).toContain('It runs');
     expect(html).toContain('Not read');
   });
+  test('the daemon\'s sentence about logins prints as prose: no backticks, a capital to begin', () => {
+    const html = render(<ClaudeHead />, seedCard(card({ claude_logins: { count: 1, selected: 'max', labels: ['max'], constraint: 'one login per Claude head at a time; `splice login <head> --label <name>` saves or switches it' } })));
+    expect(html).toContain('One login per Claude head at a time; splice login &lt;head&gt; --label &lt;name&gt; saves or switches it');
+    expect(html).not.toContain('`');
+  });
   test('a claude that is not on the path says so rather than printing a blank', () => {
     expect(render(<ClaudeHead />, seedCard(card({ resolves_to: null, claude_logins: { count: 0, selected: null, labels: [], constraint: '' } })))).toContain('Nothing named claude');
   });

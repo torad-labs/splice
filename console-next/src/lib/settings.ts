@@ -98,6 +98,12 @@ export function withServerExcluded(topology: Topology, name: string, excluded: b
   return { ...topology, daemon };
 }
 
+/** The daemon's sentence as prose: its markdown backticks dropped and a capital to begin. */
+export function proseOf(sentence: string): string {
+  const plain = sentence.replaceAll('`', '');
+  return `${plain.charAt(0).toUpperCase()}${plain.slice(1)}`;
+}
+
 /** A server's word and whether its switch is on: on = shared with sessions. */
 export type ToolState = { word: 'Running' | 'Not started' | 'Not shared'; tone: 'work' | 'idle'; shared: boolean; why: string | null };
 export function toolState(server: McpServer, excluded: boolean): ToolState {

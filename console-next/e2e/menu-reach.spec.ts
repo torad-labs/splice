@@ -31,4 +31,7 @@ test('a Select with more options than the window holds lets the last one be clic
   await page.getByRole('menuitemradio', { name: last, exact: true }).click();
   await expect(trigger).toHaveText(last);
   expect(faults.pageErrors).toEqual([]);
+  // The page re-reads /api/heads on its own timer; a read still in flight when the test ends would throw "route.fetch: Test ended"
+  // into whichever test runs next.
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
 });

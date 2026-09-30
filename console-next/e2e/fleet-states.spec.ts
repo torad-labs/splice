@@ -1,9 +1,15 @@
 // NEW: V4-444 — runtime/quota/refused-account signals over the actual replacement cards and plan pages.
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import type { HeadsPayload } from '../src/types/core';
 import type { AccountsWire } from '../src/types/accounts';
 import { STACK } from './stack';
 import { env, open, read } from './support';
+
+/** Every card's words on one line each, so a failed count says which head stood in which state. */
+async function cardStates(page: Page): Promise<string> {
+  const cards = await page.locator('li.card').all();
+  return (await Promise.all(cards.map(async (card) => (await card.innerText()).replace(/\s+/g, ' ').trim().slice(0, 160)))).join('\n');
+}
 
 test('a silent runtime is off on its card and detail while unmarked plans remain ready', async ({ page }) => {
   await page.route((url) => url.pathname === '/api/heads', async (route) => {
@@ -41,9 +47,7 @@ test('quota refusal moves one card out of ready and keeps its local reset identi
     await route.fulfill({ response, json: body });
   });
   await open(page, 'fleet');
-  const ready = page.locator('li.card').getByText('Ready', { exact: true });
-  await expect(ready.first()).toBeVisible();
-  const before = await ready.count();
+  await expect(page.locator('li.card').getByText('Ready', { exact: true }).first()).toBeVisible();
   marking = true;
   await page.reload();
   const card = page.locator('li.card').filter({ has: page.getByRole('link', { name: STACK.oauthHead, exact: true }) });
@@ -54,8 +58,14 @@ test('quota refusal moves one card out of ready and keeps its local reset identi
     month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
   }).format(new Date(seconds * 1000)), reset);
   expect(sentence).toBe('Out of quota until ' + local);
-  await expect(ready).toHaveCount(before - 1);
-  await expect(page.locator('li.card').filter({ hasNot: page.getByRole('link', { name: STACK.oauthHead, exact: true }) }).getByText(/^Out of quota/)).toHaveCount(0);
+  // The marked card alone must leave Ready and be the only one out of quota. No count of the other cards is taken: the
+  // stack's heads are still moving between states while the page first loads, which made a before/after count flake.
+  try {
+    await expect(card.getByText('Ready', { exact: true })).toHaveCount(0);
+    await expect(page.locator('li.card').getByText(/^Out of quota/)).toHaveCount(1);
+  } catch (error) {
+    throw new Error(`the quota refusal must mark only ${STACK.oauthHead}; every card:\n${await cardStates(page)}`, { cause: error });
+  }
   await expect(page.locator('main .lede')).toContainText('one out of quota');
   await card.getByRole('link', { name: STACK.oauthHead, exact: true }).click();
   await expect(page.getByRole('main').getByText(sentence, { exact: true })).toBeVisible();

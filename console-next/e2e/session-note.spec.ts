@@ -7,7 +7,8 @@ import { createServer, type Server } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { STACK } from './stack';
-import { env, open, type watch } from './support';
+import type { SessionsPayload } from '../src/types/sessions';
+import { env, open, read, type watch } from './support';
 
 const NOTED = { id: 'e2e-noted-0000-4000-8000-000000000003', name: 'e2e-noted' } as const;
 const NOTE = 'Run the gate, then tell me the sha.';
@@ -96,7 +97,15 @@ test('a session that is not running has no box, only the reason', async ({ page 
   }));
   try {
     const faults = await open(page, 'sessions/e2e-gone-0000-4000-8000-000000000004');
-    await expect(page.getByText('This session is not running, so it cannot take a note.')).toBeVisible();
+    try {
+      await expect(page.getByText('This session is not running, so it cannot take a note.')).toBeVisible();
+    } catch (error) {
+      // A recurrence says whether the page never got the row, or got it in a state that shows no reason.
+      const listed = await read<SessionsPayload>(page, '/api/sessions');
+      const row = JSON.stringify(listed.sessions.find((entry) => entry.session_id === 'e2e-gone-0000-4000-8000-000000000004') ?? null);
+      const main = (await page.getByRole('main').innerText()).replace(/\s+/g, ' ').slice(0, 400);
+      throw new Error(`the not-running reason never showed.\n-- the daemon's row for it: ${row}\n-- the page's main text: ${main}`, { cause: error });
+    }
     await expect(page.getByRole('textbox', { name: BOX, exact: true })).toHaveCount(0);
     await healthyExcept(page, faults, ['404 /api/sessions/e2e-gone-0000-4000-8000-000000000004/transcript']);
   } finally {

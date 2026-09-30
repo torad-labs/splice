@@ -47,7 +47,7 @@
 # ── 15 names, () -> Unit ──────────────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "()->Unit"
-dated = "2026-09-17"
+dated = "2026-09-29"
 names = [
     "AuthRefreshObserver",
     "CodeModeCleanup",
@@ -65,6 +65,7 @@ names = [
     "StreamStart",
     "Teardown",
     "TurnEnd",
+    "UpstreamBytes",
     "WorkerExited",
     "WsRoundAbort",
 ]
@@ -73,7 +74,9 @@ every one of these is an EVENT or an ACTION with its own lifecycle owner, and no
 from the same place. Notifications the caller only observes: AuthRefreshObserver (a credential \
 refresh happened mid-attempt), WorkerExited (the code-mode worker process died), ProtocolAnomaly \
 (a WS frame arrived that the protocol does not allow), StreamStart (the upstream began emitting), \
-PulseTick (the spinner's next frame is due), TurnEnd (a built turn is over, on whatever path — the \
+PulseTick (the spinner's next frame is due), UpstreamBytes (a provider body chunk or WebSocket JSON \
+event arrived; stamp the live turn's silence clock before parsing or client output, never on \
+headers, watchdog touch, socket pings or client keep-alives), TurnEnd (a built turn is over, on whatever path — the \
 provider gives back what it held for it, a llama-server slot lease since V4-165). Actions the caller commands: HaltJvm (exit the \
 process), Teardown and StopControl (shut this component / the control plane down), ShutdownDaemon \
 (the daemon's own stop path), WsRoundAbort (abandon the in-flight WS round), CodeModeCleanup \

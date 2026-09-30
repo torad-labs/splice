@@ -35,6 +35,7 @@ import java.util.UUID
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 /** What the stopped turn's client is told, in its frame and in the refusal of its re-send. */
 internal const val OPERATOR_STOPPED = "the operator stopped this turn"
@@ -57,6 +58,8 @@ public data class LiveTurn(
     val compact: Boolean,
     val ageMs: Long,
     val stopped: Boolean,
+    /** Time since the provider's last byte, or since this turn was listed before its first byte. */
+    val idleMs: Long = ageMs,
 )
 
 /** One head's live turns and its unused stop marks. [ids] mints a whole random UUID per turn, so no
@@ -75,9 +78,15 @@ public class LiveTurns(
         private val model: String,
         private val compact: Boolean,
         val since: Long,
-    ) {
+        private val clock: ElapsedClock,
+    ) : InflightGate.Slot.UpstreamBytes {
         @Volatile private var job: Job? = null
         private val stopped = AtomicBoolean(false)
+        private val lastByte = AtomicLong(since)
+
+        override fun received() {
+            lastByte.set(clock())
+        }
 
         fun driving(job: Job) {
             this.job = job
@@ -93,7 +102,15 @@ public class LiveTurns(
             job?.cancel(OperatorStop())
         }
 
-        fun view(now: Long): LiveTurn = LiveTurn(id, session, model, compact, now - since, stopped.get())
+        fun view(now: Long): LiveTurn = LiveTurn(
+            id,
+            session,
+            model,
+            compact,
+            now - since,
+            stopped.get(),
+            (now - lastByte.get()).coerceAtLeast(0L),
+        )
     }
 
     /** A stop's mark: which session's re-send of which messages is refused, until when. */
@@ -106,9 +123,10 @@ public class LiveTurns(
     /** A streaming turn admitted on [slot], listed until the slot is released. [messagesHash] is
      *  [MessagesHash.of] the client's request, null when it sent no session (no re-send can be told). */
     internal fun admitted(slot: InflightGate.Slot, meta: TurnMeta, messagesHash: String?) {
-        val turn = Live(ids.next(), meta.sessionId, messagesHash, meta.upstreamModel, meta.compact, clock())
+        val turn = Live(ids.next(), meta.sessionId, messagesHash, meta.upstreamModel, meta.compact, clock(), clock)
         live[turn.id] = turn
         bySlot[slot] = turn
+        slot.onReceived(turn)
         slot.onRelease {
             live.remove(turn.id)
             bySlot.remove(slot)

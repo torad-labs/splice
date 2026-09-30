@@ -293,6 +293,8 @@ public class InflightGate(
         private val lastTouch = AtomicLong(admittedAt)
         private val onRelease = ConcurrentLinkedQueue<TurnEnd>()
 
+        @Volatile private var upstreamBytes: UpstreamBytes? = null
+
         // V4-213: what the live reading says about this slot. The slot is taken BEFORE the request
         // body is read (HeadAdmission), so the turn names itself through [describe] once it is
         // prepared; until then it reads [UNREAD_LABEL]. Every touch comes from the upstream (its 2xx,
@@ -314,6 +316,22 @@ public class InflightGate(
         public fun touch() {
             lastTouch.set(clock())
             streaming = true
+        }
+
+        /** Provider body bytes or a received WebSocket event, never headers or client keep-alives. */
+        public fun received() {
+            touch()
+            upstreamBytes?.received()
+        }
+
+        /** Registered once when the turn is named, before its upstream drive starts. */
+        public fun onReceived(observer: UpstreamBytes) {
+            upstreamBytes = observer
+        }
+
+        /** The turn-owned receipt stamp, kept separate from this slot's watchdog liveness. */
+        public fun interface UpstreamBytes {
+            public fun received()
         }
 
         public fun idleForMs(): Long = clock() - lastTouch.get()

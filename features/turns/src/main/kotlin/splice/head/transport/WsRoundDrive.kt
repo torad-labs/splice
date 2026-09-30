@@ -38,10 +38,10 @@ internal class WsRoundDrive(
         // (PreContentTear). Caught here, upstream of the translator, because the translator folds an
         // I/O failure into its honest terminal.
         val instrumented = events.catch { torn -> throw reissued(torn, inputs) ?: torn }.onEach { evt ->
+            drive.slot.received()
             if (runner.isFailureTerminal(evt) && !inputs.frameEmittedThisRound()) {
                 throw RoundNeedsSse(failureDetail(evt))
             }
-            drive.slot.touch()
             drive.perf.markOnce(PerfKeys.FIRST_BYTE)
             drive.perf.add(PerfKeys.EVENTS_IN, 1)
         }

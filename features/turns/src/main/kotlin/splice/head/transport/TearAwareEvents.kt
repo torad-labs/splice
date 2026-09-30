@@ -38,7 +38,7 @@ internal class TearAwareEvents(
                 // Bytes TOUCH the slot (liveness) and stamp FIRST_BYTE; they do not pick the
                 // watchdog tier. A Responses handshake (response.created) is bytes with no output,
                 // and letting it flip the tier reaped every silent compaction — see Watchdog.kt.
-                drive.slot.touch()
+                drive.slot.received()
                 drive.perf.markOnce(PerfKeys.FIRST_BYTE)
                 drive.perf.add(PerfKeys.SSE_BYTES_IN, chunkBytes.toLong())
             },

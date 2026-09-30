@@ -8,6 +8,8 @@ import { FleetPage } from '../pages/fleet/FleetPage';
 import { NeedsPage } from '../pages/needs/NeedsPage';
 import { SessionPage } from '../pages/session/SessionPage';
 import { SessionsPage } from '../pages/sessions/SessionsPage';
+import { TurnPage } from '../pages/turns/TurnPage';
+import { TurnsPage } from '../pages/turns/TurnsPage';
 import { SettingsPage } from '../pages/settings/SettingsPage';
 
 /** Retired address -> where it went (DIRECTION.md, "Nav"). */
@@ -41,7 +43,9 @@ export const router = createHashRouter([
       { path: 'fleet/:head', element: <FleetHeadPage /> },
       { path: 'sessions', element: <SessionsPage /> },
       { path: 'sessions/:id', element: <SessionPage /> },
-      ...PLACES.filter((path) => path !== 'sessions' && path !== 'fleet' && path !== 'needs-you' && path !== 'settings').map((path) => ({ path, element: <Pending place={path} /> })),
+      { path: 'turns', element: <TurnsPage /> },
+      { path: 'turns/:head/:ts', element: <TurnPage /> },
+      ...PLACES.filter((path) => path !== 'sessions' && path !== 'fleet' && path !== 'needs-you' && path !== 'settings' && path !== 'turns').map((path) => ({ path, element: <Pending place={path} /> })),
       ...Object.entries(RETIRED).map(([path, to]) => ({ path, element: <Navigate to={to} replace /> })),
       { path: '*', element: <Navigate to={HOME} replace /> },
     ],

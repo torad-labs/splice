@@ -137,6 +137,8 @@ svg { display: block; flex: none; }
 .model::before { content: ''; width: 10px; height: 10px; border-radius: 50%; background: var(--m); }
 .m-claude { --m: var(--claude); } .m-gpt { --m: var(--gpt); } .m-grok { --m: var(--grok); } .m-kimi { --m: var(--kimi); } .m-muse { --m: var(--muse); } .m-local { --m: var(--local); }
 .m-router { --m: var(--router); } .m-deepseek { --m: var(--deepseek); } .m-none { --m: var(--tan); }
+/* a plan's colour as one custom property, for the dot, bar or sparkline that names it */
+.hue { --c: var(--tan); } .hue.claude { --c: var(--claude); } .hue.gpt { --c: var(--gpt); } .hue.grok { --c: var(--grok); } .hue.kimi { --c: var(--kimi); } .hue.muse { --c: var(--muse); } .hue.local { --c: var(--local); } .hue.router { --c: var(--router); } .hue.deepseek { --c: var(--deepseek); }
 .hand { display: inline-flex; align-items: center; gap: var(--space-3); font: 500 14px var(--meta); color: var(--mute); }
 .hand b { font-weight: 600; color: var(--ink); }
 .sep { height: 0; border-top: 1px solid var(--hair); margin: 0; }

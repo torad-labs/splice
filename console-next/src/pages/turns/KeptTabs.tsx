@@ -1,0 +1,130 @@
+import { Link } from 'react-router';
+import { failureText } from '../../api/client';
+import { useCapture, useConversation, useKeptTurn, useSetCapture, useWire } from '../../api/turns';
+import { fmtMs } from '../../lib/format';
+import { askAndAnswer, wireFor } from '../../lib/turns-page';
+import { P } from '../../lib/words-turns';
+import type { ConversationMessageWire, TraceRecord, TraceSide, TurnRow } from '../../types/perf';
+import { Button, Markdown } from '../../ui';
+
+const TABS = [['conversation', P.tabConversation], ['request', P.tabRequest], ['sent', P.tabSent]] as const;
+type Tab = (typeof TABS)[number][0];
+const tabOf = (raw: string | null): Tab => TABS.find(([id]) => id === raw)?.[0] ?? 'conversation';
+
+function Message({ message, plan }: { message: ConversationMessageWire; plan: string }) {
+  if (message.role === 'tool') return <p className="toolline">{message.tool ?? P.tool}{message.result === true ? ' · result' : ''}</p>;
+  return (
+    <div>
+      <div className="who">{message.role === 'system' ? P.system : P.answered(plan)}</div>
+      <Markdown>{message.text}</Markdown>
+    </div>
+  );
+}
+
+function Conversation({ row, plan }: { row: TurnRow; plan: string }) {
+  const read = useConversation(row.head, row.session_id ?? null, row.response_message_id ?? null, row.session_id !== undefined && row.response_message_id !== undefined);
+  if (row.session_id === undefined || row.response_message_id === undefined) return <p className="kept-note">{P.conversationNoId}</p>;
+  if (read.isError) return <p className="kept-note" role="alert">{failureText(read.error)}</p>;
+  if (read.data === undefined) return null;
+  if (read.data.state !== 'found') return <p className="kept-note">{read.data.reason}</p>;
+  const { ask, reply, earlier } = askAndAnswer(read.data.messages);
+  return (
+    <div className="qa">
+      {ask === null ? null : <div><div className="who">{P.asked}</div><div className="you">{ask.text}</div></div>}
+      {reply.map((message) => <Message key={message.index} message={message} plan={plan} />)}
+      {earlier > 0 ? <p className="note">{P.conversationEarlier(earlier)}</p> : null}
+    </div>
+  );
+}
+
+function Side({ label, side }: { label: string; side: TraceSide | undefined }) {
+  const text = side?.body ?? side?.text;
+  if (side === undefined || text === undefined) return null;
+  return (
+    <details>
+      <summary>{label}{side.status === undefined ? '' : ` · ${side.status}`}</summary>
+      <pre>{text}</pre>
+      {side.truncated === true ? <p className="sub">{P.truncated}</p> : null}
+    </details>
+  );
+}
+
+function Attempt({ record }: { record: TraceRecord }) {
+  return (
+    <li>
+      <h3>{P.attempt(record.attempt ?? 1)}</h3>
+      <p className="sub">{[record.transport, record.durationMs === undefined ? null : fmtMs(record.durationMs), record.failure].filter((part) => part !== undefined && part !== null).join(' · ')}</p>
+      <Side label={P.sentRequest} side={record.request} />
+      <Side label={P.received} side={record.response} />
+    </li>
+  );
+}
+
+function CaptureOff({ row, plan }: { row: TurnRow; plan: string }) {
+  const set = useSetCapture();
+  const change = set.data;
+  return (
+    <div className="kept-note">
+      <p>{P.captureOff(plan)}</p>
+      <Button kind="go" disabled={set.isPending} onClick={() => set.mutate({ head: row.head, enabled: true })}>{set.isPending ? P.captureTurning : P.captureOn(plan)}</Button>
+      {change === undefined ? null : change.write.ok ? <p>{change.write.answer.restart_required ? P.captureNeedsRestart : ''}</p> : <p role="alert">{P.captureRefused} {change.write.reason}</p>}
+      {set.isError ? <p role="alert">{failureText(set.error)}</p> : null}
+    </div>
+  );
+}
+
+function Request({ row, plan }: { row: TurnRow; plan: string }) {
+  const capture = useCapture(row.head);
+  const kept = useKeptTurn(row.head, row.turn ?? null, row.turn !== undefined);
+  if (row.turn === undefined) return capture.data?.enabled === false ? <CaptureOff row={row} plan={plan} /> : <p className="kept-note">{P.keptGone}</p>;
+  if (kept.isError) return <p className="kept-note" role="alert">{failureText(kept.error)}</p>;
+  if (kept.data === undefined) return null;
+  if ('gone' in kept.data) return <p className="kept-note">{kept.data.gone}</p>;
+  const attempts = kept.data.read.records.filter((record) => record.kind === 'attempt');
+  return (
+    <ul className="attempts">
+      {attempts.map((record) => <Attempt key={record.attempt ?? record.ts} record={record} />)}
+      {kept.data.read.records.filter((record) => record.kind === 'turn').map((record) => (
+        <li key={`turn-${record.ts}`}>
+          <Side label={P.received} side={record.answer} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function Sent({ row }: { row: TurnRow }) {
+  const wire = useWire(row.head);
+  if (wire.isError) return <p className="kept-note" role="alert">{failureText(wire.error)}</p>;
+  if (wire.data === undefined) return null;
+  if ('off' in wire.data) return <p className="kept-note">{wire.data.off}</p>;
+  const records = wireFor(wire.data.tap.records, row);
+  if (records.length === 0) return <p className="kept-note">{P.wireNone}</p>;
+  return (
+    <ul className="attempts">
+      {records.map((record) => (
+        <li key={record.ts}>
+          <details open>
+            <summary>{P.wireBody}</summary>
+            <pre>{record.body}</pre>
+          </details>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** What splice kept of a turn, one place per kind: the conversation, the request and answer, the bodies sent to the plan. */
+export function KeptTabs({ row, plan, tab }: { row: TurnRow; plan: string; tab: string | null }) {
+  const current = tabOf(tab);
+  return (
+    <section className="kept" aria-label={P.tabsLabel}>
+      <nav className="tabs" aria-label={P.tabsLabel}>
+        {TABS.map(([id, label]) => (
+          <Link key={id} to={`?tab=${id}`} replace aria-current={id === current ? 'page' : undefined}>{label}</Link>
+        ))}
+      </nav>
+      {current === 'conversation' ? <Conversation row={row} plan={plan} /> : current === 'request' ? <Request row={row} plan={plan} /> : <Sent row={row} />}
+    </section>
+  );
+}

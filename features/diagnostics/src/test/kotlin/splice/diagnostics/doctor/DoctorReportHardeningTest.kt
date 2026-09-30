@@ -195,4 +195,29 @@ class DoctorReportHardeningTest {
             assertTrue(row.detail.contains("last failure: $words"), "$words: ${row.detail}")
         }
     }
+
+    // Console review 2026-09-29: Needs you listed nine heads whose last failure was 3 to 35 days old
+    // ("last failure: 35d ago"). A head's failed turns warn while the newest failure is under a day
+    // old; after that the same sentence is history, read at INFO.
+    @Test
+    fun `a head's last failure warns for a day, then reads as history`() {
+        val state = Files.createDirectories(tmp.resolve("state"))
+        val perf = state.resolve("codex-perf.jsonl")
+        val probe = DoctorProbeWrite(files = DoctorReportFiles(DoctorRedaction(tmp)))
+        val cases = mapOf(
+            23L * 3_600_000 to CheckStatus.WARN,
+            25L * 3_600_000 to CheckStatus.INFO,
+            35L * 86_400_000 + 60_000 to CheckStatus.INFO,
+        )
+        cases.forEach { (age, status) ->
+            val ts = System.currentTimeMillis() - age
+            Files.writeString(perf, """{"ts":$ts,"outcome":"error:auth-missing"}""" + "\n")
+            val row = probe.perfTailRow("codex", perf)
+            assertEquals(status, row.status, "${age}ms: ${row.detail}")
+            assertTrue(row.detail.startsWith("1 of last 1 turn(s) failed; last failure:"), row.detail)
+        }
+        Files.writeString(perf, """{"outcome":"error:auth-missing"}""" + "\n")
+        val undated = probe.perfTailRow("codex", perf)
+        assertEquals(CheckStatus.WARN, undated.status, "a failure with no time is never called old: ${undated.detail}")
+    }
 }

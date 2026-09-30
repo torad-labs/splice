@@ -89,10 +89,12 @@ internal class DoctorProbeWrite(
         unread: String,
     ): DoctorCheck {
         val (outcome, ts) = failures.last()
-        val age = DoctorAge.ago(System.currentTimeMillis() - ts)
-        val last = "last failure: $age (${tag(outcome)})"
+        val ageMs = System.currentTimeMillis() - ts
+        val last = "last failure: ${DoctorAge.ago(ageMs)} (${tag(outcome)})"
         val detail = "${failures.size} of last $n turn(s) failed; $last$unread"
-        return DoctorCheck(name, CheckStatus.WARN, detail, "splice logs --head $headKey --tail 50")
+        // A row with no time (perfRow reads it as 0) is never called old.
+        val status = if (ts <= 0L || ageMs <= RECENT_FAILURE_MS) CheckStatus.WARN else CheckStatus.INFO
+        return DoctorCheck(name, status, detail, "splice logs --head $headKey --tail 50")
     }
 
     /** One perf JSONL row -> (outcome, ts); null on a malformed line (tail readers stay tolerant). */
@@ -110,6 +112,11 @@ internal class DoctorProbeWrite(
 }
 
 private const val PERF_TAIL_TURNS = 20
+
+// why: doctor says what is wrong now. A head's newest failure older than a day is history: a live
+// fault fails the head's next turn, which is recent again. Console review 2026-09-29: Needs you
+// listed nine heads whose last failure was 3 to 35 days old.
+private const val RECENT_FAILURE_MS = 24L * 3_600_000
 
 /** Enough bytes for well over 20 rows per generation (a row is under 1 KiB). */
 private const val PROBE_TAIL_BYTES = 64 shl 10

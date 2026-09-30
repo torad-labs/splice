@@ -175,9 +175,21 @@ export const QUIET_AFTER_MS = 2 * 60_000;
 const ESC = String.fromCharCode(27);
 const NOISE = new RegExp(`${ESC}\\[[0-9;]*[A-Za-z]|</?local-command-[a-z]+>`, 'g');
 
+const KEY_OPENING = /^[[{\s]*"(?:[^"\\]|\\.)*"\s*:\s*/;
+const ESCAPES: Readonly<Record<string, string>> = { n: ' ', t: ' ', r: ' ', '"': '"', '\\': '\\', '/': '/' };
+
+/** A tool's input arrives as a cut-off JSON object; its first string value is the words (`{"command":"ls -la"` says `ls -la`). */
+function wordsOf(text: string): string {
+  if (!/^[[{]/.test(text)) return text;
+  let rest = text;
+  while (KEY_OPENING.test(rest)) rest = rest.replace(KEY_OPENING, '');
+  const value = /^"((?:[^"\\]|\\.)*)/.exec(rest)?.[1];
+  return value === undefined ? text : value.replace(/\\(.)/g, (_, char: string) => ESCAPES[char] ?? char);
+}
+
 /** The newest message as one line: what the person said, what the plan answered, or what a tool did. Null when there is nothing to read. */
 export function lastLine(last: SessionLast | null | undefined): string | null {
-  const text = last?.text.replace(NOISE, '').trim() ?? '';
+  const text = wordsOf(last?.text.replace(NOISE, '').trim() ?? '').trim();
   if (last === null || last === undefined || text === '') return null;
   if (last.role === 'user') return `${SW.you}: ${text}`;
   return last.role === 'tool' && last.tool !== null ? `${last.tool}: ${text}` : text;

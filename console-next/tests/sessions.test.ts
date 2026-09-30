@@ -145,6 +145,9 @@ describe('what a card says', () => {
     expect(lastLine(said('tool', 'exit 0').last)).toBe('exit 0');
     expect(cardLine(said('assistant', 'Done.'), 'working', 3 * 60_000, null)).toEqual({ line: 'Done.', note: 'Working 3 min' });
     expect(cardLine(said('assistant', 'Done.'), 'idle', null, null)).toEqual({ line: 'Done.', note: null });
+    expect(lastLine({ role: 'tool', tool: 'Bash', text: '{"command":"cd /tmp && ls \\"a b\\"","description":"x"}', ts: null })).toBe('Bash: cd /tmp && ls "a b"');
+    expect(lastLine({ role: 'assistant', tool: null, text: '{"questions":[{"question":"The box run failed, what now?","header":"x"', ts: null })).toBe('The box run failed, what now?');
+    expect(lastLine({ role: 'assistant', tool: null, text: '{not json at all', ts: null })).toBe('{not json at all');
     expect(lastLine({ role: 'user', tool: null, text: '<local-command-stdout>\u001b[2mCompacted \u001b[22m</local-command-stdout>', ts: null })).toBe('You: Compacted');
   });
 

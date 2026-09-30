@@ -131,7 +131,7 @@ svg { display: block; flex: none; }
 /* ---------- shared bits ---------- */
 .eyebrow { font: 600 12px/1 var(--meta); letter-spacing: .04em; color: var(--mute); }
 .group-head { display: flex; align-items: baseline; gap: var(--space-5); margin: var(--space-16) 0 var(--space-10); }
-.group-head:first-child { margin-top: var(--space-11); }
+section:first-of-type > .group-head { margin-top: var(--space-11); }
 .group-head h2 { font: 520 28px/1.1 var(--display); font-variation-settings: 'opsz' 72; letter-spacing: -.015em; color: var(--ink); }
 .group-head .n { font: 600 14px var(--meta); color: var(--mute); }
 .group-head .why { margin-left: auto; font: 400 italic 16px var(--display); color: var(--mute); }

@@ -16,26 +16,27 @@
   serves and refuses a row it doesn't. llama-server conversations keep their own slot. Local heads
   report token usage, so Claude Code auto-compacts, and their errors say what happened.
 - **A rebuilt console.** Each session opens on its own page, its messages set as formatted text
-  and its tool calls and code as blocks. Needs you lists only what is live and waiting on you, each
-  item with its one fix. Settings are switches, choices and steppers under plain names, and the
-  cards on Sessions and Fleet reorder by drag. The console signs accounts in, switches, removes and
-  relabels them, and adds opt-in body capture, budgets, alerts, a playground and a per-project view
-  of the rules that govern a repo.
+  and its tool calls and code as blocks. Needs you gathers current actionable issues, each with
+  its one fix. Settings are switches, choices and steppers under plain names, and the cards on
+  Sessions and Fleet reorder by drag. The console signs accounts in, switches, removes and
+  relabels them, and adds per-head body-capture controls, budgets, alerts, a playground and a
+  per-project view of the rules that govern a repo. Body capture is on by default and can be
+  turned off per head.
 - **New commands:** `splice add <profile>`, `splice add-model`, `splice sessions`,
   `splice perf`, and `splice doctor --json` (a shareable, redacted report).
 - **New heads and modes:** `claude-muse` (a Meta Muse Code subscription); Claude head mode (wrap
   the default `claude` command); per-head system prompts, including a `strip` mode; custom
   compaction instructions; shared MCP hosting.
-- **A restart never costs a compaction.** `splice restart`, `splice upgrade` and the console's
-  restart let a compaction in flight finish first, within Claude Code's own 600 s cap, and its
-  answer is kept on disk for Claude Code's retry.
-- **Installing needs no GitHub account.** Every download is still checked against the release's
-  checksums, and build provenance is verified whenever `gh` is signed in.
+- **Restarts wait for compactions.** Unless you choose `--now`, `splice restart`, `splice upgrade`
+  and the console's restart wait for compactions in flight, within Claude Code's 600 s cap. A
+  finished answer whose client disconnected is kept on disk for its identical retry.
+- **Installing needs no GitHub account.** The downloaded release jar and launch shim are checked
+  against the release's checksums, and build provenance is verified whenever `gh` is signed in.
 - **Code mode is out of beta** and on by default for ChatGPT.
 - **Teams.** Sessions on different heads, say Claude and GPT-6 Astra, work one goal: each gets
   its role and the lead's address in its prompt, and the console's board shows their hand-offs,
-  activity and estimated cost per role.
-- **Every dollar figure is an API-rate estimate.** The status line reads `API est. $0.85`, a
+  activity and estimated cost per role slot.
+- **Every usage-cost dollar figure is an API-rate estimate.** The status line reads `API est. $0.85`, a
   budget's warning says "an estimated $2.50 in API cost", and a subscription head bills no token at
   all.
 
@@ -115,8 +116,8 @@ origin.
   compaction and is still streaming after that is cut, and Claude Code does not retry a turn cut
   after its text began. A compaction is let finish first (see Changed). `splice upgrade` waits until
   every head is idle unless you pass `--now`.
-- **splice is tested against Claude Code 2.1.285.** When a session runs a newer one, doctor,
-  `splice status` and the status line say so once.
+- **splice is tested against Claude Code 2.1.285.** When a session runs a newer one, doctor and
+  `splice status` report it; the status line warns once per session during the daemon's lifetime.
 - **Claude Code's header reads `API Usage Billing` on every head but `claude-splice`.** Claude Code
   only has names for Anthropic's plans and the clouds that sell Claude, so it prints that for any
   other service. It does not mean Anthropic is billing you: each head uses the plan, key or GPU you
@@ -220,8 +221,9 @@ origin.
   the prompt cache, and its perf row says so. The board shows each member by head (model, window,
   last turn, turns, tokens, estimated cost), the team chat (the `SendMessage` hand-offs between
   members that passed through splice, each message's text read from the sender's own transcript),
-  the members' activity sampled every 30 seconds, and lifetime turns, tokens and estimated dollars
-  per role and slot (`GET /api/teams/{id}/economics`). Teams live in `teams.json` under the state dir and
+  the members' activity sampled every 30 seconds, and lifetime turns and estimated cost per slot.
+  The economics API reports lifetime turns, tokens and estimated dollars per role and slot
+  (`GET /api/teams/{id}/economics`). Teams live in `teams.json` under the state dir and
   are archived, never deleted. A plain `claude` session can hold a slot, but its own messages
   don't pass through splice, so the chat shows only what it receives.
 - **The console can sign accounts in, switch, remove and relabel them, from one joined view
@@ -243,9 +245,10 @@ origin.
   seven-day, per-model weekly windows), window fields only and gated on `rate_limits_available`, so
   a follow-up console surface can read a session's real Claude-reported windows rather than
   splice's own derived quota.
-- **Console daemon table stakes: opt-in body capture, budgets, alerts and a playground (V4-133).**
-  `GET`/`PUT /api/heads/{head}/capture` reports and flips the TRACE knob per head — the capture
-  store V4-174 already built, not a second one — and always answers `restart_required: true`,
+- **Console daemon table stakes: body-capture controls, budgets, alerts and a playground (V4-133).**
+  Body capture is on by default and can be turned off per head. `GET`/`PUT /api/heads/{head}/capture`
+  reports and flips the TRACE knob per head — the capture store V4-174 already built, not a second
+  one — and always answers `restart_required: true`,
   because making the switch hot would touch the turn-serving path outside this change.
   `GET`/`PUT /api/budgets` holds per-head daily USD budgets with a `warn`/`block` action, defaulting
   the action from the new `budgetDefaultAction` knob when a row omits one. `GET`/`PUT /api/alerts`
@@ -576,15 +579,15 @@ origin.
   from, a lookup that broke once a restart started the daemon from the home directory. To serve
   another build, set `SPLICE_CONSOLE_HTML` to that file's absolute path. A relative or unreadable
   path serves a page that says so, never a silent fallback. The console scales with the window:
-  text is 16 px up to 1920 wide and grows to 20 px at 3840. A session's card says what it last said
-  or did, never a tool's output or a command, and a repo is named from its git remote, never its full path.
+  its root font size is 16 px through a 1920 px viewport and grows to about 20 px at 3840 px.
+  Session cards show recent words or tool activity rather than raw tool results or command input.
+  Repo labels prefer the git remote's name, with a folder-name fallback.
 - **A screenshot-heavy session on a large-window model keeps its images.** Claude Code keeps at
   most 100 images in a request, or 600 when it counts the session as 1M-context, and strips the
   oldest past that. splice now hands Claude Code the 1M form of any model whose configured window
   is at least 425,000 tokens, and scales the token counts it reports so Claude Code still compacts
   at the model's real window. Smaller models keep their names.
-- **Every dollar figure says it is an API-rate estimate, and the film's four models have rate
-  cards.** The status line printed a bare `$0.85`, and on a subscription head no token is billed at
+- **Usage-cost figures are API-rate estimates, and the film's four models have rate cards.** The status line printed a bare `$0.85`, and on a subscription head no token is billed at
   all, so it read as a charge. It now reads `API est. $0.85`, and a budget's refusal and warning say
   "an estimated $2.50 in API cost". Claude Code prices its own `total_cost_usd` at Anthropic's card
   whatever head it talks to, so that figure now shows only on a head whose upstream is Anthropic; on
@@ -604,23 +607,21 @@ origin.
   is priced turn by turn, so each request pays its own tier. The `kt-dollar-figure-single-source`
   wall keeps any other source from gluing a `$` to an amount, in any of its spellings:
   `"$$amount"`, `"\$" + amount` and `"\$%.2f"` (V4-240).
-- **A restart never costs a compaction (V4-216).** `splice restart`, `splice upgrade` and every
-  restart the daemon takes on itself (the console's restart button, an add's save) first wait for
-  the compactions in flight. The daemon keeps serving meanwhile and no head closes admission, so
-  ordinary turns never hold the restart. Each compaction is waited for until it reaches Claude
-  Code's 600 s cap, and the whole wait is held to the same 600 s; `--now` skips it. A finished
-  compaction answer is kept owner-only under `<state>/compactions/<head>/` for two hours at most, so
-  the byte-identical retry Claude Code sends after the restart is served from it with no second
-  upstream run.
+- **Restarts wait for compactions and keep their finished answers (V4-216).** `splice restart`,
+  `splice upgrade` and every restart the daemon takes on itself (the console's restart button,
+  an add's save) wait for compactions in flight before stopping. The daemon keeps serving during this wait and no head
+  closes admission, so ordinary turns do not hold the compaction wait. Each compaction is waited
+  for until it reaches Claude Code's 600 s cap, and the whole wait has the same cap; `--now` skips
+  it, and an unreadable in-flight count is reported before restarting without the wait. A finished
+  answer whose client disconnected is kept owner-only under `<state>/compactions/<head>/`. Its
+  identical retry can replay that recording for up to two hours without another upstream run;
+  expired recordings are swept at head start and when another answer is saved.
 - **Installing a release needs no GitHub account.** `install.sh` and `splice upgrade` used to stop
-  unless the GitHub CLI was installed and signed in. Now every asset is still checked against the
-  release's `sha256sums.txt`, and a mismatch still refuses. The build-provenance attestation is
+  unless the GitHub CLI was installed and signed in. Now the release jar and launch shim are still
+  checked against the release's `sha256sums.txt`, and a mismatch still refuses. The build-provenance attestation is
   verified whenever `gh` is signed in, and a failed attestation still refuses. Without a signed-in
   `gh` the install goes ahead and prints the `gh attestation verify` command for each installed
   file. `splice doctor` reports a missing or signed-out `gh` as information, not a warning.
-  The tracker remembers at most 4096 sessions and forgets the oldest first, so a daemon that
-  lives for months never grows on session ids.
-  Its tests render the warning from `GATEWAY_VERSION`, so the version bump does not turn them red.
 - **Code mode is out of beta and on by default for ChatGPT.** A `chatgpt-oauth` +
   `openai-responses` provider gets the bundled JavaScript runner and orchestration guidance with
   no config line; `code_mode = false` still turns it off, and every other provider shape stays off.
@@ -676,20 +677,20 @@ origin.
   conversation instead of the script's output (103 of 6,877 WebSocket rounds chained). A round now
   sends only what is new: the `exec` output and any context note after it. Measured on `claudex`
   after the fix: 55 of 58 rounds chained, none closed for size (V4-446).
-- **A GPT session compacts while there is still room for the compaction.** Claude Code decides
-  when to compact from the token counts splice reports, at a share of the window it is told. On a
-  GPT head that point left too little of the model's real window for the compaction itself: the
-  conversation's growth since the last count, the compaction prompt and the summary it writes.
-  splice now scales the counts it reports so that Claude Code compacts at the model's window less a
-  reserve measured from 1,420 successful GPT compactions: the p95 growth through the compaction
-  prompt plus the p99 length of the summary, per model. A row's `compaction_reserve_tokens`
-  overrides it, and a model the audit did not sample keeps its old scaling. When one turn still
-  grows past that point, splice answers `prompt is too long` with HTTP 400 before the answer
-  starts, which is the reply Claude Code compacts on, instead of a failure inside an answer already
-  under way. It refuses only on a size the provider measured. A conversation splice has not measured
-  since it started, one whose earlier part changed, or one whose new part carries an image or file
-  goes to the provider as before. A compaction or a first message is refused only when its measured
-  size alone exceeds the window (V4-446).
+- **GPT compaction thresholds reserve model-specific headroom.** Claude Code decides when to
+  compact from the token counts splice reports and the window it is told. splice now scales
+  input counts to target the model's window less a reserve calibrated from an audit containing
+  1,420 successful GPT compactions. The reserve combines growth through the compaction prompt
+  with summary-generation p99. Clean growth uses p95 where sampled; sparse or absent cohorts use
+  pooled generation or median growth, including GPT-5.5's GPT-5 family calibration. A row's
+  `compaction_reserve_tokens` overrides the total. Models without calibration or an explicit
+  override keep their old scaling. For ordinary continuations with a preserved provider-measured
+  prefix, splice adds a conservative upper bound for appended text. If that bound exceeds the
+  window minus reserve, it returns `prompt is too long` with HTTP 400 before streaming starts.
+  Unmeasured conversations, changed earlier input or other request properties, and new image or
+  file input go upstream as before. Compactions and exchanges with no assistant message yet are
+  refused only when the measured prefix alone exceeds the window. These empirical reserves do
+  not cap generated output or eliminate every upstream overflow (V4-446).
 - **`splice status` no longer calls a head ready when the daemon could not build it.** The table
   judged each row by its credential and its wrapper alone, so a head skipped at boot read "ready"
   while `/health` counted it failed. The row now reads "not running" with the daemon's own boot
@@ -781,20 +782,20 @@ origin.
   discovers among them. A `rates` line you write on the row wins, and a model OpenRouter lists no price
   for, such as its `auto` router, whose price depends on the route it picks, still reads `no rate card`
   (V4-438).
-- **A model a provider publishes while the daemon runs joins its heads within the hour.** Each
-  head's provider was asked for its models once, at daemon start, so `gpt-6.1-sol`, released on
-  Sep 29 while the daemon ran, reached no picker until a restart. splice now asks every head's
-  provider again each hour and keeps the answer on disk. A head's `/v1/models`, the launch picker,
-  the status line and a team board's rates read the new list with no restart. A refresh that fails
-  keeps the last list, and `daemon.log` says so (V4-440).
-- **A Codex model the backend runs code-mode-only gets `exec` without an edit.** `gpt-6.1-sol` shipped
-  marked `code_mode_only` in the ChatGPT backend's model list, but required a manual addition to
-  `code_mode_models` to enable the runner. New releases no longer depend on that copied list.
-  splice now reads each model's `tool_mode` from that list at start and every hour after, keeps it
-  for the next start, and checks it on every turn. The built-in list is gone; `code_mode_models` adds to what the backend marks and
-  is the way to name a model the backend hides from its list, such as `codex-auto-review`. With no list
-  known at start (no answer and none kept), only `code_mode_models` runs code mode and the head's log says
-  so once (V4-441).
+- **Provider model rosters refresh hourly while the daemon runs.** Each head's provider was
+  asked for its models only at daemon start. splice now asks again each hour. Models admitted by
+  the provider's discovery filters reach the head's `/v1/models`, newly launched pickers, the
+  status line and team economics without a restart. Failed refreshes keep the last list and are
+  logged. Successful answers are also saved for the next start; a save failure is logged without
+  discarding the live answer (V4-440).
+- **Backend code-mode eligibility no longer needs a copied model list.** With code mode enabled,
+  models the ChatGPT backend marks `code_mode_only` get `exec` without a manual model-list edit.
+  splice reads each model's `tool_mode` at start and on hourly roster refreshes, saves it for the
+  next start, and checks the current roster on every turn. The built-in list is gone;
+  `code_mode_models` adds to what the backend marks, including models absent from its list.
+  With no list known at start (no answer and none kept), only explicit `code_mode_models` entries
+  run code mode, and the head's log says so once. `code_mode = false` still disables the runner
+  (V4-441).
 - **`splice restart` no longer waits out systemd's restart delay.** Where the daemon runs under its
   systemd unit, `splice restart` stopped the daemon itself and then asked systemd to start the unit
   while it was still shutting down, so the start did nothing and the daemon came back only after the

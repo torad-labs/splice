@@ -58,11 +58,11 @@ For example, ask one session to implement a change and the other to review it. T
 
 Each named backend connection is called a **head**. You choose which heads to configure and launch; the commands above do not configure providers for you.
 
-**In [v0.4.0](https://github.com/torad-labs/splice/releases/tag/v0.4.0):** a launched session holds a turn key, never the management key; `splice upgrade` with rollback; account pools with automatic switching on the ChatGPT, Grok, Kimi and Muse heads; first-class local models; and [code mode](#code-mode-for-chatgpt) on by default for ChatGPT. Coming from 0.3.x? Read [the upgrade notes](CHANGELOG.md#upgrading-from-03x) first.
+**In [v0.4.0](https://github.com/torad-labs/splice/releases/tag/v0.4.0):** a launched session holds a turn key, never the management key; `splice upgrade` with rollback; account pools with automatic switching on the ChatGPT, Grok, Kimi and Muse heads, while Claude logins are switched manually; first-class local models; and [code mode](#code-mode-for-chatgpt) on by default for ChatGPT. Coming from 0.3.x? Read [the upgrade notes](CHANGELOG.md#upgrading-from-03x) first.
 
 ## Install
 
-The release installer checks your prerequisites, verifies every download against the release's checksums, and finishes with `splice doctor`. No GitHub account is needed.
+The release installer checks your prerequisites, verifies the downloaded jar and launch shim against the release's checksums, and finishes with `splice doctor`. No GitHub account is needed.
 
 ### Requirements
 
@@ -559,7 +559,7 @@ A single tool result larger than the runner's 64 KiB text frame is truncated at 
 
 Reasons to walk away:
 
-- **Claude Code can move under it.** A Claude Code update can break splice at any time. The version handshake makes the break loud instead of corrupting a session mid-turn.
+- **Claude Code can move under it.** A Claude Code update can break splice at any time. The version handshake refuses a mismatched daemon at launch; doctor and the status line warn about a newer Claude Code version.
 - **Single-user by design.** There is no multi-user story, remote access, or TLS. A team wanting a shared model gateway should run one built for that job (LiteLLM, for example).
 - **A JVM daemon.** Java 21 is a hard dependency, and the daemon holds a bounded 2 GB heap while serving.
 - **A one-person project.** The release gates are strict: every release is checksummed, provenance-attested, and installed hermetically in CI before it ships. It is still one person.
@@ -616,7 +616,7 @@ Each wrapper is an `argv[0]` symlink to the shared launch shim `app/src/main/dis
 
 Compaction uses the session's own model and reasoning effort and preserves its request shape. A stable prompt-cache key and unchanged prefixes support cache reuse, but the actual cache result depends on the backend and workload. Opaque reasoning replay is a separate, default-off trade-off described [below](#the-cache-replay-experiment).
 
-A client disconnect during compaction detaches that client rather than cancelling the upstream work. A byte-identical retry can follow the running turn or receive its recorded result without starting a second upstream turn. This is compaction recovery, not a promise to replay arbitrary tool executions. Stopping a head ends compactions still running on it. `splice restart`, `splice upgrade` and the console's restart wait for them first, each until Claude Code's own 600 s cap, and a finished answer is kept on disk (two hours at most) so the retry after the restart is served without a second upstream turn.
+A client disconnect during compaction detaches that client rather than cancelling the upstream work. A byte-identical retry can follow the running turn or receive its recorded result without starting a second upstream turn. This is compaction recovery, not a promise to replay arbitrary tool executions. Stopping a head ends compactions still running on it. Unless you choose `--now`, `splice restart`, `splice upgrade` and the console's restart wait for compactions first, within Claude Code's 600 s cap. An unreadable in-flight count is reported before restarting without the wait. A finished answer whose client disconnected is kept on disk for identical retries for up to two hours without another upstream turn. Expired recordings are swept at head start and when another answer is saved.
 
 A `context_window` edit in `splice.toml` needs no restart. The running daemon re-reads the windows (a model's `context_window`, `extra_windows`, `window_rules`, `default_context_window` and a head's `context_window`) when the file changes. Running sessions compact at the new window through usage scaling, and the next launch plants it. A local runtime is asked about a new window first and a window it refuses is not applied; a file that does not parse keeps the windows in force. The daemon log names what moved, or why nothing did. Every other key is still read only at boot, and `splice doctor` reports the file stale until `splice restart`.
 

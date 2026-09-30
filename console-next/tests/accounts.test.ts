@@ -17,12 +17,15 @@ import {
   SELECTOR_ORDER_TEXT,
   accountState,
   accountsFromWire,
+  canRefresh,
   exclusionText,
   isExcluded,
+  isServable,
   nearestOverall,
   nearestWindow,
   nextRuleOf,
   readAgeText,
+  refusalText,
   resetText,
   sevenDayUsed,
   windowLengthText,
@@ -411,5 +414,28 @@ describe('a refused credential on the wire', () => {
 
     expect(carried?.refusal).toBe(SENTENCE);
     expect(older?.refusal).toBeNull();
+  });
+});
+
+describe('an account the daemon cannot load', () => {
+  const REFUSED = "'linked' is a symbolic link, and splice does not load a linked credential";
+
+  test('one with a credential and no refusal is servable, a missing file or a refusal is not', () => {
+    expect(isServable(account())).toBe(true);
+    expect(isServable(account({ credential_present: false }))).toBe(false);
+    expect(isServable(account({ refusal: REFUSED }))).toBe(false);
+    expect(isServable(account({ refusal: '  ' }))).toBe(true);
+    expect(refusalText(account({ refusal: ` ${REFUSED} ` }))).toBe(REFUSED);
+    expect(refusalText(account({ refusal: null }))).toBeNull();
+  });
+
+  test('a head is refreshed only while the account that serves it can be loaded', () => {
+    const serving = account({ label: 'a', selected: true });
+    const refused = account({ label: 'b', credential_present: false, refusal: REFUSED });
+    expect(canRefresh([])).toBe(true);
+    expect(canRefresh([serving, refused])).toBe(true);
+    expect(canRefresh([{ ...serving, selected: false }, { ...refused, selected: true }])).toBe(false);
+    expect(canRefresh([account({ credential_present: false })])).toBe(false);
+    expect(canRefresh([account()])).toBe(true);
   });
 });

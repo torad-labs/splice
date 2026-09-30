@@ -1,10 +1,13 @@
 // A Fleet card rendered to markup: what it says in each state.
 import { DndContext } from '@dnd-kit/core';
 import { SortableContext } from '@dnd-kit/sortable';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router';
 import { describe, expect, test } from 'vitest';
 import type { FleetCard } from '../src/lib/fleet';
+import type { AccountRow } from '../src/types/accounts';
+import { AccountRowView } from '../src/pages/fleet/AccountRows';
 import { FleetCardView } from '../src/pages/fleet/FleetCard';
 
 const card = (over: Partial<FleetCard> = {}): FleetCard => ({
@@ -50,5 +53,40 @@ describe('a fleet card', () => {
   });
   test('a note stands where there is no window', () => {
     expect(render(card({ line: { kind: 'note', text: 'The runtime is not answering on :8099.' }, tone: 'idle', state: 'Runtime off' }))).toContain('The runtime is not answering on :8099.');
+  });
+});
+
+const acct = (over: Partial<AccountRow> = {}): AccountRow => ({
+  kind: 'chatgpt-oauth', label: 'work', single_login: false, credential_path: null, primary: false, selected: false, available: true,
+  pinned: false, next_target: false, credential_present: true, windows: [], heads: ['claudex'], ...over,
+});
+const row = (account: AccountRow) =>
+  renderToStaticMarkup(
+    <QueryClientProvider client={new QueryClient()}>
+      <ul>
+        <AccountRowView account={account} now={1_800_000_000_000} pooled />
+      </ul>
+    </QueryClientProvider>,
+  );
+
+describe('an account row', () => {
+  const REFUSED = "'work' is a symbolic link, and splice does not load a linked credential; remove the link and sign in again";
+  test('a loadable account offers Switch, and says nothing of a refusal', () => {
+    const html = row(acct());
+    expect(html).toContain('Switch to this one');
+    expect(html).not.toContain('role="alert"');
+  });
+  test('a refused account prints the daemon\'s sentence and offers no Switch, but keeps Rename and Remove', () => {
+    const html = row(acct({ credential_present: false, refusal: REFUSED }));
+    expect(html).toContain(REFUSED.replace(/'/g, '&#x27;'));
+    expect(html).not.toContain('Switch to this one');
+    expect(html).toContain('Rename');
+    expect(html).toContain('Remove');
+    expect(html).not.toContain('Its login file is gone');
+  });
+  test('an account whose login file is gone offers no Switch and says so', () => {
+    const html = row(acct({ credential_present: false }));
+    expect(html).not.toContain('Switch to this one');
+    expect(html).toContain('Its login file is gone');
   });
 });

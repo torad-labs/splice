@@ -48,6 +48,7 @@ export const D = {
   refreshing: 'Refreshing…',
   refreshed: 'Signed in again with the saved login.',
   refreshRefused: 'It did not refresh.',
+  noCredential: 'Its login file is gone. Sign in again to use it.',
   unsupported: 'This splice version cannot do that.',
   notFound: 'No head has that name.',
   readingHead: 'Reading the plan…',

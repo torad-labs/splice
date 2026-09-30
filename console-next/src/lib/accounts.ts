@@ -203,6 +203,17 @@ export function refusalText(account: AccountRow): string | null {
   return text === '' ? null : text;
 }
 
+/** True when the daemon can load this account's credential: a file is there and no link refuses it.
+ *  Switching to one that cannot be loaded pins it and serves nothing, and refreshing it fails on the missing file. */
+export const isServable = (account: AccountRow): boolean => account.credential_present && refusalText(account) === null;
+
+/** Whether a head's sign-in can be refreshed: the account that serves it must be loadable.
+ *  With no account pool there is one login and the head's own state judges it. */
+export function canRefresh(pool: readonly AccountRow[]): boolean {
+  const serving = pool.find((account) => account.selected === true) ?? (pool.length === 1 ? pool[0] : undefined);
+  return serving === undefined || isServable(serving);
+}
+
 /** The exclusion's reason, in the daemon's own words where it sent any. */
 export function exclusionText(account: AccountRow): string {
   const reason = account.auth_exclusion_reason ?? '';

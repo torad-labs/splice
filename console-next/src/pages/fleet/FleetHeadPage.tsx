@@ -1,6 +1,6 @@
 import { Link, useParams, useSearchParams } from 'react-router';
 import { useAccounts, useAuth, useHealth, useHeads, useSessions, useUsage } from '../../api/queries';
-import { poolOf } from '../../lib/accounts';
+import { canRefresh, poolOf } from '../../lib/accounts';
 import { fleetCard } from '../../lib/fleet';
 import { localInstantText } from '../../lib/heads';
 import { planWindows } from '../../lib/usage';
@@ -12,6 +12,7 @@ import { D } from './copy';
 import { LogTab } from './LogTab';
 import { ModelsTab } from './ModelsTab';
 import { FleetFix } from './FleetFix';
+import { HeadKey } from './HeadKey';
 import { RefreshSignIn } from './RefreshSignIn';
 import { WindowBars } from './WindowBars';
 import './head.css';
@@ -95,7 +96,8 @@ export function FleetHeadPage() {
                   <Button small><Plus />{D.addAccount}</Button>
                 </SignIn>
               ) : null}
-              {OAUTH.has(head.authKind) ? <RefreshSignIn head={head.key} /> : null}
+              {OAUTH.has(head.authKind) && canRefresh(pool) ? <RefreshSignIn head={head.key} /> : null}
+              {head.authKind === 'api-key' ? <HeadKey head={head.key} /> : null}
             </>
           )}
         </div>

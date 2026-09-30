@@ -2,7 +2,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { useState } from 'react';
 import { failureText } from '../../api/client';
 import { isPendingRoute, useRelabelAccount, useRemoveAccount, useSwitchAccount, useUnpinAccount } from '../../api/auth';
-import { accountState, isExcluded, windowLengthText, windowUsedText } from '../../lib/accounts';
+import { accountState, isExcluded, isServable, refusalText, windowLengthText, windowUsedText } from '../../lib/accounts';
 import type { AccountRow } from '../../types/accounts';
 import { Button, Close } from '../../ui';
 import { D } from './copy';
@@ -37,7 +37,8 @@ export function AccountRowView({ account, now, pooled }: { account: AccountRow; 
     account.primary ? D.primary : null,
   ] as (string | null)[];
   const shown = marks.filter((mark): mark is string => mark !== null);
-  const canSwitch = pooled && label !== null && account.selected !== true && !isExcluded(account, now) && head !== '';
+  const refusal = refusalText(account);
+  const canSwitch = pooled && label !== null && account.selected !== true && !isExcluded(account, now) && isServable(account) && head !== '';
 
   return (
     <li className="account">
@@ -49,6 +50,8 @@ export function AccountRowView({ account, now, pooled }: { account: AccountRow; 
         ))}
         <span className="windows-text">{windowsText(account)}</span>
       </div>
+      {refusal === null ? null : <p className="hint alert" role="alert">{refusal}</p>}
+      {refusal === null && !account.credential_present ? <p className="hint">{D.noCredential}</p> : null}
       {label === null ? null : (
         <div className="account-acts">
           {canSwitch ? <Button small disabled={pick.isPending} onClick={() => pick.mutate({ head, label }, { onSuccess: settle, onError: fail })}>{D.switch}</Button> : null}

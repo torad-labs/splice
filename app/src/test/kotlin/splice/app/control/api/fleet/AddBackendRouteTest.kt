@@ -242,8 +242,13 @@ class AddBackendRouteTest {
             assertEquals(HttpStatusCode.OK, put("/api/keys/FW_API_KEY", """{"value":"k"}""").status)
             val verified = post("/api/add/$id/verify")
             assertEquals(HttpStatusCode.OK, verified.status, verified.bodyAsText())
-            val rows = body(verified)["checks"]!!.jsonArray.map { it.jsonObject["ok"]!!.jsonPrimitive.content }
-            assertEquals(listOf("true", "true", "true"), rows)
+            val rows = body(verified)["checks"]!!.jsonArray.map {
+                it.jsonObject["name"]!!.jsonPrimitive.content to it.jsonObject["ok"]!!.jsonPrimitive.content
+            }
+            assertEquals(
+                listOf("credential" to "true", "base url" to "true", "models" to "true", "windows" to "true"),
+                rows,
+            )
 
             inFlight = GateSlot("b2e4d8f1 gpt-6-sol", true, GatePhase.STREAMING, TWO_MINUTES_MS, 0)
             val saved = post("/api/add/$id/save")

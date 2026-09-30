@@ -7,7 +7,8 @@
 // Every write answers the saved team. Archiving is a flag on a replace and a slot's standing instructions are a
 // field of its slot, so both are a replace of the whole composition (`teamWriteOf`): a replace writes each slot
 // whole, and a binding the body leaves null is KEPT by the daemon (TeamRules.carried), so an unbind is its own write.
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useRef } from 'react';
 import { request } from './client';
 import { keys, read } from './queries';
 import type {
@@ -35,21 +36,51 @@ export const teamActivityPath = (id: string, day: TeamDay): string => `${teamPat
 
 // ── reads ────────────────────────────────────────────────────────────────────────────────────────
 
-/** What a day's panels do beyond the default read. Today follows the poll AND re-reads on every mount: the app's 5 s staleTime
- *  would otherwise show the chat a page left a few seconds ago, empty, until the next poll. An older day is read once. */
+/** What a day's panels do beyond the default read: today follows the poll, an older day is read once. A mount of today's panels also
+ *  reads again (see [rereadOnMount]), so the option that would do it for a cached answer only is left off: it would dedupe onto a
+ *  read still in flight from the last mount. `staleTime: 0` keeps a change of day to today re-reading a cached answer. */
 const panelPolicy = (live: boolean) =>
-  live ? { refetchInterval: TEAM_PANELS_POLL_MS, refetchOnMount: 'always' as const } : { refetchInterval: false as const };
+  live ? { refetchInterval: TEAM_PANELS_POLL_MS, refetchOnMount: false as const, staleTime: 0 } : { refetchInterval: false as const };
+
+/** Whether a read of this key already existed, cached or in flight, before this mount subscribed: then it may predate what the page
+ *  is about to show, and the mount reads again. A first visit has no such read, and its own initial read is the mount's. */
+export const heldBefore = (client: QueryClient, key: readonly unknown[]): boolean => client.getQueryState(key) !== undefined;
+
+/** A mount of today's panels issues a read of its own: the one already in flight, if any, is cancelled, because it began before this
+ *  mount and a hand-off may have landed since, and TanStack Query would otherwise answer the mount with it. */
+export function rereadOnMount(client: QueryClient, key: readonly unknown[], held: boolean, live: boolean): void {
+  if (!live || !held) return;
+  const filter = { queryKey: key, exact: true } as const;
+  // cancelRefetch alone replaces a read only when the query already holds data; one still awaiting its first answer is cancelled here.
+  void client.cancelQueries(filter).then(() => client.refetchQueries(filter, { cancelRefetch: true }));
+}
+
+function useRereadOnMount(key: readonly unknown[], live: boolean): void {
+  const client = useQueryClient();
+  const held = useRef<boolean | null>(null);
+  if (held.current === null) held.current = heldBefore(client, key);
+  // once per mount: the key and the day are the page's own, and a later change of either is a change of read, not a mount
+  useEffect(() => rereadOnMount(client, key, held.current === true, live), []);
+}
 
 /** The day's messages between the team's sessions, text read on demand from the sender's transcript. `live` is
  *  today: it follows the poll. An older day is read once. */
 export const teamChatOptions = (id: string | null, day: TeamDay, live: boolean) =>
   read<TeamChatPayload>([...teamPanelsKey, 'chat'], teamChatPath(id ?? '', day), { enabled: id !== null, ...panelPolicy(live) });
-export const useTeamChat = (id: string | null, day: TeamDay, live: boolean) => useQuery(teamChatOptions(id, day, live));
+export const useTeamChat = (id: string | null, day: TeamDay, live: boolean) => {
+  const options = teamChatOptions(id, day, live);
+  useRereadOnMount(options.queryKey, live);
+  return useQuery(options);
+};
 
 /** The day's sampled activity labels (about one per 30 s while a session works). */
 export const teamActivityOptions = (id: string | null, day: TeamDay, live: boolean) =>
   read<TeamActivityPayload>([...teamPanelsKey, 'activity'], teamActivityPath(id ?? '', day), { enabled: id !== null, ...panelPolicy(live) });
-export const useTeamActivity = (id: string | null, day: TeamDay, live: boolean) => useQuery(teamActivityOptions(id, day, live));
+export const useTeamActivity = (id: string | null, day: TeamDay, live: boolean) => {
+  const options = teamActivityOptions(id, day, live);
+  useRereadOnMount(options.queryKey, live);
+  return useQuery(options);
+};
 
 /** Lifetime tallies per role and slot. */
 export const useTeamEconomics = (id: string | null) =>

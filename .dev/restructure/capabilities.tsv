@@ -3226,3 +3226,6 @@ integrations/providers/codex/src/main/kotlin/splice/provider/codex/branch/CodexC
 tools/gate/src/lib/landing.ts	10d978b0a8362da0cd83a28c05cd217ea4a08590dfa5e5ba7f75cc90f6bae9d9	created		Install verdict: every workflow on a sha, latest run per workflow and event, only success or skipped is yes (Marlin, Sep 30)
 tools/gate/src/commands/landing.ts	d5ba2d3a8bf8c5454d1ccfeed7d79575cfbfe78540be8f395820347f3f9836a3	created		gate landing verb: the install verdict read from the Actions runs listing on stdin
 tools/gate/test/landing.test.ts	17e5153216e66f57f8ef5ba26fe303b227584ed5fa46125616195ebfa8779ed1	created		Install verdict net: running, red, cancelled, rerun, event and foreign-sha arms
+console-next/src/app/StalePage.tsx	f8643a0228d02a9070263c6fcc79e579f5901c876e5f3149fdeb44b9368a88ee	created		V4-444 item 25, the reload offer shown when the page the daemon serves has changed since the tab loaded
+console-next/src/lib/stale-page.ts	6026ec1139a8049449de61f716fb4ef43085f77a849d0dab15615201f3381fca	created		V4-444 item 25, compares the loaded page with the one the daemon now serves
+console-next/tests/stale-page.test.ts	c3dbd91cc6900903af7c7a8b6ec75f100140ee4684c80efb5a5fe8a8cc92efa3	created		V4-444 item 25, vitest for the stale-page comparison and its reload offer

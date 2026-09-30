@@ -104,6 +104,14 @@ private val DISCLAIMERS = listOf(
     "sponsored by",
     "no warranty",
     "legally unsettled",
+    "can break splice at any time",
+    "Anthropic can change what it sends at any",
+    "nothing here should be read",
+    "NOT a vendor-documented",
+    "EXPERIMENTAL OPT-IN",
+    "not a guarantee of better output",
+    "so no environment-isolation claim is made",
+    "what a pattern removes is the operator's to own",
 )
 private val DISCLAIMER_FILES = listOf(README, CHANGELOG, EXAMPLE_TOML, PRODUCT_BRIEF, INSTALL)
 private val CONSOLE_TEXT = listOf(".ts", ".tsx")

@@ -66,18 +66,26 @@ internal class UpgradeLayout(env: EnvReader, installLayout: InstallLayout = Inst
      *  jar AND shim under its version so rollback has somewhere to go. The live shim is the one that
      *  pairs with that jar (a shim and a jar are version-locked by the launch handshake), local edit
      *  included: the pristine bytes are gone, and a rollback that copied nothing failed on the
-     *  missing file (review 2026-09-14). */
-    fun ensureCurrentRecorded() {
-        if (Files.isSymbolicLink(current)) return
+     *  missing file (review 2026-09-14). With no pristine copy, preserve those unknown bytes
+     *  separately too, edited or not; return that saved path for the upgrade's explanation. */
+    fun ensureCurrentRecorded(): Path? {
+        if (Files.isSymbolicLink(current)) return null
         val dir = versionDir(installedVersion())
         Files.createDirectories(dir)
         if (!Files.exists(dir.resolve(JAR_ASSET))) {
             Files.copy(liveJar, dir.resolve(JAR_ASSET), StandardCopyOption.COPY_ATTRIBUTES)
         }
-        if (!Files.exists(dir.resolve(SHIM_ASSET)) && Files.exists(liveShim)) {
+        val preserved = if (!Files.exists(dir.resolve(SHIM_ASSET)) && Files.exists(liveShim)) {
+            val saved = dir.resolve(EDITED_SHIM)
+            // A retry must not overwrite a copy a previous recording attempt already kept.
+            if (!Files.exists(saved)) Files.copy(liveShim, saved, StandardCopyOption.COPY_ATTRIBUTES)
             Files.copy(liveShim, dir.resolve(SHIM_ASSET), StandardCopyOption.COPY_ATTRIBUTES)
+            saved
+        } else {
+            null
         }
         point(current, dir.fileName)
+        return preserved
     }
 
     /** Symlink swap: a sibling temp link, then ONE rename — the name never dangles, and a regular

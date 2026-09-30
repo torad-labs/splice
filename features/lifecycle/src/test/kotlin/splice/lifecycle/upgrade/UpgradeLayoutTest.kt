@@ -3,6 +3,7 @@
 package splice.lifecycle.upgrade
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -16,6 +17,22 @@ class UpgradeLayoutTest {
     private fun layout(home: Path) = UpgradeLayout(
         EnvReader { name -> if (name == "SPLICE_SHARE_DIR") home.resolve("share").toString() else null },
     )
+
+    @Test
+    fun `recording retries preserve an earlier launcher copy without replacing it`(@TempDir home: Path) {
+        val layout = layout(home)
+        val dir = Files.createDirectories(layout.versionDir(layout.installedVersion()))
+        Files.writeString(layout.liveJar, "synthetic jar")
+        Files.writeString(layout.liveShim, "live launcher")
+        val saved = dir.resolve(EDITED_SHIM)
+        Files.writeString(saved, "earlier preserved launcher")
+        assertEquals(saved, layout.ensureCurrentRecorded())
+        assertEquals("earlier preserved launcher", Files.readString(saved))
+        assertEquals("live launcher", Files.readString(dir.resolve(SHIM_ASSET)))
+        assertNull(layout.ensureCurrentRecorded())
+        assertEquals("earlier preserved launcher", Files.readString(saved))
+        assertEquals("live launcher", Files.readString(layout.liveShim))
+    }
 
     /** Another upgrade's staging directory is its work in progress, not debris (review 2026-09-14). */
     @Test

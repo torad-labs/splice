@@ -89,7 +89,12 @@ internal class UpgradeCommand(
             output.line("  ${"version".padEnd(UPGRADE_PAD)} $version is already installed")
             return true
         }
-        layout.ensureCurrentRecorded()
+        layout.ensureCurrentRecorded()?.let { saved ->
+            output.line(
+                "  a flat install's live launcher is kept as splice-launch.edited, " +
+                    "because splice cannot tell whether it was edited; saved at $saved",
+            )
+        }
         val dir = layout.versionDir(version)
         layout.discard(dir)
         if (!Files.isDirectory(staging)) {

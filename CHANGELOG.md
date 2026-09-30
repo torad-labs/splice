@@ -324,8 +324,9 @@ origin.
   runs doctor. The launch shim is always refreshed with the release (it is version-locked to the
   jar by the launch handshake, so a kept old shim could launch nothing); a shim edited since its
   recorded release was installed is saved beside that release as `splice-launch.edited`, with
-  its diff printed; a flat install's live
-  shim is recorded with its jar so a rollback has one to restore. The restart is judged by what
+  its diff printed. A flat install's live launcher is kept as `splice-launch.edited`, because
+  splice cannot tell whether it was edited. Its live bytes are also recorded with its jar so a
+  rollback has one to restore. The restart is judged by what
   `/health` serves afterwards, never by an exit code: the old CLI no longer polls for its own
   version and calls a good restart a failure, a loaded-but-inactive user unit (a daemon started by
   hand) takes the stop-and-start path instead of restarting a JVM that exits on the daemon lock,

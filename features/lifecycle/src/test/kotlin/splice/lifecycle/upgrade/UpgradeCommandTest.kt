@@ -305,16 +305,23 @@ class UpgradeCommandTest {
     fun `a flat install's shim is recorded, refreshed, and restored by rollback - review 2026-09-14`(
         @TempDir home: Path,
     ) {
-        flatInstall(home)
-        val base = release(home)
-        val (ok, out) = captured { command(home, base).upgrade(listOf("--to", "v9.9.9", "--now")) }
-        assertTrue(ok, out)
-        assertEquals(NEWER, read(home, "splice-launch"))
-        assertEquals(STOCK, read(home, "releases/$INSTALLED/splice-launch"), "the flat shim was recorded with its jar")
-        assertTrue(out.contains("refreshed from the release") && !out.contains("saved at"), out)
-        val (back, out2) = captured { command(home, base).upgrade(listOf("--rollback", "--now")) }
-        assertTrue(back, out2)
-        assertEquals(STOCK, read(home, "splice-launch"), "the recorded shim came back with its jar")
+        listOf(STOCK, PATCHED).forEachIndexed { index, shim ->
+            val install = Files.createDirectories(home.resolve("case-$index"))
+            val intact = flatInstall(install, shim)
+            val base = release(install)
+            val (ok, out) = captured { command(install, base).upgrade(listOf("--to", "v9.9.9", "--now")) }
+            assertTrue(ok, out)
+            assertEquals(NEWER, read(install, "splice-launch"))
+            assertEquals(shim, read(install, "releases/$INSTALLED/splice-launch"))
+            assertEquals(shim, read(install, "releases/$INSTALLED/splice-launch.edited"))
+            assertTrue(out.contains("a flat install's live launcher is kept as splice-launch.edited"), out)
+            assertTrue(out.contains("cannot tell whether it was edited"), out)
+            val (back, backOut) = captured { command(install, base).upgrade(listOf("--rollback", "--now")) }
+            assertTrue(back, backOut)
+            assertEquals(shim, read(install, "splice-launch"))
+            assertEquals(shim, read(install, "releases/$INSTALLED/splice-launch.edited"))
+            assertIntact(intact)
+        }
     }
 
     /** The restart is judged by what /health serves afterwards, never by an exit code: a unit whose

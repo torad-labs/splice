@@ -292,7 +292,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeActivation.kt" to mapOf("Files.copy(" to 1),
     "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeCommand.kt" to mapOf("Files.move(" to 1),
     "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeLayout.kt" to mapOf(
-        "Files.copy(" to 2,
+        "Files.copy(" to 3,
         "Files.createSymbolicLink(" to 1,
         "Files.move(" to 1,
     ),

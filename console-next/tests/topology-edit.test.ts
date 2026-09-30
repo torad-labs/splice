@@ -27,6 +27,21 @@ describe('reading the document', () => {
   });
 });
 
+describe('a head with model_slots and no models list', () => {
+  const slotted = { heads: { openrouter: { provider: 'openrouter', model_slots: { opus: 'anthropic/claude-opus-5', sonnet: 'anthropic/claude-sonnet-5' } } } };
+  test('its tiers are text fields of their own table, and an edit changes one path', () => {
+    const table = topologyTables(slotted).find((entry) => entry.path === 'heads.openrouter.model_slots');
+    expect(table?.fields.map((field) => [field.key, field.kind, field.value])).toEqual([
+      ['opus', 'text', 'anthropic/claude-opus-5'], ['sonnet', 'text', 'anthropic/claude-sonnet-5'],
+    ]);
+    const next = setAtPath(slotted, 'heads.openrouter.model_slots.sonnet', 'other/model');
+    expect(changedPaths(slotted, next)).toEqual(['heads.openrouter.model_slots.sonnet']);
+  });
+  test('the raw view writes it as its own table under the head', () => {
+    expect(toToml(slotted)).toContain('[heads.openrouter.model_slots]\nopus = "anthropic/claude-opus-5"');
+  });
+});
+
 describe('editing', () => {
   test('a write returns a new document and leaves the old one as it was', () => {
     const before = JSON.stringify(doc);

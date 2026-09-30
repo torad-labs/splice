@@ -122,6 +122,7 @@ export const dispositions: readonly Disposition[] = [
   { kind: 'topology', name: 'heads.*.claude.isolate', disposition: 'editable' },
   { kind: 'topology', name: 'heads.*.context_window', disposition: 'editable' },
   { kind: 'topology', name: 'heads.*.discovery_prefix', disposition: 'editable' },
+  { kind: 'topology', name: 'heads.*.model_slots.*', disposition: 'editable' },
   { kind: 'topology', name: 'heads.*.models[].id', disposition: 'editable' },
   { kind: 'topology', name: 'heads.*.models[].slot', disposition: 'editable' },
   { kind: 'topology', name: 'heads.*.overrides.*', disposition: 'editable' },

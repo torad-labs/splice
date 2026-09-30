@@ -124,6 +124,16 @@ describe('the topology validator', () => {
     expect([...SHARE_NAMES].sort()).toEqual(daemonShareNames().sort());
   });
 
+  test("takes a head's model_slots under exactly the tiers the daemon knows, read from its Kotlin", () => {
+    const kotlin = fromRepo('core/src/main/kotlin/splice/core/topology/Topology.kt');
+    const listed = /val headModelSlots = setOf\(([^)]*)\)/.exec(kotlin)?.[1] ?? '';
+    const tiers = [...listed.matchAll(/"([^"]+)"/g)].map((match) => match[1] ?? '');
+    expect(tiers.length).toBeGreaterThan(0);
+    for (const tier of tiers) expect(validateTopology({ heads: { h: { model_slots: { [tier]: 'wire/model' } } } })).toEqual([]);
+    expect(validateTopology({ heads: { h: { model_slots: { opus: 'a', sonet: 'b' } } } }))
+      .toEqual([{ path: 'heads.h.model_slots.sonet', message: 'unknown key' }]);
+  });
+
   test('rejects an unknown top-level table', () => {
     expect(validateTopology({ daemons: {} }))
       .toEqual([{ path: 'daemons', message: 'unknown key' }]);

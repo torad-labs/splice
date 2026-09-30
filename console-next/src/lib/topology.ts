@@ -111,6 +111,8 @@ const head: SchemaNode = {
   keys: {
     provider: {}, port: {}, discovery_prefix: {}, pinned_model: {},
     models: { array: { keys: { id: {}, slot: {} } } },
+    // Tier to model id, with no serving allowlist (HeadConfig.modelSlots); the tiers are headModelSlots.
+    model_slots: { keys: { opus: {}, sonnet: {}, haiku: {}, fable: {} } },
     context_window: {},
     overrides: { open: true },
     claude: { keys: { command: {}, config_dir: {}, isolate: directoryNames } },

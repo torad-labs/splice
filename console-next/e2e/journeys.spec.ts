@@ -1,6 +1,6 @@
 // NEW: V4-444 — replacement-console journeys over real daemon payloads, never mocked API rows.
 import { expect, test } from '@playwright/test';
-import { STACK } from '../../console/e2e/stack';
+import { STACK } from './stack';
 import type { DoctorPayload } from '../src/types/doctor';
 import type { SessionsPayload } from '../src/types/sessions';
 import { FINISHED } from './setup';

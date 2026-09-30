@@ -1,6 +1,6 @@
-// NEW: V4-444 — reuse the old console's stack and lifecycle, adding only synthetic registry states.
-import globalSetup from '../../console/e2e/global-setup';
-import { STACK, saveTranscript } from '../../console/e2e/stack';
+// NEW: V4-444 — isolated daemon stack and lifecycle, adding only synthetic registry states.
+import globalSetup from './global-setup';
+import { STACK, saveTranscript } from './stack';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 

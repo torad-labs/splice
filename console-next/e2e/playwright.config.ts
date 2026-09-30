@@ -6,7 +6,8 @@ const RENDERS = /renders against the live daemon$/;
 export default defineConfig({
   testDir: '.',
   globalSetup: './setup.ts',
-  workers: process.env.CI ? 4 : 1,
+  // Every journey shares one isolated daemon, config and credential store. Mutations must not race between files.
+  workers: 1,
   fullyParallel: false,
   forbidOnly: true,
   retries: 0,

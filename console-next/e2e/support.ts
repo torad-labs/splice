@@ -2,7 +2,7 @@
 import { expect, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
-import { STACK } from '../../console/e2e/stack';
+import { STACK } from './stack';
 import type { PerfTurnsWire } from '../src/types/perf';
 
 const source = ts.createSourceFile('routes.tsx',

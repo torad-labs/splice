@@ -10138,3 +10138,4 @@ verify = "A: the operator approves rendered comps of Sessions, a session's page,
 claimed_by = "claude-console"
 claimed_at = "2026-09-30T00:02:11.949Z"
 # [2026-09-30] CLAIM: owner=claude-console at=2026-09-30T00:02:11Z
+# [2026-09-30] phase A fence narrowed to docs/design/ (comps and direction contract): the claim was refused because console/ and capabilities.tsv overlap V4-440. Phase C's fence (console/) is splice-lead's to restore when A is approved.

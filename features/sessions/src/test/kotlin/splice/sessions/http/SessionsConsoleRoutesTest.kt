@@ -23,6 +23,7 @@ import splice.sessions.query.SessionHead
 import splice.sessions.registry.SessionRegistry
 import splice.sessions.registry.SessionRoute
 import splice.sessions.transcript.SentTexts
+import splice.sessions.transcript.SessionTranscripts
 import splice.sessions.transcript.TranscriptLookup
 import splice.sessions.transcript.TranscriptMessage
 import splice.sessions.transcript.TranscriptPage
@@ -291,6 +292,36 @@ class SessionsConsoleRoutesTest {
             "beta has no head: vanilla first, then every head's own tree",
         )
         assertEquals(HttpStatusCode.BadRequest, routes.transcript(ALPHA, "x", null).status)
+    }
+
+    @Test
+    fun `the transcript route reads from the end when asked, and names the cursor of the page before`() {
+        val asked = mutableListOf<String?>()
+        val transcripts = object : SessionTranscripts {
+            override fun page(sessionId: String, roots: List<Path>, cursor: String?, limit: Int): TranscriptLookup =
+                error("a read from the end never pages forward")
+
+            override fun pageBefore(sessionId: String, roots: List<Path>, before: String?, limit: Int): TranscriptLookup {
+                asked += before
+                return TranscriptLookup.Found(
+                    TranscriptPage(
+                        sessionId, "/x/$ALPHA.jsonl", listOf(TranscriptMessage(7168, TranscriptRole.USER, null, "newest")),
+                        null, emptyMap(), earlier = if (before == null) "512" else null,
+                    ),
+                )
+            }
+
+            override fun sentTexts(sessionId: String, roots: List<Path>, ids: Set<String>): SentTexts =
+                SentTexts(null, emptyMap(), ids)
+        }
+        val routes = SessionsRoutes(registry(), transcripts, vanilla = tmp.resolve(".claude"))
+        val newest = json(routes.transcript(ALPHA, null, 20, "end").body)
+        assertEquals("512", newest["earlier"]!!.jsonPrimitive.content)
+        assertEquals("newest", newest["messages"]!!.jsonArray.single().jsonObject["text"]!!.jsonPrimitive.content)
+        val earlier = routes.transcript(ALPHA, null, 20, "512")
+        assertEquals(HttpStatusCode.OK, earlier.status)
+        assertTrue(json(earlier.body)["earlier"] is kotlinx.serialization.json.JsonNull, "the start of the file has nothing earlier")
+        assertEquals(listOf(null, "512"), asked, "end reads from the end, a number is the byte offset itself")
     }
 
     private fun head(own: Path): SessionHead = SessionHead(transcriptRoot = own)

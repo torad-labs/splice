@@ -37,6 +37,9 @@ public data class TranscriptPage(
     val next: String?,
     /** Records this page read past, by kind, [SKIPPED_UNPARSEABLE] and [SKIPPED_SIDECHAIN] included. */
     val skipped: Map<String, Int>,
+    /** Set on a page read from the end of the file ([SessionTranscripts.pageBefore]): the cursor of the page before it,
+     *  null at the start of the file. [next] is null on those pages. */
+    val earlier: String? = null,
 )
 
 public sealed class TranscriptLookup {
@@ -92,6 +95,16 @@ public interface SessionTranscripts {
         cursor: String?,
         limit: Int,
     ): TranscriptLookup
+
+    /** The newest [limit] messages at or before the cursor [before] (null: the end of the file), oldest first, with
+     *  [TranscriptPage.earlier] naming the page before them. A message's indices rise with its place in the file and
+     *  never repeat across pages, but they are not the forward pages' counts. Ports that only page forward refuse. */
+    public fun pageBefore(
+        sessionId: String,
+        roots: List<Path>,
+        before: String?,
+        limit: Int,
+    ): TranscriptLookup = TranscriptLookup.Refused("this transcript source pages forward only")
 
     public fun sentTexts(
         sessionId: String,

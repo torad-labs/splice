@@ -149,4 +149,70 @@ class TranscriptReaderTest {
         assertTrue(reader.page(ID, roots, "1.2.3", 1) is TranscriptLookup.Refused)
         assertTrue(reader.page(ID, roots, "-1.0", 1) is TranscriptLookup.Refused)
     }
+
+    /** The newest messages first, then each earlier page, as [TranscriptReader.pageBefore] hands them out. */
+    private fun backwards(reader: TranscriptReader, roots: List<Path>, limit: Int): List<TranscriptPage> =
+        generateSequence(found(reader.pageBefore(ID, roots, null, limit))) { page ->
+            page.earlier?.let { found(reader.pageBefore(ID, roots, it, limit)) }
+        }.toList()
+
+    @Test
+    fun `the newest messages come first as a page, and each earlier page continues from it`() {
+        transcript(home.resolve(".claude"))
+        val reader = TranscriptReader()
+        val roots = listOf(home.resolve(".claude"))
+        val forward = found(reader.page(ID, roots, null, 100)).messages.map { it.role to it.text }
+        val pages = backwards(reader, roots, 3)
+        // the newest page holds the newest three, oldest first inside it
+        assertEquals(forward.takeLast(3), pages.first().messages.map { it.role to it.text })
+        // stitched from the oldest page forward, the pages are the conversation once
+        assertEquals(forward, pages.reversed().flatMap { it.messages }.map { it.role to it.text })
+        assertNull(pages.last().earlier, "the origin has nothing earlier")
+        assertTrue(pages.dropLast(1).all { it.earlier != null })
+    }
+
+    @Test
+    fun `an earlier page never splits an assistant message whose blocks are several lines`() {
+        transcript(home.resolve(".claude"))
+        val reader = TranscriptReader()
+        val roots = listOf(home.resolve(".claude"))
+        // limit 5 would cut between msg_1's text and its call: the page takes the whole message instead
+        val pages = backwards(reader, roots, 5)
+        assertEquals(listOf(6, 1), pages.map { it.messages.size })
+        assertEquals(listOf("Reading it now.", """{"file_path":"/w/splice.toml"}"""), pages.first().messages.take(2).map { it.text })
+    }
+
+    @Test
+    fun `message indices are unique and rise from the oldest page to the newest`() {
+        transcript(home.resolve(".claude"))
+        val pages = backwards(TranscriptReader(), listOf(home.resolve(".claude")), 2)
+        val indices = pages.reversed().flatMap { it.messages }.map { it.index }
+        assertEquals(indices.sorted(), indices)
+        assertEquals(indices.size, indices.toSet().size)
+    }
+
+    @Test
+    fun `a limit past the conversation returns all of it with nothing earlier, and a bad cursor is refused`() {
+        transcript(home.resolve(".claude"))
+        val reader = TranscriptReader()
+        val roots = listOf(home.resolve(".claude"))
+        val all = found(reader.pageBefore(ID, roots, null, 100))
+        assertEquals(7, all.messages.size)
+        assertNull(all.earlier)
+        assertTrue(reader.pageBefore(ID, roots, "x", 3) is TranscriptLookup.Refused)
+        assertTrue(reader.pageBefore(ID, roots, "99999999", 3) is TranscriptLookup.Refused, "past the end of the file")
+    }
+
+    @Test
+    fun `an earlier page across a window boundary gives the same messages as reading the whole file`() {
+        // 300 user lines of 1 KiB: the newest page has to read several 64 KiB windows back to find its 200.
+        val lines = (0 until 300).map { n -> """{"type":"user","message":{"role":"user","content":"m$n ${"x".repeat(1024)}"}}""" }
+        transcript(home.resolve(".claude"), lines)
+        val reader = TranscriptReader()
+        val roots = listOf(home.resolve(".claude"))
+        val pages = backwards(reader, roots, 200)
+        assertEquals(listOf(200, 100), pages.map { it.messages.size })
+        assertEquals((0 until 300).map { "m$it" }, pages.reversed().flatMap { it.messages }.map { it.text.substringBefore(' ') })
+    }
 }
+

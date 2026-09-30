@@ -59,6 +59,9 @@ import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
 
 internal const val UNKNOWN_HEAD = "unknown head"
+
+/** `before=end` on the transcript route: read from the last message. */
+private const val FROM_END = "end"
 internal const val HEADLESS_NOTE = "headless `claude -p` runs never register; gone = the process exited; " +
     "stale = alive but no registry update inside the stale window"
 
@@ -104,14 +107,21 @@ public class SessionsRoutes(
         put("sessions", buildJsonArray { listing.sessions.forEach { add(row(it, edges, resumable)) } })
     }.toString()
 
-    /** GET /api/sessions/{id}/transcript?cursor=&limit= */
-    public fun transcript(sessionId: String, cursor: String?, limit: Int?): JsonReply {
+    /** GET /api/sessions/{id}/transcript?cursor=&limit= reads forward from the start. `before=` reads the newest messages
+     *  instead: `end`, or the `earlier` cursor the page before handed back (V4-444: a session opens at its newest). */
+    public fun transcript(sessionId: String, cursor: String?, limit: Int?, before: String? = null): JsonReply {
         if (!viewEnabled()) return SessionTranscriptOff.reply
         val head = registry.read().firstOrNull { it.sessionId == sessionId }?.head
+        val roots = treesFor(head)
+        val size = limit ?: DEFAULT_TRANSCRIPT_PAGE
         return when (
-            val lookup = transcripts.page(sessionId, treesFor(head), cursor, limit ?: DEFAULT_TRANSCRIPT_PAGE)
+            val lookup = if (before == null) {
+                transcripts.page(sessionId, roots, cursor, size)
+            } else {
+                transcripts.pageBefore(sessionId, roots, before.takeUnless { it == FROM_END }, size)
+            }
         ) {
-            is TranscriptLookup.Found -> JsonReply(HttpStatusCode.OK, pageJson(lookup.page))
+            is TranscriptLookup.Found -> JsonReply(HttpStatusCode.OK, pageJson(lookup.page, before != null))
             is TranscriptLookup.Missing -> JsonReply(
                 HttpStatusCode.NotFound,
                 buildJsonObject {
@@ -206,7 +216,7 @@ public class SessionsRoutes(
         return (listOfNotNull(own) + listOf(vanilla) + others).distinct()
     }
 
-    private fun pageJson(page: TranscriptPage): String = buildJsonObject {
+    private fun pageJson(page: TranscriptPage, fromEnd: Boolean): String = buildJsonObject {
         put("session_id", page.sessionId)
         put("path", page.path)
         put(
@@ -227,6 +237,7 @@ public class SessionsRoutes(
             },
         )
         put("next", page.next)
+        if (fromEnd) put("earlier", page.earlier)
         // Declared additions (V4-130, routed to splice-design): the page's denominator. What it read
         // past, by kind, with the two kinds the orchestrator asked for named on their own.
         put("unparseable_lines", page.skipped[SKIPPED_UNPARSEABLE] ?: 0)

@@ -17,9 +17,23 @@ import splice.sessions.transcript.TranscriptRole
 
 private const val UNTYPED = "untyped"
 
+/** The most messages one record may make: a record's messages share its offset, told apart by this many slots. */
+internal const val PER_RECORD: Long = 1024
+
 /** Folds records into conversation messages for one page. [accept] answers false when the page is
  *  full AND the record starts a new message, so the record is left for the next page. */
-internal class PageAssembly(firstIndex: Long, private val limit: Int, private val redaction: TranscriptRedaction) {
+internal class PageAssembly(
+    firstIndex: Long,
+    private val limit: Int,
+    private val redaction: TranscriptRedaction,
+    /** True: a message is numbered by where its record starts in the file, [at] * [PER_RECORD] plus its place among the
+     *  messages that record made, so pages read from either end never repeat or reorder an index. */
+    private val byOffset: Boolean = false,
+) {
+    /** The byte offset of the record [accept] is about to read; only a [byOffset] assembly numbers by it. */
+    var at: Long = 0
+    private var sameAt: Long = -1
+    private var lastAt: Long = -1
     var nextIndex: Long = firstIndex
         private set
     val skipped: MutableMap<String, Int> = sortedMapOf()
@@ -65,7 +79,7 @@ internal class PageAssembly(firstIndex: Long, private val limit: Int, private va
     }
 
     private fun assistant(message: JsonObject, messageId: String?, ts: Long?): Boolean {
-        val into = pending?.takeIf { it.id == messageId } ?: PendingAssistant(messageId, ts).also { pending = it }
+        val into = pending?.takeIf { it.id == messageId } ?: PendingAssistant(messageId, ts, at).also { pending = it }
         for (block in records.blocks(message)) {
             when (JsonScalars.str(block, "type")) {
                 "text" -> JsonScalars.str(block, "text")?.let(into.texts::add)
@@ -126,9 +140,9 @@ internal class PageAssembly(firstIndex: Long, private val limit: Int, private va
     private fun flush() {
         val done = pending ?: return
         pending = null
-        if (done.texts.isNotEmpty()) emit(TranscriptRole.ASSISTANT, done.ts, done.joined(), messageId = done.id)
+        if (done.texts.isNotEmpty()) emit(TranscriptRole.ASSISTANT, done.ts, done.joined(), messageId = done.id, from = done.at)
         for ((name, input) in done.calls) {
-            emit(TranscriptRole.ASSISTANT, done.ts, input, tool = name, result = false, messageId = done.id)
+            emit(TranscriptRole.ASSISTANT, done.ts, input, tool = name, result = false, messageId = done.id, from = done.at)
         }
     }
 
@@ -139,9 +153,17 @@ internal class PageAssembly(firstIndex: Long, private val limit: Int, private va
         tool: String? = null,
         result: Boolean? = null,
         messageId: String? = null,
+        from: Long = at,
     ) {
-        messages += TranscriptMessage(nextIndex, role, ts, redaction.shown(text), tool, result, messageId)
+        val index = if (byOffset) offsetIndex(from) else nextIndex
+        messages += TranscriptMessage(index, role, ts, redaction.shown(text), tool, result, messageId)
         nextIndex += 1
+    }
+
+    private fun offsetIndex(from: Long): Long {
+        sameAt = if (from == lastAt) sameAt + 1 else 0
+        lastAt = from
+        return from * PER_RECORD + sameAt
     }
 
     private fun count(kind: String): Boolean {
@@ -149,7 +171,7 @@ internal class PageAssembly(firstIndex: Long, private val limit: Int, private va
         return true
     }
 
-    private class PendingAssistant(val id: String?, val ts: Long?) {
+    private class PendingAssistant(val id: String?, val ts: Long?, val at: Long) {
         val texts = mutableListOf<String>()
         val calls = mutableListOf<Pair<String, String>>()
 

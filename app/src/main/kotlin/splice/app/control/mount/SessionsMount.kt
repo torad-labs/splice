@@ -72,7 +72,7 @@ internal class SessionsMount(
             guard.guarded(call) {
                 val id = call.parameters["id"].orEmpty()
                 val query = call.request.queryParameters
-                routes.transcript(id, query["cursor"], query["limit"]?.toIntOrNull()).send(call)
+                routes.transcript(id, query["cursor"], query["limit"]?.toIntOrNull(), query["before"]).send(call)
             }
         }
     }

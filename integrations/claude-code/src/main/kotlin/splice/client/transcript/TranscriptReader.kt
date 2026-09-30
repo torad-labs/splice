@@ -113,6 +113,7 @@ public class TranscriptReader(
     private val validSessionId = Regex("[A-Za-z0-9_-]{1,128}")
     private val redaction = TranscriptRedaction()
     private val tail = TranscriptTail(opener, TranscriptTailAssembly(TranscriptLineParser(::parse), redaction))
+    private val back = TranscriptBackPage(opener, TranscriptLineParser(::parse), redaction)
 
     override fun last(sessionId: String, roots: List<Path>): TranscriptMessage? {
         val file = if (validSessionId.matches(sessionId)) locate(roots, sessionId) else null
@@ -129,6 +130,18 @@ public class TranscriptReader(
         val file = locate(roots, sessionId)
             ?: return TranscriptLookup.Missing(roots.map { it.resolve(Keys.PROJECTS).toString() })
         return TranscriptLookup.Found(read(file, sessionId, start, limit.coerceIn(1, MAX_TRANSCRIPT_PAGE)))
+    }
+
+    override fun pageBefore(sessionId: String, roots: List<Path>, before: String?, limit: Int): TranscriptLookup {
+        val end = before?.toLongOrNull()?.takeIf { it >= 0 }
+        if (!validSessionId.matches(sessionId) || (before != null && end == null)) {
+            return TranscriptLookup.Refused(if (before != null && end == null) BAD_CURSOR else BAD_ID)
+        }
+        val file = locate(roots, sessionId)
+            ?: return TranscriptLookup.Missing(roots.map { it.resolve(Keys.PROJECTS).toString() })
+        val size = Files.size(file)
+        if (end != null && end > size) return TranscriptLookup.Refused(BAD_CURSOR)
+        return TranscriptLookup.Found(back.read(file, sessionId, end ?: size, limit))
     }
 
     /** The `message` of every SendMessage call in [sessionId]'s transcript whose tool_use id is in

@@ -22,8 +22,7 @@ test('a repository page retains daemon session/turn facts, selected rule length 
   await expect(main).toContainText(new RegExp(row.turns_today + ' turns? today'));
   await expect(main).toContainText(repo + '/CLAUDE.md');
   expect(row.cost_today_usd).toBeNull();
-  await expect(main).toContainText('API cost today');
-  await expect(main).toContainText('–');
+  await expect(main).toContainText('No turn here was priced today');
   const rules = page.getByRole('region', { name: 'Compaction rules', exact: true });
   expect(row.compaction).toEqual([{ scope: 'project', source: 'project:' + repo, chars: STACK.compactProject.length }]);
   await expect(rules).toContainText(repo);

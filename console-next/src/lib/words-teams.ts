@@ -22,6 +22,7 @@ export const M = {
   lead: 'Lead',
   openSeat: 'Open seat',
   nobody: 'Nobody is in this seat',
+  openSession: 'Open the session',
   noInstructions: 'No standing instructions.',
   noTurns: 'No turns yet',
   turns: (n: number) => `${n} ${n === 1 ? 'turn' : 'turns'}`,

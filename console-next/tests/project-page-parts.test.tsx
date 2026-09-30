@@ -38,6 +38,12 @@ describe('the project page', () => {
     expect(html).toContain('Write the limiter');
     expect(html).toContain('Grok');
   });
+  test('does not print the folder under the name: it is there on request', () => {
+    const html = render(seedRow);
+    expect(html).toContain('<summary>Show the folder</summary>');
+    expect(html).toContain('<code>/home/a/tally</code>');
+    expect(html).not.toContain('<p class="hint">/home/a/tally');
+  });
   test('shows the standing prompt as it is held, in a form that starts unsaved', () => {
     const html = render(seedRow);
     expect(html).toContain('Be brief.');

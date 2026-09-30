@@ -34,6 +34,15 @@ function render(seed: (client: QueryClient) => void): string {
 }
 
 describe('the team page', () => {
+  test('a seat says its role once, and the session under it names itself only when that adds something', () => {
+    const named = render((client) => {
+      client.setQueryData(['sessions', '/api/sessions'], { sessions: [{ session_id: 'sess-1', name: 'builder', head: 'claude-grok', availability: 'live', status: 'idle', pid: 1, kind: null, version: null, cwd: null, status_updated_at: null, started_at: null, updated_at: NOW, address: null }] });
+    });
+    expect(named.match(/>Builder</g)).toHaveLength(1);
+    expect(named).not.toContain('>builder<');
+    expect(named).toContain('>Open the session<');
+    expect(render(() => undefined)).toContain('>Write the rate limiter<');
+  });
   test('lists the lead first, names the session in a seat and marks the open one', () => {
     const html = render(() => undefined);
     expect(html).toContain('Rate limiter');

@@ -24,6 +24,13 @@ const tallyText = (tally: TeamSlotTally | undefined): string => {
   return parts.join(' · ');
 };
 
+/** What the seat's session is called under the seat's own name: the name the session carries, unless that is the seat's role said
+ *  again, in which case the link says what it opens. */
+const seatSession = (role: string, row: { name: string | null; session_id: string | null }): string => {
+  const name = row.name ?? row.session_id ?? M.openSession;
+  return name.trim().toLowerCase() === role.trim().toLowerCase() ? M.openSession : name;
+};
+
 /** One team: the seats and who sits in them, what they sent each other and what they did on a day. */
 export function TeamPage() {
   const { id = '' } = useParams();
@@ -96,7 +103,7 @@ export function TeamPage() {
                   <div className="cmd">{labelOf(slot.head)}</div>
                 </div>
                 <div>
-                  {row === null ? <div className="who none">{M.nobody}</div> : <div className="who"><Link to={sessionPath(row)}>{row.name ?? row.session_id}</Link></div>}
+                  {row === null ? <div className="who none">{M.nobody}</div> : <div className="who"><Link to={sessionPath(row)}>{seatSession(slot.role, row)}</Link></div>}
                   <p className="note">{slot.instructions === null || slot.instructions.trim() === '' ? M.noInstructions : slot.instructions}</p>
                 </div>
                 <div>

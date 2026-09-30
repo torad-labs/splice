@@ -91,7 +91,7 @@ no_upgrade_verb() {
   out="$(splice upgrade </dev/null 2>&1)"; rc=$?
   printf '%s\n' "$out" | head -5
   [ $rc -ne 0 ] || { echo "$FROM_TAG accepted \`splice upgrade\`"; return 1; }
-  ! printf '%s\n' "$out" | grep -q 'upgrade' || { echo "$FROM_TAG names an upgrade verb"; return 1; }
+  ! grep -q 'upgrade' <<<"$out" || { echo "$FROM_TAG names an upgrade verb"; return 1; }
   echo "$FROM_TAG has no upgrade verb (exit $rc)"
 }
 step "$FROM_TAG has no \`splice upgrade\`: the install one-liner is the upgrade path" no_upgrade_verb
@@ -179,8 +179,8 @@ handover() {
     timeout 120 claudex -p "Count from 1 to 3 then say END." --output-format text </dev/null 2>&1)"; rc=$?
   printf '%s\n' "$out" | tail -c 1500
   [ $rc -eq 0 ] || { echo "wrapper exit $rc"; return 1; }
-  printf '%s' "$out" | grep -qF "ok after auth" || { echo "the turn did not complete"; return 1; }
-  printf '%s' "$out" | grep -qF "replacing stale daemon $FROM_VERSION with $CANDIDATE_VERSION" ||
+  grep -qF "ok after auth" <<<"$out" || { echo "the turn did not complete"; return 1; }
+  grep -qF "replacing stale daemon $FROM_VERSION with $CANDIDATE_VERSION" <<<"$out" ||
     { echo "the shim did not say it replaced the stale daemon"; return 1; }
   local old pid fd target jar_sha="" want version
   old="$(cat "$PRIVATE/daemon.pid")"; pid="$(daemon_pid)"
@@ -220,9 +220,9 @@ doctor_after_upgrade() {
   out="$(splice doctor 2>&1 | strip_ansi)"
   printf '%s\n' "$out"
   [ -n "$shim" ] || { echo "the candidate shim carries no SPLICE_SHIM_VERSION marker"; return 1; }
-  printf '%s\n' "$out" | grep -qE "^\s*✓\s+topology\s" || { echo "doctor does not load the topology"; return 1; }
-  printf '%s\n' "$out" | grep -qE "^\s*✓\s+shim\s+current \($shim\)" || { echo "doctor does not report the shim current ($shim)"; return 1; }
-  ! printf '%s\n' "$out" | grep -v '^splice doctor' | grep -q '✗' || { echo "doctor reports a ✗"; return 1; }
+  grep -qE "^\s*✓\s+topology\s" <<<"$out" || { echo "doctor does not load the topology"; return 1; }
+  grep -qE "^\s*✓\s+shim\s+current \($shim\)" <<<"$out" || { echo "doctor does not report the shim current ($shim)"; return 1; }
+  [ "$(grep -v '^splice doctor' <<<"$out" | grep -c '✗')" = 0 ] || { echo "doctor reports a ✗"; return 1; }
 }
 step "doctor after the upgrade: topology loads, shim current, no ✗" doctor_after_upgrade
 
@@ -276,7 +276,7 @@ restart_refuses_keyless_stop() {
   out="$(splice restart </dev/null 2>&1)"; rc=$?
   printf '%s\n' "$out"
   [ $rc -ne 0 ] || { echo "restart claimed success against a daemon it had no key to stop"; return 1; }
-  printf '%s' "$out" | grep -qF "mgmt-key not found at $key" || { echo "restart did not name the missing key"; return 1; }
+  grep -qF "mgmt-key not found at $key" <<<"$out" || { echo "restart did not name the missing key"; return 1; }
   kill -0 "$(daemon_pid)" 2>/dev/null || { echo "the refused restart still took the daemon down"; return 1; }
   echo "with the key deleted and the daemon up, restart refuses by name and leaves the daemon serving"
 }

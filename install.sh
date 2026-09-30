@@ -413,7 +413,7 @@ elif [ ! -L "$CURRENT_LINK" ] && [ "$HAD_JAR" = 1 ]; then
   # install.sh run that introduces releases/ leaves nothing to roll back to (review 2026-09-14).
   OLD_VERSION="$(java -jar "$JAR_BACKUP" version 2>/dev/null | sed -n 's/^splice //p' | head -1)"
   if [ -n "$OLD_VERSION" ] && [ "$OLD_VERSION" != "$JAR_VERSION" ] &&
-    printf '%s' "$OLD_VERSION" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)([-+][0-9A-Za-z.-]+)?$'; then
+    grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)([-+][0-9A-Za-z.-]+)?$' <<<"$OLD_VERSION"; then
     OLD_DIR="${SHARE_DIR}/releases/${OLD_VERSION}"
     if mkdir -p "$OLD_DIR" && cp -p "$JAR_BACKUP" "$OLD_DIR/splice.jar" &&
       { [ "$HAD_SHIM" != 1 ] || cp -p "$SHIM_BACKUP" "$OLD_DIR/splice-launch"; } &&

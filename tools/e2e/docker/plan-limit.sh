@@ -156,7 +156,7 @@ plan_turn() {
   date +%s%3N > "$OUT/turn-end-ms"
   printf '%s\n' "$out" | tail -c 1500
   [ $rc -eq 0 ] || { echo "claude-planlimit exit $rc"; return 1; }
-  printf '%s' "$out" | grep -qF "resumed after the reset" || { echo "the turn's output lacks the upstream's post-reset reply"; return 1; }
+  grep -qF "resumed after the reset" <<<"$out" || { echo "the turn's output lacks the upstream's post-reset reply"; return 1; }
 }
 step "real Claude Code: the turn waits out the plan limit and completes" plan_turn
 step "the turn ended after the upstream's reset" bun "$PLAN_TS" resumed "$OUT/upstream-turn.jsonl" "$(cat "$OUT/turn-end-ms" 2>/dev/null || echo 0)"

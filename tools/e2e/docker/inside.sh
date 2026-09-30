@@ -38,9 +38,9 @@ doctor_prereqs() {
   out="$(splice doctor 2>&1 | strip_ansi)"
   printf '%s\n' "$out"
   for bin in java claude node curl bash; do
-    printf '%s\n' "$out" | grep -qE "^\s*✓\s+$bin\b" || { echo "prerequisite $bin is not ✓"; return 1; }
+    grep -qE "^\s*✓\s+$bin\b" <<<"$out" || { echo "prerequisite $bin is not ✓"; return 1; }
   done
-  ! printf '%s\n' "$out" | grep -v '^splice doctor' | grep -q '✗'
+  [ "$(grep -v '^splice doctor' <<<"$out" | grep -c '✗')" = 0 ]
 }
 step "doctor: prerequisites ✓, no ✗ anywhere" doctor_prereqs
 
@@ -109,7 +109,7 @@ EOF
   printf '%s\n' "$line"
   local frag
   for frag in "$@"; do
-    printf '%s' "$line" | grep -qF -- "$frag" || { echo "status line lacks '$frag'"; return 1; }
+    grep -qF -- "$frag" <<<"$line" || { echo "status line lacks '$frag'"; return 1; }
   done
 }
 step "status line: the scaled 128k row shows its label and real window" statusline_row mockchat2 mock-chat-2-big "Chat 2 big (mock)" "64k/128k" "50%"
@@ -144,10 +144,10 @@ quota_bars() {
   hdrs="$(curl_mgmt -D - -o /dev/null -X POST "http://127.0.0.1:$CODEX_HEAD_PORT/v1/messages" \
     -H 'Content-Type: application/json' \
     -d '{"model":"claude-codex--gpt-5-codex","max_tokens":16,"stream":false,"messages":[{"role":"user","content":"hi"}]}')"
-  printf '%s\n' "$hdrs" | grep -i 'anthropic-ratelimit-unified' | tr -d '\r'
-  printf '%s' "$hdrs" | grep -qi '^anthropic-ratelimit-unified-5h-utilization: 0.1400' ||
+  grep -i 'anthropic-ratelimit-unified' <<<"$hdrs" | tr -d '\r'
+  grep -qi '^anthropic-ratelimit-unified-5h-utilization: 0.1400' <<<"$hdrs" ||
     { echo "the head's response carries no 5h utilization header"; return 1; }
-  printf '%s' "$hdrs" | grep -qi '^anthropic-ratelimit-unified-7d-utilization: 0.4200' ||
+  grep -qi '^anthropic-ratelimit-unified-7d-utilization: 0.4200' <<<"$hdrs" ||
     { echo "the head's response carries no 7d utilization header"; return 1; }
   line="$(curl_mgmt --data-binary '{"model":{"id":"gpt-5-codex"},"effort":{"level":"high"},"cost":{"total_cost_usd":1.5}}' \
     "http://127.0.0.1:$CONTROL_PORT/statusline/claudex" | strip_ansi)"
@@ -155,9 +155,9 @@ quota_bars() {
   # V4-240: this head has no rate card, and the blob's 1.50 is Claude Code's own figure, priced at
   # Anthropic's card; under a ChatGPT model it is said in words, never shown as the figure.
   for frag in "Codex (mock)·high" 'no rate card' "5h █░░░░░░░ 14%" "7d ███░░░░░ 42%"; do
-    printf '%s' "$line" | grep -qF -- "$frag" || { echo "status line lacks '$frag'"; return 1; }
+    grep -qF -- "$frag" <<<"$line" || { echo "status line lacks '$frag'"; return 1; }
   done
-  ! printf '%s' "$line" | grep -qF -- '1.50' || { echo "status line shows the client's Anthropic-priced 1.50"; return 1; }
+  ! grep -qF -- '1.50' <<<"$line" || { echo "status line shows the client's Anthropic-priced 1.50"; return 1; }
 }
 step "plan usage: 5h/7d windows on every claudex response and on its status line" quota_bars
 
@@ -170,8 +170,8 @@ login_oauth() { # wrapper expected-host
   local out
   out="$(timeout 10 "$1" login </dev/null 2>&1)" || true
   printf '%s\n' "$out" | head -8
-  printf '%s' "$out" | grep -q 'open this URL to sign in' || { echo "$1 login did not print the sign-in URL"; return 1; }
-  printf '%s' "$out" | grep -q "https://$2" || { echo "$1 login URL is not on $2"; return 1; }
+  grep -q 'open this URL to sign in' <<<"$out" || { echo "$1 login did not print the sign-in URL"; return 1; }
+  grep -q "https://$2" <<<"$out" || { echo "$1 login URL is not on $2"; return 1; }
 }
 # claude-mockchat is an api-key head: with no terminal, `login` names the pipe alternative
 # verbatim, and that command stores the key in ~/.config/splice/keys.toml (0600).
@@ -179,7 +179,7 @@ login_apikey() {
   local out
   out="$(claude-mockchat login </dev/null 2>&1)" || true
   printf '%s\n' "$out"
-  printf '%s' "$out" | grep -qF 'splice key set MOCK_CHAT_API_KEY --stdin' || { echo "login did not name the pipe path"; return 1; }
+  grep -qF 'splice key set MOCK_CHAT_API_KEY --stdin' <<<"$out" || { echo "login did not name the pipe path"; return 1; }
   printf '%s' "mock-chat-key" | splice key set MOCK_CHAT_API_KEY --stdin || { echo "splice key set failed"; return 1; }
   local store="$HOME/.config/splice/keys.toml"
   [ -f "$store" ] || { echo "no $store after key set"; return 1; }
@@ -248,8 +248,8 @@ cross_head_listagents() {
   pkill -f 'SCENARIO:hold' 2>/dev/null || true; wait "$held_pid" 2>/dev/null || true
   printf '%s\n' "$out" | tail -c 2000
   [ $rc -eq 0 ] || { echo "claude-mockchat2 exit $rc"; return 1; }
-  printf '%s' "$out" | grep -qF 'PEERS:' || { echo "the mock never received a ListAgents tool result: the tool was not called"; return 1; }
-  printf '%s' "$out" | grep -q 'heldpeer' || { echo "ListAgents inside claude-mockchat2 does not list the session held under claude-mockchat"; return 1; }
+  grep -qF 'PEERS:' <<<"$out" || { echo "the mock never received a ListAgents tool result: the tool was not called"; return 1; }
+  grep -q 'heldpeer' <<<"$out" || { echo "ListAgents inside claude-mockchat2 does not list the session held under claude-mockchat"; return 1; }
   echo "ListAgents inside claude-mockchat2 listed the claude-mockchat session held from ~/heldpeer"
 }
 step "cross-head ListAgents: claude-mockchat2 lists a session held on claude-mockchat" cross_head_listagents

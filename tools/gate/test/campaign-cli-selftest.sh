@@ -96,9 +96,9 @@ for ledger in "${ledgers[@]}"; do
   fi
 
   delta="$(diff "$scratch/pristine/$name" "$copy")"
-  added="$(printf '%s\n' "$delta" | grep -c '^>')"
-  removed="$(printf '%s\n' "$delta" | grep -c '^<')"
-  carried="$(printf '%s\n' "$delta" | grep -cF "$MARKER")"
+  added="$(grep -c '^>' <<<"$delta")"
+  removed="$(grep -c '^<' <<<"$delta")"
+  carried="$(grep -cF "$MARKER" <<<"$delta")"
   if [ "$added" -ne 1 ] || [ "$removed" -ne 0 ] || [ "$carried" -ne 1 ]; then
     echo "campaign-cli-selftest: a note on $ledger ($id) did not add EXACTLY ONE line carrying it" >&2
     echo "  added $added, removed $removed, lines carrying the note $carried — the writer must be line-surgical" >&2
@@ -120,9 +120,9 @@ if ! got="$("${CLI[@]}" laws 2>&1)"; then
   echo "campaign-cli-selftest: \`manifest.ts laws\` with no path FAILED" >&2
   printf '%s\n' "$got" | head -5 >&2
   failed=1
-elif [ -z "$got" ] || printf '%s\n' "$got" | grep -qv '^# LAW'; then
+elif [ -z "$got" ] || grep -qv '^# LAW' <<<"$got"; then
   echo "campaign-cli-selftest: \`manifest.ts laws\` with no path printed something that is not laws" >&2
-  printf '%s\n' "$got" | grep -v '^# LAW' | head -5 >&2
+  grep -v '^# LAW' <<<"$got" | head -5 >&2
   failed=1
 elif [ "$got" != "$expected" ]; then
   echo "campaign-cli-selftest: \`manifest.ts laws\` with no path is not the ordered union of every ledger's laws" >&2

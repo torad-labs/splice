@@ -129,7 +129,7 @@ arm() { # arm <name> <expect: RED|GREEN> <root> [diagnosis substring]
     fail=$((fail + 1))
     return
   fi
-  if [ -n "$want" ] && ! printf '%s' "$out" | grep -qF "$want"; then
+  if [ -n "$want" ] && ! grep -qF "$want" <<<"$out"; then
     echo "FAIL  $name — $expect, but undiagnosed: wanted \"$want\""
     printf '%s\n' "$out" | sed 's/^/      /'
     fail=$((fail + 1))

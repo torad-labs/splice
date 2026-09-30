@@ -4,6 +4,7 @@ import { RouterProvider } from 'react-router';
 import { followEvents } from '../api/events';
 import { currentKey, isLocked, subscribeLock } from '../api/client';
 import { forgetRefusedReads } from './forget-refused';
+import { TranscriptPrivacy } from './TranscriptPrivacy';
 import { Unlock } from './Unlock';
 import { router } from './routes';
 
@@ -27,7 +28,7 @@ export function App() {
   }, [locked]);
   return (
     <QueryClientProvider client={client}>
-      {locked ? <Unlock rejected={tried} /> : <RouterProvider router={router} />}
+      {locked ? <Unlock rejected={tried} /> : <><TranscriptPrivacy /><RouterProvider router={router} /></>}
     </QueryClientProvider>
   );
 }

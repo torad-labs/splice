@@ -29,11 +29,11 @@ test('Settings reads the isolated whole doctor report and offers the API-key rem
 
 test('Needs you opens the intended plan and the full Health report from its doctor item', async ({ page }) => {
   const faults = await open(page, 'needs-you');
-  const wrapper = page.getByRole('listitem').filter({ hasText: 'installation/wrapper' }).first();
+  const wrapper = page.getByRole('listitem').filter({ hasText: 'Launcher' }).first();
   await expect(wrapper).toContainText('splice install --all');
   await wrapper.getByRole('link', { name: 'Open', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Health', exact: true })).toBeVisible();
-  await expect(page.locator('.row').filter({ hasText: 'installation/wrapper' })).toBeVisible();
+  await expect(page.locator('.row').filter({ hasText: 'Launcher' })).toBeVisible();
   await page.goBack();
   const key = page.getByRole('listitem').filter({ hasText: 'CONSOLE_E2E_NO_SUCH_KEY' }).first();
   await key.getByRole('link', { name: 'Open', exact: true }).click();
@@ -94,7 +94,7 @@ test('the real wrapper fix refuses inside the isolated home and returns the doct
   const report = await read<DoctorPayload>(page, '/api/doctor');
   const wrapper = report.checks.find((check) => check.fix_id === 'install_all');
   expect(wrapper).toBeDefined();
-  const row = page.locator('.row').filter({ hasText: 'installation/wrapper' });
+  const row = page.locator('.row').filter({ hasText: 'Launcher' });
   const answer = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/doctor/fix/install_all' && response.request().method() === 'POST');
   await row.getByRole('button', { name: 'Fix it', exact: true }).click();
   const response = await answer;
@@ -114,11 +114,11 @@ test('masked remedies remain noncopyable in Health and Needs you, while own-page
     await route.fulfill({ response, json: body });
   });
   const faults = await open(page, 'settings/health');
-  const row = page.locator('.row').filter({ hasText: 'synthetic/masked' });
+  const row = page.locator('.row').filter({ hasText: 'Synthetic masked remedy needs a terminal' });
   await expect(row).toContainText('Run splice doctor in a terminal to see it.');
   await expect(row.getByRole('button', { name: 'Copy the command', exact: true })).toHaveCount(0);
   await page.getByRole('navigation', { name: 'Pages', exact: true }).getByRole('link', { name: 'Needs you', exact: true }).click();
-  const item = page.getByRole('listitem', { name: 'Doctor: synthetic/masked', exact: true });
+  const item = page.getByRole('listitem', { name: 'Doctor: Masked', exact: true });
   await expect(item).toContainText('Run splice doctor in a terminal to see it.');
   await expect(item.getByRole('button', { name: 'Copy the command', exact: true })).toHaveCount(0);
   await page.evaluate((head) => { location.hash = '#/fleet/' + head; }, STACK.keyHead);

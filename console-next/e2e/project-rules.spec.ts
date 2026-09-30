@@ -31,7 +31,7 @@ test('a repository page retains daemon session/turn facts, selected rule length 
   await expect(rules).not.toContainText('Everywhere');
   await expect(rules).not.toContainText(STACK.model);
   const roots = page.getByRole('region', { name: 'Where each plan looks for a branch', exact: true });
-  const root = roots.getByRole('listitem').filter({ has: page.getByText(STACK.oauthHead, { exact: true }) });
+  const root = roots.getByRole('listitem').filter({ has: page.getByText(STACK.oauthHead) }).first();
   await expect(root).toContainText(dirname(repo));
   await expect(root).toContainText('Home folder');
   expect(faults.pageErrors).toEqual([]);

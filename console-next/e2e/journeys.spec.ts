@@ -2,6 +2,7 @@
 import { expect, test } from '@playwright/test';
 import { STACK } from './stack';
 import type { DoctorPayload } from '../src/types/doctor';
+import { checkTitle } from '../src/lib/words-needs';
 import type { SessionsPayload } from '../src/types/sessions';
 import { FINISHED } from './setup';
 import { assertHealthy, env, open, read, watch } from './support';
@@ -57,13 +58,13 @@ test('Needs you includes the waiting session but not working or finished session
   const labels = await main.getByRole('listitem', { name: /^Doctor: / }).evaluateAll((items) =>
     items.map((item) => (item.getAttribute('aria-label') ?? '').replace(/^Doctor: /, '').replace(/ \(\d+\)$/, '')));
   for (const label of labels) {
-    const members = doctor.checks.filter((check) => check.id === label || check.id.startsWith(label + ':'));
+    const members = doctor.checks.filter((check) => checkTitle(check.id) === label || checkTitle(check.id.split(':')[0] ?? check.id) === label);
     expect(members.length, 'visible doctor item must come from a real check: ' + label).toBeGreaterThan(0);
     expect(members.every((check) => check.status === 'warn' || check.status === 'fail'), label + ' must need a person').toBe(true);
   }
   for (const check of doctor.checks.filter((check) => check.status === 'ok' || check.status === 'info')) {
-    if (!doctor.checks.some((other) => other.id === check.id && (other.status === 'warn' || other.status === 'fail'))) {
-      await expect(main.getByRole('listitem', { name: 'Doctor: ' + check.id, exact: true })).toHaveCount(0);
+    if (!doctor.checks.some((other) => checkTitle(other.id) === checkTitle(check.id) && (other.status === 'warn' || other.status === 'fail'))) {
+      await expect(main.getByRole('listitem', { name: 'Doctor: ' + checkTitle(check.id), exact: true })).toHaveCount(0);
     }
   }
   await assertHealthy(page, faults);

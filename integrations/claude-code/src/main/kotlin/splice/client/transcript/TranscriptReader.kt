@@ -132,13 +132,26 @@ public class TranscriptReader(
         return TranscriptLookup.Found(read(file, sessionId, start, limit.coerceIn(1, MAX_TRANSCRIPT_PAGE)))
     }
 
+    /** Why a read from the end is refused before any file is looked for: a cursor that is no offset, or an id that is no id. */
+    private fun refusal(sessionId: String, before: String?, end: Long?): String? = when {
+        before != null && end == null -> BAD_CURSOR
+        !validSessionId.matches(sessionId) -> BAD_ID
+        else -> null
+    }
+
     override fun pageBefore(sessionId: String, roots: List<Path>, before: String?, limit: Int): TranscriptLookup {
         val end = before?.toLongOrNull()?.takeIf { it >= 0 }
-        if (!validSessionId.matches(sessionId) || (before != null && end == null)) {
-            return TranscriptLookup.Refused(if (before != null && end == null) BAD_CURSOR else BAD_ID)
+        val refusal = refusal(sessionId, before, end)
+        val file = if (refusal == null) locate(roots, sessionId) else null
+        return when {
+            refusal != null -> TranscriptLookup.Refused(refusal)
+            file == null -> TranscriptLookup.Missing(roots.map { it.resolve(Keys.PROJECTS).toString() })
+            else -> fromEnd(file, sessionId, end, limit)
         }
-        val file = locate(roots, sessionId)
-            ?: return TranscriptLookup.Missing(roots.map { it.resolve(Keys.PROJECTS).toString() })
+    }
+
+    /** The newest [limit] messages before byte [end] of [file], or before its last byte when [end] is null. */
+    private fun fromEnd(file: Path, sessionId: String, end: Long?, limit: Int): TranscriptLookup {
         val size = Files.size(file)
         if (end != null && end > size) return TranscriptLookup.Refused(BAD_CURSOR)
         return TranscriptLookup.Found(back.read(file, sessionId, end ?: size, limit))

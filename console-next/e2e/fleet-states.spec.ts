@@ -125,7 +125,7 @@ test('the real account pool keeps provider windows, its exact next target and se
   await expect(accounts.filter({ hasText: STACK.soloHead })).toHaveCount(0);
   await page.goto(env('CONSOLE_E2E_BASE') + '/#/fleet/' + STACK.keyHead);
   await expect(page.locator('li.account')).toHaveCount(0);
-  await expect(page.getByRole('main')).toContainText('This head has no account pool: it uses one login or a key.');
+  await expect(page.getByRole('main')).toContainText('This command has no account pool: it uses one login or a key.');
   expect(faults.pageErrors).toEqual([]);
 });
 

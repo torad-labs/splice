@@ -303,10 +303,15 @@ class SessionsConsoleRoutesTest {
 
             override fun pageBefore(sessionId: String, roots: List<Path>, before: String?, limit: Int): TranscriptLookup {
                 asked += before
+                val newest = TranscriptMessage(7168, TranscriptRole.USER, null, "newest")
                 return TranscriptLookup.Found(
                     TranscriptPage(
-                        sessionId, "/x/$ALPHA.jsonl", listOf(TranscriptMessage(7168, TranscriptRole.USER, null, "newest")),
-                        null, emptyMap(), earlier = if (before == null) "512" else null,
+                        sessionId,
+                        "/x/$ALPHA.jsonl",
+                        listOf(newest),
+                        null,
+                        emptyMap(),
+                        earlier = if (before == null) "512" else null,
                     ),
                 )
             }
@@ -320,7 +325,8 @@ class SessionsConsoleRoutesTest {
         assertEquals("newest", newest["messages"]!!.jsonArray.single().jsonObject["text"]!!.jsonPrimitive.content)
         val earlier = routes.transcript(ALPHA, null, 20, "512")
         assertEquals(HttpStatusCode.OK, earlier.status)
-        assertTrue(json(earlier.body)["earlier"] is kotlinx.serialization.json.JsonNull, "the start of the file has nothing earlier")
+        val start = json(earlier.body)["earlier"]
+        assertTrue(start is kotlinx.serialization.json.JsonNull, "the start of the file has nothing earlier")
         assertEquals(listOf(null, "512"), asked, "end reads from the end, a number is the byte offset itself")
     }
 

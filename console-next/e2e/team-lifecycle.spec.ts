@@ -24,11 +24,11 @@ test('a team created through the console binds real sessions, joins handoff and 
   await dialog.getByRole('combobox', { name: /^Repository/ }).fill(env('CONSOLE_E2E_REPO'));
   const seat = (n: number) => dialog.getByRole('group', { name: 'Seat ' + n, exact: true });
   await seat(1).getByRole('textbox', { name: 'Role', exact: true }).fill('lead');
-  await select(page, dialog, 'Seat 1 Plan', STACK.oauthHead);
+  await select(page, dialog, 'Seat 1 Command', STACK.oauthHead);
   await select(page, dialog, 'Seat 1 Session', sender?.name ?? '');
   await dialog.getByRole('button', { name: 'Add a seat', exact: true }).click();
   await seat(2).getByRole('textbox', { name: 'Role', exact: true }).fill('builder');
-  await select(page, dialog, 'Seat 2 Plan', STACK.oauthHead);
+  await select(page, dialog, 'Seat 2 Command', STACK.oauthHead);
   await select(page, dialog, 'Seat 2 Session', peer?.name ?? '');
   const created = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/teams' && response.request().method() === 'PUT');
   await dialog.getByRole('button', { name: 'Save the team', exact: true }).click();

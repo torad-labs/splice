@@ -35,37 +35,38 @@ internal class TranscriptBackPage(
     /** The newest [limit] messages among the lines before byte [end], oldest first. */
     fun read(file: Path, sessionId: String, end: Long, limit: Int): TranscriptPage {
         val wanted = limit.coerceIn(1, MAX_TRANSCRIPT_PAGE)
-        var start = end
-        var read = 0L
+        val tail = BackBuffer(opener, file, end)
         var tryAt = BLOCK_BYTES.toLong()
-        val chunks = ArrayDeque<ByteArray>()
-        var window = Window(emptyList(), emptyMap())
-        while (true) {
-            if (start > 0 && read < MAX_BACK_BYTES) {
-                val count = minOf(start, BLOCK_BYTES.toLong(), MAX_BACK_BYTES - read).toInt()
-                start -= count
-                val block = opener.open(file, start).use { it.readNBytes(count) }
-                chunks.addFirst(block)
-                read += block.size
-            }
-            val spent = start == 0L || read >= MAX_BACK_BYTES
-            if (!spent && read < tryAt) continue
+        var window: Window
+        do {
+            tail.fill(tryAt)
             tryAt *= 2
-            window = assemble(join(chunks, read.toInt()), start)
-            if (spent || from(window.messages, wanted) >= 1) break
-        }
+            window = assemble(tail.bytes(), tail.start)
+        } while (!tail.spent && from(window.messages, wanted) < 1)
         val first = from(window.messages, wanted).coerceAtLeast(0)
         val kept = window.messages.drop(first)
-        // Something lies before the page unless its window reached the file's start without a message ahead of it.
-        val earlier = if (first > 0 || (start > 0 && kept.isNotEmpty())) (kept.first().index / PER_RECORD).toString() else null
+        val earlier = earlier(kept, first, tail.start)
         return TranscriptPage(sessionId, file.toString(), kept, null, window.skipped, earlier)
+    }
+
+    /** The cursor of the page before: something lies before the page unless its window reached the file's start
+     *  without a message ahead of it. */
+    private fun earlier(kept: List<TranscriptMessage>, first: Int, start: Long): String? {
+        val fileBefore = start > 0 && kept.isNotEmpty()
+        return if (first > 0 || fileBefore) (kept.first().index / PER_RECORD).toString() else null
     }
 
     /** Where the newest [wanted] messages begin, moved back to the start of the reply group it would split. */
     private fun from(messages: List<TranscriptMessage>, wanted: Int): Int {
         var at = (messages.size - wanted).coerceAtLeast(0)
-        while (at > 0 && messages[at].messageId != null && messages[at - 1].messageId == messages[at].messageId) at -= 1
+        while (at > 0 && splitsReply(messages, at)) at -= 1
         return at
+    }
+
+    /** Whether the message at [at] continues the reply the one before it began: one message id, several lines. */
+    private fun splitsReply(messages: List<TranscriptMessage>, at: Int): Boolean {
+        val id = messages[at].messageId ?: return false
+        return messages[at - 1].messageId == id
     }
 
     private fun assemble(bytes: ByteArray, windowStart: Long): Window {
@@ -86,8 +87,33 @@ internal class TranscriptBackPage(
         return Window(assembly.finish(), assembly.skipped.toMap())
     }
 
-    private fun join(chunks: ArrayDeque<ByteArray>, size: Int): ByteArray {
-        val bytes = ByteArray(size)
+    private data class Window(val messages: List<TranscriptMessage>, val skipped: Map<String, Int>)
+}
+
+/** The file's bytes read backwards, one block at a time, up to [MAX_BACK_BYTES]: [start] is where they begin. */
+private class BackBuffer(private val opener: TranscriptOpener, private val file: Path, end: Long) {
+    private val chunks = ArrayDeque<ByteArray>()
+    private var read = 0L
+
+    var start = end
+        private set
+
+    /** Nothing more can be read: the file's start is buffered, or the byte budget is spent. */
+    val spent: Boolean get() = start == 0L || read >= MAX_BACK_BYTES
+
+    /** Reads blocks backwards until at least [upTo] bytes are buffered, or nothing more can be read. */
+    fun fill(upTo: Long) {
+        while (!spent && read < upTo) {
+            val count = minOf(start, BLOCK_BYTES.toLong(), MAX_BACK_BYTES - read).toInt()
+            start -= count
+            val block = opener.open(file, start).use { it.readNBytes(count) }
+            chunks.addFirst(block)
+            read += block.size
+        }
+    }
+
+    fun bytes(): ByteArray {
+        val bytes = ByteArray(read.toInt())
         var at = 0
         for (chunk in chunks) {
             chunk.copyInto(bytes, at)
@@ -95,6 +121,4 @@ internal class TranscriptBackPage(
         }
         return bytes
     }
-
-    private data class Window(val messages: List<TranscriptMessage>, val skipped: Map<String, Int>)
 }

@@ -179,7 +179,8 @@ class TranscriptReaderTest {
         // limit 5 would cut between msg_1's text and its call: the page takes the whole message instead
         val pages = backwards(reader, roots, 5)
         assertEquals(listOf(6, 1), pages.map { it.messages.size })
-        assertEquals(listOf("Reading it now.", """{"file_path":"/w/splice.toml"}"""), pages.first().messages.take(2).map { it.text })
+        val firstTwo = pages.first().messages.take(2).map { it.text }
+        assertEquals(listOf("Reading it now.", """{"file_path":"/w/splice.toml"}"""), firstTwo)
     }
 
     @Test
@@ -200,19 +201,21 @@ class TranscriptReaderTest {
         assertEquals(7, all.messages.size)
         assertNull(all.earlier)
         assertTrue(reader.pageBefore(ID, roots, "x", 3) is TranscriptLookup.Refused)
-        assertTrue(reader.pageBefore(ID, roots, "99999999", 3) is TranscriptLookup.Refused, "past the end of the file")
+        val past = reader.pageBefore(ID, roots, "99999999", 3)
+        assertTrue(past is TranscriptLookup.Refused, "past the end of the file")
     }
 
     @Test
     fun `an earlier page across a window boundary gives the same messages as reading the whole file`() {
         // 300 user lines of 1 KiB: the newest page has to read several 64 KiB windows back to find its 200.
-        val lines = (0 until 300).map { n -> """{"type":"user","message":{"role":"user","content":"m$n ${"x".repeat(1024)}"}}""" }
+        val pad = "x".repeat(1024)
+        val lines = (0 until 300).map { n -> """{"type":"user","message":{"role":"user","content":"m$n $pad"}}""" }
         transcript(home.resolve(".claude"), lines)
         val reader = TranscriptReader()
         val roots = listOf(home.resolve(".claude"))
         val pages = backwards(reader, roots, 200)
         assertEquals(listOf(200, 100), pages.map { it.messages.size })
-        assertEquals((0 until 300).map { "m$it" }, pages.reversed().flatMap { it.messages }.map { it.text.substringBefore(' ') })
+        val texts = pages.reversed().flatMap { it.messages }.map { it.text.substringBefore(' ') }
+        assertEquals((0 until 300).map { "m$it" }, texts)
     }
 }
-

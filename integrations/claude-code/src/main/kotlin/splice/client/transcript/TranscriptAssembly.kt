@@ -32,8 +32,7 @@ internal class PageAssembly(
 ) {
     /** The byte offset of the record [accept] is about to read; only a [byOffset] assembly numbers by it. */
     var at: Long = 0
-    private var sameAt: Long = -1
-    private var lastAt: Long = -1
+    private val offsets = OffsetNumbering()
     var nextIndex: Long = firstIndex
         private set
     val skipped: MutableMap<String, Int> = sortedMapOf()
@@ -140,9 +139,19 @@ internal class PageAssembly(
     private fun flush() {
         val done = pending ?: return
         pending = null
-        if (done.texts.isNotEmpty()) emit(TranscriptRole.ASSISTANT, done.ts, done.joined(), messageId = done.id, from = done.at)
+        if (done.texts.isNotEmpty()) {
+            emit(TranscriptRole.ASSISTANT, done.ts, done.joined(), messageId = done.id, from = done.at)
+        }
         for ((name, input) in done.calls) {
-            emit(TranscriptRole.ASSISTANT, done.ts, input, tool = name, result = false, messageId = done.id, from = done.at)
+            emit(
+                TranscriptRole.ASSISTANT,
+                done.ts,
+                input,
+                tool = name,
+                result = false,
+                messageId = done.id,
+                from = done.at,
+            )
         }
     }
 
@@ -155,15 +164,9 @@ internal class PageAssembly(
         messageId: String? = null,
         from: Long = at,
     ) {
-        val index = if (byOffset) offsetIndex(from) else nextIndex
+        val index = if (byOffset) offsets.indexOf(from) else nextIndex
         messages += TranscriptMessage(index, role, ts, redaction.shown(text), tool, result, messageId)
         nextIndex += 1
-    }
-
-    private fun offsetIndex(from: Long): Long {
-        sameAt = if (from == lastAt) sameAt + 1 else 0
-        lastAt = from
-        return from * PER_RECORD + sameAt
     }
 
     private fun count(kind: String): Boolean {
@@ -177,6 +180,19 @@ internal class PageAssembly(
 
         /** The message's text blocks as one text, in the order the client wrote them. */
         fun joined(): String = texts.joinToString("\n\n")
+    }
+}
+
+/** Numbers messages by where their record starts in the file: the offset times [PER_RECORD] plus the message's place
+ *  among the messages that same record made. */
+private class OffsetNumbering {
+    private var sameAt = -1L
+    private var lastAt = -1L
+
+    fun indexOf(from: Long): Long {
+        sameAt = if (from == lastAt) sameAt + 1 else 0
+        lastAt = from
+        return from * PER_RECORD + sameAt
     }
 }
 

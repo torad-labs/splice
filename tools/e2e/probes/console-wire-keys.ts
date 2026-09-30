@@ -110,6 +110,8 @@ const QUERY_FILL: Record<string, string> = {
   // One previous day stays within the chat route's 25-hour bound.
   "api/teams.ts|day.from": String(PREVIOUS_DAY_TO - MS_PER_DAY),
   "api/teams.ts|day.to": String(PREVIOUS_DAY_TO),
+  // A session's transcript is read from its end first (`before=end`); later pages carry the cursor the last one named.
+  "api/sessions.ts|id(pageParam)": "end",
 };
 
 /** A path expression that is a call to a local helper rather than a literal. Keyed by file and the

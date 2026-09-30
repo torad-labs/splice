@@ -28,6 +28,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelChildren
@@ -62,6 +63,7 @@ internal class TurnStreamer(
     private val emitters = SseEmitterFactory()
     private val wiring = TurnWiring()
     private val clientWindow = ClientWindowWitness(deps.stores.clientWindows)
+    private val driveDispatcher = ProcessDispatchers().io()
 
     // The drive handles every turn failure itself; anything that still escapes a detached
     // compaction is a bug, logged by class (safe-failure-render) rather than lost to stderr.
@@ -83,9 +85,7 @@ internal class TurnStreamer(
         val recording = if (replayKey != null) FrameRecording() else null
         // The head's quota windows ride every response as the headers Claude Code reads into its
         // rate_limits (the 5h/7d bars): the client sees the head's real plan usage, proxy or not.
-        deps.turnQuota.forSession(built.meta.sessionId, inputs.account)?.clientHeaders()?.forEach { (name, value) ->
-            call.response.header(name, value)
-        }
+        applyQuotaHeaders(call, inputs)
         return coroutineScope {
             // Headers remain uncommitted until a model frame, a non-size error, or the hold expires.
             // Structural message_start/ping are staged, not counted as sent.
@@ -103,12 +103,21 @@ internal class TurnStreamer(
                 ),
             )
             val drive = driveFactory.assembleDrive(inputs, emitter, channel)
-            val running = async {
+            // Ktor's SseResponse body previously ran blocking Writer calls on its IO bridge.
+            // The drive now starts before respond, so use the process IO adapter instead of Netty.
+            val running = async(driveDispatcher) {
                 try {
                     runPending(drive, inputs, replayKey, recording, pending)
                 } finally {
                     pending.finish()
                 }
+            }
+            // Staged pings cannot detect a disconnect before Ktor opens the response.
+            // Netty's closeFuture is the same pre-response signal collect() already uses.
+            val turnJob = requireNotNull(coroutineContext[Job])
+            val watch = launch {
+                ClientConnectionClose.await(call)
+                channel.connectionClosed(turnJob)
             }
             try {
                 respondPending(call, pending, running)
@@ -120,8 +129,15 @@ internal class TurnStreamer(
                     withContext(NonCancellable) { pending.detachForRecording() }
                 }
                 throw cancelled
+            } finally {
+                watch.cancel()
             }
         }
+    }
+
+    private fun applyQuotaHeaders(call: ApplicationCall, inputs: TurnInputs) {
+        val quota = deps.turnQuota.forSession(inputs.built.meta.sessionId, inputs.account)
+        quota?.clientHeaders()?.forEach { (name, value) -> call.response.header(name, value) }
     }
 
     private suspend fun respondPending(

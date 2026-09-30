@@ -82,7 +82,7 @@ internal class CollectTurn(
                 null
             } else {
                 launch {
-                    awaitClientConnectionClosed(call)
+                    ClientConnectionClose.await(call)
                     channel.connectionClosed(parent)
                 }
             }
@@ -104,8 +104,11 @@ internal class CollectTurn(
         // The collect path never detaches a compaction, so it never hands the slot off (V4-99 item 3).
         return false
     }
+}
 
-    private suspend fun awaitClientConnectionClosed(call: ApplicationCall) {
+/** Shared Netty close signal for collect and the stream's uncommitted status hold. */
+internal object ClientConnectionClose {
+    suspend fun await(call: ApplicationCall) {
         val netty = nettyCall(call)
         if (netty == null) {
             awaitCancellation()
@@ -121,11 +124,7 @@ internal class CollectTurn(
         }
     }
 
-    // Ktor 3 routing hands [RoutingCall], which wraps [RoutingPipelineCall], which wraps the
-    // engine call. `call as? NettyApplicationCall` is therefore always null on this path
-    // (HD-29 measured: the watch never attached and the slot stayed pinned). Walk the public
-    // getters; if the engine call is not Netty, fall back to awaitCancellation so we never
-    // false-positive-cancel.
+    // Ktor 3 routing wraps the engine call twice; checking call directly misses every turn.
     private fun nettyCall(call: ApplicationCall): NettyApplicationCall? {
         val pipeline = (call as? RoutingCall)?.pipelineCall ?: call
         val engine = (pipeline as? RoutingPipelineCall)?.engineCall ?: pipeline

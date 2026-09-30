@@ -97,9 +97,9 @@ class HeadServerCollectDisconnectTest {
     /** Write the request head + body on a raw socket: a real client whose close() is a real FIN,
      *  with no HTTP-client connection pool or cancellation semantics in between. The two arms
      *  differ in exactly one byte-range — `stream` — so any difference in outcome is the path. */
-    private fun openTurn(stream: Boolean): Socket {
+    private fun openTurn(stream: Boolean, scenario: String = "hold"): Socket {
         val body = """{"model":"claude-codex--gpt-5.6-sol","stream":$stream,"max_tokens":64,""" +
-            """"system":"You are a test. SCENARIO:hold",""" +
+            """"system":"You are a test. SCENARIO:$scenario",""" +
             """"messages":[{"role":"user","content":"go"}]}"""
         val socket = Socket("127.0.0.1", port)
         val request = "POST /v1/messages HTTP/1.1\r\n" +
@@ -149,16 +149,35 @@ class HeadServerCollectDisconnectTest {
         return freed
     }
 
-    /** CONTROL ARM — proves the instrument. Same socket, same close(), same parked upstream: on
-     *  stream:true the keepalive pinger's write fails, flips clientGone and cancels the turn, so
-     *  the slot comes back within a couple of ping intervals. A failure here means the raw-socket
-     *  hang-up itself is not observable and the sibling test below proves nothing. */
+    /** CONTROL ARM — proves the instrument. A stream whose first model frame arrived watches
+     *  Netty's closeFuture as well as its keepalive pinger, so either can return the slot promptly.
+     *  A failure here means the raw-socket hang-up is not observable. */
     @Test
-    fun `a stream-true turn abandoned mid-hold gets its gate slot back via the keepalive pinger`() = runBlocking {
+    fun `a stream-true turn abandoned mid-hold gets its gate slot back promptly`() = runBlocking {
         assertTrue(
             abandonMidTurnAndPoll(stream = true, observeMs = 20_000),
             "the stream path must free its slot on a client hang-up: ${gate.snapshot()}",
         )
+    }
+
+    @Test
+    fun `stream client hangup before first model frame releases admission promptly`() = runBlocking {
+        mock.resetStartHold()
+        val before = mock.upstreamBodies.size
+        val socket = openTurn(stream = true, scenario = "holdstart")
+        val freed = try {
+            assertTrue(waitFor(15_000) { gate.snapshot().inflight == 1 })
+            assertTrue(waitFor(15_000) { mock.upstreamBodies.size > before })
+            socket.close()
+            val released = waitFor(8_000) { gate.snapshot().inflight == 0 }
+            assertEquals(1L, mock.startHoldRelease.count, "the backend must still be held before its first item")
+            released
+        } finally {
+            socket.close()
+            mock.startHoldRelease.countDown()
+        }
+        assertTrue(waitFor(30_000) { gate.snapshot().inflight == 0 })
+        assertTrue(freed, "a pre-header hangup must not retain admission until the 120s status hold")
     }
 
     /** INVERTED (HD-29). Same socket, same close(), same parked upstream as the control arm:

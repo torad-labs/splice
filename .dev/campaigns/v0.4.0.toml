@@ -10158,6 +10158,7 @@ verify = "red first: a wrapped launch over a home whose ~/.claude.json holds mcp
 claimed_by = "splice-builder2"
 claimed_at = "2026-09-30T00:13:03.183Z"
 # [2026-09-30] CLAIM: owner=splice-builder2 at=2026-09-30T00:13:03Z
+# [2026-09-30] Sep 29 CT: former splice-builder2 socket no longer present, confirmed by claude-builder. Continued splice-lead completes existing wrap edits and gates, preserving shared-tree work. V4-441 is finalized separately with bounded scope.
 
 [[items]]
 id = "V4-446"

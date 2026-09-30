@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { SessionRow } from '../src/types/sessions';
-import { groupSessions, inOrder, moveKey, peerLabel, repoName, sessionKey, sessionLabel, stateOf, STUCK_AFTER_MS } from '../src/lib/sessions';
+import { groupSessions, peerLabel, repoName, sessionKey, sessionLabel, stateOf, STUCK_AFTER_MS } from '../src/lib/sessions';
 
 const NOW = 1_790_000_000_000;
 const row = (over: Partial<SessionRow> = {}): SessionRow => ({
@@ -51,18 +51,6 @@ describe('grouping', () => {
   test('by repo, biggest first, an unplaced row is unattributed and not dropped', () => {
     const groups = groupSessions([row(), row(), row({ cwd: '/x/other' }), row({ cwd: null })], 'repo', NOW);
     expect(groups.map((group) => [group.key, group.sessions.length])).toEqual([['tally', 2], ['other', 1], ['unattributed', 1]]);
-  });
-});
-
-describe('the operator\'s order', () => {
-  const a = row({ session_id: 'a' }), b = row({ session_id: 'b' }), c = row({ session_id: 'c' });
-  test('sorts by the kept order and leaves unknown keys after the known ones, as given', () =>
-    expect(inOrder([a, b, c], ['c', 'a']).map(sessionKey)).toEqual(['c', 'a', 'b']));
-  test('a first drag fixes the whole order', () =>
-    expect(moveKey([], ['a', 'b', 'c'], 'c', 'a')).toEqual(['c', 'a', 'b']));
-  test('moving onto itself, or an unknown key, changes nothing', () => {
-    expect(moveKey(['a', 'b'], ['a', 'b'], 'a', 'a')).toEqual(['a', 'b']);
-    expect(moveKey(['a', 'b'], ['a', 'b'], 'zzz', 'a')).toEqual(['a', 'b']);
   });
 });
 

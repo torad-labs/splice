@@ -11,7 +11,7 @@ import type {
   HeadsPayload,
   UsagePayload,
 } from '../types/core';
-import type { ResumeRecipe, SessionEdgesPayload, SessionsPayload, TranscriptRead } from '../types/sessions';
+import type { SessionsPayload } from '../types/sessions';
 import type { LiveTurnsPayload, StopTurnResult } from '../types/turns';
 
 export const keys = {
@@ -32,7 +32,7 @@ export const keys = {
 /** How often a page re-reads without an event: the stream is the fast path, this is the floor. */
 const FLOOR_MS = 15_000;
 
-const read = <T>(key: readonly string[], path: string, extra: Partial<UseQueryOptions<T>> = {}) =>
+export const read = <T>(key: readonly string[], path: string, extra: Partial<UseQueryOptions<T>> = {}) =>
   ({ queryKey: [...key, path], queryFn: () => request<T>(path), refetchInterval: FLOOR_MS, ...extra }) satisfies UseQueryOptions<T>;
 
 export const useStatus = () => useQuery(read<ControlStatusPayload>(keys.status, '/api/status', { refetchInterval: false, staleTime: 60_000 }));
@@ -45,16 +45,6 @@ export const useConfig = (head?: string) =>
 export const useHealth = () =>
   useQuery({ queryKey: [...keys.health], queryFn: () => health<{ topologyStale?: boolean }>(), refetchInterval: FLOOR_MS });
 
-export const useSessionEdges = (id: string) =>
-  useQuery(read<SessionEdgesPayload>(keys.edges, `/api/sessions/${encodeURIComponent(id)}/edges`));
-export const useTranscript = (id: string) =>
-  useQuery(read<TranscriptRead>(keys.transcript, `/api/sessions/${encodeURIComponent(id)}/transcript`));
-export const useResume = (id: string, head: string) =>
-  useQuery({
-    queryKey: [...keys.sessions, 'resume', id, head],
-    queryFn: () => request<ResumeRecipe>(`/api/sessions/${encodeURIComponent(id)}/resume?head=${encodeURIComponent(head)}`),
-    enabled: false,
-  });
 export const useLiveTurns = (head: string, enabled = true) =>
   useQuery(read<LiveTurnsPayload>(keys.liveTurns, `/api/heads/${encodeURIComponent(head)}/turns/live`, { enabled }));
 

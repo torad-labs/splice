@@ -90,26 +90,6 @@ export function groupSessions(rows: readonly SessionRow[], by: GroupBy, now: num
     : all.sort((a, b) => b.sessions.length - a.sessions.length || a.key.localeCompare(b.key));
 }
 
-/** The operator's order: rows sort by the position of their key in [order]; a key it has never seen keeps
- *  its place after the known ones, in the order given. */
-export function inOrder(rows: readonly SessionRow[], order: readonly string[]): SessionRow[] {
-  const at = new Map(order.map((key, index) => [key, index] as const));
-  const rank = (row: SessionRow): number => at.get(sessionKey(row)) ?? order.length;
-  return rows.map((row, index) => ({ row, index })).sort((a, b) => rank(a.row) - rank(b.row) || a.index - b.index).map((entry) => entry.row);
-}
-
-/** [order] with [key] moved to sit where [over] sits. Keys the order did not hold yet are added first, in the
- *  sequence [all] gives, so a first drag fixes the whole order. */
-export function moveKey(order: readonly string[], all: readonly string[], key: string, over: string): string[] {
-  const full = [...order, ...all.filter((candidate) => !order.includes(candidate))];
-  const from = full.indexOf(key);
-  const to = full.indexOf(over);
-  if (from === -1 || to === -1 || from === to) return full;
-  const next = full.filter((candidate) => candidate !== key);
-  next.splice(to, 0, key);
-  return next;
-}
-
 /** The address a session mints for other sessions to message, and the name behind one. */
 export function nameForAddress(rows: readonly SessionRow[], address: string): string | null {
   const owner = rows.find((row) => row.address === address);

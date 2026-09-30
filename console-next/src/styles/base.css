@@ -103,7 +103,9 @@ svg { display: block; flex: none; }
 .win.kimi { --rim: var(--kimi); } .win.muse { --rim: var(--muse); } .win.local { --rim: var(--local); }
 .win.router { --rim: var(--router); } .win.deepseek { --rim: var(--deepseek); }
 .win.flat { box-shadow: none; }
-.win.sheet { overflow: visible; }
+.win.sheet { overflow: visible; padding: 0; }
+.win.sheet .bar { padding: var(--space-8) var(--space-11) var(--space-6); border-bottom: 1px solid var(--hair); }
+.win.sheet .bar h3 { font: 600 16px var(--meta); color: var(--mute); letter-spacing: 0; }
 /* a card that needs a person drops its hue and keeps the one vermilion button */
 .win.attn { --rim: var(--tan) !important; }
 .bar { display: flex; align-items: center; gap: var(--space-6); padding: var(--space-8) var(--space-9) var(--space-5) var(--space-9); min-width: 0; }

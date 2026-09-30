@@ -4,7 +4,7 @@ import { SortableContext, rectSortingStrategy, sortableKeyboardCoordinates } fro
 import { failureText } from '../../api/client';
 import { useAccounts, useAuth, useHealth, useHeads, useSessions, useUsage } from '../../api/queries';
 import { poolOf } from '../../lib/accounts';
-import { fleetCard } from '../../lib/fleet';
+import { fleetCard, fleetLede } from '../../lib/fleet';
 import { moveKey, setOrder, sortByOrder, useOrder } from '../../lib/order';
 import { Empty, Fault, PageHead, Plus } from '../../ui';
 import { AddPlan } from './AddPlan';
@@ -56,6 +56,7 @@ export function FleetPage() {
     <>
       <PageHead
         title={F.title}
+        {...(cards.length === 0 ? {} : { lede: fleetLede(cards.map((card) => card.facts)) })}
         tools={
           <AddPlan>
             <button type="button" className="btn go">
@@ -76,6 +77,14 @@ export function FleetPage() {
                 fix={facts.fix === null ? null : <FleetFix fix={facts.fix} head={head} pool={poolOf(rows, head.key)} now={now} />}
               />
             ))}
+            <li>
+              <AddPlan>
+                <button type="button" className="add-card">
+                  <b>{F.bringAnother}</b>
+                  <span>{F.bringWhy}</span>
+                </button>
+              </AddPlan>
+            </li>
           </ul>
         </SortableContext>
       </DndContext>

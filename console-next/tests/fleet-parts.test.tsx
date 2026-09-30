@@ -8,7 +8,7 @@ import type { FleetCard } from '../src/lib/fleet';
 import { FleetCardView } from '../src/pages/fleet/FleetCard';
 
 const card = (over: Partial<FleetCard> = {}): FleetCard => ({
-  key: 'claude-grok', title: 'claude-grok', colour: 'grok', tone: 'work', state: 'Ready', attention: false,
+  key: 'claude-grok', title: 'claude-grok', colour: 'grok', tone: 'work', standing: 'ready', state: 'Ready', attention: false,
   line: { kind: 'gauge', name: '5 hours', pct: 41, note: 'resets Oct 5, 4:40 PM', full: false }, meta: ['grok', 'Ava’s Grok', '2 sessions'], fix: null, ...over,
 });
 const render = (facts: FleetCard, fix: string | null = null) =>

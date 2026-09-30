@@ -9,8 +9,11 @@ import { colourOfHead } from './model';
 import type { ModelColour } from './model';
 import { poolOf, selectedExcluded } from './accounts';
 import { planLevel, planWindows } from './usage';
-import { noun } from './format';
+import { countWord, noun } from './format';
 import { FL } from './words-fleet';
+
+/** Where a plan stands, in the few ways the page's one sentence counts them. */
+export type FleetStanding = 'ready' | 'near' | 'quota' | 'signed-out' | 'off' | 'other';
 
 export type FleetTone = 'work' | 'wait' | 'stuck' | 'idle' | 'quota';
 
@@ -28,6 +31,7 @@ export interface FleetCard {
   title: string;
   colour: ModelColour;
   tone: FleetTone;
+  standing: FleetStanding;
   state: string;
   attention: boolean;
   /** Null for a healthy head with nothing to draw: a card says nothing rather than fill the space. */
@@ -102,42 +106,54 @@ export function fleetCard(head: HeadStatus, inputs: FleetInputs): FleetCard {
   const oauth = OAUTH_KINDS.has(head.authKind);
   const base = { key: head.key, title: head.label, colour: colourOfHead(head.authKind), meta };
 
-  const note = (tone: FleetTone, state: string, text: string, fix: FleetFix | null, needsPerson: boolean): FleetCard => ({
-    ...base, tone, state, attention: needsPerson, line: gauge === null || tone === 'idle' ? { kind: 'note', text } : gauge, fix,
+  const note = (tone: FleetTone, standing: FleetStanding, state: string, text: string, fix: FleetFix | null, needsPerson: boolean): FleetCard => ({
+    ...base, tone, standing, state, attention: needsPerson, line: gauge === null || tone === 'idle' ? { kind: 'note', text } : gauge, fix,
   });
 
   switch (attention.cause) {
     case 'down':
-      return { ...base, tone: 'idle', state: 'Stopped', attention: false, line: { kind: 'note', text: FL.stopped }, fix: 'start' };
+      return { ...base, tone: 'idle', standing: 'off', state: 'Stopped', attention: false, line: { kind: 'note', text: FL.stopped }, fix: 'start' };
     case 'runtime not answering':
       return {
-        ...base, tone: 'idle', state: 'Runtime off', attention: false,
+        ...base, tone: 'idle', standing: 'off', state: 'Runtime off', attention: false,
         line: { kind: 'note', text: `The runtime is not answering on ${head.runtimeNotAnswering ?? 'its port'}.` }, fix: 'copy-start',
       };
     case 'unhealthy':
-      return note('stuck', 'Failing', FL.unhealthy, 'restart', true);
+      return note('stuck', 'other', 'Failing', FL.unhealthy, 'restart', true);
     case 'out of quota': {
       const when = until === null ? '' : ` until ${localInstantText(until)}`;
       const full: FleetLine = gauge === null ? { kind: 'note', text: `The provider refuses new turns${when}.` } : { ...gauge, full: true, note: until === null ? gauge.note : `out${when}` };
-      return { ...base, tone: 'quota', state: `Out of quota${when}`, attention: true, line: full, fix: pool.length > 1 ? 'switch' : null };
+      return { ...base, tone: 'quota', standing: 'quota', state: `Out of quota${when}`, attention: true, line: full, fix: pool.length > 1 ? 'switch' : null };
     }
     case 'signed out':
     case 'key missing':
-      return note('stuck', head.authKind === 'api-key' ? 'Key missing' : 'Signed out', FL.signedOut, oauth ? 'sign-in' : null, true);
+      return note('stuck', 'signed-out', head.authKind === 'api-key' ? 'Key missing' : 'Signed out', FL.signedOut, oauth ? 'sign-in' : null, true);
     case 'login expired':
-      return note('stuck', 'Sign-in expired', FL.loginExpired, oauth ? 'sign-in' : null, true);
+      return note('stuck', 'signed-out', 'Sign-in expired', FL.loginExpired, oauth ? 'sign-in' : null, true);
     case 'version mismatch':
-      return note('wait', 'Version mismatch', `It runs ${head.version ?? 'an unknown version'}; it wants ${head.wantVersion}.`, 'restart', true);
+      return note('wait', 'other', 'Version mismatch', `It runs ${head.version ?? 'an unknown version'}; it wants ${head.wantVersion}.`, 'restart', true);
     case 'account excluded':
-      return note('wait', 'Account excluded', FL.accountExcluded, pool.length > 1 ? 'switch' : null, true);
+      return note('wait', 'other', 'Account excluded', FL.accountExcluded, pool.length > 1 ? 'switch' : null, true);
     case 'queue full':
-      return note('wait', 'Queue full', FL.queueFull, null, true);
+      return note('wait', 'other', 'Queue full', FL.queueFull, null, true);
     case 'restart needed':
-      return note('wait', 'Restart needed', FL.restartNeeded, 'restart', true);
+      return note('wait', 'other', 'Restart needed', FL.restartNeeded, 'restart', true);
     case 'ok': {
       const level = gauge === null || usage === null ? 'ok' : planLevel(gauge.pct, usage.warn_pct);
-      if (level !== 'ok') return note('quota', 'Near its limit', '', null, false);
-      return { ...base, tone: 'work', state: 'Ready', attention: false, line: gauge, fix: null };
+      if (level !== 'ok') return note('quota', 'near', 'Near its limit', '', null, false);
+      return { ...base, tone: 'work', standing: 'ready', state: 'Ready', attention: false, line: gauge, fix: null };
     }
   }
+}
+
+const STANDING_ORDER: readonly FleetStanding[] = ['ready', 'near', 'quota', 'signed-out', 'off', 'other'];
+
+/** The page's one sentence: how many plans, and how many stand each way, then how to arrange them. */
+export function fleetLede(cards: readonly FleetCard[]): string {
+  const groups = STANDING_ORDER.flatMap((standing) => {
+    const count = cards.filter((card) => card.standing === standing).length;
+    return count === 0 ? [] : [`${countWord(count).toLowerCase()} ${FL.standing[standing]}`];
+  });
+  const total = cards.length === 1 ? FL.onePlan : `${countWord(cards.length)} ${FL.manyPlans}`;
+  return `${FL.plans(total, groups.join(', '))} ${FL.drag}`;
 }

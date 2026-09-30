@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import { fleetCard, startCommandOf } from '../src/lib/fleet';
+import { fleetCard, fleetLede, startCommandOf } from '../src/lib/fleet';
+import type { FleetCard, FleetStanding } from '../src/lib/fleet';
 import type { FleetInputs } from '../src/lib/fleet';
 import type { AccountRow } from '../src/types/accounts';
 import type { HeadStatus, UsagePayload } from '../src/types/core';
@@ -72,5 +73,17 @@ describe('a fleet card', () => {
   test('one session reads in the singular and none as "no sessions"', () => {
     expect(fleetCard(head(), inputs({ sessions: new Map([['claude-grok', 1]]) })).meta.at(-1)).toBe('1 session');
     expect(fleetCard(head(), inputs({ sessions: new Map() })).meta.at(-1)).toBe('no sessions');
+  });
+});
+
+describe('the fleet sentence', () => {
+  const stand = (...standings: FleetStanding[]): FleetCard[] => standings.map((standing) => ({ standing }) as FleetCard);
+  test('counts each standing in order and ends with how to arrange the cards', () => {
+    expect(fleetLede(stand('ready', 'quota', 'ready', 'off', 'near', 'signed-out'))).toBe(
+      'Six plans: two ready, one near its limit, one out of quota, one signed out, one switched off. Drag a card to put it where you want it; Sessions follows.',
+    );
+  });
+  test('one plan is singular and a standing nobody has is left out', () => {
+    expect(fleetLede(stand('other'))).toBe('One plan: one in need of a look. Drag a card to put it where you want it; Sessions follows.');
   });
 });

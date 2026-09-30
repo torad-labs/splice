@@ -50,7 +50,7 @@ export function SettingsPage() {
         </nav>
         <div className="sheets">
           {SECTIONS.map((section) => (
-            <section key={section} className="sheet" id={`settings-${section}`} aria-labelledby={`settings-${section}-h`}>
+            <section key={section} className="settings-sheet" id={`settings-${section}`} aria-labelledby={`settings-${section}-h`}>
               <h2 id={`settings-${section}-h`}>{T.section[section]}</h2>
               <div className="win flat set">{body[section]}</div>
             </section>

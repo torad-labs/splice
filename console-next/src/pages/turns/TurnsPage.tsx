@@ -42,9 +42,9 @@ function PlanLine({ row, max }: { row: PlanRow; max: number }) {
       <span className="n">{fmtInt(row.turns)}</span>
       <span className={`n${row.failed > 0 ? ' bad' : ''}`}>{fmtInt(row.failed)}</span>
       {row.firstP50 === null || slow === null ? (
-        <span className="first">{ABSENT}</span>
+        <span className="plan-first">{ABSENT}</span>
       ) : (
-        <div className="first">
+        <div className="plan-first">
           <div className="bar2" role="img" aria-label={`${T.typical} ${secondsText(row.firstP50)}, ${T.slowest} ${secondsText(slow)}`}>
             <i style={{ width: `${(slow / max) * 100}%` }} />
             <u style={{ width: `${(row.firstP50 / max) * 100}%` }} />
@@ -143,7 +143,7 @@ export function TurnsPage() {
           <SearchField value={query} onChange={setQuery} label={T.find} hint={T.find} />
         </div>
         {lines.length === 0 ? <Empty title={T.none} why={T.noneWhy} /> : <ul className="list">{lines.map((line) => <TurnRowView key={line.key} line={line} />)}</ul>}
-        {held > all.length && filter === 'all' && query === '' ? <p className="foot">{T.shownOf(all.length, held)}</p> : null}
+        {held > all.length && filter === 'all' && query === '' ? <p className="plan-foot">{T.shownOf(all.length, held)}</p> : null}
       </section>
       {slice.unread.length === 0 && slice.truncated.length === 0 ? null : (
         <section className="unread" aria-label={T.unreadTitle}>

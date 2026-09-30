@@ -7,9 +7,6 @@ a.crumb { display: inline-flex; align-items: center; gap: var(--space-4); margin
 .top .facts.quiet-meta > span + span::before { content: '·'; margin: 0 var(--space-4); color: var(--faint); }
 .top .acts { margin-left: auto; padding: var(--space-4) 0 0; margin-top: 0; }
 .cols { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: var(--space-13); align-items: start; }
-.sheet { padding: 0; }
-.sheet .bar { padding: var(--space-8) var(--space-11) var(--space-6); border-bottom: 1px solid var(--hair); }
-.sheet .bar h3 { font: 600 16px var(--meta); color: var(--mute); letter-spacing: 0; }
 .convo { padding: var(--space-8) var(--space-12) var(--space-12); display: grid; gap: var(--space-13); justify-items: center; }
 .convo > * { width: 100%; max-width: 78ch; }
 .msg { display: grid; gap: var(--space-6); max-width: 78ch; }

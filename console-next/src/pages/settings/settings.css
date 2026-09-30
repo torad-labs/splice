@@ -5,8 +5,8 @@
 .sub a[aria-current='true'] { color: var(--ink); }
 .sub a[aria-current='true']::before { content: ''; position: absolute; left: calc(-1 * var(--space-6)); top: var(--space-4); bottom: var(--space-4); width: 6px; border-radius: 3px; background: var(--charge); }
 .sheets { display: grid; gap: var(--space-17); scroll-margin-top: 30px; }
-.sheet { scroll-margin-top: 30px; }
-.sheet h2 { font: 520 30px/1.1 var(--display); font-variation-settings: 'opsz' 72; letter-spacing: -.02em; color: var(--ink); margin-bottom: var(--space-10); }
+.settings-sheet { scroll-margin-top: 30px; }
+.settings-sheet h2 { font: 520 30px/1.1 var(--display); font-variation-settings: 'opsz' 72; letter-spacing: -.02em; color: var(--ink); margin-bottom: var(--space-10); }
 .set { padding: var(--space-6) var(--space-12); overflow: visible; }
 .row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 22rem); gap: var(--space-11); align-items: center; padding: var(--space-10) 0; }
 .row + .row { border-top: 1px solid color-mix(in srgb, var(--ink) 9%, transparent); }

@@ -1,6 +1,5 @@
 /* A list of cards (Sessions, Fleet): D, the calm version. A card is a window whose one accent is its head's shadow. */
 .grid { list-style: none; margin: 0; padding: 0 var(--space-8) 0 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(460px, 1fr)); gap: var(--space-15); }
-.grid.first { grid-template-columns: repeat(auto-fill, minmax(460px, 1fr)); }
 .card { position: relative; }
 .card.dragging { z-index: 5; opacity: .92; cursor: grabbing; }
 .card .bar h3 { font-size: var(--text-4); }

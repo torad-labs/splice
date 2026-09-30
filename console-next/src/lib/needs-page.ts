@@ -3,7 +3,7 @@
 import type { HeadStatus } from '../types/core';
 import type { InputName, Need, NeedsList, Reading } from '../types/needs';
 import type { SessionRow } from '../types/sessions';
-import { clockTime, noun } from './format';
+import { clockTime, countWord, noun } from './format';
 import { stateOf } from './sessions';
 import type { TurnOf } from './sessions';
 import { K } from './words-needs';
@@ -22,8 +22,6 @@ export function toneOf(need: Need): NeedTone {
 /** A hash address (`#/fleet/claudex`) as the router path it names. */
 export const routeOf = (href: string): string => (href.startsWith('#') ? href.slice(1) : href);
 
-const COUNT_WORD = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'] as const;
-const countWord = (n: number): string => COUNT_WORD[n] ?? String(n);
 
 /** The page's one-sentence summary. It says "Everything else is running" only when every input was read: an input it could
  *  not read is not running, it is unknown. */

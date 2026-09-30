@@ -125,7 +125,7 @@ export function SessionsPage() {
             <section key={group.key} aria-label={title}>
               <GroupHead title={title} count={rows.length} {...(text === undefined ? {} : { why: text.why })} {...(team !== undefined ? { action: <Link to={`/teams/${encodeURIComponent(team.id)}`}>{M.openTeam}</Link> } : root !== undefined && projects.data?.projects.some((project) => project.root === root) === true ? { action: <Link to={`/projects/${encodeURIComponent(root)}`}>{PJ.openProject}</Link> } : {})} />
               <SortableContext items={rows.map(sessionKey)} strategy={rectSortingStrategy}>
-                <ul className={by === 'state' && group.key === 'needs' ? 'grid first' : 'grid'}>
+                <ul className="grid">
                   {rows.map((row) => (
                     <SessionCard key={sessionKey(row)} facts={factsOf(row)} />
                   ))}

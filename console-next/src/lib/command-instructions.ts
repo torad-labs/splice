@@ -37,6 +37,12 @@ export function withCommandInstructions(topology: Table, head: string, next: Com
 /** The sentence that says what the current choice does to the client's instructions. */
 export const noteOf = (current: CommandInstruction | null): string => INSTRUCTION_NOTE[current === null ? 'none' : current.mode];
 
+/** What the editor holds once a save of `saved` for `head` is done: nothing when the draft is what was saved, and the draft itself when the
+ *  operator changed it while the save was in flight, so a newer edit is never discarded by an older save finishing. */
+export function draftAfterSave<T extends { head: string; value: CommandInstruction | null }>(draft: T | null, head: string, saved: CommandInstruction | null): T | null {
+  return draft !== null && draft.head === head && JSON.stringify(draft.value) === JSON.stringify(saved) ? null : draft;
+}
+
 /** A save is held while a file is unread or refused, and while the text is blank. */
 export function canSave(current: CommandInstruction | null, changed: boolean, fileReady: boolean): boolean {
   return changed && (current === null || (current.text.trim() !== '' && (current.source === 'inline' || fileReady)));

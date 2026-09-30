@@ -1,6 +1,6 @@
 // The plan-instructions model and the upgrade rows' rules.
 import { describe, expect, test } from 'vitest';
-import { canSave, commandInstructionsOf, noteOf, topologyKeysOf, withCommandInstructions } from '../src/lib/command-instructions';
+import { canSave, commandInstructionsOf, draftAfterSave, noteOf, topologyKeysOf, withCommandInstructions } from '../src/lib/command-instructions';
 import { askOf, commandOf, rollbackTarget, versionLede } from '../src/lib/upgrade';
 import type { UpgradePayload, UpgradeRun } from '../src/types/doctor';
 
@@ -59,5 +59,19 @@ describe('the upgrade rows', () => {
   test('a run reads as the command a person would type', () => {
     const run: UpgradeRun = { id: 'r', args: ['upgrade', '--rollback'], state: 'running', started_at_epoch_millis: 1, exit_code: null, output: [] };
     expect(commandOf(run)).toBe('splice upgrade --rollback');
+  });
+});
+
+describe('a finished save and the draft', () => {
+  const saved = { source: 'inline', text: 'Be brief.', mode: 'append' } as const;
+  test('the draft that was saved is cleared, and one changed while the save ran is kept', () => {
+    expect(draftAfterSave({ head: 'a', value: saved }, 'a', saved)).toBeNull();
+    const newer = { head: 'a', value: { ...saved, mode: 'replace' } } as const;
+    expect(draftAfterSave(newer, 'a', saved)).toBe(newer);
+  });
+  test('a draft for another plan, or none, is left as it is', () => {
+    const other = { head: 'b', value: saved };
+    expect(draftAfterSave(other, 'a', saved)).toBe(other);
+    expect(draftAfterSave(null, 'a', saved)).toBeNull();
   });
 });

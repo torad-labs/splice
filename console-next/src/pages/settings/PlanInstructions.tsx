@@ -3,7 +3,7 @@ import { failureText } from '../../api/client';
 import { isPendingRoute } from '../../api/auth';
 import { usePreviewInstructionFile, useTopology, useTopologyEdit } from '../../api/config';
 import { useHeads } from '../../api/queries';
-import { canSave, commandInstructionsOf, noteOf, topologyKeysOf, withCommandInstructions } from '../../lib/command-instructions';
+import { canSave, commandInstructionsOf, draftAfterSave, noteOf, topologyKeysOf, withCommandInstructions } from '../../lib/command-instructions';
 import type { CommandInstruction, InstructionMode, InstructionSource } from '../../lib/command-instructions';
 import { I } from '../../lib/words-instructions';
 import { Button, Segmented, Select } from '../../ui';
@@ -81,7 +81,7 @@ export function PlanInstructions() {
       )}
       {current === null && held === null ? null : (
         <div className="try">
-          <Button kind="go" disabled={!ready || edit.isPending} onClick={() => edit.mutate({ topology: withCommandInstructions(payload.topology, head, current), keys: topologyKeysOf(head) }, { onSuccess: () => setDraft(null) })}>{edit.isPending ? I.saving : I.save}</Button>
+          <Button kind="go" disabled={!ready || edit.isPending} onClick={() => edit.mutate({ topology: withCommandInstructions(payload.topology, head, current), keys: topologyKeysOf(head) }, { onSuccess: () => setDraft((now) => draftAfterSave(now, head, current)) })}>{edit.isPending ? I.saving : I.save}</Button>
           {current === null ? null : <Button onClick={() => set(null)}>{I.remove}</Button>}
         </div>
       )}

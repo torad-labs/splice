@@ -20,9 +20,11 @@ note: |
   and writes to the store; nothing else talks to the network.
 files:
   - console/src/**/*.ts
+  - console-next/src/**/*.ts
 ignores:
   - console/src/shared/api/**
   - console/src/entities/*/api/**
+  - console-next/src/api/client.ts
 rule:
   any:
     - pattern: fetch($$$A)

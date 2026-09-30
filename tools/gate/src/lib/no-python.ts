@@ -124,10 +124,34 @@ export const SELF = new Set([
  *  restructure census lists every source path, that one included. Measured over every tracked file:
  *  stripping the name drops EXACTLY ONE charge, the census (41 -> 40), and every invoker keeps its
  *  charge. Red-green: "a census that only NAMES the burn-down config" (green) beside "names the
- *  burn-down config AND shells into python3" (red). */
+ *  burn-down config AND shells into python3" (red).
+ *
+ *  A FOURTH TIME, AND NOT BY NAME, 2026-09-29 (V4-444): console-next/src/ui/highlight.ts registers
+ *  highlight.js's python grammar so a session that DISPLAYS Python code is coloured. Displaying Python
+ *  is neither running nor teaching it, but the file spells the word three ways: the grammar import, a
+ *  registry entry (`{ ..., python, ... }`) and a map value (`py: 'python'`). The narrowing is therefore
+ *  by SHAPE, and only in a file that imports that grammar (displayOnly below): the import statement, the
+ *  word as an object key or shorthand, and a quoted `: 'python'` map value. A command is none of those:
+ *  `spawnSync("python3"` and `spawnSync("python", [...])` put the word behind `(` or `[`, and `python -c`
+ *  is prose, so each keeps its charge. Red-green: "a .ts that only IMPORTS the highlighter's python
+ *  grammar" (green) beside the three that add a real spawn of python3, of python, or a `python -c`
+ *  command line (red). No burn-down line was added and no import was renamed around the wall. */
 export function namesPython(text: string): boolean {
   const named = ["no-python", "python-http", "python-json", "python-values", "python-burndown"];
-  return /\bpython3?\b/.test(named.reduce((t, name) => t.replaceAll(name, ""), text));
+  return /\bpython3?\b/.test(displayOnly(named.reduce((t, name) => t.replaceAll(name, ""), text)));
+}
+
+const GRAMMAR_IMPORT = /import\s+\w+\s+from\s+['"]highlight\.js\/lib\/languages\/python['"];?/;
+
+/** A highlighter file names Python to COLOUR it: the grammar import, its registry entry and its map value. Only a file that
+ *  imports the grammar is read this way, and only those three shapes go; anything that could run (a quoted argument behind
+ *  `(` or `[`, `python3`, a command line) stays in the text. */
+function displayOnly(text: string): string {
+  if (!GRAMMAR_IMPORT.test(text)) return text;
+  return text
+    .replace(new RegExp(GRAMMAR_IMPORT.source, "g"), "")
+    .replace(/(?<=[{,]\s*)python(?=\s*[,}])/g, "")
+    .replace(/(?<=:\s*)'python'/g, "''");
 }
 
 /** A caller line that runs a file with the WRONG RUNTIME for its extension: `python3 wall.ts`, or

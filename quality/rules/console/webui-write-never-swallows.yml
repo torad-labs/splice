@@ -13,6 +13,7 @@ note: |
   `writeNote(result, ...)`, which reads only `applied` as success and prints the reason on `failed`.
 files:
   - console/src/**/*.ts
+  - console-next/src/**/*.ts
 rule:
   any:
     - pattern: return null

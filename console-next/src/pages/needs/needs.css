@@ -1,32 +1,32 @@
 /* Needs you in D: one column of cards, twice the room, one vermilion act each. The calm summary sits beside it on a wide screen. */
-.stack { list-style: none; margin: 0; padding: 0 24px 0 0; display: grid; gap: 64px; }
+.stack { list-style: none; margin: 0; padding: 0 var(--space-8) 0 0; display: grid; gap: var(--space-14); }
 .needs-layout { display: grid; grid-template-columns: minmax(0, 1040px); }
-.need { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 56px; align-items: center; padding: 36px 44px 38px; }
-.need-body { display: grid; gap: 14px; justify-items: start; }
+.need { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-4) var(--space-13); align-items: center; padding: var(--space-11) var(--space-12) var(--space-11); }
+.need-body { display: grid; gap: var(--space-6); justify-items: start; }
 .need h2 { font: 540 30px/1.12 var(--display); font-variation-settings: 'opsz' 72; letter-spacing: -.018em; color: var(--ink); }
 .need p { max-width: 62ch; font: 400 18px/1.6 var(--read); color: var(--body); }
 /* a finding is one card's sentence; a long one (a doctor check naming eleven heads) is cut at four lines and read in full where Open goes */
 .need-body p { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
-.need-do { display: grid; gap: 14px; justify-items: stretch; min-width: 200px; }
-.need-do .btn { justify-content: center; min-height: 46px; font-size: 14px; }
+.need-do { display: grid; gap: var(--space-6); justify-items: stretch; min-width: 200px; }
+.need-do .btn { justify-content: center; min-height: 46px; font-size: var(--text-1); }
 .need-do .btn.sm { min-height: 32px; }
 .need-do .hint { font: 400 14px/1.4 var(--read); color: var(--mute); }
 .need-do .hint.alert { color: var(--stuck); }
 .need-do .fallback { font: 500 13px var(--mono); color: var(--mute); word-break: break-all; }
-.calm { margin-top: 96px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 56px; }
+.calm { margin-top: var(--space-17); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-13); }
 .calm h3 { font: 520 22px/1.15 var(--display); color: var(--ink); }
-.calm p { margin-top: 6px; font: 400 16px/1.5 var(--read); color: var(--body); }
+.calm p { margin-top: var(--space-3); font: 400 16px/1.5 var(--read); color: var(--body); }
 .calm .n { font: 500 44px/1 var(--display); color: var(--ink); letter-spacing: -.03em; }
 .calm .as-of { grid-column: 1 / -1; font: 500 14px var(--meta); color: var(--mute); }
-.unread { margin-top: 64px; display: grid; gap: 10px; }
+.unread { margin-top: var(--space-14); display: grid; gap: var(--space-5); }
 .unread h3 { font: 520 22px/1.15 var(--display); color: var(--ink); }
-.unread ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.unread ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
 .unread li { font: 400 16px/1.5 var(--read); color: var(--body); }
 @media (min-width: 1500px) {
-  .needs-layout { grid-template-columns: minmax(0, 1040px) minmax(280px, 1fr); gap: 96px; align-items: start; }
-  .calm { margin-top: 0; grid-template-columns: 1fr; gap: 48px; position: sticky; top: 56px; }
+  .needs-layout { grid-template-columns: minmax(0, 1040px) minmax(280px, 1fr); gap: var(--space-17); align-items: start; }
+  .calm { margin-top: 0; grid-template-columns: 1fr; gap: var(--space-12); position: sticky; top: var(--space-13); }
 }
 @media (max-width: 900px) {
-  .need { grid-template-columns: minmax(0, 1fr); padding: 28px 26px; }
-  .calm { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+  .need { grid-template-columns: minmax(0, 1fr); padding: var(--space-9) var(--space-9); }
+  .calm { grid-template-columns: minmax(0, 1fr); gap: var(--space-10); }
 }

@@ -8,6 +8,7 @@ note: |
   lead slot named 'architect' and marks a slot whose role happens to be 'lead'.
 files:
   - console/src/**/*.tsx
+  - console-next/src/**/*.tsx
 rule:
   kind: binary_expression
   all:

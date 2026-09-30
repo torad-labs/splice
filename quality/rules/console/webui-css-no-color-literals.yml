@@ -11,8 +11,10 @@ note: |
   (transparent, currentColor, inherit) and color-mix() of tokens are not.
 files:
   - console/src/**/*.css
+  - console-next/src/**/*.css
 ignores:
   - console/src/shared/tokens.css
+  - console-next/src/styles/tokens.css
 rule:
   any:
     - kind: color_value

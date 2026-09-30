@@ -11,6 +11,7 @@ note: |
   lead slot named 'architect' and marks a slot whose role happens to be 'lead'.
 files:
   - console/src/**/*.ts
+  - console-next/src/**/*.ts
 rule:
   kind: binary_expression
   all:

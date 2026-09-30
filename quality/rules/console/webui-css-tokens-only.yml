@@ -28,8 +28,10 @@ note: |
   and radii are not gated by this rule.
 files:
   - console/src/**/*.css
+  - console-next/src/**/*.css
 ignores:
   - console/src/shared/tokens.css
+  - console-next/src/styles/tokens.css
 rule:
   kind: declaration
   all:

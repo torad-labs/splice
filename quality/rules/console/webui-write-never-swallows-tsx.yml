@@ -17,6 +17,7 @@ note: |
   failure (setFault(err.message)) instead of answering nothing.
 files:
   - console/src/**/*.tsx
+  - console-next/src/**/*.tsx
 rule:
   any:
     - all:

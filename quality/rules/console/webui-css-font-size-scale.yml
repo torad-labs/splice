@@ -12,8 +12,10 @@ note: |
   point var(--text-7). A size between rungs is a new rung in tokens.css, never a local value.
 files:
   - console/src/**/*.css
+  - console-next/src/**/*.css
 ignores:
   - console/src/shared/tokens.css
+  - console-next/src/styles/tokens.css
 rule:
   kind: declaration
   has:

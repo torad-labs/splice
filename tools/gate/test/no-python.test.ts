@@ -163,6 +163,37 @@ describe("the no-python wall", () => {
     commit(r);
   }, (r) => git(r, "ls-files", "checks/x.ts").out === "checks/x.ts");
 
+  // console-next/src/ui/highlight.ts DISPLAYS Python (highlight.js's python grammar), which is neither
+  // running nor teaching it. It spells the word as the grammar import, a registry entry and a map value,
+  // so the narrowing is by shape (src/lib/no-python.ts, displayOnly). The red arms are the boundary: a
+  // real spawn of python3 or of python, or a `python -c` command line, in a file that also imports the
+  // grammar, keeps its charge.
+  const HIGHLIGHTER = [
+    "import python from 'highlight.js/lib/languages/python';",
+    "import sql from 'highlight.js/lib/languages/sql';",
+    "const LANGUAGES = { bash, markdown, python, rust, sql };",
+    "const EXTENSION = { py: 'python', rs: 'rust' };",
+  ].join("\n") + "\n";
+  arm("a .ts that only DISPLAYS Python through the highlighter's grammar, unlisted", "green", (r) => {
+    w(r, "a.py", "x\n");
+    w(r, "checks/x.ts", HIGHLIGHTER);
+    w(r, ALLOW, list(["a.py"], []));
+    commit(r);
+  }, (r) => git(r, "ls-files", "checks/x.ts").out === "checks/x.ts");
+
+  for (const [what, line] of [
+    ["shells into python3", 'spawnSync("python3", ["-c", "1"]);'],
+    ["shells into python", 'spawnSync("python", ["-c", "1"]);'],
+    ["documents a python command line", "// run it with: python -c 1"],
+  ] as const) {
+    arm(`a .ts that displays Python through the highlighter AND ${what}, unlisted`, "red", (r) => {
+      w(r, "a.py", "x\n");
+      w(r, "checks/x.ts", `${HIGHLIGHTER}${line}\n`);
+      w(r, ALLOW, list(["a.py"], []));
+      commit(r);
+    }, (r) => git(r, "ls-files", "checks/x.ts").out === "checks/x.ts");
+  }
+
   // The wall's own config is python-burndown.json, so a record that lists every source path (the
   // LAYOUT-01 census) was charged for naming it: the narrowing a third time. Same boundary: the red
   // arm names the config AND shells into python3.

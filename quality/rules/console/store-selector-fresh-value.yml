@@ -22,6 +22,7 @@ note: |
   constant (`const NO_ROWS: Row[] = []; ... ?? NO_ROWS`).
 files:
   - console/src/**/*.tsx
+  - console-next/src/**/*.tsx
 rule:
   any:
     - pattern: $HOOK(($S) => $BODY)

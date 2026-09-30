@@ -18,6 +18,7 @@ note: |
   and subscribe via a selector.
 files:
   - console/src/**/*.tsx
+  - console-next/src/**/*.tsx
 rule:
   any:
     - pattern: fetch($$$A)

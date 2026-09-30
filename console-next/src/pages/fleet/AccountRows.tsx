@@ -87,7 +87,7 @@ export function AccountRowView({ account, now, pooled }: { account: AccountRow; 
                   <Dialog.Title>{D.removeAsk}</Dialog.Title>
                   <Dialog.Close asChild><button type="button" className="icon-btn" aria-label={D.cancel}><Close /></button></Dialog.Close>
                 </div>
-                <Dialog.Description className="hint">{label} — {D.removeWhy}</Dialog.Description>
+                <Dialog.Description className="hint">{label}: {D.removeWhy}</Dialog.Description>
                 <div className="acts-row">
                   <Button kind="go" disabled={remove.isPending} onClick={() => remove.mutate({ kind: account.kind, label }, { onSuccess: (answer) => { settle(answer); setRemoving(false); }, onError: fail })}>{D.remove}</Button>
                   <Button onClick={() => setRemoving(false)}>{D.cancel}</Button>

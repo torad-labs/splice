@@ -20,6 +20,7 @@ import {
   oracle,
   sanctionedFields,
   sanctionedScenarios,
+  waitHttp,
 } from "../src/commands/oracle.ts";
 
 const CLI = resolve(import.meta.dir, "../index.ts");
@@ -32,6 +33,27 @@ function corpusCopy(): { dir: string; done: () => void } {
   cpSync(ORACLE_DIR, dir, { recursive: true });
   return { dir, done: () => rmSync(dir, { recursive: true, force: true }) };
 }
+
+test("listener and fallback probes share one startup deadline", async () => {
+  const paths: string[] = [];
+  const server = Bun.serve({
+    hostname: "127.0.0.1", port: 0,
+    fetch: (request) => {
+      const path = new URL(request.url).pathname;
+      paths.push(path);
+      return path === "/control" ? new Response("ok") : new Promise<Response>(() => {});
+    },
+  });
+  try {
+    const deadline = performance.now() + 100;
+    await waitHttp(server.port!, "/control", deadline);
+    await expect(waitHttp(server.port!, "/head", deadline)).rejects.toThrow("nothing answering");
+    await expect(waitHttp(server.port!, "/fallback", deadline)).rejects.toThrow("nothing answering");
+    expect(paths).toEqual(["/control", "/head"]);
+  } finally {
+    server.stop(true);
+  }
+});
 
 describe("corpus integrity", () => {
   test("the committed corpus is intact (mock region and every fixture hash to the manifest)", () => {

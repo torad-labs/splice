@@ -11,16 +11,18 @@
  */
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, fstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { join, resolve } from "node:path";
-import { check, FileNotFoundError, get, OSError, ValueError } from "../src/compat/python-values.ts";
+import { check, FileNotFoundError, get, OSError, popen, ValueError } from "../src/compat/python-values.ts";
 import { loads, obj, type PyValue } from "../src/compat/python-json.ts";
 import {
-  Budget, compareConfigure, compareSeams as seams, mockConfigure, runCompare as run, type RunArgs,
+  Budget, compareConfigure, compareSeams as seams, mockConfigure, mockSeams, startDaemon, stopDaemon,
+  requestJson, runCompare as run, type RunArgs,
 } from "../src/commands/code-mode.ts";
 import { reasoningCacheDaemonEnv } from "../src/commands/heads.ts";
+import { bootFailure, readBootLog, readCredentialBootLog, redactBootCredentials } from "../src/daemon-startup.ts";
 
 const CLI = resolve(import.meta.dir, "../index.ts");
 
@@ -83,7 +85,218 @@ const raisesOSError = (message: string) => async () => {
   throw new OSError(message);
 };
 
+describe("mock daemon startup diagnostics", () => {
+  test("a stalled health socket obeys the short startup request budget", async () => {
+    const server = Bun.serve({
+      hostname: "127.0.0.1", port: 0,
+      fetch: () => new Promise<Response>(() => {}),
+    });
+    try {
+      await expect(requestJson(server.port!, "GET", "/health", undefined, null, 0.02))
+        .rejects.toBeInstanceOf(OSError);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("boot diagnostics keep the last sixty lines and cap a single noisy line", async () => {
+    await withDir(async (root) => {
+      const log = join(root, "boot.log");
+      writeFileSync(log, Array.from({ length: 100 }, (_, i) => `line-${i}`).join("\n") + "\n");
+      const message = bootFailure("timeout", 1.25, readBootLog(log));
+      expect(message).not.toContain("\nline-39\n");
+      expect(message).toContain("\nline-40\n");
+      expect(message).toEndWith("line-99");
+      expect(message).toContain("after 1.3 seconds");
+      writeFileSync(log, "x".repeat(100_000) + "\nlast-line\n");
+      expect(readBootLog(log)).toBe("last-line");
+      writeFileSync(log, "x".repeat(100_000));
+      expect(Buffer.byteLength(readBootLog(log))).toBeLessThanOrEqual(64 * 1024);
+      expect(readBootLog(join(root, "absent.log"))).toContain("boot log unavailable");
+      expect(readCredentialBootLog(log, join(root, "absent-auth.json"), "synthetic-bearer"))
+        .toBe("[boot log withheld: credential redaction unavailable]");
+      expect(redactBootCredentials(JSON.stringify({ token: 'secret"quoted' }), { access: 'secret"quoted' }, "synthetic-bearer"))
+        .toBe('{"token":"[redacted]"}');
+      expect(redactBootCredentials("safe token-value bearer-value", { tokens: { access_token: "token-value" } }, "bearer-value"))
+        .toBe("safe [redacted] [redacted]");
+    });
+  });
+
+  test("spawn and cleanup errors close the log without hiding the startup diagnosis", async () => {
+    await withDir(async (root) => {
+      const old = { ...mockSeams };
+      let fd = -1;
+      let child: ReturnType<typeof popen> | undefined;
+      mockSeams.Popen = (_argv, opts) => {
+        fd = opts.stdoutFd;
+        throw new OSError("synthetic spawn failure");
+      };
+      try {
+        await expect(startDaemon(root, "synthetic.jar", {}, 0, 0)).rejects.toThrow("synthetic spawn failure");
+        expect(() => fstatSync(fd)).toThrow();
+        mockSeams.Popen = (_argv, opts) => {
+          fd = opts.stdoutFd;
+          writeFileSync(fd, "synthetic-cleanup-boot-marker\n");
+          child = popen([process.execPath, "-e", "setInterval(() => {}, 1000);"], opts);
+          return {
+            pid: child.pid, poll: () => child!.poll(), wait: (timeout) => child!.wait(timeout),
+            kill: () => child!.kill(),
+            terminate: () => { throw new OSError("synthetic cleanup failure"); },
+          };
+        };
+        mockSeams.requestJson = raisesOSError("synthetic unavailable");
+        const error = await startDaemon(root, "synthetic.jar", {}, 0, 0)
+          .then(() => { throw new Error("unexpected readiness"); }, (e: Error) => e);
+        expect(error.message).toContain("did not become ready");
+        expect(error.message).toContain("synthetic-cleanup-boot-marker");
+        expect(error.message).toContain("synthetic cleanup failure");
+        expect(() => fstatSync(fd)).toThrow();
+        expect(child?.poll()).not.toBeNull();
+      } finally {
+        if (child?.poll() === null) {
+          child.kill();
+          await child.wait(2);
+        }
+        Object.assign(mockSeams, old);
+      }
+    });
+  });
+
+  test("an exited fake daemon carries stdout and stderr with its exit status", async () => {
+    await withDir(async (root) => {
+      const old = { ...mockSeams };
+      let proc: ReturnType<typeof popen> | undefined;
+      Object.assign(mockSeams, {
+        Popen: (_argv: string[], opts: Parameters<typeof popen>[1]) => {
+          proc = popen([process.execPath, "-e",
+            'console.log("synthetic-stdout"); console.error("synthetic-stderr"); process.exit(23);'], opts);
+          return proc;
+        },
+        requestJson: async () => {
+          await proc!.wait(2);
+          throw new OSError("synthetic health unavailable");
+        },
+      });
+      try {
+        const error = await startDaemon(root, "synthetic.jar", {}, 0, 2)
+          .then(() => { throw new Error("fake daemon unexpectedly ready"); }, (e: Error) => e);
+        expect(error).toBeInstanceOf(ValueError);
+        expect(error.message).toContain("exited during startup (exit 23)");
+        expect(error.message).toContain("synthetic-stdout");
+        expect(error.message).toContain("synthetic-stderr");
+        expect(error.message).toMatch(/after \d+\.\d seconds/);
+      } finally {
+        Object.assign(mockSeams, old);
+      }
+    });
+  });
+
+  test("successful readiness returns the owned child and open log for normal cleanup", async () => {
+    await withDir(async (root) => {
+      const old = { ...mockSeams };
+      Object.assign(mockSeams, {
+        Popen: (_argv: string[], opts: Parameters<typeof popen>[1]) =>
+          popen([process.execPath, "-e", 'setInterval(() => {}, 1000);'], opts),
+        requestJson: async () => obj([["ok", true], ["readyHeads", { __pyNum: "2", isFloat: false }]]),
+      });
+      try {
+        const [proc, log] = await startDaemon(root, "synthetic.jar", {}, 0, 1);
+        expect(proc.poll()).toBeNull();
+        await stopDaemon(proc, log);
+        expect(proc.poll()).not.toBeNull();
+      } finally {
+        Object.assign(mockSeams, old);
+      }
+    });
+  });
+
+  test("a live fake daemon timeout carries its boot log before cleanup", async () => {
+    await withDir(async (root) => {
+      const old = { ...mockSeams };
+      let proc: ReturnType<typeof popen> | undefined;
+      const marker = "synthetic-daemon-boot-marker";
+      Object.assign(mockSeams, {
+        Popen: (_argv: string[], opts: Parameters<typeof popen>[1]) => {
+          proc = popen([process.execPath, "-e",
+            `console.error("${marker}"); setInterval(() => {}, 1000);`], opts);
+          return proc;
+        },
+        requestJson: async () => {
+          // Synchronize with actual child output, not an arbitrary sleep.
+          const until = performance.now() + 2000;
+          while (!readFileSync(join(root, "daemon-output.log"), "utf8").includes(marker)) {
+            if (performance.now() >= until) throw new Error("fake daemon did not write its marker");
+            await Bun.sleep(10);
+          }
+          throw new OSError("synthetic health unavailable");
+        },
+      });
+      try {
+        const error = await startDaemon(root, "synthetic.jar", {}, 0, 0.01)
+          .then(() => { throw new Error("fake daemon unexpectedly ready"); }, (e: Error) => e);
+        expect(error).toBeInstanceOf(ValueError);
+        expect(error.message).toContain("did not become ready");
+        expect(error.message).toContain(marker);
+        expect(error.message).toMatch(/after \d+\.\d seconds/);
+        expect(proc?.poll()).not.toBeNull();
+      } finally {
+        Object.assign(mockSeams, old);
+      }
+    });
+  });
+});
+
 describe("comparison receipts", () => {
+  test("a clipped newline-free fake daemon log cannot expose a credential suffix", async () => {
+    await withDir(async (directory) => {
+      const [args, , receipt] = makeArgs(directory);
+      const secret = "synthetic-private-prefix-sensitive-suffix";
+      writeFileSync(args.auth_file, JSON.stringify({ tokens: { access_token: secret } }));
+      let proc: ReturnType<typeof popen>;
+      await withSeams({
+        Popen: (_argv, opts) => {
+          proc = popen([process.execPath, "-e",
+            `require("node:fs").writeFileSync(1, "p".repeat(100000) + "${secret}" + "x".repeat(65515)); process.exit(23);`], opts);
+          return proc;
+        },
+        requestJson: async () => {
+          await proc.wait(2);
+          throw new OSError("synthetic unavailable");
+        },
+      }, async () => {
+        const error = await run(args).then(() => { throw new Error("unexpected readiness"); }, (e: Error) => e);
+        expect(error.message).toContain("exited during startup");
+        expect(error.message).not.toContain("sensitive-suffix");
+        expect(error.message).toContain("withheld");
+      });
+      expect(readFileSync(receipt, "utf8")).not.toContain("sensitive-suffix");
+    });
+  });
+
+
+  test("startup log diagnosis redacts copied credentials and management bearer", async () => {
+    await withDir(async (directory) => {
+      const [args, , receipt] = makeArgs(directory);
+      let bearer = "";
+      await withSeams({
+        Popen: (_argv, opts) => {
+          bearer = opts.env.SPLICE_PROBE_BEARER!;
+          writeFileSync(opts.stdoutFd, `synthetic-safe-boot-line\ndo-not-record\n${bearer}\n`);
+          return new Process(23);
+        },
+      }, async () => {
+        const error = await run(args).then(() => { throw new Error("unexpected readiness"); }, (e: Error) => e);
+        expect(error.message).toContain("synthetic-safe-boot-line");
+        expect(error.message).toContain("[redacted]");
+        expect(error.message).not.toContain("do-not-record");
+        expect(error.message).not.toContain(bearer);
+      });
+      expect(readFileSync(receipt, "utf8")).not.toContain("synthetic-safe-boot-line");
+      expect(readFileSync(receipt, "utf8")).not.toContain("do-not-record");
+      expect(readFileSync(receipt, "utf8")).not.toContain(bearer);
+    });
+  });
+
   test("early daemon exit writes sanitized startup receipt", async () => {
     await withDir(async (directory) => {
       const [args, artifact, receipt] = makeArgs(directory);
@@ -105,7 +318,7 @@ describe("comparison receipts", () => {
       const [args, , receipt] = makeArgs(directory);
       const proc = new Process();
       await withSeams({
-        Popen: () => proc, requestJson: raisesOSError("private connection detail"), monotonic: ticks([0, 20]),
+        Popen: () => proc, requestJson: raisesOSError("private connection detail"), monotonic: ticks([0, 60, 60]),
       }, async () => {
         await check.raises((e) => e instanceof ValueError, () => run(args), /did not become ready/);
       });
@@ -214,7 +427,7 @@ describe("comparison receipts", () => {
       const proc = new Process(null, new OSError("cleanup secret"));
       await withSeams({
         Budget: () => budget, ThreadingHTTPServer: () => server, Popen: () => proc,
-        requestJson: raisesOSError("private connection detail"), monotonic: ticks([0, 20]),
+        requestJson: raisesOSError("private connection detail"), monotonic: ticks([0, 60, 60]),
       }, async () => {
         await check.raises((e) => e instanceof ValueError, () => run(args), /did not become ready/);
       });

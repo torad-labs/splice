@@ -56,9 +56,11 @@
  */
 import {
   appendFileSync,
+  closeSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readFileSync,
   rmSync,
   statSync,
@@ -70,6 +72,7 @@ import { join, resolve } from "node:path";
 import { exitStatusOf } from "../../../gate/src/lib/status.ts";
 import { layout } from "../../../gate/src/lib/repo.ts";
 import { daemonEnv } from "../daemon-env.ts";
+import { bootFailure, DAEMON_READY_SECONDS, readBootLog } from "../daemon-startup.ts";
 
 export const usage =
   "heads [--tier 1|2|all|perf-oracle|mcp-oracle|plant-oracle] [--head KEY] [--list] [--selftest] [--probe reasoning-cache]   " +
@@ -1183,6 +1186,17 @@ export function assertWire(rows: UpstreamRow[]): { failures: string[]; summary: 
   };
 }
 
+/** A listening socket is not readiness: the model-list route must answer successfully. */
+export async function reasoningCacheHeadReady(url: string, timeoutMs = 2000): Promise<boolean> {
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+    await response.body?.cancel();
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 /** Dummy ChatGPT auth: CodexAuthProvider reads the expiry from the access token's own `exp` JWT
  *  claim; a far-future claim means it never attempts a refresh, and the mock ignores the bearer. */
 function probeAuthJson(): string {
@@ -1392,26 +1406,37 @@ async function reasoningCacheProbe(): Promise<number> {
   let daemon: ReturnType<typeof Bun.spawn> | null = null;
   const startDaemon = async (config: string, stateDir: string, log: string): Promise<void> => {
     const opts = (process.env.SPLICE_JVM_OPTS || "-Xmx512m").split(/\s+/).filter(Boolean);
-    const out = Bun.file(log).writer();
-    daemon = Bun.spawn(["java", ...opts, "-jar", jar, "daemon"], {
-      env: reasoningCacheDaemonEnv(config, stateDir),
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    void (async () => {
-      for await (const chunk of daemon!.stdout as ReadableStream<Uint8Array>) out.write(chunk);
-      await out.end();
-    })();
-    for (let i = 0; i < 120; i++) {
-      if (await reachable(`http://127.0.0.1:${headPort}/v1/models`, 2000)) return;
-      if (daemon.exitCode !== null) throw new FatalError(`daemon died on boot (log: ${log})`);
+    const started = performance.now();
+    const fd = openSync(log, "w");
+    try {
+      daemon = Bun.spawn(["java", ...opts, "-jar", jar, "daemon"], {
+        env: reasoningCacheDaemonEnv(config, stateDir),
+        stdio: ["ignore", fd, fd],
+      });
+    } finally {
+      closeSync(fd);
+    }
+    const failure = (message: string): FatalError => new FatalError(
+      bootFailure(message, (performance.now() - started) / 1000, readBootLog(log)),
+    );
+    const deadline = started + DAEMON_READY_SECONDS * 1000;
+    while (performance.now() < deadline) {
+      if (daemon.exitCode !== null || daemon.signalCode !== null) {
+        throw failure(`daemon died on boot (exit ${daemon.exitCode}, signal ${daemon.signalCode})`);
+      }
+      if (await reasoningCacheHeadReady(`http://127.0.0.1:${headPort}/v1/models`, 2000)) return;
       await sleep(250);
     }
-    throw new FatalError(`head :${headPort} never became ready (log: ${log})`);
+    throw failure(`head :${headPort} never became ready`);
   };
   const stopDaemon = async (): Promise<void> => {
     if (!daemon) return;
     daemon.kill("SIGTERM");
-    await daemon.exited;
+    await Promise.race([daemon.exited, sleep(10_000)]);
+    if (daemon.exitCode === null && daemon.signalCode === null) {
+      daemon.kill("SIGKILL");
+      await Promise.race([daemon.exited, sleep(5000)]);
+    }
     daemon = null;
     for (let i = 0; i < 40; i++) {
       if (!(await portInUse(controlPort)) && !(await portInUse(headPort))) return;

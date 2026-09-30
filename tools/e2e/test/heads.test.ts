@@ -28,9 +28,25 @@ import {
   perfRowsOk,
   plan,
   assertWire,
+  reasoningCacheHeadReady,
   type UpstreamRow,
 } from "../src/commands/heads.ts";
 import { layout } from "../../gate/src/lib/repo.ts";
+
+test("reasoning-cache boot rejects answering error statuses", async () => {
+  let status = 503;
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("", { status }) });
+  try {
+    const url = `http://127.0.0.1:${server.port}/v1/models`;
+    expect(await reasoningCacheHeadReady(url)).toBe(false);
+    status = 404;
+    expect(await reasoningCacheHeadReady(url)).toBe(false);
+    status = 200;
+    expect(await reasoningCacheHeadReady(url)).toBe(true);
+  } finally {
+    server.stop(true);
+  }
+});
 
 const ROOT = layout().repoRoot;
 const CLI = resolve(import.meta.dir, "../index.ts");

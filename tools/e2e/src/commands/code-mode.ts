@@ -68,6 +68,7 @@ import {
 import { exitStatusOf } from "../../../gate/src/lib/status.ts";
 import { findRepoRoot } from "../../../gate/src/lib/repo.ts";
 import { daemonEnv } from "../daemon-env.ts";
+import { bootFailure, DAEMON_READY_SECONDS, readBootLog, readCredentialBootLog } from "../daemon-startup.ts";
 
 // =============================================================================================
 // PROBE — the budget proxy, the synthetic workspace and the bounded A/B comparison.
@@ -474,9 +475,9 @@ export class ProbeWorkspace {
 
 /** request_json: one HTTP/1.1 exchange with the loopback daemon, JSON in and out. */
 export async function requestJson(port: number, method: string, path: string, body: PyValue | undefined = undefined,
-  headers: [string, string][] | null = null): Promise<PyValue> {
+  headers: [string, string][] | null = null, timeoutSeconds = 180): Promise<PyValue> {
   const payload = body !== undefined ? Buffer.from(dumps(body), "utf8") : null;
-  const conn = await httpRequest("127.0.0.1", port, method, path, payload, headers ?? [], 180);
+  const conn = await httpRequest("127.0.0.1", port, method, path, payload, headers ?? [], timeoutSeconds);
   try {
     const data = await conn.response.read(MAX_BODY + 1);
     if (data.length > MAX_BODY) throw new ValueError("probe response exceeded byte limit");
@@ -1945,31 +1946,55 @@ command = "claude-${name}"
   });
 }
 
-export async function startDaemon(root: string, artifact: string, env: Record<string, string>, control: number): Promise<[Proc, number]> {
-  const log = openSync(join(root, "daemon-output.log"), "w");
-  const proc = popen(["java", "-Xmx256m", `-Duser.home=${root}`, "-jar", artifact, "daemon"], { env, cwd: root, stdoutFd: log });
+export async function startDaemon(
+  root: string, artifact: string, env: Record<string, string>, control: number, timeoutSeconds = DAEMON_READY_SECONDS,
+): Promise<[Proc, number]> {
+  const logPath = join(root, "daemon-output.log");
+  const log = openSync(logPath, "w");
+  const started = performance.now() / 1000;
+  let proc: Proc;
   try {
-    const deadline = performance.now() / 1000 + 20;
+    proc = mockSeams.Popen(["java", "-Xmx256m", `-Duser.home=${root}`, "-jar", artifact, "daemon"], { env, cwd: root, stdoutFd: log });
+  } catch (error) {
+    closeSync(log);
+    throw error;
+  }
+  const failure = (message: string): ValueError => new ValueError(
+    bootFailure(message, performance.now() / 1000 - started, readBootLog(logPath)),
+  );
+  try {
+    const deadline = started + timeoutSeconds;
     for (;;) {
-      if (proc.poll() !== null) throw new ValueError("isolated daemon exited during startup");
+      const status = proc.poll();
+      if (status !== null) throw failure(`isolated daemon exited during startup (exit ${status})`);
       try {
-        const health = await mockSeams.requestJson(control, "GET", "/health");
+        const health = await mockSeams.requestJson(control, "GET", "/health", undefined, null, 1);
         if (truthy(get(health, "ok")) && pyEq(get(health, "readyHeads"), int(2))) return [proc, log];
       } catch (e) {
         if (!(isOSError(e) || isValueError(e))) throw e;
       }
-      if (performance.now() / 1000 >= deadline) throw new ValueError("isolated daemon did not become ready");
+      if (performance.now() / 1000 >= deadline) throw failure("isolated daemon did not become ready");
       await Bun.sleep(100);
     }
   } catch (e) {
-    await stopDaemon(proc, log);
+    try {
+      await stopDaemon(proc, log);
+    } catch (cleanupError) {
+      if (e instanceof Error) e.message += "\nStartup cleanup failed: " + (cleanupError as Error).message;
+    }
     throw e;
   }
 }
 
 export async function stopDaemon(proc: Proc, log: number): Promise<void> {
-  proc.terminate();
   try {
+    try {
+      proc.terminate();
+    } catch (error) {
+      proc.kill();
+      await proc.wait(5);
+      throw error;
+    }
     try {
       await proc.wait(10);
     } catch (e) {
@@ -2105,7 +2130,7 @@ export async function runMock(args: { artifact: string; receipt: string }): Prom
 }
 
 /** The one global the mock suite replaced (mock.patch target in the original). */
-export const mockSeams = { requestJson };
+export const mockSeams = { requestJson, Popen: popen };
 
 // =============================================================================================
 // COMPARE — the billed, opt-in runner for the bounded comparison.
@@ -2284,22 +2309,28 @@ export async function runCompare(args: RunArgs): Promise<void> {
         const promptGuidance = args.prompt_guidance ?? false;
         const [env, control, baseline, codeMode] = await compareConfigure(root, args.auth_file, server.serverPort, promptGuidance);
         process.env.SPLICE_PROBE_BEARER = env.SPLICE_PROBE_BEARER;
-        const log = openSync(join(root, "daemon-output.log"), "w");
+        const logPath = join(root, "daemon-output.log");
+        const log = openSync(logPath, "w");
         try {
           launchAttempted = true;
+          const started = compareSeams.monotonic();
           proc = compareSeams.Popen(["java", "-Xmx256m", `-Duser.home=${root}`, "-jar", artifact, "daemon"], { env, cwd: root, stdoutFd: log });
-          const deadline = compareSeams.monotonic() + 20;
+          const failure = (message: string): ValueError => new ValueError(bootFailure(
+            message, compareSeams.monotonic() - started,
+            readCredentialBootLog(logPath, join(root, "auth.json"), env.SPLICE_PROBE_BEARER as string),
+          ));
+          const deadline = started + DAEMON_READY_SECONDS;
           for (;;) {
             const status = proc.poll();
             if (status !== null) {
               exitStatus = Number.isInteger(status) ? status : null;
               category = "daemon_exit";
-              throw new ValueError("isolated daemon exited during startup");
+              throw failure(`isolated daemon exited during startup (exit ${status})`);
             }
             let health: PyValue = null;
             let answered = false;
             try {
-              health = await compareSeams.requestJson(control, "GET", "/health");
+              health = await compareSeams.requestJson(control, "GET", "/health", undefined, null, 1);
               answered = true;
             } catch (e) {
               if (!(isOSError(e) || isValueError(e))) throw e;
@@ -2307,13 +2338,13 @@ export async function runCompare(args: RunArgs): Promise<void> {
             if (answered) {
               if (!(isPyObj(health) && typeof get(health, "ok") === "boolean" && isExactInt(get(health, "readyHeads")))) {
                 category = "invalid_health_response";
-                throw new ValueError("isolated daemon returned invalid startup health");
+                throw failure("isolated daemon returned invalid startup health");
               }
               if (get(health, "ok") === true && (get(health, "readyHeads") as { __pyNum: string }).__pyNum === "2") break;
             }
             if (compareSeams.monotonic() >= deadline) {
               category = "readiness_timeout";
-              throw new ValueError("isolated daemon did not become ready");
+              throw failure("isolated daemon did not become ready");
             }
             await compareSeams.sleep(0.1);
           }

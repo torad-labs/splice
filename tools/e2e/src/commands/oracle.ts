@@ -68,6 +68,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { layout } from "../../../gate/src/lib/repo.ts";
 import { daemonEnv } from "../daemon-env.ts";
+import { bootFailure, DAEMON_READY_SECONDS } from "../daemon-startup.ts";
 
 export const usage =
   "oracle [replay] [--scenario NAME] [--keep] [--json OUT] [--artifact JAR] [--fixtures DIR]   " +
@@ -533,11 +534,13 @@ function post(port: number, body: Json, bearer: string, path = "/v1/messages"): 
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-async function waitHttp(port: number, path: string, tries = 120): Promise<void> {
-  for (let i = 0; i < tries; i++) {
+export async function waitHttp(
+  port: number, path: string, deadline = performance.now() + DAEMON_READY_SECONDS * 1000,
+): Promise<void> {
+  while (performance.now() < deadline) {
     try {
       await new Promise<void>((res, rej) => {
-        const q = http.get({ host: "127.0.0.1", port, path, timeout: 1000 }, (r) => {
+        const q = http.get({ host: "127.0.0.1", port, path, timeout: Math.max(1, Math.min(1000, deadline - performance.now())) }, (r) => {
           r.resume();
           res();
         });
@@ -549,10 +552,10 @@ async function waitHttp(port: number, path: string, tries = 120): Promise<void> 
       });
       return;
     } catch {
-      await sleep(250);
+      await sleep(Math.max(0, Math.min(250, deadline - performance.now())));
     }
   }
-  throw new HarnessError(`nothing answering on :${port}${path} after ${tries / 4}s`);
+  throw new HarnessError(`nothing answering on :${port}${path}`);
 }
 
 interface ReplayOptions {
@@ -755,6 +758,7 @@ command = "claudex"
   }
 
   const logFd = join(tmp, "daemon.stdout.log");
+  const bootStarted = performance.now();
   const daemon = spawn("java", ["-Xmx1024m", "-jar", jar, "daemon"], { env, stdio: ["ignore", "pipe", "pipe"] });
   let dlog = "";
   daemon.stdout.on("data", (c) => {
@@ -805,15 +809,16 @@ command = "claudex"
   let exit = 0;
   try {
     await Promise.race([
-      // Head waits carry the same 30s budget as control: right after gate.sh's `clean check` +
-      // inline shadowJar the JVM boots under full gradle-daemon load, and the head listener
-      // (which binds AFTER control) blew a 10s ceiling — a slow boot is not a dead daemon.
+      // Both listeners get the contention-sized daemon budget; the head binds after control.
       (async () => {
-        await waitHttp(CONTROL_PORT, "/health");
-        await waitHttp(HEAD_PORT, "/health").catch(() => waitHttp(HEAD_PORT, "/"));
+        const deadline = bootStarted + DAEMON_READY_SECONDS * 1000;
+        await waitHttp(CONTROL_PORT, "/health", deadline);
+        await waitHttp(HEAD_PORT, "/health", deadline).catch(() => waitHttp(HEAD_PORT, "/", deadline));
       })(),
       deadBeforeHealthy,
-    ]);
+    ]).catch((error: Error) => {
+      throw new HarnessError(bootFailure(error.message, (performance.now() - bootStarted) / 1000, dlog));
+    });
 
     const bearer = readFileSync(join(tmp, "state", "mgmt-key"), "utf8").trim();
     const expectations = readExpectations(oracleDir);

@@ -49,11 +49,12 @@
  *  The exit code and the last line always agree.
  */
 import { spawn, type ChildProcess } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import ts from "typescript";
 import { findRepoRoot } from "../../gate/src/lib/repo.ts";
+import { bootFailure, readBootLog } from "../src/daemon-startup.ts";
 
 const REPO = findRepoRoot(import.meta.dir);
 const WEBUI = join(REPO, "console-next");
@@ -695,6 +696,9 @@ async function boot(jar: string): Promise<Daemon> {
   // build that rewrites the jar mid-read would fail every route not yet loaded (console-next/e2e/stack.ts).
   const runJar = join(home, "splice.jar");
   copyFileSync(jar, runJar);
+  const logPath = join(home, "daemon-output.log");
+  const log = openSync(logPath, "w");
+  const started = performance.now();
   const child: ChildProcess = spawn("java", [
     "-Xmx512m",
     "-Dsplice.noSystemBrowser=1",
@@ -704,23 +708,34 @@ async function boot(jar: string): Promise<Daemon> {
     "daemon",
   ], {
     env,
-    stdio: ["ignore", "ignore", "ignore"],
+    stdio: ["ignore", log, log],
   });
+  closeSync(log); // The child owns its inherited descriptors until it exits.
+  let spawnError: Error | null = null;
+  child.on("error", (error) => { spawnError = error; });
   const base = `http://127.0.0.1:${control}`;
   const stop = async (): Promise<void> => {
-    if (child.exitCode === null) {
+    if (child.exitCode === null && child.signalCode === null && spawnError === null) {
       child.kill("SIGTERM");
       const deadline = Date.now() + 20_000;
-      while (child.exitCode === null && Date.now() < deadline) await Bun.sleep(100);
-      if (child.exitCode === null) child.kill("SIGKILL");
+      while (child.exitCode === null && child.signalCode === null && Date.now() < deadline) await Bun.sleep(100);
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill("SIGKILL");
+        const killedDeadline = Date.now() + 5000;
+        while (child.exitCode === null && child.signalCode === null && Date.now() < killedDeadline) await Bun.sleep(100);
+      }
     }
     rmSync(home, { recursive: true, force: true });
   };
   const deadline = Date.now() + BOOT_TIMEOUT_MS;
   while (!(await answers(`${base}/health`))) {
-    if (child.exitCode !== null || Date.now() > deadline) {
+    if (spawnError !== null || child.exitCode !== null || child.signalCode !== null || Date.now() > deadline) {
+      const error = new Error(bootFailure(
+        `--boot: ${jar} did not answer ${base}/health (exit ${child.exitCode}, signal ${child.signalCode}${spawnError ? ", spawn failed" : ""})`,
+        (performance.now() - started) / 1000, readBootLog(logPath),
+      ));
       await stop();
-      throw new Error(`--boot: ${jar} did not answer ${base}/health (exit ${child.exitCode})`);
+      throw error;
     }
     await Bun.sleep(250);
   }

@@ -9,6 +9,8 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import splice.core.config.Knob
 import splice.core.config.UserHome
 import splice.core.terminal.TerminalOutput
@@ -49,6 +51,7 @@ class AddCommandTest {
         editConfigDuringLogin: Boolean = false,
         deleteConfigDuringLogin: Boolean = false,
         answers: Map<String, ArrayDeque<String>> = emptyMap(),
+        liveTurn: AddLiveTurn = AddLiveTurn { _, _ -> AddLiveResult(true, "the head answered the check turn") },
     ) = AddCommand(
         output = TerminalOutput(::println),
         errors = TerminalOutput(System.err::println),
@@ -73,6 +76,7 @@ class AddCommandTest {
             },
             daemonUp = { daemonUp },
             prompt = { question, default -> answers[question]?.removeFirstOrNull()?.ifEmpty { default } ?: default },
+            liveTurn = liveTurn,
         ),
         bindable = HeadPortBindable { true }, // the verb's other steps, not host listener admission
     )
@@ -302,16 +306,6 @@ class AddCommandTest {
     }
 
     @Test
-    fun `--live on a browser-oauth profile is refused before anything is asked`(@TempDir home: Path) =
-        withHome(home) {
-            val before = starter()
-            val routes = mapOf("GET https://chatgpt.com/backend-api/codex" to "{}")
-            assertFalse(runBlocking { command(http(routes)).add(listOf("codex", "--live", "--yes"), env) })
-            assertEquals(before, Files.readString(config()))
-            assertTrue(installed.isEmpty(), "no sign-in ran for a refused flag")
-        }
-
-    @Test
     fun `a kimi file with only an access token requires a sign-in, one with a refresh token is accepted`(
         @TempDir home: Path,
     ) = withHome(home) {
@@ -451,5 +445,69 @@ class AddCommandTest {
             System.setOut(original)
         }
         return buf.toString()
+    }
+}
+
+/** Kept separate from the configuration-refusal tests: a check runs only after the add is committed. */
+class AddLiveCommandTest {
+    @ParameterizedTest
+    @ValueSource(strings = ["codex", "grok", "kimi", "muse", "claude"])
+    fun `yes to the live check preserves every subscription and client-auth head`(name: String, @TempDir home: Path) {
+        checkSaved(name, home, explicit = false, throws = false)
+    }
+
+    @Test
+    fun `--live also keeps the head when the check throws`(@TempDir home: Path) {
+        checkSaved("codex", home, explicit = true, throws = true)
+    }
+
+    private fun checkSaved(name: String, home: Path, explicit: Boolean, throws: Boolean) = UserHome.within(home) {
+        val env = EnvReader { null }
+        val config = TopologyLoader.configPath(env)
+        TopologyLoader.loadOrMaterialize(config)
+        val profile = requireNotNull(AddProfiles().find(name))
+        if (name != "claude") seedCredential(profile.authKind)
+        val output = mutableListOf<String>()
+        val events = mutableListOf<String>()
+        val models = profile.models.joinToString(",") { """{"id":"${it.id}"}""" }
+        val http = AddHttp { _, url, _, _ ->
+            AddHttpReply(200, if (url.endsWith("/models")) """{"data":[$models]}""" else "{}")
+        }
+        val ports = AddPorts(
+            login = { _, _, _ -> error("the synthetic credential is already present") },
+            install = { _, _ -> events.add("linked") },
+            restart = { events.add("restarted") },
+            daemonUp = { true },
+            prompt = { question, default -> if (question.startsWith("Run one short live")) "yes" else default },
+            liveTurn = { command, _ ->
+                assertTrue(profile.headKey in TopologyLoader.parse(Files.readString(config)).heads)
+                assertEquals(listOf("linked", "restarted"), events)
+                assertEquals(profile.command, command)
+                events += "checked"
+                if (throws) throw java.io.IOException("synthetic failure")
+                AddLiveResult(false, "the head did not answer before the check's time limit")
+            },
+        )
+        val args = listOf(name) + if (explicit) listOf("--live", "--yes") else emptyList()
+        val terminal = TerminalOutput(output::add)
+        val command = AddCommand(terminal, terminal, AddChecks(terminal, http), ports, HeadPortBindable { true })
+        val ok = runBlocking { command.add(args, env) }
+        assertTrue(ok, output.toString())
+        assertTrue(profile.headKey in TopologyLoader.parse(Files.readString(config)).heads, name)
+        assertEquals(listOf("linked", "restarted", "checked"), events)
+        assertTrue(output.any { it.contains("The head is saved") }, output.toString())
+        assertFalse(output.any { it.contains("nothing written") }, output.toString())
+    }
+
+    private fun seedCredential(kind: String) {
+        val path = Path.of(TopologyLoader.expandHome(checkNotNull(AuthKindRegistry.defaultAuthFileFor(kind))))
+        Files.createDirectories(path.parent)
+        val text = when (kind) {
+            "grok-oauth" -> """{"tokens":{"access_token":"a"},"expires":${Long.MAX_VALUE}}"""
+            "kimi-oauth" -> """{"access_token":"a","refresh_token":"r","expires_at":1}"""
+            "muse-oauth" -> """{"access_token":"acct-token-fake"}"""
+            else -> TOKENS
+        }
+        Files.writeString(path, text)
     }
 }

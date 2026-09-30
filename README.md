@@ -440,6 +440,7 @@ None of these holds session content.
 | `~/.local/share/splice/releases/` | The installed releases (`splice.jar`, `splice-launch`), `current` and `previous`, a lock, and a hand-edited launcher saved as `splice-launch.edited` | Your umask | The current and previous release; older ones are deleted at each upgrade | `UpgradeRelease.kt`, `UpgradeCommand.kt`, `UpgradeLayout.kt`, `UpgradeActivation.kt`, `UpgradeWrapper.kt`, `UpgradeLock.kt` |
 | `~/.local/share/splice/upgrade-runs/<run>/` | An upgrade started from the console: its arguments, output, process id and exit code | Your umask | The newest 5 | `UpgradeRuns.kt`, `SystemdUpgradeLauncher.kt` |
 | The file you name in `splice doctor --json --out <file>` | The doctor report, redacted; with `--with-logs`, a tail of `daemon.log` | Your umask | Yours | `DoctorJsonReport.kt` |
+| `/tmp/splice-add-check-*.out` | The optional `splice add` check's command output; never printed in its diagnosis | Only you (0600) | Removed after the check finishes or times out | `AddWiring.kt` |
 | Probe files | `splice doctor` and a head's launch write a small file to prove a directory is writable, or a hook runnable | — | Deleted at once | `DoctorProbeWrite.kt`, `DoctorReportFiles.kt` |
 
 Kept in memory only, never on disk: the wire tap and the reasoning cache (see

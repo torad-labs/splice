@@ -40,7 +40,15 @@ public fun interface DaemonRestart {
     public operator fun invoke(): Boolean
 }
 
-/** The five ways `splice add` reaches outside itself, as app composes them (AddWiring) and a test
+/** The result of checking the newly written command, without exposing its raw output. */
+public data class AddLiveResult(public val ok: Boolean, public val detail: String)
+
+/** One bounded turn through the installed head command, after save and activation. */
+public fun interface AddLiveTurn {
+    public operator fun invoke(command: String, env: EnvReader): AddLiveResult
+}
+
+/** The ways `splice add` reaches outside itself, as app composes them (AddWiring) and a test
  *  fakes them: one contract rather than five constructor parameters on every verb that takes them. */
 public data class AddPorts(
     public val login: AddLogin,
@@ -48,4 +56,7 @@ public data class AddPorts(
     public val restart: DaemonRestart,
     public val daemonUp: DaemonUpProbe,
     public val prompt: AddPrompter,
+    public val liveTurn: AddLiveTurn = AddLiveTurn { _, _ ->
+        AddLiveResult(false, "the live checker is not configured; run the head's command to check it")
+    },
 )

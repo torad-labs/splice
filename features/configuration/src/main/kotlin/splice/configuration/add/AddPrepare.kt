@@ -23,7 +23,6 @@ private const val FIRST_HEAD_PORT = 3099
 // why: TCP listener port numbers are unsigned 16-bit; an exhausted range must refuse, never loop past it.
 private const val LAST_HEAD_PORT = 65_535
 private val KEY_RE = Regex("[a-z0-9][a-z0-9-]*")
-private const val OPENAI_CHAT_DIALECT = "openai-chat"
 
 /** Proves that the proposed head port binds on the same IPv4 loopback address heads use. */
 internal fun interface HeadPortBindable {
@@ -108,7 +107,7 @@ internal class AddPrepare(
         val current = TopologyLoader.loadOrMaterialize(path)
         val existing = Files.readString(path).trimEnd('\n') + "\n"
         val conflict = keyConflict(resolved, current, key)
-        val problem = conflict ?: keyProblem(resolved, key) ?: valueProblem(resolved) ?: liveProblem(args, resolved)
+        val problem = conflict ?: keyProblem(resolved, key) ?: valueProblem(resolved)
         if (problem != null) return AddPrepared.Refused(problem, conflict = conflict != null)
         val floor = ports.floor(current)
         val port = ports.choose(current, resolved.baseUrl, floor)
@@ -169,13 +168,6 @@ internal class AddPrepare(
         current.heads.any { (headKey, head) -> (head.claude.command ?: headKey) == profile.command } ->
             AddRefusal.CommandTaken(profile.command)
         else -> null
-    }
-
-    /** `--live` speaks plain HTTP with a splice-held key; a browser-OAuth or client-auth profile has
-     *  no such turn to run, and a flag that would silently do nothing is refused instead. */
-    private fun liveProblem(args: AddArgs, profile: AddProfile): AddRefusal? = when {
-        !args.live || profile.dialect == OPENAI_CHAT_DIALECT -> null
-        else -> AddRefusal.LiveUnsupported(profile.name)
     }
 
     /** [profile] here is the resolved one: base URL, command and models already filled in. */

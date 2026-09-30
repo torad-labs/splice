@@ -37,11 +37,6 @@ class AddRefusalTextTest {
             ),
         AddRefusal.QuotedValue to
             ("values must not contain quotes" to "The base URL and the command must not contain quotes."),
-        AddRefusal.LiveUnsupported("codex") to (
-            "--live is only supported for api-key profiles; 'codex' is exercised by its first launch, " +
-                "then splice doctor; drop --live" to
-                "'codex' has no live turn to run: its first launch exercises it."
-            ),
         AddRefusal.Models(AddModelProblem.None) to (
             "no models: pass --model <id>:<context_window> (repeatable)" to
                 "Add at least one model, with its context window."

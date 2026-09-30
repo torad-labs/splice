@@ -1,8 +1,8 @@
 // NEW: v0.4.0 FEATURES.md §1 — `splice add <profile>` — a second provider without editing TOML.
 // pick profile -> authenticate (the login verb's own flows) -> models -> local checks ALWAYS
 // (candidate TOML parses, credential present, base URL answers, models listed where the dialect
-// has a list) -> ONE optional short live turn, skipped by default -> atomic save (a temp file next
-// to splice.toml, then one rename) -> restart handling -> the doctor + launch line. Anything that
+// has a list) -> atomic save (a temp file next to splice.toml, then one rename) -> restart handling
+// -> ONE optional short live turn through the written head -> the doctor + launch line. Anything that
 // stops the flow before the save leaves the previous file byte-identical. In features/configuration
 // since LAYOUT-01: every line goes to [output], and app hands in the login flow, the wrapper linker,
 // the daemon probe and the restart (AddWiring).
@@ -17,7 +17,9 @@ import splice.core.terminal.RESET
 import splice.core.terminal.TerminalOutput
 import splice.core.terminal.YELLOW
 import splice.core.topology.AuthKind
+import splice.core.util.Cancellables
 import splice.core.util.EnvReader
+import splice.core.util.SafeFailureText
 import splice.daemonclient.DaemonSettings
 
 internal const val ADD_PAD = 11
@@ -52,7 +54,10 @@ internal class AddCommand(
         output.line("$title$DIM: '${candidate.key}' as $CYAN${candidate.command}$RESET")
         val ok = authenticate(candidate, env) && verified(candidate, env) && save(candidate)
         if (!ok) output.line("${YELLOW}nothing written$RESET: ${candidate.path} is unchanged")
-        return ok && finish(candidate, env)
+        if (!ok) return false
+        val live = candidate.args.live ||
+            (!candidate.args.yes && confirm("Run one short live turn against '${candidate.key}' now?", default = false))
+        return finish(candidate, env, live)
     }
 
     private suspend fun authenticate(c: AddCandidate, env: EnvReader): Boolean = when {
@@ -66,9 +71,7 @@ internal class AddCommand(
     }
 
     private fun verified(c: AddCandidate, env: EnvReader): Boolean {
-        val asked = !c.args.yes && confirm("Run one short live turn against '${c.key}' now?", default = false)
-        val live = c.args.live || asked
-        val results = checks.all(c, live, env)
+        val results = checks.all(c, live = false, env)
         results.forEach { r ->
             val glyph = if (r.ok) "$GREEN✓$RESET" else "$RED✗$RESET"
             output.line("  $glyph ${r.name.padEnd(ADD_PAD)} ${r.detail}")
@@ -92,8 +95,8 @@ internal class AddCommand(
     /** True when the head is reachable as printed: not running (comes up on first launch), restarted,
      *  or deliberately left for `splice restart`. A restart that was asked for and failed is false, and
      *  the footer says what to run instead of a Launch line that would not work yet. */
-    private fun finish(c: AddCandidate, env: EnvReader): Boolean {
-        linkWrapper(c, env)
+    private fun finish(c: AddCandidate, env: EnvReader, live: Boolean): Boolean {
+        val linked = linkWrapper(c, env)
         val port = settings.controlPort(c.topology, env)
         val daemonLabel = "daemon".padEnd(ADD_PAD)
         val activated = when {
@@ -113,17 +116,35 @@ internal class AddCommand(
             val then = "run ${CYAN}splice restart$RESET, then $CYAN${c.command}$RESET"
             output.line("  $RED✗$RESET $daemonLabel restart failed. The head is saved; $then")
         }
+        if (live) checkWrittenHead(c, env, activated, linked)
         output.line("  Checkup     ${CYAN}splice doctor$RESET $DIM(anything wrong prints its fix)$RESET")
         return activated
     }
 
-    private fun linkWrapper(c: AddCandidate, env: EnvReader) {
+    private fun checkWrittenHead(c: AddCandidate, env: EnvReader, activated: Boolean, linked: Boolean) {
+        val result = if (!activated || !linked) {
+            AddLiveResult(false, "the saved head needs its command linked and the daemon restarted first")
+        } else {
+            Cancellables.runCatchingBestEffort { ports.liveTurn(c.command, env) }.getOrElse { failure ->
+                AddLiveResult(false, "the check could not run: ${SafeFailureText.render(failure)}")
+            }
+        }
+        val glyph = if (result.ok) "$GREEN✓$RESET" else "$RED✗$RESET"
+        output.line("  $glyph ${"live turn".padEnd(ADD_PAD)} ${result.detail}")
+        if (!result.ok) {
+            val fix = "run ${CYAN}${c.command}$RESET or ${CYAN}splice doctor$RESET to check it."
+            output.line("  The head is saved; $fix")
+        }
+    }
+
+    private fun linkWrapper(c: AddCandidate, env: EnvReader): Boolean {
         val link = AddWrapperLink(ports.install).link(c.key, env)
         if (link is AddLinked.NotLinked) {
             val fix = "${CYAN}splice install ${c.key}$RESET"
             val why = link.why?.let { " ($it)" }.orEmpty()
             output.line("  $YELLOW!$RESET ${"wrapper".padEnd(ADD_PAD)} not linked$why; run: $fix")
         }
+        return link is AddLinked.Linked
     }
 
     private fun confirm(question: String, default: Boolean): Boolean {

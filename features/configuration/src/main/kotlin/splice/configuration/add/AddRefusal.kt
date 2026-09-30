@@ -23,8 +23,6 @@ internal sealed class AddRefusal {
     /** A base URL or a command carrying a quote, a backslash or a control character. */
     data object QuotedValue : AddRefusal()
 
-    data class LiveUnsupported(val profile: String) : AddRefusal()
-
     data class Models(val problem: AddModelProblem) : AddRefusal()
 }
 
@@ -58,9 +56,6 @@ internal class AddRefusalText {
         is AddRefusal.NameRequired -> "--name is required for '${r.profile}' (lowercase letters, digits, dashes)"
         is AddRefusal.BaseUrlRequired -> "--base-url is required for '${r.profile}'"
         AddRefusal.QuotedValue -> "values must not contain quotes"
-        is AddRefusal.LiveUnsupported ->
-            "--live is only supported for api-key profiles; '${r.profile}' is exercised by its first launch, " +
-                "then splice doctor; drop --live"
         else -> error("handled by cli: ${r::class.simpleName}")
     }
 
@@ -79,7 +74,6 @@ internal class AddRefusalText {
         is AddRefusal.NameRequired -> "'${r.profile}' needs a name: lowercase letters, digits and dashes."
         is AddRefusal.BaseUrlRequired -> "'${r.profile}' needs a base URL."
         AddRefusal.QuotedValue -> "The base URL and the command must not contain quotes."
-        is AddRefusal.LiveUnsupported -> "'${r.profile}' has no live turn to run: its first launch exercises it."
         else -> error("handled by console: ${r::class.simpleName}")
     }
 

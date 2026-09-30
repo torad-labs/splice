@@ -103,3 +103,34 @@ export function peerLabel(rows: readonly SessionRow[], edge: SessionEdge): strin
   const sender = rows.find((row) => row.session_id === edge.from);
   return sender === undefined ? edge.from.slice(0, 8) : sessionLabel(sender);
 }
+
+/** How a session sits in the hand-offs: it sent work to several sessions (`lead`), it was handed work by
+ *  one (`from`), or neither. A lead is a session whose newest edges go to two or more distinct peers; a
+ *  session that both led and was handed work reads as what it did last. */
+export type Handoff = { kind: 'lead'; peers: number } | { kind: 'from'; peer: string } | null;
+
+export function handoffOf(rows: readonly SessionRow[], edges: readonly SessionEdge[]): Handoff {
+  if (edges.length === 0) return null;
+  const newest = edges.reduce((a, b) => (b.at > a.at ? b : a));
+  if (newest.direction === 'in') return { kind: 'from', peer: peerLabel(rows, newest) };
+  const peers = new Set(edges.filter((edge) => edge.direction === 'out').map((edge) => edge.to));
+  return peers.size >= 2 ? { kind: 'lead', peers: peers.size } : { kind: 'from', peer: peerLabel(rows, newest) };
+}
+
+/** How long a session has been in its state, in ms, or null when the registry gave no time. Waiting and
+ *  stuck count from the last status change; working from when it started; idle from the last update. */
+export function sinceOf(row: SessionRow, state: SessionState, now: number): number | null {
+  const from = state === 'working' ? (row.started_at ?? row.status_updated_at) : (row.status_updated_at ?? row.updated_at);
+  return from === null ? null : Math.max(0, now - from);
+}
+
+/** Why a session has no conversation to open or resume, or null when it has one or the daemon did not say.
+ *  A durable row names the source that found it; a live registry row carries only `resumable`, and false
+ *  there means no head's tree holds a transcript with conversation, which is not the same as an empty file. */
+export type NoConversation = 'no-transcript' | 'nothing-to-resume' | 'empty-transcript';
+
+export function noConversation(row: SessionRow): NoConversation | null {
+  if (row.source === 'history-only' || row.source === 'registry-only') return 'no-transcript';
+  if (row.resumable !== false) return null;
+  return row.source === undefined ? 'nothing-to-resume' : 'empty-transcript';
+}

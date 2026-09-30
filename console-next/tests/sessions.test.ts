@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { SessionRow } from '../src/types/sessions';
-import { groupSessions, peerLabel, repoName, sessionKey, sessionLabel, stateOf, STUCK_AFTER_MS } from '../src/lib/sessions';
+import { groupSessions, handoffOf, noConversation, peerLabel, sinceOf, repoName, sessionKey, sessionLabel, stateOf, STUCK_AFTER_MS } from '../src/lib/sessions';
 
 const NOW = 1_790_000_000_000;
 const row = (over: Partial<SessionRow> = {}): SessionRow => ({
@@ -63,5 +63,33 @@ describe('the other end of a hand-off', () => {
   test('a peer the registry no longer holds prints what the edge carries', () => {
     expect(peerLabel([], { from: 'me', to: 'uds:/gone', at: 1, direction: 'out' })).toBe('uds:/gone');
     expect(peerLabel([], { from: 'zzzzzzzz-9', to: 'x', at: 1, direction: 'in' })).toBe('zzzzzzzz');
+  });
+});
+
+describe('hand-offs', () => {
+  const peer = row({ session_id: 'p1', name: 'claude-splice', address: 'uds:/p1' });
+  const out = (to: string, at: number) => ({ from: 'aaaaaaaa-1111', to, at, direction: 'out' as const });
+  test('no edges, no hand-off', () => expect(handoffOf([peer], [])).toBeNull());
+  test('work sent to two or more distinct peers is a lead of that many', () =>
+    expect(handoffOf([peer], [out('uds:/p1', 1), out('uds:/p2', 2), out('uds:/p2', 3)])).toEqual({ kind: 'lead', peers: 2 }));
+  test('the newest edge in makes it a session handed work by that peer', () =>
+    expect(handoffOf([peer], [out('uds:/p1', 1), { from: 'p1', to: 'uds:/me', at: 5, direction: 'in' }])).toEqual({ kind: 'from', peer: 'claude-splice' }));
+});
+
+describe('time in a state', () => {
+  test('working counts from the start, waiting from the last status change', () => {
+    expect(sinceOf(row(), 'working', NOW)).toBe(3_600_000);
+    expect(sinceOf(row({ status: 'waiting' }), 'waiting', NOW)).toBe(60_000);
+  });
+  test('no time in the registry is null, never zero', () =>
+    expect(sinceOf(row({ started_at: null, status_updated_at: null, updated_at: null }), 'working', NOW)).toBeNull());
+});
+
+describe('a session with no conversation', () => {
+  test('says why: no file, nothing to resume, or an empty file', () => {
+    expect(noConversation(row({ source: 'history-only' }))).toBe('no-transcript');
+    expect(noConversation(row({ resumable: false }))).toBe('nothing-to-resume');
+    expect(noConversation(row({ resumable: false, source: 'history+transcript' }))).toBe('empty-transcript');
+    expect(noConversation(row())).toBeNull();
   });
 });

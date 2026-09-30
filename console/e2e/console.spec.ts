@@ -77,42 +77,49 @@ async function open(page: Page, name: string): Promise<Faults> {
  *  leaves. A tip takes no pointer, so it takes one for the probe; hit-testing still honours clips.
  *  With [subject], the tip must also leave clear the text it explains. */
 async function expectWholeTip(trigger: Locator, where: string, subject?: Locator): Promise<void> {
-  // Scrolling intentionally closes an open tip. Settle Playwright's auto-scroll before hover:
-  // otherwise the exit fade remains visible while the popover has left the top layer.
-  await trigger.scrollIntoViewIfNeeded();
-  await trigger.hover();
-  const tip = trigger.page().locator(`[id="${await trigger.getAttribute('aria-describedby')}"]`);
-  await expect(tip, `${where}: the tip did not open`).toBeVisible();
-  await expect.poll(() => tip.evaluate((body) => body.matches(':popover-open')),
-    { message: `${where}: a fading-out tip is not an open popover` }).toBe(true);
-  if (subject !== undefined) {
-    // Both boxes from one layout: two reads apart compare one layout's tip with the next one's text
-    // when a poll re-flows the page between them (fired once, CI run 36194751483, on a console that
-    // passed it in five other runs). Polled, because the claim is what the operator reads once the
-    // page settles, not one frame of a re-flow.
-    const text = await subject.elementHandle();
-    const covers = (): Promise<boolean> => tip.evaluate((body: HTMLElement, under: Element) => {
-      const [a, b] = [body.getBoundingClientRect(), under.getBoundingClientRect()];
-      return body.matches(':popover-open') && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
-    }, text);
-    await expect.poll(covers, { message: `${where}: the open tip covers the text it explains` }).toBe(false);
-  }
-  const seen = await tip.evaluate((body: HTMLElement) => {
-    body.style.pointerEvents = 'auto';
-    const box = body.getBoundingClientRect();
-    const inWindow = box.left >= 0 && box.top >= 0
-      && box.right <= document.documentElement.clientWidth && box.bottom <= window.innerHeight;
-    const inset = 2;
-    const corners = [[box.left, box.top], [box.right, box.top], [box.left, box.bottom], [box.right, box.bottom]]
-      .map(([x, y]) => [x + (x === box.left ? inset : -inset), y + (y === box.top ? inset : -inset)]);
-    const hits = corners.map(([x, y]) => {
-      const hit = document.elementFromPoint(x, y);
-      return { inside: body.contains(hit), tag: hit?.tagName ?? 'none', className: typeof hit?.className === 'string' ? hit.className : '' };
+  const page = trigger.page();
+  const tip = page.locator(`[id="${await trigger.getAttribute('aria-describedby')}"]`);
+  // A scroll closes an open tip on purpose, and a page still settling (Needs you re-laying its rows, CI
+  // run 36646964572 on 3962a5897; Doctor's panel, run 36194751483) scrolls after the hover has opened it,
+  // leaving a tip that faded out while the pointer never moved: no hover follows, so no poll can bring it
+  // back. So the whole claim, open and measured, is one attempt, and an attempt begins by leaving the mark
+  // and coming back to it. It passes only on a tip that was open through every read; a tip that is cut or
+  // covers its text fails every attempt.
+  await expect(async () => {
+    await trigger.scrollIntoViewIfNeeded();
+    await page.mouse.move(0, 0);
+    await trigger.hover();
+    await expect(tip, `${where}: the tip did not open`).toBeVisible();
+    expect(await tip.evaluate((body) => body.matches(':popover-open')), `${where}: a fading-out tip is not an open popover`).toBe(true);
+    if (subject !== undefined) {
+      // Both boxes from one layout: two reads apart compare one layout's tip with the next one's text
+      // when the page re-flows between them.
+      const text = await subject.elementHandle();
+      const covered = await tip.evaluate((body: HTMLElement, under: Element) => {
+        const [a, b] = [body.getBoundingClientRect(), under.getBoundingClientRect()];
+        return body.matches(':popover-open') && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+      }, text);
+      expect(covered, `${where}: the open tip covers the text it explains`).toBe(false);
+    }
+    // A tip takes no pointer, so it takes one for the probe; hit-testing still honours clips.
+    const seen = await tip.evaluate((body: HTMLElement) => {
+      body.style.pointerEvents = 'auto';
+      const box = body.getBoundingClientRect();
+      const inWindow = box.left >= 0 && box.top >= 0
+        && box.right <= document.documentElement.clientWidth && box.bottom <= window.innerHeight;
+      const inset = 2;
+      const corners = [[box.left, box.top], [box.right, box.top], [box.left, box.bottom], [box.right, box.bottom]]
+        .map(([x, y]) => [x + (x === box.left ? inset : -inset), y + (y === box.top ? inset : -inset)]);
+      const hits = corners.map(([x, y]) => {
+        const hit = document.elementFromPoint(x, y);
+        return { inside: body.contains(hit), tag: hit?.tagName ?? 'none', className: typeof hit?.className === 'string' ? hit.className : '' };
+      });
+      body.style.pointerEvents = '';
+      return { inWindow, onTop: hits.every((hit) => hit.inside), open: body.matches(':popover-open'), hits };
     });
-    body.style.pointerEvents = '';
-    return { inWindow, onTop: hits.every((hit) => hit.inside), open: body.matches(':popover-open'), hits };
-  });
-  expect({ inWindow: seen.inWindow, onTop: seen.onTop }, `${where}: tip open=${seen.open}, corner hits=${JSON.stringify(seen.hits)}`).toEqual({ inWindow: true, onTop: true });
+    expect({ inWindow: seen.inWindow, onTop: seen.onTop, open: seen.open }, `${where}: corner hits=${JSON.stringify(seen.hits)}`)
+      .toEqual({ inWindow: true, onTop: true, open: true });
+  }, { message: `${where}: the tip never stayed open and whole` }).toPass({ timeout: 20_000, intervals: [250, 500, 1000] });
 }
 
 /** Every stat figure on the page that its tile cuts, by its text: a figure is the point of its tile,
@@ -1253,6 +1260,9 @@ test('a lane card at its narrowest reads a 12-character project whole beside the
   const faults = await open(page, 'sessions');
   const lanes = page.getByRole('group', { name: 'Sessions', exact: true });
   await expect(lanes.getByRole('button', { name: new RegExp(` ${STACK.sender.name}, `) })).toBeVisible({ timeout: 15_000 });
+  // The clone is measured in the page's own faces: read before they load, it is set in a fallback face's
+  // width (one 4-worker run of the whole project measured 21px cut where six alone measured none).
+  await page.evaluate(() => document.fonts.ready);
   const fit = await page.evaluate(() => {
     const card = document.querySelector<HTMLElement>('.myx-lane-card');
     const board = card?.closest<HTMLElement>('.myx-lanes');

@@ -1,0 +1,22 @@
+// What the shell says. Copy lives in modules like this one, never inline in a component.
+export const C = {
+  unlock: 'Unlock',
+  keyLabel: 'Management key',
+  unlockAsk: 'Paste the management key to open the console.',
+  unlockRejected: 'That key was not accepted. Paste it again.',
+  unlockHint: 'It is the file mgmt-key in splice’s state folder. splice dashboard opens this page with it.',
+  needs: 'Needs you',
+  sessions: 'Sessions',
+  fleet: 'Fleet',
+  turns: 'Turns',
+  usage: 'Usage',
+  settings: 'Settings',
+  running: 'Daemon running',
+  notAnswering: 'Not answering',
+  thisComputer: 'this computer',
+  day: 'Day',
+  night: 'Night',
+  pages: 'Pages',
+  theme: 'Theme',
+  pending: 'This page is being rebuilt.',
+} as const;

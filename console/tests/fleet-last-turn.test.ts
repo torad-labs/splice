@@ -9,6 +9,7 @@
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
+import { parseFragment, type DefaultTreeAdapterTypes } from 'parse5';
 import { FleetBoard } from '../src/pages/fleet';
 import type { FleetSources } from '../src/pages/fleet';
 import type { HeadStatus } from '../src/shared/api';
@@ -54,7 +55,12 @@ const SOURCES: FleetSources = {
   overrides: [],
 };
 
-const text = (cell: string): string => cell.replace(/<[^>]*>/g, '');
+function nodeText(node: DefaultTreeAdapterTypes.Node): string {
+  if (node.nodeName === '#text' && 'value' in node) return node.value;
+  return 'childNodes' in node ? node.childNodes.map(nodeText).join(' ') : '';
+}
+
+const text = (cell: string): string => nodeText(parseFragment(cell)).trim();
 
 /** Each row's Last turn cell, by head key, read at the position of that column's header. */
 function lastTurnCells(html: string): Record<string, string> {
@@ -95,8 +101,8 @@ describe('Fleet\'s Last turn cell (V4-420)', () => {
   });
 
   test('no cell on the board prints None, null or undefined', () => {
-    // Tags become spaces, so one cell's text cannot glue onto the next and hide from the word boundary.
-    const words = board().replace(/<[^>]*>/g, ' ');
+    // Parsed nodes stay separated, so adjacent cells cannot hide a word from the boundary assertion.
+    const words = text(board());
     expect(words).not.toMatch(/\bNone\b|\bnull\b|\bundefined\b/);
   });
 });

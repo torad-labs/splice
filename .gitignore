@@ -13,6 +13,8 @@ __pycache__/
 /dist/
 # the console bundle is :console:bundle's output (PR 4), never committed
 /console/dist/
+# the replacement console's bundle (V4-444), likewise
+/console-next/dist/
 /console/build/
 /console/e2e/.results/
 # the console tools' regenerable review output (snapshot, theme): bytes that may hold live daemon data

@@ -1,0 +1,29 @@
+/* The site's and the film's world: model colours, and two walls (day, night) with one geometry. Ported from docs/design/comps/comp.css. */
+:root {
+  --claude: #ee8f58; --gpt: #00c5be; --grok: #6eadfe; --kimi: #e3b341; --muse: #b896f3; --local: #7bc47f; --router: #f3b27a; --deepseek: #8fb8d8;
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23g)'/%3E%3C/svg%3E");
+  --display: 'Fraunces', Georgia, serif;
+  --read: 'Source Serif 4', Georgia, serif;
+  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --ease: cubic-bezier(.22, 1, .36, 1);
+  --r1: 6px; --r2: 14px;
+}
+[data-theme='day'] {
+  --wall: #e9dcc0; --wall-shade: #cdbd9d;
+  --obj: #fbf3df; --obj-sunk: #efe4c8; --obj-hi: #fffaf0;
+  --ink: #241d14; --body: #4e4434; --mute: #635741; --faint: #8c8068;
+  --edge: #241d14; --hair: rgba(36, 29, 20, .16);
+  --glass: #14100c; --glass-ink: #ece3cf; --glass-dim: #a09785; --glass-line: rgba(236, 227, 207, .14);
+  --charge: #b52a16; --charge-ink: #fbf3df; --ok: #2c6555; --wait: #7d5419; --stuck: #a53b39;
+  --tan: #b9a684; --sel: rgba(197, 51, 29, .18);
+}
+[data-theme='night'] {
+  --wall: #1d2140; --wall-shade: #141731;
+  --obj: #1b1510; --obj-sunk: #120d09; --obj-hi: #241a12;
+  --ink: #efe2c6; --body: #cbbd9d; --mute: #b6a888; --faint: #968969;
+  --edge: #0c0912; --hair: rgba(239, 226, 198, .16);
+  --glass: #100c08; --glass-ink: #ece3cf; --glass-dim: #a09785; --glass-line: rgba(236, 227, 207, .12);
+  --charge: #e2563b; --charge-ink: #1b1510; --ok: #61bea3; --wait: #e7c069; --stuck: #ee7a70;
+  --tan: #3a2f27; --sel: rgba(226, 86, 59, .26);
+}
+

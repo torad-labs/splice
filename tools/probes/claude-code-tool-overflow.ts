@@ -12,9 +12,10 @@ const limitChars = 20_000;
 const windowTokens = 272_000;
 const reserveTokens = 27_611; // gpt-5.6-sol bundled calibration: 7830 + 19781
 const usage = { prompt_tokens: 100, completion_tokens: 30, total_tokens: 130 };
-type Profile = "overflow" | "reserve" | "oversize";
+type Profile = "overflow" | "stale" | "reserve" | "oversize";
 type Seen = { status: number; retry: string; summary: boolean; stream: boolean;
-  bytes: number; atMs: number; progressAtMs?: number; error?: string };
+  bytes: number; atMs: number; progressAtMs?: number; error?: string;
+  inBandError?: { type: string; message: string }; usage?: Record<string, number> };
 function sse(model: string, deltas: object[], stop: string, bill = usage): Response {
   const frame = (delta: object, reason: string | null, end = false): string =>
     "data: " + JSON.stringify({ id: "chatcmpl-local", object: "chat.completion.chunk", model,
@@ -59,7 +60,7 @@ async function ready(head: number, child: ReturnType<typeof spawn>, log: () => s
 }
 async function inside(client: string, jar: string, delayMs: number, profile: Profile): Promise<object> {
   const beganAt = performance.now();
-  const measuredWindow = profile !== "overflow";
+  const measuredWindow = profile === "reserve" || profile === "oversize";
   const dir = mkdtempSync(join(tmpdir(), "splice-tool-overflow-"));
   const headPort = await port();
   const controlPort = await port();
@@ -162,14 +163,17 @@ async function inside(client: string, jar: string, delayMs: number, profile: Pro
   for (const stream of [daemon.stdout, daemon.stderr])
     stream.on("data", (part: Buffer) => { log = (log + part.toString()).slice(-4000); });
   const seen: Seen[] = [];
+  const countTokenReplies: number[] = [];
   const proxy = createServer((req, res) => {
     const parts: Buffer[] = [];
     req.on("data", (part: Buffer) => parts.push(part));
     req.on("end", () => {
       const bytes = Buffer.concat(parts);
-      if (measuredWindow && req.url?.includes("/count_tokens")) {
+      if ((measuredWindow || profile === "stale") && req.url?.includes("/count_tokens")) {
+        const inputTokens = profile === "reserve" ? Math.ceil(bytes.length / 4) : 100;
+        countTokenReplies.push(inputTokens);
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ input_tokens: profile === "reserve" ? Math.ceil(bytes.length / 4) : 100 }));
+        res.end(JSON.stringify({ input_tokens: inputTokens }));
         return;
       }
       const headers = { ...req.headers, host: "127.0.0.1:" + headPort, "content-length": String(bytes.length) };
@@ -184,7 +188,27 @@ async function inside(client: string, jar: string, delayMs: number, profile: Pro
             stream: body.stream === true, bytes: bytes.length,
             atMs: Math.round(performance.now() - beganAt) };
           let wire = "";
+          let frameBuffer = "";
           reply.on("data", (part: Buffer) => {
+            frameBuffer += part.toString();
+            while (frameBuffer.includes("\n\n")) {
+              const end = frameBuffer.indexOf("\n\n");
+              const frame = frameBuffer.slice(0, end);
+              frameBuffer = frameBuffer.slice(end + 2);
+              const data = frame.split("\n").filter((line) => line.startsWith("data:"))
+                .map((line) => line.slice(5).trimStart()).join("\n");
+              try {
+                const event = JSON.parse(data) as { error?: { type?: string; message?: string };
+                  usage?: Record<string, unknown>; message?: { usage?: Record<string, unknown> } };
+                if (event.error) recorded.inBandError = {
+                  type: String(event.error.type ?? ""), message: String(event.error.message ?? "").slice(0, 250),
+                };
+                const bill = event.usage ?? event.message?.usage;
+                if (bill) recorded.usage = { ...recorded.usage, ...Object.fromEntries(
+                  Object.entries(bill).filter((entry): entry is [string, number] => typeof entry[1] === "number"),
+                ) };
+              } catch { /* Comments and non-JSON SSE data carry no evidence fields. */ }
+            }
             wire = (wire + part.toString()).slice(-2000);
             if (recorded.progressAtMs === undefined && wire.includes("[splice] holding this turn open")) {
               recorded.progressAtMs = Math.round(performance.now() - beganAt);
@@ -259,19 +283,20 @@ async function inside(client: string, jar: string, delayMs: number, profile: Pro
   return { jarSha256: digest(jar), clientSha256: digest(client), delayMs, profile,
     ...(measuredWindow ? { windowTokens, reserveTokens, reservePoint: windowTokens - reserveTokens } : {}),
     calls, maxToolChars, overflowAtMs, streamCancellations, upstreamInputs, seen,
+    fixturePromptTokens: usage.prompt_tokens, countTokenReplies,
     summaries, summaryAttempts, compactBoundary, resultError, resultText, clientExit,
     headSignals: log.split("\n").filter((line) => /turn ERROR|watchdog|first.byte|upstream stream|retry|reissue|conn-reset/i.test(line)).slice(-12).map((line) => line.slice(0, 180)),
     ...(failure ? { failure } : {}) };
 }
 async function main(): Promise<void> {
   const [clientArg, baselineArg, gatedArg, delayArg, marker, isolatedProfile] = process.argv.slice(2);
-  if (!clientArg || !baselineArg || !gatedArg) throw new Error("CLIENT PRE_GATE_JAR GATED_JAR [delayMs] [reserve|oversize]");
+  if (!clientArg || !baselineArg || !gatedArg) throw new Error("CLIENT PRE_GATE_JAR GATED_JAR [delayMs] [overflow|stale|reserve|oversize]");
   const client = resolve(clientArg);
   const baseline = resolve(baselineArg);
   const gated = resolve(gatedArg);
   const delayMs = Number(delayArg ?? "0");
   const profile = (marker === "--isolated" ? isolatedProfile : marker) as Profile | undefined ?? "overflow";
-  if (!["overflow", "reserve", "oversize"].includes(profile)) throw new Error("invalid profile: " + profile);
+  if (!["overflow", "stale", "reserve", "oversize"].includes(profile)) throw new Error("invalid profile: " + profile);
   if (marker === "--isolated") { process.stdout.write(JSON.stringify(await inside(client, baseline, delayMs, profile)) + "\n"); return; }
   const script = fileURLToPath(import.meta.url);
   const env: NodeJS.ProcessEnv = {};
@@ -282,7 +307,7 @@ async function main(): Promise<void> {
       "--dev-bind", "/dev", "/dev", "--proc", "/proc", "--chdir", "/tmp",
       "--setenv", "HOME", "/tmp", "--", process.execPath, script, client, jar, jar,
       String(delayMs), "--isolated", profile], { env, encoding: "utf8",
-      timeout: profile === "overflow" ? Math.max(150_000, delayMs + 120_000) : 480_000 });
+      timeout: profile === "overflow" || profile === "stale" ? Math.max(150_000, delayMs + 120_000) : 480_000 });
     if (run.status !== 0) {
       process.stdout.write(JSON.stringify({ jar, exit: run.status, error: String(run.stderr ?? run.error).slice(-500) }) + "\n");
       process.exitCode = 1;

@@ -85,3 +85,9 @@ f37280280b4768cf6c9f825e7fdee98145ccffc4:app/src/test/kotlin/splice/app/KeptFile
 # The history is not rewritten, so each commit that carries the quote is fingerprinted here.
 5319b63131cfe0ff25ba6ad85264cd741ba92fbd:.gitleaksignore:generic-api-key:80
 36a22e1a5821273c4592a592bf474e6441f55e30:.dev/campaigns/v0.4.0.toml:generic-api-key:8297
+# 2026-09-29 CT: V4-427 transcript fixtures plant the same synthetic token as the
+# vetted TranscriptSentTextsTest above, to assert cached hand-offs stay redacted.
+# Opened all three test lines and their assertions. No credential or auth consumer.
+13ef90fbd2b1f075c37612db8e13166d0c4d4dde:integrations/claude-code/src/test/kotlin/splice/client/transcript/v4427/CachedEdgesTest.kt:generic-api-key:34
+13ef90fbd2b1f075c37612db8e13166d0c4d4dde:integrations/claude-code/src/test/kotlin/splice/client/transcript/v4427/SendLedgerTest.kt:generic-api-key:43
+13ef90fbd2b1f075c37612db8e13166d0c4d4dde:integrations/claude-code/src/test/kotlin/splice/client/transcript/v4427/SendLedgerBoundaryTest.kt:generic-api-key:58

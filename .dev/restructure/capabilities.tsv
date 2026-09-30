@@ -2896,3 +2896,6 @@ console-next/tests/parity.test.ts	e0c9c382a77c922a47188f849411be4ba40d249fceb928
 console-next/tests/support/coverage.ts	59445b3d362b92675601e7d2c9a87e24079891534bb126e7ae496709ad7514b7	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes
 console-next/src/lib/conversation.ts	46450ecdb8791307fd1acb89f7e2a5268698029867f945f33361d355eba01eb5	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes
 console-next/tests/conversation.test.ts	f377608ef3ac121833aa96fe9d451c4a9b5346cdfe7b5a26ecc0d774887670e3	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes
+console-next/src/lib/rail.ts	3e197f9f0a308d6575abc464840d483abc06847ea70556ff061262ee2cfe789f	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes
+console-next/src/types/teams.ts	e3f8943011c6dd1fdd96d25d7381b6c8f20f844b8f22db94ef6777e7ea75b1f2	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes
+console-next/tests/rail.test.ts	487046e2dfcbec3fc69545a56a03abb124f561cbdde031a243ac67c5729d4ef1	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes

@@ -131,7 +131,7 @@ export interface SessionEdge {
 /** One of a session's own edges (): the stored edge with the text its sender handed off, read
  *  on demand from the sender's transcript through the redacted read team chat uses (ActivityRoutes'
  *  HandedText). A text not found is `text` null with `missing_reason` saying why, never ''. */
-interface HandedEdge extends SessionEdge {
+export interface HandedEdge extends SessionEdge {
   text: string | null;
   /** The transcript the text was read from; null with the text. */
   text_source: string | null;

@@ -12,6 +12,7 @@ import type {
   UsagePayload,
 } from '../types/core';
 import type { SessionsPayload } from '../types/sessions';
+import type { TeamsPayload } from '../types/teams';
 import type { LiveTurnsPayload, StopTurnResult } from '../types/turns';
 
 export const keys = {
@@ -27,6 +28,7 @@ export const keys = {
   config: ['config'],
   health: ['health'],
   transcript: ['transcript'],
+  teams: ['teams'],
 } as const;
 
 /** How often a page re-reads without an event: the stream is the fast path, this is the floor. */
@@ -40,6 +42,7 @@ export const useHeads = () => useQuery(read<HeadsPayload>(keys.heads, '/api/head
 export const useUsage = () => useQuery(read<UsagePayload>(keys.usage, '/api/usage'));
 export const useAuth = () => useQuery(read<AuthPayload>(keys.auth, '/api/auth'));
 export const useSessions = () => useQuery(read<SessionsPayload>(keys.sessions, '/api/sessions'));
+export const useTeams = () => useQuery(read<TeamsPayload>(keys.teams, '/api/teams'));
 export const useConfig = (head?: string) =>
   useQuery(read<ConfigPayload>(keys.config, head === undefined ? '/api/config' : `/api/config?head=${encodeURIComponent(head)}`, { refetchInterval: false }));
 export const useHealth = () =>

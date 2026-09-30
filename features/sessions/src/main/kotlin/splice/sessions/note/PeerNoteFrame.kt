@@ -9,9 +9,11 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-/** The Claude Code versions whose inbox frame this adapter was checked against. Any other version is refused, not guessed at. */
+/** The Claude Code versions whose inbox frame this adapter was checked against: each took the frame in the PeerNoteFrameTest fixture on
+ *  its real inbox socket and refused the same frame with another `type`, under tools/probes/claude-code-peer-note.ts. Any other
+ *  version is refused, not guessed at. */
 internal object PeerNoteAbi {
-    val AUDITED_VERSIONS: Set<String> = setOf("2.1.285")
+    val AUDITED_VERSIONS: Set<String> = setOf("2.1.282", "2.1.283", "2.1.284", "2.1.285", "2.1.286")
 
     internal const val TAG = "cross-session-message"
 

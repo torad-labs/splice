@@ -77,6 +77,16 @@ class PeerNoteSocketTest {
     }
 
     @Test
+    fun `a session on any version the probe proved is sent the note`(@TempDir root: Path) {
+        // The five installed builds tools/probes/claude-code-peer-note.ts took the frame on and refused the mutant on (Sep 30, 2026).
+        for (version in listOf("2.1.282", "2.1.283", "2.1.284", "2.1.285", "2.1.286")) {
+            val inbox = inbox(root.resolve(version).also { Files.createDirectory(it) })
+            assertEquals(NoteOutcome.Submitted("id-1"), send(record(inbox.socket, version)))
+            assertEquals(PeerNoteFrame.encode("run the gate", "id-1"), inbox.received.get(5, TimeUnit.SECONDS))
+        }
+    }
+
+    @Test
     fun `a session on a version nobody checked is refused, and so is one that reports none`(@TempDir root: Path) {
         val inbox = inbox(root)
         for (version in listOf("2.1.300", null)) {

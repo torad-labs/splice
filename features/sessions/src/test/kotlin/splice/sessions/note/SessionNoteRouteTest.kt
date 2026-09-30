@@ -24,13 +24,14 @@ class SessionNoteRouteTest {
         id: String = "s-1",
         socket: String? = "/run/user/1000/cc-socks/1.sock",
         availability: SessionAvailability = SessionAvailability.LIVE,
+        version: String = "2.1.285",
     ) = SessionRecord(
         pid = 1,
         sessionId = id,
         cwd = null,
         name = null,
         kind = null,
-        version = "2.1.285",
+        version = version,
         status = "idle",
         statusUpdatedAt = null,
         startedAt = null,
@@ -73,6 +74,14 @@ class SessionNoteRouteTest {
         assertEquals("m-1", field(reply, "message_id"))
         assertEquals("unknown", field(reply, "delivery"))
         assertEquals("run the gate", sender.sent.single().second)
+    }
+
+    @Test
+    fun `a note to a session on 2-1-286 is handed to the sender with that version intact`() {
+        val sender = Recording()
+        val reply = post(route(sender, record(version = "2.1.286")), "s-1", hi)
+        assertEquals(HttpStatusCode.Accepted, reply.status)
+        assertEquals("2.1.286", sender.sent.single().first.version)
     }
 
     @Test

@@ -77,24 +77,35 @@ internal class DoctorProbeWrite(
                 DoctorCheck(name, CheckStatus.WARN, "perf file could not be read: ${read.error}", null)
             rows.isEmpty() -> DoctorCheck(name, CheckStatus.INFO, "no turns recorded yet")
             failures.isEmpty() -> DoctorCheck(name, CheckStatus.OK, "last ${rows.size} turn(s) clean$unread")
-            else -> failed(name, headKey, rows.size, failures, unread)
+            else -> failed(name, headKey, rows, failures, unread)
         }
     }
 
     private fun failed(
         name: String,
         headKey: String,
-        n: Int,
+        rows: List<Pair<String, Long>>,
         failures: List<Pair<String, Long>>,
         unread: String,
     ): DoctorCheck {
         val (outcome, ts) = failures.last()
         val ageMs = System.currentTimeMillis() - ts
         val last = "last failure: ${DoctorAge.ago(ageMs)} (${tag(outcome)})"
-        val detail = "${failures.size} of last $n turn(s) failed; $last$unread"
+        val detail = "${failures.size} of last ${rows.size} turn(s) failed; $last$unread"
         // A row with no time (perfRow reads it as 0) is never called old.
-        val status = if (ts <= 0L || ageMs <= RECENT_FAILURE_MS) CheckStatus.WARN else CheckStatus.INFO
+        val recent = ts <= 0L || ageMs <= RECENT_FAILURE_MS
+        val status = if (recent && stillFailing(rows)) CheckStatus.WARN else CheckStatus.INFO
         return DoctorCheck(name, status, detail, "splice logs --head $headKey --tail 50")
+    }
+
+    /** Whether the head is failing NOW, judged on its newest turns: the newest one failed, or at least
+     *  [FAILING_OF_NEWEST] of its newest [NEWEST_TURNS] did and the newest two are not both clean. A burst of
+     *  failures followed by two good turns has recovered and reads as history (V4-444, console review
+     *  2026-09-29: claude-splice failed 18 of 20 turns, then answered twice, and still sat in Needs you). */
+    private fun stillFailing(rows: List<Pair<String, Long>>): Boolean {
+        val newest = rows.takeLast(NEWEST_TURNS).map { (outcome, _) -> outcome != OutcomeTag.OK.wire }
+        val recovered = newest.takeLast(RECOVERY_RUN).let { it.size == RECOVERY_RUN && it.none { failed -> failed } }
+        return newest.last() || (newest.count { it } >= FAILING_OF_NEWEST && !recovered)
     }
 
     /** One perf JSONL row -> (outcome, ts); null on a malformed line (tail readers stay tolerant). */
@@ -115,8 +126,15 @@ private const val PERF_TAIL_TURNS = 20
 
 // why: doctor says what is wrong now. A head's newest failure older than a day is history: a live
 // fault fails the head's next turn, which is recent again. Console review 2026-09-29: Needs you
-// listed nine heads whose last failure was 3 to 35 days old.
+// listed nine heads whose last failure was 3 to 35 days old. The age bound stays beside the newest-turns
+// rule below because "the newest turn failed" is true forever of a head nobody has used since.
 private const val RECENT_FAILURE_MS = 24L * 3_600_000
+
+/** The window [DoctorProbeWrite.stillFailing] judges, the failures in it that make a head failing, and how many clean
+ *  turns in a row mean it has recovered. */
+private const val NEWEST_TURNS = 5
+private const val FAILING_OF_NEWEST = 3
+private const val RECOVERY_RUN = 2
 
 /** Enough bytes for well over 20 rows per generation (a row is under 1 KiB). */
 private const val PROBE_TAIL_BYTES = 64 shl 10

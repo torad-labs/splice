@@ -160,7 +160,8 @@ class DoctorReportHardeningTest {
         Files.writeString(perf, """{"ts":$now,"outcome":"ok"}""" + "\n")
         val probe = DoctorProbeWrite(files = DoctorReportFiles(DoctorRedaction(tmp)))
         val rotatedFailure = probe.perfTailRow("codex", perf)
-        assertEquals(CheckStatus.WARN, rotatedFailure.status, rotatedFailure.detail)
+        // the rotated failure was read (counted), and the turn after it was clean: history, not a fault
+        assertEquals(CheckStatus.INFO, rotatedFailure.status, rotatedFailure.detail)
         assertTrue(rotatedFailure.detail.startsWith("1 of last 2 turn(s) failed"), rotatedFailure.detail)
 
         Files.delete(state.resolve("codex-perf.jsonl.1"))
@@ -219,5 +220,33 @@ class DoctorReportHardeningTest {
         Files.writeString(perf, """{"outcome":"error:auth-missing"}""" + "\n")
         val undated = probe.perfTailRow("codex", perf)
         assertEquals(CheckStatus.WARN, undated.status, "a failure with no time is never called old: ${undated.detail}")
+    }
+
+    // V4-444, console review 2026-09-29: claude-splice failed 18 of its last 20 turns in a burst, then
+    // answered twice, and doctor still warned (and Needs you listed it) for a day. A head is failing when
+    // its newest turn failed, or 3 of its newest 5 did and the newest two are not both clean.
+    @Test
+    fun `a burst of failures followed by two good turns has recovered, and one failing now still warns`() {
+        val state = Files.createDirectories(tmp.resolve("state"))
+        val perf = state.resolve("codex-perf.jsonl")
+        val probe = DoctorProbeWrite(files = DoctorReportFiles(DoctorRedaction(tmp)))
+        val now = System.currentTimeMillis()
+
+        // oldest first: F is a failed turn, . a clean one
+        fun read(turns: String): DoctorCheck {
+            val lines = turns.mapIndexed { i, turn ->
+                val outcome = if (turn == 'F') "error:upstream-failed" else "ok"
+                """{"ts":${now - (turns.length - i) * 60_000},"outcome":"$outcome"}"""
+            }
+            Files.writeString(perf, lines.joinToString("\n") + "\n")
+            return probe.perfTailRow("codex", perf)
+        }
+        val burst = read("FFFFFF..")
+        assertEquals(CheckStatus.INFO, burst.status, burst.detail)
+        assertTrue(burst.detail.startsWith("6 of last 8 turn(s) failed; last failure: "), burst.detail)
+        assertEquals(CheckStatus.WARN, read("..F").status, "the newest turn failed")
+        assertEquals(CheckStatus.WARN, read("F.F.F").status, "a head failing every other turn is still failing")
+        assertEquals(CheckStatus.WARN, read("FFFF.").status, "one good turn after four failures is not a recovery")
+        assertEquals(CheckStatus.INFO, read(".F.F.").status, "two failures in five, ended clean")
     }
 }

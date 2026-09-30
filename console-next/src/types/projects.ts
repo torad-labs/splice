@@ -26,6 +26,8 @@ export interface ProjectStatuslineRoot {
 export interface ProjectRow {
   id: string;
   root: string;
+  /** The repo's `origin` URL with credentials removed, when it has one (ProjectsRoutes.kt); its last piece names the repo. */
+  remote?: string;
   live_sessions: number;
   /** Unarchived teams whose declared repo this is. */
   teams: number;

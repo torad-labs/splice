@@ -98,7 +98,7 @@ export function collapseChecks(checks: readonly DoctorCheck[]): CheckRow[] {
     const family = colon === -1 ? check.id : check.id.slice(0, colon);
     const key = `${check.status}|${family}|${fix ?? ''}`;
     const row = rows.get(key);
-    if (row === undefined) rows.set(key, { key, family, status: check.status, label: check.id, fix, fixId: check.fix_id ?? null, members: [check] });
+    if (row === undefined) rows.set(key, { key, family, status: check.status, label: check.id, fix, fixId: check.fix_id ?? null, fixKind: check.fix_kind ?? null, members: [check] });
     else row.members.push(check);
   }
   return [...rows.values()].map(({ family, ...row }) => row.members.length === 1

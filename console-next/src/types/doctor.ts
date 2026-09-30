@@ -27,9 +27,18 @@ export interface DoctorCheck {
    * daemon older than the field, when the remedy is the operator's to make.
    */
   fix_id?: string | null;
+  /**
+   * What [fix] is (DoctorCheckTypes.kt FixKind): `command` is one shell line safe to paste as it stands, `advice` is a
+   * sentence about what to change. Null with no fix; absent from a daemon older than the field, which the console reads
+   * as advice, so nothing is offered to paste on a guess.
+   */
+  fix_kind?: FixKind | null;
   /** V4-371: the declared trace value differs from what this daemon boot runs. */
   pending_restart?: boolean;
 }
+
+/** `fix_kind` on the wire. */
+export type FixKind = 'command' | 'advice';
 
 export interface DoctorPayload {
   schema_version: number;
@@ -77,6 +86,8 @@ export interface CheckRow {
   fix: string | null;
   /** The fix the daemon runs itself (the first member's `fix_id`), null when the remedy is text. */
   fixId: string | null;
+  /** The first member's `fix_kind`: whether [fix] is a line to paste or advice to read. */
+  fixKind: FixKind | null;
   members: DoctorCheck[];
 }
 

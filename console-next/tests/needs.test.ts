@@ -13,7 +13,7 @@ import type { TurnOf } from '../src/lib/sessions';
 import { H, K, S, U } from '../src/lib/words-needs';
 import type { AccountRow, AccountWire } from '../src/types/accounts';
 import type { AuthPayload, GateSnapshot, HeadStatus, UsagePayload } from '../src/types/core';
-import type { DoctorCheck, DoctorPayload } from '../src/types/doctor';
+import type { DoctorCheck, DoctorPayload, FixKind } from '../src/types/doctor';
 import type { Need, NeedInputs, Read } from '../src/types/needs';
 import type { SessionRow } from '../src/types/sessions';
 import type { TeamRow, TeamSlot } from '../src/types/teams';
@@ -508,7 +508,7 @@ describe('one changed splice.toml, one Needs you item', () => {
 describe('the doctor', () => {
   test('a failing check is danger with its own remedy to copy; warn is warn; ok and info are quiet', () => {
     const checks: DoctorCheck[] = [
-      { id: 'wrapper/claudex', status: 'fail', detail: 'not linked', fix: 'splice install --all' },
+      { id: 'wrapper/claudex', status: 'fail', detail: 'not linked', fix: 'splice install --all', fix_kind: 'command' },
       { id: 'daemon/disk', status: 'warn', detail: 'disk 91% full' },
       { id: 'daemon/port', status: 'ok', detail: 'fine' },
       { id: 'daemon/jvm', status: 'info', detail: 'jvm 21' },
@@ -535,25 +535,23 @@ describe('the doctor', () => {
   });
 
   test('a remedy without a console action keeps its honest CLI fallback', () => {
-    const checks: DoctorCheck[] = [{ id: 'daemon/manual', status: 'warn', detail: 'manual repair needed', fix: 'repair by hand' }];
+    const checks: DoctorCheck[] = [{ id: 'daemon/manual', status: 'warn', detail: 'manual repair needed', fix: 'repair by hand', fix_kind: 'advice' }];
     expect(needsIn({ doctor: read(doctor(checks)) })[0]?.fix).toEqual({ kind: 'open', href: '#/settings/health', label: 'Open doctor', fallback: 'repair by hand' });
   });
 
-  test('advice is printed and never offered as a line to paste; a command drops the note the daemon trails it with', () => {
-    const fixOf = (fix: string) => needsIn({ doctor: read(doctor([{ id: 'daemon/x', status: 'warn', detail: 'd', fix }])) })[0]?.fix;
-    expect(fixOf('set system_prompt_mode = "append" to add your text beside the client\'s own instructions instead')).toMatchObject({ kind: 'open', fallback: expect.stringContaining('set system_prompt_mode') });
-    expect(fixOf('start it (Ollama / LM Studio / vLLM), then re-run')).toMatchObject({ kind: 'open' });
-    expect(fixOf('rm ~/.local/bin/claude   (or give a head that command again in the topology)')).toEqual({ kind: 'copy', command: 'rm ~/.local/bin/claude' });
-    expect(fixOf('splice restart (then: splice logs --head x --tail 50 to see why)')).toEqual({ kind: 'restart-daemon' });
+  test('only a fix the daemon marked a command is offered to paste; advice, and a fix with no kind, are printed beside Open doctor', () => {
+    const fixOf = (fix: string, fix_kind?: FixKind | null) => needsIn({ doctor: read(doctor([{ id: 'daemon/x', status: 'warn', detail: 'd', fix, ...(fix_kind === undefined ? {} : { fix_kind }) }])) })[0]?.fix;
+    expect(fixOf('rm ~/.local/bin/claudeor', 'command')).toEqual({ kind: 'copy', command: 'rm ~/.local/bin/claudeor' });
+    expect(fixOf('set system_prompt_mode = "append" to add your text', 'advice')).toMatchObject({ kind: 'open', fallback: 'set system_prompt_mode = "append" to add your text' });
+    // a daemon older than the field says nothing, and a first word is not evidence: no Copy
+    expect(fixOf('rm ~/.local/bin/claudeor')).toMatchObject({ kind: 'open', fallback: 'rm ~/.local/bin/claudeor' });
+    expect(fixOf('splice restart', 'command')).toEqual({ kind: 'restart-daemon' });
   });
 
-  test('what the operator configured on purpose, and a local runtime Fleet already owns, stay on Doctor and out of Needs you', () => {
-    const warn = (id: string): DoctorCheck => ({ id, status: 'warn', detail: 'd', fix: 'advice' });
-    const ids = ['configuration/system-prompt:claudex', 'configuration/project-prompt:project:x', 'configuration/wire-tap:claudex', 'configuration/local:bonsai'];
-    expect(needsIn({ doctor: read(doctor(ids.map(warn))) })).toEqual([]);
-    // the same rows failing are a fault, and other configuration rows are untouched
-    expect(needsIn({ doctor: read(doctor([{ id: 'configuration/wire-tap:claudex', status: 'fail', detail: 'not a number', fix: null }])) })).toHaveLength(1);
-    expect(needsIn({ doctor: read(doctor([warn('configuration/other')])) })).toHaveLength(1);
+  test('a disclosure the daemon reports at info is not an item, and the same row failing is', () => {
+    const row = (status: DoctorCheck['status']): DoctorCheck => ({ id: 'configuration/system-prompt:claudex', status, detail: 'd', fix: 'advice', fix_kind: 'advice' });
+    expect(needsIn({ doctor: read(doctor([row('info')])) })).toEqual([]);
+    expect(needsIn({ doctor: read(doctor([row('fail')])) })).toHaveLength(1);
   });
 
   test('a splice logs remedy opens the requested head and tail instead of copying the command, and restart restarts', () => {

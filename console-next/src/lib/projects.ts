@@ -8,7 +8,7 @@ import type { SessionRow } from '../types/sessions';
 import type { ProjectRow } from '../types/projects';
 
 /** A repo as a person says it: the name it was cloned as, else its folder's. */
-export const repoLabel = (root: string): string => repoNameOf(root);
+export const repoLabel = (root: string, remote?: string): string => repoNameOf(root, remote);
 
 /** The sentence under a project's name. */
 export function projectLede(row: ProjectRow): string {

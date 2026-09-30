@@ -32,8 +32,8 @@ export function ProjectPage() {
 
   return (
     <>
-      <div className="crumb"><Link to="/sessions?group=repo">{P.back}</Link><span>/</span><span>{repoLabel(project.root)}</span></div>
-      <PageHead title={repoLabel(project.root)} lede={projectLede(project)} />
+      <div className="crumb"><Link to="/sessions?group=repo">{P.back}</Link><span>/</span><span>{repoLabel(project.root, project.remote)}</span></div>
+      <PageHead title={repoLabel(project.root, project.remote)} lede={projectLede(project)} />
       <p className="hint">{project.root}{project.last_activity === null ? ` · ${P.never}` : ` · ${P.activity} ${clockTime(project.last_activity)}`}</p>
 
       <section className="proj-section" aria-labelledby="proj-sessions">

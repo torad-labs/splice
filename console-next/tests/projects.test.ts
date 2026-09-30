@@ -15,6 +15,8 @@ describe('a project in words', () => {
   test('its name is the folder', () => {
     expect(repoLabel(ROOT)).toBe('tally');
     expect(repoLabel('/')).toBe('/');
+    expect(repoLabel('/home/ava/mythos/repo', 'git@github.com:torad-labs/splice.git')).toBe('splice');
+    expect(repoLabel('/home/ava/mythos/repo')).toBe('mythos/repo');
   });
   test('the sentence says what runs, which teams work here and what today cost', () => {
     expect(projectLede(row())).toBe('2 sessions are running and 1 team works here. 12 turns today. About $1.50 of API cost.');

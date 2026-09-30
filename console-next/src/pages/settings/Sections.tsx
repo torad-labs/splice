@@ -298,7 +298,7 @@ function Checks() {
             control={
               <>
                 <State tone={row.status === 'fail' ? 'stuck' : 'wait'}>{row.status === 'fail' ? T.needsYou : T.worth}</State>
-                <NeedFix fix={doctorFixOf(row.fix, row.fixId)} />
+                <NeedFix fix={doctorFixOf(row.fix, row.fixId, row.fixKind)} />
               </>
             }
           />

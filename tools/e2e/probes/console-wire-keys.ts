@@ -692,7 +692,7 @@ async function boot(jar: string): Promise<Daemon> {
   // it, so it is set again here. The rebuilt environment also carries no DISPLAY, WAYLAND_DISPLAY or
   // DBUS address, so an opener that slipped the property would still have no desktop to reach.
   // A private copy of the jar: the build path is shared, and a JVM loads its classes lazily, so a
-  // build that rewrites the jar mid-read would fail every route not yet loaded (console/e2e/stack.ts).
+  // build that rewrites the jar mid-read would fail every route not yet loaded (console-next/e2e/stack.ts).
   const runJar = join(home, "splice.jar");
   copyFileSync(jar, runJar);
   const child: ChildProcess = spawn("java", [

@@ -13,9 +13,6 @@ __pycache__/
 /dist/
 # the shipped console bundle is :console-next:bundle's output, never committed
 /console-next/dist/
-/console/build/
-# the console tools' regenerable review output (snapshot, theme): bytes that may hold live daemon data
-/console/.review/
 /.cache/
 
 # gradle (the build root is the repository root; the modules live where restructure plan §2.2 puts

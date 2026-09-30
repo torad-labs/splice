@@ -87,7 +87,7 @@
     },
     {
       "task": "consoleWireKeys",
-      "why": "Every key the console's types declare for every `request<T>()` it makes, read against the fat jar booted isolated. The console's types were written against payloads nobody read and its tests were fed fixtures shaped like those types, so on 2026-09-22 five pages were broken against the real daemon (accounts threw, turns 400ed every poll, doctor printed `undefined`) with every unit test green. The probe existed since V4-140 and ran in nothing.",
+      "why": "Every key the replacement console's types declare for its concrete `request<T>()`, `read<T>()` and `health<T>()` calls, read against the fat jar booted isolated. The console's types were written against payloads nobody read and its tests were fed fixtures shaped like those types, so on 2026-09-22 five pages were broken against the real daemon (accounts threw, turns 400ed every poll, doctor printed `undefined`) with every unit test green. The probe existed since V4-140 and ran in nothing.",
       "command": ["bun", "tools/e2e/probes/console-wire-keys.ts", "--boot", "app/build/libs/app-all.jar"],
       "dependsOn": [":app:shadowJar"]
     },
@@ -104,9 +104,9 @@
     },
     {
       "task": "consoleE2e",
-      "why": "Every console page in a real browser against the fat jar's own bundle, booted with a mock upstream, a pooled OAuth account and a driven turn (console/e2e): a page fails on the router's error screen, a read the daemon refused, a console error or a printed `undefined`, and four journeys check the values the stack put there. The wire probe checks keys; only a browser sees a page throw on them. The page set is read from src/pages, so a new page is visited with no edit here.",
-      "command": ["npm", "run", "--silent", "e2e:console"],
-      "dependsOn": [":app:shadowJar"]
+      "why": "Every retained old-console page in a real browser against console/dist, booted with a mock upstream, a pooled OAuth account and a driven turn (console/e2e): a page fails on the router's error screen, a read the daemon refused, a console error or a printed `undefined`, and four journeys check the values the stack put there. The replacement console's :console-next:e2e judges the bundle the jar ships. The old page set is read from src/pages, so a new page is visited with no edit here.",
+      "command": ["env", "-u", "CONSOLE_E2E_HTML", "CONSOLE_E2E_BUNDLE=dist", "npm", "run", "--silent", "e2e:console"],
+      "dependsOn": [":console:bundle", ":app:shadowJar"]
     },
     {
       "task": "dependencyAudit",

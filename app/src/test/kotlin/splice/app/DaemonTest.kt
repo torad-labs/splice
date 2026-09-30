@@ -322,20 +322,20 @@ class DaemonTest {
     }
 
     @Test
-    fun `dashboard loader prefers a checkout build and falls back to the packaged resource`(@TempDir tmp: Path) {
+    fun `dashboard loader reports an absent explicit file and rereads it when created`(@TempDir tmp: Path) {
         val dist = tmp.resolve("index.html")
         var packagedReads = 0
-        val dashboard = DashboardHtml().source(dist) {
+        val dashboard = DashboardHtml(splice.core.util.EnvReader { dist.toString() }).source {
             packagedReads += 1
             "<html>packaged</html>"
         }
 
-        assertEquals("<html>packaged</html>", dashboard())
-        assertEquals(1, packagedReads)
+        assertTrue(dashboard().contains("SPLICE_CONSOLE_HTML override path is unreadable"))
+        assertEquals(0, packagedReads)
 
         Files.writeString(dist, "<html>checkout</html>")
         assertEquals("<html>checkout</html>", dashboard())
-        assertEquals(1, packagedReads)
+        assertEquals(0, packagedReads)
     }
 
     @Test

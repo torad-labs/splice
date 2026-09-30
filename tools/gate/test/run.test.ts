@@ -14,6 +14,30 @@ const read = (rel: string) => readFileSync(join(repoRoot, rel), "utf8");
 const scripts = (JSON.parse(read("package.json")) as { scripts: Record<string, string> }).scripts;
 interface Leg { task: string; why: string; command: string[] }
 
+function validateCommand(argv: string[], task: string): void {
+  let at = 0;
+  if (argv[0] === "env") {
+    at = 1;
+    while (at < argv.length) {
+      if (argv[at] === "-u") {
+        expect(argv[at + 1], `${task}: env -u needs a variable name`).toMatch(/^[A-Za-z_][A-Za-z0-9_]*$/);
+        at += 2;
+      } else if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(argv[at]!)) {
+        at += 1;
+      } else break;
+    }
+  }
+  const command = argv.slice(at);
+  expect(["bun", "bash", "npm"], `${task}: runtime`).toContain(command[0]!);
+  if (command[0] === "npm") {
+    const script = command[command.length - 1]!;
+    expect(scripts[script], `${task}: package.json declares no '${script}' script`).toBeDefined();
+  } else {
+    const target = command[1] === "test" ? command[2]! : command[1]!;
+    expect(existsSync(join(repoRoot, target)), `${task}: ${target} does not exist`).toBe(true);
+  }
+}
+
 describe("gate run", () => {
   test("package.json's gate script is this verb, and checks/gate.sh is gone", () => {
     expect(scripts.gate).toBe("bun tools/gate run");
@@ -50,15 +74,33 @@ describe("gate run", () => {
     for (const leg of legs) {
       expect(leg.task, `${leg.task}: a Gradle task name`).toMatch(/^[a-z][A-Za-z0-9]*$/);
       expect(leg.why.length, `${leg.task}: needs a reason`).toBeGreaterThan(0);
-      expect(["bun", "bash", "npm"], `${leg.task}: runtime`).toContain(leg.command[0]!);
-      if (leg.command[0] === "npm") {
-        const script = leg.command[leg.command.length - 1]!;
-        expect(scripts[script], `${leg.task}: package.json declares no '${script}' script`).toBeDefined();
-      } else {
-        const target = leg.command[1] === "test" ? leg.command[2]! : leg.command[1]!;
-        expect(existsSync(join(repoRoot, target)), `${leg.task}: ${target} does not exist`).toBe(true);
-      }
+      validateCommand(leg.command, leg.task);
     }
+  });
+
+  test("env cannot hide an unapproved runtime, unknown flag, missing command or absent target", () => {
+    for (const command of [
+      ["env", "sh", "-c", "x"], ["env", "curl", "x"], ["env", "-i", "npm", "run", "x"],
+      ["env", "FOO=1"], ["env", "-u"], ["env", "-u", "bad-name", "npm", "run", "e2e:console"],
+      ["env", "FOO=1", "npm", "run", "absent-script"], ["env", "FOO=1", "bun", "absent-target"],
+    ]) expect(() => validateCommand(command, "synthetic")).toThrow();
+    validateCommand(["env", "-u", "HTML", "MODE=dist", "npm", "run", "e2e:console"], "synthetic");
+    validateCommand(["env", "MODE=jar", "bun", "test", "tools/gate/test/run.test.ts"], "synthetic");
+  });
+
+  test("the shipped console suite cannot select a developer HTML override", () => {
+    const app = read("app/build.gradle.kts");
+    expect(app).toContain('project(":console-next").tasks.named<Exec>("bundle")');
+    const suite = read("console-next/build.gradle.kts");
+    expect(suite).toContain('environment.remove("CONSOLE_E2E_HTML")');
+    expect(suite).not.toContain('environment("CONSOLE_E2E_HTML",');
+    expect(suite).toContain('environment("CONSOLE_E2E_BUNDLE", "jar")');
+    const legs = (JSON.parse(read("tools/gate/config/ladder.json")) as { legs: (Leg & { dependsOn?: string[] })[] }).legs;
+    const retained = legs.find((leg) => leg.task === "consoleE2e");
+    expect(retained?.dependsOn).toEqual([":console:bundle", ":app:shadowJar"]);
+    expect(retained?.command).toEqual([
+      "env", "-u", "CONSOLE_E2E_HTML", "CONSOLE_E2E_BUNDLE=dist", "npm", "run", "--silent", "e2e:console",
+    ]);
   });
 
   test("the legs after the slot are exactly the ones that take the slot themselves", () => {

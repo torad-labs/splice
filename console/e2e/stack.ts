@@ -91,11 +91,9 @@ export interface Stack {
   stop: () => Promise<void>;
 }
 
-/** Which console bundle the daemon serves. `jar` (the default, and the gate's) is the copy the jar
- *  embeds, so the suite judges the artifact that ships. `dist` serves console/dist/index.html
- *  through the daemon's own dev lookup (Main.kt: `<user.dir>/../console/dist/index.html` first),
- *  so a local run can judge a fresh `vite build` without rebuilding the jar. CONSOLE_E2E_HTML
- *  instead copies a chosen build into the isolated dev lookup without replacing either default. */
+/** Which console bundle the daemon serves. `jar` (the default) judges the artifact that ships.
+ *  `dist` explicitly selects console/dist/index.html through SPLICE_CONSOLE_HTML. CONSOLE_E2E_HTML
+ *  chooses another build. The daemon inherits that absolute override across suite restarts. */
 function bundleMode(): 'jar' | 'dist' {
   const mode = process.env.CONSOLE_E2E_BUNDLE ?? 'jar';
   if (mode !== 'jar' && mode !== 'dist') throw new Error(`CONSOLE_E2E_BUNDLE must be jar or dist, got '${mode}'`);
@@ -411,8 +409,8 @@ export async function startStack(): Promise<Stack> {
     throw new Error('console e2e: CONSOLE_E2E_BUNDLE=dist but console/dist/index.html is missing — run the console build first');
   }
 
-  // A replacement bundle uses the same daemon dev lookup, but never the shared dist directory.
-  const html = process.env.CONSOLE_E2E_HTML;
+  // Dist mode names a build explicitly; the isolated daemon never writes into either dist directory.
+  const html = process.env.CONSOLE_E2E_HTML ?? (mode === 'dist' ? join(REPO, 'console/dist/index.html') : undefined);
   if (html !== undefined && !existsSync(html)) {
     throw new Error(`console e2e: selected HTML is missing at ${html} — build the console first`);
   }
@@ -438,18 +436,12 @@ export async function startStack(): Promise<Stack> {
   mkdirSync(dirname(configFile), { recursive: true });
   writeFileSync(configFile, config(ports, authFiles, repo));
 
-  if (html !== undefined) {
-    const selected = join(home, 'console/dist/index.html');
-    mkdirSync(dirname(selected), { recursive: true });
-    copyFileSync(html, selected);
-  }
-
   const upstream: string[] = [];
   const mock = await startMockUpstream(ports.mock, upstream);
   const log = join(home, 'daemon.log');
   const logStream = createWriteStream(log);
-  // Without a selected HTML, `jar` mode has no ../console/dist beside it and serves only the jar.
-  const cwd = html === undefined && mode === 'dist' ? join(REPO, 'app') : join(home, 'run');
+  // No cwd-relative dashboard lookup: jar mode serves the embedded artifact from every directory.
+  const cwd = join(home, 'run');
   mkdirSync(cwd, { recursive: true });
   // The daemon runs a PRIVATE COPY of the jar. app/build/libs/app-all.jar is a shared path any build
   // in this worktree rewrites, and a JVM loads classes from its jar lazily: on 2026-09-23 another
@@ -466,6 +458,8 @@ export async function startStack(): Promise<Stack> {
       SPLICE_CONFIG: configFile,
       SPLICE_CONTROL_PORT: String(ports.control),
       SPLICE_JVM_OPTS: '-Xmx512m', // the raw successor keeps this harness's original heap cap
+      // The explicit absolute override survives DetachedDaemonSuccessor's change of cwd.
+      ...(html === undefined ? {} : { SPLICE_CONSOLE_HTML: resolve(html) }),
       CLAUDEX_QUOTA_POLL: 'off',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -520,6 +514,12 @@ export async function startStack(): Promise<Stack> {
       return (await answers(`${base}/health`)) ? true : null;
     });
     // A daemon booted into a fresh HOME writes the current state layout (V4-177).
+    if (html !== undefined) {
+      const served = await fetch(`${base}/`);
+      if (!served.ok || await served.text() !== readFileSync(html, 'utf8')) {
+        throw new Error('console e2e: daemon did not serve the selected bundle byte-for-byte');
+      }
+    }
     const key = readFileSync(join(home, '.splice/state/mgmt-key'), 'utf8').trim();
     const read = async (path: string): Promise<unknown> => {
       const res = await fetch(`${base}${path}`, { headers: { Authorization: `Bearer ${key}` } });

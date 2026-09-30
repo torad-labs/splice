@@ -24,7 +24,6 @@ import splice.lifecycle.start.BOOT_LOG_FLAG
 import splice.topology.TopologyLoader
 import splice.topology.TopologyStatePaths
 import java.nio.file.Path
-import java.nio.file.Paths
 import java.security.Security
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -93,7 +92,6 @@ internal class DaemonProcess(
         val lockWait = DaemonLockWait()
         val lost = LostLock(controlPort, lockWait.windowMs())
         if (lockLost(start, lockWait.acquire(lock, controlPort), lost, TerminalOutput(System.err::println))) return
-        val distPath = Paths.get(System.getProperty("user.dir"), "..", "console", "dist", "index.html")
         val log = persistentLogger(statePaths.logsDir)
         // Components that would otherwise fall back to bare stderr (auth providers, ConfigService,
         // ResponsesProvider) default to this sink, so their diagnostics reach daemon.log and therefore
@@ -105,7 +103,7 @@ internal class DaemonProcess(
         val daemon = Daemon(
             topology,
             statePaths,
-            DashboardHtml().source(distPath),
+            DashboardHtml().source(),
             log = log,
             shutdownDaemon = { shutdownSignal.complete(Unit) },
             // JW-04: the booted config identity, published on /health so an edited-but-inert

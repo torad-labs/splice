@@ -1,8 +1,7 @@
 // :console-next — the replacement operator console (V4-444), a Bun/Vite workspace with no Kotlin, built beside
 // :console and gated the same way: typecheck, bundle, lint and the vitest suite are tasks of this module, and
-// `gateOfRecord` depends on lint and test directly. Nothing packages its bundle yet: :app still reads
-// :console:bundle, and the one switch of that input waits for the parity check (`npm run parity` in this
-// directory) to pass.
+// `gateOfRecord` also runs its real-daemon browser suite. After parity, :app reads this module's
+// bundle output for the shipped dashboard.
 plugins {
     base
 }
@@ -88,7 +87,9 @@ tasks.register<Exec>("e2e") {
     inputs.dir(rootProject.file("console/e2e"))
     inputs.file(rootProject.file("app/build/libs/app-all.jar"))
     outputs.upToDateWhen { false }
-    environment("CONSOLE_E2E_HTML", bundle.asFile.absolutePath)
+    // Judge the shipped HTML, even when a developer shell selects a local build.
+    environment.remove("CONSOLE_E2E_HTML")
+    environment("CONSOLE_E2E_BUNDLE", "jar")
     environment("CONSOLE_E2E_JAR", rootProject.file("app/build/libs/app-all.jar").absolutePath)
     commandLine("bun", "e2e/run.ts")
 }

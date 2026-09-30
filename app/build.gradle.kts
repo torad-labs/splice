@@ -125,10 +125,10 @@ val installScript = repositoryRoot.file("install.sh")
 val packageJson = repositoryRoot.file("package.json")
 val bunLock = repositoryRoot.file("bun.lock")
 val distDir = repositoryRoot.dir("dist")
-// PR 4: the console bundle is the OUTPUT of :console:bundle, never a checked-in file. Read through
+// V4-444: the console bundle is the OUTPUT of :console-next:bundle, never a checked-in file. Read through
 // the task's output provider so verifyReleaseCompliance and shadowJar depend on the build itself.
-evaluationDependsOn(":console")
-val dashboard: Provider<File> = project(":console").tasks.named<Exec>("bundle").map { it.outputs.files.singleFile }
+evaluationDependsOn(":console-next")
+val dashboard: Provider<File> = project(":console-next").tasks.named<Exec>("bundle").map { it.outputs.files.singleFile }
 // The set was written 2026-07-20 when every dependency was Apache-2.0/MIT/EPL; BSD was never
 // considered rather than rejected. BSD 2-Clause is strictly MORE permissive than Apache-2.0, which
 // is already allowed — no patent clause, no NOTICE obligation, no copyleft, OSI-approved — and the
@@ -356,11 +356,16 @@ val verifyReleaseCompliance = tasks.register("verifyReleaseCompliance") {
             "Chinese/Japanese Word Break Dictionary Data",
         ).forEach { marker -> check(marker in licenseTexts) { "third-party license bundle missing $marker" } }
         val notices = thirdPartyNotices.asFile.readText()
+        // V4-444: the markers of the console-next bundle the jar now ships; console-next/tests/notices.test.ts
+        // holds the full list against the bundle itself, this is the release task's floor.
         listOf(
             "Copyright (c) Meta Platforms, Inc. and affiliates.",
-            "Copyright (c) 2019 Paul Henschel",
+            "Copyright (c) 2022 WorkOS",
+            "Copyright (c) 2021-present Tanner Linsley",
+            "Copyright (c) 2006, Ivan Sagalaev.",
+            "Copyright 2018 The Fraunces Project Authors",
         ).forEach { marker -> check(marker in notices) { "third-party notices missing $marker" } }
-        check(dashboard.get().length() > 100_000L) { "the built console bundle (:console:bundle) is missing or unexpectedly small" }
+        check(dashboard.get().length() > 100_000L) { "the built console bundle (:console-next:bundle) is missing or unexpectedly small" }
     }
 }
 

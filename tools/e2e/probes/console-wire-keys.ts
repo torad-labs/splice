@@ -6,13 +6,14 @@
  *  WHY THIS EXISTS. Every console capture to date was fixture-fed, and the fixtures were written to
  *  match the console's own types, so the two agreed with each other and neither was checked against
  *  the wire. The defect that exposed it: the models page read `context_window_source`, declared
- *  NON-OPTIONAL in console/src/entities/model/model/types.ts, while the daemon emitted
+ *  NON-OPTIONAL in the original console/src/entities/model/model/types.ts, while the daemon emitted
  *  `window_source`. TypeScript cannot see across the wire, so nothing fired, and the column
  *  rendered `undefined` against a live daemon while every fixture looked right.
  *
  *  THE DENOMINATOR COMES FROM THE SOURCE, NEVER FROM A LIST IN THIS FILE (law 24):
- *   - the ROUTES are every `request<T>(...)` call in console/src, found by the TypeScript compiler
- *     over console/tsconfig.json, so a route the console starts reading is checked with no edit here;
+ *   - the ROUTES are every concrete `request<T>`, `read<T>` and `health<T>` call in console-next/src,
+ *     found by the TypeScript compiler
+ *     over console-next/tsconfig.json, so a route the console starts reading is checked with no edit here;
  *   - the KEYS are T's properties as the type checker resolves them (interfaces, extends, aliases,
  *     unions, arrays, Record values), so a field the console starts declaring is checked too.
  *  What IS listed here is only INPUT, never the denominator: the values that fill a templated path
@@ -55,8 +56,10 @@ import ts from "typescript";
 import { findRepoRoot } from "../../gate/src/lib/repo.ts";
 
 const REPO = findRepoRoot(import.meta.dir);
-const WEBUI = join(REPO, "console");
-const REQUEST_HOME = join(WEBUI, "src/shared/api/index.ts");
+const WEBUI = join(REPO, "console-next");
+const REQUEST_HOME = join(WEBUI, "src/api/client.ts");
+const READ_HOME = join(WEBUI, "src/api/queries.ts");
+const AUTH_HOME = join(WEBUI, "src/api/auth.ts");
 const FETCH_TIMEOUT_MS = 15_000;
 const BOOT_TIMEOUT_MS = 90_000;
 const MAX_DEPTH = 12;
@@ -82,14 +85,15 @@ interface IdSource {
 const ID_SOURCES: Record<string, IdSource> = {
   head: { route: "/api/heads", array: "heads", field: "key" },
   "encodeURIComponent(head)": { route: "/api/heads", array: "heads", field: "key" },
-  "encodeURIComponent(sessionId)": {
+  "id(head)": { route: "/api/heads", array: "heads", field: "key" },
+  "id(session)": {
     route: "/api/sessions",
     array: "sessions",
     field: "session_id",
     where: { field: "resumable", equals: true },
   },
-  "entities/team|encodeURIComponent(id)": { route: "/api/teams", array: "teams", field: "id" },
-  "entities/project|encodeURIComponent(id)": { route: "/api/projects", array: "projects", field: "id" },
+  team: { route: "/api/teams", array: "teams", field: "id" },
+  project: { route: "/api/projects", array: "projects", field: "id" },
 };
 const MS_PER_DAY = 86_400_000;
 const PROBE_NOW = new Date();
@@ -100,69 +104,64 @@ const PREVIOUS_DAY_TO = Date.UTC(PROBE_NOW.getUTCFullYear(), PROBE_NOW.getUTCMon
  *  and always sets n. A `{name}` token is an ID_SOURCES key, filled with a live value exactly as a
  *  path placeholder is. */
 const QUERY_FILL: Record<string, string> = {
-  "entities/perf|query.toString()": "head={head}&n=20",
-  // fetchSessionHistory's first page is a live read with no cursor and an empty search query.
-  "entities/session|params": "limit=50&query=",
-  // fetchTeamPanels sends the viewer's day as ?from=&to=; the daemon's default day answers the same keys.
-  "entities/team|query": "",
-  // readTeamChat (V4-391) asks for one earlier day's chat. The daemon refuses a window whose from is not
-  // before its to, or that spans more than 25 hours, so the fill is the previous UTC day's bounds.
-  "entities/team|day.from": String(PREVIOUS_DAY_TO - MS_PER_DAY),
-  "entities/team|day.to": String(PREVIOUS_DAY_TO),
+  // The history's first page has no cursor and an empty search query.
+  "api/sessions.ts|params": "limit=50&query=",
+  // One previous day stays within the chat route's 25-hour bound.
+  "api/teams.ts|day.from": String(PREVIOUS_DAY_TO - MS_PER_DAY),
+  "api/teams.ts|day.to": String(PREVIOUS_DAY_TO),
 };
 
 /** A path expression that is a call to a local helper rather than a literal. Keyed by file and the
  *  exact call text, so a changed call no longer matches and the call site fails by name. */
 const PATH_OF_CALL: Record<string, string> = {
-  "entities/transcript/api/index.ts|pagePath(sessionId, null)":
-    "/api/sessions/${encodeURIComponent(sessionId)}/transcript",
-  // V4-239: what `splice trace` and `splice wire` print, read live; the boot turns the tap on.
-  "entities/perf/api/index.ts|headPath(head, 'trace')": "/api/heads/${encodeURIComponent(head)}/trace",
-  "entities/perf/api/index.ts|headPath(head, 'wire')": "/api/heads/${encodeURIComponent(head)}/wire",
-  // Both activity stores have the same inventory serializer; one live route exercises the shape.
-  "entities/kept/api/index.ts|path(store)": "/api/kept/edges",
-  "entities/kept/api/index.ts|tracePath(head)": "/api/heads/${encodeURIComponent(head)}/trace/kept",
+  // The first transcript page reads the same response type as a cursor page.
+  "api/sessions.ts|pageParam === null ? path : `${path}?cursor=${id(pageParam)}`":
+    "/api/sessions/${id(session)}/transcript",
+  "api/logs.ts|logsPath(head ?? '', size)": "/api/logs/${head}?tail=200",
+  "api/projects.ts|projectPath(id)": "/api/projects/${project}",
+  "api/projects.ts|`${projectPath(id)}/files`": "/api/projects/${project}/files",
+  "api/teams.ts|teamChatPath(id ?? '', day)": "/api/teams/${team}/chat?from=${day.from}&to=${day.to}",
+  "api/teams.ts|teamActivityPath(id ?? '', day)": "/api/teams/${team}/activity?from=${day.from}&to=${day.to}",
+  "api/teams.ts|teamEconomicsPath(id ?? '')": "/api/teams/${team}/economics",
+  "api/turns.ts|perfTurnsPath(head, n, since)": "/api/perf/turns?head=${head}&n=20",
+  "api/turns.ts|perfSummaryPath(label)": "/api/perf/summary?window=24h",
+  "api/turns.ts|instructionsPath(head)": "/api/compaction/instructions?head=${head}",
+  "api/turns.ts|wirePath(head)": "/api/heads/${head}/wire",
+  "api/turns.ts|capturePath(head ?? '')": "/api/heads/${head}/capture",
+  "api/turns.ts|capturePath(head)": "/api/heads/${head}/capture",
+  // Both activity stores have the same inventory serializer.
+  "api/kept.ts|keptPath(store)": "/api/kept/edges",
+  "api/kept.ts|traceKeptPath(head)": "/api/heads/${head}/trace/kept",
 };
 
 // ── input: call sites dispositioned rather than checked, each with its reason ─────────────────
 const DISPOSITIONED: Record<string, string> = {
-  "entities/transcript/api/index.ts|pagePath(state.sessionId, token)":
-    "a later page of the same route and the same TranscriptPage type the first page is checked " +
-    "against; its cursor exists only after a first page returned one",
-  "entities/add/api/index.ts|path(id)":
-    "path(id) is GET /api/add/{id}, which reads an add, and DELETE, which closes one; an add id " +
-    "exists only after POST /api/add opens one, which this read-only probe never sends, so AddView's " +
-    "keys are held against AddViews.session's own serializer by console/tests/add-backend.test.ts",
-  "entities/auth/api/index.ts|path":
-    "settle<T>() is the transport of the auth writes and the one login poll; its T is generic here. " +
-    "The writes are POST, PATCH and DELETE; the poll (GET /api/auth/{head}/login/{id}) has a login " +
-    "id only after a POST that reaches a real provider, so its keys and states are held against the " +
-    "daemon's own serializers by console/tests/login-wire.test.ts",
-  "entities/perf/api/index.ts|`${headPath(head, 'trace')}?turn=${encodeURIComponent(turn)}`":
-    "one turn of the trace the list read above checks; a turn id exists only after a head traced a " +
-    "turn, which the isolated boot never runs, so TraceTurnWire's keys are held against TraceRoute's " +
-    "turnJson and summary and TraceStore's stamp by console/tests/capture-read.test.ts",
-  "entities/perf/api/index.ts|`${headPath(head, 'conversation')}?${query}`":
-    "a saved response id exists only after a head serves a turn; the isolated boot never sends one. " +
-    "TranscriptConversationWire's found, off and missing states are checked against the route's " +
-    "serializer by TranscriptRequestRouteTest and the default-install journey in console/e2e/console.spec.ts",
-  "entities/model/api/index.ts|`/api/models/upstream${query}`":
-    "each call asks every provider's model endpoint, which a CI probe must not do, so " +
-    "UpstreamModelsPayload's keys are held against UpstreamModelsRoute's json, provider and row by " +
-    "console/tests/models-upstream.test.ts",
+  "api/queries.ts|path":
+    "the generic read<T> transport; every concrete read<T> call is enumerated with its own path and response type",
+  "api/auth.ts|path":
+    "the generic settle<T> transport for auth writes; its specialized callers are all writes, not read payloads",
+  "api/usage.ts|addPath(id)":
+    "an add id exists only after POST /api/add opens one; this read-only probe does not start a provider login",
+  "api/auth.ts|loginStatusPath(head, id)":
+    "a login id exists only after a POST that reaches a provider; this isolated probe never starts a real login",
+  "api/turns.ts|traceTurnPath(head, turn)":
+    "a trace turn id exists only after a head serves a turn; this isolated boot never sends provider traffic",
+  "api/turns.ts|conversationPath(head ?? '', sessionId ?? '', responseId ?? '')":
+    "a saved response id exists only after a head serves a turn; TranscriptRequestRouteTest holds the serializer",
+  "api/models.ts|upstreamModelsPath(provider)":
+    "this read reaches provider model endpoints; the isolated wire probe must not send live provider traffic",
 };
-/** Non-request fetch() sites in console/src, which the same scan enumerates. */
+/** Non-request fetch() sites in console-next/src, which the same scan enumerates. */
 const FETCH_DISPOSITIONED: Record<string, string> = {
-  "shared/api/index.ts|path":
-    "the transport inside request<T>() itself; every call of request<T>() is its own call site above",
-  "shared/api/index.ts|'/health'":
-    "unauthenticated probe read fail-open, and its one declared key (topologyStale) is optional",
-  "entities/events/api/index.ts|STREAM_PATH":
-    "the SSE stream, not a JSON read; its families are checked against ConsoleEvent's serializer " +
-    "by splice.app.ConsoleEventProducersTest",
+  "api/client.ts|path":
+    "the transport inside request<T>(); every concrete request<T> and read<T> is enumerated separately",
+  "api/client.ts|'/health'":
+    "the health<T> transport; its concrete callers are enumerated with their response types",
+  "api/client.ts|'/api/events'":
+    "the SSE stream, not JSON; ConsoleEventProducersTest checks its event families against the serializer",
 };
 
-// ── the denominator: every request<T> call in console/src ────────────────────────────────────────
+// ── the denominator: every typed client/query read in console-next/src ─────────────────────────
 
 interface CallSite {
   id: string;
@@ -227,19 +226,20 @@ function literalOf(checker: ts.TypeChecker, expr: ts.Expression): string | null 
   return null;
 }
 
-/** The shared/api function an identifier names, through any import alias (`pendingOf as x`). */
+/** The client/query declaration an expression names, through any import alias (`pendingOf as x`). */
 function declarationOf(checker: ts.TypeChecker, expr: ts.Expression): string | null {
   let symbol = checker.getSymbolAtLocation(expr);
   if (symbol !== undefined && symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
   const declared = symbol?.declarations?.[0];
-  return declared && ts.isFunctionDeclaration(declared) && declared.name
+  return declared && (ts.isFunctionDeclaration(declared) || ts.isVariableDeclaration(declared)) &&
+    declared.name && ts.isIdentifier(declared.name)
     ? `${declared.getSourceFile().fileName}#${declared.name.text}`
     : null;
 }
-const PENDING_OF = `${REQUEST_HOME}#pendingOf`;
+const PENDING_OF = `${AUTH_HOME}#pendingOf`;
 
 /** The console renders a 404 on an unbuilt route as PENDING <row> on purpose (pendingOf in
- *  shared/api). Which call sites do is read from the source: the try around the call whose catch
+ *  api/auth). Which call sites do is read from the source: the try around the call whose catch
  *  passes pendingOf() a row id the checker resolves to a string literal — directly, or through one
  *  helper in the same file that the catch calls (transcript's resolveFailure). */
 function pendingRowOf(checker: ts.TypeChecker, node: ts.Node): string | null {
@@ -272,6 +272,15 @@ function pendingRowOf(checker: ts.TypeChecker, node: ts.Node): string | null {
 }
 
 function templatesOf(checker: ts.TypeChecker, expr: ts.Expression, fileKey: string): Template[] | null {
+  const mapped = PATH_OF_CALL[`${fileKey}|${expr.getText()}`];
+  if (mapped !== undefined) {
+    const parts: (string | Placeholder)[] = [];
+    for (const piece of mapped.split(/(\$\{[^}]+\})/)) {
+      if (piece.startsWith("${")) parts.push({ text: piece.slice(2, -1), literal: null });
+      else if (piece !== "") parts.push(piece);
+    }
+    return [{ parts }];
+  }
   if (ts.isStringLiteralLike(expr)) return [{ parts: [expr.text] }];
   if (ts.isTemplateExpression(expr)) {
     const parts: (string | Placeholder)[] = [expr.head.text];
@@ -287,19 +296,10 @@ function templatesOf(checker: ts.TypeChecker, expr: ts.Expression, fileKey: stri
     return a && b ? [...a, ...b] : null;
   }
   if (ts.isParenthesizedExpression(expr)) return templatesOf(checker, expr.expression, fileKey);
-  const mapped = PATH_OF_CALL[`${fileKey}|${expr.getText()}`];
-  if (mapped !== undefined) {
-    const parts: (string | Placeholder)[] = [];
-    for (const piece of mapped.split(/(\$\{[^}]+\})/)) {
-      if (piece.startsWith("${")) parts.push({ text: piece.slice(2, -1), literal: null });
-      else if (piece !== "") parts.push(piece);
-    }
-    return [{ parts }];
-  }
   return null;
 }
 
-function enumerate(program: ts.Program): { calls: CallSite[]; fetches: FetchSite[] } {
+export function enumerate(program: ts.Program): { calls: CallSite[]; fetches: FetchSite[] } {
   const checker = program.getTypeChecker();
   const calls: CallSite[] = [];
   const fetches: FetchSite[] = [];
@@ -307,25 +307,33 @@ function enumerate(program: ts.Program): { calls: CallSite[]; fetches: FetchSite
     if (source.isDeclarationFile || !isProductionSource(source.fileName)) continue;
     const fileKey = relative(join(WEBUI, "src"), source.fileName);
     const visit = (node: ts.Node): void => {
-      if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
-        const name = node.expression.text;
+      if (ts.isCallExpression(node)) {
+        const name = ts.isIdentifier(node.expression) ? node.expression.text : null;
         const line = source.getLineAndCharacterOfPosition(node.getStart()).line + 1;
-        // An entity file imports request from @shared/api, so its symbol is the import alias;
-        // resolve it to the declaration, or every entity route silently drops out of the scan.
+        // Resolve aliases to the actual client or typed query helper, never by a local identifier's spelling.
         let symbol = checker.getSymbolAtLocation(node.expression);
         if (symbol !== undefined && symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
         const home = symbol?.declarations?.[0]?.getSourceFile().fileName;
-        if (declarationOf(checker, node.expression) === `${REQUEST_HOME}#request` && node.typeArguments?.length === 1) {
-          const pathExpr = node.arguments[0];
+        const declaration = declarationOf(checker, node.expression);
+        const queryRead = declaration === `${READ_HOME}#read`;
+        const healthRead = declaration === `${REQUEST_HOME}#health`;
+        if (declaration === `${REQUEST_HOME}#request` || queryRead || healthRead) {
+          if (node.typeArguments?.length !== 1) {
+            throw new Error(`${fileKey}:${line}: client/query call has no explicit response type: ${node.getText()}`);
+          }
+          const pathExpr = node.arguments[queryRead ? 1 : 0];
           const typeNode = node.typeArguments[0];
-          if (pathExpr !== undefined && typeNode !== undefined) {
+          if (pathExpr === undefined && !healthRead) {
+            throw new Error(`${fileKey}:${line}: client/query call has no path: ${node.getText()}`);
+          }
+          if (typeNode !== undefined) {
             calls.push({
               id: `${fileKey}:${line}`,
               file: fileKey,
               line,
-              method: methodOf(node.arguments[1]),
-              pathText: pathExpr.getText(),
-              templates: templatesOf(checker, pathExpr, fileKey),
+              method: queryRead || healthRead ? "GET" : methodOf(node.arguments[1]),
+              pathText: pathExpr?.getText() ?? "'/health'",
+              templates: pathExpr !== undefined ? templatesOf(checker, pathExpr, fileKey) : [{ parts: ["/health"] }],
               type: checker.getTypeFromTypeNode(typeNode),
               typeText: typeNode.getText(),
               pending: pendingRowOf(checker, node),
@@ -976,7 +984,7 @@ async function run(checker: ts.TypeChecker, calls: CallSite[], fetches: FetchSit
       for (const key of result.undeclared) lines.push(`  UNDECLARED ${key}: sent by the daemon, not declared by the console`);
     }
   }
-  if (calls.length === 0) failLine("no request<T>() call site found in console/src: the scan itself is broken");
+  if (calls.length === 0) failLine("no request<T>() call site found in console-next/src: the scan itself is broken");
   if (checked.length === 0) failLine("no route was checked: a run that reads nothing is not a pass");
   return { lines, failed, failSlots, checked };
 }

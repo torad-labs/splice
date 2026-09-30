@@ -14,6 +14,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { pendingOf } from './auth';
 import { request } from './client';
 import { keys } from './queries';
+import { recordSaved } from '../lib/restart-pending';
 import { PENDING_TOPOLOGY } from '../types/topology';
 import type { ConfigValue, PatchResult } from '../types/core';
 import type { McpPayload } from '../types/mcp';
@@ -38,6 +39,20 @@ export function useConfigWrite() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: patchConfig,
+    onSettled: () => Promise.all([keys.config, keys.health].map((key) => client.invalidateQueries({ queryKey: [...key] }))),
+  });
+}
+
+/** Save knobs as Settings does: the daemon's `restart_required` keys are recorded under the boot the write reached, so the
+ *  page can say a change waits and Needs you can say splice must restart. Every config view is read again after. */
+export function useKnobSave() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async (patch: Record<string, ConfigValue>): Promise<PatchResult> => {
+      const result = await patchConfig(patch);
+      if (result.restart_required.length > 0) recordSaved(result.restart_required, await readBootedAt().catch(() => null));
+      return result;
+    },
     onSettled: () => Promise.all([keys.config, keys.health].map((key) => client.invalidateQueries({ queryKey: [...key] }))),
   });
 }
@@ -79,6 +94,20 @@ export function useTopologyWrite() {
   return useMutation({
     mutationFn: saveTopology,
     onSettled: () => Promise.all([topologyKey, keys.health].map((key) => client.invalidateQueries({ queryKey: [...key] }))),
+  });
+}
+
+/** Write the topology as a Settings switch does. `keys` are the topology keys the edit touches: when the daemon says the write
+ *  moved a key only boot reads, they wait for a restart like any saved knob. */
+export function useTopologyEdit() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ topology, keys: touched }: { topology: Record<string, unknown>; keys: readonly string[] }): Promise<TopologyWriteResult> => {
+      const result = await saveTopology(topology);
+      if (result.ok && result.restart_required) recordSaved(touched, await readBootedAt().catch(() => null));
+      return result;
+    },
+    onSettled: () => Promise.all([topologyKey, keys.health, mcpKey].map((key) => client.invalidateQueries({ queryKey: [...key] }))),
   });
 }
 

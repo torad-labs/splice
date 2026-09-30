@@ -297,7 +297,7 @@ function doctorNeeds(checks: readonly DoctorCheck[]): Need[] {
     head: null,
     subject: row.label,
     finding: [...new Set(row.members.map(checkFinding))].join('; '),
-    fix: doctorFix(row.fix, row.fixId),
+    fix: doctorFixOf(row.fix, row.fixId),
     at: hrefOf('doctor'),
   }));
 }
@@ -325,7 +325,7 @@ function withDoctor(need: Need, checks: readonly DoctorCheck[]): Need {
 
 /** A doctor row's one fix: the daemon runs it, or its command is copied (printed when masked), or,
  *  with no remedy in the row, Doctor is where to look. */
-function doctorFix(command: string | null, id: string | null): Fix {
+export function doctorFixOf(command: string | null, id: string | null): Fix {
   if (id !== null) return command === null ? { kind: 'doctor-fix', id } : { kind: 'doctor-fix', id, fallback: command };
   if (command === null) return open(hrefOf('doctor'), S.openDoctor);
   if (command.trim() === 'splice restart') return { kind: 'restart-daemon' };

@@ -185,3 +185,4 @@ svg { display: block; flex: none; }
 .code-row { display: flex; align-items: center; gap: 14px; }
 .user-code { font: 600 28px/1 var(--mono); letter-spacing: .12em; color: var(--ink); }
 .hint.alert { color: var(--stuck); }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }

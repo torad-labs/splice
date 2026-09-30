@@ -29,3 +29,4 @@ export const Stop = (p: P) => (
 );
 export const Close = (p: P) => line(14, 2.2, <path d="M3 3l8 8M11 3l-8 8" />, p);
 export const Copy = (p: P) => line(14, 1.8, <><rect x="4.5" y="4.5" width="7" height="8" rx="1.5" /><path d="M9.5 4.5V3a1 1 0 00-1-1h-5a1 1 0 00-1 1v6.5a1 1 0 001 1H4.5" /></>, p);
+export const KeyIcon = (p: P) => line(16, 1.8, <><circle cx="5.5" cy="10.5" r="3" /><path d="M8 8.5L13.5 3M11.5 5l1.8 1.8" /></>, p);

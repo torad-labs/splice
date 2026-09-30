@@ -1,4 +1,7 @@
 export { Button } from './Button';
+export { Select, Slider, Stepper, Switch } from './controls';
+export { Prompt } from './Prompt';
+export type { Choice } from './controls';
 export * from './icons';
 export { ModelMark, State } from './marks';
 export type { StateTone } from './marks';

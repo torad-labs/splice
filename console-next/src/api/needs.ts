@@ -1,12 +1,13 @@
 // The Needs-you list, read from the same queries every other page uses: one Read per input, so the list
 // says which input it could not read instead of saying nothing.
 import type { UseQueryResult } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import { failureText } from './client';
 import { useDoctor } from './doctor';
 import { useAccounts, useAuth, useHealth, useHeads, useSessions, useTeams, useUsage } from './queries';
 import { useTurnOf } from './sessions';
 import { needsOf } from '../lib/needs';
-import { useRestartPending } from '../lib/restart-pending';
+import { observeBoot, useRestartPending } from '../lib/restart-pending';
 import { UNKNOWN_HEAD } from '../types/sessions';
 import type { NeedsList, Read } from '../types/needs';
 
@@ -32,6 +33,11 @@ export function useNeeds(now: number): NeedsList {
   const turnOf = useTurnOf(
     (sessions.data?.sessions ?? []).filter((row) => row.head !== UNKNOWN_HEAD && (row.status === 'busy' || row.status === 'shell')).map((row) => row.head),
   );
+  // a replacement boot is what clears the settings that waited for one
+  const boot = health.data?.bootedAtEpochMillis;
+  useEffect(() => {
+    if (typeof boot === 'number') observeBoot(boot);
+  }, [boot]);
   const topology = readOf(health);
   return needsOf({
     heads: { ...readOf(heads), data: heads.data?.heads ?? null },

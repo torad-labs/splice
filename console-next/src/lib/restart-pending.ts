@@ -1,35 +1,33 @@
-// The settings this console saved that the daemon applies only after a restart: the console's own record of its
-// own writes (the daemon has no field for it), kept in the browser so a reload does not forget them. Needs you
-// prints them as the daemon's one item; a restart clears them.
+// The settings this console saved that the daemon applies only after a restart, held for the page session: a fact about
+// the session, never persisted (types/config.ts RestartState). The transitions are lib/config.ts's pure reducers; this is
+// the store that holds their state and subscribes a page. Only a measured replacement boot clears it (`observeBoot`).
 import { useSyncExternalStore } from 'react';
-import { readJson, writeJson } from './storage';
+import { NO_RESTART_PENDING, markRestartPending, observeDaemonBoot } from './config';
+import type { RestartState } from '../types/config';
 
-const KEY = 'splice-restart-pending';
+let state: RestartState = NO_RESTART_PENDING;
 const listeners = new Set<() => void>();
-let held: readonly string[] | null = null;
 
-function load(): readonly string[] {
-  if (held !== null) return held;
-  const raw = readJson<unknown>(KEY, []);
-  held = Array.isArray(raw) ? raw.filter((key): key is string => typeof key === 'string') : [];
-  return held;
-}
-
-function store(next: readonly string[]): void {
-  held = next;
-  writeJson(KEY, next);
+function set(next: RestartState): void {
+  if (next === state) return;
+  state = next;
   listeners.forEach((fn) => fn());
 }
 
-/** A saved setting waits for a restart. Saving the same one again keeps one entry. */
-export function markRestartPending(setting: string): void {
-  if (!load().includes(setting)) store([...load(), setting]);
-}
+/** A write the daemon answered with `restart_required` keys: they wait under the boot the write reached. */
+export const recordSaved = (keys: readonly string[], boot: number | null): void => set(markRestartPending(state, keys, boot));
 
-/** The daemon restarted: nothing waits any more. */
-export function clearRestartPending(): void {
-  if (load().length > 0) store([]);
-}
+/** The boot /health names now. A different one from what the keys wait under is the restart. */
+export const observeBoot = (boot: number): void => {
+  const next = observeDaemonBoot(state, boot);
+  if (next.pending.length !== state.pending.length || next.bootedAtEpochMillis !== state.bootedAtEpochMillis || next.pendingAtEpochMillis !== state.pendingAtEpochMillis) set(next);
+};
+
+/** For tests: forget everything. */
+export const resetRestartPending = (): void => set(NO_RESTART_PENDING);
+
+/** The keys waiting now. */
+export const pendingNow = (): readonly string[] => state.pending;
 
 export function useRestartPending(): readonly string[] {
   return useSyncExternalStore(
@@ -39,6 +37,6 @@ export function useRestartPending(): readonly string[] {
         listeners.delete(fn);
       };
     },
-    load,
+    pendingNow,
   );
 }

@@ -50,7 +50,7 @@ export const useTeams = () => useQuery(read<TeamsPayload>(keys.teams, '/api/team
 export const useConfig = (head?: string) =>
   useQuery(read<ConfigPayload>(keys.config, head === undefined ? '/api/config' : `/api/config?head=${encodeURIComponent(head)}`, { refetchInterval: false }));
 export const useHealth = () =>
-  useQuery({ queryKey: [...keys.health], queryFn: () => health<{ topologyStale?: boolean }>(), refetchInterval: FLOOR_MS });
+  useQuery({ queryKey: [...keys.health], queryFn: () => health<{ topologyStale?: boolean; bootedAtEpochMillis?: number }>(), refetchInterval: FLOOR_MS });
 
 export const useLiveTurns = (head: string, enabled = true) =>
   useQuery(read<LiveTurnsPayload>(keys.liveTurns, `/api/heads/${encodeURIComponent(head)}/turns/live`, { enabled }));

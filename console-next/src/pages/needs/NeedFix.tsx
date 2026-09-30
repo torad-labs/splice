@@ -5,7 +5,6 @@ import { useDoctorFix, useRestartDaemon } from '../../api/doctor';
 import { useHeadAction, useStopTurn } from '../../api/queries';
 import { useLiveTurnOf } from '../../api/sessions';
 import { routeOf } from '../../lib/needs-page';
-import { clearRestartPending } from '../../lib/restart-pending';
 import type { Need } from '../../types/needs';
 import { Button } from '../../ui';
 import { SignIn } from '../shared/SignIn';
@@ -67,11 +66,7 @@ function DaemonRestart() {
   const restart = useRestartDaemon();
   return (
     <>
-      <Button
-        kind="go"
-        disabled={restart.isPending}
-        onClick={() => restart.mutate(undefined, { onSuccess: clearRestartPending })}
-      >
+      <Button kind="go" disabled={restart.isPending} onClick={() => restart.mutate()}>
         {restart.isPending ? A.restartingSplice : A.restartSplice}
       </Button>
       {restart.isError ? <span className="hint alert" role="alert">{A.failed} {failureText(restart.error)}</span> : null}

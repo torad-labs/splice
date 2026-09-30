@@ -53,7 +53,7 @@ internal class CodexCodeModeTurn(
     private val log: LogSink,
 ) {
     private val identity = CodexCodeModeIdentity()
-    private val branch = CodexCodeModeBranch(registry, wire, driver, machine, validation, log)
+    private val branch = CodexCodeModeBranch(registry, driver, machine, validation, log)
     private val locks = List(CODE_MODE_LOCK_STRIPES) { Mutex() }
 
     /** Conversation-scoped notes already logged — one line per conversation, not one per turn. */
@@ -93,21 +93,23 @@ internal class CodexCodeModeTurn(
         historyNotes(context.turn, context.key, context.digest)
             .filter { announced.add("${context.key}|$it") }
             .forEach { log("[code-mode] $it") }
-        return branch.diverged(context, bodyJson) ?: ordinary(context, initialOuter, bodyJson)
+        return ordinary(context, initialOuter, bodyJson, branch.conflictingRecords(context))
     }
 
     private suspend fun ordinary(
         context: CodeModeRunContext,
         initialOuter: GatewayCustomCall?,
         bodyJson: String,
+        conflicts: Set<String>,
     ): TurnOutcome {
-        val completed = registry.completed(context.key)
+        val completed = registry.completed(context.key).filterNot { it.id in conflicts }
         val completedHistory = wire.canonicalize(bodyJson, completed, context.turn.toolMedia)
         completedHistory.error?.let { return failure(it) }
         val canonicalBody = checkNotNull(completedHistory.bodyJson)
-        val owner = placedOwner(context, canonicalBody)
+        val owner = placedOwner(context, canonicalBody, conflicts)
         return when {
             owner != null -> resumeOwner(owner, context)
+            conflicts.isNotEmpty() -> branch.sendOwnHistory(context, canonicalBody)
             completed.any { it.lastDigest == context.digest } ->
                 driver.drive(context, null, canonicalBody, context.post(canonicalBody))
             else -> driver.drive(context, initialOuter, canonicalBody, context.post(canonicalBody))
@@ -116,10 +118,10 @@ internal class CodexCodeModeTurn(
 
     /** The active or lost owner whose baseline still places in this history, with that history
      *  restored around it — or null when there is none, or when the one there was is abandoned. */
-    private fun placedOwner(context: CodeModeRunContext, canonicalBody: String): PlacedOwner? {
+    private fun placedOwner(context: CodeModeRunContext, canonicalBody: String, conflicts: Set<String>): PlacedOwner? {
         val resultIds = context.turn.toolResults.map(CodeModeResult::id).toSet()
         val callbackIds = wire.callbackIds(canonicalBody)
-        val owner = registry.owner(context.key, context.digest, resultIds, callbackIds) ?: return null
+        val owner = registry.owner(context.key, context.digest, resultIds, callbackIds, conflicts) ?: return null
         val restored = wire.restoreBaseline(canonicalBody, owner)
         val error = restored.error ?: return PlacedOwner(owner, checkNotNull(restored.bodyJson))
         abandon(owner, error)

@@ -24,6 +24,37 @@ class CodexCodeModeHistoryTest : CodeModeBridgeTestSupport() {
     }
 
     @Test
+    fun `a completed A record cannot rewrite B's changed text result`() = runTest {
+        val runtime = ScriptedRuntime(
+            ArrayDeque(
+                listOf(
+                    CodeModeStep.Calls(listOf(call("read", "Read"))),
+                    CodeModeStep.Completed("done"),
+                ),
+            ),
+        )
+        val manager = bridge(runtime)
+        val first = RecordingSink()
+        manager.interceptor(turn(), outer(), disableParallel = false)
+            .intercept(BASE_REQUEST, first) { outerOutcome() }
+        val id = first.tools.single().id
+        manager.interceptor(turn(id, "X"), disableParallel = false)
+            .intercept(requestWithResult(id, "X"), RecordingSink()) { completedOutcome() }
+        val different = requestWithResult(id, "Y")
+        var posted = ""
+        val outcome = manager.interceptor(turn(id, "Y"), disableParallel = false)
+            .intercept(different, RecordingSink()) { body ->
+                posted = body
+                completedOutcome()
+            }
+
+        assertTrue(outcome is TurnOutcome.Success)
+        assertEquals(Json.parseToJsonElement(different), Json.parseToJsonElement(posted))
+        assertTrue((outcome as TurnOutcome.Success).usage.codeModeDiverged)
+        assertEquals(2, runtime.cell.advances, "A's completed script was not rerun")
+    }
+
+    @Test
     fun `native search history absent from callbacks is restored across cell resumes`() = runTest {
         val runtime = ScriptedRuntime(
             ArrayDeque(

@@ -264,6 +264,7 @@ class TurnFinishTest {
         assertTrue("\"code_mode_divergence\":1" in Files.readAllLines(rig.perfFile).last())
     }
 
+    /** Guards the existing short turn-line renderer for an operational failure reason. */
     @Test
     fun `worker failure reason survives the short daemon turn line`() = runBlocking {
         val rig = Rig(tmp, "worker-cause")

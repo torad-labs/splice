@@ -2,8 +2,6 @@
 package splice.provider.codex.branch
 
 import splice.core.turn.CodeModeDivergenceMarker
-import splice.core.turn.FailureCause
-import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
 import splice.provider.codex.CodeModeRunContext
@@ -11,7 +9,6 @@ import splice.provider.codex.CodexCodeModeDriver
 import splice.provider.codex.CodexCodeModeMachine
 import splice.provider.codex.CodexCodeModeRegistry
 import splice.provider.codex.CodexCodeModeValidation
-import splice.provider.codex.CodexCodeModeWire
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.transport.StreamTornBeforeClient
 import java.io.IOException
@@ -20,7 +17,6 @@ import java.io.IOException
  * the other branch’s running cell. Both decisions are keyed to the canonical request digest. */
 internal class CodexCodeModeBranch(
     private val registry: CodexCodeModeRegistry,
-    private val wire: CodexCodeModeWire,
     private val driver: CodexCodeModeDriver,
     private val machine: CodexCodeModeMachine,
     private val validation: CodexCodeModeValidation,
@@ -34,20 +30,17 @@ internal class CodexCodeModeBranch(
         return calls?.let { machine.replay(it, context.sink) }
     }
 
-    suspend fun diverged(context: CodeModeRunContext, bodyJson: String): TurnOutcome? {
+    /** Exclude an incompatible A record from rewriting and ownership, but keep B's own records. */
+    fun conflictingRecords(context: CodeModeRunContext): Set<String> {
         val resultIds = context.turn.toolResults.map(CodeModeResult::id).toSet()
-        val changed = registry.recordsFor(context.key).any { record ->
+        return registry.recordsFor(context.key).filter { record ->
             record.results.keys.any(resultIds::contains) && validation.conflicts(record, context.turn)
-        }
-        return if (changed) sendOwnHistory(context, bodyJson) else null
+        }.mapTo(mutableSetOf()) { it.id }
     }
 
-    /** Completed records that still match may canonicalize; the changed branch remains ordinary
-     * client history, never a result accepted by the active owner. */
-    private suspend fun sendOwnHistory(context: CodeModeRunContext, bodyJson: String): TurnOutcome {
-        val rewritten = wire.canonicalize(bodyJson, registry.completed(context.key), context.turn.toolMedia)
-        rewritten.error?.let { return mark(failure(it)) }
-        val ownHistory = checkNotNull(rewritten.bodyJson)
+    /** No owned B callback remains: send B's already-canonicalized history upstream without
+     * rewriting its changed results through A's completed record. */
+    suspend fun sendOwnHistory(context: CodeModeRunContext, ownHistory: String): TurnOutcome {
         log("[code-mode] observable-divergence: accepted callback changed; sending this history upstream")
         return try {
             mark(driver.drive(context, null, ownHistory, context.post(ownHistory)))
@@ -68,11 +61,4 @@ internal class CodexCodeModeBranch(
             salvagedUsage = outcome.salvagedUsage.copy(codeModeDiverged = true),
         )
     }
-
-    private fun failure(message: String): TurnOutcome.Failure = TurnOutcome.Failure(
-        message,
-        deterministic = true,
-        cause = FailureCause.CODE_MODE_PROTOCOL,
-        phase = FailurePhase.MID_OUTPUT,
-    )
 }

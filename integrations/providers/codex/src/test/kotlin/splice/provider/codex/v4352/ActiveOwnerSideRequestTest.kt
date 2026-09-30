@@ -24,6 +24,7 @@ import splice.provider.codex.CodeModeBridgeTestSupport
 import splice.provider.codex.CodeModeRetention
 import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexCodeModeHistoryCodec
+import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 import java.io.IOException
 import java.nio.file.Files
@@ -235,7 +236,12 @@ class ActiveOwnerSideRequestTest : CodeModeBridgeTestSupport() {
                 CodeModeStep.Calls(listOf(call("A-2", "Edit"))),
             ),
         )
-        val secondSteps = ArrayDeque<CodeModeStep>(listOf(CodeModeStep.Calls(listOf(call("B-1", "Read")))))
+        val secondSteps = ArrayDeque<CodeModeStep>(
+            listOf(
+                CodeModeStep.Calls(listOf(call("B-1", "Read"))),
+                CodeModeStep.Calls(listOf(call("B-2", "Edit"))),
+            ),
+        )
         val runtime = QueuedRuntime(ArrayDeque(listOf(firstSteps, secondSteps)))
         val manager = bridge(runtime)
         val first = RecordingSink()
@@ -255,6 +261,15 @@ class ActiveOwnerSideRequestTest : CodeModeBridgeTestSupport() {
         assertTrue((outcome as TurnOutcome.Success).usage.codeModeDiverged)
         assertEquals(2, runtime.starts, "B's new exec must start its own worker")
         assertEquals(1, bSink.tools.size, "B's new callback reaches its client")
+        val bId = bSink.tools.single().id
+        val bHistory = body(
+            listOf(DEVELOPER, user("start"), read(id), output(id, "Y"), read(bId), output(bId, "r")),
+        )
+        manager.interceptor(
+            turn(results = listOf(CodeModeResult(id, "Y"), CodeModeResult(bId, "r"))),
+            disableParallel = false,
+        ).intercept(bHistory, RecordingSink()) { error("B's own callback must resume locally") }
+        assertEquals(2, runtime.cells[1].advances, "B's script consumed its own tool result")
         assertEquals(2, runtime.cells[0].advances, "A's parked worker did not advance")
     }
 

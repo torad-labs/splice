@@ -65,15 +65,16 @@ internal class CodexCodeModeRegistry(
         digest: String,
         resultIds: Set<String>,
         callbackIds: Set<String>,
+        excluded: Set<String> = emptySet(),
     ): CodeModeRecord? = synchronized(monitor) {
         if (sweeper.sweep()) store.save(records, history.entries)
         val activeIds = if (callbackIds.isEmpty()) resultIds else resultIds + callbackIds
         records.lastOrNull { record ->
             record.key == key && record.phase == CodeModePhase.ACTIVE &&
-                CodeModeOwnerMatch.matches(record, digest, activeIds)
+                CodeModeOwnerMatch.matches(record, digest, activeIds, excluded)
         } ?: records.lastOrNull { record ->
             record.key == key && record.phase == CodeModePhase.LOST &&
-                CodeModeOwnerMatch.matches(record, digest, resultIds)
+                CodeModeOwnerMatch.matches(record, digest, resultIds, excluded)
         }
     }
 
@@ -217,8 +218,13 @@ internal class CodexCodeModeRegistry(
 
 /** A retry or one of this record's client ids, never just another turn with the same conversation key. */
 private object CodeModeOwnerMatch {
-    fun matches(record: CodeModeRecord, digest: String, ids: Set<String>): Boolean =
-        record.lastDigest == digest || (ids.isNotEmpty() && record.clientIds().any { it in ids })
+    fun matches(
+        record: CodeModeRecord,
+        digest: String,
+        ids: Set<String>,
+        excluded: Set<String>,
+    ): Boolean = record.id !in excluded &&
+        (record.lastDigest == digest || (ids.isNotEmpty() && record.clientIds().any { it in ids }))
 }
 
 /** V4-337: the start of a conversation's turn, under the registry's [monitor] and on its own collections.

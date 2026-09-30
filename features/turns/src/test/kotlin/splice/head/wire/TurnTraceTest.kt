@@ -143,6 +143,7 @@ class TurnTraceTest {
         assertEquals("1", turn.str("attempts"))
         assertEquals("340", turn.at("perf", "marks", "total"))
         assertEquals("12", turn.at("perf", "counters", "in_tokens"))
+        // Guards the existing pass-through of any perf counter into the trace snapshot.
         assertEquals("1", turn.at("perf", "counters", PerfKeys.CODE_MODE_DIVERGENCE))
     }
 

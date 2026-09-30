@@ -325,10 +325,9 @@ class ResponsesWsSessionTest {
         assertFalse(s.frameFor(KEY, r, GEN).chained)
     }
 
-    /** Two forks keep the same session id and first-prompt key. Once their tool results differ,
-     * neither branch may chain onto the other branch's server-side response. */
+    /** Guards the existing prefix-equality fallback when two same-key histories already differ. */
     @Test
-    fun `same-key divergent results full-send in both directions`() {
+    fun `rewritten same-key prefixes full-send in both directions`() {
         val session = ResponsesWsSession()
         val key = checkNotNull(ResponsesConversationIdentity.chainKey("same-session", "same-first-prompt"))
         val original = build(convo(1))

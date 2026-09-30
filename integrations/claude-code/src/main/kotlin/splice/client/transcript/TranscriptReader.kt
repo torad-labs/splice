@@ -59,6 +59,10 @@
 // are parsed. An id it does not find is REPORTED missing with the path it read: a lookup that
 // silently answered fewer ids than it was asked for would read as a complete chat.
 //
+// V4-444: card activity reads backwards in positioned 64 KiB chunks, up to 16 MiB for image results.
+// The same parser and PageAssembly merge the last main-thread reply; file stamps cache the result.
+// No complete message within that bounded tail means no activity can be shown from it.
+//
 // 2026-09-18 (V4-160, concentration): page assembly moved to TranscriptAssembly.kt and redaction to
 // TranscriptRedaction.kt. LAYOUT-01 later moved the public response vocabulary to :features-sessions.
 package splice.client.transcript
@@ -75,6 +79,7 @@ import splice.sessions.transcript.MAX_TRANSCRIPT_PAGE
 import splice.sessions.transcript.SentTexts
 import splice.sessions.transcript.SessionTranscripts
 import splice.sessions.transcript.TranscriptLookup
+import splice.sessions.transcript.TranscriptMessage
 import splice.sessions.transcript.TranscriptPage
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
@@ -107,6 +112,14 @@ public class TranscriptReader(
     private val json = Json { ignoreUnknownKeys = true }
     private val validSessionId = Regex("[A-Za-z0-9_-]{1,128}")
     private val redaction = TranscriptRedaction()
+    private val tail = TranscriptTail(opener, TranscriptTailAssembly(TranscriptLineParser(::parse), redaction))
+
+    override fun last(sessionId: String, roots: List<Path>): TranscriptMessage? {
+        val file = if (validSessionId.matches(sessionId)) locate(roots, sessionId) else null
+        if (file == null) return null
+        // ast-grep-ignore: kt-no-silent-result-collapse -- a removed or unreadable transcript has no available activity; the registry row still exists independently
+        return Cancellables.runCatchingCancellable { tail.read(file) }.getOrNull()
+    }
 
     override fun page(sessionId: String, roots: List<Path>, cursor: String?, limit: Int): TranscriptLookup {
         val start = parseCursor(cursor)

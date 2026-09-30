@@ -17,6 +17,8 @@
 //          what GET /api/sessions/{id}/resume needs. A registry entry can exist with none (a
 //          messaging bridge registers and never writes one). Left off a row when nothing was measured:
 //          no id, no head tree, or the transcript view is off.
+//   last   V4-444: the last main-thread message's role, tool, one-line redacted text and epoch-ms ts;
+//          null without an available transcript message, session id, or enabled transcript view.
 // and GET /api/sessions/{id}/transcript, one page through the injected SessionTranscripts port.
 //
 // WHICH TREES THE TRANSCRIPT ROUTE SEARCHES, in order: the head's own CLAUDE_CONFIG_DIR (the registry
@@ -47,6 +49,7 @@ import splice.sessions.transcript.DEFAULT_TRANSCRIPT_PAGE
 import splice.sessions.transcript.SKIPPED_SIDECHAIN
 import splice.sessions.transcript.SKIPPED_UNPARSEABLE
 import splice.sessions.transcript.SentTexts
+import splice.sessions.transcript.SessionActivity
 import splice.sessions.transcript.SessionTranscriptViewEnabled
 import splice.sessions.transcript.SessionTranscripts
 import splice.sessions.transcript.TranscriptLookup
@@ -135,6 +138,7 @@ public class SessionsRoutes(
         put("pid", s.pid)
         put("session_id", s.sessionId)
         put("name", if (viewEnabled()) s.name else null)
+        put("last", SessionActivity.last(s.sessionId, treesFor(s.head), transcripts, viewEnabled))
         put("kind", s.kind)
         put("version", s.version)
         put("cwd", s.cwd)

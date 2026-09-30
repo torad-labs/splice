@@ -80,6 +80,11 @@ public data class SentTexts(
 
 /** Reads Claude Code transcript data from [roots], in caller-defined priority order. */
 public interface SessionTranscripts {
+    /** The last redacted main-thread message, read from a bounded tail and cached by file stamp.
+     *  Indices are local to that tail, not page cursors. Null when no complete message is available;
+     *  older port implementations provide no activity. */
+    public fun last(sessionId: String, roots: List<Path>): TranscriptMessage? = null
+
     public fun page(
         sessionId: String,
         roots: List<Path>,

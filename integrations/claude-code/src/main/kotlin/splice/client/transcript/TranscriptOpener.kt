@@ -1,5 +1,5 @@
-// NEW: V4-427 — the one seam through which the send scan opens a transcript, so a test can count the bytes
-// a call reads (a warm call reads none) without the reader knowing it is being watched.
+// NEW: V4-427 — the positioned I/O seam for cached send and activity scans (V4-444), so tests count
+// actual bytes read without the readers knowing they are being watched.
 package splice.client.transcript
 
 import java.io.InputStream

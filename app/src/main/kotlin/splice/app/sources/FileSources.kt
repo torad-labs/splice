@@ -7,6 +7,7 @@ import splice.core.perf.PerfSessionTail
 import splice.core.perf.PerfSessionTotal
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaView
+import splice.core.usage.QuotaWindow
 import splice.core.usage.QuotaWindowView
 import splice.core.util.JsonScalars
 import splice.head.compact.CompactStats
@@ -39,11 +40,14 @@ public class UsageStoreSource(
         return UsageView(state.outputTokens5h, state.entries, ratelimit, quota?.snapshot()?.let(::quotaView))
     }
 
+    private fun windowView(window: QuotaWindow, observed: Long?): QuotaWindowView =
+        QuotaWindowView(window.usedPercent.toInt(), window.resetsAt, observed, window.windowSeconds)
+
     private fun quotaView(snapshot: QuotaSnapshot): QuotaView {
         val observed = snapshot.observedAtEpochSeconds
         return QuotaView(
-            fiveHour = snapshot.fiveHour?.let { QuotaWindowView(it.usedPercent.toInt(), it.resetsAt, observed) },
-            sevenDay = snapshot.sevenDay?.let { QuotaWindowView(it.usedPercent.toInt(), it.resetsAt, observed) },
+            fiveHour = snapshot.fiveHour?.let { windowView(it, observed) },
+            sevenDay = snapshot.sevenDay?.let { windowView(it, observed) },
             plan = snapshot.plan,
         )
     }

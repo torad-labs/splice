@@ -7,7 +7,14 @@ package splice.core.usage
  *  [observedAt] is when the numbers were read (the provider's headers or its usage endpoint), null
  *  when the source names no observation — a window's age is how a reader tells a live bar from one
  *  the head last saw days ago. */
-public data class QuotaWindowView(val usedPct: Int, val resetsAt: Long?, val observedAt: Long? = null) {
+public data class QuotaWindowView(
+    val usedPct: Int,
+    val resetsAt: Long?,
+    val observedAt: Long? = null,
+    /** The window's own length as the provider reported it, null when it gave none: a surface that prints a length
+     *  reads it here and never infers it from the slot the window sits in. */
+    val windowSeconds: Long? = null,
+) {
     /** This window when it may be shown as the plan's usage at [nowSeconds] ([QuotaFreshness]). */
     public fun currentAt(nowSeconds: Long): QuotaWindowView? =
         takeIf { QuotaFreshness.current(observedAt, resetsAt, nowSeconds) }

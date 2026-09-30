@@ -103,9 +103,37 @@ class AccountsRouteTest {
         assertEquals(50.0, row["seven_day_used_percent"]!!.jsonPrimitive.content.toDouble())
         assertEquals(1_700_500_000L, row["seven_day_reset_epoch_seconds"]!!.jsonPrimitive.content.toLong())
         assertEquals(1_699_999_000L, row["observed_at_epoch_seconds"]!!.jsonPrimitive.content.toLong())
-        // The head's own tracked QuotaView carries no window LENGTH (only a pooled AccountView does).
+        // A quota the provider gave no length for says none: the console must not read a week into it.
         assertEquals(JsonNull, row["five_hour_window_seconds"])
         assertEquals(JsonNull, row["seven_day_window_seconds"])
+    }
+
+    // Operator report, 2026-09-29 (Marlin): a single login's long window printed 7 days whatever the provider said, because
+    // the head's own QuotaView dropped the length the tracker had read and the console filled the gap with a week.
+    @Test
+    fun `a single-login head carries the window lengths its provider reported`() = runBlocking {
+        val quota = QuotaView(
+            fiveHour = QuotaWindowView(
+                usedPct = 42,
+                resetsAt = 1_700_000_000L,
+                observedAt = 1_699_999_000L,
+                windowSeconds = 18_000L,
+            ),
+            sevenDay = QuotaWindowView(
+                usedPct = 9,
+                resetsAt = 1_702_000_000L,
+                observedAt = 1_699_999_000L,
+                windowSeconds = 2_592_000L,
+            ),
+            plan = null,
+        )
+        val heads = mapOf("solo" to oauthHeadNoPool("solo", quota))
+
+        val body = json.parseToJsonElement(AccountsRoute(heads).accountsJson()).jsonObject
+        val row = body["accounts"]!!.jsonArray.single().jsonObject
+
+        assertEquals(18_000L, row["five_hour_window_seconds"]!!.jsonPrimitive.content.toLong())
+        assertEquals(2_592_000L, row["seven_day_window_seconds"]!!.jsonPrimitive.content.toLong())
     }
 
     @Test

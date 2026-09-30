@@ -60,10 +60,10 @@ public data class HeadAccountPoolView(
         val account = selectedAccount() ?: return null
         val observed = account.quotaObservedAtEpochSeconds
         val fiveHour = account.fiveHourUsedPercent?.let { used ->
-            QuotaWindowView(used.toInt(), account.fiveHourResetEpochSeconds, observed)
+            QuotaWindowView(used.toInt(), account.fiveHourResetEpochSeconds, observed, account.fiveHourWindowSeconds)
         }
         val sevenDay = account.sevenDayUsedPercent?.let { used ->
-            QuotaWindowView(used.toInt(), account.sevenDayResetEpochSeconds, observed)
+            QuotaWindowView(used.toInt(), account.sevenDayResetEpochSeconds, observed, account.sevenDayWindowSeconds)
         }
         return if (fiveHour == null && sevenDay == null) null else QuotaView(fiveHour, sevenDay, account.plan)
     }

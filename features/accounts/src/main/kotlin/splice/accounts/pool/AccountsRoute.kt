@@ -61,11 +61,18 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
                 primary = true,
                 singleLogin = true,
                 plan = quota?.plan,
-                // No window-LENGTH here: unlike a pooled HeadAccountView, the head's own tracked
-                // QuotaView carries no windowSeconds (UsagePayloads.window() doesn't emit one either)
-                // — a single-login head's quota tracker never learned it.
-                fiveHour = QuotaWindowView(quota?.fiveHour?.usedPct?.toDouble(), quota?.fiveHour?.resetsAt, null),
-                sevenDay = QuotaWindowView(quota?.sevenDay?.usedPct?.toDouble(), quota?.sevenDay?.resetsAt, null),
+                // The length the provider reported rides the head's QuotaView (null when it gave none), so a long
+                // window is 30 days where the provider says 30 days, never a week by default.
+                fiveHour = QuotaWindowView(
+                    quota?.fiveHour?.usedPct?.toDouble(),
+                    quota?.fiveHour?.resetsAt,
+                    quota?.fiveHour?.windowSeconds,
+                ),
+                sevenDay = QuotaWindowView(
+                    quota?.sevenDay?.usedPct?.toDouble(),
+                    quota?.sevenDay?.resetsAt,
+                    quota?.sevenDay?.windowSeconds,
+                ),
                 observedAtEpochSeconds = quota?.fiveHour?.observedAt ?: quota?.sevenDay?.observedAt,
                 authExclusion = AuthExclusionView(null, null),
                 flags = AccountFlags(

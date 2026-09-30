@@ -3,6 +3,8 @@
 // corrupt line is skipped, a missing file reads empty.
 package splice.head.perf
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -13,11 +15,41 @@ import splice.core.model.ModelRates
 import splice.core.model.TurnPrice
 import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSnapshot
+import splice.core.perf.PromptTokenEstimate
 import splice.core.perf.TurnPerf
 import java.nio.file.Files
 import java.nio.file.Path
 
 class PerfStatsTest {
+
+    @Test
+    fun `preflight anchors only a proven input prefix and marks weaker estimates`(@TempDir tmp: Path) {
+        val stats = PerfStats(tmp.resolve("perf.jsonl"), clock = { 123L })
+        fun body(text: String) = Json.parseToJsonElement(text).jsonObject
+        val previous = body("""{"model":"m","input":[{"role":"user","content":"a"}]}""")
+        val appended = body("""{"model":"m","input":[{"role":"user","content":"a"},{"role":"user","content":"b"}]}""")
+        val rewritten = body("""{"model":"m","input":[{"role":"user","content":"b"}]}""")
+        val shrunk = body("""{"model":"m","input":[]}""")
+        val perf = TurnPerf { 0L }
+        perf.setCount(PerfKeys.IN_TOKENS, 200)
+        stats.record(
+            PerfRowMeta("m", "ok", compact = false, sessionId = "session", conversationKey = "first"),
+            perf.snapshot(),
+            previous,
+        )
+        val expected = 200 + appended.toString().toByteArray().size - previous.toString().toByteArray().size
+        assertEquals(expected.toLong(), stats.measuredInputs.estimate("session", "first", "m", appended).tokens)
+        assertEquals("measured-prefix", stats.measuredInputs.estimate("session", "first", "m", appended).basis)
+        for (candidate in listOf(rewritten, shrunk)) {
+            val estimated = stats.measuredInputs.estimate("session", "first", "m", candidate)
+            assertEquals(
+                PromptTokenEstimate.fromBytes(candidate.toString().toByteArray().size.toLong()),
+                estimated.tokens,
+            )
+            assertEquals("local-bytes-3", estimated.basis)
+        }
+        assertEquals("local-bytes-3", stats.measuredInputs.estimate("session", "fork", "m", appended).basis)
+    }
 
     @Test
     fun `record then tailNumeric roundtrips numeric fields`(@TempDir tmp: Path) {

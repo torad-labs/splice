@@ -44,6 +44,15 @@ public enum class OutcomeTag(public val wire: String) {
     AUTH_MISSING("error:auth-missing"),
     UPSTREAM_FAILED("error:upstream-failed"),
     UPSTREAM_FRAME_TOO_LARGE("error:upstream-frame-too-large"),
+
+    /** Size preflight refused before an upstream send; the client has prior exchanges to compact. */
+    COMPACTION_PREFLIGHT_COMPACTABLE("error:compaction-preflight-compactable"),
+
+    /** Same refusal on a first exchange: the installed client cannot compact a single exchange. */
+    COMPACTION_PREFLIGHT_FIRST_EXCHANGE("error:compaction-preflight-first-exchange"),
+
+    /** Even the compact turn exceeds the window with its audited output allowance. */
+    COMPACTION_PREFLIGHT_COMPACT_OVERFLOW("error:compaction-preflight-compact-overflow"),
 }
 
 /** The parameterised tags, whose suffix only the call site knows.

@@ -10,11 +10,10 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respondText
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.perf.PromptTokenEstimate
 import splice.head.admission.AdmissionGate
 import splice.head.admission.AdmissionResponses
 import splice.upstream.Provider
-
-private const val TOKEN_ESTIMATE_BYTES = 3
 
 internal class CountTokens(
     private val provider: Provider,
@@ -42,10 +41,7 @@ internal class CountTokens(
             // Conservative and Unicode-safe: UTF-8 bytes / 3 overestimates ordinary English while
             // avoiding the old UTF-16 chars / 4 undercount for CJK and emoji. The complete JSON body
             // intentionally contributes structural/tool overhead.
-            val estimate =
-                ((body.bytes + TOKEN_ESTIMATE_BYTES - 1) / TOKEN_ESTIMATE_BYTES)
-                    .coerceAtLeast(1)
-                    .toLong()
+            val estimate = PromptTokenEstimate.fromBytes(body.bytes.toLong())
             deps.log("[${provider.key}] count_tokens estimate=$estimate (local; no upstream turn)\n")
             call.respondText(
                 buildJsonObject { put("input_tokens", estimate) }.toString(),

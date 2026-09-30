@@ -10,6 +10,7 @@ import io.ktor.server.application.ApplicationCall
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
+import splice.head.CompactionPreflight
 import splice.head.HeadDeps
 import splice.head.RequestBodyTooLarge
 import splice.head.turn.MaterializedRequest
@@ -22,6 +23,10 @@ internal class AdmissionGate(
     private val deps: HeadDeps,
     private val window: AdmissionWindow,
     private val responses: AdmissionResponses,
+    internal val compactionPreflight: CompactionPreflight = CompactionPreflight(
+        provider.catalog,
+        deps.stores.perfStats,
+    ),
 ) {
     private val gate get() = deps.gate
     private val log get() = deps.log

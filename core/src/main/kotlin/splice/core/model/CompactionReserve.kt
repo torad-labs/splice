@@ -1,8 +1,8 @@
 // NEW: V4-446 Phase 2 — empirical reserve behind the Codex client's compaction threshold.
 package splice.core.model
 
-private const val CALIBRATION_RESOURCE = "/compaction-reserve-p99.tsv"
-private const val CALIBRATION_HEADER = "model\tgrowth_and_prompt_p99\tgeneration_p99"
+private const val CALIBRATION_RESOURCE = "/compaction-reserve.tsv"
+private const val CALIBRATION_HEADER = "model\tgrowth_and_prompt_p95\tgeneration_p99"
 
 // why: each calibration row has its model id and two independent p99 measurements.
 private const val CALIBRATION_COLUMNS = 3
@@ -19,10 +19,10 @@ private const val PERCENT_DENOMINATOR = 100L
 // why: the installed client also holds this many tokens beyond its percentage threshold.
 private const val CLIENT_TAIL_RESERVE = 13_000L
 
-/** P99 context growth through the compaction prompt plus P99 generated compaction output.
+/** Clean-pair P95 context growth through the compaction prompt plus P99 generated output.
  * Input/cache buckets are cumulative, so a reserve is subtracted from the real model window once. */
-public data class CompactionReserve(val growthAndPromptP99: Long, val generationP99: Long) {
-    public val totalTokens: Long get() = growthAndPromptP99.coerceAtLeast(0) + generationP99
+public data class CompactionReserve(val growthAndPromptP95: Long, val generationP99: Long) {
+    public val totalTokens: Long get() = growthAndPromptP95.coerceAtLeast(0) + generationP99
 }
 
 /** A row's overridable total reserve and the independently calibrated generation allowance. */
@@ -48,7 +48,8 @@ public fun interface CompactionReserveDefaults {
 }
 
 /** Numeric-only audit captures/v4-446-compaction-audit-20260929.json, sha256 68a5dab1...62ad7.
- * The bundled TSV freezes clean-pair nearest-rank p99 growth and successful-generation p99.
+ * The bundled TSV freezes clean-pair nearest-rank p95 growth and successful-generation p99.
+ * B2's pre-SSE preflight handles the growth tail that the ordinary reserve does not cover.
  * A growth pair is consecutive within its session, same model, predecessor finished before the
  * compaction, both inputs within the current declared W, and token delta within added request
  * bytes. No historical effective W is retained, so an unobserved config change remains unknown.

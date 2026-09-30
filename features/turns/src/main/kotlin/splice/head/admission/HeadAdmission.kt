@@ -169,7 +169,7 @@ internal class HeadAdmission(
         trace: TurnTrace?,
     ): Boolean {
         val armedMs = deps.upstream.rateLimitedForMs
-        if (armedMs <= 0L) return false
+        if (armedMs <= 0L) return refuseIfOversized(call, prepared, admitted, trace)
         val now = wallClock()
         // V4-233: a held PLAN window is the upstream's own statement that the plan is spent until an
         // instant, so that instant is the deadline, and a persistent client sleeps once, until it.
@@ -204,6 +204,33 @@ internal class HeadAdmission(
         )
         val message = rateLimitedMessage(armedMs, windowResetEpochSeconds, plan)
         responses.respondRateLimited(call, message, retryEpochSeconds)
+        return true
+    }
+
+    /** A 400 before SSE, so the installed client's conditional size-error path can compact.
+     * This is an estimated-input bound with a measured append delta, plus empirical p99 output. */
+    private suspend fun refuseIfOversized(
+        call: ApplicationCall,
+        prepared: Preparation.Ready,
+        admitted: Admitted,
+        trace: TurnTrace?,
+    ): Boolean {
+        val meta = prepared.built.meta
+        val message = admission.compactionPreflight.refusal(meta, prepared.built.requestBody, prepared.hasPriorExchange)
+            ?: return false
+        val tag = when {
+            meta.compact -> OutcomeTag.COMPACTION_PREFLIGHT_COMPACT_OVERFLOW
+            prepared.hasPriorExchange -> OutcomeTag.COMPACTION_PREFLIGHT_COMPACTABLE
+            else -> OutcomeTag.COMPACTION_PREFLIGHT_FIRST_EXCHANGE
+        }
+        trace?.failureSentence(message)
+        driver.recordLocalRefusal(
+            prepared.built.meta,
+            admitted.perf,
+            admitted.t0,
+            LocalRefusal(tag.wire, message, trace),
+        )
+        responses.respondInvalidRequest(call, message)
         return true
     }
 

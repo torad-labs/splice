@@ -90,8 +90,10 @@ internal class TurnTelemetry(
                 turn = drive.trace?.turnId,
                 sessionId = drive.meta.sessionId,
                 responseMessageId = drive.emitter.responseMessageId,
+                conversationKey = drive.meta.conversationKey,
             ),
             snap,
+            drive.requestBody,
         )
         account?.switch?.let { switched ->
             log("[$headKey] account ${switched.from} -> ${switched.to}: ${switched.reason}\n")

@@ -68,6 +68,15 @@ internal object OutcomeSentences {
         OutcomeTag.UPSTREAM_FRAME_TOO_LARGE to
             "the provider sent one streaming event larger than splice accepts; retry the request, which " +
             "usually comes back smaller",
+        OutcomeTag.COMPACTION_PREFLIGHT_COMPACTABLE to
+            "the estimated request exceeds this model's reserved context before any provider send; " +
+            "compact the earlier conversation, then retry",
+        OutcomeTag.COMPACTION_PREFLIGHT_FIRST_EXCHANGE to
+            "the first exchange exceeds this model's window before any provider send; " +
+            "shorten the request, then retry",
+        OutcomeTag.COMPACTION_PREFLIGHT_COMPACT_OVERFLOW to
+            "even the compaction cannot fit its estimated input and generated output; " +
+            "shorten the conversation, then retry",
     )
 
     /** The kinds of `error:<kind>` that are not fixed [OutcomeTag] constants. */

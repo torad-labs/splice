@@ -25,10 +25,14 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import splice.core.config.Knob
+import splice.core.perf.InputDigest
+import splice.core.perf.InputPrefix
 import splice.core.perf.PerfArchiveName
+import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSessionTail
 import splice.core.perf.PerfSessionTurn
 import splice.core.perf.PerfSnapshot
+import splice.core.perf.PromptTokenEstimate
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
@@ -68,6 +72,8 @@ public data class PerfRowMeta(
      *  local transcript without guessing by timestamp or the shortened session tag (V4-354). */
     val sessionId: String? = null,
     val responseMessageId: String? = null,
+    /** Same stable first-prompt key the provider uses, only for in-memory preflight measurements. */
+    val conversationKey: String? = null,
 ) {
     /** These optional string facts never enter the row's numeric snapshot. */
     internal fun putTranscriptFacts(into: JsonObjectBuilder) {
@@ -77,6 +83,54 @@ public data class PerfRowMeta(
 }
 
 private const val DEFAULT_TAIL = 200
+
+// why: bound in-memory sizing witnesses for live conversations; a missing one falls back to request size.
+private const val MAX_PREFLIGHT_WITNESSES = 512
+
+/** What supports a preflight estimate: a verified prefix bound or the local count_tokens heuristic. */
+internal data class InputEstimate(val tokens: Long, val basis: String)
+
+/** Latest observed upstream input for one session, conversation and model; no prompt bytes persist. */
+internal class MeasuredInputs {
+    private data class Key(val session: String, val conversation: String, val model: String)
+    private data class Sample(val input: Long, val prefix: InputPrefix)
+
+    private val samples = LinkedHashMap<Key, Sample>()
+    private val lock = Any()
+
+    fun remember(meta: PerfRowMeta, snap: PerfSnapshot, request: JsonObject?) {
+        val key = meta.sessionId?.let { session ->
+            meta.conversationKey?.let { conversation -> Key(session, conversation, meta.model) }
+        }
+        val sample = snap.counters[PerfKeys.IN_TOKENS]?.takeIf { it > 0 }?.let { input ->
+            request?.let(InputDigest::capture)?.let { prefix -> Sample(input, prefix) }
+        }
+        if (key != null && sample != null) {
+            synchronized(lock) {
+                samples.remove(key)
+                samples[key] = sample
+                if (samples.size > MAX_PREFLIGHT_WITNESSES) samples.remove(samples.keys.first())
+            }
+        }
+    }
+
+    fun estimate(session: String?, conversation: String?, model: String, request: JsonObject): InputEstimate {
+        val requestBytes = request.toString().toByteArray(Charsets.UTF_8).size.toLong()
+        val fresh = PromptTokenEstimate.fromBytes(requestBytes)
+        val measured = if (session != null && conversation != null) {
+            synchronized(lock) { samples[Key(session, conversation, model)] }
+        } else {
+            null
+        }
+        // A UTF-8 byte of appended request cannot carry more than one byte-level BPE token.
+        // Prove the measured input and every other request property stayed byte-identical first.
+        return if (measured != null && measured.prefix.extendedBy(request)) {
+            InputEstimate(maxOf(fresh, measured.input + requestBytes - measured.prefix.requestBytes), "measured-prefix")
+        } else {
+            InputEstimate(fresh, "local-bytes-3")
+        }
+    }
+}
 
 // ~256 KiB of trailing JSONL bounds parse cost regardless of file age.
 private const val READ_TAIL_BYTES = 256 * 1024
@@ -127,6 +181,7 @@ public class PerfStats(
     public fun skippedRowCount(): Long = skippedRows.get()
 
     private val json = Json { ignoreUnknownKeys = true }
+    internal val measuredInputs = MeasuredInputs()
 
     // append is best-effort by design: the turn builds an immutable row and the bounded file lane
     // owns filesystem latency.
@@ -135,7 +190,8 @@ public class PerfStats(
     // under it (PerfRoutes), so it is what the console's turn.end carries to join the stream to the
     // poll. Two rows of one head stamped in the same millisecond share it; that is the route's
     // existing key, and a new id here would be one the route could not look up.
-    public fun record(meta: PerfRowMeta, snap: PerfSnapshot): Long {
+    public fun record(meta: PerfRowMeta, snap: PerfSnapshot, request: JsonObject? = null): Long {
+        measuredInputs.remember(meta, snap, request)
         val ts = clock()
         val row = buildJsonObject {
             put("ts", ts)

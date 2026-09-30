@@ -19,15 +19,20 @@ package splice.head
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.json.JsonObject
 import splice.core.auth.ForeignHostLog
 import splice.core.head.Head
 import splice.core.head.HeadHealth
+import splice.core.model.CompactionBudgets
+import splice.core.model.ModelCatalog
+import splice.core.turn.TurnMeta
 import splice.head.admission.AdmissionGate
 import splice.head.admission.AdmissionResponses
 import splice.head.admission.AdmissionTelemetry
 import splice.head.admission.AdmissionWindow
 import splice.head.admission.HeadAdmission
 import splice.head.compaction.CompactionReplay
+import splice.head.perf.PerfStats
 import splice.head.turn.TurnDriver
 import splice.head.turn.TurnPreparation
 import splice.upstream.Provider
@@ -59,7 +64,13 @@ public class HeadServer(
     private val clientAuth = ClientAuth(deps, responses, ForeignHostLog("the ${provider.key} head", deps.log))
     private val bodyReader = RequestBodyReader(deps.policy.requestReadTimeoutMs)
     private val bodyParse = AnthropicBodyParse()
-    private val admissionGate = AdmissionGate(provider, deps, window, responses)
+    private val admissionGate = AdmissionGate(
+        provider,
+        deps,
+        window,
+        responses,
+        CompactionPreflight(provider.catalog, deps.stores.perfStats),
+    )
     private val diagnostics = HeadDiagnostics(provider, deps.gate, driver, deps.stores.wireTap)
     private val admission = HeadAdmission(
         deps,
@@ -152,5 +163,28 @@ public class HeadServer(
         deps.stores.economicsStore?.flushNow()
         deps.stores.perfStats.totals?.flushNow()
         if (wasRunning) deps.seams.events.lifecycle(HeadLifecycle.STOPPED)
+    }
+}
+
+/** The client compacts reactively only when a size refusal is HTTP 400 before SSE commits 200.
+ * Input is bounded only when a measured prefix is proven preserved; new or rewritten history uses
+ * the weaker local count_tokens estimate. The output allowance is audited p99, never a hard cap. */
+internal class CompactionPreflight(private val catalog: ModelCatalog, private val perf: PerfStats) {
+    fun refusal(meta: TurnMeta, request: JsonObject, hasPriorExchange: Boolean): String? {
+        val budget = CompactionBudgets.forRow(catalog, meta.originalModel) ?: return null
+        val window = catalog.contextWindowFor(meta.originalModel)
+        val estimate = perf.measuredInputs.estimate(meta.sessionId, meta.conversationKey, meta.upstreamModel, request)
+        // An ordinary continuation asks the client to compact before the whole R is consumed.
+        // The compact turn itself must fit only its generated output; rejecting it at W−R loops.
+        // A first exchange cannot compact, so it is sent while its input fits W.
+        val allowance = when {
+            meta.compact -> budget.generationTokens
+            hasPriorExchange -> budget.totalTokens
+            else -> 0L
+        }
+        if (estimate.tokens <= window - allowance) return null
+        return "prompt is too long: estimated ${estimate.tokens} input tokens plus $allowance " +
+            "reserved context tokens exceed the $window token model maximum " +
+            "(estimate basis ${estimate.basis}, compaction generation p99 ${budget.generationTokens})"
     }
 }

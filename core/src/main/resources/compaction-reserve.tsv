@@ -1,9 +1,9 @@
-model	growth_and_prompt_p99	generation_p99
+model	growth_and_prompt_p95	generation_p99
 gpt-5.5	1290	25948
 gpt-5.6-luna	7830	31791
-gpt-5.6-sol	7969	19781
+gpt-5.6-sol	7830	19781
 gpt-5.6-terra	7830	14807
-gpt-6-astra	7841	22953
+gpt-6-astra	7568	22953
 gpt-6-luna	1290	22844
 gpt-6-sol	1290	11602
 gpt-6.1-sol	1303	22844

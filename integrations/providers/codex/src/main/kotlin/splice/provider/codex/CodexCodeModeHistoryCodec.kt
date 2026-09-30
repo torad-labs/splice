@@ -7,11 +7,11 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.perf.InputDigest
 import splice.core.util.JsonScalars
 import splice.dialect.responses.request.ResponsesCodeModeInput
 import splice.dialect.responses.request.ResponsesCodeModeProjection
 import splice.dialect.responses.request.ResponsesContextMessage
-import java.security.MessageDigest
 
 /**
  * Every persisted count, digest and offset is CONVERSATION-relative: the lite preamble (the leading
@@ -107,9 +107,7 @@ internal class CodexCodeModeHistoryCodec(private val json: Json) {
     private fun phaseless(element: JsonElement): JsonElement =
         (element as? JsonObject)?.let { JsonObject(it - FIELD_PHASE) } ?: element
 
-    private fun digest(value: String): String = MessageDigest.getInstance("SHA-256")
-        .digest(value.toByteArray())
-        .joinToString("") { "%02x".format(it) }
+    private fun digest(value: String): String = InputDigest.hex(value)
 }
 
 /** The lite preamble a request arrived with, and the conversation body every record is measured on. */

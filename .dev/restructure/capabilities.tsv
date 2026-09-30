@@ -3187,7 +3187,7 @@ console-next/src/app/TranscriptPrivacy.tsx	2f4255b3ea4f54e7c98c61296d832193921b1
 console-next/tests/transcript-privacy.test.ts	b5e536fa7b7cbb035cfe80b8718ee11639f5f963aae3b1c1eeed3b8ac1a386d8	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes
 console-next/tests/stacking.test.ts	8688766931b20da4871219ade9bdb7d9a61b9a6db0c28617b970fa9a32ab5871	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes
 core/src/main/kotlin/splice/core/model/CompactionReserve.kt	6a9bee6d2a11ca5a21a9eeb1ccb5891d67d0664f00089196afef32632898a6b1	created		V4-446: audited per-row p99 reserve, generation allowance and exact Claude Code trigger
-core/src/main/resources/compaction-reserve-p99.tsv	458478e3cf4d9b8e81b5df01a19f3034832c8025c43a36d5c43c77cb17d9aee6	created		V4-446: numeric-only p99 calibration frozen from the retained compaction audit
+core/src/main/resources/compaction-reserve.tsv	741a4bd8b84ba7e2f9c5eccfb375832135dd16914c6acadc2d4e4cbec86f7be0	created		V4-446: clean-pair growth p95 and generation p99 calibration from retained audit
 tools/probes/claude-code-compaction.ts	bf0abbee39060c655fd5a0ee1cb4dafa974ae261aa75bcf087d98ebc0c7c979a	created		V4-446: manual isolated local Claude Code prompt-too-long compaction contract probe
 app/src/main/kotlin/splice/app/control/mount/SessionsWiring.kt	c4c90ced85d5609e81a68e1c73fcb884aa7aa3ae73bb42d090c3d73df625230d	created		V4-444: a route group split out of its mount to hold the concentration band at its baseline
 app/src/main/kotlin/splice/app/control/mount/TeamsMount.kt	3fb6c6d451781ae88e2bd2bc859e5fbe8a526bed7456188313329812085a1da1	created		V4-444: a route group split out of its mount to hold the concentration band at its baseline
@@ -3215,3 +3215,7 @@ console-next/e2e/turn-retention.spec.ts	5a45e042da7bebbeb0673e01160008b3cad6f6a1
 tools/probes/tsconfig.json	81c9d993278f009eb96197615402da18b40e0614ab74f9fc1e2ff3444f086a51	created		V4-446: typechecked program for the manual isolated Claude Code compaction probe
 console-next/tests/config-url.test.ts	2ca265144cc6b47f921da401e17a49f82e7cecd005fe1e86a83c2e5ffd4f0d8c	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes
 console-next/tests/contrast.test.ts	c93aaf37006ba559aaad9d89d2bdfe8ad7f256d55acf5ca6c7ee062a689a01e9	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes
+core/src/main/kotlin/splice/core/perf/InputDigest.kt	0c5ae70c034a16a5812dd95e769b5a5665b883cc13e4327c4217f7ec71de6051	created		V4-446: byte-identical persisted input digest and bound-only request prefix witness
+core/src/main/kotlin/splice/core/perf/PromptTokenEstimate.kt	8f6aee01b8244fac09f872abd4bbb6b9a60b8bb795c3e699c63c3f7e9e0a8107	created		V4-446: shared local count-tokens UTF-8 byte estimate
+features/turns/src/test/kotlin/splice/head/HeadServerPreflightTest.kt	9ace6666ef966379bf4f5c2cfbfd5ab1603a4f1f48e579a3ae621247f3eda287	created		V4-446: HTTP 400 before send versus genuine in-stream overflow and tagged trace
+console-next/e2e/menu-reach.spec.ts	540cc303765b8ed3b3f156075d6d3c1b76590d79a96ca52d55f5569f084c574f	created		V4-444: a Select taller than the room beside its trigger scrolls inside itself so its last option can be reached

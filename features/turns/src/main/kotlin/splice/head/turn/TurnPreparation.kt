@@ -64,6 +64,8 @@ internal sealed class Preparation {
         val stream: Boolean,
         val inbound: ClientInbound?,
         val messagesHash: String?,
+        /** The installed client can only compact after at least one assistant exchange exists. */
+        val hasPriorExchange: Boolean,
     ) : Preparation()
     data class Rejected(val message: String) : Preparation()
 
@@ -217,7 +219,10 @@ internal class TurnPreparation(
         val replayed = if (built.meta.compact) compactionReplay(built, parsed.typed.stream) else null
         // V4-165: a replayed turn is never driven, so what its build holds ends here, not at a drive.
         replayed?.let { built.onEnd?.ended() }
-        return replayed ?: Preparation.Ready(built, parsed.typed.stream, arrival.inbound, marked(parsed, sessionId))
+        return replayed ?: Preparation.Ready(
+            built, parsed.typed.stream, arrival.inbound, marked(parsed, sessionId),
+            hasPriorExchange = parsed.typed.messages.any { it.role == "assistant" },
+        )
     }
 
     /** V4-319: what a stop of this turn would mark, the hash of its messages. A streaming turn with a

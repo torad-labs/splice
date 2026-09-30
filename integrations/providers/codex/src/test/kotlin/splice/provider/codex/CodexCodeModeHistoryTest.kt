@@ -16,6 +16,14 @@ import splice.upstream.codemode.CodeModeStep
 
 class CodexCodeModeHistoryTest : CodeModeBridgeTestSupport() {
     @Test
+    fun `persisted input digest is byte stable across digest owner relocation`() {
+        val codec = CodexCodeModeHistoryCodec(Json)
+        val body = """{"input":[{"role":"developer","content":"preamble"},{"role":"user","content":"á"}]}"""
+        val baseline = requireNotNull(codec.inputBoundary(body))
+        assertEquals("1e5c5942b0178c373b12ed3d8fe82bae865430c7a8f0f98214b12fb997901608", baseline.fullDigest)
+    }
+
+    @Test
     fun `native search history absent from callbacks is restored across cell resumes`() = runTest {
         val runtime = ScriptedRuntime(
             ArrayDeque(

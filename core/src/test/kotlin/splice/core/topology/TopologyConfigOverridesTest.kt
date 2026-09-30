@@ -356,6 +356,19 @@ class TopologyConfigOverridesTest {
     }
 
     @Test
+    fun `preflight owns rare jumps so ordinary reserve uses clean p95 growth`() {
+        val provider = topology.providers.getValue("codex").copy(
+            models = listOf(
+                ModelEntry("gpt-5.6-sol", contextWindow = 272_000),
+                ModelEntry("gpt-6-astra", contextWindow = 872_000),
+            ),
+        )
+        val catalog = provider.catalogFor(topology.heads.getValue("codex").copy(pinnedModel = "gpt-6-astra"))
+        assertEquals(27_611, splice.core.model.CompactionBudgets.forRow(catalog, "gpt-5.6-sol")?.totalTokens)
+        assertEquals(30_521, splice.core.model.CompactionBudgets.forRow(catalog, "gpt-6-astra")?.totalTokens)
+    }
+
+    @Test
     fun `the retired oracle gpt-5-codex row retains its raw usage without an audited reserve`() {
         val provider = topology.providers.getValue("codex").copy(
             models = listOf(ModelEntry("gpt-5-codex", contextWindow = 272_000)),

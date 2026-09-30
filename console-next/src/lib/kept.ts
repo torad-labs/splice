@@ -20,3 +20,22 @@ export function keptLines(inventory: KeptInventory | TraceInventory): string[] {
 
 /** How many entries a delete would remove, for its button. */
 export const entriesOf = (inventory: KeptInventory | TraceInventory): number => ('records' in inventory ? inventory.records : inventory.rows);
+
+/** The plans the activityStoreHeads knob names among [keys]: `*` is every plan, empty is none, a list is those it names.
+ *  A name that is no longer a plan is dropped. */
+export function plansKept(value: string, keys: readonly string[]): Set<string> {
+  if (value.trim() === '*') return new Set(keys);
+  const named = new Set(value.split(',').map((key) => key.trim()));
+  return new Set(keys.filter((key) => named.has(key)));
+}
+
+/** The knob's value for a set of plans: every plan is `*` (so a plan added later keeps labels too), none is empty. */
+export function plansKeptValue(kept: ReadonlySet<string>, keys: readonly string[]): string {
+  const chosen = keys.filter((key) => kept.has(key));
+  return chosen.length === keys.length ? '*' : chosen.join(',');
+}
+
+export function plansKeptLine(kept: ReadonlySet<string>, keys: readonly string[]): string {
+  if (kept.size === 0) return K.labels.plansNone;
+  return kept.size === keys.length ? K.labels.plansEvery : K.labels.plansSome(kept.size, keys.length);
+}

@@ -66,6 +66,10 @@
 .kept-title { font: 520 1.625rem/1.15 var(--display); color: var(--ink); }
 .kept-why { margin: var(--space-4) 0 var(--space-6); font: 400 1rem/1.5 var(--read); color: var(--mute); max-width: 70ch; }
 .kept-ctl { display: grid; gap: var(--space-4); justify-items: end; }
+.kept-plans { font: 500 0.9375rem var(--meta); color: var(--body); text-align: right; }
+.kept-plans summary { cursor: pointer; }
+.kept-plans ul { list-style: none; margin: var(--space-4) 0 0; padding: 0; display: grid; gap: var(--space-3); }
+.kept-plans li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-5); text-align: left; }
 .census { display: grid; gap: var(--space-3); justify-items: end; text-align: right; font: 500 0.9375rem var(--meta); color: var(--body); }
 .row .ctl .fallback { min-width: 0; overflow-wrap: anywhere; font: 500 0.8125rem var(--mono); color: var(--mute); }
 .recent { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); justify-items: end; font: 500 0.9375rem var(--meta); color: var(--body); }

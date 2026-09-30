@@ -1,6 +1,6 @@
 // What splice keeps: a UTC day as a date, and a census as sentences that claim nothing the store did not say.
 import { describe, expect, test } from 'vitest';
-import { ageOutText, entriesOf, keptLines } from '../src/lib/kept';
+import { ageOutText, entriesOf, keptLines, plansKept, plansKeptLine, plansKeptValue } from '../src/lib/kept';
 import type { KeptInventory, TraceInventory } from '../src/types/kept';
 
 const store = (over: Partial<KeptInventory> = {}): KeptInventory => ({ store: 'edges', state: 'on', days: 10, rows: 9227, oldest: '2026-09-19', ages_out: '2026-12-29', ...over });
@@ -25,5 +25,26 @@ describe('the census', () => {
     expect(keptLines(trace())).toEqual(['3780 records, 4.0 GiB kept.']);
     expect(entriesOf(trace())).toBe(3780);
     expect(entriesOf(store())).toBe(9227);
+  });
+});
+
+describe('the plans that keep activity labels', () => {
+  const keys = ['claudex', 'claude-grok', 'bonsai'];
+  test('the knob reads as a set of plans: * is all of them, empty is none, a list is those it names', () => {
+    expect([...plansKept('*', keys)]).toEqual(keys);
+    expect([...plansKept('', keys)]).toEqual([]);
+    expect([...plansKept(' claudex , bonsai ', keys)]).toEqual(['claudex', 'bonsai']);
+    expect([...plansKept('claudex,gone', keys)]).toEqual(['claudex']);
+  });
+  test('the set writes back as the knob: every plan is *, none is empty, else a list in plan order', () => {
+    expect(plansKeptValue(new Set(keys), keys)).toBe('*');
+    expect(plansKeptValue(new Set(), keys)).toBe('');
+    expect(plansKeptValue(new Set(['bonsai', 'claudex']), keys)).toBe('claudex,bonsai');
+  });
+  test('the summary counts plans in words', () => {
+    expect(plansKeptLine(new Set(keys), keys)).toBe('Every plan');
+    expect(plansKeptLine(new Set(), keys)).toBe('No plan');
+    expect(plansKeptLine(new Set(['claudex']), keys)).toBe('1 of 3 plans');
+    expect(plansKeptLine(new Set(['claudex', 'bonsai']), keys)).toBe('2 of 3 plans');
   });
 });

@@ -6,6 +6,7 @@ import { describe, expect, test } from 'vitest';
 import { captureState, savedCapture } from '../src/lib/turns-page';
 import { CaptureControl } from '../src/pages/turns/CaptureControl';
 import { KeptTabs } from '../src/pages/turns/KeptTabs';
+import { PlansKept } from '../src/pages/settings/Kept';
 import type { CaptureWire, KeptTurn, TurnRow } from '../src/types/perf';
 import type { TopologyState } from '../src/types/topology';
 
@@ -83,5 +84,21 @@ describe('the body capture control', () => {
     expect(captureState(true, true)).toEqual({ on: true, recording: true, pending: false });
     expect(captureState(false, false)).toEqual({ on: false, recording: false, pending: false });
     expect(captureState(null, null).on).toBe(false);
+  });
+});
+
+describe('the plans that keep activity labels', () => {
+  const plans = [{ key: 'claudex', label: 'Claudex' }, { key: 'bonsai', label: 'Bonsai' }];
+  const control = (value: string): string => renderToStaticMarkup(<PlansKept value={value} plans={plans} onSave={() => undefined} />);
+  test('is a switch per plan under a summary, never a text box of plan keys', () => {
+    const html = control('claudex');
+    expect(html).toContain('1 of 2 plans · Choose plans');
+    expect(html).toMatch(/aria-checked="true" aria-label="Keep activity labels for Claudex"/);
+    expect(html).toMatch(/aria-checked="false" aria-label="Keep activity labels for Bonsai"/);
+    expect(html).not.toContain('<input');
+  });
+  test('* reads as every plan and empty as none', () => {
+    expect(control('*')).toContain('Every plan · Choose plans');
+    expect(control('')).toContain('No plan · Choose plans');
   });
 });

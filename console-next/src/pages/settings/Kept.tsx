@@ -2,12 +2,12 @@ import type { ReactNode } from 'react';
 import { failureText } from '../../api/client';
 import { useHeads } from '../../api/queries';
 import { useKept, useKeptDelete, useTraceKept } from '../../api/kept';
-import { entriesOf, keptLines } from '../../lib/kept';
+import { entriesOf, keptLines, plansKept, plansKeptLine, plansKeptValue } from '../../lib/kept';
 import { textOf, numberOf } from '../../lib/settings';
 import { K } from '../../lib/words-kept';
 import type { ConfigPayload } from '../../types/core';
 import type { KeptInventory, KeptStore, TraceInventory } from '../../types/kept';
-import { Button, Confirm, NumberInput, Switch, TextInput } from '../../ui';
+import { Button, Confirm, NumberInput, Switch } from '../../ui';
 import { Row, SaveNote, useSetting } from './Row';
 
 /** One store's census, and the one act that clears it. Nothing is claimed before the store answers. */
@@ -59,6 +59,29 @@ function TraceHead({ head, label }: { head: string; label: string }) {
   );
 }
 
+/** Which plans keep activity labels: one switch each under a summary, written back as the knob's own value. */
+export function PlansKept({ value, plans, onSave }: { value: string; plans: readonly { key: string; label: string }[]; onSave: (value: string) => void }) {
+  const keys = plans.map((plan) => plan.key);
+  const kept = plansKept(value, keys);
+  return (
+    <details className="kept-plans">
+      <summary>{plansKeptLine(kept, keys)} · {K.labels.choose}</summary>
+      <ul>
+        {plans.map((plan) => (
+          <li key={plan.key}>
+            <span>{plan.label}</span>
+            <Switch
+              label={K.labels.chooseLabel(plan.label)}
+              checked={kept.has(plan.key)}
+              onChange={(next) => onSave(plansKeptValue(new Set(next ? [...kept, plan.key] : [...kept].filter((key) => key !== plan.key)), keys))}
+            />
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 /** Every store splice owns: what is in it, how to stop it keeping more, and how to clear it. */
 export function Kept({ config }: { config: ConfigPayload }) {
   const heads = useHeads();
@@ -92,8 +115,7 @@ export function Kept({ config }: { config: ConfigPayload }) {
         config={config}
         extra={() => (
           <>
-            <TextInput label={K.labels.headsLabel} value={textOf(config.effective['activityStoreHeads'])} onCommit={(next) => labels.save(next.trim())} />
-            <span className="tip">{K.labels.headsHint}</span>
+            <PlansKept value={textOf(config.effective['activityStoreHeads'])} plans={traceHeads} onSave={labels.save} />
             <SaveNote keys={['activityStoreHeads']} saved={labels.saved} />
           </>
         )}

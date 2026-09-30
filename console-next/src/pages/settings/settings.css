@@ -74,6 +74,8 @@
 .row .ctl .fallback { min-width: 0; overflow-wrap: anywhere; font: 400 0.96rem/1.45 var(--read); color: var(--mute); }
 .recent { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); justify-items: end; font: 500 0.96rem var(--meta); color: var(--body); }
 .recent li { display: flex; gap: var(--space-5); align-items: center; flex-wrap: wrap; justify-content: flex-end; text-align: right; }
+.recent.rules { justify-items: start; gap: var(--space-6); }
+.recent.rules li { justify-content: flex-start; text-align: left; }
 .recent li b { color: var(--ink); font-weight: 650; }
 
 /* The plan-instructions editor, the upgrade run and the try-a-plan form sit under their rows on the same sheet. */

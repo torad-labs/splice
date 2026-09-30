@@ -67,7 +67,7 @@ export function Compaction() {
           title={W.rules}
           why={rules.data.rules.length === 0 ? W.rulesNone : W.rulesWhy}
           control={
-            <ul className="recent">
+            <ul className="recent rules">
               {rules.data.rules.map((rule) => {
                 const text = ruleText(rule);
                 const plans = plansText(rule.heads, labelOf);

@@ -13,6 +13,7 @@ export const M = {
   restore: 'Restore',
   archived: 'Archived',
   ledeSeats: (working: number, seats: number, open: number) => {
+    if (open === seats) return seats === 1 ? 'The one seat is open.' : `All ${countWord(seats).toLowerCase()} seats are open.`;
     const set =
       seats === 1
         ? `The one seat is${working === 1 ? '' : ' not'} working`

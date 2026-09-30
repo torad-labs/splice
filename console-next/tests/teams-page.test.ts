@@ -2,6 +2,7 @@
 import { describe, expect, test } from 'vitest';
 import { addSeat, atRetentionEdge, blankDraft, dayOf, dayWords, draftOf, editSeat, featuresOf, keyFor, peerName, removeSeat, seatsOf, setLead, teamLede, validateDraft, writeOf } from '../src/lib/teams-page';
 import type { TeamChatPayload, TeamRow } from '../src/types/teams';
+import { M } from '../src/lib/words-teams';
 
 const team = (over: Partial<TeamRow> = {}): TeamRow => ({
   id: 't1', name: 'Rate limiter', goal: 'Add a rate limiter to the API.', features: ['per-key limits'], repo: '/home/a/tally', archived: false,
@@ -68,6 +69,9 @@ describe('the board', () => {
   test('the lede reads the goal, then how many seats work and how many are open', () => {
     expect(teamLede(team(), 1)).toBe('Add a rate limiter to the API. One of two seats is working; one seat is open.');
     expect(teamLede(team({ goal: '' }), 0)).toBe('No goal written. None of two seats are working; one seat is open.');
+    // A team whose every seat is open says that, not that none of its one seat is working.
+    expect(M.ledeSeats(0, 1, 1)).toBe('The one seat is open.');
+    expect(M.ledeSeats(0, 3, 3)).toBe('All three seats are open.');
   });
   test('a day is local midnight to local midnight, and words name it', () => {
     const now = new Date(2026, 8, 29, 16, 30).getTime();

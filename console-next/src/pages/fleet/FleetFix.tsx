@@ -41,6 +41,7 @@ export function FleetFix({ fix, head, pool, now, keyCommand = null }: { fix: Fix
       return (
         <Button
           small
+          {...(fix === 'copy-key' ? { kind: 'go' as const } : {})}
           onClick={() => {
             if (command === null) return;
             void navigator.clipboard.writeText(command).then(() => {

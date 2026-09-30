@@ -23,6 +23,7 @@ import splice.core.util.FormEncoding
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
+import splice.core.util.StateMemory
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -65,8 +66,9 @@ public data class KimiDeviceAuthorization(
     val intervalS: Long,
 )
 
-/** The kimi device-flow wire builders and response parsers. Stateless — collaborators construct one. */
+/** The kimi device-flow wire builders and response parsers. Collaborators construct one; its only state is the last credential-read failure it warned about. */
 public class KimiOAuth {
+    private val statFailures = StateMemory()
 
     /** Device-authorization request body: `client_id=<id>` — NO scope param. */
     public fun kimiDeviceAuthorizationForm(clientId: String = KimiOAuthEndpoints.CLIENT_ID): String =
@@ -189,11 +191,17 @@ public class KimiOAuth {
                 // identity — unknown, which the latch treats as fail-open.
                 CredentialFileDigest.of(authPath),
             )
+        }.onSuccess {
+            statFailures.clear()
         }.onFailure {
-            log(
-                "[kimi-auth] failed to stat $authPath identity: ${SafeFailureText.render(it)}; " +
-                    "invalid_grant latch check skipped",
-            )
+            // One line per change of state: a status poll re-reads the same missing file every few seconds.
+            val state = "${SafeFailureText.render(it)} link=${Files.isSymbolicLink(authPath)}"
+            if (statFailures.isNews(state)) {
+                log(
+                    "[kimi-auth] failed to stat $authPath identity: ${SafeFailureText.render(it)}; " +
+                        "invalid_grant latch check skipped",
+                )
+            }
         }.getOrNull()
 }
 

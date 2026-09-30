@@ -9,6 +9,7 @@ import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
+import splice.core.util.StateMemory
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -36,6 +37,8 @@ public object CodexOAuthEndpoints {
 }
 
 internal class CodexAuthFile {
+    private val statFailures = StateMemory()
+
     // DR-176: returns the file IDENTITY, not a bare mtime. Truncated milliseconds could not tell a
     // freshly re-authenticated credential from the rejected one it replaced within the same tick.
     fun codexAuthIdentityOrNull(authPath: Path, log: LogSink): CredentialFileIdentity? =
@@ -48,10 +51,16 @@ internal class CodexAuthFile {
                 // identity — unknown, which the latch treats as fail-open.
                 CredentialFileDigest.of(authPath),
             )
+        }.onSuccess {
+            statFailures.clear()
         }.onFailure {
-            log(
-                "[codex-auth] failed to stat $authPath identity: ${SafeFailureText.render(it)}; " +
-                    "invalid_grant latch check skipped",
-            )
+            // One line per change of state: a status poll re-reads the same missing file every few seconds.
+            val state = "${SafeFailureText.render(it)} link=${Files.isSymbolicLink(authPath)}"
+            if (statFailures.isNews(state)) {
+                log(
+                    "[codex-auth] failed to stat $authPath identity: ${SafeFailureText.render(it)}; " +
+                        "invalid_grant latch check skipped",
+                )
+            }
         }.getOrNull()
 }

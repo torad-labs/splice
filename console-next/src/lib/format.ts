@@ -13,7 +13,7 @@ export function fmtInt(n: number): string {
 /** The noun that agrees with a count: [one] for exactly one, [many] for every other count, zero
  *  included (`0 messages`). A count printed beside a plural-only word read `1 messages`; the sentence
  *  keeps its own number formatting and asks only for the word. */
-const COUNT_WORD = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve'] as const;
+const COUNT_WORD = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'] as const;
 /** A small count as a capitalised word ("Six"), a larger one as digits. */
 export const countWord = (n: number): string => COUNT_WORD[n] ?? String(n);
 

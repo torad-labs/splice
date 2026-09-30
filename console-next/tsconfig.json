@@ -14,7 +14,7 @@
     "skipLibCheck": true,
     "isolatedModules": true,
     "noEmit": true,
-    "types": ["vite/client"]
+    "types": ["vite/client", "node"]
   },
-  "include": ["src", "tests", "vite.config.ts"]
+  "include": ["src", "tests", "e2e", "vite.config.ts"]
 }

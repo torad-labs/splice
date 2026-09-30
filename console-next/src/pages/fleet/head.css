@@ -39,3 +39,4 @@
 .models.pick { list-style: none; margin: var(--space-6) 0 0; padding: 0; display: grid; gap: var(--space-4); max-height: 40vh; overflow: auto; }
 .pick-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-5); font: 400 16px var(--read); color: var(--body); cursor: pointer; }
 .pick-row small { font: 500 14px var(--meta); color: var(--mute); }
+.refresh { display: flex; align-items: center; gap: var(--space-6); flex-wrap: wrap; margin-top: var(--space-6); }

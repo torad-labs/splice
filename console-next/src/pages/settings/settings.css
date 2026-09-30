@@ -71,3 +71,20 @@
 .recent { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); justify-items: end; font: 500 15px var(--meta); color: var(--body); }
 .recent li { display: flex; gap: var(--space-5); align-items: center; flex-wrap: wrap; justify-content: flex-end; text-align: right; }
 .recent li b { color: var(--ink); font-weight: 650; }
+
+/* The plan-instructions editor, the upgrade run and the try-a-plan form sit under their rows on the same sheet. */
+.try { display: flex; align-items: center; gap: var(--space-6); flex-wrap: wrap; padding: var(--space-6) 0; }
+.try .input.wide { flex: 1 1 320px; min-width: 0; }
+.input.release { width: 12ch; }
+.instructions { display: grid; gap: var(--space-8); padding: var(--space-6) 0; }
+.instructions .pickers { display: flex; gap: var(--space-9); flex-wrap: wrap; align-items: center; }
+.instructions .field { display: grid; gap: var(--space-3); }
+.instructions textarea.input { min-height: 120px; padding: var(--space-5) var(--space-6); resize: vertical; font: 400 16px/1.5 var(--read); width: 100%; box-sizing: border-box; height: auto; }
+.preview h4, .exchange h4 { font: 600 15px var(--meta); color: var(--mute); }
+.preview pre, .exchange pre, .run pre { margin: var(--space-4) 0 0; padding: var(--space-6) var(--space-7); max-height: 320px; overflow: auto; background: var(--glass); color: var(--glass-ink); border-radius: 10px; font: 400 13px/1.55 var(--mono); white-space: pre-wrap; word-break: break-word; }
+.exchange { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--space-8); padding: var(--space-6) 0; }
+.run { padding: var(--space-6) 0; }
+.run-head { display: flex; align-items: center; gap: var(--space-6); flex-wrap: wrap; font: 500 15px var(--meta); color: var(--mute); }
+.run-head code { font: 500 14px var(--mono); color: var(--ink); }
+.row .ctl code.path { font: 500 13px var(--mono); color: var(--body); overflow-wrap: anywhere; text-align: right; }
+.preview .hint { margin-top: var(--space-4); }

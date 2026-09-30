@@ -22,9 +22,13 @@ import { Button, Close, Folder, Plus, Prompt, Segmented, Select, Slider, State, 
 import { NeedFix } from '../needs/NeedFix';
 import { AllSettings } from './AllSettings';
 import { T } from './copy';
+import { ClaudeHead } from './ClaudeHead';
 import { Compaction } from './Compaction';
 import { Kept } from './Kept';
+import { PlanInstructions } from './PlanInstructions';
+import { Playground } from './Playground';
 import { Row, SaveNote, useSetting } from './Row';
+import { Upgrade } from './Upgrade';
 
 const THEME: readonly (readonly [ThemeChoice, string])[] = [['day', T.day], ['night', T.night], ['system', T.system]];
 
@@ -100,6 +104,7 @@ export function Conversation({ config }: { config: ConfigPayload }) {
         control={<Select label={T.reasoning} value={textOf(config.effective['showReasoning']) || 'text'} options={REASONING_CHOICES} onChange={(next) => reasoning.save(next)} />}
         note={<SaveNote keys={['showReasoning']} saved={reasoning.saved} />}
       />
+      <PlanInstructions />
       <Compaction />
     </>
   );
@@ -213,7 +218,7 @@ export function Storage({ config }: { config: ConfigPayload }) {
   );
 }
 
-export function Tools() {
+function SharedTools() {
   const mcp = useMcp();
   const topology = useTopology();
   const edit = useTopologyEdit();
@@ -260,7 +265,7 @@ export function Tools() {
   );
 }
 
-export function Health() {
+function Checks() {
   const doctor = useDoctor();
   const health = useHealth();
   const data = doctor.data;
@@ -301,6 +306,21 @@ export function Health() {
     </>
   );
 }
+
+export const Tools = () => (
+  <>
+    <SharedTools />
+    <ClaudeHead />
+  </>
+);
+
+export const Health = () => (
+  <>
+    <Checks />
+    <Upgrade />
+    <Playground />
+  </>
+);
 
 export function Advanced() {
   const showKeys = useShowKeys();

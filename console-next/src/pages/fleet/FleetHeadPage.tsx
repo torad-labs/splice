@@ -12,6 +12,7 @@ import { D } from './copy';
 import { LogTab } from './LogTab';
 import { ModelsTab } from './ModelsTab';
 import { FleetFix } from './FleetFix';
+import { RefreshSignIn } from './RefreshSignIn';
 import { WindowBars } from './WindowBars';
 import './head.css';
 
@@ -94,6 +95,7 @@ export function FleetHeadPage() {
                   <Button small><Plus />{D.addAccount}</Button>
                 </SignIn>
               ) : null}
+              {OAUTH.has(head.authKind) ? <RefreshSignIn head={head.key} /> : null}
             </>
           )}
         </div>

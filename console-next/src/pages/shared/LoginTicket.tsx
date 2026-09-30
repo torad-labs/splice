@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { providerPage } from '../../lib/login-tab';
 import { S } from '../../lib/words-login';
 import { Button, Copy } from '../../ui';
 
@@ -12,7 +13,9 @@ export function LoginTicket({ code, link }: { code: string | null; link: string 
           <CopyText text={code} />
         </div>
       )}
-      {link === null ? null : (
+      {link === null ? null : providerPage(link) === null ? (
+        <span className="hint alert">{S.signInUnavailable}</span>
+      ) : (
         <a className="btn go" href={link} target="_blank" rel="noopener noreferrer">
           {code !== null ? S.openVerification : S.openSignIn}
         </a>

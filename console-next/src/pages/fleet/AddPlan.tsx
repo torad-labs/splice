@@ -10,6 +10,7 @@ import { AD } from '../../lib/words-add';
 import type { AddChecksFailed, AddProfile, AddView } from '../../types/add';
 import { Button, Check, Close } from '../../ui';
 import { LoginTicket } from '../shared/LoginTicket';
+import { useSignInTab } from '../shared/useSignInTab';
 
 function Fault({ text }: { text: string }) {
   return <p className="hint alert" role="alert">{AD.failedTo} {text}</p>;
@@ -149,6 +150,7 @@ export function AddPlan({ children }: { children: ReactNode }) {
   const view = polled.data ?? null;
   const profile = profiles.data?.find((each) => each.name === draft?.profile) ?? null;
   const busy = opener.isPending || signIn.isPending || verify.isPending || save.isPending;
+  const openSignInTab = useSignInTab(view?.sign_in ?? null, fault);
 
   const runSave = (id: string): void => {
     setFault(null);
@@ -219,7 +221,10 @@ export function AddPlan({ children }: { children: ReactNode }) {
             <SavedView view={view} />
           ) : (
             <>
-              <Connect view={view} busy={busy} onSignIn={() => signIn.mutate(view.id, { onError: (err) => setFault(failureText(err)) })} />
+              <Connect view={view} busy={busy} onSignIn={() => {
+                openSignInTab();
+                signIn.mutate(view.id, { onError: (err) => setFault(failureText(err)) });
+              }} />
               {checks === null ? null : (
                 <ul className="add-checks" aria-label={AD.checksTitle}>
                   {checks.map((check) => (

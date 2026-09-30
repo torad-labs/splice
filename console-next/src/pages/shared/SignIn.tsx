@@ -7,6 +7,7 @@ import { LOGIN_PENDING_EMPTY, canStart, initialLoginState, next, polling, stepMe
 import { H, S } from '../../lib/words-login';
 import { Button, Close } from '../../ui';
 import { LoginTicket } from './LoginTicket';
+import { useSignInTab } from './useSignInTab';
 
 /** The sign-in flow in a dialog: name the account, start the login, finish it in the browser with the code or link the
  *  daemon hands out, then wait for the head to restart with the account. A renewal begins at its existing label. */
@@ -16,6 +17,7 @@ export function SignIn({ head, label = '', purpose, children }: { head: string; 
   const [loginId, setLoginId] = useState<string | null>(null);
   const start = useStartLogin();
   const status = useLoginStatus(head, loginId, polling(state));
+  const openSignInTab = useSignInTab(state.status, state.step === 'failed' ? (state.note ?? '') : null);
 
   useEffect(() => {
     const data = status.data;
@@ -26,6 +28,7 @@ export function SignIn({ head, label = '', purpose, children }: { head: string; 
 
   const submit = async (): Promise<void> => {
     if (!canStart(state)) return;
+    openSignInTab();
     dispatch({ kind: 'start' });
     try {
       const answer = await start.mutateAsync({ head, label: state.label.trim() });

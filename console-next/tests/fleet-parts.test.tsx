@@ -44,7 +44,9 @@ describe('a fleet card', () => {
     expect(html).toContain('Out of quota until Oct 5, 2:13 PM');
   });
   test('a healthy head with nothing to draw has no glass block at all', () => {
-    expect(render(card({ line: null }))).not.toContain('glass');
+    const html = render(card({ line: null }));
+    expect(html).not.toContain('glass');
+    expect(html).toContain('This plan reports no usage window.');
   });
   test('a note stands where there is no window', () => {
     expect(render(card({ line: { kind: 'note', text: 'The runtime is not answering on :8099.' }, tone: 'idle', state: 'Runtime off' }))).toContain('The runtime is not answering on :8099.');

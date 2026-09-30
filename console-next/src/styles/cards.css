@@ -1,4 +1,6 @@
 /* A list of cards (Sessions, Fleet): D, the calm version. A card is a window whose one accent is its head's shadow. */
+/* a card is as tall as what it says: `fit` keeps a short card short beside a tall one */
+.grid.fit { align-items: start; }
 .grid { list-style: none; margin: 0; padding: 0 var(--space-8) 0 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(460px, 1fr)); gap: var(--space-15); }
 .card { position: relative; }
 .card.dragging { z-index: 5; opacity: .92; cursor: grabbing; }

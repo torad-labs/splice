@@ -17,6 +17,7 @@ export const F = {
   copyStart: 'Copy start command',
   copied: 'Copied',
   dragHandle: 'Drag to reorder',
+  noWindow: 'This plan reports no usage window.',
   failed: 'That did not work:',
 } as const;
 

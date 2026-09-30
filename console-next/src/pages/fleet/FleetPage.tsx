@@ -69,7 +69,7 @@ export function FleetPage() {
       {cards.length === 0 ? <Empty title={F.empty} why={F.emptyWhy} /> : null}
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <SortableContext items={keys} strategy={rectSortingStrategy}>
-          <ul className="grid">
+          <ul className="grid fit">
             {cards.map(({ head, facts }) => (
               <FleetCardView
                 key={head.key}

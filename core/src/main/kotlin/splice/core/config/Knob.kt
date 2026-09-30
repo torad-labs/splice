@@ -183,8 +183,8 @@ public enum class Knob(
     MAX_QUEUED("maxQueued", KnobKind.NUMBER, listOf("CLAUDEX_MAX_QUEUED"), 512L),
 
     // V4-354: one GLOBAL live switch for reading the redacted conversation Claude Code already wrote
-    // locally. ON by default because it collects no new bytes. The operator's 2026-09-20 opt-in ruling
-    // for exact request/response bodies still belongs to per-head TRACE below, OFF by default;
+    // locally. ON by default because it collects no new bytes. Exact request/response bodies belong to
+    // per-head TRACE below (on by default since the operator's 2026-09-28 ruling, off per head);
     // this switch neither changes TRACE nor exposes its instructions, tools or raw headers.
     TRANSCRIPT_VIEW("transcriptView", KnobKind.BOOL, listOf(), true),
     UPSTREAM_RETRIES(

@@ -133,7 +133,7 @@ internal class ControlPlane(
      *  the guard refuses to every other head. */
     private fun launchService(home: Path, sharing: McpSharing, controlPort: Int): LaunchService {
         val materializer = materializer(home, sharing, controlPort)
-        return LaunchService(materializer, wrap = WrappedHead(home, materializer = materializer))
+        return LaunchService(materializer, wrap = WrappedHead(home))
     }
 
     internal fun cancelProbes() {

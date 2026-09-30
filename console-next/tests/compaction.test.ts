@@ -1,6 +1,6 @@
 // The compaction block's reads: which outcomes are failures, which counts lead, and the rules in words.
 import { describe, expect, test } from 'vitest';
-import { compactLede, failedOf, medianOf, outcomeCounts, outcomeRows, outcomeText, recentOf, ruleText, shareText, stateOf } from '../src/lib/compaction';
+import { charsText, compactLede, failedOf, medianOf, outcomeCounts, outcomeRows, outcomeText, plansText, recentOf, ruleText, shareText, stateOf } from '../src/lib/compaction';
 import type { CompactPayload, CompactRow } from '../src/types/compaction';
 
 const row = (over: Partial<CompactRow> = {}): CompactRow => ({ head: 'claude-splice', ts: 1, outcome: 'model_text', ms: 10_000, ...over });
@@ -51,5 +51,15 @@ describe('the rules', () => {
     expect(ruleText({ scope: 'global', source: 'global' })).toEqual({ scope: 'Everywhere', names: null });
     expect(ruleText({ scope: 'model', source: 'model:opus-5.5' })).toEqual({ scope: 'For a model', names: 'opus-5.5' });
     expect(ruleText({ scope: 'project', source: 'project:/home/a/tally file:/home/a/tally/rules.md' })).toEqual({ scope: 'For a project', names: '/home/a/tally' });
+  });
+  test('a rule says how long it is, that it is an opt-out, or that its file cannot be read', () => {
+    expect(charsText(120)).toBe('120 characters');
+    expect(charsText(0)).toBe('Explicitly none.');
+    expect(charsText(null)).toBe('Its file cannot be read.');
+  });
+  test('the plans a rule applies to are named, and a rule no plan listed names none', () => {
+    const label = (key: string): string => ({ 'claude-grok': 'Grok' })[key] ?? key;
+    expect(plansText(['claude-grok', 'keyed'], label)).toBe('On Grok, keyed.');
+    expect(plansText([], label)).toBeNull();
   });
 });

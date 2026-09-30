@@ -3,7 +3,7 @@ import { failureText } from '../../api/client';
 import { useHeads, useSessions, useTeams } from '../../api/queries';
 import { useProject, useProjectFiles } from '../../api/projects';
 import { clockTime } from '../../lib/format';
-import { ruleText } from '../../lib/compaction';
+import { charsText, ruleText } from '../../lib/compaction';
 import { liveNames, projectLede, repoLabel, sessionsIn } from '../../lib/projects';
 import { sessionLabel } from '../../lib/sessions';
 import { P } from '../../lib/words-projects';
@@ -61,7 +61,7 @@ export function ProjectPage() {
           <ul className="proj-list">
             {project.compaction.map((rule) => {
               const text = ruleText(rule);
-              return <li key={`${rule.scope}-${rule.source}`}><b>{text.scope}</b>{text.names === null ? null : <small>{text.names}</small>}</li>;
+              return <li key={`${rule.scope}-${rule.source}`}><b>{text.scope}</b>{text.names === null ? null : <small>{text.names}</small>}<small>{charsText(rule.chars)}</small></li>;
             })}
           </ul>
         )}

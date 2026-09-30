@@ -1,7 +1,8 @@
 import { failureText } from '../../api/client';
+import { useHeads } from '../../api/queries';
 import { useCompactStats, useCompactionInstructions } from '../../api/turns';
 import { clockTime, fmtInt } from '../../lib/format';
-import { compactLede, failedOf, medianOf, outcomeCounts, outcomeRows, outcomeText, recentOf, ruleText, shareText, stateOf } from '../../lib/compaction';
+import { charsText, compactLede, failedOf, medianOf, outcomeCounts, outcomeRows, outcomeText, plansText, recentOf, ruleText, shareText, stateOf } from '../../lib/compaction';
 import { secondsText } from '../../lib/turns-page';
 import { W } from '../../lib/words-compaction';
 import { State } from '../../ui';
@@ -14,6 +15,8 @@ const TONE: Record<ReturnType<typeof stateOf>, StateTone> = { ok: 'work', warn: 
 export function Compaction() {
   const stats = useCompactStats();
   const rules = useCompactionInstructions();
+  const heads = useHeads();
+  const labelOf = (key: string): string => heads.data?.heads.find((head) => head.key === key)?.label ?? key;
   const data = stats.data?.stats;
   const { counts, total, week } = data === undefined ? { counts: {}, total: 0, week: false } : outcomeCounts(data);
   const failed = failedOf(counts);
@@ -67,11 +70,13 @@ export function Compaction() {
             <ul className="recent">
               {rules.data.rules.map((rule) => {
                 const text = ruleText(rule);
+                const plans = plansText(rule.heads, labelOf);
                 return (
                   <li key={`${rule.scope}-${rule.source}`}>
                     <b>{text.scope}</b>
                     {text.names === null ? null : <span>{text.names}</span>}
-                    <span>{rule.chars === null ? W.ruleUnreadable : rule.chars === 0 ? W.ruleOptOut : W.ruleChars(rule.chars)}</span>
+                    <span>{charsText(rule.chars)}</span>
+                    {plans === null ? null : <span>{plans}</span>}
                   </li>
                 );
               })}

@@ -65,3 +65,10 @@ export function ruleText(rule: Pick<InstructionRule, 'scope' | 'source'>): { sco
   const detail = rule.source.includes(':') ? rule.source.slice(rule.source.indexOf(':') + 1).replace(/ file:.*$/, '') : null;
   return { scope: W.scope[rule.scope as InstructionScopeWire] ?? rule.scope, names: detail === '' ? null : detail };
 }
+
+/** A rule's length in words: its characters, an explicit opt-out, or that its file cannot be read. */
+export const charsText = (chars: number | null): string => (chars === null ? W.ruleUnreadable : chars === 0 ? W.ruleOptOut : W.ruleChars(chars));
+
+/** The plans a rule applies to, by their names; nothing when the answer names none. */
+export const plansText = (heads: readonly string[], labelOf: (key: string) => string): string | null =>
+  heads.length === 0 ? null : W.rulePlans(heads.map(labelOf).join(', '));

@@ -49,6 +49,12 @@ describe('the project page', () => {
     expect(html).toContain('Home folder');
     expect(html).not.toContain('statuslineGitRoots');
   });
+  test('prints each compaction rule with its length, and says so when a rule is an opt-out or unreadable', () => {
+    expect(render(seedRow)).toContain('40 characters');
+    const held = (chars: number | null) => (client: QueryClient): void => void client.setQueryData(['projects', 'row', projectPath(ROOT)], { ...project, compaction: [{ scope: 'project', source: `project:${ROOT}`, chars }] });
+    expect(render(held(0))).toContain('Explicitly none.');
+    expect(render(held(null))).toContain('Its file cannot be read.');
+  });
   test('while the row is being read it says so', () => {
     expect(render(() => undefined)).toContain('Reading the project.');
   });

@@ -130,10 +130,13 @@ private const val PERF_TAIL_TURNS = 20
 // rule below because "the newest turn failed" is true forever of a head nobody has used since.
 private const val RECENT_FAILURE_MS = 24L * 3_600_000
 
-/** The window [DoctorProbeWrite.stillFailing] judges, the failures in it that make a head failing, and how many clean
- *  turns in a row mean it has recovered. */
+// why: five turns is the run an operator reads to say "it is failing now"; twenty (the tail) reads as history.
 private const val NEWEST_TURNS = 5
+
+// why: three of five is a majority of the newest turns, the same bar a person would call a head unreliable.
 private const val FAILING_OF_NEWEST = 3
+
+// why: two clean turns in a row are the shortest run that cannot be one lucky retry after a burst.
 private const val RECOVERY_RUN = 2
 
 /** Enough bytes for well over 20 rows per generation (a row is under 1 KiB). */

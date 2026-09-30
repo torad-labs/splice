@@ -68,3 +68,44 @@ export const K = {
   seat: 'Team seat',
   doctor: 'Doctor',
 } as const satisfies Record<string, NeedKind>;
+
+/** What a doctor check is titled, by the daemon's id (`section/name`, the name sometimes `:detail`). A family collapsed
+ *  to one row is titled by its id up to the colon. An id nobody has titled prints as its name, never with the path. */
+const CHECK_TITLES: Readonly<Record<string, string>> = {
+  'daemon/heads': 'Plans starting',
+  'daemon/turn path': 'Turn path',
+  'daemon/daemon': 'Daemon',
+  'daemon/topology': 'Running plans',
+  'daemon/mgmt-key': 'Management key',
+  'installation/wrapper': 'Launcher',
+  'installation/jar': 'Installed jar',
+  'installation/PATH': 'Search path',
+  'configuration/topology': 'Plan file',
+  'configuration/system-prompt': 'System prompt',
+  'configuration/project-prompt': 'Project prompt',
+  'configuration/wire-tap': 'Kept request bodies',
+  'configuration/local': 'Local runtime',
+  'accounts/accounts': 'Accounts',
+};
+
+const capital = (name: string): string => `${name.charAt(0).toUpperCase()}${name.slice(1)}`;
+
+export function checkTitle(id: string): string {
+  const titled = CHECK_TITLES[id];
+  if (titled !== undefined) return titled;
+  const colon = id.indexOf(':');
+  if (colon !== -1) {
+    const family = CHECK_TITLES[id.slice(0, colon)];
+    return family === undefined ? capital(id.slice(id.indexOf('/') + 1)) : `${family} · ${id.slice(colon + 1)}`;
+  }
+  const slash = id.indexOf('/');
+  const section = id.slice(0, slash);
+  const name = id.slice(slash + 1);
+  if (slash === -1) return capital(id);
+  const head = /^head (.+?)(?: (errors|turns))?$/.exec(name);
+  if (section === 'runtime' && head?.[2] !== undefined) return `${head[1]} ${head[2]}`;
+  if (section === 'daemon' && head !== null && head[2] === undefined) return `${head[1]} port`;
+  if (section === 'auth') return `${name} sign-in`;
+  if (section === 'prerequisites') return name;
+  return capital(name);
+}

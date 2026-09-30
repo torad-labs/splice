@@ -518,8 +518,8 @@ describe('the doctor', () => {
     ];
     const out = needsIn({ doctor: read(doctor(checks)) });
     expect(out.map((need) => [need.severity, need.kind, need.subject, need.finding])).toEqual([
-      ['danger', K.doctor, 'wrapper/claudex', 'not linked'],
-      ['warn', K.doctor, 'daemon/disk', 'disk 91% full'],
+      ['danger', K.doctor, 'Claudex', 'not linked'],
+      ['warn', K.doctor, 'Disk', 'disk 91% full'],
     ]);
     expect(out[0]?.fix).toEqual({ kind: 'copy', command: 'splice install --all' });
     expect(out[1]?.fix).toMatchObject({ kind: 'open', href: '#/settings/health' });
@@ -569,7 +569,7 @@ describe('the doctor', () => {
     const checks: DoctorCheck[] = ['a', 'b', 'c', 'd'].map((name) => ({ id: `installation/wrapper:${name}`, status: 'fail' as const, detail: `'${name}' missing`, fix: 'splice install --all' }));
     const out = needsIn({ doctor: read(doctor(checks)) });
     expect(out).toHaveLength(1);
-    expect(out[0]).toMatchObject({ subject: 'installation/wrapper (4)', finding: "'a' missing; 'b' missing; 'c' missing; 'd' missing" });
+    expect(out[0]).toMatchObject({ subject: 'Launcher (4)', finding: "'a' missing; 'b' missing; 'c' missing; 'd' missing" });
   });
 
   test('a head\'s sign-in check is said once, on the head', () => {
@@ -612,10 +612,10 @@ describe('the doctor', () => {
     // Every head up, one of them with an item that is not about being down: the count and the port
     // are the daemon's to explain, not that head's.
     const up = { ...stopped(), heads: read([head({ versionMatch: false }), head({ key: 'mockchat2', label: 'mockchat2', port: 54791 })]) };
-    expect(needsIn(up).map((need) => `${need.source}:${need.subject}`)).toEqual(['heads:claudex', 'doctor:daemon/heads', 'doctor:daemon/head mockchat2']);
+    expect(needsIn(up).map((need) => `${need.source}:${need.subject}`)).toEqual(['heads:claudex', 'doctor:Plans starting', 'doctor:mockchat2 port']);
     // A head that failed to start carries the daemon's own remedy, which Start is not.
     const failed = { ...stopped(), doctor: read(doctor([{ id: 'daemon/heads', status: 'fail' as const, detail: '1 of 2 head(s) FAILED to start', fix: 'splice restart' }])) };
-    expect(needsIn(failed).map((need) => `${need.source}:${need.subject}`)).toEqual(['heads:mockchat2', 'doctor:daemon/heads']);
+    expect(needsIn(failed).map((need) => `${need.source}:${need.subject}`)).toEqual(['heads:mockchat2', 'doctor:Plans starting']);
   });
 });
 

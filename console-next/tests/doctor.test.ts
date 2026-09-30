@@ -148,9 +148,24 @@ describe('every failing check carries its fix', () => {
       check('configuration/topology', 'ok', 'fine'),
     ]);
     expect(rows.map((row) => [row.label, row.members.length])).toEqual([
-      ['configuration/system-prompt (2)', 2], ['configuration/topology', 1],
+      ['System prompt (2)', 2], ['Plan file', 1],
     ]);
     expect(new Set(rows.map((row) => row.key)).size).toBe(rows.length);
+  });
+
+  test('a check is titled for what it is about, never by the daemon\'s id', () => {
+    const title = (id: string) => collapseChecks([check(id, 'warn', 'x')])[0]?.label;
+    expect(title('runtime/head claudex errors')).toBe('claudex errors');
+    expect(title('runtime/head claude-grok turns')).toBe('claude-grok turns');
+    expect(title('auth/claude-kimi')).toBe('claude-kimi sign-in');
+    expect(title('daemon/head bonsai')).toBe('bonsai port');
+    expect(title('daemon/heads')).toBe('Plans starting');
+    expect(title('daemon/turn path')).toBe('Turn path');
+    expect(title('configuration/local:bonsai')).toBe('Local runtime · bonsai');
+    expect(title('prerequisites/java')).toBe('java');
+    // an id nobody has titled yet prints as its name, never with the section path in front
+    expect(title('somewhere/new thing')).toBe('New thing');
+    expect(title('bare')).toBe('Bare');
   });
 
   test('checks sharing an id with no colon are one row that keeps every member', () => {
@@ -164,7 +179,7 @@ describe('every failing check carries its fix', () => {
     ];
     const rows = collapseChecks(checks);
     expect(rows.map((row) => [row.label, row.members.length])).toEqual([
-      ['installation/wrapper (3)', 3], ['installation/wrapper', 1],
+      ['Launcher (3)', 3], ['Launcher', 1],
     ]);
     expect(rows.reduce((total, row) => total + row.members.length, 0)).toBe(checks.length);
     expect(new Set(rows.map((row) => row.key)).size).toBe(rows.length);

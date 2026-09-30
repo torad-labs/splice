@@ -25,6 +25,7 @@ import type {
   UpgradePayload,
   UpgradeVerdict,
 } from '../types/doctor';
+import { checkTitle } from './words-needs';
 
 // ── The report's accessors ────────────────────────────────────────────────────────────────────────
 
@@ -98,12 +99,12 @@ export function collapseChecks(checks: readonly DoctorCheck[]): CheckRow[] {
     const family = colon === -1 ? check.id : check.id.slice(0, colon);
     const key = `${check.status}|${family}|${fix ?? ''}`;
     const row = rows.get(key);
-    if (row === undefined) rows.set(key, { key, family, status: check.status, label: check.id, fix, fixId: check.fix_id ?? null, fixKind: check.fix_kind ?? null, members: [check] });
+    if (row === undefined) rows.set(key, { key, family, status: check.status, label: checkTitle(check.id), fix, fixId: check.fix_id ?? null, fixKind: check.fix_kind ?? null, members: [check] });
     else row.members.push(check);
   }
   return [...rows.values()].map(({ family, ...row }) => row.members.length === 1
     ? row
-    : { ...row, label: `${family} (${row.members.length})` });
+    : { ...row, label: `${checkTitle(family)} (${row.members.length})` });
 }
 
 // ── The upgrade verdict ───────────────────────────────────────────────────────────────────────────

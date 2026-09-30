@@ -29,7 +29,7 @@ export const T = {
   typical: 'typical',
   slowest: 'slowest',
   cached: (pct: string) => `${pct} cached`,
-  finishedTitle: 'Landed',
+  finishedTitle: 'Finished',
   finishedWhy: 'Open a turn to see where its time went, what was asked and what came back.',
   filterLabel: 'Show',
   filters: [['all', 'All'], ['failed', 'Failed'], ['compacted', 'Compacted']] as readonly (readonly ['all' | 'failed' | 'compacted', string])[],

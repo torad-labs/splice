@@ -75,7 +75,7 @@ export function body() {
 <section class="section"><h2>Running now</h2><p class="why">A turn stays here until its answer lands. One has been quiet for 14 minutes.</p><div class="live">${live}</div></section>
 <section class="section"><h2>How each plan is answering</h2><p class="why">The dark end of each bar is the typical first word; the pale end is the slowest twentieth.</p>
 <div class="plans"><div class="plan head"><span>Plan</span><span>Turns</span><span>Failed</span><span>First word</span><span></span></div>${plans}</div></section>
-<section class="section"><h2>Landed</h2><p class="why">Open a turn to see where its time went, what was asked and what came back.</p>
+<section class="section"><h2>Finished</h2><p class="why">Open a turn to see where its time went, what was asked and what came back.</p>
 <div class="filters"><span class="seg" role="group" aria-label="Show"><button aria-pressed="true">All</button><button aria-pressed="false">Failed</button><button aria-pressed="false">Compacted</button></span><span class="search">${icon.search}Find a turn</span></div>
 <div class="list">${list}</div><p class="foot">Showing the newest 200 of 212. Narrow the window or filter to see the rest.</p></section>`;
 }

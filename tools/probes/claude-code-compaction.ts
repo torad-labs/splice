@@ -7,10 +7,10 @@ import { readFileSync, realpathSync } from "node:fs";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 
-type Mode = "prompt_too_long" | "unrelated_400" | "first_exchange";
+type Mode = "prompt_too_long" | "unrelated_400" | "first_exchange" | "in_band_overflow";
 type Seen = { reply: number; summary: boolean };
 type Result = { mode: Mode; pass: boolean; replies: number[]; summaryRequests: boolean[]; compactBoundary: boolean; clientExit: number | null };
-const modes: Mode[] = ["prompt_too_long", "unrelated_400", "first_exchange"];
+const modes: Mode[] = ["prompt_too_long", "unrelated_400", "first_exchange", "in_band_overflow"];
 const timeoutMs = 70_000;
 
 async function isolated(client: string, mode: Mode): Promise<Result> {
@@ -35,7 +35,8 @@ async function isolated(client: string, mode: Mode): Promise<Result> {
     const attempt = seen.length + 1;
     const prompt = JSON.stringify([body.system, body.messages]).toLowerCase();
     const summary = prompt.includes("summari");
-    if ((mode === "first_exchange" && attempt === 1) || (mode !== "first_exchange" && attempt === 2)) {
+    if ((mode === "first_exchange" && attempt === 1) ||
+        ((mode === "prompt_too_long" || mode === "unrelated_400") && attempt === 2)) {
       seen.push({ reply: 400, summary });
       const message = mode === "unrelated_400"
         ? "unrelated invalid request: fixture parameter"
@@ -43,8 +44,16 @@ async function isolated(client: string, mode: Mode): Promise<Result> {
       answer(400, JSON.stringify({ type: "error", error: { type: "invalid_request_error", message } }));
       return;
     }
+    if (mode === "in_band_overflow" && attempt === 2) {
+      seen.push({ reply: 200, summary });
+      const error = { type: "error", error: { type: "invalid_request_error",
+        message: "prompt is too long: 210000 tokens > 200000 maximum" } };
+      answer(200, "event: error\ndata: " + JSON.stringify(error) + "\n\n", "text/event-stream");
+      return;
+    }
     seen.push({ reply: 200, summary });
-    const content = attempt === 3 ? "Local summary: previous greeting acknowledged." : attempt === 1 ? "READY" : "DONE";
+    const content = mode === "prompt_too_long" && attempt === 3
+      ? "Local summary: previous greeting acknowledged." : attempt === 1 ? "READY" : "DONE";
     const usage = { input_tokens: 100, output_tokens: 10, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
     const message = { type: "message", id: "msg_local_" + attempt, role: "assistant",
       model: body.model ?? "claude-sonnet-5", content: [{ type: "text", text: content }],
@@ -126,6 +135,10 @@ async function isolated(client: string, mode: Mode): Promise<Result> {
     const final = results[1];
     pass = equals([200, 400, 200, 200]) && summaryRequests[2] === true && compactBoundary
       && results.length === 2 && final !== undefined && !final.isError && final.text.includes("DONE");
+  } else if (mode === "in_band_overflow") {
+    const final = results[1];
+    pass = equals([200, 200, 200]) && results.length === 2 && final !== undefined
+      && !final.isError && final.text.includes("DONE") && !compactBoundary && !summaryRequests.some(Boolean);
   } else {
     pass = equals(mode === "first_exchange" ? [400] : [200, 400])
       && !compactBoundary && !summaryRequests.some(Boolean);

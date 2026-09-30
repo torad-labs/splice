@@ -96,11 +96,19 @@ const PLAN_HOLD_REASON =
   "by the cooldown's plan hold and thrown as UpstreamFailed from the upstream layer (RetryPolicy's giveUp); its own " +
   "file only because RateLimitCooldown is at detekt's function ceiling";
 
+const OVERFLOW_FILE = "features/turns/src/main/kotlin/splice/head/turn/stream/OverflowFrame.kt";
+const OVERFLOW_MARK = "OverflowFrame";
+const OVERFLOW_REASON =
+  "2026-09-30 (V4-446, splice-lead's ruling): the stream's PRE-COMMIT overflow answer, sent as an HTTP 400 body " +
+  "while no status is committed (PendingSse), never as an in-band frame; its status carries the verdict, as on the " +
+  "collect path, and its type is invalid_request_error, outside the governed set";
+
 const EXEMPTIONS: [string, string, string][] = [
   [COLLECT_FILE, COLLECT_MARK, COLLECT_REASON],
   [PRE_TURN_FILE, PRE_TURN_MARK, PRE_TURN_REASON],
   [POOLED_FILE, POOLED_MARK, POOLED_REASON],
   [PLAN_HOLD_FILE, PLAN_HOLD_MARK, PLAN_HOLD_REASON],
+  [OVERFLOW_FILE, OVERFLOW_MARK, OVERFLOW_REASON],
 ];
 
 const ROUTED = "PreContentWireType.of(";
@@ -651,6 +659,13 @@ function selftest(): number {
     { [SEAM_FILE]: SEAM_OK, [COLLECT_FILE]: COLLECT, [PLAN_HOLD_FILE]: `class ${PLAN_HOLD_MARK} { ${envelopeBody} }` }, SEAM_OK, false);
   kase("envelopes: the plan-hold exemption without its mark is RED",
     { [SEAM_FILE]: SEAM_OK, [COLLECT_FILE]: COLLECT, [PLAN_HOLD_FILE]: `class SomethingElse { ${envelopeBody} }` }, SEAM_OK, true, PLAN_HOLD_MARK);
+  // V4-446's pre-commit overflow answer, paired the same way, on the builder the live file uses:
+  // without the written exemption this body is red, which is what makes the green case earn it.
+  const overflowBody = 'fun body(m: String) = ErrorEnvelope.of("invalid_request_error", m).toString()';
+  kase("envelopes: the pre-commit overflow answer keeps its WRITTEN exemption",
+    { [SEAM_FILE]: SEAM_OK, [COLLECT_FILE]: COLLECT, [OVERFLOW_FILE]: `object ${OVERFLOW_MARK} { ${overflowBody} }` }, SEAM_OK, false);
+  kase("envelopes: the overflow exemption without its mark is RED",
+    { [SEAM_FILE]: SEAM_OK, [COLLECT_FILE]: COLLECT, [OVERFLOW_FILE]: `object SomethingElse { ${overflowBody} }` }, SEAM_OK, true, OVERFLOW_MARK);
 
   kase("envelopes: the collect path keeps its WRITTEN exemption", tree(), SEAM_OK, false);
   kase("envelopes: the exemption's file is no longer the collect terminal",

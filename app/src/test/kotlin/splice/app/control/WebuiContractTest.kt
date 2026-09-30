@@ -1,12 +1,10 @@
-// NEW: the webui contract gate (P4-WEBUI). The unmodified React dashboard consumes the daemon's
-// /api/* JSON through the field names declared in console/src/shared/api/index.ts. This test boots
-// the ControlServer with a stub head and asserts every declared field is present in the daemon's
-// actual JSON — so a rename in the Kotlin payload builders breaks THIS test, not the dashboard at
-// runtime. Field sets are transcribed from index.ts @ pre-public-port-baseline (the comment is the source of
-// truth; a drift shows up as a failing assertion here) — EXCEPT the economics bucket, whose set is
-// DERIVED from EconomicsRow since V4-98 and asserted as a bijection; see ECONOMICS_WIRE_RENAMES for
-// why that one is not a transcription. Manual click-through stays operator work; this pins the
-// SHAPE contract automatically.
+// The webui contract gate (P4-WEBUI). The shipped console consumes /api/* JSON through
+// console-next/src/api, with payload fields declared in console-next/src/types. This test boots
+// ControlServer with a stub head and pins the required fields of the payload types it exercises,
+// plus selected optional fields its fixture supplies. V4-444 reconciled these transcribed lists
+// against the successor types. The economics bucket is DERIVED from EconomicsRow since V4-98
+// and asserted as a bijection; see ECONOMICS_WIRE_RENAMES. The source-derived packaged probe
+// (tools/e2e/probes/console-wire-keys.ts) independently covers every typed successor read.
 package splice.app.control
 
 import io.ktor.client.HttpClient
@@ -162,7 +160,7 @@ class WebuiContractTest {
         val head = payload["heads"]!!.jsonArray.first().jsonObject
         assertFields(
             head,
-            // HeadStatus (server/launcher/heads.mjs) — gate/mode/maxInflight are contract-nullable.
+            // HeadStatus (console-next/src/types/core.ts) — gate/mode/maxInflight are contract-nullable.
             listOf(
                 "key", "label", "name", "port", "authKind", "wantVersion",
                 "running", "healthy", "version", "versionMatch", "mode", "gate", "maxInflight", "health", "pids",
@@ -174,13 +172,12 @@ class WebuiContractTest {
 
     @Test
     fun `config payload matches ConfigPayload`() = runBlocking {
-        // Node returns {effective, layers:{defaults,file,env,runtime}, restart_required_keys, source}
-        // (server/src/control/api.mjs:73). The webui reads the layer objects UNDER `layers`.
+        // ConfigPayload (console-next/src/types/core.ts); the successor reads per-head layers too.
         val payload = api("/api/config")
-        assertFields(payload, listOf("effective", "layers", "restart_required_keys"), "ConfigPayload")
+        assertFields(payload, listOf("effective", "layers", "restart_required_keys", "source"), "ConfigPayload")
         assertFields(
             payload["layers"]!!.jsonObject,
-            listOf("defaults", "toml", "file", "env", "runtime"),
+            listOf("defaults", "toml", "perHead", "file", "env", "runtime"),
             "ConfigPayload.layers",
         )
     }
@@ -191,7 +188,14 @@ class WebuiContractTest {
         assertFields(payload, listOf("window_hours", "warn_pct", "warn_tokens_5h", "heads"), "UsagePayload")
         val head = payload["heads"]!!.jsonArray.first().jsonObject
         assertFields(head, listOf("key", "label", "usage"), "HeadUsageEntry")
-        assertFields(head["usage"]!!.jsonObject, listOf("output_tokens_5h", "entries", "warn"), "HeadUsage")
+        val usage = head["usage"]!!.jsonObject
+        assertFields(usage, listOf("output_tokens_5h", "entries", "ratelimit", "warn"), "HeadUsage")
+        assertFields(
+            usage["ratelimit"]!!.jsonObject,
+            listOf("limit_tokens", "remaining_tokens", "reset_tokens"),
+            "RatelimitState",
+        )
+        assertFields(usage["warn"]!!.jsonObject, listOf("level", "pct", "source", "reset"), "UsageWarn")
     }
 
     @Test
@@ -208,15 +212,15 @@ class WebuiContractTest {
     }
 
     @Test
-    fun `auth payload matches AuthPayload plus CodexAuth`() = runBlocking {
-        // Node keys auth by head; webui reads `.codex` (server/src/control/api.mjs:130).
+    fun `auth payload matches AuthPayload plus ProviderAuth`() = runBlocking {
+        // AuthPayload is keyed by head; this fixture supplies the codex ProviderAuth.
         val payload = api("/api/auth")
         assertFields(payload, listOf("codex"), "AuthPayload")
         assertFields(
             payload["codex"]!!.jsonObject,
             // V4-220 item 6b: `verdict` ({state, at_epoch_ms?}) is on every head's auth object.
             listOf("kind", "present", "login", "account_id_masked", "verdict"),
-            "CodexAuth",
+            "ProviderAuth",
         )
     }
 
@@ -225,7 +229,7 @@ class WebuiContractTest {
         assertFields(api("/api/logs/codex"), listOf("key", "path", "lines"), "LogsPayload")
     }
 
-    /** ClaudeHeadPayload (webui entities/claude-head/model/types.ts). ADDED BY V4-175, and it is
+    /** ClaudeHeadPayload (console-next/src/types/claude-head.ts). ADDED BY V4-175, and it is
      *  the route that proves why this wall's route list has to be the denominator rather than a
      *  sample: /api/claude-head was absent from it, so the webui's types were written AHEAD of the
      *  daemon ("PENDING V4-129") and V4-129 then shipped a different payload. Nothing compared the
@@ -235,7 +239,11 @@ class WebuiContractTest {
     @Test
     fun `claude-head payload matches ClaudeHeadPayload`() = runBlocking {
         val payload = api("/api/claude-head")
-        assertFields(payload, listOf("mode", "resolves_to", "shim_path", "real_binary_path"), "ClaudeHeadPayload")
+        assertFields(
+            payload,
+            listOf("mode", "resolves_to", "shim_path", "real_binary_path", "claude_logins"),
+            "ClaudeHeadPayload",
+        )
         assertFields(
             payload["claude_logins"]!!.jsonObject,
             listOf("count", "selected", "labels", "constraint"),
@@ -253,7 +261,7 @@ class WebuiContractTest {
         )
     }
 
-    /** EconomicsPayload + HeadEconomics + EconomicsBucket (webui shared/api). The bucket fields
+    /** EconomicsPayload + HeadEconomics + EconomicsBucket (console-next/src/types/economics.ts). The bucket fields
      *  are the burn page's whole input; a rename here silently blanks the quota gauge, which is
      *  the one surface whose failure mode is reading SAFE while the plan drains.
      *
@@ -312,8 +320,8 @@ private const val HEADS_KEY = "heads"
 
 // ── V4-98: the economics bucket's field set, DERIVED from EconomicsRow ────────────────────────
 //
-// WHY. This file's other field lists are transcribed from console/src/shared/api/index.ts and that
-// is the right shape for them: they pin a CLIENT contract whose keys the Kotlin side does not own.
+// WHY. This file's other field lists are transcribed from console-next/src/types, consumed by
+// console-next/src/api: they pin a CLIENT contract whose keys the Kotlin side does not own.
 // The economics bucket is different — every one of its fields is one EconomicsRow sum, copied by
 // hand three times (EconomicsStore.EconomicsBucket -> FileSources.kt:56 -> EconomicsPayloads'
 // buildJsonObject), and none of those copies fails to compile when a sum is added with a default
@@ -339,7 +347,7 @@ private const val HEADS_KEY = "heads"
 //
 // NOT CAUGHT, and why. A field renamed in BOTH EconomicsRow and EconomicsPayloads at once still
 // agrees here — the client contract is what would break, and that is what
-// console/src/shared/api/index.ts and the console tests own. A value that is wrong rather than absent:
+// console-next/src/types/economics.ts and the packaged wire probe own. A wrong value rather than absence:
 // the `economics ships input and cached separately` test below pins the three that must not be
 // pre-netted. This wall owns the field SET.
 private val ECONOMICS_WIRE_RENAMES = mapOf(

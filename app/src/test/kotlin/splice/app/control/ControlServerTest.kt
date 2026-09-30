@@ -1,7 +1,7 @@
 // PORT-OF: server/test/control-server.test.mjs @ pre-public-port-baseline — bearer guard, /api/status, /api/heads
 // + lifecycle, /api/config GET+PATCH (single-JVM: no fanout targets), /api/usage soft-warn
 // firing from a seeded 90% ratelimit, /api/auth masked, dashboard serving, 404s. Payload shapes
-// match console/src/shared/api/index.ts (the contract).
+// match console-next/src/types, consumed by console-next/src/api (the contract).
 package splice.app.control
 
 import io.ktor.client.HttpClient

@@ -11,12 +11,9 @@ __pycache__/
 
 # generated release bundle and local validation tools
 /dist/
-# the console bundle is :console:bundle's output (PR 4), never committed
-/console/dist/
-# the replacement console's bundle (V4-444), likewise
+# the shipped console bundle is :console-next:bundle's output, never committed
 /console-next/dist/
 /console/build/
-/console/e2e/.results/
 # the console tools' regenerable review output (snapshot, theme): bytes that may hold live daemon data
 /console/.review/
 /.cache/

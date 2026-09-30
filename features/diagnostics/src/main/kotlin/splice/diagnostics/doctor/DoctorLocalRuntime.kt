@@ -73,7 +73,7 @@ internal class DoctorLocalRuntime(
         val probe = LocalRuntimeProbe(provider.baseUrl, transport.http(key, provider, env))
         val runtime = probe.detect()
             ?: return listOf(
-                DoctorCheck(name, CheckStatus.WARN, "no runtime answering at ${provider.baseUrl}", FIX_START),
+                DoctorCheck(name, CheckStatus.INFO, "no runtime answering at ${provider.baseUrl}", FIX_START),
             )
         // The live probe runs only for rows the runtime LISTS (LM Studio answers a request for an
         // unknown id with whichever model is loaded — a green live row for a refused id would lie),

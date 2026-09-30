@@ -148,11 +148,11 @@ class DoctorLocalRuntimeTest {
     }
 
     @Test
-    fun `a runtime that is down is one WARN row with the fix, never a fabricated OK`() {
+    fun `a runtime that is down is one INFO row with the fix, never a fabricated OK`() {
         val checks = DoctorLocalRuntime(DoctorTestPorts.silentLocal)
             .localChecks(TopologyLoader.parse(toml), live = true)
         assertEquals(1, checks.size)
-        assertEquals(CheckStatus.WARN, checks.single().status)
+        assertEquals(CheckStatus.INFO, checks.single().status)
         assertTrue(checks.single().detail.contains("no runtime answering"))
     }
 }

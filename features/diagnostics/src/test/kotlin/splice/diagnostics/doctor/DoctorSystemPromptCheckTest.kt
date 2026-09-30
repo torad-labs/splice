@@ -13,10 +13,10 @@ import java.nio.file.Paths
 class DoctorSystemPromptCheckTest {
 
     @Test
-    fun `a replace-mode head warns that Claude Code's instruction set is stripped`() {
+    fun `a replace-mode head says at INFO that Claude Code's instruction set is stripped`() {
         val row = promptRows(head("one", "\"stay terse\"", "\"replace\"")).single()
         assertEquals("system-prompt:one", row.name)
-        assertEquals(CheckStatus.WARN, row.status)
+        assertEquals(CheckStatus.INFO, row.status)
         assertTrue(row.detail.contains("system_prompt_mode = \"replace\""), row.detail)
         assertTrue(row.detail.contains("entire operating instruction set"), row.detail)
         assertTrue(row.detail.contains("bare model with tools attached"), row.detail)
@@ -26,10 +26,10 @@ class DoctorSystemPromptCheckTest {
     /** V4-171: strip edits the client's field too, so it gets the same row — the repo ships no
      *  pattern list; the stance lives in this warning. */
     @Test
-    fun `a strip-mode head warns that the client field is edited and what is removed is the operator's`() {
+    fun `a strip-mode head says at INFO that the client field is edited and what is removed is the operator's`() {
         val row = promptRows(head("one", "\"^# Context management\"", "\"strip\"")).single()
         assertEquals("system-prompt:one", row.name)
-        assertEquals(CheckStatus.WARN, row.status)
+        assertEquals(CheckStatus.INFO, row.status)
         assertTrue(row.detail.contains("system_prompt_mode = \"strip\""), row.detail)
         assertTrue(row.detail.contains("yours to own"), row.detail)
         // V4-172: NOT the replace remedy — "use append instead" would ship the regex list upstream

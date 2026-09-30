@@ -30,7 +30,7 @@ internal class DoctorWireTapChecks {
                 keep <= 0 -> null
                 else -> DoctorCheck(
                     "wire-tap:$key",
-                    CheckStatus.WARN,
+                    CheckStatus.INFO,
                     "$key keeps its last $keep upstream request bodies in memory (overrides.wireTap): each " +
                         "one carries the whole conversation it was sent for, readable with `splice wire $key` " +
                         "by whoever holds the management key; nothing is written to disk and a restart forgets them",

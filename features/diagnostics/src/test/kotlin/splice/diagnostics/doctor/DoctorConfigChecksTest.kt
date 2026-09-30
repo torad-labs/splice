@@ -77,10 +77,10 @@ class DoctorConfigChecksTest {
     }
 
     @Test
-    fun `a replace layer warns that the client instructions and earlier layers are substituted`(@TempDir tmp: Path) {
+    fun `a replace layer discloses at INFO that earlier layers are substituted`(@TempDir tmp: Path) {
         val row = projectRows(toml(tmp, projectMode = "\"replace\"")).first()
 
-        assertEquals(CheckStatus.WARN, row.status)
+        assertEquals(CheckStatus.INFO, row.status)
         assertTrue(row.detail.contains("every earlier layer"), row.detail)
         assertTrue(row.detail.contains("bare model with tools attached"), row.detail)
         assertTrue(requireNotNull(row.fix).contains("system_prompt_mode = \"append\""), row.fix.orEmpty())
@@ -90,12 +90,12 @@ class DoctorConfigChecksTest {
      *  like replace — the client's instructions are edited, and what a pattern removes is the
      *  operator's to own. */
     @Test
-    fun `a strip layer parses from TOML and warns that the client field is edited`(@TempDir tmp: Path) {
+    fun `a strip layer parses from TOML and discloses at INFO that the field is edited`(@TempDir tmp: Path) {
         val topology = TopologyLoader.parse(toml(tmp, projectMode = "\"strip\""))
         val row = projectRows(toml(tmp, projectMode = "\"strip\"")).first()
 
         assertEquals(SystemPromptMode.STRIP, topology.projects.values.single().systemPromptMode)
-        assertEquals(CheckStatus.WARN, row.status)
+        assertEquals(CheckStatus.INFO, row.status)
         assertTrue(row.detail.contains("system_prompt_mode = \"strip\" (inline)"), row.detail)
         assertTrue(row.detail.contains("yours to own"), row.detail)
         // V4-172: the STRIP remedy, not the REPLACE one. A strip layer's value is a regex list, so

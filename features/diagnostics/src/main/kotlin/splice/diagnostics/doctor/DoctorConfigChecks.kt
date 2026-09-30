@@ -163,7 +163,8 @@ internal class DoctorConfigChecks(
      *  client's whole system field, and Claude Code ships its entire operating instruction set in
      *  that field — so the head then runs as a bare model with tools attached. That is the
      *  operator's choice to make, but it must never be a thing they DISCOVER; doctor says it
-     *  plainly. WARN, not FAIL: the configuration is legal and deliberate. V4-171: `strip` gets the
+     *  plainly. INFO, not WARN or FAIL: the configuration is legal and deliberate, so the row
+     *  discloses it and asks for no act (V4-444: a warn read as Needs you). V4-171: `strip` gets the
      *  same row for the same reason — the client's instructions are being edited, and the repo
      *  ships no pattern list, so the stance lives here rather than in a shipped default.
      *
@@ -176,7 +177,7 @@ internal class DoctorConfigChecks(
         .map { (key, head) ->
             DoctorCheck(
                 "system-prompt:$key",
-                CheckStatus.WARN,
+                CheckStatus.INFO,
                 if (head.systemPromptMode == SystemPromptMode.REPLACE) {
                     "head '$key' sets system_prompt_mode = \"replace\": the client's own system field is " +
                         "substituted, and Claude Code ships its entire operating instruction set in that " +

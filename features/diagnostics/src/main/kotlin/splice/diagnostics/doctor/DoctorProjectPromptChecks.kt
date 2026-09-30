@@ -73,7 +73,7 @@ internal class DoctorProjectPromptChecks(private val replaceFix: String, private
     private fun layerRow(name: String, mode: SystemPromptMode?, source: String): DoctorCheck = when (mode) {
         SystemPromptMode.REPLACE -> DoctorCheck(
             "project-prompt:$name",
-            CheckStatus.WARN,
+            CheckStatus.INFO,
             "$name sets system_prompt_mode = \"replace\" ($source): the client's own system field and every " +
                 "earlier layer are substituted, and Claude Code ships its entire operating instruction set in " +
                 "that field, so sessions in this project run as a bare model with tools attached",
@@ -83,7 +83,7 @@ internal class DoctorProjectPromptChecks(private val replaceFix: String, private
         // removes is the operator's to own; splice ships no pattern list.
         SystemPromptMode.STRIP -> DoctorCheck(
             "project-prompt:$name",
-            CheckStatus.WARN,
+            CheckStatus.INFO,
             "$name sets system_prompt_mode = \"strip\" ($source): the client's own system field is edited on " +
                 "every turn in this project; each paragraph a pattern matches is removed, and what is removed " +
                 "is yours to own",

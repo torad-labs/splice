@@ -14,11 +14,11 @@ import java.nio.file.Paths
 class DoctorWireTapCheckTest {
 
     @Test
-    fun `a head that keeps bodies warns on every run, naming what is held and how to stop`() {
+    fun `a head that keeps bodies says so on every run at INFO, naming what is held and how to stop`() {
         val row = wireRows(head("one", wireTap = "\"8\"")).single()
 
         assertEquals("wire-tap:one", row.name)
-        assertEquals(CheckStatus.WARN, row.status)
+        assertEquals(CheckStatus.INFO, row.status, "the operator's own setting, disclosed and not a fault")
         assertTrue(row.detail.contains("last 8 upstream request bodies in memory"), row.detail)
         assertTrue(row.detail.contains("whole conversation"), row.detail)
         assertTrue(row.detail.contains("splice wire one"), row.detail)

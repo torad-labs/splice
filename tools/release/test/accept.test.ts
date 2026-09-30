@@ -6,7 +6,7 @@
 // `java` is faked on PATH the way tools/gate's slot tests fake gradlew: the jar's self-reported
 // version is an input to these legs, not the thing under test.
 import { afterAll, describe, expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -61,9 +61,12 @@ function fakeJava(version = JAR_VERSION): string {
   return dir;
 }
 
-function accept(dist: string, options: { javaDir?: string; argv?: readonly string[] } = {}) {
+function accept(dist: string, options: { javaDir?: string; argv?: readonly string[]; root?: string } = {}) {
   const javaDir = options.javaDir ?? fakeJava();
-  const proc = Bun.spawnSync([process.execPath, CLI, "accept", ...(options.argv ?? [dist])], {
+  const command = options.root === undefined ? [CLI, "accept", ...(options.argv ?? [dist])] : [
+    "--eval", `import { accept } from ${JSON.stringify(join(repoRoot, "tools/release/src/commands/accept.ts"))}; process.exit(await accept(${JSON.stringify([dist])}, ${JSON.stringify(options.root)}));`,
+  ];
+  const proc = Bun.spawnSync([process.execPath, ...command], {
     cwd: repoRoot,
     env: { ...Bun.env, PATH: `${javaDir}:${Bun.env.PATH ?? ""}`, SPLICE_EXPECTED_VERSION: "" },
     stdout: "pipe",
@@ -72,7 +75,78 @@ function accept(dist: string, options: { javaDir?: string; argv?: readonly strin
   return { code: proc.exitCode, output: `${proc.stdout.toString()}${proc.stderr.toString()}` };
 }
 
+/** Stored ZIP records keep the dashboard tests independent of java/jar and of any real build. */
+function packagedBundle(dist: string, dashboard: string): void {
+  const entries = ["LICENSE", "THIRD_PARTY_NOTICES.md", "THIRD_PARTY_LICENSES.txt", "PROVENANCE.md", "bom.cdx.json", "dependency-licenses.json"]
+    .map((name) => ({ name: "META-INF/" + name, body: readFileSync(join(dist, name)) }));
+  entries.push({ name: "webui/index.html", body: Buffer.from(dashboard) });
+  const local: Buffer[] = [];
+  const central: Buffer[] = [];
+  let offset = 0;
+  for (const entry of entries) {
+    const name = Buffer.from(entry.name);
+    const header = Buffer.alloc(30);
+    header.writeUInt32LE(0x04034b50, 0);
+    header.writeUInt16LE(20, 4);
+    header.writeUInt32LE(entry.body.length, 18);
+    header.writeUInt32LE(entry.body.length, 22);
+    header.writeUInt16LE(name.length, 26);
+    local.push(header, name, entry.body);
+    const record = Buffer.alloc(46);
+    record.writeUInt32LE(0x02014b50, 0);
+    record.writeUInt16LE(20, 6);
+    record.writeUInt32LE(entry.body.length, 20);
+    record.writeUInt32LE(entry.body.length, 24);
+    record.writeUInt16LE(name.length, 28);
+    record.writeUInt32LE(offset, 42);
+    central.push(record, name);
+    offset += header.length + name.length + entry.body.length;
+  }
+  const directory = Buffer.concat(central);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(directory.length, 12);
+  end.writeUInt32LE(offset, 16);
+  writeFileSync(join(dist, "splice.jar"), Buffer.concat([...local, directory, end]));
+  writeFileSync(join(dist, "sha256sums.txt"), ASSETS.map((asset) =>
+    createHash("sha256").update(readFileSync(join(dist, asset))).digest("hex") + "  " + asset + "\n").join(""));
+}
+
+function dashboardFixture(packaged: string) {
+  const root = mkdtempSync(join(tmpdir(), "release-dashboard-"));
+  workspaces.push(root);
+  const reports = join(root, "app/build/reports/compliance");
+  mkdirSync(reports, { recursive: true });
+  writeFileSync(join(reports, "console-bundle.html"), "<html>console-next</html>");
+  // A retained old build must never be mistaken for the bundle the packaging provider produced.
+  mkdirSync(join(root, "console/dist"), { recursive: true });
+  writeFileSync(join(root, "console/dist/index.html"), "<html>retired console</html>");
+  const dist = bundle({ "bom.cdx.json": JSON.stringify({
+    bomFormat: "CycloneDX", specVersion: "1.6", serialNumber: "urn:uuid:synthetic", components: [{}],
+  }) });
+  packagedBundle(dist, packaged);
+  return { root, dist };
+}
+
 describe("release accept", () => {
+  test("the jar's console-next bundle passes the dashboard leg and reaches installation", () => {
+    const fixture = dashboardFixture("<html>console-next</html>");
+    const run = accept(fixture.dist, { root: fixture.root });
+    expect(run.code).toBe(1); // The synthetic installer deliberately installs no command.
+    expect(run.output).toContain("installed splice command is missing or dangling");
+    expect(run.output).not.toContain("packaged dashboard differs");
+  });
+
+  test("a different dashboard fails even when it matches the retained old build", () => {
+    const fixture = dashboardFixture("<html>retired console</html>");
+    const run = accept(fixture.dist, { root: fixture.root });
+    expect(run.code).toBe(1);
+    expect(run.output).toContain("packaged dashboard differs from the built console bundle");
+    expect(run.output).not.toContain("installed splice command");
+  });
+
   test("the argv it does not take is refused", () => {
     expect(accept("", { argv: ["--nope"] }).output).toContain("unknown argument --nope");
     expect(accept("", { argv: ["a", "b"] }).output).toContain("one dist directory, got a second");

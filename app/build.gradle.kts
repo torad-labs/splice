@@ -129,6 +129,8 @@ val distDir = repositoryRoot.dir("dist")
 // the task's output provider so verifyReleaseCompliance and shadowJar depend on the build itself.
 evaluationDependsOn(":console-next")
 val dashboard: Provider<File> = project(":console-next").tasks.named<Exec>("bundle").map { it.outputs.files.singleFile }
+// Release acceptance reads the bytes from this same provider, not a second workspace path.
+val builtConsoleBundle = complianceDir.map { it.file("console-bundle.html") }
 // The set was written 2026-07-20 when every dependency was Apache-2.0/MIT/EPL; BSD was never
 // considered rather than rejected. BSD 2-Clause is strictly MORE permissive than Apache-2.0, which
 // is already allowed — no patent clause, no NOTICE obligation, no copyleft, OSI-approved — and the
@@ -414,6 +416,8 @@ tasks.register("stageRelease") {
     group = "release"
     description = "Stages dist/: the published asset set and sha256sums.txt over it (checks/release/stage.sh until PR 6)."
     inputs.file(releaseJar).withPropertyName("fatJar")
+    inputs.file(dashboard).withPropertyName("builtConsoleBundle")
+    outputs.file(builtConsoleBundle)
     inputs.files(bom, licenses, thirdPartyLicenses).withPropertyName("complianceReports")
     inputs.files(licenseFile, thirdPartyNotices, provenance, launchShim, installScript)
         .withPropertyName("publishedRepositoryFiles")
@@ -497,6 +501,9 @@ tasks.register("stageRelease") {
             "$digest  $asset\n"
         }
         dist.resolve("sha256sums.txt").writeText(sums)
+        val builtBundle = builtConsoleBundle.get().asFile
+        builtBundle.parentFile.mkdirs()
+        Files.copy(dashboard.get().toPath(), builtBundle.toPath(), StandardCopyOption.REPLACE_EXISTING)
         // QUIET, not LIFECYCLE: the rehearsal and the release workflow both run gradle with `-q`,
         // and stage.sh's closing line printed there too.
         logger.quiet("release stage: $dist")

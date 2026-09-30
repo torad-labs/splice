@@ -4,11 +4,13 @@ import type { ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router';
 import { describe, expect, test } from 'vitest';
+import { collapseChecks } from '../src/lib/doctor';
+import { CheckMembers } from '../src/pages/settings/CheckMembers';
 import { ClaudeHead } from '../src/pages/settings/ClaudeHead';
 import { Playground } from '../src/pages/settings/Playground';
 import { Upgrade } from '../src/pages/settings/Upgrade';
 import type { ClaudeHeadPayload } from '../src/types/claude-head';
-import type { UpgradePayload, UpgradeRun } from '../src/types/doctor';
+import type { DoctorCheck, UpgradePayload, UpgradeRun } from '../src/types/doctor';
 
 const render = (element: ReactElement, seed: (client: QueryClient) => unknown): string => {
   const client = new QueryClient();
@@ -77,5 +79,27 @@ describe('try a plan', () => {
     expect(html).toContain('Choose a plan');
     expect(html).toMatch(/<button[^>]*disabled[^>]*>Send<\/button>/);
     expect(html).not.toContain('Answered with');
+  });
+});
+
+describe('a check row that folds several checks', () => {
+  const check = (detail: string, id = 'installation/wrapper'): DoctorCheck => ({ id, status: 'warn', detail, fix: 'splice install --all' });
+  const html = (checks: DoctorCheck[]): string => {
+    const [row] = collapseChecks(checks);
+    if (row === undefined) throw new Error('no row');
+    return renderToStaticMarkup(<CheckMembers row={row} />);
+  };
+  test('keeps every member\'s own finding reachable, not only the first and a count', () => {
+    const out = html([check('claude-a is not linked'), check('claude-b is not linked'), check('claudex points at another copy'), check('claude-d is not linked')]);
+    expect(out).toContain('Show all 4 findings');
+    for (const detail of ['claude-a is not linked', 'claude-b is not linked', 'claudex points at another copy', 'claude-d is not linked']) expect(out).toContain(detail);
+  });
+  test('names the head of a member whose id carries one', () => {
+    const out = html([check('no prompt', 'configuration/system-prompt:claude-a'), check('no prompt', 'configuration/system-prompt:claude-b')]);
+    expect(out).toContain('<b>claude-a </b>');
+    expect(out).toContain('<b>claude-b </b>');
+  });
+  test('a row of one check has nothing more to show', () => {
+    expect(html([check('one')])).toBe('');
   });
 });

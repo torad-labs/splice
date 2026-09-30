@@ -28,6 +28,7 @@ import { Compaction } from './Compaction';
 import { Kept } from './Kept';
 import { PlanInstructions } from './PlanInstructions';
 import { Playground } from './Playground';
+import { CheckMembers } from './CheckMembers';
 import { Row, SaveNote, useSetting } from './Row';
 import { Upgrade } from './Upgrade';
 
@@ -295,6 +296,7 @@ function Checks() {
             key={row.key}
             title={row.label}
             why={first === undefined ? '' : checkFinding(first)}
+            note={<CheckMembers row={row} />}
             control={
               <>
                 <State tone={row.status === 'fail' ? 'stuck' : 'wait'}>{row.status === 'fail' ? T.needsYou : T.worth}</State>

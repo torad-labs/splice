@@ -3,6 +3,7 @@ import { useEffect, useSyncExternalStore } from 'react';
 import { RouterProvider } from 'react-router';
 import { followEvents } from '../api/events';
 import { currentKey, isLocked, subscribeLock } from '../api/client';
+import { forgetRefusedReads } from './forget-refused';
 import { Unlock } from './Unlock';
 import { router } from './routes';
 
@@ -15,6 +16,9 @@ export function App() {
   // The unlock screen says "rejected" only when a key was tried: with none held it just asks. Read at render, not once at
   // mount: a page that opened with no key and was then given a wrong one is locked again with a key held.
   const tried = currentKey() !== '';
+  useEffect(() => {
+    if (locked) void forgetRefusedReads(client);
+  }, [locked]);
   useEffect(() => {
     if (locked) return;
     const stop = new AbortController();

@@ -241,6 +241,10 @@ export interface AccountState {
  * refusing.
  */
 export function accountState(account: AccountRow, nowMs: number): AccountState {
+  // The daemon's own refusal is the most specific thing it can say about a credential, so it is named before the pool's exclusion.
+  if (refusalText(account) !== null) {
+    return { edge: 'grey', cocked: false, struck: true, label: 'refused' };
+  }
   if (isExcluded(account, nowMs)) {
     return { edge: 'grey', cocked: false, struck: true, label: 'excluded' };
   }

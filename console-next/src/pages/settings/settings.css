@@ -102,3 +102,7 @@
 .cf-list code { font: 500 13px var(--mono); }
 .cf-raw summary { cursor: pointer; font: 600 15px var(--meta); color: var(--mute); }
 .cf-raw pre { margin: var(--space-4) 0 0; padding: var(--space-6) var(--space-7); max-height: 420px; overflow: auto; background: var(--glass); color: var(--glass-ink); border-radius: 10px; font: 400 13px/1.55 var(--mono); white-space: pre-wrap; word-break: break-word; }
+.members { margin-top: var(--space-4); font: 400 15px/1.5 var(--read); color: var(--body); }
+.members summary { cursor: pointer; color: var(--mute); }
+.members ul { margin: var(--space-3) 0 0; padding-left: var(--space-7); display: grid; gap: var(--space-3); }
+.members li b { color: var(--ink); font-weight: 600; }

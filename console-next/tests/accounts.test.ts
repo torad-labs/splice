@@ -438,4 +438,10 @@ describe('an account the daemon cannot load', () => {
     expect(canRefresh([account({ credential_present: false })])).toBe(false);
     expect(canRefresh([account()])).toBe(true);
   });
+
+  test('a refused account reads as refused, not as a missing figure and not as merely excluded', () => {
+    const state = accountState(account({ credential_present: false, available: false, refusal: REFUSED }), NOW);
+    expect(state).toMatchObject({ label: 'refused', struck: true, cocked: false, edge: 'grey' });
+    expect(accountState(account({ credential_present: false, available: false }), NOW).label).toBe('excluded');
+  });
 });

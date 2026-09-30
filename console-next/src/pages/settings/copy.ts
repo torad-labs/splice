@@ -78,6 +78,7 @@ export const T = {
   healthUnserved: 'This version of splice does not serve its checks.',
   needsYou: 'Needs you',
   worth: 'Worth a look',
+  showAllFindings: (count: number): string => `Show all ${count} findings`,
   recheck: 'Check again',
   rechecking: 'Checking…',
   // Advanced

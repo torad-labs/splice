@@ -24,7 +24,7 @@
     "features/configuration/src/main/kotlin/splice/configuration/add/AddHttp.kt": 1,
     "features/configuration/src/main/kotlin/splice/configuration/add/AddModels.kt": 3,
     "features/configuration/src/main/kotlin/splice/configuration/add/AddPrepare.kt": 1,
-    "features/configuration/src/main/kotlin/splice/configuration/add/AddProfileCatalog.kt": 8,
+    "features/configuration/src/main/kotlin/splice/configuration/add/AddProfileCatalog.kt": 7,
     "features/configuration/src/main/kotlin/splice/configuration/add/AddProfiles.kt": 1,
     "integrations/daemon-client/src/main/kotlin/splice/daemonclient/ControlPlaneClient.kt": 1,
     "integrations/daemon-client/src/main/kotlin/splice/daemonclient/DaemonHealth.kt": 1,

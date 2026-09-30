@@ -271,7 +271,7 @@ context_window = 1000000
 [[providers.openrouter.models]]
 id = "z-ai/glm-5.3-flash"
 label = "GLM 5.3 Flash"
-context_window = 1310720
+context_window = 1048576
 [[providers.openrouter.models]]
 id = "openai/gpt-6-sol"
 label = "GPT-6 Sol"
@@ -295,7 +295,7 @@ context_window = 1048576
 [[providers.openrouter.models]]
 id = "z-ai/glm-5.3"
 label = "GLM 5.3"
-context_window = 1310720       # OpenRouter's declared context_length for this row
+context_window = 1048576       # OpenRouter's declared context_length for this row
 [[providers.openrouter.models]]
 id = "anthropic/claude-haiku-4.5"
 label = "Claude Haiku 4.5"

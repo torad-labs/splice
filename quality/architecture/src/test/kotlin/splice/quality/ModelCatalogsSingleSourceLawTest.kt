@@ -1004,7 +1004,7 @@ class ModelCatalogsSingleSourceLawTest {
         const val OPENROUTER_MODELS = "[[providers.openrouter.models]]"
         const val CODEX_MODELS = "[[providers.codex.models]]\n"
         const val FAKE_CODEX_ROW = "id = \"gpt-fake-9\"\nlabel = \"Fake 9\"\ncontext_window = 272000\n"
-        const val DELETED_ROW = "z-ai/glm-5.3 (context_window 1310720) is absent from"
+        const val DELETED_ROW = "z-ai/glm-5.3 (context_window 1048576) is absent from"
 
         const val NULL_ROSTER = "            name = \"api-key\",\n            baseUrl = null,\n" +
             "            models = emptyList(),"

@@ -27,7 +27,6 @@ private const val WINDOW_872K = 872_000L
 private const val WINDOW_1M = 1_000_000L
 private const val WINDOW_1048K = 1_048_576L
 private const val WINDOW_1050K = 1_050_000L
-private const val WINDOW_1310K = 1_310_720L
 private const val OPENAI_CHAT = "openai-chat"
 private val DEEPSEEK_BLOCKS = listOf(
     "text",
@@ -286,7 +285,7 @@ internal class AddProfileCatalog {
                 AddModel(
                     "z-ai/glm-5.3-flash",
                     "GLM 5.3 Flash",
-                    WINDOW_1310K,
+                    WINDOW_1048K,
                     listOf("haiku"),
                     rates = ModelRates(input = 0.15, cacheRead = 0.03, output = 0.5),
                 ),
@@ -342,7 +341,7 @@ internal class AddProfileCatalog {
                 AddModel(
                     "z-ai/glm-5.3",
                     "GLM 5.3",
-                    WINDOW_1310K,
+                    WINDOW_1048K,
                     rates = ModelRates(input = 1.4, cacheRead = 0.26, output = 4.4),
                 ),
                 AddModel(

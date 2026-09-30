@@ -32,6 +32,26 @@ class OpenRouterProfileTest {
     }
 
     @Test
+    fun `no profile row exceeds its provider's published window`() {
+        // The provider's cached roster, not values derived from AddProfileCatalog.
+        val served = mapOf(
+            "anthropic/claude-sonnet-5" to 1_000_000L,
+            "anthropic/claude-opus-5.5" to 1_000_000L,
+            "z-ai/glm-5.3-flash" to 1_048_576L,
+            "openai/gpt-6-sol" to 1_050_000L,
+            "openai/gpt-6-luna" to 1_050_000L,
+            "google/gemini-3.8-flash" to 1_048_576L,
+            "deepseek/deepseek-v4.1-flash" to 1_048_576L,
+            "z-ai/glm-5.3" to 1_048_576L,
+            "meta-llama/llama-4-maverick" to 1_048_576L,
+            "anthropic/claude-haiku-4.5" to 200_000L,
+        )
+        profile.models.forEach { row ->
+            assertTrue(row.contextWindow <= served.getValue(row.id), "oversized profile row: ${row.id}")
+        }
+    }
+
+    @Test
     fun `no model id carries two slots`() {
         val mappings = profile.models.flatMap { model -> model.slots.map { slot -> model.id to slot } }
         val ids = mappings.map { it.first }

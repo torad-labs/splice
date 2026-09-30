@@ -11,6 +11,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.accounts.status.CredentialPresence
+import splice.core.model.ModelEntry
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
@@ -35,7 +36,7 @@ internal data class AddCheck(val name: String, val ok: Boolean, val detail: Stri
 internal sealed class ListedModels {
     data object Absent : ListedModels()
     data class Unreadable(val detail: String) : ListedModels()
-    data class Listed(val ids: List<String>) : ListedModels()
+    data class Listed(val ids: List<String>, val windows: Map<String, Long> = emptyMap()) : ListedModels()
 }
 
 /** [output] takes the one line an unreadable credential file raises (CredentialPresence, DR-70). */
@@ -57,10 +58,12 @@ internal class AddChecks(output: TerminalOutput, private val http: AddHttp = Jdk
         } else {
             env
         }
+        val listed = listedModels(c.provider, c.key, checkEnv)
         return listOf(
             credential(c, env),
             reachable(c.provider.baseUrl),
-            modelsListed(c.models, listedModels(c.provider, c.key, checkEnv), c.resolved.listAuthoritative),
+            modelsListed(c.models, listed, c.resolved.listAuthoritative),
+            modelWindows(c.provider.models, listed),
         ) + listOfNotNull(if (live) liveTurn(c.provider, c.key, c.models.first(), checkEnv) else null)
     }
 
@@ -113,10 +116,17 @@ internal class AddChecks(output: TerminalOutput, private val http: AddHttp = Jdk
     }
 
     private fun parsedList(body: String, url: String): ListedModels = Cancellables.runCatchingCancellable {
-        (json.parseToJsonElement(body).jsonObject["data"] as? JsonArray).orEmpty()
-            .mapNotNull { JsonScalars.str(it.jsonObject, "id") }
+        val entries = (json.parseToJsonElement(body).jsonObject["data"] as? JsonArray).orEmpty()
+        val windows = entries.mapNotNull { element ->
+            val row = element.jsonObject
+            val id = JsonScalars.str(row, "id") ?: return@mapNotNull null
+            val window = (JsonScalars.long(row, "context_length") ?: JsonScalars.long(row, "context_window"))
+                ?.takeIf { it > 0 } ?: return@mapNotNull null
+            id to window
+        }.toMap()
+        ListedModels.Listed(entries.mapNotNull { JsonScalars.str(it.jsonObject, "id") }, windows)
     }.fold(
-        onSuccess = { ListedModels.Listed(it) },
+        onSuccess = { it },
         onFailure = { ListedModels.Unreadable("$url did not answer with a model list") },
     )
 
@@ -146,9 +156,24 @@ internal class AddChecks(output: TerminalOutput, private val http: AddHttp = Jdk
             }
         }
 
-    /** ONE short turn, only when asked. openai-chat with a splice-held key speaks plain HTTP here; every
-     *  other pair is refused at parse time (AddPrepare), so reaching this branch without a bearer is a
-     *  failed check, never a silent skip. */
+    /** Every declared row, including unpinned rows, must fit an advertised provider window. */
+    fun modelWindows(models: List<ModelEntry>, listed: ListedModels): AddCheck {
+        val windows = (listed as? ListedModels.Listed)?.windows.orEmpty()
+        val oversized = models.mapNotNull { row ->
+            windows[row.id]?.takeIf { row.contextWindow > it }?.let { served ->
+                "${row.id} declares ${row.contextWindow}, provider serves $served"
+            }
+        }
+        val detail = when {
+            oversized.isNotEmpty() -> oversized.joinToString("; ")
+            windows.isEmpty() -> "the provider lists no window sizes to check"
+            else -> "declared rows fit the window sizes the provider lists"
+        }
+        return AddCheck("windows", oversized.isEmpty(), detail)
+    }
+
+    /** The console's direct check supports openai-chat with a splice-held key only.
+     *  The CLI instead checks the installed command after saving, through AddPorts.liveTurn. */
     fun liveTurn(provider: ProviderConfig, key: String, model: String, env: EnvReader): AddCheck {
         val bearer = apiKey(provider, key, env)
         if (provider.dialect != Dialect.OPENAI_CHAT || bearer == null) {

@@ -43,8 +43,9 @@ export function StopTurn({ row, fallback }: { row: SessionRow; fallback?: ReactN
 
 type Copy = { kind: 'idle' } | { kind: 'copied' } | { kind: 'failed'; message: string };
 
-/** Copies how to resume a session on a head. A session the daemon launched names its head; one it did not asks
- *  which head to resume on, because the recipe differs per head. */
+/** Copies how to resume a session on a head. A session the daemon launched names its head and is resumed there in one
+ *  press; a menu beside it offers any other plan, because a plan that has reached its limit is resumed on another. One
+ *  the daemon did not launch has no head to name and asks which, because the recipe differs per head. */
 export function ResumeCopy({ row }: { row: SessionRow }) {
   const [copy, setCopy] = useState<Copy>({ kind: 'idle' });
   const reset = useRef<number | undefined>(undefined);
@@ -65,33 +66,28 @@ export function ResumeCopy({ row }: { row: SessionRow }) {
   };
   const label = copy.kind === 'copied' ? S.copied : S.copyResume;
   const note = copy.kind === 'failed' ? <span className="hint" role="alert">{S.copyFailed} {copy.message}</span> : null;
-  if (row.head !== UNKNOWN_HEAD) {
-    return (
-      <>
-        <Button small onClick={() => void run(row.head)}>{label}</Button>
-        {note}
-      </>
-    );
-  }
-  const options = heads.data?.heads ?? [];
+  const named = row.head !== UNKNOWN_HEAD;
+  const options = (heads.data?.heads ?? []).filter((head) => head.key !== row.head);
+  const menu = (trigger: ReactNode) => (
+    <Menu.Root>
+      <Menu.Trigger asChild>{trigger}</Menu.Trigger>
+      <Menu.Portal>
+        <Menu.Content className="menu" align="start" sideOffset={6}>
+          <Menu.Label className="menu-label">{S.pickHead}</Menu.Label>
+          {options.length === 0 ? <div className="menu-empty">{S.noHeads}</div> : null}
+          {options.map((head) => (
+            <Menu.Item key={head.key} className="menu-item" onSelect={() => void run(head.key)}>
+              {head.label}
+            </Menu.Item>
+          ))}
+        </Menu.Content>
+      </Menu.Portal>
+    </Menu.Root>
+  );
   return (
     <>
-      <Menu.Root>
-        <Menu.Trigger asChild>
-          <Button small>{label}<Chevron /></Button>
-        </Menu.Trigger>
-        <Menu.Portal>
-          <Menu.Content className="menu" align="start" sideOffset={6}>
-            <Menu.Label className="menu-label">{S.pickHead}</Menu.Label>
-            {options.length === 0 ? <div className="menu-empty">{S.noHeads}</div> : null}
-            {options.map((head) => (
-              <Menu.Item key={head.key} className="menu-item" onSelect={() => void run(head.key)}>
-                {head.label}
-              </Menu.Item>
-            ))}
-          </Menu.Content>
-        </Menu.Portal>
-      </Menu.Root>
+      {named ? <Button small onClick={() => void run(row.head)}>{label}</Button> : null}
+      {menu(named ? <Button small aria-label={S.resumeElsewhere}>{S.otherPlan}<Chevron /></Button> : <Button small>{label}<Chevron /></Button>)}
       {note}
     </>
   );

@@ -8,6 +8,7 @@ import { describe, expect, test } from 'vitest';
 import type { Item } from '../src/lib/conversation';
 import type { Rail as RailFacts } from '../src/lib/rail';
 import type { HandedEdge, SessionRow } from '../src/types/sessions';
+import { UNKNOWN_HEAD } from '../src/types/sessions';
 import { Composer } from '../src/pages/session/Composer';
 import { Handoff } from '../src/pages/session/Handoff';
 import { Rail } from '../src/pages/session/Rail';
@@ -154,6 +155,23 @@ describe('a session card', () => {
     expect(html).toContain('Open the session');
     expect(html).toContain('Copy resume command');
     expect(html).toContain('Waiting on you');
+  });
+  test('an earlier session offers its resume command on its own plan and on another, and no open link', () => {
+    const html = render(facts({ state: 'gone', row: row({ status: null, availability: 'gone', pid: null }) }));
+    expect(html).toContain('Copy resume command');
+    expect(html).toContain('aria-label="Copy resume command for another plan"');
+    expect(html).toContain('Another plan');
+    expect(html).not.toContain('Open the session');
+    expect(html).not.toContain('Stop the turn');
+  });
+  test('a working or idle card offers no resume', () => {
+    expect(render(facts({ state: 'idle' }))).not.toContain('Copy resume command');
+    expect(render(facts())).not.toContain('Copy resume command');
+  });
+  test('a session splice did not start asks which head to resume on, and offers no second button', () => {
+    const html = render(facts({ state: 'gone', head: null, colour: 'none', row: row({ head: UNKNOWN_HEAD, availability: 'gone' }) }));
+    expect(html).toContain('Copy resume command');
+    expect(html).not.toContain('Another plan');
   });
   test('a session splice did not start shows no head and no invented colour', () => {
     const html = render(facts({ head: null, colour: 'none' }));

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { failureText } from '../../api/client';
 import { useHeads, useSessions, useTeams } from '../../api/queries';
-import { useSessionEdges, useTranscript, useTurnOf } from '../../api/sessions';
+import { useSessionEdges, useSessionHistory, useTranscript, useTurnOf } from '../../api/sessions';
 import { clockTime } from '../../lib/format';
 import { foldTranscript, interleave } from '../../lib/conversation';
 import { colourOfHead } from '../../lib/model';
@@ -37,7 +37,11 @@ export function SessionPage() {
   const now = Date.now();
 
   const rows = sessions.data?.sessions ?? [];
-  const row: SessionRow | undefined = rows.find((candidate) => sessionKey(candidate) === id);
+  const liveRow = rows.find((candidate) => sessionKey(candidate) === id);
+  // A session that has ended is not in the registry: the history knows it, and matches it by its id.
+  const history = useSessionHistory(id, sessions.isSuccess && liveRow === undefined && id !== '');
+  const pastRow = (history.data?.pages ?? []).flatMap((page) => ('sessions' in page ? page.sessions : [])).find((candidate) => sessionKey(candidate) === id);
+  const row: SessionRow | undefined = liveRow ?? pastRow;
   const colourOfKey = (headKey: string | null): ModelColour => {
     if (headKey === null || headKey === UNKNOWN_HEAD) return 'none';
     const head = heads.data?.heads.find((candidate) => candidate.key === headKey);
@@ -114,7 +118,7 @@ export function SessionPage() {
             {transcript.view?.kind === 'off' ? <p className="hint">{P.transcriptOff} {transcript.view.reason}</p> : null}
             {transcript.view?.kind === 'missing' ? (
               <p className="hint">
-                {row === undefined && sessions.isSuccess ? P.notFound : P.transcriptMissing} {transcript.view.searched.join(', ')}
+                {row === undefined && sessions.isSuccess && !history.isFetching ? P.notFound : P.transcriptMissing} {transcript.view.searched.join(', ')}
               </p>
             ) : null}
             {transcript.view?.kind === 'messages' && shown.length === 0 && !transcript.hasNextPage ? <Empty title={P.noMessages} /> : null}

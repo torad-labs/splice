@@ -66,9 +66,9 @@ export function SessionCard({ facts, sortable = true }: { facts: CardFacts; sort
           <span key={part}>{part}</span>
         ))}
       </div>
-      {needs ? (
+      {needs || state === 'gone' ? (
         <div className="acts">
-          {state === 'stuck' ? <StopTurn row={row} /> : <OpenLink row={row} />}
+          {needs ? (state === 'stuck' ? <StopTurn row={row} /> : <OpenLink row={row} />) : null}
           <ResumeCopy row={row} />
         </div>
       ) : null}

@@ -51,7 +51,7 @@ export function body() {
 <div class="cost">${p.cost}<small>${p.cache ? p.cache + '% cached' : 'no cache'}</small></div></div>`).join('');
   return `<header class="page-head"><div><h1>Usage</h1>
 <p class="lede">About $184 of API-equivalent in the last 7 days. ChatGPT is out of quota and Kimi will be in about nine hours.</p></div>
-<div class="tools"><span class="seg" role="group" aria-label="Window"><button aria-pressed="false">24 hours</button><button aria-pressed="true">7 days</button><button aria-pressed="false">30 days</button></span></div></header>
+<div class="tools"><span class="seg" role="group" aria-label="Window"><button aria-pressed="false">24 hours</button><button aria-pressed="true">7 days</button></span></div></header>
 <section class="section"><div class="totals">
 <div><div class="n">3,204</div><h3>Turns</h3><p>Across five plans in the last 7 days.</p></div>
 <div><div class="n">766M</div><h3>Tokens read in</h3><p>68% came from the cache. Plans still count those.</p></div>

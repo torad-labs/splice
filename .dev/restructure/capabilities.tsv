@@ -3181,3 +3181,4 @@ console-next/src/pages/settings/CheckMembers.tsx	b5cc4a0c19c52749e4d1a65d77286ed
 console-next/tests/unlock-recovery.test.ts	bf5a471a94ba0ff60ad93ee0c0c9af786977f95709fc8fb1666a7f7d99a214db	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes
 console-next/src/pages/turns/CaptureControl.tsx	6b2dcc6f137932192ec3eae95c81b140b67afe4d803e5abe4e371c2460655ff2	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes
 console-next/tests/kept-parts.test.tsx	ac0445e0e94d80c5e8bb2afda75cf0e6a66d3141fe3b2d42ebdb4d351ac9ae25	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes
+console-next/src/lib/session-says.ts	94bcd21562c770878dbc5082416ca8ca3a376fcabfdb7f6e4e4c8190ef781ff6	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes

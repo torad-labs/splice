@@ -219,6 +219,8 @@ export interface TranscriptPage {
   /** Opaque token for the next page. Absent or null means this was the last page. The console
    *  never parses it: it is the daemon's cursor to mint. */
   next?: string | null;
+  /** On a page read from the end of the conversation: the cursor of the page before it, null at the start. */
+  earlier?: string | null;
   /** The number of messages in the whole transcript, when the daemon counted them. */
   total?: number;
 }

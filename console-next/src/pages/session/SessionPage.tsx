@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { failureText } from '../../api/client';
 import { useHeads, useSessions, useTeams } from '../../api/queries';
@@ -14,7 +14,6 @@ import type { SessionRow } from '../../types/sessions';
 import { UNKNOWN_HEAD } from '../../types/sessions';
 import { Back, Button, Empty, Fault, Markdown, Segmented, State, Window } from '../../ui';
 import { ResumeCopy, StopTurn, sessionPath } from '../shared/SessionActions';
-import { Composer } from './Composer';
 import { P } from './copy';
 import { Handoff } from './Handoff';
 import { Rail } from './Rail';
@@ -80,6 +79,22 @@ export function SessionPage() {
     return entry.kind === 'handoff';
   });
 
+  // The page opens at the newest message. It stays at the bottom while the conversation fills in, until the operator scrolls up;
+  // an earlier page loaded at the top keeps what they were reading where it was.
+  const nearBottom = useRef(true);
+  const anchor = useRef<number | null>(null);
+  useEffect(() => {
+    const onScroll = () => { nearBottom.current = document.documentElement.scrollHeight - (window.scrollY + window.innerHeight) < 240; };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+  useLayoutEffect(() => {
+    if (anchor.current !== null) {
+      window.scrollBy(0, document.documentElement.scrollHeight - anchor.current);
+      anchor.current = null;
+    } else if (nearBottom.current) window.scrollTo(0, document.documentElement.scrollHeight);
+  }, [shown.length]);
+
   let previous: string | null = null;
   return (
     <>
@@ -113,6 +128,16 @@ export function SessionPage() {
             <Segmented label={P.filterLabel} value={filter} options={FILTERS} onChange={setFilter} />
           </div>
           <div className="convo">
+            {transcript.hasNextPage ? (
+              <div className="more-row">
+                <Button
+                  disabled={transcript.isFetchingNextPage}
+                  onClick={() => { anchor.current = document.documentElement.scrollHeight; void transcript.fetchNextPage(); }}
+                >
+                  {P.loadEarlier}
+                </Button>
+              </div>
+            ) : null}
             {transcript.isPending ? <p className="hint">{P.loading}</p> : null}
             {transcript.isError ? <Fault message={failureText(transcript.error)} onRetry={() => void transcript.refetch()} /> : null}
             {transcript.view?.kind === 'off' ? <p className="hint">{P.transcriptOff} {transcript.view.reason}</p> : null}
@@ -156,13 +181,7 @@ export function SessionPage() {
                 </div>
               );
             })}
-            {transcript.hasNextPage ? (
-              <div className="more-row">
-                <Button disabled={transcript.isFetchingNextPage} onClick={() => void transcript.fetchNextPage()}>{P.loadMore}</Button>
-              </div>
-            ) : null}
           </div>
-          <Composer />
         </Window>
         {rail === null ? <div /> : <Rail rail={rail} colourOf={seatColour} pathOf={seatPath} />}
       </div>

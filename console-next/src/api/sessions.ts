@@ -1,5 +1,5 @@
 // What the session pages read, and the two things they do to a session: copy how to resume it, stop its turn.
-import { useInfiniteQuery, useQueries, useQuery } from '@tanstack/react-query';
+import { infiniteQueryOptions, useInfiniteQuery, useQueries, useQuery } from '@tanstack/react-query';
 import { MgmtError, request } from './client';
 import { keys, read, useLiveTurns } from './queries';
 import type { TurnOf } from '../lib/sessions';
@@ -52,40 +52,47 @@ export type TranscriptView =
   | { kind: 'off'; reason: string }
   | { kind: 'missing'; searched: string[] };
 
-/** A session's conversation, read from the top a page at a time. The transcript view can be off
- *  (a state, not an empty conversation), and a session with no file on disk is the daemon's own 404. */
-export function useTranscript(session: string) {
-  const query = useInfiniteQuery({
+type TranscriptAnswer = TranscriptRead | { missing: string[] };
+
+/** The messages one read holds. */
+export const TRANSCRIPT_PAGE = 100;
+
+/** A session's conversation, newest first: the first read is the end of it (`before=end`) and each next read is the cursor the
+ *  page before named, so a session opens at what was said last. The transcript view can be off (a state, not an empty
+ *  conversation), and a session with no file on disk is the daemon's own 404. */
+export const transcriptOptions = (session: string) =>
+  infiniteQueryOptions({
     queryKey: [...keys.transcript, session],
-    initialPageParam: null as string | null,
-    queryFn: async ({ pageParam }): Promise<TranscriptRead | { missing: string[] }> => {
-      const path = `/api/sessions/${id(session)}/transcript`;
+    initialPageParam: 'end',
+    queryFn: async ({ pageParam }): Promise<TranscriptAnswer> => {
       try {
-        return await request<TranscriptRead>(pageParam === null ? path : `${path}?cursor=${id(pageParam)}`);
+        return await request<TranscriptRead>(`/api/sessions/${id(session)}/transcript?before=${id(pageParam)}&limit=${TRANSCRIPT_PAGE}`);
       } catch (err) {
         const searched = searchedOf(err);
         if (searched !== null) return { missing: searched };
         throw err;
       }
     },
-    getNextPageParam: (last) => ('state' in last || 'missing' in last ? undefined : (last.next ?? undefined)),
+    getNextPageParam: (last: TranscriptAnswer) => ('state' in last || 'missing' in last ? undefined : (last.earlier ?? undefined)),
     refetchInterval: false,
   });
-  const first = query.data?.pages[0];
-  let view: TranscriptView | null = null;
-  if (first !== undefined) {
-    if ('missing' in first) view = { kind: 'missing', searched: first.missing };
-    else if ('state' in first) view = { kind: 'off', reason: first.reason };
-    else {
-      const pages = query.data?.pages ?? [];
-      view = {
-        kind: 'messages',
-        path: first.path,
-        messages: pages.flatMap((page) => ('messages' in page ? page.messages : [])),
-      };
-    }
-  }
-  return { ...query, view };
+
+/** The pages as one conversation, oldest first: the newest page is first in [pages], and each page is oldest first within. */
+export function transcriptView(pages: readonly TranscriptAnswer[]): TranscriptView | null {
+  const first = pages[0];
+  if (first === undefined) return null;
+  if ('missing' in first) return { kind: 'missing', searched: first.missing };
+  if ('state' in first) return { kind: 'off', reason: first.reason };
+  return {
+    kind: 'messages',
+    path: first.path,
+    messages: [...pages].reverse().flatMap((page) => ('messages' in page ? page.messages : [])),
+  };
+}
+
+export function useTranscript(session: string) {
+  const query = useInfiniteQuery(transcriptOptions(session));
+  return { ...query, view: transcriptView(query.data?.pages ?? []) };
 }
 
 /** What resuming a session on a head does, read when the operator picks the head and never polled. It

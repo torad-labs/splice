@@ -119,7 +119,12 @@ export function clockTitle(start: number): string {
   return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
 }
 
-/** A moment as a clock time on the operator's machine: `3:04 PM`. */
-export function clockTime(at: number): string {
-  return new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+/** A time of day, and its day when it is not today (its year too when it is not this year): a time from last week must not read as this morning. */
+export function clockTime(at: number, now: number = Date.now()): string {
+  const when = new Date(at);
+  const clock = when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const today = new Date(now);
+  if (when.toDateString() === today.toDateString()) return clock;
+  const day = when.toLocaleDateString([], { month: 'short', day: 'numeric', ...(when.getFullYear() === today.getFullYear() ? {} : { year: 'numeric' }) });
+  return `${day}, ${clock}`;
 }

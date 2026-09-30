@@ -31,8 +31,13 @@ describe('formatting', () => {
 });
 
 describe('a clock time', () => {
-  test('it prints hour and minute and no seconds', () => {
-    const text = clockTime(new Date(2026, 8, 29, 15, 4, 59).getTime());
-    expect(text).toMatch(/^(0?3:04\s?PM|15:04)$/i);
+  const at = new Date(2026, 8, 29, 15, 4, 59).getTime();
+  test('today it prints hour and minute and no seconds', () => {
+    expect(clockTime(at, new Date(2026, 8, 29, 23, 59).getTime())).toMatch(/^(0?3:04\s?PM|15:04)$/i);
+  });
+  test('a time from an earlier day carries its day, and from an earlier year its year', () => {
+    const yesterday = clockTime(at, new Date(2026, 8, 30, 0, 1).getTime());
+    expect(yesterday).toMatch(/^Sep 29, (0?3:04\s?PM|15:04)$/i);
+    expect(clockTime(at, new Date(2027, 0, 2).getTime())).toMatch(/^Sep 29, 2026, (0?3:04\s?PM|15:04)$/i);
   });
 });

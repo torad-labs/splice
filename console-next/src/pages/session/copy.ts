@@ -15,7 +15,7 @@ export const P = {
   noOutput: 'no output',
   ranTool: 'Input',
   outputCut: 'Only the start of this output is shown.',
-  loadMore: 'Show the next messages',
+  loadEarlier: 'Show earlier messages',
   loading: 'Reading the conversation…',
   noMessages: 'Nothing has been said yet.',
   transcriptOff: 'Reading transcripts is switched off:',

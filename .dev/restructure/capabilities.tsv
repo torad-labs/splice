@@ -3239,3 +3239,4 @@ features/sessions/src/test/kotlin/splice/sessions/note/SessionNoteRouteTest.kt	f
 console-next/src/lib/note.ts	2c41a48709c1ebd3ef712988c565a28db136fec35a58ea0f4af8ea01cb46b677	created		V4-444 item 3, the note box's limit and whether a draft can be sent
 console-next/src/pages/session/SessionNote.tsx	4376540fd21438230e368aff3e0f285e7130e8bab4e968348051e0acdbe9daa0	created		V4-444 item 3, the session page's note box: draft, send and what came of it
 console-next/e2e/session-note.spec.ts	77d3b31d257834ecd4e9e276b695730de0810f6e5ac3f25e564b769d31977cc1	created		V4-444 item 3, journeys for a note reaching a real socket, a refused version and a session not running
+console-next/src/pages/shared/OnRequest.tsx	d8955a5a67433df0f48dc001b4b59f79cd0f5b7e614f0738785af3df3b934699	created		V4-444 design-law pass: a path or code the page keeps until it is asked for (a folder, the config file, a shim)

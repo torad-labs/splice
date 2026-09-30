@@ -3,10 +3,13 @@ import { useClaudeHead, useUnwrapClaudeHead, useWrapClaudeHead } from '../../api
 import { proseOf } from '../../lib/settings';
 import { C } from '../../lib/words-claude';
 import { Button, Confirm, State } from '../../ui';
+import { OnRequest } from '../shared/OnRequest';
 import { T } from './copy';
 import { Row } from './Row';
 
-const Path = ({ children }: { children: string }) => <code className="path">{children}</code>;
+/** A path is kept until asked for; what stands in for one when there is none is a sentence, not a path. */
+const Path = ({ children }: { children: string }) =>
+  children === C.notFound || children === C.unknown ? <span className="none">{children}</span> : <OnRequest label={C.showPath}>{children}</OnRequest>;
 
 /** Whether the claude command on this machine is splice's own separate command or wrapped through splice. Two acts with different side
  *  effects (wrap swaps the claude link on the PATH), so each asks once and prints any backup the daemon names. */

@@ -34,7 +34,7 @@ export function Rail({ rail, colourOf, pathOf }: { rail: RailFacts; colourOf: (s
                 .filter((ride) => ride.seat === seat.key)
                 .map((ride) => (
                   <li key={`${seat.key}-${ride.at}-${ride.direction}`} className="ride" style={hue(colourOf(seat))}>
-                    <span>{firstLine(ride.text) || P.handoffMissing}</span>
+                    {firstLine(ride.text) === '' ? null : <span>{firstLine(ride.text)}</span>}
                     <small>
                       {ride.direction === 'in' ? P.received : P.sent} · {clockTime(ride.at)}
                     </small>

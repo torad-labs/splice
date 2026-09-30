@@ -1,18 +1,18 @@
 /* Needs you in D: one column of cards, twice the room, one vermilion act each. The calm summary sits beside it on a wide screen. */
 .stack { list-style: none; margin: 0; padding: 0 var(--space-8) 0 0; display: grid; gap: var(--space-14); }
 .needs-layout { display: grid; grid-template-columns: minmax(0, 65rem); }
-.need { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-4) var(--space-13); align-items: center; padding: var(--space-11) var(--space-12) var(--space-11); }
+.need { display: grid; grid-template-columns: minmax(0, 1fr) minmax(12.5rem, 18rem); gap: var(--space-4) var(--space-13); align-items: center; padding: var(--space-11) var(--space-12) var(--space-11); }
 .need-body { display: grid; gap: var(--space-6); justify-items: start; }
 .need h2 { font: 540 1.875rem/1.12 var(--display); font-variation-settings: 'opsz' 72; letter-spacing: -.018em; color: var(--ink); }
 .need p { max-width: 62ch; font: 400 1.125rem/1.6 var(--read); color: var(--body); }
 /* a finding is one card's sentence; a long one (a doctor check naming eleven heads) is cut at four lines and read in full where Open goes */
 .need-body p { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
-.need-do { display: grid; gap: var(--space-6); justify-items: stretch; min-width: 12.5rem; }
+.need-do { display: grid; gap: var(--space-6); justify-items: stretch; min-width: 0; }
 .need-do .btn { justify-content: center; min-height: 2.875rem; font-size: var(--text-2); }
 .need-do .btn.sm { min-height: 2rem; }
 .need-do .hint { font: 400 0.875rem/1.4 var(--read); color: var(--mute); }
 .need-do .hint.alert { color: var(--stuck); }
-.need-do .fallback { font: 500 0.8125rem var(--mono); color: var(--mute); word-break: break-all; }
+.need-do .fallback { font: 400 0.96rem/1.45 var(--read); color: var(--mute); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
 .calm { margin-top: var(--space-17); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-13); }
 .calm h3 { font: 520 1.375rem/1.15 var(--display); color: var(--ink); }
 .calm p { margin-top: var(--space-3); font: 400 1rem/1.5 var(--read); color: var(--body); }

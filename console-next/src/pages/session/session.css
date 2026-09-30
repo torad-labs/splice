@@ -59,7 +59,7 @@ a.crumb { display: inline-flex; align-items: center; gap: var(--space-4); margin
 .note summary { cursor: pointer; }
 .note pre { margin: var(--space-4) 0 0; padding: var(--space-5) var(--space-6); border-radius: 0.5rem; background: color-mix(in srgb, var(--ink) 6%, transparent); font: 400 0.8125rem/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--body); }
 .composer { display: grid; border: var(--input); border-radius: 0.75rem; background: var(--obj); }
-.composer .in { padding: var(--space-8) var(--space-9) var(--space-3); font: 400 1.125rem/1.5 var(--read); color: var(--ink); min-height: 4.25rem; border: 0; background: transparent; resize: vertical; outline: 0; }
+.composer .in { padding: var(--space-8) var(--space-9) var(--space-3); font: 400 1.125rem/1.5 var(--read); color: var(--ink); min-height: 4.25rem; border: 0; background: transparent; resize: none; outline: 0; }
 .composer .what { margin: 0; padding: 0 var(--space-9); font: 400 0.96rem/1.5 var(--read); color: var(--mute); }
 .composer .row { display: flex; align-items: center; gap: var(--space-5); padding: var(--space-4) var(--space-5) var(--space-5) var(--space-9); }
 .composer .row .btn { margin-left: auto; }

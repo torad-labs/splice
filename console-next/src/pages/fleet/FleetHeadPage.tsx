@@ -74,7 +74,7 @@ export function FleetHeadPage() {
             ))}
           </div>
         </div>
-        {facts.fix === null ? null : <div className="acts"><FleetFix fix={facts.fix} head={head} pool={pool} now={now} /></div>}
+        {facts.fix === null ? null : <div className="acts"><FleetFix fix={facts.fix} head={head} pool={pool} now={now} keyCommand={facts.keyCommand ?? null} /></div>}
       </header>
       <Window as="section" colour={facts.colour} attention={facts.attention} className="sheet head-sheet" aria-label={D.windowsTab}>
         <div className="bar">

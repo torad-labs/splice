@@ -13,7 +13,10 @@ export const M = {
   restore: 'Restore',
   archived: 'Archived',
   ledeSeats: (working: number, seats: number, open: number) => {
-    const set = `${working === seats ? 'All' : working === 0 ? 'None' : countWord(working)} of ${countWord(seats).toLowerCase()} ${seats === 1 ? 'seat' : 'seats'} ${working === 1 || seats === 1 ? 'is' : 'are'} working`;
+    const set =
+      seats === 1
+        ? `The one seat is${working === 1 ? '' : ' not'} working`
+        : `${working === seats ? 'All' : working === 0 ? 'None' : countWord(working)} of ${countWord(seats).toLowerCase()} seats ${working === 1 ? 'is' : 'are'} working`;
     return open === 0 ? `${set}.` : `${set}; ${open === 1 ? 'one seat is' : `${countWord(open).toLowerCase()} seats are`} open.`;
   },
   noGoal: 'No goal written.',

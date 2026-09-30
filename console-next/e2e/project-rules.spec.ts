@@ -1,6 +1,6 @@
 // NEW: V4-444 — source-derived project facts and effective rule lengths/applicability.
 import { expect, test } from '@playwright/test';
-import { dirname } from 'node:path';
+import { basename, dirname } from 'node:path';
 import type { ProjectRow } from '../src/types/projects';
 import { driveOneTurn, STACK, utcDayWait } from './stack';
 import { env, FIRST_READ_MS, open, read } from './support';
@@ -25,7 +25,7 @@ test('a repository page retains daemon session/turn facts, selected rule length 
   await expect(main).toContainText('No turn here was priced today');
   const rules = page.getByRole('region', { name: 'Compaction rules', exact: true });
   expect(row.compaction).toEqual([{ scope: 'project', source: 'project:' + repo, chars: STACK.compactProject.length }]);
-  await expect(rules).toContainText(repo);
+  await expect(rules).toContainText(basename(repo));
   await expect(rules).toContainText(STACK.compactProject.length + ' characters');
   await expect(rules).not.toContainText('Everywhere');
   await expect(rules).not.toContainText(STACK.model);
@@ -41,12 +41,13 @@ test('Settings lists each actual effective compaction rule with its length and a
   const faults = await open(page, 'settings/storage');
   const block = page.getByRole('region', { name: 'Compaction', exact: true });
   const rule = (source: string) => block.getByRole('listitem').filter({ hasText: source });
+  const repoName = basename(env('CONSOLE_E2E_REPO'));
   // This is the panel's first instruction read; later value assertions retain Playwright's default bound.
   await expect(block).toContainText(STACK.compactGlobal.length + ' characters', { timeout: FIRST_READ_MS });
   await expect(rule(STACK.model)).toContainText(STACK.compactModel.length + ' characters');
   await expect(rule(STACK.model)).toContainText(STACK.oauthHead);
   await expect(rule(STACK.model)).not.toContainText(STACK.keyHead);
-  await expect(rule(env('CONSOLE_E2E_REPO'))).toContainText(STACK.compactProject.length + ' characters');
+  await expect(rule(repoName)).toContainText(STACK.compactProject.length + ' characters');
   expect(faults.pageErrors).toEqual([]);
   expect(faults.failedReads).toEqual([]);
 });

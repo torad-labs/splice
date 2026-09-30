@@ -31,12 +31,12 @@ test('Needs you opens the intended plan and the full Health report from its doct
   const faults = await open(page, 'needs-you');
   const wrapper = page.getByRole('listitem').filter({ hasText: 'Launcher' }).first();
   await expect(wrapper).toContainText('splice install --all');
-  await wrapper.getByRole('link', { name: 'Open', exact: true }).click();
+  await wrapper.getByRole('link', { name: 'Show the details', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Health', exact: true })).toBeVisible();
   await expect(page.locator('.row').filter({ hasText: 'Launcher' })).toBeVisible();
   await page.goBack();
   const key = page.getByRole('listitem').filter({ hasText: 'CONSOLE_E2E_NO_SUCH_KEY' }).first();
-  await key.getByRole('link', { name: 'Open', exact: true }).click();
+  await key.getByRole('link', { name: 'Show the details', exact: true }).click();
   await expect(page).toHaveURL(new RegExp('#/fleet/' + STACK.keyHead + '$'));
   await expect(page.getByRole('heading', { name: STACK.keyHead, level: 1, exact: true })).toBeVisible();
   expect(faults.pageErrors).toEqual([]);

@@ -7,6 +7,7 @@ export const C = {
   wrappedWhy: 'splice runs claude through itself. The claude command on your PATH is its launcher, and your ~/.claude is left as it is; unwrapping puts the command back.',
   onPath: 'claude on your PATH',
   notFound: 'Nothing named claude',
+  showPath: 'Show the path',
   shim: 'The splice shim',
   realBinary: 'It runs',
   unknown: 'Not read',

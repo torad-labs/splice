@@ -7,6 +7,9 @@ import { ResumeCopy } from '../shared/SessionActions';
 import { A } from './copy';
 import { NeedFix } from './NeedFix';
 
+/** A sentence that ends: a finding with no closing mark gets its full stop before the next sentence starts. */
+const closed = (text: string): string => (/[.!?]$/.test(text) ? text : `${text}.`);
+
 /** One thing that needs a person: its state, who it is about, one sentence, one act, and a quiet way to open it. Every card is
  *  an attention window: it drops its hue and keeps the one vermilion button. */
 export function NeedCard({ need, row }: { need: Need; row: SessionRow | null }) {
@@ -17,8 +20,7 @@ export function NeedCard({ need, row }: { need: Need; row: SessionRow | null }) 
         <State tone={toneOf(need)}>{need.kind}</State>
         <h2>{need.subject}</h2>
         <p title={need.finding}>
-          {need.finding}
-          {need.session?.said == null ? null : <>: <b>{need.session.said}</b></>}
+          {need.session?.said == null ? closed(need.finding) : <>{need.finding}: <b>{need.session.said}</b>{/[.!?]$/.test(need.session.said) ? null : '.'}</>}
           {need.session?.repo == null ? null : <> {A.sessionIn} <b>{need.session.repo}</b>.</>}
         </p>
       </div>

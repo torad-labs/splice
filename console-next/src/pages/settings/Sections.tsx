@@ -180,7 +180,7 @@ function OpenRouterKey() {
       settingKey="OPENROUTER_API_KEY"
       control={
         <span className="secret">
-          <span className="mask">{stored ? '••••••••••••' : T.keyNotSet}</span>
+          <span className={`mask${stored ? '' : ' unset'}`}>{stored ? '••••••••••••' : T.keyNotSet}</span>
           <Prompt
             trigger={<Button small>{stored ? T.keyReplace : T.keySetNew}</Button>}
             title={T.keyAsk}
@@ -300,7 +300,7 @@ function Checks() {
             control={
               <>
                 <State tone={row.status === 'fail' ? 'stuck' : 'wait'}>{row.status === 'fail' ? T.needsYou : T.worth}</State>
-                <NeedFix fix={doctorFixOf(row.fix, row.fixId, row.fixKind)} />
+                <NeedFix fix={doctorFixOf(row.fix, row.fixId, row.fixKind)} tone="quiet" />
               </>
             }
           />

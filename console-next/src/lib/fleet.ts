@@ -20,7 +20,7 @@ export type FleetStanding = 'ready' | 'near' | 'quota' | 'signed-out' | 'off' | 
 export type FleetTone = 'work' | 'wait' | 'stuck' | 'idle' | 'quota';
 
 /** The one act a card offers. `copy-start` is a copy, never a button that starts: the runtime is rig's, not splice's. */
-export type FleetFix = 'switch' | 'sign-in' | 'start' | 'restart' | 'copy-start';
+export type FleetFix = 'switch' | 'sign-in' | 'start' | 'restart' | 'copy-start' | 'copy-key';
 
 export type FleetLine =
   /** The tightest plan window, drawn as a bar. `full` is a window that has refused turns. */
@@ -41,6 +41,8 @@ export interface FleetCard {
   /** Plan family, account, sessions: read once, never chips. */
   meta: string[];
   fix: FleetFix | null;
+  /** The command `copy-key` copies: the key store's setter for this head's variable. Null when the daemon names no variable. */
+  keyCommand?: string | null;
   /** What a card with no line says instead, only when it is true of this head: a key pays per token, a reading may be missing or old. Null says nothing. */
   none: string | null;
 }
@@ -106,6 +108,9 @@ function tightest(head: HeadStatus, usage: UsagePayload | null, now: number): Ex
   };
 }
 
+/** The command that stores a key under its variable, which the card offers to copy. */
+export const keyCommandOf = (variable: string): string => `splice key set ${variable}`;
+
 export function fleetCard(head: HeadStatus, inputs: FleetInputs): FleetCard {
   const { usage, auth, accounts, sessions, topologyStale, now } = inputs;
   const pool = poolOf(accounts, head.key);
@@ -151,8 +156,12 @@ export function fleetCard(head: HeadStatus, inputs: FleetInputs): FleetCard {
       return { ...base, tone: 'quota', standing: 'quota', state: `Out of quota${when}`, attention: true, line: full, fix: pool.length > 1 ? 'switch' : null };
     }
     case 'signed out':
-    case 'key missing':
-      return note('stuck', 'signed-out', head.authKind === 'api-key' ? 'Key missing' : 'Signed out', FL.signedOut, oauth ? 'sign-in' : null, true);
+    case 'key missing': {
+      const keyless = head.authKind === 'api-key';
+      const variable = card?.env_var;
+      const fix = oauth ? 'sign-in' : keyless && variable !== undefined ? 'copy-key' : null;
+      return { ...note('stuck', 'signed-out', keyless ? 'Key missing' : 'Signed out', keyless ? FL.keyMissing : FL.signedOut, fix, true), keyCommand: variable === undefined ? null : keyCommandOf(variable) };
+    }
     case 'login expired':
       return note('stuck', 'signed-out', 'Sign-in expired', FL.loginExpired, oauth ? 'sign-in' : null, true);
     case 'version mismatch':

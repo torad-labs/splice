@@ -76,7 +76,7 @@ export function FleetPage() {
               <FleetCardView
                 key={head.key}
                 facts={facts}
-                fix={facts.fix === null ? null : <FleetFix fix={facts.fix} head={head} pool={poolOf(rows, head.key)} now={now} />}
+                fix={facts.fix === null ? null : <FleetFix fix={facts.fix} head={head} pool={poolOf(rows, head.key)} now={now} keyCommand={facts.keyCommand ?? null} />}
               />
             ))}
             <li>

@@ -5,6 +5,7 @@ import { useTopology, useTopologyEdit } from '../../api/config';
 import { validateTopology } from '../../lib/topology';
 import { changedPaths, coerce, groupOf, headOverrideOf, parseList, setAtPath, toToml, topologyTables, valueAtPath } from '../../lib/topology-edit';
 import type { TopologyField, TopologyTable } from '../../lib/topology-edit';
+import { OnRequest } from '../shared/OnRequest';
 import { CF } from '../../lib/words-config-file';
 import { Button, Select, Switch, TextInput } from '../../ui';
 import { Row } from './Row';
@@ -59,7 +60,8 @@ export function ConfigFile() {
     <>
       <Row
         title={CF.title}
-        why={CF.why(payload.path)}
+        why={CF.why}
+        note={<OnRequest label={CF.showPath}>{payload.path}</OnRequest>}
         control={<Button small aria-expanded={open} onClick={() => setOpen(!open)}>{open ? CF.close : CF.open}</Button>}
       />
       {!open ? null : (

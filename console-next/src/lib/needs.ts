@@ -323,10 +323,13 @@ function headsOfCheck(check: DoctorCheck, said: ReadonlySet<string>, down: reado
 
 /** A head's item, and what Doctor found about that head after it: one stopped head is one item. */
 function withDoctor(need: Need, checks: readonly DoctorCheck[]): Need {
-  if (checks.length === 0) return need;
+  // What Doctor adds is what the head's own finding has not already said: "X not set" and "X is not set" are one fact.
+  const words = (text: string): string => text.toLowerCase().replace(/\b(is|are)\b/g, '').replace(/[^a-z0-9_ ]/g, '').replace(/\s+/g, ' ').trim();
+  const added = [...new Set(checks.map(checkFinding))].filter((finding) => words(finding) !== words(need.finding));
+  if (added.length === 0) return need;
   // The head's finding closes as a sentence first: "not set Doctor:" ran together in V4-331's render.
   const said = /[.!?]$/.test(need.finding) ? need.finding : `${need.finding}.`;
-  return { ...need, finding: `${said} ${U.doctor} ${[...new Set(checks.map(checkFinding))].join('; ')}` };
+  return { ...need, finding: `${said} ${U.doctor} ${added.join('; ')}` };
 }
 
 /** A doctor row's one fix: the daemon runs it, or its command is copied (printed when masked), or,

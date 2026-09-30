@@ -13,7 +13,7 @@ import { SignIn } from '../shared/SignIn';
 import { F } from './copy';
 
 /** The one act a Fleet card offers, as the derivation named it. */
-export function FleetFix({ fix, head, pool, now }: { fix: Fix; head: HeadStatus; pool: readonly AccountRow[]; now: number }) {
+export function FleetFix({ fix, head, pool, now, keyCommand = null }: { fix: Fix; head: HeadStatus; pool: readonly AccountRow[]; now: number; keyCommand?: string | null }) {
   const action = useHeadAction();
   const pin = useSwitchAccount();
   const [copied, setCopied] = useState(false);
@@ -36,20 +36,24 @@ export function FleetFix({ fix, head, pool, now }: { fix: Fix; head: HeadStatus;
       );
     }
     case 'copy-start':
+    case 'copy-key': {
+      const command = fix === 'copy-key' ? keyCommand : startCommandOf(head);
       return (
         <Button
           small
           onClick={() => {
-            void navigator.clipboard.writeText(startCommandOf(head)).then(() => {
+            if (command === null) return;
+            void navigator.clipboard.writeText(command).then(() => {
               setCopied(true);
               window.clearTimeout(timer.current);
               timer.current = window.setTimeout(() => setCopied(false), 2_000);
             });
           }}
         >
-          {copied ? F.copied : F.copyStart}
+          {copied ? F.copied : fix === 'copy-key' ? F.copyKey : F.copyStart}
         </Button>
       );
+    }
     case 'sign-in':
       return (
         <SignIn head={head.key} purpose="renew" {...(pool[0]?.label != null ? { label: pool[0].label } : {})}>

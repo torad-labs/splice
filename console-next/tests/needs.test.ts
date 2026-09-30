@@ -587,7 +587,10 @@ describe('the doctor', () => {
     const checks: DoctorCheck[] = [{ id: 'auth/openrouter', status: 'fail', detail: 'OPENROUTER_API_KEY is not set' }];
     const [folded] = needsIn({ ...inputs, doctor: read(doctor(checks)) });
     expect(alone?.finding).toBe('OPENROUTER_API_KEY not set');
-    expect(folded?.finding).toBe(`OPENROUTER_API_KEY not set. ${U.doctor} OPENROUTER_API_KEY is not set`);
+    // The same fact said twice is said once; what Doctor adds beyond it still follows as its own sentence.
+    expect(folded?.finding).toBe('OPENROUTER_API_KEY not set');
+    const [more] = needsIn({ ...inputs, doctor: read(doctor([{ id: 'auth/openrouter', status: 'fail', detail: 'OPENROUTER_API_KEY is not set' }, { id: 'auth/openrouter', status: 'warn', detail: 'the key store is locked' }])) });
+    expect(more?.finding).toBe(`OPENROUTER_API_KEY not set. ${U.doctor} the key store is locked`);
   });
 
   // V4-333: V4-331's render listed one stopped head three times: its own item, the daemon's

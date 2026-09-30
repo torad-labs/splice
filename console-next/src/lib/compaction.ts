@@ -62,7 +62,9 @@ export function compactLede(total: number, failed: number, week: boolean): strin
 
 /** A rule as a person reads it: its scope in words, and the project or model it names when it names one. */
 export function ruleText(rule: Pick<InstructionRule, 'scope' | 'source'>): { scope: string; names: string | null } {
-  const detail = rule.source.includes(':') ? rule.source.slice(rule.source.indexOf(':') + 1).replace(/ file:.*$/, '') : null;
+  // A folder is named by its last part: the path is on the project's own page, on request.
+  const named = (text: string): string => text.replace(/\/[^\s,|]+/g, (path) => path.replace(/\/+$/, '').split('/').pop() ?? path);
+  const detail = rule.source.includes(':') ? named(rule.source.slice(rule.source.indexOf(':') + 1).replace(/ file:.*$/, '')) : null;
   return { scope: W.scope[rule.scope as InstructionScopeWire] ?? rule.scope, names: detail === '' ? null : detail };
 }
 

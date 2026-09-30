@@ -50,7 +50,7 @@ describe('the rules', () => {
   test('a scope reads as words and the project or model it names is pulled out of the source', () => {
     expect(ruleText({ scope: 'global', source: 'global' })).toEqual({ scope: 'Everywhere', names: null });
     expect(ruleText({ scope: 'model', source: 'model:opus-5.5' })).toEqual({ scope: 'For a model', names: 'opus-5.5' });
-    expect(ruleText({ scope: 'project', source: 'project:/home/a/tally file:/home/a/tally/rules.md' })).toEqual({ scope: 'For a project', names: '/home/a/tally' });
+    expect(ruleText({ scope: 'project', source: 'project:/home/a/tally file:/home/a/tally/rules.md' })).toEqual({ scope: 'For a project', names: 'tally' });
   });
   test('a rule says how long it is, that it is an opt-out, or that its file cannot be read', () => {
     expect(charsText(120)).toBe('120 characters');

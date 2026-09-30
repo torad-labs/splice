@@ -15,6 +15,7 @@ export const F = {
   restart: 'Restart',
   restarting: 'Restarting…',
   copyStart: 'Copy start command',
+  copyKey: 'Copy the key command',
   copied: 'Copied',
   dragHandle: 'Drag to reorder',
   failed: 'That did not work:',

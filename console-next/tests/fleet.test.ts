@@ -109,10 +109,10 @@ describe('the fleet sentence', () => {
   const stand = (...standings: FleetStanding[]): FleetCard[] => standings.map((standing) => ({ standing }) as FleetCard);
   test('counts each standing in order and ends with how to arrange the cards', () => {
     expect(fleetLede(stand('ready', 'quota', 'ready', 'off', 'near', 'signed-out'))).toBe(
-      'Six plans: two ready, one near its limit, one out of quota, one signed out, one switched off. Drag a card to put it where you want it; Sessions follows.',
+      'Six commands: two ready, one near its limit, one out of quota, one needs a sign-in or a key, one switched off. Drag a card to put it where you want it; Sessions follows.',
     );
   });
-  test('one plan is singular and a standing nobody has is left out', () => {
-    expect(fleetLede(stand('other'))).toBe('One plan: one in need of a look. Drag a card to put it where you want it; Sessions follows.');
+  test('one command is singular and a standing nobody has is left out', () => {
+    expect(fleetLede(stand('other'))).toBe('One command: one in need of a look. Drag a card to put it where you want it; Sessions follows.');
   });
 });

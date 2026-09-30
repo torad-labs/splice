@@ -16,7 +16,7 @@ export const A = {
   copied: 'Copied',
   copyFailed: 'Could not copy:',
   masked: 'Its command holds a value splice keeps out of this page. Run splice doctor in a terminal to see it.',
-  open: 'Open',
+  open: 'Show the details',
   failed: 'That did not work:',
   refused: 'The fix did not take:',
   ran: 'Fixed.',

@@ -7,7 +7,7 @@
   --mono: 'IBM Plex Mono', ui-monospace, monospace;
   /* D: everything that is not code or terminal text (meta, buttons, nav, labels, values) reads in the reading face */
   --meta: 'Source Serif 4', Georgia, serif;
-  --input: 2px solid color-mix(in srgb, var(--ink) 38%, transparent);
+  --input: 2px solid color-mix(in srgb, var(--ink) 50%, transparent);
   --ease: cubic-bezier(.22, 1, .36, 1);
   --r1: 6px; --r2: 14px;
   /* Spacing: one scale, on a 4px grid with the 2px and 6px half-steps. Every gap, margin, padding and offset is a rung; a size

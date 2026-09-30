@@ -1,7 +1,7 @@
 import { Link } from 'react-router';
 import { failureText } from '../../api/client';
 import { useCapture, useConversation, useKeptTurn, useSetCapture, useWire } from '../../api/turns';
-import { toolLabel } from '../../lib/conversation';
+import { callTarget, toolLabel } from '../../lib/conversation';
 import { fmtMs } from '../../lib/format';
 import { readable } from '../../lib/message';
 import { askAndAnswer, wireFor } from '../../lib/turns-page';
@@ -14,6 +14,10 @@ type Tab = (typeof TABS)[number][0];
 const tabOf = (raw: string | null): Tab => TABS.find(([id]) => id === raw)?.[0] ?? 'conversation';
 
 function Message({ message, plan }: { message: ConversationMessageWire; plan: string }) {
+  if (message.role === 'assistant' && message.tool !== undefined) {
+    const target = callTarget(message.tool, message.text);
+    return <p className="toolline">{toolLabel(message.tool)}{target === null ? '' : ` · ${target}`}</p>;
+  }
   if (message.role === 'tool') return <p className="toolline">{message.tool === undefined ? P.tool : toolLabel(message.tool)}{message.result === true ? ' · result' : ''}</p>;
   const said = readable(message.text);
   if (said === null) return null;

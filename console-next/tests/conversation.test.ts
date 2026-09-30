@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { editDiff, foldTranscript, interleave, outputSize, toolCommand, toolLabel, toolTarget } from '../src/lib/conversation';
+import { callTarget, editDiff, foldTranscript, interleave, outputSize, toolCommand, toolLabel, toolTarget } from '../src/lib/conversation';
 import type { TranscriptMessage } from '../src/types/sessions';
 
 const say = (index: number, role: TranscriptMessage['role'], text: string, ts?: number): TranscriptMessage => ({ index, role, text, ...(ts === undefined ? {} : { ts }) });
@@ -105,5 +105,17 @@ describe('a tool row says what the tool did', () => {
     expect(toolLabel('mcp__plugin_figma_figma__authenticate')).toBe('figma · authenticate');
     expect(toolLabel('mcp__claude_ai_Claude_Docs__read')).toBe('claude ai Claude Docs · read');
     expect(toolLabel('Bash')).toBe('Bash');
+  });
+});
+
+describe('what a call in a turn\'s conversation did', () => {
+  test('a whole input reads as the tool\'s own target', () => {
+    expect(callTarget('Bash', '{"command":"git log","description":"Show the log"}')).toBe('Show the log');
+    expect(callTarget('Read', '{"file_path":"src/a.ts"}')).toBe('src/a.ts');
+  });
+  test('a cut-off input still gives its description, else the first line of its command', () => {
+    expect(callTarget('Bash', '{"command":"cd /x && ls \\"a b\\"","description":"List the folder')).toBe('List the folder');
+    expect(callTarget('Bash', '{"command":"echo one\\necho two')).toBe('echo one');
+    expect(callTarget('Skill', '{not json')).toBeNull();
   });
 });

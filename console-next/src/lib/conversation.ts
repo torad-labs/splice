@@ -121,6 +121,18 @@ export function toolCommand(tool: string, input: unknown): string | null {
   return text(description) !== null ? text(command) : null;
 }
 
+/** What a tool call did, from the input as the daemon kept it in a turn's conversation: a JSON object as text. A cut-off object
+ *  still gives its description, else the opening of its command. Null when the text names neither. */
+export function callTarget(tool: string, inputText: string): string | null {
+  try {
+    return toolTarget(tool, JSON.parse(inputText));
+  } catch {
+    const opening = (key: string): string | undefined => new RegExp(`"${key}":"((?:[^"\\\\]|\\\\.)*)`).exec(inputText)?.[1];
+    const said = opening('description') ?? opening('command');
+    return said === undefined ? null : firstLine(said.replace(/\\n/g, '\n').replace(/\\(.)/g, '$1')) || null;
+  }
+}
+
 /** A tool's name as a person reads it: `mcp__ast-grep__find_code_by_rule` is `ast-grep · find code by rule`. */
 export function toolLabel(tool: string): string {
   const parts = /^mcp__(.+?)__(.+)$/.exec(tool);

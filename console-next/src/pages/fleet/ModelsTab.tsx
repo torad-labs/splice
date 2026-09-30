@@ -6,6 +6,7 @@ import { rateText, slotTiers, windowSourceText } from '../../lib/models';
 import { M } from '../../lib/words-models';
 import type { CatalogModel, UpstreamProvider } from '../../types/models';
 import { Button } from '../../ui';
+import { AddModels } from './AddModels';
 import { HT } from './copy';
 
 const windowText = (model: CatalogModel): string =>
@@ -65,6 +66,7 @@ export function ModelsTab({ head }: { head: string }) {
       </section>
       <section className="tab-section" aria-label={HT.everyModel}>
         <h2 className="sub-head">{HT.everyModel}</h2>
+        <div className="acts-row"><AddModels head={head} /></div>
         <ul className="models">
           {catalog.models.map((model) => (
             <li key={`${model.slot ?? ''}:${model.id}`}>

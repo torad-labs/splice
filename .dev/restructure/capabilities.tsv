@@ -3077,3 +3077,5 @@ console-next/src/pages/teams/teams.css	0c32cc442cb780dfdc2120e05141ea8f6ffe14516
 console-next/tests/team-page-parts.test.tsx	c7df4841e7490c2408b08b6ed06c529fdc1983c882940e7cf0a53c7043f7ce70	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes
 console-next/tests/teams-page.test.ts	7de6a08134bbfb170b942cf1fddeaa0b4ef6d050bbbe5932b5c428998afe1ed2	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes
 docs/design/comps/pages/team.mjs	ed7d6773470389ca86d065bbc6180ebe7b0e38d92f228dac3a018375b3037048	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes
+console-next/src/pages/fleet/AddModels.tsx	e1a367d97c59d6045edd9a8af742dd77a726440f9010341242c49e78e395d05a	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes
+console-next/tests/add-models.test.tsx	5486f833e4e17dea277894fe817b6888064b84b604548be1973e62eadb2581fe	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes

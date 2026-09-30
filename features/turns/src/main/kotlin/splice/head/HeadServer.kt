@@ -175,16 +175,14 @@ internal class CompactionPreflight(private val catalog: ModelCatalog, private va
         val window = catalog.contextWindowFor(meta.originalModel)
         val estimate = perf.measuredInputs.estimate(meta.sessionId, meta.conversationKey, meta.upstreamModel, request)
             ?: return null
-        // An ordinary continuation asks the client to compact before the whole R is consumed.
-        // The compact turn itself must fit only its generated output; rejecting it at W−R loops.
-        // A measured first exchange cannot compact, so refuse it only above W.
-        val allowance = when {
-            meta.compact -> budget.generationTokens
-            hasPriorExchange -> budget.totalTokens
-            else -> 0L
-        }
-        return if (estimate.tokens > window - allowance) {
-            "prompt is too long: estimated ${estimate.tokens} input tokens plus $allowance " +
+        // An ordinary continuation may compact early, so use the conservative upper bound.
+        // Compact and first-exchange refusals have no recovery behind them: only measured
+        // input alone beyond W proves overflow. Generation p99 is not a required minimum.
+        val ordinary = hasPriorExchange && !meta.compact
+        val allowance = if (ordinary) budget.totalTokens else 0L
+        val bound = if (ordinary) estimate.upperTokens else estimate.lowerTokens
+        return if (bound > window - allowance) {
+            "prompt is too long: estimated $bound input tokens plus $allowance " +
                 "reserved context tokens exceed the $window token model maximum " +
                 "(estimate basis ${estimate.basis}, compaction generation p99 ${budget.generationTokens})"
         } else {

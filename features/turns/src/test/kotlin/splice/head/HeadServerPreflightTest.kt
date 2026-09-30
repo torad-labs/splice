@@ -52,12 +52,13 @@ class HeadServerPreflightTest {
         upstream: MockChatGptUpstream,
         window: Long = 272_000,
         stats: PerfStats = PerfStats(root.resolve("perf-preflight.jsonl")),
+        model: String = "gpt-5.6-sol",
     ): HeadServer {
         val catalog = ModelCatalog(
             discoveryPrefix = "claude-codex--",
-            models = listOf(ModelEntry("gpt-5.6-sol", contextWindow = window)),
+            models = listOf(ModelEntry(model, contextWindow = window)),
             defaultContextWindow = window,
-            pinnedModel = "gpt-5.6-sol",
+            pinnedModel = model,
             compactionReserveDefaults = CodexCompactionReserves,
         )
         val provider = TestResponsesProvider(
@@ -65,7 +66,7 @@ class HeadServerPreflightTest {
                 key = "codex",
                 label = "claudex",
                 catalog = catalog,
-                pinnedModel = "gpt-5.6-sol",
+                pinnedModel = model,
                 auth = PreflightAuth(),
                 baseUrl = upstream.baseUrl,
                 watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
@@ -87,10 +88,11 @@ class HeadServerPreflightTest {
         previous: String,
         content: String,
         system: String = "test",
+        model: String = "gpt-5.6-sol",
     ): HttpResponse = client.post("http://127.0.0.1:$port/v1/messages") {
         header("Content-Type", "application/json")
         header("x-claude-code-session-id", "preflight-session")
-        val body = """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":64,"system":"$system","messages":[""" +
+        val body = """{"model":"claude-codex--$model","stream":true,"max_tokens":64,"system":"$system","messages":[""" +
             previous + """{"role":"user","content":"$content"}]}"""
         setBody(body)
     }
@@ -98,12 +100,18 @@ class HeadServerPreflightTest {
     private suspend fun compact(client: HttpClient, port: Int, previous: String, content: String): HttpResponse =
         send(client, port, previous, content, "SCENARIO:basic tasked with summarizing conversations")
 
-    private fun measured(stats: PerfStats, upstream: MockChatGptUpstream, firstText: String, tokens: Long) {
+    private fun measured(
+        stats: PerfStats,
+        upstream: MockChatGptUpstream,
+        firstText: String,
+        tokens: Long,
+        model: String = "gpt-5.6-sol",
+    ) {
         val request = Json.parseToJsonElement(upstream.upstreamBodies.last().second).jsonObject
         val perf = TurnPerf { 0L }.apply { setCount(PerfKeys.IN_TOKENS, tokens) }
         stats.measuredInputs.remember(
             PerfRowMeta(
-                model = "gpt-5.6-sol",
+                model = model,
                 outcome = "ok",
                 compact = false,
                 sessionId = "preflight-session",
@@ -183,7 +191,7 @@ class HeadServerPreflightTest {
                 "gpt-5.6-sol",
                 measuredBody,
             )
-            assertEquals(250_000L, anchored?.tokens, "synthetic measurement must be in the head's live stats")
+            assertEquals(250_000L, anchored?.lowerTokens, "synthetic measurement must be in the head's live stats")
             val previous = """{"role":"user","content":"seed"},{"role":"assistant","content":"earlier"},"""
             val ordinary = send(client, server.port, previous, "new work")
             assertEquals(400, ordinary.status.value, "measured growth exceeds W−R before SSE")
@@ -193,16 +201,114 @@ class HeadServerPreflightTest {
             assertEquals(200, compact.status.value, "an unmeasured compact reaches the provider")
             assertTrue("event: message_stop" in compact.bodyAsText())
             awaitRows(stats, 3)
-            measured(stats, upstream, seed, tokens = 260_000)
+            measured(stats, upstream, seed, tokens = 273_000)
             val compactHistory = previous + """{"role":"user","content":"summary"},"""
             val tooLargeCompact = compact(client, server.port, compactHistory, "continue")
-            assertEquals(400, tooLargeCompact.status.value, "measured compact exceeds W−generation")
+            assertEquals(400, tooLargeCompact.status.value, "measured compact input alone exceeds W")
             tooLargeCompact.bodyAsText()
             assertEquals(2, upstream.upstreamBodies.size, "only measured refusals avoid the backend")
             val recorded = recorded(root)
             assertTrue("compaction-preflight-compactable" in recorded, recorded)
             assertTrue("compaction-preflight-compact-overflow" in recorded, recorded)
             assertTrue("compaction-preflight-first-exchange" !in recorded, recorded)
+        } finally {
+            server.stop()
+            client.close()
+            upstream.stop()
+        }
+    }
+
+    @Test
+    fun `a measured compact can use less than empirical generation p99`(@TempDir root: Path) = runTest {
+        val upstream = MockChatGptUpstream()
+        val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
+        val stats = PerfStats(root.resolve("perf-preflight.jsonl"))
+        val server = head(root, upstream, window = 872_000, stats = stats, model = "gpt-6-sol")
+        try {
+            server.start()
+            val seed = send(client, server.port, "", "seed", model = "gpt-6-sol")
+            assertEquals(200, seed.status.value)
+            seed.bodyAsText()
+            awaitRows(stats, 1)
+            measured(stats, upstream, "seed", tokens = 865_000, model = "gpt-6-sol")
+            val history = """{"role":"user","content":"seed"},{"role":"assistant","content":"earlier"},"""
+            val compact = send(
+                client,
+                server.port,
+                history,
+                "tasked with summarizing conversations",
+                model = "gpt-6-sol",
+            )
+            assertEquals(200, compact.status.value, "p99 output is not a required output minimum")
+            compact.bodyAsText()
+            assertEquals(2, upstream.upstreamBodies.size)
+        } finally {
+            server.stop()
+            client.close()
+            upstream.stop()
+        }
+    }
+
+    @Test
+    fun `large text growth requests compaction without refusing a fitting compact`(@TempDir root: Path) = runTest {
+        val upstream = MockChatGptUpstream()
+        val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
+        val stats = PerfStats(root.resolve("perf-preflight.jsonl"))
+        val server = head(root, upstream, window = 872_000, stats = stats, model = "gpt-6-sol")
+        try {
+            server.start()
+            val seed = send(client, server.port, "", "seed", model = "gpt-6-sol")
+            assertEquals(200, seed.status.value)
+            seed.bodyAsText()
+            awaitRows(stats, 1)
+            measured(stats, upstream, "seed", tokens = 800_000, model = "gpt-6-sol")
+            val history = """{"role":"user","content":"seed"},{"role":"assistant","content":"earlier"},"""
+            val addedText = "x".repeat(70_000)
+            val ordinary = send(client, server.port, history, addedText, model = "gpt-6-sol")
+            assertEquals(400, ordinary.status.value, "upper text bound should request compaction")
+            assertTrue("prompt is too long" in ordinary.bodyAsText())
+            val compact = send(
+                client,
+                server.port,
+                history,
+                addedText + " tasked with summarizing conversations",
+                model = "gpt-6-sol",
+            )
+            assertEquals(200, compact.status.value, "measured lower bound leaves room for compact")
+            assertTrue("event: message_stop" in compact.bodyAsText())
+            assertEquals(2, upstream.upstreamBodies.size)
+        } finally {
+            server.stop()
+            client.close()
+            upstream.stop()
+        }
+    }
+
+    @Test
+    fun `a measured first exchange uses the lower bound when text bytes overcount`(@TempDir root: Path) = runTest {
+        val upstream = MockChatGptUpstream()
+        val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
+        val stats = PerfStats(root.resolve("perf-preflight.jsonl"))
+        val server = head(root, upstream, window = 872_000, stats = stats, model = "gpt-6-sol")
+        try {
+            server.start()
+            val seed = send(client, server.port, "", "seed", model = "gpt-6-sol")
+            assertEquals(200, seed.status.value)
+            seed.bodyAsText()
+            awaitRows(stats, 1)
+            measured(stats, upstream, "seed", tokens = 800_000, model = "gpt-6-sol")
+            val previous = """{"role":"user","content":"seed"},"""
+            val response = send(client, server.port, previous, "x".repeat(90_000), model = "gpt-6-sol")
+            assertEquals(200, response.status.value, "the first exchange has no compaction to fall back on")
+            response.bodyAsText()
+            awaitRows(stats, 2)
+            measured(stats, upstream, "seed", tokens = 873_000, model = "gpt-6-sol")
+            val grown = previous + """{"role":"user","content":"${"x".repeat(90_000)}"},"""
+            val oversized = send(client, server.port, grown, "continue", model = "gpt-6-sol")
+            assertEquals(400, oversized.status.value, "measured input alone exceeds W")
+            oversized.bodyAsText()
+            assertEquals(2, upstream.upstreamBodies.size)
+            assertTrue("compaction-preflight-first-exchange" in recorded(root))
         } finally {
             server.stop()
             client.close()

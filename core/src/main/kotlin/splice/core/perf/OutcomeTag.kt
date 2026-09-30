@@ -51,7 +51,7 @@ public enum class OutcomeTag(public val wire: String) {
     /** Same refusal on a first exchange: the installed client cannot compact a single exchange. */
     COMPACTION_PREFLIGHT_FIRST_EXCHANGE("error:compaction-preflight-first-exchange"),
 
-    /** Even the compact turn exceeds the window with its audited output allowance. */
+    /** The measured compact input alone exceeds the model's window. */
     COMPACTION_PREFLIGHT_COMPACT_OVERFLOW("error:compaction-preflight-compact-overflow"),
 }
 

@@ -75,7 +75,7 @@ internal object OutcomeSentences {
             "the first exchange exceeds this model's window before any provider send; " +
             "shorten the request, then retry",
         OutcomeTag.COMPACTION_PREFLIGHT_COMPACT_OVERFLOW to
-            "even the compaction cannot fit its estimated input and generated output; " +
+            "the measured input alone exceeds this model's window, even for compaction; " +
             "shorten the conversation, then retry",
     )
 

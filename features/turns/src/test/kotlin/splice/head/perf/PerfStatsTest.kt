@@ -39,7 +39,8 @@ class PerfStatsTest {
         )
         val expected = 200 + appended.toString().toByteArray().size - previous.toString().toByteArray().size
         val estimated = requireNotNull(stats.measuredInputs.estimate("session", "first", "m", appended))
-        assertEquals(expected.toLong(), estimated.tokens)
+        assertEquals(200L, estimated.lowerTokens)
+        assertEquals(expected.toLong(), estimated.upperTokens)
         assertEquals("measured-text-prefix", estimated.basis)
         val lite = body(
             """{"model":"m","input":[{"role":"user","content":"a"},""" +

@@ -86,8 +86,8 @@ private const val DEFAULT_TAIL = 200
 // why: bound in-memory sizing witnesses; a missing one passes through to the provider.
 private const val MAX_PREFLIGHT_WITNESSES = 512
 
-/** A token upper bound backed by upstream-measured input and a byte-level bound on added text. */
-internal data class InputEstimate(val tokens: Long, val basis: String)
+/** The measured prefix is a lower bound; one token per added text byte is the upper bound. */
+internal data class InputEstimate(val lowerTokens: Long, val upperTokens: Long, val basis: String)
 
 /** Latest observed upstream input for one session, conversation and model; no prompt bytes persist. */
 internal class MeasuredInputs {
@@ -118,7 +118,7 @@ internal class MeasuredInputs {
         val measured = key?.let { synchronized(lock) { samples[it] } }
         val growth = measured?.prefix?.textGrowthBytes(request)
         return if (measured != null && growth != null) {
-            InputEstimate(measured.input + growth, "measured-text-prefix")
+            InputEstimate(measured.input, measured.input + growth, "measured-text-prefix")
         } else {
             null
         }

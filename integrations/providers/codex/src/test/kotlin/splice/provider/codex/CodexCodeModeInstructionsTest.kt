@@ -30,7 +30,11 @@ import splice.upstream.codemode.CodeModeStep
 class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
     @Test
     fun `eligible turns append guidance to the original developer item without moving history`() {
-        val builder = CodexCodeModeTurnBuilder(bridge(ScriptedRuntime(ArrayDeque())), media())
+        val builder = CodexCodeModeTurnBuilder(
+            bridge(ScriptedRuntime(ArrayDeque())),
+            media(),
+            codeModeOnly = backendCodeModeOnly,
+        )
         listOf("Caller instructions  \n", "", "<code_mode_orchestration>caller text</code_mode_orchestration>")
             .forEach { system ->
                 val (body, original) = request(system)
@@ -71,7 +75,11 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
         val (body, original) = request("Caller instructions")
         val disabled = CodexCodeModeTurnBuilder(null, media()).prepare(body, false, "session", original)
         assertSame(original, disabled)
-        val builder = CodexCodeModeTurnBuilder(bridge(ScriptedRuntime(ArrayDeque())), media())
+        val builder = CodexCodeModeTurnBuilder(
+            bridge(ScriptedRuntime(ArrayDeque())),
+            media(),
+            codeModeOnly = backendCodeModeOnly,
+        )
         // 2026-09-21: a compaction is no longer excluded — it must build the same bytes as a turn, so
         // its prefix stays cached (CodexCodeModeBridgeTest pins the byte identity).
         val compact = builder.prepare(body, true, "session", original)
@@ -91,10 +99,17 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
         assertSame(nonLite, builder.prepare(body, false, "session", nonLite))
     }
 
+    // V4-441: there is no built-in list. The backend's marks (backendCodeModeOnly, asked each turn) cover
+    // Sol in both families, and TOML `code_mode_models` adds to them: it is also the only way to name a model
+    // the backend hides from its list (codex-auto-review).
     @Test
-    fun `the default model list covers Sol in both families and TOML models replace it`() {
+    fun `the backend's marks cover Sol in both families and TOML models add to them`() {
         val (body, original) = request("Caller")
-        val default = CodexCodeModeTurnBuilder(bridge(ScriptedRuntime(ArrayDeque())), media())
+        val marked = CodexCodeModeTurnBuilder(
+            bridge(ScriptedRuntime(ArrayDeque())),
+            media(),
+            codeModeOnly = backendCodeModeOnly,
+        )
         listOf(
             "gpt-6-astra",
             "gpt-6-sol",
@@ -102,28 +117,35 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
             "gpt-5.6-sol",
             "gpt-5.6-terra",
             "gpt-5.6-luna",
-            "codex-auto-review",
             "GPT-5.6-Sol[1m]",
         ).forEach { model ->
             val eligible = original.copy(meta = original.meta.copy(upstreamModel = model))
-            val prepared = default.prepare(body, false, "session", eligible)
+            val prepared = marked.prepare(body, false, "session", eligible)
             assertTrue(instructions(prepared.requestBody).contains("functions.exec"), model)
         }
-        val configured = CodexCodeModeTurnBuilder(
+        val hidden = original.copy(meta = original.meta.copy(upstreamModel = "codex-auto-review"))
+        assertSame(hidden, marked.prepare(body, false, "session", hidden), "the backend hides it: no mark to read")
+        val listed = CodexCodeModeTurnBuilder(
             bridge(ScriptedRuntime(ArrayDeque())),
             media(),
-            models = listOf(" gpt-5.6-terra "),
+            models = listOf(" gpt-5.6-terra ", "codex-auto-review"),
         )
-        val terra = original.copy(meta = original.meta.copy(upstreamModel = "gpt-5.6-terra"))
-        val terraPrepared = configured.prepare(body, false, "session", terra)
-        assertTrue(instructions(terraPrepared.requestBody).contains("functions.exec"))
+        listOf("gpt-5.6-terra", "codex-auto-review").forEach { model ->
+            val named = original.copy(meta = original.meta.copy(upstreamModel = model))
+            val prepared = listed.prepare(body, false, "session", named)
+            assertTrue(instructions(prepared.requestBody).contains("functions.exec"), model)
+        }
         val astra = original.copy(meta = original.meta.copy(upstreamModel = "gpt-6-astra"))
-        assertSame(astra, configured.prepare(body, false, "session", astra))
+        assertSame(astra, listed.prepare(body, false, "session", astra), "no mark and not named: direct tools")
     }
 
     @Test
     fun `client parallel disable selects sequential guidance not the lite backend flag`() {
-        val builder = CodexCodeModeTurnBuilder(bridge(ScriptedRuntime(ArrayDeque())), media())
+        val builder = CodexCodeModeTurnBuilder(
+            bridge(ScriptedRuntime(ArrayDeque())),
+            media(),
+            codeModeOnly = backendCodeModeOnly,
+        )
         val (ordinaryBody, ordinary) = request("Caller")
         assertEquals("false", ordinary.requestBody.getValue("parallel_tool_calls").jsonPrimitive.content)
         val concurrent = builder.prepare(ordinaryBody, false, "session", ordinary)
@@ -138,7 +160,11 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
 
     @Test
     fun `rebuilding an eligible request never accumulates guidance or mutates caller instructions`() {
-        val builder = CodexCodeModeTurnBuilder(bridge(ScriptedRuntime(ArrayDeque())), media())
+        val builder = CodexCodeModeTurnBuilder(
+            bridge(ScriptedRuntime(ArrayDeque())),
+            media(),
+            codeModeOnly = backendCodeModeOnly,
+        )
         val (body, original) = request("Caller")
         val snapshot = original.requestBody.toString()
         val first = builder.prepare(body, false, "session", original).requestBody
@@ -160,7 +186,7 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
                 ),
             ),
         )
-        val builder = CodexCodeModeTurnBuilder(bridge(runtime), media())
+        val builder = CodexCodeModeTurnBuilder(bridge(runtime), media(), codeModeOnly = backendCodeModeOnly)
         val (initialBody, initial) = request("Caller")
         val first = builder.prepare(initialBody, false, "session", initial)
         val readSink = RecordingSink()

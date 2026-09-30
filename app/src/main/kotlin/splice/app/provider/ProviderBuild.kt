@@ -4,6 +4,7 @@
 package splice.app.provider
 
 import splice.core.config.SpliceConfig
+import splice.core.model.HeadDiscoveredModels
 import splice.core.model.ModelCatalog
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
@@ -18,4 +19,7 @@ internal data class ProviderBuild(
     val watchdog: WatchdogBudget,
     val cfg: SpliceConfig,
     val loginCommand: String,
+    /** What the head's endpoint publishes, read when asked and never copied (V4-441): the roster is
+     *  refreshed while the daemon runs, so a reader that wants the current answer holds this, not a list. */
+    val discovered: HeadDiscoveredModels = HeadDiscoveredModels { emptyList() },
 )

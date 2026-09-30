@@ -342,7 +342,7 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
             """{"model":"gpt-6-astra","max_tokens":100,"tools":[{"name":"Read","input_schema":{"type":"object"}}],""" +
                 """"messages":[{"role":"user","content":[$results]}]}""",
         )
-        val builder = CodexCodeModeTurnBuilder(manager, media())
+        val builder = CodexCodeModeTurnBuilder(manager, media(), codeModeOnly = backendCodeModeOnly)
         return turn(results = builder.toolResults(body))
             .copy(toolMedia = builder.toolMedia(body), legacyResults = builder.legacyResults(body))
     }

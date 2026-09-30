@@ -32,14 +32,17 @@ public class CodexProvider(
      *  /mgmt/logs and not stderr alone (wall kt-no-println, 2026-07-27). */
     log: LogSink = LogSink(DaemonLog::write),
     codeModeBridge: CodexCodeModeBridge? = null,
-    /** Upstream model ids offered the runner; null keeps [CodexCodeModeModels.DEFAULT]. */
+    /** Upstream model ids the operator adds to those the backend marks code-mode-only; null adds none. */
     codeModeModels: Collection<String>? = null,
+    /** The models the backend marks `code_mode_only`, asked each turn (V4-441). */
+    codeModeOnly: CodeModeOnlyModels = NoCodeModeOnlyModels,
 ) : ResponsesProvider(tuning, showReasoning, replayReasoning, configEffort, configSummary, quirks, foldConfig, log) {
 
     private val codeModeTurns = CodexCodeModeTurnBuilder(
         codeModeBridge,
         ResponsesToolResultMedia(quirks),
         codeModeModels,
+        codeModeOnly,
     )
     private val codeMode = codeModeBridge
 
@@ -67,4 +70,18 @@ public class CodexProvider(
             put("ChatGPT-Account-ID", accountId)
         }
     }
+}
+
+/**
+ * The models the backend runs on the code-mode surface alone, asked at TURN time and never captured (V4-441):
+ * the daemon's roster is refreshed while it runs, and a set held from build would hide the refresh. Ids are
+ * whatever the backend published (`tool_mode = "code_mode_only"`); [CodexCodeModeModels.eligible] normalizes.
+ */
+public fun interface CodeModeOnlyModels {
+    public fun ids(): Collection<String>
+}
+
+/** No backend list known: only the operator's `code_mode_models` runs code mode. */
+internal object NoCodeModeOnlyModels : CodeModeOnlyModels {
+    override fun ids(): Collection<String> = emptyList()
 }

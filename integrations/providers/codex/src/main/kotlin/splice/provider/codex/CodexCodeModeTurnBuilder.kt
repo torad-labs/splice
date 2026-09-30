@@ -26,8 +26,9 @@ internal class CodexCodeModeTurnBuilder(
     private val bridge: CodexCodeModeBridge?,
     private val media: ResponsesToolResultMedia,
     models: Collection<String>? = null,
+    private val codeModeOnly: CodeModeOnlyModels = NoCodeModeOnlyModels,
 ) {
-    private val models: Set<String> = CodexCodeModeModels.normalize(models ?: CodexCodeModeModels.DEFAULT)
+    private val operatorModels: Set<String> = CodexCodeModeModels.normalize(models.orEmpty())
 
     /** [compact] is part of the provider's buildTurn contract and deliberately not read: the bridge
      *  rides compactions exactly as it rides turns (see [eligible]). */
@@ -76,9 +77,14 @@ internal class CodexCodeModeTurnBuilder(
         val choiceAllowsBridge = choice == null || (choice.name == null && choice.type in setOf("auto", "any"))
         return body.typed.tools.isNotEmpty() &&
             choiceAllowsBridge &&
-            CodexCodeModeModels.eligible(built.meta.upstreamModel, models) &&
+            runsCodeMode(built.meta.upstreamModel) &&
             isLiteRequest(built.requestBody)
     }
+
+    /** The backend's flag is read now, each turn: see [CodeModeOnlyModels]. */
+    private fun runsCodeMode(upstreamModel: String): Boolean =
+        CodexCodeModeModels.eligible(upstreamModel, operatorModels) ||
+            CodexCodeModeModels.eligible(upstreamModel, CodexCodeModeModels.normalize(codeModeOnly.ids()))
 
     private fun isLiteRequest(request: JsonObject): Boolean {
         val input = request[FIELD_INPUT] as? JsonArray ?: return false
@@ -194,31 +200,19 @@ private class CodeModeLegacyMarkers {
 }
 
 /**
- * The upstream models offered the runner. V4-388: every model codex-rs's catalog runs
- * `tool_mode = "code_mode_only"` (models-manager/models.json, Sep 21: gpt-6-astra, gpt-5.6-sol,
- * gpt-5.6-terra, gpt-5.6-luna, codex-auto-review) plus the GPT-6 ids the backend has served since
- * (gpt-6-sol, pinned by `splice add codex`, V4-224, and gpt-6-luna). Those models are trained on the
- * one-`exec` surface; before this list, luna and terra subagents ran with direct tools (2026-09-28:
- * 16 gpt-6-luna attempts, none offered exec). The TOML `code_mode_models` list replaces this default;
- * an optional `[Nk|Nm]` context suffix on the model id is ignored.
+ * Which upstream models are offered the runner. A model runs code mode when the BACKEND marks it
+ * `tool_mode = "code_mode_only"` (V4-388, V4-441: models trained on the one-`exec` surface, which run with
+ * direct tools badly: 2026-09-28, 98% direct calls and 1.6% exec) OR the operator's TOML `code_mode_models`
+ * names it. That list is an addition and the only way a model the backend hides from its list reaches
+ * code mode (codex-auto-review). An optional `[Nk|Nm]` context suffix on the model id is ignored.
  */
-public object CodexCodeModeModels {
-    public val DEFAULT: Set<String> = setOf(
-        "gpt-6-astra",
-        "gpt-6-sol",
-        "gpt-6-luna",
-        "gpt-5.6-sol",
-        "gpt-5.6-terra",
-        "gpt-5.6-luna",
-        "codex-auto-review",
-    )
-
+internal object CodexCodeModeModels {
     private val contextSuffix = Regex("\\[\\d+[km]]$", RegexOption.IGNORE_CASE)
 
-    public fun normalize(models: Collection<String>): Set<String> =
+    fun normalize(models: Collection<String>): Set<String> =
         models.map { it.trim().lowercase() }.filter(String::isNotEmpty).toSet()
 
-    public fun eligible(upstreamModel: String, models: Set<String>): Boolean =
+    fun eligible(upstreamModel: String, models: Set<String>): Boolean =
         upstreamModel.trim().lowercase().replace(contextSuffix, "") in models
 }
 

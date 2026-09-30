@@ -102,6 +102,7 @@ internal class HeadBuildInputs(
             ),
             cfg = headCfg,
             loginCommand = signInPlanner.signInPlan(resolvedProvider, resolvedHead, key).credentialFix,
+            discovered = discovered,
         )
     }
 

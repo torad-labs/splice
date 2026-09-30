@@ -748,6 +748,14 @@ origin.
   discovers among them. A `rates` line you write on the row wins, and a model OpenRouter lists no price
   for, such as its `auto` router, whose price depends on the route it picks, still reads `no rate card`
   (V4-438).
+- **A Codex model the backend runs code-mode-only gets `exec` without an edit.** `gpt-6.1-sol` shipped
+  marked `code_mode_only` in the ChatGPT backend's model list, but required a manual addition to
+  `code_mode_models` to enable the runner. New releases no longer depend on that copied list.
+  splice now reads each model's `tool_mode` from that list at start, keeps it for the next start, and
+  checks it on every turn. The built-in list is gone; `code_mode_models` adds to what the backend marks and
+  is the way to name a model the backend hides from its list, such as `codex-auto-review`. With no list
+  known at start (no answer and none kept), only `code_mode_models` runs code mode and the head's log says
+  so once (V4-441).
 - **`splice restart` no longer waits out systemd's restart delay.** Where the daemon runs under its
   systemd unit, `splice restart` stopped the daemon itself and then asked systemd to start the unit
   while it was still shutting down, so the start did nothing and the daemon came back only after the

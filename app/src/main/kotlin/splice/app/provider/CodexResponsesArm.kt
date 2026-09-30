@@ -16,6 +16,7 @@ import splice.core.util.HeadScopedLogs
 import splice.core.util.LogSink
 import splice.oauth.OAuthAccountFiles
 import splice.provider.codex.CodeModeBridgeConfig
+import splice.provider.codex.CodeModeOnlyModels
 import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexAuthProvider
 import splice.provider.codex.CodexCodeModeBridge
@@ -72,10 +73,27 @@ internal class CodexResponsesArm(
                 accountIdHeader = providerCfg.quirks.accountIdHeader,
                 codeModeBridge = codeModeBridge(ctx),
                 codeModeModels = ctx.providerCfg.quirks.codeModeModels,
+                codeModeOnly = backendCodeModeOnly(ctx),
             ),
             auth,
             accounts,
         )
+    }
+
+    /** V4-441: the models the backend marks `code_mode_only`, read from the head's roster at each turn so a
+     *  refresh while the daemon runs reaches the next one. With none known at start (no answer and no kept
+     *  list) only `code_mode_models` runs code mode, and the head's log says so once. */
+    private fun backendCodeModeOnly(ctx: ProviderBuild): CodeModeOnlyModels {
+        val port = CodeModeOnlyModels {
+            ctx.discovered.forHead(ctx.key).filter { it.codeModeOnly }.flatMap { it.spellings }
+        }
+        if (port.ids().isEmpty()) {
+            HeadScopedLogs.headScopedLog(ctx.key, log).invoke(
+                "[code-mode] no model is marked code_mode_only by the backend's list (none was discovered or " +
+                    "kept), so only code_mode_models runs code mode\n",
+            )
+        }
+        return port
     }
 
     private fun codexAccounts(ctx: ProviderBuild, primaryPath: Path): List<WiredAccount> {

@@ -363,7 +363,7 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
     @Test
     fun `turn builder arms canonical lite requests, compactions included`() {
         val manager = bridge(ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Completed("ok")))))
-        val builder = CodexCodeModeTurnBuilder(manager, media())
+        val builder = CodexCodeModeTurnBuilder(manager, media(), codeModeOnly = backendCodeModeOnly)
         listOf("gpt-6-astra", "gpt-6-sol", "gpt-6-astra[1m]", "GPT-6-SOL[500K]").forEach { model ->
             val prepared = builder.prepare(toolBody(), false, "s", built(model, lite = true))
             assertTrue(prepared.roundInterceptor != null, model)
@@ -393,7 +393,7 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
         // V4-179: the marker tells the truth about where the pixels went — a readable image is
         // DELIVERED beside the script's output; an unreadable one is omitted with the renderer's reason.
         val runtime = ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Completed("ok"))))
-        val builder = CodexCodeModeTurnBuilder(bridge(runtime), media())
+        val builder = CodexCodeModeTurnBuilder(bridge(runtime), media(), codeModeOnly = backendCodeModeOnly)
         val delivered = builder.toolResults(nonTextResultBody()).single().output
         assertEquals(
             "[image from tool_result toolu_splice_test: image/png, 4 base64 chars",
@@ -421,7 +421,7 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
     @Test
     fun `historical nonbridge image result passes without bridge conversion`() {
         val manager = bridge(ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Completed("ok")))))
-        val built = CodexCodeModeTurnBuilder(manager, media()).prepare(
+        val built = CodexCodeModeTurnBuilder(manager, media(), codeModeOnly = backendCodeModeOnly).prepare(
             historicalImageResultBody(),
             compact = false,
             sessionId = "s",

@@ -60,6 +60,9 @@ internal data class UpstreamModel(
     public val unusable: String? = null,
     /** The card the endpoint lists for it, per million tokens ([ListedPricing]), or null (V4-438). */
     public val rates: ModelRates? = null,
+    /** The endpoint's `tool_mode` for it (the Codex backend: `code_mode_only` for the models it trains on the
+     *  one-`exec` surface), or null when it publishes none (V4-441). */
+    public val toolMode: String? = null,
 ) {
     /** The id and every spelling the endpoint says resolves to it. */
     public val spellings: List<String> get() = listOf(id) + aliases
@@ -164,6 +167,7 @@ internal class UpstreamRosterParser(private val json: Json = Json { ignoreUnknow
         aliases = strings(row["aliases"]),
         unusable = unusable(row),
         rates = ListedPricing.of(row),
+        toolMode = JsonScalars.str(row, "tool_mode"),
     )
 
     /** What the row itself says against serving a Claude Code turn, in the three forms endpoints use

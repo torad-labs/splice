@@ -17,6 +17,8 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshAttempt
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
+import splice.core.model.DiscoveredModel
+import splice.core.model.HeadDiscoveredModels
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicParse
@@ -38,7 +40,8 @@ class CodexResponsesArmTest {
     @Test
     fun `codex oauth path pins responses url routing quirks accounts and code-mode on`(@TempDir tmp: Path) = runTest {
         val primaryFile = writeAccounts(tmp)
-        val ctx = context(tmp, primaryFile)
+        // V4-441: exec comes from the backend's own mark, which discovery carried from its model list.
+        val ctx = context(tmp, primaryFile, listOf(DiscoveredModel("gpt-6-astra", toolMode = "code_mode_only")))
         assertTrue(ctx.providerCfg.codeModeEnabled)
         val wired = CodexResponsesArm(
             StatePaths(baseOverride = tmp.resolve("state")).also { Files.createDirectories(it.stateDir) },
@@ -50,6 +53,33 @@ class CodexResponsesArmTest {
         val built = wired.provider.buildTurn(AnthropicParse.parseAnthropicBody(TOOL_BODY), false, "session-1")
         pinTurn(built)
         assertNotNull(wired.provider.foldController(built.meta))
+        wired.provider.onHeadStop()
+    }
+
+    @Test
+    fun `the arm reads the backend's code_mode_only mark each turn, and says once when none is known`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        var roster = emptyList<DiscoveredModel>()
+        val logged = mutableListOf<String>()
+        val ctx = context(tmp, writeAccounts(tmp), discovered = HeadDiscoveredModels { roster })
+        val wired = CodexResponsesArm(
+            StatePaths(baseOverride = tmp.resolve("state")).also { Files.createDirectories(it.stateDir) },
+            backgroundScope,
+            log = { logged += it },
+            refreshCall = TokenUrlRefreshCall { _, _ -> RefreshAttempt.Denied("test-denied") },
+        ).codexOAuthProvider(ctx, "claude-codex")
+        val body = AnthropicParse.parseAnthropicBody(TOOL_BODY)
+
+        val before = wired.provider.buildTurn(body, false, "session-1")
+        assertFalse(before.requestBody.toString().contains("\"name\":\"exec\""), "no mark known: direct tools")
+        assertEquals(1, logged.count { it.contains("[code-mode] no model is marked code_mode_only") }, "$logged")
+        assertTrue(logged.single { it.contains("[code-mode]") }.startsWith("[codex]"), "$logged")
+
+        roster = listOf(DiscoveredModel("gpt-6-astra", toolMode = "code_mode_only"))
+        val after = wired.provider.buildTurn(body, false, "session-1")
+        assertTrue(after.requestBody.toString().contains("\"name\":\"exec\""), "the refreshed roster marks it")
+        assertEquals(1, logged.count { it.contains("[code-mode]") }, "said once, at start: $logged")
         wired.provider.onHeadStop()
     }
 
@@ -95,7 +125,12 @@ class CodexResponsesArmTest {
         assertTrue(wire.contains("\"name\":\"exec\""))
     }
 
-    private fun context(tmp: Path, authFile: Path): ProviderBuild {
+    private fun context(
+        tmp: Path,
+        authFile: Path,
+        listed: List<DiscoveredModel> = emptyList(),
+        discovered: HeadDiscoveredModels = HeadDiscoveredModels { listed },
+    ): ProviderBuild {
         val key = "codex"
         val state = StatePaths(baseOverride = tmp.resolve("state"))
         val config = ConfigService(
@@ -125,6 +160,7 @@ class CodexResponsesArmTest {
             watchdog = WatchdogBudget(60.seconds, 60.seconds, 600.seconds),
             cfg = config.getConfig(key),
             loginCommand = "claude-codex login",
+            discovered = discovered,
         )
     }
 }

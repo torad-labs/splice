@@ -100,8 +100,8 @@ zstd_request_body = true
 # code_mode (default TRUE for chatgpt-oauth + openai-responses providers, off everywhere else):
 # an eligible turn declares one tool, exec, as Codex does for a model its catalog runs code-mode-only:
 # splice's JAR-bundled JavaScript runner, whose description declares every Claude Code tool, plus
-# orchestration instructions. Eligible by default: every model Codex runs code-mode-only and the
-# GPT-6 family, or the ids in code_mode_models. Claude Code's permission-checked client handlers
+# orchestration instructions. Eligible: every model the Codex backend marks code_mode_only in its own
+# model list, or the ids in code_mode_models. Claude Code's permission-checked client handlers
 # still execute the real operations. Code mode requires neither Codex nor Node. Only chatgpt-oauth +
 # openai-responses providers may enable it; code_mode = false turns it off. Toolless and forced-
 # tool turns retain the ordinary path; a single tool result over 64 KiB is truncated at admission
@@ -117,7 +117,8 @@ zstd_request_body = true
 #   code_mode_workers = 4      the GraalJS child-JVM pool size
 #   code_mode_timeout_ms = 5000 ms a running script may take to answer (its worker's start is not counted)
 #   code_mode_heap = 128       MB each child JVM's -Xmx
-#   code_mode_models = ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "codex-auto-review"]  models offered the runner
+#   code_mode_models = ["codex-auto-review"]  models offered the runner in ADDITION to those the backend marks
+#                              code_mode_only (a model the backend hides from its list is only reachable here)
 # Deferred tool surface: Claude Code advertises 64-87 tools and every schema used to ride every
 # request; this defers the mcp__* tail and answers the model's tool_search at the gateway.
 [providers.codex.quirks.tool_surface]

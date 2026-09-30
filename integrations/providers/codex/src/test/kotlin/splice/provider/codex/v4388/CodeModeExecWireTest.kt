@@ -17,6 +17,7 @@ import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeBridgeTestSupport
 import splice.provider.codex.CodexCodeModeTurnBuilder
 import splice.provider.codex.CodexCodeModeValidation
+import splice.provider.codex.backendCodeModeOnly
 
 /** V4-388: what rides beside exec, when the manual says tools were withheld, and which outer names are ours. */
 class CodeModeExecWireTest : CodeModeBridgeTestSupport() {
@@ -59,7 +60,11 @@ class CodeModeExecWireTest : CodeModeBridgeTestSupport() {
             {"name":"LSP","description":"Language server.","input_schema":{"type":"object",
              "properties":{"line":{"type":"integer"}},"required":["line"]}}]}""",
         )
-        val builder = CodexCodeModeTurnBuilder(bridge(ScriptedRuntime(ArrayDeque())), media())
+        val builder = CodexCodeModeTurnBuilder(
+            bridge(ScriptedRuntime(ArrayDeque())),
+            media(),
+            codeModeOnly = backendCodeModeOnly,
+        )
         assertEquals(
             "Language server.\n\nexec tool declaration:\n```ts\n" +
                 "declare const tools: { LSP(args: { line: number; }): Promise<unknown>; };\n```",

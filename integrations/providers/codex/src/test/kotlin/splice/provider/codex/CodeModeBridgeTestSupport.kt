@@ -30,6 +30,12 @@ import java.time.ZoneId
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 
+/** V4-441: the models the backend's catalog marks `tool_mode = "code_mode_only"`, which is what runs code mode
+ *  in production; the suites below that arm a turn on one of these hand the builder the same port. */
+internal val backendCodeModeOnly: CodeModeOnlyModels = CodeModeOnlyModels {
+    listOf("gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna")
+}
+
 internal const val BASE_REQUEST: String = """{"input":[{"role":"developer","content":"s"}]}"""
 
 private val TERMINATED_HEADER = Regex("^Script terminated\nWall time \\d+\\.\\d seconds\nOutput:\n")

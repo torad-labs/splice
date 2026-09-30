@@ -19,6 +19,7 @@ import splice.dialect.responses.request.BuildOptions
 import splice.dialect.responses.request.ResponsesRequestBuilder
 import splice.provider.codex.CodeModeBridgeTestSupport
 import splice.provider.codex.CodexCodeModeTurnBuilder
+import splice.provider.codex.backendCodeModeOnly
 
 /**
  * V4-388 conformance: a code_mode_only turn carries the surface codex-rs sends
@@ -96,7 +97,11 @@ class CodeModeExecSurfaceTest : CodeModeBridgeTestSupport() {
             ),
         ).build(body.typed, body.raw, options).req
         val built = built("gpt-6-sol", lite = true).copy(requestBody = request)
-        val builder = CodexCodeModeTurnBuilder(bridge(ScriptedRuntime(ArrayDeque())), media())
+        val builder = CodexCodeModeTurnBuilder(
+            bridge(ScriptedRuntime(ArrayDeque())),
+            media(),
+            codeModeOnly = backendCodeModeOnly,
+        )
         return builder.prepare(body, false, "session", built).requestBody
     }
 

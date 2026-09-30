@@ -23,7 +23,6 @@ package splice.provider.grok
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import splice.core.auth.AuthDescription
 import splice.core.auth.CredentialExpiry
@@ -49,6 +48,7 @@ import splice.upstream.credentials.AccountCredentialIdentitySource
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialEvidence
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialFileEvidenceReader
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialPresence
+import splice.upstream.credentials.BackgroundCredentialRefresh
 import splice.upstream.credentials.CredentialLock
 import splice.upstream.retry.SingleFlight
 import java.nio.file.Files
@@ -99,6 +99,7 @@ public class GrokAuthProvider(
 
     private val json = Json { ignoreUnknownKeys = true }
     private val singleFlight = SingleFlight<Credentials?>()
+    private val backgroundRefresh = BackgroundCredentialRefresh(prefetchScope, LOG_TAG, log)
     private val invalidGrantLatch = InvalidGrantLatch()
 
     // G15: the mtime probe lives on its own collaborator, not on this class. Measured, not assumed:
@@ -159,7 +160,7 @@ public class GrokAuthProvider(
             // prefetch tier (G17): kick a single-flight refresh in the background, serve the CURRENT
             // token now. singleFlight still dedups concurrent entrants to one network call;
             // credentialsOrNull still owns the one logging flatten (discipline L3).
-            prefetchScope.launch { singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG, log) } }
+            backgroundRefresh.launch { singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG, log) } }
             current
         } else if (clock() - lastIneffectiveRefreshAtMs < REFRESH_INEFFECTIVE_BACKOFF_MS) {
             // SH-02(b): the last refresh succeeded without advancing past the stale floor — another

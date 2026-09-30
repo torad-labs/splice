@@ -12,7 +12,6 @@ package splice.provider.kimi
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import splice.core.auth.AuthDescription
 import splice.core.auth.CredentialExpiry
@@ -34,6 +33,7 @@ import splice.upstream.credentials.AccountCredentialIdentitySource
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialEvidence
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialFileEvidenceReader
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialPresence
+import splice.upstream.credentials.BackgroundCredentialRefresh
 import splice.upstream.credentials.CredentialLock
 import splice.upstream.retry.SingleFlight
 import java.nio.file.Files
@@ -64,6 +64,7 @@ public class KimiAuthProvider(
 ) : RefreshableAuthProvider, AccountCredentialIdentitySource {
 
     private val singleFlight = SingleFlight<Credentials?>()
+    private val backgroundRefresh = prefetchScope?.let { BackgroundCredentialRefresh(it, LOG_TAG, log) }
     private val invalidGrantLatch = InvalidGrantLatch()
 
     // The plan-tier probe and the auth-file shaper moved to KimiOAuth with the rest of the kimi
@@ -105,8 +106,8 @@ public class KimiAuthProvider(
         nowS: Long,
         remainingS: Long,
     ): Credentials? {
-        if (prefetchScope != null && remainingS > HARD_FLOOR_S) {
-            prefetchScope.launch { singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG, log) } }
+        if (backgroundRefresh != null && remainingS > HARD_FLOOR_S) {
+            backgroundRefresh.launch { singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG, log) } }
             return apiKey(snap.access)
         }
         val refreshed = singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG, log) }

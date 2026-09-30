@@ -13,7 +13,6 @@ package splice.provider.codex
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import splice.core.auth.AuthDescription
 import splice.core.auth.CredentialExpiry
@@ -37,6 +36,7 @@ import splice.upstream.credentials.AccountCredentialIdentitySource
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialEvidence
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialFileEvidenceReader
 import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialPresence
+import splice.upstream.credentials.BackgroundCredentialRefresh
 import splice.upstream.credentials.CredentialLock
 import splice.upstream.retry.SingleFlight
 import java.nio.file.Files
@@ -91,6 +91,7 @@ public class CodexAuthProvider(
 ) : RefreshableAuthProvider, AccountCredentialIdentitySource {
 
     private val singleFlight = SingleFlight<Credentials?>()
+    private val backgroundRefresh = BackgroundCredentialRefresh(prefetchScope, LOG_TAG, log)
     private val invalidGrantLatch = InvalidGrantLatch()
 
     // The JWT claim reader moved to CodexOAuth with the rest of the codex OAuth wire helpers
@@ -135,7 +136,7 @@ public class CodexAuthProvider(
         } else if (expiresAt - clock() >= STALE_FLOOR_MS) {
             // prefetch tier (G17): kick a single-flight refresh in the background, serve the CURRENT
             // token now. singleFlight still dedups concurrent entrants to one network call.
-            prefetchScope.launch { singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG, log) } }
+            backgroundRefresh.launch { singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG, log) } }
             current
         } else {
             // stale floor: too close to hard expiry to risk it — block for a confirmed-fresh token.

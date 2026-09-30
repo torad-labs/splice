@@ -46,7 +46,6 @@
     ":integrations-dialects-openai-responses splice.dialect.responses.websocket.WsConnector",
     ":integrations-dialects-openai-responses splice.dialect.responses.websocket.WsUpstream",
     ":integrations-upstream splice.upstream.transport.CausePredicate",
-    ":integrations-upstream splice.upstream.credentials.CredentialRefresh",
     ":integrations-upstream splice.upstream.PollRuntime"
   ],
   "kept": {

@@ -40,6 +40,280 @@ Because the bundle is a single minified file, per-package license banners are no
 individually preserved inline; this notices file is the record of what is bundled and
 under what license, standing in for banner preservation.
 
+## console-next bundled runtime dependencies
+
+`console-next/dist/index.html` is a single-file production bundle (built with `vite-plugin-singlefile`). The packages below are the ones
+with code in it, read from the bundle itself (rollup's rendered modules), not from `package.json`, so the transitive packages that
+react-markdown, radix and the rest pull in are listed too. Each line is the package's own version, its declared SPDX license and the
+copyright lines of its own LICENSE file. `console-next/tests/notices.test.ts` fails by name when a bundled package has no entry, an entry
+differs from the package's own LICENSE, or an entry is no longer bundled; `bun console-next/tests/support/print-notices.ts --write`
+rewrites the block below from the bundle.
+
+Because the bundle is a single minified file, per-package license banners are not individually preserved inline; this notices file is the
+record of what is bundled and under what license, standing in for banner preservation.
+
+<!-- console-next-bundle:begin -->
+- @dnd-kit/accessibility 3.1.1 — MIT
+  - Copyright (c) 2021, Claudéric Demers
+- @dnd-kit/core 6.3.1 — MIT
+  - Copyright (c) 2021, Claudéric Demers
+- @dnd-kit/sortable 10.0.0 — MIT
+  - Copyright (c) 2021, Claudéric Demers
+- @dnd-kit/utilities 3.2.2 — MIT
+  - Copyright (c) 2021, Claudéric Demers
+- @floating-ui/core 1.8.0 — MIT
+  - Copyright (c) 2021-present Floating UI contributors
+- @floating-ui/dom 1.8.0 — MIT
+  - Copyright (c) 2021-present Floating UI contributors
+- @floating-ui/react-dom 2.1.9 — MIT
+  - Copyright (c) 2021-present Floating UI contributors
+- @floating-ui/utils 0.2.12 — MIT
+  - Copyright (c) 2021-present Floating UI contributors
+- @radix-ui/primitive 1.1.3 — MIT
+  - Copyright (c) 2022 WorkOS
+- @radix-ui/react-arrow 1.1.7 — MIT
+  - Copyright (c) 2022 WorkOS
+- @radix-ui/react-collection 1.1.7 — MIT
+  - Copyright (c) 2022 WorkOS
+- @radix-ui/react-compose-refs 1.1.2 — MIT
+  - Copyright (c) 2022 WorkOS (from the 1.1.5 release's LICENSE; this release ships none)
+- @radix-ui/react-context 1.1.2 — MIT
+  - Copyright (c) 2022 WorkOS (from @radix-ui/primitive's LICENSE, the same repository; this package ships none)
+- @radix-ui/react-dialog 1.1.15 — MIT
+  - Copyright (c) 2022 WorkOS
+- @radix-ui/react-direction 1.1.1 — MIT
+  - Copyright (c) 2022 WorkOS (from @radix-ui/primitive's LICENSE, the same repository; this package ships none)
+- @radix-ui/react-dismissable-layer 1.1.11 — MIT
+  - Copyright (c) 2022 WorkOS
+- @radix-ui/react-dropdown-menu 2.1.16 — MIT
+  - Copyright (c) 2022 WorkOS
+- @radix-ui/react-focus-guards 1.1.3 — MIT
+  - Copyright (c) 2022 WorkOS
+- @radix-ui/react-focus-scope 1.1.7 — MIT
+  - Copyright (c) 2022 WorkOS
+- @radix-ui/react-id 1.1.1 — MIT
+  - Copyright (c) 2022 WorkOS (from the 1.1.4 release's LICENSE; this release ships none)
+- @radix-ui/react-menu 2.1.16 — MIT
+  - Copyright (c) 2022 WorkOS
+- @radix-ui/react-popper 1.2.8 — MIT
+  - Copyright (c) 2022 WorkOS
+- @radix-ui/react-portal 1.1.9 — MIT
+  - Copyright (c) 2022 WorkOS
+- @radix-ui/react-presence 1.1.5 — MIT
+  - Copyright (c) 2022 WorkOS
+- @radix-ui/react-primitive 2.1.3 — MIT
+  - Copyright (c) 2022 WorkOS
+- @radix-ui/react-roving-focus 1.1.11 — MIT
+  - Copyright (c) 2022 WorkOS
+- @radix-ui/react-slot 1.2.3 — MIT
+  - Copyright (c) 2022 WorkOS
+- @radix-ui/react-use-callback-ref 1.1.1 — MIT
+  - Copyright (c) 2022 WorkOS (from @radix-ui/primitive's LICENSE, the same repository; this package ships none)
+- @radix-ui/react-use-controllable-state 1.2.2 — MIT
+  - Copyright (c) 2022 WorkOS
+- @radix-ui/react-use-escape-keydown 1.1.1 — MIT
+  - Copyright (c) 2022 WorkOS (from @radix-ui/primitive's LICENSE, the same repository; this package ships none)
+- @radix-ui/react-use-layout-effect 1.1.1 — MIT
+  - Copyright (c) 2022 WorkOS (from @radix-ui/primitive's LICENSE, the same repository; this package ships none)
+- @radix-ui/react-use-size 1.1.1 — MIT
+  - Copyright (c) 2022 WorkOS (from @radix-ui/primitive's LICENSE, the same repository; this package ships none)
+- @tanstack/query-core 5.104.0 — MIT
+  - Copyright (c) 2021-present Tanner Linsley
+- @tanstack/react-query 5.104.0 — MIT
+  - Copyright (c) 2021-present Tanner Linsley
+- @ungap/structured-clone 1.4.0 — ISC
+  - Copyright (c) 2021, Andrea Giammarchi, @WebReflection
+- aria-hidden 1.2.6 — MIT
+  - Copyright (c) 2017 Anton Korzunov
+- bail 2.0.2 — MIT
+  - Copyright (c) 2015 Titus Wormer <tituswormer@gmail.com>
+- ccount 2.0.1 — MIT
+  - Copyright (c) 2015 Titus Wormer <tituswormer@gmail.com>
+- comma-separated-tokens 2.0.3 — MIT
+  - Copyright (c) 2016 Titus Wormer <tituswormer@gmail.com>
+- decode-named-character-reference 1.3.0 — MIT
+  - Copyright (c) Titus Wormer <tituswormer@gmail.com>
+- devlop 1.1.0 — MIT
+  - Copyright (c) 2023 Titus Wormer <tituswormer@gmail.com>
+- escape-string-regexp 5.0.0 — MIT
+  - Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
+- estree-util-is-identifier-name 3.0.0 — MIT
+  - Copyright (c) 2020 Titus Wormer <tituswormer@gmail.com>
+- extend 3.0.2 — MIT
+  - Copyright (c) 2014 Stefan Thomas
+- get-nonce 1.0.1 — MIT
+  - Copyright (c) 2020 Anton Korzunov
+- hast-util-to-jsx-runtime 2.3.6 — MIT
+  - Copyright (c) Titus Wormer <tituswormer@gmail.com>
+- hast-util-whitespace 3.0.0 — MIT
+  - Copyright (c) 2016 Titus Wormer <tituswormer@gmail.com>
+- highlight.js 11.12.0 — BSD-3-Clause
+  - Copyright (c) 2006, Ivan Sagalaev.
+- html-url-attributes 3.0.1 — MIT
+  - Copyright (c) Titus Wormer
+- inline-style-parser 0.2.7 — MIT
+  - Copyright (c) 2012 TJ Holowaychuk <tj@vision-media.ca>
+- is-plain-obj 4.1.0 — MIT
+  - Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
+- longest-streak 3.1.0 — MIT
+  - Copyright (c) 2015 Titus Wormer <mailto:tituswormer@gmail.com>
+- markdown-table 3.0.4 — MIT
+  - Copyright (c) Titus Wormer <tituswormer@gmail.com>
+- mdast-util-find-and-replace 3.0.2 — MIT
+  - Copyright (c) Titus Wormer <tituswormer@gmail.com>
+- mdast-util-from-markdown 2.0.3 — MIT
+  - Copyright (c) Titus Wormer <tituswormer@gmail.com>
+- mdast-util-gfm 3.1.0 — MIT
+  - Copyright (c) Titus Wormer <tituswormer@gmail.com>
+- mdast-util-gfm-autolink-literal 2.0.1 — MIT
+  - Copyright (c) 2020 Titus Wormer <tituswormer@gmail.com>
+- mdast-util-gfm-footnote 2.1.0 — MIT
+  - Copyright (c) Titus Wormer <tituswormer@gmail.com>
+- mdast-util-gfm-strikethrough 2.0.1 — MIT
+  - Copyright (c) Titus Wormer <tituswormer@gmail.com>
+- mdast-util-gfm-table 2.0.0 — MIT
+  - Copyright (c) 2020 Titus Wormer <tituswormer@gmail.com>
+- mdast-util-gfm-task-list-item 2.0.0 — MIT
+  - Copyright (c) 2020 Titus Wormer <tituswormer@gmail.com>
+- mdast-util-phrasing 4.1.0 — MIT
+  - Copyright (c) 2017 Titus Wormer <tituswormer@gmail.com>
+  - Copyright (c) 2017 Victor Felder <victor@draft.li>
+- mdast-util-to-hast 13.2.1 — MIT
+  - Copyright (c) 2016 Titus Wormer <tituswormer@gmail.com>
+- mdast-util-to-markdown 2.1.3 — MIT
+  - Copyright (c) Titus Wormer <tituswormer@gmail.com>
+- mdast-util-to-string 4.0.0 — MIT
+  - Copyright (c) 2015 Titus Wormer <tituswormer@gmail.com>
+- micromark 4.0.3 — MIT
+  - Copyright (c) Titus Wormer <tituswormer@gmail.com>
+- micromark-core-commonmark 2.0.4 — MIT
+  - Copyright (c) Titus Wormer <tituswormer@gmail.com>
+- micromark-extension-gfm 3.0.0 — MIT
+  - Copyright (c) 2020 Titus Wormer <tituswormer@gmail.com>
+- micromark-extension-gfm-autolink-literal 2.1.0 — MIT
+  - Copyright (c) 2020 Titus Wormer <tituswormer@gmail.com>
+- micromark-extension-gfm-footnote 2.1.0 — MIT
+  - Copyright (c) 2021 Titus Wormer <tituswormer@gmail.com>
+- micromark-extension-gfm-strikethrough 2.1.0 — MIT
+  - Copyright (c) 2020 Titus Wormer <tituswormer@gmail.com>
+- micromark-extension-gfm-table 2.1.2 — MIT
+  - Copyright (c) Titus Wormer <tituswormer@gmail.com>
+- micromark-extension-gfm-task-list-item 2.1.0 — MIT
+  - Copyright (c) 2020 Titus Wormer <tituswormer@gmail.com>
+- micromark-factory-destination 2.0.1 — MIT
+  - Copyright (c) Titus Wormer <tituswormer@gmail.com>
+- micromark-factory-label 2.0.1 — MIT
+  - Copyright (c) Titus Wormer <tituswormer@gmail.com>
+- micromark-factory-space 2.1.0 — MIT
+  - Copyright (c) Titus Wormer <tituswormer@gmail.com>
+- micromark-factory-title 2.0.1 — MIT
+  - Copyright (c) Titus Wormer <tituswormer@gmail.com>
+- micromark-factory-whitespace 2.0.1 — MIT
+  - Copyright (c) Titus Wormer <tituswormer@gmail.com>
+- micromark-util-character 2.1.1 — MIT
+  - Copyright (c) Titus Wormer <tituswormer@gmail.com>
+- micromark-util-chunked 2.0.1 — MIT
+  - Copyright (c) Titus Wormer <tituswormer@gmail.com>
+- micromark-util-classify-character 2.0.1 — MIT
+  - Copyright (c) Titus Wormer <tituswormer@gmail.com>
+- micromark-util-combine-extensions 2.0.1 — MIT
+  - Copyright (c) Titus Wormer <tituswormer@gmail.com>
+- micromark-util-decode-numeric-character-reference 2.0.2 — MIT
+  - Copyright (c) Titus Wormer <tituswormer@gmail.com>
+- micromark-util-decode-string 2.0.1 — MIT
+  - Copyright (c) Titus Wormer <tituswormer@gmail.com>
+- micromark-util-edit-map 1.0.0 — MIT
+  - Copyright (c) Titus Wormer <tituswormer@gmail.com>
+- micromark-util-html-tag-name 2.0.1 — MIT
+  - Copyright (c) Titus Wormer <tituswormer@gmail.com>
+- micromark-util-normalize-identifier 2.0.1 — MIT
+  - Copyright (c) Titus Wormer <tituswormer@gmail.com>
+- micromark-util-resolve-all 2.0.1 — MIT
+  - Copyright (c) Titus Wormer <tituswormer@gmail.com>
+- micromark-util-sanitize-uri 2.0.1 — MIT
+  - Copyright (c) Titus Wormer <tituswormer@gmail.com>
+- micromark-util-subtokenize 2.1.0 — MIT
+  - Copyright (c) Titus Wormer <tituswormer@gmail.com>
+- property-information 7.2.0 — MIT
+  - Copyright (c) Titus Wormer <mailto:tituswormer@gmail.com>
+- react 19.2.8 — MIT
+  - Copyright (c) Meta Platforms, Inc. and affiliates.
+- react-dom 19.2.8 — MIT
+  - Copyright (c) Meta Platforms, Inc. and affiliates.
+- react-markdown 10.1.0 — MIT
+  - Copyright (c) Espen Hovlandsdal
+- react-remove-scroll 2.7.2 — MIT
+  - Copyright (c) 2017 Anton Korzunov
+- react-remove-scroll-bar 2.3.8 — MIT
+  - Copyright (c) Anton Korzunov <thekashey@gmail.com> (the author its package.json names; this package ships no LICENSE file)
+- react-router 7.18.4 — MIT
+  - Copyright (c) React Training LLC 2015-2019
+  - Copyright (c) Remix Software Inc. 2020-2021
+  - Copyright (c) Shopify Inc. 2022-2023
+- react-style-singleton 2.2.3 — MIT
+  - Copyright (c) 2017 Anton Korzunov
+- remark-gfm 4.0.1 — MIT
+  - Copyright (c) Titus Wormer <tituswormer@gmail.com>
+- remark-parse 11.0.0 — MIT
+  - Copyright (c) 2014 Titus Wormer <tituswormer@gmail.com>
+- remark-rehype 11.1.2 — MIT
+  - Copyright (c) Titus Wormer <tituswormer@gmail.com>
+- scheduler 0.27.0 — MIT
+  - Copyright (c) Meta Platforms, Inc. and affiliates.
+- space-separated-tokens 2.0.2 — MIT
+  - Copyright (c) 2016 Titus Wormer <tituswormer@gmail.com>
+- style-to-js 1.1.21 — MIT
+  - Copyright (c) 2020 Menglin "Mark" Xu <mark@remarkablemark.org>
+- style-to-object 1.0.14 — MIT
+  - Copyright (c) 2017 Menglin "Mark" Xu <mark@remarkablemark.org>
+- trim-lines 3.0.1 — MIT
+  - Copyright (c) 2015 Titus Wormer <mailto:tituswormer@gmail.com>
+- trough 2.2.0 — MIT
+  - Copyright (c) 2016 Titus Wormer <tituswormer@gmail.com>
+- tslib 2.8.1 — 0BSD
+  - Copyright (c) Microsoft Corporation.
+- unified 11.0.5 — MIT
+  - Copyright (c) 2015 Titus Wormer <tituswormer@gmail.com>
+- unist-util-is 6.0.1 — MIT
+  - Copyright (c) 2015 Titus Wormer <tituswormer@gmail.com>
+- unist-util-position 5.0.0 — MIT
+  - Copyright (c) 2015 Titus Wormer <tituswormer@gmail.com>
+- unist-util-stringify-position 4.0.0 — MIT
+  - Copyright (c) 2016 Titus Wormer <tituswormer@gmail.com>
+- unist-util-visit 5.1.0 — MIT
+  - Copyright (c) 2015 Titus Wormer <tituswormer@gmail.com>
+- unist-util-visit-parents 6.0.2 — MIT
+  - Copyright (c) 2016 Titus Wormer <tituswormer@gmail.com>
+- use-callback-ref 1.3.3 — MIT
+  - Copyright (c) 2017 Anton Korzunov
+- use-sidecar 1.1.3 — MIT
+  - Copyright (c) 2017 Anton Korzunov
+- vfile 6.0.3 — MIT
+  - Copyright (c) 2015 Titus Wormer <tituswormer@gmail.com>
+- vfile-message 4.0.3 — MIT
+  - Copyright (c) Titus Wormer <tituswormer@gmail.com>
+<!-- console-next-bundle:end -->
+
+## console-next fonts
+
+The fonts the bundle embeds as data URIs, by family, each with the license text beside the font files. The test above reads the families
+from the `@font-face` rules the bundle pulled in and checks the embedded count against them.
+
+<!-- console-next-fonts:begin -->
+- Fraunces (`fraunces-400-italic.woff2`, `fraunces-400.woff2`)
+  - Copyright 2018 The Fraunces Project Authors (https://github.com/undercasetype/Fraunces)
+  - License: SIL Open Font License, Version 1.1
+  - Full license text: `console-next/src/styles/fonts/OFL-Fraunces.txt`
+- IBM Plex Mono (`ibm-plex-mono-400.woff2`, `ibm-plex-mono-500.woff2`, `ibm-plex-mono-600.woff2`)
+  - Copyright 2019 IBM Corp. All rights reserved.
+  - License: SIL Open Font License, Version 1.1
+  - Full license text: `console-next/src/styles/fonts/OFL-IBM-Plex.txt`
+- Source Serif 4 (`source-serif-4-400-italic.woff2`, `source-serif-4-400.woff2`)
+  - Copyright 2014 - 2023 Adobe (http://www.adobe.com/), with Reserved Font Name ‘Source’. All Rights Reserved.
+  - License: SIL Open Font License, Version 1.1
+  - Full license text: `console-next/src/styles/fonts/OFL-Source-Serif-4.txt`
+<!-- console-next-fonts:end -->
+
 ## Gateway shaded-JAR dependency enumeration
 
 The splice application (`:app`) is distributed as a shaded/shadow JAR

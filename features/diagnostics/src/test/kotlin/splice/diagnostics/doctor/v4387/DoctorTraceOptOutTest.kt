@@ -19,7 +19,8 @@ class DoctorTraceOptOutTest {
         assertEquals(emptyList<String>(), doctor.traceChecks(topology(null), running).map { it.name })
         val off = doctor.traceChecks(topology("false"), mapOf("local" to DaemonProbe.HeadTrace(false))).single()
         assertEquals("trace:local", off.name)
-        assertTrue(off.detail.contains("does not write"), off.detail)
+        assertEquals("local does not write its request and reply trace", off.detail.substringBefore(". "))
+        assertTrue(off.detail.contains("overrides.trace = false"), off.detail)
         assertFalse(off.pendingRestart)
     }
 

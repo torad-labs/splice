@@ -23,7 +23,8 @@ internal const val FIX_RELINK = "splice install --all"
 // in the jar carries its bytes. `splice install --all` only LINKS wrappers onto the shim already
 // there, so naming it as the remedy for a stale shim sent the operator to a command that leaves the
 // shim exactly as stale (V4-220 item 4).
-private const val FIX_REINSTALL_SHIM = "./install.sh from a checkout, or re-run the release installer"
+private const val FIX_REINSTALL_SHIM = "reinstall splice's launcher"
+private const val REINSTALL_SHIM_DETAIL = "Run ./install.sh from a checkout, or re-run the release installer."
 
 /** Doctor's install-integrity probes as a constructed collaborator (Kotlin style law, 2026-08-15:
  *  main sources carry no top-level functions). [probes] is injected for one thing only: the
@@ -92,7 +93,7 @@ internal class DoctorInstallProbes(private val probes: DoctorProbes, private val
             noSuch && !entryPresent -> DoctorCheck(
                 "shim",
                 CheckStatus.FAIL,
-                "launch shim missing at $shim, and every wrapper needs it",
+                "splice's launcher is missing. Expected at $shim; every head command needs it. $REINSTALL_SHIM_DETAIL",
                 FIX_REINSTALL_SHIM,
             )
             noSuch -> DoctorCheck(
@@ -127,7 +128,7 @@ internal class DoctorInstallProbes(private val probes: DoctorProbes, private val
             DoctorCheck(
                 "shim",
                 CheckStatus.WARN,
-                "stale (installed=${installed ?: "<unmarked>"}, expected=$expected)",
+                "stale (installed=${installed ?: "<unmarked>"}, expected=$expected). $REINSTALL_SHIM_DETAIL",
                 FIX_REINSTALL_SHIM,
             )
         }

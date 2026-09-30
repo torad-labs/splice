@@ -68,6 +68,34 @@ class DoctorShimAbsenceTest {
     }
 
     @Test
+    fun `a missing launcher has a plain finding and remedy with paths and instructions in detail`(@TempDir tmp: Path) {
+        val shim = installProbes().installationChecks(DoctorTopology.Absent, shareEnv(tmp))
+            .single { it.name == "shim" }
+        assertEquals(CheckStatus.FAIL, shim.status)
+        assertEquals("splice's launcher is missing", shim.detail.substringBefore(". "))
+        assertEquals("reinstall splice's launcher", shim.fix)
+        assertEquals(FixKind.ADVICE, shim.fixKind)
+        assertTrue(shim.detail.contains(tmp.resolve("share/splice-launch").toString()), shim.detail)
+        assertTrue(shim.detail.contains("./install.sh"), shim.detail)
+        assertTrue(shim.detail.contains("release installer"), shim.detail)
+    }
+
+    @Test
+    fun `a stale launcher uses the same plain remedy and keeps installation instructions in detail`(
+        @TempDir tmp: Path,
+    ) {
+        val share = Files.createDirectories(tmp.resolve("share"))
+        Files.writeString(share.resolve("splice-launch"), "const SPLICE_SHIM_VERSION = \"0.0.0\";\n")
+        val shim = installProbes().installationChecks(DoctorTopology.Absent, shareEnv(tmp))
+            .single { it.name == "shim" }
+        assertEquals(CheckStatus.WARN, shim.status)
+        assertEquals("reinstall splice's launcher", shim.fix)
+        assertEquals(FixKind.ADVICE, shim.fixKind)
+        assertTrue(shim.detail.contains("./install.sh"), shim.detail)
+        assertTrue(shim.detail.contains("release installer"), shim.detail)
+    }
+
+    @Test
     fun `a genuinely absent shim is null marker and no warning - DR-69 control`(@TempDir tmp: Path) {
         val env = shareEnv(tmp)
         assertNull(InstallShim().installedShimVersion(env))

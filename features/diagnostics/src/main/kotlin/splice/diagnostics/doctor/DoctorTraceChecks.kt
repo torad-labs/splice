@@ -53,10 +53,11 @@ internal class DoctorTraceChecks(private val statePaths: StatePaths) {
             declared ->
                 "$key will write after the next restart; nothing is written now. " +
                     "Its FULL request/response trace"
-            else -> "$key does not write its FULL request/response trace (overrides.trace = false)"
+            else -> "$key does not write its request and reply trace"
         }
+        val setting = if (declared) "" else " Its head sets overrides.trace = false."
         val tense = if (booted?.enabled == true) "It records" else "When enabled, it records"
-        val detail = "$lead. $tense every request it receives, every upstream attempt with the exact body " +
+        val detail = "$lead.$setting $tense every request it receives, every upstream attempt with the exact body " +
             "it sent (credentials redacted) and the raw response, and every frame it streamed back, " +
             "as one file per UTC day; the declared directory for the next start is " +
             "${statePaths.traceDir} (owner-only); declared files are kept $declaredDays day(s) " +

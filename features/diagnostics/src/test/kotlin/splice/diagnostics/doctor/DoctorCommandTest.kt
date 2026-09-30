@@ -253,7 +253,7 @@ class DoctorCommandTest {
         assertFalse(ok)
         assertTrue(out.contains("no topology yet"), out)
         assertTrue(out.contains("splice init"), out)
-        assertTrue(out.contains("launch shim missing"), out)
+        assertTrue(out.contains("splice's launcher is missing"), out)
         assertTrue(out.contains("splice install --all"), out) // the 'splice' wrapper itself
         assertTrue(out.contains("install bash with your package manager"), out)
     }

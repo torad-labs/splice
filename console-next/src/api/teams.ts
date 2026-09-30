@@ -35,24 +35,21 @@ export const teamActivityPath = (id: string, day: TeamDay): string => `${teamPat
 
 // ── reads ────────────────────────────────────────────────────────────────────────────────────────
 
+/** What a day's panels do beyond the default read. Today follows the poll AND re-reads on every mount: the app's 5 s staleTime
+ *  would otherwise show the chat a page left a few seconds ago, empty, until the next poll. An older day is read once. */
+const panelPolicy = (live: boolean) =>
+  live ? { refetchInterval: TEAM_PANELS_POLL_MS, refetchOnMount: 'always' as const } : { refetchInterval: false as const };
+
 /** The day's messages between the team's sessions, text read on demand from the sender's transcript. `live` is
  *  today: it follows the poll. An older day is read once. */
-export const useTeamChat = (id: string | null, day: TeamDay, live: boolean) =>
-  useQuery(
-    read<TeamChatPayload>([...teamPanelsKey, 'chat'], teamChatPath(id ?? '', day), {
-      enabled: id !== null,
-      refetchInterval: live ? TEAM_PANELS_POLL_MS : false,
-    }),
-  );
+export const teamChatOptions = (id: string | null, day: TeamDay, live: boolean) =>
+  read<TeamChatPayload>([...teamPanelsKey, 'chat'], teamChatPath(id ?? '', day), { enabled: id !== null, ...panelPolicy(live) });
+export const useTeamChat = (id: string | null, day: TeamDay, live: boolean) => useQuery(teamChatOptions(id, day, live));
 
 /** The day's sampled activity labels (about one per 30 s while a session works). */
-export const useTeamActivity = (id: string | null, day: TeamDay, live: boolean) =>
-  useQuery(
-    read<TeamActivityPayload>([...teamPanelsKey, 'activity'], teamActivityPath(id ?? '', day), {
-      enabled: id !== null,
-      refetchInterval: live ? TEAM_PANELS_POLL_MS : false,
-    }),
-  );
+export const teamActivityOptions = (id: string | null, day: TeamDay, live: boolean) =>
+  read<TeamActivityPayload>([...teamPanelsKey, 'activity'], teamActivityPath(id ?? '', day), { enabled: id !== null, ...panelPolicy(live) });
+export const useTeamActivity = (id: string | null, day: TeamDay, live: boolean) => useQuery(teamActivityOptions(id, day, live));
 
 /** Lifetime tallies per role and slot. */
 export const useTeamEconomics = (id: string | null) =>

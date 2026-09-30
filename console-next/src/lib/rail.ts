@@ -38,7 +38,7 @@ const seatOf = (row: SessionRow, here: boolean, now: number, slot?: { role: stri
 });
 
 /** The peer on the other end of one edge, as a registry row when one answers to it. */
-function peerRow(rows: readonly SessionRow[], edge: HandedEdge): SessionRow | undefined {
+export function peerRow(rows: readonly SessionRow[], edge: HandedEdge): SessionRow | undefined {
   return edge.direction === 'out' ? rows.find((row) => row.address === edge.to) : rows.find((row) => row.session_id === edge.from);
 }
 

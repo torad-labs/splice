@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { SessionRow } from '../src/types/sessions';
-import { groupSessions, handoffOf, noConversation, peerLabel, sinceOf, repoName, sessionKey, sessionLabel, stateOf, STUCK_AFTER_MS } from '../src/lib/sessions';
+import { activityText, groupSessions, handoffOf, matchesQuery, noConversation, sessionsLede, peerLabel, repoName, sessionKey, sessionLabel, sinceOf, spanText, stateOf, stateTone, stateWord, STUCK_AFTER_MS } from '../src/lib/sessions';
 
 const NOW = 1_790_000_000_000;
 const row = (over: Partial<SessionRow> = {}): SessionRow => ({
@@ -91,5 +91,49 @@ describe('a session with no conversation', () => {
     expect(noConversation(row({ resumable: false }))).toBe('nothing-to-resume');
     expect(noConversation(row({ resumable: false, source: 'history+transcript' }))).toBe('empty-transcript');
     expect(noConversation(row())).toBeNull();
+  });
+});
+
+describe('what a card says', () => {
+  test('a span reads in the largest unit that stays small', () => {
+    expect([0, 90_000, 59 * 60_000, 3 * 3_600_000, 47 * 3_600_000, 50 * 3_600_000].map(spanText)).toEqual(['under a minute', '1 min', '59 min', '3 h', '47 h', '2 d']);
+  });
+
+  test('every state has a word, a tone and an activity line that claims only what is known', () => {
+    for (const state of ['working', 'waiting', 'stuck', 'idle', 'gone'] as const) {
+      expect(stateWord(state)).not.toBe('');
+      expect(activityText(state, null)).not.toMatch(/\bfor \d/);
+    }
+    expect(activityText('waiting', 2 * 60_000)).toBe('Waiting for your answer for 2 min');
+    expect(activityText('stuck', 14 * 60_000)).toBe('Quiet for 14 min');
+    expect(stateTone('waiting')).toBe('wait');
+    expect(stateTone('gone')).toBe('idle');
+  });
+
+  test('the search matches a name, a repository, a head or a team, and an empty search matches all', () => {
+    expect(matchesQuery(row(), '')).toBe(true);
+    expect(matchesQuery(row(), '  TESTS ')).toBe(true);
+    expect(matchesQuery(row(), 'tally')).toBe(true);
+    expect(matchesQuery(row(), 'splice')).toBe(true);
+    expect(matchesQuery(row({ team: 'billing' }), 'billing')).toBe(true);
+    expect(matchesQuery(row(), 'ledger')).toBe(false);
+  });
+});
+
+describe('the lede', () => {
+  test('it counts what works, waits, is stuck and finished, in words', () => {
+    const rows = [
+      row(), row({ session_id: 'b' }), row({ session_id: 'c' }),
+      row({ session_id: 'd', status: 'waiting' }),
+      row({ session_id: 'e', status_updated_at: NOW - 20 * 60_000 }),
+      row({ session_id: 'f', status: 'idle' }), row({ session_id: 'g', status: 'idle' }),
+    ];
+    expect(sessionsLede(rows, NOW)).toBe('Three are working, one is waiting on you, one is stuck. Two finished earlier.');
+  });
+  test('an empty registry has no sentence to print', () => {
+    expect(sessionsLede([], NOW)).toBe('');
+  });
+  test('past twelve the count is a digit', () => {
+    expect(sessionsLede(Array.from({ length: 14 }, (_, i) => row({ session_id: String(i) })), NOW)).toBe('14 are working.');
   });
 });

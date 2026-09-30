@@ -152,13 +152,13 @@ export function outputSize(output: string | null): { lines: number; chars: numbe
 
 /** Items in the order they happened, with each hand-off from [edges] placed by its time among them. An edge
  *  with no text to show still takes its place, and a hand-off that predates the first message comes first. */
-export type Timeline =
+export type Timeline<E extends SessionEdge = SessionEdge> =
   | { kind: 'item'; at: number | null; item: Item }
-  | { kind: 'handoff'; at: number; edge: SessionEdge };
+  | { kind: 'handoff'; at: number; edge: E };
 
-export function interleave(items: readonly Item[], edges: readonly SessionEdge[]): Timeline[] {
+export function interleave<E extends SessionEdge>(items: readonly Item[], edges: readonly E[]): Timeline<E>[] {
   const pending = [...edges].sort((a, b) => a.at - b.at);
-  const out: Timeline[] = [];
+  const out: Timeline<E>[] = [];
   for (const item of items) {
     while (item.ts !== null && pending[0] !== undefined && pending[0].at <= item.ts) {
       const edge = pending.shift();
@@ -166,5 +166,5 @@ export function interleave(items: readonly Item[], edges: readonly SessionEdge[]
     }
     out.push({ kind: 'item', at: item.ts, item });
   }
-  return [...out, ...pending.map((edge): Timeline => ({ kind: 'handoff', at: edge.at, edge }))];
+  return [...out, ...pending.map((edge): Timeline<E> => ({ kind: 'handoff', at: edge.at, edge }))];
 }

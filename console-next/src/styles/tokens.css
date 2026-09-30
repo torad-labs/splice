@@ -5,6 +5,9 @@
   --display: 'Fraunces', Georgia, serif;
   --read: 'Source Serif 4', Georgia, serif;
   --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  /* D: everything that is not code or terminal text (meta, buttons, nav, labels, values) reads in the reading face */
+  --meta: 'Source Serif 4', Georgia, serif;
+  --input: 2px solid color-mix(in srgb, var(--ink) 38%, transparent);
   --ease: cubic-bezier(.22, 1, .36, 1);
   --r1: 6px; --r2: 14px;
 }

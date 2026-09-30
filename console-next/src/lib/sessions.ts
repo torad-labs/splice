@@ -134,3 +134,69 @@ export function noConversation(row: SessionRow): NoConversation | null {
   if (row.resumable !== false) return null;
   return row.source === undefined ? 'nothing-to-resume' : 'empty-transcript';
 }
+
+export type SessionTone = 'work' | 'wait' | 'stuck' | 'idle';
+
+const STATE_WORD: Readonly<Record<SessionState, string>> = {
+  working: 'Working', waiting: 'Waiting on you', stuck: 'Stuck', idle: 'Idle', gone: 'Ended',
+};
+export const stateWord = (state: SessionState): string => STATE_WORD[state];
+
+const STATE_TONE: Readonly<Record<SessionState, SessionTone>> = {
+  working: 'work', waiting: 'wait', stuck: 'stuck', idle: 'idle', gone: 'idle',
+};
+export const stateTone = (state: SessionState): SessionTone => STATE_TONE[state];
+
+/** A span as a person says it: minutes under an hour, hours under two days, then days. */
+export function spanText(ms: number): string {
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 1) return 'under a minute';
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  return hours < 48 ? `${hours} h` : `${Math.floor(hours / 24)} d`;
+}
+
+/** The one activity line of a card. The daemon has no last-message field yet (V4-444 daemon work), so the
+ *  line says what the state means and for how long, and nothing it cannot know. */
+export function activityText(state: SessionState, since: number | null): string {
+  const span = since === null ? null : spanText(since);
+  switch (state) {
+    case 'waiting':
+      return span === null ? 'Waiting for your answer' : `Waiting for your answer for ${span}`;
+    case 'stuck':
+      return span === null ? 'Quiet for a while' : `Quiet for ${span}`;
+    case 'working':
+      return span === null ? 'Working' : `Working for ${span}`;
+    case 'idle':
+      return span === null ? 'Waiting for your next message' : `Idle for ${span}, waiting for your next message`;
+    case 'gone':
+      return 'The session ended';
+  }
+}
+
+/** Whether a session answers to what was typed in the search: its name, repository, head or branch-free
+ *  working folder, case-insensitively. An empty search matches all. */
+export function matchesQuery(row: SessionRow, query: string): boolean {
+  const needle = query.trim().toLowerCase();
+  if (needle === '') return true;
+  return [sessionLabel(row), repoName(row) ?? '', row.head, row.team ?? ''].some((field) => field.toLowerCase().includes(needle));
+}
+
+const NUMBER_WORDS = ['none', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'] as const;
+const numberWord = (n: number): string => NUMBER_WORDS[n] ?? String(n);
+const capital = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
+
+/** The page's one-sentence summary: what is working, what needs a person, what finished. A registry with no
+ *  live session says so. Counts are words up to twelve, digits after. */
+export function sessionsLede(rows: readonly SessionRow[], now: number): string {
+  const count = { working: 0, waiting: 0, stuck: 0, idle: 0, gone: 0 };
+  for (const row of rows) count[stateOf(row, now)] += 1;
+  const parts: string[] = [];
+  if (count.working > 0) parts.push(`${numberWord(count.working)} ${count.working === 1 ? 'is' : 'are'} working`);
+  if (count.waiting > 0) parts.push(`${numberWord(count.waiting)} ${count.waiting === 1 ? 'is' : 'are'} waiting on you`);
+  if (count.stuck > 0) parts.push(`${numberWord(count.stuck)} ${count.stuck === 1 ? 'is' : 'are'} stuck`);
+  const finished = count.idle + count.gone;
+  const first = parts.length === 0 ? '' : `${capital(parts.join(', '))}.`;
+  const last = finished === 0 ? '' : `${capital(numberWord(finished))} finished earlier.`;
+  return [first, last].filter((sentence) => sentence !== '').join(' ');
+}

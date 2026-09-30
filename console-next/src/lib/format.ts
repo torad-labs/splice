@@ -114,3 +114,8 @@ export function clockTitle(start: number): string {
   const at = new Date(start);
   return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
 }
+
+/** A moment as a clock time on the operator's machine: `3:04 PM`. */
+export function clockTime(at: number): string {
+  return new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}

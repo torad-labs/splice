@@ -86,3 +86,11 @@ describe('request', () => {
     expect(isLocked()).toBe(true);
   });
 });
+
+describe('what a failure says', () => {
+  test('the daemon\'s sentence comes through, and a non-error is printed', async () => {
+    const { failureText, MgmtError } = await import('../src/api/client');
+    expect(failureText(new MgmtError(409, 'That head is not running.'))).toBe('That head is not running.');
+    expect(failureText('plain')).toBe('plain');
+  });
+});

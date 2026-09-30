@@ -147,3 +147,6 @@ export async function openStream(signal: AbortSignal, lastId: number | null): Pr
   if (res.status === 401) noteUnauthorized(carried);
   return res;
 }
+
+/** What a failed call says to a person: the daemon's own sentence, or the browser's. */
+export const failureText = (err: unknown): string => (err instanceof Error ? err.message : String(err));

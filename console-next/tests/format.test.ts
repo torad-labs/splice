@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { fmtBytes, fmtMs, fmtShare, fmtTokens, fmtUsd, noun, ratio, timeAgo } from '../src/lib/format';
+import { clockTime, fmtBytes, fmtMs, fmtShare, fmtTokens, fmtUsd, noun, ratio, timeAgo } from '../src/lib/format';
 
 describe('formatting', () => {
   test('sizes, tokens and money at the precision a figure that small needs', () => {
@@ -27,5 +27,12 @@ describe('formatting', () => {
     expect(noun(1, 'message', 'messages')).toBe('message');
     expect(noun(0, 'message', 'messages')).toBe('messages');
     expect(ratio(3, 0)).toBe(0);
+  });
+});
+
+describe('a clock time', () => {
+  test('it prints hour and minute and no seconds', () => {
+    const text = clockTime(new Date(2026, 8, 29, 15, 4, 59).getTime());
+    expect(text).toMatch(/^(0?3:04\s?PM|15:04)$/i);
   });
 });

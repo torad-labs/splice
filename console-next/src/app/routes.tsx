@@ -3,6 +3,8 @@
 import { Navigate, createHashRouter } from 'react-router';
 import { Shell } from './Shell';
 import { Pending } from './Pending';
+import { SessionPage } from '../pages/session/SessionPage';
+import { SessionsPage } from '../pages/sessions/SessionsPage';
 
 /** Retired address -> where it went (DIRECTION.md, "Nav"). */
 export const RETIRED: Readonly<Record<string, string>> = {
@@ -29,7 +31,9 @@ export const router = createHashRouter([
     element: <Shell />,
     children: [
       { index: true, element: <Navigate to={HOME} replace /> },
-      ...PLACES.map((path) => ({ path, element: <Pending place={path} /> })),
+      { path: 'sessions', element: <SessionsPage /> },
+      { path: 'sessions/:id', element: <SessionPage /> },
+      ...PLACES.filter((path) => path !== 'sessions').map((path) => ({ path, element: <Pending place={path} /> })),
       ...Object.entries(RETIRED).map(([path, to]) => ({ path, element: <Navigate to={to} replace /> })),
       { path: '*', element: <Navigate to={HOME} replace /> },
     ],

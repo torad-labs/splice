@@ -6,6 +6,7 @@
     "tools/release/tsconfig.json",
     "tools/e2e/tsconfig.json",
     "console/tsconfig.json",
+    "console-next/tsconfig.json",
     "console/tools/tsconfig.json",
     ".dev/tsconfig.json",
     ".claude/hooks/tsconfig.json"

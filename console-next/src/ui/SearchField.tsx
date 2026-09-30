@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { W } from '../lib/words';
 import { Search } from './icons';
 
 /** A search box that ⌘K (or Ctrl+K) focuses from anywhere on the page. */
@@ -18,7 +19,7 @@ export function SearchField({ value, onChange, label, hint }: { value: string; o
     <label className="search">
       <Search />
       <input ref={input} type="search" value={value} placeholder={hint} aria-label={label} onChange={(event) => onChange(event.target.value)} />
-      <span className="kbd" aria-hidden="true">⌘K</span>
+      <span className="kbd" aria-hidden="true">{W.searchKey}</span>
     </label>
   );
 }

@@ -19,7 +19,7 @@ export function Shell() {
   return (
     <div className="app">
       <aside className="side">
-        <div className="mark">splice</div>
+        <div className="mark">{C.brand}</div>
         <nav className="nav" aria-label={C.pages}>
           {NAV.map(([path, label]) => (
             <NavLink key={path} to={`/${path}`}>

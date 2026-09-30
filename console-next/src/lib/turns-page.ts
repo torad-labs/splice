@@ -5,7 +5,7 @@ import { waterfall } from './perf';
 import { colourOfHead } from './model';
 import type { ModelColour } from './model';
 import { STUCK_IDLE_MS, spanText } from './sessions';
-import { T } from './words-turns';
+import { STAGE_PHRASE, T } from './words-turns';
 import type { InflightTurn, PerfSummaryHead, PerfWindowLabel, TurnRow } from '../types/perf';
 
 export const WINDOW_MS: Record<PerfWindowLabel, number> = { '1h': 3_600_000, '24h': 86_400_000, '7d': 604_800_000 };
@@ -222,13 +222,6 @@ export function stagesOf(row: TurnRow): StageBar[] {
     return ms === undefined ? [] : [{ key, ms }];
   });
 }
-
-const STAGE_PHRASE: Record<StageKey, string> = {
-  prepare: 'splice preparing the request',
-  queue: 'waiting in line behind other turns',
-  provider: 'the plan thinking before its first word',
-  stream: 'the answer arriving',
-};
 
 /** The sentence under a turn's title: how long it took and where most of it went. */
 export function turnLede(row: TurnRow, stages: readonly StageBar[]): string {

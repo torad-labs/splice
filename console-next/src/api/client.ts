@@ -3,6 +3,8 @@
 // state root's management key. `splice dashboard` opens the console with it in the address's
 // fragment (#k=<key>), so nobody pastes it; the unlock screen is the fallback.
 
+import { W } from '../lib/words';
+
 const KEY_STORAGE = 'myx-mgmt-key';
 
 export class MgmtError extends Error {
@@ -19,7 +21,7 @@ export class MgmtError extends Error {
 
 /** What a read says when the daemon did not answer at all, in place of the browser's own words
  *  for a refused connection. Status 0 is the response that never came. */
-export const NOT_ANSWERING = 'Splice is not answering.';
+export const NOT_ANSWERING = W.notAnswering;
 
 /** What an HTTP header value may hold here: printable ASCII, no space. */
 const HEADER_SAFE = /^[\x21-\x7e]*$/;

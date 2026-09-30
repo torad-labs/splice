@@ -5,7 +5,7 @@ import type { Totals } from './economics';
 import { ABSENT, fmtShare, fmtTokens, fmtUsd } from './format';
 import { headWindow } from './usage';
 import type { HeadWindow } from './usage';
-import { U } from './words-usage';
+import { U, spanWords } from './words-usage';
 import type { ModelColour } from './model';
 import type { HeadEconomics } from '../types/economics';
 import type { UsagePayload } from '../types/core';
@@ -17,8 +17,6 @@ export function windowChoices(retentionHours: number): readonly (readonly [strin
   if (retentionHours >= 720) choices.push(['720', '30 days']);
   return choices;
 }
-
-export const spanWords = (hours: number): string => (hours === 24 ? 'the last 24 hours' : hours === 168 ? 'the last 7 days' : `the last ${Math.round(hours / 24)} days`);
 
 /** How long the fullest window lasts at the recent pace, said the way a person would. Null when nothing can be projected
  *  (no ceiling, or no burn) rather than a guess. */

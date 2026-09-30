@@ -9,6 +9,7 @@ import { wantsAttention } from './doctor';
 import { KNOB_META } from './knobs';
 import type { KnobGroup, KnobMeta } from './knobs';
 import { GROUP_LABELS, KNOB_LABELS } from './words-knobs';
+import { R } from './words-settings';
 
 export const SECTIONS = ['general', 'conversation', 'tools', 'storage', 'health', 'advanced'] as const;
 export type Section = (typeof SECTIONS)[number];
@@ -25,9 +26,9 @@ export const effortChoice = (value: ConfigValue | undefined): Effort | null => E
 
 /** `showReasoning`: ConfigCoercion folds every spelling into these three. */
 export const REASONING_CHOICES = [
-  { id: 'text', label: 'In the reply', hint: 'As plain text above the answer' },
-  { id: 'thinking', label: 'As thinking', hint: 'In Claude Code’s own thinking blocks' },
-  { id: 'off', label: 'Hidden', hint: 'Only the answer' },
+  { id: 'text', ...R.text },
+  { id: 'thinking', ...R.thinking },
+  { id: 'off', ...R.off },
 ] as const;
 
 export const ACTIVITY_DAYS = [2, 7, 14, 30, 60, 90, 180, 365] as const;

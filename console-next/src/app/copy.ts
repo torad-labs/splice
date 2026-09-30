@@ -1,5 +1,6 @@
 // What the shell says. Copy lives in modules like this one, never inline in a component.
 export const C = {
+  brand: 'splice',
   unlock: 'Unlock',
   keyLabel: 'Management key',
   unlockAsk: 'Paste the management key to open the console.',

@@ -1,6 +1,14 @@
 // What the Turns pages say. Copy lives in modules like this one, never inline in a component.
 import type { PerfWindowLabel } from '../types/perf';
 
+/** What a turn's longest stage was doing, said as a phrase that ends a sentence. */
+export const STAGE_PHRASE = {
+  prepare: 'splice preparing the request',
+  queue: 'waiting in line behind other turns',
+  provider: 'the plan thinking before its first word',
+  stream: 'the answer arriving',
+} as const;
+
 export const T = {
   title: 'Turns',
   window: 'Window',

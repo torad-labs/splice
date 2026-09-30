@@ -3,6 +3,7 @@
 import type { SessionEdge, SessionRow } from '../types/sessions';
 import type { LiveTurn } from '../types/turns';
 import { UNKNOWN_HEAD } from '../types/sessions';
+import { SW } from './words-sessions';
 
 /** A session's key: its session id, else its pid. A registration with no session id still has to be
  *  openable, and its key must not collide with "nothing is open". */
@@ -176,16 +177,16 @@ export function activityText(state: SessionState, since: number | null, quiet: n
   const span = since === null ? null : spanText(since);
   switch (state) {
     case 'waiting':
-      return span === null ? 'Waiting for your answer' : `Waiting for your answer for ${span}`;
+      return span === null ? SW.waiting : SW.waitingFor(span);
     case 'stuck':
-      return span === null ? 'Quiet for a while' : `Quiet for ${span}`;
+      return span === null ? SW.stuck : SW.stuckFor(span);
     case 'working':
-      if (quiet !== null && quiet >= QUIET_AFTER_MS) return `Running a tool, quiet for ${spanText(quiet)}`;
-      return span === null ? 'Working' : `Working for ${span}`;
+      if (quiet !== null && quiet >= QUIET_AFTER_MS) return SW.toolQuiet(spanText(quiet));
+      return span === null ? SW.working : SW.workingFor(span);
     case 'idle':
-      return span === null ? 'Waiting for your next message' : `Idle for ${span}, waiting for your next message`;
+      return span === null ? SW.idle : SW.idleFor(span);
     case 'gone':
-      return 'The session ended';
+      return SW.gone;
   }
 }
 

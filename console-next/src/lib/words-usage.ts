@@ -1,4 +1,7 @@
 // What the Usage page says. Copy lives in modules like this one, never inline in a component.
+/** A window in hours as a person says it. */
+export const spanWords = (hours: number): string => (hours === 24 ? 'the last 24 hours' : hours === 168 ? 'the last 7 days' : `the last ${Math.round(hours / 24)} days`);
+
 export const U = {
   title: 'Usage',
   reading: 'Reading the usage.',

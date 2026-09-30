@@ -16,7 +16,7 @@ export function Unlock({ rejected }: { rejected: boolean }) {
             if (key.trim() !== '') storeKey(key);
           }}
         >
-          <h1 className="mark">splice</h1>
+          <h1 className="mark">{C.brand}</h1>
           <p className="lede">{rejected ? C.unlockRejected : C.unlockAsk}</p>
           <label className="field">
             <span className="eyebrow">{C.keyLabel}</span>

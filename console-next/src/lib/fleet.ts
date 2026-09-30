@@ -10,6 +10,7 @@ import type { ModelColour } from './model';
 import { poolOf, selectedExcluded } from './accounts';
 import { planLevel, planWindows } from './usage';
 import { noun } from './format';
+import { FL } from './words-fleet';
 
 export type FleetTone = 'work' | 'wait' | 'stuck' | 'idle' | 'quota';
 
@@ -54,7 +55,7 @@ const OAUTH_KINDS = new Set(['chatgpt-oauth', 'grok-oauth', 'kimi-oauth', 'muse-
 export const startCommandOf = (head: HeadStatus): string => `rig up ${head.key}`;
 
 function accountLine(head: HeadStatus, pool: readonly AccountRow[], auth: AuthPayload | null): string {
-  if (providerFamily(head.authKind) === 'local') return 'Runs on this computer';
+  if (providerFamily(head.authKind) === 'local') return FL.local;
   if (pool.length > 1) return `Pool · ${pool.length} accounts`;
   const only = pool[0];
   if (only?.label != null && only.label !== '') return only.label;
@@ -107,14 +108,14 @@ export function fleetCard(head: HeadStatus, inputs: FleetInputs): FleetCard {
 
   switch (attention.cause) {
     case 'down':
-      return { ...base, tone: 'idle', state: 'Stopped', attention: false, line: { kind: 'note', text: 'This head is not running.' }, fix: 'start' };
+      return { ...base, tone: 'idle', state: 'Stopped', attention: false, line: { kind: 'note', text: FL.stopped }, fix: 'start' };
     case 'runtime not answering':
       return {
         ...base, tone: 'idle', state: 'Runtime off', attention: false,
         line: { kind: 'note', text: `The runtime is not answering on ${head.runtimeNotAnswering ?? 'its port'}.` }, fix: 'copy-start',
       };
     case 'unhealthy':
-      return note('stuck', 'Failing', 'Its health check is failing.', 'restart', true);
+      return note('stuck', 'Failing', FL.unhealthy, 'restart', true);
     case 'out of quota': {
       const when = until === null ? '' : ` until ${localInstantText(until)}`;
       const full: FleetLine = gauge === null ? { kind: 'note', text: `The provider refuses new turns${when}.` } : { ...gauge, full: true, note: until === null ? gauge.note : `out${when}` };
@@ -122,17 +123,17 @@ export function fleetCard(head: HeadStatus, inputs: FleetInputs): FleetCard {
     }
     case 'signed out':
     case 'key missing':
-      return note('stuck', head.authKind === 'api-key' ? 'Key missing' : 'Signed out', 'Its next turn will fail until you sign in.', oauth ? 'sign-in' : null, true);
+      return note('stuck', head.authKind === 'api-key' ? 'Key missing' : 'Signed out', FL.signedOut, oauth ? 'sign-in' : null, true);
     case 'login expired':
-      return note('stuck', 'Sign-in expired', 'Its login could not be refreshed, so its next turn will fail.', oauth ? 'sign-in' : null, true);
+      return note('stuck', 'Sign-in expired', FL.loginExpired, oauth ? 'sign-in' : null, true);
     case 'version mismatch':
       return note('wait', 'Version mismatch', `It runs ${head.version ?? 'an unknown version'}; it wants ${head.wantVersion}.`, 'restart', true);
     case 'account excluded':
-      return note('wait', 'Account excluded', 'The pool has set its selected account aside.', pool.length > 1 ? 'switch' : null, true);
+      return note('wait', 'Account excluded', FL.accountExcluded, pool.length > 1 ? 'switch' : null, true);
     case 'queue full':
-      return note('wait', 'Queue full', 'Turns are waiting for a free slot.', null, true);
+      return note('wait', 'Queue full', FL.queueFull, null, true);
     case 'restart needed':
-      return note('wait', 'Restart needed', 'The configuration changed after this head started.', 'restart', true);
+      return note('wait', 'Restart needed', FL.restartNeeded, 'restart', true);
     case 'ok': {
       const level = gauge === null || usage === null ? 'ok' : planLevel(gauge.pct, usage.warn_pct);
       if (level !== 'ok') return note('quota', 'Near its limit', '', null, false);

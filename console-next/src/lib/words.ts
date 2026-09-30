@@ -5,4 +5,8 @@ export const W = {
   notReread: 'Reset, not re-read',
   /** Printed when the pool excludes an account and the daemon sent no reason of its own. */
   excluded: 'Excluded by the pool, with no reason given.',
+  /** What a read says when the daemon did not answer at all. */
+  notAnswering: 'Splice is not answering.',
+  retry: 'Try again',
+  searchKey: '⌘K',
 } as const;

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { W } from '../lib/words';
 
 export function PageHead({ title, lede, tools }: { title: string; lede?: string; tools?: ReactNode }) {
   return (
@@ -40,7 +41,7 @@ export function Fault({ message, onRetry }: { message: string; onRetry?: () => v
       <p>{message}</p>
       {onRetry === undefined ? null : (
         <button type="button" className="btn sm" onClick={onRetry}>
-          Try again
+          {W.retry}
         </button>
       )}
     </div>

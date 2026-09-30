@@ -4,7 +4,6 @@
 .hero { max-width: 1080px; }
 .chips { margin-top: var(--space-7); display: flex; flex-wrap: wrap; gap: var(--space-4); }
 .team-section { margin-top: var(--space-16); max-width: 1080px; }
-.team-section:first-of-type { margin-top: 0; }
 .team-section > h2 { font: 520 26px/1.15 var(--display); color: var(--ink); }
 .team-section > .why { margin-top: var(--space-4); font: 400 16px/1.5 var(--read); color: var(--mute); }
 .seatrows { list-style: none; margin: var(--space-10) 0 0; padding: 0; display: grid; }

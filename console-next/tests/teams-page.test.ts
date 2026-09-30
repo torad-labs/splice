@@ -66,8 +66,8 @@ describe('the board', () => {
     expect(seatsOf(team()).map((slot) => slot.id)).toEqual(['s2', 's1']);
   });
   test('the lede reads the goal, then how many seats work and how many are open', () => {
-    expect(teamLede(team(), 1)).toBe('Add a rate limiter to the API. 1 of 2 seats are working; one seat is open.');
-    expect(teamLede(team({ goal: '' }), 0)).toBe('No goal written. None of 2 seats are working; one seat is open.');
+    expect(teamLede(team(), 1)).toBe('Add a rate limiter to the API. One of two seats is working; one seat is open.');
+    expect(teamLede(team({ goal: '' }), 0)).toBe('No goal written. None of two seats are working; one seat is open.');
   });
   test('a day is local midnight to local midnight, and words name it', () => {
     const now = new Date(2026, 8, 29, 16, 30).getTime();

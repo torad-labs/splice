@@ -7,6 +7,7 @@ import { useArchiveTeam, useTeamActivity, useTeamChat, useTeamEconomics } from '
 import { ABSENT, clockTime, fmtUsd } from '../../lib/format';
 import { colourFromHeads } from '../../lib/turns-page';
 import { stateOf, stateTone, stateWord } from '../../lib/sessions';
+import { repoLabel } from '../../lib/projects';
 import { dayOf, dayWords, seatsOf, sessionIn, teamLede } from '../../lib/teams-page';
 import { M } from '../../lib/words-teams';
 import type { TeamSlotTally } from '../../types/teams';
@@ -72,9 +73,10 @@ export function TeamPage() {
           </>
         }
       />
-      {team.archived || team.features.length > 0 ? (
+      {team.archived || team.features.length > 0 || team.repo !== '' ? (
         <div className="chips">
           {team.archived ? <span className="tag">{M.archived}</span> : null}
+          {team.repo === '' ? null : <span className="tag">{repoLabel(team.repo)}</span>}
           {team.features.map((feature) => <span key={feature} className="tag">{feature}</span>)}
         </div>
       ) : null}

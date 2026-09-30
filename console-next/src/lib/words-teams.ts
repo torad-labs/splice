@@ -1,4 +1,6 @@
 // What the Teams pages say. Copy lives in modules like this one, never inline in a component.
+import { countWord } from './format';
+
 export const M = {
   back: 'Sessions',
   reading: 'Reading the team.',
@@ -11,8 +13,8 @@ export const M = {
   restore: 'Restore',
   archived: 'Archived',
   ledeSeats: (working: number, seats: number, open: number) => {
-    const set = `${working === seats ? 'All' : working === 0 ? 'None' : working} of ${seats} ${seats === 1 ? 'seat is' : 'seats are'} working`;
-    return open === 0 ? `${set}.` : `${set}; ${open === 1 ? 'one seat is' : `${open} seats are`} open.`;
+    const set = `${working === seats ? 'All' : working === 0 ? 'None' : countWord(working)} of ${countWord(seats).toLowerCase()} ${seats === 1 ? 'seat' : 'seats'} ${working === 1 || seats === 1 ? 'is' : 'are'} working`;
+    return open === 0 ? `${set}.` : `${set}; ${open === 1 ? 'one seat is' : `${countWord(open).toLowerCase()} seats are`} open.`;
   },
   noGoal: 'No goal written.',
   seatsTitle: 'Seats',

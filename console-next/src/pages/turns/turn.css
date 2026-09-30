@@ -39,3 +39,6 @@
 .attempts summary { cursor: pointer; font: 600 15px var(--meta); color: var(--ink); }
 .attempts pre { margin: var(--space-4) 0 0; padding: var(--space-6) var(--space-7); max-height: 360px; overflow: auto; background: var(--glass); color: var(--glass-ink); border-radius: 10px; font: 400 13px/1.55 var(--mono); white-space: pre-wrap; word-break: break-word; }
 @media (max-width: 900px) { .legend, .figs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.failure-sentence { margin-top: var(--space-8); max-width: 62ch; font: 500 17px/1.6 var(--read); color: var(--ink); }
+.capture-control { margin-top: var(--space-8); display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-5) var(--space-7); }
+.capture-switch { display: inline-flex; align-items: center; gap: var(--space-5); font: 500 15px var(--meta); color: var(--body); }

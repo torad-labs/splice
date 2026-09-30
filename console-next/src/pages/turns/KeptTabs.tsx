@@ -1,13 +1,14 @@
 import { Link } from 'react-router';
 import { failureText } from '../../api/client';
-import { useCapture, useConversation, useKeptTurn, useSetCapture, useWire } from '../../api/turns';
+import { useCapture, useConversation, useKeptTurn, useWire } from '../../api/turns';
 import { callTarget, toolLabel } from '../../lib/conversation';
 import { fmtMs } from '../../lib/format';
 import { readable } from '../../lib/message';
 import { askAndAnswer, wireFor } from '../../lib/turns-page';
 import { P } from '../../lib/words-turns';
 import type { ConversationMessageWire, TraceRecord, TraceSide, TurnRow } from '../../types/perf';
-import { Button, Markdown } from '../../ui';
+import { Markdown } from '../../ui';
+import { CaptureControl } from './CaptureControl';
 
 const TABS = [['conversation', P.tabConversation], ['request', P.tabRequest], ['sent', P.tabSent]] as const;
 type Tab = (typeof TABS)[number][0];
@@ -69,23 +70,17 @@ function Attempt({ record }: { record: TraceRecord }) {
   );
 }
 
-function CaptureOff({ row, plan }: { row: TurnRow; plan: string }) {
-  const set = useSetCapture();
-  const change = set.data;
-  return (
-    <div className="kept-note">
-      <p>{P.captureOff(plan)}</p>
-      <Button kind="go" disabled={set.isPending} onClick={() => set.mutate({ head: row.head, enabled: true })}>{set.isPending ? P.captureTurning : P.captureOn(plan)}</Button>
-      {change === undefined ? null : change.write.ok ? <p>{change.write.answer.restart_required ? P.captureNeedsRestart : ''}</p> : <p role="alert">{P.captureRefused} {change.write.reason}</p>}
-      {set.isError ? <p role="alert">{failureText(set.error)}</p> : null}
-    </div>
-  );
+/** The sentence the daemon recorded for a failed turn, whole, under this turn's own read: a late answer for another turn lands in that turn's cache. */
+function Failure({ row }: { row: TurnRow }) {
+  const kept = useKeptTurn(row.head, row.turn ?? null, row.turn !== undefined);
+  const sentence = kept.data === undefined || 'gone' in kept.data ? null : (kept.data.read.turn.failure_sentence ?? null);
+  return sentence === null || sentence.trim() === '' ? null : <p className="failure-sentence">{sentence}</p>;
 }
 
 function Request({ row, plan }: { row: TurnRow; plan: string }) {
   const capture = useCapture(row.head);
   const kept = useKeptTurn(row.head, row.turn ?? null, row.turn !== undefined);
-  if (row.turn === undefined) return capture.data?.enabled === false ? <CaptureOff row={row} plan={plan} /> : <p className="kept-note">{P.keptGone}</p>;
+  if (row.turn === undefined) return <p className="kept-note">{capture.data?.enabled === false ? P.captureOff(plan) : P.keptGone}</p>;
   if (kept.isError) return <p className="kept-note" role="alert">{failureText(kept.error)}</p>;
   if (kept.data === undefined) return null;
   if ('gone' in kept.data) return <p className="kept-note">{kept.data.gone}</p>;
@@ -128,6 +123,8 @@ export function KeptTabs({ row, plan, tab }: { row: TurnRow; plan: string; tab: 
   const current = tabOf(tab);
   return (
     <section className="kept" aria-label={P.tabsLabel}>
+      <Failure row={row} />
+      <CaptureControl head={row.head} plan={plan} />
       <nav className="tabs" aria-label={P.tabsLabel}>
         {TABS.map(([id, label]) => (
           <Link key={id} to={`?tab=${id}`} replace aria-current={id === current ? 'page' : undefined}>{label}</Link>

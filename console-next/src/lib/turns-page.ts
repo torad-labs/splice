@@ -283,3 +283,11 @@ export const movedOf = (row: TurnRow): Moved => ({
   cost: typeof row.cost_usd === 'number' ? row.cost_usd : null,
   retries: row.retries !== undefined && row.retries > 0 ? row.retries : null,
 });
+
+/** What a head's body capture is, from the two things the daemon says. `running` is the re-read: what it records now. `written` is what
+ *  the last successful write saved to splice.toml, which a recorder built at start only follows after a restart; null before any
+ *  write in this page. The switch shows what was saved, and a difference between the two is a restart waiting. */
+export function captureState(running: boolean | null, written: boolean | null): { on: boolean; recording: boolean; pending: boolean } {
+  const on = written ?? running ?? false;
+  return { on, recording: running === true, pending: written !== null && running !== null && written !== running };
+}

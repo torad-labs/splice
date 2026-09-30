@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.model.CodexCompactionReserves
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
@@ -307,6 +308,25 @@ class UsageScalingTest {
 
     private fun payload(model: String, input: Long, cached: Long) =
         wiring.usagePayloadBuilder(xai, meta(model))(Usage(input, 7, cached))
+
+    @Test
+    fun `codex reserve scales every input bucket while output stays raw`() {
+        val codex = ModelCatalog(
+            discoveryPrefix = "claude-codex--",
+            models = listOf(ModelEntry("gpt-5.6-luna", contextWindow = 272_000)),
+            defaultContextWindow = 272_000,
+            pinnedModel = "gpt-5.6-luna",
+            compactionReserveDefaults = CodexCompactionReserves,
+        )
+        val factor = 153_000.0 / (272_000 - 40_056)
+        val p = wiring.usagePayloadBuilder(codex, meta("gpt-5.6-luna"), sessionWindow = 200_000)(
+            Usage(inputTokens = 100_000, outputTokens = 7, cachedTokens = 60_000, cacheWriteTokens = 20_000),
+        )
+        assertEquals((20_000 * factor).toLong(), p["input_tokens"]?.jsonPrimitive?.content?.toLong())
+        assertEquals((20_000 * factor).toLong(), p["cache_creation_input_tokens"]?.jsonPrimitive?.content?.toLong())
+        assertEquals((60_000 * factor).toLong(), p["cache_read_input_tokens"]?.jsonPrimitive?.content?.toLong())
+        assertEquals(7, p["output_tokens"]?.jsonPrimitive?.content?.toLong())
+    }
 
     @Test
     fun `a scaled row logs its factor once per turn and an exact row logs nothing`() {

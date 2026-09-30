@@ -59,7 +59,16 @@ public data class ModelEntry(
      *  row whose id Claude Code does not know, which it otherwise names on every -p run with a
      *  `[claude-code:unrecognized_model]` line. Null = the client sees [id] as it is. */
     @SerialName("client_model") val clientModel: String? = null,
+    /** Override the audited headroom for this picker row; absent uses the provider's calibration. */
+    @SerialName("compaction_reserve_tokens") val compactionReserveTokens: Long? = null,
 ) {
+
+    init {
+        require(compactionReserveTokens == null || compactionReserveTokens >= 0) {
+            "compaction_reserve_tokens must be nonnegative for $id"
+        }
+    }
+
     /** V4-350: the name a person sees. "" is [label]'s no-label default, and a row the provider lists
      *  without a display name (Meta's /v1/models) keeps it, so the status line and the picker showed an
      *  empty model name; a blank label names the row by its [id]. */
@@ -97,6 +106,8 @@ public data class ModelCatalog(
      *  It exists so a reader can say WHERE a window came from (console review 2026-09-24: /api/models
      *  labelled a head's 300k "model"). */
     val headWindow: Long? = null,
+    /** Provider-supplied empirical reserve; absent preserves the existing window-ratio behavior. */
+    val compactionReserveDefaults: CompactionReserveDefaults? = null,
 ) {
     init {
         require(models.isNotEmpty()) { "a catalog needs at least one picker model" }
@@ -191,6 +202,9 @@ public data class ModelCatalog(
         // V4-232: a presented row is one the client knows, so its window is the client's table, and
         // unlike a "claude-" id below we know that number, so the factor is honest rather than 1.0.
         presented.covers(id) -> CLIENT_TABLE_WINDOW
+        // A Codex discovery wrapper starts with claude- but is not a Claude model from the
+        // client's own table. It gets the client's unknown-model 200k fallback, not this row's W.
+        compactionReserveDefaults != null && id.startsWith(discoveryPrefix) -> CLIENT_TABLE_WINDOW
         id.startsWith(CLIENT_OWN_ID_PREFIX) -> contextWindowFor(id)
         // An env-governed id: the window is whatever THIS session's process was launched with.
         // [sessionWindow] is that value when the session has told us (ClientWindows, fed by its
@@ -199,16 +213,10 @@ public data class ModelCatalog(
         else -> sessionWindow?.takeIf { it > 0 } ?: clientLaunchWindow
     }
 
-    /** Multiplier for the input-token counts reported to the client, so a row compacts at ITS OWN
-     *  declared window rather than the session's.
-     *
-     *  We are a proxy: Claude Code compacts on `(input + cache_creation + cache_read) / window`, and
-     *  splice authors the NUMERATOR of that ratio even though the denominator is fixed in the
-     *  client's process. Scaling the numerator by `client/declared` makes the ratio reach 1 exactly
-     *  when real usage reaches the declared window — so a 500k row on a 256k session compacts at
-     *  500k, live, switchable from the /model menu. The pinned row rides raw (1.0) on a session
-     *  launched with its current window; 1.0 is also left where the client's window is genuinely
-     *  not ours: a declared 1e6 row and the "claude-" ids [clientContextWindowFor] names. */
+    /** Multiplier for the three client-visible input buckets. Most providers retain the legacy
+     *  client/declared-window ratio. A calibrated Codex row uses the client's actual threshold T(C)
+     *  divided by its real input target W-R: input and both disjoint cache buckets must agree.
+     *  Raw upstream usage and output accounting never pass through this factor. */
     /** True when Claude Code sizes [id]'s window from the launch env — the ids whose window a
      *  session's status-line post reveals (ClientWindows). False for a "[1m]" id (always 1e6) and
      *  a "claude-" id (Claude Code's own table): their posts say nothing about the env. */
@@ -217,16 +225,13 @@ public data class ModelCatalog(
 
     public fun usageScale(id: String, sessionWindow: Long? = null): Double {
         val declared = contextWindowFor(id)
-        // NO "[1m]" exemption, deliberately. `contains()` strips the suffix before its membership
-        // test, so an UNDECLARED tier id — `grok-4.6[1m]`, which exists in no catalog — passes the
-        // "proxies its own models only" gate, and Claude Code applies its own /\[1m\]/i rule to
-        // whatever string it holds. Exempting those from scaling let a 500k model run toward 1e6
-        // and hard-fail upstream. Scaling them instead makes the client's 1e6 land on the stripped
-        // id's real window. A DECLARED 1e6 row needs no special case: client and declared are both
-        // 1e6, so this arithmetic already returns exactly 1.0.
+        // An undeclared [1m] tier still resolves its real window through stripSuffixes. An
+        // explicit reserve overrides the provider's default, never the client's selector window.
         val client = clientContextWindowFor(id, sessionWindow)
         if (declared <= 0 || client <= 0) return 1.0
-        return client.toDouble() / declared
+        val budget = CompactionBudgets.forRow(this, id) ?: return client.toDouble() / declared
+        val realInputTarget = (declared - budget.totalTokens).coerceAtLeast(1)
+        return ClaudeCodeCompactThreshold.tokens(client).toDouble() / realInputTarget
     }
 
     /** The immutable catalog snapshot in force now: live windows and refreshed discovery (V4-440).

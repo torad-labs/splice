@@ -398,6 +398,19 @@ class ModelCatalogTest {
         assertEquals(1_000_000, kimi.contextWindowFor("claude-kimi--k3[1m]"), "wrapped picker id")
         assertEquals(1_000_000, kimi.contextWindowFor("claude-kimi--k3"), "wrapped bare id")
     }
+
+    @Test
+    fun `a row override changes reserve but keeps the generation preflight allowance`() {
+        val codex = ModelCatalog(
+            discoveryPrefix = "claude-codex--",
+            models = listOf(ModelEntry("gpt-5.6-luna", contextWindow = 272_000, compactionReserveTokens = 50_000)),
+            defaultContextWindow = 272_000,
+            pinnedModel = "gpt-5.6-luna",
+            compactionReserveDefaults = CodexCompactionReserves,
+        )
+        assertEquals(CompactionBudget(50_000, 31_791), CompactionBudgets.forRow(codex, "gpt-5.6-luna"))
+        assertEquals(153_000.0 / 222_000, codex.usageScale("gpt-5.6-luna", 200_000), 1e-12)
+    }
 }
 
 // 2026-09-05: a session runs on the env it was launched with for its whole life, and scaling its

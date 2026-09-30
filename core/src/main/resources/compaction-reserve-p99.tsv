@@ -1,0 +1,8 @@
+model	growth_and_prompt_p99	generation_p99
+gpt-5.6-luna	8265	31791
+gpt-5.6-sol	138067	19781
+gpt-5.6-terra	68391	14807
+gpt-6-astra	13973	22953
+gpt-6-luna	0	6298
+gpt-6-sol	635232	11602
+gpt-6.1-sol	1303	13840

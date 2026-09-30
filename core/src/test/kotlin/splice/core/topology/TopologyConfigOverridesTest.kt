@@ -313,6 +313,38 @@ class TopologyConfigOverridesTest {
     // The single-head fixture keeps seeding (the `topology seeds every legacy management knob it
     // owns` pin above) — this adds the solo-keys fact the resolve side gates on.
     @Test
+    fun `codex rows compact at audited headroom for every client selector window`() {
+        val provider = topology.providers.getValue("codex").copy(
+            models = listOf(
+                ModelEntry("gpt-5.6-luna", contextWindow = 272_000),
+                ModelEntry("gpt-6-sol", contextWindow = 872_000),
+            ),
+        )
+        val catalog = provider.catalogFor(topology.heads.getValue("codex").copy(pinnedModel = "gpt-6-sol"))
+        val thresholds = listOf(
+            200_000L to 153_000L,
+            272_000L to 214_200L,
+            400_000L to 323_000L,
+            872_000L to 724_200L,
+            1_000_000L to 833_000L,
+        )
+        for ((clientWindow, threshold) in thresholds) {
+            assertEquals(
+                threshold.toDouble() / (272_000 - 40_056),
+                catalog.usageScale("gpt-5.6-luna", clientWindow),
+                1e-12,
+                "luna5.6: p99 growth 8265 + p99 generation 31791",
+            )
+            assertEquals(
+                threshold.toDouble() / (872_000 - 646_834),
+                catalog.usageScale("gpt-6-sol", clientWindow),
+                1e-12,
+                "sol6: p99 growth 635232 + p99 generation 11602",
+            )
+        }
+    }
+
+    @Test
     fun `a single legacy head per kind is the sole legacy head - DR-80 control`() {
         assertEquals(setOf("codex", "grok"), TopologyKnobLayer(topology).soleLegacyHeadKeys())
     }

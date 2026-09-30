@@ -24,6 +24,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import splice.core.compaction.CompactionConfig
 import splice.core.config.Knob
+import splice.core.model.CodexCompactionReserves
 import splice.core.model.DiscoveredModel
 import splice.core.model.ExtraWindow
 import splice.core.model.ModelCatalog
@@ -252,6 +253,7 @@ public data class ProviderConfig(
                 selectedModels.firstOrNull()?.contextWindow ?: DEFAULT_WINDOW_FLOOR
             },
             headWindow = window,
+            compactionReserveDefaults = CodexCompactionReserves.takeIf { auth.kind == AuthKind.ChatgptOAuth.wire },
         )
     }
 

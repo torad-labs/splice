@@ -68,7 +68,7 @@ export function FleetFix({ fix, head, pool, now }: { fix: Fix; head: HeadStatus;
               </Button>
             </Menu.Trigger>
             <Menu.Portal>
-              <Menu.Content className="menu" align="start" sideOffset={6}>
+              <Menu.Content className="menu" align="start" sideOffset={6} collisionPadding={8}>
                 {choices.map((account) => (
                   <Menu.Item key={account.label} className="menu-item" onSelect={() => pin.mutate({ head: head.key, label: account.label ?? '' })}>
                     {account.label}

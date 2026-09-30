@@ -65,7 +65,7 @@ export function Select<T extends string>({ value, options, onChange, label }: { 
         <Chevron />
       </Menu.Trigger>
       <Menu.Portal>
-        <Menu.Content className="menu select-menu" align="end" sideOffset={8}>
+        <Menu.Content className="menu select-menu" align="end" sideOffset={8} collisionPadding={8}>
           <Menu.RadioGroup value={value} onValueChange={(next) => onChange(next as T)}>
             {options.map((option) => (
               <Menu.RadioItem key={option.id} value={option.id} className="menu-item">

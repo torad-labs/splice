@@ -10,6 +10,14 @@ const layer = (selector: string): number => {
   return Number(found[1]);
 };
 
+describe('the menu’s height', () => {
+  test('a menu is capped to the room Radix reports beside its trigger and scrolls inside itself', () => {
+    const rule = base.split('\n').find((line) => line.startsWith('.menu {')) ?? '';
+    expect(rule).toContain('max-height: var(--radix-dropdown-menu-content-available-height)');
+    expect(rule).toContain('overflow-y: auto');
+  });
+});
+
 describe('the layers', () => {
   test('a menu opened from a control inside a dialog stacks above its scrim and its window', () => {
     expect(layer('.menu')).toBeGreaterThan(layer('.scrim'));

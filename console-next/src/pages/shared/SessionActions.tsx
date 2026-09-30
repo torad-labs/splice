@@ -72,7 +72,7 @@ export function ResumeCopy({ row }: { row: SessionRow }) {
     <Menu.Root>
       <Menu.Trigger asChild>{trigger}</Menu.Trigger>
       <Menu.Portal>
-        <Menu.Content className="menu" align="start" sideOffset={6}>
+        <Menu.Content className="menu" align="start" sideOffset={6} collisionPadding={8}>
           <Menu.Label className="menu-label">{S.pickHead}</Menu.Label>
           {options.length === 0 ? <div className="menu-empty">{S.noHeads}</div> : null}
           {options.map((head) => (

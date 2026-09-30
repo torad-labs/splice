@@ -177,7 +177,7 @@ section:first-of-type > .group-head { margin-top: var(--space-11); }
 
 /* ---------- a menu that opens from a control (Radix DropdownMenu content) ----------
    Portaled to <body>, so it stacks above the dialog (.scrim 20, .dialog 21): a Select inside a dialog must take the click. */
-.menu { min-width: 12.5rem; padding: var(--space-4); background: var(--obj); border: 2px solid var(--hair); border-radius: 0.625rem; box-shadow: 0.375rem 0.4375rem 0 var(--tan); z-index: 30; }
+.menu { min-width: 12.5rem; padding: var(--space-4); background: var(--obj); border: 2px solid var(--hair); border-radius: 0.625rem; box-shadow: 0.375rem 0.4375rem 0 var(--tan); z-index: 30; max-height: var(--radix-dropdown-menu-content-available-height); overflow-y: auto; }
 .menu-label, .menu-empty { padding: var(--space-4) var(--space-5); font: 600 0.875rem var(--meta); color: var(--mute); }
 .menu-item { padding: var(--space-5) var(--space-5); border-radius: 0.375rem; font: 600 0.9375rem var(--meta); color: var(--ink); cursor: pointer; outline: 0; }
 .menu-item[data-highlighted] { background: var(--sel); }

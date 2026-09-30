@@ -22,7 +22,7 @@
 //
 import type { AccountRow, AccountWindow } from '../types/accounts';
 import type { AuthPayload, UsagePayload } from '../types/core';
-import { COCK_AT_PERCENT, EXHAUSTED_AT_PERCENT, isExcluded, nearestWindow as accountWindow, windowLengthText } from './accounts';
+import { COCK_AT_PERCENT, EXHAUSTED_AT_PERCENT, isExcluded, nearestWindow as accountWindow, windowSpan } from './accounts';
 import { nearestWindow as headWindow, planLevel, resetsInText } from './usage';
 
 export interface NearestLimit {
@@ -51,7 +51,7 @@ export interface LimitSources {
 /** A window's name: its reported length, prefixed by the model where the provider scopes one. The
  *  length is the window's own (Grok reports 30d), never assumed from its slot. */
 export function windowName(window: AccountWindow): string {
-  const length = windowLengthText(window.seconds);
+  const length = windowSpan(window);
   return window.model === undefined ? length : `${window.model} ${length}`;
 }
 

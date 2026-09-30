@@ -22,6 +22,9 @@ export interface AccountWindow {
   used_percent: number | null;
   /** Epoch SECONDS (not ms) as the providers send it, or null where none is reported. */
   reset_epoch_seconds: number | null;
+  /** False when the daemon sent no length for this window: `seconds` then only places it in its slot (short or long), and no page
+   *  prints it as a length. Absent when the provider's own length is in `seconds`. */
+  length_known?: false;
   /** Whether the daemon says this reading may count as the plan's usage now false for a reading
    *  too old to say what the plan holds, though its reset is still ahead. The Accounts page shows such a
    *  reading with its age; the nearest limit skips it. Absent on a window that did not come from

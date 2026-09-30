@@ -35,7 +35,7 @@ export const D = {
   selectorOrder: (order: string): string => `The next account is taken in this order: ${order}.`,
   primary: 'Primary',
   /** A window by the length the provider reported, as a person says it: `week`, `5-hour window`, else its length and `window`. */
-  windowWord: (seconds: number, length: string): string => (seconds === 604800 ? 'week' : seconds === 18000 ? '5-hour window' : `${length} window`),
+  windowWord: (seconds: number | null, span: string): string => (seconds === 604800 ? 'week' : seconds === 18000 ? '5-hour window' : span.endsWith('window') ? span : `${span} window`),
   thisAccount: 'This account',
   steppedPast: (name: string, window: string, serving: string): string => `${name}’s ${window} is used; turns go to ${serving}`,
   resetPassed: 'Reset, not re-read',

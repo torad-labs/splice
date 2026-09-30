@@ -22,6 +22,21 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe('an account edit', () => {
+  test('names the head the pool rides, and an unknown head is an error, never a route the daemon does not serve', async () => {
+    const { auth } = await fresh();
+    const fetchMock = vi.fn(async () => reply(200, { ok: true }));
+    vi.stubGlobal('fetch', fetchMock);
+    await auth.removeAccount('claudex', 'work 2');
+    await auth.relabelAccount('claudex', 'work 2', 'spare');
+    expect((fetchMock.mock.calls as unknown as [string, RequestInit][]).map(([path, init]) => `${init.method} ${path}`)).toEqual([
+      'DELETE /api/auth/claudex/accounts/work%202', 'PATCH /api/auth/claudex/accounts/work%202',
+    ]);
+    vi.stubGlobal('fetch', vi.fn(async () => reply(404, { error: 'unknown head' })));
+    await expect(auth.removeAccount('chatgpt-oauth', 'work')).rejects.toMatchObject({ status: 404, message: 'unknown head' });
+  });
+});
+
 describe('the paths', () => {
   test('a head, id, kind, label or key name with a slash or a space cannot leave its segment', async () => {
     const { auth } = await fresh();
@@ -38,6 +53,8 @@ describe('the pending-route rule', () => {
   test('a 404, or the daemon naming an unknown route, is pending; any other failure is not', async () => {
     const { client, auth } = await fresh();
     expect(auth.pendingOf(new client.MgmtError(404, 'HTTP 404'), 'V4-132')).toEqual({ pending: 'V4-132' });
+    // a 404 the daemon's own handler wrote (`{"error": "unknown head"}`) is a refusal about a thing, not a route that is not served
+    expect(auth.pendingOf(new client.MgmtError(404, 'unknown head', { error: 'unknown head' }), 'V4-132')).toBeNull();
     expect(auth.pendingOf(new client.MgmtError(400, 'Unknown route /api/x'), 'V4-132')).toEqual({ pending: 'V4-132' });
     expect(auth.pendingOf(new client.MgmtError(409, 'a login is already running'), 'V4-132')).toBeNull();
     expect(auth.pendingOf(new client.MgmtError(0, client.NOT_ANSWERING), 'V4-132')).toBeNull();

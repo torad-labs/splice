@@ -28,8 +28,10 @@ import {
   refusalText,
   resetText,
   sevenDayUsed,
+  slotWindows,
   steppedPast,
   windowLengthText,
+  windowSpan,
   windowUsedText,
 } from '../src/lib/accounts';
 import type { AccountRow, AccountWindow, AccountWire } from '../src/types/accounts';
@@ -310,6 +312,19 @@ describe('the accounts wire becomes the page model', () => {
     ]);
   });
 
+  test('a window the daemon sent no length for keeps its slot but never claims seven days', () => {
+    const [row] = accountsFromWire({ accounts: [wireRow({ label: null, single_login: true, seven_day_window_seconds: null, five_hour_window_seconds: null })] }).accounts;
+    const [short, long] = row?.windows ?? [];
+    expect(short).toMatchObject({ length_known: false });
+    expect(long).toMatchObject({ length_known: false });
+    expect(long === undefined ? null : windowSpan(long)).toBe('long window');
+    expect(short === undefined ? null : windowSpan(short)).toBe('short window');
+    expect(slotWindows(row as AccountRow).long).toBe(long);
+    const [known] = accountsFromWire({ accounts: [wireRow({ seven_day_window_seconds: DAY_30 })] }).accounts;
+    expect(known?.windows[1]).not.toHaveProperty('length_known');
+    expect(known?.windows[1] === undefined ? null : windowSpan(known.windows[1])).toBe('30d');
+  });
+
   test('a slot the provider reported nothing for is no window, never a zero', () => {
     const [row] = accountsFromWire({ accounts: [SINGLE_LOGIN] }).accounts;
     expect(row?.windows).toEqual([]);
@@ -452,7 +467,7 @@ describe('a spent account the pool has stepped past', () => {
   const serving = (over: Partial<AccountRow> = {}) => account({ label: 'work', selected: true, windows: [window7d(20)], ...over });
   test('names the account that serves and the window that is used, and reads quiet, never as an alarm', () => {
     const pool = [spent(), serving()];
-    expect(steppedPast(pool[0] as AccountRow, pool, NOW)).toEqual({ serving: 'work', window: DAY_7 });
+    expect(steppedPast(pool[0] as AccountRow, pool, NOW)).toEqual({ serving: 'work', window: pool[0]?.windows[0] });
     expect(accountState(pool[0] as AccountRow, NOW, pool)).toEqual({ edge: 'grey', cocked: false, struck: false, label: 'used' });
     expect(accountState(pool[0] as AccountRow, NOW)).toMatchObject({ edge: 'grey', struck: true, label: 'excluded' });
   });

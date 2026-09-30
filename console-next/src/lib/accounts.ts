@@ -52,6 +52,12 @@ export function windowLengthText(seconds: number): string {
   return `${seconds}s`;
 }
 
+/** A window's length as a page prints it: the provider's own (`5h`, `7d`, `30d`), or only its slot when the daemon sent no length. */
+export function windowSpan(window: AccountWindow): string {
+  if (window.length_known === false) return window.seconds > FIVE_HOUR_SLOT_MAX_SECONDS ? W.longWindow : W.shortWindow;
+  return windowLengthText(window.seconds);
+}
+
 /** The account's windows in the daemon's two slots: `short` up to six hours, `long` beyond. Each is
  *  the slot's fullest window (a Claude account can carry several model-scoped long windows; the
  *  detail lists every one), or null when the slot holds none. A rack prints one track per slot so
@@ -225,12 +231,12 @@ export function exclusionText(account: AccountRow): string {
  * setting it aside, and another account of the pool is serving. Nothing is wrong, so it is not an alarm; the row says where
  * turns go. Null for a spent account with nothing to step to, or that is itself the one serving.
  */
-export function steppedPast(account: AccountRow, pool: readonly AccountRow[], nowMs: number): { serving: string; window: number } | null {
+export function steppedPast(account: AccountRow, pool: readonly AccountRow[], nowMs: number): { serving: string; window: AccountWindow } | null {
   if (account.single_login || account.selected === true || (account.auth_exclusion_reason ?? '').trim() !== '') return null;
   const window = nearestWindow(account, nowMs);
   if (window === null || (window.used_percent ?? 0) < EXHAUSTED_AT_PERCENT) return null;
   const serving = pool.find((other) => other !== account && other.selected === true && other.label !== null && isServable(other) && !isExcluded(other, nowMs));
-  return serving?.label == null ? null : { serving: serving.label, window: window.seconds };
+  return serving?.label == null ? null : { serving: serving.label, window };
 }
 
 export interface AccountState {
@@ -300,7 +306,7 @@ export function readAgeText(account: AccountRow, nowMs: number): string | null {
   const observed = account.observed_at_epoch_seconds;
   if (observed === null || observed === undefined) return null;
   const read = `windows read ${timeAgo(observed * 1000, nowMs)}`;
-  const reset = account.windows.filter((window) => isStale(window, nowMs)).map((window) => windowLengthText(window.seconds));
+  const reset = account.windows.filter((window) => isStale(window, nowMs)).map(windowSpan);
   if (reset.length === 0) return read;
   return `${read}; the ${reset.join(' and ')} ${reset.length === 1 ? 'window has' : 'windows have'} reset since, so ${reset.length === 1 ? 'its figure is' : 'their figures are'} unknown until the next reading`;
 }
@@ -329,8 +335,8 @@ export function selectedExcluded(pool: readonly AccountRow[], nowMs: number): bo
 // ---- the wire ----
 
 /** The length of each slot the daemon files a provider's windows into. The daemon names the slots by
- *  their length (QuotaSlots) and sends the provider's own length beside each; this is only the
- *  fallback for a slot whose provider sent a figure with no length. */
+ *  their length (QuotaSlots) and sends the provider's own length beside each; this only places a window whose
+ *  length it sent none for in its slot (`length_known` is then false, and no page prints the number). */
 const FIVE_HOUR_SECONDS = 18000;
 const SEVEN_DAY_SECONDS = 604800;
 
@@ -349,6 +355,7 @@ function slot(
     used_percent: usedPercent,
     reset_epoch_seconds: resetEpochSeconds,
     current,
+    ...(windowSeconds === null ? { length_known: false as const } : {}),
   };
 }
 

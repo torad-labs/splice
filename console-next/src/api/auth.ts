@@ -37,16 +37,20 @@ export const loginPath = (head: string): string => `/api/auth/${seg(head)}/login
 export const loginStatusPath = (head: string, id: string): string => `${loginPath(head)}/${seg(id)}`;
 export const refreshPath = (head: string): string => `/api/auth/${seg(head)}/refresh`;
 export const switchPath = (head: string): string => `/api/auth/${seg(head)}/switch`;
-export const accountPath = (kind: string, label: string): string => `/api/auth/${seg(kind)}/accounts/${seg(label)}`;
+export const accountPath = (head: string, label: string): string => `/api/auth/${seg(head)}/accounts/${seg(label)}`;
 export const keyPath = (name: string): string => `/api/keys/${seg(name)}`;
 
 // ── the pending-route rule ───────────────────────────────────────────────────────────────────────
 
-/** 404, or the daemon naming an unknown route, means the daemon does not serve it; any other failure is a
- *  real error and stays one. */
+/** What a 404 that is no handler's answer says: the bare status, or the router's own `not found`. */
+const MISSING_ROUTE = /^(HTTP 404|not found)$/i;
+
+/** A 404 nothing answered, or the daemon naming an unknown route, means the daemon does not serve it; any other failure is a real
+ *  error and stays one. A 404 carrying a handler's own sentence (`unknown head`) is that handler refusing a thing it was asked
+ *  about, so it is never a missing route. */
 export function pendingOf(err: unknown, row: string): PendingRoute | null {
   if (!(err instanceof MgmtError)) return null;
-  if (err.status === 404 || /unknown route|no such route/i.test(err.message)) return { pending: row };
+  if ((err.status === 404 && MISSING_ROUTE.test(err.message.trim())) || /unknown route|no such route/i.test(err.message)) return { pending: row };
   return null;
 }
 
@@ -106,15 +110,15 @@ export async function unpinAccount(head: string): Promise<AuthActionState> {
   }
 }
 
-/** DELETE /api/auth/{kind}/accounts/{label}: remove a pooled account. Addressed by KIND, not head: the
- *  pool is the kind's, and several heads may ride the same login. */
-export const removeAccount = (kind: string, label: string): Promise<AuthActionState> =>
-  settle<AccountMutationPayload>(accountPath(kind, label), { method: 'DELETE' }, (result) => ({ action: 'remove', result }));
+/** DELETE /api/auth/{head}/accounts/{label}: remove a pooled account. Addressed by a head key the pool rides, which is how the daemon
+ *  resolves the name; the kind (`chatgpt-oauth`) is no head and was a 404. */
+export const removeAccount = (head: string, label: string): Promise<AuthActionState> =>
+  settle<AccountMutationPayload>(accountPath(head, label), { method: 'DELETE' }, (result) => ({ action: 'remove', result }));
 
-/** PATCH /api/auth/{kind}/accounts/{label}: relabel a pooled account. Its windows, exclusions and pool
+/** PATCH /api/auth/{head}/accounts/{label}: relabel a pooled account. Its windows, exclusions and pool
  *  position are keyed by the credential path, so a relabel loses none of them. */
-export const relabelAccount = (kind: string, label: string, nextLabel: string): Promise<AuthActionState> =>
-  settle<AccountMutationPayload>(accountPath(kind, label), { method: 'PATCH', body: JSON.stringify({ label: nextLabel }) }, (result) => ({ action: 'relabel', result }));
+export const relabelAccount = (head: string, label: string, nextLabel: string): Promise<AuthActionState> =>
+  settle<AccountMutationPayload>(accountPath(head, label), { method: 'PATCH', body: JSON.stringify({ label: nextLabel }) }, (result) => ({ action: 'relabel', result }));
 
 /** PUT /api/keys/{ENV}: store (or replace) a key. THE VALUE GOES ONE WAY: it is the body and nothing else;
  *  no cache holds it and no answer carries it. A refusal (400 name or value, 409 store) throws the daemon's words. */
@@ -168,9 +172,9 @@ export const useRefreshLogin = () => useAuthWrite((head: string) => refreshLogin
 export const useSwitchAccount = () => useAuthWrite(({ head, label }: { head: string; label: string }) => switchAccount(head, label), accountsChanged);
 export const useUnpinAccount = () => useAuthWrite((head: string) => unpinAccount(head), accountsChanged);
 export const useRemoveAccount = () =>
-  useAuthWrite(({ kind, label }: { kind: string; label: string }) => removeAccount(kind, label), accountsChanged);
+  useAuthWrite(({ head, label }: { head: string; label: string }) => removeAccount(head, label), accountsChanged);
 export const useRelabelAccount = () =>
-  useAuthWrite(({ kind, label, next }: { kind: string; label: string; next: string }) => relabelAccount(kind, label, next), accountsChanged);
+  useAuthWrite(({ head, label, next }: { head: string; label: string; next: string }) => relabelAccount(head, label, next), accountsChanged);
 
 /** The key store: every key a head reads or the store holds, by name, never by value. */
 export const useKeyStore = () => useQuery(read<KeysPayload>(keyStoreKey, '/api/keys'));

@@ -51,6 +51,7 @@ import splice.upstream.retry.InflightGate
 import splice.upstream.retry.LiveLimit
 import splice.upstream.retry.TurnWatchdog
 import splice.upstream.retry.WatchdogFired
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
@@ -202,6 +203,85 @@ class TurnFinishTest {
                 drive.slot.release()
             }
         }
+    }
+
+    @Test
+    fun `a divergent result fallback marks its upstream perf row`() = runBlocking {
+        val rig = Rig(tmp, "code-mode-divergence")
+        val drive = rig.drive(CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } }))
+        drive.perf.setCount(PerfKeys.ATTEMPTS, 1)
+        try {
+            rig.finish.finishTurn(
+                drive,
+                TurnOutcome.Success(
+                    hasToolUse = false,
+                    incomplete = false,
+                    usage = Usage(codeModeDiverged = true),
+                    bodyText = "served upstream",
+                    messageClosed = true,
+                ),
+            )
+            assertEquals(1L, drive.perf.snapshot().counters[PerfKeys.CODE_MODE_DIVERGENCE])
+        } finally {
+            drive.slot.release()
+        }
+        assertTrue(AsyncFileIo.drain())
+        val row = Files.readAllLines(rig.perfFile).last()
+        assertTrue("\"code_mode_divergence\":1" in row, row)
+    }
+
+    @Test
+    fun `a dead client still records a divergent branch on its connection-reset row`() = runBlocking {
+        val rig = Rig(tmp, "code-mode-divergence-reset")
+        val collecting = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } })
+        val failing = object : TurnTerminal by collecting {
+            override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) {
+                throw IOException("client closed")
+            }
+        }
+        val drive = rig.drive(failing)
+        var torn = false
+        try {
+            rig.finish.finishTurn(
+                drive,
+                TurnOutcome.Success(
+                    hasToolUse = false,
+                    incomplete = false,
+                    usage = Usage(codeModeDiverged = true),
+                    bodyText = "served upstream",
+                    messageClosed = true,
+                ),
+            )
+        } catch (_: IOException) {
+            torn = true
+        } finally {
+            drive.slot.release()
+        }
+        assertTrue(torn, "the terminal actually failed before the ordinary finish path")
+        rig.telemetry.recordPerf(drive, splice.core.turn.CONN_RESET_OUTCOME)
+        assertEquals(1L, drive.perf.snapshot().counters[PerfKeys.CODE_MODE_DIVERGENCE])
+        assertTrue(AsyncFileIo.drain())
+        assertTrue("\"code_mode_divergence\":1" in Files.readAllLines(rig.perfFile).last())
+    }
+
+    @Test
+    fun `worker failure reason survives the short daemon turn line`() = runBlocking {
+        val rig = Rig(tmp, "worker-cause")
+        val drive = rig.drive(CollectingTerminal("gpt-6.1-sol", UsagePayloadBuilder { buildJsonObject { } }))
+        try {
+            rig.finish.finishTurn(
+                drive,
+                TurnOutcome.Failure(
+                    "code-mode runtime failed: IllegalStateException: worker pool exhausted; " +
+                        "accepted results=3; source was not rerun",
+                    cause = FailureCause.CODE_MODE_PROTOCOL,
+                    phase = FailurePhase.MID_OUTPUT,
+                ),
+            )
+        } finally {
+            drive.slot.release()
+        }
+        assertTrue("IllegalStateException: worker pool exhausted" in rig.logs.first(), rig.logs.first())
     }
 
     @Test

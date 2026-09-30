@@ -64,6 +64,9 @@ internal data class CodeModeRecordSnapshot(
     val continuity: List<JsonElement> = emptyList(),
     val continuityReplay: List<CodeModeNativeSegment> = emptyList(),
 ) {
+    /** Kept outside the already-wide constructor; the store compares it explicitly on save. */
+    var issued: List<CodeModeIssuedStep> = emptyList()
+
     fun restore(): CodeModeRecord = CodeModeRecord(
         id = id,
         key = key,
@@ -97,7 +100,7 @@ internal data class CodeModeRecordSnapshot(
         nativeSegments = nativeSegments,
         continuity = continuity,
         continuityReplay = continuityReplay,
-    )
+    ).also { it.issued.addAll(issued) }
 
     /** A completed record with old metadata is still terminal — the rewrite omits it (and logs) rather
      *  than refusing the conversation; only an unfinished one has nothing left to resume. */
@@ -130,6 +133,7 @@ internal data class CodeModeRecord(
     val continuityReplay: List<CodeModeNativeSegment>,
 ) {
     val results: Map<String, CodeModeResult> get() = accepted.results
+    val issued: MutableList<CodeModeIssuedStep> = mutableListOf()
 
     fun visiblePending(): List<CodeModePending> = pending.filter(CodeModePending::exposed)
 
@@ -166,7 +170,7 @@ internal data class CodeModeRecord(
         nativeSegments = nativeSegments,
         continuity = continuity,
         continuityReplay = continuityReplay,
-    )
+    ).also { it.issued = issued.toList() }
 }
 
 /**
@@ -221,6 +225,10 @@ internal data class CodeModePending(
     val arguments: JsonObject,
     var exposed: Boolean,
 )
+
+/** The exact client-visible step this request digest already received. */
+@Serializable
+internal data class CodeModeIssuedStep(val requestDigest: String, val calls: List<CodeModePending>)
 
 /** [media]: V4-179, see [CodeModeAccepted.media]. A v3 file has no such key: it decodes to null,
  *  which is exactly "legacy, not captured" — no metadata-version bump, no invalidated records. */

@@ -144,6 +144,7 @@ private fun itemDoneCallByItemId(itemId: String) =
 
 private const val BODY_ANSWERED_BY_ITEM_ID =
     """{"model":"gpt-5.6-sol","input":[{"role":"user","content":"hi"},""" +
+        """{"type":"function_call","call_id":"fc_9","name":"read","arguments":"{}"},""" +
         """{"type":"function_call_output","call_id":"fc_9","output":"file"}]}"""
 
 private const val BODY_COMPACT =
@@ -151,6 +152,7 @@ private const val BODY_COMPACT =
 
 private const val BODY_ANSWERED =
     """{"model":"gpt-5.6-sol","input":[{"role":"user","content":"hi"},""" +
+        """{"type":"function_call","call_id":"call_9","name":"read","arguments":"{}"},""" +
         """{"type":"function_call_output","call_id":"call_9","output":"file"}]}"""
 
 /** The socket argument onPing hands the listener; it only re-arms request(1) on it. */

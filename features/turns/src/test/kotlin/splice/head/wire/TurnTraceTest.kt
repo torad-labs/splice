@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSnapshot
 import splice.core.storage.ActivityDays
 import splice.core.turn.ReasoningDisplay
@@ -100,7 +101,13 @@ class TurnTraceTest {
         trace.attempted(attempt(1, """{"model":"gpt-5.6-sol"}"""))
         trace.clientFrame("event: message_start\ndata: {\"a\":1}\n\n")
         trace.clientFrame("event: ping\ndata: {}\n\n")
-        trace.finish("ok", PerfSnapshot(marks = mapOf("total" to 340L), counters = mapOf("in_tokens" to 12L)))
+        trace.finish(
+            "ok",
+            PerfSnapshot(
+                marks = mapOf("total" to 340L),
+                counters = mapOf("in_tokens" to 12L, PerfKeys.CODE_MODE_DIVERGENCE to 1L),
+            ),
+        )
 
         val (attempt, turn) = lines()
 
@@ -136,6 +143,7 @@ class TurnTraceTest {
         assertEquals("1", turn.str("attempts"))
         assertEquals("340", turn.at("perf", "marks", "total"))
         assertEquals("12", turn.at("perf", "counters", "in_tokens"))
+        assertEquals("1", turn.at("perf", "counters", PerfKeys.CODE_MODE_DIVERGENCE))
     }
 
     @Test

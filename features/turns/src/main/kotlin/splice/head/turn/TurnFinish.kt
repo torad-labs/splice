@@ -44,6 +44,8 @@ internal class TurnFinish(
         // exactly as before — the counts stamped here ride that row via the shared TurnPerf).
         // Cancellation still skips the stamps (runCatchingCancellable rethrows immediately):
         // a cancellation seal is the documented no-bill case, unchanged.
+        // The conn-reset surface records this same perf snapshot if the terminal write throws.
+        markCodeMode(drive, outcome)
         val streamed = Cancellables.runCatchingCancellable {
             drive.pipeline.finishStream(
                 drive.emitter,
@@ -79,7 +81,6 @@ internal class TurnFinish(
         // attempt count the retry loop stamped on it. A Success carries neither, and both default to
         // absent — the row for a healthy turn is byte-identical to what it was before this field.
         val failure = outcome as? TurnOutcome.Failure
-        markLocalStep(drive, outcome)
         telemetry.recordPerf(
             drive,
             outcomeTag,
@@ -88,8 +89,15 @@ internal class TurnFinish(
         )
     }
 
-    private fun markLocalStep(drive: TurnDrive, outcome: TurnOutcome) {
-        if (outcome !is TurnOutcome.Success || !outcome.usage.localStep) return
+    private fun markCodeMode(drive: TurnDrive, outcome: TurnOutcome) {
+        val usage = when (outcome) {
+            is TurnOutcome.Success -> outcome.usage
+            is TurnOutcome.Failure -> outcome.salvagedUsage
+            is TurnOutcome.ClientAbandoned -> outcome.salvagedUsage
+        }
+        // The same perf snapshot is included in the turn trace, even if the upstream failed.
+        if (usage.codeModeDiverged) drive.perf.setCount(PerfKeys.CODE_MODE_DIVERGENCE, 1)
+        if (outcome !is TurnOutcome.Success || !usage.localStep) return
         // A turn that began upstream and then emitted a code-mode tool call remains a turn.
         if (drive.perfCounter(PerfKeys.ATTEMPTS) == 0L) drive.perf.setCount(PerfKeys.LOCAL_STEP, 1)
     }

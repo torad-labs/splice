@@ -27,6 +27,10 @@ public object PerfKeys {
 
     /** One client-facing code-mode step synthesized without an upstream post, not a turn. */
     public const val LOCAL_STEP: String = "local_step"
+
+    /** A changed code-mode callback was sent upstream without touching the owner's queued script. */
+    public const val CODE_MODE_DIVERGENCE: String = "code_mode_divergence"
+
     public const val RETRIES: String = "retries"
     public const val REFRESHES: String = "refreshes"
     public const val REQ_BYTES: String = "req_bytes"

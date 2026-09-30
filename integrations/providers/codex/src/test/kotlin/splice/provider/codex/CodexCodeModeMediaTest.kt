@@ -117,7 +117,7 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
     }
 
     @Test
-    fun `changed media under an accepted id is a conflicting replay`() = runTest {
+    fun `changed media under an accepted id stays B-only upstream without advancing A`() = runTest {
         val runtime = ScriptedRuntime(ArrayDeque(listOf(calls("r1"), calls("r2"), CodeModeStep.Completed("done"))))
         val manager = bridge(runtime)
         val first = start(manager, runtime)
@@ -129,14 +129,19 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
 
         // Same id, same text, DIFFERENT pixels — plus the new result the script is waiting for.
         val replayed = turnWithResults(manager, first to IMAGE_B, second to null)
+        val clientHistory = history(replayed, first to "shot", second to "next")
+        var posted = ""
         val outcome = manager.interceptor(replayed, null, disableParallel = false)
-            .intercept(history(replayed, first to "shot", second to "next"), RecordingSink()) {
-                error("must not post")
+            .intercept(clientHistory, RecordingSink()) {
+                posted = it
+                completedOutcome()
             }
-        assertTrue(outcome is TurnOutcome.Failure, outcome.toString())
-        val message = (outcome as TurnOutcome.Failure).message
-        assertTrue(message.contains("conflicting replay for code-mode tool result '$first'"), message)
-        assertEquals(2, runtime.cell.advances, "the cell was not advanced on a conflicting batch")
+        assertTrue(outcome is TurnOutcome.Success, outcome.toString())
+        assertTrue((outcome as TurnOutcome.Success).usage.codeModeDiverged)
+        assertEquals(input(clientHistory), input(posted), "B's result and pixels stay exactly B's")
+        assertEquals(listOf(replayed.toolMedia.getValue(first).single()), imageMessages(input(posted)))
+        assertEquals(0, input(posted).count { it.jsonObject["type"] == JsonPrimitive("custom_tool_call_output") })
+        assertEquals(2, runtime.cell.advances, "the cell was not advanced on a divergent batch")
     }
 
     @Test
@@ -246,17 +251,25 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
     }
 
     @Test
-    fun `a legacy result replayed with different text is still a conflict`() = runTest {
+    fun `a legacy result with different text stays ordinary upstream without replaying the worker`() = runTest {
         val (reloaded, first, second) = parkedByPreviousDaemon { manager, id ->
             turnWithResults(manager, id to IMAGE_A)
         }
         val changed = """{"type":"text","text":"changed"},${imageBlock(IMAGE_A)}"""
         val replay = turnWithBlocks(reloaded, first to changed, second to TEXT_ONLY)
+        val clientHistory = history(replay, first to "shot", second to "next")
+        val saved = savedRecord()
+        var posted = ""
         val outcome = reloaded.interceptor(replay, null, disableParallel = false)
-            .intercept(history(replay, first to "shot", second to "next"), RecordingSink()) { error("must not post") }
-        assertTrue(outcome is TurnOutcome.Failure, outcome.toString())
-        val message = (outcome as TurnOutcome.Failure).message
-        assertTrue(message.contains("conflicting replay for code-mode tool result '$first'"), message)
+            .intercept(clientHistory, RecordingSink()) {
+                posted = it
+                completedOutcome()
+            }
+        assertTrue(outcome is TurnOutcome.Success, outcome.toString())
+        assertTrue((outcome as TurnOutcome.Success).usage.codeModeDiverged)
+        assertEquals(input(clientHistory), input(posted), "changed legacy text and its media stay client-owned")
+        assertEquals(0, input(posted).count { it.jsonObject["type"] == JsonPrimitive("custom_tool_call_output") })
+        assertEquals(saved, savedRecord(), "a lost legacy worker must not accept the changed result")
     }
 
     @Test
@@ -272,14 +285,15 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
                 completedOutcome()
             }
         assertTrue(outcome is TurnOutcome.Success, outcome.toString())
+        assertTrue((outcome as TurnOutcome.Success).usage.codeModeDiverged)
         val items = input(posted)
+        assertEquals(input(history(replay, id to "shot", tail = ANSWER_AND_NEXT)), items)
         // Coherent fallback: the record is omitted (no canonical pair, no captured A), and the client's
         // ordinary callback with B rides exactly as the client sent it.
         assertEquals(0, items.count { it.jsonObject["type"] == JsonPrimitive("custom_tool_call_output") })
         assertEquals(listOf(replay.toolMedia.getValue(id).single()), imageMessages(items))
         assertEquals(1, items.count { it.jsonObject["type"] == JsonPrimitive("function_call_output") })
-        val skipped = logLines.any { it.contains("history rewrite skipped") && it.contains("differ") }
-        assertTrue(skipped, logLines.toString())
+        assertTrue(logLines.any { it.contains("observable-divergence") }, logLines.toString())
     }
 
     @Test

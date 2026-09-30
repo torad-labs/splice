@@ -16,8 +16,48 @@ import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeRuntime
 import splice.upstream.codemode.CodeModeStep
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneOffset
+import kotlin.time.Duration.Companion.minutes
 
 class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
+    @Test
+    fun `worker failure starts with safe cause and counts accepted results`() = runTest {
+        var failureText = "worker pool exhausted\nPRIVATE_TOOL_RESULT"
+        val runtime = object : CodeModeRuntime {
+            override suspend fun start(
+                source: String,
+                tools: Set<String>,
+                descriptions: Map<String, String>,
+            ): CodeModeCell = object : CodeModeCell {
+                override suspend fun advance(results: List<CodeModeResult>): CodeModeStep =
+                    error(failureText)
+                override fun close() = Unit
+            }
+            override fun close() = Unit
+        }
+        val outcome = bridge(runtime).interceptor(turn(), outer(), disableParallel = false)
+            .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome() }
+        assertTrue(outcome is TurnOutcome.Failure)
+        val message = (outcome as TurnOutcome.Failure).message
+        assertTrue(message.contains("IllegalStateException: worker pool exhausted"), message)
+        assertTrue(message.contains("accepted results=0"), message)
+        assertFalse(message.contains("call ids="), message)
+        assertFalse(message.contains("PRIVATE_TOOL_RESULT"), "exception payload must stay private: $message")
+
+        failureText = "PRIVATE_TOOL_RESULT as first line"
+        val privateOutcome = bridge(runtime).interceptor(
+            turn(sessionId = "other-session"),
+            outer("other-call"),
+            disableParallel = false,
+        ).intercept(BASE_REQUEST, RecordingSink()) { outerOutcome("other-call") }
+        assertTrue(privateOutcome is TurnOutcome.Failure)
+        val privateMessage = (privateOutcome as TurnOutcome.Failure).message
+        assertTrue("IllegalStateException: message withheld" in privateMessage, privateMessage)
+        assertFalse("PRIVATE_TOOL_RESULT" in privateMessage, "private worker text must never enter the log")
+    }
+
     @Test
     fun `initial calls save failure retries captured callback without rerunning worker`() = runTest {
         val runtime = FailingSaveRuntime(
@@ -124,6 +164,39 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
         assertEquals(1, runtime.starts)
         assertFalse(runtime.cell.closed)
         manager.onHeadStop()
+    }
+
+    @Test
+    fun `failed issued-step save cannot make a later retry serve an unpersisted callback`() = runTest {
+        val runtime = ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Calls(listOf(call("read", "Read"))))))
+        val manager = bridge(runtime)
+        manager.interceptor(turn(), disableParallel = false)
+            .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome() }
+        val config = CodeModeBridgeConfig(
+            { runtime },
+            stateLocation(),
+            clock = Clock.fixed(Instant.ofEpochMilli(1_000), ZoneOffset.UTC),
+        )
+        val registry = CodexCodeModeRegistry(config, Json, 5.minutes)
+        val key = stateFiles.records().single().getValue("key").jsonPrimitive.content
+        val record = registry.recordsFor(key).single()
+        assertEquals(1, record.issued.size)
+        record.lastDigest = "next-request-digest"
+        val machine = CodexCodeModeMachine(config, registry, CodexCodeModeValidation(config))
+        stateFiles.block()
+        var failed = false
+        try {
+            machine.emit(record, record.visiblePending(), RecordingSink())
+        } catch (_: CodeModePersistenceException) {
+            failed = true
+        } finally {
+            stateFiles.unblock()
+        }
+        assertTrue(failed, "the issued-step save really failed before any client callback")
+        assertEquals(1, record.issued.size, "a failed save cannot leave a replayable in-memory step")
+        machine.emit(record, record.visiblePending(), RecordingSink())
+        assertEquals(2, registry.recordsFor(key).single().issued.size)
+        assertEquals(2, stateFiles.records().single().getValue("issued").jsonArray.size)
     }
 
     private fun assertPersistenceFailure(outcome: TurnOutcome) {

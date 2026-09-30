@@ -27,6 +27,7 @@ internal data class RoundUsage(
      *  re-sends the whole conversation, so round N's cache_creation already contains round N-1's. */
     val lastCacheWrite: Long = 0,
     val localStep: Boolean = false,
+    val codeModeDiverged: Boolean = false,
 ) {
     fun plusRound(u: Usage) = RoundUsage(
         lastInput = u.inputTokens,
@@ -35,6 +36,7 @@ internal data class RoundUsage(
         reasoningSum = reasoningSum + u.reasoningTokens,
         lastCacheWrite = u.cacheWriteTokens,
         localStep = localStep || u.localStep,
+        codeModeDiverged = codeModeDiverged || u.codeModeDiverged,
     )
 
     /** DR-124: fold the TERMINAL failed round's harvested usage (Failure.partial.usage) under the
@@ -48,6 +50,7 @@ internal data class RoundUsage(
         reasoningSum = reasoningSum + u.reasoningTokens,
         lastCacheWrite = if (u.cacheWriteTokens > 0) u.cacheWriteTokens else lastCacheWrite,
         localStep = localStep || u.localStep,
+        codeModeDiverged = codeModeDiverged || u.codeModeDiverged,
     )
 
     fun toUsage() = Usage(
@@ -57,5 +60,6 @@ internal data class RoundUsage(
         reasoningTokens = reasoningSum,
         cacheWriteTokens = lastCacheWrite,
         localStep = localStep,
+        codeModeDiverged = codeModeDiverged,
     )
 }

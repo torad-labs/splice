@@ -50,8 +50,10 @@ internal class CodexCodeModeMachine(
         }
     }
 
-    suspend fun emit(calls: List<CodeModePending>, sink: WireSink): TurnOutcome {
-        if (calls.isEmpty()) {
+    suspend fun emit(record: CodeModeRecord, calls: List<CodeModePending>, sink: WireSink): TurnOutcome {
+        val previous = record.issued.firstOrNull { it.requestDigest == record.lastDigest }
+        val served = previous?.calls ?: calls
+        if (served.isEmpty()) {
             return TurnOutcome.Failure(
                 "code-mode has no client calls to emit",
                 deterministic = true,
@@ -59,6 +61,23 @@ internal class CodexCodeModeMachine(
                 phase = FailurePhase.MID_OUTPUT,
             )
         }
+        if (previous == null) {
+            val issued = CodeModeIssuedStep(record.lastDigest, calls.map(CodeModePending::copy))
+            record.issued += issued
+            try {
+                registry.save()
+            } catch (error: CodeModePersistenceException) {
+                // The worker already advanced, but no callback reached the client. A retry
+                // reuses persisted pending ids and earns this issuance with a successful save.
+                record.issued.remove(issued)
+                throw error
+            }
+        }
+        return replay(served, sink)
+    }
+
+    /** Emit the prior recorded calls without touching the runtime's consumed cursor. */
+    suspend fun replay(calls: List<CodeModePending>, sink: WireSink): TurnOutcome {
         calls.forEach { call ->
             val index = sink.openTool(call.clientId, call.name)
             sink.inputJsonDelta(index, call.arguments.toString())
@@ -95,10 +114,7 @@ internal class CodexCodeModeMachine(
 
     private suspend fun advanceCell(request: CodeModeAdvanceRequest, cell: CodeModeCell): TurnOutcome = try {
         request.record.rounds++
-        when (val step = cell.advance(request.results)) {
-            is CodeModeStep.Calls -> acceptCalls(request, step.calls)
-            is CodeModeStep.Completed -> complete(request.record, step)
-        }
+        dispatchStep(request, cell.advance(request.results))
     } catch (error: CancellationException) {
         started.remove(request.record.id)
         registry.lose(request.record, "code-mode cell cancelled: ${lostMessage(request.record)}", error)
@@ -112,10 +128,33 @@ internal class CodexCodeModeMachine(
             request.record,
             "code-mode infrastructure failure ${error.category}/${error.faultClass}; ${lostMessage(request.record)}",
         )
-    } catch (_: IOException) {
-        poison(request.record, "code-mode runtime failed; ${lostMessage(request.record)}")
+    } catch (error: IOException) {
+        poison(request.record, runtimeFailure(error, request.record))
+    } catch (error: IllegalStateException) {
+        poison(request.record, runtimeFailure(error, request.record))
+    } catch (error: IllegalArgumentException) {
+        poison(request.record, runtimeFailure(error, request.record))
     } catch (_: RuntimeException) {
-        poison(request.record, "code-mode runtime failed; ${lostMessage(request.record)}")
+        poison(
+            request.record,
+            "code-mode runtime failed: RuntimeException: message withheld; " +
+                "accepted results=${request.record.results.size}; source was not rerun",
+        )
+    }
+
+    private suspend fun dispatchStep(request: CodeModeAdvanceRequest, step: CodeModeStep): TurnOutcome =
+        when (step) {
+            is CodeModeStep.Calls -> acceptCalls(request, step.calls)
+            is CodeModeStep.Completed -> complete(request.record, step)
+        }
+
+    /** Throwable messages may quote script or tool bytes. Only audited operational text is safe
+     * for daemon.log; every other message keeps its concrete exception class but not its content. */
+    private fun runtimeFailure(error: Throwable, record: CodeModeRecord): String {
+        val firstLine = error.message?.lineSequence()?.firstOrNull()?.trim()
+        val detail = if (firstLine == "worker pool exhausted") firstLine else "message withheld"
+        return "code-mode runtime failed: ${error::class.simpleName}: $detail; " +
+            "accepted results=${record.results.size}; source was not rerun"
     }
 
     private suspend fun acceptCalls(
@@ -135,7 +174,7 @@ internal class CodexCodeModeMachine(
         }
         request.record.updatedAt = config.clock.millis()
         registry.save()
-        return emit(request.record.visiblePending(), request.sink)
+        return emit(request.record, request.record.visiblePending(), request.sink)
     }
 
     private fun complete(record: CodeModeRecord, step: CodeModeStep.Completed): TurnOutcome {

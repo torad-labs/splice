@@ -64,7 +64,10 @@ internal class ResponsesWsSession(
          *  its context's tail and refuses any continuation that does not answer them ("No tool
          *  output found for function call …"). A turn that answers none of them cannot chain. */
         val pendingCalls: Set<String>,
-    )
+    ) {
+        /** Assistant text and calls observed on the committed server response. */
+        var evidence: WsServerEvidence = WsServerEvidence()
+    }
 
     // LRU + idle bounded. Chains retain the full logical input and request properties, so count
     // alone is not a memory bound; trimLocked enforces count, 64 MiB of retained UTF-8 input, and a
@@ -163,7 +166,7 @@ internal class ResponsesWsSession(
         // An empty delta means the same input was re-sent (a client retry), not a continuation:
         // chaining it would ask the server to continue from a response with nothing to react to.
         return items.takeIf { it.size == array.size }
-            ?.let { deltaOf(chain.input, it) }
+            ?.let { deltaOf(chain.input, it, chain.evidence) }
             ?.takeIf { it.isNotEmpty() }
             ?.takeIf { delta -> unansweredCalls(chain.pendingCalls, delta).isEmpty() }
     }
@@ -189,6 +192,7 @@ internal class ResponsesWsSession(
         generation: Long,
         epoch: Long,
         pendingCalls: Set<String> = emptySet(),
+        evidence: WsServerEvidence = WsServerEvidence(),
     ): Unit = synchronized(lock) {
         val now = clock()
         trimLocked(now)
@@ -204,8 +208,15 @@ internal class ResponsesWsSession(
         val logicalInput = input.map { it.toString() }
         val props = propsOf(request)
         val bytes = logicalInput.sumOf { it.encodeToByteArray().size.toLong() } +
-            props.encodeToByteArray().size.toLong()
-        chains[key] = Chain(logicalInput, responseId, props, generation, bytes, now, pendingCalls)
+            props.encodeToByteArray().size.toLong() +
+            evidence.assistantTexts.sumOf { it.encodeToByteArray().size.toLong() } +
+            evidence.calls.values.sumOf { it.toString().encodeToByteArray().size.toLong() } +
+            evidence.reasoning.entries.sumOf { (id, cipher) ->
+                id.encodeToByteArray().size.toLong() + cipher.encodeToByteArray().size.toLong()
+            }
+        chains[key] = Chain(logicalInput, responseId, props, generation, bytes, now, pendingCalls).also {
+            it.evidence = evidence
+        }
         totalBytes += bytes
         trimLocked(now)
     }
@@ -263,46 +274,72 @@ internal class ResponsesWsSession(
     private fun propsOf(request: JsonObject): String =
         JsonObject(request.filterKeys { it != FIELD_INPUT }).toString()
 
-    private enum class Disposition { SERVER_HAS_IT, SEND, BAIL }
-
     /**
      * The suffix beyond [previous] that must be sent, or null to bail.
      *
      * Bails when the new input does not EXTEND the previous one elementwise (a rewritten
      * prefix means the builder changed history — cache-key drift, a compaction, an amended
      * body), or when the suffix holds any item that is neither a known server-held rebuild nor
-     * a known client-new item. An assistant `message` in the suffix is server-held (it produced
-     * that text) — distinguished from a user message by role.
+     * a known client-new item. An assistant `message`, call or reasoning item is server-held
+     * only when the committed response proves the bytes the client rebuilt.
      *
      * A member rather than the companion function it used to be (Kotlin main sources carry no
      * `companion` blocks); it reads only its arguments, and its one caller is [chainableDelta]
      * inside this class, so the call site is unchanged.
      */
-    private fun deltaOf(previous: List<String>, current: List<JsonObject>): List<JsonObject>? {
+    private fun deltaOf(
+        previous: List<String>,
+        current: List<JsonObject>,
+        evidence: WsServerEvidence,
+    ): List<JsonObject>? {
         if (!extendsPrefix(previous, current)) return null
         val send = mutableListOf<JsonObject>()
+        val matchedCalls = mutableListOf<String>()
+        val matchedReasoning = mutableListOf<String>()
+        var matchedAssistant = 0
+        var verified = true
         for (item in current.drop(previous.size)) {
-            when (dispositionOf(item)) {
-                Disposition.SERVER_HAS_IT -> Unit // it produced this; re-sending would duplicate
-                Disposition.SEND -> send += item
-                Disposition.BAIL -> return null
+            val assistantText = WsAssistantText.of(item)
+            if (JsonScalars.str(item[FIELD_TYPE]) in OBSERVED_SERVER_ITEMS) {
+                // Neither a shared key nor a matching call id proves these response bytes.
+                verified = verified && evidence.verifies(item)
+                evidence.trackObserved(item, matchedCalls, matchedReasoning)
+            } else if (assistantText != null) {
+                // The first-prompt key identifies a scope, not which fork's assistant spoke.
+                verified = verified && evidence.assistantTexts.getOrNull(matchedAssistant++) == assistantText
+            } else {
+                verified = verified && WsSuffixDisposition.accept(item, send)
             }
         }
-        return send
+        return send.takeIf { verified && evidence.completeEcho(matchedAssistant, matchedCalls, matchedReasoning) }
     }
 
     private fun extendsPrefix(previous: List<String>, current: List<JsonObject>): Boolean =
         current.size >= previous.size &&
             previous.indices.all { previous[it] == current[it].toString() }
+}
+
+/** Suffix shapes are separate from the session's retained connection state. Unknown ones bail. */
+private object WsSuffixDisposition {
+    private enum class Disposition { SERVER_HAS_IT, SEND, BAIL }
+
+    fun accept(item: JsonObject, send: MutableList<JsonObject>): Boolean = when (dispositionOf(item)) {
+        Disposition.SERVER_HAS_IT -> true
+        Disposition.SEND -> {
+            send += item
+            true
+        }
+        Disposition.BAIL -> false
+    }
 
     private fun dispositionOf(item: JsonObject): Disposition {
-        // The builder emits plain role/content messages with no explicit `type`.
         val type = JsonScalars.str(item[FIELD_TYPE]) ?: item[FIELD_ROLE]?.let { MESSAGE } ?: return Disposition.BAIL
         val assistantMessage = type == MESSAGE && JsonScalars.str(item[FIELD_ROLE]) == "assistant"
         return when {
-            type in SERVER_HELD || assistantMessage -> Disposition.SERVER_HAS_IT
+            assistantMessage -> Disposition.BAIL
+            type in OBSERVED_SERVER_ITEMS -> Disposition.SERVER_HAS_IT
             type in CLIENT_NEW -> Disposition.SEND
-            else -> Disposition.BAIL // unknown shape
+            else -> Disposition.BAIL
         }
     }
 }
@@ -321,13 +358,11 @@ private const val TTL_MS = 30L * 60 * 1000
  *  `custom_tool_call` is code mode's `exec` (V4-446): since V4-388 it is the only tool a GPT
  *  model calls, and leaving it out bailed every code-mode round to a full send.
  *  FILE SCOPE ON PURPOSE: one shared immutable set, read per delta item. */
-private val SERVER_HELD = setOf(
-    "reasoning",
-    "function_call",
-    "custom_tool_call",
-    "tool_search_call",
-    "tool_search_output",
-)
+internal const val REASONING_ITEM_TYPE = "reasoning"
+private val OBSERVED_SERVER_ITEMS = setOf(REASONING_ITEM_TYPE, "function_call", "custom_tool_call")
+
+// Tool-search declarations are synthesized from this request's tool surface, not proof of an
+// item the prior response emitted. An appended declaration must full-send rather than vanish.
 
 /** Item kinds that are genuinely NEW client-side input and must be sent: a tool's output, an exec
  *  script's output (V4-446), a message. */
@@ -335,7 +370,7 @@ private val CLIENT_NEW = setOf("function_call_output", "custom_tool_call_output"
 
 private const val FIELD_INPUT = "input"
 private const val FIELD_TYPE = "type"
-private const val FIELD_ROLE = "role"
-private const val FIELD_CALL_ID = "call_id"
+internal const val FIELD_ROLE = "role"
+internal const val FIELD_CALL_ID = "call_id"
 private const val CALL_SUFFIX = "_call"
 private const val MESSAGE = "message"

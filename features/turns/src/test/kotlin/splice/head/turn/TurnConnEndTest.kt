@@ -41,6 +41,7 @@ import splice.core.model.ModelEntry
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.storage.ActivityDays
+import splice.core.turn.CodeModeDivergenceMarker
 import splice.core.turn.ErrorType
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
@@ -281,6 +282,26 @@ class TurnConnEndTest {
                 "the server is down or still starting); retry",
             emitter.errorMessage,
         )
+    }
+
+    @Test
+    fun `a divergent upstream tear remains countable on its connection-reset trace`() = runBlocking {
+        val rig = Rig("diverged-tear", traceEnabled = true)
+        val drive = rig.drive()
+        try {
+            val cause = java.io.IOException("upstream closed").apply { addSuppressed(CodeModeDivergenceMarker()) }
+            assertEquals(true, rig.connEnd.tryEmit(drive, StreamTornBeforeClient(cause)))
+        } finally {
+            drive.slot.release()
+            assertEquals(true, AsyncFileIo.drain())
+        }
+        val row = Json.parseToJsonElement(Files.readAllLines(rig.perfFile).last()).jsonObject
+        assertEquals("1", row.getValue(PerfKeys.CODE_MODE_DIVERGENCE).jsonPrimitive.content)
+        val day = rig.traceDir.resolve("codex-2026-09-18.jsonl")
+        val turn = Json.parseToJsonElement(Files.readAllLines(day).last()).jsonObject
+        val divergence = turn.getValue("perf").jsonObject.getValue("counters").jsonObject
+            .getValue(PerfKeys.CODE_MODE_DIVERGENCE).jsonPrimitive.content
+        assertEquals("1", divergence)
     }
 
     @Test

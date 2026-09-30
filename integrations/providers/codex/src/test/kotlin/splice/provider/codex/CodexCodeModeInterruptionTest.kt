@@ -9,7 +9,6 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
@@ -105,7 +104,7 @@ class CodexCodeModeInterruptionTest : CodeModeBridgeTestSupport() {
     }
 
     @Test
-    fun `lost continuation rejects conflicting already accepted results`() = runTest {
+    fun `lost continuation routes changed accepted result upstream without rerunning worker`() = runTest {
         val batch = CodeModeStep.Calls(listOf(call("first", "Read"), call("second", "Edit")))
         val runtime = ScriptedRuntime(ArrayDeque(listOf(batch)))
         val manager = bridge(runtime)
@@ -117,12 +116,21 @@ class CodexCodeModeInterruptionTest : CodeModeBridgeTestSupport() {
         manager.onHeadStop()
         val before = stateFiles.text()
         val changed = CodeModeResult(id, "conflict")
+        val clientHistory = siblingResults(listOf(changed))
+        var posted = ""
         val outcome = manager.interceptor(turn(results = listOf(changed)), disableParallel = true)
-            .intercept(siblingResults(listOf(changed)), RecordingSink()) { error("must not post conflict") }
-        assertTrue(outcome is TurnOutcome.Failure)
-        assertTrue((outcome as TurnOutcome.Failure).message.contains("conflicting replay"))
-        assertEquals(before, stateFiles.text())
-        assertFalse(runtime.starts > 1)
+            .intercept(clientHistory, RecordingSink()) {
+                posted = it
+                completedOutcome()
+            }
+        assertTrue(outcome is TurnOutcome.Success)
+        assertTrue((outcome as TurnOutcome.Success).usage.codeModeDiverged)
+        assertEquals(Json.parseToJsonElement(clientHistory), Json.parseToJsonElement(posted))
+        val items = Json.parseToJsonElement(posted).jsonObject.getValue("input").jsonArray
+        assertEquals(1, items.count { it.jsonObject["type"] == JsonPrimitive("function_call_output") })
+        assertEquals(0, items.count { it.jsonObject["type"] == JsonPrimitive("custom_tool_call_output") })
+        assertEquals(before, stateFiles.text(), "the lost record and its accepted result stay unchanged")
+        assertEquals(1, runtime.starts, "a lost worker must not rerun on the divergent branch")
     }
 
     @Test

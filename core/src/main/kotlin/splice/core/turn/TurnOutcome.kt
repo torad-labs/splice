@@ -27,6 +27,8 @@ public data class Usage(
     val cacheWriteTokens: Long = 0,
     /** A client-facing code-mode step synthesized locally; retained through round usage folding. */
     val localStep: Boolean = false,
+    /** A code-mode branch changed a result already accepted on this conversation key. */
+    val codeModeDiverged: Boolean = false,
 ) {
     /** Sum two rounds' usage — reasoning-continuation folding accumulates across hidden rounds. */
     public operator fun plus(other: Usage): Usage = Usage(
@@ -36,8 +38,13 @@ public data class Usage(
         reasoningTokens = reasoningTokens + other.reasoningTokens,
         cacheWriteTokens = cacheWriteTokens + other.cacheWriteTokens,
         localStep = localStep || other.localStep,
+        codeModeDiverged = codeModeDiverged || other.codeModeDiverged,
     )
 }
+
+/** Suppressed on an actual upstream I/O tear so connection-reset telemetry retains the
+ * branch-divergence fact even when no [TurnOutcome] can return from the post. */
+public class CodeModeDivergenceMarker : Exception("divergent code-mode result sent upstream")
 
 /** Anthropic error-event taxonomy the wire understands (error literals are not L3-gated). */
 public enum class ErrorType(public val wireName: String) {

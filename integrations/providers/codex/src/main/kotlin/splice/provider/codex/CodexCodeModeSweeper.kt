@@ -208,7 +208,12 @@ internal class CodeModeRecordRetention(
      *  the least recently used ones until the head is within its bounds. True when any went. */
     fun trim(records: MutableList<CodeModeRecord>, expired: CodeModeExpiredHistory, now: Long): Boolean {
         val before = records.size
-        records.map(CodeModeRecord::key).distinct().forEach { key -> beginTurn(records, expired, key, now) }
+        // A conversation exactly at its per-conversation bound still has one valid retry to
+        // serve after restart. New turns call beginTurn after the retry lookup; an OVER-bound
+        // conversation is trimmed here as before, even with no new client turn.
+        records.map(CodeModeRecord::key).distinct().forEach { key ->
+            if (records.count { it.key == key } > bounds.perConversation) beginTurn(records, expired, key, now)
+        }
         val gone = Gone(records, expired, now)
         while (records.size > bounds.records) gone.leastRecent(null, "the head held ${records.size} records") ?: break
         var held = records.sumOf(::bytesOf)

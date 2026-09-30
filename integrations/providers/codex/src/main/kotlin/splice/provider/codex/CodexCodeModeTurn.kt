@@ -8,6 +8,7 @@ import splice.core.turn.FailurePhase
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
+import splice.provider.codex.branch.CodexCodeModeBranch
 import splice.upstream.InterceptedRoundPost
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.sse.WireSink
@@ -48,9 +49,11 @@ internal class CodexCodeModeTurn(
     private val driver: CodexCodeModeDriver,
     private val resume: CodexCodeModeResume,
     private val machine: CodexCodeModeMachine,
+    private val validation: CodexCodeModeValidation,
     private val log: LogSink,
 ) {
     private val identity = CodexCodeModeIdentity()
+    private val branch = CodexCodeModeBranch(registry, wire, driver, machine, validation, log)
     private val locks = List(CODE_MODE_LOCK_STRIPES) { Mutex() }
 
     /** Conversation-scoped notes already logged — one line per conversation, not one per turn. */
@@ -68,9 +71,14 @@ internal class CodexCodeModeTurn(
         )
         return locks[(key.hashCode() and Int.MAX_VALUE) % locks.size].withLock {
             try {
-                // V4-337: before this turn's history is built, so a script it starts is measured on what stays.
-                registry.turnStart.begin(context.key)
-                runLocked(context, input.initialOuter, input.bodyJson)
+                // An identical request is served before retention can trim its recorded step.
+                val replay = branch.replay(context)
+                if (replay != null) {
+                    replay
+                } else {
+                    registry.turnStart.begin(context.key)
+                    runLocked(context, input.initialOuter, input.bodyJson)
+                }
             } catch (error: CodeModePersistenceException) {
                 error.outcome()
             }
@@ -85,6 +93,14 @@ internal class CodexCodeModeTurn(
         historyNotes(context.turn, context.key, context.digest)
             .filter { announced.add("${context.key}|$it") }
             .forEach { log("[code-mode] $it") }
+        return branch.diverged(context, bodyJson) ?: ordinary(context, initialOuter, bodyJson)
+    }
+
+    private suspend fun ordinary(
+        context: CodeModeRunContext,
+        initialOuter: GatewayCustomCall?,
+        bodyJson: String,
+    ): TurnOutcome {
         val completed = registry.completed(context.key)
         val completedHistory = wire.canonicalize(bodyJson, completed, context.turn.toolMedia)
         completedHistory.error?.let { return failure(it) }
@@ -140,20 +156,19 @@ internal class CodexCodeModeTurn(
         digest: String,
     ): List<String> {
         val resultIds = turn.toolResults.map(CodeModeResult::id).toSet()
-        val foreign = registry.foreignResultOwner(key, resultIds)
-        val unknown = registry.unknownBridgeResults(key, resultIds)
+        val owners = registry.resultOwners(key, resultIds)
         return buildList {
             if (registry.expiredHistory(key, digest, resultIds)) {
                 add("expired code-mode history for this conversation; its client calls stay ordinary tool calls")
             }
-            if (foreign != null) {
+            owners.foreign?.let { foreign ->
                 add(
                     "code-mode results in this history belong to another session or model " +
                         "(record ${foreign.id.take(RECORD_ID_LOG_CHARS)}); they stay ordinary tool calls",
                 )
             }
-            if (unknown.isNotEmpty()) {
-                add("unknown or expired code-mode tool results stay ordinary tool calls: $unknown")
+            if (owners.unknown.isNotEmpty()) {
+                add("unknown or expired code-mode tool results stay ordinary tool calls: ${owners.unknown}")
             }
         }
     }

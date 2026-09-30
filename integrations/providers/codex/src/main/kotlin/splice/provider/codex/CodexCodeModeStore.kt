@@ -96,7 +96,14 @@ internal class CodexCodeModeStore(
         val next = grouped(
             CodeModePersistedState(records = records.map(CodeModeRecord::snapshot), expired = expired.toList()),
         )
-        val changed = next.filter { (key, conversation) -> kept[key] != conversation }.map { (key, conversation) ->
+        val changed = next.filter { (key, conversation) ->
+            val prior = kept[key]
+            // RecordSnapshot's constructor equality excludes its body-owned issued steps. Persist a
+            // newly served callback before emitting it even when no other record field changed.
+            prior != conversation ||
+                prior.records.map(CodeModeRecordSnapshot::issued) !=
+                conversation.records.map(CodeModeRecordSnapshot::issued)
+        }.map { (key, conversation) ->
             Encoded(key, conversation, json.encodeToString(conversation))
         }
         try {

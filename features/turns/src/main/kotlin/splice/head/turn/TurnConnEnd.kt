@@ -3,8 +3,10 @@
 package splice.head.turn
 
 import splice.core.perf.OutcomeTag
+import splice.core.perf.PerfKeys
 import splice.core.turn.CONN_RESET_KIND
 import splice.core.turn.CONN_RESET_OUTCOME
+import splice.core.turn.CodeModeDivergenceMarker
 import splice.core.turn.ErrorType
 import splice.core.util.ERR_SNIPPET
 import splice.core.util.LogSink
@@ -15,6 +17,9 @@ import splice.upstream.transport.StreamTornBeforeClient
 import java.io.IOException
 
 private const val RETRY_HINT = "; retry"
+
+// why: bound cause traversal even if an external throwable forms a cycle.
+private const val MAX_FAILURE_CAUSE_DEPTH = 8
 
 internal class TurnConnEnd(
     private val provider: Provider,
@@ -29,6 +34,10 @@ internal class TurnConnEnd(
         // upstream connection failure, honestly retryable; never "internal gateway error".
         // post-handoff socket failure: our side of the wire
         is StreamTornBeforeClient, is IOException -> {
+            val divergence = generateSequence<Throwable>(e) { it.cause }.take(MAX_FAILURE_CAUSE_DEPTH).any { failure ->
+                failure.suppressed.any { it is CodeModeDivergenceMarker }
+            }
+            if (divergence) drive.perf.setCount(PerfKeys.CODE_MODE_DIVERGENCE, 1)
             emitConnReset(drive, failures.connectionResetMessage(e))
             true
         }

@@ -2,6 +2,10 @@ package splice.provider.codex
 
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -232,7 +236,7 @@ class CodexCodeModeLifecycleTest : CodeModeBridgeTestSupport() {
     }
 
     @Test
-    fun `conflicting consumed replay fails without advancing and corrected history resumes`() = runTest {
+    fun `divergent consumed replay goes upstream without advancing and original history resumes`() = runTest {
         val runtime = ScriptedRuntime(
             ArrayDeque(
                 listOf(
@@ -255,10 +259,24 @@ class CodexCodeModeLifecycleTest : CodeModeBridgeTestSupport() {
         val conflicting = turn(
             results = listOf(CodeModeResult(firstId, "different"), CodeModeResult(secondId, "B")),
         )
-        val rejected = manager.interceptor(conflicting, null, disableParallel = false)
-            .intercept(requestWithTwoResults(firstId, secondId), RecordingSink()) { error("upstream must not run") }
-        assertTrue(rejected is TurnOutcome.Failure)
-        assertEquals(2, runtime.cell.advances)
+        val divergentHistory = requestWithTwoResults(firstId, secondId).replace(
+            "\"output\":\"A\"",
+            "\"output\":\"different\"",
+        )
+        var posted = ""
+        val served = manager.interceptor(conflicting, null, disableParallel = false)
+            .intercept(divergentHistory, RecordingSink()) {
+                posted = it
+                completedOutcome()
+            }
+        assertTrue(served is TurnOutcome.Success)
+        assertTrue((served as TurnOutcome.Success).usage.codeModeDiverged)
+        assertEquals(Json.parseToJsonElement(divergentHistory), Json.parseToJsonElement(posted))
+        val spuriousExecOutputs = Json.parseToJsonElement(posted).jsonObject.getValue("input").jsonArray.count {
+            it.jsonObject["type"] == JsonPrimitive("custom_tool_call_output")
+        }
+        assertEquals(0, spuriousExecOutputs)
+        assertEquals(2, runtime.cell.advances, "B did not advance A's cursor")
         assertFalse(runtime.cell.closed)
 
         val corrected = turn(results = listOf(CodeModeResult(firstId, "A"), CodeModeResult(secondId, "B")))

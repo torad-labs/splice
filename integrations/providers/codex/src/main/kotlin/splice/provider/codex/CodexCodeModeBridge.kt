@@ -118,7 +118,7 @@ public class CodexCodeModeBridge(
     private val run = CodeModeRuntimeRun(config.runtimes)
     private val driver = CodexCodeModeDriver(config, run, registry, wire, validation, machine)
     private val resume = CodexCodeModeResume(registry, wire, validation, machine, driver)
-    private val controller = CodexCodeModeTurn(registry, wire, driver, resume, machine, config.log)
+    private val controller = CodexCodeModeTurn(registry, wire, driver, resume, machine, validation, config.log)
 
     init {
         require(config.retention.perConversation > 0) { "code-mode retention.perConversation must be positive" }

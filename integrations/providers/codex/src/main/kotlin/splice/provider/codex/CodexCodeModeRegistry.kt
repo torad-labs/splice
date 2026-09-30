@@ -19,6 +19,11 @@ import splice.upstream.codemode.CodeModeResult
 import java.time.Clock
 import kotlin.time.Duration
 
+internal data class CodeModeResultOwners(
+    val foreign: CodeModeRecord?,
+    val unknown: Set<String>,
+)
+
 internal class CodexCodeModeRegistry(
     private val config: CodeModeBridgeConfig,
     json: Json,
@@ -72,6 +77,12 @@ internal class CodexCodeModeRegistry(
         }
     }
 
+    /** One conversation's records for replay and divergence checks under a single sweep. */
+    fun recordsFor(key: String): List<CodeModeRecord> = synchronized(monitor) {
+        if (sweeper.sweep()) store.save(records, history.entries)
+        records.filter { it.key == key }
+    }
+
     fun completed(key: String): List<CodeModeRecord> = synchronized(monitor) {
         if (sweeper.sweep()) store.save(records, history.entries)
         records.filter { it.key == key && it.phase == CodeModePhase.COMPLETED }
@@ -84,15 +95,13 @@ internal class CodexCodeModeRegistry(
         }
     }
 
-    fun foreignResultOwner(key: String, ids: Set<String>): CodeModeRecord? = synchronized(monitor) {
+    /** Classify foreign and missing result ids from one consistent record snapshot. */
+    fun resultOwners(key: String, ids: Set<String>): CodeModeResultOwners = synchronized(monitor) {
         if (sweeper.sweep()) store.save(records, history.entries)
-        records.firstOrNull { record -> record.key != key && record.clientIds().any { it in ids } }
-    }
-
-    fun unknownBridgeResults(key: String, ids: Set<String>): Set<String> = synchronized(monitor) {
-        if (sweeper.sweep()) store.save(records, history.entries)
+        val foreign = records.firstOrNull { record -> record.key != key && record.clientIds().any { it in ids } }
         val known = records.filter { it.key == key }.flatMap(CodeModeRecord::clientIds).toSet()
-        ids.filter { it.startsWith(CODE_MODE_CLIENT_ID_PREFIX) && it !in known }.toSet()
+        val unknown = ids.filter { it.startsWith(CODE_MODE_CLIENT_ID_PREFIX) && it !in known }.toSet()
+        CodeModeResultOwners(foreign, unknown)
     }
 
     fun add(record: CodeModeRecord): Boolean = synchronized(monitor) {

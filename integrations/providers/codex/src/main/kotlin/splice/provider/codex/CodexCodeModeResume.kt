@@ -32,7 +32,7 @@ internal class CodexCodeModeResume(
         record.error?.let { return failure(it) }
         if (record.lastDigest == context.digest && record.pending.isNotEmpty()) {
             val pending = record.visiblePending().filter { it.clientId !in record.results }
-            if (pending.isNotEmpty()) return machine.emit(pending, context.sink)
+            if (pending.isNotEmpty()) return machine.emit(record, pending, context.sink)
         }
         return fresh(record, context, bodyJson)
     }
@@ -145,7 +145,7 @@ internal class CodexCodeModeResume(
         val pending = record.visiblePending().filter {
             it.clientId !in record.results && it.clientId !in supplied
         }
-        return machine.emit(pending, sink)
+        return machine.emit(record, pending, sink)
     }
 
     private fun suppliedResults(

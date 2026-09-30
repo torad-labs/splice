@@ -10,7 +10,6 @@ export const T = {
   saving: 'Saving…',
   waits: 'Applies after a restart',
   restartNow: 'Restart now',
-  restarting: 'Restarting…',
   liveOnly: 'In force now, but it did not reach the file, so a restart forgets it:',
   failed: 'That did not save:',
   rejected: 'Splice did not accept it:',

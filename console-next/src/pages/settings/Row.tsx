@@ -1,14 +1,14 @@
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { failureText } from '../../api/client';
-import { useRestartDaemon } from '../../api/doctor';
 import { useKnobSave } from '../../api/config';
 import { outcomeOf } from '../../lib/settings';
 import type { SaveOutcome } from '../../lib/settings';
 import { useRestartPending } from '../../lib/restart-pending';
 import { useShowKeys } from '../../lib/show-keys';
 import type { ConfigValue } from '../../types/core';
-import { Button, Check, Clock, KeyIcon } from '../../ui';
+import { Check, Clock, KeyIcon } from '../../ui';
+import { DaemonRestart } from '../shared/DaemonRestart';
 import { T } from './copy';
 
 /** A setting's key, on demand: the icon on a row reveals just that row's key; Advanced › Show setting keys reveals every one. */
@@ -44,7 +44,6 @@ export type Saved = SaveOutcome | { kind: 'failed'; message: string } | { kind: 
 /** A saved value's state under its row: saved, waiting for a restart (with the one act that ends the wait), refused, or only live. */
 export function SaveNote({ keys, saved }: { keys: readonly string[]; saved: Saved }) {
   const pending = useRestartPending();
-  const restart = useRestartDaemon();
   const [seen, setSeen] = useState(false);
   useEffect(() => {
     if (saved?.kind !== 'saved') return undefined;
@@ -64,8 +63,7 @@ export function SaveNote({ keys, saved }: { keys: readonly string[]; saved: Save
         <span className="tip-restart">
           <Clock />
           {T.waits} ·{' '}
-          <Button small disabled={restart.isPending} onClick={() => restart.mutate()}>{restart.isPending ? T.restarting : T.restartNow}</Button>
-          {restart.isError ? <span className="tip bad" role="alert">{failureText(restart.error)}</span> : null}
+          <DaemonRestart label={T.restartNow} small />
         </span>
       ) : null}
     </>

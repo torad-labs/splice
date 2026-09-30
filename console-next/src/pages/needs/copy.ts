@@ -4,8 +4,6 @@ export const A = {
   starting: 'Starting…',
   restart: 'Restart',
   restarting: 'Restarting…',
-  restartSplice: 'Restart splice',
-  restartingSplice: 'Restarting splice…',
   signIn: 'Sign in',
   signInAgain: 'Sign in again',
   stopTurn: 'Stop the turn',

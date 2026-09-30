@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { failureText } from '../../api/client';
-import { useDoctorFix, useRestartDaemon } from '../../api/doctor';
+import { useDoctorFix } from '../../api/doctor';
 import { useHeadAction, useStopTurn } from '../../api/queries';
 import { useLiveTurnOf } from '../../api/sessions';
 import { routeOf } from '../../lib/needs-page';
 import type { Need } from '../../types/needs';
 import { Button } from '../../ui';
+import { DaemonRestart } from '../shared/DaemonRestart';
 import { SignIn } from '../shared/SignIn';
 import { A } from './copy';
 
@@ -58,18 +59,6 @@ function HeadAct({ head, act }: { head: string; act: 'start' | 'restart' }) {
     <>
       <Button kind="go" disabled={busy} onClick={() => action.mutate({ head, action: act })}>{label}</Button>
       {action.isError ? <span className="hint alert" role="alert">{A.failed} {failureText(action.error)}</span> : null}
-    </>
-  );
-}
-
-function DaemonRestart() {
-  const restart = useRestartDaemon();
-  return (
-    <>
-      <Button kind="go" disabled={restart.isPending} onClick={() => restart.mutate()}>
-        {restart.isPending ? A.restartingSplice : A.restartSplice}
-      </Button>
-      {restart.isError ? <span className="hint alert" role="alert">{A.failed} {failureText(restart.error)}</span> : null}
     </>
   );
 }

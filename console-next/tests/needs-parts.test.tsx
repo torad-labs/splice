@@ -47,6 +47,12 @@ describe('a need card', () => {
     expect(render(need({ fix: { kind: 'copy', command: 'splice key set OPENAI_KEY' } }))).toContain('Copy the command');
     expect(render(need({ fix: { kind: 'doctor-fix', id: 'x' } }))).toContain('>Fix it<');
   });
+  test('the daemon restart is armed first: its card offers Restart splice and no Drain and restart until it is pressed', () => {
+    const html = render(need({ fix: { kind: 'restart-daemon' }, at: null }));
+    expect(html).toContain('Restart splice');
+    expect(html).not.toContain('Drain and restart');
+    expect(html).not.toContain('Turns in flight finish first');
+  });
   test('a stop-turn with no live turn to name opens the session instead', () => {
     const html = render(need({ kind: K.stuck, fix: { kind: 'stop-turn', head: 'claudex', session: 's1' }, at: null }));
     expect(html).toContain('href="/sessions/s1"');

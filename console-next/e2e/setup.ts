@@ -9,6 +9,13 @@ export const FINISHED = { id: 'synthetic-console-finished', name: 'Synthetic fin
 export default async function setup(): Promise<() => Promise<void>> {
   const stop = await globalSetup();
   try {
+    const html = process.env.CONSOLE_E2E_HTML;
+    if (html !== undefined) {
+      const response = await fetch((process.env.CONSOLE_E2E_BASE ?? '') + '/');
+      if (!response.ok || await response.text() !== readFileSync(html, 'utf8')) {
+        throw new Error('real daemon did not serve the selected built console byte-for-byte');
+      }
+    }
     const config = process.env.CONSOLE_E2E_CONFIG;
     const root = process.env.CONSOLE_E2E_TRANSCRIPT_ROOT;
     if (config === undefined || root === undefined) throw new Error('shared stack did not publish its isolated paths');
@@ -25,6 +32,25 @@ export default async function setup(): Promise<() => Promise<void>> {
       messagingSocketPath: null,
     }));
     saveTranscript(root, STACK.sender.id, 'synthetic-console-reply', 'Synthetic question', '**Synthetic answer** with `code`.');
+    const response = await fetch((process.env.CONSOLE_E2E_BASE ?? '') + '/api/teams', {
+      method: 'PUT',
+      headers: {
+        Authorization: 'Bearer ' + (process.env.CONSOLE_E2E_KEY ?? ''),
+        'content-type': 'application/json',
+        'Idempotency-Key': 'synthetic-console-team',
+      },
+      body: JSON.stringify({
+        name: 'Synthetic console team', goal: '', features: [], repo: process.env.CONSOLE_E2E_REPO,
+        archived: false,
+        slots: [{
+          id: 'synthetic-console-lead', role: 'lead', head: STACK.oauthHead,
+          model: STACK.model, account: null, lead: true, instructions: null, session: null,
+        }],
+      }),
+    });
+    if (!response.ok) throw new Error('isolated daemon refused synthetic team: ' + response.status);
+    const team = await response.json() as { id: string };
+    process.env.CONSOLE_NEXT_E2E_TEAM = team.id;
     return stop;
   } catch (failure) {
     await stop();

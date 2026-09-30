@@ -2,6 +2,8 @@
 import { expect, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
+import { STACK } from '../../console/e2e/stack';
+import type { PerfTurnsWire } from '../src/types/perf';
 
 const source = ts.createSourceFile('routes.tsx',
   readFileSync(new URL('../src/app/routes.tsx', import.meta.url), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -13,10 +15,49 @@ const array = initializer !== undefined && ts.isAsExpression(initializer) ? init
 if (array === undefined || !ts.isArrayLiteralExpression(array) || array.elements.length === 0) {
   throw new Error('router PLACES must declare a non-empty page census');
 }
-export const PAGES = array.elements.map((element) => {
+const PAGES = array.elements.map((element) => {
   if (!ts.isStringLiteral(element)) throw new Error('router PLACES contains a non-literal page');
   return element.text;
 });
+
+// Own detail pages count too. Redirects and the shell are not independent page implementations.
+export const ROUTES: string[] = [];
+function collectRoutes(node: ts.Node): void {
+  if (ts.isObjectLiteralExpression(node)) {
+    const properties = node.properties.filter(ts.isPropertyAssignment);
+    const path = properties.find((property) => property.name.getText(source) === 'path')?.initializer;
+    const element = properties.find((property) => property.name.getText(source) === 'element')?.initializer;
+    if (path !== undefined && ts.isStringLiteral(path) && element !== undefined &&
+        ts.isJsxSelfClosingElement(element) && element.tagName.getText(source) !== 'Navigate' &&
+        path.text !== '/') ROUTES.push(path.text);
+  }
+  ts.forEachChild(node, collectRoutes);
+}
+collectRoutes(source);
+for (const page of PAGES) {
+  if (!ROUTES.some((route) => route === page || route === page + '/:section?')) {
+    throw new Error('canonical page has no rendered route: ' + page);
+  }
+}
+
+export async function routePath(page: Page, route: string): Promise<string> {
+  switch (route) {
+    case 'sessions/:id': return 'sessions/' + STACK.sender.id;
+    case 'fleet/:head': return 'fleet/' + STACK.oauthHead;
+    case 'teams/:id': return 'teams/' + env('CONSOLE_NEXT_E2E_TEAM');
+    case 'projects/:id': return 'projects/' + encodeURIComponent(env('CONSOLE_E2E_REPO'));
+    case 'settings/:section?': return 'settings';
+    case 'turns/:head/:ts': {
+      const payload = await read<PerfTurnsWire>(page, '/api/perf/turns?head=' + STACK.oauthHead);
+      const row = payload.heads.flatMap((head) => head.rows ?? [])[0];
+      if (row === undefined) throw new Error('isolated daemon has no real turn for its detail route');
+      return 'turns/' + STACK.oauthHead + '/' + row.ts;
+    }
+    default:
+      if (route.includes(':')) throw new Error('render census has no real-data resolver for ' + route);
+      return route;
+  }
+}
 
 export function env(name: string): string {
   const value = process.env[name];
@@ -46,6 +87,7 @@ export async function open(page: Page, path: string): Promise<ReturnType<typeof 
   }
   await page.goto(env('CONSOLE_E2E_BASE') + '/#/' + path);
   await expect(page.getByRole('navigation', { name: 'Pages', exact: true })).toBeVisible();
+  expect(new URL(page.url()).hash).toBe('#/' + path);
   return faults;
 }
 

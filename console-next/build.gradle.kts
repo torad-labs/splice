@@ -47,8 +47,8 @@ fun Exec.consoleInputs(vararg trees: String) {
 
 val typecheck = tasks.register<Exec>("typecheck") {
     group = "verification"
-    description = "tsc --noEmit over the replacement console's sources and tests."
-    consoleInputs("src", "tests")
+    description = "tsc --noEmit over the replacement console's sources, unit tests and browser suite."
+    consoleInputs("src", "tests", "e2e")
     outputs.upToDateWhen { true }
     commandLine("bunx", "tsc", "--noEmit")
 }
@@ -64,10 +64,10 @@ val consoleBundle = tasks.register<Exec>("bundle") {
 
 tasks.register<Exec>("lint") {
     group = "verification"
-    description = "eslint over src and tests: the layers and the one file that may touch the network are lint-enforced."
-    consoleInputs("src", "tests")
+    description = "eslint over src, tests and e2e: the production layers and network boundary are lint-enforced."
+    consoleInputs("src", "tests", "e2e")
     outputs.upToDateWhen { true }
-    commandLine("bunx", "eslint", "src", "tests")
+    commandLine("bunx", "eslint", "src", "tests", "e2e")
 }
 tasks.register<Exec>("test") {
     group = "verification"
@@ -77,6 +77,20 @@ tasks.register<Exec>("test") {
     // enum and FEATURES.md through git, which no input tree here can name.
     outputs.upToDateWhen { false }
     commandLine("bunx", "vitest", "run")
+}
+
+tasks.register<Exec>("e2e") {
+    group = "verification"
+    description = "Playwright over the built console and isolated real daemon, including a throwing-page canary."
+    dependsOn(consoleBundle, "lint", ":app:shadowJar")
+    consoleInputs("e2e")
+    inputs.file(bundle)
+    inputs.dir(rootProject.file("console/e2e"))
+    inputs.file(rootProject.file("app/build/libs/app-all.jar"))
+    outputs.upToDateWhen { false }
+    environment("CONSOLE_E2E_HTML", bundle.asFile.absolutePath)
+    environment("CONSOLE_E2E_JAR", rootProject.file("app/build/libs/app-all.jar").absolutePath)
+    commandLine("bun", "e2e/run.ts")
 }
 
 // `check` reaches the bundle so a bundle that stops building is red before the switch, not at it.

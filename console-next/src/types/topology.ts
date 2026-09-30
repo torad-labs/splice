@@ -79,6 +79,8 @@ export type TopologyState = TopologyPayload | PendingRoute;
  *                   one of these would reject legal config, which is worse than not checking it.
  *   `names`         a list of names the daemon knows ([claude] share, a head's isolate): an entry
  *                   outside them is a notice, since the daemon also matches any on-disk item by name.
+ *   `foldedKeys`    a table whose KEYS are these names in any letter case, as the loader lowercases them
+ *                   (a head's model_slots), quote marks around a key dropped: another key is unknown, two that fold to one are a duplicate.
  */
 export interface SchemaNode {
   keys?: Record<string, SchemaNode>;
@@ -86,4 +88,5 @@ export interface SchemaNode {
   array?: SchemaNode;
   open?: boolean;
   names?: readonly string[];
+  foldedKeys?: readonly string[];
 }

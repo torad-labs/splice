@@ -48,6 +48,9 @@ export const SHARE_NAMES = [
 
 const directoryNames: SchemaNode = { names: SHARE_NAMES };
 
+/** The Claude tiers a head's `model_slots` names (`headModelSlots`, Topology.kt), pinned to it both ways by the topology test. */
+export const MODEL_SLOT_TIERS = ['opus', 'sonnet', 'haiku', 'fable'] as const;
+
 /** The per-million-token rates, per model id (FEATURES 2.3). `cache_write` is optional; the absent
  *  case means "no dollar figure", never zero. The `long_context_*` keys are a card's long-context
  *  tier (V4-240, TomlRates in TokenCost.kt): all of them or none, `long_context_cache_write` optional. */
@@ -112,7 +115,7 @@ const head: SchemaNode = {
     provider: {}, port: {}, discovery_prefix: {}, pinned_model: {},
     models: { array: { keys: { id: {}, slot: {} } } },
     // Tier to model id, with no serving allowlist (HeadConfig.modelSlots); the tiers are headModelSlots.
-    model_slots: { keys: { opus: {}, sonnet: {}, haiku: {}, fable: {} } },
+    model_slots: { foldedKeys: MODEL_SLOT_TIERS },
     context_window: {},
     overrides: { open: true },
     claude: { keys: { command: {}, config_dir: {}, isolate: directoryNames } },
@@ -183,6 +186,15 @@ function walk(value: unknown, node: SchemaNode, path: string, out: TopologyFindi
   }
   if (!isTable(value)) return; // a scalar where a table belongs: TOML's own parse rejects it first
 
+  if (node.foldedKeys !== undefined) {
+    const seen = new Set<string>();
+    for (const key of Object.keys(value)) {
+      const folded = key.replace(/^["']+|["']+$/g, '').toLowerCase();
+      if (!node.foldedKeys.includes(folded)) out.push({ path: join(path, key), message: 'unknown key' });
+      else if (seen.has(folded)) out.push({ path: join(path, key), message: 'duplicate key' });
+      seen.add(folded);
+    }
+  }
   if (node.keys !== undefined) {
     for (const [key, child] of Object.entries(value)) {
       const childNode = Object.hasOwn(node.keys, key) ? node.keys[key] : undefined;

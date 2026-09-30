@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
-import { SHARE_NAMES, validateTopology } from '../src/lib/topology';
+import { MODEL_SLOT_TIERS, SHARE_NAMES, validateTopology } from '../src/lib/topology';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const fromRepo = (relative: string): string => readFileSync(path.join(repoRoot, relative), 'utf8');
@@ -128,10 +128,20 @@ describe('the topology validator', () => {
     const kotlin = fromRepo('core/src/main/kotlin/splice/core/topology/Topology.kt');
     const listed = /val headModelSlots = setOf\(([^)]*)\)/.exec(kotlin)?.[1] ?? '';
     const tiers = [...listed.matchAll(/"([^"]+)"/g)].map((match) => match[1] ?? '');
-    expect(tiers.length).toBeGreaterThan(0);
+    expect([...MODEL_SLOT_TIERS].sort()).toEqual(tiers.sort());
     for (const tier of tiers) expect(validateTopology({ heads: { h: { model_slots: { [tier]: 'wire/model' } } } })).toEqual([]);
     expect(validateTopology({ heads: { h: { model_slots: { opus: 'a', sonet: 'b' } } } }))
       .toEqual([{ path: 'heads.h.model_slots.sonet', message: 'unknown key' }]);
+  });
+
+  test('a tier in any letter case is valid, as the loader lowercases it, and two that fold to one are a duplicate', () => {
+    expect(validateTopology({ heads: { h: { model_slots: { Opus: 'a', SONNET: 'b' } } } })).toEqual([]);
+    expect(validateTopology({ heads: { h: { model_slots: { Opus: 'a', opus: 'b' } } } }))
+      .toEqual([{ path: 'heads.h.model_slots.opus', message: 'duplicate key' }]);
+    // ktoml hands a quoted key back with its quote marks; the loader drops them before it matches a tier.
+    expect(validateTopology({ heads: { h: { model_slots: { '"Opus"': 'a', "'sonnet'": 'b' } } } })).toEqual([]);
+    expect(validateTopology({ heads: { h: { model_slots: { '"opus"': 'a', opus: 'b' } } } }))
+      .toEqual([{ path: 'heads.h.model_slots.opus', message: 'duplicate key' }]);
   });
 
   test('rejects an unknown top-level table', () => {

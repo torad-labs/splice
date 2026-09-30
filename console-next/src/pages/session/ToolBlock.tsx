@@ -1,4 +1,4 @@
-import { editDiff, outputSize, toolTarget, writtenContent } from '../../lib/conversation';
+import { editDiff, outputSize, toolCommand, toolLabel, toolTarget, writtenContent } from '../../lib/conversation';
 import type { Item } from '../../lib/conversation';
 import { noun } from '../../lib/format';
 import { Check, Chevron } from '../../ui';
@@ -22,13 +22,14 @@ export function ToolBlock({ item }: { item: Tool }) {
   const target = toolTarget(item.tool, item.input);
   const diff = editDiff(item.tool, item.input);
   const written = writtenContent(item.tool, item.input);
+  const command = toolCommand(item.tool, item.input);
   const running = item.output === null;
   const body = item.output === null ? null : item.output.length > OUTPUT_CAP ? item.output.slice(0, OUTPUT_CAP) : item.output;
   return (
     <details className="tool">
       <summary>
         <Chevron className="chev" />
-        <span className="verb">{item.tool}</span>
+        <span className="verb">{toolLabel(item.tool)}</span>
         {target === null ? null : <span className="arg">{target}</span>}
         <span className={`res${running ? ' run' : ''}`}>
           {running ? <span className="sp" /> : <Check />}
@@ -47,7 +48,8 @@ export function ToolBlock({ item }: { item: Tool }) {
           ))}
         </pre>
       )}
-      {diff === null && written === null && item.inputText !== '' && body === null ? <pre>{item.inputText}</pre> : null}
+      {command === null ? null : <pre className="code">{command}</pre>}
+      {diff === null && written === null && command === null && item.inputText !== '' && body === null ? <pre>{item.inputText}</pre> : null}
       {body === null || body === '' ? null : <pre className="shell-out">{body}</pre>}
       {item.output !== null && item.output.length > OUTPUT_CAP ? <p className="cut">{P.outputCut}</p> : null}
     </details>

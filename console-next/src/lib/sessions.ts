@@ -3,6 +3,9 @@
 import type { SessionEdge, SessionLast, SessionRow } from '../types/sessions';
 import type { LiveTurn } from '../types/turns';
 import { UNKNOWN_HEAD } from '../types/sessions';
+import { toolLabel } from './conversation';
+import { cleanMessage } from './message';
+import { repoNameOf } from './repo';
 import { SW } from './words-sessions';
 
 /** A session's key: its session id, else its pid. A registration with no session id still has to be
@@ -11,20 +14,22 @@ export function sessionKey(row: SessionRow): string {
   return row.session_id ?? `pid:${row.pid ?? 0}`;
 }
 
-/** A session's own label: its name, else the first 8 of its session id, else its pid. */
+/** A session's own label: its name, else its repo and the day it started (the daemon reports no first message to quote),
+ *  else its pid. A hex id is never a name. */
 export function sessionLabel(row: SessionRow): string {
   if (row.name !== null && row.name !== '') return row.name;
-  if (row.session_id !== null && row.session_id !== '') return row.session_id.slice(0, 8);
-  return row.pid === null ? 'unknown' : `pid ${row.pid}`;
+  const repo = repoName(row);
+  const began = row.started_at;
+  if (repo !== null && began !== null) return SW.inRepoOn(repo, new Date(began).toLocaleDateString([], { month: 'short', day: 'numeric' }));
+  if (repo !== null) return repo;
+  return row.pid === null ? SW.aSession : `pid ${row.pid}`;
 }
 
-const lastSegment = (path: string): string => path.replace(/\/+$/, '').split('/').pop() ?? path;
-
-/** A repository as a person names it: the folder, never the path. A row with neither a resolved repo nor a
- *  working directory has none. */
+/** A repository as a person names it: its remote's name, else its folder, never a path. A row with neither a resolved
+ *  repo nor a working directory has none. */
 export function repoName(row: SessionRow): string | null {
   const root = row.repo?.root ?? row.cwd;
-  return root === null || root === undefined || root === '' ? null : lastSegment(root);
+  return root === null || root === undefined || root === '' ? null : repoNameOf(root, row.repo?.remote);
 }
 
 /** Where a session stands, in the words the board groups by. `waiting` is the client's own status; `stuck` is a busy
@@ -110,9 +115,12 @@ export function nameForAddress(rows: readonly SessionRow[], address: string): st
 /** The session on the other end of one edge: a sent edge's `to` is an address (or name) the call used; a
  *  received edge's `from` is the sender's session id, never an address. */
 export function peerLabel(rows: readonly SessionRow[], edge: SessionEdge): string {
-  if (edge.direction === 'out') return nameForAddress(rows, edge.to) ?? edge.to;
+  if (edge.direction === 'out') return nameForAddress(rows, edge.to) ?? (edge.to.startsWith('uds:') ? SW.aSession : edge.to);
   const sender = rows.find((row) => row.session_id === edge.from);
-  return sender === undefined ? edge.from.slice(0, 8) : sessionLabel(sender);
+  if (sender === undefined) return SW.anEndedSession;
+  const named = sender.name !== null && sender.name !== '';
+  const repo = repoName(sender);
+  return named || repo === null ? sessionLabel(sender) : SW.aSessionIn(repo);
 }
 
 /** How a session sits in the hand-offs: it sent work to several sessions (`lead`), it was handed work by
@@ -171,10 +179,6 @@ export function spanText(ms: number): string {
 /** How long a busy session with no live turn may sit before its line says it is running a tool, quietly. */
 export const QUIET_AFTER_MS = 2 * 60_000;
 
-/** Terminal colour codes and the wrapper tags a client puts around a command's output are not words. */
-const ESC = String.fromCharCode(27);
-const NOISE = new RegExp(`${ESC}\\[[0-9;]*[A-Za-z]|</?local-command-[a-z]+>`, 'g');
-
 const KEY_OPENING = /^[[{\s]*"(?:[^"\\]|\\.)*"\s*:\s*/;
 const ESCAPES: Readonly<Record<string, string>> = { n: ' ', t: ' ', r: ' ', '"': '"', '\\': '\\', '/': '/' };
 
@@ -189,10 +193,14 @@ function wordsOf(text: string): string {
 
 /** The newest message as one line: what the person said, what the plan answered, or what a tool did. Null when there is nothing to read. */
 export function lastLine(last: SessionLast | null | undefined): string | null {
-  const text = wordsOf(last?.text.replace(NOISE, '').trim() ?? '').trim();
-  if (last === null || last === undefined || text === '') return null;
+  if (last === null || last === undefined) return null;
+  const cleaned = cleanMessage(last.text);
+  if (cleaned.kind === 'hidden') return null;
+  if (cleaned.kind === 'event') return cleaned.line;
+  const text = wordsOf(cleaned.text).trim();
+  if (text === '') return null;
   if (last.role === 'user') return `${SW.you}: ${text}`;
-  return last.role === 'tool' && last.tool !== null ? `${last.tool}: ${text}` : text;
+  return last.role === 'tool' && last.tool !== null ? `${toolLabel(last.tool)}: ${text}` : text;
 }
 
 /** A card's one line, and the note that goes to its quiet line: the newest message when the daemon sent one, with the state's own sentence

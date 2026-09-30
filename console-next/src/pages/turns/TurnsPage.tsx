@@ -7,7 +7,7 @@ import { usePerfSummary, usePerfTurns } from '../../api/turns';
 import { ABSENT, fmtInt, fmtTokens } from '../../lib/format';
 import { sessionLabel } from '../../lib/sessions';
 import {
-  WINDOW_MS, barMax, cacheText, colourFromHeads, filterLines, lineOf, newestFirst, planRows, runningOf, secondsText, tookText, turnsLede,
+  WINDOW_MS, barMax, cacheText, colourFromHeads, filterLines, lineOf, newestFirst, planRows, runningOf, secondsText, servedLocally, tookText, turnsLede,
 } from '../../lib/turns-page';
 import type { TurnFilter, TurnLine, PlanRow, RunningLine } from '../../lib/turns-page';
 import { T } from '../../lib/words-turns';
@@ -110,7 +110,9 @@ export function TurnsPage() {
   if (slice === undefined || isPendingRoute(slice)) return <><PageHead title={T.title} tools={tools} /><Empty title={T.none} why={T.noneWhy} /></>;
 
   const since = Date.now() - WINDOW_MS[window];
-  const all = newestFirst(slice.landed.filter((row) => row.ts >= since).map((row) => lineOf(row, planLabel, colourOf, titleOf)));
+  const inWindow = slice.landed.filter((row) => row.ts >= since);
+  const local = inWindow.filter(servedLocally).length;
+  const all = newestFirst(inWindow.filter((row) => !servedLocally(row)).map((row) => lineOf(row, planLabel, colourOf, titleOf)));
   const lines = filterLines(all, filter, query);
   const running = runningOf(slice.inflight, planLabel, colourOf);
   const quiet = running.filter((turn) => turn.stuck);
@@ -143,7 +145,8 @@ export function TurnsPage() {
           <SearchField value={query} onChange={setQuery} label={T.find} hint={T.find} />
         </div>
         {lines.length === 0 ? <Empty title={T.none} why={T.noneWhy} /> : <ul className="list">{lines.map((line) => <TurnRowView key={line.key} line={line} />)}</ul>}
-        {held > all.length && filter === 'all' && query === '' ? <p className="plan-foot">{T.shownOf(all.length, held)}</p> : null}
+        {local > 0 && filter === 'all' && query === '' ? <p className="plan-foot">{T.localLeftOut(local)}</p> : null}
+        {held > all.length + local && filter === 'all' && query === '' ? <p className="plan-foot">{T.shownOf(all.length, held)}</p> : null}
       </section>
       {slice.unread.length === 0 && slice.truncated.length === 0 ? null : (
         <section className="unread" aria-label={T.unreadTitle}>

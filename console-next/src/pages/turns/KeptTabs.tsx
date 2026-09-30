@@ -1,7 +1,9 @@
 import { Link } from 'react-router';
 import { failureText } from '../../api/client';
 import { useCapture, useConversation, useKeptTurn, useSetCapture, useWire } from '../../api/turns';
+import { toolLabel } from '../../lib/conversation';
 import { fmtMs } from '../../lib/format';
+import { readable } from '../../lib/message';
 import { askAndAnswer, wireFor } from '../../lib/turns-page';
 import { P } from '../../lib/words-turns';
 import type { ConversationMessageWire, TraceRecord, TraceSide, TurnRow } from '../../types/perf';
@@ -12,11 +14,13 @@ type Tab = (typeof TABS)[number][0];
 const tabOf = (raw: string | null): Tab => TABS.find(([id]) => id === raw)?.[0] ?? 'conversation';
 
 function Message({ message, plan }: { message: ConversationMessageWire; plan: string }) {
-  if (message.role === 'tool') return <p className="toolline">{message.tool ?? P.tool}{message.result === true ? ' · result' : ''}</p>;
+  if (message.role === 'tool') return <p className="toolline">{message.tool === undefined ? P.tool : toolLabel(message.tool)}{message.result === true ? ' · result' : ''}</p>;
+  const said = readable(message.text);
+  if (said === null) return null;
   return (
     <div>
       <div className="who">{message.role === 'system' ? P.system : P.answered(plan)}</div>
-      <Markdown>{message.text}</Markdown>
+      <Markdown>{said}</Markdown>
     </div>
   );
 }
@@ -28,9 +32,10 @@ function Conversation({ row, plan }: { row: TurnRow; plan: string }) {
   if (read.data === undefined) return null;
   if (read.data.state !== 'found') return <p className="kept-note">{read.data.reason}</p>;
   const { ask, reply, earlier } = askAndAnswer(read.data.messages);
+  const asked = ask === null ? null : readable(ask.text);
   return (
     <div className="qa">
-      {ask === null ? null : <div><div className="who">{P.asked}</div><div className="you">{ask.text}</div></div>}
+      {asked === null ? null : <div><div className="who">{P.asked}</div><div className="you">{asked}</div></div>}
       {reply.map((message) => <Message key={message.index} message={message} plan={plan} />)}
       {earlier > 0 ? <p className="note">{P.conversationEarlier(earlier)}</p> : null}
     </div>

@@ -27,6 +27,8 @@ export type SessionAvailability = 'live' | 'stale' | 'gone';
 export interface SessionRepo {
   /** The git common root, shared by a worktree and its main checkout. */
   root: string;
+  /** The URL the repo was cloned from (`origin`), credentials removed, when the daemon reports it; its last piece names the repo. */
+  remote?: string;
   /** The worktree's own path when the session's cwd is a linked worktree of [root]. */
   worktree?: string;
   /** Why the row groups where it does, when the cwd sits outside the trusted root set and the

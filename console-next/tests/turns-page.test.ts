@@ -1,7 +1,7 @@
 // The Turns pages' arithmetic: outcomes, plan rows, the stuck rule, a turn's four stages, and what was kept.
 import { describe, expect, test } from 'vitest';
 import {
-  askAndAnswer, failedCount, filterLines, lineOf, outcomeOf, planRows, runningOf, stagesOf, turnLede, turnsLede, wireFor, WINDOW_MS,
+  askAndAnswer, failedCount, filterLines, lineOf, outcomeOf, planRows, runningOf, servedLocally, stagesOf, turnLede, turnsLede, wireFor, WINDOW_MS,
 } from '../src/lib/turns-page';
 import type { PerfSummaryHead, TurnRow } from '../src/types/perf';
 
@@ -22,6 +22,20 @@ describe('outcomes', () => {
   });
   test('the unattributed tag is not a failure in a head count', () => {
     expect(failedCount(summary())).toBe(1);
+  });
+});
+
+describe('a record splice answered itself', () => {
+  const local = row({ in_tokens: 0, out_tokens: 0, total: 53 });
+  test('no first byte and no tokens on an ok row is a local answer; a model turn or a failure is not', () => {
+    expect(servedLocally(local)).toBe(true);
+    expect(servedLocally(row())).toBe(false);
+    expect(servedLocally(row({ first_byte: 900, in_tokens: 1200, out_tokens: 80 }))).toBe(false);
+    expect(servedLocally(row({ in_tokens: 1200, out_tokens: 80 }))).toBe(false);
+    expect(servedLocally(row({ outcome: 'error:upstream-failed' }))).toBe(false);
+  });
+  test('its page says the plan was not asked', () => {
+    expect(turnLede(local, [])).toBe('The plan was not asked. Splice answered this step itself, from a script the model had already written.');
   });
 });
 

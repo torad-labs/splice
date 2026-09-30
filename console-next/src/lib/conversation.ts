@@ -4,6 +4,8 @@
 // bookkeeping (command wrappers, background-task notices) out of the way, and reads a call's input so a
 // block can name what it did in a few words.
 import type { SessionEdge, TranscriptMessage } from '../types/sessions';
+import { cleanMessage } from './message';
+import { MSG } from './words-message';
 
 export type Speaker = 'user' | 'assistant' | 'system';
 
@@ -11,31 +13,8 @@ export type Item =
   | { kind: 'say'; index: number; ts: number | null; who: Speaker; text: string }
   /** A call and its result. `output` is null until a result arrives: the tool is still running. */
   | { kind: 'tool'; index: number; ts: number | null; tool: string; input: unknown; inputText: string; output: string | null; last: boolean }
-  /** The client's bookkeeping: a slash command, its output, a background task's notice. Folded, not hidden. */
-  | { kind: 'note'; index: number; ts: number | null; label: string; text: string };
-
-const WRAPPER = /^\s*<([a-zA-Z][\w-]*)>/;
-
-/** What the client wrote around a message, by its outer tag: [label] names the tag, [text] is what's inside. */
-export function noteOf(text: string): { label: string; text: string } | null {
-  const tag = WRAPPER.exec(text)?.[1];
-  if (tag === undefined) return null;
-  const inner = (name: string): string | null => new RegExp(`<${name}>([\\s\\S]*?)</${name}>`).exec(text)?.[1]?.trim() ?? null;
-  switch (tag) {
-    case 'task-notification':
-      return { label: 'Background task', text: inner('summary') ?? inner('result') ?? text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() };
-    case 'command-name':
-      return { label: 'Command', text: [inner('command-name'), inner('command-args')].filter((part) => part !== null && part !== '').join(' ') };
-    case 'local-command-stdout':
-    case 'local-command-stderr':
-      return { label: 'Command output', text: inner(tag) ?? '' };
-    case 'local-command-caveat':
-    case 'system-reminder':
-      return { label: 'Note', text: inner(tag) ?? '' };
-    default:
-      return null;
-  }
-}
+  /** The client's bookkeeping as one quiet line: a slash command (its output folded into `detail`), a background task's notice. */
+  | { kind: 'note'; index: number; ts: number | null; label: string; text: string; line: string; detail: string | null };
 
 function parseInput(text: string): unknown {
   try {
@@ -72,12 +51,18 @@ export function foldTranscript(messages: readonly TranscriptMessage[]): Item[] {
       continue;
     }
     if (message.role === 'tool') continue;
-    const note = noteOf(message.text);
-    if (note !== null) {
-      items.push({ kind: 'note', index: message.index, ts, ...note });
+    const cleaned = cleanMessage(message.text);
+    if (cleaned.kind === 'hidden') continue;
+    if (cleaned.kind === 'event') {
+      const tail = items.at(-1);
+      if (cleaned.label === MSG.output && tail?.kind === 'note' && tail.label === MSG.ran && tail.detail === null) {
+        tail.detail = cleaned.text;
+        continue;
+      }
+      items.push({ kind: 'note', index: message.index, ts, label: cleaned.label, text: cleaned.text, line: cleaned.line, detail: null });
       continue;
     }
-    items.push({ kind: 'say', index: message.index, ts, who: message.role, text: message.text });
+    items.push({ kind: 'say', index: message.index, ts, who: message.role, text: cleaned.text });
   }
   const tail = items.at(-1);
   if (tail?.kind === 'tool') tail.last = true;
@@ -97,7 +82,7 @@ export function toolTarget(tool: string, input: unknown): string | null {
   const pick = (...names: string[]): string | null => names.map((name) => text(fields[name])).find((value) => value !== null) ?? null;
   switch (tool) {
     case 'Bash':
-      return firstLine(pick('command') ?? '') || null;
+      return pick('description') ?? (firstLine(pick('command') ?? '') || null);
     case 'Read':
     case 'Edit':
     case 'Write':
@@ -126,6 +111,25 @@ export function toolTarget(tool: string, input: unknown): string | null {
     default:
       return pick('file_path', 'path', 'command', 'query', 'pattern', 'description', 'name');
   }
+}
+
+/** A shell command in full, for the body of a row that names what it did in words: null when the row has no such
+ *  words (its own text already is the command) or the call is not a command. */
+export function toolCommand(tool: string, input: unknown): string | null {
+  if (tool !== 'Bash' || typeof input !== 'object' || input === null) return null;
+  const { command, description } = input as Record<string, unknown>;
+  return text(description) !== null ? text(command) : null;
+}
+
+/** A tool's name as a person reads it: `mcp__ast-grep__find_code_by_rule` is `ast-grep · find code by rule`. */
+export function toolLabel(tool: string): string {
+  const parts = /^mcp__(.+?)__(.+)$/.exec(tool);
+  if (parts === null) return tool;
+  const spaced = (id: string): string => id.replace(/_+/g, ' ').trim();
+  const server = spaced((parts[1] ?? '').replace(/^plugin_/, '')).split(' ');
+  const half = server.length / 2;
+  const once = Number.isInteger(half) && server.slice(0, half).join(' ') === server.slice(half).join(' ');
+  return `${(once ? server.slice(0, half) : server).join(' ')} · ${spaced(parts[2] ?? '')}`;
 }
 
 /** The lines an Edit removed and added, for a diff. Null for a call that is not an edit or whose input is not

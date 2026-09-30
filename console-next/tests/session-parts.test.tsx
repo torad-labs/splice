@@ -28,6 +28,16 @@ describe('a tool block', () => {
     expect(html).toContain('2 lines');
     expect(html).not.toContain('res run');
   });
+  test('a Bash call reads as its description, with the command in the opened body', () => {
+    const html = renderToStaticMarkup(<ToolBlock item={tool({ input: { command: 'git log --oneline -5', description: 'Show the last five commits' } })} />);
+    expect(html).toContain('<span class="arg">Show the last five commits</span>');
+    expect(html).toContain('<pre class="code">git log --oneline -5</pre>');
+  });
+  test('an MCP tool reads as its server and its tool', () => {
+    const html = renderToStaticMarkup(<ToolBlock item={tool({ tool: 'mcp__ast-grep__find_code_by_rule', input: {}, inputText: '{}' })} />);
+    expect(html).toContain('<span class="verb">ast-grep · find code by rule</span>');
+    expect(html).not.toContain('mcp__');
+  });
   test('a call with no result yet is running, never a size of zero', () => {
     const html = renderToStaticMarkup(<ToolBlock item={tool({ output: null })} />);
     expect(html).toContain('res run');
@@ -60,6 +70,11 @@ describe('a hand-off', () => {
     expect(html).toContain('Hand-off from claude-splice');
     expect(html).toContain('Build the limiter.');
     expect(html).toContain('var(--claude)');
+  });
+  test('a hand-off wrapped in a system tag reads as its event, never the tag', () => {
+    const html = renderToStaticMarkup(<Handoff edge={edge({ text: '<task-notification><summary>new commits on feat/v0.4.0</summary></task-notification>' })} peer="a session in splice" colour="none" />);
+    expect(html).toContain('Background task · new commits on feat/v0.4.0');
+    expect(html).not.toContain('task-notification');
   });
   test('one this session sent says to whom, and a text that is gone says why', () => {
     const html = renderToStaticMarkup(<Handoff edge={edge({ direction: 'out', text: null, missing_reason: 'transcript rotated' })} peer="claude-muse" colour="none" />);

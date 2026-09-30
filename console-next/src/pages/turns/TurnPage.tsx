@@ -4,7 +4,7 @@ import { useHeads, useSessions } from '../../api/queries';
 import { usePerfTurns } from '../../api/turns';
 import { ABSENT, fmtInt, fmtUsd } from '../../lib/format';
 import { sessionLabel } from '../../lib/sessions';
-import { STAGE_ORDER, colourFromHeads, movedOf, outcomeOf, stagesOf, secondsText, turnLede } from '../../lib/turns-page';
+import { STAGE_ORDER, colourFromHeads, movedOf, outcomeOf, servedLocally, stagesOf, secondsText, turnLede } from '../../lib/turns-page';
 import { P, T } from '../../lib/words-turns';
 import { Empty, Fault, PageHead, State } from '../../ui';
 import { sessionPath } from '../shared/SessionActions';
@@ -45,7 +45,7 @@ export function TurnPage() {
           <h1>{title}</h1>
           <p className="lede">{turnLede(row, stages)}</p>
           <div className="facts">
-            <State tone={outcome.tone}>{outcome.word}</State>
+            {servedLocally(row) ? <span className="tag">{T.servedLocallyTag}</span> : <State tone={outcome.tone}>{outcome.word}</State>}
             <span>{plan}</span>
             {row.model === null ? null : <span>{row.model}</span>}
             {row.account === undefined ? null : <span>{row.account}</span>}

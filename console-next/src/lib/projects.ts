@@ -1,13 +1,14 @@
 // The Projects page's arithmetic: a repo's name and sentence, and the standing prompt and compaction rule read from and written
 // into splice.toml. Pure over the daemon's payloads and the parsed topology.
 import { ABSENT, fmtUsd } from './format';
+import { repoNameOf } from './repo';
 import { sessionLabel } from './sessions';
 import { P } from './words-projects';
 import type { SessionRow } from '../types/sessions';
 import type { ProjectRow } from '../types/projects';
 
-/** A repo as a person says it: its folder's own name. */
-export const repoLabel = (root: string): string => root.split('/').filter(Boolean).at(-1) ?? root;
+/** A repo as a person says it: the name it was cloned as, else its folder's. */
+export const repoLabel = (root: string): string => repoNameOf(root);
 
 /** The sentence under a project's name. */
 export function projectLede(row: ProjectRow): string {

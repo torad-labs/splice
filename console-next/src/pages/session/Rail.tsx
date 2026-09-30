@@ -1,11 +1,12 @@
 import { Link } from 'react-router';
 import { clockTime } from '../../lib/format';
+import { plainLine } from '../../lib/message';
 import type { Rail as RailFacts, Seat } from '../../lib/rail';
 import type { ModelColour } from '../../lib/model';
 import { stateWord } from '../../lib/sessions';
 import { P } from './copy';
 
-const firstLine = (text: string | null): string => (text === null ? '' : (text.trim().split('\n', 1)[0] ?? ''));
+const firstLine = (text: string | null): string => (text === null ? '' : (plainLine(text) ?? ''));
 const hue = (colour: ModelColour): React.CSSProperties => ({ '--c': colour === 'none' ? 'var(--tan)' : `var(--${colour})` }) as React.CSSProperties;
 
 /** Who this session works with and what rode between them: the team's seats (lead first), or the sessions it

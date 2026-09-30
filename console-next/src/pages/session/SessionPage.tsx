@@ -133,8 +133,8 @@ export function SessionPage() {
                 previous = null;
                 return (
                   <details key={item.index} className="note">
-                    <summary>{item.label}{item.text === '' ? '' : `: ${item.text.split('\n', 1)[0] ?? ''}`}</summary>
-                    {item.text.includes('\n') ? <pre>{item.text}</pre> : null}
+                    <summary>{item.line}</summary>
+                    {item.detail !== null ? <pre>{item.detail}</pre> : item.text.includes('\n') ? <pre>{item.text}</pre> : null}
                   </details>
                 );
               }

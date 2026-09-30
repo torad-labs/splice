@@ -42,9 +42,9 @@ describe('the rail of a session with no team', () => {
       { seat: 'lead', direction: 'in', at: 2, text: 'ready' },
     ]);
   });
-  test('a peer the registry no longer holds is a seat named by what the edge carries', () => {
+  test('a peer the registry no longer holds is a seat named a session, never its socket', () => {
     const rail = railOf(rows[0] as SessionRow, [rows[0] as SessionRow], [edge({ to: 'uds:/gone' })], []);
-    expect(rail.seats.at(-1)).toMatchObject({ key: 'uds:/gone', label: 'uds:/gone', state: null });
+    expect(rail.seats.at(-1)).toMatchObject({ key: 'uds:/gone', label: 'a session', state: null });
   });
   test('a session with no hand-offs is alone on its rail', () =>
     expect(railOf(rows[0] as SessionRow, rows, [], []).seats).toHaveLength(1));

@@ -17,6 +17,7 @@ import { ResumeCopy, StopTurn, sessionPath } from '../shared/SessionActions';
 import { P } from './copy';
 import { Handoff, PeerSaid } from './Handoff';
 import { Rail } from './Rail';
+import { SessionNote } from './SessionNote';
 import { ToolBlock } from './ToolBlock';
 import './session.css';
 
@@ -186,6 +187,7 @@ export function SessionPage() {
                 </div>
               );
             })}
+            {row === undefined ? null : <SessionNote key={id} row={row} />}
           </div>
         </Window>
         {rail === null ? <div /> : <Rail rail={rail} colourOf={seatColour} pathOf={seatPath} />}

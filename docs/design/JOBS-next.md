@@ -60,6 +60,7 @@ Each page answers one question. An action with a row in brackets is not built ye
 - Filter to hand-offs
 - Copy the resume command for a plan
 - Stop the turn
+- Send a note to the session
 
 ## sessions
 

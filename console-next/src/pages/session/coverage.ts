@@ -8,6 +8,7 @@ export const dispositions: readonly Disposition[] = [
   { kind: 'route', name: '/api/sessions/{id}/edges', disposition: 'read-only' },
   { kind: 'route', name: '/api/sessions/{id}/transcript', disposition: 'read-only' },
   { kind: 'route', name: '/api/sessions/{id}/resume', disposition: 'read-only' },
+  { kind: 'route', name: '/api/sessions/{id}/message', disposition: 'editable' },
 ];
 
 export const job: PageJob = {
@@ -18,5 +19,6 @@ export const job: PageJob = {
     { name: 'Filter to hand-offs' },
     { name: 'Copy the resume command for a plan' },
     { name: 'Stop the turn' },
+    { name: 'Send a note to the session' },
   ],
 };

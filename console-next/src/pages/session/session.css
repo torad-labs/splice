@@ -58,11 +58,13 @@ a.crumb { display: inline-flex; align-items: center; gap: var(--space-4); margin
 .note { font: 500 0.96rem var(--meta); color: var(--mute); }
 .note summary { cursor: pointer; }
 .note pre { margin: var(--space-4) 0 0; padding: var(--space-5) var(--space-6); border-radius: 0.5rem; background: color-mix(in srgb, var(--ink) 6%, transparent); font: 400 0.8125rem/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--body); }
-.composer { width: calc(100% - 3.25rem); max-width: calc(78ch + 2.5rem); margin: 0 auto var(--space-12); display: grid; border: var(--input); border-radius: 0.75rem; background: var(--obj); }
-.composer .in { padding: var(--space-8) var(--space-9) var(--space-5); font: 400 1.125rem/1.5 var(--read); color: var(--mute); min-height: 4.25rem; border: 0; background: transparent; resize: none; outline: 0; }
-.composer .row { display: flex; align-items: center; gap: var(--space-5); padding: var(--space-4) var(--space-5) var(--space-5) var(--space-6); }
+.composer { display: grid; border: var(--input); border-radius: 0.75rem; background: var(--obj); }
+.composer .in { padding: var(--space-8) var(--space-9) var(--space-3); font: 400 1.125rem/1.5 var(--read); color: var(--ink); min-height: 4.25rem; border: 0; background: transparent; resize: vertical; outline: 0; }
+.composer .what { margin: 0; padding: 0 var(--space-9); font: 400 0.96rem/1.5 var(--read); color: var(--mute); }
+.composer .row { display: flex; align-items: center; gap: var(--space-5); padding: var(--space-4) var(--space-5) var(--space-5) var(--space-9); }
 .composer .row .btn { margin-left: auto; }
-.pend { font: 600 0.875rem var(--meta); color: var(--wait); }
+.composer .status { font: 600 0.96rem var(--meta); color: var(--mute); }
+.composer .status.bad { color: var(--stuck); }
 .rail { position: sticky; top: var(--space-9); display: grid; gap: var(--space-10); }
 .rail h2 { font: 520 1.375rem/1.1 var(--display); color: var(--ink); letter-spacing: -.01em; }
 .team { list-style: none; margin: 0; padding: 0 0 0 var(--space-10); position: relative; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-8); }

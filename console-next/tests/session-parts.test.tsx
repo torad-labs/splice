@@ -9,7 +9,9 @@ import type { Item } from '../src/lib/conversation';
 import type { Rail as RailFacts } from '../src/lib/rail';
 import type { HandedEdge, SessionRow } from '../src/types/sessions';
 import { UNKNOWN_HEAD } from '../src/types/sessions';
-import { Composer } from '../src/pages/session/Composer';
+import { Composer, NoteClosed } from '../src/pages/session/Composer';
+import type { ComposerProps } from '../src/pages/session/Composer';
+import { NOTE_LIMIT } from '../src/lib/note';
 import { Handoff } from '../src/pages/session/Handoff';
 import { Rail } from '../src/pages/session/Rail';
 import { OUTPUT_CAP, ToolBlock } from '../src/pages/session/ToolBlock';
@@ -85,12 +87,39 @@ describe('a hand-off', () => {
   });
 });
 
-describe('the composer', () => {
-  test('it is disabled and says why', () => {
-    const html = renderToStaticMarkup(<Composer />);
-    expect(html).toMatch(/<textarea[^>]*disabled/);
-    expect(html).toContain('Pending: splice cannot send to a session yet');
+describe('the note box', () => {
+  const box = (over: Partial<ComposerProps> = {}) =>
+    renderToStaticMarkup(<Composer draft="" phase="idle" failure={null} onDraft={() => undefined} onSend={() => undefined} {...over} />);
+  test('an empty box says what a note is, and cannot send', () => {
+    const html = box();
+    expect(html).toContain('aria-label="Send a note to this session"');
+    expect(html).toContain('It reaches the session as a message from another session, not as you typing.');
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>Send the note/);
+    expect(html).not.toContain('Pending');
+  });
+  test('a draft can be sent, and sending holds the button and says so', () => {
+    expect(box({ draft: 'run the gate' })).toMatch(/<button(?![^>]*disabled)[^>]*>Send the note/);
+    const sending = box({ draft: 'run the gate', phase: 'sending' });
+    expect(sending).toMatch(/<button[^>]*disabled[^>]*>Sending…/);
+  });
+  test('a sent note says it was sent and never that it was read', () => {
+    const html = box({ phase: 'sent' });
+    expect(html).toContain('Sent. splice cannot tell whether the session has read it yet.');
+    expect(html).not.toMatch(/delivered|read it\.|received/i);
+  });
+  test('a refused note shows the daemon’s sentence and keeps the draft', () => {
+    const html = box({ draft: 'keep me', phase: 'failed', failure: 'the session is not running' });
+    expect(html).toContain('the session is not running');
+    expect(html).toContain('keep me');
+    expect(html).toContain('status bad');
+  });
+  test('a note past the limit cannot be sent, and says the limit', () => {
+    const html = box({ draft: 'x'.repeat(NOTE_LIMIT + 1) });
+    expect(html).toContain('A note is at most 8,000 characters.');
     expect(html).toMatch(/<button[^>]*disabled/);
+  });
+  test('a session that is not running has no box, and says why', () => {
+    expect(renderToStaticMarkup(<NoteClosed />)).toContain('This session is not running, so it cannot take a note.');
   });
 });
 

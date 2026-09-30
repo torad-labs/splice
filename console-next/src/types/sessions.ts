@@ -234,3 +234,10 @@ export interface TranscriptOff {
 export type TranscriptRead = TranscriptPage | TranscriptOff;
 
 
+
+/** The daemon's answer to a note: it wrote the note to the session's inbox, and the client gives no receipt, so delivery is never known. */
+export interface NoteAnswer {
+  submitted: true;
+  message_id: string;
+  delivery: 'unknown';
+}

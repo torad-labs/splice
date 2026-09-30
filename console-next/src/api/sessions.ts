@@ -1,11 +1,12 @@
 // What the session pages read, and the two things they do to a session: copy how to resume it, stop its turn.
-import { infiniteQueryOptions, useInfiniteQuery, useQueries, useQuery } from '@tanstack/react-query';
+import { infiniteQueryOptions, useInfiniteQuery, useMutation, useQueries, useQuery } from '@tanstack/react-query';
 import { MgmtError, request } from './client';
 import { keys, read, useLiveTurns } from './queries';
 import type { TurnOf } from '../lib/sessions';
 import type { LiveTurnsPayload } from '../types/turns';
 import type {
   BoardEdgesPayload,
+  NoteAnswer,
   ResumeRecipe,
   SessionEdgesPayload,
   SessionHistoryRead,
@@ -100,6 +101,14 @@ export function useTranscript(session: string) {
  *  that fixes it. */
 export const fetchResume = (session: string, head: string): Promise<ResumeRecipe> =>
   request<ResumeRecipe>(`/api/sessions/${id(session)}/resume?head=${id(head)}`);
+
+/** A note from the console to one running session, written to its inbox as a message from another session. The daemon says
+ *  it submitted the note, never that the session read it, and a refusal (not running, a version it has not checked, two
+ *  sessions on one socket) rejects with its sentence. Sent once: nothing here retries a note that may have arrived. */
+export const useSendNote = (session: string) =>
+  useMutation({
+    mutationFn: (text: string) => request<NoteAnswer>(`/api/sessions/${id(session)}/message`, { method: 'POST', body: JSON.stringify({ text }) }),
+  });
 
 /** The daemon's id for the turn a session is running on [head], the one a stop names; null when it
  *  runs none. */

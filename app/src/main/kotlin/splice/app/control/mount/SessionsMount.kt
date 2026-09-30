@@ -2,9 +2,11 @@
 // transcripts (features/sessions). V4-444: the team and project routes moved to TeamsMount and ProjectsMount.
 package splice.app.control.mount
 
+import io.ktor.server.request.receiveText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
+import io.ktor.server.routing.post
 import kotlinx.coroutines.withContext
 import splice.core.config.ConfigService
 import splice.sessions.http.KeptActivity
@@ -12,6 +14,8 @@ import splice.sessions.http.SessionHistoryRoute
 import splice.sessions.http.SessionHistoryRowOf
 import splice.sessions.http.SessionRepoNameOf
 import splice.sessions.http.SessionsRoutes
+import splice.sessions.note.PeerNoteSocket
+import splice.sessions.note.SessionNoteRoute
 import splice.sessions.registry.SessionSource
 import splice.sessions.transcript.SessionTranscriptViewEnabled
 import splice.upstream.codemode.ProcessDispatchers
@@ -36,6 +40,9 @@ internal class SessionsMount(
             SessionRepoNameOf { record -> routes.repoOf(record)?.root },
         )
     }
+
+    /** V4-444: the console's note to one live session, written to its inbox socket. */
+    private val noteRoute = sessions?.let { SessionNoteRoute(it, PeerNoteSocket(fileIo)) }
 
     fun register(route: Route) {
         wiring.routes?.let { sessionRoutes(route, it) }
@@ -67,6 +74,11 @@ internal class SessionsMount(
         route.get("/api/sessions/edges") { guard.guarded(call) { routes.edgeRoutes.boardEdges().send(call) } }
         route.get("/api/sessions/{id}/edges") {
             guard.guarded(call) { routes.edgeRoutes.edges(call.parameters["id"].orEmpty()).send(call) }
+        }
+        noteRoute?.let { notes ->
+            route.post("/api/sessions/{id}/message") {
+                guard.guarded(call) { notes.post(call.parameters["id"].orEmpty(), call.receiveText()).send(call) }
+            }
         }
         route.get("/api/sessions/{id}/transcript") {
             guard.guarded(call) {

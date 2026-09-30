@@ -101,7 +101,7 @@ Needs you · Sessions · Fleet · Turns · Usage · Settings. Where the rest wen
 | Settings controls | `GET/PATCH /api/config`; keys `GET/PUT /api/keys/{name}` | exists |
 | Drag reorder (Sessions, Fleet) | browser storage | no daemon work |
 | Approve / Deny a permission prompt | none: the prompt belongs to Claude Code, splice cannot answer it | **not drawn**; future = a PermissionRequest hook on launched sessions (a security decision) |
-| Send a message to a session (composer) | none: `address` is Claude Code's own socket, splice never writes to it | **daemon work**: `POST /api/sessions/{id}/message`; feasibility unverified. Drawn in the comp, marked PENDING |
+| Send a note to a session (composer) | `POST /api/sessions/{id}/message`: the daemon writes the text to the live session's inbox socket, as a message from another session (never as the operator typing; it cannot answer a prompt or run a command). 202 is submitted, never delivered: the client gives no receipt | exists (V4-444) |
 | Interrupt a tool call | none: the call runs in the client | **not drawn** (Stop the turn instead) |
 | Stuck | derived: `status` busy and `status_updated_at` older than a threshold | console rule |
 

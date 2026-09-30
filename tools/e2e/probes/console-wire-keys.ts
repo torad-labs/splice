@@ -160,6 +160,8 @@ const FETCH_DISPOSITIONED: Record<string, string> = {
     "the transport inside request<T>(); every concrete request<T> and read<T> is enumerated separately",
   "api/client.ts|'/health'":
     "the health<T> transport; its concrete callers are enumerated with their response types",
+  "api/client.ts|'/'":
+    "the served page itself, compared as text with the one already loaded; it is HTML, not a JSON payload with keys",
   "api/client.ts|'/api/events'":
     "the SSE stream, not JSON; ConsoleEventProducersTest checks its event families against the serializer",
 };

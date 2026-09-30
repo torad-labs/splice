@@ -3214,3 +3214,4 @@ console-next/e2e/team-lifecycle.spec.ts	4ead16f522a9d868df3c86d8fdfce38f34160608
 console-next/e2e/turn-retention.spec.ts	5a45e042da7bebbeb0673e01160008b3cad6f6a1e723a8cc334244f7055eb8e3	created		V4-444: retained browser behavior ported before retiring console; isolated loopback daemon and synthetic data
 tools/probes/tsconfig.json	81c9d993278f009eb96197615402da18b40e0614ab74f9fc1e2ff3444f086a51	created		V4-446: typechecked program for the manual isolated Claude Code compaction probe
 console-next/tests/config-url.test.ts	2ca265144cc6b47f921da401e17a49f82e7cecd005fe1e86a83c2e5ffd4f0d8c	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes
+console-next/tests/contrast.test.ts	c93aaf37006ba559aaad9d89d2bdfe8ad7f256d55acf5ca6c7ee062a689a01e9	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes

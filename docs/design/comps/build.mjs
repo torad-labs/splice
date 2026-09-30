@@ -6,7 +6,7 @@ import { chromium } from '/home/marcos/Documents/dev/projects/mythos/repo/node_m
 import { shell } from './shell.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const PAGES = ['sessions', 'session', 'needs', 'settings', 'fleet'];
+const PAGES = ['sessions', 'session', 'needs', 'settings', 'fleet', 'turns', 'turn', 'usage'];
 const WIDTHS = [1440, 1920];
 const THEMES = ['day', 'night'];
 const pick = process.argv.slice(2);

@@ -31,14 +31,14 @@ private const val NO_SOCKET = "the session has no messaging socket"
 private const val SHARED_SOCKET = "more than one running session answers on that socket"
 
 /** What sending one note came to. Only [Submitted] put bytes on the socket. */
-public sealed interface NoteOutcome {
-    public data class Submitted(val messageId: String) : NoteOutcome
+public sealed class NoteOutcome {
+    public data class Submitted(val messageId: String) : NoteOutcome()
 
     /** Nothing was sent: the target or its version is not one this route may write to. */
-    public data class Refused(val status: HttpStatusCode, val reason: String) : NoteOutcome
+    public data class Refused(val status: HttpStatusCode, val reason: String) : NoteOutcome()
 
     /** The socket could not be reached or written. Not retried: a half-written note may have arrived. */
-    public data class Failed(val reason: String) : NoteOutcome
+    public data class Failed(val reason: String) : NoteOutcome()
 }
 
 public fun interface SessionNoteSender {
@@ -46,20 +46,20 @@ public fun interface SessionNoteSender {
 }
 
 /** One check's answer: the value to carry on with, or the reply that ends the request. */
-private sealed interface Step<out T> {
-    data class Go<T>(val value: T) : Step<T>
+private sealed class Step<out T> {
+    data class Go<T>(val value: T) : Step<T>()
 
-    data class Stop(val reply: JsonReply) : Step<Nothing>
+    data class Stop(val reply: JsonReply) : Step<Nothing>()
 }
-
-private fun stop(status: HttpStatusCode, reason: String): Step.Stop =
-    Step.Stop(JsonReply(status, buildJsonObject { put("error", reason) }.toString()))
 
 public class SessionNoteRoute(
     private val registry: SessionSource,
     private val sender: SessionNoteSender?,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
+
+    private fun stop(status: HttpStatusCode, reason: String): Step.Stop =
+        Step.Stop(JsonReply(status, buildJsonObject { put("error", reason) }.toString()))
 
     public suspend fun post(sessionId: String, body: String): JsonReply =
         when (val text = note(body)) {

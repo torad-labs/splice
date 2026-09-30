@@ -41,10 +41,15 @@ private val OTHERS = setOf(
     PosixFilePermission.OTHERS_EXECUTE,
 )
 
+/** Where a note's message id comes from: random in the daemon, fixed in a test. */
+public fun interface NoteIds {
+    public fun next(): String
+}
+
 public class PeerNoteSocket(
     private val io: CoroutineDispatcher,
     private val audited: Set<String> = PeerNoteAbi.AUDITED_VERSIONS,
-    private val newId: () -> String = { UUID.randomUUID().toString() },
+    private val newId: NoteIds = NoteIds { UUID.randomUUID().toString() },
     private val timeoutMs: Long = NOTE_SEND_TIMEOUT_MS,
     private val user: String = System.getProperty("user.name").orEmpty(),
 ) : SessionNoteSender {
@@ -60,7 +65,7 @@ public class PeerNoteSocket(
         }
         val socket = target.messagingSocketPath?.let(Path::of)
             ?: return NoteOutcome.Refused(HttpStatusCode.Conflict, "the session has no messaging socket")
-        val id = newId()
+        val id = newId.next()
         val frame = PeerNoteFrame.encode(text, id).toByteArray(Charsets.UTF_8)
         return withTimeoutOrNull(timeoutMs) { runInterruptible(io) { deliver(socket, frame, id) } }
             ?: NoteOutcome.Failed("the session's inbox did not take the note in time")
@@ -102,7 +107,7 @@ public class PeerNoteSocket(
     }
 
     private fun isSocket(path: Path): Boolean {
-        val mode = Files.getAttribute(path, "unix:mode", LinkOption.NOFOLLOW_LINKS) as Int
+        val mode = Files.getAttribute(path, "unix:mode", LinkOption.NOFOLLOW_LINKS) as? Int ?: return false
         return mode and FILE_TYPE_MASK == SOCKET_TYPE
     }
 

@@ -62,13 +62,15 @@ import java.util.concurrent.ConcurrentHashMap
 internal const val UNKNOWN_HEAD = "unknown head"
 
 /** One transcript message as the route sends it. */
-private fun messageJson(m: TranscriptMessage): JsonObject = buildJsonObject {
-    put("index", m.index)
-    put("role", m.role.name.lowercase())
-    m.ts?.let { put("ts", it) }
-    put("text", m.text)
-    m.tool?.let { put("tool", it) }
-    m.result?.let { put("result", it) }
+private object MessageWire {
+    fun json(m: TranscriptMessage): JsonObject = buildJsonObject {
+        put("index", m.index)
+        put("role", m.role.name.lowercase())
+        m.ts?.let { put("ts", it) }
+        put("text", m.text)
+        m.tool?.let { put("tool", it) }
+        m.result?.let { put("result", it) }
+    }
 }
 
 /** `before=end` on the transcript route: read from the last message. */
@@ -230,7 +232,7 @@ public class SessionsRoutes(
     private fun pageJson(page: TranscriptPage, fromEnd: Boolean): String = buildJsonObject {
         put("session_id", page.sessionId)
         put("path", page.path)
-        put("messages", buildJsonArray { page.messages.forEach { add(messageJson(it)) } })
+        put("messages", buildJsonArray { page.messages.forEach { add(MessageWire.json(it)) } })
         put("next", page.next)
         if (fromEnd) put("earlier", page.earlier)
         // Declared additions (V4-130, routed to splice-design): the page's denominator. What it read

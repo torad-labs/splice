@@ -1,0 +1,81 @@
+import { describe, expect, test } from 'vitest';
+import { editDiff, foldTranscript, interleave, noteOf, outputSize, toolTarget } from '../src/lib/conversation';
+import type { TranscriptMessage } from '../src/types/sessions';
+
+const say = (index: number, role: TranscriptMessage['role'], text: string, ts?: number): TranscriptMessage => ({ index, role, text, ...(ts === undefined ? {} : { ts }) });
+const call = (index: number, tool: string, input: unknown, ts?: number): TranscriptMessage => ({ ...say(index, 'assistant', JSON.stringify(input), ts), tool, result: false });
+const result = (index: number, tool: string, text: string): TranscriptMessage => ({ ...say(index, 'tool', text), tool, result: true });
+
+describe('folding a transcript', () => {
+  test('a call and its result become one item; the last unanswered call is still running', () => {
+    const items = foldTranscript([say(0, 'user', 'go'), call(1, 'Bash', { command: 'ls' }), result(2, 'Bash', 'a\nb'), call(3, 'Bash', { command: 'sleep 9' })]);
+    expect(items.map((item) => item.kind)).toEqual(['say', 'tool', 'tool']);
+    expect(items[1]).toMatchObject({ tool: 'Bash', output: 'a\nb', last: false });
+    expect(items[2]).toMatchObject({ output: null, last: true });
+  });
+  test('a result joins the newest open call of its own tool, not another tool\'s', () => {
+    const items = foldTranscript([call(0, 'Read', { file_path: 'a' }), call(1, 'Bash', { command: 'x' }), result(2, 'Read', 'file body')]);
+    expect(items[0]).toMatchObject({ tool: 'Read', output: 'file body' });
+    expect(items[1]).toMatchObject({ tool: 'Bash', output: null });
+  });
+  test('a result whose call was on an earlier page is kept as an item, not dropped', () => {
+    const items = foldTranscript([result(9, 'Bash', 'late')]);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ kind: 'tool', output: 'late', input: null });
+  });
+  test('input that is not JSON stays as text', () => {
+    const [item] = foldTranscript([{ ...say(0, 'assistant', 'plain words'), tool: 'X', result: false }]);
+    expect(item).toMatchObject({ input: 'plain words', inputText: 'plain words' });
+  });
+  test('the client\'s own wrappers fold into notes with what they say', () => {
+    const items = foldTranscript([
+      say(0, 'user', '<command-name>/clear</command-name>\n<command-args></command-args>'),
+      say(1, 'system', '<local-command-stdout></local-command-stdout>'),
+      say(2, 'user', '<task-notification><task-id>1</task-id><summary>Build finished</summary></task-notification>'),
+    ]);
+    expect(items).toMatchObject([{ kind: 'note', label: 'Command', text: '/clear' }, { kind: 'note', label: 'Command output' }, { kind: 'note', label: 'Background task', text: 'Build finished' }]);
+  });
+  test('an unknown tag is a message, not a note', () => expect(noteOf('<b>bold</b> text')).toBeNull());
+});
+
+describe('what a call did', () => {
+  test('names its target by tool', () => {
+    expect(toolTarget('Bash', { command: 'npm test\nmore' })).toBe('npm test');
+    expect(toolTarget('Edit', { file_path: 'src/a.ts', old_string: 'x', new_string: 'y' })).toBe('src/a.ts');
+    expect(toolTarget('Grep', { pattern: 'foo' })).toBe('foo');
+    expect(toolTarget('SendMessage', { to: 'claude-splice' })).toBe('claude-splice');
+    expect(toolTarget('Weird', { name: 'n' })).toBe('n');
+    expect(toolTarget('Skill', { skill: 'campaign' })).toBe('campaign');
+    expect(toolTarget('SendUserFile', { files: ['a.png', 'b.png'] })).toBe('a.png');
+    expect(toolTarget('AskUserQuestion', { questions: [{ question: 'Which one?' }] })).toBe('Which one?');
+  });
+  test('nothing obvious, or input that is text, names nothing', () => {
+    expect(toolTarget('ListAgents', {})).toBeNull();
+    expect(toolTarget('Bash', 'raw')).toBeNull();
+    expect(toolTarget('Bash', { command: '   ' })).toBeNull();
+  });
+  test('an edit is a diff of its lines; anything else is not', () => {
+    expect(editDiff('Edit', { old_string: 'a\nb', new_string: 'c' })).toEqual({ removed: ['a', 'b'], added: ['c'] });
+    expect(editDiff('Edit', { old_string: '', new_string: 'new\n' })).toEqual({ removed: [], added: ['new'] });
+    expect(editDiff('Edit', { file_path: 'x' })).toBeNull();
+    expect(editDiff('Read', { old_string: 'a', new_string: 'b' })).toBeNull();
+  });
+  test('a result\'s size, and none before it comes', () => {
+    expect(outputSize('a\nb\nc')).toEqual({ lines: 3, chars: 5 });
+    expect(outputSize('')).toEqual({ lines: 0, chars: 0 });
+    expect(outputSize(null)).toBeNull();
+  });
+});
+
+describe('hand-offs among the messages', () => {
+  const edge = (at: number) => ({ from: 'p', to: 'uds:/me', at, direction: 'in' as const });
+  test('each lands by its time; one before the first message comes first, one after the last comes last', () => {
+    const items = foldTranscript([say(0, 'user', 'a', 100), say(1, 'assistant', 'b', 200)]);
+    const timeline = interleave(items, [edge(50), edge(150), edge(999)]);
+    expect(timeline.map((entry) => (entry.kind === 'handoff' ? `h${entry.at}` : `m${entry.at}`))).toEqual(['h50', 'm100', 'h150', 'm200', 'h999']);
+  });
+  test('messages with no time keep their order and never pull a hand-off out of place', () => {
+    const items = foldTranscript([say(0, 'user', 'a'), say(1, 'assistant', 'b')]);
+    expect(interleave(items, [edge(10)]).map((entry) => entry.kind)).toEqual(['item', 'item', 'handoff']);
+  });
+});

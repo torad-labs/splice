@@ -29,6 +29,6 @@ export const W = {
     tooled_no_text: 'Tool call instead',
     empty_model: 'Empty reply',
     stream_error: 'Stream failed',
-    upstream_error: 'Command error',
+    upstream_error: 'Provider error',
   },
 } as const;

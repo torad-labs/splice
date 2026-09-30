@@ -29,11 +29,11 @@ test('Settings reads the isolated whole doctor report and offers the API-key rem
 
 test('Needs you opens the intended plan and the full Health report from its doctor item', async ({ page }) => {
   const faults = await open(page, 'needs-you');
-  const wrapper = page.getByRole('listitem').filter({ hasText: 'Launcher' }).first();
+  const wrapper = page.getByRole('listitem', { name: /^Doctor: Launcher/ });
   await expect(wrapper).toContainText('splice install --all');
   await wrapper.getByRole('link', { name: 'Show the details', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Health', exact: true })).toBeVisible();
-  await expect(page.locator('.row').filter({ hasText: 'Launcher' })).toBeVisible();
+  await expect(page.locator('.row').filter({ has: page.getByRole('heading', { name: /^Launcher/ }) })).toBeVisible();
   await page.goBack();
   const key = page.getByRole('listitem').filter({ hasText: 'CONSOLE_E2E_NO_SUCH_KEY' }).first();
   await key.getByRole('link', { name: 'Show the details', exact: true }).click();

@@ -10,7 +10,7 @@ export const U = {
   totalsTurnsWhy: (plans: number, span: string) => `Across ${plans} ${plans === 1 ? 'command' : 'commands'} in ${span}.`,
   totalsIn: 'Tokens read in',
   totalsInWhy: (cached: string) => `${cached} came from the cache.`,
-  totalsInPlain: 'Everything the commands were asked to read.',
+  totalsInPlain: 'Everything the models were asked to read.',
   totalsOut: 'Tokens written out',
   totalsOutWhy: 'Answers, tools and thinking.',
   totalsCost: 'API cost, estimated',

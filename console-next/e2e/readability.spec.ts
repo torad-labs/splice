@@ -2,7 +2,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { PerfTurnsWire } from '../src/types/perf';
 import type { HeadsPayload } from '../src/types/core';
-import { open } from './support';
+import { FIRST_READ_MS, open } from './support';
 import { STACK } from './stack';
 
 const FRAMES = [
@@ -109,7 +109,7 @@ test('Turns keeps a long model, large token counts and complete refusal outcome 
   });
   const faults = await open(page, 'turns');
   const row = page.locator('li.turn').filter({ hasText: model }).first();
-  await expect(row).toBeVisible({ timeout: 20_000 });
+  await expect(row).toBeVisible({ timeout: FIRST_READ_MS });
   await expect(row).toContainText('2.00M in');
   await expect(row).toContainText('123k out');
   await expect(row.getByText('Rate limited', { exact: true })).toBeVisible();

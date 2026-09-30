@@ -12,8 +12,6 @@ export default defineConfig({
   forbidOnly: true,
   retries: 0,
   timeout: 60_000,
-  // Initial daemon reads use the stack's landing bound. Explicit remount/poll timing assertions stay tighter.
-  expect: { timeout: 20_000 },
   reporter: [['list']],
   outputDir: '../build/e2e',
   use: {

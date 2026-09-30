@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 import { dirname } from 'node:path';
 import type { ProjectRow } from '../src/types/projects';
 import { driveOneTurn, STACK, utcDayWait } from './stack';
-import { env, open, read } from './support';
+import { env, FIRST_READ_MS, open, read } from './support';
 
 test('a repository page retains daemon session/turn facts, selected rule length and trusted roots', async ({ page }) => {
   const wait = utcDayWait(60_000);
@@ -42,7 +42,8 @@ test('Settings lists each actual effective compaction rule with its length and a
   const faults = await open(page, 'settings/storage');
   const block = page.getByRole('region', { name: 'Compaction', exact: true });
   const rule = (source: string) => block.getByRole('listitem').filter({ hasText: source });
-  await expect(block).toContainText(STACK.compactGlobal.length + ' characters');
+  // This is the panel's first instruction read; later value assertions retain Playwright's default bound.
+  await expect(block).toContainText(STACK.compactGlobal.length + ' characters', { timeout: FIRST_READ_MS });
   await expect(rule(STACK.model)).toContainText(STACK.compactModel.length + ' characters');
   await expect(rule(STACK.model)).toContainText(STACK.oauthHead);
   await expect(rule(STACK.model)).not.toContainText(STACK.keyHead);

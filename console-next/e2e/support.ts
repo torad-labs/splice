@@ -59,6 +59,10 @@ export async function routePath(page: Page, route: string): Promise<string> {
   }
 }
 
+// The isolated daemon's first read under a loaded host can outlast the normal assertion bound.
+// Traces kept heads/instruction and initial chat reads pending; later values and remount timing retain their tighter bounds.
+export const FIRST_READ_MS = 20_000;
+
 export function env(name: string): string {
   const value = process.env[name];
   if (value === undefined || value === '') throw new Error(name + ' is unset: shared stack did not start');

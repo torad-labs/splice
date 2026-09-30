@@ -2,7 +2,7 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import type { TeamRow } from '../src/types/teams';
-import { env, open, read } from './support';
+import { env, FIRST_READ_MS, open, read } from './support';
 import { sendHandOff, STACK } from './stack';
 
 const TEAM: TeamRow = {
@@ -185,7 +185,7 @@ test('reentering a team after its empty read shows a newly landed real turn befo
     });
   }
   const faults = await open(page, 'teams/' + team.id);
-  await expect(page.getByText('The seats sent each other nothing.', { exact: true })).toBeVisible();
+  await expect(page.getByText('The seats sent each other nothing.', { exact: true })).toBeVisible({ timeout: FIRST_READ_MS });
   await page.getByRole('main').getByRole('link', { name: 'Sessions', exact: true }).click();
   await sendHandOff(Number(env('CONSOLE_E2E_OAUTH_PORT')), env('CONSOLE_E2E_KEY'), env('CONSOLE_E2E_PEER_ADDRESS'), 'toolu_synthetic_entry_' + randomUUID());
   const { today, tomorrow } = days();

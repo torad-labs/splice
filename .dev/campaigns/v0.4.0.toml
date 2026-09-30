@@ -10091,6 +10091,7 @@ claimed_by = "claude-builder"
 claimed_at = "2026-09-29T23:53:57.626Z"
 # [2026-09-29] CLAIM: owner=claude-builder at=2026-09-29T23:53:57Z
 # [2026-09-29] amend by=unattributed: files were ["app/src/main/kotlin/splice/app/provider/ModelRosters.kt", "app/src/test/kotlin/splice/app/v4440/"]
+# [2026-09-30] Sep 29, 7:24 PM CT: priority CI 36646964572 Teams fix committed de679f3a3. Cause console/src/pages/teams/index.tsx:378-384: first day read can precede sender turn, and timeline entry did not reread before minute tick. Real daemon payload contains session=e2e5e11d while browser retains empty snapshot. Standalone regression red on same 15s locator then green; original journey green (2/2, exit 0). Scoped console Teams/perf tests 121/121 exit 0; lint and typecheck exit 0, no added debt. Rules exit 1 names peer uncommitted V4-445 WrappedHead.kt:196/198 blocking IO under lock; owner notified. No captures or peer code committed. V4-440 remains in progress.
 
 [[items]]
 id = "V4-441"

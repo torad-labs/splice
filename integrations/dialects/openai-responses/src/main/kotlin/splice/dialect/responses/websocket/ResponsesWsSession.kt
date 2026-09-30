@@ -318,11 +318,20 @@ private const val TTL_MS = 30L * 60 * 1000
 
 /** Item kinds the server ALREADY holds after the previous response: it produced them, so
  *  the builder's rebuild of them is a duplicate that must be dropped from the delta.
+ *  `custom_tool_call` is code mode's `exec` (V4-446): since V4-388 it is the only tool a GPT
+ *  model calls, and leaving it out bailed every code-mode round to a full send.
  *  FILE SCOPE ON PURPOSE: one shared immutable set, read per delta item. */
-private val SERVER_HELD = setOf("reasoning", "function_call", "tool_search_call", "tool_search_output")
+private val SERVER_HELD = setOf(
+    "reasoning",
+    "function_call",
+    "custom_tool_call",
+    "tool_search_call",
+    "tool_search_output",
+)
 
-/** Item kinds that are genuinely NEW client-side input and must be sent. */
-private val CLIENT_NEW = setOf("function_call_output", "message")
+/** Item kinds that are genuinely NEW client-side input and must be sent: a tool's output, an exec
+ *  script's output (V4-446), a message. */
+private val CLIENT_NEW = setOf("function_call_output", "custom_tool_call_output", "message")
 
 private const val FIELD_INPUT = "input"
 private const val FIELD_TYPE = "type"

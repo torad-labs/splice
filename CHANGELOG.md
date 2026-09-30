@@ -676,6 +676,20 @@ origin.
   conversation instead of the script's output (103 of 6,877 WebSocket rounds chained). A round now
   sends only what is new: the `exec` output and any context note after it. Measured on `claudex`
   after the fix: 55 of 58 rounds chained, none closed for size (V4-446).
+- **A GPT session compacts while there is still room for the compaction.** Claude Code decides
+  when to compact from the token counts splice reports, at a share of the window it is told. On a
+  GPT head that point left too little of the model's real window for the compaction itself: the
+  conversation's growth since the last count, the compaction prompt and the summary it writes.
+  splice now scales the counts it reports so that Claude Code compacts at the model's window less a
+  reserve measured from 1,420 successful GPT compactions: the p95 growth through the compaction
+  prompt plus the p99 length of the summary, per model. A row's `compaction_reserve_tokens`
+  overrides it, and a model the audit did not sample keeps its old scaling. When one turn still
+  grows past that point, splice answers `prompt is too long` with HTTP 400 before the answer
+  starts, which is the reply Claude Code compacts on, instead of a failure inside an answer already
+  under way. It refuses only on a size the provider measured. A conversation splice has not measured
+  since it started, one whose earlier part changed, or one whose new part carries an image or file
+  goes to the provider as before. A compaction or a first message is refused only when its measured
+  size alone exceeds the window (V4-446).
 - **`splice status` no longer calls a head ready when the daemon could not build it.** The table
   judged each row by its credential and its wrapper alone, so a head skipped at boot read "ready"
   while `/health` counted it failed. The row now reads "not running" with the daemon's own boot

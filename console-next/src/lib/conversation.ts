@@ -13,6 +13,8 @@ export type Item =
   | { kind: 'say'; index: number; ts: number | null; who: Speaker; text: string }
   /** A call and its result. `output` is null until a result arrives: the tool is still running. */
   | { kind: 'tool'; index: number; ts: number | null; tool: string; input: unknown; inputText: string; output: string | null; last: boolean }
+  /** A message another session sent this one, from its sender, never a person's own words. */
+  | { kind: 'peer'; index: number; ts: number | null; from: string; text: string }
   /** The client's bookkeeping as one quiet line: a slash command (its output folded into `detail`), a background task's notice. */
   | { kind: 'note'; index: number; ts: number | null; label: string; text: string; line: string; detail: string | null };
 
@@ -53,6 +55,10 @@ export function foldTranscript(messages: readonly TranscriptMessage[]): Item[] {
     if (message.role === 'tool') continue;
     const cleaned = cleanMessage(message.text);
     if (cleaned.kind === 'hidden') continue;
+    if (cleaned.kind === 'peer') {
+      items.push({ kind: 'peer', index: message.index, ts, from: cleaned.from, text: cleaned.text });
+      continue;
+    }
     if (cleaned.kind === 'event') {
       const tail = items.at(-1);
       if (cleaned.label === MSG.output && tail?.kind === 'note' && tail.label === MSG.ran && tail.detail === null) {
@@ -110,8 +116,11 @@ export function toolTarget(tool: string, input: unknown): string | null {
     case 'Agent':
     case 'Task':
       return pick('description');
-    case 'SendMessage':
-      return pick('to', 'recipient');
+    case 'SendMessage': {
+      const to = pick('to', 'recipient');
+      // A socket address names a session to the machine, not to a person.
+      return to === null ? null : MSG.sentTo(/^uds:|^\/|^[a-z]+:\/\//.test(to) ? MSG.peer : to);
+    }
     case 'Skill':
       return pick('skill');
     case 'TaskStop':
@@ -183,6 +192,17 @@ export function outputSize(output: string | null): { lines: number; chars: numbe
 export type Timeline<E extends SessionEdge = SessionEdge> =
   | { kind: 'item'; at: number | null; item: Item }
   | { kind: 'handoff'; at: number; edge: E };
+
+/** A hand-off the receiver's own transcript already shows, as a message from its sender, is not shown twice: an `in` edge within two
+ *  minutes of such a message whose sender is the same name, or one the registry no longer names, is that message. */
+export function withoutEchoed<E extends SessionEdge>(edges: readonly E[], items: readonly Item[], nameOf: (edge: E) => string | null): E[] {
+  const said = items.flatMap((item) => (item.kind === 'peer' && item.ts !== null ? [{ from: item.from.toLowerCase(), at: item.ts }] : []));
+  return edges.filter((edge) => {
+    if (edge.direction !== 'in') return true;
+    const name = nameOf(edge)?.toLowerCase() ?? null;
+    return !said.some((message) => Math.abs(message.at - edge.at) <= 120_000 && (name === null || name === message.from));
+  });
+}
 
 export function interleave<E extends SessionEdge>(items: readonly Item[], edges: readonly E[]): Timeline<E>[] {
   const pending = [...edges].sort((a, b) => a.at - b.at);

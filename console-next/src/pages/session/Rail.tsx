@@ -26,6 +26,8 @@ export function Rail({ rail, colourOf, pathOf }: { rail: RailFacts; colourOf: (s
             return [
               <li key={seat.key} className={`seat${seat.here ? ' here' : ''}`} style={hue(colourOf(seat))}>
                 <b>{label}</b>
+                {seat.role === null || seat.role.toLowerCase() === seat.label.toLowerCase() ? null : <span className="role">{seat.role}</span>}
+                {seat.lead ? <span className="tag">{P.lead}</span> : null}
                 {seat.state === null ? null : <span className="s2">{stateWord(seat.state)}</span>}
               </li>,
               ...rail.rides
@@ -34,7 +36,7 @@ export function Rail({ rail, colourOf, pathOf }: { rail: RailFacts; colourOf: (s
                   <li key={`${seat.key}-${ride.at}-${ride.direction}`} className="ride" style={hue(colourOf(seat))}>
                     <span>{firstLine(ride.text) || P.handoffMissing}</span>
                     <small>
-                      {ride.direction === 'in' ? P.toThis : P.fromThis} · {clockTime(ride.at)}
+                      {ride.direction === 'in' ? P.received : P.sent} · {clockTime(ride.at)}
                     </small>
                   </li>
                 )),

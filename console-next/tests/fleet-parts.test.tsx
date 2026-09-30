@@ -95,6 +95,15 @@ describe('an account row', () => {
     expect(row(acct({ label: 'pin', pinned: true, next_target: true }), pool)).toContain('Next because it is the pinned account.');
     expect(row(other, pool)).not.toContain('Next because');
   });
+  test('a spent primary the pool has stepped past says where turns go, in quiet words', () => {
+    const primary = acct({ label: 'primary', primary: true, available: false, windows: [{ seconds: 604800, used_percent: 100, reset_epoch_seconds: 1_800_100_000 }] });
+    const work = acct({ label: 'work', selected: true, windows: [{ seconds: 604800, used_percent: 20, reset_epoch_seconds: 1_800_100_000 }] });
+    const html = row(primary, [primary, work]);
+    expect(html).toContain('primary’s week is used; turns go to work');
+    expect(html).not.toContain('spent 100%');
+    expect(html).not.toContain('excluded');
+    expect(html).not.toContain('role="alert"');
+  });
   test('an excluded account prints the provider’s whole reason and offers no Switch', () => {
     const reason = 'Synthetic subscription is excluded until its provider accepts this login again.';
     const html = row(acct({ available: false, auth_excluded_until_epoch_millis: 1_800_000_000_000 + 3_600_000, auth_exclusion_reason: reason }));

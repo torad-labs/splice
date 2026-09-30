@@ -51,7 +51,7 @@ describe('the team page', () => {
         slots: [{ slot: 's1', turns: 31, tokens: { input: 1, cache_read: 0, cache_write: 0, output: 1 }, cost_usd: 1.9, unpriced_turns: 0, last_turn_at_epoch_millis: null, checks: 'fail', checks_source: 'x' }],
       }),
     );
-    expect(html).toContain('31 turns · $1.90 · checks failing');
+    expect(html).toContain('31 turns · API est. $1.90 · last turn failed');
     expect(html).toContain('3 turns on these commands carry no session');
   });
   test('the day\'s talk is newest first, named by role, and a missing text says why', () => {

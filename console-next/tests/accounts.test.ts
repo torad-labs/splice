@@ -28,6 +28,7 @@ import {
   refusalText,
   resetText,
   sevenDayUsed,
+  steppedPast,
   windowLengthText,
   windowUsedText,
 } from '../src/lib/accounts';
@@ -443,5 +444,28 @@ describe('an account the daemon cannot load', () => {
     const state = accountState(account({ credential_present: false, available: false, refusal: REFUSED }), NOW);
     expect(state).toMatchObject({ label: 'refused', struck: true, cocked: false, edge: 'grey' });
     expect(accountState(account({ credential_present: false, available: false }), NOW).label).toBe('excluded');
+  });
+});
+
+describe('a spent account the pool has stepped past', () => {
+  const spent = (over: Partial<AccountRow> = {}) => account({ label: 'primary', primary: true, available: false, windows: [window7d(100)], ...over });
+  const serving = (over: Partial<AccountRow> = {}) => account({ label: 'work', selected: true, windows: [window7d(20)], ...over });
+  test('names the account that serves and the window that is used, and reads quiet, never as an alarm', () => {
+    const pool = [spent(), serving()];
+    expect(steppedPast(pool[0] as AccountRow, pool, NOW)).toEqual({ serving: 'work', window: DAY_7 });
+    expect(accountState(pool[0] as AccountRow, NOW, pool)).toEqual({ edge: 'grey', cocked: false, struck: false, label: 'used' });
+    expect(accountState(pool[0] as AccountRow, NOW)).toMatchObject({ edge: 'grey', struck: true, label: 'excluded' });
+  });
+  test('is not claimed when nothing else can serve, when the account serves itself, or when the daemon gave its own reason', () => {
+    const alone = [spent()];
+    expect(steppedPast(alone[0] as AccountRow, alone, NOW)).toBeNull();
+    const refusing = [spent(), serving({ available: false })];
+    expect(steppedPast(refusing[0] as AccountRow, refusing, NOW)).toBeNull();
+    const itself = [spent({ selected: true }), serving({ selected: false })];
+    expect(steppedPast(itself[0] as AccountRow, itself, NOW)).toBeNull();
+    const reasoned = [spent({ auth_exclusion_reason: 'Synthetic refusal.' }), serving()];
+    expect(steppedPast(reasoned[0] as AccountRow, reasoned, NOW)).toBeNull();
+    const roomy = [spent({ windows: [window7d(60)] }), serving()];
+    expect(steppedPast(roomy[0] as AccountRow, roomy, NOW)).toBeNull();
   });
 });

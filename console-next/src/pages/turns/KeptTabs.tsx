@@ -30,6 +30,7 @@ function Conversation({ row, plan }: { row: TurnRow; plan: string }) {
       {foldTranscript(reply).map((item) => {
         if (item.kind === 'tool') return <div key={item.index} className="msg"><ToolBlock item={item} /></div>;
         if (item.kind === 'note') return <p key={item.index} className="note">{item.line}</p>;
+        if (item.kind === 'peer') return <div key={item.index}><div className="who">{item.from}</div><Markdown>{item.text}</Markdown></div>;
         return (
           <div key={item.index}>
             <div className="who">{item.who === 'system' ? P.system : P.answered(plan)}</div>

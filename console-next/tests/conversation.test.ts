@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import { callTarget, editDiff, foldTranscript, interleave, outputSize, toolCommand, toolLabel, toolPath, toolTarget } from '../src/lib/conversation';
-import type { TranscriptMessage } from '../src/types/sessions';
+import { callTarget, editDiff, foldTranscript, interleave, outputSize, toolCommand, toolLabel, toolPath, toolTarget, withoutEchoed } from '../src/lib/conversation';
+import type { SessionEdge, TranscriptMessage } from '../src/types/sessions';
 
 const say = (index: number, role: TranscriptMessage['role'], text: string, ts?: number): TranscriptMessage => ({ index, role, text, ...(ts === undefined ? {} : { ts }) });
 const call = (index: number, tool: string, input: unknown, ts?: number): TranscriptMessage => ({ ...say(index, 'assistant', JSON.stringify(input), ts), tool, result: false });
@@ -57,7 +57,8 @@ describe('what a call did', () => {
     expect(toolPath('Read', { file_path: '/home/marcos/dev/splice/fleet.ts' })).toBe('/home/marcos/dev/splice/fleet.ts');
     expect(toolPath('Bash', { command: 'ls' })).toBeNull();
     expect(toolTarget('Grep', { pattern: 'foo' })).toBe('foo');
-    expect(toolTarget('SendMessage', { to: 'claude-splice' })).toBe('claude-splice');
+    expect(toolTarget('SendMessage', { to: 'builder' })).toBe('to builder');
+    expect(toolTarget('SendMessage', { to: 'uds:/run/user/1000/cc-socks/1587057.sock' })).toBe('to another session');
     expect(toolTarget('Weird', { name: 'n' })).toBe('n');
     expect(toolTarget('Skill', { skill: 'campaign' })).toBe('campaign');
     expect(toolTarget('SendUserFile', { files: ['a.png', 'b.png'] })).toBe('a.png');
@@ -120,5 +121,24 @@ describe('what a call in a turn\'s conversation did', () => {
     expect(callTarget('Bash', '{"command":"cd /x && ls \\"a b\\"","description":"List the folder')).toBe('List the folder');
     expect(callTarget('Bash', '{"command":"echo one\\necho two')).toBe('echo one');
     expect(callTarget('Skill', '{not json')).toBeNull();
+  });
+});
+
+describe('a message another session sent', () => {
+  const wrapped = (from: string, body: string) => `<cross-session-message from="uds:/run/user/1000/cc-socks/1.sock" from-name="${from}" from-mode="bypass">${body}</cross-session-message>`;
+  test('reads as a message from its sender, with no wrapper and no socket path', () => {
+    const items = foldTranscript([{ index: 0, role: 'user', ts: 5, text: wrapped('splice-lead', 'Two things.\nNow.') }]);
+    expect(items).toEqual([{ kind: 'peer', index: 0, ts: 5, from: 'splice-lead', text: 'Two things.\nNow.' }]);
+    expect(foldTranscript([{ index: 0, role: 'user', text: '<cross-session-message from="uds:/x.sock">hi</cross-session-message>' }])[0]).toMatchObject({ kind: 'peer', from: 'another session' });
+  });
+  test('an in hand-off its receiver\'s own transcript already shows is not shown twice; an unrelated one stays', () => {
+    const items = foldTranscript([{ index: 0, role: 'user', ts: 100_000, text: wrapped('splice-lead', 'hello') }]);
+    const edge = (over: Partial<SessionEdge>): SessionEdge => ({ from: 'a', to: 'b', at: 100_500, direction: 'in', ...over });
+    const name = (edge: SessionEdge): string | null => (edge.from === 'a' ? 'splice-lead' : edge.from === 'z' ? null : 'someone else');
+    expect(withoutEchoed([edge({})], items, name)).toEqual([]);
+    expect(withoutEchoed([edge({ from: 'z' })], items, name)).toEqual([]);
+    expect(withoutEchoed([edge({ from: 'q' })], items, name)).toHaveLength(1);
+    expect(withoutEchoed([edge({ at: 900_000 })], items, name)).toHaveLength(1);
+    expect(withoutEchoed([edge({ direction: 'out' })], items, name)).toHaveLength(1);
   });
 });

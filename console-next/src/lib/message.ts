@@ -9,12 +9,15 @@ export type Cleaned =
   | { kind: 'say'; text: string }
   /** Bookkeeping worth one quiet line: `line` is the whole line, `label` and `text` its two halves. */
   | { kind: 'event'; label: string; text: string; line: string }
+  /** A message another session sent this one: its sender's name and its words, the wrapper removed. */
+  | { kind: 'peer'; from: string; text: string }
   /** Nothing to show. */
   | { kind: 'hidden' };
 
 const ESC = String.fromCharCode(27);
 const ANSI = new RegExp(`${ESC}\\[[0-9;]*[A-Za-z]`, 'g');
 const OUTER = /^\s*<([a-zA-Z][\w-]*)>/;
+const PEER = /^\s*<cross-session-message\b([^>]*)>([\s\S]*?)<\/cross-session-message>\s*$/;
 const CAVEAT = /<local-command-caveat>[\s\S]*?<\/local-command-caveat>/g;
 const REMINDER = /<system-reminder>[\s\S]*?<\/system-reminder>/g;
 
@@ -33,6 +36,12 @@ const named = (label: string, text: string): Cleaned => ({ kind: 'event', label,
 export function cleanMessage(raw: string): Cleaned {
   const text = raw.replace(ANSI, '');
   const tag = OUTER.exec(text)?.[1];
+  const peer = PEER.exec(text);
+  if (peer !== null) {
+    const words = (peer[2] ?? '').trim();
+    const from = /\bfrom-name="([^"]*)"/.exec(peer[1] ?? '')?.[1]?.trim();
+    return words === '' ? { kind: 'hidden' } : { kind: 'peer', from: from === undefined || from === '' ? MSG.peer : from, text: words };
+  }
   switch (tag) {
     case 'local-command-caveat':
       return { kind: 'hidden' };
@@ -68,6 +77,7 @@ export function cleanMessage(raw: string): Cleaned {
 export function plainLine(raw: string): string | null {
   const cleaned = cleanMessage(raw);
   if (cleaned.kind === 'hidden') return null;
+  if (cleaned.kind === 'peer') return `${cleaned.from}: ${firstLine(cleaned.text)}`;
   return cleaned.kind === 'event' ? cleaned.line : firstLine(cleaned.text);
 }
 
@@ -75,5 +85,6 @@ export function plainLine(raw: string): string | null {
 export function readable(raw: string): string | null {
   const cleaned = cleanMessage(raw);
   if (cleaned.kind === 'hidden') return null;
+  if (cleaned.kind === 'peer') return `${cleaned.from}: ${cleaned.text}`;
   return cleaned.kind === 'event' ? cleaned.line : cleaned.text;
 }

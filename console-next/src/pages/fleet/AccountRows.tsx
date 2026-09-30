@@ -2,7 +2,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { useState } from 'react';
 import { failureText } from '../../api/client';
 import { isPendingRoute, useRelabelAccount, useRemoveAccount, useSwitchAccount, useUnpinAccount } from '../../api/auth';
-import { accountState, exclusionText, isExcluded, isServable, nextRuleOf, refusalText, windowLengthText, windowUsedText } from '../../lib/accounts';
+import { accountState, exclusionText, isExcluded, isServable, nextRuleOf, refusalText, steppedPast, windowLengthText, windowUsedText } from '../../lib/accounts';
 import type { AccountRow } from '../../types/accounts';
 import { Button, Close } from '../../ui';
 import { D } from './copy';
@@ -29,7 +29,8 @@ export function AccountRowView({ account, now, pooled, pool }: { account: Accoun
   const [name, setName] = useState(account.label ?? '');
   const head = account.heads[0] ?? '';
   const label = account.label;
-  const state = accountState(account, now);
+  const state = accountState(account, now, pool);
+  const past = steppedPast(account, pool, now);
   const marks = [
     account.selected === true ? D.selected : null,
     account.pinned === true ? D.pinned : null,
@@ -51,7 +52,7 @@ export function AccountRowView({ account, now, pooled, pool }: { account: Accoun
         ))}
         <span className="windows-text">{windowsText(account)}</span>
       </div>
-      {isExcluded(account, now) ? <p className="hint">{exclusionText(account)}</p> : null}
+      {past !== null ? <p className="hint">{D.steppedPast(label ?? D.thisAccount, D.windowWord(past.window, windowLengthText(past.window)), past.serving)}</p> : isExcluded(account, now) ? <p className="hint">{exclusionText(account)}</p> : null}
       {rule === null ? null : <p className="hint">{D.nextBecause(D.nextRule[rule])}</p>}
       {refusal === null ? null : <p className="hint alert" role="alert">{refusal}</p>}
       {refusal === null && !account.credential_present ? <p className="hint">{D.noCredential}</p> : null}

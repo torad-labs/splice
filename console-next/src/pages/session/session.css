@@ -72,6 +72,7 @@ a.crumb { display: inline-flex; align-items: center; gap: var(--space-4); margin
 .seat::after { content: ''; position: absolute; left: calc(-1 * var(--space-9)); top: 50%; width: 0.875rem; height: 0.875rem; margin-top: calc(-1 * var(--space-4)); border-radius: 50%; background: var(--obj-sunk); border: 2px solid var(--hair); }
 .seat.here { box-shadow: 0.25rem 0.3125rem 0 var(--c); border-color: var(--edge); }
 .seat b { font: 600 0.96rem var(--meta); color: var(--ink); }
+.seat .role { font: 500 0.96rem var(--meta); color: var(--mute); }
 .seat b a { text-decoration: none; }
 .seat .s2 { margin-left: auto; font: 600 0.875rem var(--meta); color: var(--mute); }
 .ride { position: relative; margin-left: 0; padding: var(--space-5) var(--space-6) var(--space-5) var(--space-8); background: var(--obj-hi); border: 2px solid var(--hair); border-radius: 0.5rem; font: 600 0.96rem var(--meta); color: var(--ink); }

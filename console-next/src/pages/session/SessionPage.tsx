@@ -4,18 +4,18 @@ import { failureText } from '../../api/client';
 import { useHeads, useSessions, useTeams } from '../../api/queries';
 import { useSessionEdges, useSessionHistory, useTranscript, useTurnOf } from '../../api/sessions';
 import { clockTime } from '../../lib/format';
-import { foldTranscript, interleave } from '../../lib/conversation';
+import { foldTranscript, interleave, withoutEchoed } from '../../lib/conversation';
 import { colourOfHead } from '../../lib/model';
 import type { ModelColour } from '../../lib/model';
 import { peerRow, railOf } from '../../lib/rail';
 import type { Seat } from '../../lib/rail';
-import { peerLabel, sessionKey, sessionLabel, spanText, stateOf, stateTone, stateWord, repoName, timingOf } from '../../lib/sessions';
+import { namedPeer, peerLabel, sessionKey, sessionLabel, spanText, stateOf, stateTone, stateWord, repoName, timingOf } from '../../lib/sessions';
 import type { SessionRow } from '../../types/sessions';
 import { UNKNOWN_HEAD } from '../../types/sessions';
 import { Back, Button, Empty, Fault, Markdown, Segmented, State, Window } from '../../ui';
 import { ResumeCopy, StopTurn, sessionPath } from '../shared/SessionActions';
 import { P } from './copy';
-import { Handoff } from './Handoff';
+import { Handoff, PeerSaid } from './Handoff';
 import { Rail } from './Rail';
 import { ToolBlock } from './ToolBlock';
 import './session.css';
@@ -53,8 +53,8 @@ export function SessionPage() {
   const timeline = useMemo(() => {
     const view = transcript.view;
     const items = view?.kind === 'messages' ? foldTranscript(view.messages) : [];
-    return interleave(items, handed);
-  }, [transcript.view, handed]);
+    return interleave(items, withoutEchoed(handed, items, (edge) => namedPeer(rows, edge)));
+  }, [transcript.view, handed, rows]);
 
   const turnOf = useTurnOf(row === undefined || row.head === UNKNOWN_HEAD ? [] : [row.head]);
   const state = row === undefined ? null : stateOf(row, turnOf(row));
@@ -157,6 +157,11 @@ export function SessionPage() {
               if (item.kind === 'tool') {
                 previous = null;
                 return <div key={item.index} className="msg"><ToolBlock item={item} /></div>;
+              }
+              if (item.kind === 'peer') {
+                previous = null;
+                const sender = rows.find((candidate) => sessionLabel(candidate) === item.from);
+                return <PeerSaid key={item.index} from={item.from} at={item.ts} text={item.text} colour={colourOfKey(sender?.head ?? null)} />;
               }
               if (item.kind === 'note') {
                 previous = null;

@@ -4,4 +4,6 @@ export const MSG = {
   output: 'Output',
   task: 'Background task',
   note: 'System note',
+  peer: 'another session',
+  sentTo: (name: string): string => `to ${name}`,
 } as const;

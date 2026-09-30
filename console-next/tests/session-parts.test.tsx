@@ -112,8 +112,18 @@ describe('the rail', () => {
     expect(html).toContain('seat here');
     expect(html).toContain('href="/sessions/lead"');
     expect(html).toContain('src/rateLimit.js');
-    expect(html).toContain('to this session');
+    expect(html).toContain('received');
     expect(html).not.toContain('more');
+    const sent = render(rail({ seats: [seat('lead'), seat('me', { here: true })], rides: [{ seat: 'lead', direction: 'out', at: 0, text: 'x' }] }));
+    expect(sent).toContain('sent');
+    expect(sent).not.toContain('received');
+  });
+  test('a seat says its role once, and the lead wears the tag; a role the session name already is is not said again', () => {
+    const html = render(rail({ team: 'T', seats: [seat('Planner', { role: 'Planner', lead: true }), seat('rate-limiter-2', { role: 'Builder' })] }));
+    expect(html.match(/>Planner</g)).toHaveLength(1);
+    expect(html).toContain('<span class="role">Builder</span>');
+    expect(html).toContain('<span class="tag">Lead</span>');
+    expect(html.match(/class="tag"/g)).toHaveLength(1);
   });
 });
 

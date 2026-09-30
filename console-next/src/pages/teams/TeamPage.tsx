@@ -18,9 +18,9 @@ import './teams.css';
 
 const tallyText = (tally: TeamSlotTally | undefined): string => {
   if (tally === undefined || tally.turns === 0) return M.noTurns;
-  const parts = [M.turns(tally.turns), tally.cost_usd === null ? ABSENT : fmtUsd(tally.cost_usd)];
-  if (tally.checks === 'pass') parts.push(M.checksPass);
-  if (tally.checks === 'fail') parts.push(M.checksFail);
+  const parts = [M.turns(tally.turns), tally.cost_usd === null ? ABSENT : M.cost(fmtUsd(tally.cost_usd))];
+  if (tally.checks === 'pass') parts.push(M.lastFinished);
+  if (tally.checks === 'fail') parts.push(M.lastFailed);
   return parts.join(' · ');
 };
 

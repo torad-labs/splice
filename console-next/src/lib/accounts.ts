@@ -220,6 +220,19 @@ export function exclusionText(account: AccountRow): string {
   return reason.trim() === '' ? EXCLUDED_REASON : reason;
 }
 
+/**
+ * A spent account the pool has already stepped past: the account's window is used up, the daemon gave no reason of its own for
+ * setting it aside, and another account of the pool is serving. Nothing is wrong, so it is not an alarm; the row says where
+ * turns go. Null for a spent account with nothing to step to, or that is itself the one serving.
+ */
+export function steppedPast(account: AccountRow, pool: readonly AccountRow[], nowMs: number): { serving: string; window: number } | null {
+  if (account.single_login || account.selected === true || (account.auth_exclusion_reason ?? '').trim() !== '') return null;
+  const window = nearestWindow(account, nowMs);
+  if (window === null || (window.used_percent ?? 0) < EXHAUSTED_AT_PERCENT) return null;
+  const serving = pool.find((other) => other !== account && other.selected === true && other.label !== null && isServable(other) && !isExcluded(other, nowMs));
+  return serving?.label == null ? null : { serving: serving.label, window: window.seconds };
+}
+
 export interface AccountState {
   edge: Edge;
   /** True when the strip carries a warning edge: needs-me, while there is still room to act. */
@@ -240,11 +253,12 @@ export interface AccountState {
  * at all. Reporting it as "nearly out" would point the operator at an account the pool is already
  * refusing.
  */
-export function accountState(account: AccountRow, nowMs: number): AccountState {
+export function accountState(account: AccountRow, nowMs: number, pool: readonly AccountRow[] = []): AccountState {
   // The daemon's own refusal is the most specific thing it can say about a credential, so it is named before the pool's exclusion.
   if (refusalText(account) !== null) {
     return { edge: 'grey', cocked: false, struck: true, label: 'refused' };
   }
+  if (steppedPast(account, pool, nowMs) !== null) return { edge: 'grey', cocked: false, struck: false, label: 'used' };
   if (isExcluded(account, nowMs)) {
     return { edge: 'grey', cocked: false, struck: true, label: 'excluded' };
   }

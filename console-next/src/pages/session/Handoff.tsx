@@ -5,11 +5,23 @@ import type { HandedEdge } from '../../types/sessions';
 import { Markdown } from '../../ui';
 import { P } from './copy';
 
+const tint = (colour: ModelColour): React.CSSProperties => ({ '--c': colour === 'none' ? 'var(--tan)' : `var(--${colour})` }) as React.CSSProperties;
+
+/** A message another session sent this one, read out of this session's own transcript: from its sender, in the sender's colour. */
+export function PeerSaid({ from, at, text, colour }: { from: string; at: number | null; text: string; colour: ModelColour }) {
+  return (
+    <div className="msg peer" style={tint(colour)}>
+      <div className="stamp">{P.handoffFrom} {from}{at === null ? '' : ` · ${clockTime(at)}`}</div>
+      <Markdown>{text}</Markdown>
+    </div>
+  );
+}
+
 /** What another session handed over (or this one handed on): visibly not a person's message, in the peer's colour. */
 export function Handoff({ edge, peer, colour }: { edge: HandedEdge; peer: string; colour: ModelColour }) {
   const said = edge.text === null ? null : readable(edge.text);
   return (
-    <div className="msg peer" style={{ '--c': colour === 'none' ? 'var(--tan)' : `var(--${colour})` } as React.CSSProperties}>
+    <div className="msg peer" style={tint(colour)}>
       <div className="stamp">
         {edge.direction === 'in' ? P.handoffFrom : P.handoffTo} {peer} · {clockTime(edge.at)}
       </div>

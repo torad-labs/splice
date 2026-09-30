@@ -34,6 +34,10 @@ export const D = {
   nextRule: { pinned: 'the pinned account', primary: 'the primary account', 'last used': 'the one this session last used', 'most weekly room': 'the one with the most weekly room' } as const,
   selectorOrder: (order: string): string => `The next account is taken in this order: ${order}.`,
   primary: 'Primary',
+  /** A window by the length the provider reported, as a person says it: `week`, `5-hour window`, else its length and `window`. */
+  windowWord: (seconds: number, length: string): string => (seconds === 604800 ? 'week' : seconds === 18000 ? '5-hour window' : `${length} window`),
+  thisAccount: 'This account',
+  steppedPast: (name: string, window: string, serving: string): string => `${name}’s ${window} is used; turns go to ${serving}`,
   resetPassed: 'Reset, not re-read',
   switch: 'Switch to this one',
   unpin: 'Unpin',

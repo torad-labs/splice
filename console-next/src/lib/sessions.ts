@@ -122,6 +122,12 @@ export function peerLabel(rows: readonly SessionRow[], edge: SessionEdge): strin
   return named || repo === null ? sessionLabel(sender) : SW.aSessionIn(repo);
 }
 
+/** The peer an edge names, or null when the registry no longer knows who it was. */
+export function namedPeer(rows: readonly SessionRow[], edge: SessionEdge): string | null {
+  const label = peerLabel(rows, edge);
+  return label === SW.anEndedSession ? null : label;
+}
+
 /** How a session sits in the hand-offs: it sent work to several sessions (`lead`), to one (`to`), it was handed work by
  *  one (`from`), or neither. A lead is a session whose newest edges go to two or more distinct peers; a
  *  session that both sent and was handed work reads as what it did last. */

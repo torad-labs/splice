@@ -26,7 +26,7 @@ export function Standing({ root, live }: { root: string; live: readonly string[]
   const held = payload === undefined || isPendingRoute(payload) ? null : standingOf(payload.topology, root);
   const [draft, setDraft] = useState<StandingEdit | null>(null);
   if (topology.isError) return <p className="hint alert" role="alert">{failureText(topology.error)}</p>;
-  if (payload === undefined) return null;
+  if (payload === undefined) return <p className="hint">{P.readingStanding}</p>;
   if (isPendingRoute(payload) || held === null) return <p className="hint">{P.unavailable}</p>;
   const now = draft ?? { prompt: held.prompt, compaction: held.compaction };
   const changed = now.prompt !== held.prompt || now.compaction !== held.compaction;

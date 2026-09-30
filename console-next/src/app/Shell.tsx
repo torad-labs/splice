@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from 'react-router';
+import { NavLink, Outlet, useLocation } from 'react-router';
 import { useNeeds } from '../api/needs';
 import { useStatus } from '../api/queries';
 import { setTheme, useTheme } from '../lib/theme';
@@ -13,7 +13,11 @@ const NAV = [
   ['settings', C.settings],
 ] as const;
 
+/** A team or a project is a place inside Sessions: its nav item stays lit there. */
+const INSIDE_SESSIONS = /^\/(teams|projects)\//;
+
 export function Shell() {
+  const { pathname } = useLocation();
   const status = useStatus();
   const theme = useTheme();
   const answering = status.isSuccess || status.isPending;
@@ -24,7 +28,7 @@ export function Shell() {
         <div className="mark">{C.brand}</div>
         <nav className="nav" aria-label={C.pages}>
           {NAV.map(([path, label]) => (
-            <NavLink key={path} to={`/${path}`}>
+            <NavLink key={path} to={`/${path}`} {...(path === 'sessions' && INSIDE_SESSIONS.test(pathname) ? { 'aria-current': 'page' as const } : {})}>
               {label}
               {path === 'needs-you' && waiting > 0 ? <span className="count" aria-hidden="true">{waiting}</span> : null}
             </NavLink>

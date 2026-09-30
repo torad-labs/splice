@@ -31,6 +31,7 @@ export const P = {
   saved: 'Saved. It applies after splice restarts.',
   failed: 'That did not save:',
   unavailable: 'This splice cannot edit its configuration file.',
+  readingStanding: 'Reading the configuration file.',
   filesTitle: 'Files splice read',
   filesWhy: 'Instructions and memory, exactly as the client would see them.',
   filesNone: 'No instruction or memory file was found.',

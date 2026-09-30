@@ -175,6 +175,11 @@ describe('what a card says', () => {
     expect(says(last('system', 'A process claiming the address uds:/run/user/1000/cc-socks/1.sock'))).toBeNull();
     expect(says(last('assistant', 'The new console is now what splice serves. CI passed on the exact sha, and I am holding the review.'))).toBe('The new console is now what splice serves.');
     expect(says(last('user', 'Fix the census. Then push it.'))).toBe('You: Fix the census.');
+    expect(says(last('assistant', 'claude-console committed the fix (`9cf12062b`) and **pushed** it. More follows.'))).toBe('claude-console committed the fix (9cf12062b) and pushed it.');
+    expect(says(last('assistant', 'Keeps claude_code and snake_case words whole.'))).toBe('Keeps claude_code and snake_case words whole.');
+    const cut = 'I picked an offer whose download rate was $0.051/GB and the earlier boxes were paid for by the run that finished, so the credit went on this one and the next one too and now';
+    expect(says(last('assistant', cut))).toBe(`${cut.slice(0, cut.lastIndexOf(' '))}…`);
+    expect(says(last('assistant', '{"questions":[{"question":"The box run failed and used up the Vast credit, my mistake: I picked an offer whose download rate was $0.051/GB (the earlier boxes pa', 'AskUserQuestion'))).toBe('The box run failed and used up the Vast credit, my mistake: I picked an offer whose download rate was $0.051/GB (the earlier boxes…');
     expect(cardSays(null)).toBeNull();
     expect(cardSays(undefined)).toBeNull();
   });

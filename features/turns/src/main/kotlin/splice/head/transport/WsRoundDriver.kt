@@ -14,6 +14,7 @@ package splice.head.transport
 import kotlinx.coroutines.CompletableJob
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.onEach
+import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
 import splice.head.turn.TurnDrive
@@ -73,6 +74,7 @@ internal class WsRoundDriver(
                 return null
             }
             drive.slot.touch()
+            drive.perf.add(PerfKeys.ATTEMPTS, 1)
             drive.trace?.wsRoundStarted()
             traced = true
             // Start the client while the acquired cold flow is being collected, not before: if the

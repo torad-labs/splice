@@ -194,6 +194,7 @@ class PerfRowTraceTurnTest {
         val row = lines(head.perf).single()
         assertEquals(responseId, row.text("response_message_id"), "the exact id Claude Code recorded")
         assertEquals("sess-v4345", row.text("session_id"), "the lookup needs the full session id")
+        assertEquals("1", row.text("attempts"), "upstream attempts are measured even without trace")
     }
 
     @Test
@@ -215,6 +216,7 @@ class PerfRowTraceTurnTest {
 
         val (row, traced) = written(head)
         assertEquals("error:budget-blocked", row.text("outcome"))
+        assertEquals("0", row.text("attempts"), "a local refusal made no upstream send")
         assertEquals(traced, row.text("turn"), "the refusal's row names its trace turn")
     }
 

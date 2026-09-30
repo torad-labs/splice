@@ -48,6 +48,25 @@ class ProjectsRoutesTest {
     }
 
     @Test
+    fun `session and project origins lose credentials before crossing the wire`() {
+        val projects = routes(emptyMap())
+        Files.writeString(
+            rig.repo.resolve(".git/config"),
+            "[remote \"origin\"]\n url = https://user:secret@github.com/torad-labs/splice.git\n",
+        )
+        val sessionRoutes = SessionsRoutes(rig.registry, TestTranscripts(), vanilla = tmp.resolve("vanilla"))
+        val session = rig.find(rig.json(sessionRoutes.sessionsJson()), "sessions", "session_id", BUILDER)
+        assertEquals(
+            "https://github.com/torad-labs/splice.git",
+            session.getValue("repo").jsonObject.getValue("remote").jsonPrimitive.content,
+        )
+        val project = rig.json(projects.project(rig.repo.toString()).body)
+        assertEquals("https://github.com/torad-labs/splice.git", project.getValue("remote").jsonPrimitive.content)
+        assertFalse(project.toString().contains("secret"))
+        assertFalse(session.toString().contains("secret"))
+    }
+
+    @Test
     fun `each root is a row with its live sessions, teams and today's turns and dollars`() {
         rig.team()
         val archived = rig.store.upsert(rig.store.teams().single().copy(id = "", name = "old"))
@@ -64,6 +83,7 @@ class ProjectsRoutesTest {
         val body = rig.json(routes(mapOf("codex" to codex)).list().body)
         val rows = body.getValue("projects").jsonArray.map { it.jsonObject }
         val roots = listOf(rig.repo.toString())
+        assertFalse(rows.single().containsKey("remote"), "no origin is absent, never an invented remote")
         assertEquals(
             roots,
             rows.map { it.getValue("id").jsonPrimitive.content },

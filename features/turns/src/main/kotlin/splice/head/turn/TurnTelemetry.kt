@@ -65,6 +65,7 @@ internal class TurnTelemetry(
         layers: Int = 0,
     ) {
         drive.perf.mark(PerfKeys.TOTAL)
+        drive.perf.setCount(PerfKeys.ATTEMPTS, drive.perfCounter(PerfKeys.ATTEMPTS))
         val snap = drive.perf.snapshot()
         // V4-174: the turn record closes on the same snapshot the perf row carries — every ending
         // of a drive goes through here, so the trace never has a turn without its outcome.
@@ -177,6 +178,7 @@ internal class TurnTelemetry(
         val (tag, detail, trace) = refusal
         val session = meta.sessionId?.take(SESSION_TAG_CHARS)
         perf.mark(PerfKeys.TOTAL)
+        perf.setCount(PerfKeys.ATTEMPTS, 0)
         val snap = perf.snapshot()
         closeTrace(trace, tag, snap)
         val rowMeta = PerfRowMeta(

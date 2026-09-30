@@ -57,6 +57,7 @@ import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
+import splice.core.util.AsyncFileIo
 import splice.head.HeadDeps
 import splice.head.HeadServer
 import splice.head.MockChatGptUpstream
@@ -89,6 +90,7 @@ import splice.upstream.retry.TurnWatchdog
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.UpstreamClient
 import java.io.IOException
+import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.seconds
@@ -460,6 +462,9 @@ class WsRoundDriverTest {
             assertEquals(0, runner.endedNotOk, "the bypass is reported by roundBypassed, never roundEnded - V4-114")
             assertTrue(mock.upstreamBodies.size > before, "the SSE upstream must have served the turn")
             assertTrue(sse.contains("event: message_stop"), "the client sees a normal completed turn")
+            assertTrue(AsyncFileIo.drain(), "the attempt counter reached its perf row")
+            val row = ev(Files.readString(tmp.resolve("perf-$built.jsonl")).trim())
+            assertEquals("2", row.getValue("attempts").toString(), "the websocket send and HTTP fallback both count")
         } finally {
             runBlocking { h.stop() }
         }
@@ -694,6 +699,7 @@ class WsRoundDriverTest {
         inputs.drive.slot.release()
 
         assertEquals(0, runner.aborts, "a round that ended on its own must not have its source torn")
+        assertEquals(1L, inputs.drive.perf.snapshot().counters[PerfKeys.ATTEMPTS], "accepted untraced WS send")
     }
 
     /** DR-7, THE SECOND DEFECT ON THIS PATH and one nothing pointed at: WsRoundDrive reported

@@ -52,6 +52,7 @@ import splice.core.util.WallClock
 import splice.http.JsonReply
 import splice.sessions.query.SessionHead
 import splice.sessions.query.SessionPerfWindow
+import splice.sessions.registry.RepoOrigin
 import splice.sessions.registry.RepoRoot
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRecord
@@ -194,6 +195,7 @@ public class ProjectsRoutes(
             return buildJsonObject {
                 put("id", root)
                 put("root", root)
+                RepoOrigin.of(root)?.let { put("remote", it) }
                 put("live_sessions", sessions.count { it.availability == SessionAvailability.LIVE })
                 put("teams", repoTeams.count { !it.archived })
                 put("turns_today", tally.turns)

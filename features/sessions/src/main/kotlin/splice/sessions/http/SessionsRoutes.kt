@@ -39,6 +39,7 @@ import splice.core.config.ConfigService
 import splice.core.config.UserHome
 import splice.http.JsonReply
 import splice.sessions.query.SessionHead
+import splice.sessions.registry.RepoOrigin
 import splice.sessions.registry.RepoResolver
 import splice.sessions.registry.RepoRoot
 import splice.sessions.registry.SessionRecord
@@ -186,6 +187,7 @@ public class SessionsRoutes(
 
     private fun repoJson(repo: RepoRoot) = buildJsonObject {
         put("root", repo.root)
+        if (repo.reason == null) RepoOrigin.of(repo.root)?.let { put("remote", it) }
         repo.worktree?.let { put("worktree", it) }
         repo.reason?.let { put("reason", it) }
     }

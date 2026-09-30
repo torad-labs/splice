@@ -5,6 +5,14 @@ export const UNKNOWN_HEAD = 'unknown head';
 
 /** Derived by the daemon, never trusted from the file: a registration whose pid is gone is GONE
  *  whatever its status says, and one that has not been heard from inside the stale window is STALE. */
+/** SessionActivity.json: what a card's activity line reads. `tool` names the tool on a tool call or its result. */
+export interface SessionLast {
+  role: 'user' | 'assistant' | 'system' | 'tool';
+  tool: string | null;
+  text: string;
+  ts: number | null;
+}
+
 export type SessionAvailability = 'live' | 'stale' | 'gone';
 
 /**
@@ -58,6 +66,9 @@ export interface SessionRow {
    *  null"): the daemon binds sessions to slots, and the console groups by that binding. Null for a
    *  session bound to no team, which is most of them. */
   team?: string | null;
+  /** The newest message in the session's transcript, clipped to one line by the daemon and redacted. Null when the transcript view is
+   *  off or nothing is readable; absent from a daemon older than it. */
+  last?: SessionLast | null;
   /** The selected login for this session when the daemon can attribute one, not the head's
    *  currently selected account for an unrelated session. */
   account?: string | null;

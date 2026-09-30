@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import type { SessionRow } from '../src/types/sessions';
 import type { LiveTurn } from '../src/types/turns';
-import { activityText, groupSessions, timingOf, handoffOf, matchesQuery, noConversation, sessionsLede, peerLabel, repoName, sessionKey, sessionLabel, sinceOf, spanText, stateOf, stateTone, stateWord, STUCK_IDLE_MS } from '../src/lib/sessions';
+import { activityText, cardLine, groupSessions, lastLine, timingOf, handoffOf, matchesQuery, noConversation, sessionsLede, peerLabel, repoName, sessionKey, sessionLabel, sinceOf, spanText, stateOf, stateTone, stateWord, STUCK_IDLE_MS } from '../src/lib/sessions';
 
 const NOW = 1_790_000_000_000;
 const row = (over: Partial<SessionRow> = {}): SessionRow => ({
@@ -135,6 +135,22 @@ describe('what a card says', () => {
     expect(activityText('stuck', 14 * 60_000)).toBe('Quiet for 14 min');
     expect(stateTone('waiting')).toBe('wait');
     expect(stateTone('gone')).toBe('idle');
+  });
+
+  test('the newest message is the card line when the daemon sent one, with the state beside the facts', () => {
+    const said = (role: 'user' | 'assistant' | 'tool', text: string, tool: string | null = null) => row({ last: { role, tool, text, ts: NOW } });
+    expect(lastLine(said('user', 'Fix the census').last)).toBe('You: Fix the census');
+    expect(lastLine(said('assistant', 'Done, it is green.').last)).toBe('Done, it is green.');
+    expect(lastLine(said('tool', 'exit 0', 'Bash').last)).toBe('Bash: exit 0');
+    expect(lastLine(said('tool', 'exit 0').last)).toBe('exit 0');
+    expect(cardLine(said('assistant', 'Done.'), 'working', 3 * 60_000, null)).toEqual({ line: 'Done.', note: 'Working for 3 min' });
+  });
+
+  test('with no newest message the card says what the state means, and the note is empty', () => {
+    for (const last of [undefined, null, { role: 'assistant' as const, tool: null, text: '  ', ts: null }]) {
+      expect(lastLine(last)).toBeNull();
+      expect(cardLine(row(last === undefined ? {} : { last }), 'idle', null, null)).toEqual({ line: 'Waiting for your next message', note: null });
+    }
   });
 
   test('the search matches a name, a repository, a head or a team, and an empty search matches all', () => {

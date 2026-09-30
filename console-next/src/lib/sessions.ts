@@ -1,6 +1,6 @@
 // Pure derivations over the session registry: a session's key and label, what state it is in, and how a
 // list of them groups. No rendering, no store; the clock is passed in.
-import type { SessionEdge, SessionRow } from '../types/sessions';
+import type { SessionEdge, SessionLast, SessionRow } from '../types/sessions';
 import type { LiveTurn } from '../types/turns';
 import { UNKNOWN_HEAD } from '../types/sessions';
 import { SW } from './words-sessions';
@@ -171,8 +171,23 @@ export function spanText(ms: number): string {
 /** How long a busy session with no live turn may sit before its line says it is running a tool, quietly. */
 export const QUIET_AFTER_MS = 2 * 60_000;
 
-/** The one activity line of a card. The daemon has no last-message field yet (V4-444 daemon work), so the
- *  line says what the state means and for how long, and nothing it cannot know. */
+/** The newest message as one line: what the person said, what the plan answered, or what a tool did. Null when there is nothing to read. */
+export function lastLine(last: SessionLast | null | undefined): string | null {
+  if (last === null || last === undefined || last.text.trim() === '') return null;
+  if (last.role === 'user') return `${SW.you}: ${last.text}`;
+  return last.role === 'tool' && last.tool !== null ? `${last.tool}: ${last.text}` : last.text;
+}
+
+/** A card's one line, and the note that goes to its quiet line: the newest message when the daemon sent one, with the state's own sentence
+ *  beside the facts; the state's sentence alone when it did not. */
+export function cardLine(row: SessionRow, state: SessionState, since: number | null, quiet: number | null): { line: string; note: string | null } {
+  const said = activityText(state, since, quiet);
+  const last = lastLine(row.last);
+  return last === null ? { line: said, note: null } : { line: last, note: said };
+}
+
+/** What a state means and for how long, and nothing the console cannot know: the sentence a card falls back to when the daemon sent no
+ *  newest message. */
 export function activityText(state: SessionState, since: number | null, quiet: number | null = null): string {
   const span = since === null ? null : spanText(since);
   switch (state) {

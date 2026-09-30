@@ -3,7 +3,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { Link } from 'react-router';
 import type { ModelColour } from '../../lib/model';
 import type { Handoff, SessionState } from '../../lib/sessions';
-import { activityText, needsPerson, sessionKey, sessionLabel, stateTone, stateWord, repoName } from '../../lib/sessions';
+import { cardLine, needsPerson, sessionKey, sessionLabel, stateTone, stateWord, repoName } from '../../lib/sessions';
 import type { SessionRow } from '../../types/sessions';
 import { Grip, State, Window } from '../../ui';
 import { S } from '../shared/copy';
@@ -33,7 +33,8 @@ export function SessionCard({ facts, sortable = true }: { facts: CardFacts; sort
   const key = sessionKey(row);
   const drag = useSortable({ id: key, disabled: !sortable });
   const needs = needsPerson(state);
-  const meta = [repoName(row), head, handText(hand)].filter((part): part is string => part !== null);
+  const { line, note } = cardLine(row, state, since, quiet);
+  const meta = [note, repoName(row), head, handText(hand)].filter((part): part is string => part !== null);
   return (
     <Window
       as="li"
@@ -58,7 +59,7 @@ export function SessionCard({ facts, sortable = true }: { facts: CardFacts; sort
         ) : null}
       </div>
       <div className="glass one">
-        <p className={state === 'working' ? 'cur' : undefined}>{activityText(state, since, quiet)}</p>
+        <p className={state === 'working' ? 'cur' : undefined}>{line}</p>
       </div>
       <div className="quiet-meta">
         {meta.map((part) => (

@@ -5,6 +5,7 @@ import { bootTheme } from './lib/theme';
 import './styles/fonts.css';
 import './styles/tokens.css';
 import './styles/base.css';
+import './styles/cards.css';
 
 // Before React paints: the key from the address, then the wall the operator chose, so the first frame is
 // already the right room.

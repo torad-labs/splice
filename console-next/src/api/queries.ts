@@ -2,6 +2,7 @@
 // `fetch`; they ask here. The key constants are what the event stream marks stale (events.ts).
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UseQueryOptions } from '@tanstack/react-query';
+import { accountsFromWire } from '../lib/accounts';
 import { health, request } from './client';
 import type {
   AuthPayload,
@@ -11,6 +12,7 @@ import type {
   HeadsPayload,
   UsagePayload,
 } from '../types/core';
+import type { AccountsWire } from '../types/accounts';
 import type { SessionsPayload } from '../types/sessions';
 import type { TeamsPayload } from '../types/teams';
 import type { LiveTurnsPayload, StopTurnResult } from '../types/turns';
@@ -41,6 +43,8 @@ export const useStatus = () => useQuery(read<ControlStatusPayload>(keys.status, 
 export const useHeads = () => useQuery(read<HeadsPayload>(keys.heads, '/api/heads'));
 export const useUsage = () => useQuery(read<UsagePayload>(keys.usage, '/api/usage'));
 export const useAuth = () => useQuery(read<AuthPayload>(keys.auth, '/api/auth'));
+/** The accounts, each with its windows labelled by the length the provider reported (accountsFromWire). */
+export const useAccounts = () => useQuery({ ...read<AccountsWire>(keys.accounts, '/api/accounts'), select: accountsFromWire });
 export const useSessions = () => useQuery(read<SessionsPayload>(keys.sessions, '/api/sessions'));
 export const useTeams = () => useQuery(read<TeamsPayload>(keys.teams, '/api/teams'));
 export const useConfig = (head?: string) =>

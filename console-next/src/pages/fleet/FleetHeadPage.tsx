@@ -1,0 +1,83 @@
+import { Link, useParams } from 'react-router';
+import { useAccounts, useAuth, useHealth, useHeads, useSessions, useUsage } from '../../api/queries';
+import { poolOf } from '../../lib/accounts';
+import { fleetCard } from '../../lib/fleet';
+import { localInstantText } from '../../lib/heads';
+import { planWindows } from '../../lib/usage';
+import { Back, Button, Empty, Fault, PageHead, Plus, State, Window } from '../../ui';
+import { failureText } from '../../api/client';
+import { SignIn } from '../shared/SignIn';
+import { AccountRowView } from './AccountRows';
+import { D } from './copy';
+import { FleetFix } from './FleetFix';
+import { WindowBars } from './WindowBars';
+import './head.css';
+
+const OAUTH = new Set(['chatgpt-oauth', 'grok-oauth', 'kimi-oauth', 'muse-oauth']);
+
+/** One plan's own page: every window it reports, the accounts of its pool and what a person does to them. */
+export function FleetHeadPage() {
+  const { head: key = '' } = useParams();
+  const heads = useHeads();
+  const usage = useUsage();
+  const auth = useAuth();
+  const accounts = useAccounts();
+  const sessions = useSessions();
+  const health = useHealth();
+  const now = Date.now();
+  const back = (
+    <Link className="crumb" to="/fleet">
+      <Back />
+      {D.back}
+    </Link>
+  );
+
+  if (heads.isPending) return <>{back}<PageHead title={key} lede={D.readingHead} /></>;
+  if (heads.isError) return <>{back}<Fault message={failureText(heads.error)} onRetry={() => void heads.refetch()} /></>;
+  const head = heads.data.heads.find((candidate) => candidate.key === key);
+  if (head === undefined) return <>{back}<Empty title={D.notFound} /></>;
+
+  const rows = accounts.data?.accounts ?? [];
+  const pool = poolOf(rows, head.key);
+  const live = new Map<string, number>();
+  for (const row of sessions.data?.sessions ?? []) if (row.availability !== 'gone') live.set(row.head, (live.get(row.head) ?? 0) + 1);
+  const facts = fleetCard(head, { usage: usage.data ?? null, auth: auth.data ?? null, accounts: rows, sessions: live, topologyStale: health.data?.topologyStale === true, now });
+  const windows = planWindows(usage.data?.heads.find((row) => row.key === head.key)?.usage ?? null, now);
+
+  return (
+    <>
+      {back}
+      <header className="top">
+        <div>
+          <h1>{head.label}</h1>
+          <div className="facts quiet-meta">
+            <State tone={facts.tone}>{facts.state}</State>
+            {facts.meta.map((part) => (
+              <span key={part}>{part}</span>
+            ))}
+          </div>
+        </div>
+        {facts.fix === null ? null : <div className="acts"><FleetFix fix={facts.fix} head={head} pool={pool} now={now} /></div>}
+      </header>
+      <Window as="section" colour={facts.colour} attention={facts.attention} className="sheet head-sheet" aria-label={D.windowsTab}>
+        <div className="bar"><h3>{D.windowsTab}</h3></div>
+        <div className="head-body">
+          {windows.length === 0 ? <p className="hint">{D.noWindows}</p> : <WindowBars windows={windows} now={now} format={localInstantText} />}
+          <h2 className="sub-head">{D.accounts}</h2>
+          {pool.length === 0 ? <p className="hint">{D.noAccounts}</p> : (
+            <ul className="accounts">
+              {pool.map((account) => (
+                <AccountRowView key={account.credential_path ?? account.label ?? account.kind} account={account} now={now} pooled={pool.length > 1 || account.single_login === false} />
+              ))}
+            </ul>
+          )}
+          {OAUTH.has(head.authKind) ? (
+            <SignIn head={head.key} purpose="add">
+              <Button small><Plus />{D.addAccount}</Button>
+            </SignIn>
+          ) : null}
+        </div>
+      </Window>
+    </>
+  );
+}

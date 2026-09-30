@@ -1,16 +1,2 @@
-/* Sessions: D, the calm version. A card is a window whose one accent is its head's shadow. */
-.grid { list-style: none; margin: 0; padding: 0 24px 0 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(460px, 1fr)); gap: 72px; }
-.grid.first { grid-template-columns: repeat(auto-fill, minmax(460px, 1fr)); }
-.card { position: relative; }
-.card.dragging { z-index: 5; opacity: .92; cursor: grabbing; }
-.card .bar h3 { font-size: 22px; }
-.card-link { color: inherit; text-decoration: none; }
-/* the whole card opens the session; its acts stay above the link */
-.card-link::after { content: ''; position: absolute; inset: 0; z-index: 0; }
-.card .acts { position: relative; z-index: 1; align-items: center; flex-wrap: wrap; }
-.card .glass.one { padding: 14px 18px; margin-bottom: 8px; }
-.card .glass.one p { color: var(--glass-ink); }
-.grip { margin: 0 -8px 0 0; padding: 6px; border: 0; background: transparent; color: var(--faint); cursor: grab; opacity: 0; position: relative; z-index: 1; }
-.card:hover .grip, .card:focus-within .grip { opacity: 1; }
+/* Sessions: the cards' own styles are in styles/cards.css. */
 .tools .search { min-width: 300px; }
-.hint.alert { color: var(--stuck); }

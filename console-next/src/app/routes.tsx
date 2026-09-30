@@ -3,6 +3,8 @@
 import { Navigate, createHashRouter } from 'react-router';
 import { Shell } from './Shell';
 import { Pending } from './Pending';
+import { FleetHeadPage } from '../pages/fleet/FleetHeadPage';
+import { FleetPage } from '../pages/fleet/FleetPage';
 import { SessionPage } from '../pages/session/SessionPage';
 import { SessionsPage } from '../pages/sessions/SessionsPage';
 
@@ -31,9 +33,11 @@ export const router = createHashRouter([
     element: <Shell />,
     children: [
       { index: true, element: <Navigate to={HOME} replace /> },
+      { path: 'fleet', element: <FleetPage /> },
+      { path: 'fleet/:head', element: <FleetHeadPage /> },
       { path: 'sessions', element: <SessionsPage /> },
       { path: 'sessions/:id', element: <SessionPage /> },
-      ...PLACES.filter((path) => path !== 'sessions').map((path) => ({ path, element: <Pending place={path} /> })),
+      ...PLACES.filter((path) => path !== 'sessions' && path !== 'fleet').map((path) => ({ path, element: <Pending place={path} /> })),
       ...Object.entries(RETIRED).map(([path, to]) => ({ path, element: <Navigate to={to} replace /> })),
       { path: '*', element: <Navigate to={HOME} replace /> },
     ],

@@ -168,3 +168,20 @@ svg { display: block; flex: none; }
 .menu-item { padding: 10px 12px; border-radius: 6px; font: 600 15px var(--meta); color: var(--ink); cursor: pointer; outline: 0; }
 .menu-item[data-highlighted] { background: var(--sel); }
 .more-row { display: flex; justify-content: center; padding: 48px 0 0; }
+
+/* ---------- a dialog: a window over a scrim, for a flow that must be finished or cancelled ---------- */
+.scrim { position: fixed; inset: 0; background: color-mix(in srgb, var(--wall-shade) 70%, transparent); z-index: 20; }
+.dialog {
+  position: fixed; z-index: 21; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(520px, calc(100vw - 48px));
+  padding: 32px 36px 36px; display: grid; gap: 18px; background: var(--obj); color: var(--ink);
+  border: 3px solid var(--edge); border-radius: var(--r2); box-shadow: 8px 9px 0 var(--tan);
+}
+[data-theme='night'] .dialog { border-color: var(--hair); box-shadow: 8px 9px 0 var(--edge); }
+.dialog form { display: grid; gap: 18px; }
+.dialog-head { display: flex; align-items: center; gap: 12px; }
+.dialog-head [role='dialog'], .dialog-head h2 { font: 520 28px/1.1 var(--display); letter-spacing: -.015em; margin-right: auto; }
+.icon-btn { display: grid; place-items: center; width: 34px; height: 34px; border: 0; background: transparent; color: var(--mute); border-radius: var(--r1); cursor: pointer; }
+.icon-btn:hover { color: var(--ink); }
+.code-row { display: flex; align-items: center; gap: 14px; }
+.user-code { font: 600 28px/1 var(--mono); letter-spacing: .12em; color: var(--ink); }
+.hint.alert { color: var(--stuck); }

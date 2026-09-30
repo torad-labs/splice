@@ -15,6 +15,8 @@ export const css = `
 .row p { margin-top: 4px; font: 400 16px/1.5 var(--read); color: var(--body); max-width: 56ch; }
 .row .ctl { justify-self: end; display: flex; align-items: center; gap: 18px; }
 .key { display: inline-flex; align-items: center; gap: 6px; margin-top: 14px; font: 500 13px var(--meta); color: var(--mute); cursor: pointer; }
+.key.hid code { display: none; }
+.key.hid { opacity: .55; }
 .key code { font-family: var(--mono); padding: 2px 8px; background: color-mix(in srgb, var(--ink) 8%, transparent); border: 0; border-radius: 5px; color: var(--ink); font-weight: 600; }
 .select { position: relative; display: inline-flex; align-items: center; justify-content: space-between; gap: 20px; min-width: 200px; height: 42px; padding: 0 14px; background: var(--obj); border: 2px solid color-mix(in srgb, var(--ink) 38%, transparent); border-radius: var(--r1); font: 600 15px var(--meta); color: var(--ink); }
 [data-theme='night'] .select { border-color: var(--hair); background: var(--obj-hi); }
@@ -48,7 +50,9 @@ const row = (title, text, ctl, extra = '') => `<div class="row"><div><h3>${title
 const seg = (opts, on) => `<span class="seg" role="group">${opts.map((o, i) => `<button aria-pressed="${i === on}">${o}</button>`).join('')}</span>`;
 const sw = (on, c) => `<span class="switch" role="switch" aria-checked="${on}" style="--sw:var(--${c ?? 'ok'})"></span>`;
 
-const key = (name) => `<span class="key">${icon.key}<code>${name}</code></span>`;
+// A setting's key is shown on demand: the `<>` on a row reveals just that row's key; "Show setting keys" under Advanced
+// reveals them all (remembered in the browser). The comp draws every row hidden except usageWarnPct, to show the revealed form.
+const key = (name, on = false) => `<span class="key${on ? ' on' : ' hid'}" role="button" aria-label="Show this setting’s key">${icon.key}<code>${name}</code></span>`;
 const chip = (t, x = true) => `<span class="folder">${icon.folder}${t}${x ? ' <b style="color:var(--mute)">×</b>' : ''}</span>`;
 const slider = (min, max, val, unit) => {
   const at = ((val - min) / (max - min)) * 100;
@@ -64,7 +68,7 @@ export function body() {
 <section class="sheet"><h2>General</h2><div class="win flat set">
 ${row('Appearance', 'Follows your computer unless you choose.', seg(['Day', 'Night', 'Match my computer'], 2))}
 ${row('Open the console at', 'This address only opens on this computer.', '<span class="folder code">127.0.0.1:3096</span><button class="btn sm">Copy</button>')}
-${row('Warn me when a plan is this full', 'Splice flags a plan window once it passes this share of its limit.', slider(50, 100, 80, '%'), key('usageWarnPct') + '<span class="tip-restart">' + icon.clock + 'Applies after a restart · <b>Restart now</b></span>')}
+${row('Warn me when a plan is this full', 'Splice flags a plan window once it passes this share of its limit.', slider(50, 100, 80, '%'), key('usageWarnPct', true) + '<span class="tip-restart">' + icon.clock + 'Applies after a restart · <b>Restart now</b></span>')}
 ${row('Detailed log', 'Writes extra lines to the splice log. Turn it on while chasing a problem.', sw(false, 'ink'), key('debug'))}
 </div></section>
 
@@ -90,6 +94,11 @@ ${row('browser', 'Drives a web page for a session. Left out of sharing until you
 <section class="sheet"><h2>Health</h2><div class="win flat set">
 ${row('Everything splice depends on', 'Sign-ins, ports, folders and the daemon itself, checked a minute ago.', '<span class="state work"><i></i>Mostly good</span><button class="btn sm">Check again</button>')}
 ${row('Four commands are not linked', 'claude-grok, claude-kimi, claude-muse and claudex are not on your PATH yet, so a terminal cannot start them.', '<span class="state stuck"><i></i>Needs you</span><button class="btn go sm">Link them</button>')}
+</div></section>
+
+<section class="sheet"><h2>Advanced</h2><div class="win flat set">
+${row('Show setting keys', 'Print each setting’s name under it, the way it is written in splice.toml. Off, only the <> on a row reveals its key.', sw(false, 'ink'))}
+${row('Every other setting', 'The settings this page does not group above, each as its own control, for one plan or all.', '<button class="btn sm">Open the full list</button>')}
 </div></section>
 </div></div>`;
 }

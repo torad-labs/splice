@@ -23,6 +23,7 @@ import { NeedFix } from '../needs/NeedFix';
 import { AllSettings } from './AllSettings';
 import { T } from './copy';
 import { ClaudeHead } from './ClaudeHead';
+import { ConfigFile } from './ConfigFile';
 import { Compaction } from './Compaction';
 import { Kept } from './Kept';
 import { PlanInstructions } from './PlanInstructions';
@@ -334,6 +335,7 @@ export function Advanced() {
         control={<Button small aria-expanded={open} onClick={() => setOpen(!open)}>{open ? T.closeList : T.openList}</Button>}
       />
       {open ? <AllSettings /> : null}
+      <ConfigFile />
     </>
   );
 }

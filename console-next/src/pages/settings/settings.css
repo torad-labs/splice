@@ -88,3 +88,17 @@
 .run-head code { font: 500 14px var(--mono); color: var(--ink); }
 .row .ctl code.path { font: 500 13px var(--mono); color: var(--body); overflow-wrap: anywhere; text-align: right; }
 .preview .hint { margin-top: var(--space-4); }
+
+/* The configuration file: tables under their top-level group, one typed control per value. */
+.cf { display: grid; gap: var(--space-8); padding: var(--space-6) 0; }
+.cf-group summary { cursor: pointer; font: 600 19px/1.25 var(--read); color: var(--ink); }
+.cf-group summary small { margin-left: var(--space-5); font: 500 14px var(--meta); color: var(--mute); }
+.cf-table { margin-top: var(--space-7); display: grid; gap: var(--space-5); }
+.cf-table h4 { font: 600 15px var(--meta); color: var(--mute); overflow-wrap: anywhere; }
+.cf-field { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 22rem); gap: var(--space-9); align-items: center; }
+.cf-key { font: 500 14px var(--mono); color: var(--body); overflow-wrap: anywhere; }
+.cf-ctl { display: flex; align-items: center; gap: var(--space-5); justify-content: flex-end; flex-wrap: wrap; }
+.cf-list { list-style: none; margin: var(--space-4) 0 0; padding: 0; display: grid; gap: var(--space-3); font: 400 15px var(--read); color: var(--body); overflow-wrap: anywhere; }
+.cf-list code { font: 500 13px var(--mono); }
+.cf-raw summary { cursor: pointer; font: 600 15px var(--meta); color: var(--mute); }
+.cf-raw pre { margin: var(--space-4) 0 0; padding: var(--space-6) var(--space-7); max-height: 420px; overflow: auto; background: var(--glass); color: var(--glass-ink); border-radius: 10px; font: 400 13px/1.55 var(--mono); white-space: pre-wrap; word-break: break-word; }

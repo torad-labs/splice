@@ -8,6 +8,7 @@ import { FleetPage } from '../pages/fleet/FleetPage';
 import { NeedsPage } from '../pages/needs/NeedsPage';
 import { SessionPage } from '../pages/session/SessionPage';
 import { SessionsPage } from '../pages/sessions/SessionsPage';
+import { ProjectPage } from '../pages/projects/ProjectPage';
 import { TeamPage } from '../pages/teams/TeamPage';
 import { UsagePage } from '../pages/usage/UsagePage';
 import { TurnPage } from '../pages/turns/TurnPage';
@@ -46,6 +47,7 @@ export const router = createHashRouter([
       { path: 'sessions', element: <SessionsPage /> },
       { path: 'sessions/:id', element: <SessionPage /> },
       { path: 'teams/:id', element: <TeamPage /> },
+      { path: 'projects/:id', element: <ProjectPage /> },
       { path: 'turns', element: <TurnsPage /> },
       { path: 'usage', element: <UsagePage /> },
       { path: 'turns/:head/:ts', element: <TurnPage /> },

@@ -14,6 +14,7 @@ import { UNATTRIBUTED, groupSessions, handoffOf, matchesQuery, sessionKey, sessi
 import type { SessionRow } from '../../types/sessions';
 import { UNKNOWN_HEAD } from '../../types/sessions';
 import { Button, Empty, Fault, GroupHead, PageHead, SearchField, Segmented } from '../../ui';
+import { P as PJ } from '../../lib/words-projects';
 import { M } from '../../lib/words-teams';
 import { TeamDialog } from '../teams/TeamDialog';
 import { P } from './copy';
@@ -116,10 +117,11 @@ export function SessionsPage() {
           const rows = sortByOrder(group.sessions, sessionKey, order);
           const text = by === 'state' ? STATE_HEAD[group.key] : undefined;
           const team = by === 'team' ? teams.data?.teams.find((candidate) => candidate.id === group.key) : undefined;
+          const root = by === 'repo' ? group.sessions.find((row) => row.repo !== undefined)?.repo?.root : undefined;
           const title = text?.title ?? team?.name ?? (group.key === UNATTRIBUTED ? P.unattributed : group.key === UNKNOWN_HEAD ? P.unknownHead : group.key);
           return (
             <section key={group.key} aria-label={title}>
-              <GroupHead title={title} count={rows.length} {...(text === undefined ? {} : { why: text.why })} {...(team === undefined ? {} : { action: <Link to={`/teams/${encodeURIComponent(team.id)}`}>{M.openTeam}</Link> })} />
+              <GroupHead title={title} count={rows.length} {...(text === undefined ? {} : { why: text.why })} {...(team !== undefined ? { action: <Link to={`/teams/${encodeURIComponent(team.id)}`}>{M.openTeam}</Link> } : root !== undefined ? { action: <Link to={`/projects/${encodeURIComponent(root)}`}>{PJ.openProject}</Link> } : {})} />
               <SortableContext items={rows.map(sessionKey)} strategy={rectSortingStrategy}>
                 <ul className={by === 'state' && group.key === 'needs' ? 'grid first' : 'grid'}>
                   {rows.map((row) => (

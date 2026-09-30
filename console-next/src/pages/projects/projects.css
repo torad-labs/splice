@@ -1,0 +1,20 @@
+/* One project in D: its sentence, who works in it, what governs it, and the two texts that stand for it. */
+.crumb { display: flex; gap: var(--space-5); margin-bottom: var(--space-7); font: 600 15px var(--meta); color: var(--mute); }
+.crumb a { color: var(--ink); text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 2px; text-decoration-color: var(--hair); }
+.proj-section { margin-top: var(--space-16); max-width: 1080px; }
+.proj-section:first-of-type { margin-top: 0; }
+.proj-section > h2 { font: 520 26px/1.15 var(--display); color: var(--ink); }
+.proj-section > .why { margin-top: var(--space-4); font: 400 16px/1.5 var(--read); color: var(--mute); max-width: 70ch; }
+.proj-list { list-style: none; margin: var(--space-9) 0 0; padding: 0; display: grid; gap: var(--space-6); }
+.proj-list li { font: 500 17px var(--meta); color: var(--body); display: flex; gap: var(--space-6); align-items: baseline; flex-wrap: wrap; }
+.proj-list a { color: var(--ink); font-weight: 650; text-decoration: none; }
+.proj-list a:hover { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; }
+.proj-list small { font: 500 14px var(--meta); color: var(--mute); }
+.standing { display: grid; gap: var(--space-8); margin-top: var(--space-9); max-width: 760px; }
+.standing .field { display: grid; gap: var(--space-3); }
+.standing textarea.input { min-height: 120px; resize: vertical; font: 400 16px/1.5 var(--read); width: 100%; box-sizing: border-box; }
+.standing .fromfile code { font: 500 14px var(--mono); color: var(--body); overflow-wrap: anywhere; }
+.proj-files { list-style: none; margin: var(--space-9) 0 0; padding: 0; display: grid; gap: var(--space-8); }
+.proj-files summary { cursor: pointer; font: 600 17px var(--meta); color: var(--ink); }
+.proj-files summary small { margin-left: var(--space-5); font: 500 14px var(--mono); color: var(--mute); overflow-wrap: anywhere; }
+.proj-files pre { margin: var(--space-5) 0 0; padding: var(--space-6) var(--space-7); max-height: 360px; overflow: auto; background: var(--glass); color: var(--glass-ink); border-radius: 10px; font: 400 13px/1.55 var(--mono); white-space: pre-wrap; word-break: break-word; }

@@ -44,7 +44,9 @@ internal class DoctorInstallProbes(private val probes: DoctorProbes, private val
         val shim = paths.shareDir.resolve("splice-launch")
         // Orphans are judged only against a PARSED topology: with none, every head's wrapper would
         // read as a command no head claims.
-        val orphans = if (topology == null) emptyList() else path.orphanWrappers(paths.binDir, shim, commands.toSet())
+        // The wrapped `claude` is the wrapper the claude-head prerequisite reports, so it is claimed too (V4-445).
+        val claimed = commands.toSet() + listOfNotNull(probes.wrappedCommand())
+        val orphans = if (topology == null) emptyList() else path.orphanWrappers(paths.binDir, shim, claimed)
         return listOf(jarCheck(), shimCheck(shim, envReader)) +
             commands.map { path.wrapperCheck(paths.binDir.resolve(it), it) } +
             orphans +

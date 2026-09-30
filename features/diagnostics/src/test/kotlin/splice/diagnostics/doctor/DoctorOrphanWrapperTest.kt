@@ -9,6 +9,9 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.client.wrap.WrapStateStore
+import splice.client.wrap.WrappedHead
+import splice.core.config.InstallPaths
 import splice.core.util.EnvReader
 import splice.topology.TopologyLoader
 import java.nio.file.Files
@@ -31,6 +34,31 @@ class DoctorOrphanWrapperTest {
         assertEquals(CheckStatus.WARN, row.status)
         assertTrue(row.detail.startsWith("'claudeor' → "), row.detail)
         assertEquals("rm ${bin.resolve("claudeor")}   (or give a head that command again in the topology)", row.fix)
+    }
+
+    // V4-445: `claude` on PATH IS the shim when wrapped (WrappedHead, the source the claude-head prerequisite reads).
+    // It is the operator's launcher, so doctor must never tell them to rm it.
+    @Test
+    fun `the wrapped claude link is the wrapper, never an orphan`(@TempDir tmp: Path) {
+        install(tmp, "claude", "claude-openrouter", "splice")
+        assertEquals(emptyList<DoctorCheck>(), orphans(tmp, parsed(command = "claude-openrouter"), wrapped(tmp)))
+    }
+
+    @Test
+    fun `a leftover from a removed head still warns beside the wrapped claude link`(@TempDir tmp: Path) {
+        val bin = install(tmp, "claude", "claudeor", "claude-openrouter", "splice")
+        val row = orphans(tmp, parsed(command = "claude-openrouter"), wrapped(tmp)).single()
+        assertEquals(CheckStatus.WARN, row.status)
+        assertTrue(row.detail.startsWith("'claudeor' → "), row.detail)
+        assertEquals("rm ${bin.resolve("claudeor")}   (or give a head that command again in the topology)", row.fix)
+    }
+
+    @Test
+    fun `a claude link that is not the shim is not judged`(@TempDir tmp: Path) {
+        install(tmp, "claude-openrouter", "splice")
+        val real = Files.writeString(tmp.resolve("real-claude"), "#!/bin/sh\n")
+        Files.createSymbolicLink(tmp.resolve("bin").resolve("claude"), real)
+        assertEquals(emptyList<DoctorCheck>(), orphans(tmp, parsed(command = "claude-openrouter"), wrapped(tmp)))
     }
 
     @Test
@@ -84,8 +112,18 @@ class DoctorOrphanWrapperTest {
         return bin
     }
 
-    private fun orphans(tmp: Path, topology: DoctorTopology) =
-        DoctorInstallProbes(DoctorTestPorts.probes(), DoctorTestPorts.noJar).installationChecks(topology, env(tmp))
+    /** The prerequisite's own source, pointed at the same bin and share dirs the install probes scan. */
+    private fun wrapped(tmp: Path) = DoctorProbes(
+        runningJar = DoctorTestPorts.noJar,
+        wrappedHead = WrappedHead(
+            home = tmp,
+            installPaths = InstallPaths(binOverride = tmp.resolve("bin"), shareOverride = tmp.resolve("share")),
+            stateStore = WrapStateStore(file = tmp.resolve("state/claude-head-wrap.json")),
+        ),
+    )
+
+    private fun orphans(tmp: Path, topology: DoctorTopology, probes: DoctorProbes = DoctorTestPorts.probes()) =
+        DoctorInstallProbes(probes, DoctorTestPorts.noJar).installationChecks(topology, env(tmp))
             .filter { it.detail.contains("names no head in the topology") }
 
     private fun parsed(command: String?): DoctorTopology {

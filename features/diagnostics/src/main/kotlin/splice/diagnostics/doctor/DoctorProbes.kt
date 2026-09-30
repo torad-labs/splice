@@ -57,6 +57,11 @@ internal class DoctorProbes(
         return DoctorCheck("claude-head", CheckStatus.INFO, detail)
     }
 
+    /** The command the claude-head prerequisite reports as wrapped, or null when `claude` is separate. Read from the same
+     *  [wrappedHead] status as [claudeHeadModeCheck], so the two rows cannot disagree: a link the prerequisite calls the
+     *  wrapper is never an orphan (V4-445). */
+    internal fun wrappedCommand(): String? = if (wrappedHead.status().mode == MODE_WRAPPED) CLAUDE_BINARY else null
+
     /** Claude Code's version for the report's `claude_code` block, from the claude this doctor's PATH
      *  resolves: the lookup the prerequisites row makes, so the two cannot disagree. It ran the bare
      *  name on the JVM's own PATH, and an absent binary's failure to start read "present (version
@@ -120,5 +125,8 @@ internal class DoctorProbes(
 
 internal const val PROBE_SECONDS = 4L
 private const val PROBE_POOL_SIZE = 4
+
+/** ClaudeHeadStatus.mode when `claude` on PATH is the launch shim. */
+private const val MODE_WRAPPED = "wrapped"
 private const val OVERALL_BOUND_SECONDS = PROBE_SECONDS * 3
 private const val FIX_REDOCTOR = "re-run: splice doctor"

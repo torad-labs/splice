@@ -110,3 +110,16 @@ The daemon has no team, so this is the real page rendered over fixture data shap
 | ![](png/team-day-1920.png) | ![](png/built/team-day-1920.png) |
 
 Left: messages name the seats by role ("Planner to Builder") where the comp names the plans, and a cost under a dollar prints to a tenth of a cent ("$0.900") as it does on Usage and Turn.
+
+## The operator's frame: 3840 x 2060, day
+
+His panels are 3840 wide at scale 1 (ruling 4, 2026-09-25). Built pages only, captured on Sep 30, 2026 against the running daemon with the viewport at exactly 3840 x 2060; the comps are drawn at 1440 and 1920, where the page is unchanged (the root size holds 16px through 1920).
+
+| Needs you | Sessions |
+|---|---|
+| ![](png/built/needs-day-3840.png) | ![](png/built/sessions-day-3840.png) |
+| **A session** | **Turns** |
+| ![](png/built/session-day-3840.png) | ![](png/built/turns-day-3840.png) |
+
+What scales: the root size grows from 16px at 1920 to 20px at 3840, and every size (type, space, radii, widths, the sidebar) is in rem, so the page is the same page 1.25 times larger; the 1560px cap on the wall is gone, so a page draws in 87 to 90% of the width. Measured on glyph boxes: Sessions 0.901, Usage and Turns 0.878, Needs you 0.874 at 3840 (floor 0.8), body 21.25px (floor 20); at 1600 body is 17px (floor 17) and the drawn share 0.77 to 0.81 (floor 0.7). Needs you goes to two columns of cards from 2400px, where one column of cards beside the summary would leave the right half bare. Settings is still a column of 1550px at this frame (39% drawn), because a form of rows stretched to the window would be harder to read; it is outside the ruling's three pages.
+

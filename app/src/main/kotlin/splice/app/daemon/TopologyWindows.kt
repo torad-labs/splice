@@ -5,7 +5,7 @@
 // boot, yet every window the daemon serves is a number splice authors itself: on the wire through
 // usage scaling, and at launch through CLAUDE_CODE_MAX_CONTEXT_TOKENS. The operator, 2026-09-19:
 // "we're a proxy, we can change those configurations at proxy time". So the windows follow the file
-// and nothing else does; the roster, ports, auth, quirks and knobs stay boot-time.
+// and only discovered models also refresh (V4-440); declared rows, ports, auth, quirks and knobs stay boot-time.
 //
 // THE IDIOM IS CompactionInstructions.currentText: a stat per read, the bytes re-read only when the
 // (modification time, size) stamp moved, and parsed only when their sha-256 moved. Reading, hashing
@@ -28,6 +28,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import splice.app.provider.LiveRosterCatalog
 import splice.app.provider.LocalProbeInputs
 import splice.app.provider.LocalRowsCheck
 import splice.app.provider.ProviderBuild
@@ -117,7 +118,8 @@ internal class TopologyWindows(
     /** [ctx] with its catalog's windows following splice.toml from now on. */
     fun attach(ctx: ProviderBuild, legacyKnobsGovern: Boolean): ProviderBuild {
         heads[ctx.key] = Head(ctx.catalog, legacyKnobsGovern, ctx.providerCfg.isLocal)
-        return ctx.copy(catalog = ctx.catalog.copy(liveWindows = LiveWindows { current(ctx.key) }))
+        val live = LiveRosterCatalog(ctx, LiveWindows { current(ctx.key) })
+        return ctx.copy(catalog = ctx.catalog.copy(liveWindows = live))
     }
 
     override fun digest(): String {

@@ -8,6 +8,8 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import splice.client.ClaudePolicy
 import splice.client.login.TokenCaptureSpec
 import splice.core.model.CLAUDE_CODE_ONE_MILLION
@@ -16,6 +18,9 @@ import splice.core.model.ClientSpelling
 import splice.core.model.ModelCatalog
 import splice.core.util.JsonScalars
 import java.nio.file.Path
+
+private const val PICKER_VALUE = "value"
+private const val PICKER_LABEL = "label"
 
 /** The transcript trees one launch may look at (V4-115): the head's OWN CLAUDE_CONFIG_DIR and every
  *  OTHER head's. They are ONE fact — which trees this head can adopt a named session out of — so they
@@ -118,19 +123,22 @@ public data class LaunchSpec(
      */
     val forwardClientAuth: Boolean = false,
 ) {
-    /** V4-162: this boot-assembled spec with the windows splice.toml declares NOW, read per launch
-     *  (the DR-81 shape: the spec is frozen at boot, a live fact is not). The env plants the pinned
-     *  row's window, so a session launched after an edit starts on the edited window and rides raw;
-     *  each picker row in the model-options cache takes its row's window, so .claude.json never
-     *  disagrees with the env (Claude Code 2.1.276 drops that field, so there it is informational). */
+    /** This boot-assembled spec with the current catalog's roster, labels, picker and windows.
+     *  Read per launch: provider discoveries and accepted TOML window edits need no daemon restart.
+     *  Discovered rows join the picker, never the positional tiers; client spellings follow their windows. */
     public fun withWindows(catalog: ModelCatalog): LaunchSpec {
-        val windows = catalog.live().models.associate { it.id to it.contextWindow }
-        val options = (modelOptionsCache as? JsonArray)?.let { rows -> JsonArray(rows.map { withWindow(it, windows) }) }
-        return copy(
-            contextWindow = catalog.clientLaunchWindow,
-            modelOptionsCache = options ?: modelOptionsCache,
-            tiers = tiers.copy(spelled = spelledIn(catalog)),
+        val current = catalog.live()
+        val refreshed = copy(
+            availableModelIds = current.availableModelIds(),
+            modelLabels = current.models.associate { it.id to it.label.ifBlank { modelLabels[it.id] ?: it.id } },
+            contextWindow = current.clientLaunchWindow,
+            modelOptionsCache = pickerRows(current),
+            tiers = tiers.copy(
+                candidates = tiers.candidates?.let { current.tierModelIds() },
+                modelOverrides = current.presented.overrides,
+            ),
         )
+        return refreshed.copy(tiers = refreshed.tiers.copy(spelled = refreshed.spelledIn(current)))
     }
 
     /** V4-358: this spec as the client is handed it: the pinned row, the allowlist and each picker row
@@ -159,14 +167,27 @@ public data class LaunchSpec(
 
     private fun heldRow(row: JsonElement): JsonElement {
         val option = row as? JsonObject ?: return row
-        val value = JsonScalars.str(option, "value") ?: return row
-        return JsonObject(option + ("value" to JsonPrimitive(tiers.clientId(value))))
+        val value = JsonScalars.str(option, PICKER_VALUE) ?: return row
+        return JsonObject(option + (PICKER_VALUE to JsonPrimitive(tiers.clientId(value))))
     }
 
-    private fun withWindow(row: JsonElement, windows: Map<String, Long>): JsonElement {
-        val option = row as? JsonObject ?: return row
-        val window = JsonScalars.str(option, "value")?.let(windows::get) ?: return row
-        return JsonObject(option + ("context_window" to JsonPrimitive(window)))
+    private fun pickerRows(catalog: ModelCatalog): JsonElement {
+        val rows = modelOptionsCache as? JsonArray ?: return modelOptionsCache
+        val kept = rows.filterIsInstance<JsonObject>().associateBy { JsonScalars.str(it, PICKER_VALUE) }
+        val options = catalog.models.map { model ->
+            val old = kept[model.id]
+            val labelChanged = model.label != modelLabels[model.id]
+            val includesLabel = old == null || PICKER_LABEL in old
+            val label = model.label.ifBlank { old?.let { JsonScalars.str(it, PICKER_LABEL) } ?: model.id }
+            buildJsonObject {
+                old?.forEach { (key, value) -> put(key, value) }
+                put(PICKER_VALUE, model.id)
+                if (includesLabel || labelChanged) put(PICKER_LABEL, label)
+                if (old == null) put("description", model.description.ifBlank { model.shownName() })
+                put("context_window", model.contextWindow)
+            }
+        }
+        return JsonArray(options + rows.filterNot { it is JsonObject })
     }
 }
 

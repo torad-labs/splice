@@ -27,7 +27,7 @@ public class TurnPrice(private val catalog: ModelCatalog?, private val cost: Tok
     }
 
     private fun ratesFor(model: String): ModelRates? {
-        val c = catalog ?: return null
+        val c = catalog?.live() ?: return null
         val key = c.stripSuffixes(model)
         return cost.ratesFor(null, key, c.models.firstOrNull { c.stripSuffixes(it.id) == key }?.rates)
     }

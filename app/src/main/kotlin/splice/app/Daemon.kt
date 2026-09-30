@@ -192,12 +192,12 @@ public class Daemon(
         HeadKeptFiles(statePaths, log).ofRemovedHeads(topology.heads.keys)
         // 2026-09-22: every head's endpoint is asked what it serves — all at once, bounded, before any
         // catalog exists — so each picker is its declared rows plus what its provider lists.
-        controlPlane.modelRosters.resolve(
-            topology.heads.mapNotNull { (key, head) ->
-                val declared = topology.providers[head.provider] ?: return@mapNotNull null
-                key to buildInputs.effectiveProvider(key, declared, legacyKnobsGovern = key in legacySolo)
-            }.toMap(),
-        )
+        val rosterProviders = topology.heads.mapNotNull { (key, head) ->
+            val declared = topology.providers[head.provider] ?: return@mapNotNull null
+            key to buildInputs.effectiveProvider(key, declared, legacyKnobsGovern = key in legacySolo)
+        }.toMap()
+        controlPlane.modelRosters.resolve(rosterProviders)
+        controlPlane.modelRosters.start(controlPlane.probeScope, rosterProviders)
         val failed = headBoot.assembleDaemonHeads(topology, statePaths, heads, log) { key, head, providerCfg ->
             val legacy = key in legacySolo
             val ctx = buildInputs.providerContext(key, head, providerCfg, legacyKnobsGovern = legacy)

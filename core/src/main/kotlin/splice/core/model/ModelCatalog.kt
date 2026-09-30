@@ -88,10 +88,9 @@ public data class ModelCatalog(
     /** The head's pinned model (ANTHROPIC_MODEL at launch). Its declared window is what every launch
      *  plants as the client's window ([clientLaunchWindow]). */
     val pinnedModel: String = "",
-    /** V4-162: where a RUNNING head reads the windows in force now, so a context_window edit in
-     *  splice.toml needs no restart. Every window METHOD below answers from it; a reader of the window
-     *  FIELDS goes through [live]. Null = the windows above, fixed for this catalog's life, which is
-     *  every catalog built outside the daemon's head assembly. */
+    /** The running head's current immutable catalog: accepted TOML windows and refreshed discovery.
+     *  Roster and window methods delegate through it; field readers resolve [live] once per operation.
+     *  Null keeps this snapshot fixed, as for catalogs built outside daemon head assembly. */
     val liveWindows: LiveWindows? = null,
     /** The head's own window (its `context_window`, or the contextWindowOverride knob) when it replaced
      *  the provider's windows on every entry, rule and the default; null = the provider's numbers stand.
@@ -105,9 +104,10 @@ public data class ModelCatalog(
     }
 
     /** V4-232: the rows the client resolves as a Claude model it knows, and the overrides that make it. */
-    public val presented: PresentedRows = PresentedRows(models, discoveryPrefix)
+    private val bootPresented = PresentedRows(models, discoveryPrefix)
+    public val presented: PresentedRows get() = liveWindows?.current()?.presented ?: bootPresented
 
-    public val defaultModel: String get() = models.first().id
+    public val defaultModel: String get() = live().models.first().id
 
     // Canonical (suffix-stripped) ids — `contains` and `contextWindowFor` both strip the query the
     // same way. Storing the RAW picker id (e.g. "k3[1m]") let membership pass after the contains
@@ -136,7 +136,7 @@ public data class ModelCatalog(
     public fun unwrap(id: String): String = id.removePrefix(discoveryPrefix)
 
     /** True only for a picker model owned by this head (wrapped or upstream id). */
-    public fun contains(id: String): Boolean = stripSuffixes(id) in modelIds
+    public fun contains(id: String): Boolean = liveWindows?.current()?.contains(id) ?: (stripSuffixes(id) in modelIds)
 
     /** Discovery wrapper + any valid trailing numeric tier ("[1m]", "[500k]") stripped — what the
      *  upstream actually sees. Only the [<digits><k|m>] grammar strips (DR-27): a non-numeric
@@ -229,9 +229,8 @@ public data class ModelCatalog(
         return client.toDouble() / declared
     }
 
-    /** V4-162: this catalog with the windows in force NOW, for a reader of the window FIELDS
-     *  ([models]' context_window, [extraWindows], [windowRules], [defaultContextWindow]). The window
-     *  methods here already answer from it. */
+    /** The immutable catalog snapshot in force now: live windows and refreshed discovery (V4-440).
+     *  Field readers resolve this once per operation; roster and window methods already delegate. */
     public fun live(): ModelCatalog = liveWindows?.current() ?: this
 
     /** V4-162: this roster with [declared]'s windows, which is everything a context_window edit
@@ -252,21 +251,21 @@ public data class ModelCatalog(
         )
     }
 
-    public fun labelFor(id: String): String = models.firstOrNull { it.id == id }?.shownName() ?: id
+    public fun labelFor(id: String): String = live().models.firstOrNull { it.id == id }?.shownName() ?: id
 
     /** /v1/models rows: every catalog model, wrapped, with display_name for the picker. */
     public fun discoveryRows(): List<DiscoveryRow> =
-        models.map { DiscoveryRow(id = wrap(it.id), displayName = it.shownName()) }
+        live().models.map { DiscoveryRow(id = wrap(it.id), displayName = it.shownName()) }
 
     /** settings.json availableModels allowlist — UNWRAPPED ids. */
-    public fun availableModelIds(): List<String> = models.map { it.id }
+    public fun availableModelIds(): List<String> = live().models.map { it.id }
 
     /** The rows a launch may promote to a Claude tier alias when the head declares no slots: the
      *  DECLARED ones, in declared order. A discovered row is offered in the picker but never tiered —
      *  its place is the vendor's list order, and the positional heuristic would otherwise hand a
      *  sonnet-tier subagent to whatever the endpoint happened to list second (on OpenRouter, the
      *  first id ending "-sol" or containing "mini" among 380). */
-    public fun tierModelIds(): List<String> = models.filterNot { it.discovered }.map { it.id }
+    public fun tierModelIds(): List<String> = live().models.filterNot { it.discovered }.map { it.id }
 }
 
 /** V4-232: a catalog's rows the CLIENT resolves as a Claude model it knows ([ModelEntry.clientModel]),

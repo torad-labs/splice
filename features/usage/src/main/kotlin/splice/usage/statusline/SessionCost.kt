@@ -101,7 +101,7 @@ internal class SessionCost(
     }
 
     private fun providerEntry(key: String): ModelRates? {
-        val c = catalog ?: return null
+        val c = catalog?.live() ?: return null
         return c.models.firstOrNull { c.stripSuffixes(it.id) == key }?.rates
     }
 

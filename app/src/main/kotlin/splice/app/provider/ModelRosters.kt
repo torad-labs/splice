@@ -1,11 +1,6 @@
-// NEW: 2026-09-22 — every head's DISCOVERED models, asked for once at daemon start and held for the
-// daemon's life, so a head's catalog offers what its provider serves rather than only what
-// splice.toml spells out (the operator: "make sure that splice probes the head endpoint for available
-// models instead of having to hardcode them on the toml file").
-//
-// ONCE, AT START, like the rest of the roster: TopologyWindows' header keeps "the roster, ports,
-// auth, quirks and knobs" boot-time, and a model that appears upstream while the daemon runs joins the
-// picker at the next start — which every install and upgrade already is.
+// NEW: 2026-09-22 — every head's discovered models, asked at daemon start and refreshed hourly
+// (V4-440), so its catalog offers what the provider serves rather than only splice.toml's rows.
+// The daemon owns the refresh scope; a failed refresh retains the last live answer.
 //
 // NEVER BELOW THE STATUS QUO. Every head is asked at once, each bounded by [DISCOVERY_DEADLINE], and no
 // failure stops a head from starting: an endpoint that does not answer is replaced by the list it
@@ -13,9 +8,13 @@
 // before discovery existed. One daemon.log line per head says which of the three happened.
 package splice.app.provider
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withTimeoutOrNull
 import splice.app.DaemonBoundary
@@ -33,7 +32,9 @@ import splice.models.discovery.KeptRoster
 import splice.models.discovery.ModelDiscovery
 import splice.models.discovery.RosterCache
 import splice.models.list.UpstreamRosterUrl
+import splice.upstream.Ticker
 import splice.upstream.codemode.ProcessDispatchers
+import splice.upstream.codemode.ProcessTicker
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -43,6 +44,9 @@ import kotlin.time.Duration.Companion.seconds
 // budget (about two minutes); 10s matches the response bound, and every head is asked at once, so ten
 // providers cost one wait, not ten.
 private val DISCOVERY_DEADLINE: Duration = 10.seconds
+
+// why: a provider release joins every running head within an hour, without polling its endpoint per turn.
+private const val REFRESH_INTERVAL_MS = 3_600_000L
 
 /** One head's provider asked what it serves. [EndpointModels] in production. */
 internal fun interface HeadModelsSource {
@@ -64,6 +68,7 @@ internal class ModelRosters(
     private val log: LogSink,
     private val source: HeadModelsSource = EndpointModels(),
     private val deadline: Duration = DISCOVERY_DEADLINE,
+    private val ticker: Ticker = ProcessTicker(),
 ) : HeadDiscoveredModels {
 
     private val cache = RosterCache(statePaths)
@@ -71,7 +76,7 @@ internal class ModelRosters(
     private val byHead = ConcurrentHashMap<String, List<DiscoveredModel>>()
     private val boundary = DaemonBoundary()
 
-    /** What [key]'s provider published at start, or last published when it did not answer. Empty
+    /** What [key]'s provider published most recently, or last published when it did not answer. Empty
      *  before [resolve], and for a head whose provider discovered nothing. */
     override fun forHead(key: String): List<DiscoveredModel> = byHead[key].orEmpty()
 
@@ -83,6 +88,11 @@ internal class ModelRosters(
             heads.map { (key, provider) -> async { key to modelsFor(key, provider) } }.awaitAll()
         }
         answers.forEach { (key, models) -> byHead[key] = models }
+    }
+
+    /** Start after the initial [resolve]; cancellation of the daemon scope stops all refreshes. */
+    fun start(scope: CoroutineScope, heads: Map<String, ProviderConfig>): Job = scope.launch {
+        while (isActive && ticker.awaitTick(REFRESH_INTERVAL_MS)) resolve(heads)
     }
 
     private suspend fun modelsFor(key: String, provider: ProviderConfig): List<DiscoveredModel> {
@@ -118,7 +128,7 @@ internal class ModelRosters(
      *  when the reason does not already say, and why no kept list stood in when none did. */
     private fun fallback(key: String, provider: ProviderConfig, missed: Discovery.Unavailable): List<DiscoveredModel> {
         val at = missed.url?.takeUnless { it in missed.reason }?.let { " (asked at $it)" }.orEmpty()
-        val kept = cache.read(key, provider)
+        val kept = byHead[key]?.let { KeptRoster.Kept(it) } ?: cache.read(key, provider)
         log("[$key] models: ${missed.reason}$at; ${instead(kept)}\n")
         return (kept as? KeptRoster.Kept)?.models.orEmpty()
     }

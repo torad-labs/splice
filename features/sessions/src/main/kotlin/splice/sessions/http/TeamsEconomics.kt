@@ -184,7 +184,7 @@ internal class PerfTally(private val cost: TokenCost = TokenCost()) {
     }
 
     /** The provider model entry's rates, keyed on the canonical id as SessionCost keys them. */
-    private fun rates(model: String?, catalog: ModelCatalog?) = catalog?.let { c ->
+    private fun rates(model: String?, catalog: ModelCatalog?) = catalog?.live()?.let { c ->
         model?.let(c::stripSuffixes)?.let { key ->
             cost.ratesFor(null, key, c.models.firstOrNull { c.stripSuffixes(it.id) == key }?.rates)
         }

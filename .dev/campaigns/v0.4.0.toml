@@ -10168,3 +10168,4 @@ verify = "red first: a code-mode continuation (previous response ended in an exe
 claimed_by = "splice-lead"
 claimed_at = "2026-09-30T00:08:57.374Z"
 # [2026-09-30] CLAIM: owner=splice-lead at=2026-09-30T00:08:57Z
+# [2026-09-30] RECEIPT cmd="bun tools/gate slot V4-446 -- --continue :integrations-dialects-openai-responses:test :integrations-dialects-openai-responses:detekt; then :integrations-providers-codex:test :quality-architecture:test; bun tools/gate rules" exit=0 tests=931 touched=integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/ResponsesWsSession.kt,integrations/dialects/openai-responses/src/test/kotlin/splice/dialect/responses/v4446/CodeModeChainingTest.kt,.dev/restructure/capabilities.tsv

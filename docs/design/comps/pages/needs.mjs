@@ -10,35 +10,31 @@ const ITEMS = [
 const LABEL = { wait: 'wait', stuck: 'stuck', quota: 'quota' };
 
 export const css = `
-.stack { display: grid; gap: 34px; }
-.need { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 40px; align-items: center; padding: 22px 30px 24px 34px; }
-.need .k { display: inline-flex; margin-bottom: 8px; }
+.stack { display: grid; gap: 64px; }
+.need { --rim: var(--tan); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 56px; align-items: center; padding: 36px 44px 38px 44px; }
+.need .k { display: inline-flex; margin-bottom: 14px; }
 .need h2 { font: 540 30px/1.12 var(--display); font-variation-settings: 'opsz' 72; letter-spacing: -.018em; color: var(--ink); }
-.need p { margin-top: 10px; max-width: 62ch; font: 400 18px/1.6 var(--read); color: var(--body); }
+.need p { margin-top: 14px; max-width: 62ch; font: 400 18px/1.6 var(--read); color: var(--body); }
 .need p em { font-style: normal; font-weight: 600; color: var(--ink); }
 .need p b { color: var(--ink); font-weight: 650; }
 .need p em { white-space: normal; }
 .nw { white-space: nowrap; }
-.need code { font: 500 .82em var(--mono); padding: 2px 6px; background: var(--obj-sunk); border: 2px solid var(--hair); border-radius: 5px; color: var(--ink); }
-.need .do { display: grid; gap: 10px; justify-items: stretch; min-width: 200px; }
+.need code { font: 500 .82em var(--mono); padding: 2px 6px; background: color-mix(in srgb, var(--ink) 8%, transparent); border: 0; border-radius: 5px; color: var(--ink); }
+.need .do { display: grid; gap: 14px; justify-items: stretch; min-width: 200px; }
 .need .do .btn { justify-content: center; min-height: 46px; font-size: 14px; }
-.need::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 12px; background: var(--rimc); border-radius: 10px 0 0 10px; }
-[data-theme='night'] .need::before { border-radius: 11px 0 0 11px; }
 .layout { display: grid; grid-template-columns: minmax(0, 1040px); gap: 0; }
-.calm { margin-top: 54px; padding-top: 26px; border-top: 3px solid var(--edge); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 30px; }
+.calm { margin-top: 96px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 56px; }
 @media (min-width: 1500px) {
-  .layout { grid-template-columns: minmax(0, 1040px) minmax(280px, 1fr); gap: 64px; align-items: start; }
-  .calm { margin-top: 0; padding-top: 0; border-top: 0; grid-template-columns: 1fr; gap: 34px; padding-left: 32px; border-left: 3px solid var(--edge); position: sticky; top: 34px; }
-  [data-theme='night'] .calm { border-left-color: var(--hair); }
+  .layout { grid-template-columns: minmax(0, 1040px) minmax(280px, 1fr); gap: 96px; align-items: start; }
+  .calm { margin-top: 0; grid-template-columns: 1fr; gap: 48px; position: sticky; top: 56px; }
 }
-[data-theme='night'] .calm { border-top-color: var(--hair); }
 .calm h3 { font: 520 22px/1.15 var(--display); color: var(--ink); }
 .calm p { margin-top: 6px; font: 400 16px/1.5 var(--read); color: var(--body); }
 .calm .n { font: 500 44px/1 var(--display); color: var(--ink); letter-spacing: -.03em; }
 `;
 
 export function body() {
-  const rows = ITEMS.map((i) => `<article class="win need ${i.c}" style="--rimc:var(--${i.c})">
+  const rows = ITEMS.map((i) => `<article class="win need">
 <div><span class="state ${i.tone} k"><i></i>${i.kind}</span><h2>${i.title}</h2><p>${i.says}</p></div>
 <div class="do"><button class="btn go">${i.fix}</button>${i.more ? `<button class="btn quiet sm">${i.more}</button>` : ''}</div></article>`).join('');
   return `<header class="page-head"><div><h1>Needs you</h1>

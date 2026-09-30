@@ -28,7 +28,7 @@ export function shell({ current, theme, body, css = '' }) {
   const nav = NAV.map(([id, label, n]) =>
     `<a href="${id}.html"${id === current ? ' aria-current="page"' : ''}>${label}${n ? `<span class="count">${n}</span>` : ''}</a>`).join('');
   return `<!doctype html><html lang="en" data-theme="${theme}"><head><meta charset="utf-8"><title>splice — ${current}</title>
-<link rel="stylesheet" href="comp.css"><style>${css}</style></head><body>
+<link rel="stylesheet" href="comp.css"><style>${css}</style><link rel="stylesheet" href="calm.css"></head><body>
 <div class="app"><aside class="side"><div class="mark">splice</div><nav class="nav" aria-label="Pages">${nav}</nav>
 <div class="foot"><span class="live"><i class="dot"></i><b>Daemon running</b></span><span>0.4.0 · this computer</span></div></aside>
 <main class="wall"><div class="wrap">${body}</div></main></div></body></html>`;

@@ -45,7 +45,7 @@ export const css = `
 `;
 
 export function body(opts = {}) {
-  const c = opts.compact === true;
+  const c = opts.compact !== false;
   const need = S.filter((s) => s.state === 'wait' || s.state === 'stuck');
   const work = S.filter((s) => s.state === 'work');
   const idle = S.filter((s) => s.state === 'idle');

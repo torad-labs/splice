@@ -2834,7 +2834,6 @@ docs/design/comps/fonts/ibm-plex-mono-500.woff2	01d285447409c8a588692162439a038b
 docs/design/comps/fonts/ibm-plex-mono-600.woff2	0d1f0b8d0722224e32e9f28261bdc86c79115be73444ae5eceb73976a1bcdf83	created		V4-444 phase A: the console redesign comps (direction, source, fonts from torad-main), not console code
 docs/design/comps/fonts/source-serif-4-400-italic.woff2	09147e39b7b7aaf201498b2e8ee7e5fddaf7073cbab42d9b06217e4a9f7fdf78	created		V4-444 phase A: the console redesign comps (direction, source, fonts from torad-main), not console code
 docs/design/comps/fonts/source-serif-4-400.woff2	f2ea9c12d2fe9bd3a9589b02ad2c0909da88f30938c91adc838c4f4098f9f9e0	created		V4-444 phase A: the console redesign comps (direction, source, fonts from torad-main), not console code
-docs/design/comps/variants.mjs	517faa837bdc2bb9c65418719981b30aff7d395d73dbfe1e3f38a538ec12b85b	created		V4-444 phase A: the console redesign comps (direction, source, fonts from torad-main), not console code
 console-next/eslint.config.mjs	2c5b38121efac5edbf3753d3aa69f473457995e02330ec161fa31976a0e1e0fc	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes
 console-next/index.html	ee88409120b6bdb184253477f6fea3861803c4ba430451c19ef0fc2c81056606	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes
 console-next/package.json	5f455566e0023f98fa90ae2e6bc8eb754b345f788c5556a8e7d0572039abab10	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes
@@ -2940,3 +2939,4 @@ console-next/tests/mcp.test.ts	87f3297c12dd87174bcbe6ad4f6a9d3a0b653db6ab8c2c24a
 console-next/tests/models.test.ts	c84553b2577320b331239524b6087c4bc17c920460762ae8d58495e03d1d2db8	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes
 console-next/tests/perf.test.ts	6781aeb2027950edb65421e32c9298d949623ea23bfc5e741e8b7d48dcc05fe0	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes
 console-next/tests/topology.test.ts	75054d32850da8aac48055f4e48e78094eeba56c5ef2ba81b8b779ee45373b6f	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes
+docs/design/comps/calm.css	bbc5bed6738dd9803ee8f6ac57b9434aa8788c0a64116e3fc8d9c3614220ecc5	created		V4-444 phase A: the console redesign comps (direction, source, fonts from torad-main), not console code

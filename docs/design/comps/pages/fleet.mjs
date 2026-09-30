@@ -18,36 +18,33 @@ const FIX = { ok: '', near: '', quota: '<button class="btn go sm">Switch account
 const gauge = ([label, pct, note], m, danger) => `<div class="g"><div class="gl"><span>${label}</span><b>${pct}%</b><small>${note}</small></div>
 <div class="track ${danger ? 'full' : ''}" role="img" aria-label="${label} ${pct}% used"><i style="width:${pct}%;background:var(--${m})"></i></div></div>`;
 
+// One activity line per card: the plan's tightest window. The rest is in the card's own page (Models, Log, every window).
+const tight = (w) => w.reduce((a, b) => (b[1] >= a[1] ? b : a));
+
 const card = (h) => {
   const [tone, word] = STATE[h.state];
   const attn = h.state === 'quota' || h.state === 'out';
   return `<article class="win ${h.m}${attn ? ' attn' : ''}">
-<div class="bar"><span class="grip" aria-hidden="true">${icon.grip}</span><h3 class="mono">${h.cmd}</h3><span class="more" aria-label="More">•••</span></div>
-<div class="meta"><span class="tag">${h.plan}</span><span class="acct">${h.acct}</span></div>
-<div class="glass gauges">${h.w.length ? h.w.map((w) => gauge(w, h.m, h.state === 'quota' && w[0] === 'Week')).join('') : `<p class="dim none">${h.note[0]}</p><p class="none">${h.note[1]}</p>`}</div>
-<div class="strip" style="--m:var(--${h.m})"><span class="model m-${h.m}">${h.model}</span><span class="sp">${h.sessions ? h.sessions + (h.sessions === 1 ? ' session' : ' sessions') : 'no sessions'}</span></div>
-<div class="foot2"><span class="state ${tone}"><i></i>${word}</span><span class="fx">${FIX[h.state]}</span></div></article>`;
+<div class="bar"><h3>${h.cmd}</h3><span class="state ${tone}"><i></i>${word}</span></div>
+<div class="glass one gauges">${h.w.length ? gauge(tight(h.w), h.m, h.state === 'quota') : `<p class="none">${h.note[1]}</p>`}</div>
+<div class="quiet-meta"><span>${h.plan}</span><span>${h.acct}</span><span>${h.model}</span><span>${h.sessions ? h.sessions + (h.sessions === 1 ? ' session' : ' sessions') : 'no sessions'}</span></div>
+${FIX[h.state] ? `<div class="acts">${FIX[h.state]}</div>` : ''}</article>`;
 };
 
 export const css = `
-.fleet { display: grid; grid-template-columns: repeat(auto-fill, minmax(440px, 1fr)); gap: 38px 40px; padding-right: 10px; }
-.meta { display: flex; align-items: center; gap: 12px; padding: 0 16px 12px; }
-.meta .acct { font: 500 13px var(--mono); color: var(--mute); }
-.more { margin-left: auto; font: 700 15px var(--mono); letter-spacing: 2px; color: var(--mute); padding: 2px 8px; }
-.gauges { gap: 16px; padding: 18px 18px 20px; align-content: start; }
+.fleet { display: grid; grid-template-columns: repeat(auto-fill, minmax(460px, 1fr)); gap: 72px 72px; padding-right: 24px; }
+.fleet .win { cursor: pointer; }
+.gauges { gap: 16px; align-content: start; }
 .g { display: grid; gap: 8px; }
 .gl { display: flex; align-items: baseline; gap: 10px; font: 500 13px var(--mono); }
 .gl span { color: var(--glass-ink); font-weight: 600; }
 .gl b { color: var(--glass-ink); font-weight: 600; }
 .gl small { margin-left: auto; font: 400 12.5px var(--mono); color: var(--glass-dim); }
 .track { height: 14px; border-radius: 7px; background: #26201a; overflow: hidden; }
-.track i { display: block; height: 100%; border-radius: 7px 0 0 7px; }
-.track.full i { background: repeating-linear-gradient(135deg, var(--gpt) 0 8px, #0b8b86 8px 16px) !important; border-radius: 7px; }
+.track i { display: block; height: 100%; border-radius: 7px 0 0 7px; background: var(--glass-ink) !important; }
+.track.full i { background: repeating-linear-gradient(135deg, var(--glass-ink) 0 8px, #8a8272 8px 16px) !important; border-radius: 7px; }
 .none { white-space: normal !important; }
-.foot2 { margin-top: auto; display: flex; align-items: center; gap: 12px; padding: 2px 16px 16px; }
-.foot2 .fx { margin-left: auto; }
-.add { display: grid; place-items: center; min-height: 250px; border: 4px dashed var(--edge); border-radius: var(--r2); color: var(--mute); text-align: center; padding: 30px; gap: 8px; align-content: center; }
-[data-theme='night'] .add { border-color: var(--hair); }
+.add { display: grid; place-items: center; min-height: 250px; border: 3px dashed var(--hair); border-radius: var(--r2); color: var(--mute); text-align: center; padding: 30px; gap: 8px; align-content: center; }
 .add b { font: 520 26px/1.15 var(--display); color: var(--ink); }
 .add span { font: 400 16px/1.5 var(--read); max-width: 30ch; }
 `;

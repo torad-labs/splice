@@ -90,7 +90,7 @@ export const css = `
 `;
 
 export function body(opts = {}) {
-  const c = opts.compact === true;
+  const c = opts.compact !== false;
   return `<a class="crumb" href="sessions.html">${icon.back}Sessions</a>
 <header class="top"><div><h1>Write the rate limiter</h1>
 ${c ? `<div class="facts quiet-meta"><span class="state work"><i></i>Working</span><span>tally</span><span>rate-limit</span><span>claude-grok</span><span>grok-4.7</span><span>31 min</span></div></div>

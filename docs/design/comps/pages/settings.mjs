@@ -2,49 +2,46 @@ import { icon } from '../shell.mjs';
 export const nav = 'settings';
 
 export const css = `
-.split { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 56px; align-items: start; max-width: 1240px; }
+.split { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 88px; align-items: start; max-width: 1240px; }
 .sub { position: sticky; top: 30px; display: grid; gap: 2px; }
-.sub a { position: relative; padding: 9px 12px; font: 500 15px var(--mono); color: var(--mute); text-decoration: none; }
+.sub a { position: relative; padding: 11px 12px; font: 600 16px var(--meta); color: var(--mute); text-decoration: none; }
 .sub a[aria-current='true'] { color: var(--ink); font-weight: 600; }
 .sub a[aria-current='true']::before { content: ''; position: absolute; left: -16px; top: 8px; bottom: 8px; width: 6px; border-radius: 3px; background: var(--charge); }
-.sheets { display: grid; gap: 44px; }
-.sheet h2 { font: 520 30px/1.1 var(--display); font-variation-settings: 'opsz' 72; letter-spacing: -.02em; color: var(--ink); margin-bottom: 20px; }
-.set { padding: 6px 34px; }
-.row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, auto); gap: 40px; align-items: center; padding: 24px 0; border-bottom: 1px solid var(--hair); }
-.row:last-child { border-bottom: 0; }
+.sheets { display: grid; gap: 96px; }
+.sheet h2 { font: 520 30px/1.1 var(--display); font-variation-settings: 'opsz' 72; letter-spacing: -.02em; color: var(--ink); margin-bottom: 30px; }
+.set, .win.flat.set { padding: 14px 44px; overflow: visible; }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, auto); gap: 40px; align-items: center; padding: 34px 0; }
 .row h3 { font: 600 19px/1.25 var(--read); color: var(--ink); }
 .row p { margin-top: 4px; font: 400 16px/1.5 var(--read); color: var(--body); max-width: 56ch; }
-.row .ctl { justify-self: end; display: flex; align-items: center; gap: 14px; }
-.key { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; font: 500 12px var(--mono); color: var(--mute); cursor: pointer; }
-.key code { padding: 2px 8px; background: var(--obj-sunk); border: 2px solid var(--hair); border-radius: 5px; color: var(--ink); font-weight: 600; }
-.select { position: relative; display: inline-flex; align-items: center; justify-content: space-between; gap: 20px; min-width: 200px; height: 42px; padding: 0 14px; background: var(--obj); border: 3px solid var(--edge); border-radius: var(--r1); font: 600 14px var(--mono); color: var(--ink); }
+.row .ctl { justify-self: end; display: flex; align-items: center; gap: 18px; }
+.key { display: inline-flex; align-items: center; gap: 6px; margin-top: 14px; font: 500 13px var(--meta); color: var(--mute); cursor: pointer; }
+.key code { font-family: var(--mono); padding: 2px 8px; background: color-mix(in srgb, var(--ink) 8%, transparent); border: 0; border-radius: 5px; color: var(--ink); font-weight: 600; }
+.select { position: relative; display: inline-flex; align-items: center; justify-content: space-between; gap: 20px; min-width: 200px; height: 42px; padding: 0 14px; background: var(--obj); border: 2px solid color-mix(in srgb, var(--ink) 38%, transparent); border-radius: var(--r1); font: 600 15px var(--meta); color: var(--ink); }
 [data-theme='night'] .select { border-color: var(--hair); background: var(--obj-hi); }
 .select.open { border-color: var(--charge); }
-.menu { position: absolute; bottom: -18px; right: calc(100% + 16px); z-index: 3; width: 290px; padding: 6px; background: var(--obj); border: 3px solid var(--edge); border-radius: 10px; box-shadow: 6px 7px 0 var(--tan); text-align: left; }
+.menu { position: absolute; top: calc(100% + 8px); right: 0; z-index: 3; width: 290px; padding: 8px; background: var(--obj); border: 2px solid var(--hair); border-radius: 10px; box-shadow: 6px 7px 0 var(--tan); text-align: left; }
 [data-theme='night'] .menu { border-color: var(--hair); box-shadow: 6px 7px 0 #0c0912; background: var(--obj-hi); }
-.menu div { padding: 10px 12px; border-radius: 6px; font: 500 14px var(--mono); color: var(--ink); }
+.menu div { padding: 12px 14px; border-radius: 6px; font: 600 15px var(--meta); color: var(--ink); }
 .menu div small { display: block; margin-top: 2px; font: 400 14px var(--read); color: var(--mute); }
 .menu div.on { background: var(--sel); }
 .menu div { position: relative; }
 .menu div.on::after { content: '✓'; position: absolute; right: 12px; top: 10px; color: var(--charge); font-weight: 700; }
-.step { display: inline-flex; align-items: center; border: 3px solid var(--edge); border-radius: var(--r1); background: var(--obj); }
+.step { display: inline-flex; align-items: center; border: 2px solid color-mix(in srgb, var(--ink) 38%, transparent); border-radius: var(--r1); background: var(--obj); }
 [data-theme='night'] .step { border-color: var(--hair); background: var(--obj-hi); }
-.step button { width: 40px; height: 36px; border: 0; background: transparent; font: 600 18px var(--mono); color: var(--ink); cursor: pointer; }
-.step b { min-width: 56px; text-align: center; font: 600 15px var(--mono); color: var(--ink); }
+.step button { width: 40px; height: 36px; border: 0; background: transparent; font: 600 18px var(--meta); color: var(--ink); cursor: pointer; }
+.step b { min-width: 56px; text-align: center; font: 600 16px var(--meta); color: var(--ink); }
 .slider { width: 220px; display: grid; gap: 6px; }
-.slider .track { position: relative; height: 12px; border-radius: 6px; background: var(--obj-sunk); border: 3px solid var(--edge); }
-[data-theme='night'] .slider .track { border-color: var(--hair); }
-.slider .track i { position: absolute; left: 0; top: 0; bottom: 0; width: 66.7%; background: var(--claude); border-radius: 4px 0 0 4px; }
-.slider .track u { position: absolute; left: 66.7%; top: -8px; width: 22px; height: 22px; margin-left: -11px; border-radius: 50%; background: var(--obj); border: 3px solid var(--edge); }
+.slider .track { position: relative; height: 12px; border-radius: 6px; background: var(--obj-sunk); border: 2px solid var(--hair); }
+.slider .track i { position: absolute; left: 0; top: 0; bottom: 0; width: 66.7%; background: var(--ink); border-radius: 4px 0 0 4px; }
+.slider .track u { position: absolute; left: 66.7%; top: -8px; width: 22px; height: 22px; margin-left: -11px; border-radius: 50%; background: var(--obj); border: 3px solid var(--edge); box-shadow: 0 2px 0 var(--tan); }
 [data-theme='night'] .slider .track u { background: #efe2c6; border-color: var(--edge); }
-.slider small { display: flex; justify-content: space-between; font: 500 12px var(--mono); color: var(--mute); }
-.folder { display: inline-flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--obj-sunk); border: 3px solid var(--edge); border-radius: var(--r1); font: 600 14px var(--mono); color: var(--ink); }
-[data-theme='night'] .folder { border-color: var(--hair); }
+.slider small { display: flex; justify-content: space-between; font: 500 13px var(--meta); color: var(--mute); }
+.folder { display: inline-flex; align-items: center; gap: 10px; padding: 8px 12px; background: color-mix(in srgb, var(--ink) 8%, transparent); border: 0; border-radius: var(--r1); font: 600 15px var(--meta); color: var(--ink); }
+.folder.code { font-family: var(--mono); font-size: 14px; }
 .secret { display: inline-flex; align-items: center; gap: 12px; }
-.secret .mask { padding: 8px 14px; min-width: 190px; background: var(--obj-sunk); border: 3px solid var(--edge); border-radius: var(--r1); font: 600 14px var(--mono); letter-spacing: .12em; color: var(--mute); }
-[data-theme='night'] .secret .mask { border-color: var(--hair); }
-.saved { display: inline-flex; align-items: center; gap: 8px; font: 600 12px var(--mono); color: var(--ok); }
-.tip-restart { margin-top: 10px; display: inline-flex; align-items: center; gap: 8px; font: 500 13px var(--mono); color: var(--wait); }
+.secret .mask { padding: 8px 14px; min-width: 190px; background: var(--obj); border: 2px solid color-mix(in srgb, var(--ink) 38%, transparent); border-radius: var(--r1); font: 600 14px var(--mono); letter-spacing: .12em; color: var(--mute); }
+.saved { display: inline-flex; align-items: center; gap: 8px; font: 600 14px var(--meta); color: var(--ok); }
+.tip-restart { margin-top: 14px; margin-left: 14px; display: inline-flex; align-items: center; gap: 8px; font: 500 14px var(--meta); color: var(--wait); }
 `;
 
 const row = (title, text, ctl, extra = '') => `<div class="row"><div><h3>${title}</h3><p>${text}</p>${extra}</div><div class="ctl">${ctl}</div></div>`;
@@ -55,7 +52,7 @@ const key = (name) => `<span class="key">${icon.key}<code>${name}</code></span>`
 const chip = (t, x = true) => `<span class="folder">${icon.folder}${t}${x ? ' <b style="color:var(--mute)">×</b>' : ''}</span>`;
 const slider = (min, max, val, unit) => {
   const at = ((val - min) / (max - min)) * 100;
-  return `<div class="slider"><div class="track"><i style="width:${at}%"></i><u style="left:${at}%"></u></div><small style="position:relative;height:16px"><span style="position:absolute;left:0">${min}${unit}</span><b class="mono" style="color:var(--ink);position:absolute;left:${at}%;transform:translateX(-50%)">${val}${unit}</b><span style="position:absolute;right:0">${max}${unit}</span></small></div>`;
+  return `<div class="slider"><div class="track"><i style="width:${at}%"></i><u style="left:${at}%"></u></div><small style="position:relative;height:16px"><span style="position:absolute;left:0">${min}${unit}</span><b style="font-family:var(--meta);color:var(--ink);position:absolute;left:${at}%;transform:translateX(-50%)">${val}${unit}</b><span style="position:absolute;right:0">${max}${unit}</span></small></div>`;
 };
 
 // Every control below maps to a real knob (GET/PATCH /api/config, `[daemon]`/`[defaults]` in splice.toml), a
@@ -66,9 +63,9 @@ export function body() {
 <div class="sheets">
 <section class="sheet"><h2>General</h2><div class="win flat set">
 ${row('Appearance', 'Follows your computer unless you choose.', seg(['Day', 'Night', 'Match my computer'], 2))}
-${row('Open the console at', 'This address only opens on this computer.', '<span class="folder">127.0.0.1:3096</span><button class="btn sm">Copy</button>')}
+${row('Open the console at', 'This address only opens on this computer.', '<span class="folder code">127.0.0.1:3096</span><button class="btn sm">Copy</button>')}
 ${row('Warn me when a plan is this full', 'Splice flags a plan window once it passes this share of its limit.', slider(50, 100, 80, '%'), key('usageWarnPct') + '<span class="tip-restart">' + icon.clock + 'Applies after a restart · <b>Restart now</b></span>')}
-${row('Detailed log', 'Writes extra lines to the splice log. Turn it on while chasing a problem.', sw(false, 'claude'), key('debug'))}
+${row('Detailed log', 'Writes extra lines to the splice log. Turn it on while chasing a problem.', sw(false, 'ink'), key('debug'))}
 </div></section>
 
 <section class="sheet"><h2>Conversation</h2><div class="win flat set">
@@ -85,9 +82,9 @@ ${row('OpenRouter key', 'Used by the OpenRouter plan. Splice keeps it in its key
 </div></section>
 
 <section class="sheet"><h2>Tools</h2><div class="win flat set">
-${row('Share tools across sessions', 'One process per tool server, handed to every session so any model can call it.', sw(true, 'claude'), key('daemon.mcp_hosting'))}
-${row('filesystem', 'Reads and writes files in the folders you allow. Started when a session first calls it.', '<span class="state work"><i></i>Running</span>' + sw(true, 'claude'))}
-${row('browser', 'Drives a web page for a session. Left out of sharing until you turn it on.', '<span class="state idle"><i></i>Not shared</span>' + sw(false, 'claude'), key('daemon.mcp_hosting_exclude'))}
+${row('Share tools across sessions', 'One process per tool server, handed to every session so any model can call it.', sw(true, 'ink'), key('daemon.mcp_hosting'))}
+${row('filesystem', 'Reads and writes files in the folders you allow. Started when a session first calls it.', '<span class="state work"><i></i>Running</span>' + sw(true, 'ink'))}
+${row('browser', 'Drives a web page for a session. Left out of sharing until you turn it on.', '<span class="state idle"><i></i>Not shared</span>' + sw(false, 'ink'), key('daemon.mcp_hosting_exclude'))}
 </div></section>
 
 <section class="sheet"><h2>Health</h2><div class="win flat set">

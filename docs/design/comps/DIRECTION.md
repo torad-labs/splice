@@ -1,7 +1,7 @@
 # V4-444 phase A — direction contract for the splice console
 
-Status: the direction is approved ("Yes, keep going"); Sessions and the session page build first, Needs you, Settings and Fleet wait for his answer on the comps. Nothing under `console/src` changes until the replacement reaches parity. Every comp is seeded demo content
-(no real session names, messages, repos or paths). Render: `node docs/design/comps/build.mjs` → `png/<screen>-<day|night>-<1440|1920>.png`.
+Status: the direction is approved ("Yes, keep going") and the operator picked variant D, the calm version ("D, all three"), as the rule for all five pages. Nothing under `console/src` changes until the replacement reaches parity. Every comp is seeded demo content
+(no real session names, messages, repos or paths). Render: `node docs/design/comps/build.mjs` → `png/<screen>-<day|night>-<1440|1920>.png`. D is in `calm.css`, loaded after `comp.css` and the page's own css.
 
 ## Direction
 
@@ -30,8 +30,32 @@ Rules the comps follow (each one is a thing he rejected, turned around):
 8. **Only live things need him.** Needs you lists waiting, stuck, out-of-quota and signed-out; not an idle session or a runtime he switched off.
 9. Charged act = one vermilion button per item. One fix per item; the second action is quiet text.
 
-Two themes, one geometry. **Day**: paper objects on the day wall (`#e9dcc0`), 4 px ink outline, `8px 9px` hard shadow in the model colour.
+Two themes, one geometry. **Day**: paper objects on the day wall (`#e9dcc0`), 3 px ink outline, `8px 9px` hard shadow in the model colour.
 **Night**: the film's console, warm dark objects on the night wall (`#1d2140`), 3 px hairline outline, same shadow.
+
+## D, the design law
+
+Why it felt busy, and what he chose (variants A–D compared on Sessions and a session, Day, 1440): the outlines, too little room, too much per
+card, mono everywhere, and several colours on one card. D answers all of them. Every page and every new surface is built against these five
+rules; `calm.css` is their CSS and a page that needs a rule `calm.css` does not have gets it there, not in a page stylesheet.
+
+1. **Fewer outlines.** One edge treatment: the window's 3 px outline with the model-hued shadow. Chips and pills are a quiet tint with no border;
+   a state is a dot and a word; secondary buttons are underlined text (only the one charged act is a filled button); no frame inside the frame
+   (the glass block and its strip sit flush with the window edge). An outline stays only where it is a functional boundary: a window, an input,
+   a selected state, an open menu. Settings controls keep a 2 px input outline in a soft ink; their TOML key chips are tint, not outline.
+2. **Twice the room.** Gutters, section spacing and inner padding are about double the first comps: wall padding 56 px, gap 72 px between
+   windows, 84 px above a group heading, 26 px inside a card bar. Separate rows with space, never with a rule.
+3. **Less per card.** A card is a title, a state, one activity line, one quiet meta line, and at most one action. No grip on the card (the
+   whole card drags), no "more" menu, no duplicate facts. Everything else lives on the object's own page. A Fleet card shows only the plan's
+   tightest window; every window, Models and Log are on the card's page.
+4. **Mono only for code and terminal text.** Mono is for the glass block, tool blocks, code, commands, addresses and TOML keys. Meta lines,
+   buttons, nav, labels, counts, times and values are Source Serif 4; names are Fraunces.
+5. **One accent per card.** The head's colour is the card's identity, and it lives in the shadow only. A card that needs a person drops the
+   hue (tan shadow) and keeps the one vermilion button. State never adds a second colour: a state dot is the only tint besides that. Gauge
+   fills inside the glass are the glass ink, not the head's colour. Toggles and sliders are ink.
+
+Checks a page passes before it is shown: count the outlines a card carries (window edge only); find a mono run that is not code; find two
+colours on one card; look for a rule between rows. Each is a defect.
 
 ## Foundation for phase C (decision, by easy-to-replace / decoupled / clear contract)
 

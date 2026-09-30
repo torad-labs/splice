@@ -67,6 +67,16 @@ class DoctorRedactionTest {
     }
 
     @Test
+    fun `bare short opaque keys never survive text or structured log output`() {
+        val key = "AbCdEfGhIjKlMnOpQrStUvWxYz012345"
+        assertEquals(32, key.length)
+        assertFalse(redaction.text("connection failed $key").contains(key))
+        val log = "[2026-09-13 10:00:53] [$key] turn compact=false model=$key"
+        val selected = redaction.logLines(listOf(log), SafeNames(redaction, null))
+        assertFalse(selected.kept.joinToString("\n").contains(key), selected.toString())
+    }
+
+    @Test
     fun `only the host of a URL survives`() {
         assertEquals("api.example.invalid", redaction.host("https://user:pass@api.example.invalid/v1?key=abc"))
         assertEquals("<unparsable>", redaction.host("not a url"))

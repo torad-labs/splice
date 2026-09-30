@@ -51,7 +51,7 @@ internal class DoctorRedaction(private val home: Path, spliceDirs: List<Path> = 
     private val providerKey = Regex("\\b(sk|xai|gsk|xoxb|ghp|github_pat)[-_][A-Za-z0-9_-]{8,}")
     private val email = Regex("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}")
     private val uuid = Regex("\\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\b")
-    private val opaque = Regex("\\b[A-Za-z0-9_-]{40,}\\b")
+    private val opaque = Regex("\\b[A-Za-z0-9_-]{32,}\\b")
 
     /** A path and, after it, every word up to the next delimiter or the next path start: a foreign
      *  path may carry spaces ("Secret Merger", "Secret Merger/client"), and nothing in free text

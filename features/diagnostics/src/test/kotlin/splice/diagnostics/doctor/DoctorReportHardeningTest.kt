@@ -18,6 +18,7 @@ import splice.accounts.pool.HeadAccountView
 import splice.core.config.StatePaths
 import splice.core.topology.AuthConfig
 import splice.core.topology.ClaudeWrapperConfig
+import splice.core.topology.DaemonConfig
 import splice.core.topology.Dialect
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
@@ -78,6 +79,14 @@ class DoctorReportHardeningTest {
         sevenDayResetEpochSeconds = null,
         credentialPresent = present,
     )
+
+    @Test
+    fun `a bare key in a config string never appears in the report`() {
+        val key = "AbCdEfGhIjKlMnOpQrStUvWxYz012345"
+        val authored = topology("codex").copy(daemon = DaemonConfig(showReasoning = key))
+        val report = build(DoctorRun(authored, emptyList())).toString()
+        assertFalse(report.contains(key), report)
+    }
 
     @Test
     fun `credential_present rides per account`() {

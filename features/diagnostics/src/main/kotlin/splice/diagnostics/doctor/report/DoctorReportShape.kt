@@ -42,7 +42,7 @@ internal class DoctorReportShape(private val redaction: DoctorRedaction, private
         putJsonObject("daemon") {
             put("control_port", t.daemon.controlPort)
             put("state_dir", t.daemon.stateDir?.let(redaction::text))
-            put("show_reasoning", t.daemon.showReasoning)
+            put("show_reasoning", t.daemon.showReasoning?.let(names::token))
             put("effort", t.daemon.effort?.let(names::token))
             put("mcp_hosting", t.daemon.mcpHosting)
             putJsonArray("mcp_hosting_exclude") {

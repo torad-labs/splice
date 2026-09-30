@@ -1,8 +1,10 @@
 // The rules Settings holds: which choices a control offers, what a save answered, what the Tools switches write.
 import { describe, expect, test } from 'vitest';
+import { KNOB_META } from '../src/lib/knobs';
 import {
-  daysOptions, effortChoice, excludedOf, folderOf, gitRootsOf, gitRootsValue, healthOf, outcomeOf, sectionOf, toolState, withMcpHosting, withServerExcluded,
+  CURATED_KNOBS, controlOf, daysOptions, effortChoice, excludedOf, folderOf, gitRootsOf, gitRootsValue, healthOf, otherKnobs, outcomeOf, sectionOf, toolState, withHeadOverride, withMcpHosting, withServerExcluded,
 } from '../src/lib/settings';
+import type { KnobDisposition } from '../src/types/config';
 import type { PatchResult } from '../src/types/core';
 import type { DoctorCheck } from '../src/types/doctor';
 import type { McpHostedServer } from '../src/types/mcp';
@@ -93,5 +95,51 @@ describe('health', () => {
     expect(healthOf([check('ok'), check('warn')])).toMatchObject({ word: 'Mostly good', wanting: 1 });
     expect(healthOf([check('warn'), check('fail')])).toMatchObject({ word: 'Needs you', wanting: 2 });
     expect(healthOf([])).toMatchObject({ word: 'All good' });
+  });
+});
+
+const knob = (key: string, value: KnobDisposition['value'] = 1): KnobDisposition => ({ key, value, provenance: 'default', hot: true, defaultValue: value, overriddenBy: [] });
+
+describe('every other setting', () => {
+  test('every knob the table places, less the curated ones, is in exactly one group', () => {
+    const all = Object.keys(KNOB_META).map((key) => knob(key));
+    const shown = otherKnobs(all).flatMap((group) => group.knobs.map((entry) => entry.key));
+    expect(shown.sort()).toEqual(Object.keys(KNOB_META).filter((key) => !CURATED_KNOBS.has(key)).sort());
+    expect(new Set(shown).size).toBe(shown.length);
+  });
+  test('a knob the table does not place goes to the last group, never nowhere', () => {
+    const groups = otherKnobs([knob('brandNewKnob')]);
+    expect(groups.map((group) => group.group)).toEqual(['daemon']);
+    expect(groups[0]?.knobs[0]?.key).toBe('brandNewKnob');
+  });
+  test('the control follows what the daemon says the knob is', () => {
+    expect(controlOf(true, undefined, null)).toEqual({ kind: 'switch' });
+    expect(controlOf(3, undefined, null)).toEqual({ kind: 'number' });
+    expect(controlOf('x', undefined, null)).toEqual({ kind: 'text' });
+    expect(controlOf('warn', { group: 'usage', choices: ['warn', 'block'] }, null)).toEqual({ kind: 'choice', choices: ['warn', 'block'] });
+    expect(controlOf(1, { group: 'reasoning', locked: true }, null)).toEqual({ kind: 'locked' });
+  });
+  test('a plan-only knob is printed for all plans and edited for one plan', () => {
+    const meta = { group: 'usage', headOnly: true, choices: ['warn', 'block'] } as const;
+    expect(controlOf('warn', meta, null)).toEqual({ kind: 'head-only' });
+    expect(controlOf('warn', meta, 'claudex')).toEqual({ kind: 'choice', choices: ['warn', 'block'] });
+  });
+});
+
+describe('a plan’s own value', () => {
+  test('it lands in that plan’s overrides as a string and leaves the other plans and tables alone', () => {
+    const next = withHeadOverride({ daemon: { control_port: 1 }, heads: { b: { overrides: { x: '1' } } } }, 'a', 'maxQueued', 8);
+    expect(next).toEqual({ daemon: { control_port: 1 }, heads: { a: { overrides: { maxQueued: '8' } }, b: { overrides: { x: '1' } } } });
+  });
+  test('a second knob joins the first, and setting the same knob again replaces it', () => {
+    const one = withHeadOverride({}, 'a', 'k1', 1);
+    const two = withHeadOverride(one, 'a', 'k2', true);
+    expect(two).toEqual({ heads: { a: { overrides: { k1: '1', k2: 'true' } } } });
+    expect(withHeadOverride(two, 'a', 'k1', 2)).toEqual({ heads: { a: { overrides: { k2: 'true', k1: '2' } } } });
+  });
+  test('removing the last override drops the table and keeps the plan’s other keys', () => {
+    const start = { heads: { a: { url: 'x', overrides: { k: '1' } } } };
+    expect(withHeadOverride(start, 'a', 'k', null)).toEqual({ heads: { a: { url: 'x' } } });
+    expect(withHeadOverride({}, 'a', 'k', null)).toEqual({ heads: { a: {} } });
   });
 });

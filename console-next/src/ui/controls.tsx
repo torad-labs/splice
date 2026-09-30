@@ -80,3 +80,49 @@ export function Select<T extends string>({ value, options, onChange, label }: { 
     </Menu.Root>
   );
 }
+
+/** A number typed in, saved when the field is left or Enter is pressed; anything that is not a whole number goes back to what it was. */
+export function NumberInput({ value, onCommit, label, suffix }: { value: number; onCommit: (next: number) => void; label: string; suffix?: string | null }) {
+  const [text, setText] = useState(String(value));
+  useEffect(() => setText(String(value)), [value]);
+  const commit = (): void => {
+    const next = Number(text.trim());
+    if (text.trim() === '' || !Number.isSafeInteger(next)) setText(String(value));
+    else if (next !== value) onCommit(next);
+  };
+  return (
+    <span className="number">
+      <input
+        className="input"
+        inputMode="numeric"
+        aria-label={label}
+        value={text}
+        onChange={(event) => setText(event.currentTarget.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') event.currentTarget.blur();
+        }}
+      />
+      {suffix === null || suffix === undefined ? null : <small>{suffix}</small>}
+    </span>
+  );
+}
+
+/** A text value typed in, saved when the field is left or Enter is pressed. */
+export function TextInput({ value, onCommit, label }: { value: string; onCommit: (next: string) => void; label: string }) {
+  const [text, setText] = useState(value);
+  useEffect(() => setText(value), [value]);
+  return (
+    <input
+      className="input wide"
+      aria-label={label}
+      spellCheck={false}
+      value={text}
+      onChange={(event) => setText(event.currentTarget.value)}
+      onBlur={() => text !== value && onCommit(text)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') event.currentTarget.blur();
+      }}
+    />
+  );
+}

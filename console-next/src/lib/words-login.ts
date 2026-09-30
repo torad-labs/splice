@@ -7,6 +7,7 @@ export const S = {
   start: 'Start login',
   cancel: 'Cancel',
   copy: 'Copy',
+  copied: 'Copied',
   code: 'Code',
   link: 'Link',
   openSignIn: 'Open sign-in page',

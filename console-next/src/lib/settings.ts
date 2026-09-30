@@ -4,7 +4,11 @@
 import type { ConfigValue, PatchResult } from '../types/core';
 import type { DoctorCheck } from '../types/doctor';
 import type { McpServer } from '../types/mcp';
+import type { KnobDisposition } from '../types/config';
 import { wantsAttention } from './doctor';
+import { KNOB_META } from './knobs';
+import type { KnobGroup, KnobMeta } from './knobs';
+import { GROUP_LABELS, KNOB_LABELS } from './words-knobs';
 
 export const SECTIONS = ['general', 'conversation', 'tools', 'storage', 'health', 'advanced'] as const;
 export type Section = (typeof SECTIONS)[number];
@@ -111,4 +115,62 @@ export function healthOf(checks: readonly DoctorCheck[]): Health {
   const wanting = checks.filter((check) => wantsAttention(check.status));
   if (checks.some((check) => check.status === 'fail')) return { word: 'Needs you', tone: 'stuck', wanting: wanting.length };
   return wanting.length > 0 ? { word: 'Mostly good', tone: 'wait', wanting: wanting.length } : { word: 'All good', tone: 'work', wanting: 0 };
+}
+
+// ── Advanced: every knob the curated sections do not show ─────────────────────────────────────────
+
+/** The knobs the sections above draw as their own control. */
+export const CURATED_KNOBS: ReadonlySet<string> = new Set([
+  'usageWarnPct', 'debug', 'effort', 'maxInflight', 'showReasoning', 'activityRetentionDays', 'traceRetentionDays', 'statuslineGitRoots',
+]);
+
+export interface KnobGroupView {
+  group: KnobGroup;
+  knobs: KnobDisposition[];
+}
+
+/** The rest of the knobs, in the groups GROUP_LABELS orders, each group by the name the operator reads. A knob the table does not
+ *  place (the daemon added one) goes to the last group rather than nowhere: no knob leaves the console. */
+export function otherKnobs(dispositions: readonly KnobDisposition[]): KnobGroupView[] {
+  const order = Object.keys(GROUP_LABELS) as KnobGroup[];
+  const last = order[order.length - 1] ?? 'daemon';
+  const nameOf = (key: string): string => (KNOB_LABELS as Record<string, string>)[key] ?? key;
+  return order
+    .map((group) => ({
+      group,
+      knobs: dispositions
+        .filter((knob) => !CURATED_KNOBS.has(knob.key) && (KNOB_META[knob.key]?.group ?? last) === group)
+        .sort((a, b) => nameOf(a.key).localeCompare(nameOf(b.key))),
+    }))
+    .filter((view) => view.knobs.length > 0);
+}
+
+/** What kind of control a knob gets, from what the daemon says it is. */
+export type KnobControl =
+  | { kind: 'locked' }
+  /** Set only in a plan's own overrides: the global view prints it. */
+  | { kind: 'head-only' }
+  | { kind: 'switch' }
+  | { kind: 'choice'; choices: readonly string[] }
+  | { kind: 'number' }
+  | { kind: 'text' };
+
+export function controlOf(value: ConfigValue, meta: KnobMeta | undefined, head: string | null): KnobControl {
+  if (meta?.locked === true) return { kind: 'locked' };
+  if (meta?.headOnly === true && head === null) return { kind: 'head-only' };
+  if (meta?.choices !== undefined) return { kind: 'choice', choices: meta.choices };
+  if (typeof value === 'boolean') return { kind: 'switch' };
+  if (typeof value === 'number') return { kind: 'number' };
+  return { kind: 'text' };
+}
+
+/** A plan's own override of one knob, written into `[heads.<key>.overrides]`; `null` removes it, and a head left with no
+ *  overrides loses the table. The table holds strings (the daemon reads them back as the knob's type). */
+export function withHeadOverride(topology: Topology, head: string, key: string, value: string | number | boolean | null): Topology {
+  const heads = tableOf(topology['heads']);
+  const entry = tableOf(heads[head]);
+  const kept = Object.entries(tableOf(entry['overrides'])).filter(([name]) => name !== key);
+  const overrides = Object.fromEntries(value === null ? kept : [...kept, [key, String(value)]]);
+  const rest = Object.fromEntries(Object.entries(entry).filter(([name]) => name !== 'overrides'));
+  return { ...topology, heads: { ...heads, [head]: Object.keys(overrides).length === 0 ? rest : { ...rest, overrides } } };
 }

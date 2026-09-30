@@ -5,7 +5,8 @@ import { failureText } from '../../api/client';
 import { isPendingRoute, useLoginStatus, useStartLogin } from '../../api/auth';
 import { LOGIN_PENDING_EMPTY, canStart, initialLoginState, next, polling, stepMessage } from '../../lib/login';
 import { H, S } from '../../lib/words-login';
-import { Button, Close, Copy } from '../../ui';
+import { Button, Close } from '../../ui';
+import { LoginTicket } from './LoginTicket';
 
 /** The sign-in flow in a dialog: name the account, start the login, finish it in the browser with the code or link the
  *  daemon hands out, then wait for the head to restart with the account. A renewal begins at its existing label. */
@@ -82,17 +83,7 @@ export function SignIn({ head, label = '', purpose, children }: { head: string; 
                 </label>
               )}
               {message === null ? null : <p className={state.step === 'failed' ? 'hint alert' : 'hint'} role={state.step === 'failed' ? 'alert' : 'status'}>{message}</p>}
-              {code === null ? null : (
-                <div className="code-row">
-                  <code className="user-code">{code}</code>
-                  <CopyText text={code} />
-                </div>
-              )}
-              {link === null ? null : (
-                <a className="btn go" href={link} target="_blank" rel="noopener noreferrer">
-                  {state.status?.user_code != null ? S.openVerification : S.openSignIn}
-                </a>
-              )}
+              <LoginTicket code={code} link={link} />
               {state.step === 'live' ? null : (
                 <Button kind="go" type="submit" disabled={!canStart(state)}>
                   {state.step === 'starting' ? H.opening : S.start}
@@ -103,20 +94,5 @@ export function SignIn({ head, label = '', purpose, children }: { head: string; 
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
-  );
-}
-
-function CopyText({ text }: { text: string }) {
-  const [done, setDone] = useState(false);
-  return (
-    <Button
-      small
-      onClick={() => {
-        void navigator.clipboard.writeText(text).then(() => setDone(true));
-      }}
-    >
-      <Copy />
-      {done ? 'Copied' : S.copy}
-    </Button>
   );
 }

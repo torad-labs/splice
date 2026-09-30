@@ -9,3 +9,17 @@
 .account-main b { font: 600 17px var(--meta); color: var(--ink); }
 .account-main .state-word, .account-main .windows-text { font: 500 14.5px var(--meta); color: var(--mute); }
 .account-acts, .acts-row { display: flex; flex-wrap: wrap; gap: var(--space-5); }
+.add-plan { max-height: calc(100vh - var(--space-13)); overflow-y: auto; width: min(34rem, calc(100vw - var(--space-13))); }
+.add-plan form { display: grid; gap: var(--space-7); }
+.plan-choices { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.plan-choice { display: grid; gap: var(--space-1); width: 100%; padding: var(--space-5) var(--space-6); text-align: left; border: 0; border-radius: var(--r1); background: transparent; color: var(--ink); cursor: pointer; }
+.plan-choice:hover:not(:disabled), .plan-choice:focus-visible { background: var(--sel); }
+.plan-choice:disabled { cursor: default; opacity: .55; }
+.plan-choice b { font: 600 var(--text-3) var(--read); }
+.plan-choice span { font: 400 var(--text-2) var(--read); color: var(--body); }
+.model-rows { border: 0; margin: 0; padding: 0; display: grid; gap: var(--space-4); }
+.model-row { display: grid; grid-template-columns: minmax(0, 1fr) 9rem; gap: var(--space-4); }
+.add-checks { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-5); }
+.add-checks li { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: var(--space-5); align-items: baseline; font: 400 var(--text-2) var(--read); }
+.add-checks b { font-weight: 600; }
+.user-code.cmd { font-size: var(--text-3); letter-spacing: 0; }

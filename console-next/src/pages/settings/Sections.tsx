@@ -20,6 +20,7 @@ import type { ThemeChoice } from '../../lib/theme';
 import type { ConfigPayload } from '../../types/core';
 import { Button, Close, Folder, Plus, Prompt, Segmented, Select, Slider, State, Stepper, Switch } from '../../ui';
 import { NeedFix } from '../needs/NeedFix';
+import { AllSettings } from './AllSettings';
 import { T } from './copy';
 import { Row, SaveNote, useSetting } from './Row';
 
@@ -299,5 +300,16 @@ export function Health() {
 
 export function Advanced() {
   const showKeys = useShowKeys();
-  return <Row title={T.showKeys} why={T.showKeysWhy} control={<Switch label={T.showKeys} checked={showKeys} onChange={setShowKeys} />} />;
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Row title={T.showKeys} why={T.showKeysWhy} control={<Switch label={T.showKeys} checked={showKeys} onChange={setShowKeys} />} />
+      <Row
+        title={T.everyOther}
+        why={T.everyOtherWhy}
+        control={<Button small aria-expanded={open} onClick={() => setOpen(!open)}>{open ? T.closeList : T.openList}</Button>}
+      />
+      {open ? <AllSettings /> : null}
+    </>
+  );
 }

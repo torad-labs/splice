@@ -89,3 +89,17 @@ export const T = {
   openList: 'Open the full list',
   closeList: 'Close the list',
 } as const;
+
+export const AS = {
+  scope: 'Which plan',
+  scopeAll: 'All plans',
+  scopeWhy: 'A value set for all plans; a plan can override it with its own.',
+  none: 'Not set',
+  locked: 'Splice fixes this value.',
+  headOnly: 'Set only for a plan of its own: choose the plan above.',
+  headUnserved: 'This version of splice does not serve its topology, so a plan’s own value cannot be written from here.',
+  reset: 'Use the value for all plans',
+  source: { default: 'Default', 'defaults table': 'splice.toml', 'head override': 'This plan’s own', 'state file': 'Set here', env: 'Environment', patch: 'Set here' },
+  overriddenBy: (heads: string): string => `A plan sets its own: ${heads}.`,
+  empty: 'Every setting is in the sections above.',
+} as const;

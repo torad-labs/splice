@@ -7,6 +7,7 @@ import { poolOf } from '../../lib/accounts';
 import { fleetCard } from '../../lib/fleet';
 import { moveKey, setOrder, sortByOrder, useOrder } from '../../lib/order';
 import { Empty, Fault, PageHead, Plus } from '../../ui';
+import { AddPlan } from './AddPlan';
 import { F } from './copy';
 import { FleetCardView } from './FleetCard';
 import { FleetFix } from './FleetFix';
@@ -56,10 +57,12 @@ export function FleetPage() {
       <PageHead
         title={F.title}
         tools={
-          <button type="button" className="btn go">
-            <Plus />
-            {F.add}
-          </button>
+          <AddPlan>
+            <button type="button" className="btn go">
+              <Plus />
+              {F.add}
+            </button>
+          </AddPlan>
         }
       />
       {cards.length === 0 ? <Empty title={F.empty} why={F.emptyWhy} /> : null}

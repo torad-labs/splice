@@ -3100,3 +3100,6 @@ console-next/src/pages/projects/Standing.tsx	f0cee8bc0741ec99b9249a504016553a04e
 console-next/src/types/projects.ts	0dafa060e83b575ba3d421d8ee16491380b1d29d6b90cfad75675f7727a8e606	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes
 console-next/tests/project-page-parts.test.tsx	7bdffe935df6df2ea9de13e194bb6511756c76eb48ba539eee18f50595380461	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes
 console-next/tests/projects.test.ts	3a9a37007447e0efa5ca883bbf2b98ad0ebf186fd4ca0432a92de11c1e91b8f2	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes
+docs/design/comps/pages/turn.mjs	fa78459a25658215a1b66f2db58df434c3431e66486fb23a186b449fd02e0b2a	created		V4-444 phase A: the console redesign comps (direction, source, fonts from torad-main), not console code
+docs/design/comps/pages/turns.mjs	6b1af35f209c138cbc9ff8232835e75f3b2a08fb579e27a10786a69d459dd6c1	created		V4-444 phase A: the console redesign comps (direction, source, fonts from torad-main), not console code
+docs/design/comps/pages/usage.mjs	54e0838aa0601353dbb68e8bb77b34d689d8e0b49cac4c39ac56074743009a73	created		V4-444 phase A: the console redesign comps (direction, source, fonts from torad-main), not console code

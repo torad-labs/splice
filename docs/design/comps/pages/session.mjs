@@ -11,7 +11,8 @@ export const css = `
 .sheet { padding: 0; }
 .sheet .bar { padding: 16px 26px 12px; border-bottom: 1px solid var(--hair); }
 .sheet .bar h3 { font-size: 15px; font-family: var(--mono); font-weight: 600; color: var(--mute); letter-spacing: 0; }
-.convo { padding: 8px 40px 28px; display: grid; gap: 30px; }
+.convo { padding: 8px 40px 28px; display: grid; gap: 30px; justify-items: center; }
+.convo > * { width: 100%; max-width: 78ch; }
 .msg { display: grid; gap: 10px; max-width: 78ch; }
 .who { display: flex; align-items: center; gap: 10px; font: 600 13px var(--mono); color: var(--ink); }
 .who .t { margin-left: auto; font-weight: 500; color: var(--mute); }
@@ -55,11 +56,12 @@ export const css = `
 .k { color: #ee8f58; } .s { color: #7bc47f; } .f { color: #6eadfe; } .c { color: #8f8571; font-style: italic; } .n { color: #e3b341; }
 .pass { color: #7bc47f; }
 .shell-out { padding-top: 12px !important; }
-.composer { margin: 0 26px 26px; display: grid; gap: 0; border: 3px solid var(--edge); border-radius: 12px; background: var(--obj); }
+.composer { width: calc(100% - 52px); max-width: calc(78ch + 40px); margin: 0 auto 26px; display: grid; gap: 0; border: 3px solid var(--edge); border-radius: 12px; background: var(--obj); }
 [data-theme='night'] .composer { border-color: var(--hair); background: var(--obj-hi); }
 .composer .in { padding: 16px 18px 6px; font: 400 18px/1.5 var(--read); color: var(--mute); min-height: 68px; }
 .composer .row { display: flex; align-items: center; gap: 10px; padding: 8px 12px 12px 14px; }
 .composer .row .sp { margin-left: auto; }
+.pend { font: 600 12px var(--mono); color: var(--wait); }
 .rail { position: sticky; top: 26px; display: grid; gap: 18px; }
 .rail h2 { font: 520 22px/1.1 var(--display); color: var(--ink); letter-spacing: -.01em; }
 .team { position: relative; display: grid; gap: 14px; padding-left: 30px; }
@@ -91,7 +93,7 @@ export function body() {
   return `<a class="crumb" href="sessions.html">${icon.back}Sessions</a>
 <header class="top"><div><h1>Write the rate limiter</h1>
 <div class="facts"><span class="tag">tally</span><span class="tag">rate-limit</span><span class="model m-grok">claude-grok · grok-4.7</span><span class="state work"><i></i>Working</span><span class="hand mono">31 min · 14 turns</span></div></div>
-<div class="acts"><button class="btn danger">${icon.stop}Stop the turn</button><button class="btn">Copy resume command</button></div></header>
+<div class="acts"><button class="btn go">${icon.stop}Stop the turn</button><button class="btn">Copy resume command</button></div></header>
 <div class="cols">
 <section class="win grok sheet" aria-label="Conversation">
 <div class="bar"><h3>Conversation</h3><span class="seg" role="group"><button aria-pressed="true">Messages</button><button aria-pressed="false">Tools only</button><button aria-pressed="false">Hand-offs</button></span></div>
@@ -129,7 +131,7 @@ export function body() {
 <div class="msg"><div class="tool"><header><span class="chev">${icon.chev}</span><span class="verb">Run</span><span class="arg">npm run lint</span><span class="res run"><span class="sp"></span>running · 6 s</span></header></div></div>
 </div>
 <div class="composer"><div class="in">Message claude-grok, or reply to the hand-off…</div>
-<div class="row"><span class="model m-grok">grok-4.7</span><span class="sp"></span><button class="btn go sm">Send${icon.send}</button></div></div>
+<div class="row"><span class="model m-grok">grok-4.7</span><span class="pend">Pending: splice cannot send to a session yet</span><span class="sp"></span><button class="btn sm" aria-disabled="true" style="opacity:.6">Send${icon.send}</button></div></div>
 </section>
 
 <aside class="rail" aria-label="The team">
@@ -139,7 +141,8 @@ export function body() {
 <div class="ride" style="--c:var(--claude)"><span>src/rateLimit.js</span><small>to this session · 3:04 PM</small></div>
 <div class="seat here" style="--c:var(--grok)"><b>claude-grok</b><span class="s2">Working</span></div>
 <div class="ride" style="--c:var(--grok)"><span>createRateLimiter is ready</span><small>from this session · 3:33 PM</small></div>
-<div class="seat" style="--c:var(--muse)"><b>claude-muse</b><span class="s2 w">Reading</span></div>
+<div class="seat" style="--c:var(--muse)"><b>claude-muse</b><span class="s2">Running tests</span></div>
+<div class="seat" style="--c:var(--gpt)"><b>claudex</b><span class="s2" style="color:var(--charge)">Waiting on you</span></div>
 </div>
 <h2 style="margin-top:14px">This session</h2>
 <div class="facts-list"><div>Started<b>3:04 PM</b></div><div>Turns<b>14</b></div><div>Estimated cost<b>$0.42</b></div><div>Context<b>41% of 500k</b></div></div>

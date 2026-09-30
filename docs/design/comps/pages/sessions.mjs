@@ -1,7 +1,7 @@
 import { icon, models } from '../shell.mjs';
 
 const S = [
-  { m: 'gpt', title: 'Review the rate limiter diff', repo: 'tally', branch: 'rate-limit', state: 'wait', say: ['Waiting for your answer','Run npm run migrate -- --apply?'], age: 'asked 2 min ago', hand: 'from claude-grok' },
+  { m: 'gpt', title: 'Review the rate limiter diff', repo: 'tally', branch: 'rate-limit', state: 'wait', say: ['Waiting for your answer','Run npm run migrate -- --apply?'], age: 'asked 2 min ago', hand: 'from claude-splice' },
   { m: 'kimi', title: 'Migrate the billing tables', repo: 'ledger-api', branch: 'billing-v2', state: 'stuck', say: ['Quiet for 14 min','Run psql ledger < 0042.sql — no result yet'], age: 'since 3:12 PM', hand: '' },
   { m: 'claude', title: 'Add a rate limiter to the API', repo: 'tally', branch: 'rate-limit', state: 'work', say: ['Reading src/server.js','Splitting the work between three sessions'], age: '42 min', hand: 'lead of 3' },
   { m: 'grok', title: 'Write the rate limiter', repo: 'tally', branch: 'rate-limit', state: 'work', say: ['Editing src/rateLimit.js','createRateLimiter(db, { limit, windowMs })'], age: '31 min', hand: 'from claude-splice' },
@@ -15,9 +15,9 @@ const card = (s, big) => {
   const { cmd, model } = models[s.m];
   const attn = s.state === 'wait' || s.state === 'stuck';
   const actions = s.state === 'wait'
-    ? `<div class="acts"><button class="btn go sm">Open the session</button><button class="btn sm">Copy resume command</button></div>`
+    ? `<div class="acts"><button class="btn go sm">Open the session</button><button class="btn quiet sm">Copy resume command</button></div>`
     : s.state === 'stuck'
-      ? `<div class="acts"><button class="btn go sm">Stop the turn</button><button class="btn sm">Copy resume command</button><button class="btn quiet sm">Open</button></div>` : '';
+      ? `<div class="acts"><button class="btn go sm">Stop the turn</button><button class="btn quiet sm">Copy resume command</button></div>` : '';
   return `<article class="win ${s.m}${attn ? ' attn' : ''}">
   <div class="bar"><span class="grip" aria-hidden="true">${icon.grip}</span><h3>${s.title}</h3><span class="state ${s.state}"><i></i>${WORD[s.state]}</span></div>
   <div class="meta"><span class="tag">${s.repo}</span><span class="tag">${s.branch}</span>${s.hand ? `<span class="hand">${icon.arrow}<b>${s.hand}</b></span>` : ''}<span class="age">${s.age}</span></div>
@@ -32,7 +32,7 @@ export const css = `
 .meta .age { margin-left: auto; font: 500 12px var(--mono); color: var(--mute); }
 .acts { display: flex; gap: 10px; padding: 0 16px 16px; margin-top: -2px; }
 .grid.first { grid-template-columns: repeat(auto-fill, minmax(520px, 1fr)); }
-.idle-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(460px, 1fr)); gap: 34px 38px; }
+.idle-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(460px, 1fr)); gap: 34px 38px; padding-right: 10px; }
 .idle-row .win { opacity: .92; }
 .pinned { display: inline-flex; align-items: center; gap: 8px; font: 500 12px var(--mono); color: var(--mute); }
 `;

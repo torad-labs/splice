@@ -1,6 +1,6 @@
 # Review: each built page beside its comp
 
-Day theme, 1440 and 1920. Left is the comp (`png/`), right is the built page (`png/built/`), captured live against the running daemon on Sep 29, 2026, so the data is real and the comp's is drawn. Night is not repeated: no page sheet has night-specific rules, only the shared ones (`styles/base.css`, `styles/tokens.css`) that every page uses.
+Day theme, 1440 and 1920. Left is the comp (`png/`), right is the built page (`png/built/`), captured live against the running daemon (Needs you, Sessions, a session, Turns and a turn on Sep 30, 2026 against daemon `a652183da`; the other pages on Sep 29), so the data is real and the comp's is drawn. Night is not repeated: no page sheet has night-specific rules, only the shared ones (`styles/base.css`, `styles/tokens.css`) that every page uses.
 
 ## Needs you
 
@@ -18,7 +18,7 @@ Left: the cards are the daemon's real items (doctor findings, two waiting sessio
 | ![](png/sessions-day-1440.png) | ![](png/built/sessions-day-1440.png) |
 | ![](png/sessions-day-1920.png) | ![](png/built/sessions-day-1920.png) |
 
-Left: a session carries a name, not a task title, so a card shows the name and its dark line is the newest message; the switch has a Team segment the comp lacks, because Team grouping exists; the sidebar carries the Day/Night switch, which the comp leaves out. The dark line reads what a message did, not its tags: a slash command is "Ran /clear", command output is "Output · Compacted", a tool is its server and name ("ast-grep · find code by rule"). The repo on each card is its folder ("mythos/repo") until the daemon sends the remote's name.
+Left: a session carries a name, not a task title, so a card shows the name and its dark line is the newest message; the switch has a Team segment the comp lacks, because Team grouping exists; the sidebar carries the Day/Night switch, which the comp leaves out. The dark line reads what a message did, not its tags: a slash command is "Ran /clear", command output is "Output · Compacted", a tool is its server and name ("ast-grep · find code by rule"). The repo on each card is the name of its git remote, which the daemon now sends, so this checkout reads "splice"; a folder with no remote shows its folder name.
 
 ## A session
 
@@ -54,7 +54,7 @@ There is no comp for this page: the plan page was never drawn, so only the built
 | ![](png/turns-day-1440.png) | ![](png/built/turns-day-1440.png) |
 | ![](png/turns-day-1920.png) | ![](png/built/turns-day-1920.png) |
 
-Left: the finished list is two hundred real turns (the page caps it and says so), so the built image shows its top; its heading says Finished on every page, so the comp was changed from Landed. A running turn has no title on the wire, so its card shows the turn id and model. Steps splice answered itself in Codex code mode (no first byte, no tokens, no plan asked) are not turns the model took, so the list leaves them out and says how many; the counts in the sentence above and the plan table still include them until the daemon marks them.
+Left: the finished list is two hundred real turns (the page caps it and says so), so the built image shows its top; its heading says Finished on every page, so the comp was changed from Landed. A running turn has no title on the wire, so its card shows the turn id and model. Steps splice answered itself in Codex code mode (no plan asked) are not turns the model took. The daemon marks them at the source (`local_step`) and counts them apart (`local_steps`), so the sentence above and the plan table count only real turns, and the list leaves the steps out and says how many. The daemon started marking at 1:28 AM CT on Sep 30, so the rows before that are unmarked and read as turns; no step has been marked since, so this capture shows no such line.
 
 ## A turn
 
@@ -67,7 +67,7 @@ Left: the tab labels are Conversation, Request and answer, Sent to the plan, whe
 
 ### A step splice answered itself
 
-There is no comp for this: the comp has no such turn. This is what a turn page says when the plan was not asked.
+There is no comp for this: the comp has no such turn. This is what a turn page says when the plan was not asked. The image is from Sep 29, before the daemon marked these steps; the page is the same, it now keys off the daemon's mark, and a fresh capture waits for the first marked step.
 
 | Built |
 |---|

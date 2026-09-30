@@ -375,10 +375,13 @@ export function TeamsPage() {
     return () => { live = false; };
   }, [fixture, openId, chatDay]);
 
+  const timelineOpen = modeOf(active) === 'timeline';
   useEffect(() => {
     if (fixture !== null || openId === null) return undefined;
+    // A turn can land after the first day read. Entering its timeline reads it now, not at the
+    // next minute tick, while the heavy background read keeps its existing cadence.
     return poll(() => fetchPerfTurns(undefined, TURN_TAIL, dayStartOf(Date.now())), TURN_LOG_EVERY_MS);
-  }, [fixture, openId]);
+  }, [fixture, openId, timelineOpen]);
 
   const sessions = registry.data?.sessions ?? [];
   const log = turnLogOf(turns);

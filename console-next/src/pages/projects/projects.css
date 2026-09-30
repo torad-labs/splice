@@ -2,7 +2,6 @@
 .crumb { display: flex; gap: var(--space-5); margin-bottom: var(--space-7); font: 600 15px var(--meta); color: var(--mute); }
 .crumb a { color: var(--ink); text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 2px; text-decoration-color: var(--hair); }
 .proj-section { margin-top: var(--space-16); max-width: 1080px; }
-.proj-section:first-of-type { margin-top: 0; }
 .proj-section > h2 { font: 520 26px/1.15 var(--display); color: var(--ink); }
 .proj-section > .why { margin-top: var(--space-4); font: 400 16px/1.5 var(--read); color: var(--mute); max-width: 70ch; }
 .proj-list { list-style: none; margin: var(--space-9) 0 0; padding: 0; display: grid; gap: var(--space-6); }

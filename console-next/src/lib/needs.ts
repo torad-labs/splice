@@ -257,7 +257,8 @@ function sessionNeeds(rows: readonly SessionRow[], now: number, turnOf: TurnOf):
       head,
       subject: sessionLabel(row),
       finding: activityText(state, timingOf(row, state, turn, now).since),
-      session: { id: row.session_id, said: closed(lastLine(row.last)), repo: repoName(row) },
+      // Only what the session itself said is its question: a system notice (a peer asking to be told when it is idle) is not one.
+      session: { id: row.session_id, said: row.last?.role === 'assistant' ? closed(lastLine(row.last)) : null, repo: repoName(row) },
       fix: stuck && head !== null && row.session_id !== null
         ? { kind: 'stop-turn', head, session: row.session_id }
         : open(at, S.openSession),
@@ -320,6 +321,14 @@ function headsOfCheck(check: DoctorCheck, said: ReadonlySet<string>, down: reado
   return check.id === 'daemon/heads' && check.status === 'warn' ? [...down] : [];
 }
 
+/** Doctor rows that restate what the operator configured on purpose, or a state Fleet already owns, at warn. None asks for an act
+ *  (every remedy undoes the choice or starts a runtime they stopped), so they stay on the Health page and never sit in Needs you.
+ *  A `fail` on the same id (wireTap set to a non-number, DoctorWireTapChecks.kt:23) is a real fault and still counts. Daemon
+ *  sources: DoctorConfigChecks.kt:177 (system-prompt), DoctorProjectPromptChecks.kt:38-85 (project-prompt), DoctorWireTapChecks.kt:31,
+ *  DoctorLocalRuntime.kt:76 (a local runtime not answering is `runtime not answering`, a Fleet state). */
+const DISCLOSURES = ['configuration/system-prompt:', 'configuration/project-prompt:', 'configuration/wire-tap:', 'configuration/local:'];
+const isDisclosure = (check: DoctorCheck): boolean => check.status === 'warn' && DISCLOSURES.some((prefix) => check.id.startsWith(prefix));
+
 /** A head's item, and what Doctor found about that head after it: one stopped head is one item. */
 function withDoctor(need: Need, checks: readonly DoctorCheck[]): Need {
   if (checks.length === 0) return need;
@@ -330,13 +339,26 @@ function withDoctor(need: Need, checks: readonly DoctorCheck[]): Need {
 
 /** A doctor row's one fix: the daemon runs it, or its command is copied (printed when masked), or,
  *  with no remedy in the row, Doctor is where to look. */
-export function doctorFixOf(command: string | null, id: string | null): Fix {
-  if (id !== null) return command === null ? { kind: 'doctor-fix', id } : { kind: 'doctor-fix', id, fallback: command };
-  if (command === null) return open(hrefOf('doctor'), S.openDoctor);
+/** The shell line inside a doctor remedy, or null when the remedy is advice. The daemon's `fix` holds both kinds in one string:
+ *  `splice install --all` is a command, "set system_prompt_mode = \"append\" to add your text..." is not, and a command may
+ *  carry a trailing note (`rm ~/.local/bin/claude   (or give a head that command again...)`, DoctorPathCheck.kt:124;
+ *  `splice restart (then: splice logs ...)`) that a shell would refuse. Only the words the daemon's remedies actually start with count. */
+export function shellLineOf(fix: string): string | null {
+  const line = (fix.split(/\s{3,}\(|\s\(then:/)[0] ?? '').trim();
+  return /^(?:splice|rm|export|chmod|ln|sudo)\s/.test(line) ? line : null;
+}
+
+export function doctorFixOf(remedy: string | null, id: string | null): Fix {
+  if (id !== null) return remedy === null ? { kind: 'doctor-fix', id } : { kind: 'doctor-fix', id, fallback: remedy };
+  const command = remedy === null ? null : shellLineOf(remedy);
+  if (remedy === null) return open(hrefOf('doctor'), S.openDoctor);
+  if (fixMasked(remedy)) return { kind: 'masked', command: remedy };
+  // Advice is printed beside the link to Doctor, never offered as a line to paste.
+  if (command === null) return { kind: 'open', href: hrefOf('doctor'), label: S.openDoctor, fallback: remedy };
   if (command.trim() === 'splice restart') return { kind: 'restart-daemon' };
   const logsHref = logsHrefOf(command);
   if (logsHref !== null) return { kind: 'open', href: logsHref, label: S.openLog, fallback: command };
-  return { kind: fixMasked(command) ? 'masked' : 'copy', command };
+  return { kind: 'copy', command };
 }
 
 // ---- the list --------------------------------------------------------------------------------
@@ -374,7 +396,7 @@ export function needsOf(inputs: NeedInputs, now: number): NeedsList {
     ...(registry === null ? [] : sessionNeeds(registry.sessions, now, inputs.turnOf ?? noTurns)),
     ...(registry === null ? [] : teamNeeds(teams, registry.sessions)),
     ...(doctor === null ? [] : doctorNeeds(wanted.filter((check) =>
-      about.get(check)?.length === 0 && check.pending_restart !== true &&
+      about.get(check)?.length === 0 && check.pending_restart !== true && !isDisclosure(check) &&
       !(topologyStale === true && check.id === 'daemon/topology' && check.status === 'warn'),
     ))),
   ];

@@ -399,6 +399,11 @@ describe('a session needs a person only when it waits or is stuck (operator ruli
     expect(sessionItems({ sessions: read({ note: '', sessions: [asked] }) })[0]?.session).toEqual({ id: 'sess-1', said: 'Run npm run migrate -- --apply?', repo: 'repo' });
   });
 
+  test('a system notice is not a waiting session\'s question, so nothing is quoted', () => {
+    const notice = session({ status: 'waiting', last: { role: 'system', tool: null, text: 'A process claiming the address uds:/run/x.sock asked to be told when this session is next idle', ts: NOW } });
+    expect(sessionItems({ sessions: read({ note: '', sessions: [notice] }) })[0]?.session?.said).toBeNull();
+  });
+
   test('a message the daemon cut mid-sentence ends in an ellipsis, a finished one does not', () => {
     const said = (text: string) => sessionItems({ sessions: read({ note: '', sessions: [session({ status: 'waiting', last: { role: 'assistant', tool: null, text, ts: NOW } })] }) })[0]?.session?.said;
     expect(said('The box run failed and used up the')).toBe('The box run failed and used up the…');
@@ -531,7 +536,24 @@ describe('the doctor', () => {
 
   test('a remedy without a console action keeps its honest CLI fallback', () => {
     const checks: DoctorCheck[] = [{ id: 'daemon/manual', status: 'warn', detail: 'manual repair needed', fix: 'repair by hand' }];
-    expect(needsIn({ doctor: read(doctor(checks)) })[0]?.fix).toEqual({ kind: 'copy', command: 'repair by hand' });
+    expect(needsIn({ doctor: read(doctor(checks)) })[0]?.fix).toEqual({ kind: 'open', href: '#/settings/health', label: 'Open doctor', fallback: 'repair by hand' });
+  });
+
+  test('advice is printed and never offered as a line to paste; a command drops the note the daemon trails it with', () => {
+    const fixOf = (fix: string) => needsIn({ doctor: read(doctor([{ id: 'daemon/x', status: 'warn', detail: 'd', fix }])) })[0]?.fix;
+    expect(fixOf('set system_prompt_mode = "append" to add your text beside the client\'s own instructions instead')).toMatchObject({ kind: 'open', fallback: expect.stringContaining('set system_prompt_mode') });
+    expect(fixOf('start it (Ollama / LM Studio / vLLM), then re-run')).toMatchObject({ kind: 'open' });
+    expect(fixOf('rm ~/.local/bin/claude   (or give a head that command again in the topology)')).toEqual({ kind: 'copy', command: 'rm ~/.local/bin/claude' });
+    expect(fixOf('splice restart (then: splice logs --head x --tail 50 to see why)')).toEqual({ kind: 'restart-daemon' });
+  });
+
+  test('what the operator configured on purpose, and a local runtime Fleet already owns, stay on Doctor and out of Needs you', () => {
+    const warn = (id: string): DoctorCheck => ({ id, status: 'warn', detail: 'd', fix: 'advice' });
+    const ids = ['configuration/system-prompt:claudex', 'configuration/project-prompt:project:x', 'configuration/wire-tap:claudex', 'configuration/local:bonsai'];
+    expect(needsIn({ doctor: read(doctor(ids.map(warn))) })).toEqual([]);
+    // the same rows failing are a fault, and other configuration rows are untouched
+    expect(needsIn({ doctor: read(doctor([{ id: 'configuration/wire-tap:claudex', status: 'fail', detail: 'not a number', fix: null }])) })).toHaveLength(1);
+    expect(needsIn({ doctor: read(doctor([warn('configuration/other')])) })).toHaveLength(1);
   });
 
   test('a splice logs remedy opens the requested head and tail instead of copying the command, and restart restarts', () => {

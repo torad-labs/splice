@@ -19,7 +19,7 @@ gateway:
 
 console:
   - changed-files:
-      - any-glob-to-any-file: 'console/**'
+      - any-glob-to-any-file: 'console-next/**'
 
 documentation:
   - changed-files:

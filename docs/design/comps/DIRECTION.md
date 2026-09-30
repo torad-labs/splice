@@ -1,6 +1,6 @@
 # V4-444 phase A — direction contract for the splice console
 
-Status: the direction is approved ("Yes, keep going") and the operator picked variant D, the calm version ("D, all three"), as the rule for all five pages. Nothing under `console/src` changes until the replacement reaches parity. Every comp is seeded demo content
+Status: the direction is approved ("Yes, keep going") and the operator picked variant D, the calm version ("D, all three"), as the rule for all five pages. The replacement in `console-next/` is now the shipped frontend; the old `console/` source was retired after retained browser coverage passed. Every comp is seeded demo content
 (no real session names, messages, repos or paths). Render: `node docs/design/comps/build.mjs` → `png/<screen>-<day|night>-<1440|1920>.png`. D is in `calm.css`, loaded after `comp.css` and the page's own css.
 
 ## Direction
@@ -59,7 +59,7 @@ colours on one card; look for a rule between rows. Each is a defect.
 
 ## Foundation for phase C (decision, by easy-to-replace / decoupled / clear contract)
 
-A new frontend on the daemon's existing `/api`, in `console-next/` beside the old one until it covers its routes; the old `console/src` is then deleted.
+The shipped frontend uses the daemon's existing `/api` from `console-next/`. It was built beside the old frontend until retained behaviors passed against the packaged jar; the old `console/` source is retired.
 
 | Concern | Choice | Why |
 |---|---|---|

@@ -122,9 +122,7 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     ":features-events" to setOf(":integrations-http"),
     // the management plane reads the domain, the client side it assembles a launch spec for, and
     // the head-start slice it delegates starting a head to.
-    // the operator console: a Bun/Vite workspace with no Kotlin and no module edges (PR 4).
-    ":console" to emptySet(),
-    // its replacement (V4-444): the same shape, no Kotlin, no edges.
+    // The shipped operator console: a Bun/Vite workspace with no Kotlin or module edges.
     ":console-next" to emptySet(),
 )
 

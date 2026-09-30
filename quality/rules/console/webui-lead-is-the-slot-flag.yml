@@ -10,7 +10,6 @@ note: |
   Read member.lead or slot.lead. A role is free text in compose, so a role-name check misses a
   lead slot named 'architect' and marks a slot whose role happens to be 'lead'.
 files:
-  - console/src/**/*.ts
   - console-next/src/**/*.ts
 rule:
   kind: binary_expression

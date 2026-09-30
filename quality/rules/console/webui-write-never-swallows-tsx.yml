@@ -12,11 +12,10 @@ language: tsx
 severity: error
 message: "A write's failure is shown, never caught into null, false or nothing."
 note: |
-  A write answers a WriteResult (shared/lib): print it with `writeNote(result, ...)`, which reads
-  only `applied` as success and prints the reason on `failed`. A catch that must stay prints the
-  failure (setFault(err.message)) instead of answering nothing.
+  Render the typed mutation's error instead of treating its rejection as an empty answer.
+  Only a fulfilled mutation may read as success. A catch that must stay renders its failure
+  instead of returning null, false or undefined.
 files:
-  - console/src/**/*.tsx
   - console-next/src/**/*.tsx
 rule:
   any:

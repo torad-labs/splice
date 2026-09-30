@@ -22,7 +22,7 @@ splice puts Claude Code in front of the backend you choose.
   A turn is never lost.                                      features/turns
   It never runs away, and never corrupts a credential.       integrations/upstream  core/config
   Your Claude Code stays yours.                              integrations/claude-code
-  You see what happens and what it would cost at API rates.  features/usage  app/control  console/
+  You see what happens and what it would cost at API rates.  features/usage  app/control  console-next/
   Every failure comes with its remedy.                       features/diagnostics  features/turns
   Heads see each other.                                      features/sessions  integrations/claude-code
 
@@ -663,7 +663,7 @@ app/           :app — composition: the daemon, the control plane (app/control)
                fat jar, the launch shim and the sample topology
                (src/main/dist/bin/splice-launch: every head command is an argv[0] symlink to it;
                src/main/resources/splice.example.toml: the sample multi-provider topology, shipped in the jar)
-console/       React 19 + Vite + Zustand operator console, single-file bundle (console/tools: its look gate)
+console-next/  React 19 + Vite operator console, single-file bundle; typed queries and isolated browser journeys
 quality/       enforcement: architecture/ (the Kotlin laws), compiler-plugin/, rules/ (the ast-grep
                walls, write-time AND at the gate), detekt/
 build-logic/   Gradle convention plugins; the build itself is rooted at the repository root

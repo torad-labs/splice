@@ -16,7 +16,6 @@ note: |
   Data cells use a plain hyphen or an explicit empty-state string, never an
   em-dash placeholder.
 files:
-  - console/src/**/*.tsx
   - console-next/src/**/*.tsx
 rule:
   any:

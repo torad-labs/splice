@@ -23,7 +23,7 @@ ALLOWLIST="bug enhancement documentation question gateway console ci release"
 
 SYSTEM="You label GitHub issues for splice, a local LLM gateway daemon
 (Kotlin capabilities under features/, adapters under integrations/, executable under app/,
-operator console under console/, CI gates under tools/gate/, quality/ and .github/,
+operator console under console-next/, CI gates under tools/gate/, quality/ and .github/,
 release pipeline in tools/release/ and install.sh).
 Reply with ONLY a JSON object, no prose, no code fences: {\"labels\": [...]}.
 Allowed labels — type: bug, enhancement, documentation, question;

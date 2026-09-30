@@ -1,7 +1,6 @@
-// :console-next — the replacement operator console (V4-444), a Bun/Vite workspace with no Kotlin, built beside
-// :console and gated the same way: typecheck, bundle, lint and the vitest suite are tasks of this module, and
-// `gateOfRecord` also runs its real-daemon browser suite. After parity, :app reads this module's
-// bundle output for the shipped dashboard.
+// :console-next — the shipped operator console, a Bun/Vite workspace with no Kotlin.
+// Typecheck, bundle, lint and unit tests are module tasks; gateOfRecord also runs the
+// isolated real-daemon browser suite and its throwing-page canary. :app packages this bundle.
 plugins {
     base
 }
@@ -84,7 +83,6 @@ tasks.register<Exec>("e2e") {
     dependsOn(consoleBundle, "lint", ":app:shadowJar")
     consoleInputs("e2e")
     inputs.file(bundle)
-    inputs.dir(rootProject.file("console/e2e"))
     inputs.file(rootProject.file("app/build/libs/app-all.jar"))
     outputs.upToDateWhen { false }
     // Judge the shipped HTML, even when a developer shell selects a local build.
@@ -94,6 +92,6 @@ tasks.register<Exec>("e2e") {
     commandLine("bun", "e2e/run.ts")
 }
 
-// `check` reaches the bundle so a bundle that stops building is red before the switch, not at it.
+// `check` reaches the shipped bundle so a production build failure makes verification red.
 tasks.named("assemble") { dependsOn(consoleBundle) }
 tasks.named("check") { dependsOn(consoleBundle) }

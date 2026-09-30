@@ -82,8 +82,9 @@ Constraints:
 - Topology is boot-only; the daemon reports when the file on disk no longer matches what booted.
 - Secrets are masked and replace-only; account ids and emails are never displayed unmasked.
 - Missing provider data reads "not reported by provider", never zero and never unlimited.
-- The console architecture is lint-enforced: Feature-Sliced layers, HTTP only inside entity api
-  segments, spacing and font sizes only from the token scales, zero em-dashes in UI text.
+- The console architecture is lint-enforced: typed query and mutation hooks own server state,
+  HTTP only inside `console-next/src/api/client.ts`, spacing and font sizes only from the token
+  scales, zero em-dashes in UI text.
 
 Terminology: head, provider, dialect, quirk, slot (opus, sonnet, haiku, fable), pinned model,
 turn, gate (inflight, queued), compaction, account pool, primary account, plan window (five-hour,
@@ -130,7 +131,9 @@ topology editor or the forms are the primary settings surface.
 
 ## Accessibility & Inclusion
 
-WCAG AA for text, controls, focus and data inks in both light and dark, verified by the contrast
-test in `console/tests`. Focus is always visible. Motion is functional only and respects
-prefers-reduced-motion. Color is never the sole signal: every status carries a text label. The
-console is fully operable from the keyboard.
+Text, controls, focus and state inks meet their WCAG AA contrast floors in both themes,
+held by `console-next/tests/contrast.test.ts` against the source token sheet and used colour roles.
+Plan identity hues are decorative exceptions on the day paper, recorded by name and paired with
+printed plan names. They are not claimed to meet the WCAG non-text contrast floor. Focus is always visible.
+Motion is functional only and respects prefers-reduced-motion. Color is never the sole signal:
+every status carries a text label. The console is fully operable from the keyboard.

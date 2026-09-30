@@ -145,9 +145,10 @@ RUNNING heads over `/mgmt` for live status + config.
 npm run gate          # all Kotlin/Node/console/release/OSS checks, ONE PASS/FAIL
 npm run gate:rules    # ast-grep scan (tree) + rule red/green tests
 npm run test:hooks    # orchestrator routing tests
-npm run lint -w console # FSD boundaries — the architecture is lint-enforced
-npm test -w console   # vitest
-./gradlew :console:build # the single-file bundle, :console:bundle's OUTPUT (never committed)
+npm run lint -w console-next # production layers and HTTP boundary are lint-enforced
+npm test -w console-next   # vitest
+./gradlew :console-next:build # the single-file bundle output (never committed)
+./gradlew :console-next:e2e # packaged HTML, isolated real daemon, throwing-page canary
 ```
 
 The Kotlin gateway tier runs under `./gradlew check` (from the repository root, JDK 21): module-law

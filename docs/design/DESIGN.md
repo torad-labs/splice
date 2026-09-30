@@ -82,13 +82,13 @@ components:
     size: "up to 272px x 76px"
 ---
 
-# The splice console
+# Historical design of the retired console
 
-This file is the console's identity: what it looks like, why, and the rules a page follows. It
-replaces the strip-bay world ("paper strips racked in steel bays"), which the operator retired on
-2026-09-24. `docs/design/PRODUCT.md` still says who the console is for; this file says how it
-looks. The tokens it names live in `console/src/shared/tokens.css`, and the walls that hold them
-are in `quality/rules/console/`.
+This file records the retired airport-board frontend, not the shipped console's identity.
+Its token, component and test paths below are historical references to the removed `console/` tree.
+The replacement follows [the approved calm direction](comps/DIRECTION.md), implemented in
+`console-next/src/styles/tokens.css`. [PRODUCT.md](PRODUCT.md) remains the product contract,
+and the retained `quality/rules/console/` namespace now enforces the successor sources.
 
 ## 1. The idea in one paragraph
 

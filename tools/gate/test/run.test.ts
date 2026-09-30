@@ -96,11 +96,12 @@ describe("gate run", () => {
     expect(suite).not.toContain('environment("CONSOLE_E2E_HTML",');
     expect(suite).toContain('environment("CONSOLE_E2E_BUNDLE", "jar")');
     const legs = (JSON.parse(read("tools/gate/config/ladder.json")) as { legs: (Leg & { dependsOn?: string[] })[] }).legs;
-    const retained = legs.find((leg) => leg.task === "consoleE2e");
-    expect(retained?.dependsOn).toEqual([":console:bundle", ":app:shadowJar"]);
-    expect(retained?.command).toEqual([
-      "env", "-u", "CONSOLE_E2E_HTML", "CONSOLE_E2E_BUNDLE=dist", "npm", "run", "--silent", "e2e:console",
-    ]);
+    expect(legs.some((leg) => leg.task === "consoleE2e")).toBe(false);
+    expect(suite).toContain('dependsOn(consoleBundle, "lint", ":app:shadowJar")');
+    expect(suite).toContain('commandLine("bun", "e2e/run.ts")');
+    const gate = read("build-logic/src/main/kotlin/splice.gate-ladder.gradle.kts");
+    expect(gate).toContain('dependsOn(":console-next:lint", ":console-next:test", ":console-next:e2e")');
+    expect(read("console-next/e2e/run.ts")).toContain("throwing-page canary");
   });
 
   test("the legs after the slot are exactly the ones that take the slot themselves", () => {

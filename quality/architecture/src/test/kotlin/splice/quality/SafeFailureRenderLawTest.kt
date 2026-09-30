@@ -880,10 +880,10 @@ class SafeFailureRenderLawTest {
 
     /** The synthetic tree the red proofs write into. ONE fixture is on disk at a time, exactly as
      *  the selftest's `arm` writes and then removes one file per arm, so no arm can be decided by
-     *  another's leftovers. `:console` is mapped and is NOT one of the checker's SOURCE homes,
+     *  another's leftovers. `:console-next` is mapped and is NOT one of the checker's SOURCE homes,
      *  which is what makes the glob-to-map translation provable rather than asserted. */
     private class Tree(val root: File) {
-        val map: ProjectMap = ProjectMap.parse(root, ":app=app;:console=console", setOf("build"))
+        val map: ProjectMap = ProjectMap.parse(root, ":app=app;:console-next=console-next", setOf("build"))
 
         fun census(): List<SafeFailureRender.Site> = SafeFailureRender.sites(SafeFailureRender.sources(map), root)
 
@@ -943,7 +943,7 @@ class SafeFailureRenderLawTest {
             assertEquals(
                 listOf("$PROBE_DIR/Boring.kt", "$PROBE_DIR/Pure.kt"),
                 SafeFailureRender.sources(map).map { KotlinText.rel(map, it) },
-                "the map names :app and :console and nothing else, so a tree it never declared is not graded",
+                "the map names :app and :console-next and nothing else, so a tree it never declared is not graded",
             )
             assertEquals(1, census().size, "an out-of-scope file and an unmapped tree add no sites")
         }

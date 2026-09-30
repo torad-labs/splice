@@ -17,7 +17,7 @@ npm run gate:rules        # ast-grep walls, rule routing, config guard, coverage
 npm run test:hooks        # the write-time wall hook's red-green arms
 bun test tools/gate           # the gate CLI's own red-green arms
 ./gradlew check              # module-law + detekt + konsist + unit tests (Kotlin gateway)
-npm run lint -w console && npm test -w console && ./gradlew :console:build
+npm run lint -w console-next && npm test -w console-next && ./gradlew :console-next:build :console-next:e2e
 bun tools/gate audit         # the dependency audit
 bun tools/release verify     # the release rehearsal: stage, accept, the launcher against the shim
 ```

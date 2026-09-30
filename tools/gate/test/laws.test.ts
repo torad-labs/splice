@@ -15,16 +15,16 @@ const SELF = ["tools/gate/src/lib/laws.ts"]; // a fence with no CSS anywhere
 
 describe("gate ledger laws: both laws, both ways", () => {
   test("a CSS-fenced row with no build leg is RED", () => {
-    expect(laws(one(["console/src/widgets/rule/rule.css"], "npx tsc --noEmit"))).toEqual(["law-25"]);
+    expect(laws(one(["console-next/src/styles/base.css"], "npx tsc --noEmit"))).toEqual(["law-25"]);
   });
   test("the same row WITH npx vite build is GREEN", () => {
-    expect(laws(one(["console/src/widgets/rule/rule.css"], "npx tsc --noEmit && npx vite build"))).toEqual([]);
+    expect(laws(one(["console-next/src/styles/base.css"], "npx tsc --noEmit && npx vite build"))).toEqual([]);
   });
   test("npm run build is NOT a build leg (tsc masks the CSS defect)", () => {
-    expect(laws(one(["console/src/widgets/rule/rule.css"], "npm run build -w console"))).toEqual(["law-25"]);
+    expect(laws(one(["console-next/src/styles/base.css"], "npm run build -w console-next"))).toEqual(["law-25"]);
   });
   test("a CSS-holding directory counts, not just a .css path", () => {
-    expect(laws(one(["console/src/widgets/rule/**"], "npx tsc --noEmit"))).toEqual(["law-25"]);
+    expect(laws(one(["console-next/src/styles/**"], "npx tsc --noEmit"))).toEqual(["law-25"]);
   });
   test("a fence with no CSS anywhere is not a law-25 row", () => {
     expect(laws(one(SELF, "npx tsc --noEmit"))).toEqual([]);
@@ -39,10 +39,10 @@ describe("gate ledger laws: both laws, both ways", () => {
     expect(laws(one(SELF, 'test -z "$(grep -v ok file.txt)"'))).toEqual(["law-27"]);
   });
   test("a presence assertion of the compliant shape is GREEN", () => {
-    expect(laws(one(SELF, "bun console/tools scan console/src && grep -q OWNER .dev/web-console/census/m1-punch-list.md"))).toEqual([]);
+    expect(laws(one(SELF, "bun tools/gate rules && grep -q OWNER .dev/web-console/census/m1-punch-list.md"))).toEqual([]);
   });
   test("both laws on one row are both reported", () => {
-    expect(laws(one(["console/src/widgets/rule/rule.css"], "npx tsc --noEmit && if grep -q x y; then exit 1; fi"))).toEqual(["law-25", "law-27"]);
+    expect(laws(one(["console-next/src/styles/base.css"], "npx tsc --noEmit && if grep -q x y; then exit 1; fi"))).toEqual(["law-25", "law-27"]);
   });
   test("an unreadable row is a finding of its own (law 0), never dropped from the denominator", () => {
     const r = check([{ id: "X-9", status: null, verify: null, files: [], unreadable: true }]);

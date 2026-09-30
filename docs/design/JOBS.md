@@ -1,7 +1,7 @@
-# What each console page is for
+# Historical jobs of the retired console
 
-<!-- Rendered from each page's `job` in console/src/pages/*/coverage.ts. tests/jobs.test.ts fails when
-     this file differs; edit the declarations, then `vitest run -u tests/jobs.test.ts` in console/. -->
+This records the retired frontend's page declarations. It is no longer generated or gated.
+The shipped console's current jobs and source-backed coverage are in [JOBS-next.md](JOBS-next.md).
 
 Each page answers one question. An action with a row in brackets is not built yet; the row builds it.
 

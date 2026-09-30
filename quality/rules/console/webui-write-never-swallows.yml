@@ -2,17 +2,16 @@
 # `method:`) and answers `null` or `false` from its catch hands its caller "nothing" for a refusal,
 # a network failure and a route not built yet alike; the caller cannot tell any of them from a
 # success, and the panels printed "Saved" and "Sent" over each (Marlin's HOLD, 2026-09-25: putBudgets,
-# putAlerts, sendTestAlert). A write returns a WriteResult (shared/lib): applied with the daemon's
-# answer, pending with the item that will serve it, or failed with the reason.
+# putAlerts, sendTestAlert). The successor's typed mutations preserve the refusal or failure
+# as an error so the caller cannot mistake it for success.
 id: webui-write-never-swallows
 language: typescript
 severity: error
-message: "A write answers a WriteResult (applied | pending | failed), never null or false from a catch."
+message: "A write preserves its failure, never null or false from a catch."
 note: |
-  Return `writeFailure(err, PENDING_ROW)` from the catch (shared/api); the caller prints
-  `writeNote(result, ...)`, which reads only `applied` as success and prints the reason on `failed`.
+  Let the typed mutation reject on a refusal or network failure. Render its error in the caller;
+  only a fulfilled mutation may read as success. Never convert a rejected write into an empty answer.
 files:
-  - console/src/**/*.ts
   - console-next/src/**/*.ts
 rule:
   any:

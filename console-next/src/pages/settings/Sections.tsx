@@ -22,6 +22,7 @@ import { Button, Close, Folder, Plus, Prompt, Segmented, Select, Slider, State, 
 import { NeedFix } from '../needs/NeedFix';
 import { AllSettings } from './AllSettings';
 import { T } from './copy';
+import { Kept } from './Kept';
 import { Row, SaveNote, useSetting } from './Row';
 
 const THEME: readonly (readonly [ThemeChoice, string])[] = [['day', T.day], ['night', T.night], ['system', T.system]];
@@ -205,6 +206,7 @@ export function Storage({ config }: { config: ConfigPayload }) {
       <DaysRow title={T.traces} why={T.tracesWhy} settingKey="traceRetentionDays" list={TRACE_DAYS} config={config} />
       <GitFolders config={config} />
       <OpenRouterKey />
+      <Kept config={config} />
     </>
   );
 }

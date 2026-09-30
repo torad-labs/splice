@@ -1,5 +1,6 @@
 export { Button } from './Button';
 export { NumberInput, Select, Slider, Stepper, Switch, TextInput } from './controls';
+export { Confirm } from './Confirm';
 export { Prompt } from './Prompt';
 export type { Choice } from './controls';
 export * from './icons';

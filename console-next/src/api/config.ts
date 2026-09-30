@@ -107,7 +107,11 @@ export function useTopologyEdit() {
       if (result.ok && result.restart_required) recordSaved(touched, await readBootedAt().catch(() => null));
       return result;
     },
-    onSettled: () => Promise.all([topologyKey, keys.health, mcpKey].map((key) => client.invalidateQueries({ queryKey: [...key] }))),
+    // Not returned: React Query keeps the mutation pending until onSettled's promise settles, so returning the refetches made
+    // "Written." wait for the slowest of them (a daemon answering /health or /api/mcp slowly held the page on "Writing…").
+    onSettled: () => {
+      void Promise.all([topologyKey, keys.health, mcpKey].map((key) => client.invalidateQueries({ queryKey: [...key] })));
+    },
   });
 }
 

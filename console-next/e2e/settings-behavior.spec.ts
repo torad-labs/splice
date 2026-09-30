@@ -46,6 +46,26 @@ test('the configuration editor writes compaction instructions without discarding
   await expect(page.getByRole('status').filter({ hasText: 'Written.' })).toBeVisible();
 });
 
+test('a written configuration file says so without waiting for the page to re-read its other data', async ({ page }) => {
+  await topologyWrites(page);
+  let slow = false;
+  await page.route('**/api/mcp', async (route) => {
+    if (slow) await new Promise((resolve) => setTimeout(resolve, 8_000));
+    await route.continue().catch(() => undefined);
+  });
+  await open(page, 'settings/advanced');
+  await page.getByRole('button', { name: 'Open the file', exact: true }).click();
+  const group = page.locator('details.cf-group').filter({ has: page.locator('summary').filter({ hasText: /^Compaction/ }) });
+  await group.locator('summary').click();
+  const field = group.getByRole('textbox', { name: 'instructions', exact: true }).first();
+  await field.fill('Prefer concise answers.');
+  await field.press('Tab');
+  slow = true;
+  await page.getByRole('button', { name: 'Write the file', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Written.' })).toBeVisible({ timeout: 5_000 });
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
+});
+
 test('plan instruction modes preview isolated writes and preserve an unrelated unsaved file draft', async ({ page }) => {
   const writes = await topologyWrites(page);
   await open(page, 'settings/conversation');

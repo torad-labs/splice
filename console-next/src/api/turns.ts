@@ -21,7 +21,6 @@ import type {
   PerfSummaryPayload,
   PerfTurnsWire,
   PerfWindowLabel,
-  TraceListWire,
   TraceTurnWire,
   TranscriptConversationWire,
   TruncatedHead,
@@ -253,10 +252,6 @@ export const useCompactionInstructions = () =>
 // the drawer that asked: no cache after it closes (gcTime 0). A refusal rejects with the daemon's sentence.
 
 const asked = { refetchInterval: false, gcTime: 0 } as const;
-
-/** The newest turns on the head's trace files, with no body. */
-export const useTraceList = (head: string | null, enabled = true) =>
-  useQuery({ queryKey: ['trace', head ?? ''], queryFn: () => request<TraceListWire>(tracePath(head ?? '')), enabled: enabled && head !== null, ...asked });
 
 /** A turn a perf row names (its `turn`), records and bodies included. A 400 is the daemon's sentence that its
  *  trace holds no such turn (retention deleted it, or the files were purged): a state the detail says, `{ gone }`. */

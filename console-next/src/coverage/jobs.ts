@@ -61,8 +61,8 @@ export function renderJobs(jobs: readonly (readonly [string, PageJob])[]): strin
   return [
     '# What each console page is for',
     '',
-    '<!-- Rendered from each page\'s `job` in console/src/pages/*/coverage.ts. tests/jobs.test.ts fails when',
-    '     this file differs; edit the declarations, then `vitest run -u tests/jobs.test.ts` in console/. -->',
+    '<!-- Rendered from each page\'s `job` in console-next/src/pages/*/coverage.ts. tests/jobs.test.ts fails when',
+    '     this file differs; edit the declarations, then `vitest run -u tests/jobs.test.ts` in console-next/. -->',
     '',
     'Each page answers one question. An action with a row in brackets is not built yet; the row builds it.',
     '',

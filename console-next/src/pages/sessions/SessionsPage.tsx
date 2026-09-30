@@ -4,6 +4,7 @@ import { SortableContext, rectSortingStrategy, sortableKeyboardCoordinates } fro
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { failureText } from '../../api/client';
+import { useProjects } from '../../api/projects';
 import { useHeads, useSessions, useTeams } from '../../api/queries';
 import { useBoardEdges, useSessionHistory, useTurnOf } from '../../api/sessions';
 import { colourOfHead } from '../../lib/model';
@@ -38,6 +39,7 @@ export function SessionsPage() {
   const [composing, setComposing] = useState(false);
   const navigate = useNavigate();
   const teams = useTeams();
+  const projects = useProjects();
   const sessions = useSessions();
   const heads = useHeads();
   const edges = useBoardEdges();
@@ -121,7 +123,7 @@ export function SessionsPage() {
           const title = text?.title ?? team?.name ?? (group.key === UNATTRIBUTED ? P.unattributed : group.key === UNKNOWN_HEAD ? P.unknownHead : group.key);
           return (
             <section key={group.key} aria-label={title}>
-              <GroupHead title={title} count={rows.length} {...(text === undefined ? {} : { why: text.why })} {...(team !== undefined ? { action: <Link to={`/teams/${encodeURIComponent(team.id)}`}>{M.openTeam}</Link> } : root !== undefined ? { action: <Link to={`/projects/${encodeURIComponent(root)}`}>{PJ.openProject}</Link> } : {})} />
+              <GroupHead title={title} count={rows.length} {...(text === undefined ? {} : { why: text.why })} {...(team !== undefined ? { action: <Link to={`/teams/${encodeURIComponent(team.id)}`}>{M.openTeam}</Link> } : root !== undefined && projects.data?.projects.some((project) => project.root === root) === true ? { action: <Link to={`/projects/${encodeURIComponent(root)}`}>{PJ.openProject}</Link> } : {})} />
               <SortableContext items={rows.map(sessionKey)} strategy={rectSortingStrategy}>
                 <ul className={by === 'state' && group.key === 'needs' ? 'grid first' : 'grid'}>
                   {rows.map((row) => (

@@ -129,18 +129,3 @@ export const useSaveTeam = () =>
 /** Archive or restore: only the flag moves. Nothing is ever deleted. */
 export const useArchiveTeam = () =>
   useTeamWrite(({ team, archived }: { team: TeamRow; archived: boolean }) => replaceTeam(team.id, { ...teamWriteOf(team), archived }));
-
-/** Set one slot's standing instructions. Blank is no instructions: it clears them on the daemon rather than
- *  saving an empty prompt. */
-export const useSetSlotInstructions = () =>
-  useTeamWrite(({ team, slot, instructions }: { team: TeamRow; slot: string; instructions: string }) => {
-    const body = teamWriteOf(team);
-    return replaceTeam(team.id, {
-      ...body,
-      slots: body.slots.map((one) => (one.id === slot ? { ...one, instructions: instructions.trim() === '' ? null : instructions } : one)),
-    });
-  });
-
-/** Bind or unbind slots directly. */
-export const useBindSessions = () =>
-  useTeamWrite(({ id, bindings }: { id: string; bindings: Record<string, string | null> }) => bindSessions(id, bindings));

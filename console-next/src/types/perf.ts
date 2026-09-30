@@ -265,16 +265,6 @@ export interface TracedTurnWire {
   total_ms: number | null;
 }
 
-/** GET /api/heads/{head}/trace: the newest turns on disk, oldest first, and no body. `files` is
- *  where they are (`<dir>/<head>-YYYY-MM-DD.jsonl`), `on_disk` how many turns all the files hold. */
-export interface TraceListWire {
-  head: string;
-  files: string;
-  on_disk: number;
-  skipped_lines: number;
-  turns: TracedTurnWire[];
-}
-
 /** A request or response side of a traced record, as the TraceStore wrote it: headers redacted by
  *  name when written, the body exact up to the cap (`truncated` says it was cut). */
 export interface TraceSide {

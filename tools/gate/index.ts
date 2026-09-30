@@ -4,6 +4,7 @@
 import { allowlist, usage as allowlistUsage } from "./src/commands/allowlist.ts";
 import { attribution, usage as attributionUsage } from "./src/commands/attribution.ts";
 import { audit, usage as auditUsage } from "./src/commands/audit.ts";
+import { landing, usage as landingUsage } from "./src/commands/landing.ts";
 import { ledger, usage as ledgerUsage } from "./src/commands/ledger.ts";
 import { noPython, usage as noPythonUsage } from "./src/commands/no-python.ts";
 import { rules, usage as rulesUsage } from "./src/commands/rules.ts";
@@ -25,6 +26,7 @@ const VERBS = {
   ledger: { usage: ledgerUsage, exec: (argv: string[]) => ledger(argv) },
   audit: { usage: auditUsage, exec: (argv: string[]) => audit(argv) },
   allowlist: { usage: allowlistUsage, exec: (argv: string[]) => allowlist(argv) },
+  landing: { usage: landingUsage, exec: (argv: string[]) => landing(argv) },
 } satisfies Record<string, { usage: string; exec: (argv: string[]) => number | Promise<number> }>;
 
 const [verb, ...argv] = process.argv.slice(2);

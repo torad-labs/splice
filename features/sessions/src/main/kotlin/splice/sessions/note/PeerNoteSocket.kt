@@ -1,7 +1,7 @@
 // NEW: V4-444 — writes one note frame to a live session's inbox socket, and refuses every target it cannot vouch for. The audit's rules
 // (splice-builder2, Sep 29 9:36 PM CT) are the checks below: a checked Claude Code version, a socket that is a real socket owned by this
-// user and sitting in a directory only this user can enter (no symlink anywhere on it), the connected peer owned by this user, and only the
-// text frame written: no control action, no attachment, no sender mode, no token. Transport completion is all the close proves, so the
+// user, the socket and its directory not links, the directory one only this user can enter (so nobody else can swap what is behind the
+// path), the connected peer owned by this user, and only the text frame written: no control action, no attachment, no sender mode, no token. Transport completion is all the close proves, so the
 // answer is "submitted", never "delivered", and a failed write is not retried.
 package splice.sessions.note
 

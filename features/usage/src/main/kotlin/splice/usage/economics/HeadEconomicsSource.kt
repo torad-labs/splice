@@ -10,12 +10,15 @@ public fun interface HeadEconomicsSource {
     public fun buckets(): List<EconomicsRow>
 }
 
+/** The control plane's client-turn and local-step counts, projected from the head's bucket. */
+public data class EconomicsTurnCounts(val turns: Long = 0, val localSteps: Long = 0)
+
 /** One hour of a head's economics on the control-plane side. Sums only; every ratio the dashboard
  *  shows is derived at render time from these. [deferralTurns] is the denominator for the tool
  *  averages and is 0 on a head whose dialect cannot defer — which the UI renders as "n/a". */
 public data class EconomicsRow(
     val hour: Long,
-    val turns: Long,
+    val counts: EconomicsTurnCounts,
     val inTokens: Long,
     val cachedTokens: Long,
     /** V4-86: the cache-WRITE half of [inTokens], disjoint from [cachedTokens]. Its own sum
@@ -33,4 +36,7 @@ public data class EconomicsRow(
     val costUsd: Double?,
     /** V4-221: turns whose model had no rate card, so their dollars are not in [costUsd]. */
     val unpricedTurns: Long,
-)
+) {
+    val turns: Long get() = counts.turns
+    val localSteps: Long get() = counts.localSteps
+}

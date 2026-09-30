@@ -60,11 +60,17 @@ private const val HOUR_MS = 60L * 60 * 1000
 private const val MAX_FILE_BYTES = 1L * 1024 * 1024
 private const val ECONOMICS_FLUSH_DELAY_MS = 1_000L
 
+/** One hour's client turns and code-mode steps, grouped without widening the economics bucket. */
+public data class EconomicsTurnCounts(val turns: Long = 0, val localSteps: Long = 0) {
+    public fun add(localStep: Boolean): EconomicsTurnCounts =
+        if (localStep) copy(localSteps = localSteps + 1) else copy(turns = turns + 1)
+}
+
 /** One hour of a head's economics. Sums only — ratios are derived by the reader, never stored,
  *  so a bucket stays mergeable and a rounding choice never hardens into the file. */
 public data class EconomicsBucket(
     val hour: Long,
-    val turns: Long = 0,
+    val counts: EconomicsTurnCounts = EconomicsTurnCounts(),
     val inTokens: Long = 0,
     val cachedTokens: Long = 0,
     /** V4-86: the cache-WRITE half of [inTokens], disjoint from [cachedTokens] (the read half).
@@ -86,7 +92,10 @@ public data class EconomicsBucket(
     val costUsd: Double? = 0.0,
     /** V4-221: turns whose model had no rate card; their dollars are not in [costUsd]. */
     val unpricedTurns: Long = 0,
-)
+) {
+    val turns: Long get() = counts.turns
+    val localSteps: Long get() = counts.localSteps
+}
 
 /** The per-turn facts the rollup consumes. Nullable where a head genuinely may not report the
  *  field: the chat dialect has no tool deferral at all, and `null` must stay distinguishable from
@@ -107,6 +116,8 @@ public data class TurnEconomics(
     val toolsEager: Long?,
     val toolsDeferred: Long?,
     val rateLimited: Boolean = false,
+    /** Set only when the code-mode machine answered locally without an upstream post. */
+    val localStep: Boolean = false,
 )
 
 public class EconomicsStore(
@@ -121,12 +132,13 @@ public class EconomicsStore(
     /** Fold one finished turn into its hour. Memory-only plus an enqueue — never blocks the turn. */
     public fun record(turn: TurnEconomics) {
         val hour = clock() / HOUR_MS * HOUR_MS
+        val localStep = turn.localStep
         val usd = price.usd(turn.model, counters(turn))
         synchronized(lock) {
             loadUnderLock()
             val b = buckets[hour] ?: EconomicsBucket(hour)
             buckets[hour] = b.copy(
-                turns = b.turns + 1,
+                counts = b.counts.add(localStep),
                 inTokens = b.inTokens + turn.inTokens,
                 cachedTokens = b.cachedTokens + turn.cachedTokens,
                 cacheWriteTokens = b.cacheWriteTokens + turn.cacheWriteTokens,
@@ -138,20 +150,23 @@ public class EconomicsStore(
                 // Only turns that actually REPORTED a partition count toward the deferral average,
                 // so a head that cannot defer averages over zero turns and reads as "—" rather than
                 // being diluted to a misleading 0.0 by turns that never had the choice.
-                deferralTurns = b.deferralTurns + if (turn.toolsEager != null) 1 else 0,
+                deferralTurns = b.deferralTurns + deferralTurn(turn),
                 rateLimited = b.rateLimited + if (turn.rateLimited) 1 else 0,
-            ).let { priced(it, usd) }
+            ).let { priced(it, usd, localStep) }
             trimUnderLock()
             version += 1
         }
         CoalescedFlush.scheduleCoalesced(ECONOMICS_FLUSH_DELAY_MS, writeScheduled) { flushScheduled() }
     }
 
+    private fun deferralTurn(turn: TurnEconomics): Int =
+        if (turn.localStep || turn.toolsEager == null) 0 else 1
+
     /** V4-221: the turn's dollars into its hour; null [usd] is a turn with no card. A null hour (one
      *  written before the field) stays null: a partial sum must not read as the hour's cost. */
-    private fun priced(b: EconomicsBucket, usd: Double?): EconomicsBucket = b.copy(
+    private fun priced(b: EconomicsBucket, usd: Double?, localStep: Boolean): EconomicsBucket = b.copy(
         costUsd = b.costUsd?.plus(usd ?: 0.0),
-        unpricedTurns = b.unpricedTurns + if (usd == null) 1 else 0,
+        unpricedTurns = b.unpricedTurns + if (usd == null && !localStep) 1 else 0,
     )
 
     /** The turn's tokens as the perf-row counters [TurnPrice] prices (in_tokens inclusive of both
@@ -244,6 +259,7 @@ public class EconomicsStore(
                         buildJsonObject {
                             put("hour", b.hour)
                             put("turns", b.turns)
+                            put("local_steps", b.localSteps)
                             put("in_tokens", b.inTokens)
                             put("cached_tokens", b.cachedTokens)
                             put("cache_write_tokens", b.cacheWriteTokens)
@@ -280,7 +296,7 @@ public class EconomicsStore(
         val hour = long(o, "hour") ?: return null
         return EconomicsBucket(
             hour = hour,
-            turns = longOr(o, "turns"),
+            counts = EconomicsTurnCounts(longOr(o, "turns"), longOr(o, "local_steps")),
             inTokens = longOr(o, "in_tokens"),
             cachedTokens = longOr(o, "cached_tokens"),
             // THE MIGRATION, and it is deliberately the absent-field default rather than a version

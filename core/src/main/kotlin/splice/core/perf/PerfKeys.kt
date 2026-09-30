@@ -24,6 +24,9 @@ public object PerfKeys {
     public const val WRITE_MS: String = "write_ms"
     public const val USAGE_MS: String = "usage_ms"
     public const val ATTEMPTS: String = "attempts"
+
+    /** One client-facing code-mode step synthesized without an upstream post, not a turn. */
+    public const val LOCAL_STEP: String = "local_step"
     public const val RETRIES: String = "retries"
     public const val REFRESHES: String = "refreshes"
     public const val REQ_BYTES: String = "req_bytes"

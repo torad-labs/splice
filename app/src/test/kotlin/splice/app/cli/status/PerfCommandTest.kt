@@ -105,7 +105,7 @@ class PerfCommandTest {
         val (ok, text) = capture { PerfWiring.command().perf(emptyList(), env) }
         assertTrue(ok)
         assertTrue(text.contains("last 24h per head"), text)
-        assertTrue(text.contains("no rows in this window"), text)
+        assertTrue(text.contains("no turns in this window"), text)
         assertTrue(text.contains("no perf rows recorded yet"), "nothing recorded is not a clamp: $text")
     }
 

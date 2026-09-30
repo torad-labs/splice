@@ -72,6 +72,23 @@ class PerfSummaryTest {
     }
 
     @Test
+    fun `local code steps are reported apart from turns and do not dilute turn latency or failure shares`() {
+        val rows = listOf(
+            row(3000, "ok", "attempts" to 1L, "total" to 100L),
+            row(2000, "error:upstream-failed", "attempts" to 1L, "total" to 200L),
+            row(1500, "error:rate-limited", "attempts" to 0L, "total" to 50L),
+            row(1000, "ok", "attempts" to 0L, "local_step" to 1L, "total" to 10_000L),
+            row(500, "ok", "total" to 300L), // legacy rows without markers are turns
+        )
+        val s = PerfSummary { now }.json(PerfRowsWindow(rows), PerfWindow.H1, now)
+        assertEquals("4", n(s, "count"))
+        assertEquals("1", n(s, "local_steps"))
+        assertEquals("4", n(s.getValue("total_ms").jsonObject, "count"))
+        assertEquals("300", n(s.getValue("total_ms").jsonObject, "max"))
+        assertEquals(0.5, n(s, "failure_share").toDouble(), 1e-9)
+    }
+
+    @Test
     fun `io drops are the counter's increases, a restart is taken whole, and a row that never grew is zero`() {
         val steady = (1..5).map { row(it * 1000L, "ok", "async_io_drops" to 7L) }
         assertEquals("0", n(PerfSummary { now }.json(PerfRowsWindow(steady), PerfWindow.H1, now), "io_drops_in_window"))

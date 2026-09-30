@@ -84,9 +84,9 @@ public class PerfCommand(
     private fun printHead(key: String, s: JsonObject) {
         output.line("")
         val count = num(s, "count")
-        output.line("  $BOLD$key$RESET  $DIM$count turn(s)$RESET" + note(s))
+        output.line("  $BOLD$key$RESET  $DIM$count turn(s), ${num(s, "local_steps")} local step(s)$RESET" + note(s))
         if (JsonScalars.str(s, "empty") == "true") {
-            output.line("  $DIM–  no rows in this window$RESET")
+            output.line("  $DIM–  no turns in this window$RESET")
             return
         }
         output.line("  time before first byte  ${pct(s["time_before_first_byte_ms"])}")

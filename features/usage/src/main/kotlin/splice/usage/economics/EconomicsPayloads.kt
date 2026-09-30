@@ -51,6 +51,7 @@ public class EconomicsPayloads(
                             addJsonObject {
                                 put("hour", b.hour)
                                 put("turns", b.turns)
+                                put("local_steps", b.localSteps)
                                 put("in_tokens", b.inTokens)
                                 put("cached_tokens", b.cachedTokens)
                                 put("cache_write_tokens", b.cacheWriteTokens)

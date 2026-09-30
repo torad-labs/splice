@@ -64,13 +64,13 @@ internal class CodexCodeModeMachine(
             sink.inputJsonDelta(index, call.arguments.toString())
             sink.closeBlock(index)
         }
-        return TurnOutcome.Success(hasToolUse = true, incomplete = false, usage = Usage())
+        return TurnOutcome.Success(hasToolUse = true, incomplete = false, usage = Usage(localStep = true))
     }
 
     fun interrupt(record: CodeModeRecord, detail: String = "additional client content arrived"): TurnOutcome {
         val output = CodeModeExecOutput.terminated(record, detail, wallMillis(record), config.maxOutputChars)
         registry.complete(record, output)
-        return TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage())
+        return TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage(localStep = true))
     }
 
     /** The script's wall time so far; its stamp goes with it, since the record is terminal after this. */
@@ -144,7 +144,7 @@ internal class CodexCodeModeMachine(
         val output = step.error?.let { CodeModeExecOutput.failed(step.output, it, wall, config.maxOutputChars) }
             ?: CodeModeExecOutput.completed(step.output, wall, config.maxOutputChars)
         registry.complete(record, output)
-        return TurnOutcome.Success(false, false, Usage())
+        return TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage(localStep = true))
     }
 }
 

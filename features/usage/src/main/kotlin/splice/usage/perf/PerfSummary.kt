@@ -68,11 +68,13 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
      *  `last_ts` reads null over a head whose newest row predates the window. */
     fun json(read: PerfRowsWindow, window: PerfWindow, now: Long): JsonObject {
         val inWindow = read.rows.filter { it.ts >= now - window.ms }
+        val (localSteps, turns) = inWindow.partition { it.fields[PerfKeys.LOCAL_STEP] == 1L }
         val coverage = coverage(read, window, now)
         return buildJsonObject {
             put("window", window.label)
-            put("count", inWindow.size)
-            put("empty", inWindow.isEmpty())
+            put("count", turns.size)
+            put("local_steps", localSteps.size)
+            put("empty", turns.isEmpty())
             put("last_ts", read.newestHeldTs ?: read.rows.maxOfOrNull { it.ts })
             put("coverage_known", coverage.known)
             put("clamped", coverage.clamped)
@@ -80,7 +82,8 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
             coverage.note()?.let { put("note", it) }
             read.readError?.let { put("read_error", it) }
             if (read.skipped > 0) put("skipped_lines", read.skipped)
-            if (inWindow.isNotEmpty()) metrics(inWindow, read.dropsBefore).forEach { (k, v) -> put(k, v) }
+            if (turns.isNotEmpty()) metrics(turns).forEach { (k, v) -> put(k, v) }
+            if (inWindow.isNotEmpty()) put("io_drops_in_window", ioDrops(inWindow, read.dropsBefore))
         }
     }
 
@@ -115,7 +118,7 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
     private fun span(ms: Long): String =
         if (ms >= MS_PER_HOUR) "${ms / MS_PER_HOUR}h" else "${ms / MS_PER_MINUTE}m"
 
-    private fun metrics(rows: List<PerfRow>, dropsBefore: Long?): JsonObject = buildJsonObject {
+    private fun metrics(rows: List<PerfRow>): JsonObject = buildJsonObject {
         latencies(rows).forEach { (k, v) -> put(k, v) }
         val byOutcome = rows.groupingBy { it.outcome }.eachCount().toSortedMap()
         putJsonObject("outcomes") { byOutcome.forEach { (tag, n) -> put(tag, n) } }
@@ -125,7 +128,7 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
         // Per tag, so four upstream failures and one client abort read 0.20 and 0.05, not one 0.25.
         putJsonObject("failure_shares") { failures.forEach { (tag, n) -> put(tag, n.toDouble() / rows.size) } }
         put("unattributed", byOutcome[UNATTRIBUTED_OUTCOME] ?: 0)
-        counters(rows, dropsBefore).forEach { (k, v) -> put(k, v) }
+        counters(rows).forEach { (k, v) -> put(k, v) }
     }
 
     private fun latencies(rows: List<PerfRow>): JsonObject = buildJsonObject {
@@ -134,14 +137,13 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
         stats(rows.mapNotNull { it.fields[PerfKeys.TOTAL] })?.let { put("total_ms", it) }
     }
 
-    private fun counters(rows: List<PerfRow>, dropsBefore: Long?): JsonObject = buildJsonObject {
+    private fun counters(rows: List<PerfRow>): JsonObject = buildJsonObject {
         put("retries", rows.sumOf { it.fields[PerfKeys.RETRIES] ?: 0L })
         put("refreshes", rows.sumOf { it.fields[PerfKeys.REFRESHES] ?: 0L })
         val inTokens = rows.sumOf { it.fields[PerfKeys.IN_TOKENS] ?: 0L }
         val cached = rows.sumOf { it.fields[PerfKeys.CACHED_TOKENS] ?: 0L }
         put("cache_hit_ratio", if (inTokens > 0) cached.toDouble() / inTokens else null)
         put("peak_inflight", rows.maxOfOrNull { it.fields[PerfKeys.INFLIGHT] ?: 0L })
-        put("io_drops_in_window", ioDrops(rows, dropsBefore))
     }
 
     /** The per-row counter is cumulative for the daemon process: the drops that happened inside the

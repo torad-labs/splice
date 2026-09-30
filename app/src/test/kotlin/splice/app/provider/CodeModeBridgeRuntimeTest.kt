@@ -84,7 +84,7 @@ class CodeModeBridgeRuntimeTest {
                 .intercept(BRIDGE_BASE_REQUEST, sink) {
                     outer("await tools.call('Read', {}); while (true) {}")
                 }
-            assertEquals(upstreamUsage, (first as TurnOutcome.Success).usage)
+            assertEquals(upstreamUsage.copy(localStep = true), (first as TurnOutcome.Success).usage)
             val id = sink.ids.single()
             val output = "private result marker"
             val failure = bridge.interceptor(turn(id, output), disableParallel = false)

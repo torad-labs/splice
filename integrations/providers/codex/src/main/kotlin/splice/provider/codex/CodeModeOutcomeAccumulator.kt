@@ -73,6 +73,7 @@ internal class CodeModeOutcomeAccumulator {
         outputTokens = prior.outputTokens + latest.outputTokens,
         cachedTokens = if (latest.inputTokens > 0) latest.cachedTokens else prior.cachedTokens,
         reasoningTokens = prior.reasoningTokens + latest.reasoningTokens,
+        localStep = prior.localStep || latest.localStep,
     )
 
     private fun mergeTerminalUsage(prior: Usage, latest: Usage): Usage = Usage(
@@ -80,5 +81,6 @@ internal class CodeModeOutcomeAccumulator {
         outputTokens = prior.outputTokens + latest.outputTokens,
         cachedTokens = if (latest.cachedTokens > 0) latest.cachedTokens else prior.cachedTokens,
         reasoningTokens = prior.reasoningTokens + latest.reasoningTokens,
+        localStep = prior.localStep || latest.localStep,
     )
 }

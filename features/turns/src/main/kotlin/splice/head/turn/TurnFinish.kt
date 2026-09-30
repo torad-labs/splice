@@ -79,11 +79,18 @@ internal class TurnFinish(
         // attempt count the retry loop stamped on it. A Success carries neither, and both default to
         // absent — the row for a healthy turn is byte-identical to what it was before this field.
         val failure = outcome as? TurnOutcome.Failure
+        markLocalStep(drive, outcome)
         telemetry.recordPerf(
             drive,
             outcomeTag,
             cause = failure?.cause?.name,
             layers = failure?.layers ?: 0,
         )
+    }
+
+    private fun markLocalStep(drive: TurnDrive, outcome: TurnOutcome) {
+        if (outcome !is TurnOutcome.Success || !outcome.usage.localStep) return
+        // A turn that began upstream and then emitted a code-mode tool call remains a turn.
+        if (drive.perfCounter(PerfKeys.ATTEMPTS) == 0L) drive.perf.setCount(PerfKeys.LOCAL_STEP, 1)
     }
 }

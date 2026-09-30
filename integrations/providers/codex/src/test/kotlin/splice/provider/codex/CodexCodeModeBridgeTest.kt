@@ -188,6 +188,7 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
             completedOutcome()
         }
         assertFalse((thirdOutcome as TurnOutcome.Success).hasToolUse)
+        assertEquals(true to false, secondOutcome.usage.localStep to thirdOutcome.usage.localStep)
         assertEquals(2, upstreamCalls)
         assertEquals(listOf("runtime-1", "runtime-2"), runtime.cell.results.flatten().map { it.id })
     }

@@ -136,6 +136,7 @@ internal class TurnTelemetry(
                     TurnEconomics(
                         // V4-221: priced at THIS turn's card, the model the perf row names.
                         model = model,
+                        localStep = snap.counters[PerfKeys.LOCAL_STEP] == 1L,
                         inTokens = snap.counters[PerfKeys.IN_TOKENS] ?: 0,
                         cachedTokens = snap.counters[PerfKeys.CACHED_TOKENS] ?: 0,
                         // V4-86: the cache-WRITE bucket. Absent on a perf row written before the

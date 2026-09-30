@@ -54,7 +54,8 @@ private fun turn(
     deferred: Long? = null,
     rateLimited: Boolean = false,
     model: String? = null,
-) = TurnEconomics(model, inTokens, cached, cacheWrite, out, req, upstream, eager, deferred, rateLimited)
+    localStep: Boolean = false,
+) = TurnEconomics(model, inTokens, cached, cacheWrite, out, req, upstream, eager, deferred, rateLimited, localStep)
 
 class EconomicsStoreTest {
 
@@ -126,6 +127,24 @@ class EconomicsStoreTest {
         val b = store.read().single()
         assertEquals(null, b.costUsd, "a partial sum must not read as the hour's cost")
         assertEquals(4, b.turns)
+    }
+
+    @Test
+    fun `local code steps are separate from turns but their tokens and price are retained`(@TempDir tmp: Path) {
+        val file = tmp.resolve("e.json")
+        val store = EconomicsStore(file, FABLE_HEAD, WallClock { 10 * HOUR })
+        store.record(turn(inTokens = 1_000, out = 10, model = FABLE))
+        store.record(turn(inTokens = 70, out = 0, model = FABLE, localStep = true))
+        store.record(turn(inTokens = 20, model = null)) // legacy without a marker is a turn
+        store.flushNow()
+        AsyncFileIo.drain()
+
+        val b = EconomicsStore(file, FABLE_HEAD, WallClock { 10 * HOUR }).read().single()
+        assertEquals(2, b.turns)
+        assertEquals(1, b.localSteps)
+        assertEquals(1_090, b.inTokens)
+        assertEquals(1, b.unpricedTurns)
+        assertEquals(TokenCost().of(TokenBuckets(input = 1_070, output = 10), FABLE_RATES), b.costUsd!!, 1e-9)
     }
 
     @Test

@@ -40,6 +40,7 @@ import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
 import splice.head.usage.EconomicsBucket
 import splice.usage.economics.EconomicsRow
+import splice.usage.economics.EconomicsTurnCounts
 import splice.usage.economics.HeadEconomicsSource
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.RateLimitView
@@ -97,7 +98,10 @@ class WebuiContractTest {
             },
             economics = HeadEconomicsSource {
                 listOf(
-                    EconomicsRow(1_000, 2, 300, 270, 24, 5, 400, 440, 28, 48, 2, 1, costUsd = 0.42, unpricedTurns = 1),
+                    EconomicsRow(
+                        1_000, EconomicsTurnCounts(2, 1), 300, 270, 24, 5, 400, 440, 28, 48, 2, 1,
+                        costUsd = 0.42, unpricedTurns = 1,
+                    ),
                 )
             },
             warnPct = 80,
@@ -346,10 +350,16 @@ private val ECONOMICS_WIRE_RENAMES = mapOf(
     "upstreamBytes" to "upstream_req_bytes",
 )
 
-/** A data class's constructor properties: its non-synthetic, non-static declared fields. */
+/** A data class's constructor properties, expanding the shared turn-count value into its sums. */
 private fun declaredProperties(type: Class<*>): Set<String> =
     type.declaredFields.filterNot { it.isSynthetic || java.lang.reflect.Modifier.isStatic(it.modifiers) }
-        .map { it.name }.toSet()
+        .flatMap { field ->
+            if (field.name == "counts") {
+                declaredProperties(field.type).toList()
+            } else {
+                listOf(field.name)
+            }
+        }.toSet()
 
 /** [EconomicsRow]'s properties as the wire spells them. The denominator, from the type. */
 private fun economicsWireNames(): List<String> {

@@ -114,6 +114,7 @@ class EconomicsCostRouteTest {
         store.record(turn(HAIKU, inTokens = 100_000, cached = 60_000, cacheWrite = 10_000, out = 2_000))
         store.record(turn(FABLE, inTokens = 1_000, cached = 0, cacheWrite = 0, out = 100))
         store.record(turn("gpt-5.6-sol", inTokens = 1_000, cached = 0, cacheWrite = 0, out = 100))
+        store.record(TurnEconomics(FABLE, 0, 0, 0, 0, null, null, null, null, localStep = true))
         return store
     }
 
@@ -141,6 +142,8 @@ class EconomicsCostRouteTest {
         val fable = cost.of(TokenBuckets(input = 1_000, output = 100), FABLE_RATES)
         assertEquals(haiku + fable, bucket.getValue("cost_usd").jsonPrimitive.double, 1e-9, "$bucket")
         assertEquals(1L, bucket.getValue("unpriced_turns").jsonPrimitive.long, "$bucket")
+        assertEquals(3L, bucket.getValue("turns").jsonPrimitive.long, "$bucket")
+        assertEquals(1L, bucket.getValue("local_steps").jsonPrimitive.long, "$bucket")
     }
 
     @Test

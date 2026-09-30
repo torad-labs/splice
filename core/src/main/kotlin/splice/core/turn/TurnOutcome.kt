@@ -25,6 +25,8 @@ public data class Usage(
     // code-mode and custom-call pins, so inserting it beside cachedTokens where it semantically
     // belongs would silently re-read those four literals as a different set of buckets.
     val cacheWriteTokens: Long = 0,
+    /** A client-facing code-mode step synthesized locally; retained through round usage folding. */
+    val localStep: Boolean = false,
 ) {
     /** Sum two rounds' usage — reasoning-continuation folding accumulates across hidden rounds. */
     public operator fun plus(other: Usage): Usage = Usage(
@@ -33,6 +35,7 @@ public data class Usage(
         cachedTokens = cachedTokens + other.cachedTokens,
         reasoningTokens = reasoningTokens + other.reasoningTokens,
         cacheWriteTokens = cacheWriteTokens + other.cacheWriteTokens,
+        localStep = localStep || other.localStep,
     )
 }
 

@@ -18,6 +18,7 @@ import splice.head.usage.EconomicsStore
 import splice.head.usage.QuotaTracker
 import splice.head.usage.UsageStore
 import splice.usage.economics.EconomicsRow
+import splice.usage.economics.EconomicsTurnCounts
 import splice.usage.economics.HeadEconomicsSource
 import splice.usage.perf.HeadPerfSkipSource
 import splice.usage.perf.HeadPerfSource
@@ -74,7 +75,7 @@ public class EconomicsStoreSource(private val store: EconomicsStore) : HeadEcono
     override fun buckets(): List<EconomicsRow> = store.read().map {
         EconomicsRow(
             hour = it.hour,
-            turns = it.turns,
+            counts = EconomicsTurnCounts(it.turns, it.localSteps),
             inTokens = it.inTokens,
             cachedTokens = it.cachedTokens,
             cacheWriteTokens = it.cacheWriteTokens,

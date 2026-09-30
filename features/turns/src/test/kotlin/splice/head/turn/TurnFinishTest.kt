@@ -20,6 +20,7 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
+import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
@@ -176,6 +177,31 @@ class TurnFinishTest {
         assertTrue("\"cause\":\"UPSTREAM_STALLED\"" in row, "the cause must ride the row: $row")
         assertTrue("\"layers\":3" in row, "the loop's attempt count must ride the row: $row")
         assertTrue("\"outcome\":" in row, "the greppable outcome tag must survive: $row")
+    }
+
+    @Test
+    fun `only a code-mode response without an upstream attempt marks a local step`() = runBlocking {
+        for (attempts in listOf(0L, 1L)) {
+            val rig = Rig(tmp, "local-step-$attempts")
+            val emitter = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } })
+            val drive = rig.drive(emitter)
+            drive.perf.setCount(PerfKeys.ATTEMPTS, attempts)
+            try {
+                rig.finish.finishTurn(
+                    drive,
+                    TurnOutcome.Success(
+                        hasToolUse = false,
+                        incomplete = false,
+                        usage = Usage(localStep = true),
+                        bodyText = "done",
+                        messageClosed = true,
+                    ),
+                )
+                assertEquals(attempts == 0L, drive.perf.snapshot().counters[PerfKeys.LOCAL_STEP] == 1L)
+            } finally {
+                drive.slot.release()
+            }
+        }
     }
 
     @Test

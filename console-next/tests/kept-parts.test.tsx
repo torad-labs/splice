@@ -3,10 +3,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router';
 import { describe, expect, test } from 'vitest';
-import { captureState } from '../src/lib/turns-page';
+import { captureState, savedCapture } from '../src/lib/turns-page';
 import { CaptureControl } from '../src/pages/turns/CaptureControl';
 import { KeptTabs } from '../src/pages/turns/KeptTabs';
 import type { CaptureWire, KeptTurn, TurnRow } from '../src/types/perf';
+import type { TopologyState } from '../src/types/topology';
 
 const row = (turn: string): TurnRow => ({ head: 'claude-solo', ts: 1_000_000, model: 'm', outcome: 'error:conn-reset', compact: false, turn });
 const kept = (id: string, sentence: string | null): KeptTurn => ({
@@ -41,13 +42,36 @@ describe('a failed turn\'s sentence', () => {
 });
 
 describe('the body capture control', () => {
-  const control = (enabled: boolean | null): string => page(<CaptureControl head="claude-solo" plan="Solo" />, (client) => { if (enabled !== null) client.setQueryData(['capture', 'claude-solo'], capture(enabled)); });
+  const file = (trace: string | null): TopologyState => ({ path: '/x/splice.toml', stale: false, topology: { heads: { 'claude-solo': { overrides: trace === null ? {} : { trace } } } } });
+  const control = (enabled: boolean | null, saved: string | null = null): string => page(<CaptureControl head="claude-solo" plan="Solo" />, (client) => {
+    if (enabled !== null) client.setQueryData(['capture', 'claude-solo'], capture(enabled));
+    if (saved !== null) client.setQueryData(['topology'], file(saved));
+  });
   test('is a switch named Body capture that shows what the daemon records now', () => {
     expect(control(false)).toMatch(/role="switch" aria-checked="false" aria-label="Body capture"/);
     const on = control(true);
     expect(on).toMatch(/aria-checked="true"/);
     expect(on).toContain('Recording bodies for Solo.');
     expect(on).not.toContain('Restart to apply');
+  });
+  test('reads what was saved from splice.toml, so the pending restart is there on any turn\'s page and after a reload', () => {
+    const waiting = control(false, 'true');
+    expect(waiting).toMatch(/aria-checked="true"/);
+    expect(waiting).toContain('Restart to apply. Capture will be on after splice restarts.');
+    expect(waiting).toContain('Restart splice');
+    expect(waiting).not.toContain('Recording bodies');
+    const off = control(true, 'false');
+    expect(off).toMatch(/aria-checked="false"/);
+    expect(off).toContain('Capture will be off after splice restarts.');
+    expect(control(true, 'true')).not.toContain('Restart to apply');
+  });
+  test('the saved value is the file\'s own trace text for that head, and nothing when the file sets none', () => {
+    expect(savedCapture(file('true'), 'claude-solo')).toBe(true);
+    expect(savedCapture(file('false'), 'claude-solo')).toBe(false);
+    expect(savedCapture(file(null), 'claude-solo')).toBeNull();
+    expect(savedCapture(file('true'), 'other')).toBeNull();
+    expect(savedCapture({ pending: 'no route' } as unknown as TopologyState, 'claude-solo')).toBeNull();
+    expect(savedCapture(undefined, 'claude-solo')).toBeNull();
   });
   test('draws nothing until the daemon has said', () => {
     expect(control(null)).toBe('');

@@ -6,6 +6,7 @@ import { colourOfHead } from './model';
 import type { ModelColour } from './model';
 import { STUCK_IDLE_MS, spanText } from './sessions';
 import { STAGE_PHRASE, T } from './words-turns';
+import type { TopologyState } from '../types/topology';
 import type { InflightTurn, PerfSummaryHead, PerfWindowLabel, TurnRow } from '../types/perf';
 
 export const WINDOW_MS: Record<PerfWindowLabel, number> = { '1h': 3_600_000, '24h': 86_400_000, '7d': 604_800_000 };
@@ -284,10 +285,22 @@ export const movedOf = (row: TurnRow): Moved => ({
   retries: row.retries !== undefined && row.retries > 0 ? row.retries : null,
 });
 
-/** What a head's body capture is, from the two things the daemon says. `running` is the re-read: what it records now. `written` is what
- *  the last successful write saved to splice.toml, which a recorder built at start only follows after a restart; null before any
- *  write in this page. The switch shows what was saved, and a difference between the two is a restart waiting. */
-export function captureState(running: boolean | null, written: boolean | null): { on: boolean; recording: boolean; pending: boolean } {
-  const on = written ?? running ?? false;
-  return { on, recording: running === true, pending: written !== null && running !== null && written !== running };
+/** What splice.toml holds for a head's body capture: `[heads.<key>.overrides] trace`, written as the text "true" or "false". Null when
+ *  the file sets none (the head then follows the default, so nothing is waiting) or the read is not here. The file is what a save
+ *  changes and a restart applies, so this read is the same after a reload and on another turn's page. */
+export function savedCapture(topology: TopologyState | undefined, head: string): boolean | null {
+  if (topology === undefined || 'pending' in topology) return null;
+  const heads = topology.topology.heads;
+  const entry = typeof heads === 'object' && heads !== null ? (heads as Record<string, unknown>)[head] : undefined;
+  const overrides = typeof entry === 'object' && entry !== null ? (entry as { overrides?: unknown }).overrides : undefined;
+  const trace = typeof overrides === 'object' && overrides !== null ? (overrides as { trace?: unknown }).trace : undefined;
+  return trace === 'true' ? true : trace === 'false' ? false : null;
+}
+
+/** What a head's body capture is, from the two things the daemon says. `running` is the capture read: what it records now. `saved` is what
+ *  splice.toml holds, which a recorder built at start only follows after a restart. The switch shows what was saved, and a difference
+ *  between the two is a restart waiting. */
+export function captureState(running: boolean | null, saved: boolean | null): { on: boolean; recording: boolean; pending: boolean } {
+  const on = saved ?? running ?? false;
+  return { on, recording: running === true, pending: saved !== null && running !== null && saved !== running };
 }

@@ -9,6 +9,7 @@
 // `useLiveTurns` in queries.ts.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { pendingOf } from './auth';
+import { topologyKey } from './config';
 import { failureText, MgmtError, request } from './client';
 import { keys } from './queries';
 import { inflightFrom } from '../lib/perf';
@@ -334,8 +335,10 @@ export function useSetCapture() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: ({ head, enabled }: { head: string; enabled: boolean }) => putCapture(head, enabled),
-    onSuccess: (change, { head }) => {
+    // The saved value is read from the topology, so the mutation stays pending until that read has the write in it.
+    onSuccess: async (change, { head }) => {
       if (change.running !== null) client.setQueryData<CaptureWire>([...captureKey(head)], change.running);
+      await client.invalidateQueries({ queryKey: [...topologyKey] });
     },
   });
 }

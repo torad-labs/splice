@@ -1,6 +1,6 @@
 # Review: each built page beside its comp
 
-Day theme, 1440 and 1920. Left is the comp (`png/`), right is the built page (`png/built/`), captured live against the running daemon (Needs you, Sessions, a session, Turns and a turn on Sep 30, 2026 against daemon `a652183da`; the other pages on Sep 29), so the data is real and the comp's is drawn. Night is not repeated: no page sheet has night-specific rules, only the shared ones (`styles/base.css`, `styles/tokens.css`) that every page uses.
+Day theme, 1440 and 1920, and 3840 x 2060 at the end. Left is the comp (`png/`), right is the built page (`png/built/`), captured live against the running daemon `79c16ced4` from the console its jar serves on :3096 (Needs you, Sessions, a session, Turns and a turn, at 1440, 1920 and 3840, on Sep 30, 2026, 4:30 AM CT; the other pages on Sep 29), so the data is real and the comp's is drawn.
 
 ## Needs you
 
@@ -113,13 +113,17 @@ Left: messages name the seats by role ("Planner to Builder") where the comp name
 
 ## The operator's frame: 3840 x 2060, day
 
-His panels are 3840 wide at scale 1 (ruling 4, 2026-09-25). Built pages only, captured on Sep 30, 2026 against the running daemon with the viewport at exactly 3840 x 2060; the comps are drawn at 1440 and 1920, where the page is unchanged (the root size holds 16px through 1920).
+His panels are 3840 wide at scale 1 (ruling 4, 2026-09-25). Built pages only, captured on Sep 30, 2026, 4:30 AM CT from the jar's own console on :3096 with the viewport at exactly 3840 x 2060; the comps are drawn at 1440 and 1920, where the page is unchanged (the root size holds 16px through 1920).
 
 | Needs you | Sessions |
 |---|---|
 | ![](png/built/needs-day-3840.png) | ![](png/built/sessions-day-3840.png) |
 | **A session** | **Turns** |
 | ![](png/built/session-day-3840.png) | ![](png/built/turns-day-3840.png) |
+| **A turn** | |
+| ![](png/built/turn-day-3840.png) | |
+
+On Sessions the card lines are the daemon's: the newest message or a call's description ("Edit · AdmissionGate.kt", "Bash · Retake all captures from the served jar console"), never a tool result or a command; a session whose last event is a compaction says "Compacted its context".
 
 What scales: the root size grows from 16px at 1920 to 20px at 3840, and every size (type, space, radii, widths, the sidebar) is in rem, so the page is the same page 1.25 times larger; the 1560px cap on the wall is gone, so a page draws in 87 to 90% of the width. Measured on glyph boxes: Sessions 0.901, Usage and Turns 0.878, Needs you 0.874 at 3840 (floor 0.8), body 21.25px (floor 20); at 1600 body is 17px (floor 17) and the drawn share 0.77 to 0.81 (floor 0.7). Needs you goes to two columns of cards from 2400px, where one column of cards beside the summary would leave the right half bare. Settings is still a column of 1550px at this frame (39% drawn), because a form of rows stretched to the window would be harder to read; it is outside the ruling's three pages.
 

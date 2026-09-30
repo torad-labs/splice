@@ -51,6 +51,7 @@ svg { display: block; flex: none; }
 
 .wall { padding: var(--space-13) var(--gutter) var(--space-18); min-width: 0; }
 .wrap { margin: 0 auto; }
+.stale-page { display: flex; align-items: center; gap: var(--space-7); margin-bottom: var(--space-9); padding: var(--space-6) var(--space-8); border-radius: 0.625rem; background: var(--obj); border: var(--input); font: 500 0.96rem var(--meta); color: var(--ink); }
 /* At the operator's frame (ruling 4, 3840 wide) a page's sections stand in columns of about 44rem, so the right two thirds are not bare. One column below 2400px. */
 @media (min-width: 2400px) {
   .frame-cols { column-width: 44rem; column-gap: var(--space-16); margin-top: var(--space-10); }

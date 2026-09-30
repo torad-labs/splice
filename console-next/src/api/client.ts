@@ -129,6 +129,16 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 /** GET /health is open (no bearer): the daemon's own answer to "are you there, and is your topology stale". */
+/** The page the daemon serves at `/` now, straight from the daemon and never the cache; null when it did not answer. */
+export async function servedPage(): Promise<string | null> {
+  try {
+    const res = await fetch('/', { cache: 'no-store' });
+    return res.ok ? await res.text() : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function health<T>(): Promise<T> {
   let res: Response;
   try {

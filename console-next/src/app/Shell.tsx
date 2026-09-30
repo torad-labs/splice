@@ -3,6 +3,7 @@ import { useNeeds } from '../api/needs';
 import { useStatus } from '../api/queries';
 import { setTheme, useTheme } from '../lib/theme';
 import { C } from './copy';
+import { StaleBanner, useStalePage } from './StalePage';
 
 const NAV = [
   ['needs-you', C.needs],
@@ -22,6 +23,7 @@ export function Shell() {
   const theme = useTheme();
   const answering = status.isSuccess || status.isPending;
   const waiting = useNeeds(Date.now()).needs.length;
+  const stale = useStalePage();
   return (
     <div className="app">
       <aside className="side">
@@ -53,6 +55,7 @@ export function Shell() {
       </aside>
       <main className="wall">
         <div className="wrap">
+          {stale ? <StaleBanner /> : null}
           <Outlet />
         </div>
       </main>

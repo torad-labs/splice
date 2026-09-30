@@ -192,11 +192,14 @@ origin.
   (Separate, the default: `claude-splice` stays a splice-owned head with its own config dir; Wrap:
   the operator's plain `claude` becomes a splice launcher over the vanilla `~/.claude`), what
   `claude` on PATH resolves to right now, and the shim path. `POST /api/claude-head/wrap` installs
-  the shim at `claude`, preserving the shadowed symlink's exact target for byte-identical restore,
-  and materializes `~/.claude/settings.json` + `~/.claude/.claude.json` through a deliberately
-  narrow door that never bypasses `ClaudeConfigMaterializer`'s DR-102 guard (that guard still
-  refuses `~/.claude` on its general entry point); both files are backed up first. `POST
-  /api/claude-head/unwrap` restores both. Every OTHER head's launch is protected too: LaunchService
+  the shim at `claude` and writes nothing into `~/.claude` or `~/.claude.json`: a wrapped `claude`
+  runs over your own config, so its MCP servers, projects, trust, account, settings, hooks and
+  plugins are the ones plain `claude` had, and the head's settings ride a `--settings` overlay
+  (V4-445). A Claude Code update re-points `~/.local/bin/claude`; the daemon puts the shim back at
+  start, on a watch of that directory and on a slow tick, and records the new release as the real
+  binary, so `claude` stays wrapped and on the new version. `POST /api/claude-head/unwrap` points
+  `claude` back at the current real binary. `splice setup` asks Separate or Wrap. Every OTHER
+  head's launch is protected too: LaunchService
   now plants the real absolute claude binary instead of the bare `"claude"` string whenever wrap is
   active, because every head shares one `claude`-on-PATH argv[0] and a wrapped `claude` would
   otherwise resolve straight back to the shim mid-launch. `splice login claude-splice --label
@@ -657,6 +660,11 @@ origin.
   (`RETURN_VALUE_NOT_USED`) is an error in tests too.
 
 ### Fixed
+- **Code-mode turns chain on the WebSocket again.** Every GPT tool call is `exec`, a custom tool,
+  and the chaining check knew only function calls, so each round after an `exec` re-sent the whole
+  conversation instead of the script's output (103 of 6,877 WebSocket rounds chained). A round now
+  sends only what is new: the `exec` output and any context note after it. Measured on `claudex`
+  after the fix: 55 of 58 rounds chained, none closed for size (V4-446).
 - **`splice status` no longer calls a head ready when the daemon could not build it.** The table
   judged each row by its credential and its wrapper alone, so a head skipped at boot read "ready"
   while `/health` counted it failed. The row now reads "not running" with the daemon's own boot

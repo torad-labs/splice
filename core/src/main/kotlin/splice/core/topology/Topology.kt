@@ -254,6 +254,7 @@ public data class ProviderConfig(
             },
             headWindow = window,
             compactionReserveDefaults = CodexCompactionReserves.takeIf { auth.kind == AuthKind.ChatgptOAuth.wire },
+            tierSlots = head.tierSlots(),
         )
     }
 
@@ -350,6 +351,14 @@ public data class ProviderConfig(
         // named, and a catalog without it refuses every turn the head was launched to serve. With no
         // declared rows the roster is whatever the endpoint listed, which can omit the pinned id — a
         // retired model, a discovery filter, an alias the roster does not spell, a start it missed.
+        head.modelSlots.forEach { (slot, id) ->
+            require(head.models == null || head.models.any { it.id == id }) {
+                "model_slots.$slot names a model outside the head models allowlist; add it to models or remove the tier"
+            }
+            require(roster.any { it.id == id } || listsModels) {
+                "model_slots.$slot names model '$id' neither declared nor discovered by provider '${head.provider}'"
+            }
+        }
         val requested = head.models ?: return withPinned(roster, head.pinnedModel)
         require(requested.isNotEmpty()) { "head model list must not be empty" }
         require(requested.map { it.id }.distinct().size == requested.size) { "head model list contains duplicates" }
@@ -389,7 +398,7 @@ public data class ProviderConfig(
 // (concentration, 2026-09-23). Same-package FQCNs are unchanged.
 
 private const val DEFAULT_WINDOW_FLOOR: Long = 200_000
-private val headModelSlots = setOf("opus", "sonnet", "haiku", "fable")
+internal val headModelSlots = setOf("opus", "sonnet", "haiku", "fable")
 
 /** What a control-plane port collision names as its owner in [Topology.portCollisions] — the
  *  dotted form [DaemonConfig.controlPort]'s own TOML key, so the report points at where to look

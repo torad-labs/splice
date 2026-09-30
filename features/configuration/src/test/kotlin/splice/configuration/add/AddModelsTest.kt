@@ -2,8 +2,8 @@
 // Cancel and a non-TTY empty selection leave the seeded file byte-identical.
 //
 // V4-356: the first-run starter intentionally has no head. These add-model tests instead append
-// the shipped OpenRouter profile through AddProfiles.toml, then lay out its declared head roster
-// over several lines so the editor's comment, bracket and byte-preservation cases stay exercised.
+// the shipped OpenRouter profile through AddProfiles.toml, then turn its tier declarations into
+// a legacy allowlist so the editor's comment, bracket and byte-preservation cases stay exercised.
 // The denominator is the profile the operator can choose, never a duplicate hand-written roster.
 package splice.configuration.add
 
@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.model.DiscoveredModel
 import splice.terminal.KeyReader
 import splice.terminal.MultiSelectPrompt
 import splice.terminal.SelectPrompt
@@ -29,12 +30,44 @@ import java.nio.file.StandardOpenOption
 class AddModelsTest {
 
     @Test
-    fun `the configured OpenRouter profile declares a head model roster`(@TempDir dir: Path) {
-        // If the emitted profile stops declaring `models = [...]`, the editor tests would pass vacuously.
+    fun `an existing OpenRouter allowlist keeps its declared head roster`(@TempDir dir: Path) {
+        // These legacy explicit-allowlist cases must keep exercising the roster editor.
         val path = seed(dir)
         val head = requireNotNull(TopologyLoader.loadOrMaterialize(path).heads["openrouter"])
         val roster = requireNotNull(head.models) { "profile head declares no models = [...] roster" }
         assertFalse(LUNA in roster.map { it.id }, "seed already rosters the model the test adds")
+    }
+
+    @Test
+    fun `fresh discovery heads offer no already declared models`(@TempDir dir: Path) {
+        val path = dir.resolve("splice.toml")
+        val profiles = AddProfiles()
+        val profile = requireNotNull(profiles.find("openrouter"))
+        Files.writeString(path, profiles.toml(profile, "openrouter", OPENROUTER_PORT))
+        val before = Files.readString(path)
+        assertTrue(AddModelOffers().of(TopologyLoader.parse(before)).single().remaining.isEmpty())
+        assertFalse(addFirstRemaining(path))
+        assertEquals(before, Files.readString(path))
+    }
+
+    @Test
+    fun `adding a missing provider row preserves unrestricted discovery and independent tiers`(@TempDir dir: Path) {
+        val path = dir.resolve("splice.toml")
+        val profiles = AddProfiles()
+        val profile = requireNotNull(profiles.find("openrouter"))
+        val emitted = profiles.toml(profile, "openrouter", OPENROUTER_PORT)
+        Files.writeString(path, withoutProviderRow(emitted, LUNA))
+        val original = TopologyLoader.parse(Files.readString(path)).heads.getValue("openrouter")
+        assertTrue(addFirstRemaining(path))
+        val topology = TopologyLoader.loadOrMaterialize(path)
+        val head = topology.heads.getValue("openrouter")
+        assertEquals(null, head.models)
+        assertEquals(original.modelSlots, head.modelSlots)
+        val discovered = DiscoveredModel("fixture/extra-model", contextWindow = 64_000)
+        val catalog = topology.providers.getValue(head.provider).catalogFor(head, discovered = listOf(discovered))
+        assertTrue(catalog.contains(LUNA))
+        assertTrue(catalog.contains(discovered.id))
+        assertEquals(profile.models.first { it.id == LUNA }.rates, catalog.models.first { it.id == LUNA }.rates)
     }
 
     @Test
@@ -251,15 +284,15 @@ class AddModelsTest {
     private fun outsideRoster(text: String): String =
         text.substringBefore(ROSTER_OPEN) + text.substringAfter(ROSTER_OPEN).substringAfter("]")
 
-    /** The operator selects OpenRouter explicitly. The row comes from AddProfiles; the head roster
-     *  uses the multiline TOML spelling these editor cases probe, not a second model list. */
+    /** An existing explicit allowlist, derived from the shipped profile's tier declarations.
+     *  Fresh profiles instead use model_slots; those unrestricted heads are tested separately. */
     private fun seed(dir: Path): Path {
         val path = dir.resolve("splice.toml")
         TopologyLoader.loadOrMaterialize(path)
         val profiles = AddProfiles()
         val profile = requireNotNull(profiles.find("openrouter"))
         val emitted = profiles.toml(profile, "openrouter", OPENROUTER_PORT)
-        val oneLine = emitted.lineSequence().first { it.startsWith(ROSTER_OPEN) }
+        val oneLine = emitted.lineSequence().first { it.startsWith("model_slots =") }
         val entries = profile.models.flatMap { model ->
             model.slots.map { slot -> "  { id = \"${model.id}\", slot = \"$slot\" }," }
         }

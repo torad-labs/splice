@@ -76,11 +76,15 @@ internal class HeadBoot {
     private fun logUnlisted(key: String, head: HeadConfig, built: ManagedHead, log: LogSink) {
         val catalog = built.catalog ?: return
         val unlisted = head.models.orEmpty().map { it.id }.filterNot(catalog::contains)
-        if (unlisted.isEmpty()) return
-        log(
-            "[$key][boot] models list names ${unlisted.joinToString(", ")}, which its endpoint did not " +
-                "list at this start, so they are not offered until it does\n",
-        )
+        if (unlisted.isNotEmpty()) {
+            log(
+                "[$key][boot] models list names ${unlisted.joinToString(", ")}, which its endpoint did not " +
+                    "list at this start, so they are not offered until it does\n",
+            )
+        }
+        head.tierSlots().filterKeys { id -> catalog.live().models.none { it.id == id } }.forEach { (id, slot) ->
+            log("[$key][boot] model_slots.$slot names $id, which is not offered at this start; $slot stays unmapped\n")
+        }
     }
 
     /** IO-006: neither head is refused (that would break the codex/claudex usage-history migration

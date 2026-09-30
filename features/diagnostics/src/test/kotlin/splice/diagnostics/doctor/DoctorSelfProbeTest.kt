@@ -11,6 +11,8 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.config.MgmtKey
+import splice.core.config.StatePaths
 import splice.core.testing.TestPorts
 import splice.core.util.EnvReader
 import splice.daemonclient.DaemonHealth
@@ -88,8 +90,13 @@ class DoctorSelfProbeTest {
             heads = """{"heads":[{"key":"codex","health":{"localOriginErrors":0,"providerErrors":0}}]}""",
             auth = POOLED,
             trace = emptyMap(), // this fixture exercises pool and health, not a booted trace
+            unmappedTiers = mapOf("codex" to mapOf("opus" to "fixture/absent")),
         )
-        val run = DoctorTestPorts.doctor().collect(env(port), answers = answers)
+        val reader = env(port)
+        val config = tmp.resolve("config/splice/splice.toml")
+        Files.createDirectories(config.parent)
+        Files.writeString(config, "[daemon]\ncontrol_port = $port\n")
+        val run = DoctorTestPorts.doctor().collect(reader, answers = answers)
         val sections = run.sections.toMap()
         assertEquals(
             DoctorCheck(CHECK_DAEMON, CheckStatus.OK, "running $version on :$port"),
@@ -101,6 +108,33 @@ class DoctorSelfProbeTest {
             sections.getValue("runtime").toString(),
         )
         assertEquals(setOf("codex"), run.accountPools.keys)
+        val missing = sections.getValue("configuration").single { it.name == "model-slot:codex:opus" }
+        assertEquals(CheckStatus.WARN, missing.status)
+        assertTrue(missing.detail.contains("fixture/absent"), missing.detail)
+    }
+
+    @Test
+    fun `loopback tiers use the management key and preserve unresolved declarations`() {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        val key = MgmtKey(StatePaths(baseOverride = tmp.resolve("state"))).get()
+        server.createContext("/api/models") { exchange ->
+            val authorized = exchange.requestHeaders.getFirst("Authorization") == "Bearer $key"
+            val body = """{"heads":[{"head":"fixture","models":[""" +
+                """{"id":"fixture/absent","slot":"opus","resolved":false},""" +
+                """{"id":"fixture/live","slot":"sonnet","resolved":true},""" +
+                """{"id":"fixture/other","slot":null,"resolved":false}]}]}"""
+            val bytes = body.toByteArray()
+            exchange.sendResponseHeaders(if (authorized) 200 else 401, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+        }
+        server.start()
+        daemon = server
+        val reader = LoopbackDaemon(JdkAccountPoolRead())
+        val environment = env(server.address.port)
+        assertEquals(
+            DaemonRead.Answered(mapOf("fixture" to mapOf("opus" to "fixture/absent"))),
+            reader.unmappedTiers(server.address.port, environment),
+        )
     }
 
     @Test

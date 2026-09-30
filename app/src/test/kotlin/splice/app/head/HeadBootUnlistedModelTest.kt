@@ -69,6 +69,26 @@ class HeadBootUnlistedModelTest {
         assertTrue(boot(head.copy(models = listOf(HeadModel("grok-4.6", "opus")))).none { "models list names" in it })
     }
 
+    @Test
+    fun `a mapped suffixed id absent from the offered rows is logged even when admission recognizes its base`() {
+        val head = HeadConfig("xai", 4104, "claude-grok--", "grok-4.6")
+            .copy(modelSlots = mapOf("opus" to "grok-4.6[1m]"))
+        val named = boot(head).single { "model_slots" in it }
+        assertTrue(named.contains("opus"), named)
+        assertTrue(named.contains("grok-4.6[1m]"), named)
+        assertTrue(named.contains("unmapped"), named)
+    }
+
+    @Test
+    fun `a mapped tier missing from the endpoint is logged without failing the head`() {
+        val head = HeadConfig("xai", 4104, "claude-grok--", "grok-4.6")
+            .copy(modelSlots = mapOf("opus" to "fixture/absent"))
+        val named = boot(head).single { "model_slots" in it }
+        assertTrue(named.contains("opus"), named)
+        assertTrue(named.contains("fixture/absent"), named)
+        assertTrue(named.contains("unmapped"), named)
+    }
+
     private fun managed(key: String, catalog: ModelCatalog): ManagedHead = ManagedHead(
         head = object : Head {
             override val key: String = key

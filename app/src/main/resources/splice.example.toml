@@ -430,7 +430,11 @@ context_window = 1000000
 
 # ── heads: each is a Claude Code wrapper on its own loopback port ───────────────
 # `command` names the installed wrapper (`splice install` links ~/.local/bin/<command>).
-# `models` is this process's ordered provider-model allowlist. An explicit `context_window` forces
+# `models` is this process's ordered provider-model allowlist. `model_slots` maps tiers to ids
+# without restricting discovery: model_slots = { opus = "vendor/model-a", sonnet = "vendor/model-b" }.
+# Keep either slots within `models` or `model_slots`, never both. An unslotted allowlist can use
+# `model_slots` for ids it allows. A mapped model the endpoint does not list stays unmapped,
+# with a boot-log explanation, never a substitute. An explicit `context_window` forces
 # one window onto every selected row; omit it when their real backend ceilings differ. A launch
 # plants the pinned row's window as CLAUDE_CODE_MAX_CONTEXT_TOKENS, and usage scaling makes every
 # other row compact at its own declared window — live through /model. A window edited here reaches
@@ -548,7 +552,7 @@ pinned_model = "meta-llama/llama-4-maverick"
 # as sonnet. haiku and fable stay undeclared and 400 cleanly pre-upstream — the slot note on
 # [heads.claudex] explains what degrades (background titling, `--model haiku`). No head-wide
 # context_window: the two rows have different ceilings and each keeps its own.
-models = [{ id = "meta-llama/llama-4-maverick", slot = "opus" }, { id = "z-ai/glm-5.3", slot = "sonnet" }]
+model_slots = { opus = "meta-llama/llama-4-maverick", sonnet = "z-ai/glm-5.3" }
 [heads.openrouter.claude]
 command = "claude-openrouter"
 

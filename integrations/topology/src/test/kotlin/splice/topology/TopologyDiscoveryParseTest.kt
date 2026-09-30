@@ -8,7 +8,10 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
+import splice.core.model.DiscoveredModel
 import splice.core.topology.ModelDiscoveryConfig
+import splice.core.topology.Topology
 
 class TopologyDiscoveryParseTest {
 
@@ -40,4 +43,99 @@ class TopologyDiscoveryParseTest {
         assertEquals(ModelDiscoveryConfig(exclude = listOf("*")), off.discovery)
         assertEquals(ModelDiscoveryConfig(), provider("").discovery)
     }
+
+    @Test
+    fun `tier mappings reject unknown repeated and competing declarations`() {
+        val invalid = listOf(
+            """model_slots = { unknown = "m1" }""",
+            """model_slots = { opus = "" }""",
+            """model_slots = { opus = "m1", sonnet = "m1" }""",
+            """model_slots = { opus = "m1", OPUS = "m2" }""",
+            """model_slots = { opus = "m1", opus = "m2" }""",
+            """model_slots = { "opus" = "m1", 'opus' = "m2" }""",
+            """model_slots = { opus = "m1" }
+               model_slots = { sonnet = "m2" }""",
+            """[heads.one.model_slots]
+               opus = "m1"
+               opus = "m2" """,
+        )
+        invalid.forEach { extra ->
+            assertThrows<IllegalArgumentException>(extra) { withHead(extra) }
+        }
+        val mixed = assertThrows<IllegalArgumentException> {
+            withHead(
+                """models = [{ id = "m1", slot = "opus" }]
+                   model_slots = { sonnet = "m1" }""",
+            )
+        }
+        assertTrue(mixed.message.orEmpty().contains("keep"), mixed.message)
+        assertTrue(mixed.message.orEmpty().contains("model_slots"), mixed.message)
+    }
+
+    @Test
+    fun `quoted tier keys normalize like bare keys without restricting the catalog`() {
+        for (declaration in listOf(
+            """model_slots = { "Opus" = "m1", 'sonnet' = "m2" }""",
+            """[heads.one.model_slots]
+               "Opus" = "m1"
+               'sonnet' = "m2" """,
+        )) {
+            val topology = withHead(declaration)
+            val head = topology.heads.getValue("one")
+            val catalog = topology.providers.getValue("p").catalogFor(head, discovered = listOf(DiscoveredModel("m2")))
+            assertEquals(mapOf("m1" to "opus", "m2" to "sonnet"), head.tierSlots())
+            assertEquals(emptyMap<String, String>(), catalog.unmappedTiers)
+        }
+    }
+
+    @Test
+    fun `mapped tiers require a declared or discovered served id`() {
+        val topology = withHead("""model_slots = { opus = "m1", sonnet = "m2" }""")
+        val head = topology.heads.getValue("one")
+        val provider = topology.providers.getValue("p")
+        assertEquals(listOf("m1"), provider.catalogFor(head).models.map { it.id })
+        val unlisting = provider.copy(discovery = ModelDiscoveryConfig(exclude = listOf("*")))
+        val failure = assertThrows<IllegalArgumentException> { unlisting.catalogFor(head) }
+        assertTrue(failure.message.orEmpty().contains("model_slots.sonnet"), failure.message)
+        val catalog = provider.catalogFor(head, discovered = listOf(DiscoveredModel("m2")))
+        assertEquals(listOf("m1", "m2"), catalog.models.map { it.id })
+        assertEquals(mapOf("m1" to "opus", "m2" to "sonnet"), head.tierSlots())
+    }
+
+    @Test
+    fun `separate tiers respect an explicit serving allowlist`() {
+        val topology = withHead(
+            """models = [{ id = "m1" }]
+               model_slots = { opus = "m1" }""",
+        )
+        val head = topology.heads.getValue("one")
+        val provider = topology.providers.getValue("p")
+        assertEquals(mapOf("m1" to "opus"), head.tierSlots())
+        assertEquals(
+            listOf("m1"),
+            provider.catalogFor(head, discovered = listOf(DiscoveredModel("m2"))).models.map { it.id },
+        )
+        assertThrows<IllegalArgumentException> {
+            provider.catalogFor(
+                head.copy(modelSlots = mapOf("opus" to "m2")),
+                discovered = listOf(DiscoveredModel("m2")),
+            )
+        }
+    }
+
+    private fun withHead(extra: String): Topology = TopologyLoader.parse(
+        """
+        [providers.p]
+        dialect = "openai-chat"
+        base_url = "https://example.invalid/v1"
+        auth = { kind = "api-key", env = "FIXTURE_KEY" }
+        models = [{ id = "m1", context_window = 64000 }]
+        [heads.one]
+        provider = "p"
+        port = 3105
+        discovery_prefix = "claude-one--"
+        pinned_model = "m1"
+        ${extra.trimIndent()}
+        """.trimIndent(),
+    )
 }

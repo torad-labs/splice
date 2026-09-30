@@ -4,12 +4,20 @@
 // serving, it timed out on its own /health in 3 page loads of 6 and read "stopped" (2026-09-25).
 package splice.diagnostics.doctor
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
+import splice.core.util.JsonScalars
+import splice.daemonclient.ControlPlaneClient
 import splice.daemonclient.DaemonProbe
 import splice.daemonclient.MgmtKeyFile
 import splice.daemonclient.MgmtKeyRead
 import splice.daemonclient.TraceConfigProbe
+import java.nio.file.Path
 
 /** One read of the daemon past /health: what it answered, or why it was not asked. Each section
  *  words the misses its own way, so the cause stays a case rather than a sentence. */
@@ -37,6 +45,8 @@ internal interface DaemonReads {
     fun trace(port: Int, env: EnvReader, heads: Set<String>): DaemonRead<Map<String, DaemonProbe.HeadTrace>>
 
     fun accountPools(port: Int, env: EnvReader): AccountPoolsRead
+
+    fun unmappedTiers(port: Int, env: EnvReader): DaemonRead<Map<String, Map<String, String>>>
 }
 
 /** The CLI's reads: over loopback, with the management key this shell's state dir holds. */
@@ -75,6 +85,20 @@ internal class LoopbackDaemon(private val pools: AccountPoolRead) : DaemonReads 
 
     override fun accountPools(port: Int, env: EnvReader): AccountPoolsRead = pools(port, env)
 
+    override fun unmappedTiers(port: Int, env: EnvReader): DaemonRead<Map<String, Map<String, String>>> =
+        when (val key = MgmtKeyFile().read(env)) {
+            is MgmtKeyRead.Present -> {
+                val reply = ControlPlaneClient.send("http://127.0.0.1:$port/api/models", "GET", key.key)
+                if (reply == null || reply.status !in ControlPlaneClient.OK_RANGE) {
+                    DaemonRead.Unreachable
+                } else {
+                    DaemonRead.Answered(DoctorTierChecks.parse(reply.body))
+                }
+            }
+            MgmtKeyRead.Absent -> DaemonRead.KeyAbsent
+            is MgmtKeyRead.Unreadable -> DaemonRead.KeyUnreadable(key.reason)
+        }
+
     private fun <T> answered(value: T?): DaemonRead<T> =
         value?.let { DaemonRead.Answered(it) } ?: DaemonRead.Unreachable
 }
@@ -98,4 +122,38 @@ internal class AnsweredDaemon(private val answers: DaemonAnswers) : DaemonReads 
         DaemonRead.Answered(answers.trace)
 
     override fun accountPools(port: Int, env: EnvReader): AccountPoolsRead = AccountPoolProjection().read(answers.auth)
+
+    override fun unmappedTiers(port: Int, env: EnvReader): DaemonRead<Map<String, Map<String, String>>> =
+        DaemonRead.Answered(answers.unmappedTiers)
+}
+
+/** The running model answer and its doctor checks, kept beside both daemon read implementations. */
+internal object DoctorTierChecks {
+    private val json = Json
+
+    fun parse(body: String): Map<String, Map<String, String>> =
+        json.parseToJsonElement(body).jsonObject.getValue("heads").jsonArray.associate { entry ->
+            val head = entry.jsonObject
+            checkNotNull(JsonScalars.str(head, "head")) to head.getValue("models").jsonArray.mapNotNull { value ->
+                val row = value.jsonObject
+                val slot = JsonScalars.str(row, "slot")
+                if (row.getValue("resolved").jsonPrimitive.boolean || slot == null) {
+                    null
+                } else {
+                    slot to checkNotNull(JsonScalars.str(row, "id"))
+                }
+            }.toMap()
+        }
+
+    fun checks(unmapped: Map<String, Map<String, String>>?, configPath: Path): List<DoctorCheck> =
+        unmapped.orEmpty().flatMap { (head, tiers) ->
+            tiers.map { (slot, id) ->
+                DoctorCheck(
+                    "model-slot:$head:$slot",
+                    CheckStatus.WARN,
+                    "$head: $slot maps to $id, which is not offered by the running catalog; $slot stays unmapped",
+                    "check the provider's models, discovery filters and the tier declaration in $configPath",
+                )
+            }
+        }
 }

@@ -267,6 +267,7 @@ internal class AddProfileCatalog {
             baseUrl = "https://openrouter.ai/api/v1",
             headKey = "openrouter",
             command = "claude-openrouter",
+            discoverRoster = true,
             models = listOf(
                 AddModel(
                     "anthropic/claude-sonnet-5",

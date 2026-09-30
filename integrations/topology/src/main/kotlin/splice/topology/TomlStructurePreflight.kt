@@ -6,6 +6,8 @@
 // on MASKED text (strings and comments blanked) so quoted content cannot fake or hide structure.
 package splice.topology
 
+import splice.core.util.TopologySlotsFailure
+
 internal object TomlStructurePreflight {
 
     // ktoml loops instead of rejecting a head roster spelled as an array of strings. Mask quoted
@@ -21,6 +23,7 @@ internal object TomlStructurePreflight {
         val structure = TomlStructureMasker(text).mask()
         validateInlineModelArrays(structure)
         rejectDuplicateModelKeys(structure)
+        rejectDuplicateSlots(structure)
     }
 
     /** DR-44b: TOML forbids a duplicated key, but ktoml accepts it silently (proven by the red
@@ -66,6 +69,31 @@ internal object TomlStructurePreflight {
         }
     }
 
+    /** ktoml collapses repeated map keys before HeadConfig can see them. Read only masked keys. */
+    private fun rejectDuplicateSlots(structure: String) {
+        val map = Regex("(?<![A-Za-z0-9_-])model_slots[ \\t]*=[ \\t]*\\{([^}]*)}")
+        val keys = Regex("(?m)(?:^|[,\\n])[ \\t]*([A-Za-z0-9_-]+)[ \\t]*=")
+        val assignments = Regex("(?m)^[ \\t]*model_slots[ \\t]*=")
+        val bounds = TABLE_HEADER.findAll(structure).map { it.range.first }.toList() + structure.length
+        var start = 0
+        for (end in bounds) {
+            val section = structure.substring(start, end)
+            val header = section.lineSequence().firstOrNull().orEmpty().trim()
+            val nested = Regex("\\[heads\\.[^.]+\\.model_slots]").matches(header)
+            val bodies = if (nested) {
+                listOf(section.substringAfter('\n'))
+            } else {
+                map.findAll(section).map { it.groupValues[1] }.toList()
+            }
+            val repeated = assignments.findAll(section).count() > 1 || bodies.any { body ->
+                val names = keys.findAll(body).map { it.groupValues[1].lowercase() }.toList()
+                names.distinct().size != names.size
+            }
+            if (repeated) throw TopologySlotsFailure(TopologySlotsFailure.Problem.DUPLICATE)
+            start = end
+        }
+    }
+
     private fun validateInlineModelArrays(structure: String) {
         MODEL_ARRAY_ASSIGNMENT.findAll(structure).forEach { assignment ->
             val valueStart = assignment.range.last + 1
@@ -89,9 +117,9 @@ public class TomlStructureMasker(private val text: String) {
     public fun mask(): String {
         var index = 0
         while (index < text.length) {
-            val keyLength = quotedModelsKeyLength(index)
+            val key = quotedAssignmentKey(index)
             index = when {
-                keyLength > 0 -> preserveModelsKey(index, keyLength)
+                key != null -> preserveKey(index, key)
                 text[index] == '#' -> maskComment(index)
                 text.startsWith("\"\"\"", index) -> maskQuoted(index, "\"\"\"", escapes = true)
                 text.startsWith("'''", index) -> maskQuoted(index, "'''", escapes = false)
@@ -103,19 +131,23 @@ public class TomlStructureMasker(private val text: String) {
         return masked.toString()
     }
 
-    private fun quotedModelsKeyLength(start: Int): Int {
-        val token = when {
-            text.startsWith("\"models\"", start) -> "\"models\""
-            text.startsWith("'models'", start) -> "'models'"
-            else -> return 0
-        }
-        var cursor = start + token.length
+    private fun quotedAssignmentKey(start: Int): String? {
+        val quote = text[start]
+        if (quote != '"' && quote != '\'') return null
+        val end = text.indexOf(quote, start + 1)
+        if (end < 0) return null
+        val key = text.substring(start + 1, end)
+        var cursor = end + 1
         while (cursor < text.length && isHorizontalSpace(text[cursor])) cursor++
-        return if (text.getOrNull(cursor) == '=') token.length else 0
+        return key.takeIf {
+            it.lowercase() in setOf("models", "model_slots", "opus", "sonnet", "haiku", "fable") &&
+                text.getOrNull(cursor) == '='
+        }
     }
 
-    private fun preserveModelsKey(start: Int, length: Int): Int {
-        "models".padEnd(length).forEachIndexed { offset, char -> masked.setCharAt(start + offset, char) }
+    private fun preserveKey(start: Int, key: String): Int {
+        val length = key.length + 2
+        key.padEnd(length).forEachIndexed { offset, char -> masked.setCharAt(start + offset, char) }
         return start + length
     }
 

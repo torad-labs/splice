@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.model.DiscoveredModel
 import splice.core.model.LongContextRates
 import splice.core.model.ModelEntry
 import splice.core.model.ModelRates
@@ -27,8 +28,37 @@ class OpenRouterProfileTest {
         val provider = requireNotNull(topology.providers["openrouter"]) { "openrouter provider absent" }
         assertEquals(PROFILE_MODELS, provider.models.size, "every declared row must parse")
         val catalog = provider.catalogFor(head)
-        assertEquals(SLOTTED, catalog.models.size, "the four slotted rows are the boot catalog")
+        assertEquals(PROFILE_MODELS, catalog.models.size, "declared rows are not a serving allowlist")
         assertEquals("anthropic/claude-sonnet-5", catalog.pinnedModel)
+    }
+
+    @Test
+    fun `fresh OpenRouter heads expose discovered priced rows and retain declared windows`() {
+        val topology = TopologyLoader.parse(DAEMON_BLOCK + AddProfiles().toml(profile, "openrouter", PORT))
+        val head = topology.heads.getValue("openrouter")
+        val provider = topology.providers.getValue("openrouter")
+        val listed = DiscoveredModel(
+            id = "fixture/extra-model",
+            contextWindow = 64_000,
+            rates = ModelRates(input = 0.5, cacheRead = 0.1, output = 2.0),
+        )
+        val catalog = provider.catalogFor(head, discovered = listOf(listed))
+        assertEquals(provider.models.map { it.id } + listed.id, catalog.models.map { it.id })
+        assertEquals(listed.rates, catalog.models.single { it.id == listed.id }.rates)
+        assertEquals(64_000L, catalog.contextWindowFor(listed.id))
+        provider.models.forEach { row -> assertEquals(row.contextWindow, catalog.contextWindowFor(row.id), row.id) }
+        assertEquals(provider.models.first().id, catalog.pinnedModel)
+        assertEquals(
+            mapOf(
+                "anthropic/claude-sonnet-5" to "sonnet",
+                "anthropic/claude-opus-5.5" to "opus",
+                "z-ai/glm-5.3-flash" to "haiku",
+                "openai/gpt-6-sol" to "fable",
+            ),
+            head.tierSlots(),
+        )
+        assertEquals(null, head.models)
+        assertEquals(null, head.contextWindow)
     }
 
     @Test
@@ -71,9 +101,9 @@ class OpenRouterProfileTest {
         val provider = requireNotNull(topology.providers["openrouter"]) { "profile provider missing" }
         assertEquals(PROFILE_MODELS, provider.models.size)
         val catalog = provider.catalogFor(head)
-        assertEquals(SLOTTED, catalog.models.size)
+        assertEquals(PROFILE_MODELS, catalog.models.size)
         assertEquals("anthropic/claude-sonnet-5", catalog.pinnedModel)
-        val slots = head.models.orEmpty().map { it.slot }
+        val slots = head.tierSlots().values.toList()
         assertEquals(listOf("sonnet", "opus", "haiku", "fable"), slots)
         assertEquals(slots.distinct().size, slots.size)
         assertTrue(Files.readString(path).contains("command = \"claude-openrouter\""))
@@ -95,7 +125,7 @@ class OpenRouterProfileTest {
         val path = dir.resolve("splice.toml")
         Files.writeString(path, DAEMON_BLOCK + AddProfiles().toml(profile, "openrouter", PORT))
         val selected = TopologyLoader.loadOrMaterialize(path)
-        val slots = selected.heads.getValue("openrouter").models.orEmpty().associate { it.slot to it.id }
+        val slots = selected.heads.getValue("openrouter").modelSlots
         assertEquals(latest.mapValues { it.value.first }, slots.filterKeys { it in latest })
         val windows = selected.providers.getValue("openrouter").models.associate { it.id to it.contextWindow }
         latest.values.forEach { (id, window) -> assertEquals(window, windows[id], id) }
@@ -171,7 +201,6 @@ class OpenRouterProfileTest {
 
 private const val PORT = 3101
 private const val PROFILE_MODELS = 10
-private const val SLOTTED = 4
 private val DAEMON_BLOCK = """
     [daemon]
     control_port = 3096

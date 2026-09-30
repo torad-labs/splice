@@ -141,7 +141,7 @@ class ExampleConfigTest {
     @Test
     fun `example heads declare the tier decision - grok gains haiku, kimi and openrouter serve their rows, fireworks stays opus-only`() {
         val topology = TopologyLoader.parse(exampleToml())
-        fun slots(head: String) = topology.heads.getValue(head).models.orEmpty().mapNotNull { it.slot }
+        fun slots(head: String) = topology.heads.getValue(head).tierSlots().values.toList()
 
         assertEquals(listOf("opus", "sonnet", "haiku"), slots("claude-grok"))
         assertEquals(
@@ -156,7 +156,7 @@ class ExampleConfigTest {
         assertEquals(listOf("opus", "sonnet"), slots("openrouter"))
         assertEquals(
             "z-ai/glm-5.3",
-            topology.heads.getValue("openrouter").models.orEmpty().first { it.slot == "sonnet" }.id,
+            topology.heads.getValue("openrouter").tierSlots().entries.first { it.value == "sonnet" }.key,
         )
         assertEquals(listOf("opus"), slots("fireworks"), "fireworks is opus-only by documented choice")
     }
@@ -420,11 +420,16 @@ class ExampleConfigTest {
         )
         headProfiles.forEach { (key, profile) ->
             val head = topology.heads.getValue(key)
-            assertEquals(
-                profile.first,
-                head.models?.map { it.id to it.slot },
-                "$key must expose only its own slotted model roster",
-            )
+            if (key == "openrouter") {
+                assertNull(head.models, "OpenRouter's tier declarations must not restrict discovery")
+                assertEquals(profile.first.toMap(), head.tierSlots())
+            } else {
+                assertEquals(
+                    profile.first,
+                    head.models?.map { it.id to it.slot },
+                    "$key must expose only its own slotted model roster",
+                )
+            }
             assertEquals(profile.second, head.contextWindow, "$key must preserve its explicit head-window policy")
         }
     }

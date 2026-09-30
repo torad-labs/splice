@@ -27,6 +27,8 @@ public data class DaemonAnswers(
     public val heads: String,
     public val auth: String,
     public val trace: Map<String, DaemonProbe.HeadTrace>,
+    /** Declared tiers absent from each head's current catalog, read in process. */
+    public val unmappedTiers: Map<String, Map<String, String>> = emptyMap(),
 )
 
 /** Takes the daemon's [DaemonAnswers] at call time: two of the three are suspend reads, and a doctor

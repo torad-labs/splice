@@ -11,7 +11,9 @@ package splice.head.turn
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
@@ -20,6 +22,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
@@ -164,7 +167,46 @@ class TurnPreparationTest {
         return requireNotNull(captured)
     }
 
-    private fun provider() = PassthroughProvider(
+    @Test
+    fun `an absent declared tier receives a named invalid request without building a turn`(@TempDir tmp: Path) {
+        val deps = headDeps(
+            tmp = tmp,
+            upstream = UpstreamClient(totalTimeoutMs = 1_000, maxRetries = 1),
+            gate = InflightGate({ 1 }),
+        )
+        val preparation = TurnPreparation(
+            provider(mapOf("fixture/absent" to "opus")),
+            deps,
+            RequestBodyReader(deps.policy.requestReadTimeoutMs),
+            parser,
+            ClientAuth(deps, AdmissionResponses(), ForeignHostLog("fixture", deps.log)),
+        )
+        testApplication {
+            application {
+                routing {
+                    post("/v1/messages") {
+                        val result = preparation.prepareTurn(call, TurnPerf())
+                        assertTrue(result is Preparation.Rejected, result.toString())
+                        AdmissionResponses().respondInvalidRequest(call, (result as Preparation.Rejected).message)
+                    }
+                }
+            }
+            listOf("opus", "claude-opus-5-5", "fixture/absent").forEach { model ->
+                val response = client.post("/v1/messages") {
+                    header(HttpHeaders.ContentType, "application/json")
+                    setBody(REQUEST.replace("claude-kimi--$MODEL", model))
+                }
+                assertEquals(HttpStatusCode.BadRequest, response.status)
+                val text = response.bodyAsText()
+                assertTrue(text.contains("invalid_request_error"), text)
+                assertTrue(text.contains("opus"), text)
+                assertTrue(text.contains("fixture/absent"), text)
+                assertTrue(text.contains("not offered"), text)
+            }
+        }
+    }
+
+    private fun provider(tiers: Map<String, String> = emptyMap()) = PassthroughProvider(
         ProviderTuning(
             key = "kimi",
             label = "kimix",
@@ -172,6 +214,7 @@ class TurnPreparationTest {
                 discoveryPrefix = "claude-kimi--",
                 models = listOf(ModelEntry(MODEL, "Kimi", contextWindow = 200_000)),
                 defaultContextWindow = 200_000,
+                tierSlots = tiers,
             ),
             pinnedModel = MODEL,
             auth = LayersTestAuth(),

@@ -61,6 +61,7 @@ internal class DoctorConfigChecks(
         configPath: Path,
         live: Boolean = false,
         runningTrace: Map<String, DaemonProbe.HeadTrace>? = null,
+        unmappedTiers: Map<String, Map<String, String>>? = null,
     ): List<DoctorCheck> = when (topo) {
         is DoctorTopology.Absent -> listOf(
             unfinishedSetup("no topology yet at $configPath", "splice init"),
@@ -102,7 +103,7 @@ internal class DoctorConfigChecks(
             }
             // v0.4.0 (FEATURES.md §10): local runtimes answer for themselves, in their own words.
             listOf(summary) + brokenRefs + portDupes + museCompatibility.checks(topology, configPath) +
-                ignoredSettingChecks(topology, configPath) +
+                DoctorTierChecks.checks(unmappedTiers, configPath) + ignoredSettingChecks(topology, configPath) +
                 stateDirChecks(topology, configPath) + systemPromptChecks(topology) +
                 projectPrompts.projectPromptChecks(topology) + wireTaps.wireTapChecks(topology) +
                 traces.traceChecks(topology, runningTrace) + localRuntime.localChecks(topology, live)

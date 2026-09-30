@@ -123,10 +123,8 @@ internal class TurnPreparation(
      *  session and messages. The re-send is answered here and never built or sent upstream; the 400
      *  ends the client's turn with no further request (the probe on Claude Code 2.1.283). */
     private fun refusalOf(parsed: AnthropicTurnBody, sessionId: String?): Preparation.Rejected? = when {
-        !provider.catalog.contains(parsed.typed.model) -> {
-            val unwrappedModel = provider.catalog.unwrap(parsed.typed.model)
-            Preparation.Rejected("this head proxies its own models only; got $unwrappedModel")
-        }
+        !provider.catalog.contains(parsed.typed.model) ->
+            Preparation.Rejected(provider.catalog.refusals.message(parsed.typed.model, provider.key))
         !parsed.typed.stream && deps.liveTurns.refusesResend(sessionId, parsed.raw) -> {
             deps.log("[${provider.key}] re-send of a stopped turn refused (${who(sessionId)}no upstream turn)\n")
             Preparation.Rejected("${provider.key}: $OPERATOR_STOPPED")

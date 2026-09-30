@@ -27,6 +27,15 @@ class ModelCatalogTest {
     )
 
     @Test
+    fun `tier availability uses the exact offered row even when turn admission strips a suffix`() {
+        val mapped = catalog.copy(tierSlots = mapOf("gpt-5.6-sol[1m]" to "opus"))
+        assertTrue(mapped.contains("gpt-5.6-sol[1m]"))
+        assertEquals(mapOf("opus" to "gpt-5.6-sol[1m]"), mapped.unmappedTiers)
+        val offered = mapped.copy(models = mapped.models + ModelEntry("gpt-5.6-sol[1m]", contextWindow = 272_000))
+        assertEquals(emptyMap<String, String>(), offered.unmappedTiers)
+    }
+
+    @Test
     fun `exact match wins before prefix rules`() {
         assertEquals(1_000_000, catalog.contextWindowFor("gpt-5.5-1m"))
         assertEquals(128_000, catalog.contextWindowFor("gpt-5.3-codex-spark"))

@@ -9,6 +9,7 @@ import kotlinx.serialization.Serializable
 import splice.core.model.ModelRates
 import splice.core.prompt.HeadSystemPrompt
 import splice.core.prompt.SystemPromptMode
+import splice.core.util.TopologySlotsFailure
 import java.nio.file.Path
 
 @Serializable
@@ -24,6 +25,9 @@ public data class HeadConfig(
     @SerialName("discovery_prefix") val discoveryPrefix: String,
     @SerialName("pinned_model") val pinnedModel: String,
     val models: List<HeadModel>? = null,
+    /** Tier mappings without a serving allowlist. [models] still restricts the roster; its entries
+     *  must not carry slots alongside this map. Keys are tiers, values are model ids. */
+    @SerialName("model_slots") val modelSlots: Map<String, String> = emptyMap(),
     @SerialName("context_window") val contextWindow: Long? = null,
     val overrides: Map<String, String> = emptyMap(),
     val claude: ClaudeWrapperConfig = ClaudeWrapperConfig(),
@@ -47,6 +51,26 @@ public data class HeadConfig(
      *  segment without a new field on the runtime head handle or a second wiring path. */
     val rates: Map<String, ModelRates>? = null,
 ) {
+    init {
+        val slots = modelSlots.keys.map { it.trim('"', '\'').lowercase() }
+        if (slots.any { it !in headModelSlots }) throw TopologySlotsFailure(TopologySlotsFailure.Problem.UNKNOWN)
+        if (slots.distinct().size != slots.size) throw TopologySlotsFailure(TopologySlotsFailure.Problem.DUPLICATE)
+        if (modelSlots.values.any(String::isBlank)) throw TopologySlotsFailure(TopologySlotsFailure.Problem.BLANK_ID)
+        if (modelSlots.values.distinct().size != modelSlots.size) {
+            throw TopologySlotsFailure(TopologySlotsFailure.Problem.DUPLICATE_ID)
+        }
+        if (modelSlots.isNotEmpty() && models.orEmpty().any { it.slot != null }) {
+            throw TopologySlotsFailure(TopologySlotsFailure.Problem.COMPETING)
+        }
+    }
+
+    /** The id-to-tier map the launcher consumes, independent of the provider's discovered roster. */
+    public fun tierSlots(): Map<String, String> = if (modelSlots.isNotEmpty()) {
+        modelSlots.entries.associate { (slot, id) -> id to slot.trim('"', '\'').lowercase() }
+    } else {
+        models.orEmpty().mapNotNull { model -> model.slot?.let { model.id to it.lowercase() } }.toMap()
+    }
+
     /** V4-36: this head's standing prompt as its resolver. An ABSENT `system_prompt_mode` is the
      *  documented default rather than a missing value — an operator who names no mode gets
      *  `append` — so the default lives here, once, next to the schema that documents it, instead

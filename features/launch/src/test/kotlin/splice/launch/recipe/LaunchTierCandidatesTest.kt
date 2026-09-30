@@ -93,6 +93,35 @@ class LaunchTierCandidatesTest(@param:TempDir private val tmp: Path) {
         }
     }
 
+    @Test
+    fun `an explicitly mapped discovered model can carry a tier without positional candidacy`() {
+        val env = env(
+            spec(
+                available = listOf("fixture/pinned", "fixture/discovered"),
+                tiers = ModelTiers(
+                    slots = mapOf("fixture/discovered" to "opus"),
+                    candidates = listOf("fixture/pinned"),
+                ),
+            ),
+        )
+        assertEquals("fixture/discovered", env["ANTHROPIC_DEFAULT_OPUS_MODEL"])
+        assertTrue("ANTHROPIC_DEFAULT_SONNET_MODEL" !in env)
+    }
+
+    @Test
+    fun `an explicit tier missing from the roster stays unmapped instead of using positional fallback`() {
+        val recipe = service.launch(
+            spec(
+                available = listOf("fixture/pinned"),
+                tiers = ModelTiers(slots = mapOf("fixture/absent" to "opus")),
+            ),
+            emptyList(),
+            dangerouslySkipPermissions = false,
+        )
+        assertTrue("ANTHROPIC_DEFAULT_OPUS_MODEL" !in recipe.env, recipe.env.toString())
+        assertTrue("ANTHROPIC_DEFAULT_OPUS_MODEL" in recipe.unset, recipe.unset.toString())
+    }
+
     // No candidates list is every offered id — the positional scheme every head had before discovery.
     @Test
     fun `without candidates every offered id is placed as before`() {

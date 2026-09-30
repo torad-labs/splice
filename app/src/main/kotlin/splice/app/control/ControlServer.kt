@@ -155,6 +155,7 @@ public class ControlServer(
                     val effective = config.getConfig(key)
                     DaemonProbe.HeadTrace(effective.trace)
                 },
+                unmappedTiers = heads.mapValues { (_, head) -> head.catalog?.unmappedTiers.orEmpty() },
             )
         },
     )

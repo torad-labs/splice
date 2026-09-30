@@ -129,6 +129,20 @@ class LaunchSpecClientAuthTest {
     }
 
     @Test
+    fun `tier map reaches the launch spec without becoming a serving allowlist`(@TempDir tmp: Path) {
+        val base = build(tmp, Dialect.OPENAI_CHAT)
+        val tiers = mapOf("opus" to "m", "sonnet" to "m2", "haiku" to "m3")
+        val head = base.head.copy(modelSlots = tiers)
+        val provider = base.providerCfg.copy(
+            models = listOf("m", "m2", "m3", "m4").map { ModelEntry(it, contextWindow = 200_000) },
+        )
+        val ctx = base.copy(head = head, providerCfg = provider, catalog = provider.catalogFor(head))
+        val spec = factory(tmp).launchSpecFor(ctx, 3099, forwardClientAuth = false)
+        assertEquals(tiers.entries.associate { (slot, id) -> id to slot }, spec.tiers.slots)
+        assertEquals(listOf("m", "m2", "m3", "m4"), ctx.catalog.models.map { it.id })
+    }
+
+    @Test
     fun `model picker cache uses the effective per-head window`(@TempDir tmp: Path) {
         val declared = ModelEntry(id = "m", label = "Model", contextWindow = 256_000)
         val effective = declared.copy(contextWindow = 333_000)

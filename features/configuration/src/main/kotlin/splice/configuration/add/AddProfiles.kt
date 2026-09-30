@@ -75,6 +75,8 @@ public data class AddProfile internal constructor(
     /** Whether an API-key profile needs a key from the operator. Local runtimes use a non-secret
      *  placeholder at save instead; OAuth and client profiles have their own sign-in path. */
     internal val requiresKey: Boolean = authKind == API_KEY,
+    /** The endpoint supplies the serving roster; declared rows supply only pinned models and tiers. */
+    internal val discoverRoster: Boolean = false,
 )
 
 public class AddProfiles {
@@ -124,16 +126,23 @@ public class AddProfiles {
             "port = $port",
             "discovery_prefix = \"claude-$key--\"",
             "pinned_model = \"${pinned.id}\"",
-        ) + headExtras(mappings, pinned.contextWindow) + listOf(
+        ) + headExtras(mappings, pinned.contextWindow, profile.discoverRoster) + listOf(
             "[heads.$key.claude]",
             "command = \"${profile.command}\"",
         )
         return (provider + head).joinToString("\n") + "\n"
     }
 
-    /** Head-wide window is the pinned row's ceiling, never the catalog max. Slot mappings are
-     *  omitted when the profile has none, so the head keeps the provider-wide surface. */
-    private fun headExtras(mappings: List<Pair<String, String>>, pinnedWindow: Long): List<String> {
+    /** Discovery profiles keep row windows and map tiers separately. Other profiles keep their
+     *  pinned window and their existing serving allowlist when they declare tiers. */
+    private fun headExtras(
+        mappings: List<Pair<String, String>>,
+        pinnedWindow: Long,
+        discoverRoster: Boolean,
+    ): List<String> {
+        if (discoverRoster) {
+            return listOf("model_slots = {" + mappings.joinToString { (id, slot) -> "$slot = \"$id\"" } + "}")
+        }
         val window = listOf("context_window = $pinnedWindow")
         return if (mappings.isEmpty()) {
             window

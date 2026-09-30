@@ -45,6 +45,21 @@ public class TopologyTypeFailure(
     }
 }
 
+/** A fixed tier-declaration diagnosis. No source values or parser text enter its message. */
+public class TopologySlotsFailure(public val problem: Problem) : IllegalArgumentException(problem.detail) {
+    public enum class Problem(public val detail: String) {
+        UNKNOWN("model_slots contains an unknown Claude tier; use opus, sonnet, haiku or fable"),
+        DUPLICATE("model_slots contains duplicate tiers; keep one assignment per tier"),
+        BLANK_ID("model_slots model ids must not be blank"),
+        DUPLICATE_ID("model_slots assigns one model id to multiple tiers; keep one tier per model"),
+        COMPETING(
+            "models entries with slots and model_slots compete; keep slots in models or keep model_slots, not both",
+        ),
+    }
+
+    public fun fix(): String = problem.detail
+}
+
 public object SafeFailureText {
 
     /** Filesystem and network failures keep their full text — their messages are paths, hosts
@@ -54,6 +69,7 @@ public object SafeFailureText {
      *  overrides toString() colon-free would ride any prefix-taking render into diagnostics
      *  verbatim (codex probe, 2026-08-31). No virtual call happens outside the allowlist. */
     public fun render(failure: Throwable): String = when (failure) {
+        is TopologySlotsFailure -> failure.problem.detail
         is TopologyTypeFailure ->
             "splice.toml: ${failure.key} at line ${failure.line} expects ${failure.expected.label}"
         // SAFE-RENDER-EXEMPT[2026-09-01]: these exact filesystem/network classes carry paths,

@@ -15,6 +15,7 @@ import splice.core.terminal.TerminalOutput
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
+import splice.core.util.TopologySlotsFailure
 import splice.core.util.TopologyTypeFailure
 import splice.daemonclient.DaemonSettings
 import splice.diagnostics.doctor.report.DOCTOR_USAGE
@@ -229,11 +230,16 @@ public class DoctorCommand(
         } else {
             null
         }
+        val unmapped = if (snapshot.unanswered == null && topology != null) {
+            (reads.unmappedTiers(port, envReader) as? DaemonRead.Answered)?.value
+        } else {
+            null
+        }
         val read = (pools as? AccountPoolsRead.Read)?.pools.orEmpty()
         val sections = listOf(
             "prerequisites" to guarded { probes.prerequisiteChecks(envReader) },
             "installation" to guarded { installProbes.installationChecks(topo, envReader) },
-            "configuration" to guarded { config.configurationChecks(topo, configPath, live, runningTrace) },
+            "configuration" to guarded { config.configurationChecks(topo, configPath, live, runningTrace, unmapped) },
             CHECK_DAEMON to guarded { daemon.daemonChecks(snapshot, envReader, topology, configPath) },
             "auth" to guarded { auth.authChecks(topo, envReader, snapshot, reads) },
             // v0.4.0 (FEATURES.md §11): which account each pooled head is on, and when every one is out.
@@ -286,7 +292,12 @@ public class DoctorCommand(
             if (genuinelyAbsent) {
                 DoctorTopology.Absent
             } else {
-                DoctorTopology.Broken(SafeFailureText.render(e), (e as? TopologyTypeFailure)?.fix())
+                val fix = when (e) {
+                    is TopologyTypeFailure -> e.fix()
+                    is TopologySlotsFailure -> e.fix()
+                    else -> null
+                }
+                DoctorTopology.Broken(SafeFailureText.render(e), fix)
             }
         }
 }

@@ -108,6 +108,8 @@ public data class ModelCatalog(
     val headWindow: Long? = null,
     /** Provider-supplied empirical reserve; absent preserves the existing window-ratio behavior. */
     val compactionReserveDefaults: CompactionReserveDefaults? = null,
+    /** Declared model id to Claude tier, kept even when a listing omits the model. */
+    val tierSlots: Map<String, String> = emptyMap(),
 ) {
     init {
         require(models.isNotEmpty()) { "a catalog needs at least one picker model" }
@@ -141,6 +143,14 @@ public data class ModelCatalog(
     // never match its own stripped upstream id "k3" → every k3 turn 400'd "proxies its own models
     // only" (regression from the contains guard's introduction; no [1m] catalog test caught it).
     private val modelIds: Set<String> = models.mapTo(HashSet()) { stripSuffixes(it.id) }
+
+    /** Declared tier to unavailable id. Missing discovery never changes the declaration. */
+    public val unmappedTiers: Map<String, String>
+        get() {
+            val current = live()
+            val offered = current.models.mapTo(HashSet()) { it.id }
+            return current.tierSlots.entries.filterNot { it.key in offered }.associate { (id, slot) -> slot to id }
+        }
 
     public fun wrap(id: String): String = discoveryPrefix + id
 
@@ -271,6 +281,22 @@ public data class ModelCatalog(
      *  sonnet-tier subagent to whatever the endpoint happened to list second (on OpenRouter, the
      *  first id ending "-sol" or containing "mini" among 380). */
     public fun tierModelIds(): List<String> = live().models.filterNot { it.discovered }.map { it.id }
+
+    /** A model diagnosis from the same current roster used for admission and tier availability. */
+    public val refusals: Refusals get() = Refusals(live())
+
+    public class Refusals internal constructor(private val catalog: ModelCatalog) {
+        public fun message(model: String, head: String): String {
+            val id = catalog.unwrap(model)
+            val missing = catalog.unmappedTiers.entries.firstOrNull { (slot, mapped) ->
+                id == mapped || id == slot || id.startsWith("claude-$slot-")
+            }
+            return missing?.let { (slot, mapped) ->
+                "$slot maps to $mapped, which is not offered by head $head in its current roster; " +
+                    "the tier stays unmapped, never replaced by another model"
+            } ?: "this head proxies its own models only; got $id"
+        }
+    }
 }
 
 /** V4-232: a catalog's rows the CLIENT resolves as a Claude model it knows ([ModelEntry.clientModel]),

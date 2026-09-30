@@ -6,10 +6,12 @@ package splice.diagnostics.doctor
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import splice.core.prompt.SystemPromptMode
 import splice.core.topology.HeadConfig
 import splice.core.topology.Topology
+import splice.core.util.SafeFailureText
 import splice.topology.TopologyLoader
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -119,6 +121,56 @@ class DoctorConfigChecksTest {
         val rows = projectRows(toml(Paths.get("relative/repo"), projectMode = null))
 
         assertEquals(listOf(CheckStatus.FAIL), rows.map { it.status })
+    }
+
+    @Test
+    fun `invalid tier declarations give doctor a safe named configuration failure`(@TempDir tmp: Path) {
+        val invalid = listOf(
+            """model_slots = { unknown = "m1" }""",
+            """models = [{ id = "m1", slot = "opus" }]
+               model_slots = { sonnet = "m1" }""",
+        )
+        invalid.forEach { declaration ->
+            val source = toml(tmp, null).replace(
+                """pinned_model = "m1"""",
+                """pinned_model = "m1"
+                ${declaration.trimIndent()}""",
+            )
+            val failure = assertThrows<IllegalArgumentException> { TopologyLoader.parse(source) }
+            val row = DoctorTestPorts.configChecks().configurationChecks(
+                DoctorTopology.Broken(SafeFailureText.render(failure)),
+                tmp.resolve("splice.toml"),
+            ).single()
+            assertEquals(CheckStatus.FAIL, row.status)
+            assertTrue(row.detail.contains("model_slots"), row.detail)
+        }
+    }
+
+    @Test
+    fun `doctor names a declared tier that the running roster cannot resolve`(@TempDir tmp: Path) {
+        val rows = DoctorTestPorts.configChecks().configurationChecks(
+            DoctorTopology.Parsed(TopologyLoader.parse(toml(tmp, null))),
+            tmp.resolve("splice.toml"),
+            unmappedTiers = mapOf("one" to mapOf("opus" to "fixture/absent")),
+        )
+        val row = rows.single { it.name == "model-slot:one:opus" }
+        assertEquals(CheckStatus.WARN, row.status)
+        assertTrue(row.detail.contains("fixture/absent"), row.detail)
+        assertTrue(row.detail.contains("unmapped"), row.detail)
+        assertTrue(row.fix.orEmpty().contains("models"), row.fix)
+    }
+
+    @Test
+    fun `doctor reads unresolved slots from the served models payload without inventing null tiers`() {
+        val payload = """{"heads":[{"head":"fixture","models":[
+            {"id":"fixture/served","slot":"sonnet","resolved":true},
+            {"id":"fixture/absent","slot":"opus","resolved":false},
+            {"id":"fixture/unslotted","slot":null,"resolved":false}
+        ]}]}"""
+        assertEquals(
+            mapOf("fixture" to mapOf("opus" to "fixture/absent")),
+            DoctorTierChecks.parse(payload),
+        )
     }
 
     private fun projectRows(toml: String) = DoctorTestPorts.configChecks()

@@ -42,6 +42,8 @@ heads.*.claude.config_dir
 heads.*.claude.isolate	
 heads.*.context_window	
 heads.*.discovery_prefix	
+heads.*.model_slots	
+heads.*.model_slots.*	
 heads.*.models	
 heads.*.models[].id	
 heads.*.models[].slot	

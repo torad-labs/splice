@@ -126,6 +126,31 @@ class TopologyWriterTest {
     }
 
     @Test
+    fun `a tier naming an unavailable model is refused at model_slots without editing the file`() {
+        val mapped = head(PORT).copy(modelSlots = mapOf("sonnet" to "m9"))
+        val unlisting = topology(head = mapped).let { t ->
+            t.copy(
+                providers = t.providers.mapValues { (_, p) ->
+                    p.copy(discovery = ModelDiscoveryConfig(exclude = listOf("*")))
+                },
+            )
+        }
+        val findings = untouched(writer(mapOf(FILE to topology())).write(unlisting))
+        assertEquals(listOf("heads.ex.model_slots"), findings.map { it.path })
+        assertTrue(findings.single().message.contains("sonnet"), findings.toString())
+        val served = TopologyWriter(
+            file,
+            tmp.resolve("backups"),
+            TopologyParse { text -> topology().also { require(text == FILE) { "unpredicted" } } },
+            WallClock { NOW },
+            discovered = { key -> if (key == "ex") listOf(DiscoveredModel("m9")) else emptyList() },
+        )
+        val accepted = untouched(served.write(topology(head = mapped)))
+        assertTrue(accepted.none { it.path == "heads.ex.model_slots" }, accepted.toString())
+        assertTrue(accepted.single().message.startsWith("the edit would not parse"), accepted.toString())
+    }
+
+    @Test
     fun `a file that does not parse is never edited`() {
         val findings = untouched(writer(emptyMap()).write(topology()))
         assertTrue(findings.single().message.startsWith("splice.toml on disk does not parse"), findings.toString())

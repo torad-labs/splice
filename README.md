@@ -155,7 +155,20 @@ splice add openrouter             # sign in, add the head and install its comman
 claude-openrouter                 # launch it; splice status shows its loopback port
 ```
 
-On a head without a `models` list, every text-producing, tool-capable model OpenRouter serves is already in the picker, refreshed hourly. `splice add openrouter` writes a list of four models. Add another model's id to that list and run `splice restart`, or use `splice add-model` for the curated list. A `[[providers.openrouter.models]]` row is optional when you want your own label, window or rates.
+`splice add openrouter` offers every text-producing, tool-capable model OpenRouter serves, refreshed hourly. It writes `model_slots` to keep the opus, sonnet, haiku and fable tier mappings without restricting the picker. Each model keeps its own window and price. A `[[providers.openrouter.models]]` row is optional when you want your own label, window or rates.
+
+`models` remains an explicit serving allowlist. Existing heads keep theirs until you edit it. To keep a discovered roster while choosing tiers, use `model_slots` under the existing head's table instead of a slotted `models` list:
+
+```toml
+[heads.example]
+provider = "example"
+port = 3105
+discovery_prefix = "claude-example--"
+pinned_model = "vendor/model-a"
+model_slots = { opus = "vendor/model-a", sonnet = "vendor/model-b" }
+```
+
+Use your existing head key and fields in place of the example. Slot names are opus, sonnet, haiku and fable, with one model per slot and one slot per model. Do not combine `model_slots` with slots inside `models`. An unslotted `models` allowlist can have a separate tier map, but its tier ids must be allowed. A mapped model the endpoint does not list stays unmapped, with a boot-log explanation, rather than selecting another model. Restart after changing tier mappings.
 
 A model you add this way is priced from the card OpenRouter lists for it, read when the daemon starts and every hour after, so its turns read `API est.` on the status line and count against a budget. A model OpenRouter lists no price for reads `no rate card`. A `rates = { input = …, cache_read = …, output = … }` line on the row wins over the listed price.
 

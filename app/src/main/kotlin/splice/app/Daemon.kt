@@ -36,6 +36,7 @@ import splice.core.compaction.SessionProject
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
+import splice.core.topology.HeadModel
 import splice.core.topology.ProviderFamilyRule
 import splice.core.topology.Topology
 import splice.core.topology.TopologyKnobLayer
@@ -110,7 +111,10 @@ public class Daemon(
             declaredHeads = DeclaredHeads {
                 topology.heads.mapValues { (_, head) ->
                     val family = topology.providers[head.provider]?.let { ProviderFamilyRule().of(head.provider, it) }
-                    DeclaredHead(head.provider, head.models, family)
+                    val slots = head.tierSlots()
+                    val declared = head.models?.map { it.copy(slot = slots[it.id]) }
+                        ?: slots.map { (id, slot) -> HeadModel(id, slot) }
+                    DeclaredHead(head.provider, declared, family)
                 }
             },
             running = topologyWindows,

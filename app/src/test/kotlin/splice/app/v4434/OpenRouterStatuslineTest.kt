@@ -11,7 +11,7 @@
 // reads "no rate card", which is what every default model printed before V4-434.
 //
 // V4-438 adds the models OUTSIDE the ten. The fake endpoint lists two more with a `pricing` block, and a row
-// the user adds by id (the head's roster names it, no rates line) is priced from that listing: the card
+// the discovered roster offers without a rates line is priced from that listing: the card
 // OpenRouter published, read at daemon start. A model it lists no price for still reads "no rate card", and a
 // rates line written on the row wins over the listing.
 package splice.app.v4434
@@ -77,7 +77,7 @@ class OpenRouterStatuslineTest {
 
     @Test
     fun `a row added by id outside the ten reads API est at the price OpenRouter lists - V4-438`(@TempDir tmp: Path) {
-        val line = statusLineAfterTurn(tmp, keepRates = true, model = ADDED, edit = rostering(ADDED))
+        val line = statusLineAfterTurn(tmp, keepRates = true, model = ADDED, edit = ::listing)
         // The same 800,000 / 200,000 / 100,000 tokens at the listed $2 / $0.20 / $10 per million.
         assertTrue("API est. $2.64" in line, line)
         assertFalse("no rate card" in line, line)
@@ -89,7 +89,7 @@ class OpenRouterStatuslineTest {
             tmp,
             keepRates = true,
             model = UNPRICED,
-            edit = rostering(UNPRICED),
+            edit = ::listing,
             expectFigure = false,
         )
         assertTrue("no rate card" in line, line)
@@ -109,21 +109,20 @@ class OpenRouterStatuslineTest {
             tmp,
             keepRates = true,
             model = ADDED,
-            edit = { config -> rostering(ADDED)(config).trimEnd('\n') + "\n\n" + written + "\n" },
+            edit = { config -> listing(config).trimEnd('\n') + "\n\n" + written + "\n" },
         )
         // 800,000 at $1, 200,000 at $0.10, 100,000 at $5 per million; the listing's $2.64 is not used.
         assertTrue("API est. $1.32" in line, line)
     }
 
-    /** The head's roster with [id] named in it and no row for it, which is what adding a model by id leaves.
-     *  The fake endpoint is on loopback, which splice reads as a local runtime and never asks for a list, so
-     *  the provider says `local = false`: the daemon then asks it, as it asks the real one. */
-    private fun rostering(id: String): (String) -> String = { config ->
+    /** The fake endpoint is loopback, so local = false asks its model list as for the real provider.
+     *  The shipped independent tiers remain intact and no serving allowlist is introduced. */
+    private fun listing(config: String): String {
         val header = "[providers.openrouter]\n"
-        require("models = [" in config && header in config) { "the shipped head names no model roster:\n$config" }
-        config
-            .replaceFirst("models = [", "models = [{ id = \"$id\" }, ")
-            .replaceFirst(header, header + "local = false\n")
+        require(header in config) { "the shipped provider header moved" }
+        val head = TopologyLoader.parse(config).heads.getValue("openrouter")
+        require(head.models == null && head.modelSlots.isNotEmpty()) { "the shipped tiers must not limit discovery" }
+        return config.replaceFirst(header, header + "local = false\n")
     }
 
     private fun statusLineAfterTurn(

@@ -74,7 +74,7 @@ class ConsoleWiringPinTest {
                 "file, which can diverge from the heads that were actually built",
         )
         assertTrue(
-            daemon.contains("DeclaredHead(head.provider, head.models, family)"),
+            daemon.contains("DeclaredHead(head.provider, declared, family)") && daemon.contains("head.tierSlots()"),
             "each entry carries the provider key, the declared model list and the provider's family: " +
                 "the models page groups by the first and reports missing tiers from the second, and " +
                 "the console colours the head by the third",

@@ -409,8 +409,8 @@ public class LaunchService(
     // not emitted, never pointed at an already-claimed model.
     private fun aliasSlots(spec: LaunchSpec): List<Pair<String, String>> {
         val ids = (listOf(spec.pinnedModel) + (spec.tiers.candidates ?: spec.availableModelIds)).distinct()
-        val declared = declaredSlots(spec, ids)
-        if (declared.isNotEmpty()) {
+        val declared = declaredSlots(spec)
+        if (spec.tiers.slots.isNotEmpty()) {
             return listOf("OPUS", "SONNET", "HAIKU", "FABLE").mapNotNull { slot ->
                 declared[slot.lowercase()]?.let { model -> slot to model }
             }
@@ -466,9 +466,9 @@ public class LaunchService(
     /** slot name -> model id, keeping only slots this catalog actually offers. A declared slot
      *  naming a model the head does not serve is ignored rather than planted, so a stale row in
      *  splice.toml cannot point a tier at a model every turn would 400 on. */
-    private fun declaredSlots(spec: LaunchSpec, ids: List<String>): Map<String, String> =
+    private fun declaredSlots(spec: LaunchSpec): Map<String, String> =
         spec.tiers.slots
-            .filterKeys { it in ids }
+            .filterKeys { it == spec.pinnedModel || it in spec.availableModelIds }
             .entries
             .associate { (model, slot) -> slot.lowercase() to model }
 }

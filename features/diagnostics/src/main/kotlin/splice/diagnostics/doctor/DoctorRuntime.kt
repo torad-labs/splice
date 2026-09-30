@@ -45,6 +45,7 @@ internal class DoctorRuntime {
                 CheckStatus.WARN,
                 "${h.providerErrors} provider / ${h.localOriginErrors} local error(s) since last restart",
                 "splice logs --head ${h.key} --tail 50",
+                fixKind = FixKind.COMMAND,
             )
         } else {
             DoctorCheck("head ${h.key} errors", CheckStatus.OK, "none since last restart")
@@ -69,8 +70,10 @@ internal class DoctorRuntime {
             "turn path",
             CheckStatus.FAIL,
             "WEDGED on ${h.turnPathStalled.joinToString(", ")}: requests are accepted but never " +
-                "answered (loopback probes timed out). This is the 91h-outage signature.",
-            "splice restart (then: splice logs --head <key> --tail 100)",
+                "answered (loopback probes timed out). This is the 91h-outage signature. After a restart, " +
+                "`splice logs --head <key> --tail 100` says why.",
+            "splice restart",
+            fixKind = FixKind.COMMAND,
         )
         // ok:false naming no head is still a refusal to certify health; reporting it beats falling
         // through to the counters, which is the exact false green being fenced off.

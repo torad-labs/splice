@@ -156,14 +156,16 @@ class DoctorReportTest {
                         CheckStatus.FAIL,
                         "token at /home/operator/.config/splice/auth/codex.json expired",
                         "splice login codex",
+                        fixKind = FixKind.COMMAND,
                     ),
                 ),
             ),
         )
         val out = report(env, withLogs = false, run = failing)
         val check = out.getValue("checks").jsonArray.single().jsonObject
-        val six = setOf("id", "status", "detail", "fix", "fix_id", "pending_restart")
-        assertEquals(six, check.keys, "schema 1: a check is exactly these six")
+        val seven = setOf("id", "status", "detail", "fix", "fix_kind", "fix_id", "pending_restart")
+        assertEquals(seven, check.keys, "schema 1: a check is exactly these seven; an added key is not breaking")
+        assertEquals("command", check.getValue("fix_kind").jsonPrimitive.content, "a login is one line to paste")
         assertEquals("false", check.getValue("pending_restart").toString())
         assertEquals(JsonNull, check.getValue("fix_id"), "a login is the operator's to run: no fix id")
         assertEquals("auth/codex", check.getValue("id").jsonPrimitive.content)
@@ -354,6 +356,7 @@ class DoctorReportTest {
         val detail = check.getValue("detail").jsonPrimitive.content
         assertEquals("prefix '<omitted>' of head <head-1> is not a token", detail)
         assertEquals("rename it in ~/.config/splice/splice.toml", check.getValue("fix").jsonPrimitive.content)
+        assertEquals("advice", check.getValue("fix_kind").jsonPrimitive.content, "a remedy nobody marked is advice")
     }
 
     private fun prosePool() = HeadAccountPoolView(

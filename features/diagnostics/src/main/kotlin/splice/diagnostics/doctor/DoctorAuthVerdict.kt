@@ -22,7 +22,13 @@ internal class DoctorAuthVerdict {
                 )
                 // Only genuine OAuth heads have a `<command> login` flow; api-key heads (env var known)
                 // must never be sent to that dead end, so the guard is isOAuth, not envVar == null.
-                auth.isOAuth -> DoctorCheck(auth.key, missingStatus, "not signed in", "${auth.command} login")
+                auth.isOAuth -> DoctorCheck(
+                    auth.key,
+                    missingStatus,
+                    "not signed in",
+                    "${auth.command} login",
+                    fixKind = FixKind.COMMAND,
+                )
                 // V4-220: `splice key set` stores the key where the head reads it on its next request, prompts
                 // for the value masked and keeps it out of shell history; `export VAR=…` was a placeholder the
                 // report masked to `<redacted>`, so the console's Fix column could not paste it.
@@ -31,6 +37,7 @@ internal class DoctorAuthVerdict {
                     missingStatus,
                     "${auth.envVar} is not set",
                     "splice key set ${auth.envVar}",
+                    fixKind = FixKind.COMMAND,
                 )
             }
         }

@@ -53,7 +53,13 @@ internal class DoctorProbeWrite(
             // The label is read off the BRANCH, not off the caught throwable's runtime class: this
             // clause only ever stands in for AccessDeniedException, so naming it is a compile-time
             // fact and the reflective lookup that used to produce the same six syllables is gone.
-            DoctorCheck(name, CheckStatus.FAIL, "$dir is not writable (AccessDeniedException)", "chmod u+rwx $dir")
+            DoctorCheck(
+                name,
+                CheckStatus.FAIL,
+                "$dir is not writable (AccessDeniedException)",
+                "chmod u+rwx $dir",
+                fixKind = FixKind.COMMAND,
+            )
         } catch (e: java.io.IOException) {
             val why = "$dir is not writable (${SafeFailureText.render(e)})"
             DoctorCheck(name, CheckStatus.FAIL, why, "check free space: df -h $dir")
@@ -95,7 +101,7 @@ internal class DoctorProbeWrite(
         // A row with no time (perfRow reads it as 0) is never called old.
         val recent = ts <= 0L || ageMs <= RECENT_FAILURE_MS
         val status = if (recent && stillFailing(rows)) CheckStatus.WARN else CheckStatus.INFO
-        return DoctorCheck(name, status, detail, "splice logs --head $headKey --tail 50")
+        return DoctorCheck(name, status, detail, "splice logs --head $headKey --tail 50", fixKind = FixKind.COMMAND)
     }
 
     /** Whether the head is failing NOW, judged on its newest turns: the newest one failed, or at least

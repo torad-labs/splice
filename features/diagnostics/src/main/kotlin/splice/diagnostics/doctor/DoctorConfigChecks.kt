@@ -52,6 +52,10 @@ internal class DoctorConfigChecks(
     private val traces = DoctorTraceChecks(TopologyStatePaths(env).current())
     private val museCompatibility = DoctorMuseCompatibilityChecks()
 
+    /** A topology that is not there yet or holds no head: INFO, with the one splice verb that fills it. */
+    private fun unfinishedSetup(detail: String, command: String): DoctorCheck =
+        DoctorCheck(CHECK_TOPOLOGY, CheckStatus.INFO, detail, command, fixKind = FixKind.COMMAND)
+
     internal fun configurationChecks(
         topo: DoctorTopology,
         configPath: Path,
@@ -59,7 +63,7 @@ internal class DoctorConfigChecks(
         runningTrace: Map<String, DaemonProbe.HeadTrace>? = null,
     ): List<DoctorCheck> = when (topo) {
         is DoctorTopology.Absent -> listOf(
-            DoctorCheck(CHECK_TOPOLOGY, CheckStatus.INFO, "no topology yet at $configPath", "splice init"),
+            unfinishedSetup("no topology yet at $configPath", "splice init"),
         )
         is DoctorTopology.Broken -> listOf(
             DoctorCheck(
@@ -74,12 +78,7 @@ internal class DoctorConfigChecks(
             val topology = topo.topology
             val heads = topology.heads.entries.joinToString(", ") { (k, h) -> "$k → ${h.claude.command ?: k}" }
             val summary = if (topology.heads.isEmpty()) {
-                DoctorCheck(
-                    CHECK_TOPOLOGY,
-                    CheckStatus.INFO,
-                    "$configPath, not set up yet: no plan connected",
-                    "splice setup",
-                )
+                unfinishedSetup("$configPath, not set up yet: no plan connected", "splice setup")
             } else {
                 DoctorCheck(CHECK_TOPOLOGY, CheckStatus.OK, "$configPath, ${topology.heads.size} head(s): $heads")
             }

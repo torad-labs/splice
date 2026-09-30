@@ -33,7 +33,9 @@ class DoctorOrphanWrapperTest {
         val row = orphans(tmp, parsed(command = "claude-openrouter")).single()
         assertEquals(CheckStatus.WARN, row.status)
         assertTrue(row.detail.startsWith("'claudeor' → "), row.detail)
-        assertEquals("rm ${bin.resolve("claudeor")}   (or give a head that command again in the topology)", row.fix)
+        assertEquals("rm ${bin.resolve("claudeor")}", row.fix, "one line safe to paste, no trailing note")
+        assertEquals(FixKind.COMMAND, row.fixKind)
+        assertTrue(row.detail.contains("or give that command a head again in the topology"), row.detail)
     }
 
     // V4-445: `claude` on PATH IS the shim when wrapped (WrappedHead, the source the claude-head prerequisite reads).
@@ -50,7 +52,9 @@ class DoctorOrphanWrapperTest {
         val row = orphans(tmp, parsed(command = "claude-openrouter"), wrapped(tmp)).single()
         assertEquals(CheckStatus.WARN, row.status)
         assertTrue(row.detail.startsWith("'claudeor' → "), row.detail)
-        assertEquals("rm ${bin.resolve("claudeor")}   (or give a head that command again in the topology)", row.fix)
+        assertEquals("rm ${bin.resolve("claudeor")}", row.fix, "one line safe to paste, no trailing note")
+        assertEquals(FixKind.COMMAND, row.fixKind)
+        assertTrue(row.detail.contains("or give that command a head again in the topology"), row.detail)
     }
 
     @Test

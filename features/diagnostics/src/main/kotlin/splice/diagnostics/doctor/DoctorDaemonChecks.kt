@@ -42,6 +42,7 @@ internal class DoctorDaemonChecks(private val heads: DoctorHeadChecks) {
                 CheckStatus.WARN,
                 "running on :$port, slow to answer: /health gave no answer within ${probe.waitedMs}ms",
                 FIX_LOGS,
+                fixKind = FixKind.COMMAND,
             )
             is DaemonProbe.HealthProbe.Odd -> foreign(port, probe.detail)
             is DaemonProbe.HealthProbe.Up -> when (val running = probe.view.version) {
@@ -52,6 +53,7 @@ internal class DoctorDaemonChecks(private val heads: DoctorHeadChecks) {
                     CheckStatus.WARN,
                     "running $running but this CLI is $expected",
                     FIX_RESTART,
+                    fixKind = FixKind.COMMAND,
                 )
             }
         }

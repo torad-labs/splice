@@ -34,7 +34,7 @@ public class AccountPoolText(private val now: WallClock = WallClock { System.cur
         val safe = safeView(view)
         val detail = summary(safe)
         if (safe.accounts.any { it.primary && !it.credentialPresent }) {
-            return DoctorCheck(headKey, CheckStatus.WARN, detail, "splice login $headKey")
+            return DoctorCheck(headKey, CheckStatus.WARN, detail, "splice login $headKey", fixKind = FixKind.COMMAND)
         }
         val exhausted = safe.accounts.isNotEmpty() && safe.accounts.none { it.available && it.credentialPresent }
         if (!exhausted) return DoctorCheck(headKey, CheckStatus.OK, detail)

@@ -74,9 +74,10 @@ internal class DoctorReportShape(private val redaction: DoctorRedaction, private
         put("unreadable_entries", usage.unreadable)
     }
 
-    /** Exactly {id, status, detail, fix, fix_id, pending_restart} (schema 1): `fix` is the check's
-     *  remedy, null when it has none, and `fix_id` names the daemon-run fix, null
-     *  on every row whose remedy is the operator's own. V4-253: the fix rode inside the detail behind
+    /** Exactly {id, status, detail, fix, fix_kind, fix_id, pending_restart} (schema 1): `fix` is the check's
+     *  remedy, null when it has none, `fix_kind` is `command` (one line safe to paste) or `advice` (null
+     *  with no fix), and `fix_id` names the daemon-run fix, null on every row whose remedy is the
+     *  operator's own. V4-253: the fix rode inside the detail behind
      *  an em-dash separator, so the JSON users paste into issues carried U+2014 on every check with a
      *  remedy. An added key is not a breaking change, so the schema stays 1. A check's name, detail
      *  and fix are the doctor's own sentences, but they quote config values — so every unsafe
@@ -92,6 +93,7 @@ internal class DoctorReportShape(private val redaction: DoctorRedaction, private
                             put("detail", safe(c.detail))
                             put("fix", c.fix?.let(::safe))
                             put("fix_id", c.fixId?.wire)
+                            put("fix_kind", c.fixKind?.wire)
                             put("pending_restart", c.pendingRestart)
                         },
                     )

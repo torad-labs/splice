@@ -64,6 +64,7 @@ internal class DoctorPathCheck(private val probes: DoctorProbes) {
                     "'$command' is not linked",
                     FIX_RELINK,
                     DoctorFix.INSTALL_ALL,
+                    fixKind = FixKind.COMMAND,
                 )
             entryStat != null ->
                 DoctorCheck(
@@ -86,6 +87,7 @@ internal class DoctorPathCheck(private val probes: DoctorProbes) {
                     "'$command' is a dangling symlink (target gone)",
                     FIX_RELINK,
                     DoctorFix.INSTALL_ALL,
+                    fixKind = FixKind.COMMAND,
                 )
             else -> DoctorCheck(CHECK_WRAPPER, CheckStatus.OK, "'$command' → ${Files.readSymbolicLink(link)}")
         }
@@ -120,8 +122,10 @@ internal class DoctorPathCheck(private val probes: DoctorProbes) {
                 DoctorCheck(
                     CHECK_WRAPPER,
                     CheckStatus.WARN,
-                    "'${link.fileName}' → $shim names no head in the topology (left by a renamed or removed head)",
-                    "rm $link   (or give a head that command again in the topology)",
+                    "'${link.fileName}' → $shim names no head in the topology (left by a renamed or removed " +
+                        "head; or give that command a head again in the topology)",
+                    "rm $link",
+                    fixKind = FixKind.COMMAND,
                 )
             }
     }

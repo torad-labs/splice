@@ -57,8 +57,10 @@ internal class DoctorHeadChecks(private val doctorRuntime: DoctorRuntime) {
             failed > 0 -> DoctorCheck(
                 headCheckName,
                 CheckStatus.FAIL,
-                "$failed of $heads head(s) FAILED to start",
-                "splice restart (then: splice logs --head <key> --tail 50 to see why)",
+                "$failed of $heads head(s) FAILED to start; after a restart, " +
+                    "`splice logs --head <key> --tail 50` says why",
+                "splice restart",
+                fixKind = FixKind.COMMAND,
             )
             ready + failed < heads -> DoctorCheck(
                 headCheckName,
@@ -71,6 +73,7 @@ internal class DoctorHeadChecks(private val doctorRuntime: DoctorRuntime) {
                     CheckStatus.INFO,
                     "not set up yet: no heads configured",
                     "splice setup",
+                    fixKind = FixKind.COMMAND,
                 )
             else -> DoctorCheck(headCheckName, CheckStatus.OK, "$ready of $heads head(s) ready")
         }
@@ -93,6 +96,7 @@ internal class DoctorHeadChecks(private val doctorRuntime: DoctorRuntime) {
                 CheckStatus.WARN,
                 "splice.toml changed since the daemon booted, so the running topology is stale",
                 "splice restart",
+                fixKind = FixKind.COMMAND,
             )
         }
     }

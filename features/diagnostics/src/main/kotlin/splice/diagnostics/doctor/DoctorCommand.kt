@@ -249,7 +249,16 @@ public class DoctorCommand(
     // and its remedy when one fits.
     private fun accountChecks(pools: AccountPoolsRead?, snapshot: DaemonSnapshot): List<DoctorCheck> = when (pools) {
         null -> listOf(DoctorCheck(ACCOUNTS_CHECK, CheckStatus.INFO, "skipped (${snapshot.unanswered})"))
-        is AccountPoolsRead.Unread -> listOf(DoctorCheck(ACCOUNTS_CHECK, CheckStatus.WARN, pools.reason, pools.fix))
+        is AccountPoolsRead.Unread -> listOf(
+            // Unread's remedy is always a splice verb (FIX_LOGS, FIX_RESTART) or none.
+            DoctorCheck(
+                ACCOUNTS_CHECK,
+                CheckStatus.WARN,
+                pools.reason,
+                pools.fix,
+                fixKind = pools.fix?.let { FixKind.COMMAND },
+            ),
+        )
         is AccountPoolsRead.Read -> if (pools.pools.isEmpty()) {
             listOf(DoctorCheck(ACCOUNTS_CHECK, CheckStatus.INFO, "one account per head"))
         } else {

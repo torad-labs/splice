@@ -53,6 +53,7 @@ internal class SplitBrainChecks {
                     CheckStatus.FAIL,
                     "${auth.envVar} is set in this shell but the daemon started without it",
                     FIX_RESTART,
+                    fixKind = FixKind.COMMAND,
                 )
             }
     }

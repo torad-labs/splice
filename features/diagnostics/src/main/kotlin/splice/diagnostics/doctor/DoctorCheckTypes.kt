@@ -15,7 +15,9 @@ internal const val FIX_LOGS = "splice logs"
 
 /** [fixId] names a fix the daemon can run itself (POST /api/doctor/fix/{id}); [fix] stays the
  *  sentence an operator reads, and a row whose remedy is theirs alone (edit a shell rc, fix access,
- *  move a foreign file) carries no id. */
+ *  move a foreign file) carries no id. [fixKind] says what [fix] is, set where the remedy is written:
+ *  a [FixKind.COMMAND] is one shell line safe to paste as it stands, and anything else is advice, which
+ *  is the default, so a remedy nobody marked is never offered to paste. */
 internal data class DoctorCheck(
     val name: String,
     val status: CheckStatus,
@@ -24,7 +26,17 @@ internal data class DoctorCheck(
     val fixId: DoctorFix? = null,
     /** Declared restart-required value differs from the running daemon's value. */
     val pendingRestart: Boolean = false,
+    val fixKind: FixKind? = fix?.let { FixKind.ADVICE },
 )
+
+/** What a check's `fix` is: `fix_kind` on the wire (absent with no fix). */
+internal enum class FixKind(val wire: String) {
+    /** One shell line, complete and safe to paste: no placeholder, no trailing note. */
+    COMMAND("command"),
+
+    /** A sentence about what to change, which a console prints and never offers to copy. */
+    ADVICE("advice"),
+}
 
 /** V4-220 item 4: the fixes the console may ask the daemon to run, each one the CLI verb it runs.
  *  Only a verb that is safe unattended belongs here — it creates or relinks splice's own files and

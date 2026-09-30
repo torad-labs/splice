@@ -22,6 +22,7 @@ import { Button, Close, Folder, Plus, Prompt, Segmented, Select, Slider, State, 
 import { NeedFix } from '../needs/NeedFix';
 import { AllSettings } from './AllSettings';
 import { T } from './copy';
+import { Compaction } from './Compaction';
 import { Kept } from './Kept';
 import { Row, SaveNote, useSetting } from './Row';
 
@@ -99,6 +100,7 @@ export function Conversation({ config }: { config: ConfigPayload }) {
         control={<Select label={T.reasoning} value={textOf(config.effective['showReasoning']) || 'text'} options={REASONING_CHOICES} onChange={(next) => reasoning.save(next)} />}
         note={<SaveNote keys={['showReasoning']} saved={reasoning.saved} />}
       />
+      <Compaction />
     </>
   );
 }

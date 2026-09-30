@@ -68,3 +68,6 @@
 .kept-ctl { display: grid; gap: var(--space-4); justify-items: end; }
 .census { display: grid; gap: var(--space-3); justify-items: end; text-align: right; font: 500 15px var(--meta); color: var(--body); }
 .row .ctl .fallback { min-width: 0; overflow-wrap: anywhere; font: 500 13px var(--mono); color: var(--mute); }
+.recent { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); justify-items: end; font: 500 15px var(--meta); color: var(--body); }
+.recent li { display: flex; gap: var(--space-5); align-items: center; flex-wrap: wrap; justify-content: flex-end; text-align: right; }
+.recent li b { color: var(--ink); font-weight: 650; }

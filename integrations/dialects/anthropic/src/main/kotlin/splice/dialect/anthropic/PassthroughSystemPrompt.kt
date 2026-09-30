@@ -1,7 +1,7 @@
 // NEW: v0.4.0 (operator ask 2026-09-15) — the head's standing system prompt on the anthropic
 // passthrough wire. Mirrors PassthroughCompactionTail: normalizes the client's `system`, and in
 // APPEND mode leaves every existing block at the same byte prefix so the prompt cache keeps
-// hitting; REPLACE substitutes the field outright; STRIP (V4-170) deletes the paragraphs a pattern
+// hitting; REPLACE preserves client billing metadata before the prompt; STRIP (V4-170) deletes paragraphs a pattern
 // list names from each of the client's text blocks and leaves everything else where it was.
 package splice.dialect.anthropic
 
@@ -17,8 +17,8 @@ import splice.core.prompt.SystemPromptMode
 import splice.core.util.JsonScalars
 
 /** Places a text block in the request's `system` field: APPEND adds it after the client's blocks,
- *  REPLACE makes it the field, STRIP edits the client's blocks in place. An absent (or explicitly
- *  null) system normalizes to an empty block list, and a shape this dialect cannot extend leaves
+ *  REPLACE keeps client metadata then substitutes the prompt, STRIP edits the client's blocks in place.
+ *  An absent or null system normalizes to an empty block list, and a shape this dialect cannot extend leaves
  *  the request untouched. */
 public class PassthroughSystemPrompt {
     public fun apply(request: JsonObject, text: String, mode: SystemPromptMode): JsonObject {
@@ -94,16 +94,34 @@ public class PassthroughSystemPrompt {
         return JsonObject(request.toMutableMap().apply { put(SYSTEM, JsonArray(blocks + textBlock(text))) })
     }
 
-    /** The client's whole system field is replaced, so its blocks are GONE from the wire. Always
-     *  placeable: overwriting a field needs no shape the client has to have provided. */
-    private fun replaced(request: JsonObject, text: String): JsonObject =
-        JsonObject(request.toMutableMap().apply { put(SYSTEM, JsonArray(listOf(textBlock(text)))) })
+    /** Billing attribution is client metadata, not prompt prose. Preserve its blocks verbatim and
+     *  transfer the last removed prompt block's cache policy to the replacement. Other shapes and
+     *  requests without metadata keep the previous replacement wire. */
+    private fun replaced(request: JsonObject, text: String): JsonObject {
+        val blocks = (request[SYSTEM] as? JsonArray).orEmpty()
+        val (metadata, prompts) = blocks.partition { block ->
+            val obj = block as? JsonObject
+            val value = JsonScalars.str(obj?.get(TEXT)).orEmpty()
+            JsonScalars.str(obj?.get(TYPE)) == TYPE_TEXT && CLIENT_NON_PROMPT_PREFIXES.any { value.startsWith(it) }
+        }
+        val replacement = textBlock(text).toMutableMap()
+        if (metadata.isNotEmpty()) {
+            val lastPrompt = prompts.filterIsInstance<JsonObject>().lastOrNull {
+                JsonScalars.str(it, TYPE) == TYPE_TEXT
+            }
+            lastPrompt?.get(CACHE_CONTROL)?.let { replacement[CACHE_CONTROL] = it }
+        }
+        return JsonObject(request.toMutableMap().apply { put(SYSTEM, JsonArray(metadata + JsonObject(replacement))) })
+    }
 
     private fun textBlock(text: String): JsonObject = buildJsonObject {
         put(TYPE, TYPE_TEXT)
         put(TEXT, text)
     }
 }
+
+// Exact client-authored metadata prefixes only: never classify prompt prose by a heuristic.
+private val CLIENT_NON_PROMPT_PREFIXES: Set<String> = setOf("x-anthropic-billing-header:")
 
 /** One client block after a strip: [block] null when it was stripped to nothing. */
 private data class StrippedBlock(val block: JsonElement?, val changed: Boolean)

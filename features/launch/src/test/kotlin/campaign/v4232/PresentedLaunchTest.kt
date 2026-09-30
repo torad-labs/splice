@@ -124,7 +124,7 @@ class PresentedLaunchTest(@param:TempDir private val tmp: Path) {
         val stateStore = WrapStateStore(file = tmp.resolve("wrapped-state/claude-head-wrap.json"))
         stateStore.write(WrapState("/opt/claude/2.1.283", "/opt/claude/2.1.283", "/share/splice-launch", "", "", 0L))
         val materializer = ClaudeConfigMaterializer(home)
-        val wrap = WrappedHead(home, stateStore = stateStore, materializer = materializer)
+        val wrap = WrappedHead(home, stateStore = stateStore)
         val wrapping = LaunchService(materializer, wrap = wrap)
         val through = wrapping.wrap.launchThrough("claude") ?: error("a wrap state is present: claude must resolve")
 

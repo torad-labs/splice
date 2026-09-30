@@ -96,8 +96,8 @@ public class ClaudeConfigMaterializer(
      *  null carries none. Beside the spec, not in it: MaterializeSpec is at its constructor-width
      *  baseline. [modelOverrides] (V4-232, ModelCatalog.presented) is written as settings.json
      *  `modelOverrides`, a Claude model the client knows -> the row id it stands for; empty writes
-     *  nothing and leaves a shared value as it was. Only this entry point takes it, never
-     *  [materializeWrap]: the wrap writes the operator's own ~/.claude, which a head's rows never enter. */
+     *  nothing and leaves a shared value as it was. A wrapped `claude` never comes through here:
+     *  it writes nothing into the operator's own ~/.claude, which this entry point refuses (V4-445). */
     public fun materialize(
         spec: MaterializeSpec,
         trust: TrustedLaunch? = null,
@@ -153,32 +153,6 @@ public class ClaudeConfigMaterializer(
             spec.configDir,
             spec.modelOptionsCache,
             shareMcp = spec.policy.sharesMcp(),
-            local = localClaudeJson,
-            trust = trust,
-        )
-        return MaterializeResult(spec.configDir, spec.availableModelIds.size, mcpCount)
-    }
-
-    /** V4-129: WRAP's narrow materialization — writes ONLY settings.json + .claude.json into
-     *  [spec.configDir], reusing the exact shape [materialize] produces for those two files (model
-     *  allowlist, enforceAvailableModels, the statusline block, carried hooks) so a wrapped `claude`
-     *  looks like any other splice head from Claude Code's point of view. Deliberately narrow: no
-     *  [requireIsolatedDir] — this path exists PRECISELY to write into the operator's real
-     *  `~/.claude`, which that guard refuses for [materialize]'s general entry point; this is not a
-     *  bypass of DR-102, it is the one caller the guard was never meant to cover — no linkShared, no
-     *  hook SCRIPT files, no sessions/projects migration. WrappedHead backs up whatever already sits
-     *  at these two paths before calling this, and [spec.policy] deciding whether settings.json's
-     *  "global" layer (here, the very file about to be overwritten) is carried forward is the
-     *  caller's call, not this method's. [trust] as for [materialize]. */
-    public fun materializeWrap(spec: MaterializeSpec, trust: TrustedLaunch? = null): MaterializeResult {
-        val localClaudeJson = jsonReads.strict(spec.configDir.resolve(Keys.CLAUDE_JSON))
-        val existingSettings = readSettingsModelBase(spec.configDir.resolve(Keys.SETTINGS))
-        Files.createDirectories(spec.configDir)
-        writeSettings(spec, emptyMap(), existingSettings, modelOverrides = emptyMap())
-        val mcpCount = writeClaudeJson(
-            spec.configDir,
-            spec.modelOptionsCache,
-            shareMcp = false,
             local = localClaudeJson,
             trust = trust,
         )

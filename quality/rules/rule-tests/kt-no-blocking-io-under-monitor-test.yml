@@ -21,6 +21,11 @@ valid:
         val snapshot = synchronized(lock) { windows.toMap() }
         Files.writeString(path, snapshot.toString())
     }
+  # IO-only wrap transaction; readers do not take its monitor.
+  - |
+    fun reconcile() = synchronized(WRAP_LOCK) {
+        if (Files.exists(shim)) Files.move(staged, command)
+    }
 invalid:
   # a synthetic reconstruction of the AccountPool.select shape this wall exists to prevent
   # recurring in the DIRECT form. If this case ever goes green the wall cannot fire at all.
@@ -46,6 +51,11 @@ invalid:
                 results += Files.readAllBytes(candidate.authPath)
             }
         }
+    }
+  # the wrap exemption must not extend to a DIFFERENT monitor taken inside it
+  - |
+    synchronized(WRAP_LOCK) {
+        synchronized(sessions) { Files.readAllBytes(path) }
     }
   # the ioLock exemption must not extend to a DIFFERENT monitor taken inside it
   - |

@@ -25,6 +25,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -213,18 +214,8 @@ class ClaudeHeadRoutesWiringTest {
                 }
                 val body = launched.bodyAsText()
                 assertEquals(HttpStatusCode.OK, launched.status, body)
-                val recipe = Json.parseToJsonElement(body).jsonObject
-                assertEquals(
-                    realBinary.toRealPath().toString(),
-                    recipe.getValue("argv").jsonArray.first().jsonPrimitive.content,
-                    "argv[0] is the real binary the wrap recorded, never the bare name the shim now holds",
-                )
-                val env = recipe.getValue("env").jsonObject
-                assertEquals(
-                    home.resolve(".claude").toString(),
-                    env.getValue("CLAUDE_CONFIG_DIR").jsonPrimitive.content,
-                )
-                assertTrue(home.resolve(".claude/settings.json").exists(), "the vanilla dir is materialized")
+                assertWrappedRecipe(Json.parseToJsonElement(body).jsonObject, realBinary)
+                assertFalse(home.resolve(".claude").exists(), "wrap and a wrapped launch write nothing into ~/.claude")
                 assertFalse(
                     home.resolve(".claude-claude-splice").exists(),
                     "a wrapped launch never builds the isolated tree it replaced",
@@ -233,6 +224,29 @@ class ClaudeHeadRoutesWiringTest {
                 client.close()
             }
         }
+    }
+
+    private fun assertWrappedRecipe(recipe: JsonObject, realBinary: Path) {
+        assertEquals(
+            realBinary.toRealPath().toString(),
+            recipe.getValue("argv").jsonArray.first().jsonPrimitive.content,
+            "argv[0] is the real binary the wrap recorded, never the bare name the shim now holds",
+        )
+        val env = recipe.getValue("env").jsonObject
+        assertFalse(
+            env.containsKey("CLAUDE_CONFIG_DIR"),
+            "Claude Code reads ~/.claude.json only while this is unset (V4-445): $env",
+        )
+        assertEquals(
+            "http://127.0.0.1:3104",
+            env.getValue("ANTHROPIC_BASE_URL").jsonPrimitive.content,
+            "the launch runs the claude-splice head, so its own settings and prompt apply",
+        )
+        assertEquals(
+            "--settings",
+            recipe.getValue("argv").jsonArray[1].jsonPrimitive.content,
+            "the head's settings ride the launch",
+        )
     }
 
     /** A LaunchService whose wrap lives entirely under [home]: `bin/claude` -> [realBinary], the launch
@@ -249,7 +263,6 @@ class ClaudeHeadRoutesWiringTest {
                 home = home,
                 installPaths = InstallPaths(binOverride = bin, shareOverride = share),
                 stateStore = WrapStateStore(file = home.resolve("state/claude-head-wrap.json")),
-                materializer = materializer,
             ),
         )
     }

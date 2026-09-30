@@ -18,10 +18,8 @@ import kotlinx.serialization.json.putJsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNull
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.client.wrap.WrappedLaunch
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.readText
@@ -144,17 +142,5 @@ class ClaudeConfigFolderTrustTest {
 
         val state = launchClaudex(link)
         assertEquals(true, trust(state, take.toString()), "Claude Code keys the real path: $state")
-    }
-
-    @Test
-    fun `the wrapped default head carries the same records`() {
-        val take = folder("tally-resume-7")
-        records(spliceHead.resolve(".claude.json"), take.toString() to true)
-        val vanilla = home.resolve(".claude")
-
-        val wrap = WrappedLaunch(vanilla, ClaudeConfigMaterializer(home))
-        wrap.materialize(spec(vanilla), TrustedLaunch(take, listOf(spliceHead)))
-        val state = Json.parseToJsonElement(vanilla.resolve(".claude.json").readText()).jsonObject
-        assertTrue(trust(state, take.toString()) == true, "the wrap door seeds too: $state")
     }
 }

@@ -4,13 +4,14 @@
 // data shapes separate from the class that acts on them). Same-package FQCNs are unchanged.
 package splice.client.wrap
 
-import splice.client.ClaudeConfigMaterializer
-import splice.client.ClaudePolicy
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 import splice.client.Keys
-import splice.client.MaterializeResult
-import splice.client.MaterializeSpec
-import splice.client.TrustedLaunch
 import java.nio.file.Path
+import java.nio.file.Paths
 
 /** [splice.launch.recipe.LaunchService]'s read seam: the real absolute claude binary when the default
  *  `claude` command is wrapped, else null — bare `"claude"` (today's byte-identical behaviour,
@@ -25,29 +26,41 @@ public data class WrapState(
     val realBinaryPath: String,
     val shadowedSymlinkTarget: String,
     val shimPath: String,
+    /** Only a wrap made before V4-445 records these: it copied the operator's settings.json and .claude.json
+     *  aside before rewriting them, and unwrap puts them back. A wrap now writes neither, so both are blank. */
     val settingsBackupPath: String,
     val claudeJsonBackupPath: String,
     val wrappedAtEpochMillis: Long,
 )
 
-/** V4-129 review: one launch THROUGH the wrapped default `claude` command ([WrappedHead.launchThrough]):
- *  the vanilla config dir it runs over, and the narrow materialization that dir takes. Only
- *  [WrappedHead] makes one, so a launch cannot name a config dir its materialization would not write. */
-public class WrappedLaunch internal constructor(
-    public val configDir: Path,
-    private val materializer: ClaudeConfigMaterializer,
-) {
-    /** THE one spelling of how the vanilla dir is materialized — wrap itself goes through here too, so
-     *  a launch re-renders exactly what wrap wrote. [spec]'s configDir and policy are OVERRIDDEN: the
-     *  vanilla dir is the only target, and the policy carries settings.json's "global" layer (the very
-     *  file being rewritten) forward whatever the source head's share/isolate says. The door is the
-     *  materializer's narrow one ([ClaudeConfigMaterializer.materializeWrap]), never a bypass of the
-     *  DR-102 guard. [trust] is carried as for any head (V4-283). */
-    public fun materialize(spec: MaterializeSpec, trust: TrustedLaunch? = null): MaterializeResult =
-        materializer.materializeWrap(
-            spec.copy(configDir = configDir, policy = ClaudePolicy(share = setOf(Keys.SETTINGS), isolate = emptySet())),
-            trust,
-        )
+/** V4-129 review: one launch THROUGH the wrapped default `claude` command ([WrappedHead.launchThrough]): the
+ *  vanilla config dir the launch READS its transcripts from (a bounded `-c`, a named `-r`). Only [WrappedHead]
+ *  makes one. V4-445: the launch WRITES nothing there and does not name it as CLAUDE_CONFIG_DIR: Claude Code
+ *  reads its global state from ~/.claude.json only while that variable is unset (from
+ *  $CLAUDE_CONFIG_DIR/.claude.json when it is set), so naming the dir hid the operator's mcpServers, projects
+ *  and account behind a fresh file. The head's settings ride the launch as a `--settings` overlay instead. */
+public class WrappedLaunch internal constructor(public val configDir: Path) {
+    /** Clear an inherited splice head's root, but retain an operator's custom vanilla root. */
+    public fun configRootUnsets(inherited: String?, headDirs: List<Path>): List<String> {
+        val path = inherited?.let(Paths::get) ?: return emptyList()
+        val isHead = path.isAbsolute && headDirs.any { it.toAbsolutePath().normalize() == path.normalize() }
+        return if (isHead) listOf("CLAUDE_CONFIG_DIR") else emptyList()
+    }
+
+    /** The `--settings` JSON a wrapped launch hands Claude Code in place of a materialized settings.json: the
+     *  head's model roster (as an enforced allowlist, so the picker offers what the head serves) and its status
+     *  line. The client merges it over the operator's own settings for this run only, so nothing is written to
+     *  ~/.claude/settings.json and a plain `claude` afterwards reads the file it always read. */
+    public fun settingsOverlay(availableModelIds: List<String>, statuslineCommand: String): String =
+        buildJsonObject {
+            putJsonArray(Keys.AVAILABLE_MODELS) { availableModelIds.forEach { add(it) } }
+            put("enforceAvailableModels", true)
+            putJsonObject(Keys.STATUS_LINE) {
+                put("type", "command")
+                put("command", statuslineCommand)
+                put("padding", 0)
+            }
+        }.toString()
 }
 
 public data class ClaudeHeadStatus(
@@ -58,11 +71,7 @@ public data class ClaudeHeadStatus(
 )
 
 public sealed class WrapResult {
-    public data class Ok(
-        val status: ClaudeHeadStatus,
-        val settingsBackupPath: String,
-        val claudeJsonBackupPath: String,
-    ) : WrapResult()
+    public data class Ok(val status: ClaudeHeadStatus) : WrapResult()
 
     public data class Refused(val reason: String) : WrapResult()
 }
@@ -70,4 +79,21 @@ public sealed class WrapResult {
 public sealed class UnwrapResult {
     public data class Ok(val status: ClaudeHeadStatus) : UnwrapResult()
     public data class Refused(val reason: String) : UnwrapResult()
+}
+
+/** What [WrappedHead.reconcile] found. */
+public sealed class ReconcileResult {
+    /** Nothing is wrapped, so there is nothing to keep wrapped. */
+    public data object NotWrapped : ReconcileResult()
+
+    /** `claude` is still the shim and the recorded real binary is there. */
+    public data object Intact : ReconcileResult()
+
+    /** The updater re-pointed `claude`, or deleted the recorded binary: the state now names [realBinaryPath],
+     *  and `claude` is the shim again. */
+    public data class Rewrapped(val realBinaryPath: String) : ReconcileResult()
+
+    /** Something is not settled and is left as it is: an update in the middle of its swap, a `claude` that is
+     *  not a symlink, a missing shim. [reason] says which; the next event or tick tries again. */
+    public data class Waiting(val reason: String) : ReconcileResult()
 }

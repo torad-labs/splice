@@ -15,11 +15,18 @@ import splice.http.JsonBody
 import splice.launch.LaunchAudit
 import splice.launch.LaunchHead
 import splice.launch.LaunchHeads
+import splice.launch.LaunchRecipe
 import splice.launch.LaunchReplies
+import splice.launch.LaunchSpec
 import splice.launch.wrap.CLAUDE_HEAD_KEY
 
 /** [cwd]: V4-183, the shim's working directory, absent from a shim older than shim-4. */
-private data class LaunchRequest(val extraArgs: List<String>, val dangerouslySkipPermissions: Boolean, val cwd: String?)
+private data class LaunchRequest(
+    val extraArgs: List<String>,
+    val dangerouslySkipPermissions: Boolean,
+    val cwd: String?,
+    val inheritedConfigDir: String?,
+)
 
 /** The head one launch runs, and [wrapped] when it came through the wrapped `claude` (V4-129). */
 private data class Resolved(val head: LaunchHead, val wrapped: WrappedLaunch?)
@@ -67,24 +74,32 @@ public class LaunchRoutes(
         // V4-162: the windows are read per LAUNCH too — splice.toml's context_window is live and the
         // spec is boot-frozen, so a launch after an edit is planted with the edited window.
         val launched = target.catalog?.let(spec::withWindows) ?: spec
-        val recipe = launchResponse.withAuthWarning(
-            target,
-            launched,
-            launchService.launch(
-                launched,
-                request.extraArgs,
-                request.dangerouslySkipPermissions,
-                // DR-81: key presence is read per LAUNCH — the spec is boot-frozen, and a stale
-                // gate left the capture hook armed against a credential `splice key set` landed.
-                keyPresentNow = target.keyPresence.keyPresentNow(),
-                cwd = request.cwd,
-                wrapped = resolved.wrapped,
-            ),
-        )
+        val recipe = recipeFor(target, launched, request, resolved.wrapped, launchService)
         audit.launched(key, recipe.argv)
-        if (recipe.warning != null) audit.warned(recipe.warning)
+        recipe.warning?.let(audit::warned)
         call.respondText(launchResponse.launchRecipeJson(recipe), ContentType.Application.Json)
     }
+
+    private suspend fun recipeFor(
+        target: LaunchHead,
+        spec: LaunchSpec,
+        request: LaunchRequest,
+        wrapped: WrappedLaunch?,
+        service: LaunchService,
+    ): LaunchRecipe = launchResponse.withAuthWarning(
+        target,
+        spec,
+        service.launch(
+            spec,
+            request.extraArgs,
+            request.dangerouslySkipPermissions,
+            // DR-81: key presence is read per launch, not from the boot-frozen spec.
+            keyPresentNow = target.keyPresence.keyPresentNow(),
+            cwd = request.cwd,
+            wrapped = wrapped,
+            inheritedConfigDir = request.inheritedConfigDir,
+        ),
+    )
 
     /** The head [key] launches, given its key/label [targets] (at most one — several were refused).
      *
@@ -105,6 +120,11 @@ public class LaunchRoutes(
         val dangerouslySkipPermissions = JsonScalars.str(body, "dangerouslySkipPermissions") == "true"
         val extraArgs = (body?.get("args") as? JsonArray)
             ?.mapNotNull { JsonScalars.str(it) } ?: emptyList()
-        return LaunchRequest(extraArgs, dangerouslySkipPermissions, JsonScalars.str(body, "cwd"))
+        return LaunchRequest(
+            extraArgs,
+            dangerouslySkipPermissions,
+            JsonScalars.str(body, "cwd"),
+            JsonScalars.str(body, "inheritedConfigDir"),
+        )
     }
 }

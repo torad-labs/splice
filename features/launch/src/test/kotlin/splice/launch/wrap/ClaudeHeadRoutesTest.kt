@@ -25,6 +25,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -132,15 +133,14 @@ class ClaudeHeadRoutesTest {
     }
 
     @Test
-    fun `wrap through the route answers ok with both backup paths, and mode flips to wrapped on the next GET`(
+    fun `wrap through the route answers ok, and mode flips to wrapped on the next GET`(
         @TempDir home: Path,
     ) {
         serveHermetic(home) { port, rig ->
             rig.linkCmdToReal()
             val response = postJson(port, "/api/claude-head/wrap")
             assertTrue(response["ok"]!!.jsonPrimitive.boolean, "$response")
-            assertTrue(response.containsKey("settings_backup_path"))
-            assertTrue(response.containsKey("claude_json_backup_path"))
+            assertFalse(response.containsKey("settings_backup_path"), "wrap writes nothing to back up (V4-445)")
 
             val client = HttpClient(CIO) { expectSuccess = false }
             val status = try {

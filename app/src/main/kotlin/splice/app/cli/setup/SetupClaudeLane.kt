@@ -14,10 +14,9 @@
 // the same reason (SetupSignIn, V4-156). SetupHeads keeps the tick list; this keeps the lane.
 //
 // THE SAME PATH, NOT A SECOND MECHANISM. Wrapping means POST /api/claude-head/wrap on the loopback
-// control plane — the identical route the console's Settings page posts to, and the only place the
-// MaterializeSpec can be built, since it is assembled from the live `claude-splice` head's own
-// LaunchSpec (ClaudeHeadRoutes.kt). The wizard does not touch ~/.claude, does not plant a shim and
-// does not learn what wrapping is; it asks the daemon that already knows.
+// control plane — the identical route the console's Settings page posts to (ClaudeHeadRoutes.kt).
+// The wizard does not touch ~/.claude, does not plant a shim and does not learn what wrapping is;
+// it asks the daemon that already knows.
 package splice.app.cli.setup
 
 import kotlinx.serialization.json.Json
@@ -35,11 +34,10 @@ import splice.terminal.SelectOutcome
 /** The catalogue row this question is about (AddProfileCatalog's `claude`). */
 internal const val CLAUDE_PROFILE: String = "claude"
 
-/** The one line on what Wrap takes over — the row's words, and the two files are named because
- *  they are the operator's own, not splice's to quietly own. */
+/** The one line on what Wrap takes over: the command, never the operator's config. */
 internal const val WRAP_HINT: String =
-    "claude itself goes through splice: a shim shadows the claude command and " +
-        "settings.json and .claude.json in ~/.claude are rewritten (both backed up first)"
+    "claude itself goes through splice and stays wrapped across updates; " +
+        "your settings, MCP servers and other Claude state stay untouched"
 
 internal const val SEPARATE_HINT: String =
     "a claude-splice command beside your own; nothing in ~/.claude is touched"
@@ -47,8 +45,8 @@ internal const val SEPARATE_HINT: String =
 /** Where to do it by hand. There is no `splice wrap` verb — the console's Settings page is the
  *  other caller of this route, so it is what the operator is actually sent to. */
 /** The wrap POST's own read budget. ControlPlaneClient's 3s default was sized for the shutdown
- *  route, which answers 202 BEFORE it tears down; wrap answers only AFTER WrappedHead creates
- *  directories, takes two backups, materializes the config and atomically moves the shim — and the
+ *  route, which answers 202 BEFORE it tears down; wrap answers only AFTER WrappedHead writes
+ *  its state and atomically moves the shim — and the
  *  wizard fires it seconds after restarting the daemon, the coldest moment of the run. A budget
  *  that expires mid-wrap is not a slow answer, it is a wrong report about a changed machine.
  *  Matched to the restart drain rather than to a liveness probe. */
@@ -128,8 +126,8 @@ internal class DaemonClaudeWrap(private val env: EnvReader = EnvReader(System::g
 
     /** THE POST MAY HAVE LANDED. [ControlPlaneClient.send]'s null means "never connected" OR
      *  "connected, got a status, and reading the body failed" — and wrap is not a read: the route
-     *  answers only AFTER WrappedHead has created directories, taken two backups, materialized the
-     *  config and atomically moved the shim into place. Reporting that as a flat "the daemon did not
+     *  answers only AFTER WrappedHead has written its state and atomically moved the shim into place.
+     *  Reporting that as a flat "the daemon did not
      *  answer, nothing happened" is the wizard telling the operator the opposite of what is on disk.
      *
      *  So: ask. GET /api/claude-head is a plain read and reports the mode actually in force. Only

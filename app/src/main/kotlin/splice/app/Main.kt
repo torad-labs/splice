@@ -9,7 +9,11 @@ import kotlinx.coroutines.withTimeoutOrNull
 import splice.app.daemon.DaemonLock
 import splice.app.daemon.DaemonLockWait
 import splice.app.daemon.LockOutcome
+import splice.client.wrap.WrapGuard
+import splice.client.wrap.WrappedHead
+import splice.core.config.InstallPaths
 import splice.core.config.StatePaths
+import splice.core.config.UserHome
 import splice.core.terminal.TerminalOutput
 import splice.core.util.AsyncFileIo
 import splice.core.util.DaemonLog
@@ -116,7 +120,12 @@ internal class DaemonProcess(
         Runtime.getRuntime().addShutdownHook(
             Executors.defaultThreadFactory().newThread { shutdown(daemon, lock) },
         )
-        serveUntilShutdown(daemon, lock, shutdownSignal)
+        // V4-445: keeps a wrapped plain `claude` wrapped across Claude Code's own updates. Production only: it
+        // watches the real ~/.local/bin, which a test daemon must never do.
+        WrapGuard(WrappedHead(UserHome.dir()), InstallPaths().binDir, log).use { guard ->
+            guard.start()
+            serveUntilShutdown(daemon, lock, shutdownSignal)
+        }
     }
 
     /** The blocking serve loop, PRIVATE by law: wall kt-no-runblocking-exported-bridge lets Main.kt

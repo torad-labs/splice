@@ -359,7 +359,6 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
         "Files.move(" to 1,
     ),
     "integrations/claude-code/src/main/kotlin/splice/client/wrap/WrappedHead.kt" to mapOf(
-        "Files.copy(" to 1,
         "Files.createSymbolicLink(" to 1,
         "Files.move(" to 2,
         "writeAtomic0600(" to 1,

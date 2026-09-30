@@ -1,6 +1,8 @@
 // NEW: V4-129 — the default-command shim (FEATURES.md 4.12 "Wrap"). The operator's plain `claude`
-// on PATH becomes a splice launcher over the vanilla config dir (~/.claude) instead of an isolated
-// tree. Two hazards this file exists to close:
+// on PATH becomes a splice launcher over the vanilla config, which this file never writes (V4-445): a
+// wrapped launch runs Claude Code with no CLAUDE_CONFIG_DIR, so it reads the operator's real ~/.claude.json
+// and ~/.claude exactly as a plain `claude` does, and the head's own settings ride the launch (LaunchService).
+// What wrap changes is one symlink and one state file. Three hazards this file exists to close:
 //   - SELF-EXEC: app/src/main/dist/bin/splice-launch execs its recipe's argv[0] by resolving it through PATH, and
 //     LaunchService plants the bare string "claude" there. The moment `claude` on PATH IS the shim,
 //     every head's launch (not only the wrapped one) would resolve argv[0] back to the shim that is
@@ -10,13 +12,14 @@
 //     absolute path while `claude` on PATH is still, in fact, untouched (harmless: same target,
 //     spelled absolutely) rather than the reverse ordering, which would leave every head resolving
 //     a shim with nothing telling them not to.
-//   - DR-102: ClaudeConfigMaterializer.materialize() refuses to write into ~/.claude by design (the
-//     isolation guard). Wrap's whole point is to write there, so it goes through the deliberately
-//     narrow materializeWrap() entry point instead — never a bypass of the guard, a different door.
+//   - THE UPDATER: `~/.local/bin/claude` is a symlink Claude Code owns, and it re-points it on every release
+//     (2.1.282 to .285 in four days), which replaces the shim and pins the recorded binary to a version the
+//     updater then deletes. [WrappedHead.reconcile] notices, records the live binary and puts the shim
+//     back; the daemon runs it at start and on a watch of the bin directory (WrapGuard).
+//   - THE DAEMON'S OWN SWAP: unwrap swaps the same symlink, and the watch would read that as an update and
+//     wrap again. wrap, unwrap and reconcile therefore take one lock, and unwrap clears the state inside it.
 // "no pool, no isolation, no un-link on a wrapped head" (the row title): this class does not touch
-// Topology, ManagedHead or the account pool — it is a self-contained shim-and-two-files mechanism;
-// the MaterializeSpec it writes is handed in by the caller (ClaudeHeadRoutes), which is the one that
-// knows about the claude-splice head's own catalog.
+// Topology, ManagedHead or the account pool — it is a self-contained shim-and-one-file mechanism.
 // DTOs, read seams and outcome types live in WrappedHeadTypes.kt (concentration, 2026-09-20). Same
 // package, same FQCNs.
 package splice.client.wrap
@@ -25,9 +28,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import splice.client.ClaudeConfigMaterializer
 import splice.client.Keys
-import splice.client.MaterializeSpec
 import splice.client.SymlinkOp
 import splice.core.config.InstallPaths
 import splice.core.config.StatePaths
@@ -40,13 +41,15 @@ import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
-import java.nio.file.StandardCopyOption.COPY_ATTRIBUTES
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import kotlin.io.path.isSymbolicLink
 
 private const val CLAUDE_COMMAND = "claude"
 private const val SHIM_NAME = "splice-launch"
 private const val WRAP_STATE_FILE = "claude-head-wrap.json"
+
+/** One lock for every state-changing wrap operation in this JVM (the daemon's): see the file header. */
+private val WRAP_LOCK = Any()
 
 /** The one fact [splice.launch.recipe.LaunchService] must read on every launch (see file header). A file,
  *  not in-memory state: the daemon's LaunchService is constructed once at boot while wrap/unwrap are
@@ -79,8 +82,8 @@ public class WrapStateStore(
             put("real_binary_path", state.realBinaryPath)
             put("shadowed_symlink_target", state.shadowedSymlinkTarget)
             put("shim_path", state.shimPath)
-            put("settings_backup_path", state.settingsBackupPath)
-            put("claude_json_backup_path", state.claudeJsonBackupPath)
+            if (state.settingsBackupPath.isNotBlank()) put("settings_backup_path", state.settingsBackupPath)
+            if (state.claudeJsonBackupPath.isNotBlank()) put("claude_json_backup_path", state.claudeJsonBackupPath)
             put("wrapped_at_epoch_millis", state.wrappedAtEpochMillis)
         }
         SecureFile.writeAtomic0600(file, json.encodeToString(JsonObject.serializer(), body) + "\n")
@@ -115,7 +118,6 @@ public class WrappedHead(
     private val home: Path,
     private val installPaths: InstallPaths = InstallPaths(),
     private val stateStore: WrapStateStore = WrapStateStore(),
-    private val materializer: ClaudeConfigMaterializer = ClaudeConfigMaterializer(home),
     private val symlink: SymlinkOp = SymlinkOp { link, target -> Files.createSymbolicLink(link, target) },
     private val now: WallClock = WallClock(System::currentTimeMillis),
 ) : WrapStateRead {
@@ -123,8 +125,14 @@ public class WrappedHead(
     private val shimPath: Path get() = installPaths.shareDir.resolve(SHIM_NAME)
     private val vanillaDir: Path get() = home.resolve(Keys.CLAUDE)
 
-    /** The real claude binary while wrap is in place (its state file is the proof), else null. */
-    override fun realBinaryPath(): String? = stateStore.read()?.realBinaryPath
+    /** The real claude binary while wrap is in place (its state file is the proof), else null. A recorded binary
+     *  the updater has since deleted is put right first ([reconcile]), so a launch never execs a dead path. */
+    override fun realBinaryPath(): String? {
+        val state = stateStore.read() ?: return null
+        if (Files.isExecutable(Paths.get(state.realBinaryPath))) return state.realBinaryPath
+        reconcile()
+        return stateStore.read()?.realBinaryPath
+    }
 
     /** V4-129 review: the launch a `/launch/<[command]>` makes THROUGH the wrapped default command,
      *  or null. The shim takes its head from its own basename, so a wrapped `claude` posts
@@ -132,46 +140,66 @@ public class WrappedHead(
      *  Non-null exactly when [command] is `claude` AND the wrap state is present; the caller then
      *  launches the splice-owned Claude head over [WrappedLaunch.configDir], the vanilla ~/.claude. */
     public fun launchThrough(command: String): WrappedLaunch? =
-        if (command == CLAUDE_COMMAND && realBinaryPath() != null) WrappedLaunch(vanillaDir, materializer) else null
+        if (command == CLAUDE_COMMAND && realBinaryPath() != null) WrappedLaunch(vanillaDir) else null
 
     public fun status(): ClaudeHeadStatus {
         val cmd = commandPath
         val shim = shimPath
         val wrapped = isWrapShim(cmd, shim)
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-29: an unresolvable command reports no resolvesTo
+        val resolvesTo = Cancellables.runCatchingCancellable { cmd.toRealPath().toString() }.getOrNull()
         return ClaudeHeadStatus(
             mode = if (wrapped) "wrapped" else "separate",
-            resolvesTo = resolveCommand(cmd),
+            resolvesTo = resolvesTo,
             shimPath = shim.toString(),
             realBinaryPath = if (wrapped) realBinaryPath() else null,
         )
     }
 
-    /** [spec] arrives from the caller with its own configDir/policy — both are OVERRIDDEN (by
-     *  [WrappedLaunch.materialize], the one place the vanilla dir's materialization is spelled): the
-     *  vanilla dir is the only legal target for wrap, and the policy is fixed so settings.json's
-     *  "global" layer (the very file about to be overwritten, once configDir == vanillaDir) is
-     *  always carried forward, regardless of the source head's own share/isolate configuration. */
-    public fun wrap(spec: MaterializeSpec): WrapResult {
+    /** Wrap writes the state file and swaps the `claude` symlink for the shim, and nothing else: the vanilla
+     *  ~/.claude.json and ~/.claude are neither copied nor rewritten (V4-445). */
+    public fun wrap(): WrapResult = synchronized(WRAP_LOCK) {
         val cmd = commandPath
         val shim = shimPath
-        return when (val preflight = wrapPreflight(cmd, shim)) {
+        when (val preflight = wrapPreflight(cmd, shim)) {
             is WrapPreflight.Refused -> WrapResult.Refused(preflight.reason)
-            is WrapPreflight.Ready -> performWrap(spec, cmd, shim, preflight)
+            is WrapPreflight.Ready -> performWrap(cmd, shim, preflight)
         }
     }
 
-    public fun unwrap(): UnwrapResult {
+    /** Puts `claude` back on the real binary the updater now points it at, or the newest one when the
+     *  recorded one is gone. */
+    public fun unwrap(): UnwrapResult = synchronized(WRAP_LOCK) {
         val cmd = commandPath
         val shim = shimPath
-        if (!isWrapShim(cmd, shim)) return UnwrapResult.Refused("claude is not currently wrapped")
         val state = stateStore.read()
-        return if (state == null) {
-            UnwrapResult.Refused(
+        when {
+            !isWrapShim(cmd, shim) -> UnwrapResult.Refused("claude is not currently wrapped")
+            state == null -> UnwrapResult.Refused(
                 "wrap state is missing or unreadable, so splice cannot recover the previous '$cmd' target or " +
                     "the backed-up config; point $cmd at your real claude install by hand",
             )
-        } else {
-            performUnwrap(cmd, state)
+            else -> performUnwrap(cmd, state)
+        }
+    }
+
+    /** Keeps `claude` wrapped across Claude Code's own updates (V4-445). The updater re-points
+     *  `~/.local/bin/claude` at the new version and deletes old ones, which replaces the shim and pins
+     *  [WrapState.realBinaryPath] to a file that is gone. When the state says wrapped and `claude` is not the
+     *  shim, this records what `claude` points at now and puts the shim back, the state first (the crash
+     *  ordering in the file header). Idempotent, and quiet when nothing changed, so a directory watch and a
+     *  timer can both call it. It never invents a target: a `claude` that is missing, dangling or not a
+     *  symlink is [ReconcileResult.Waiting], and left exactly as found. */
+    public fun reconcile(): ReconcileResult = synchronized(WRAP_LOCK) {
+        val state = stateStore.read() ?: return@synchronized ReconcileResult.NotWrapped
+        val cmd = commandPath
+        val shim = shimPath
+        when {
+            !Files.exists(shim, NOFOLLOW_LINKS) -> ReconcileResult.Waiting("launch shim not found at $shim")
+            isWrapShim(cmd, shim) -> refreshDeadBinary(state)
+            !Files.exists(cmd, NOFOLLOW_LINKS) -> ReconcileResult.Waiting("$cmd is missing")
+            !cmd.isSymbolicLink() -> ReconcileResult.Waiting("$cmd is not a symlink, so it is left alone")
+            else -> rewrap(cmd, shim, state)
         }
     }
 
@@ -202,34 +230,69 @@ public class WrappedHead(
         }
     }
 
-    private fun performWrap(spec: MaterializeSpec, cmd: Path, shim: Path, ready: WrapPreflight.Ready): WrapResult {
-        val settingsBackup = backupPath(vanillaDir.resolve(Keys.SETTINGS))
-        val claudeJsonBackup = backupPath(vanillaDir.resolve(Keys.CLAUDE_JSON))
-        Files.createDirectories(vanillaDir)
-        backup(vanillaDir.resolve(Keys.SETTINGS), settingsBackup)
-        backup(vanillaDir.resolve(Keys.CLAUDE_JSON), claudeJsonBackup)
-        WrappedLaunch(vanillaDir, materializer).materialize(spec)
+    private fun performWrap(cmd: Path, shim: Path, ready: WrapPreflight.Ready): WrapResult {
         // State BEFORE the symlink swap — the safe crash ordering (file header).
         stateStore.write(
             WrapState(
                 realBinaryPath = ready.realBinaryPath,
                 shadowedSymlinkTarget = ready.shadowedTarget,
                 shimPath = shim.toString(),
-                settingsBackupPath = settingsBackup.toString(),
-                claudeJsonBackupPath = claudeJsonBackup.toString(),
+                settingsBackupPath = "",
+                claudeJsonBackupPath = "",
                 wrappedAtEpochMillis = now(),
             ),
         )
         atomicSymlink(cmd, shim)
-        return WrapResult.Ok(status(), settingsBackup.toString(), claudeJsonBackup.toString())
+        return WrapResult.Ok(status())
     }
 
     private fun performUnwrap(cmd: Path, state: WrapState): UnwrapResult {
-        atomicSymlink(cmd, Paths.get(state.shadowedSymlinkTarget))
-        restore(vanillaDir.resolve(Keys.SETTINGS), Paths.get(state.settingsBackupPath))
-        restore(vanillaDir.resolve(Keys.CLAUDE_JSON), Paths.get(state.claudeJsonBackupPath))
+        val target = WrapBinaryVersions.liveTarget(cmd, state)
+            ?: return UnwrapResult.Refused(
+                "the claude that was wrapped (${state.shadowedSymlinkTarget}) is gone and no other version sits " +
+                    "beside it; point $cmd at your real claude install by hand",
+            )
+        atomicSymlink(cmd, target)
+        // A wrap made before V4-445 copied the operator's settings.json and .claude.json aside and rewrote
+        // both; its backups go back. A wrap now records none.
+        if (state.settingsBackupPath.isNotBlank()) {
+            restore(vanillaDir.resolve(Keys.SETTINGS), Paths.get(state.settingsBackupPath))
+        }
+        if (state.claudeJsonBackupPath.isNotBlank()) {
+            restore(vanillaDir.resolve(Keys.CLAUDE_JSON), Paths.get(state.claudeJsonBackupPath))
+        }
         stateStore.clear()
         return UnwrapResult.Ok(status())
+    }
+
+    /** `claude` is the shim, so the updater has not re-pointed it, but it may have deleted the version the
+     *  state names (its cleanup keeps a few). The newest one beside it stands in, recorded. */
+    private fun refreshDeadBinary(state: WrapState): ReconcileResult {
+        if (Files.isExecutable(Paths.get(state.realBinaryPath))) return ReconcileResult.Intact
+        val gone = state.realBinaryPath
+        val live = WrapBinaryVersions.newestBeside(Paths.get(gone))
+            ?: return ReconcileResult.Waiting("the recorded claude $gone is gone and none sits beside it")
+        stateStore.write(state.copy(realBinaryPath = live.toString(), shadowedSymlinkTarget = live.toString()))
+        return ReconcileResult.Rewrapped(live.toString())
+    }
+
+    /** `claude` is no longer the shim: the updater re-pointed it. Record its target as the real binary, put
+     *  the shim back. */
+    private fun rewrap(cmd: Path, shim: Path, state: WrapState): ReconcileResult {
+        val target = Files.readSymbolicLink(cmd).toString()
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-29: a target that does not resolve is the Waiting below, not a failure to report
+        val real = Cancellables.runCatchingCancellable { cmd.toRealPath() }.getOrNull()
+            ?: return ReconcileResult.Waiting("$cmd -> $target does not resolve yet")
+        stateStore.write(
+            state.copy(
+                realBinaryPath = real.toString(),
+                shadowedSymlinkTarget = target,
+                shimPath = shim.toString(),
+                wrappedAtEpochMillis = now(),
+            ),
+        )
+        atomicSymlink(cmd, shim)
+        return ReconcileResult.Rewrapped(real.toString())
     }
 
     /** Is [cmd] currently a link to [shim]? Compared by real path so a relative or differently
@@ -242,20 +305,6 @@ public class WrappedHead(
         // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: unresolvable reads as NOT wrapped by contract (KDoc above)
         val shimReal = Cancellables.runCatchingCancellable { shim.toRealPath() }.getOrNull() ?: return false
         return cmdReal == shimReal
-    }
-
-    private fun resolveCommand(cmd: Path): String? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: an unresolvable command reports no resolvesTo in the status
-        Cancellables.runCatchingCancellable { cmd.toRealPath().toString() }.getOrNull()
-
-    private fun backupPath(original: Path): Path =
-        original.resolveSibling("${original.fileName}.splice-wrap-backup-${now()}")
-
-    /** No-op when [original] does not exist — its own absence IS what [restore] must reproduce, and
-     *  an absent backup path is how it tells the two states apart. */
-    private fun backup(original: Path, backupTo: Path) {
-        if (!Files.exists(original, NOFOLLOW_LINKS)) return
-        Files.copy(original, backupTo, COPY_ATTRIBUTES)
     }
 
     private fun restore(target: Path, backupFrom: Path) {

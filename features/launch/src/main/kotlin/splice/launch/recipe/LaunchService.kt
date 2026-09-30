@@ -48,7 +48,7 @@ public class LaunchService(
      *  the wrap that is written and the wrap a launch reads are one object over one home (ControlPlane
      *  passes the daemon's). Carried here because LaunchService is the one launch object the control
      *  server is handed; the default is the real home, exactly what ClaudeHeadRoutes defaulted to. */
-    public val wrap: WrappedHead = WrappedHead(UserHome.dir(), materializer = materializer),
+    public val wrap: WrappedHead = WrappedHead(UserHome.dir()),
     /** V4-129: the real absolute claude binary when the default `claude` command is WRAPPED —
      *  app/src/main/dist/bin/splice-launch execs argv[0] by resolving it through PATH, and a wrapped `claude` on PATH
      *  IS the shim, so planting the bare [claudeBinary] string there would make EVERY head's launch
@@ -77,10 +77,10 @@ public class LaunchService(
         /** V4-183: the shim's working directory; null from a shim older than shim-4, which leaves -c unbounded. */
         cwd: String? = null,
         /** V4-129 review: non-null when this launch came THROUGH the wrapped default `claude` command
-         *  ([WrappedHead.launchThrough]): the head then runs over the vanilla dir that launch names,
-         *  materialized through wrap's own narrow door (the DR-102 guard refuses that dir to
-         *  [ClaudeConfigMaterializer.materialize], by design). */
+         *  ([WrappedHead.launchThrough]): its settings ride an overlay, never a write into vanilla. */
         wrapped: WrappedLaunch? = null,
+        /** The calling shim's config root, not the daemon's own inherited environment. */
+        inheritedConfigDir: String? = null,
     ): LaunchRecipe {
         val keyed = if (keyPresentNow) spec.copy(tokenCapture = null, advertiseKeySetup = false) else spec
         val effective = wrapped?.let { keyed.copy(trees = keyed.trees.copy(own = it.configDir)) } ?: keyed
@@ -105,13 +105,10 @@ public class LaunchService(
         // V4-283: the folder-trust records the operator granted for this cwd, in any head, are carried in.
         val trust = cwd?.let { Paths.get(it) }?.takeIf { it.isAbsolute }
             ?.let { TrustedLaunch(it, effective.trees.siblings) }
-        // V4-232: a head's presented rows enter its OWN settings.json only; the wrap writes the operator's
-        // ~/.claude and takes no overrides.
-        if (wrapped != null) {
-            wrapped.materialize(materialize, trust)
-        } else {
-            materializer.materialize(materialize, trust, effective.tiers.modelOverrides)
-        }
+        // V4-232: a head's presented rows enter its OWN settings.json only. V4-445: a wrapped launch materializes
+        // NOTHING: it runs over the operator's own ~/.claude and ~/.claude.json, which stay as they are, and
+        // carries the head's settings as a --settings overlay below.
+        materializeLaunch(materialize, trust, effective.tiers.modelOverrides, wrapped)
         // V4-276: a launch never writes a head's .credentials.json. V4-129 copied the selected stored
         // login over it here, and Claude Code's refresh tokens rotate, so every launch put back a
         // superseded token and upstream revoked the login (V4-237, V4-250). The live login is
@@ -124,20 +121,33 @@ public class LaunchService(
         // adoptResume judges.
         val bounded = headBoundedContinue.resolve(effective.trees.own, extraArgs, cwd)
         val adoption = adoptResume(held, bounded.args)
-        val env = buildEnv(held, slots)
-        val unset = staleEnvUnsets(effective, slots)
+        // V4-445: Claude Code reads ~/.claude.json only while CLAUDE_CONFIG_DIR is unset. Set to the vanilla dir it
+        // reads ~/.claude/.claude.json, a file that holds none of the operator's mcpServers, projects or account.
+        val environment = launchEnvironment(spec, held, slots, wrapped, inheritedConfigDir)
         val argv = buildList {
             // V4-129: the real absolute path when `claude` on PATH is currently the wrap shim itself
             // (see [wrapState]'s KDoc) — bare [claudeBinary] otherwise, byte-identical to every launch
             // before this row.
             add(wrapState.realBinaryPath() ?: claudeBinary)
             if (dangerouslySkipPermissions) add("--dangerously-skip-permissions")
+            wrapped?.let {
+                addAll(listOf("--settings", it.settingsOverlay(held.availableModelIds, held.statuslineCommand)))
+            }
             // NB: no --model — the active model is ANTHROPIC_MODEL + settings.json, so the /model
             // picker (populated by the materialized bare-id roster) can freely switch. Forcing it locked the row.
             addAll(bounded.args)
         }
         val warning = launchWarning(spec, dangerouslySkipPermissions, adoption, bounded.warning)
-        return LaunchRecipe(env, unset, argv, warning)
+        return LaunchRecipe(environment.env, environment.unset, argv, warning)
+    }
+
+    private fun materializeLaunch(
+        spec: MaterializeSpec,
+        trust: TrustedLaunch?,
+        modelOverrides: Map<String, String>,
+        wrapped: WrappedLaunch?,
+    ) {
+        if (wrapped == null) materializer.materialize(spec, trust, modelOverrides)
     }
 
     /** Resolve a launch's `-r SESSION_ID` against the other heads' transcript trees (V4-115). Null
@@ -236,7 +246,13 @@ public class LaunchService(
      *  picker. (3) Every alias-tier triplet this head does NOT emit — an explicit-slots head that
      *  omits a tier must not let the outer head's value leak through and point that tier at a
      *  model this head cannot serve (codex redo verdict, 2026-08-30). */
-    private fun staleEnvUnsets(spec: LaunchSpec, slots: List<Pair<String, String>>): List<String> {
+    private fun launchEnvironment(
+        spec: LaunchSpec,
+        held: LaunchSpec,
+        slots: List<Pair<String, String>>,
+        wrapped: WrappedLaunch?,
+        inheritedConfigDir: String?,
+    ): LaunchEnvironment {
         val auth = if (spec.forwardClientAuth) {
             emptyList()
         } else {
@@ -256,7 +272,11 @@ public class LaunchService(
                     "ANTHROPIC_DEFAULT_${tier}_MODEL_DESCRIPTION",
                 )
             }
-        return auth + "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY" + absentTiers
+        val dirs = listOf(spec.trees.own) + spec.trees.siblings
+        val config = wrapped?.configRootUnsets(inheritedConfigDir, dirs).orEmpty()
+        val planted = buildEnv(held, slots)
+        val env = if (wrapped == null) planted else planted - CONFIG_DIR_ENV
+        return LaunchEnvironment(env, auth + "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY" + absentTiers + config)
     }
 
     private fun buildEnv(spec: LaunchSpec, slots: List<Pair<String, String>>): Map<String, String> {
@@ -267,7 +287,7 @@ public class LaunchService(
             // consuming work. A native-auth head plants NOTHING: the client's own credential must
             // reach the head untouched, and this would override it.
             if (!spec.forwardClientAuth) put("ANTHROPIC_AUTH_TOKEN", spec.inferenceToken)
-            put("CLAUDE_CONFIG_DIR", spec.trees.own.toString())
+            put(CONFIG_DIR_ENV, spec.trees.own.toString())
             // NO gateway model discovery: the picker reads the materialized roster (settings.json
             // availableModels + .claude.json additionalModelOptionsCache) — see the header for why
             // the wrapped /v1/models spelling must never reach the picker.
@@ -452,3 +472,8 @@ public class LaunchService(
             .entries
             .associate { (model, slot) -> slot.lowercase() to model }
 }
+
+private data class LaunchEnvironment(val env: Map<String, String>, val unset: List<String>)
+
+/** The variable that moves Claude Code's whole config root, and its global .claude.json with it. */
+private const val CONFIG_DIR_ENV = "CLAUDE_CONFIG_DIR"

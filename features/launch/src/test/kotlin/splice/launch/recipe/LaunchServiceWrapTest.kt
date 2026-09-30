@@ -6,7 +6,12 @@
 // refresh token it put back got the login revoked; the pins below keep the live login byte for byte.
 package splice.launch.recipe
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -81,40 +86,86 @@ class LaunchServiceWrapTest(@param:TempDir private val tmp: Path) {
         assertEquals("max-gen2-newer", live.readText())
     }
 
-    /** V4-129 review. A launch THROUGH the wrapped `claude` runs the client-auth claude-splice head
-     *  over the operator's own ~/.claude — whose credential IS the operator's login. FEATURES.md 4.5
-     *  says the selected Claude login is materialized "never on a wrapped default head": writing it
-     *  there would overwrite the operator's real login with a splice-stored one. */
+    /** V4-129 review, and V4-445. A launch THROUGH the wrapped `claude` runs the client-auth claude-splice head
+     *  over the operator's own state. FEATURES.md 4.5 says the selected Claude login is materialized "never on a
+     *  wrapped default head", and V4-445 goes further: nothing is written into ~/.claude or ~/.claude.json at
+     *  all, and CLAUDE_CONFIG_DIR stays unset, because Claude Code reads its global .claude.json (mcpServers,
+     *  projects, the account) from ~/.claude.json only then. The head's settings ride a --settings overlay. */
     @Test
-    fun `a launch through the wrapped claude runs over the vanilla dir and never writes a login into it`() {
+    fun `a launch through the wrapped claude reads the operator's own state and writes none - V4-445`() {
         val home = tmp.resolve("wrapped-home").createDirectories()
+        val claudeJson = """{"mcpServers":{"ast-grep":{"command":"ast-grep"}},"projects":{"/work/app":{}}}"""
+        home.resolve(".claude.json").writeText(claudeJson)
+        val vanilla = home.resolve(".claude").createDirectories()
+        vanilla.resolve("settings.json").writeText("""{"theme":"dark"}""")
         val stateStore = WrapStateStore(file = tmp.resolve("wrapped-state/claude-head-wrap.json"))
         stateStore.write(WrapState("/opt/claude/2.1.281", "/opt/claude/2.1.281", "/share/splice-launch", "", "", 0L))
-        val materializer = ClaudeConfigMaterializer(home)
         val service = LaunchService(
-            materializer,
-            wrap = WrappedHead(home, stateStore = stateStore, materializer = materializer),
+            ClaudeConfigMaterializer(home),
+            wrap = WrappedHead(home, stateStore = stateStore),
         )
         val through = service.wrap.launchThrough("claude") ?: error("a wrap state is present: claude must resolve")
+
+        val recipe = service.launch(
+            spec("claude-splice", forwardClientAuth = true),
+            listOf("-p"),
+            dangerouslySkipPermissions = false,
+            wrapped = through,
+            inheritedConfigDir = tmp.resolve(".claude-claude-splice").toString(),
+        )
+
+        assertFalse("CLAUDE_CONFIG_DIR" in recipe.env, "set, Claude Code reads ~/.claude/.claude.json: ${recipe.env}")
+        assertTrue(
+            "CLAUDE_CONFIG_DIR" in recipe.unset,
+            "a parent head's inherited config root must not hide vanilla state",
+        )
+        assertEquals("http://127.0.0.1:3104", recipe.env["ANTHROPIC_BASE_URL"], "it is the claude-splice head")
+        assertEquals(listOf("/opt/claude/2.1.281", "--settings"), recipe.argv.take(2))
+        assertEquals("-p", recipe.argv.last())
+        val overlay = Json.parseToJsonElement(recipe.argv[2]).jsonObject
+        assertEquals(listOf("m1"), overlay.getValue("availableModels").jsonArray.map { it.jsonPrimitive.content })
+        assertEquals(true, overlay.getValue("enforceAvailableModels").jsonPrimitive.boolean)
+        assertEquals(
+            "\"/bin/curl\" -s :3096/statusline",
+            overlay.getValue("statusLine").jsonObject.getValue("command").jsonPrimitive.content,
+        )
+        assertEquals(claudeJson, home.resolve(".claude.json").readText(), "~/.claude.json is byte for byte")
+        assertEquals("""{"theme":"dark"}""", vanilla.resolve("settings.json").readText())
+        assertEquals(
+            listOf("settings.json"),
+            vanilla.toFile().list().orEmpty().sorted(),
+            "nothing was added to ~/.claude, a .credentials.json or a .claude.json least of all",
+        )
+        assertEquals(null, service.wrap.launchThrough("claudex"), "only the wrapped command resolves through wrap")
+    }
+
+    @Test
+    fun `a wrapped launch retains an operator's custom config root`() {
+        val home = tmp.resolve("custom-home").createDirectories()
+        val stateStore = WrapStateStore(file = home.resolve("state/claude-head-wrap.json"))
+        stateStore.write(WrapState("/opt/claude/current", "/opt/claude/current", "/share/splice-launch", "", "", 0L))
+        val service = LaunchService(ClaudeConfigMaterializer(home), wrap = WrappedHead(home, stateStore = stateStore))
+        val through = service.wrap.launchThrough("claude") ?: error("wrap state is present")
+        val customDir = home.resolve("my-custom-config").toString()
 
         val recipe = service.launch(
             spec("claude-splice", forwardClientAuth = true),
             emptyList(),
             dangerouslySkipPermissions = false,
             wrapped = through,
+            inheritedConfigDir = customDir,
         )
 
-        assertEquals(home.resolve(".claude").toString(), recipe.env["CLAUDE_CONFIG_DIR"])
-        assertEquals("/opt/claude/2.1.281", recipe.argv.first())
-        assertTrue(
-            home.resolve(".claude/settings.json").exists(),
-            "the vanilla dir takes wrap's narrow materialization",
-        )
-        assertFalse(
-            home.resolve(".claude/.credentials.json").exists(),
-            "the operator's own ~/.claude login must never be overwritten by a stored splice login",
-        )
-        assertEquals(null, service.wrap.launchThrough("claudex"), "only the wrapped command resolves through wrap")
+        assertFalse("CLAUDE_CONFIG_DIR" in recipe.env)
+        assertFalse("CLAUDE_CONFIG_DIR" in recipe.unset, "the shim preserves the caller's $customDir")
+    }
+
+    @Test
+    fun `a launch of the head itself still names its own config dir`() {
+        val recipe = LaunchService(ClaudeConfigMaterializer(tmp))
+            .launch(spec("claude-splice", forwardClientAuth = true), emptyList(), dangerouslySkipPermissions = false)
+        assertEquals(tmp.resolve(".claude-claude-splice").toString(), recipe.env["CLAUDE_CONFIG_DIR"])
+        assertFalse("--settings" in recipe.argv, "the head's settings are materialized in its own tree")
     }
 
     @Test

@@ -55,7 +55,7 @@ module.exports = { liveStateDir };
 
 // Hand-paired with splice.core.SHIM_VERSION (core/src/main/kotlin/splice/core/Versions.kt)
 // — bump both together whenever this shim's behavior changes. No code generation.
-const SPLICE_SHIM_VERSION = "shim-9";
+const SPLICE_SHIM_VERSION = "shim-10";
 // Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.
 const SPLICE_GATEWAY_VERSION = "0.4.0";
 
@@ -458,7 +458,12 @@ async function launch() {
   // Ask the daemon for the exec recipe (env sets/unsets + argv), passing through extra args and the
   // working directory (shim-4, V4-183): a bare -c is resolved by the daemon to this head's own newest
   // session in this cwd, so it never continues another head's session.
-  const body = JSON.stringify({ dangerouslySkipPermissions: DANGEROUS, cwd: process.cwd(), args });
+  const body = JSON.stringify({
+    dangerouslySkipPermissions: DANGEROUS,
+    cwd: process.cwd(),
+    args,
+    inheritedConfigDir: env.CLAUDE_CONFIG_DIR,
+  });
   const answer = await request("POST", `${CONTROL}/launch/${HEAD}`, 0x7fffffff, {
     Authorization: `Bearer ${key}`,
     "Content-Type": "application/json",

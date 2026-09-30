@@ -35,6 +35,16 @@ describe('request', () => {
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer abc123');
   });
 
+  test('a page opened with no key and then given a wrong one is locked again with a key held, which is what makes the unlock screen say rejected', async () => {
+    const { request, storeKey, isLocked, currentKey } = await fresh();
+    vi.stubGlobal('fetch', vi.fn(async () => reply(401, {})));
+    expect([isLocked(), currentKey()]).toEqual([true, '']);
+    storeKey('wrong');
+    await expect(request('/api/heads')).rejects.toMatchObject({ status: 401 });
+    expect(isLocked()).toBe(true);
+    expect(currentKey()).toBe('wrong');
+  });
+
   test('a 401 locks: nothing more goes out until a key is stored again', async () => {
     const { request, storeKey, isLocked } = await fresh();
     const fetchMock = vi.fn(async () => reply(401, {}));

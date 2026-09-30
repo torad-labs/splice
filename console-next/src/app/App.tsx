@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 import { RouterProvider } from 'react-router';
 import { followEvents } from '../api/events';
 import { currentKey, isLocked, subscribeLock } from '../api/client';
@@ -12,8 +12,9 @@ const client = new QueryClient({
 
 export function App() {
   const locked = useSyncExternalStore(subscribeLock, isLocked);
-  // The unlock screen says "rejected" only when a key was tried: with none held it just asks.
-  const [tried] = useState(() => currentKey() !== '');
+  // The unlock screen says "rejected" only when a key was tried: with none held it just asks. Read at render, not once at
+  // mount: a page that opened with no key and was then given a wrong one is locked again with a key held.
+  const tried = currentKey() !== '';
   useEffect(() => {
     if (locked) return;
     const stop = new AbortController();

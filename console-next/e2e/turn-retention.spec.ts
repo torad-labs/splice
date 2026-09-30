@@ -1,16 +1,34 @@
 // NEW: V4-444 — retained turn bytes, failure identity, transcript privacy and capture writes.
 import { expect, test, type Page } from '@playwright/test';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import type { PerfTurnsWire, TurnRowWire } from '../src/types/perf';
 import { env, open, read } from './support';
 import { driveOneTurn, saveTranscript, STACK, TURN_PROMPT } from './stack';
 
+/** The daemon's two logs, from the stack's own config path (<home>/.config/splice/splice.toml): the boot output, where the
+ *  file lane's one drop warning goes, and the persistent daemon.log. */
+function daemonLogs(): string {
+  const home = dirname(dirname(dirname(env('CONSOLE_E2E_CONFIG'))));
+  const text = (file: string): string => (existsSync(file) ? readFileSync(file, 'utf8') : '(no such log)');
+  return [join(home, 'daemon.log'), join(home, '.splice/logs/daemon.log')].map((file) => {
+    const lines = text(file).split('\n');
+    const dropped = lines.filter((line) => line.includes('[async-file-io]'));
+    return `-- ${file}: ${dropped.length} "[async-file-io]" line(s)\n${dropped.join('\n')}\n-- last 40 lines\n${lines.slice(-40).join('\n')}`;
+  }).join('\n');
+}
+
+/** The turn's row is appended on the daemon's best-effort file lane after the answer ends (PerfStats.kt:212-219, AsyncFileIo.submit),
+ *  so it is an eventual read, the same one the stack waits on for its own first turn. A row that never lands fails with the logs,
+ *  which say whether the lane dropped it. */
 async function newest(page: Page, head: string): Promise<number> {
-  const body = await read<PerfTurnsWire>(page, '/api/perf/turns?head=' + head);
-  const rows = body.heads.flatMap((entry) => entry.rows ?? []);
-  const at = Math.max(...rows.map((row) => row.ts));
-  expect(Number.isFinite(at), 'a synthetic turn must be recorded').toBe(true);
-  return at;
+  const rows = async () => (await read<PerfTurnsWire>(page, '/api/perf/turns?head=' + head)).heads.flatMap((entry) => entry.rows ?? []);
+  try {
+    await expect.poll(async () => (await rows()).length, { timeout: 5_000, message: 'a synthetic turn must be recorded' }).toBeGreaterThan(0);
+  } catch (error) {
+    throw new Error(`a synthetic turn must be recorded on ${head} within 5 s\n${daemonLogs()}`, { cause: error });
+  }
+  return Math.max(...(await rows()).map((row) => row.ts));
 }
 
 async function openTurn(page: Page, head: string, at: number): Promise<void> {

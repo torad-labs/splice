@@ -27,7 +27,8 @@ import { fmtMs, ABSENT } from './format';
 import { headAttention, localInstantText, quotaRefusedUntil } from './heads';
 import { nearestLimit } from './nearest-limit';
 import { inflightFrom, isStalled } from './perf';
-import { activityText, lastLine, needsPerson, repoName, sessionKey, sessionLabel, stateOf, timingOf } from './sessions';
+import { waitingQuestion } from './session-says';
+import { activityText, needsPerson, repoName, sessionKey, sessionLabel, stateOf, timingOf } from './sessions';
 import type { TurnOf } from './sessions';
 import { H, K, S, U } from './words-needs';
 
@@ -235,7 +236,6 @@ function turnNeeds(heads: readonly HeadStatus[]): Need[] {
 
 /** The daemon cuts a message at 160 characters without saying so: one that stops mid-sentence ends in an ellipsis, so the
  *  sentence after it does not run into it. */
-const closed = (text: string | null): string | null => (text === null || /[.?!…"')\]]$/.test(text) ? text : `${text}…`);
 
 /** Every session that needs a person by lib/sessions.ts: one waiting for an answer, or a busy one whose
  *  live turn reports itself quiet past STUCK_IDLE_MS. Never a session merely called stale by the daemon:
@@ -257,8 +257,8 @@ function sessionNeeds(rows: readonly SessionRow[], now: number, turnOf: TurnOf):
       head,
       subject: sessionLabel(row),
       finding: activityText(state, timingOf(row, state, turn, now).since),
-      // Only what the session itself said is its question: a system notice (a peer asking to be told when it is idle) is not one.
-      session: { id: row.session_id, said: row.last?.role === 'assistant' ? closed(lastLine(row.last)) : null, repo: repoName(row) },
+      // Only a question the session itself asked is quoted: a system notice or a tool's output is not one.
+      session: { id: row.session_id, said: waitingQuestion(row.last), repo: repoName(row) },
       fix: stuck && head !== null && row.session_id !== null
         ? { kind: 'stop-turn', head, session: row.session_id }
         : open(at, S.openSession),

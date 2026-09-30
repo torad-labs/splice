@@ -404,10 +404,13 @@ describe('a session needs a person only when it waits or is stuck (operator ruli
     expect(sessionItems({ sessions: read({ note: '', sessions: [notice] }) })[0]?.session?.said).toBeNull();
   });
 
-  test('a message the daemon cut mid-sentence ends in an ellipsis, a finished one does not', () => {
-    const said = (text: string) => sessionItems({ sessions: read({ note: '', sessions: [session({ status: 'waiting', last: { role: 'assistant', tool: null, text, ts: NOW } })] }) })[0]?.session?.said;
-    expect(said('The box run failed and used up the')).toBe('The box run failed and used up the…');
-    expect(said('Run it?')).toBe('Run it?');
+  test('only a question the session asked is quoted: a statement, a cut-off sentence or a tool\'s output is not, and the last question wins', () => {
+    const said = (role: 'assistant' | 'tool' | 'user', text: string, tool: string | null = null) => sessionItems({ sessions: read({ note: '', sessions: [session({ status: 'waiting', last: { role, tool, text, ts: NOW } })] }) })[0]?.session?.said;
+    expect(said('assistant', 'The box run failed and used up the credit, my mistake. I picked an offer whose download rate was $0.051/GB (the earlier boxes pa')).toBeNull();
+    expect(said('assistant', 'Run it?')).toBe('Run it?');
+    expect(said('assistant', 'The build is green. Do you want it pushed? Or should I hold the review?')).toBe('Or should I hold the review?');
+    expect(said('tool', 'Did it finish?', 'Bash')).toBeNull();
+    expect(said('assistant', '{"questions":[{"question":"Which plan takes the session?","header":"Plan"', 'AskUserQuestion')).toBe('Which plan takes the session?');
   });
 
   test('a busy session with no live turn is running a tool: no item, whether the head says none or was not read', () => {

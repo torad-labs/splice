@@ -1,6 +1,7 @@
 // What a session card's activity line says. Copy lives in modules like this one, never inline in logic.
 export const SW = {
   waiting: 'Waiting for your answer',
+  compacted: 'Compacted its context',
   waitingFor: (span: string): string => `Waiting for your answer for ${span}`,
   stuck: 'Quiet for a while',
   stuckFor: (span: string): string => `Quiet for ${span}`,

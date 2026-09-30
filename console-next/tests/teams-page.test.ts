@@ -1,6 +1,6 @@
 // The team composer's rules and the board's reads: what stops a save, what a save sends, and the day a board shows.
 import { describe, expect, test } from 'vitest';
-import { addSeat, atRetentionEdge, blankDraft, dayOf, dayWords, draftOf, editSeat, featuresOf, keyFor, removeSeat, seatsOf, setLead, teamLede, validateDraft, writeOf } from '../src/lib/teams-page';
+import { addSeat, atRetentionEdge, blankDraft, dayOf, dayWords, draftOf, editSeat, featuresOf, keyFor, peerName, removeSeat, seatsOf, setLead, teamLede, validateDraft, writeOf } from '../src/lib/teams-page';
 import type { TeamChatPayload, TeamRow } from '../src/types/teams';
 
 const team = (over: Partial<TeamRow> = {}): TeamRow => ({
@@ -90,5 +90,13 @@ describe('the board', () => {
     expect(atRetentionEdge(chat({ state: 'not_kept' }), older)).toBe(true);
     expect(atRetentionEdge(chat({ state: 'partially_kept', oldest_kept_epoch_millis: yesterday.from + 3_600_000 }), yesterday)).toBe(true);
     expect(atRetentionEdge(chat({ oldest_kept_epoch_millis: older.from }), yesterday)).toBe(false);
+  });
+});
+
+describe('who a message names', () => {
+  test('a filed session reads as its role, an unfiled socket as another session, and never as the socket', () => {
+    expect(peerName('lead', 'uds:/run/user/1000/cc-socks/700.sock')).toBe('lead');
+    expect(peerName(null, 'uds:/run/user/1000/cc-socks/700.sock')).toBe('Another session');
+    expect(peerName(null, 'sess-1')).toBe('sess-1');
   });
 });

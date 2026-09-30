@@ -92,6 +92,13 @@ describe('an account row', () => {
     expect(row(acct({ label: 'pin', pinned: true, next_target: true }), pool)).toContain('Next because it is the pinned account.');
     expect(row(other, pool)).not.toContain('Next because');
   });
+  test('an excluded account prints the provider’s whole reason and offers no Switch', () => {
+    const reason = 'Synthetic subscription is excluded until its provider accepts this login again.';
+    const html = row(acct({ available: false, auth_excluded_until_epoch_millis: 1_800_000_000_000 + 3_600_000, auth_exclusion_reason: reason }));
+    expect(html).toContain(reason);
+    expect(html).not.toContain('Switch to this one');
+    expect(row(acct({ available: false }))).toContain('Excluded by the pool, with no reason given.');
+  });
   test('an account whose login file is gone offers no Switch and says so', () => {
     const html = row(acct({ credential_present: false }));
     expect(html).not.toContain('Switch to this one');

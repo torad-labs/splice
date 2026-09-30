@@ -23,7 +23,7 @@ describe('a project in words', () => {
     expect(projectLede(row({ live_sessions: 0, teams: 0, turns_today: 0 }))).toBe('Nothing is running. No turns today.');
   });
   test('turns with no priced turn state no cost rather than a cost of zero', () => {
-    expect(projectLede(row({ cost_today_usd: null, teams: 0, live_sessions: 1 }))).toBe('1 session is running. 12 turns today.');
+    expect(projectLede(row({ cost_today_usd: null, teams: 0, live_sessions: 1 }))).toBe('1 session is running. 12 turns today. API cost today –.');
   });
   test('only live sessions whose repo is this one count', () => {
     const here = session({ session_id: 'a', repo: { root: ROOT } } as Partial<SessionRow>);

@@ -11,6 +11,7 @@ export const P = {
   noTurnsToday: 'No turns today.',
   turnsToday: (n: number): string => `${n.toLocaleString('en-US')} ${n === 1 ? 'turn' : 'turns'} today.`,
   costToday: (usd: string): string => `About ${usd} of API cost.`,
+  costUnpriced: (dash: string): string => `API cost today ${dash}.`,
   sessionsTitle: 'Sessions here',
   sessionsNone: 'No session is running in this repo.',
   teamsTitle: 'Teams',

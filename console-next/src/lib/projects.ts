@@ -14,7 +14,7 @@ export const repoLabel = (root: string, remote?: string): string => repoNameOf(r
 export function projectLede(row: ProjectRow): string {
   const running = row.live_sessions === 0 ? P.noneRunning : P.running(row.live_sessions);
   const teams = row.teams === 0 ? '' : ` ${P.teams(row.teams)}`;
-  const today = row.turns_today === 0 ? P.noTurnsToday : row.cost_today_usd === null ? P.turnsToday(row.turns_today) : `${P.turnsToday(row.turns_today)} ${P.costToday(fmtUsd(row.cost_today_usd))}`;
+  const today = row.turns_today === 0 ? P.noTurnsToday : row.cost_today_usd === null ? `${P.turnsToday(row.turns_today)} ${P.costUnpriced(ABSENT)}` : `${P.turnsToday(row.turns_today)} ${P.costToday(fmtUsd(row.cost_today_usd))}`;
   return `${running}${teams}. ${today}`;
 }
 

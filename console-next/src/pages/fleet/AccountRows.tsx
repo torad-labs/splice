@@ -2,7 +2,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { useState } from 'react';
 import { failureText } from '../../api/client';
 import { isPendingRoute, useRelabelAccount, useRemoveAccount, useSwitchAccount, useUnpinAccount } from '../../api/auth';
-import { accountState, isExcluded, isServable, nextRuleOf, refusalText, windowLengthText, windowUsedText } from '../../lib/accounts';
+import { accountState, exclusionText, isExcluded, isServable, nextRuleOf, refusalText, windowLengthText, windowUsedText } from '../../lib/accounts';
 import type { AccountRow } from '../../types/accounts';
 import { Button, Close } from '../../ui';
 import { D } from './copy';
@@ -51,6 +51,7 @@ export function AccountRowView({ account, now, pooled, pool }: { account: Accoun
         ))}
         <span className="windows-text">{windowsText(account)}</span>
       </div>
+      {isExcluded(account, now) ? <p className="hint">{exclusionText(account)}</p> : null}
       {rule === null ? null : <p className="hint">{D.nextBecause(D.nextRule[rule])}</p>}
       {refusal === null ? null : <p className="hint alert" role="alert">{refusal}</p>}
       {refusal === null && !account.credential_present ? <p className="hint">{D.noCredential}</p> : null}

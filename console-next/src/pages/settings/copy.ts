@@ -74,7 +74,7 @@ export const T = {
   noTools: 'No tool servers are set up.',
   // Health
   healthTitle: 'Everything splice depends on',
-  healthChecked: (ago: string): string => `Sign-ins, ports, folders and the daemon itself, checked ${ago}.`,
+  healthChecked: (ago: string): string => `Sign-ins, ports, folders and splice itself, checked ${ago}.`,
   healthUnserved: 'This version of splice does not serve its checks.',
   needsYou: 'Needs you',
   worth: 'Worth a look',

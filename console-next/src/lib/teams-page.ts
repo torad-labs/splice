@@ -32,6 +32,11 @@ export interface TeamDraft {
   archived: boolean;
 }
 
+/** Who a message names: the seat's role when the team has filed the session, else the session as a person reads it. A socket address
+ *  (`uds:<path>`) is how a session is reached, never how it is called, so an unfiled one reads as another session. */
+export const peerName = (role: string | null, address: string): string =>
+  role !== null ? role : address.startsWith('uds:') ? M.anotherSession : address;
+
 export const blankSeat = (id: string): DraftSeat => ({ id, model: null, account: null, role: '', head: '', lead: false, instructions: '', session: null });
 export const blankDraft = (seatId: string): TeamDraft => ({ name: '', goal: '', features: '', repo: '', seats: [{ ...blankSeat(seatId), lead: true }], archived: false });
 

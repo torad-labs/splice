@@ -38,6 +38,7 @@ export const M = {
   today: 'Today',
   dayLabel: 'Day',
   to: 'to',
+  anotherSession: 'Another session',
   textMissing: 'The message text is not available.',
   economicsUnattributed: (n: number) => `${n} ${n === 1 ? 'turn' : 'turns'} on these plans carry no session and are counted apart.`,
   compose: {

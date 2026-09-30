@@ -8,7 +8,7 @@ import { ABSENT, clockTime, fmtUsd } from '../../lib/format';
 import { colourFromHeads } from '../../lib/turns-page';
 import { stateOf, stateTone, stateWord } from '../../lib/sessions';
 import { repoLabel } from '../../lib/projects';
-import { atRetentionEdge, dayOf, dayWords, seatsOf, sessionIn, teamLede } from '../../lib/teams-page';
+import { atRetentionEdge, dayOf, dayWords, peerName, seatsOf, sessionIn, teamLede } from '../../lib/teams-page';
 import { M } from '../../lib/words-teams';
 import type { TeamSlotTally } from '../../types/teams';
 import { Button, Empty, Fault, PageHead, State } from '../../ui';
@@ -57,7 +57,7 @@ export function TeamPage() {
   const tallies = new Map((economics.data?.slots ?? []).map((tally) => [tally.slot, tally] as const));
   const nameOf = (session: string): string => {
     const slot = team.slots.find((candidate) => candidate.id === session);
-    return slot === undefined ? session : slot.role;
+    return peerName(slot?.role ?? null, session);
   };
 
   return (

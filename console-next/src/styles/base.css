@@ -113,7 +113,7 @@ svg { display: block; flex: none; }
 /* a card that needs a person drops its hue and keeps the one vermilion button */
 .win.attn { --rim: var(--tan) !important; }
 .bar { display: flex; align-items: center; gap: var(--space-6); padding: var(--space-8) var(--space-9) var(--space-5) var(--space-9); min-width: 0; }
-.bar h3 { min-width: 0; margin-right: auto; font: 560 1.375rem/1.15 var(--display); font-variation-settings: 'opsz' 48; letter-spacing: -.01em; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar h3 { min-width: 0; margin-right: auto; font: 560 1.375rem/1.15 var(--display); font-variation-settings: 'opsz' 48; letter-spacing: -.01em; color: var(--ink); overflow-wrap: anywhere; }
 .glass {
   margin: 0 var(--space-7) var(--space-7); padding: var(--space-6) var(--space-7); border-radius: 0; background: var(--glass); color: var(--glass-ink);
   font: 400 0.84375rem/1.6 var(--mono); display: grid; gap: var(--space-1); min-width: 0;

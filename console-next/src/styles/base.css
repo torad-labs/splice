@@ -34,8 +34,8 @@ svg { display: block; flex: none; }
   position: relative; display: flex; align-items: center; gap: var(--space-5); padding: var(--space-5) var(--space-5) var(--space-5) var(--space-6);
   font: 600 16px/1.2 var(--meta); color: var(--body); text-decoration: none; border-radius: var(--r1);
 }
-.nav a[aria-current='page'] { color: var(--ink); }
-.nav a[aria-current='page']::before { content: ''; position: absolute; left: calc(-1 * var(--space-10)); top: var(--space-4); bottom: var(--space-4); width: 6px; border-radius: 3px; background: var(--charge); }
+.nav a[aria-current='page'], .nav a.here { color: var(--ink); }
+.nav a[aria-current='page']::before, .nav a.here::before { content: ''; position: absolute; left: calc(-1 * var(--space-10)); top: var(--space-4); bottom: var(--space-4); width: 6px; border-radius: 3px; background: var(--charge); }
 .nav .count {
   margin-left: auto; min-width: 22px; padding: var(--space-px) var(--space-4); text-align: center; font: 600 12px/18px var(--meta);
   color: var(--charge-ink); background: var(--charge); border-radius: 11px;

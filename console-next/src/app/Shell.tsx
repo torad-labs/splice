@@ -28,7 +28,7 @@ export function Shell() {
         <div className="mark">{C.brand}</div>
         <nav className="nav" aria-label={C.pages}>
           {NAV.map(([path, label]) => (
-            <NavLink key={path} to={`/${path}`} {...(path === 'sessions' && INSIDE_SESSIONS.test(pathname) ? { 'aria-current': 'page' as const } : {})}>
+            <NavLink key={path} to={`/${path}`} {...(path === 'sessions' && INSIDE_SESSIONS.test(pathname) ? { className: 'here' } : {})}>
               {label}
               {path === 'needs-you' && waiting > 0 ? <span className="count" aria-hidden="true">{waiting}</span> : null}
             </NavLink>

@@ -323,14 +323,6 @@ class HeadServerIntegrationTest {
     }
 
     @Test
-    fun `overflow via SSE failure emits an error event with prompt-is-too-long`() = runTest {
-        val sse = messages("overflow_sse")
-        assertTrue(sse.contains("event: error"))
-        assertTrue(sse.contains("prompt is too long"))
-        assertFalse(sse.contains("event: message_stop")) // never a clean stop after failure
-    }
-
-    @Test
     fun `oversized upstream SSE frame emits an honest provider error`() = runTest {
         val sse = messages("oversized_sse")
         assertTrue(sse.contains("event: error"))

@@ -126,14 +126,11 @@ class HeadServerReviewTest {
         )
     }
 
-    // Dead-air wall: the Responses backend commits 200 + headers, then reasons for seconds before
-    // any content event. message_start needs nothing from upstream, so the client must see the turn
-    // OPEN during that window rather than a frozen screen. Measured before the fix: first_byte ->
-    // first_frame p50 2840ms on the codex head (37% of a median turn), 0ms on kimi/grok.
-    // Fails if drive.emitter.ensureStarted() is removed from the upstream-handoff path — the frames
-    // then arrive only after the latch releases.
+    // An upstream overflow can become HTTP 400 only until the first model frame commits SSE.
+    // The structural opener waits beside the upstream while it is silent, but a model that
+    // starts answering must open the response immediately, well before the 120s hold bound.
     @Test
-    fun `message_start reaches the client while upstream is still silent`() = runBlocking {
+    fun `first model frame opens SSE before the precommit deadline`() = runBlocking {
         val head = buildHead(
             InflightGate(maxInflight = { 4 }),
             RequestMaterializationGate(),
@@ -144,13 +141,14 @@ class HeadServerReviewTest {
         mock.resetStartHold()
         val opened = CompletableDeferred<Long>()
         try {
+            val before = mock.upstreamBodies.count { it.first == "holdstart" }
             val t0 = System.currentTimeMillis()
             val turn = async(Dispatchers.IO) { readTurn(port, "holdstart", opened, t0) }
-            // The latch is still closed: upstream has emitted NOTHING content-bearing. message_start
-            // must already have reached the client.
-            val openedAtMs = withTimeout(20_000) { opened.await() }
-            assertTrue(mock.startHoldRelease.count > 0, "latch must still be closed when message_start lands")
+            assertTrue(waitFor(5_000) { mock.upstreamBodies.count { it.first == "holdstart" } > before })
+            assertTrue(!opened.isCompleted, "the structural opener waits for model content")
             mock.startHoldRelease.countDown()
+            val openedAtMs = withTimeout(20_000) { opened.await() }
+            assertTrue(openedAtMs < 20_000, "a producing turn must not wait for the 120s deadline")
             val body = turn.await()
             assertTrue(body.contains("event: message_start"), "expected message_start in: $body")
             assertTrue(body.contains("\"late\""), "expected the post-release content in: $body")
@@ -160,7 +158,7 @@ class HeadServerReviewTest {
                 body.indexOf("event: message_start") < body.indexOf("event: content_block_start"),
                 "message_start must precede content: $body",
             )
-            println("message_start reached client at ${openedAtMs}ms, before any upstream content")
+            println("message_start reached client at ${openedAtMs}ms after the model began responding")
         } finally {
             mock.startHoldRelease.countDown()
             head.stop()
@@ -337,16 +335,16 @@ class HeadServerReviewTest {
                 val before = mock.upstreamBodies.count { it.first == "tear" }
                 val resp = turn(port, "tear")
                 val body = resp.bodyAsText()
-                // The 200 + SSE headers are already committed once respondTextWriter opens, so the
-                // upstream tear MUST become an honest `event: error` frame (StreamTornBeforeClient ->
-                // emitConnReset in TurnDriver), never an escaped/truncated 200 with no terminal.
+                // A non-size upstream tear commits SSE when its error arrives. It MUST become an
+                // honest `event: error` frame (StreamTornBeforeClient -> emitConnReset in
+                // TurnDriver), never an escaped/truncated 200 with no terminal.
                 assertEquals(200, resp.status.value)
                 assertTrue(body.contains("event: error"), "expected an error event in: $body")
                 assertTrue(body.contains("overloaded_error"), "expected overloaded_error in: $body")
                 assertEquals(1, body.split("event: error").size - 1, "exactly one error event: $body")
                 assertTrue(!body.contains("message_stop"), "a torn turn must NOT emit message_stop: $body")
-                // Early-open handoff (2026-07-26 review): the turn opens at upstream handoff, so a
-                // torn stream can reach the client as message_start THEN an error frame.
+                // An upstream handoff may stage message_start before the tear, so the torn
+                // stream can still reach the client as message_start THEN an error frame.
                 //
                 // Asserting message_start is always PRESENT here is wrong, and shipping that
                 // assertion turned CI red (2026-07-27) while passing 3/3 locally. Whether the turn
@@ -357,9 +355,8 @@ class HeadServerReviewTest {
                 //
                 // What IS invariant, and what a regression would break: message_start must never
                 // arrive AFTER the error frame. Ordering is the contract; presence is a race.
-                // The PRESENCE half is pinned deterministically by the holdstart test above
-                // ("message_start reaches the client while upstream is still silent"), where the
-                // mock blocks before emitting anything and the handoff is guaranteed.
+                // The healthy holdstart test above pins delivery of the staged opener as soon as
+                // the model starts producing, without waiting for the bounded status hold.
                 val startAt = body.indexOf("event: message_start")
                 assertTrue(
                     startAt == -1 || startAt < body.indexOf("event: error"),

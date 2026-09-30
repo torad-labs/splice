@@ -15,33 +15,37 @@
 // the recording even when a cancellation lands between the check and the start.
 package splice.head.turn
 
+import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.header
 import io.ktor.server.response.respond
+import io.ktor.server.response.respondText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import splice.core.perf.PerfKeys
 import splice.head.ClientWindowWitness
 import splice.head.HeadDeps
 import splice.head.compaction.CompactionReplay
-import splice.head.wire.ClientChannel
+import splice.head.turn.stream.PendingSse
 import splice.head.wire.FrameRecording
-import splice.head.wire.ImmediateSseWriter
 import splice.head.wire.SseEmitterFactory
 import splice.head.wire.SseResponse
 import splice.head.wire.TurnWiring
 import splice.upstream.LifecycleScope
 import splice.upstream.Provider
 import splice.upstream.codemode.ProcessDispatchers
-import java.util.concurrent.atomic.AtomicBoolean
 
 internal class TurnStreamer(
     private val provider: Provider,
@@ -66,14 +70,10 @@ internal class TurnStreamer(
             deps.log("[${provider.key}] detached compaction crashed (${e::class.simpleName})\n")
         }
 
-    /** Open the SSE writer, wire the per-turn collaborators, run the single turn.
-     *
-     *  RETURNS whether a detached compaction took the slot with it (V4-99 item 3). The value is
-     *  produced INSIDE the SseResponse body, which is why it cannot simply be returned from
-     *  there — Ktor runs the body inside respond, not this function. The port [TurnInputs.markHandedOff] is the durable
-     *  channel for the cancellation path; this return is the same answer for the ordinary path. */
+    /** Drive the turn while holding HTTP status, then attach the SSE writer or return HTTP 400.
+     * A detached compaction takes its slot as soon as its drive starts; [TurnInputs.markHandedOff]
+     * is the durable cancellation-path signal, and this return reports the same handoff. */
     suspend fun stream(call: ApplicationCall, inputs: TurnInputs): Boolean {
-        val handedOff = AtomicBoolean(false)
         val built = inputs.built
         val perf = inputs.perf
         val replayKey = if (built.meta.compact) replay.key(built.meta, built.requestBody.toString()) else null
@@ -86,30 +86,14 @@ internal class TurnStreamer(
         deps.turnQuota.forSession(built.meta.sessionId, inputs.account)?.clientHeaders()?.forEach { (name, value) ->
             call.response.header(name, value)
         }
-        val response = SseResponse { out ->
-            // Flush-per-frame: a frame buffered across an upstream lull is invisible to the
-            // user exactly when responsiveness matters (see ImmediateSseWriter header).
-            val channel = ClientChannel(
-                coalesced = ImmediateSseWriter(writeRaw = { frame -> out.write(frame) }, flushRaw = { out.flush() }),
-                writeMutex = Mutex(),
-                clientGone = AtomicBoolean(false),
-                recording = recording,
-                trace = inputs.trace,
-            )
+        return coroutineScope {
+            // Headers remain uncommitted until a model frame, a non-size error, or the hold expires.
+            // Structural message_start/ping are staged, not counted as sent.
+            val pending = PendingSse(perf, deps.seams.clock, inputs.trace, recording)
+            val channel = pending.channel
             val emitter = emitters.create(
-                write = { frame ->
-                    channel.writeMutex.withLock { channel.timedClientWrite(frame, perf, deps.seams.clock) }
-                },
-                // The pinger's own frames (heartbeat ping, status line) — same socket, same mutex,
-                // never counted as model output. See ClientChannel.timedProgressWrite.
-                progressWrite = { frame ->
-                    channel.writeMutex.withLock { channel.timedProgressWrite(frame, perf, deps.seams.clock) }
-                },
-                // V4-81: the content-reached answer the emitter's failure rule turns on, read off
-                // the SAME TurnPerf this writer increments through (ClientChannel.timedClientWrite
-                // is the only thing that ever adds CONTENT_FRAMES_OUT, and this lambda is the only
-                // thing that calls it). A lambda, not a snapshot: the emitter is built before the
-                // first byte and must see the answer as of the failure, not as of the open.
+                write = pending::model,
+                progressWrite = pending::progress,
                 contentReached = { (perf.snapshot().counters[PerfKeys.CONTENT_FRAMES_OUT] ?: 0L) > 0 },
                 model = built.meta.originalModel,
                 usagePayload = wiring.usagePayloadBuilder(
@@ -119,26 +103,67 @@ internal class TurnStreamer(
                 ),
             )
             val drive = driveFactory.assembleDrive(inputs, emitter, channel)
-            if (replayKey == null || recording == null) {
+            val running = async {
                 try {
-                    // The 200 + SSE headers are committed once the SseResponse opens, so any failure
-                    // must become an honest `event: error` frame — NOT escape and leave the client an
-                    // empty/truncated 200 (the "empty or malformed response (HTTP 200)" class).
-                    sealedDrive.driveSealingCancellation(drive)
+                    runPending(drive, inputs, replayKey, recording, pending)
                 } finally {
-                    // Terminal frames force-flush already; this covers abandon / exception paths.
-                    // DR-93 (redo): quiet by contract — see ClientChannel.flushQuietly. A raw
-                    // coalesced.flush() here is walled off (kt-turn-finally-flush-quietly): its
-                    // dead-socket throw would replace the primary outcome or cancellation.
-                    channel.flushQuietly()
+                    pending.finish()
                 }
-            } else {
-                handedOff.set(true)
-                driveDetachable(drive, inputs, replayKey, recording)
+            }
+            try {
+                respondPending(call, pending, running)
+                running.await()
+            } catch (cancelled: CancellationException) {
+                if (recording == null) {
+                    pending.abortClient()
+                } else {
+                    withContext(NonCancellable) { pending.detachForRecording() }
+                }
+                throw cancelled
             }
         }
-        call.respond(response)
-        return handedOff.get()
+    }
+
+    private suspend fun respondPending(
+        call: ApplicationCall,
+        pending: PendingSse,
+        running: Deferred<Boolean>,
+    ) {
+        when (val choice = pending.decide()) {
+            PendingSse.Decision.Stream -> call.respond(
+                SseResponse { out ->
+                    pending.attach(out)
+                    try {
+                        running.await()
+                    } finally {
+                        pending.channel.flushQuietly()
+                    }
+                },
+            )
+            is PendingSse.Decision.Overflow -> {
+                running.await()
+                call.response.header("x-should-retry", "false")
+                call.respondText(choice.body, ContentType.Application.Json, HttpStatusCode.BadRequest)
+            }
+        }
+    }
+
+    private suspend fun runPending(
+        drive: TurnDrive,
+        inputs: TurnInputs,
+        replayKey: String?,
+        recording: FrameRecording?,
+        pending: PendingSse,
+    ): Boolean = if (replayKey == null || recording == null) {
+        try {
+            sealedDrive.driveSealingCancellation(drive)
+        } finally {
+            drive.channel.flushQuietly()
+        }
+        false
+    } else {
+        driveDetachable(drive, inputs, replayKey, recording, pending)
+        true
     }
 
     /** Runs the drive on [detachedScope] and waits for it. Ktor cancelling THIS call (the client hung
@@ -147,7 +172,13 @@ internal class TurnStreamer(
      *  ends, whichever way, not when this call does. */
     // CoroutineStart.ATOMIC is a delicate API, used for the reason the comment below gives.
     @OptIn(DelicateCoroutinesApi::class)
-    private suspend fun driveDetachable(drive: TurnDrive, inputs: TurnInputs, key: String, recording: FrameRecording) {
+    private suspend fun driveDetachable(
+        drive: TurnDrive,
+        inputs: TurnInputs,
+        key: String,
+        recording: FrameRecording,
+        pending: PendingSse,
+    ) {
         replay.begin(key, recording)
         inputs.markHandedOff()
         // ATOMIC: the body starts even if the scope was cancelled, so the finally below always runs;
@@ -173,7 +204,9 @@ internal class TurnStreamer(
         try {
             job.join()
         } catch (e: CancellationException) {
-            if (job.isActive && drive.channel.detachIfRecording()) {
+            // Before Ktor opens SseResponse there is no writer to attach. Unblock the detached
+            // drive and transfer staged structural frames into its replay recording.
+            if (job.isActive && withContext(NonCancellable) { pending.detachForRecording() }) {
                 val who = drive.sessionTag()?.let { "session $it, " } ?: ""
                 deps.log(
                     "[${provider.key}] client gone (${who}call cancelled); " +

@@ -230,6 +230,7 @@ internal class HeadAdmission(
             admitted.t0,
             LocalRefusal(tag.wire, message, trace),
         )
+        call.response.header("x-should-retry", "false")
         responses.respondInvalidRequest(call, message)
         return true
     }

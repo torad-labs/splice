@@ -66,37 +66,24 @@ internal class TurnKnownEnd(
             } else {
                 boundedMessage
             }
-            // DR-128: account BEFORE the emit — same law as the auth-missing arm above.
-            // A 429 is the quota instrument's most load-bearing event: it is the exact moment the
-            // plan said no, and it must be countable in the rollup, not just greppable in the log.
-            // V4-117: the cause is the classifier's own, and layers is the count the LOOP stamped on
-            // the exception before throwing it (UpstreamFailed.layers) — this is the site where an
-            // attempt count actually exists, because this is the arm the retry loop exits through.
-            telemetry.recordPerf(
-                drive,
-                outcome.wire,
-                failure.type == ErrorType.RATE_LIMIT,
-                cause = failure.cause.name,
-                layers = e.layers,
-            )
+            // The emitter first decides the pending HTTP status. Record the resulting trace and
+            // perf row in finally, so a dead-client write still counts the exact failure, its cause,
+            // and the retry loop's attempt count. The pre-commit 400 must not leave a 200 trace.
             health.provider() // e.status/e.body are the literal HTTP response the upstream host gave
-            // V4-71 re-sited by V4-81: the FIRST turn to meet a persistent 429 must reach the
-            // client RETRYABLE, and a 200 is already committed at TurnStreamer.stream before the
-            // upstream connect — so the 429 cannot be sent as a status and the wire type is the
-            // only lever. That lever now lives at the emitter; what stays HERE is the one fact the
-            // classifier produced for this failure and nothing downstream can re-derive.
-            //
-            // V4-81: the WIRE TYPE is decided at the emitter now (SseEmitter.emitError), not here,
-            // so this surface hands the failure through unaltered. Two facts stay the CALLER'S
-            // because only the caller holds them: the failure's own permanence — failure.transient
-            // is the classifier's verdict that an identical re-send reproduces this exact answer,
-            // and a relabelled permanent failure is 300 client re-sends at six upstream attempts
-            // each — and the message text, which is FailurePresenter's plus the login hint V4-59
-            // appends outside the snippet bound. Everything else (whether content has reached the
-            // client, and what the client does with each type) is the emitter's, because the
-            // emitter owns both the counter and the frame. Telemetry above still records the REAL
-            // type: only the WIRE TYPE ever moves.
-            drive.emitter.emitError(failure.type, message, permanent = !failure.transient)
+            // V4-81: the emitter still chooses the wire type and preserves the classifier's
+            // permanence. A 429 remains an in-band retryable failure; only a classified context
+            // overflow before any client content can take the new HTTP 400 status.
+            try {
+                drive.emitter.emitError(failure.type, message, permanent = !failure.transient)
+            } finally {
+                telemetry.recordPerf(
+                    drive,
+                    outcome.wire,
+                    failure.type == ErrorType.RATE_LIMIT,
+                    cause = failure.cause.name,
+                    layers = e.layers,
+                )
+            }
             true
         }
         else -> false

@@ -172,6 +172,13 @@ class MockChatGptUpstream(
             return
         }
 
+        if (scenario == "overflow_http") {
+            val err = """{"error":{"code":"context_length_exceeded","message":"prompt is too long: 210000 tokens > 200000 maximum"}}"""
+            ex.sendResponseHeaders(400, err.length.toLong())
+            ex.responseBody.use { it.write(err.toByteArray()) }
+            return
+        }
+
         if (scenario == "tear") {
             // 200 committed, then a PARTIAL frame and an early socket drop: promising more bytes
             // (fixed Content-Length) than we deliver makes the client's read fail with a premature
@@ -442,6 +449,15 @@ class MockChatGptUpstream(
                 """{"type":"response.failed","response":{"error":{"code":"invalid_request_error",""" +
                     """"message":"Your input exceeds the context window of this model. Please reduce the length."}}}""",
             )
+            "overflow_after_content" -> {
+                sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}""")
+                sse(ex, """{"type":"response.output_text.delta","output_index":0,"delta":"partial answer"}""")
+                sse(
+                    ex,
+                    """{"type":"response.failed","response":{"error":{"code":"invalid_request_error",""" +
+                        """"message":"Your input exceeds the context window of this model."}}}""",
+                )
+            }
             "oversized_sse" -> {
                 ex.responseBody.write("data: ".toByteArray())
                 ex.responseBody.write("x".repeat(1024 * 1024 + 1).toByteArray())
@@ -456,10 +472,9 @@ class MockChatGptUpstream(
                 sse(ex, """{"type":"response.output_text.delta","output_index":0,"delta":"partial"}""")
                 pacer(5_000)
             }
-            // Models the codex reasoning phase: upstream commits 200 + headers, then emits NOTHING
-            // content-bearing until released. The client must still see the turn open immediately
-            // (message_start + ping) — that window measured p50 2840ms of frozen screen before
-            // message_start moved to upstream-handoff.
+            // Models a silent response before its first model item. The head stages its
+            // structural opener during the bounded HTTP-status hold, then opens and flushes
+            // the response when the latch releases an actual content item.
             "holdstart" -> {
                 startHoldRelease.await()
                 sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}""")
@@ -487,6 +502,9 @@ class MockChatGptUpstream(
                     "<html><body>401 Unauthorized: your session token has expired, please sign in again.</body></html>"
                         .toByteArray(),
                 )
+            }
+            "zero_event_overflow" -> {
+                ex.responseBody.write("context window exceeded".toByteArray())
             }
             "zero_event_empty" -> {
                 // deliberately nothing written — a true stall, not a diagnosable auth-shaped body

@@ -20,6 +20,7 @@ import {
   oracle,
   sanctionedFields,
   sanctionedScenarios,
+  sanctionedStatus,
   waitHttp,
 } from "../src/commands/oracle.ts";
 
@@ -279,6 +280,27 @@ status = "passing"
       { field: "expected_upstream_requests[].wildcard" },
     ]);
     expect(sanctionedScenarios(toml)).toEqual({ truncated: { pinnedSha: "abc", pinnedUpstreamSha: "def" } });
+  });
+
+  test("a pinned status overrides only its sanctioned fixture status", () => {
+    const sanctioned = sanctionedScenarios(`
+[[scenario]]
+name = "overflow_sse"
+status = "sanctioned"
+pinned_sha256 = "abc"
+pinned_status = 400
+
+[[scenario]]
+name = "truncated"
+status = "sanctioned"
+pinned_sha256 = "def"
+`);
+    expect(sanctionedStatus(sanctioned.overflow_sse, 200)).toBe(400);
+    expect(sanctionedStatus(sanctioned.truncated, 200)).toBe(200);
+    expect(sanctionedStatus(undefined, 200)).toBe(200);
+    expect(sanctionedStatus(sanctioned.overflow_sse, 200)).not.toBe(200);
+    expect(() => sanctionedScenarios(`[[scenario]]\nname = "overflow_sse"\nstatus = "sanctioned"\npinned_status = "400"\n`))
+      .toThrow("invalid pinned_status for overflow_sse");
   });
 
   test("a sanction is a pin, never a wildcard", () => {

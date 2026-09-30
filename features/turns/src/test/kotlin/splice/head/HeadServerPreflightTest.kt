@@ -47,7 +47,7 @@ private class PreflightAuth : RefreshableAuthProvider {
 }
 
 class HeadServerPreflightTest {
-    private fun head(
+    internal fun head(
         root: Path,
         upstream: MockChatGptUpstream,
         window: Long = 272_000,
@@ -82,7 +82,7 @@ class HeadServerPreflightTest {
         return HeadServer(provider, 0, headDeps(root).copy(stores = stores))
     }
 
-    private suspend fun send(
+    internal suspend fun send(
         client: HttpClient,
         port: Int,
         previous: String,
@@ -136,7 +136,7 @@ class HeadServerPreflightTest {
         assertTrue("larger context window" in message && "start a fresh conversation" in message, message)
     }
 
-    private fun recorded(root: Path): String {
+    internal fun recorded(root: Path): String {
         check(AsyncFileIo.drain()) { "trace writes must settle" }
         return Files.list(root.resolve("trace")).use { paths ->
             paths.filter { it.toString().endsWith(".jsonl") }.map(Files::readString).toList().joinToString("\n")
@@ -192,6 +192,7 @@ class HeadServerPreflightTest {
             val previous = """{"role":"user","content":"seed"},{"role":"assistant","content":"earlier"},"""
             val ordinary = send(client, server.port, previous, "new work")
             assertEquals(400, ordinary.status.value, "measured growth exceeds W−R before SSE")
+            assertEquals("false", ordinary.headers["x-should-retry"])
             val refusal = ordinary.bodyAsText()
             assertTrue("prompt is too long" in refusal && "measured-text-prefix" in refusal, refusal)
             val compact = compact(client, server.port, previous, "summary")
@@ -351,19 +352,135 @@ class HeadServerPreflightTest {
             upstream.stop()
         }
     }
+}
+
+/** End-to-end status selection on a shared synthetic upstream and an isolated head per test. */
+class HeadServerOverflowStatusTest {
+    private val fixture = HeadServerPreflightTest()
+
+    private fun head(root: Path, upstream: MockChatGptUpstream): HeadServer = fixture.head(root, upstream)
+
+    private suspend fun send(
+        client: HttpClient,
+        port: Int,
+        previous: String,
+        content: String,
+        system: String,
+    ): HttpResponse = fixture.send(client, port, previous, content, system)
+
+    private fun recorded(root: Path): String = fixture.recorded(root)
 
     @Test
-    fun `genuine upstream overflow remains an SSE error inside HTTP 200`(@TempDir root: Path) = runTest {
+    fun `upstream overflow before client content is HTTP 400 before SSE`(@TempDir root: Path) = runTest {
         val upstream = MockChatGptUpstream()
         val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
         val server = head(root, upstream)
         try {
             server.start()
-            val overflow = send(client, server.port, "", "go", "SCENARIO:overflow_sse")
-            assertEquals(200, overflow.status.value)
-            val sse = overflow.bodyAsText()
-            assertTrue("event: error" in sse && "prompt is too long" in sse, sse)
+            val previous = """{"role":"assistant","content":"earlier"},"""
+            val overflow = send(client, server.port, previous, "go", "SCENARIO:overflow_sse")
+            assertEquals(400, overflow.status.value, "size error precedes HTTP 200 and SSE")
+            val body = overflow.bodyAsText()
+            assertTrue("invalid_request_error" in body && "prompt is too long" in body, body)
+            assertEquals("false", overflow.headers["x-should-retry"])
+            val trace = recorded(root)
+            assertTrue("\"answer\":{\"status\":400" in trace, trace)
+            assertTrue("\"first_frame\"" !in trace, "an undelivered opener cannot mark the first frame: $trace")
             assertEquals(1, upstream.upstreamBodies.size)
+        } finally {
+            server.stop()
+            client.close()
+            upstream.stop()
+        }
+    }
+
+    @Test
+    fun `zero event context rejection before SSE is HTTP 400`(@TempDir root: Path) = runTest {
+        val upstream = MockChatGptUpstream()
+        val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
+        val server = head(root, upstream)
+        try {
+            server.start()
+            val response = send(client, server.port, "", "go", "SCENARIO:zero_event_overflow")
+            assertEquals(400, response.status.value)
+            assertEquals("false", response.headers["x-should-retry"])
+            assertTrue("prompt is too long" in response.bodyAsText())
+        } finally {
+            server.stop()
+            client.close()
+            upstream.stop()
+        }
+    }
+
+    @Test
+    fun `a healthy turn opens before the bounded silent hold`(@TempDir root: Path) = runTest {
+        val upstream = MockChatGptUpstream()
+        val client = HttpClient(CIO) {
+            engine { requestTimeout = 20_000 }
+            defaultRequest { bearerAuth("test-inference-token") }
+        }
+        val server = head(root, upstream)
+        try {
+            server.start()
+            val answer = send(client, server.port, "", "go", "SCENARIO:basic")
+            assertEquals(200, answer.status.value)
+            assertTrue("event: message_stop" in answer.bodyAsText())
+            assertEquals(1, upstream.upstreamBodies.size)
+        } finally {
+            server.stop()
+            client.close()
+            upstream.stop()
+        }
+    }
+
+    @Test
+    fun `upstream HTTP context rejection is a downstream HTTP 400`(@TempDir root: Path) = runTest {
+        val upstream = MockChatGptUpstream()
+        val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
+        val server = head(root, upstream)
+        try {
+            server.start()
+            val response = send(client, server.port, "", "go", "SCENARIO:overflow_http")
+            assertEquals(400, response.status.value)
+            assertEquals("false", response.headers["x-should-retry"])
+            assertTrue("prompt is too long" in response.bodyAsText())
+            assertEquals(1, upstream.upstreamBodies.size)
+        } finally {
+            server.stop()
+            client.close()
+            upstream.stop()
+        }
+    }
+
+    @Test
+    fun `overflow after model content stays inside committed SSE`(@TempDir root: Path) = runTest {
+        val upstream = MockChatGptUpstream()
+        val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
+        val server = head(root, upstream)
+        try {
+            server.start()
+            val response = send(client, server.port, "", "go", "SCENARIO:overflow_after_content")
+            assertEquals(200, response.status.value)
+            val body = response.bodyAsText()
+            assertTrue("partial answer" in body && "event: error" in body, body)
+            assertTrue("prompt is too long" in body, body)
+        } finally {
+            server.stop()
+            client.close()
+            upstream.stop()
+        }
+    }
+
+    @Test
+    fun `a different upstream error keeps the in-band SSE contract`(@TempDir root: Path) = runTest {
+        val upstream = MockChatGptUpstream()
+        val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
+        val server = head(root, upstream)
+        try {
+            server.start()
+            val failure = send(client, server.port, "", "go", "SCENARIO:failed")
+            assertEquals(200, failure.status.value)
+            assertTrue("event: error" in failure.bodyAsText())
         } finally {
             server.stop()
             client.close()

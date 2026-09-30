@@ -130,6 +130,7 @@ export interface SanctionedField {
   pinnedValue?: string;
 }
 export interface SanctionedScenario {
+  pinnedStatus?: number;
   pinnedSha?: string;
   pinUpstream?: string;
   pinnedUpstreamSha?: string;
@@ -452,6 +453,11 @@ export function sanctionedScenarios(text: string): Record<string, SanctionedScen
     if (name && tomlStr(block, "status") === "sanctioned") {
       const row: SanctionedScenario = {};
       const pinnedSha = tomlStr(block, "pinned_sha256");
+      if (/^pinned_status\s*=/m.test(block)) {
+        const pinnedStatus = /^pinned_status\s*=\s*([1-5]\d{2})\s*$/m.exec(block)?.[1];
+        if (pinnedStatus === undefined) throw new HarnessError(`invalid pinned_status for ${name}`);
+        row.pinnedStatus = Number(pinnedStatus);
+      }
       const pinUpstream = tomlStr(block, "pin_upstream");
       const pinnedUpstreamSha = tomlStr(block, "pinned_upstream_sha256");
       if (pinnedSha !== undefined) row.pinnedSha = pinnedSha;
@@ -462,6 +468,11 @@ export function sanctionedScenarios(text: string): Record<string, SanctionedScen
   }
   return rows;
 }
+
+export function sanctionedStatus(sanction: SanctionedScenario | undefined, fixtureStatus: number): number {
+  return sanction?.pinnedStatus ?? fixtureStatus;
+}
+
 function readExpectations(oracleDir: string): string {
   const p = join(oracleDir, EXPECTATIONS_NAME);
   return existsSync(p) ? readFileSync(p, "utf8") : "";
@@ -849,7 +860,8 @@ command = "claudex"
       if (sanction?.pinnedSha) {
         const gotSse = canonicalize(out.sse);
         const sha = createHash("sha256").update(gotSse).digest("hex");
-        if (out.status !== fx.expected_client_status) problems.push(`client status: expected ${fx.expected_client_status}, got ${out.status}`);
+        const expectedStatus = sanctionedStatus(sanction, fx.expected_client_status);
+        if (out.status !== expectedStatus) problems.push(`client status: expected ${expectedStatus}, got ${out.status}`);
         if (sha !== sanction.pinnedSha) {
           problems.push(`sanctioned bytes drifted: pinned ${sanction.pinnedSha.slice(0, 16)}…, observed ${sha.slice(0, 16)}… — the divergence is no longer the one that was authorised`);
         }

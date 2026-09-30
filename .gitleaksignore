@@ -91,3 +91,12 @@ f37280280b4768cf6c9f825e7fdee98145ccffc4:app/src/test/kotlin/splice/app/KeptFile
 13ef90fbd2b1f075c37612db8e13166d0c4d4dde:integrations/claude-code/src/test/kotlin/splice/client/transcript/v4427/CachedEdgesTest.kt:generic-api-key:34
 13ef90fbd2b1f075c37612db8e13166d0c4d4dde:integrations/claude-code/src/test/kotlin/splice/client/transcript/v4427/SendLedgerTest.kt:generic-api-key:43
 13ef90fbd2b1f075c37612db8e13166d0c4d4dde:integrations/claude-code/src/test/kotlin/splice/client/transcript/v4427/SendLedgerBoundaryTest.kt:generic-api-key:58
+# 2026-09-30 CT (splice-lead): three fixtures red on secret-scan and org-secret-scan since
+# 3962a5897 (Sep 29, 6:46 PM CT). Opened each line: TranscriptLastTest's synthetic assistant
+# reply text carrying a token= phrase in a 1970 transcript fixture (message id synthetic-reply),
+# and doctor.test.ts's planted fix and detail values of the report-redaction test, both spelling
+# PLANTED. No credential and no auth consumer; the doctor fix value is also exempt in
+# .github/secret-scan-allow.toml for the supplementary pass.
+1cc6847d61fec3a81471fb798090aeb65eda5eb4:integrations/claude-code/src/test/kotlin/splice/client/v4444/TranscriptLastTest.kt:generic-api-key:14
+1755abd8e5b5b228cff12fccfe86e50a283ca7d5:console-next/tests/doctor.test.ts:generic-api-key:243
+1755abd8e5b5b228cff12fccfe86e50a283ca7d5:console-next/tests/doctor.test.ts:generic-api-key:244

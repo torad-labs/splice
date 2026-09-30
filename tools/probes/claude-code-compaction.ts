@@ -77,7 +77,7 @@ async function isolated(client: string, mode: Mode): Promise<Result> {
   for (const key of ["PATH", "LANG", "LC_ALL", "TERM"]) if (process.env[key]) env[key] = process.env[key];
   Object.assign(env, {
     ANTHROPIC_BASE_URL: "http://127.0.0.1:" + port,
-    ANTHROPIC_API_KEY: "local-fixture-placeholder",
+    ANTHROPIC_API_KEY: "LOCAL_FIXTURE_PLACEHOLDER",
     HOME: "/tmp", CLAUDE_CONFIG_DIR: "/tmp/claude-compaction-proof",
     DISABLE_TELEMETRY: "1", DISABLE_ERROR_REPORTING: "1", DISABLE_AUTOUPDATER: "1",
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",

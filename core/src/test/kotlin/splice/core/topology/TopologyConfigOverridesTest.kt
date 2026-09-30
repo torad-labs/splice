@@ -330,18 +330,39 @@ class TopologyConfigOverridesTest {
         )
         for ((clientWindow, threshold) in thresholds) {
             assertEquals(
-                threshold.toDouble() / (272_000 - 40_056),
+                threshold.toDouble() / (272_000 - 39_621),
                 catalog.usageScale("gpt-5.6-luna", clientWindow),
                 1e-12,
-                "luna5.6: p99 growth 8265 + p99 generation 31791",
+                "luna5.6: clean-pair p99 growth 7830 + own p99 generation 31791",
             )
             assertEquals(
-                threshold.toDouble() / (872_000 - 646_834),
+                threshold.toDouble() / (872_000 - 12_892),
                 catalog.usageScale("gpt-6-sol", clientWindow),
                 1e-12,
-                "sol6: p99 growth 635232 + p99 generation 11602",
+                "sol6: clean-pair p99 growth 1290 + own p99 generation 11602",
             )
         }
+    }
+
+    @Test
+    fun `sol6 compaction trigger stays above eighty percent of its real window`() {
+        val provider = topology.providers.getValue("codex").copy(
+            models = listOf(ModelEntry("gpt-6-sol", contextWindow = 872_000)),
+        )
+        val catalog = provider.catalogFor(topology.heads.getValue("codex").copy(pinnedModel = "gpt-6-sol"))
+        val budget = splice.core.model.CompactionBudgets.forRow(catalog, "gpt-6-sol")!!
+        assertEquals(12_892, budget.totalTokens)
+        assertTrue(872_000 - budget.totalTokens >= 872_000 * 80 / 100)
+    }
+
+    @Test
+    fun `the retired oracle gpt-5-codex row retains its raw usage without an audited reserve`() {
+        val provider = topology.providers.getValue("codex").copy(
+            models = listOf(ModelEntry("gpt-5-codex", contextWindow = 272_000)),
+        )
+        val catalog = provider.catalogFor(topology.heads.getValue("codex").copy(pinnedModel = "gpt-5-codex"))
+        assertEquals(null, splice.core.model.CompactionBudgets.forRow(catalog, "gpt-5-codex"))
+        assertEquals(1.0, catalog.usageScale("gpt-5-codex"))
     }
 
     @Test

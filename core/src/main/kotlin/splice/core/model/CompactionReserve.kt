@@ -3,16 +3,19 @@ package splice.core.model
 
 private const val CALIBRATION_RESOURCE = "/compaction-reserve-p99.tsv"
 private const val CALIBRATION_HEADER = "model\tgrowth_and_prompt_p99\tgeneration_p99"
+
 // why: each calibration row has its model id and two independent p99 measurements.
 private const val CALIBRATION_COLUMNS = 3
-// why: with no calibration fitting W, reserve one tenth and let preflight guard new growth.
-private const val FALLBACK_RESERVE_DIVISOR = 10L
+
 // why: Claude Code subtracts at most this much output budget from its effective context.
 private const val CLIENT_MAX_OUTPUT_RESERVE = 20_000L
+
 // why: the launch plants this auto-compact threshold override for every wrapped client.
 private const val CLIENT_COMPACT_PERCENT = 85L
+
 // why: the override is a percentage of the effective client context window.
 private const val PERCENT_DENOMINATOR = 100L
+
 // why: the installed client also holds this many tokens beyond its percentage threshold.
 private const val CLIENT_TAIL_RESERVE = 13_000L
 
@@ -45,8 +48,14 @@ public fun interface CompactionReserveDefaults {
 }
 
 /** Numeric-only audit captures/v4-446-compaction-audit-20260929.json, sha256 68a5dab1...62ad7.
- * The bundled TSV freezes each model's upper nearest-rank p99 for same-model prestart growth and
- * successful generation. Sparse samples are empirical, not output caps; preflight guards new deltas. */
+ * The bundled TSV freezes clean-pair nearest-rank p99 growth and successful-generation p99.
+ * A growth pair is consecutive within its session, same model, predecessor finished before the
+ * compaction, both inputs within the current declared W, and token delta within added request
+ * bytes. No historical effective W is retained, so an unobserved config change remains unknown.
+ * GPT-5.5 has no own sample: its growth is the median over 111 clean GPT-5
+ * predecessors and its generation is the pooled nearest-rank p99 over 832 GPT-5 successes.
+ * Other unsampled model ids keep their old scaling until measured; no worst-case family transfer.
+ * Sparse samples are empirical, not output caps; preflight guards new deltas. */
 public object CodexCompactionReserves : CompactionReserveDefaults {
     private val samples: Map<String, CompactionReserve> by lazy {
         val resource = checkNotNull(javaClass.getResourceAsStream(CALIBRATION_RESOURCE)) {
@@ -65,13 +74,8 @@ public object CodexCompactionReserves : CompactionReserveDefaults {
     }
 
     override fun forRow(model: String, window: Long): CompactionReserve? {
-        if (!model.startsWith("gpt-") || window <= 0) return null
-        val observed = samples[ModelTierSuffix.strip(model)]
-        if (observed != null && observed.totalTokens < window) return observed
-        // An unsampled row (or a newly narrowed one) inherits the largest observed reserve that
-        // fits its declared window. The preflight remains the guard against a larger next delta.
-        return samples.values.filter { it.totalTokens < window }.maxByOrNull { it.totalTokens }
-            ?: CompactionReserve(0, (window / FALLBACK_RESERVE_DIVISOR).coerceAtMost(window - 1))
+        if (window <= 0) return null
+        return samples[ModelTierSuffix.strip(model)]
     }
 }
 

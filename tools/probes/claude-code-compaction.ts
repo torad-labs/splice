@@ -123,8 +123,9 @@ async function isolated(client: string, mode: Mode): Promise<Result> {
   const equals = (expected: number[]) => JSON.stringify(replies) === JSON.stringify(expected);
   let pass: boolean;
   if (mode === "prompt_too_long") {
+    const final = results[1];
     pass = equals([200, 400, 200, 200]) && summaryRequests[2] === true && compactBoundary
-      && results.length === 2 && !results[1].isError && results[1].text.includes("DONE");
+      && results.length === 2 && final !== undefined && !final.isError && final.text.includes("DONE");
   } else {
     pass = equals(mode === "first_exchange" ? [400] : [200, 400])
       && !compactBoundary && !summaryRequests.some(Boolean);

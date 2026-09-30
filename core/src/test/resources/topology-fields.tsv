@@ -90,6 +90,7 @@ providers.*.extra_windows[].id
 providers.*.local	
 providers.*.models	
 providers.*.models[].client_model	
+providers.*.models[].compaction_reserve_tokens	
 providers.*.models[].context_window	
 providers.*.models[].description	
 providers.*.models[].id	

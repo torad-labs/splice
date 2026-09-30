@@ -3212,3 +3212,4 @@ console-next/e2e/stack.ts	d245c39c605ff754618f09e4cfbe23d22ae49c2da555ff32649d7a
 console-next/e2e/team-history.spec.ts	46be56c68a20ff68749e842cb4fc98778ad7b5bd556beb50845f7a6f545383af	created		V4-444: retained browser behavior ported before retiring console; isolated loopback daemon and synthetic data
 console-next/e2e/team-lifecycle.spec.ts	4ead16f522a9d868df3c86d8fdfce38f34160608d9fa06e6043bf27609552804	created		V4-444: retained browser behavior ported before retiring console; isolated loopback daemon and synthetic data
 console-next/e2e/turn-retention.spec.ts	5a45e042da7bebbeb0673e01160008b3cad6f6a1e723a8cc334244f7055eb8e3	created		V4-444: retained browser behavior ported before retiring console; isolated loopback daemon and synthetic data
+tools/probes/tsconfig.json	81c9d993278f009eb96197615402da18b40e0614ab74f9fc1e2ff3444f086a51	created		V4-446: typechecked program for the manual isolated Claude Code compaction probe

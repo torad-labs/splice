@@ -1,8 +1,9 @@
 import { failureText } from '../../api/client';
+import { useTopology } from '../../api/config';
 import { useCompareModels, useModels } from '../../api/models';
 import { isPendingRoute } from '../../api/auth';
 import { fmtTokens } from '../../lib/format';
-import { rateText, slotTiers, windowSourceText } from '../../lib/models';
+import { headWindows, rateText, slotTiers, windowSourceText } from '../../lib/models';
 import { M } from '../../lib/words-models';
 import type { CatalogModel, UpstreamProvider } from '../../types/models';
 import { Button } from '../../ui';
@@ -41,12 +42,14 @@ function Compared({ provider }: { provider: UpstreamProvider }) {
 export function ModelsTab({ head }: { head: string }) {
   const models = useModels();
   const compare = useCompareModels();
+  const topology = useTopology();
   if (models.isError) return <p className="hint alert" role="alert">{failureText(models.error)}</p>;
   if (models.data === undefined) return null;
   if (isPendingRoute(models.data)) return <p className="hint">{HT.modelsUnserved}</p>;
   const catalog = models.data.heads.find((entry) => entry.head === head);
   if (catalog === undefined || catalog.models.length === 0) return <p className="hint">{HT.noCatalog}</p>;
   const provider = compare.data?.providers.find((entry) => entry.key === catalog.provider);
+  const declared = headWindows(topology.data, head, catalog.provider);
   return (
     <>
       <section className="tab-section" aria-label={HT.tiers}>
@@ -64,6 +67,18 @@ export function ModelsTab({ head }: { head: string }) {
           ))}
         </ul>
       </section>
+      {declared === null ? null : (
+        <section className="tab-section" aria-label={HT.declared}>
+          <h2 className="sub-head">{HT.declared}</h2>
+          <p className="hint">{HT.declaredWhy}</p>
+          <dl className="declared">
+            <div><dt>{HT.planWindow}</dt><dd>{declared.plan === null ? HT.notSet : `${fmtTokens(declared.plan)} tokens`}</dd></div>
+            <div><dt>{HT.providerWindow}</dt><dd>{declared.provider === null ? HT.notSet : `${fmtTokens(declared.provider)} tokens`}</dd></div>
+            <div><dt>{HT.extraWindows}</dt><dd>{declared.extra}</dd></div>
+            <div><dt>{HT.windowRules}</dt><dd>{declared.rules}</dd></div>
+          </dl>
+        </section>
+      )}
       <section className="tab-section" aria-label={HT.everyModel}>
         <h2 className="sub-head">{HT.everyModel}</h2>
         <div className="acts-row"><AddModels head={head} /></div>

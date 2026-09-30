@@ -1,6 +1,6 @@
 import { Link, useParams, useSearchParams } from 'react-router';
 import { useAccounts, useAuth, useHealth, useHeads, useSessions, useUsage } from '../../api/queries';
-import { canRefresh, poolOf } from '../../lib/accounts';
+import { SELECTOR_ORDER_TEXT, canRefresh, poolOf } from '../../lib/accounts';
 import { fleetCard } from '../../lib/fleet';
 import { localInstantText } from '../../lib/heads';
 import { planWindows } from '../../lib/usage';
@@ -85,11 +85,14 @@ export function FleetHeadPage() {
               {windows.length === 0 ? <p className="hint">{D.noWindows}</p> : <WindowBars windows={windows} now={now} format={localInstantText} />}
               <h2 className="sub-head">{D.accounts}</h2>
               {pool.length === 0 ? <p className="hint">{D.noAccounts}</p> : (
+                <>
+                {pool.length > 1 ? <p className="hint">{D.selectorOrder(SELECTOR_ORDER_TEXT)}</p> : null}
                 <ul className="accounts">
                   {pool.map((account) => (
-                    <AccountRowView key={account.credential_path ?? account.label ?? account.kind} account={account} now={now} pooled={pool.length > 1 || account.single_login === false} />
+                    <AccountRowView key={account.credential_path ?? account.label ?? account.kind} account={account} now={now} pooled={pool.length > 1 || account.single_login === false} pool={pool} />
                   ))}
                 </ul>
+                </>
               )}
               {OAUTH.has(head.authKind) ? (
                 <SignIn head={head.key} purpose="add">

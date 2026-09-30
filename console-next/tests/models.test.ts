@@ -4,7 +4,7 @@
 // built inline with the same shape (claudex-like: opus pinned, fable undeclared). The rest of that
 // file renders ModelsBoard or tests the page's own model and is not ported.
 import { describe, expect, test } from 'vitest';
-import { rateText, slotTiers, windowSourceText } from '../src/lib/models';
+import { headWindows, rateText, slotTiers, windowSourceText } from '../src/lib/models';
 import type { CatalogModel, HeadCatalog } from '../src/types/models';
 
 function model(over: Partial<CatalogModel> & { id: string }): CatalogModel {
@@ -60,5 +60,20 @@ describe('a price as a person reads it', () => {
     expect(rateText(null)).toBe('No price declared');
     expect(rateText(undefined)).toBe('No price declared');
     expect(rateText({ input: 0.5, cache_read: 0.05, output: 2 })).toBe('$0.500 in, $2.00 out per million tokens');
+  });
+});
+
+describe('the windows a plan declares', () => {
+  const topology = (heads: unknown, providers: unknown) => ({ path: '/c/splice.toml', topology: { heads, providers }, stale: false });
+  test('the plan’s forced window, its provider’s default and the extras and rules come from splice.toml, apart from the catalogue', () => {
+    const state = topology({ 'chatgpt-oauth': { context_window: 300_000 } }, { codex: { default_context_window: 272_000, extra_windows: [{}, {}], window_rules: [{}] } });
+    expect(headWindows(state, 'chatgpt-oauth', 'codex')).toEqual({ plan: 300_000, provider: 272_000, extra: 2, rules: 1 });
+  });
+  test('a window not set is null, never zero, and a plan the file does not name reads as nothing', () => {
+    const state = topology({ a: { context_window: 0 } }, { codex: {} });
+    expect(headWindows(state, 'a', 'codex')).toEqual({ plan: null, provider: null, extra: 0, rules: 0 });
+    expect(headWindows(state, 'other', 'codex')).toBeNull();
+    expect(headWindows(undefined, 'a', 'codex')).toBeNull();
+    expect(headWindows({ pending: true } as never, 'a', 'codex')).toBeNull();
   });
 });

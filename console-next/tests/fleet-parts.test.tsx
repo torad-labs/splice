@@ -60,11 +60,11 @@ const acct = (over: Partial<AccountRow> = {}): AccountRow => ({
   kind: 'chatgpt-oauth', label: 'work', single_login: false, credential_path: null, primary: false, selected: false, available: true,
   pinned: false, next_target: false, credential_present: true, windows: [], heads: ['claudex'], ...over,
 });
-const row = (account: AccountRow) =>
+const row = (account: AccountRow, pool: readonly AccountRow[] = [account]) =>
   renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
       <ul>
-        <AccountRowView account={account} now={1_800_000_000_000} pooled />
+        <AccountRowView account={account} now={1_800_000_000_000} pooled pool={pool} />
       </ul>
     </QueryClientProvider>,
   );
@@ -83,6 +83,14 @@ describe('an account row', () => {
     expect(html).toContain('Rename');
     expect(html).toContain('Remove');
     expect(html).not.toContain('Its login file is gone');
+  });
+  test('the account the daemon marks next says which rule chose it, and no other row does', () => {
+    const primary = acct({ label: 'primary', primary: true, next_target: true });
+    const other = acct({ label: 'spare' });
+    const pool = [primary, other];
+    expect(row(primary, pool)).toContain('Next because it is the primary account.');
+    expect(row(acct({ label: 'pin', pinned: true, next_target: true }), pool)).toContain('Next because it is the pinned account.');
+    expect(row(other, pool)).not.toContain('Next because');
   });
   test('an account whose login file is gone offers no Switch and says so', () => {
     const html = row(acct({ credential_present: false }));

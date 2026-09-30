@@ -2,7 +2,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { useState } from 'react';
 import { failureText } from '../../api/client';
 import { isPendingRoute, useRelabelAccount, useRemoveAccount, useSwitchAccount, useUnpinAccount } from '../../api/auth';
-import { accountState, isExcluded, isServable, refusalText, windowLengthText, windowUsedText } from '../../lib/accounts';
+import { accountState, isExcluded, isServable, nextRuleOf, refusalText, windowLengthText, windowUsedText } from '../../lib/accounts';
 import type { AccountRow } from '../../types/accounts';
 import { Button, Close } from '../../ui';
 import { D } from './copy';
@@ -18,7 +18,7 @@ function useNote() {
 }
 
 /** One account of a plan's pool: its name, where it stands, its windows, and the few things a person does to it. */
-export function AccountRowView({ account, now, pooled }: { account: AccountRow; now: number; pooled: boolean }) {
+export function AccountRowView({ account, now, pooled, pool }: { account: AccountRow; now: number; pooled: boolean; pool: readonly AccountRow[] }) {
   const pick = useSwitchAccount();
   const unpin = useUnpinAccount();
   const remove = useRemoveAccount();
@@ -38,6 +38,7 @@ export function AccountRowView({ account, now, pooled }: { account: AccountRow; 
   ] as (string | null)[];
   const shown = marks.filter((mark): mark is string => mark !== null);
   const refusal = refusalText(account);
+  const rule = nextRuleOf(account, pool);
   const canSwitch = pooled && label !== null && account.selected !== true && !isExcluded(account, now) && isServable(account) && head !== '';
 
   return (
@@ -50,6 +51,7 @@ export function AccountRowView({ account, now, pooled }: { account: AccountRow; 
         ))}
         <span className="windows-text">{windowsText(account)}</span>
       </div>
+      {rule === null ? null : <p className="hint">{D.nextBecause(D.nextRule[rule])}</p>}
       {refusal === null ? null : <p className="hint alert" role="alert">{refusal}</p>}
       {refusal === null && !account.credential_present ? <p className="hint">{D.noCredential}</p> : null}
       {label === null ? null : (

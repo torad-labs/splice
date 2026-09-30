@@ -1,6 +1,7 @@
 // Pure derivations over a head's catalog. No rendering, no store.
 import { MODEL_SLOTS } from '../types/models';
 import type { CatalogModel, HeadCatalog, ModelRates, SlotTier } from '../types/models';
+import type { TopologyState } from '../types/topology';
 import { fmtUsd } from './format';
 import { M } from './words-models';
 
@@ -44,4 +45,31 @@ export function windowSourceText(source: string): string {
 export function rateText(rates: ModelRates | null | undefined): string {
   if (rates === null || rates === undefined) return M.noRate;
   return M.rate(fmtUsd(rates.input), fmtUsd(rates.output));
+}
+
+/** What splice.toml declares for a plan's windows, apart from the catalogue's own: the plan's forced window, its provider's default,
+ *  and how many extra windows and prefix rules the provider carries. Null while the topology is not here or does not name the plan. */
+export interface HeadWindows {
+  plan: number | null;
+  provider: number | null;
+  extra: number;
+  rules: number;
+}
+
+const tableOf = (value: unknown): Record<string, unknown> | null =>
+  typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+const tokensOf = (value: unknown): number | null => (typeof value === 'number' && value > 0 ? value : null);
+const countOf = (value: unknown): number => (Array.isArray(value) ? value.length : 0);
+
+export function headWindows(topology: TopologyState | undefined, head: string, provider: string): HeadWindows | null {
+  if (topology === undefined || 'pending' in topology) return null;
+  const headTable = tableOf(tableOf(topology.topology.heads)?.[head]);
+  const providerTable = tableOf(tableOf(topology.topology.providers)?.[provider]);
+  if (headTable === null || providerTable === null) return null;
+  return {
+    plan: tokensOf(headTable.context_window),
+    provider: tokensOf(providerTable.default_context_window),
+    extra: countOf(providerTable.extra_windows),
+    rules: countOf(providerTable.window_rules),
+  };
 }

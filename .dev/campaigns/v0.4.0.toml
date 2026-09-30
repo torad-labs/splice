@@ -10160,6 +10160,7 @@ claimed_by = "splice-builder2"
 claimed_at = "2026-09-30T00:13:03.183Z"
 # [2026-09-30] CLAIM: owner=splice-builder2 at=2026-09-30T00:13:03Z
 # [2026-09-30] Sep 29 CT: former splice-builder2 socket no longer present, confirmed by claude-builder. Continued splice-lead completes existing wrap edits and gates, preserving shared-tree work. V4-441 is finalized separately with bounded scope.
+# [2026-09-30] Sep 29 CT correction: continued session is the renamed builder2 seat. Active splice-lead [063360] owns push, CI and install; this seat completes V4-441/V4-445 only and sends receipts.
 
 [[items]]
 id = "V4-446"

@@ -85,7 +85,21 @@ describe('the Tools switches', () => {
     expect(toolState({ ...live, hosted: false }, false)).toMatchObject({ word: 'Not started', shared: true });
     expect(toolState(live, true)).toMatchObject({ word: 'Not shared', shared: false, why: null });
     expect(toolState({ eligible: false, reason: 'excluded by [daemon] mcp_hosting_exclude' }, true)).toMatchObject({ shared: false, why: null });
-    expect(toolState({ eligible: false, reason: 'transport http' }, false)).toMatchObject({ word: 'Not shared', shared: false, why: 'transport http' });
+    expect(toolState({ eligible: false, reason: 'a reason nobody has worded yet' }, false)).toMatchObject({ word: 'Not shared', shared: false, why: 'a reason nobody has worded yet' });
+  });
+  test('every reason the planner gives reads as a sentence, never as a config term', () => {
+    // The planner's whole list, from McpSharing.kt rejection() and its entry checks.
+    const said = (reason: string): string => toolState({ eligible: false, reason }, false).why ?? '';
+    expect(said("transport 'http' already serves many clients")).toBe('It is a network server that already serves many sessions, so splice has nothing to share.');
+    expect(said('no command')).toBe('It names no program to run.');
+    expect(said('has a cwd (session-scoped)')).toBe('It runs in a folder of its own, so one shared copy cannot serve every session.');
+    expect(said('a value expands ${VAR} from the client\'s environment')).toBe('It reads a setting from each session’s own environment, so one shared copy cannot serve every session.');
+    expect(said("names the relative path './x' (project-scoped)")).toBe('It is tied to one project’s folder (./x), so one shared copy cannot serve every session.');
+    expect(said("'--root repo' names a location relative to the client (project-scoped)")).toBe('It is tied to one project’s folder (--root repo), so one shared copy cannot serve every session.');
+    expect(said("names the directory '/srv/a' (project-scoped)")).toBe('It is tied to one project’s folder (/srv/a), so one shared copy cannot serve every session.');
+    for (const malformed of ['entry is not an object', 'malformed transport type', 'malformed args (expected only strings)', 'malformed env (expected string values)']) {
+      expect(said(malformed)).toBe('Its entry in the client’s settings is not a valid tool server, so splice cannot run it.');
+    }
   });
 });
 

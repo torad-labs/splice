@@ -4,9 +4,10 @@ import { useHeads, useSessions, useTeams } from '../../api/queries';
 import { useProject, useProjectFiles } from '../../api/projects';
 import { clockTime } from '../../lib/format';
 import { charsText, ruleText } from '../../lib/compaction';
-import { liveNames, projectLede, repoLabel, sessionsIn } from '../../lib/projects';
+import { liveNames, projectLede, repoLabel, rootGroups, sessionsIn } from '../../lib/projects';
 import { sessionLabel } from '../../lib/sessions';
 import { P } from '../../lib/words-projects';
+import { UNKNOWN_HEAD } from '../../types/sessions';
 import { Empty, PageHead } from '../../ui';
 import { sessionPath } from '../shared/SessionActions';
 import { Standing } from './Standing';
@@ -40,7 +41,7 @@ export function ProjectPage() {
         <h2 id="proj-sessions">{P.sessionsTitle}</h2>
         {here.length === 0 ? <p className="why">{P.sessionsNone}</p> : (
           <ul className="proj-list">
-            {here.map((session) => <li key={session.session_id ?? session.pid}><Link to={sessionPath(session)}>{sessionLabel(session)}</Link><small>{labelOf(session.head)}</small></li>)}
+            {here.map((session) => <li key={session.session_id ?? session.pid}><Link to={sessionPath(session)}>{sessionLabel(session)}</Link>{session.head === UNKNOWN_HEAD ? null : <small>{labelOf(session.head)}</small>}</li>)}
           </ul>
         )}
       </section>
@@ -101,8 +102,8 @@ export function ProjectPage() {
           <h2 id="proj-status">{P.statuslineTitle}</h2>
           <p className="why">{P.statuslineWhy}</p>
           <ul className="proj-list">
-            {project.statusline_roots.map((entry) => (
-              <li key={entry.head}><b>{labelOf(entry.head)}</b><small>{entry.root === null ? P.noBranch : `${entry.root} · ${entry.entry === null ? '' : P.trusted[entry.entry]}`}</small></li>
+            {rootGroups(project.statusline_roots, labelOf).map((group) => (
+              <li key={group.text}><b>{group.names.join(', ')}</b><small>{group.text}</small></li>
             ))}
           </ul>
         </section>

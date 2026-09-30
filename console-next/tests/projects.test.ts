@@ -1,6 +1,6 @@
 // The Projects arithmetic: a repo's sentence, and the standing prompt and rule read from and written into splice.toml.
 import { describe, expect, test } from 'vitest';
-import { liveNames, projectLede, repoLabel, sessionsIn, standingKeys, standingOf, withStanding } from '../src/lib/projects';
+import { liveNames, projectLede, rootGroups, repoLabel, sessionsIn, standingKeys, standingOf, withStanding } from '../src/lib/projects';
 import type { ProjectRow } from '../src/types/projects';
 import type { SessionRow } from '../src/types/sessions';
 
@@ -68,3 +68,20 @@ describe('the standing prompt and rule', () => {
     expect(standingKeys(ROOT)).toEqual([`projects.${ROOT}.system_prompt`, 'compaction.project[].instructions']);
   });
 });
+
+describe('where each plan looks for a branch', () => {
+  const entry = (head: string, root: string | null, kind: 'home' | 'tmp' | null = 'home') => ({ head, root, entry: kind });
+  test('plans that find the repo under the same folder are one line, in the order they were first named', () => {
+    const groups = rootGroups([entry('a', '/home/x'), entry('b', '/tmp/y', 'tmp'), entry('c', '/home/x')], (key) => key.toUpperCase());
+    expect(groups).toEqual([
+      { names: ['A', 'C'], text: '/home/x · Home folder' },
+      { names: ['B'], text: '/tmp/y · Temp folder' },
+    ]);
+  });
+  test('a plan that finds it under no trusted folder says so, apart from those that do', () => {
+    const groups = rootGroups([entry('a', null, null), entry('b', '/home/x')], (key) => key);
+    expect(groups.map((group) => group.names)).toEqual([['a'], ['b']]);
+    expect(groups[0]?.text).not.toContain('/home');
+  });
+});
+

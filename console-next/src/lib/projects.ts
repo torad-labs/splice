@@ -5,7 +5,7 @@ import { repoNameOf } from './repo';
 import { sessionLabel } from './sessions';
 import { P } from './words-projects';
 import type { SessionRow } from '../types/sessions';
-import type { ProjectRow } from '../types/projects';
+import type { ProjectRow, ProjectStatuslineRoot } from '../types/projects';
 
 /** A repo as a person says it: the name it was cloned as, else its folder's. */
 export const repoLabel = (root: string, remote?: string): string => repoNameOf(root, remote);
@@ -19,6 +19,18 @@ export function projectLede(row: ProjectRow): string {
 }
 
 export const costText = (row: ProjectRow): string => (row.cost_today_usd === null ? ABSENT : fmtUsd(row.cost_today_usd));
+
+/** Plans that find the repo under the same trusted folder, as one line each: eleven plans under one home folder are one fact, not eleven. */
+export function rootGroups(entries: readonly ProjectStatuslineRoot[], labelOf: (head: string) => string): { names: string[]; text: string }[] {
+  const groups = new Map<string, { names: string[]; text: string }>();
+  for (const entry of entries) {
+    const text = entry.root === null ? P.noBranch : `${entry.root} · ${entry.entry === null ? '' : P.trusted[entry.entry]}`;
+    const held = groups.get(text);
+    if (held === undefined) groups.set(text, { names: [labelOf(entry.head)], text });
+    else held.names.push(labelOf(entry.head));
+  }
+  return [...groups.values()];
+}
 
 /** The sessions running in the repo now, by the name the console gives them everywhere else. */
 export const sessionsIn = (rows: readonly SessionRow[], root: string): SessionRow[] => rows.filter((row) => row.availability === 'live' && row.repo?.root === root);

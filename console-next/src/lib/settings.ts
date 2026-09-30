@@ -9,7 +9,7 @@ import { wantsAttention } from './doctor';
 import { KNOB_META } from './knobs';
 import type { KnobGroup, KnobMeta } from './knobs';
 import { GROUP_LABELS, KNOB_LABELS } from './words-knobs';
-import { R } from './words-settings';
+import { R, toolReasonText } from './words-settings';
 
 export const SECTIONS = ['general', 'conversation', 'tools', 'storage', 'health', 'advanced'] as const;
 export type Section = (typeof SECTIONS)[number];
@@ -103,7 +103,7 @@ export type ToolState = { word: 'Running' | 'Not started' | 'Not shared'; tone: 
 export function toolState(server: McpServer, excluded: boolean): ToolState {
   // the operator's own exclusion makes the planner call the server ineligible: the switch says why, the planner's echo adds nothing
   if (excluded) return { word: 'Not shared', tone: 'idle', shared: false, why: null };
-  if (!server.eligible) return { word: 'Not shared', tone: 'idle', shared: false, why: server.reason };
+  if (!server.eligible) return { word: 'Not shared', tone: 'idle', shared: false, why: toolReasonText(server.reason) };
   return server.hosted ? { word: 'Running', tone: 'work', shared: true, why: null } : { word: 'Not started', tone: 'idle', shared: true, why: null };
 }
 

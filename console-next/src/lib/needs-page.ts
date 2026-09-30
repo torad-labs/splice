@@ -55,14 +55,14 @@ function unreadText(reading: Reading): string {
 export interface Calm {
   /** Sessions with a live turn making progress. */
   working: number;
-  /** The heads that answer and have no item. */
+  /** The heads that answer and have no item: a plan whose local runtime is off does not answer, as Fleet says. */
   serving: readonly string[];
 }
 
 export function calmOf(list: NeedsList, sessions: readonly SessionRow[], turnOf: TurnOf, heads: readonly HeadStatus[]): Calm {
   const working = sessions.filter((row) => stateOf(row, turnOf(row)) === 'working').length;
   const named = new Set(list.needs.flatMap((need) => (need.head === null ? [] : [need.head])));
-  const serving = heads.filter((head) => head.running && head.healthy && !named.has(head.key)).map((head) => head.label);
+  const serving = heads.filter((head) => head.running && head.healthy && head.runtimeNotAnswering === undefined && !named.has(head.key)).map((head) => head.label);
   return { working, serving };
 }
 

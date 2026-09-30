@@ -55,6 +55,14 @@ describe('the project page', () => {
     expect(render(held(0))).toContain('Explicitly none.');
     expect(render(held(null))).toContain('Its file cannot be read.');
   });
+  test('a session splice did not start names no head, where the page would otherwise print the code for it', () => {
+    const html = render((client) => {
+      seedRow(client);
+      client.setQueryData(['sessions', '/api/sessions'], { sessions: [{ session_id: 'sess-2', name: 'Plain session', head: 'unknown head', availability: 'live', status: 'idle', pid: 2, kind: null, version: null, cwd: ROOT, status_updated_at: null, started_at: null, updated_at: 1, address: null, repo: { root: ROOT } }] });
+    });
+    expect(html).toContain('Plain session');
+    expect(html).not.toContain('unknown head');
+  });
   test('while the row is being read it says so', () => {
     expect(render(() => undefined)).toContain('Reading the project.');
   });

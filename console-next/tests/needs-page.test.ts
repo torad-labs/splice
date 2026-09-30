@@ -78,6 +78,10 @@ describe('the calm figures', () => {
     const calm = calmOf(list([need({ head: 'b' })]), [], none, [head('a'), head('b'), head('c', { running: false }), head('d', { healthy: false })]);
     expect(calm.serving).toEqual(['a']);
   });
+  test('a plan whose local runtime is not answering is not serving, whatever its own health says', () => {
+    const calm = calmOf(list([]), [], none, [head('a'), head('b', { runtimeNotAnswering: ':8099' })]);
+    expect(calm.serving).toEqual(['a']);
+  });
   test('working counts busy sessions, with or without a live turn (a tool running), but not a stuck, idle or gone one', () => {
     const turn = (idle: number) => ({ id: 't', session: 's1', model: 'm', compact: false, age_ms: 1, stopped: false, idle_ms: idle }) as never;
     const live: TurnOf = (row) => (row.session_id === 's1' ? turn(1_000) : row.session_id === 's3' ? turn(6 * 60_000) : null);

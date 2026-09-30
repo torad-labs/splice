@@ -45,7 +45,7 @@ export function NeedsPage() {
             </ul>
           )}
           {unread.length === 0 ? null : (
-            <section className="unread" aria-label={N.unreadTitle}>
+            <section className="needs-unread" aria-label={N.unreadTitle}>
               <h3>{N.unreadTitle}</h3>
               <ul>
                 {unread.map((row) => (

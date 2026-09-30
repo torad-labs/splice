@@ -18,10 +18,10 @@
 .calm p { margin-top: var(--space-3); font: 400 16px/1.5 var(--read); color: var(--body); }
 .calm .n { font: 500 44px/1 var(--display); color: var(--ink); letter-spacing: -.03em; }
 .calm .as-of { grid-column: 1 / -1; font: 500 14px var(--meta); color: var(--mute); }
-.unread { margin-top: var(--space-14); display: grid; gap: var(--space-5); }
-.unread h3 { font: 520 22px/1.15 var(--display); color: var(--ink); }
-.unread ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
-.unread li { font: 400 16px/1.5 var(--read); color: var(--body); }
+.needs-unread { margin-top: var(--space-14); display: grid; gap: var(--space-5); }
+.needs-unread h3 { font: 520 22px/1.15 var(--display); color: var(--ink); }
+.needs-unread ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
+.needs-unread li { font: 400 16px/1.5 var(--read); color: var(--body); }
 @media (min-width: 1500px) {
   .needs-layout { grid-template-columns: minmax(0, 1040px) minmax(280px, 1fr); gap: var(--space-17); align-items: start; }
   .calm { margin-top: 0; grid-template-columns: 1fr; gap: var(--space-12); position: sticky; top: var(--space-13); }

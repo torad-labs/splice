@@ -1,5 +1,5 @@
 /* A session's page: D, the calm version. The conversation is prose; tool blocks are the only dark glass. */
-.crumb { display: inline-flex; align-items: center; gap: var(--space-4); margin-bottom: var(--space-7); font: 600 14.5px var(--meta); color: var(--mute); text-decoration: none; }
+a.crumb { display: inline-flex; align-items: center; gap: var(--space-4); margin-bottom: var(--space-7); font: 600 14.5px var(--meta); color: var(--mute); text-decoration: none; }
 .top { display: flex; align-items: flex-start; gap: var(--space-8); margin-bottom: var(--space-13); }
 .top h1 { font: 500 clamp(40px, 3.2vw, 54px)/1.02 var(--display); font-variation-settings: 'opsz' 144; letter-spacing: -.025em; color: var(--ink); }
 .top .facts.quiet-meta { padding: 0; margin-top: var(--space-6); gap: var(--space-2) 0; font-size: var(--text-1); }

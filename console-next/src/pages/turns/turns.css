@@ -3,10 +3,10 @@
 .section:first-of-type { margin-top: 0; }
 .section > h2 { font: 520 26px/1.15 var(--display); color: var(--ink); letter-spacing: -.01em; }
 .section > .why { margin-top: var(--space-4); font: 400 16px/1.5 var(--read); color: var(--mute); max-width: 70ch; }
-.live { list-style: none; margin: var(--space-10) 0 0; padding: 0 var(--space-8) 0 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(460px, 1fr)); gap: var(--space-13) var(--space-15); align-items: start; }
-.live .win .bar { padding-bottom: var(--space-4); }
-.live .say { padding: 0 var(--space-9) var(--space-7); font: 400 17px/1.5 var(--read); color: var(--body); }
-.live .say b { color: var(--ink); font-weight: 650; }
+.running-list { list-style: none; margin: var(--space-10) 0 0; padding: 0 var(--space-8) 0 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(460px, 1fr)); gap: var(--space-13) var(--space-15); align-items: start; }
+.running-list .win .bar { padding-bottom: var(--space-4); }
+.running-list .say { padding: 0 var(--space-9) var(--space-7); font: 400 17px/1.5 var(--read); color: var(--body); }
+.running-list .say b { color: var(--ink); font-weight: 650; }
 .plans { list-style: none; margin: var(--space-11) 0 0; padding: 0; display: grid; }
 .plan { display: grid; grid-template-columns: 220px 90px 90px minmax(260px, 1fr) 120px; align-items: center; gap: var(--space-10); padding: var(--space-9) 0; border-top: 2px solid var(--hair); }
 .plan.cols { padding: 0 0 var(--space-5); border-top: 0; font: 600 14px var(--meta); color: var(--mute); }

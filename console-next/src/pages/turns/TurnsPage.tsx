@@ -123,7 +123,7 @@ export function TurnsPage() {
       <section className="section" aria-labelledby="turns-running">
         <h2 id="turns-running">{T.runningTitle}</h2>
         <p className="why">{running.length === 0 ? T.runningNone : `${T.runningWhy}${stuck === undefined || stuck.quiet === null ? '' : ` ${T.runningQuiet(quiet.length, stuck.quiet)}`}`}</p>
-        {running.length === 0 ? null : <ul className="live">{running.map((turn) => <RunningCard key={turn.key} turn={turn} />)}</ul>}
+        {running.length === 0 ? null : <ul className="running-list">{running.map((turn) => <RunningCard key={turn.key} turn={turn} />)}</ul>}
       </section>
       <section className="section" aria-labelledby="turns-plans">
         <h2 id="turns-plans">{T.plansTitle}</h2>

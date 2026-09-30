@@ -11,4 +11,8 @@ export const SW = {
   idleFor: (span: string): string => `Idle for ${span}, waiting for your next message`,
   gone: 'The session ended',
   you: 'You',
+  waitingNote: (span: string): string => `Waiting ${span}`,
+  stuckNote: (span: string): string => `Quiet ${span}`,
+  workingNote: (span: string): string => `Working ${span}`,
+  idleNote: (span: string): string => `Idle ${span}`,
 } as const;

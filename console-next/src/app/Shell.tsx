@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from 'react-router';
+import { useNeeds } from '../api/needs';
 import { useStatus } from '../api/queries';
 import { setTheme, useTheme } from '../lib/theme';
 import { C } from './copy';
@@ -16,6 +17,7 @@ export function Shell() {
   const status = useStatus();
   const theme = useTheme();
   const answering = status.isSuccess || status.isPending;
+  const waiting = useNeeds(Date.now()).needs.length;
   return (
     <div className="app">
       <aside className="side">
@@ -24,6 +26,7 @@ export function Shell() {
           {NAV.map(([path, label]) => (
             <NavLink key={path} to={`/${path}`}>
               {label}
+              {path === 'needs-you' && waiting > 0 ? <span className="count" aria-hidden="true">{waiting}</span> : null}
             </NavLink>
           ))}
         </nav>

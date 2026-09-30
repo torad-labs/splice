@@ -171,19 +171,36 @@ export function spanText(ms: number): string {
 /** How long a busy session with no live turn may sit before its line says it is running a tool, quietly. */
 export const QUIET_AFTER_MS = 2 * 60_000;
 
+/** Terminal colour codes and the wrapper tags a client puts around a command's output are not words. */
+const ESC = String.fromCharCode(27);
+const NOISE = new RegExp(`${ESC}\\[[0-9;]*[A-Za-z]|</?local-command-[a-z]+>`, 'g');
+
 /** The newest message as one line: what the person said, what the plan answered, or what a tool did. Null when there is nothing to read. */
 export function lastLine(last: SessionLast | null | undefined): string | null {
-  if (last === null || last === undefined || last.text.trim() === '') return null;
-  if (last.role === 'user') return `${SW.you}: ${last.text}`;
-  return last.role === 'tool' && last.tool !== null ? `${last.tool}: ${last.text}` : last.text;
+  const text = last?.text.replace(NOISE, '').trim() ?? '';
+  if (last === null || last === undefined || text === '') return null;
+  if (last.role === 'user') return `${SW.you}: ${text}`;
+  return last.role === 'tool' && last.tool !== null ? `${last.tool}: ${text}` : text;
 }
 
 /** A card's one line, and the note that goes to its quiet line: the newest message when the daemon sent one, with the state's own sentence
  *  beside the facts; the state's sentence alone when it did not. */
 export function cardLine(row: SessionRow, state: SessionState, since: number | null, quiet: number | null): { line: string; note: string | null } {
-  const said = activityText(state, since, quiet);
   const last = lastLine(row.last);
-  return last === null ? { line: said, note: null } : { line: last, note: said };
+  return last === null ? { line: activityText(state, since, quiet), note: null } : { line: last, note: noteText(state, since) };
+}
+
+/** The state's duration in a few words, for the quiet line beside a newest message; nothing when the daemon gave no start. */
+function noteText(state: SessionState, since: number | null): string | null {
+  if (since === null) return null;
+  const span = spanText(since);
+  switch (state) {
+    case 'waiting': return SW.waitingNote(span);
+    case 'stuck': return SW.stuckNote(span);
+    case 'working': return SW.workingNote(span);
+    case 'idle': return SW.idleNote(span);
+    case 'gone': return null;
+  }
 }
 
 /** What a state means and for how long, and nothing the console cannot know: the sentence a card falls back to when the daemon sent no

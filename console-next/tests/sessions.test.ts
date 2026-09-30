@@ -143,7 +143,9 @@ describe('what a card says', () => {
     expect(lastLine(said('assistant', 'Done, it is green.').last)).toBe('Done, it is green.');
     expect(lastLine(said('tool', 'exit 0', 'Bash').last)).toBe('Bash: exit 0');
     expect(lastLine(said('tool', 'exit 0').last)).toBe('exit 0');
-    expect(cardLine(said('assistant', 'Done.'), 'working', 3 * 60_000, null)).toEqual({ line: 'Done.', note: 'Working for 3 min' });
+    expect(cardLine(said('assistant', 'Done.'), 'working', 3 * 60_000, null)).toEqual({ line: 'Done.', note: 'Working 3 min' });
+    expect(cardLine(said('assistant', 'Done.'), 'idle', null, null)).toEqual({ line: 'Done.', note: null });
+    expect(lastLine({ role: 'user', tool: null, text: '<local-command-stdout>\u001b[2mCompacted \u001b[22m</local-command-stdout>', ts: null })).toBe('You: Compacted');
   });
 
   test('with no newest message the card says what the state means, and the note is empty', () => {

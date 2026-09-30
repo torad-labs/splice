@@ -225,11 +225,13 @@ export function stagesOf(row: TurnRow): StageBar[] {
 
 /** The sentence under a turn's title: how long it took and where most of it went. */
 /** A record splice answered itself: in Codex code mode the model has already written its script, and each queued tool step is
- *  served to the client as a synthesized tool call with no send upstream (CodexCodeModeMachine.kt:130), so the record has no
- *  first byte and no tokens (TurnTrace.kt:48,82: `rounds` counts upstream attempts only). It is a step of a turn, not a turn
- *  the model took. The daemon does not mark these rows, so this is the shape they have on the wire (measured 2026-09-29: 152 of 300 claudex rows,
- *  every one with `in_tokens: 0`, `out_tokens: 0` written out and no `first_byte`); a legacy row that omits the token fields is not one. */
-export const servedLocally = (row: TurnRow): boolean => row.outcome === 'ok' && row.first_byte === undefined && row.in_tokens === 0 && row.out_tokens === 0;
+ *  served to the client as a synthesized tool call with no send upstream (CodexCodeModeMachine.kt:130). It is a step of a turn,
+ *  not a turn the model took, and the daemon marks it at the source (`local_step` = 1, PerfKeys.LOCAL_STEP). A row without the
+ *  field is a turn. */
+export const servedLocally = (row: TurnRow): boolean => row.local_step === 1;
+
+/** The steps splice answered itself across every plan in the window, as the summary counts them. */
+export const localStepsOf = (heads: readonly PerfSummaryHead[]): number => heads.reduce((n, head) => n + (head.local_steps ?? 0), 0);
 
 export function turnLede(row: TurnRow, stages: readonly StageBar[]): string {
   const outcome = outcomeOf(row.outcome);

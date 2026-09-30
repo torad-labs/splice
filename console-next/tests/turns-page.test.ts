@@ -1,7 +1,7 @@
 // The Turns pages' arithmetic: outcomes, plan rows, the stuck rule, a turn's four stages, and what was kept.
 import { describe, expect, test } from 'vitest';
 import {
-  askAndAnswer, failedCount, filterLines, lineOf, outcomeOf, planRows, runningOf, servedLocally, stagesOf, turnLede, turnsLede, wireFor, WINDOW_MS,
+  askAndAnswer, failedCount, filterLines, lineOf, outcomeOf, planRows, localStepsOf, runningOf, servedLocally, stagesOf, turnLede, turnsLede, wireFor, WINDOW_MS,
 } from '../src/lib/turns-page';
 import type { PerfSummaryHead, TurnRow } from '../src/types/perf';
 
@@ -26,13 +26,19 @@ describe('outcomes', () => {
 });
 
 describe('a record splice answered itself', () => {
-  const local = row({ in_tokens: 0, out_tokens: 0, total: 53 });
-  test('no first byte and no tokens on an ok row is a local answer; a model turn or a failure is not', () => {
+  const local = row({ local_step: 1, in_tokens: 0, out_tokens: 0, total: 53 });
+  test('only the daemon\'s own mark makes a local answer; the shape of the row does not', () => {
     expect(servedLocally(local)).toBe(true);
     expect(servedLocally(row())).toBe(false);
+    expect(servedLocally(row({ local_step: 0 }))).toBe(false);
     expect(servedLocally(row({ first_byte: 900, in_tokens: 1200, out_tokens: 80 }))).toBe(false);
-    expect(servedLocally(row({ in_tokens: 1200, out_tokens: 80 }))).toBe(false);
-    expect(servedLocally(row({ outcome: 'error:upstream-failed' }))).toBe(false);
+    expect(servedLocally(row({ in_tokens: 0, out_tokens: 0 }))).toBe(false);
+    expect(servedLocally(row({ outcome: 'error:admission', in_tokens: 0, out_tokens: 0 }))).toBe(false);
+  });
+  test('the steps left out are the summary\'s count across plans, and none from a daemon without the field', () => {
+    expect(localStepsOf([summary({ local_steps: 4 }), summary({ local_steps: 3 }), summary()])).toBe(7);
+    expect(localStepsOf([summary()])).toBe(0);
+    expect(localStepsOf([])).toBe(0);
   });
   test('its page says the plan was not asked', () => {
     expect(turnLede(local, [])).toBe('The plan was not asked. Splice answered this step itself, from a script the model had already written.');

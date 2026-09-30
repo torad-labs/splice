@@ -36,7 +36,10 @@ export interface PerfSummaryHead {
   key: string;
   label: string;
   window: PerfWindowLabel;
+  /** Turns in the window; the code-mode steps splice answered itself are `local_steps`, not counted here. */
   count: number;
+  /** Steps splice answered itself in the window; absent from a daemon older than the field. */
+  local_steps?: number;
   empty: boolean;
   coverage_known: boolean;
   clamped: boolean;
@@ -147,6 +150,8 @@ export interface TurnRow {
   write_ms?: number;
   usage_ms?: number;
   attempts?: number;
+  /** 1 when code mode served this step with no upstream attempt (PerfKeys.LOCAL_STEP): a step of a turn, not a turn. Absent on a turn. */
+  local_step?: number;
   retries?: number;
   refreshes?: number;
   post_send_retries?: number;

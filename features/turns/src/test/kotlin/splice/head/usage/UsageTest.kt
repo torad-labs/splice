@@ -318,7 +318,9 @@ class UsageScalingTest {
             pinnedModel = "gpt-5.6-luna",
             compactionReserveDefaults = CodexCompactionReserves,
         )
-        val factor = 153_000.0 / (272_000 - 40_056)
+        // C=200k gives T=153k. W=272k minus luna's clean growth p99 7830 and generation
+        // p99 31791 leaves 232379: 20000*T/232379 truncates to 13168, not the old 13192.
+        val factor = 153_000.0 / (272_000 - 39_621)
         val p = wiring.usagePayloadBuilder(codex, meta("gpt-5.6-luna"), sessionWindow = 200_000)(
             Usage(inputTokens = 100_000, outputTokens = 7, cachedTokens = 60_000, cacheWriteTokens = 20_000),
         )

@@ -217,14 +217,14 @@ describe('a head the provider refuses is one out-of-quota item, with the instant
     expect(items({ heads: read([refused()]) })).toEqual([{
       key: 'heads:claudex', severity: 'warn', source: 'heads', kind: 'Out of quota', head: 'claudex', subject: 'claudex',
       finding: `Out of quota until ${localInstantText(UNTIL)}`,
-      fix: { kind: 'open', href: '#/fleet?open=claudex', label: 'See the plan' },
-      at: '#/fleet?open=claudex',
+      fix: { kind: 'open', href: '#/fleet/claudex', label: 'See the plan' },
+      at: '#/fleet/claudex',
     }]);
   });
 
   test('an OAuth head that rides a pool of several logins offers Switch account; a single login or a key head does not', () => {
     const pool = [account({ label: 'a' }), account({ label: 'b' })];
-    expect(items({ heads: read([refused()]), accounts: read({ accounts: pool }) })[0]?.fix).toMatchObject({ label: 'Switch account', href: '#/fleet?open=claudex' });
+    expect(items({ heads: read([refused()]), accounts: read({ accounts: pool }) })[0]?.fix).toMatchObject({ label: 'Switch account', href: '#/fleet/claudex' });
     expect(items({ heads: read([refused()]), accounts: read({ accounts: [account({ label: 'a' })] }) })[0]?.fix).toMatchObject({ label: 'See the plan' });
     const key = refused({ key: 'or', label: 'or', authKind: 'api-key' });
     const keyPool = pool.map((row) => ({ ...row, heads: ['or'] }));
@@ -297,7 +297,7 @@ describe('the daemon, the plans and the accounts', () => {
     expect(out[0]?.fix).toEqual({ kind: 'login', head: 'claudex', label: 'spare' });
     expect(out[0]?.finding).toContain('this label');
     expect(out[0]?.finding).not.toContain('new label');
-    expect(out[0]).toMatchObject({ kind: K.account, head: 'claudex', at: '#/fleet?open=claudex' });
+    expect(out[0]).toMatchObject({ kind: K.account, head: 'claudex', at: '#/fleet/claudex' });
     expect(out[1]?.fix).toEqual({ kind: 'open', href: '#/fleet', label: S.openFleet });
   });
 
@@ -616,9 +616,9 @@ describe('the list ranks worst first', () => {
 
 describe('each item opens itself on its page, at the console-next routes', () => {
   test('hrefOf: a head on Fleet, a session\'s own page, and the pages the rest live on; the daemon has none', () => {
-    expect(hrefOf('heads', 'claudex')).toBe('#/fleet?open=claudex');
+    expect(hrefOf('heads', 'claudex')).toBe('#/fleet/claudex');
     expect(hrefOf('heads')).toBe('#/fleet');
-    expect(hrefOf('accounts', 'a b')).toBe('#/fleet?open=a%20b');
+    expect(hrefOf('accounts', 'a b')).toBe('#/fleet/a%20b');
     expect(hrefOf('accounts')).toBe('#/fleet');
     expect(hrefOf('plans')).toBe('#/usage');
     expect(hrefOf('turns')).toBe('#/turns');
@@ -642,10 +642,10 @@ describe('each item opens itself on its page, at the console-next routes', () =>
       topology: read(true),
     });
     const at = (source: string) => out.filter((need) => need.source === source).map((need) => need.at);
-    expect(at('heads')).toEqual(['#/fleet?open=down']);
+    expect(at('heads')).toEqual(['#/fleet/down']);
     expect(at('daemon')).toEqual([null]);
     expect(at('plans')).toEqual(['#/usage']);
-    expect(at('accounts')).toEqual(['#/fleet?open=claudex']);
+    expect(at('accounts')).toEqual(['#/fleet/claudex']);
     expect(at('turns')).toEqual(['#/turns']);
     expect(at('sessions')).toEqual(['#/sessions/sess-1']);
     expect(at('teams')).toEqual(['#/sessions?group=team']);

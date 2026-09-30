@@ -48,7 +48,7 @@ export function readingOf(input: InputName, read: Read<unknown>): Reading {
 // ---- where an item opens ---------------------------------------------------------------------
 
 /** The hash address of the page an item belongs to, and of its own detail where the page opens one: a
- *  head's card on Fleet (`?open=<key>`), a session's own page. The daemon is no page's. */
+ *  head's card on Fleet (`/fleet/<key>`), a session's own page. The daemon is no page's. */
 export function hrefOf(source: 'daemon'): null;
 export function hrefOf(source: Exclude<Source, 'daemon'>, id?: string): string;
 export function hrefOf(source: Source, id?: string): string | null;
@@ -56,7 +56,7 @@ export function hrefOf(source: Source, id?: string): string | null {
   switch (source) {
     case 'heads':
     case 'accounts':
-      return id === undefined ? '#/fleet' : `#/fleet?open=${encodeURIComponent(id)}`;
+      return id === undefined ? '#/fleet' : `#/fleet/${encodeURIComponent(id)}`;
     case 'plans':
       return '#/usage';
     case 'turns':

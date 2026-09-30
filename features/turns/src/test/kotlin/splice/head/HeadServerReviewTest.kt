@@ -25,6 +25,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -45,12 +46,14 @@ import splice.core.util.MonoClock
 import splice.head.admission.RequestMaterializationGate
 import splice.head.usage.UsageStore
 import splice.upstream.ProviderTuning
+import splice.upstream.Ticker
 import splice.upstream.Waiter
 import splice.upstream.codemode.ProcessWaiter
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.seconds
 
 private class ReviewFakeAuth : RefreshableAuthProvider {
@@ -91,8 +94,7 @@ class HeadServerReviewTest {
         gate: InflightGate,
         matGate: RequestMaterializationGate,
         ratelimitFile: Path,
-        waiter: Waiter = ProcessWaiter(),
-        clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
+        seams: HeadDeps.HeadSeams = HeadDeps.HeadSeams(),
     ): HeadServer {
         val provider = TestResponsesProvider(
             tuning = ProviderTuning(
@@ -119,11 +121,7 @@ class HeadServerReviewTest {
                 upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 2),
                 gate = gate,
                 log = {},
-                seams = HeadDeps.HeadSeams(
-                    waiter = waiter,
-                    requestMaterializationGate = matGate,
-                    clock = clock,
-                ),
+                seams = seams.copy(requestMaterializationGate = matGate),
             ).copy(
                 // This rig keys its store files per head and points the RATE-LIMIT store at a file the
                 // assertions read directly, so the default stores would not be the ones under test.
@@ -149,7 +147,7 @@ class HeadServerReviewTest {
             InflightGate(maxInflight = { 4 }),
             RequestMaterializationGate(),
             tmp.resolve("rl-stream-dispatch.json"),
-            clock = clock,
+            seams = HeadDeps.HeadSeams(clock = clock),
         )
         head.start()
         try {
@@ -159,6 +157,49 @@ class HeadServerReviewTest {
             assertTrue(writeThreads.none { "eventLoop" in it }, "a blocking frame write ran on Netty: $writeThreads")
         } finally {
             head.stop()
+        }
+    }
+
+    @Test
+    fun `visible progress opens a silent ordinary and compact stream before the hold bound`() = runBlocking {
+        for (compact in listOf(false, true)) {
+            val tickGate = CompletableDeferred<Unit>()
+            val elapsed = AtomicLong(0)
+            val ticker = Ticker {
+                tickGate.await()
+                yield() // cooperative virtual ticks until the upstream has opened the message
+                true
+            }
+            val head = buildHead(
+                InflightGate(maxInflight = { 4 }),
+                RequestMaterializationGate(),
+                tmp.resolve("rl-progress-$compact.json"),
+                HeadDeps.HeadSeams(ticker = ticker, clock = ElapsedClock(elapsed::get)),
+            )
+            head.start()
+            mock.resetStartHold()
+            val progressSeen = CompletableDeferred<Unit>()
+            val opened = CompletableDeferred<Long>()
+            try {
+                val before = mock.upstreamBodies.count { it.first == "holdstart" }
+                val scenario = if (compact) "holdstart tasked with summarizing conversations" else "holdstart"
+                val turn = async(Dispatchers.IO) { readTurn(head.port, scenario, opened, 0L, progressSeen) }
+                assertTrue(waitFor(5_000) { mock.upstreamBodies.count { it.first == "holdstart" } > before })
+                assertTrue(!opened.isCompleted, "the structural opener is still staged")
+                elapsed.set(29_000L)
+                tickGate.complete(Unit)
+                withTimeout(5_000) { progressSeen.await() }
+                assertTrue(opened.isCompleted, "the first visible progress line commits the opener")
+                assertEquals(1L, mock.startHoldRelease.count, "no model item arrived before progress")
+                mock.startHoldRelease.countDown()
+                val body = turn.await()
+                assertTrue(body.contains("[splice] holding this turn open"), body)
+                assertTrue(body.contains("event: message_stop"), body)
+            } finally {
+                tickGate.complete(Unit)
+                mock.startHoldRelease.countDown()
+                head.stop()
+            }
         }
     }
 
@@ -207,6 +248,7 @@ class HeadServerReviewTest {
         scenario: String,
         opened: CompletableDeferred<Long>,
         t0: Long,
+        progressSeen: CompletableDeferred<Unit>? = null,
     ): String {
         val sb = StringBuilder()
         client.preparePost("http://127.0.0.1:$port/v1/messages") {
@@ -223,6 +265,9 @@ class HeadServerReviewTest {
                 sb.append(line).append('\n')
                 if (!opened.isCompleted && line.contains("event: message_start")) {
                     opened.complete(System.currentTimeMillis() - t0)
+                }
+                if (progressSeen?.isCompleted == false && line.contains("[splice] holding this turn open")) {
+                    progressSeen.complete(Unit)
                 }
             }
         }
@@ -270,7 +315,12 @@ class HeadServerReviewTest {
             if (drainArmed.get()) draining.complete(Unit)
             processWaiter.wait(ms)
         }
-        val head = buildHead(gate, RequestMaterializationGate(), tmp.resolve("rl-e.json"), drainWaiter)
+        val head = buildHead(
+            gate,
+            RequestMaterializationGate(),
+            tmp.resolve("rl-e.json"),
+            HeadDeps.HeadSeams(waiter = drainWaiter),
+        )
         head.start()
         // Read once, before the restart below rebinds a fresh OS-assigned port: both turns go to this one.
         val port = head.port

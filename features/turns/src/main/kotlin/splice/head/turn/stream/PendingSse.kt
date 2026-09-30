@@ -44,6 +44,11 @@ internal class PendingSse(
     }
 
     suspend fun progress(frame: String) {
+        // The first status-line thinking delta is client-visible output. Open SSE now so a
+        // silent model still speaks at the heartbeat; structural pings and comments stay held.
+        if (frame.startsWith("event: content_block_delta\n") && frame.contains("\"type\":\"thinking_delta\"")) {
+            choice.complete(Decision.Stream)
+        }
         if (output.stageProgress(frame)) return
         if (choice.await() is Decision.Overflow) return
         output.writeProgress(frame)

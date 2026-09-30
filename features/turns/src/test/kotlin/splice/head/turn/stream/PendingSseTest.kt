@@ -30,6 +30,10 @@ class PendingSseTest {
         """{"type":"error","error":{"type":"invalid_request_error","message":"$message"}}""" +
         "\n\n"
 
+    private fun progressLine(): String = "event: content_block_delta\ndata: " +
+        """{"delta":{"type":"thinking_delta","thinking":"[splice] holding this turn open"}}""" +
+        "\n\n"
+
     @Test
     fun `upstream size error before commitment discards the undelivered opening`() = runTest {
         val perf = TurnPerf { 0L }
@@ -56,6 +60,44 @@ class PendingSseTest {
         pending.model(overflowFrame("prompt is too long"))
         assertTrue(writer.toString().contains("event: message_start"))
         assertTrue(writer.toString().contains("event: error"))
+    }
+
+    @Test
+    fun `the first visible progress delta commits before the silent deadline`() = runTest {
+        val pending = gate(120_000L)
+        pending.model("event: message_start\ndata: {}\n\n")
+        pending.progress("event: content_block_start\ndata: {}\n\n")
+        val writing = async { pending.progress(progressLine()) }
+        assertEquals(PendingSse.Decision.Stream, withTimeout(1_000) { pending.decide() })
+        val wire = StringWriter()
+        pending.attach(wire)
+        writing.await()
+        assertTrue("[splice] holding this turn open" in wire.toString())
+    }
+
+    @Test
+    fun `overflow before the first visible line still returns HTTP 400`() = runTest {
+        val pending = gate(120_000L)
+        pending.model("event: message_start\ndata: {}\n\n")
+        pending.progress("event: ping\ndata: {}\n\n")
+        pending.model(overflowFrame("prompt is too long"))
+        assertTrue(pending.decide() is PendingSse.Decision.Overflow)
+        assertEquals(0L, pending.channel.socketFrames.get())
+    }
+
+    @Test
+    fun `overflow after a visible line stays inside committed SSE`() = runTest {
+        val pending = gate(120_000L)
+        pending.model("event: message_start\ndata: {}\n\n")
+        pending.progress("event: content_block_start\ndata: {}\n\n")
+        val writing = async { pending.progress(progressLine()) }
+        assertEquals(PendingSse.Decision.Stream, withTimeout(1_000) { pending.decide() })
+        val wire = StringWriter()
+        pending.attach(wire)
+        writing.await()
+        pending.model(overflowFrame("prompt is too long"))
+        assertTrue(wire.toString().contains("[splice] holding this turn open"))
+        assertTrue(wire.toString().contains("event: error"))
     }
 
     @Test

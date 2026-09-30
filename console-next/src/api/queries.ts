@@ -47,8 +47,10 @@ export const useAuth = () => useQuery(read<AuthPayload>(keys.auth, '/api/auth'))
 export const useAccounts = () => useQuery({ ...read<AccountsWire>(keys.accounts, '/api/accounts'), select: accountsFromWire });
 export const useSessions = () => useQuery(read<SessionsPayload>(keys.sessions, '/api/sessions'));
 export const useTeams = () => useQuery(read<TeamsPayload>(keys.teams, '/api/teams'));
-export const useConfig = (head?: string) =>
-  useQuery(read<ConfigPayload>(keys.config, head === undefined ? '/api/config' : `/api/config?head=${encodeURIComponent(head)}`, { refetchInterval: false }));
+/** The effective configuration: the fleet's, or one head's when a head is named (its key percent-encoded into the query). */
+export const configOptions = (head?: string) =>
+  read<ConfigPayload>(keys.config, head === undefined ? '/api/config' : `/api/config?head=${encodeURIComponent(head)}`, { refetchInterval: false });
+export const useConfig = (head?: string) => useQuery(configOptions(head));
 export const useHealth = () =>
   useQuery({ queryKey: [...keys.health], queryFn: () => health<{ topologyStale?: boolean; bootedAtEpochMillis?: number }>(), refetchInterval: FLOOR_MS });
 

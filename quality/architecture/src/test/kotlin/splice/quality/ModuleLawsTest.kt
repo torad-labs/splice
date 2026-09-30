@@ -124,6 +124,8 @@ private val MODULE_DEPENDENCY_LAW: Map<String, Set<String>> = mapOf(
     // the head-start slice it delegates starting a head to.
     // the operator console: a Bun/Vite workspace with no Kotlin and no module edges (PR 4).
     ":console" to emptySet(),
+    // its replacement (V4-444): the same shape, no Kotlin, no edges.
+    ":console-next" to emptySet(),
 )
 
 /** Exempt from the direction law: :app is the composition root and may wire anything, and the rest are

@@ -54,6 +54,7 @@ include(
     ":quality-architecture",
     ":quality-compiler-plugin",
     ":console",
+    ":console-next",
 )
 
 project(":core").projectDir = file("core")
@@ -92,3 +93,5 @@ project(":quality-compiler-plugin").projectDir = file("quality/compiler-plugin")
 // the operator console: a Bun/Vite workspace with no Kotlin, included so the release packages its
 // bundle through a task output rather than a checked-in file (PR 4)
 project(":console").projectDir = file("console")
+// its replacement (V4-444), built beside it: gated here, packaged by nothing until the switch
+project(":console-next").projectDir = file("console-next")

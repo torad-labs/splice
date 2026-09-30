@@ -89,6 +89,8 @@ val moduleLaw: Map<String, Set<String>> = mapOf(
     // :console is the Bun/Vite operator console — no Kotlin, no edges; graded here so the map
     // covers every module the build declares.
     ":console" to emptySet(),
+    // :console-next is its replacement (V4-444): the same shape, no Kotlin, no edges.
+    ":console-next" to emptySet(),
     // :quality-compiler-plugin is a Kotlin-compiler plugin: zero project deps in main (it talks to the compiler,
     // not our modules), wired into every build only via the -Xplugin classpath (see gateway/build.gradle.kts).
     ":quality-compiler-plugin" to emptySet(),

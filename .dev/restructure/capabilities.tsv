@@ -2899,3 +2899,4 @@ console-next/tests/conversation.test.ts	f377608ef3ac121833aa96fe9d451c4a9b5346cd
 console-next/src/lib/rail.ts	3e197f9f0a308d6575abc464840d483abc06847ea70556ff061262ee2cfe789f	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes
 console-next/src/types/teams.ts	e3f8943011c6dd1fdd96d25d7381b6c8f20f844b8f22db94ef6777e7ea75b1f2	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes
 console-next/tests/rail.test.ts	487046e2dfcbec3fc69545a56a03abb124f561cbdde031a243ac67c5729d4ef1	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes
+console-next/build.gradle.kts	fc1ead4ea0594eddd0b577c221f181979b29ddcc82b506f48cd5e50735fff57e	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes

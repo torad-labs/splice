@@ -66,7 +66,7 @@ val gateOfRecord = tasks.register("gateOfRecord") {
         "The gate of record: every module's check, the console's lint and tests, and every leg of " +
             "$ladderPath. Enter through `bun tools/gate run` (JDK 21, the slot, clean, no build cache)."
     dependsOn(subprojects.map { "${it.path}:check" })
-    dependsOn(":console:lint", ":console:test")
+    dependsOn(":console:lint", ":console:test", ":console-next:lint", ":console-next:test")
     dependsOn(legTasks)
     dependsOn("verifyLadder")
     dependsOn("catalogMetadataSync")

@@ -150,8 +150,8 @@ summary = "detailed"
 replay_reasoning = false
 
 # No provider or head is selected on first run. Connect a plan with `splice setup`, or add a
-# specific profile with `splice add <profile>`. Experimental vendor-OAuth examples stay opt-in
-# in splice.example.toml.
+# specific profile with `splice add <profile>`. The ChatGPT, Grok, Kimi and Muse sign-in examples
+# are in splice.example.toml.
 """
 
     public fun configPath(env: EnvReader = EnvReader(System::getenv)): Path {

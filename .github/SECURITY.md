@@ -44,7 +44,8 @@ contract, or secret leakage get priority.
 
 ## Reasoning-cache retention
 
-Within-turn `reasoning_cache` is on by default for ChatGPT, OpenAI Responses and Muse heads.
+`reasoning_cache` is on by default for ChatGPT, OpenAI Responses and Muse heads. It sends the
+model's reasoning back with every earlier tool call in the conversation until the conversation compacts.
 The daemon stores one JSONL file per conversation under `<state>/heads/<head>/reasoning/`,
 in a 0700 directory with 0600 files. Each envelope contains the provider's encrypted reasoning
 and any readable summary the provider supplied. The summary defaults to detailed where supported.
@@ -52,12 +53,13 @@ The envelope is base64-encoded JSON; base64 does not encrypt the readable summar
 
 The keyed cache survives a daemon restart and has no inactivity expiry. A conversation is removed
 when it compacts, when the provider rejects its reasoning as stale, or when the head exceeds
-8192 rounds or 64 MB across conversations, least recently used conversation first. Disabling
-`quirks = { reasoning_cache = false }` purges it on the next head assembly; removing the head
-purges its directory at daemon start. Entries are keyed by conversation. Cross-turn replay of
-earlier turns' reasoning is a separate setting and defaults off.
+8192 rounds or 64 MB across conversations, least recently used conversation first. Setting
+`quirks = { reasoning_cache = false }` deletes the stored files the next time the daemon starts
+(`splice restart`); removing the head deletes its directory at that start too. Entries are keyed by
+conversation. Sending reasoning back through Claude Code's own transcript is a separate setting,
+`replay_reasoning` in `[daemon]`, and defaults off.
 
 Code mode is separate from this cache: its records keep the model's reasoning summaries in
 plaintext on disk until 24 hours after the record's last use, checked every 5 minutes whether or not
 the head is used again. [What splice keeps on your disk](../README.md#what-splice-keeps-on-your-disk)
-lists every file splice writes, what it holds and how long it stays.
+lists the files splice writes, what each holds and how long it stays.

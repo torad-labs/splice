@@ -337,8 +337,8 @@ internal object ReleaseReadiness {
         Rule("example-password-equivalent") { repo ->
             repo.contains(EXAMPLE_TOML, "password-equivalent", ignoreCase = true)
         },
-        Rule("topology-loader-experimental") { repo ->
-            repo.contains(TOPOLOGY_LOADER, "experimental", ignoreCase = true)
+        Rule("topology-loader-not-experimental") { repo ->
+            repo.lacks(TOPOLOGY_LOADER, "experimental", ignoreCase = true)
         },
     )
 
@@ -434,7 +434,7 @@ private class Tree(val root: File) {
         // On the green side on purpose: a test that proves the line is gone names it, and stays legal.
         file(SETUP_TEST, "val gone = \"Unofficial; use at your own risk.\"\n")
         file(EXAMPLE_TOML, "# every key here is password-equivalent\n")
-        file(TOPOLOGY_LOADER, "// Experimental examples remain opt-in\n")
+        file(TOPOLOGY_LOADER, "// The sign-in examples are in splice.example.toml\n")
         packaging()
     }
 
@@ -586,8 +586,8 @@ private fun readmeMutations(): List<Mutation> = listOf(
     Mutation("the example config without password-equivalent", "example-password-equivalent", "password-equivalent") {
         file(EXAMPLE_TOML, "# keys\n")
     },
-    Mutation("TopologyLoader without experimental", "topology-loader-experimental", "TopologyLoader.kt") {
-        file(TOPOLOGY_LOADER, "// plain\n")
+    Mutation("TopologyLoader calling its examples experimental", "topology-loader-not-experimental", "still contains 'experimental'") {
+        file(TOPOLOGY_LOADER, "// Experimental examples remain opt-in\n")
     },
 ) + DISCLAIMERS.map { phrase ->
     // Upper-cased, so each phrase is proven matched whatever its case.

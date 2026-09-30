@@ -45,7 +45,7 @@ describe('a record splice answered itself', () => {
     expect(localStepsOf([])).toBe(0);
   });
   test('its page says the plan was not asked', () => {
-    expect(turnLede(local, [])).toBe('The plan was not asked. Splice answered this step itself, from a script the model had already written.');
+    expect(turnLede(local, [])).toBe('The plan was not asked. splice answered this step itself, from a script the model had already written.');
   });
 });
 
@@ -111,7 +111,7 @@ describe('a turn', () => {
   });
   test('the lede names the longest stage; a failure says how long it ran', () => {
     expect(turnLede(row(marks), stagesOf(row(marks)))).toContain('Most of it, 8.5 s, was the answer arriving.');
-    expect(turnLede(row({ ...marks, outcome: 'error:upstream-failed' }), stagesOf(row(marks)))).toBe('Plan failed after 14.2 s.');
+    expect(turnLede(row({ ...marks, outcome: 'error:upstream-failed' }), stagesOf(row(marks)))).toBe('Provider failed after 14.2 s.');
   });
   test('a list line carries no cost when the row is not priced', () => {
     const line = lineOf(row({ cost_usd: null }), (h) => h, none, () => null);

@@ -8,8 +8,8 @@ import { Row } from './Row';
 
 const Path = ({ children }: { children: string }) => <code className="path">{children}</code>;
 
-/** Whether the claude command on this machine is splice's own separate plan or wrapped through splice. Two acts with different side
- *  effects (wrap edits two files in ~/.claude), so each asks once and prints what it backed up. */
+/** Whether the claude command on this machine is splice's own separate command or wrapped through splice. Two acts with different side
+ *  effects (wrap swaps the claude link on the PATH), so each asks once and prints any backup the daemon names. */
 export function ClaudeHead() {
   const head = useClaudeHead();
   const wrap = useWrapClaudeHead();

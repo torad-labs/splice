@@ -502,7 +502,7 @@ describe('one changed splice.toml, one Needs you item', () => {
     const checks: DoctorCheck[] = [{ id: 'daemon/topology', status: 'warn', detail: 'splice.toml changed since the daemon booted', fix: 'splice restart' }];
     const out = needsIn({ topology: read(true), doctor: read(doctor(checks)) });
     expect(out).toHaveLength(1);
-    expect(out[0]).toMatchObject({ source: 'daemon', subject: 'Splice', fix: { kind: 'restart-daemon' } });
+    expect(out[0]).toMatchObject({ source: 'daemon', subject: 'splice', fix: { kind: 'restart-daemon' } });
     expect(out[0]?.finding).toContain('splice.toml');
     expect(out[0]?.finding).not.toContain('the config file');
   });

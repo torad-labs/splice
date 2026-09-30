@@ -17,7 +17,7 @@ export const GROUP_LABELS = {
   mcp: 'Shared MCP servers',
   records: 'Recording and history',
   logins: 'ChatGPT and Grok',
-  daemon: 'Splice',
+  daemon: 'splice',
 } as const;
 
 /** Every knob's name as the operator reads it. The key stays visible beside it, small, because

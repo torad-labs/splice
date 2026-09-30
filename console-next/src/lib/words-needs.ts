@@ -5,7 +5,7 @@ import type { NeedKind } from '../types/needs';
 
 export const S = {
   /** The daemon's item is named for the daemon. */
-  daemon: 'Splice',
+  daemon: 'splice',
   nearest: 'Nearest limit',
   singleLogin: 'Single login',
   signIn: 'Sign in',
@@ -50,6 +50,14 @@ export const U = {
   seat: 'seat',
   /** Before what Doctor's checks found, on the head item they are about. */
   doctor: 'Doctor:',
+} as const;
+
+/** What a head's runtime checks found, in the page's words: the daemon's counters say `2 provider / 0 local error(s)`. */
+export const DF = {
+  failedAt: (n: number, where: 'the provider' | 'inside splice'): string => `${n} ${n === 1 ? 'turn' : 'turns'} failed ${where === 'the provider' ? 'at the provider' : where}`,
+  errors: (head: string, parts: string): string => `${head}: ${parts} since the restart`,
+  recent: (head: string, failed: number, total: number, ago: string, outcome: string): string =>
+    `${head}: ${failed} of its last ${total} ${total === 1 ? 'turn' : 'turns'} failed; the latest, ${ago}, was ${outcome}`,
 } as const;
 
 /** The state word each kind of item prints. */

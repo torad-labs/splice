@@ -25,7 +25,8 @@ import type {
   UpgradePayload,
   UpgradeVerdict,
 } from '../types/doctor';
-import { checkTitle } from './words-needs';
+import { outcomeOf } from './turns-page';
+import { DF, checkTitle } from './words-needs';
 
 // ── The report's accessors ────────────────────────────────────────────────────────────────────────
 
@@ -76,7 +77,29 @@ export function logsHrefOf(fix: string | null): string | null {
 
 /** What the check found, which a page prints on its own line apart from the remedy. */
 export function checkFinding(check: DoctorCheck): string {
-  return check.detail;
+  return runtimeFinding(check) ?? check.detail;
+}
+
+const HEAD_ERRORS = /^(\d+) provider \/ (\d+) local error\(s\) since last restart$/;
+const HEAD_TURNS = /^(\d+) of last (\d+) turn\(s\) failed; last failure: (.+?) \(([^()]*)\)$/;
+
+/** A head's runtime checks in words (`runtime/head <key> errors|turns`), from the counters the daemon prints; null for any other
+ *  check or a detail of another shape, which prints as the daemon wrote it. */
+function runtimeFinding(check: DoctorCheck): string | null {
+  const id = /^runtime\/head (.+) (errors|turns)$/.exec(check.id);
+  if (id?.[1] === undefined) return null;
+  const head = id[1];
+  if (id[2] === 'errors') {
+    const counts = HEAD_ERRORS.exec(check.detail);
+    if (counts === null) return null;
+    const [provider, local] = [Number(counts[1]), Number(counts[2])];
+    const parts = [provider > 0 ? DF.failedAt(provider, 'the provider') : null, local > 0 ? DF.failedAt(local, 'inside splice') : null].filter((part) => part !== null);
+    // Two kinds read as one sentence with its verb said once.
+    return parts.length === 0 ? null : DF.errors(head, parts.length === 2 ? `${parts[0]} and ${local} inside splice` : (parts[0] ?? ''));
+  }
+  const turns = HEAD_TURNS.exec(check.detail);
+  if (turns === null) return null;
+  return DF.recent(head, Number(turns[1]), Number(turns[2]), turns[3] ?? '', outcomeOf(turns[4] ?? '?').word);
 }
 
 /**

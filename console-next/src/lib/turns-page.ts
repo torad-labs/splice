@@ -40,7 +40,7 @@ const OUTCOME_WORD: Readonly<Record<string, string>> = {
   'error:all-accounts-exhausted': 'Out of quota',
   'error:budget-blocked': 'Over budget',
   'error:auth-missing': 'Signed out',
-  'error:upstream-failed': 'Plan failed',
+  'error:upstream-failed': 'Provider failed',
   'error:upstream-frame-too-large': 'Answer too large',
 };
 

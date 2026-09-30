@@ -12,7 +12,7 @@ export const TOOL_REASON = {
   ownFolder: 'It runs in a folder of its own, so one shared copy cannot serve every session.',
   ownEnvironment: 'It reads a setting from each session’s own environment, so one shared copy cannot serve every session.',
   tiedTo: (place: string): string => `It is tied to one project’s folder (${place}), so one shared copy cannot serve every session.`,
-  malformed: 'Its entry in the client’s settings is not a valid tool server, so splice cannot run it.',
+  malformed: 'Its entry in Claude Code’s settings is not a valid tool server, so splice cannot run it.',
 } as const;
 
 /** The planner's reason in words. The reasons are the closed list in McpSharing.kt; one it adds later prints as it was sent. */

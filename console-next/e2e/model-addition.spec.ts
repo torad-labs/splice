@@ -28,7 +28,7 @@ test('Add models preserves offered upstream ids and prints the persisted restart
   expect((await write).ok()).toBe(true);
   await expect(dialog).toContainText('Added ' + ids.join(', ') + '.');
   await expect(dialog).toContainText('Written to ' + offers.path + '.');
-  await expect(dialog.getByRole('status')).toHaveText('Splice is restarting; the plan appears once it is back.');
+  await expect(dialog.getByRole('status')).toHaveText('splice is restarting; the command appears once it is back.');
   expect(faults.pageErrors).toEqual([]);
   await page.unrouteAll({ behavior: 'wait' });
 });
@@ -59,7 +59,7 @@ test('the real catalogue offers only models outside the declared roster and writ
   await expect.poll(() => writes).toEqual([{ head: STACK.keyHead, models: [picked] }]);
   await expect(dialog).toContainText('Added ' + picked + '.');
   await expect(dialog).toContainText('Written to ' + offers.path + '.');
-  await expect(dialog.getByRole('status')).toHaveText('Splice is restarting; the plan appears once it is back.');
+  await expect(dialog.getByRole('status')).toHaveText('splice is restarting; the command appears once it is back.');
   expect(faults.pageErrors).toEqual([]);
   await page.unrouteAll({ behavior: 'wait' });
 });
@@ -79,7 +79,7 @@ test('each plan keeps its actual pinned identity and displays its separately dec
     expect(pinned?.context_window).toBe(head === STACK.oauthHead ? STACK.headWindow : 400000);
     await expect(row).toContainText((pinned?.context_window ?? 0) / 1000 + 'k tokens');
     if (head === STACK.oauthHead) {
-      const windows = page.getByRole('region', { name: 'Windows this plan declares', exact: true });
+      const windows = page.getByRole('region', { name: 'Windows this command declares', exact: true });
       await expect(windows).toContainText('Plan window');
       await expect(windows).toContainText(STACK.headWindow / 1000 + 'k tokens');
       await expect(row).toContainText('head setting');

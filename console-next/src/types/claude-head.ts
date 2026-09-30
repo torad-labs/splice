@@ -3,7 +3,7 @@
 //   POST /api/claude-head/wrap     ClaudeHeadActionResult
 //   POST /api/claude-head/unwrap   ClaudeHeadActionResult
 // Separate is a splice-owned head with its own config dir; wrapped runs the operator's own `claude` command through splice and
-// edits two files in `~/.claude`. The daemon reads the link every time, so a shim removed by hand reads as separate.
+// writes nothing into `~/.claude` (V4-445): it swaps one link. The daemon reads the link every time, so a shim removed by hand reads as separate.
 export type ClaudeHeadMode = 'separate' | 'wrapped';
 
 /** The stored Claude logins: what stands in for account rows on a head that signs in by the client. */

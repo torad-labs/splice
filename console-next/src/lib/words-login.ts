@@ -39,5 +39,5 @@ export const H = {
   renamed: 'Account renamed.',
   removed: 'Account removed.',
   unsupported: 'This splice version cannot do that.',
-  refused: 'Splice refused it.',
+  refused: 'splice refused it.',
 } as const;

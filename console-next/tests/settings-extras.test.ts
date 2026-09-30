@@ -54,7 +54,7 @@ describe('the upgrade rows', () => {
   test('an unchecked release never reads as nothing newer', () => {
     expect(versionLede(status())).toBe('Running 0.3.2. The newest release is 0.4.0.');
     expect(versionLede(status({ latest: null }))).toBe('Running 0.3.2. There is no newer release.');
-    expect(versionLede(status({ latest: null, latest_basis: 'unavailable' }))).toBe('Running 0.3.2. Splice has not checked for a newer release.');
+    expect(versionLede(status({ latest: null, latest_basis: 'unavailable' }))).toBe('Running 0.3.2. splice has not checked for a newer release.');
   });
   test('a run reads as the command a person would type', () => {
     const run: UpgradeRun = { id: 'r', args: ['upgrade', '--rollback'], state: 'running', started_at_epoch_millis: 1, exit_code: null, output: [] };

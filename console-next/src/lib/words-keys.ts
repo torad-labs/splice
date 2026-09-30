@@ -6,7 +6,7 @@ export const KW = {
   replace: 'Replace key',
   remove: 'Remove key',
   removeAsk: 'Remove this key?',
-  removeWhy: 'Splice forgets the key it stored. A head that has no other key to read stops working.',
+  removeWhy: 'splice forgets the key it stored. A head that has no other key to read stops working.',
   removeAct: (name: string): string => `Remove ${name}`,
   ask: (name: string): string => `The key for ${name}`,
   why: 'It is written to splice’s key store and is never shown again.',

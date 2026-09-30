@@ -18,7 +18,7 @@ test('a Select with more options than the window holds lets the last one be clic
   });
   const faults = await open(page, 'settings/health');
   const health = page.getByRole('region', { name: 'Health', exact: true });
-  const trigger = health.getByRole('button', { name: 'Plan', exact: true });
+  const trigger = health.getByRole('button', { name: 'Command', exact: true });
   await trigger.evaluate((element) => element.scrollIntoView({ block: 'end' }));
   await trigger.click();
   const last = 'Synthetic plan ' + String(EXTRA - 1).padStart(2, '0');

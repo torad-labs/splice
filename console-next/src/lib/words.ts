@@ -6,7 +6,7 @@ export const W = {
   /** Printed when the pool excludes an account and the daemon sent no reason of its own. */
   excluded: 'Excluded by the pool, with no reason given.',
   /** What a read says when the daemon did not answer at all. */
-  notAnswering: 'Splice is not answering.',
+  notAnswering: 'splice is not answering.',
   retry: 'Try again',
   searchKey: '⌘K',
 } as const;

@@ -1,12 +1,12 @@
 // What the configuration-file editor says. Copy lives in modules like this one, never inline in a component.
 export const CF = {
   title: 'Configuration file',
-  why: (path: string): string => `${path}. Splice backs it up before each write and writes it through its own writer. Changes apply after splice restarts.`,
+  why: (path: string): string => `${path}. splice backs it up before each write and writes it through its own writer. Changes apply after splice restarts.`,
   open: 'Open the file',
   close: 'Close the file',
   topLevel: 'Top level',
   groups: {
-    daemon: 'Splice',
+    daemon: 'splice',
     heads: 'Commands',
     providers: 'Providers',
     defaults: 'Defaults for every command',
@@ -24,7 +24,7 @@ export const CF = {
   written: 'Written. It applies after splice restarts.',
   backup: 'The old file is kept at',
   failed: 'That was not written:',
-  problems: 'Splice’s own check found:',
+  problems: 'splice’s own check found:',
   raw: 'The file as it will read',
   rawWhy: 'A view of the document as parsed. Comments and layout from your own file are kept on disk, not shown here.',
   unavailable: 'This splice cannot edit its configuration file.',

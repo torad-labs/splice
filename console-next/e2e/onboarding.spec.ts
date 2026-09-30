@@ -114,7 +114,7 @@ test('a first plan follows a late sign-in URL while hidden, saves once and tries
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   await page.goto(env('CONSOLE_E2E_BASE') + '/#/settings/health');
   const health = page.getByRole('region', { name: 'Health', exact: true });
-  await health.getByRole('button', { name: 'Plan', exact: true }).click();
+  await health.getByRole('button', { name: 'Command', exact: true }).click();
   await page.getByRole('menuitemradio', { name: connected.label, exact: true }).click();
   await health.getByLabel('Prompt', { exact: true }).fill('Say hello and name your model.');
   await health.getByRole('button', { name: 'Send', exact: true }).click();
@@ -138,7 +138,7 @@ test('an isolated key backend prints every refused verification check and discar
   await page.getByRole('button', { name: 'Add a command', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: /^api-key / }).click();
-  await dialog.getByRole('textbox', { name: 'Plan name', exact: true }).fill('synthetic-refused-plan');
+  await dialog.getByRole('textbox', { name: 'Command name', exact: true }).fill('synthetic-refused-plan');
   await dialog.getByRole('textbox', { name: 'Provider address', exact: true }).fill('http://127.0.0.1:9/v1');
   await dialog.getByRole('textbox', { name: 'Model id', exact: true }).fill('synthetic/refused-model');
   const opening = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/add' && response.request().method() === 'POST');

@@ -98,7 +98,7 @@ describe('the Tools switches', () => {
     expect(said("'--root repo' names a location relative to the client (project-scoped)")).toBe('It is tied to one project’s folder (--root repo), so one shared copy cannot serve every session.');
     expect(said("names the directory '/srv/a' (project-scoped)")).toBe('It is tied to one project’s folder (/srv/a), so one shared copy cannot serve every session.');
     for (const malformed of ['entry is not an object', 'malformed transport type', 'malformed args (expected only strings)', 'malformed env (expected string values)']) {
-      expect(said(malformed)).toBe('Its entry in the client’s settings is not a valid tool server, so splice cannot run it.');
+      expect(said(malformed)).toBe('Its entry in Claude Code’s settings is not a valid tool server, so splice cannot run it.');
     }
   });
 });

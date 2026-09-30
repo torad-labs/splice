@@ -15,7 +15,7 @@ export const K = {
   labels: { name: 'Activity labels', holds: 'File names, commands and search patterns from tool activity. Today and yesterday; older days age out on the next sweep.', plansEvery: 'Every command', plansNone: 'No command', plansSome: (kept: number, total: number): string => `${kept} of ${total} commands`, choose: 'Choose commands', chooseLabel: (plan: string): string => `Keep activity labels for ${plan}` },
   trace: { name: 'Request capture', holds: 'Full requests and answers for commands with capture on. Whole UTC days, as Request history sets them. Turn capture on from a turn’s page.', plan: (label: string): string => `Capture on ${label}`, none: 'No command has a trace directory.' },
   wire: { name: 'Sent bodies', holds: 'The last few request bodies each command sent, kept in memory only; a restart clears them.' },
-  transcripts: { name: 'Transcript view', holds: 'Claude Code’s own conversation files. Splice reads them and never deletes them; Claude Code decides when they go.', switchWhy: 'Applies at once.' },
+  transcripts: { name: 'Transcript view', holds: 'Claude Code’s own conversation files. splice reads them and never deletes them; Claude Code decides when they go.', switchWhy: 'Applies at once.' },
   turns: {
     name: 'Turn statistics',
     holds: 'Finished turns: model, session, outcome, timing, tokens and cost. Current files never expire on their own.',

@@ -50,7 +50,7 @@ test('plan instruction modes preview isolated writes and preserve an unrelated u
   const writes = await topologyWrites(page);
   await open(page, 'settings/conversation');
   const conversation = page.getByRole('region', { name: 'Conversation', exact: true });
-  await pick(page, conversation, 'Plan', STACK.oauthHead);
+  await pick(page, conversation, 'Command', STACK.oauthHead);
   await page.getByRole('button', { name: 'Open the file', exact: true }).click();
   const group = page.locator('details.cf-group').filter({ has: page.locator('summary').filter({ hasText: /^Compaction/ }) });
   await group.locator('summary').click();
@@ -62,7 +62,7 @@ test('plan instruction modes preview isolated writes and preserve an unrelated u
   const save = conversation.getByRole('button', { name: 'Save', exact: true });
   await expect(save).toBeDisabled();
   await conversation.getByRole('textbox', { name: 'Instructions', exact: true }).fill('Keep answers brief.');
-  await expect(preview).toContainText('Splice adds this after Claude Code’s instructions.');
+  await expect(preview).toContainText('splice adds this after Claude Code’s own instructions.');
   await expect(preview).toContainText('Keep answers brief.');
   await save.click();
   await expect(conversation.getByRole('status')).toHaveText('Saved. It applies after splice restarts.');
@@ -70,7 +70,7 @@ test('plan instruction modes preview isolated writes and preserve an unrelated u
   const savedHead = () => (writes.at(-1)?.heads as Record<string, Record<string, unknown>>)[STACK.oauthHead];
   expect(savedHead()).toMatchObject({ system_prompt: 'Keep answers brief.', system_prompt_mode: 'append' });
   await conversation.getByRole('button', { name: 'Replace', exact: true }).click();
-  await expect(preview).toContainText('This replaces Claude Code’s instructions.');
+  await expect(preview).toContainText('This replaces Claude Code’s own instructions.');
   await expect(preview).toContainText('That takes away Claude Code’s operating instructions');
   await save.click();
   await expect(conversation.getByRole('status')).toHaveText('Saved. It applies after splice restarts.');
@@ -109,7 +109,7 @@ test('a finished instruction save preserves a newer mode edit made while the wri
   try {
     const faults = await open(page, 'settings/conversation');
     const conversation = page.getByRole('region', { name: 'Conversation', exact: true });
-    await pick(page, conversation, 'Plan', STACK.oauthHead);
+    await pick(page, conversation, 'Command', STACK.oauthHead);
     await conversation.getByRole('button', { name: 'Add instructions', exact: true }).click();
     await conversation.getByRole('textbox', { name: 'Instructions', exact: true }).fill('Synthetic pending instructions.');
     const saving = page.waitForRequest((request) => new URL(request.url()).pathname === '/api/topology' && request.method() === 'PUT');
@@ -121,7 +121,7 @@ test('a finished instruction save preserves a newer mode edit made while the wri
     await expect(conversation.getByRole('button', { name: 'Replace', exact: true })).toHaveAttribute('aria-pressed', 'true');
     const save = conversation.getByRole('button', { name: 'Save', exact: true });
     await expect(save).toBeEnabled();
-    await expect(conversation.getByRole('region', { name: 'What splice will use', exact: true })).toContainText('This replaces Claude Code’s instructions.');
+    await expect(conversation.getByRole('region', { name: 'What splice will use', exact: true })).toContainText('This replaces Claude Code’s own instructions.');
     await save.click();
     await expect(conversation.getByRole('status')).toHaveText('Saved. It applies after splice restarts.');
     await expect.poll(() => writes.length).toBe(2);
@@ -147,7 +147,7 @@ test('a file-backed replacement previews bytes and length before Save without wr
   });
   await open(page, 'settings/conversation');
   const conversation = page.getByRole('region', { name: 'Conversation', exact: true });
-  await pick(page, conversation, 'Plan', STACK.oauthHead);
+  await pick(page, conversation, 'Command', STACK.oauthHead);
   await conversation.getByRole('button', { name: 'Add instructions', exact: true }).click();
   await conversation.getByRole('button', { name: 'Replace', exact: true }).click();
   await conversation.getByRole('button', { name: 'In a file', exact: true }).click();
@@ -170,7 +170,7 @@ test('a refused instruction file disables Save and the daemon refuses a direct w
   });
   await open(page, 'settings/conversation');
   const conversation = page.getByRole('region', { name: 'Conversation', exact: true });
-  await pick(page, conversation, 'Plan', STACK.oauthHead);
+  await pick(page, conversation, 'Command', STACK.oauthHead);
   await conversation.getByRole('button', { name: 'Add instructions', exact: true }).click();
   await conversation.getByRole('button', { name: 'In a file', exact: true }).click();
   await conversation.getByRole('textbox', { name: 'File path', exact: true }).fill('synthetic-missing-instructions.md');
@@ -197,7 +197,7 @@ test('a refused instruction file disables Save and the daemon refuses a direct w
 test('Settings playground sends one synthetic prompt through the isolated loopback head and shows both sides', async ({ page }) => {
   const faults = await open(page, 'settings/health');
   const section = page.getByRole('region', { name: 'Health', exact: true });
-  await pick(page, section, 'Plan', STACK.oauthHead);
+  await pick(page, section, 'Command', STACK.oauthHead);
   await section.getByRole('textbox', { name: 'Prompt', exact: true }).fill('one synthetic prompt from the console e2e');
   await section.getByRole('button', { name: 'Send', exact: true }).click();
   await expect(section.getByRole('region', { name: 'Answered with 200', exact: true })).toContainText('console e2e answer', { timeout: 30_000 });

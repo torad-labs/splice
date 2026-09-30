@@ -73,7 +73,7 @@ describe('the upgrade rows', () => {
     expect(html).toContain('Reload this page');
   });
   test('a run read while splice restarts says it is restarting', () => {
-    expect(render(<Upgrade />, (client) => { client.setQueryData(['upgrade'], status); client.setQueryData(['upgrade-run'], { run: { ...run, state: 'running', exit_code: null }, away: true }); })).toContain('Splice is restarting');
+    expect(render(<Upgrade />, (client) => { client.setQueryData(['upgrade'], status); client.setQueryData(['upgrade-run'], { run: { ...run, state: 'running', exit_code: null }, away: true }); })).toContain('splice is restarting');
   });
 });
 

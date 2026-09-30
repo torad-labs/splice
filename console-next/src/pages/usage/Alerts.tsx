@@ -5,9 +5,10 @@ import { useAlerts, usePutAlerts, useTestAlert } from '../../api/usage';
 import { canTest } from '../../lib/alerts';
 import { U } from '../../lib/words-usage';
 import type { AlertSettings } from '../../types/alerts';
-import { Button, Switch } from '../../ui';
+import { Button } from '../../ui';
 
-function Settings({ settings }: { settings: AlertSettings }) {
+/** Only the webhook is here: the daemon delivers nothing to a desktop and this console shows no notification (AlertDelivery.kt's header), so a desktop switch would promise what nothing does. */
+export function Settings({ settings }: { settings: AlertSettings }) {
   const put = usePutAlerts();
   const test = useTestAlert();
   const [url, setUrl] = useState(settings.webhook_url ?? '');
@@ -15,11 +16,6 @@ function Settings({ settings }: { settings: AlertSettings }) {
   const saved = (settings.webhook_url ?? '') === url.trim();
   return (
     <ul className="usrows">
-      <li className="usrow">
-        <b>{U.alertDesktop}</b>
-        <span>{U.alertDesktopWhy}</span>
-        <Switch checked={settings.desktop} label={U.alertDesktop} disabled={put.isPending} onChange={(desktop) => put.mutate({ ...settings, desktop })} />
-      </li>
       <li className="usrow">
         <b>{U.alertWebhook}</b>
         <div>

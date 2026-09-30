@@ -58,7 +58,7 @@ export const AD = {
   discard: 'Discard',
   saved: (plan: string): string => `${plan} saved`,
   launch: 'Type this command in your terminal after the restart.',
-  draining: 'Splice is restarting; the command appears once it is back.',
+  draining: 'splice is restarting; the command appears once it is back.',
   waiting: (count: number): string => `The restart waits for ${count} ${count === 1 ? 'compaction' : 'compactions'} to finish.`,
   restartManually: 'Run splice restart, then come back to the command.',
   written: 'Written to',

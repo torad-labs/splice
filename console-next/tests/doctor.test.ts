@@ -28,6 +28,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 import {
+  checkFinding,
   checkFix,
   checkSection,
   collapseChecks,
@@ -151,6 +152,17 @@ describe('every failing check carries its fix', () => {
       ['System prompt (2)', 2], ['Command file', 1],
     ]);
     expect(new Set(rows.map((row) => row.key)).size).toBe(rows.length);
+  });
+
+  test('a head\'s error and turn counts are said in words, not in the daemon\'s counters', () => {
+    const said = (id: string, detail: string) => checkFinding(check(id, 'warn', detail));
+    expect(said('runtime/head claudex errors', '0 provider / 2 local error(s) since last restart')).toBe('claudex: 2 turns failed inside splice since the restart');
+    expect(said('runtime/head claudex errors', '1 provider / 0 local error(s) since last restart')).toBe('claudex: 1 turn failed at the provider since the restart');
+    expect(said('runtime/head claudex errors', '3 provider / 1 local error(s) since last restart')).toBe('claudex: 3 turns failed at the provider and 1 inside splice since the restart');
+    expect(said('runtime/head claudex turns', '2 of last 5 turn(s) failed; last failure: 4m ago (error:upstream-failed)')).toBe('claudex: 2 of its last 5 turns failed; the latest, 4m ago, was Provider failed');
+    expect(said('runtime/head claudex turns', '1 of last 1 turn(s) failed; last failure: 9s ago (?)')).toBe('claudex: 1 of its last 1 turn failed; the latest, 9s ago, was Unknown');
+    expect(said('runtime/head claudex turns', 'perf file could not be read: denied')).toBe('perf file could not be read: denied');
+    expect(said('daemon/turn path', 'WEDGED on claudex')).toBe('WEDGED on claudex');
   });
 
   test('a check is titled for what it is about, never by the daemon\'s id', () => {

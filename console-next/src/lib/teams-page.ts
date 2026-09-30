@@ -6,7 +6,7 @@
 // removeSeat, which edits a draft the operator is still writing.
 import { M } from './words-teams';
 import type { SessionRow } from '../types/sessions';
-import type { TeamDay, TeamRow, TeamSlot, TeamWrite } from '../types/teams';
+import type { TeamChatPayload, TeamDay, TeamRow, TeamSlot, TeamWrite } from '../types/teams';
 
 const C = M.compose;
 
@@ -122,6 +122,14 @@ export function dayWords(now: number, back: number): string {
   if (back === 0) return M.today;
   if (back === 1) return 'Yesterday';
   return new Date(dayOf(now, back).from).toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
+/** Whether `day` is the edge of what the daemon keeps: its chat is not kept at all, or the oldest message kept is on or after the day's
+ *  start, so the day before it could only be expired. The daemon says so on the day it is asked for, so going earlier stops there. */
+export function atRetentionEdge(chat: TeamChatPayload | undefined, day: TeamDay): boolean {
+  if (chat === undefined) return false;
+  if (chat.state === 'not_kept') return true;
+  return chat.oldest_kept_epoch_millis !== undefined && chat.oldest_kept_epoch_millis >= day.from;
 }
 
 export function teamLede(team: TeamRow, working: number): string {

@@ -8,7 +8,7 @@ import { ABSENT, clockTime, fmtUsd } from '../../lib/format';
 import { colourFromHeads } from '../../lib/turns-page';
 import { stateOf, stateTone, stateWord } from '../../lib/sessions';
 import { repoLabel } from '../../lib/projects';
-import { dayOf, dayWords, seatsOf, sessionIn, teamLede } from '../../lib/teams-page';
+import { atRetentionEdge, dayOf, dayWords, seatsOf, sessionIn, teamLede } from '../../lib/teams-page';
 import { M } from '../../lib/words-teams';
 import type { TeamSlotTally } from '../../types/teams';
 import { Button, Empty, Fault, PageHead, State } from '../../ui';
@@ -114,7 +114,7 @@ export function TeamPage() {
         <h2 id="team-talk">{M.talkTitle} {dayWords(now, back).toLowerCase()}</h2>
         <p className="why">{M.talkWhy}</p>
         <div className="day" role="group" aria-label={M.dayLabel}>
-          <Button small kind="quiet" onClick={() => setBack(back + 1)}>{M.earlier}</Button>
+          <Button small kind="quiet" disabled={atRetentionEdge(chat.data, day)} onClick={() => setBack(back + 1)}>{M.earlier}</Button>
           <span>{dayWords(now, back)}</span>
           {back === 0 ? null : <Button small kind="quiet" onClick={() => setBack(back - 1)}>{M.later}</Button>}
         </div>

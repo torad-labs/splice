@@ -1,7 +1,7 @@
 // The team composer's rules and the board's reads: what stops a save, what a save sends, and the day a board shows.
 import { describe, expect, test } from 'vitest';
-import { addSeat, blankDraft, dayOf, dayWords, draftOf, editSeat, featuresOf, keyFor, removeSeat, seatsOf, setLead, teamLede, validateDraft, writeOf } from '../src/lib/teams-page';
-import type { TeamRow } from '../src/types/teams';
+import { addSeat, atRetentionEdge, blankDraft, dayOf, dayWords, draftOf, editSeat, featuresOf, keyFor, removeSeat, seatsOf, setLead, teamLede, validateDraft, writeOf } from '../src/lib/teams-page';
+import type { TeamChatPayload, TeamRow } from '../src/types/teams';
 
 const team = (over: Partial<TeamRow> = {}): TeamRow => ({
   id: 't1', name: 'Rate limiter', goal: 'Add a rate limiter to the API.', features: ['per-key limits'], repo: '/home/a/tally', archived: false,
@@ -77,5 +77,18 @@ describe('the board', () => {
     expect(dayOf(now, 1).to).toBe(today.from);
     expect(dayWords(now, 0)).toBe('Today');
     expect(dayWords(now, 1)).toBe('Yesterday');
+  });
+  test('Earlier stops at the edge of what is kept: a day whose chat is not kept, or that holds the oldest kept message', () => {
+    const now = new Date(2026, 8, 29, 16, 30).getTime();
+    const chat = (over: Partial<TeamChatPayload>): TeamChatPayload => ({ team_id: 't', day_start_epoch_millis: 0, packet_note: '', messages: [], ...over });
+    const yesterday = dayOf(now, 1);
+    const older = dayOf(now, 2);
+    expect(atRetentionEdge(undefined, yesterday)).toBe(false);
+    expect(atRetentionEdge(chat({}), yesterday)).toBe(false);
+    expect(atRetentionEdge(chat({ state: 'on' }), yesterday)).toBe(false);
+    expect(atRetentionEdge(chat({ state: 'not_kept', reason: 'Message history past activityRetentionDays is not kept.', oldest_kept_epoch_millis: yesterday.from }), older)).toBe(true);
+    expect(atRetentionEdge(chat({ state: 'not_kept' }), older)).toBe(true);
+    expect(atRetentionEdge(chat({ state: 'partially_kept', oldest_kept_epoch_millis: yesterday.from + 3_600_000 }), yesterday)).toBe(true);
+    expect(atRetentionEdge(chat({ oldest_kept_epoch_millis: older.from }), yesterday)).toBe(false);
   });
 });

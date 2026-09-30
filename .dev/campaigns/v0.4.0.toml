@@ -10118,6 +10118,7 @@ claimed_at = "2026-09-29T23:49:42.137Z"
 # [2026-09-29] CLAIM: owner=claude-console at=2026-09-29T23:49:42Z
 # [2026-09-29] Sep 29 CT: superseded by V4-444. The operator rejected the whole console on sight at ~7:00 PM CT, and the Sessions lanes this row polishes are replaced by the redesign.
 # [2026-09-30] Closed by the redesign: claude-console stopped with a CSS fix and an e2e uncommitted (lanes.css, console/e2e/v4442/); the old frontend is replaced under V4-444.
+# [2026-09-30] Sep 29 CT orchestrator: parked by name. The uncommitted fix made V4-437's lane-card test fail in a full journeys run (cut 21px, claude-console), so it cannot sit in the shared tree. Recorded here, then lanes.css restores to HEAD and console/e2e/v4442/lane-labels.spec.ts (113 lines, labels against cards at 1440 and 1024, scrolled or not) is removed. The fix was: .myx-lane-head drops min-width 0 and gains flex-wrap wrap, max-width calc(14 * var(--u)), overflow-wrap anywhere, and the narrow-screen rule adds max-width none. The redesign (V4-444) replaces the lanes.
 
 [[items]]
 id = "V4-443"

@@ -20,7 +20,7 @@ export const css = `
 .select { position: relative; display: inline-flex; align-items: center; justify-content: space-between; gap: 20px; min-width: 200px; height: 42px; padding: 0 14px; background: var(--obj); border: 3px solid var(--edge); border-radius: var(--r1); font: 600 14px var(--mono); color: var(--ink); }
 [data-theme='night'] .select { border-color: var(--hair); background: var(--obj-hi); }
 .select.open { border-color: var(--charge); }
-.menu { position: absolute; bottom: 48px; right: 0; z-index: 3; width: 290px; padding: 6px; background: var(--obj); border: 3px solid var(--edge); border-radius: 10px; box-shadow: 6px 7px 0 var(--tan); text-align: left; }
+.menu { position: absolute; bottom: -18px; right: calc(100% + 16px); z-index: 3; width: 290px; padding: 6px; background: var(--obj); border: 3px solid var(--edge); border-radius: 10px; box-shadow: 6px 7px 0 var(--tan); text-align: left; }
 [data-theme='night'] .menu { border-color: var(--hair); box-shadow: 6px 7px 0 #0c0912; background: var(--obj-hi); }
 .menu div { padding: 10px 12px; border-radius: 6px; font: 500 14px var(--mono); color: var(--ink); }
 .menu div small { display: block; margin-top: 2px; font: 400 14px var(--read); color: var(--mute); }
@@ -51,39 +51,48 @@ const row = (title, text, ctl, extra = '') => `<div class="row"><div><h3>${title
 const seg = (opts, on) => `<span class="seg" role="group">${opts.map((o, i) => `<button aria-pressed="${i === on}">${o}</button>`).join('')}</span>`;
 const sw = (on, c) => `<span class="switch" role="switch" aria-checked="${on}" style="--sw:var(--${c ?? 'ok'})"></span>`;
 
+const key = (name) => `<span class="key">${icon.key}<code>${name}</code></span>`;
+const chip = (t, x = true) => `<span class="folder">${icon.folder}${t}${x ? ' <b style="color:var(--mute)">×</b>' : ''}</span>`;
+const slider = (min, max, val, unit) => {
+  const at = ((val - min) / (max - min)) * 100;
+  return `<div class="slider"><div class="track"><i style="width:${at}%"></i><u style="left:${at}%"></u></div><small style="position:relative;height:16px"><span style="position:absolute;left:0">${min}${unit}</span><b class="mono" style="color:var(--ink);position:absolute;left:${at}%;transform:translateX(-50%)">${val}${unit}</b><span style="position:absolute;right:0">${max}${unit}</span></small></div>`;
+};
+
+// Every control below maps to a real knob (GET/PATCH /api/config, `[daemon]`/`[defaults]` in splice.toml), a
+// route, or the browser; docs/design/comps/DIRECTION.md lists each with its backing.
 export function body() {
-  return `<header class="page-head"><div><h1>Settings</h1><p class="lede">How splice looks, what it remembers, and how it behaves. Changes apply as you make them.</p></div></header>
-<div class="split"><nav class="sub" aria-label="Settings sections"><a href="#" aria-current="true">General</a><a href="#">Conversation</a><a href="#">Tools</a><a href="#">Storage</a><a href="#">Health</a></nav>
+  return `<header class="page-head"><div><h1>Settings</h1><p class="lede">How splice looks, what it remembers, and how it behaves. Changes apply as you make them; a few wait for a restart and say so.</p></div></header>
+<div class="split"><nav class="sub" aria-label="Settings sections"><a href="#" aria-current="true">General</a><a href="#">Conversation</a><a href="#">Tools</a><a href="#">Storage</a><a href="#">Health</a><a href="#">Advanced</a></nav>
 <div class="sheets">
 <section class="sheet"><h2>General</h2><div class="win flat set">
 ${row('Appearance', 'Follows your computer unless you choose.', seg(['Day', 'Night', 'Match my computer'], 2))}
-${row('Start splice when I sign in', 'The daemon comes up on its own, so your plans are ready before you open a terminal.', sw(true))}
 ${row('Open the console at', 'This address only opens on this computer.', '<span class="folder">127.0.0.1:3096</span><button class="btn sm">Copy</button>')}
+${row('Warn me when a plan is this full', 'Splice flags a plan window once it passes this share of its limit.', slider(50, 100, 80, '%'), key('usageWarnPct') + '<span class="tip-restart">' + icon.clock + 'Applies after a restart · <b>Restart now</b></span>')}
+${row('Detailed log', 'Writes extra lines to the splice log. Turn it on while chasing a problem.', sw(false, 'claude'), key('debug'))}
 </div></section>
 
 <section class="sheet"><h2>Conversation</h2><div class="win flat set">
-${row('Keep long chats going', 'When a chat outgrows what the model can hold, splice summarizes its oldest part and carries on.', sw(true, 'claude'))}
-${row('Summarize at', 'How full the model’s memory gets before the oldest part is summarized.', '<div class="slider"><div class="track"><i></i><u></u></div><small style="position:relative;height:16px"><span style="position:absolute;left:0">50%</span><b class="mono" style="color:var(--ink);position:absolute;left:66.7%;transform:translateX(-50%)">80%</b><span style="position:absolute;right:0">95%</span></small></div>',
-  '<span class="key">' + icon.key + '<code>compaction.threshold</code></span>')}
-${row('Show the model’s reasoning', 'Some models think before they answer. Choose how much of that you see in a session.', '<span class="select open">Summary ' + icon.chev + '<div class="menu"><div>Hidden<small>Only the answer</small></div><div class="on">Summary<small>A short account of the thinking</small></div><div>Full<small>Everything the model wrote, as it wrote it</small></div></div></span>')}
-${row('Turns at once, per plan', 'More turns at once finish sooner but use the plan’s limit faster.', '<span class="step"><button aria-label="Fewer">−</button><b>4</b><button aria-label="More">+</button></span>')}
+${row('How hard the model thinks', 'Used when Claude Code sets nothing of its own; each model keeps its default until you pick.', seg(['Model default', 'Low', 'Medium', 'High'], 0), key('effort'))}
+${row('Turns at once, per plan', 'More turns at once finish sooner but use the plan’s limit faster. Zero means no limit.', '<span class="step"><button aria-label="Fewer">−</button><b>12</b><button aria-label="More">+</button></span>', key('maxInflight'))}
+${row('Show the model’s reasoning', 'Some models think before they answer. Choose how Claude Code shows that.', '<span class="select open">In the reply ' + icon.chev + '<div class="menu"><div class="on">In the reply<small>As plain text above the answer</small></div><div>As thinking<small>In Claude Code’s own thinking blocks</small></div><div>Hidden<small>Only the answer</small></div></div></span>', key('showReasoning'))}
 </div></section>
 
 <section class="sheet"><h2>Storage</h2><div class="win flat set">
-${row('Keep session transcripts for', 'Older ones are removed from this computer; nothing is sent anywhere.', '<span class="select">30 days ' + icon.chev + '</span>')}
-${row('Where splice keeps its files', 'Sign-ins, summaries and the turn record live in one folder you own.', '<span class="folder">' + icon.folder + 'Splice data</span><button class="btn sm">Change…</button>')}
-${row('OpenRouter key', 'Used by the OpenRouter plan. It is stored in your system keychain, never shown again.', '<span class="secret"><span class="mask">••••••••••••</span><button class="btn sm">Replace</button></span><span class="saved">' + icon.check + 'Saved</span>')}
+${row('Keep message history for', 'Splice’s record of which session messaged which. Older days are removed from this computer; nothing is sent anywhere.', '<span class="select">90 days ' + icon.chev + '</span>', key('activityRetentionDays'))}
+${row('Keep request traces for', 'The turn-by-turn record behind Turns. Older days are deleted.', '<span class="select">7 days ' + icon.chev + '</span>', key('traceRetentionDays'))}
+${row('Show git branches in', 'Folders beyond your home folder and /tmp where a session’s branch is read.', '<span style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end">' + chip('work') + chip('clients') + '<button class="btn sm">' + icon.plus + 'Add a folder</button></span>', key('statuslineGitRoots'))}
+${row('OpenRouter key', 'Used by the OpenRouter plan. Splice keeps it in its key store and never shows it again.', '<span class="secret"><span class="mask">••••••••••••</span><button class="btn sm">Replace</button></span><span class="saved">' + icon.check + 'Saved</span>', key('OPENROUTER_API_KEY'))}
 </div></section>
 
 <section class="sheet"><h2>Tools</h2><div class="win flat set">
-${row('Connect tools to every session', 'Servers splice hands to each session so any model can call them.', sw(true, 'claude'))}
+${row('Share tools across sessions', 'One process per tool server, handed to every session so any model can call it.', sw(true, 'claude'), key('daemon.mcp_hosting'))}
 ${row('filesystem', 'Reads and writes files in the folders you allow. Started when a session first calls it.', '<span class="state work"><i></i>Running</span>' + sw(true, 'claude'))}
-${row('browser', 'Drives a web page for a session. Off until you turn it on.', '<span class="state idle"><i></i>Off</span>' + sw(false, 'claude'))}
+${row('browser', 'Drives a web page for a session. Left out of sharing until you turn it on.', '<span class="state idle"><i></i>Not shared</span>' + sw(false, 'claude'), key('daemon.mcp_hosting_exclude'))}
 </div></section>
 
 <section class="sheet"><h2>Health</h2><div class="win flat set">
-${row('Everything splice depends on', 'Sign-ins, ports, folders and the daemon itself, checked a minute ago.', '<span class="state work"><i></i>All good</span><button class="btn sm">Check again</button>')}
-${row('One thing to fix', 'The local runtime for claude-bonsai is not answering on port 8099.', '<span class="state stuck"><i></i>Needs you</span><button class="btn go sm">Start the runtime</button>')}
+${row('Everything splice depends on', 'Sign-ins, ports, folders and the daemon itself, checked a minute ago.', '<span class="state work"><i></i>Mostly good</span><button class="btn sm">Check again</button>')}
+${row('Four commands are not linked', 'claude-grok, claude-kimi, claude-muse and claudex are not on your PATH yet, so a terminal cannot start them.', '<span class="state stuck"><i></i>Needs you</span><button class="btn go sm">Link them</button>')}
 </div></section>
 </div></div>`;
 }

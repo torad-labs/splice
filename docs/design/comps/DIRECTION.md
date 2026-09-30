@@ -1,6 +1,6 @@
 # V4-444 phase A — direction contract for the splice console
 
-Status: comps for the operator's eye. Nothing under `console/src` changes until he approves them. Every comp is seeded demo content
+Status: the direction is approved ("Yes, keep going"); Sessions and the session page build first, Needs you, Settings and Fleet wait for his answer on the comps. Nothing under `console/src` changes until the replacement reaches parity. Every comp is seeded demo content
 (no real session names, messages, repos or paths). Render: `node docs/design/comps/build.mjs` → `png/<screen>-<day|night>-<1440|1920>.png`.
 
 ## Direction
@@ -42,9 +42,9 @@ A new frontend on the daemon's existing `/api`, in `console-next/` beside the ol
 | Framework, build | React 19 + Vite + TypeScript | Same runtime the daemon already embeds; nothing to learn. |
 | Primitives | Radix Primitives (headless: Dialog, Popover, Select, Switch, Slider, Tabs, DropdownMenu) | Accessibility and keyboard behaviour without a look; the look is ours. Replaceable per primitive. |
 | Drag reorder | dnd-kit | Keyboard-accessible sortable; independent of everything else. |
-| Messages | `react-markdown` + `remark-gfm` + Shiki | Real markdown, tables, highlighted code; one `Markdown` component is the only place it lives. |
-| Data | TanStack Query over a typed API client; response types generated from the daemon's payload shapes and checked at the boundary | The API contract is one file; pages never touch `fetch`. |
-| Routing | TanStack Router (hash routes, deep-linkable sessions) | Typed params, no server needed. |
+| Messages | `react-markdown` + `remark-gfm` + `highlight.js` (core, few languages) | Real markdown, tables, highlighted code, far smaller than Shiki in one inlined file; one `Markdown` component is the only place it lives. |
+| Data | TanStack Query over a typed API client; payload types are the daemon's own, kept beside the client | The API contract is one file; pages never touch `fetch`. |
+| Routing | react-router 7 (hash routes, deep-linkable sessions; the old addresses redirect) | Already in the lockfile; no server needed. |
 | Styles | CSS custom properties from `comp.css` tokens, plain CSS per component, no utility framework | The look is bespoke and small; tokens are the contract. |
 
 ## Nav
@@ -57,10 +57,10 @@ Needs you · Sessions · Fleet · Turns · Usage · Settings. Where the rest wen
 | Models | A Fleet card's Models drawer. |
 | Teams | Sessions (group by Team) and the team rail on a session's page. Team economics: Usage. |
 | Projects | Sessions, group by Repo (by name). |
-| Compaction | Settings › Conversation; a "compacted" mark on the turn in Turns. |
+| Compaction | Settings › Conversation (its instructions); a "compacted" mark on the turn in Turns. |
 | Logs | A Fleet card's Log drawer. |
 | MCP | Settings › Tools. |
-| Doctor | Needs you (a failing check with its one fix) and Settings › Health. |
+| Doctor | Needs you (a failing check with its one fix) and Settings › Health. A deliberately stopped local runtime is a Fleet state ("Runtime off"), never a Health or Needs you item. |
 | What splice keeps | Settings › Storage. |
 
 ## Every action drawn, and what backs it
@@ -71,7 +71,8 @@ Needs you · Sessions · Fleet · Turns · Usage · Settings. Where the rest wen
 | Copy resume command (session, cards) | `GET /api/sessions/{id}/resume` (recipe) | exists |
 | Open the session | client route | exists |
 | Switch account, Sign in again / Sign in | `POST /api/auth/{head}/switch`, `/api/auth/{head}/login` | exists |
-| Start the runtime (Fleet) | `POST /api/heads/{head}/start` | exists |
+| Start a stopped head (Fleet) | `POST /api/heads/{head}/start` | exists |
+| Start a local runtime that is off (Fleet) | none: the runtime is `rig`'s, not splice's | **not drawn as a button**: "Copy start command" (`rig up <head>`), a copy |
 | Add a plan | `POST /api/add` (+ `/api/add/{id}/…`) | exists |
 | Settings controls | `GET/PATCH /api/config`; keys `GET/PUT /api/keys/{name}` | exists |
 | Drag reorder (Sessions, Fleet) | browser storage | no daemon work |
@@ -106,3 +107,27 @@ Needs you · Sessions · Fleet · Turns · Usage · Settings. Where the rest wen
 | "we dont have fucking rich UI anywhere" | Session page: prose, table, highlighted code, collapsible tool blocks, a team rail with hand-offs riding it; Fleet: gauges; Settings: typed controls. |
 | "messages don't have any styling or formatting" | The session page's conversation is rendered markdown; a peer's hand-off is a distinct dashed card. |
 | "the repo name has the full path" | Repos read `tally`, `ledger-api`, `harbor-web`; no path appears in any comp. |
+
+## Settings: what backs every control
+
+A control is drawn only if it maps to a knob (`GET`/`PATCH /api/config`; the knob table `Knob.kt`), a topology key (`GET`/`PUT /api/topology`, i.e. `splice.toml`), a route, or the browser. "Advanced" lists every knob the curated sections do not, each as a typed control from the same table, with the head scope switcher, so no knob leaves the console.
+
+| Section › control | Control | Backing | Applies |
+|---|---|---|---|
+| General › Appearance | segmented: Day / Night / Match my computer | browser storage `splice-theme` | at once |
+| General › Open the console at | read-only address + Copy | `location.host` | n/a |
+| General › Warn me when a plan is this full | slider 50–100% | knob `usageWarnPct` | restart (says so, offers "Restart now": `POST /api/daemon/restart`) |
+| General › Detailed log | switch | knob `debug` | restart |
+| Conversation › How hard the model thinks | segmented | knob `effort` (`''` = model default, then low/medium/high; the rest in Advanced) | restart |
+| Conversation › Turns at once, per plan | stepper | knob `maxInflight` (0 = no limit); a head's own value in its Fleet card | at once |
+| Conversation › Show the model's reasoning | select: In the reply / As thinking / Hidden | knob `showReasoning` = `text` / `thinking` / `off` | restart |
+| Storage › Keep message history for | select of days | knob `activityRetentionDays` | restart |
+| Storage › Keep request traces for | select of days | knob `traceRetentionDays` | restart |
+| Storage › Show git branches in | folder chips + add | knob `statuslineGitRoots` (colon-separated) | at once |
+| Storage › OpenRouter key | secret field, Replace | `PUT /api/keys/OPENROUTER_API_KEY`; state from `GET /api/keys` | at once |
+| Tools › Share tools across sessions | switch | topology `daemon.mcp_hosting` via `PUT /api/topology` | restart |
+| Tools › per-server state and switch | word + switch | state `GET /api/mcp`; switch adds or removes the server in topology `daemon.mcp_hosting_exclude` | restart |
+| Health › Everything splice depends on | word + Check again | `GET /api/doctor` (Check again re-reads it) | n/a |
+| Health › a failing check | word + its one fix | the check's own remedy: `POST /api/doctor/fix/{id}` where the daemon runs it, else a command to copy | at once |
+
+Cut from the first comp because no knob or route backs them: "Keep long chats going" and "Summarize at" (compaction is Claude Code's own; splice only adds instructions text, topology `compaction.instructions`, shown under Conversation), "Start splice when I sign in" (no route; `supervisorUnit` names a unit splice restarts into, it does not enable one), "Where splice keeps its files → Change…" (the state folder is fixed at start), "Keep session transcripts for 30 days" (the transcripts are Claude Code's files; the real retention is message history and traces above).

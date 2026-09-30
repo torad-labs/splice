@@ -13,7 +13,7 @@ const STATE = {
   ok: ['work', 'Ready'], near: ['quota', 'Near its limit'], quota: ['stuck', 'Out of quota until Oct 5, 2:13 PM'],
   out: ['stuck', 'Signed out'], off: ['idle', 'Runtime off'],
 };
-const FIX = { ok: '', near: '', quota: '<button class="btn go sm">Switch account</button>', out: '<button class="btn go sm">Sign in</button>', off: '<button class="btn go sm">Start the runtime</button>' };
+const FIX = { ok: '', near: '', quota: '<button class="btn go sm">Switch account</button>', out: '<button class="btn go sm">Sign in</button>', off: '<button class="btn sm">Copy start command</button>' };
 
 const gauge = ([label, pct, note], m, danger) => `<div class="g"><div class="gl"><span>${label}</span><b>${pct}%</b><small>${note}</small></div>
 <div class="track ${danger ? 'full' : ''}" role="img" aria-label="${label} ${pct}% used"><i style="width:${pct}%;background:var(--${m})"></i></div></div>`;

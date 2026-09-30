@@ -89,11 +89,13 @@ export const css = `
 .meter i { display: block; height: 100%; width: 41%; background: var(--grok); }
 `;
 
-export function body() {
+export function body(opts = {}) {
+  const c = opts.compact === true;
   return `<a class="crumb" href="sessions.html">${icon.back}Sessions</a>
 <header class="top"><div><h1>Write the rate limiter</h1>
-<div class="facts"><span class="tag">tally</span><span class="tag">rate-limit</span><span class="model m-grok">claude-grok · grok-4.7</span><span class="state work"><i></i>Working</span><span class="hand mono">31 min · 14 turns</span></div></div>
-<div class="acts"><button class="btn go">${icon.stop}Stop the turn</button><button class="btn">Copy resume command</button></div></header>
+${c ? `<div class="facts quiet-meta"><span class="state work"><i></i>Working</span><span>tally</span><span>rate-limit</span><span>claude-grok</span><span>grok-4.7</span><span>31 min</span></div></div>
+<div class="acts"><button class="btn go">${icon.stop}Stop the turn</button></div></header>` : `<div class="facts"><span class="tag">tally</span><span class="tag">rate-limit</span><span class="model m-grok">claude-grok · grok-4.7</span><span class="state work"><i></i>Working</span><span class="hand mono">31 min · 14 turns</span></div></div>
+<div class="acts"><button class="btn go">${icon.stop}Stop the turn</button><button class="btn">Copy resume command</button></div></header>`}
 <div class="cols">
 <section class="win grok sheet" aria-label="Conversation">
 <div class="bar"><h3>Conversation</h3><span class="seg" role="group"><button aria-pressed="true">Messages</button><button aria-pressed="false">Tools only</button><button aria-pressed="false">Hand-offs</button></span></div>
@@ -144,9 +146,9 @@ export function body() {
 <div class="seat" style="--c:var(--muse)"><b>claude-muse</b><span class="s2">Running tests</span></div>
 <div class="seat" style="--c:var(--gpt)"><b>claudex</b><span class="s2" style="color:var(--charge)">Waiting on you</span></div>
 </div>
-<h2 style="margin-top:14px">This session</h2>
+${c ? '' : `<h2 style="margin-top:14px">This session</h2>
 <div class="facts-list"><div>Started<b>3:04 PM</b></div><div>Turns<b>14</b></div><div>Estimated cost<b>$0.42</b></div><div>Context<b>41% of 500k</b></div></div>
-<div class="meter" aria-label="Context used 41%"><i></i></div>
+<div class="meter" aria-label="Context used 41%"><i></i></div>`}
 </aside>
 </div>`;
 }

@@ -11,13 +11,20 @@ const S = [
 ];
 const WORD = { work: 'Working', wait: 'Waiting on you', stuck: 'Stuck', idle: 'Idle' };
 
-const card = (s, big) => {
+const card = (s, compact = false) => {
   const { cmd, model } = models[s.m];
   const attn = s.state === 'wait' || s.state === 'stuck';
   const actions = s.state === 'wait'
     ? `<div class="acts"><button class="btn go sm">Open the session</button><button class="btn quiet sm">Copy resume command</button></div>`
     : s.state === 'stuck'
       ? `<div class="acts"><button class="btn go sm">Stop the turn</button><button class="btn quiet sm">Copy resume command</button></div>` : '';
+  if (compact) {
+    return `<article class="win ${s.m}${attn ? ' attn' : ''}">
+  <div class="bar"><h3>${s.title}</h3><span class="state ${s.state}"><i></i>${WORD[s.state]}</span></div>
+  <div class="glass one"><p${s.state === 'work' ? ' class="cur"' : ''}>${s.say[1]}</p></div>
+  <div class="quiet-meta"><span>${s.repo}</span><span>${s.branch}</span><span>${cmd}</span><span>${model}</span></div>
+  ${s.state === 'wait' ? `<div class="acts"><button class="btn go sm">Open the session</button></div>` : s.state === 'stuck' ? `<div class="acts"><button class="btn go sm">Stop the turn</button></div>` : ''}</article>`;
+  }
   return `<article class="win ${s.m}${attn ? ' attn' : ''}">
   <div class="bar"><span class="grip" aria-hidden="true">${icon.grip}</span><h3>${s.title}</h3><span class="state ${s.state}"><i></i>${WORD[s.state]}</span></div>
   <div class="meta"><span class="tag">${s.repo}</span><span class="tag">${s.branch}</span>${s.hand ? `<span class="hand">${icon.arrow}<b>${s.hand}</b></span>` : ''}<span class="age">${s.age}</span></div>
@@ -37,7 +44,8 @@ export const css = `
 .pinned { display: inline-flex; align-items: center; gap: 8px; font: 500 12px var(--mono); color: var(--mute); }
 `;
 
-export function body() {
+export function body(opts = {}) {
+  const c = opts.compact === true;
   const need = S.filter((s) => s.state === 'wait' || s.state === 'stuck');
   const work = S.filter((s) => s.state === 'work');
   const idle = S.filter((s) => s.state === 'idle');
@@ -46,9 +54,9 @@ export function body() {
 <div class="tools"><span class="seg" role="group" aria-label="Group by"><button aria-pressed="true">State</button><button aria-pressed="false">Repo</button><button aria-pressed="false">Model</button></span>
 <span class="search">${icon.search}Find a session<span class="kbd">⌘K</span></span></div></header>
 <div class="group-head"><h2>Needs you</h2><span class="n">2</span><span class="why">A person has to act; they stay on top until they do.</span></div>
-<div class="grid first">${need.map((s) => card(s)).join('')}</div>
+<div class="grid first">${need.map((s) => card(s, c)).join('')}</div>
 <div class="group-head"><h2>Working</h2><span class="n">3</span><span class="why">Drag to reorder; the order is yours.</span></div>
-<div class="grid">${work.map((s) => card(s)).join('')}</div>
+<div class="grid">${work.map((s) => card(s, c)).join('')}</div>
 <div class="group-head"><h2>Idle</h2><span class="n">2</span><span class="why">Finished; a message wakes them.</span></div>
-<div class="idle-row">${idle.map((s) => card(s)).join('')}</div>`;
+<div class="idle-row">${idle.map((s) => card(s, c)).join('')}</div>`;
 }

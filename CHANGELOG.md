@@ -667,8 +667,10 @@ origin.
   A row's `compaction_reserve_tokens` overrides it, and a model with no sample in its family keeps its old scaling.
   When one turn still grows past that point, splice answers `prompt is too long` with HTTP 400
   before the answer starts, which is the reply Claude Code compacts on, instead of a failure inside
-  an answer already under way. It refuses only when the provider has measured the conversation so far, counting the new text at a safe upper estimate.
-  A conversation splice has not measured since it started, one whose earlier part changed, or one
+  an answer already under way. splice refuses only when the provider measured the conversation's
+  earlier part and everything added since is text or text tool results, counting that new text at a
+  safe upper estimate. A turn that adds the model's own tool calls or reasoning goes to the provider
+  as before. A conversation splice has not measured since it started, one whose earlier part changed, or one
   whose new part carries an image or file goes to the provider as before. A compaction or a first
   message is refused only when its measured size alone exceeds the window.
 - **`splice status` no longer calls a head ready when the daemon could not build it.** The table

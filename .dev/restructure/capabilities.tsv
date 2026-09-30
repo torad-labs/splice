@@ -3145,3 +3145,4 @@ console-next/src/lib/words-sessions.ts	b8bcfefbde7e27f5823c468714dd17be95359af49
 console-next/src/lib/words-settings.ts	ce1ba785513d05e93d33e88af6908f3296212379801d626dcd9b5d99288459b6	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes
 console-next/tests/copy.test.ts	fcca8a10660aeb29f495bd26b554a8f85b71bc216323b6404fc62ceed498933c	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes
 console-next/tests/fixtures/walls/bad-copy.tsx	6656b5959be9521928fd41c697f0e5bb459d9bc76c5bfd26df9dba615571b04c	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes
+docs/design/comps/pages/project.mjs	dba5dc5e2cc6b917d93c705bbcbc736f56b99cfafd9067c82e86155b0402a136	created		V4-444 phase C: the replacement console (console-next), built beside console until it covers its routes

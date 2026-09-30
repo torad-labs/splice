@@ -2,13 +2,6 @@
 
 ## splice v0.4.0: a rebuilt console, teams across models, resume on another model, and one-command setup - 2026-09-24
 
-To opt a head out of trace capture, use its existing key in place of `example`, then restart:
-
-```toml
-[heads.example.overrides]
-trace = "false"
-```
-
 ### Highlights
 - **Sessions can run turns without the key that controls splice.** In 0.3.x, sessions other than
   `claude-splice` held that management key. Upgrade, rotate the key, then relaunch your sessions ([Security](#security), [Upgrading from 0.3.x](#upgrading-from-03x)).
@@ -953,6 +946,12 @@ origin.
   The console's capture switch also turns a head's trace off after restart. Turning it off
   removes retained days at the next daemon start; kept data can also be deleted separately.
   `splice doctor` names heads whose trace is off or whose changed setting needs a restart.
+  To opt out, use the head's existing key in place of `example`, then restart:
+
+  ```toml
+  [heads.example.overrides]
+  trace = "false"
+  ```
 - **See what splice sent upstream, once you ask it to keep it.** A proxy that cannot show
   the request it sent cannot be audited — and nothing kept one: the perf row records how many bytes
   went upstream, never which. `[heads.KEY.overrides] wireTap = N` now makes that head keep its last

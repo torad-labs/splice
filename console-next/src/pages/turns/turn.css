@@ -30,7 +30,6 @@
 .qa .who { margin-bottom: var(--space-4); font: 600 0.875rem var(--meta); color: var(--mute); }
 .qa .you { background: color-mix(in srgb, var(--ink) 6%, transparent); border-radius: 0.75rem; padding: var(--space-7) var(--space-8); font: 400 1.125rem/1.6 var(--read); color: var(--ink); white-space: pre-wrap; }
 .qa .note { font: 400 0.96rem var(--read); color: var(--mute); }
-.qa .toolline { font: 500 0.96rem var(--meta); color: var(--mute); }
 .kept-note { margin-top: var(--space-10); max-width: 62ch; font: 400 1.0625rem/1.6 var(--read); color: var(--body); display: grid; gap: var(--space-6); justify-items: start; }
 .attempts { list-style: none; margin: var(--space-10) 0 0; padding: 0; display: grid; gap: var(--space-9); }
 .attempts h3 { font: 560 1.1875rem var(--display); color: var(--ink); }

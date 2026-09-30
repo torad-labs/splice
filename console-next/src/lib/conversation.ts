@@ -74,7 +74,17 @@ const text = (value: unknown): string | null => (typeof value === 'string' && va
 const firstOf = (value: unknown): string | null => text(Array.isArray(value) ? value[0] : value);
 const firstLine = (value: string): string => value.trim().split('\n', 1)[0] ?? '';
 
-/** What a call acted on, in a few words: the file for a file tool, the first line of a command, the pattern of
+/** The file tools, whose input names one file by its path. */
+const FILE_TOOLS = new Set(['Read', 'Edit', 'Write', 'NotebookEdit']);
+
+/** The path a file tool acted on, whole. Null for any other call. */
+export function toolPath(tool: string, input: unknown): string | null {
+  if (!FILE_TOOLS.has(tool) || typeof input !== 'object' || input === null) return null;
+  const { file_path: file, notebook_path: notebook } = input as Record<string, unknown>;
+  return text(file) ?? text(notebook);
+}
+
+/** What a call acted on, in a few words: the file's name for a file tool, the first line of a command, the pattern of
  *  a search. Null for a tool with nothing obvious to name; its block then shows the raw input when opened. */
 export function toolTarget(tool: string, input: unknown): string | null {
   if (typeof input !== 'object' || input === null) return null;
@@ -86,8 +96,10 @@ export function toolTarget(tool: string, input: unknown): string | null {
     case 'Read':
     case 'Edit':
     case 'Write':
-    case 'NotebookEdit':
-      return pick('file_path', 'notebook_path');
+    case 'NotebookEdit': {
+      const path = pick('file_path', 'notebook_path');
+      return path === null ? null : (path.replace(/\/+$/, '').split('/').pop() ?? path);
+    }
     case 'Grep':
     case 'Glob':
       return pick('pattern');

@@ -1,34 +1,20 @@
 import { Link } from 'react-router';
 import { failureText } from '../../api/client';
 import { useCapture, useConversation, useKeptTurn, useWire } from '../../api/turns';
-import { callTarget, toolLabel } from '../../lib/conversation';
+import { foldTranscript } from '../../lib/conversation';
 import { fmtMs } from '../../lib/format';
 import { readable } from '../../lib/message';
 import { askAndAnswer, wireFor } from '../../lib/turns-page';
 import { P } from '../../lib/words-turns';
-import type { ConversationMessageWire, TraceRecord, TraceSide, TurnRow } from '../../types/perf';
+import type { TraceRecord, TraceSide, TurnRow } from '../../types/perf';
 import { Markdown } from '../../ui';
+import { ToolBlock } from '../session/ToolBlock';
+import '../session/session.css';
 import { CaptureControl } from './CaptureControl';
 
 const TABS = [['conversation', P.tabConversation], ['request', P.tabRequest], ['sent', P.tabSent]] as const;
 type Tab = (typeof TABS)[number][0];
 const tabOf = (raw: string | null): Tab => TABS.find(([id]) => id === raw)?.[0] ?? 'conversation';
-
-function Message({ message, plan }: { message: ConversationMessageWire; plan: string }) {
-  if (message.role === 'assistant' && message.tool !== undefined) {
-    const target = callTarget(message.tool, message.text);
-    return <p className="toolline">{toolLabel(message.tool)}{target === null ? '' : ` · ${target}`}</p>;
-  }
-  if (message.role === 'tool') return <p className="toolline">{message.tool === undefined ? P.tool : toolLabel(message.tool)}{message.result === true ? ' · result' : ''}</p>;
-  const said = readable(message.text);
-  if (said === null) return null;
-  return (
-    <div>
-      <div className="who">{message.role === 'system' ? P.system : P.answered(plan)}</div>
-      <Markdown>{said}</Markdown>
-    </div>
-  );
-}
 
 function Conversation({ row, plan }: { row: TurnRow; plan: string }) {
   const read = useConversation(row.head, row.session_id ?? null, row.response_message_id ?? null, row.session_id !== undefined && row.response_message_id !== undefined);
@@ -41,7 +27,16 @@ function Conversation({ row, plan }: { row: TurnRow; plan: string }) {
   return (
     <div className="qa">
       {asked === null ? null : <div><div className="who">{P.asked}</div><div className="you">{asked}</div></div>}
-      {reply.map((message) => <Message key={message.index} message={message} plan={plan} />)}
+      {foldTranscript(reply).map((item) => {
+        if (item.kind === 'tool') return <div key={item.index} className="msg"><ToolBlock item={item} /></div>;
+        if (item.kind === 'note') return <p key={item.index} className="note">{item.line}</p>;
+        return (
+          <div key={item.index}>
+            <div className="who">{item.who === 'system' ? P.system : P.answered(plan)}</div>
+            <Markdown>{item.text}</Markdown>
+          </div>
+        );
+      })}
       {earlier > 0 ? <p className="note">{P.conversationEarlier(earlier)}</p> : null}
     </div>
   );

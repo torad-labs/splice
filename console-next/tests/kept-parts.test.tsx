@@ -48,8 +48,8 @@ describe('the body capture control', () => {
     if (enabled !== null) client.setQueryData(['capture', 'claude-solo'], capture(enabled));
     if (saved !== null) client.setQueryData(['topology'], file(saved));
   });
-  test('is a switch named Body capture that shows what the daemon records now', () => {
-    expect(control(false)).toMatch(/role="switch" aria-checked="false" aria-label="Body capture"/);
+  test('is a switch that says what it keeps, for how long and who can read it, and shows what the daemon records now', () => {
+    expect(control(false)).toMatch(/role="switch" aria-checked="false" aria-label="Keep full requests and replies for Solo \(7 days, only you can read them\)"/);
     const on = control(true);
     expect(on).toMatch(/aria-checked="true"/);
     expect(on).toContain('Recording bodies for Solo.');

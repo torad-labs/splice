@@ -14,6 +14,7 @@ export function CaptureControl({ head, plan }: { head: string; plan: string }) {
   const set = useSetCapture();
   const topology = useTopology();
   const running = capture.data?.enabled ?? null;
+  const label = P.captureSwitch(plan, capture.data?.retention_days ?? null);
   if (running === null && !capture.isError) return null;
   const state = captureState(running, savedCapture(topology.data, head));
   const change = set.data;
@@ -21,12 +22,12 @@ export function CaptureControl({ head, plan }: { head: string; plan: string }) {
     <div className="capture-control">
       <span className="capture-switch">
         <Switch
-          label={P.captureSwitch}
+          label={label}
           checked={state.on}
           disabled={running === null || set.isPending}
           onChange={(next) => set.mutate({ head, enabled: next })}
         />
-        <span>{P.captureSwitch}</span>
+        <span>{label}</span>
       </span>
       {state.pending ? (
         <>

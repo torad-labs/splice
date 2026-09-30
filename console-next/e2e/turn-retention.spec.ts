@@ -153,7 +153,7 @@ test('capture writes reread running state, keep new bodies absent until restart 
     await driveOneTurn(Number(env('CONSOLE_E2E_OAUTH_PORT')), env('CONSOLE_E2E_KEY'));
     await openTurn(page, STACK.oauthHead, await newest(page, STACK.oauthHead));
     await page.getByRole('link', { name: 'Request and answer', exact: true }).click();
-    const toggle = page.getByRole('switch', { name: 'Body capture', exact: true });
+    const toggle = page.getByRole('switch', { name: /^Keep full requests and replies for .* \(\d+ days?, only you can read them\)$/ });
     await expect(toggle).toHaveAttribute('aria-checked', 'false');
     await expect(page.getByRole('main')).toContainText('Request capture is off');
     await toggle.click();

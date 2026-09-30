@@ -1,19 +1,21 @@
 import { Link, useSearchParams } from 'react-router';
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { failureText } from '../../api/client';
-import { useHeads, useSessions } from '../../api/queries';
+import { useHeads, useLiveTurns, useSessions, useStopTurn } from '../../api/queries';
 import { isPendingRoute } from '../../api/auth';
 import { usePerfSummary, usePerfTurns } from '../../api/turns';
 import { ABSENT, fmtInt, fmtTokens } from '../../lib/format';
 import { sessionLabel } from '../../lib/sessions';
 import {
-  WINDOW_MS, barMax, cacheText, colourFromHeads, filterLines, lineOf, newestFirst, planRows, runningOf, secondsText, localStepsOf, servedLocally, tookText, turnsLede,
+  WINDOW_MS, barMax, cacheText, colourFromHeads, filterLines, liveTurnFor, lineOf, newestFirst, planRows, runningOf, secondsText, localStepsOf, servedLocally, tookText, turnsLede,
 } from '../../lib/turns-page';
 import type { TurnFilter, TurnLine, PlanRow, RunningLine } from '../../lib/turns-page';
 import { T } from '../../lib/words-turns';
 import { PERF_WINDOWS } from '../../types/perf';
 import type { PerfWindowLabel } from '../../types/perf';
-import { Empty, Fault, PageHead, SearchField, Segmented, State, Window, WindowBar } from '../../ui';
+import { Button, Empty, Fault, PageHead, SearchField, Segmented, State, Window, WindowBar } from '../../ui';
+import { S } from '../shared/copy';
 import './turns.css';
 
 const windowOf = (raw: string | null): PerfWindowLabel => PERF_WINDOWS.find((label) => label === raw) ?? '1h';
@@ -22,7 +24,21 @@ export function turnPath(line: Pick<TurnLine, 'head' | 'ts'>): string {
   return `/turns/${encodeURIComponent(line.head)}/${line.ts}`;
 }
 
-function RunningCard({ turn }: { turn: RunningLine }) {
+/** Stops the turn a running card stands for. A card whose turn the daemon no longer lists has nothing to stop, so it offers nothing. */
+function StopRunning({ turn }: { turn: RunningLine }) {
+  const live = useLiveTurns(turn.head);
+  const stop = useStopTurn();
+  const target = liveTurnFor(turn, live.data?.turns ?? []);
+  if (target === null) return null;
+  return (
+    <div className="acts">
+      <Button small disabled={stop.isPending} onClick={() => stop.mutate({ head: turn.head, id: target.id })}>{stop.isPending ? S.stopping : S.stopTurn}</Button>
+      {stop.isError ? <span className="hint" role="alert">{S.stopFailed} {failureText(stop.error)}</span> : null}
+    </div>
+  );
+}
+
+export function RunningCard({ turn, act }: { turn: RunningLine; act?: ReactNode }) {
   const say = turn.quiet !== null ? T.quietFor(turn.quiet) : turn.phase === 'streaming' ? T.streaming : T.connecting;
   return (
     <Window as="li" colour={turn.colour} attention={turn.stuck} aria-label={`${turn.title}, ${turn.plan}`}>
@@ -30,6 +46,7 @@ function RunningCard({ turn }: { turn: RunningLine }) {
         <State tone={turn.stuck ? 'stuck' : 'work'}>{turn.stuck ? 'Stuck' : 'Working'}</State>
       </WindowBar>
       <p className="say"><b>{turn.plan}</b>{turn.model === null ? '' : ` · ${turn.model}`} · {say} · {T.runningFor(turn.age)}</p>
+      {act}
     </Window>
   );
 }
@@ -125,7 +142,7 @@ export function TurnsPage() {
       <section className="section" aria-labelledby="turns-running">
         <h2 id="turns-running">{T.runningTitle}</h2>
         <p className="why">{running.length === 0 ? T.runningNone : `${T.runningWhy}${stuck === undefined || stuck.quiet === null ? '' : ` ${T.runningQuiet(quiet.length, stuck.quiet)}`}`}</p>
-        {running.length === 0 ? null : <ul className="running-list">{running.map((turn) => <RunningCard key={turn.key} turn={turn} />)}</ul>}
+        {running.length === 0 ? null : <ul className="running-list">{running.map((turn) => <RunningCard key={turn.key} turn={turn} act={<StopRunning turn={turn} />} />)}</ul>}
       </section>
       <section className="section" aria-labelledby="turns-plans">
         <h2 id="turns-plans">{T.plansTitle}</h2>

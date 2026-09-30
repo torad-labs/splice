@@ -1,4 +1,4 @@
-import { editDiff, outputSize, toolCommand, toolLabel, toolTarget, writtenContent } from '../../lib/conversation';
+import { callTarget, editDiff, outputSize, toolCommand, toolLabel, toolPath, toolTarget, writtenContent } from '../../lib/conversation';
 import type { Item } from '../../lib/conversation';
 import { noun } from '../../lib/format';
 import { Check, Chevron } from '../../ui';
@@ -19,7 +19,9 @@ const resultText = (item: Tool): string => {
 
 /** One tool call and what came back, as a dark-glass block that opens on demand. */
 export function ToolBlock({ item }: { item: Tool }) {
-  const target = toolTarget(item.tool, item.input);
+  // A call the daemon cut short has no parsed input; its text still names what it did.
+  const target = toolTarget(item.tool, item.input) ?? (item.inputText === '' ? null : callTarget(item.tool, item.inputText));
+  const where = toolPath(item.tool, item.input);
   const diff = editDiff(item.tool, item.input);
   const written = writtenContent(item.tool, item.input);
   const command = toolCommand(item.tool, item.input);
@@ -36,6 +38,7 @@ export function ToolBlock({ item }: { item: Tool }) {
           {resultText(item)}
         </span>
       </summary>
+      {where === null ? null : <p className="where">{where}</p>}
       {diff === null ? (
         written === null ? null : <pre className="code">{written}</pre>
       ) : (

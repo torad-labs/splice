@@ -7,6 +7,7 @@ import type { ModelColour } from './model';
 import { STUCK_IDLE_MS, spanText } from './sessions';
 import { STAGE_PHRASE, T } from './words-turns';
 import type { TopologyState } from '../types/topology';
+import type { LiveTurn } from '../types/turns';
 import type { InflightTurn, PerfSummaryHead, PerfWindowLabel, TurnRow } from '../types/perf';
 
 export const WINDOW_MS: Record<PerfWindowLabel, number> = { '1h': 3_600_000, '24h': 86_400_000, '7d': 604_800_000 };
@@ -182,6 +183,8 @@ export interface RunningLine {
   model: string | null;
   stuck: boolean;
   age: string;
+  /** The age the card's figure was made from, to tell a session's turns apart. */
+  ageMs: number;
   quiet: string | null;
   phase: 'connect' | 'streaming';
 }
@@ -208,10 +211,22 @@ export function runningOf(turns: readonly InflightTurn[], planLabel: (head: stri
       ...liveTitle(turn.label, nameOf),
       stuck: turn.idleMs > STUCK_IDLE_MS,
       age: spanText(turn.ageMs),
+      ageMs: turn.ageMs,
       quiet: turn.idleMs >= 30_000 ? spanText(turn.idleMs) : null,
       phase: turn.phase === 'streaming' ? ('streaming' as const) : ('connect' as const),
     }))
     .sort((left, right) => Number(right.stuck) - Number(left.stuck));
+}
+
+/** The live turn a running card stands for. The card is read off the gate, which labels a turn with the first eight of its session id
+ *  and its model; the stop names the daemon's own id, so the two are joined on those, and on the age when a session runs two at once
+ *  (a compaction beside its turn). A card whose label is no session's names nothing. */
+export function liveTurnFor(line: Pick<RunningLine, 'label' | 'ageMs'>, turns: readonly LiveTurn[]): LiveTurn | null {
+  const coded = GATE_LABEL.exec(line.label);
+  if (coded?.[1] === undefined) return null;
+  const [, prefix, model] = coded;
+  const match = turns.filter((turn) => !turn.stopped && turn.session?.startsWith(prefix) === true && turn.model === model);
+  return match.reduce<LiveTurn | null>((best, turn) => (best === null || Math.abs(turn.age_ms - line.ageMs) < Math.abs(best.age_ms - line.ageMs) ? turn : best), null);
 }
 
 // ── one turn's stages ───────────────────────────────────────────────────────────────────────────

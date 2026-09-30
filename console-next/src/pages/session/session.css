@@ -51,6 +51,7 @@ a.crumb { display: inline-flex; align-items: center; gap: var(--space-4); margin
 .tool pre { margin: 0; padding: var(--space-5) var(--space-6) var(--space-6); border-top: 1px solid var(--glass-line); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 26.25rem; overflow-y: auto; }
 .tool pre.code { white-space: pre; overflow-x: auto; }
 .tool .cut { padding: 0 var(--space-6) var(--space-6); color: var(--glass-dim); font-family: var(--meta); }
+.tool .where { margin: 0; padding: var(--space-4) var(--space-6); border-top: 1px solid var(--glass-line); color: var(--glass-dim); overflow-wrap: anywhere; }
 .ln { display: block; padding: 0 var(--space-6); margin: 0 calc(-1 * var(--space-6)); }
 .ln.add { background: var(--diff-add); }
 .ln.del { background: var(--diff-del); }

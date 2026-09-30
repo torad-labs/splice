@@ -1,8 +1,12 @@
 // The Turns pages' arithmetic: outcomes, plan rows, the stuck rule, a turn's four stages, and what was kept.
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { RunningCard } from '../src/pages/turns/TurnsPage';
 import { describe, expect, test } from 'vitest';
 import {
-  askAndAnswer, failedCount, filterLines, lineOf, outcomeOf, planRows, localStepsOf, runningOf, servedLocally, stagesOf, turnLede, turnsLede, wireFor, WINDOW_MS,
+  askAndAnswer, failedCount, filterLines, lineOf, outcomeOf, planRows, localStepsOf, liveTurnFor, runningOf, servedLocally, stagesOf, turnLede, turnsLede, wireFor, WINDOW_MS,
 } from '../src/lib/turns-page';
+import type { RunningLine } from '../src/lib/turns-page';
 import type { PerfSummaryHead, TurnRow } from '../src/types/perf';
 
 const none = () => 'none' as const;
@@ -74,6 +78,20 @@ describe('running turns', () => {
     const unknown = runningOf([coded], (h) => h, none)[0];
     expect([unknown?.title, unknown?.model]).toEqual(['gpt-6-sol', null]);
     expect(runningOf([live(1000)], (h) => h, none)[0]?.title).toBe('Migrate');
+  });
+  test('a running card finds the daemon turn a stop must name, by the gate label and its age', () => {
+    const turn = (id: string, session: string | null, model: string, age_ms: number, stopped = false) => ({ id, session, model, compact: false, age_ms, stopped });
+    const turns = [turn('a', '544af4b6-0000', 'gpt-6-sol', 900_000), turn('b', '544af4b6-0000', 'gpt-6-sol', 4_000), turn('c', '99999999-0000', 'gpt-6-sol', 900_000), turn('d', '544af4b6-0000', 'gpt-6-sol', 900_000, true)];
+    expect(liveTurnFor({ label: '544af4b6 gpt-6-sol', ageMs: 5_000 }, turns)?.id).toBe('b');
+    expect(liveTurnFor({ label: '544af4b6 gpt-6-sol', ageMs: 899_000 }, turns)?.id).toBe('a');
+    expect(liveTurnFor({ label: '544af4b6 other-model', ageMs: 5_000 }, turns)).toBeNull();
+    expect(liveTurnFor({ label: 'Migrate', ageMs: 5_000 }, turns)).toBeNull();
+  });
+  test('a running card draws the act it is given beside what the turn is doing', () => {
+    const line = { ...runningOf([live(1000)], (h) => h, none)[0] } as RunningLine;
+    const html = renderToStaticMarkup(createElement(RunningCard, { turn: line, act: createElement('button', null, 'Stop the turn') }));
+    expect(html).toContain('Stop the turn');
+    expect(renderToStaticMarkup(createElement(RunningCard, { turn: line }))).not.toContain('Stop the turn');
   });
   test('a turn that has just spoken names no silence', () => {
     expect(runningOf([live(2000)], (h) => h, none)[0]?.quiet).toBeNull();

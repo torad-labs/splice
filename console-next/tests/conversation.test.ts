@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { callTarget, editDiff, foldTranscript, interleave, outputSize, toolCommand, toolLabel, toolTarget } from '../src/lib/conversation';
+import { callTarget, editDiff, foldTranscript, interleave, outputSize, toolCommand, toolLabel, toolPath, toolTarget } from '../src/lib/conversation';
 import type { TranscriptMessage } from '../src/types/sessions';
 
 const say = (index: number, role: TranscriptMessage['role'], text: string, ts?: number): TranscriptMessage => ({ index, role, text, ...(ts === undefined ? {} : { ts }) });
@@ -52,7 +52,10 @@ describe('what a call did', () => {
   test('names its target by tool', () => {
     expect(toolTarget('Bash', { command: 'npm test\nmore' })).toBe('npm test');
     expect(toolTarget('Bash', { command: 'git status --short', description: 'Show working tree status' })).toBe('Show working tree status');
-    expect(toolTarget('Edit', { file_path: 'src/a.ts', old_string: 'x', new_string: 'y' })).toBe('src/a.ts');
+    expect(toolTarget('Edit', { file_path: 'src/a.ts', old_string: 'x', new_string: 'y' })).toBe('a.ts');
+    expect(toolTarget('Read', { file_path: '/home/marcos/dev/splice/console-next/src/lib/fleet.ts' })).toBe('fleet.ts');
+    expect(toolPath('Read', { file_path: '/home/marcos/dev/splice/fleet.ts' })).toBe('/home/marcos/dev/splice/fleet.ts');
+    expect(toolPath('Bash', { command: 'ls' })).toBeNull();
     expect(toolTarget('Grep', { pattern: 'foo' })).toBe('foo');
     expect(toolTarget('SendMessage', { to: 'claude-splice' })).toBe('claude-splice');
     expect(toolTarget('Weird', { name: 'n' })).toBe('n');
@@ -111,7 +114,7 @@ describe('a tool row says what the tool did', () => {
 describe('what a call in a turn\'s conversation did', () => {
   test('a whole input reads as the tool\'s own target', () => {
     expect(callTarget('Bash', '{"command":"git log","description":"Show the log"}')).toBe('Show the log');
-    expect(callTarget('Read', '{"file_path":"src/a.ts"}')).toBe('src/a.ts');
+    expect(callTarget('Read', '{"file_path":"/x/src/a.ts"}')).toBe('a.ts');
   });
   test('a cut-off input still gives its description, else the first line of its command', () => {
     expect(callTarget('Bash', '{"command":"cd /x && ls \\"a b\\"","description":"List the folder')).toBe('List the folder');

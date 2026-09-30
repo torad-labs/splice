@@ -87,6 +87,9 @@ export interface Need {
   head: string | null;
   subject: string;
   finding: string;
+  /** A session item's own words: the session id it joins to /api/sessions by, the newest message it left (a waiting
+   *  session's question), and the repo it works in. Absent on every other source. */
+  session?: { id: string | null; said: string | null; repo: string | null };
   fix: Fix;
   /** Where the item itself opens: its detail on its page where the page has one, else the page;
    *  null for the daemon, which no page opens. */

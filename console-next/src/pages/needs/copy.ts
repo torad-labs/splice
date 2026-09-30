@@ -11,6 +11,7 @@ export const A = {
   stopTurn: 'Stop the turn',
   stopping: 'Stopping…',
   openSession: 'Open the session',
+  sessionIn: 'It is a session in',
   fix: 'Fix it',
   fixing: 'Fixing…',
   copy: 'Copy the command',

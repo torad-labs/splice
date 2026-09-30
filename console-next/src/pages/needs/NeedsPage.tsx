@@ -40,7 +40,7 @@ export function NeedsPage() {
           {list.needs.length === 0 ? null : (
             <ul className="stack">
               {list.needs.map((need) => (
-                <NeedCard key={need.key} need={need} />
+                <NeedCard key={need.key} need={need} row={need.session?.id == null ? null : rows.find((candidate) => candidate.session_id === need.session?.id) ?? null} />
               ))}
             </ul>
           )}

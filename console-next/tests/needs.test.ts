@@ -389,9 +389,20 @@ describe('a session needs a person only when it waits or is stuck (operator ruli
     expect(rest).toEqual([]);
     expect(item).toEqual({
       key: 'sessions:sess-1', severity: 'warn', source: 'sessions', kind: 'Waiting on you', state: 'waiting', head: 'claudex',
-      subject: 'implementer', finding: 'Waiting for your answer for 45 min',
+      subject: 'implementer', finding: 'Waiting for your answer for 45 min', session: { id: 'sess-1', said: null, repo: 'repo' },
       fix: { kind: 'open', href: '#/sessions/sess-1', label: 'Open the session' }, at: '#/sessions/sess-1',
     });
+  });
+
+  test('a waiting session carries the newest thing it said, so the card can quote its question', () => {
+    const asked = session({ status: 'waiting', last: { role: 'assistant', tool: null, text: 'Run npm run migrate -- --apply?', ts: NOW } });
+    expect(sessionItems({ sessions: read({ note: '', sessions: [asked] }) })[0]?.session).toEqual({ id: 'sess-1', said: 'Run npm run migrate -- --apply?', repo: 'repo' });
+  });
+
+  test('a message the daemon cut mid-sentence ends in an ellipsis, a finished one does not', () => {
+    const said = (text: string) => sessionItems({ sessions: read({ note: '', sessions: [session({ status: 'waiting', last: { role: 'assistant', tool: null, text, ts: NOW } })] }) })[0]?.session?.said;
+    expect(said('The box run failed and used up the')).toBe('The box run failed and used up the…');
+    expect(said('Run it?')).toBe('Run it?');
   });
 
   test('a busy session with no live turn is running a tool: no item, whether the head says none or was not read', () => {
@@ -406,7 +417,7 @@ describe('a session needs a person only when it waits or is stuck (operator ruli
     const stuck = (turns: LiveTurn | null) => sessionItems({ sessions: read({ note: '', sessions: [busy] }), turnOf: byId({ 'sess-1': turns }) });
     expect(stuck(turn({ idle_ms: 7 * MIN }))).toEqual([{
       key: 'sessions:sess-1', severity: 'warn', source: 'sessions', kind: 'Stuck', state: 'stuck', head: 'claudex',
-      subject: 'implementer', finding: 'Quiet for 7 min',
+      subject: 'implementer', finding: 'Quiet for 7 min', session: { id: 'sess-1', said: null, repo: 'repo' },
       fix: { kind: 'stop-turn', head: 'claudex', session: 'sess-1' }, at: '#/sessions/sess-1',
     }]);
     // at the limit is not past it; a daemon that sends no idle_ms claims nothing; a stopped turn is already ending

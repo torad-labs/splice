@@ -6,17 +6,18 @@ import { describe, expect, test } from 'vitest';
 import { K } from '../src/lib/words-needs';
 import { NeedCard } from '../src/pages/needs/NeedCard';
 import type { Need } from '../src/types/needs';
+import type { SessionRow } from '../src/types/sessions';
 
 const need = (over: Partial<Need> = {}): Need => ({
   key: 'heads:claudex', severity: 'warn', source: 'heads', kind: K.failing, head: 'claudex', subject: 'claudex', finding: 'Not running.',
   fix: { kind: 'start', head: 'claudex' }, at: '#/fleet/claudex', ...over,
 });
-const render = (item: Need) =>
+const render = (item: Need, row: SessionRow | null = null) =>
   renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
       <MemoryRouter>
         <ul>
-          <NeedCard need={item} />
+          <NeedCard need={item} row={row} />
         </ul>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -50,6 +51,19 @@ describe('a need card', () => {
     const html = render(need({ kind: K.stuck, fix: { kind: 'stop-turn', head: 'claudex', session: 's1' }, at: null }));
     expect(html).toContain('href="/sessions/s1"');
     expect(html).toContain('Open the session');
+  });
+  test('a waiting session quotes its question in bold, names its repo, and offers a resume copy beside the open act', () => {
+    const waiting = need({
+      kind: K.waiting, state: 'waiting', source: 'sessions', head: 'claudex', subject: 'implementer', finding: 'Waiting for your answer for 2 min',
+      session: { id: 's1', said: 'Run npm run migrate?', repo: 'tally' }, fix: { kind: 'open', href: '#/sessions/s1', label: 'Open the session' }, at: '#/sessions/s1',
+    });
+    const row = { session_id: 's1', head: 'claudex' } as SessionRow;
+    const html = render(waiting, row);
+    expect(html).toContain('<b>Run npm run migrate?</b>');
+    expect(html).toContain('It is a session in <b>tally</b>.');
+    expect(html).toContain('Copy resume command');
+    expect(render(waiting)).not.toContain('Copy resume command');
+    expect(render(need({ kind: K.stuck, state: 'stuck', session: { id: 's1', said: null, repo: null }, at: null }), row)).not.toContain('Copy resume command');
   });
   test('a fix whose command holds a redacted value is never copyable and never printed', () => {
     const html = render(need({ fix: { kind: 'masked', command: 'splice key set <redacted:key>' }, at: null }));

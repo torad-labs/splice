@@ -3229,3 +3229,4 @@ tools/gate/test/landing.test.ts	17e5153216e66f57f8ef5ba26fe303b227584ed5fa461256
 console-next/src/app/StalePage.tsx	f8643a0228d02a9070263c6fcc79e579f5901c876e5f3149fdeb44b9368a88ee	created		V4-444 item 25, the reload offer shown when the page the daemon serves has changed since the tab loaded
 console-next/src/lib/stale-page.ts	6026ec1139a8049449de61f716fb4ef43085f77a849d0dab15615201f3381fca	created		V4-444 item 25, compares the loaded page with the one the daemon now serves
 console-next/tests/stale-page.test.ts	c3dbd91cc6900903af7c7a8b6ec75f100140ee4684c80efb5a5fe8a8cc92efa3	created		V4-444 item 25, vitest for the stale-page comparison and its reload offer
+integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/WsServerEvidence.kt	289faf9ed8d3f1ee0ac3901a496d94260e9f698c46d09f1764d7e7dc523534cd	created		V4-446: isolate observed WebSocket response evidence from chain storage and preserve ordinary reasoning continuation

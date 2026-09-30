@@ -179,7 +179,7 @@ internal class ResponsesWsSession(
         pendingCalls.filterNot { id ->
             items.any {
                 JsonScalars.str(it[FIELD_CALL_ID]) == id &&
-                    !JsonScalars.strOrEmpty(it[FIELD_TYPE]).endsWith(CALL_SUFFIX)
+                    !JsonScalars.strOrEmpty(it[WS_FIELD_TYPE]).endsWith(CALL_SUFFIX)
             }
         }
 
@@ -300,7 +300,7 @@ internal class ResponsesWsSession(
         var verified = true
         for (item in current.drop(previous.size)) {
             val assistantText = WsAssistantText.of(item)
-            if (JsonScalars.str(item[FIELD_TYPE]) in OBSERVED_SERVER_ITEMS) {
+            if (JsonScalars.str(item[WS_FIELD_TYPE]) in OBSERVED_SERVER_ITEMS) {
                 // Neither a shared key nor a matching call id proves these response bytes.
                 verified = verified && evidence.verifies(item)
                 evidence.trackObserved(item, matchedCalls, matchedReasoning)
@@ -333,7 +333,7 @@ private object WsSuffixDisposition {
     }
 
     private fun dispositionOf(item: JsonObject): Disposition {
-        val type = JsonScalars.str(item[FIELD_TYPE]) ?: item[FIELD_ROLE]?.let { MESSAGE } ?: return Disposition.BAIL
+        val type = JsonScalars.str(item[WS_FIELD_TYPE]) ?: item[FIELD_ROLE]?.let { MESSAGE } ?: return Disposition.BAIL
         val assistantMessage = type == MESSAGE && JsonScalars.str(item[FIELD_ROLE]) == "assistant"
         return when {
             assistantMessage -> Disposition.BAIL
@@ -369,7 +369,7 @@ private val OBSERVED_SERVER_ITEMS = setOf(REASONING_ITEM_TYPE, "function_call", 
 private val CLIENT_NEW = setOf("function_call_output", "custom_tool_call_output", "message")
 
 private const val FIELD_INPUT = "input"
-private const val FIELD_TYPE = "type"
+internal const val WS_FIELD_TYPE = "type"
 internal const val FIELD_ROLE = "role"
 internal const val FIELD_CALL_ID = "call_id"
 private const val CALL_SUFFIX = "_call"

@@ -252,9 +252,14 @@ class ResponsesWsSessionTest {
             """{"type":"response.output_item.done","item":{"type":"reasoning","id":"rs_env-call_2",""" +
                 """"encrypted_content":"env-call_2"}}""",
         ).jsonObject
+        val finalReasoning = responsesRequestJson.parseToJsonElement(
+            """{"type":"response.output_item.done","item":{"type":"reasoning","id":"rs_final",""" +
+                """"encrypted_content":"final-cipher"}}""",
+        ).jsonObject
         observer.observeTerminal(key, pending, reasoningDone)
         observer.observeTerminal(key, pending, done)
         observer.observeTerminal(key, pending, callDone)
+        observer.observeTerminal(key, pending, finalReasoning)
         observer.observeTerminal(key, pending, terminal)
         assertTrue(session.frameFor(key, build(convo(2, assistantText = "A spoke")), GEN).chained)
         assertFalse(session.frameFor(key, build(convo(2, assistantText = "B spoke")), GEN).chained)
@@ -262,9 +267,16 @@ class ResponsesWsSessionTest {
 
     /** A user continuation sends the user message (client-new), not the history. */
     @Test
-    fun `a user follow-up chains and sends the user message`() {
+    fun `a user follow-up chains despite unreplayed final-answer reasoning`() {
         val s = ResponsesWsSession()
-        s.completed(KEY, build(convo(1)), "resp_1", GEN, s.epochOf(KEY))
+        s.completed(
+            KEY,
+            build(convo(1)),
+            "resp_1",
+            GEN,
+            s.epochOf(KEY),
+            evidence = WsServerEvidence(reasoning = mapOf("rs_final" to "cipher")),
+        )
         val f = s.frameFor(KEY, build(convo(1, trailingUserText = "and now this")), GEN)
         assertTrue(f.chained)
         val types = typesOf(f.frameItems())

@@ -26,11 +26,13 @@ internal class ResponsesWsIdentity(
         val calls: MutableSet<String> = mutableSetOf()
         val callItems: MutableMap<String, JsonObject> = mutableMapOf()
         val reasoning: MutableMap<String, String> = mutableMapOf()
+        val reasoningSinceCall: MutableList<String> = mutableListOf()
+        val requiredReasoning: MutableList<String> = mutableListOf()
         val assistantTexts: MutableList<String> = mutableListOf()
     }
 
     fun observeTerminal(chain: String, pending: PendingCommit?, event: JsonObject) {
-        val type = JsonScalars.str(event[FIELD_TYPE])
+        val type = JsonScalars.str(event[WS_FIELD_TYPE])
         if (type == OUTPUT_ITEM_DONE) {
             observeItem(pending, event["item"])
             return
@@ -54,9 +56,23 @@ internal class ResponsesWsIdentity(
         val evidence = WsServerEvidence(
             assistantTexts = commit.assistantTexts.ifEmpty { output.mapNotNull(WsAssistantText::of) },
             calls = observedCalls.toMap(),
+            requiredReasoning = if (commit.reasoning.isNotEmpty() || commit.callItems.isNotEmpty()) {
+                commit.requiredReasoning.toList()
+            } else if (observedCalls.isEmpty()) {
+                emptyList()
+            } else {
+                output.mapNotNull { item ->
+                    val obj = item as? JsonObject
+                    if (JsonScalars.str(obj?.get(WS_FIELD_TYPE)) == REASONING_ITEM_TYPE) {
+                        JsonScalars.str(obj?.get("id"))
+                    } else {
+                        null
+                    }
+                }
+            },
             reasoning = commit.reasoning.ifEmpty {
                 output.filter { item ->
-                    JsonScalars.str((item as? JsonObject)?.get(FIELD_TYPE)) == "reasoning"
+                    JsonScalars.str((item as? JsonObject)?.get(WS_FIELD_TYPE)) == "reasoning"
                 }.mapNotNull { item ->
                     val obj = item as JsonObject
                     val id = JsonScalars.str(obj["id"])
@@ -77,16 +93,24 @@ internal class ResponsesWsIdentity(
     }
 
     private fun observeItem(pending: PendingCommit?, item: JsonElement?) {
+        val obj = item as? JsonObject
+        val kind = JsonScalars.str(obj?.get(WS_FIELD_TYPE))
         callIdOf(item)?.let { id ->
             pending?.calls?.add(id)
-            (item as? JsonObject)?.let { pending?.callItems?.put(id, it) }
+            obj?.let { pending?.callItems?.put(id, it) }
+            if (kind == FUNCTION_CALL || kind == "custom_tool_call") {
+                pending?.requiredReasoning?.addAll(pending.reasoningSinceCall)
+                pending?.reasoningSinceCall?.clear()
+            }
         }
         WsAssistantText.of(item)?.let { pending?.assistantTexts?.add(it) }
-        val obj = item as? JsonObject
-        if (JsonScalars.str(obj?.get(FIELD_TYPE)) == "reasoning") {
+        if (kind == REASONING_ITEM_TYPE) {
             val id = JsonScalars.str(obj?.get("id"))
             val cipher = JsonScalars.str(obj?.get("encrypted_content"))
-            if (id != null && cipher != null) pending?.reasoning?.put(id, cipher)
+            if (id != null && cipher != null) {
+                pending?.reasoning?.put(id, cipher)
+                pending?.reasoningSinceCall?.add(id)
+            }
         }
     }
 
@@ -106,7 +130,11 @@ internal class ResponsesWsIdentity(
         val obj = item as? JsonObject ?: return null
         val execution = JsonScalars.strOrEmpty(obj[FIELD_EXECUTION])
         if (execution.isNotEmpty() && execution != EXECUTION_CLIENT) return null
-        val fallback = if (JsonScalars.str(obj[FIELD_TYPE]) == FUNCTION_CALL) JsonScalars.strOrEmpty(obj["id"]) else ""
+        val fallback = if (JsonScalars.str(obj[WS_FIELD_TYPE]) == FUNCTION_CALL) {
+            JsonScalars.strOrEmpty(obj["id"])
+        } else {
+            ""
+        }
         return JsonScalars.strOrEmpty(obj["call_id"]).ifEmpty { fallback }.ifEmpty { null }
     }
 
@@ -145,61 +173,6 @@ internal class ResponsesWsIdentity(
             .getOrNull()
 }
 
-/** The committed backend response, not an inference from the client’s rebuilt history. */
-internal data class WsServerEvidence(
-    val assistantTexts: List<String> = emptyList(),
-    val calls: Map<String, JsonObject> = emptyMap(),
-    /** The replay codec preserves id and encrypted_content, not the output item's JSON shape. */
-    val reasoning: Map<String, String> = emptyMap(),
-) {
-    fun verifies(item: JsonObject): Boolean = when (JsonScalars.str(item[FIELD_TYPE])) {
-        REASONING_ITEM_TYPE -> matchesReasoning(item)
-        "function_call", "custom_tool_call" -> matchesCall(item)
-        else -> false
-    }
-
-    private fun matchesReasoning(item: JsonObject): Boolean {
-        val id = JsonScalars.str(item["id"])
-        val cipher = JsonScalars.str(item["encrypted_content"])
-        return id != null && cipher != null && reasoning[id] == cipher
-    }
-
-    fun trackObserved(item: JsonObject, callsSeen: MutableList<String>, reasoningSeen: MutableList<String>) {
-        if (JsonScalars.str(item[FIELD_TYPE]) == REASONING_ITEM_TYPE) {
-            reasoningSeen += JsonScalars.str(item["id"]).orEmpty()
-        } else {
-            callsSeen += JsonScalars.str(item[FIELD_CALL_ID]).orEmpty()
-        }
-    }
-
-    fun completeEcho(assistantCount: Int, echoedCalls: List<String>, echoedReasoning: List<String>): Boolean =
-        assistantCount == assistantTexts.size &&
-            echoedCalls == calls.keys.toList() && echoedReasoning == reasoning.keys.toList()
-
-    fun matchesCall(item: JsonObject): Boolean {
-        val echoedId = JsonScalars.str(item[FIELD_CALL_ID]) ?: return false
-        val observed = calls[echoedId] ?: return false
-        val required = requiredCallFields(item)
-        // A function_call with an empty server call_id reaches the client under its item id.
-        // That normalization is the sole field allowed to differ from the emitted item.
-        val fallback = JsonScalars.str(observed[FIELD_CALL_ID]).isNullOrEmpty() &&
-            JsonScalars.str(observed["id"]) == echoedId
-        return required != null && item.keys.containsAll(required) && item.all { (field, value) ->
-            if (field == FIELD_CALL_ID && fallback) {
-                JsonScalars.str(value) == echoedId
-            } else {
-                observed[field] == value
-            }
-        }
-    }
-
-    private fun requiredCallFields(item: JsonObject): Set<String>? = when (JsonScalars.str(item[FIELD_TYPE])) {
-        "function_call" -> setOf(FIELD_TYPE, FIELD_CALL_ID, "name", "arguments")
-        "custom_tool_call" -> setOf(FIELD_TYPE, FIELD_CALL_ID, "name", "input")
-        else -> null
-    }
-}
-
 /** Text the server actually emitted or the client echoes, never guessed from a prompt key. */
 internal object WsAssistantText {
     fun of(item: JsonElement?): String? {
@@ -211,7 +184,7 @@ internal object WsAssistantText {
             else -> {
                 val parts = content.map { part ->
                     val block = part as? JsonObject
-                    val type = JsonScalars.str(block?.get(FIELD_TYPE))
+                    val type = JsonScalars.str(block?.get(WS_FIELD_TYPE))
                     if (type in setOf("text", "output_text", "input_text")) {
                         JsonScalars.str(block?.get("text"))
                     } else {
@@ -236,7 +209,6 @@ internal object ResponsesConversationIdentity {
         parts.joinToString("") { "${it.length}:$it" }
 }
 
-private const val FIELD_TYPE = "type"
 private const val FIELD_EXECUTION = "execution"
 private const val EXECUTION_CLIENT = "client"
 private const val FUNCTION_CALL = "function_call"

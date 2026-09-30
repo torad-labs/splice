@@ -190,6 +190,18 @@ class CodeModeConversationRetentionTest {
     }
 
     @Test
+    fun `restart removes an oversized newest conversation before an older small one`() {
+        val original = registry()
+        original.script(2, 0, source = "small")
+        original.script(1, 0, source = "x".repeat(40_000))
+
+        val restarted = registry(CodeModeRetention(bytes = 30_000))
+
+        assertEquals(emptyList<String>(), restarted.kept(1), "the newest conversation exceeds the bound alone")
+        assertEquals(listOf("c2-s0"), restarted.kept(2), "a small older conversation remains")
+    }
+
+    @Test
     fun `a live conversation keeps every record while eighteen other conversations fill the head`() {
         val registry = registry()
         // Conversation 0 runs a script, then two other conversations run all ten of theirs, nine times

@@ -212,13 +212,18 @@ internal class CodeModeRecordRetention(
         // serve after restart. New turns call beginTurn after the retry lookup; an OVER-bound
         // conversation is trimmed here as before, even with no new client turn.
         records.map(CodeModeRecord::key).distinct().forEach { key ->
-            if (records.count { it.key == key } > bounds.perConversation) beginTurn(records, expired, key, now)
+            if (overOwnBound(records, key)) beginTurn(records, expired, key, now)
         }
         val gone = Gone(records, expired, now)
         while (records.size > bounds.records) gone.leastRecent(null, "the head held ${records.size} records") ?: break
         var held = records.sumOf(::bytesOf)
         while (held > bounds.bytes) held -= gone.leastRecent(null, "the head's records held $held bytes") ?: break
         return records.size != before
+    }
+
+    private fun overOwnBound(records: List<CodeModeRecord>, key: String): Boolean {
+        val own = records.filter { it.key == key }
+        return own.size > bounds.perConversation || own.sumOf(::bytesOf) > bounds.bytes
     }
 
     /** Lets records go from [records] at [now], each remembered in [expired]. */

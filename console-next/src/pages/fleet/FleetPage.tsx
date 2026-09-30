@@ -2,6 +2,7 @@ import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, us
 import type { DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, rectSortingStrategy, sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { failureText } from '../../api/client';
+import { useKeyStore } from '../../api/auth';
 import { useAccounts, useAuth, useHealth, useHeads, useSessions, useUsage } from '../../api/queries';
 import { poolOf } from '../../lib/accounts';
 import { fleetCard, fleetLede } from '../../lib/fleet';
@@ -19,6 +20,7 @@ export function FleetPage() {
   const accounts = useAccounts();
   const sessions = useSessions();
   const health = useHealth();
+  const keyStore = useKeyStore();
   const order = useOrder('fleet');
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -43,7 +45,7 @@ export function FleetPage() {
   }
   const cards = sortByOrder(heads.data.heads, (head) => head.key, order).map((head) => ({
     head,
-    facts: fleetCard(head, { usage: usage.data ?? null, auth: auth.data ?? null, accounts: rows, sessions: live, topologyStale: health.data?.topologyStale === true, now }),
+    facts: fleetCard(head, { usage: usage.data ?? null, auth: auth.data ?? null, accounts: rows, sessions: live, topologyStale: health.data?.topologyStale === true, keys: keyStore.data ?? null, now }),
   }));
   const keys = cards.map((card) => card.head.key);
   const onDragEnd = (event: DragEndEvent): void => {

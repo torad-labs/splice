@@ -169,7 +169,7 @@ export const FAMILY_NAME: Record<ProviderFamily, string> = {
   muse: 'muse',
   anthropic: 'anthropic',
   key: 'api key',
-  local: 'local',
+  local: 'this computer',
 };
 
 /** The provider name an auth kind prints as (`chatgpt-oauth` -> `chatgpt`, `api-key` -> `api

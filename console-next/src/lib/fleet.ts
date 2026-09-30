@@ -3,13 +3,15 @@
 // prints (headAttention, planWindows, poolOf), so Fleet and Needs you cannot disagree about a head.
 import type { AccountRow } from '../types/accounts';
 import type { AuthPayload, HeadStatus, UsagePayload } from '../types/core';
+import type { KeysPayload } from '../types/login';
 import { familyName, headAttention, localInstantText, providerFamily, quotaRefusedUntil } from './heads';
 import type { HeadSignals } from './heads';
+import { headKeys } from './keys';
 import { colourOfHead } from './model';
 import type { ModelColour } from './model';
 import { poolOf, selectedExcluded } from './accounts';
 import { planLevel, planWindows } from './usage';
-import { countWord, noun } from './format';
+import { countWord, noun, timeAgo } from './format';
 import { FL } from './words-fleet';
 
 /** Where a plan stands, in the few ways the page's one sentence counts them. */
@@ -39,6 +41,8 @@ export interface FleetCard {
   /** Plan family, account, sessions: read once, never chips. */
   meta: string[];
   fix: FleetFix | null;
+  /** What a card with no line says instead, only when it is true of this head: a key pays per token, a reading may be missing or old. Null says nothing. */
+  none: string | null;
 }
 
 export interface FleetInputs {
@@ -48,6 +52,8 @@ export interface FleetInputs {
   /** Live sessions riding each head, by head key. */
   sessions: ReadonlyMap<string, number>;
   topologyStale: boolean;
+  /** The key store: a head that reads no key is a runtime on this computer, whatever auth kind the daemon gives it. Null until it answers. */
+  keys: KeysPayload | null;
   now: number;
 }
 
@@ -58,15 +64,31 @@ const OAUTH_KINDS = new Set(['chatgpt-oauth', 'grok-oauth', 'kimi-oauth', 'muse-
 /** The start command a stopped local runtime is copied as. */
 export const startCommandOf = (head: HeadStatus): string => `rig up ${head.key}`;
 
-function accountLine(head: HeadStatus, pool: readonly AccountRow[]): string {
-  if (providerFamily(head.authKind) === 'local') return FL.local;
+/** The auth kind a card speaks by: the daemon calls a runtime on this computer `api-key`, but it reads no key, and the card must not say it does. */
+export function kindOf(head: HeadStatus, keys: KeysPayload | null): string {
+  return head.authKind === 'api-key' && keys !== null && headKeys(keys, head.key).length === 0 ? 'local' : head.authKind;
+}
+
+function accountLine(pool: readonly AccountRow[], kind: string): string {
+  if (providerFamily(kind) === 'local') return '';
   if (pool.length > 1) return `Pool · ${pool.length} accounts`;
   const only = pool[0];
   if (only?.label != null && only.label !== '') return only.label;
   // The hashed account id the daemon also reports is a code, never printed: the plan the provider names is what a person knows the login by.
   const plan = only?.plan?.trim() ?? '';
   if (plan !== '') return plan.charAt(0).toUpperCase() + plan.slice(1);
-  return head.authKind === 'api-key' ? 'API key' : '';
+  return kind === 'api-key' ? 'API key' : '';
+}
+
+/** Why a head draws no window. A key has none by nature; a plan that draws none has either never been read or been read before its window reset. */
+function noWindowText(kind: string, keys: KeysPayload | null, usage: UsagePayload | null, head: HeadStatus, now: number): string | null {
+  if (kind === 'api-key') return keys === null ? null : FL.payPerToken;
+  if (kind === 'local') return null;
+  const windows = planWindows(usage?.heads.find((row) => row.key === head.key)?.usage ?? null, now);
+  const last = windows.reduce<(typeof windows)[number] | null>((a, b) => (a === null || (b.observedAt ?? 0) >= (a.observedAt ?? 0) ? b : a), null);
+  if (last === null) return FL.noReading;
+  const when = last.observedAt === null ? 'before its reset' : timeAgo(last.observedAt * 1000, now);
+  return FL.lastReading(when, Math.round(last.pct), WINDOW_NAME[last.window]);
 }
 
 function tightest(head: HeadStatus, usage: UsagePayload | null, now: number): Extract<FleetLine, { kind: 'gauge' }> | null {
@@ -99,14 +121,15 @@ export function fleetCard(head: HeadStatus, inputs: FleetInputs): FleetCard {
   const gauge = tightest(head, usage, now);
   const count = sessions.get(head.key) ?? 0;
   const said = new Set<string>();
-  const meta = [familyName(head.authKind), accountLine(head, pool), `${count === 0 ? 'no' : count} ${noun(count, 'session', 'sessions')}`].filter((part) => {
+  const kind = kindOf(head, inputs.keys);
+  const meta = [familyName(kind), accountLine(pool, kind), `${count === 0 ? 'no' : count} ${noun(count, 'session', 'sessions')}`].filter((part) => {
     const key = part.toLowerCase();
     if (part === '' || said.has(key)) return false;
     said.add(key);
     return true;
   });
   const oauth = OAUTH_KINDS.has(head.authKind);
-  const base = { key: head.key, title: head.label, colour: colourOfHead(head.authKind), meta };
+  const base = { key: head.key, title: head.label, colour: colourOfHead(kind), meta, none: noWindowText(kind, inputs.keys, inputs.usage, head, now) };
 
   const note = (tone: FleetTone, standing: FleetStanding, state: string, text: string, fix: FleetFix | null, needsPerson: boolean): FleetCard => ({
     ...base, tone, standing, state, attention: needsPerson, line: gauge === null || tone === 'idle' ? { kind: 'note', text } : gauge, fix,

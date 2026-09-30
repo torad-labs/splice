@@ -18,8 +18,7 @@ export const S = {
   copied: 'Copied',
   copyFailed: 'Could not copy:',
   pickHead: 'Resume on which head?',
-  otherPlan: 'Another plan',
-  resumeElsewhere: 'Copy resume command for another plan',
+  otherPlan: 'Resume on another command',
   noHeads: 'No heads to resume on.',
   unnamed: 'Untitled session',
 } as const;

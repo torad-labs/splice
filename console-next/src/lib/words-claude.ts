@@ -3,7 +3,7 @@ export const C = {
   title: 'The claude command',
   separate: 'Separate',
   wrapped: 'Wrapped',
-  separateWhy: 'Splice leaves claude on your PATH alone. Its own plan shares your ~/.claude setup and sessions by default.',
+  separateWhy: 'Splice leaves claude on your PATH alone. Its own command shares your ~/.claude setup and sessions by default.',
   wrappedWhy: 'Splice runs claude through itself. Wrapping rewrote two files in ~/.claude and shadowed the command; unwrapping puts them back.',
   onPath: 'claude on your PATH',
   notFound: 'Nothing named claude',

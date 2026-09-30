@@ -12,9 +12,9 @@ export const K = {
   deleteAct: (days: number, entries: number): string => `Delete ${days} ${days === 1 ? 'day' : 'days'} and ${entries} ${entries === 1 ? 'entry' : 'entries'}`,
   cancel: 'Cancel',
   edges: { name: 'Message edges', holds: 'Who messaged whom and when, never the message itself. Whole UTC days, as Message history sets them.', switchWhy: 'Applies after splice restarts.' },
-  labels: { name: 'Activity labels', holds: 'File names, commands and search patterns from tool activity. Today and yesterday; older days age out on the next sweep.', plansEvery: 'Every plan', plansNone: 'No plan', plansSome: (kept: number, total: number): string => `${kept} of ${total} plans`, choose: 'Choose plans', chooseLabel: (plan: string): string => `Keep activity labels for ${plan}` },
-  trace: { name: 'Request capture', holds: 'Full requests and answers for plans with capture on. Whole UTC days, as Request history sets them. Turn capture on from a turn’s page.', plan: (label: string): string => `Capture on ${label}`, none: 'No plan has a trace directory.' },
-  wire: { name: 'Sent bodies', holds: 'The last few request bodies each plan sent, kept in memory only; a restart clears them.' },
+  labels: { name: 'Activity labels', holds: 'File names, commands and search patterns from tool activity. Today and yesterday; older days age out on the next sweep.', plansEvery: 'Every command', plansNone: 'No command', plansSome: (kept: number, total: number): string => `${kept} of ${total} commands`, choose: 'Choose commands', chooseLabel: (plan: string): string => `Keep activity labels for ${plan}` },
+  trace: { name: 'Request capture', holds: 'Full requests and answers for commands with capture on. Whole UTC days, as Request history sets them. Turn capture on from a turn’s page.', plan: (label: string): string => `Capture on ${label}`, none: 'No command has a trace directory.' },
+  wire: { name: 'Sent bodies', holds: 'The last few request bodies each command sent, kept in memory only; a restart clears them.' },
   transcripts: { name: 'Transcript view', holds: 'Claude Code’s own conversation files. Splice reads them and never deletes them; Claude Code decides when they go.', switchWhy: 'Applies at once.' },
   turns: {
     name: 'Turn statistics',

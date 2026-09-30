@@ -148,7 +148,7 @@ describe('every failing check carries its fix', () => {
       check('configuration/topology', 'ok', 'fine'),
     ]);
     expect(rows.map((row) => [row.label, row.members.length])).toEqual([
-      ['System prompt (2)', 2], ['Plan file', 1],
+      ['System prompt (2)', 2], ['Command file', 1],
     ]);
     expect(new Set(rows.map((row) => row.key)).size).toBe(rows.length);
   });
@@ -159,7 +159,7 @@ describe('every failing check carries its fix', () => {
     expect(title('runtime/head claude-grok turns')).toBe('claude-grok turns');
     expect(title('auth/claude-kimi')).toBe('claude-kimi sign-in');
     expect(title('daemon/head bonsai')).toBe('bonsai port');
-    expect(title('daemon/heads')).toBe('Plans starting');
+    expect(title('daemon/heads')).toBe('Commands starting');
     expect(title('daemon/turn path')).toBe('Turn path');
     expect(title('configuration/local:bonsai')).toBe('Local runtime · bonsai');
     expect(title('prerequisites/java')).toBe('java');

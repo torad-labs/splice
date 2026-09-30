@@ -12,7 +12,7 @@ import { FleetCardView } from '../src/pages/fleet/FleetCard';
 
 const card = (over: Partial<FleetCard> = {}): FleetCard => ({
   key: 'claude-grok', title: 'claude-grok', colour: 'grok', tone: 'work', standing: 'ready', state: 'Ready', attention: false,
-  line: { kind: 'gauge', name: '5 hours', pct: 41, note: 'resets Oct 5, 4:40 PM', full: false }, meta: ['grok', 'Ava’s Grok', '2 sessions'], fix: null, ...over,
+  line: { kind: 'gauge', name: '5 hours', pct: 41, note: 'resets Oct 5, 4:40 PM', full: false }, meta: ['grok', 'Ava’s Grok', '2 sessions'], fix: null, none: null, ...over,
 });
 const render = (facts: FleetCard, fix: string | null = null) =>
   renderToStaticMarkup(
@@ -47,9 +47,12 @@ describe('a fleet card', () => {
     expect(html).toContain('Out of quota until Oct 5, 2:13 PM');
   });
   test('a healthy head with nothing to draw has no glass block at all', () => {
-    const html = render(card({ line: null }));
+    const html = render(card({ line: null, none: 'Pays per token; no window' }));
     expect(html).not.toContain('glass');
-    expect(html).toContain('This plan reports no usage window.');
+    expect(html).toContain('Pays per token; no window');
+  });
+  test('a card with nothing true to say about a window says nothing', () => {
+    expect(render(card({ line: null, none: null }))).not.toContain('window');
   });
   test('a note stands where there is no window', () => {
     expect(render(card({ line: { kind: 'note', text: 'The runtime is not answering on :8099.' }, tone: 'idle', state: 'Runtime off' }))).toContain('The runtime is not answering on :8099.');

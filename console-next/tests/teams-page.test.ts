@@ -15,7 +15,7 @@ const valid = () => ({ ...editSeat(blankDraft('a'), 0, { role: 'Planner', head: 
 
 describe('a draft', () => {
   test('a blank draft has one lead seat and every problem in field order', () => {
-    expect(validateDraft(blankDraft('a'))).toEqual(['Give the team a name.', 'Say which repository it works in.', 'Seat 1 needs a role', 'Seat 1 needs a plan']);
+    expect(validateDraft(blankDraft('a'))).toEqual(['Give the team a name.', 'Say which repository it works in.', 'Seat 1 needs a role', 'Seat 1 needs a command']);
   });
   test('a complete draft is valid', () => {
     expect(validateDraft(valid())).toEqual([]);

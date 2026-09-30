@@ -105,12 +105,12 @@ test('a near-limit notice leads through the spare plan to exact cross-plan resum
   const card = earlier.getByRole('listitem').filter({ hasText: 'Synthetic parser' });
   await expect(card).toContainText('parser');
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
-  await card.getByRole('button', { name: 'Copy resume command for another plan', exact: true }).click();
+  await card.getByRole('button', { name: 'Resume on another command', exact: true }).click();
   await page.getByRole('menuitem', { name: STACK.soloHead, exact: true }).click();
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(command);
   await card.getByRole('link', { name: 'Synthetic parser', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Synthetic parser', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Copy resume command for another plan', exact: true }).click();
+  await page.getByRole('button', { name: 'Resume on another command', exact: true }).click();
   await page.getByRole('menuitem', { name: STACK.soloHead, exact: true }).click();
   await expect.poll(() => targets).toEqual([STACK.soloHead, STACK.soloHead]);
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(command);

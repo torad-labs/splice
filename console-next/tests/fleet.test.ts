@@ -14,10 +14,33 @@ const usage = (pct: number, resetsAt: number | null = NOW / 1000 + 3600): UsageP
   window_hours: 1, warn_pct: 80, warn_tokens_5h: 0,
   heads: [{ key: 'claude-grok', label: 'claude-grok', usage: { warn: { pct: 0, level: 'ok', source: 'none', reset: null }, quota: { five_hour: { used_pct: pct, resets_at: resetsAt } } } as never }],
 });
-const inputs = (over: Partial<FleetInputs> = {}): FleetInputs => ({ usage: usage(41), auth: null, accounts: [], sessions: new Map([['claude-grok', 2]]), topologyStale: false, now: NOW, ...over });
+const inputs = (over: Partial<FleetInputs> = {}): FleetInputs => ({ usage: usage(41), auth: null, accounts: [], sessions: new Map([['claude-grok', 2]]), topologyStale: false, keys: null, now: NOW, ...over });
 const account = (over: Partial<AccountRow> = {}): AccountRow => ({ heads: ['claude-grok'], label: 'Ava’s Grok', selected: null, ...over }) as AccountRow;
 
 describe('a fleet card', () => {
+  test('a head on this computer says so, and is never called an api key', () => {
+    const local = head({ key: 'bonsai', label: 'bonsai', authKind: 'api-key' });
+    const keyed = { path: '', keys: [{ name: 'OPENROUTER_API_KEY', stored: true, heads: [{ head: 'openrouter', source: 'store' }] }] } as never;
+    const card = fleetCard(local, inputs({ keys: keyed, sessions: new Map() }));
+    expect(card.meta).toEqual(['this computer', 'no sessions']);
+    expect(card.colour).toBe('local');
+    const remote = fleetCard(head({ key: 'openrouter', label: 'openrouter', authKind: 'api-key' }), inputs({ keys: keyed, sessions: new Map() }));
+    expect(remote.meta).toEqual(['api key', 'no sessions']);
+  });
+  test('a card with no window to draw says why, and only what is true', () => {
+    const keyed = { path: '', keys: [{ name: 'K', stored: true, heads: [{ head: 'openrouter', source: 'store' }] }] } as never;
+    const key = head({ key: 'openrouter', label: 'openrouter', authKind: 'api-key' });
+    expect(fleetCard(key, inputs({ keys: keyed, usage: null })).none).toBe('Pays per token; no window');
+    expect(fleetCard(head({ key: 'bonsai', authKind: 'api-key' }), inputs({ keys: keyed, usage: null })).none).toBeNull();
+    expect(fleetCard(head(), inputs({ usage: null })).none).toBe('No reading yet');
+    const old = usage(41, NOW / 1000 - 60);
+    const read = old.heads[0]?.usage?.quota?.five_hour;
+    if (read !== undefined) read.observed_at = NOW / 1000 - 3 * 3600 - 60;
+    expect(fleetCard(head(), inputs({ usage: old })).none).toBe('Last reading 3h ago: 41% of 5 hours, which has reset since');
+  });
+  test('until the key store answers, an api-key head is called what the daemon calls it', () => {
+    expect(fleetCard(head({ key: 'bonsai', label: 'bonsai', authKind: 'api-key' }), inputs({ keys: null, sessions: new Map() })).meta[0]).toBe('api key');
+  });
   test('a ready head shows its tightest window and one quiet line, and no act', () => {
     const card = fleetCard(head(), inputs({ accounts: [account()] }));
     expect(card).toMatchObject({ state: 'Ready', tone: 'work', attention: false, fix: null });
@@ -58,7 +81,7 @@ describe('a fleet card', () => {
     const off = fleetCard(head({ authKind: 'local', runtimeNotAnswering: ':8099' }), inputs());
     expect(off).toMatchObject({ state: 'Runtime off', tone: 'idle', attention: false, fix: 'copy-start' });
     expect(off.line).toEqual({ kind: 'note', text: 'The runtime is not answering on :8099.' });
-    expect(off.meta[0]).toBe('local');
+    expect(off.meta[0]).toBe('this computer');
     expect(startCommandOf(head({ key: 'bonsai' }))).toBe('rig up bonsai');
   });
   test('an unhealthy head fails and can be restarted', () => {

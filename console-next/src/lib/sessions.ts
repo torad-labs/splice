@@ -122,17 +122,17 @@ export function peerLabel(rows: readonly SessionRow[], edge: SessionEdge): strin
   return named || repo === null ? sessionLabel(sender) : SW.aSessionIn(repo);
 }
 
-/** How a session sits in the hand-offs: it sent work to several sessions (`lead`), it was handed work by
+/** How a session sits in the hand-offs: it sent work to several sessions (`lead`), to one (`to`), it was handed work by
  *  one (`from`), or neither. A lead is a session whose newest edges go to two or more distinct peers; a
- *  session that both led and was handed work reads as what it did last. */
-export type Handoff = { kind: 'lead'; peers: number } | { kind: 'from'; peer: string } | null;
+ *  session that both sent and was handed work reads as what it did last. */
+export type Handoff = { kind: 'lead'; peers: number } | { kind: 'from'; peer: string } | { kind: 'to'; peer: string } | null;
 
 export function handoffOf(rows: readonly SessionRow[], edges: readonly SessionEdge[]): Handoff {
   if (edges.length === 0) return null;
   const newest = edges.reduce((a, b) => (b.at > a.at ? b : a));
   if (newest.direction === 'in') return { kind: 'from', peer: peerLabel(rows, newest) };
   const peers = new Set(edges.filter((edge) => edge.direction === 'out').map((edge) => edge.to));
-  return peers.size >= 2 ? { kind: 'lead', peers: peers.size } : { kind: 'from', peer: peerLabel(rows, newest) };
+  return peers.size >= 2 ? { kind: 'lead', peers: peers.size } : { kind: 'to', peer: peerLabel(rows, newest) };
 }
 
 /** How long a session has been in its state, in ms, or null when the registry gave no time. Every state counts from its

@@ -217,7 +217,7 @@ describe('a head the provider refuses is one out-of-quota item, with the instant
     expect(items({ heads: read([refused()]) })).toEqual([{
       key: 'heads:claudex', severity: 'warn', source: 'heads', kind: 'Out of quota', head: 'claudex', subject: 'claudex',
       finding: `Out of quota until ${localInstantText(UNTIL)}`,
-      fix: { kind: 'open', href: '#/fleet/claudex', label: 'See the plan' },
+      fix: { kind: 'open', href: '#/fleet/claudex', label: 'See the command' },
       at: '#/fleet/claudex',
     }]);
   });
@@ -225,10 +225,10 @@ describe('a head the provider refuses is one out-of-quota item, with the instant
   test('an OAuth head that rides a pool of several logins offers Switch account; a single login or a key head does not', () => {
     const pool = [account({ label: 'a' }), account({ label: 'b' })];
     expect(items({ heads: read([refused()]), accounts: read({ accounts: pool }) })[0]?.fix).toMatchObject({ label: 'Switch account', href: '#/fleet/claudex' });
-    expect(items({ heads: read([refused()]), accounts: read({ accounts: [account({ label: 'a' })] }) })[0]?.fix).toMatchObject({ label: 'See the plan' });
+    expect(items({ heads: read([refused()]), accounts: read({ accounts: [account({ label: 'a' })] }) })[0]?.fix).toMatchObject({ label: 'See the command' });
     const key = refused({ key: 'or', label: 'or', authKind: 'api-key' });
     const keyPool = pool.map((row) => ({ ...row, heads: ['or'] }));
-    expect(items({ heads: read([key]), accounts: read({ accounts: keyPool }), auth: read({}) })[0]?.fix).toMatchObject({ label: 'See the plan' });
+    expect(items({ heads: read([key]), accounts: read({ accounts: keyPool }), auth: read({}) })[0]?.fix).toMatchObject({ label: 'See the command' });
   });
 
   test('a refusal whose reset has passed is over: no item', () => {
@@ -612,10 +612,10 @@ describe('the doctor', () => {
     // Every head up, one of them with an item that is not about being down: the count and the port
     // are the daemon's to explain, not that head's.
     const up = { ...stopped(), heads: read([head({ versionMatch: false }), head({ key: 'mockchat2', label: 'mockchat2', port: 54791 })]) };
-    expect(needsIn(up).map((need) => `${need.source}:${need.subject}`)).toEqual(['heads:claudex', 'doctor:Plans starting', 'doctor:mockchat2 port']);
+    expect(needsIn(up).map((need) => `${need.source}:${need.subject}`)).toEqual(['heads:claudex', 'doctor:Commands starting', 'doctor:mockchat2 port']);
     // A head that failed to start carries the daemon's own remedy, which Start is not.
     const failed = { ...stopped(), doctor: read(doctor([{ id: 'daemon/heads', status: 'fail' as const, detail: '1 of 2 head(s) FAILED to start', fix: 'splice restart' }])) };
-    expect(needsIn(failed).map((need) => `${need.source}:${need.subject}`)).toEqual(['heads:mockchat2', 'doctor:Plans starting']);
+    expect(needsIn(failed).map((need) => `${need.source}:${need.subject}`)).toEqual(['heads:mockchat2', 'doctor:Commands starting']);
   });
 });
 

@@ -26,8 +26,9 @@ export const P = {
   empty: 'No sessions are open.',
   emptyWhy: 'A Claude Code session started through one of your commands shows here.',
   reading: 'Reading the sessions…',
-  from: 'from',
-  leadOf: 'lead of',
+  lastFrom: 'last message from',
+  lastTo: 'last message to',
+  messaged: (peers: number): string => `messaged ${peers} sessions`,
   dragHandle: 'Drag to reorder',
   needsAnswer: 'Waiting for your answer',
 } as const;

@@ -5,7 +5,7 @@ import type { ModelColour } from '../../lib/model';
 import type { Handoff, SessionState } from '../../lib/sessions';
 import { cardLine, needsPerson, sessionKey, sessionLabel, stateTone, stateWord, repoName } from '../../lib/sessions';
 import type { SessionRow } from '../../types/sessions';
-import { Grip, State, Window } from '../../ui';
+import { Grip, ModelMark, State, Window } from '../../ui';
 import { S } from '../shared/copy';
 import { OpenLink, ResumeCopy, StopTurn, sessionPath } from '../shared/SessionActions';
 import { P } from './copy';
@@ -25,7 +25,7 @@ export interface CardFacts {
 }
 
 const handText = (hand: Handoff): string | null =>
-  hand === null ? null : hand.kind === 'lead' ? `${P.leadOf} ${hand.peers}` : `${P.from} ${hand.peer}`;
+  hand === null ? null : hand.kind === 'lead' ? P.messaged(hand.peers) : `${hand.kind === 'from' ? P.lastFrom : P.lastTo} ${hand.peer}`;
 
 /** One session: its title, its state, one line of what it is doing, one quiet line of facts, and at most one act. */
 export function SessionCard({ facts, sortable = true }: { facts: CardFacts; sortable?: boolean }) {
@@ -34,7 +34,7 @@ export function SessionCard({ facts, sortable = true }: { facts: CardFacts; sort
   const drag = useSortable({ id: key, disabled: !sortable });
   const needs = needsPerson(state);
   const { line, note } = cardLine(row, state, since, quiet);
-  const meta = [note, repoName(row), head, handText(hand)].filter((part): part is string => part !== null);
+  const meta = [note, repoName(row), handText(hand)].filter((part): part is string => part !== null);
   return (
     <Window
       as="li"
@@ -62,6 +62,8 @@ export function SessionCard({ facts, sortable = true }: { facts: CardFacts; sort
         <p className={state === 'working' ? 'cur' : undefined}>{line}</p>
       </div>
       <div className="quiet-meta">
+        {/* the head's own dot, in the hue the card's shadow wears: that is the key to it */}
+        {head === null ? null : <ModelMark colour={colour}>{head}</ModelMark>}
         {meta.map((part) => (
           <span key={part}>{part}</span>
         ))}

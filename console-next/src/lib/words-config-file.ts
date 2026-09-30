@@ -7,9 +7,9 @@ export const CF = {
   topLevel: 'Top level',
   groups: {
     daemon: 'Splice',
-    heads: 'Plans',
+    heads: 'Commands',
     providers: 'Providers',
-    defaults: 'Defaults for every plan',
+    defaults: 'Defaults for every command',
     compaction: 'Compaction',
     projects: 'Projects',
     claude: 'Claude',

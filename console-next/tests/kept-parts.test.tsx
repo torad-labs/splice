@@ -92,13 +92,13 @@ describe('the plans that keep activity labels', () => {
   const control = (value: string): string => renderToStaticMarkup(<PlansKept value={value} plans={plans} onSave={() => undefined} />);
   test('is a switch per plan under a summary, never a text box of plan keys', () => {
     const html = control('claudex');
-    expect(html).toContain('1 of 2 plans · Choose plans');
+    expect(html).toContain('1 of 2 commands · Choose commands');
     expect(html).toMatch(/aria-checked="true" aria-label="Keep activity labels for Claudex"/);
     expect(html).toMatch(/aria-checked="false" aria-label="Keep activity labels for Bonsai"/);
     expect(html).not.toContain('<input');
   });
   test('* reads as every plan and empty as none', () => {
-    expect(control('*')).toContain('Every plan · Choose plans');
-    expect(control('')).toContain('No plan · Choose plans');
+    expect(control('*')).toContain('Every command · Choose commands');
+    expect(control('')).toContain('No command · Choose commands');
   });
 });

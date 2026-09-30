@@ -66,7 +66,7 @@ describe('what could not be read', () => {
     ];
     const out = unreadOf(list([], { readings, readAt: null }));
     expect(out.map((row) => row.input)).toEqual(['heads', 'teams', 'doctor']);
-    expect(out[0]?.text).toBe('Could not read the plans: connection refused');
+    expect(out[0]?.text).toBe('Could not read the commands: connection refused');
     expect(out[1]?.text).toBe('This version of splice does not serve the teams.');
     expect(out[2]?.text).toBe('Still reading the doctor checks…');
   });

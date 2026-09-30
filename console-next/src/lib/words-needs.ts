@@ -17,13 +17,13 @@ export const S = {
   openDoctor: 'Open doctor',
   openSession: 'Open the session',
   switchAccount: 'Switch account',
-  seePlan: 'See the plan',
+  seePlan: 'See the command',
 } as const;
 
 export const H = {
   down: 'Not running.',
   unhealthy: 'Running, but failing its health check.',
-  signedOut: 'No login is saved for this plan.',
+  signedOut: 'No login is saved for this command.',
   keyMissingBare: 'Its API key is not set.',
   loginExpired: 'Its login expired and the refresh is blocked.',
   queueFull: 'Every slot is busy and the queue is full.',
@@ -72,15 +72,15 @@ export const K = {
 /** What a doctor check is titled, by the daemon's id (`section/name`, the name sometimes `:detail`). A family collapsed
  *  to one row is titled by its id up to the colon. An id nobody has titled prints as its name, never with the path. */
 const CHECK_TITLES: Readonly<Record<string, string>> = {
-  'daemon/heads': 'Plans starting',
+  'daemon/heads': 'Commands starting',
   'daemon/turn path': 'Turn path',
   'daemon/daemon': 'Daemon',
-  'daemon/topology': 'Running plans',
+  'daemon/topology': 'Running commands',
   'daemon/mgmt-key': 'Management key',
   'installation/wrapper': 'Launcher',
   'installation/jar': 'Installed jar',
   'installation/PATH': 'Search path',
-  'configuration/topology': 'Plan file',
+  'configuration/topology': 'Command file',
   'configuration/system-prompt': 'System prompt',
   'configuration/project-prompt': 'Project prompt',
   'configuration/wire-tap': 'Kept request bodies',

@@ -34,8 +34,8 @@ describe('a need card', () => {
   });
   test('a quiet link opens what the card is about, unless the act already goes there', () => {
     expect(render(need())).toContain('href="/fleet/claudex"');
-    const same = render(need({ fix: { kind: 'open', href: '#/fleet/claudex', label: 'See the plan' } }));
-    expect(same).toContain('See the plan');
+    const same = render(need({ fix: { kind: 'open', href: '#/fleet/claudex', label: 'See the command' } }));
+    expect(same).toContain('See the command');
     expect(same.match(/href="\/fleet\/claudex"/g)).toHaveLength(1);
     expect(render(need({ at: null }))).not.toContain('btn quiet');
   });

@@ -13,8 +13,8 @@ export const KW = {
   field: 'New key',
   save: 'Save',
   cancel: 'Cancel',
-  noReader: 'No plan uses this key.',
-  none: 'This plan reads no key.',
+  noReader: 'No command uses this key.',
+  none: 'This command reads no key.',
 } as const;
 
 /** Where a head reads its key now: the link of its read chain the daemon names. */

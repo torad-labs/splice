@@ -143,11 +143,17 @@ describe('a session card', () => {
     expect(html).toContain('Working');
     expect(html).toContain('Working for 42 min');
     expect(html).toContain('tally');
-    expect(html).toContain('from claude-splice');
+    expect(html).toContain('last message from claude-splice');
     expect(html).toContain('href="/sessions/sess-1"');
     expect(html).not.toContain('class="acts"');
     expect(html).toContain('win grok');
+    expect(html).toContain('<span class="model m-grok">claude-grok</span>');
     expect(html).not.toContain('attn');
+  });
+  test('a hand-off line says what happened: the last message to a session, or the sessions a lead messaged', () => {
+    expect(render(facts({ hand: { kind: 'to', peer: 'claude-muse' } }))).toContain('last message to claude-muse');
+    expect(render(facts({ hand: { kind: 'lead', peers: 50 } }))).toContain('messaged 50 sessions');
+    expect(render(facts({ hand: { kind: 'lead', peers: 50 } }))).not.toContain('lead of');
   });
   test('a card that needs a person drops its hue, opens the session and offers the resume command', () => {
     const html = render(facts({ state: 'waiting', row: row({ status: 'waiting' }) }));
@@ -159,8 +165,7 @@ describe('a session card', () => {
   test('an earlier session offers its resume command on its own plan and on another, and no open link', () => {
     const html = render(facts({ state: 'gone', row: row({ status: null, availability: 'gone', pid: null }) }));
     expect(html).toContain('Copy resume command');
-    expect(html).toContain('aria-label="Copy resume command for another plan"');
-    expect(html).toContain('Another plan');
+    expect(html).toContain('Resume on another command');
     expect(html).not.toContain('Open the session');
     expect(html).not.toContain('Stop the turn');
   });
@@ -171,7 +176,7 @@ describe('a session card', () => {
   test('a session splice did not start asks which head to resume on, and offers no second button', () => {
     const html = render(facts({ state: 'gone', head: null, colour: 'none', row: row({ head: UNKNOWN_HEAD, availability: 'gone' }) }));
     expect(html).toContain('Copy resume command');
-    expect(html).not.toContain('Another plan');
+    expect(html).not.toContain('Resume on another command');
   });
   test('a session splice did not start shows no head and no invented colour', () => {
     const html = render(facts({ head: null, colour: 'none' }));

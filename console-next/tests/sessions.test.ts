@@ -119,6 +119,8 @@ describe('hand-offs', () => {
     expect(handoffOf([peer], [out('uds:/p1', 1), out('uds:/p2', 2), out('uds:/p2', 3)])).toEqual({ kind: 'lead', peers: 2 }));
   test('the newest edge in makes it a session handed work by that peer', () =>
     expect(handoffOf([peer], [out('uds:/p1', 1), { from: 'p1', to: 'uds:/me', at: 5, direction: 'in' }])).toEqual({ kind: 'from', peer: 'claude-splice' }));
+  test('work sent to one peer reads as sent to that peer, never as received from it', () =>
+    expect(handoffOf([peer], [out('uds:/p1', 1), out('uds:/p1', 2)])).toEqual({ kind: 'to', peer: 'claude-splice' }));
 });
 
 describe('time in a state', () => {

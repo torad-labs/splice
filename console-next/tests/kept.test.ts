@@ -42,9 +42,9 @@ describe('the plans that keep activity labels', () => {
     expect(plansKeptValue(new Set(['bonsai', 'claudex']), keys)).toBe('claudex,bonsai');
   });
   test('the summary counts plans in words', () => {
-    expect(plansKeptLine(new Set(keys), keys)).toBe('Every plan');
-    expect(plansKeptLine(new Set(), keys)).toBe('No plan');
-    expect(plansKeptLine(new Set(['claudex']), keys)).toBe('1 of 3 plans');
-    expect(plansKeptLine(new Set(['claudex', 'bonsai']), keys)).toBe('2 of 3 plans');
+    expect(plansKeptLine(new Set(keys), keys)).toBe('Every command');
+    expect(plansKeptLine(new Set(), keys)).toBe('No command');
+    expect(plansKeptLine(new Set(['claudex']), keys)).toBe('1 of 3 commands');
+    expect(plansKeptLine(new Set(['claudex', 'bonsai']), keys)).toBe('2 of 3 commands');
   });
 });

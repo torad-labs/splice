@@ -1,4 +1,5 @@
 import { Link, useParams, useSearchParams } from 'react-router';
+import { useKeyStore } from '../../api/auth';
 import { useAccounts, useAuth, useHealth, useHeads, useSessions, useUsage } from '../../api/queries';
 import { SELECTOR_ORDER_TEXT, canRefresh, poolOf } from '../../lib/accounts';
 import { fleetCard } from '../../lib/fleet';
@@ -39,6 +40,7 @@ export function FleetHeadPage() {
   const accounts = useAccounts();
   const sessions = useSessions();
   const health = useHealth();
+  const keyStore = useKeyStore();
   const now = Date.now();
   const back = (
     <Link className="crumb" to="/fleet">
@@ -56,7 +58,7 @@ export function FleetHeadPage() {
   const pool = poolOf(rows, head.key);
   const live = new Map<string, number>();
   for (const row of sessions.data?.sessions ?? []) if (row.availability !== 'gone') live.set(row.head, (live.get(row.head) ?? 0) + 1);
-  const facts = fleetCard(head, { usage: usage.data ?? null, auth: auth.data ?? null, accounts: rows, sessions: live, topologyStale: health.data?.topologyStale === true, now });
+  const facts = fleetCard(head, { usage: usage.data ?? null, auth: auth.data ?? null, accounts: rows, sessions: live, topologyStale: health.data?.topologyStale === true, keys: keyStore.data ?? null, now });
   const windows = planWindows(usage.data?.heads.find((row) => row.key === head.key)?.usage ?? null, now);
 
   return (
@@ -82,7 +84,7 @@ export function FleetHeadPage() {
         <div className="head-body">
           {tab === 'models' ? <ModelsTab head={head.key} /> : tab === 'log' ? <LogTab head={head.key} initialTail={tailOf(params.get('tail'))} /> : (
             <>
-              {windows.length === 0 ? <p className="hint">{D.noWindows}</p> : <WindowBars windows={windows} now={now} format={localInstantText} />}
+              {windows.length === 0 ? <p className="hint">{facts.none ?? D.noWindows}</p> : <WindowBars windows={windows} now={now} format={localInstantText} />}
               <h2 className="sub-head">{D.accounts}</h2>
               {pool.length === 0 ? <p className="hint">{D.noAccounts}</p> : (
                 <>

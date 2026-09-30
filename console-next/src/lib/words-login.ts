@@ -28,7 +28,7 @@ export const H = {
   browser: 'Finish signing in at this link.',
   opening: 'Opening sign-in with your provider; return to splice when finished.',
   waiting: 'Starting the sign-in.',
-  afterRestart: 'Signed in; the plan restarts to use this account.',
+  afterRestart: 'Signed in; the command restarts to use this account.',
   added: 'Account added.',
   renewed: (label: string): string => `${label} renewed; old usage set aside, read again next request.`,
   renewedExisting: (label: string): string => `${label} signed in again.`,

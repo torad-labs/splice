@@ -58,7 +58,7 @@ export function FleetCardView({ facts, fix, sortable = true }: { facts: Facts; f
           <span key={part}>{part}</span>
         ))}
       </div>
-      {facts.line === null ? <div className="quiet-meta"><span>{F.noWindow}</span></div> : null}
+      {facts.line === null && facts.none !== null ? <div className="quiet-meta"><span>{facts.none}</span></div> : null}
       {fix === null ? null : <div className="acts">{fix}</div>}
     </Window>
   );

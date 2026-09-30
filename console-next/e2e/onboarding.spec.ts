@@ -88,7 +88,7 @@ test('a first plan follows a late sign-in URL while hidden, saves once and tries
     } });
   });
   await open(page, 'fleet');
-  await page.getByRole('button', { name: 'Add a plan', exact: true }).click();
+  await page.getByRole('button', { name: 'Add a command', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: /ChatGPT Sign in with your ChatGPT plan/ }).click();
   const popupReady = page.waitForEvent('popup');
@@ -135,7 +135,7 @@ test('an isolated key backend prints every refused verification check and discar
   page.on('request', (request) => {
     if (/^\/api\/add\/[^/]+\/save$/.test(new URL(request.url()).pathname)) saves += 1;
   });
-  await page.getByRole('button', { name: 'Add a plan', exact: true }).click();
+  await page.getByRole('button', { name: 'Add a command', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: /^api-key / }).click();
   await dialog.getByRole('textbox', { name: 'Plan name', exact: true }).fill('synthetic-refused-plan');

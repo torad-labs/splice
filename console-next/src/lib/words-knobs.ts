@@ -25,7 +25,7 @@ export const GROUP_LABELS = {
  *  in both directions. */
 export const KNOB_LABELS = {
   activityRetentionDays: 'Message history',
-  activityStoreHeads: 'Activity plans',
+  activityStoreHeads: 'Activity commands',
   messageEdges: 'Message edges',
   authCacheMs: 'Login cache',
   budgetDefaultAction: 'Budget default',
@@ -42,7 +42,7 @@ export const KNOB_LABELS = {
   foldReasoningModels: 'Fold models',
   grokAuthPath: 'Grok login file',
   grokModel: 'Grok model',
-  grokPort: 'Grok plan port',
+  grokPort: 'Grok command port',
   materializationPermits: 'Parallel conversions',
   maxInflight: 'Concurrent turns',
   maxQueued: 'Queued turns',
@@ -55,7 +55,7 @@ export const KNOB_LABELS = {
   mirrorReasoning: 'Mirror reasoning',
   perfArchiveRetentionDays: 'Turn stats history',
   pinnedModel: 'ChatGPT model',
-  port: 'ChatGPT plan port',
+  port: 'ChatGPT command port',
   progressLine: 'Progress line',
   quotaPoll: 'Plan usage polling',
   quotaPollIntervalMs: 'Usage poll interval',
@@ -86,21 +86,21 @@ export const KNOB_LABELS = {
 /** One line of help per knob, keyed by the knob's key. */
 export const KNOB_HELP: Record<string, string> = {
   // load limits
-  maxInflight: 'Turns one plan sends upstream at once; 0 means no limit.',
+  maxInflight: 'Turns one command sends upstream at once; 0 means no limit.',
   maxQueued: 'Turns that can wait for a slot; past this, turns are refused.',
   maxRequestBytes: 'The largest request splice accepts from Claude Code.',
   requestReadTimeoutMs: 'How long splice waits for Claude Code to finish sending.',
-  materializationPermits: "Requests converted to a provider's format at once, across all plans.",
+  materializationPermits: "Requests converted to a provider's format at once, across all commands.",
 
   // retries and timeouts
   upstreamRetries: 'Tries per failing provider call, the first included, before the turn fails.',
   retryBackoffBaseMs: 'The wait before the first retry; each later retry waits longer.',
   retryBackoffCapMs: 'The longest any single retry waits.',
-  retryBackoffJitterPct: 'Random retry delays keep failing plans from retrying together.',
+  retryBackoffJitterPct: 'Random retry delays keep failing commands from retrying together.',
   upstreamTimeoutMs: 'The longest one turn can run before splice ends it.',
   firstByteTimeoutMs: 'How long a provider has to start answering before a liveness check.',
   streamIdleMs: 'Silence before splice checks the connection; a dead one is retried.',
-  stallReanchorMs: 'Stall before splice resumes a cut answer, on supported plans.',
+  stallReanchorMs: 'Stall before splice resumes a cut answer, on supported commands.',
 
   // reasoning
   effort: 'Reasoning effort when Claude Code sets none.',
@@ -134,26 +134,26 @@ export const KNOB_HELP: Record<string, string> = {
 
   // recording and history
   transcriptView: "Read Claude Code's already-saved redacted conversation; off hides it everywhere.",
-  trace: 'Record whole conversations for one plan, secrets removed; investigate only.',
+  trace: 'Record whole conversations for one command, secrets removed; investigate only.',
   traceRetentionDays: 'Days of trace files kept; older days are deleted.',
   traceMaxBodyChars: 'Longer bodies are cut in the trace and marked as cut.',
   wireTap: 'Recent provider requests kept in memory for splice wire; 0 keeps none.',
   activityRetentionDays: 'Message history days, at least two; activity labels keep today and yesterday.',
-  activityStoreHeads: 'Plans storing activity labels: * for all, empty for none, or keys.',
+  activityStoreHeads: 'Commands storing activity labels: * for all, empty for none, or keys.',
   messageEdges: 'Keep conversation hand-off metadata; off stops new edges after restart.',
   perfArchiveRetentionDays: 'Days of past turn statistics kept; 0 keeps only the current file.',
   debug: 'Write detailed debug lines to the splice log.',
 
   // chatgpt and grok logins
-  port: 'The port every ChatGPT plan listens on, over splice.toml.',
-  pinnedModel: 'The model every ChatGPT plan uses, over splice.toml.',
+  port: 'The port every ChatGPT command listens on, over splice.toml.',
+  pinnedModel: 'The model every ChatGPT command uses, over splice.toml.',
   chatgptApiBase: 'The ChatGPT API address this provider calls.',
   codexAuthPath: 'Where the ChatGPT login is stored; splice login writes it.',
-  grokPort: 'The port every Grok plan listens on, over splice.toml.',
-  grokModel: 'The model every Grok plan uses, over splice.toml.',
+  grokPort: 'The port every Grok command listens on, over splice.toml.',
+  grokModel: 'The model every Grok command uses, over splice.toml.',
   xaiApiBase: 'The xAI API address Grok-login providers call.',
   grokAuthPath: 'Where the Grok login is stored; splice login writes it.',
-  authCacheMs: 'How long a plan reuses a login before rereading it from disk.',
+  authCacheMs: 'How long a command reuses a login before rereading it from disk.',
 
   // daemon
   controlPort: 'The port this console and the control API listen on.',

@@ -78,10 +78,10 @@ describe('the upgrade rows', () => {
 });
 
 describe('try a plan', () => {
-  test('starts with nothing sent, the send held until a plan and a prompt exist', () => {
+  test('starts with nothing sent, the send held until a command and a prompt exist', () => {
     const html = render(<Playground />, (client) => client.setQueryData(['heads', '/api/heads'], { heads: [{ key: 'claude-grok', label: 'Grok', authKind: 'grok' }] }));
-    expect(html).toContain('Try a plan');
-    expect(html).toContain('Choose a plan');
+    expect(html).toContain('Try a command');
+    expect(html).toContain('Choose a command');
     expect(html).toMatch(/<button[^>]*disabled[^>]*>Send<\/button>/);
     expect(html).not.toContain('Answered with');
   });

@@ -87,7 +87,7 @@ export function ResumeCopy({ row }: { row: SessionRow }) {
   return (
     <>
       {named ? <Button small onClick={() => void run(row.head)}>{label}</Button> : null}
-      {menu(named ? <Button small aria-label={S.resumeElsewhere}>{S.otherPlan}<Chevron /></Button> : <Button small>{label}<Chevron /></Button>)}
+      {menu(named ? <Button small>{S.otherPlan}<Chevron /></Button> : <Button small>{label}<Chevron /></Button>)}
       {note}
     </>
   );

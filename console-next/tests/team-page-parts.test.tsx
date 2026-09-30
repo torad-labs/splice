@@ -52,7 +52,7 @@ describe('the team page', () => {
       }),
     );
     expect(html).toContain('31 turns · $1.90 · checks failing');
-    expect(html).toContain('3 turns on these plans carry no session');
+    expect(html).toContain('3 turns on these commands carry no session');
   });
   test('the day\'s talk is newest first, named by role, and a missing text says why', () => {
     const day = dayOf(NOW, 0);

@@ -176,14 +176,28 @@ export interface RunningLine {
   plan: string;
   colour: ModelColour;
   label: string;
+  /** What the card is called: the session's name, or the model when no session is known: never the gate's short id. */
+  title: string;
+  /** The model, when the title is the session's name. */
+  model: string | null;
   stuck: boolean;
   age: string;
   quiet: string | null;
   phase: 'connect' | 'streaming';
 }
 
+/** The gate labels a live turn `<first 8 of the session id> <model>`. The id is a code: the card says the session's name where one is
+ *  known, and the model alone where not. A label of any other shape is printed as it is. */
+const GATE_LABEL = /^([0-9a-f]{8}) (.+)$/;
+function liveTitle(label: string, nameOf: (prefix: string) => string | null): { title: string; model: string | null } {
+  const coded = GATE_LABEL.exec(label);
+  if (coded?.[1] === undefined || coded[2] === undefined) return { title: label, model: null };
+  const name = nameOf(coded[1]);
+  return name === null ? { title: coded[2], model: null } : { title: name, model: coded[2] };
+}
+
 /** A live turn is stuck once the plan has said nothing for the same five minutes a session is. */
-export function runningOf(turns: readonly InflightTurn[], planLabel: (head: string) => string, colourOf: ColourOf): RunningLine[] {
+export function runningOf(turns: readonly InflightTurn[], planLabel: (head: string) => string, colourOf: ColourOf, nameOf: (prefix: string) => string | null = () => null): RunningLine[] {
   return turns
     .map((turn, index) => ({
       key: `${turn.head}/${index}`,
@@ -191,6 +205,7 @@ export function runningOf(turns: readonly InflightTurn[], planLabel: (head: stri
       plan: planLabel(turn.head),
       colour: colourOf(turn.head),
       label: turn.label,
+      ...liveTitle(turn.label, nameOf),
       stuck: turn.idleMs > STUCK_IDLE_MS,
       age: spanText(turn.ageMs),
       quiet: turn.idleMs >= 30_000 ? spanText(turn.idleMs) : null,

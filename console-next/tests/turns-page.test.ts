@@ -67,6 +67,14 @@ describe('running turns', () => {
     const lines = runningOf([live(4 * 60_000), { ...live(6 * 60_000), label: 'Old' }], (h) => h, none);
     expect(lines.map((l) => [l.label, l.stuck])).toEqual([['Old', true], ['Migrate', false]]);
   });
+  test('a live turn is titled by its session, never by the code the gate labels it with', () => {
+    const coded = { ...live(1000), label: '544af4b6 gpt-6-sol' };
+    const named = runningOf([coded], (h) => h, none, (prefix) => (prefix === '544af4b6' ? 'claude-builder' : null))[0];
+    expect([named?.title, named?.model]).toEqual(['claude-builder', 'gpt-6-sol']);
+    const unknown = runningOf([coded], (h) => h, none)[0];
+    expect([unknown?.title, unknown?.model]).toEqual(['gpt-6-sol', null]);
+    expect(runningOf([live(1000)], (h) => h, none)[0]?.title).toBe('Migrate');
+  });
   test('a turn that has just spoken names no silence', () => {
     expect(runningOf([live(2000)], (h) => h, none)[0]?.quiet).toBeNull();
   });

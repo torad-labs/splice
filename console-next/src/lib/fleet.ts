@@ -58,13 +58,15 @@ const OAUTH_KINDS = new Set(['chatgpt-oauth', 'grok-oauth', 'kimi-oauth', 'muse-
 /** The start command a stopped local runtime is copied as. */
 export const startCommandOf = (head: HeadStatus): string => `rig up ${head.key}`;
 
-function accountLine(head: HeadStatus, pool: readonly AccountRow[], auth: AuthPayload | null): string {
+function accountLine(head: HeadStatus, pool: readonly AccountRow[]): string {
   if (providerFamily(head.authKind) === 'local') return FL.local;
   if (pool.length > 1) return `Pool · ${pool.length} accounts`;
   const only = pool[0];
   if (only?.label != null && only.label !== '') return only.label;
-  const masked = auth?.[head.key]?.account_id_masked;
-  return masked ?? (head.authKind === 'api-key' ? 'API key' : '');
+  // The hashed account id the daemon also reports is a code, never printed: the plan the provider names is what a person knows the login by.
+  const plan = only?.plan?.trim() ?? '';
+  if (plan !== '') return plan.charAt(0).toUpperCase() + plan.slice(1);
+  return head.authKind === 'api-key' ? 'API key' : '';
 }
 
 function tightest(head: HeadStatus, usage: UsagePayload | null, now: number): Extract<FleetLine, { kind: 'gauge' }> | null {
@@ -97,7 +99,7 @@ export function fleetCard(head: HeadStatus, inputs: FleetInputs): FleetCard {
   const gauge = tightest(head, usage, now);
   const count = sessions.get(head.key) ?? 0;
   const said = new Set<string>();
-  const meta = [familyName(head.authKind), accountLine(head, pool, auth), `${count === 0 ? 'no' : count} ${noun(count, 'session', 'sessions')}`].filter((part) => {
+  const meta = [familyName(head.authKind), accountLine(head, pool), `${count === 0 ? 'no' : count} ${noun(count, 'session', 'sessions')}`].filter((part) => {
     const key = part.toLowerCase();
     if (part === '' || said.has(key)) return false;
     said.add(key);

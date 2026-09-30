@@ -25,11 +25,11 @@ export function turnPath(line: Pick<TurnLine, 'head' | 'ts'>): string {
 function RunningCard({ turn }: { turn: RunningLine }) {
   const say = turn.quiet !== null ? T.quietFor(turn.quiet) : turn.phase === 'streaming' ? T.streaming : T.connecting;
   return (
-    <Window as="li" colour={turn.colour} attention={turn.stuck} aria-label={`${turn.label}, ${turn.plan}`}>
-      <WindowBar title={turn.label}>
+    <Window as="li" colour={turn.colour} attention={turn.stuck} aria-label={`${turn.title}, ${turn.plan}`}>
+      <WindowBar title={turn.title}>
         <State tone={turn.stuck ? 'stuck' : 'work'}>{turn.stuck ? 'Stuck' : 'Working'}</State>
       </WindowBar>
-      <p className="say"><b>{turn.plan}</b> · {say} · {T.runningFor(turn.age)}</p>
+      <p className="say"><b>{turn.plan}</b>{turn.model === null ? '' : ` · ${turn.model}`} · {say} · {T.runningFor(turn.age)}</p>
     </Window>
   );
 }
@@ -114,7 +114,7 @@ export function TurnsPage() {
   const local = localStepsOf(summary.data?.heads ?? []);
   const all = newestFirst(inWindow.filter((row) => !servedLocally(row)).map((row) => lineOf(row, planLabel, colourOf, titleOf)));
   const lines = filterLines(all, filter, query);
-  const running = runningOf(slice.inflight, planLabel, colourOf);
+  const running = runningOf(slice.inflight, planLabel, colourOf, (prefix) => titleOf(undefined, prefix));
   const quiet = running.filter((turn) => turn.stuck);
   const held = plans.reduce((n, row) => n + row.turns, 0);
   const stuck = quiet[0];

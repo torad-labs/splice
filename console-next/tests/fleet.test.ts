@@ -24,6 +24,12 @@ describe('a fleet card', () => {
     expect(card.line).toMatchObject({ kind: 'gauge', name: '5 hours', pct: 41, full: false });
     expect(card.meta).toEqual(['grok', 'Ava’s Grok', '2 sessions']);
   });
+  test('a single login with no label is named by its plan, never by the hashed account id', () => {
+    const auth = { 'claude-grok': { kind: 'grok-oauth', login: '', present: true, account_id_masked: '3460...b1aa' } };
+    const meta = fleetCard(head(), inputs({ auth, accounts: [account({ label: null, plan: 'pro' })] })).meta;
+    expect(meta).toEqual(['grok', 'Pro', '2 sessions']);
+    expect(fleetCard(head(), inputs({ auth, accounts: [account({ label: null })] })).meta).toEqual(['grok', '2 sessions']);
+  });
   test('a head near its warn share says so, without needing a person', () => {
     const card = fleetCard(head(), inputs({ usage: usage(90) }));
     expect(card).toMatchObject({ state: 'Near its limit', tone: 'quota', attention: false });

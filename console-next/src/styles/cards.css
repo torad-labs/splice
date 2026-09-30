@@ -17,7 +17,7 @@
 .gauge { display: grid; gap: var(--space-5); }
 .gauge .gl { display: flex; align-items: baseline; gap: var(--space-5); font: 500 0.8125rem var(--mono); }
 .gauge .gl span, .gauge .gl b { color: var(--glass-ink); font-weight: 600; }
-.gauge .gl small { margin-left: auto; font: 400 0.78125rem var(--mono); color: var(--glass-dim); }
+.gauge .gl small { margin-left: auto; font: 400 0.8125rem var(--mono); color: var(--glass-dim); }
 .gauge .track { height: 0.875rem; border-radius: 0.4375rem; background: var(--glass-track); overflow: hidden; }
 .gauge .track i { display: block; height: 100%; border-radius: 0.4375rem 0 0 0.4375rem; background: var(--glass-ink); }
 .gauge .track.full i { background: repeating-linear-gradient(135deg, var(--glass-ink) 0 8px, var(--glass-hatch) 8px 16px); border-radius: 0.4375rem; }

@@ -82,7 +82,7 @@ export function TeamPage() {
       ) : null}
       {archive.isError ? <Fault message={failureText(archive.error)} /> : null}
 
-      <section className="team-section" aria-labelledby="team-seats">
+      <section className="team-section wide" aria-labelledby="team-seats">
         <h2 id="team-seats">{M.seatsTitle}</h2>
         <p className="why">{M.seatsWhy}</p>
         <ul className="seatrows">
@@ -110,6 +110,7 @@ export function TeamPage() {
         {economics.data === undefined || economics.data.unattributed_turns === 0 ? null : <p className="team-note">{M.economicsUnattributed(economics.data.unattributed_turns)}</p>}
       </section>
 
+      <div className="frame-cols two">
       <section className="team-section" aria-labelledby="team-talk">
         <h2 id="team-talk">{M.talkTitle} {dayWords(now, back).toLowerCase()}</h2>
         <p className="why">{M.talkWhy}</p>
@@ -144,6 +145,7 @@ export function TeamPage() {
           </ul>
         )}
       </section>
+      </div>
 
       {editing ? <TeamDialog team={team} onClose={() => setEditing(false)} onSaved={() => setEditing(false)} /> : null}
     </>

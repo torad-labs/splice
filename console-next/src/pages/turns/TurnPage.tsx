@@ -55,7 +55,7 @@ export function TurnPage() {
         {session === undefined ? null : <div className="tools"><Link className="btn go" to={sessionPath(session)}>{P.openSession}</Link></div>}
       </header>
 
-      <section className="turn-section" aria-labelledby="turn-stages">
+      <section className="turn-section wide" aria-labelledby="turn-stages">
         <h2 id="turn-stages">{P.stagesTitle}</h2>
         <p className="why">{stages.length === 0 ? P.stagesNone : P.stagesWhy}</p>
         {stages.length === 0 ? null : (
@@ -76,6 +76,7 @@ export function TurnPage() {
         )}
       </section>
 
+      <div className="frame-cols two">
       <section className="turn-section" aria-labelledby="turn-moved">
         <h2 id="turn-moved">{P.movedTitle}</h2>
         <div className="figs">
@@ -87,6 +88,7 @@ export function TurnPage() {
       </section>
 
       <KeptTabs row={row} plan={plan} tab={params.get('tab')} />
+      </div>
     </div>
   );
 }

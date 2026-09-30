@@ -37,6 +37,7 @@ export function ProjectPage() {
       <PageHead title={repoLabel(project.root, project.remote)} lede={projectLede(project)} />
       <p className="hint">{project.root}{project.last_activity === null ? ` · ${P.never}` : ` · ${P.activity} ${clockTime(project.last_activity)}`}</p>
 
+      <div className="frame-cols">
       <section className="proj-section" aria-labelledby="proj-sessions">
         <h2 id="proj-sessions">{P.sessionsTitle}</h2>
         {here.length === 0 ? <p className="why">{P.sessionsNone}</p> : (
@@ -108,6 +109,7 @@ export function ProjectPage() {
           </ul>
         </section>
       )}
+      </div>
     </>
   );
 }

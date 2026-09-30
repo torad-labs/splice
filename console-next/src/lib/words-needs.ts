@@ -96,7 +96,7 @@ export function checkTitle(id: string): string {
   const colon = id.indexOf(':');
   if (colon !== -1) {
     const family = CHECK_TITLES[id.slice(0, colon)];
-    return family === undefined ? capital(id.slice(id.indexOf('/') + 1)) : `${family} · ${id.slice(colon + 1)}`;
+    return family === undefined ? capital(id.slice(id.indexOf('/') + 1)).replace(':', ' · ') : `${family} · ${id.slice(colon + 1)}`;
   }
   const slash = id.indexOf('/');
   const section = id.slice(0, slash);

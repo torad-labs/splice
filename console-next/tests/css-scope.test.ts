@@ -66,3 +66,39 @@ describe('css scope', () => {
     expect(collisions(shared, pages)).toEqual(['a.css: .live is also defined by a shared sheet', 'a.css: .first is also defined by a shared sheet', 'b.css: .crumb differs from a.css']);
   });
 });
+
+// TYPE FLOORS AT THE OPERATOR'S FRAME (ruling 4, 3840 wide, root 20px): a caption reads at 16px or more (0.8rem) and a cell or control
+// at 19px or more (0.96rem). A size is one or the other: a caption rung from 0.8rem to 0.875rem, or a cell rung from 0.96rem up.
+// The font-size wall reads only `font-size:`; every size written in a `font:` shorthand slipped past it.
+const CAPTION_FLOOR = 0.8;
+const CAPTION_CEILING = 0.875;
+const CELL_FLOOR = 0.96;
+
+/** Every rem size a sheet writes in `font` or `font-size`, with the declaration it came from. */
+export function textSizes(css: string): { rem: number; text: string }[] {
+  const out: { rem: number; text: string }[] = [];
+  for (const match of css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/(?<![\w-])font(?:-size)?\s*:\s*([^;}]*)/g)) {
+    const text = match[1] ?? '';
+    const rem = /(?<![\w.-])(\d*\.?\d+)rem\b/.exec(text)?.[1];
+    if (rem !== undefined) out.push({ rem: Number(rem), text: text.trim() });
+  }
+  return out;
+}
+
+/** Sizes that are neither a caption nor a cell. */
+export const offScale = (sizes: readonly { rem: number }[]): number[] =>
+  [...new Set(sizes.map((size) => size.rem).filter((rem) => rem < CAPTION_FLOOR || (rem > CAPTION_CEILING && rem < CELL_FLOOR)))].sort((a, b) => a - b);
+
+describe('type floors', () => {
+  test('every size in every sheet is a caption of 16px or more at 3840 or a cell of 19px or more (0.96rem, so the float arithmetic cannot land a hair under)', () => {
+    const sizes = Object.entries(sheets).filter(([file]) => file !== 'src/styles/tokens.css').flatMap(([, css]) => textSizes(css));
+    expect(sizes.length).toBeGreaterThan(100);
+    expect(offScale(sizes)).toEqual([]);
+  });
+
+  test('the check fails on a shorthand size between the rungs and one below the caption floor', () => {
+    const planted = textSizes('.a { font: 500 0.9375rem var(--meta); } .e { font: 500 0.95rem var(--meta); } .b { font: 600 0.75rem/1 var(--meta); } .c { font: 0.875rem var(--meta); } .d { font-size: 1rem; }');
+    expect(offScale(planted)).toEqual([0.75, 0.9375, 0.95]);
+  });
+});
+

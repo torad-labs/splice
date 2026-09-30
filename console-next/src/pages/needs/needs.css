@@ -8,7 +8,7 @@
 /* a finding is one card's sentence; a long one (a doctor check naming eleven heads) is cut at four lines and read in full where Open goes */
 .need-body p { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
 .need-do { display: grid; gap: var(--space-6); justify-items: stretch; min-width: 12.5rem; }
-.need-do .btn { justify-content: center; min-height: 2.875rem; font-size: var(--text-1); }
+.need-do .btn { justify-content: center; min-height: 2.875rem; font-size: var(--text-2); }
 .need-do .btn.sm { min-height: 2rem; }
 .need-do .hint { font: 400 0.875rem/1.4 var(--read); color: var(--mute); }
 .need-do .hint.alert { color: var(--stuck); }

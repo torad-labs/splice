@@ -7,7 +7,7 @@
 .account:last-child { border-bottom: 0; padding-bottom: 0; }
 .account-main { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4) var(--space-6); }
 .account-main b { font: 600 1.0625rem var(--meta); color: var(--ink); }
-.account-main .state-word, .account-main .windows-text { font: 500 0.90625rem var(--meta); color: var(--mute); }
+.account-main .state-word, .account-main .windows-text { font: 500 0.96rem var(--meta); color: var(--mute); }
 .account-acts, .acts-row { display: flex; flex-wrap: wrap; gap: var(--space-5); }
 .add-plan { max-height: calc(100vh - var(--space-13)); overflow-y: auto; width: min(34rem, calc(100vw - var(--space-13))); }
 .add-plan form { display: grid; gap: var(--space-7); }

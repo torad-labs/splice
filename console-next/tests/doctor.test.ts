@@ -166,6 +166,7 @@ describe('every failing check carries its fix', () => {
     // an id nobody has titled yet prints as its name, never with the section path in front
     expect(title('somewhere/new thing')).toBe('New thing');
     expect(title('bare')).toBe('Bare');
+    expect(title('trace:e2e-codex')).toBe('Trace · e2e-codex');
   });
 
   test('checks sharing an id with no colon are one row that keeps every member', () => {

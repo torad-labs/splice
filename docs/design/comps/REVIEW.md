@@ -9,7 +9,7 @@ Day theme, 1440 and 1920. Left is the comp (`png/`), right is the built page (`p
 | ![](png/needs-day-1440.png) | ![](png/built/needs-day-1440.png) |
 | ![](png/needs-day-1920.png) | ![](png/built/needs-day-1920.png) |
 
-Left: the cards are the daemon's real items (doctor findings, two waiting sessions), not the comp's four. A waiting session quotes its question and offers Copy resume command; other kinds carry only the acts the daemon backs.
+Left: the cards are the daemon's real items (doctor findings, two waiting sessions), not the comp's four. A waiting session quotes its question and offers Copy resume command; other kinds carry only the acts the daemon backs. A session with no name reads as its repo and the day it began, never a hex id.
 
 ## Sessions
 
@@ -18,7 +18,7 @@ Left: the cards are the daemon's real items (doctor findings, two waiting sessio
 | ![](png/sessions-day-1440.png) | ![](png/built/sessions-day-1440.png) |
 | ![](png/sessions-day-1920.png) | ![](png/built/sessions-day-1920.png) |
 
-Left: a session carries a name, not a task title, so a card shows the name and its dark line is the newest message; the switch has a Team segment the comp lacks, because Team grouping exists; the sidebar carries the Day/Night switch, which the comp leaves out.
+Left: a session carries a name, not a task title, so a card shows the name and its dark line is the newest message; the switch has a Team segment the comp lacks, because Team grouping exists; the sidebar carries the Day/Night switch, which the comp leaves out. The dark line reads what a message did, not its tags: a slash command is "Ran /clear", command output is "Output · Compacted", a tool is its server and name ("ast-grep · find code by rule"). The repo on each card is its folder ("mythos/repo") until the daemon sends the remote's name.
 
 ## A session
 
@@ -27,7 +27,7 @@ Left: a session carries a name, not a task title, so a card shows the name and i
 | ![](png/session-day-1440.png) | ![](png/built/session-day-1440.png) |
 | ![](png/session-day-1920.png) | ![](png/built/session-day-1920.png) |
 
-Left: this is a real two-month session, so its rail is long with hand-offs and it has no Stop the turn (nothing is running). Its layout is the comp's.
+Left: this is a real two-month session, so its rail is long with hand-offs and it has no Stop the turn (nothing is running). Its layout is the comp's. The local-command caveat is gone, the slash command folds to one quiet line ("Ran /clear", its output inside), a Bash row reads its description with the command in the opened body, and a hand-off from a session the registry no longer holds says "an ended session" where a hex id stood.
 
 ## Fleet
 
@@ -54,7 +54,7 @@ There is no comp for this page: the plan page was never drawn, so only the built
 | ![](png/turns-day-1440.png) | ![](png/built/turns-day-1440.png) |
 | ![](png/turns-day-1920.png) | ![](png/built/turns-day-1920.png) |
 
-Left: the finished list is two hundred real turns (the page caps it and says so), so the built image shows its top; its heading says Finished on every page, so the comp was changed from Landed. A running turn has no title on the wire, so its card shows the turn id and model.
+Left: the finished list is two hundred real turns (the page caps it and says so), so the built image shows its top; its heading says Finished on every page, so the comp was changed from Landed. A running turn has no title on the wire, so its card shows the turn id and model. Steps splice answered itself in Codex code mode (no first byte, no tokens, no plan asked) are not turns the model took, so the list leaves them out and says how many; the counts in the sentence above and the plan table still include them until the daemon marks them.
 
 ## A turn
 
@@ -63,7 +63,15 @@ Left: the finished list is two hundred real turns (the page caps it and says so)
 | ![](png/turn-day-1440.png) | ![](png/built/turn-day-1440.png) |
 | ![](png/turn-day-1920.png) | ![](png/built/turn-day-1920.png) |
 
-Left: the tab labels are Conversation, Request and answer, Sent to the plan, where the comp says Request, Trace, Wire; a turn with no retry or price shows no Retry figure and a dash for cost.
+Left: the tab labels are Conversation, Request and answer, Sent to the plan, where the comp says Request, Trace, Wire; a turn with no retry or price shows no Retry figure and a dash for cost. A tool call in the conversation reads as its tool and what it did ("Bash · Show files changed in the console fix commit"), and a background-task notice reads as a named event, never its tags.
+
+### A step splice answered itself
+
+There is no comp for this: the comp has no such turn. This is what a turn page says when the plan was not asked.
+
+| Built |
+|---|
+| ![](png/built/turn-local-day-1440.png) |
 
 ## Usage
 

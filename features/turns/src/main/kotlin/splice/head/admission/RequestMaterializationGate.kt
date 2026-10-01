@@ -10,8 +10,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 // Measured everyday daemon footprint, reserved before request admission (V4-374).
 internal const val MATERIALIZATION_RESIDENT_BYTES: Long = 384 * 1024 * 1024L
+
 // why: the measured 208 MiB for a 32 MiB body is a 13/2 heap expansion, rounded upward.
 private const val HEAP_EXPANSION_NUMERATOR = 13L
+
 // why: retain the measured half-byte expansion without floating-point admission arithmetic.
 private const val HEAP_EXPANSION_DENOMINATOR = 2L
 

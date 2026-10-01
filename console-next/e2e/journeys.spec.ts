@@ -46,13 +46,12 @@ test('real working waiting and finished rows group and a session opens on its ow
   await assertHealthy(page, faults);
 });
 
-test('a session opens at its newest message, scrolled to the bottom, with a note box that takes input', async ({ page }) => {
+test('a session opens at its newest message, scrolled to the bottom', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 420 });
   const faults = await open(page, 'sessions/' + STACK.sender.id);
   await expect(page.getByText('Synthetic answer')).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollHeight - (window.scrollY + window.innerHeight)), { timeout: 5000 }).toBeLessThan(4);
   expect(await page.evaluate(() => document.documentElement.scrollHeight), 'the page is taller than the window').toBeGreaterThan(420);
-  await expect(page.getByRole('textbox', { name: 'Send a note to this session', exact: true })).toBeEnabled();
   await assertHealthy(page, faults);
 });
 

@@ -55,7 +55,7 @@ module.exports = { liveStateDir };
 
 // Hand-paired with splice.core.SHIM_VERSION (core/src/main/kotlin/splice/core/Versions.kt)
 // — bump both together whenever this shim's behavior changes. No code generation.
-const SPLICE_SHIM_VERSION = "shim-10";
+const SPLICE_SHIM_VERSION = "shim-11";
 // Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.
 const SPLICE_GATEWAY_VERSION = "0.4.0";
 
@@ -178,12 +178,24 @@ function resolveExecutable(name, environment) {
 
 /** Replaces this process, as the bash `exec` did — the launched program is the terminal's
  *  foreground job, not a child of the shim. */
-function exec(argv, environment) {
+function recordLaunch(head, baseUrl, kind, environment) {
+  try {
+    execFileSync("java", [
+      CLI_CONSOLE, USER_HOME, "-jar", JAR, "record-launch", String(process.pid),
+      head, baseUrl || "", kind, environment.SPLICE_LOGIN_ORIGIN === "hook" ? "hook" : "other",
+    ], { env: { ...environment, SPLICE_STATE_DIR: STATE_DIR }, stdio: "ignore" });
+  } catch {
+    warn("splice: launch ownership could not be recorded; this session may have an unknown head on macOS");
+  }
+}
+
+function exec(argv, environment, owner) {
   const file = resolveExecutable(argv[0], environment);
   if (file === null) fail(`splice: ${argv[0]}: command not found on PATH`);
   if (typeof process.execve !== "function") {
     fail(`splice: the launch shim needs Node 22.15 or newer (process.execve); this is ${process.version}`);
   }
+  if (owner) recordLaunch(owner.head, owner.baseUrl, owner.kind, environment);
   process.execve(file, argv, environment);
 }
 
@@ -193,11 +205,22 @@ function needJar() {
 
 const args = process.argv.slice(2);
 
+function loginHead(words) {
+  const positional = [];
+  for (let i = 0; i < words.length; i++) {
+    if (words[i] === "--label") { i++; continue; }
+    if (words[i] !== "--discard") positional.push(words[i]);
+  }
+  return positional.length === 1 ? positional[0] : undefined;
+}
+
 // Invoked as `splice` (the admin command): pass every subcommand straight to the CLI
 // (setup, status, dashboard, login <head>, install, …). The CLI self-manages the daemon.
 if (HEAD === "splice") {
   needJar();
-  exec(["java", CLI_CONSOLE, USER_HOME, "-jar", JAR, ...args], env);
+  const head = args[0] === "login" ? loginHead(args.slice(1)) : undefined;
+  exec(["java", CLI_CONSOLE, USER_HOME, "-jar", JAR, ...args], env,
+    head ? { head, baseUrl: "", kind: "login" } : undefined);
 }
 
 // `<command> login [--label NAME]` runs the OAuth browser flow for this head directly (no daemon
@@ -205,7 +228,8 @@ if (HEAD === "splice") {
 // account of this head's kind).
 if (args[0] === "login") {
   needJar();
-  exec(["java", CLI_CONSOLE, USER_HOME, "-jar", JAR, "login", HEAD, ...args.slice(1)], env);
+  exec(["java", CLI_CONSOLE, USER_HOME, "-jar", JAR, "login", HEAD, ...args.slice(1)], env,
+    { head: HEAD, baseUrl: "", kind: "login" });
 }
 
 /** One HTTP exchange against the control plane: the body on ANY status (curl without -f), "" on a
@@ -488,7 +512,7 @@ async function launch() {
     else warn(`splice: ignoring malformed env key from daemon: '${name}'`);
   }
   if (recipe.warning) warn(`splice: ${recipe.warning}`);
-  exec(recipe.argv, environment);
+  exec(recipe.argv, environment, { head: HEAD, baseUrl: environment.ANTHROPIC_BASE_URL, kind: "session" });
 }
 
 async function main() {

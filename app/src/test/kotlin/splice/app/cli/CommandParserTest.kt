@@ -10,6 +10,23 @@ class CommandParserTest {
     private val parser = CommandParser()
 
     @Test
+    fun `internal ownership protocols reject incomplete or malformed declarations`() {
+        val valid = arrayOf("record-launch", "42", "fixture", "http://127.0.0.1:3101", "session", "other")
+        org.junit.jupiter.api.Assertions.assertTrue(parser.parse(valid) is LaunchOwnerCommand)
+        for (args in listOf(
+            valid.dropLast(1).toTypedArray(),
+            arrayOf("record-launch", "0", "fixture", "", "login", "hook"),
+            arrayOf("record-launch", "42", "fixture", "", "wrong", "hook"),
+            arrayOf("record-launch", "42", "fixture", "", "login", "wrong"),
+        )) assertEquals(null, parser.parse(args))
+        org.junit.jupiter.api.Assertions.assertTrue(
+            parser.parse(arrayOf("pending-login", "/fixture.jar", "fixture")) is PendingLoginCommand,
+        )
+        assertEquals(null, parser.parse(arrayOf("pending-login", "/fixture.jar")))
+        assertEquals(null, parser.parse(arrayOf("pending-login", "", "fixture")))
+    }
+
+    @Test
     fun `login carries the head and the optional label`() {
         assertEquals(Command.Login("claudex", null), parser.parse(arrayOf("login", "claudex")))
         assertEquals(Command.Login("claudex", "work"), parser.parse(arrayOf("login", "claudex", "--label", "work")))

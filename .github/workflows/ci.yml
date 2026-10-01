@@ -14,9 +14,13 @@ concurrency:
 
 jobs:
   gate:
+    needs: macos
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
+      - name: require macOS parity
+        run: test "${{ needs.macos.result }}" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -73,6 +77,53 @@ jobs:
             app/src/main/dist/bin/splice-launch
           retention-days: 14
           if-no-files-found: error
+
+  macos:
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+      - name: install workspaces
+        run: bun install --frozen-lockfile
+      - name: verify stock Bash
+        run: /bin/bash -c 'test "${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}" = 3.2'
+      - name: portable process and hook tests
+        run: |
+          ./gradlew :core:test --tests splice.core.process.LaunchOwnersTest
+          ./gradlew :features-sessions:test --tests splice.sessions.registry.ProcessEnvironmentTest
+          ./gradlew :integrations-claude-code:test --tests splice.client.login.PortablePendingLoginTest --tests splice.client.login.PortablePendingScriptTest
+          ./gradlew :app:test --tests splice.app.cli.CommandParserTest
+      - name: build packaged daemon
+        run: ./gradlew :app:shadowJar
+      - name: launcher ownership across exec
+        run: bun test tools/e2e/test/launch-owner.test.ts
+      - name: packaged daemon conformance
+        run: |
+          mkdir -p test-results
+          bun tools/e2e conformance --artifact app/build/libs/app-all.jar --json test-results/macos-conformance.json
+      - name: keep macOS proof
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: macos-proof
+          path: |
+            **/build/test-results/**/*.xml
+            test-results/macos-conformance.json
+          retention-days: 14
+          if-no-files-found: warn
 
   walls-annotate:
     # Annotation-only surface for ast-grep wall violations.

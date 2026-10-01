@@ -49,6 +49,12 @@
       "dependsOn": [":app:shadowJar"]
     },
     {
+      "task": "launchOwnerPackagedProof",
+      "why": "The real launch shim records the PID and exact process birth that survive exec, including wrapped Claude and flag-first administrative logins. A missing-writer mutant fails, and an unrelated JVM cannot declare another parent. Loopback fixtures only, no provider login; the packaged CLI requires the freshly built jar.",
+      "command": ["bun", "test", "tools/e2e/test/launch-owner.test.ts"],
+      "dependsOn": [":app:shadowJar"]
+    },
+    {
       "task": "conformanceSelftest",
       "why": "The conformance verb's own net: the corpus complete against the source's dialects and modes, the census failing BY NAME on a missing dialect, mode, class, fixture or check, and every grader passing a faithful upstream request and failing a mutated one, so the leg above cannot stay green because its checker lost the ability to find anything.",
       "command": ["bun", "test", "tools/e2e/test/conformance.test.ts"]

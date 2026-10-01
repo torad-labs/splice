@@ -43,12 +43,33 @@ internal fun interface CommandFactory {
 private const val LABEL_FLAG = "--label"
 private const val DISCARD_FLAG = "--discard"
 
+// record-launch names its verb, PID, head, base URL, kind and origin, in that wire order.
+private const val OWNER_ARG_COUNT = 6
+
+// Kind follows the verb, PID, head and base URL.
+private const val OWNER_KIND_INDEX = 4
+
+// Origin is the last word of the six-word declaration.
+private const val OWNER_ORIGIN_INDEX = 5
+
+// pending-login requires its verb, a jar path and at least one head word.
+private const val PENDING_MIN_ARGS = 3
+
 /** `install|uninstall --all`: every head (InstallLinker, UninstallCommand), not models' --all. */
 private const val EVERY_HEAD_FLAG = "--all"
 
 private val verbs: Map<String, CommandFactory> = mapOf(
     "doctor" to CommandFactory { a -> Command.Doctor(a.drop(1)) },
     "version" to CommandFactory.Alone(Command.Version),
+    "record-launch" to CommandFactory { a ->
+        val valid = a.size == OWNER_ARG_COUNT && (a[1].toLongOrNull() ?: 0) > 0 &&
+            a[2].isNotBlank() && a[OWNER_KIND_INDEX] in setOf("session", "login") &&
+            a[OWNER_ORIGIN_INDEX] in setOf("hook", "other")
+        if (valid) LaunchOwnerCommand(a.drop(1)) else null
+    },
+    "pending-login" to CommandFactory { a ->
+        if (a.size >= PENDING_MIN_ARGS && a.drop(1).all { it.isNotBlank() }) PendingLoginCommand(a.drop(1)) else null
+    },
     "shim-version" to CommandFactory.Alone(Command.ShimVersion),
     "init" to CommandFactory.Alone(Command.Init),
     "install" to CommandFactory.OneHead { a -> Command.Install(a.getOrNull(1)) },

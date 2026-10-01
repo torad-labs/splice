@@ -59,7 +59,7 @@ private fun write(dir: Path, name: String, body: String): Path =
 
 /** The real JVMs the pending-sign-in cases need: a parked one in the shim's exact invocation, unrelated
  *  JVMs and bash bystanders that carry the words but are not ours. */
-private object LoginProcesses {
+internal object LoginProcesses {
     private val javaBin: String = Path.of(System.getProperty("java.home"), "bin", "java").toString()
 
     /** V4-139: every spawner below returns only once its process is VISIBLE AS THE HOOK WILL SEE IT
@@ -86,7 +86,7 @@ private object LoginProcesses {
     private fun carriesLogin(info: ProcessHandle.Info): Boolean = info.commandLine().orElse("").contains("login")
 
     /** A REAL JVM parked the way `splice.jar login` parks on its loopback listener: a tiny jar
-     *  compiled here whose main sleeps; with `stubborn` as its last argument it registers a slow
+     *  compiled here whose main sleeps; with its fixture JVM property it registers a slow
      *  shutdown hook, so TERM does not end it within the hook's 2 s (the JVM mid-shutdown-hook case). */
     fun parkJar(dir: Path): Path {
         val jar = dir.resolve("park.jar")
@@ -99,11 +99,13 @@ private object LoginProcesses {
             """
             public class Park {
                 public static void main(String[] args) throws Exception {
-                    if (args.length > 0 && args[args.length - 1].equals("stubborn")) {
+                    if (Boolean.getBoolean("fixture.stubborn")) {
                         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                             try { Thread.sleep(30000); } catch (InterruptedException ignored) { }
                         }));
                     }
+                    String ready = System.getenv("PENDING_READY");
+                    if (ready != null) java.nio.file.Files.writeString(java.nio.file.Path.of(ready), "ready");
                     Thread.sleep(60000);
                 }
             }
@@ -130,12 +132,25 @@ private object LoginProcesses {
         ignoreTerm: Boolean,
         hookStarted: Boolean = true,
         word: String = recorder.toString(),
+        label: String? = null,
     ): Process {
-        val argv = mutableListOf(javaBin, "-jar", jar.toString(), "login", word)
-        if (ignoreTerm) argv += "stubborn"
+        val argv = mutableListOf(
+            javaBin,
+            "-Djdk.console=java.base",
+            "-Dfixture.stubborn=$ignoreTerm",
+            "-jar",
+            jar.toString(),
+            "login",
+        )
+        if (label != null) argv += listOf("--label", label)
+        argv += word
+        val ready = jar.parent.resolve("pending-ready-${java.util.UUID.randomUUID()}.marker")
         val builder = ProcessBuilder(argv)
+        builder.environment()["PENDING_READY"] = ready.toString()
         if (hookStarted) builder.environment()["SPLICE_LOGIN_ORIGIN"] = "hook"
-        return visible(builder.start(), "the pending sign-in", ::carriesLogin)
+        return visible(builder.start(), "the pending sign-in") { info ->
+            carriesLogin(info) && Files.isRegularFile(ready)
+        }.also { Files.deleteIfExists(ready) }
     }
 
     /** An UNRELATED JVM (the same real java executable) whose main is something else and whose
@@ -452,7 +467,13 @@ class LoginHookScriptSafetyTest(@param:TempDir private val tmp: Path) {
         val recorder = recorder(tmp)
         val hook = write(tmp, "login-foreign.sh", LoginHookScripts.loginHookScript(browserSpec(recorder)))
         val jar = LoginProcesses.parkJar(tmp)
-        val terminal = LoginProcesses.pendingLogin(recorder, jar, ignoreTerm = false, hookStarted = false)
+        val terminal = LoginProcesses.pendingLogin(
+            recorder,
+            jar,
+            ignoreTerm = false,
+            hookStarted = false,
+            label = "work",
+        )
         try {
             val env = mapOf("SPLICE_JAR" to jar.toString())
             val ran = run("bash", hook.toString(), stdin = """{"prompt":"/login --label work"}""", dir = tmp, env = env)

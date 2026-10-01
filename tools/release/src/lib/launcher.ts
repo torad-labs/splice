@@ -580,6 +580,8 @@ function writeMocks(bin: string): void {
   writeStub(
     join(bin, "java"),
     'import { appendFileSync, writeFileSync } from "node:fs";\n' +
+      // The short ownership writer is not a daemon boot or an administrative CLI invocation.
+      'if (process.argv.includes("record-launch")) process.exit(0);\n' +
       'if (process.env.LAUNCHER_JAVA_BOOT_FAILS === "1") {\n' +
       // JW-01: a boot-dead daemon — the stack trace goes to stderr, which the shim must be
       // redirecting into daemon-boot.log (pre-fix it went to /dev/null).

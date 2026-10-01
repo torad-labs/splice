@@ -171,22 +171,18 @@ class ResponsesRequestBuilderTest {
         assertNull(req["stream_options"])
     }
 
-    // 2026-10-01: the summary_delivery overlay. On gpt-6.1-sol, sequential_cutoff came back with 161 of
-    // 165 reasoning summaries empty, so a head showed nothing for a whole reasoning phase. `off` omits
-    // the field, which is codex-rs's own default (its ConcurrentReasoningSummaries flag is off); absent
-    // keeps the provider's base.
+    // 2026-10-01: the summary delivery mode on the wire. On gpt-6.1-sol, sequential_cutoff came back
+    // with 161 of 165 reasoning summaries empty, so a head showed nothing for a whole reasoning phase.
+    // null omits the field, which is codex-rs's own default (its ConcurrentReasoningSummaries flag is
+    // off). The TOML reading (absent keeps the base) is pinned in the app's ResponsesQuirksOverlayTest.
     @Test
-    fun `summary_delivery overlay - absent keeps the base, off omits the field, a value sets it`() {
+    fun `summary delivery - null omits stream_options, a mode is sent as written`() {
         val body = """{"model":"m","thinking":{"type":"enabled","budget_tokens":32000},
             "messages":[{"role":"user","content":"x"}]}"""
-        fun delivery(quirks: ResponsesQuirks): String? {
-            val options = build(body, quirks = quirks)["stream_options"]?.jsonObject
-            return options?.get("reasoning_summary_delivery")?.jsonPrimitive?.content
-        }
         val cutoff = CODEX.copy(summaryDelivery = "sequential_cutoff")
-        assertEquals("sequential_cutoff", delivery(cutoff.withSummaryDeliveryToml(null)))
-        assertNull(build(body, quirks = cutoff.withSummaryDeliveryToml("off"))["stream_options"])
-        assertEquals("sequential_cutoff", delivery(CODEX.withSummaryDeliveryToml("sequential_cutoff")))
+        assertNull(build(body, quirks = cutoff.withSummaryDelivery(null))["stream_options"])
+        val options = build(body, quirks = CODEX.withSummaryDelivery("sequential_cutoff"))["stream_options"]?.jsonObject
+        assertEquals("sequential_cutoff", options?.get("reasoning_summary_delivery")?.jsonPrimitive?.content)
     }
 
     @Test

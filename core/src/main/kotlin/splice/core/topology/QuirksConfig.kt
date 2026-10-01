@@ -19,20 +19,6 @@ package splice.core.topology
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-/** stream_options.reasoning_summary_delivery on an openai-responses head; [wire] is its TOML and wire spelling. */
-@Serializable
-public enum class SummaryDelivery(public val wire: String) {
-    /** codex-rs's one delivery mode: a summary section still being written when the reasoning item
-     *  ends is cancelled (openai/codex#31306). */
-    @SerialName("sequential_cutoff")
-    SEQUENTIAL_CUTOFF("sequential_cutoff"),
-
-    /** Omit the field: the backend's default delivery, and codex-rs's own default (its
-     *  ConcurrentReasoningSummaries flag is off). */
-    @SerialName("off")
-    OFF("off"),
-}
-
 /** The finite quirk surface of the openai dialects — everything a vendor varies without code. */
 @Serializable
 public data class QuirksConfig(

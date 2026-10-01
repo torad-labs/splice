@@ -163,13 +163,10 @@ public data class ResponsesQuirks(
     public fun withWebSocketToml(webSocket: Boolean?): ResponsesQuirks =
         copy(webSocket = webSocket ?: this.webSocket)
 
-    /** summary_delivery overlay, NULLABLE like its siblings: absent keeps the provider default,
-     *  "off" omits stream_options, any other value is sent as the delivery mode. */
-    public fun withSummaryDeliveryToml(delivery: String?): ResponsesQuirks = when (delivery) {
-        null -> this
-        "off" -> copy(summaryDelivery = null)
-        else -> copy(summaryDelivery = delivery)
-    }
+    /** The delivery mode sent as stream_options.reasoning_summary_delivery; null omits the field.
+     *  The TOML reading (absent keeps the provider default, `off` omits) is the app overlay's, because
+     *  a dialect does not import the topology (HD-9). */
+    public fun withSummaryDelivery(wire: String?): ResponsesQuirks = copy(summaryDelivery = wire)
 }
 
 /** One provider's prompt-cache routing and retention contract, without mutable tool-name state. */

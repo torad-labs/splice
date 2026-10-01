@@ -102,6 +102,11 @@ zstd_request_body = true
 # true was tried live 2026-09-20: the ChatGPT lite backend 400s every turn ("requires
 # `parallel_tool_calls` to be false"). Leave it unset; batching comes from code mode.
 # parallel_tool_calls = false
+# summary_delivery (codex default "sequential_cutoff"): stream_options.reasoning_summary_delivery.
+# "off" omits the field and takes the backend's own delivery, which is also codex-rs's default (its
+# ConcurrentReasoningSummaries flag is off). Measured 2026-10-01: under the cutoff, gpt-6.1-sol
+# returned 161 of 165 reasoning summaries empty, so the client showed no thinking for a whole round.
+# summary_delivery = "off"
 # code_mode (default TRUE for chatgpt-oauth + openai-responses providers, off everywhere else):
 # an eligible turn declares one tool, exec, as Codex does for a model its catalog runs code-mode-only:
 # splice's JAR-bundled JavaScript runner, whose description declares every Claude Code tool, plus

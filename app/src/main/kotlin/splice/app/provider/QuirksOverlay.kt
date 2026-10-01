@@ -7,6 +7,7 @@ package splice.app.provider
 
 import splice.core.config.SpliceConfig
 import splice.core.topology.ProviderConfig
+import splice.core.topology.SummaryDelivery
 import splice.core.topology.ToolSurfaceConfig
 import splice.dialect.anthropic.PassthroughQuirks
 import splice.dialect.chat.ChatQuirks
@@ -42,8 +43,16 @@ internal class QuirksOverlay {
     ).withReasoningCacheToml(providerCfg.quirks.reasoningCache)
         .withParallelToolCallsToml(providerCfg.quirks.parallelToolCalls)
         .withWebSocketToml(providerCfg.quirks.webSocket)
-        .withSummaryDeliveryToml(providerCfg.quirks.summaryDelivery?.wire)
+        .withSummaryDelivery(summaryDeliveryWire(providerCfg.quirks.summaryDelivery, base.summaryDelivery))
         .withToolSurfaceToml(toolDeferralPolicy(providerCfg.quirks.toolSurface, cfg.toolSurfaceOff, base.toolSurface))
+
+    /** summary_delivery: absent keeps the provider default, `off` omits the field, a mode is sent as
+     *  written. Exhaustive, so a mode added to [SummaryDelivery] cannot reach the wire unmapped. */
+    private fun summaryDeliveryWire(delivery: SummaryDelivery?, providerDefault: String?): String? = when (delivery) {
+        null -> providerDefault
+        SummaryDelivery.OFF -> null
+        SummaryDelivery.SEQUENTIAL_CUTOFF -> delivery.wire
+    }
 
     /**
      * The chat dialect's base profile, chosen by AUTH KIND, with the head's TOML overlaid.

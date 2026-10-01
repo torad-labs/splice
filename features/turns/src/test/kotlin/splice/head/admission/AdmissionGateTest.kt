@@ -1,11 +1,19 @@
 package splice.head.admission
 
 import io.ktor.client.request.post
+import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.content.OutgoingContent
+import io.ktor.server.response.respondText
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
+import io.ktor.utils.io.ByteReadChannel
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -66,26 +74,7 @@ class AdmissionGateTest {
     fun `a lying request channel is a retryable timeout rather than a malformed request`(
         @TempDir tmp: Path,
     ) = testApplication {
-        val catalog = ModelCatalog(
-            discoveryPrefix = "claude-codex--",
-            models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
-            defaultContextWindow = 272_000,
-        )
-        val provider = TestResponsesProvider(
-            tuning = ProviderTuning(
-                key = "codex",
-                label = "claudex",
-                catalog = catalog,
-                pinnedModel = "gpt-5.6-sol",
-                auth = AdmissionTestAuth(),
-                baseUrl = "http://127.0.0.1",
-                watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
-            ),
-            showReasoning = ReasoningDisplay.TEXT,
-            replayReasoning = false,
-            configEffort = "high",
-            configSummary = "detailed",
-        )
+        val provider = provider()
         val deps = headDeps(tmp)
         val responses = AdmissionResponses()
         val admission = AdmissionGate(provider, deps, AdmissionWindow(), responses)
@@ -112,4 +101,74 @@ class AdmissionGateTest {
         assertTrue(body.contains("invalid_request_error"), body)
         assertTrue(body.contains("request body stream interrupted"), body)
     }
+
+    @Test
+    fun `declared bodies reserve their size unknown bodies reserve the cap and oversized bodies keep 413`(
+        @TempDir tmp: Path,
+    ) = testApplication {
+        val materialization = RequestMaterializationGate(heapBudgetBytes = 26)
+        val deps = headDeps(tmp).copy(
+            policy = HeadDeps.HeadPolicy(maxRequestBytes = 4),
+            seams = HeadDeps.HeadSeams(requestMaterializationGate = materialization),
+        )
+        val admission = AdmissionGate(provider(), deps, AdmissionWindow(), AdmissionResponses())
+        val lengths = mutableListOf<String?>()
+        application {
+            routing {
+                post("/probe") {
+                    lengths += call.request.headers[HttpHeaders.ContentLength]
+                    val entered = admission.materializeOrRespond(call, fastFail = true) { "admitted" }
+                    if (entered != null) call.respondText(entered)
+                }
+            }
+        }
+
+        coroutineScope {
+            val acquired = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val holder = async {
+                materialization.withLease(1) {
+                    acquired.complete(Unit)
+                    release.await()
+                }
+            }
+            acquired.await()
+            try {
+                val small = client.post("/probe") { setBody("hi") }
+                assertEquals(HttpStatusCode.OK, small.status)
+                val unknown = client.post("/probe") {
+                    setBody(object : OutgoingContent.ReadChannelContent() {
+                        override fun readFrom(): ByteReadChannel = ByteReadChannel("hi")
+                    })
+                }
+                assertEquals(529, unknown.status.value, unknown.bodyAsText())
+                val oversized = client.post("/probe") { setBody("hello") }
+                assertEquals(HttpStatusCode.PayloadTooLarge, oversized.status)
+                assertEquals(listOf("2", null, "5"), lengths, "the fixture must really omit Content-Length")
+            } finally {
+                release.complete(Unit)
+                holder.await()
+            }
+        }
+    }
+
+    private fun provider(): TestResponsesProvider = TestResponsesProvider(
+        tuning = ProviderTuning(
+            key = "codex",
+            label = "claudex",
+            catalog = ModelCatalog(
+                discoveryPrefix = "claude-codex--",
+                models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
+                defaultContextWindow = 272_000,
+            ),
+            pinnedModel = "gpt-5.6-sol",
+            auth = AdmissionTestAuth(),
+            baseUrl = "http://127.0.0.1",
+            watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
+        ),
+        showReasoning = ReasoningDisplay.TEXT,
+        replayReasoning = false,
+        configEffort = "high",
+        configSummary = "detailed",
+    )
 }

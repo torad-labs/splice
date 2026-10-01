@@ -50,7 +50,7 @@ internal class HeadServerFactory(
     // v0.4.0: what a launched session holds, derived from the management key (see [TurnKey]).
     private val turnKey = TurnKey(mgmtKey)
 
-    private val requestMaterializationGate = RequestMaterializationGate(materializationPermits())
+    private val requestMaterializationGate = RequestMaterializationGate(materializationHeapBytes())
 
     internal fun headServerFor(
         ctx: ProviderBuild,
@@ -153,11 +153,10 @@ internal class HeadServerFactory(
         slotInstructions = console?.slots,
     )
 
-    /** V4-110: the process-shared materialization permit count, read from the GLOBAL knob layer (no
-     *  head key) once at daemon boot. One value bounds every head's concurrent decode/translate. */
-    private fun materializationPermits(): Int {
+    /** Process-shared heap bytes, read once from the global layer. Zero derives spare JVM heap. */
+    private fun materializationHeapBytes(): Long {
         val m = config.getConfig().asMap()
-        return (m[Knob.MATERIALIZATION_PERMITS.key] as Long).toInt()
+        return m[Knob.MATERIALIZATION_HEAP_BYTES.key] as Long
     }
 }
 

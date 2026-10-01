@@ -12,9 +12,11 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.head.HeadServer
 import splice.head.TestResponsesProvider
+import splice.head.admission.MATERIALIZATION_RESIDENT_BYTES
 import splice.head.awaitListening
 import splice.head.headDeps
 import splice.upstream.ProviderTuning
+import java.lang.ref.Reference
 import java.net.InetSocketAddress
 import java.net.URI
 import java.net.http.HttpClient
@@ -44,7 +46,9 @@ private class ProbeAuth : RefreshableAuthProvider {
 object HeadHeapProbe {
     @JvmStatic
     fun main(args: Array<String>) {
+        val resident = ByteArray(MATERIALIZATION_RESIDENT_BYTES.toInt())
         val ok = run(args[0].toInt(), args[1].toInt(), Path.of(args[2]))
+        Reference.reachabilityFence(resident)
         System.out.flush()
         exitProcess(if (ok) 0 else 1)
     }

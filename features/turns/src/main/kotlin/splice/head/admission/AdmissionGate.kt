@@ -6,6 +6,7 @@
 // (HD-24) as the file that owns the InflightGate and the materialization lease together.
 package splice.head.admission
 
+import io.ktor.http.HttpHeaders
 import io.ktor.server.application.ApplicationCall
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
@@ -62,23 +63,26 @@ internal class AdmissionGate(
         return slot
     }
 
-    // fastFail: cheap best-effort endpoints (count_tokens) tryAcquire instead of queueing — a
-    // slow-body flood must not camp the process-shared semaphore real turns materialize through
-    // (review 2026-07-22); contention gets the 529 retry shape instead of a queue slot.
+    // count_tokens fast-fails instead of queueing on the shared heap budget. Unknown body lengths
+    // reserve the full head cap; oversized declarations keep their 413 before any admission wait.
     suspend fun <T : Any> materializeOrRespond(
         call: ApplicationCall,
         fastFail: Boolean = false,
+        owner: MaterializationOwner? = null,
         block: MaterializedRequest<T>,
     ): T? = try {
-        if (fastFail) {
-            val leased = deps.seams.requestMaterializationGate.tryWithLease(block)
-            if (leased == null) {
-                responses.respondAtCapacity(call, "gateway busy; retry")
-            }
-            leased
+        val declared = call.request.headers[HttpHeaders.ContentLength]?.toLongOrNull()?.takeIf { it >= 0L }
+        val cap = deps.policy.maxRequestBytes
+        if (declared != null && declared > cap) throw RequestBodyTooLarge(cap)
+        val bytes = declared ?: cap.toLong()
+        val materialization = deps.seams.requestMaterializationGate
+        val leased = if (fastFail) {
+            materialization.tryWithLease(bytes, block)
         } else {
-            deps.seams.requestMaterializationGate.withLease(block)
+            materialization.withLease(bytes, owner, block)
         }
+        if (leased == null) responses.respondAtCapacity(call, "gateway busy; retry")
+        leased
     } catch (tooLarge: RequestBodyTooLarge) {
         responses.respondTooLarge(call, tooLarge.limit)
         null

@@ -143,7 +143,7 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
 
     // V4-110: shared MCP hosting and request-materialization knobs are positive-only. A floor keeps
     // a typo'd 0/negative from becoming a zero-capacity host or a body cap that rejects every
-    // request (NEVER-BELOW-STATUS-QUO — the operator's bad value must not crash the daemon).
+    // request. The materialization byte budget alone accepts zero for automatic spare-heap sizing.
     private fun clampPromoted(out: MutableMap<String, Any?>) {
         out[Knob.MCP_IDLE_TIMEOUT_MS.key] = clampLong(out, Knob.MCP_IDLE_TIMEOUT_MS, floor = 1_000L)
         out[Knob.MCP_REQUEST_TIMEOUT_MS.key] = clampLong(out, Knob.MCP_REQUEST_TIMEOUT_MS, floor = 1_000L)
@@ -151,7 +151,7 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
         out[Knob.MCP_MAX_SERVERS.key] = clampLong(out, Knob.MCP_MAX_SERVERS, floor = 1L)
         out[Knob.MAX_REQUEST_BYTES.key] = clampLong(out, Knob.MAX_REQUEST_BYTES, floor = 1L)
         out[Knob.REQUEST_READ_TIMEOUT_MS.key] = clampLong(out, Knob.REQUEST_READ_TIMEOUT_MS, floor = 1L)
-        out[Knob.MATERIALIZATION_PERMITS.key] = clampLong(out, Knob.MATERIALIZATION_PERMITS, floor = 1L)
+        out[Knob.MATERIALIZATION_HEAP_BYTES.key] = clampLong(out, Knob.MATERIALIZATION_HEAP_BYTES, floor = 0L)
         out[Knob.QUOTA_POLL_INTERVAL_MS.key] = clampLong(
             out,
             Knob.QUOTA_POLL_INTERVAL_MS,

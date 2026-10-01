@@ -31,7 +31,7 @@ export const RUNTIME_KNOBS = [
   'controlPort', 'usageWarnPct', 'usageWarnTokens5h', 'statuslineGitRoots',
   'quotaPollIntervalMs', 'retryBackoffBaseMs', 'retryBackoffCapMs', 'retryBackoffJitterPct',
   'stallReanchorMs', 'mcpIdleTimeoutMs', 'mcpMaxServers', 'mcpRequestTimeoutMs',
-  'mcpInitializeTimeoutMs', 'maxRequestBytes', 'requestReadTimeoutMs', 'materializationPermits',
+  'mcpInitializeTimeoutMs', 'maxRequestBytes', 'requestReadTimeoutMs', 'materializationHeapBytes',
   'supervisorUnit', 'mcpSlice', 'activityRetentionDays', 'activityStoreHeads', 'messageEdges', 'traceRetentionDays',
   'traceMaxBodyChars', 'budgetDefaultAction', 'perfArchiveRetentionDays',
 ] as const;

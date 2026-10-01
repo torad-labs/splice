@@ -301,7 +301,7 @@ class WsRoundDriverTest {
             tmp = tmp,
             upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 2),
             log = log,
-            seams = HeadDeps.HeadSeams(requestMaterializationGate = RequestMaterializationGate(2)),
+            seams = HeadDeps.HeadSeams(requestMaterializationGate = RequestMaterializationGate()),
         ).copy(stores = headStores(tmp, suffix = "-${++built}")),
     )
 

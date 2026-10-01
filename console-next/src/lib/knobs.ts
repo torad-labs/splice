@@ -46,9 +46,9 @@ export const KNOB_META: Record<string, KnobMeta> = {
     group: 'limits',
     unit: 'ms',
   },
-  materializationPermits: {
+  materializationHeapBytes: {
     group: 'limits',
-    unit: 'count',
+    unit: 'bytes',
   },
 
   // retries and timeouts

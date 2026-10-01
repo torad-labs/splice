@@ -56,7 +56,7 @@ export const dispositions: readonly Disposition[] = [
   { kind: 'knob', name: 'GROK_AUTH_PATH', disposition: 'editable' },
   { kind: 'knob', name: 'GROK_MODEL', disposition: 'editable' },
   { kind: 'knob', name: 'GROK_PORT', disposition: 'editable' },
-  { kind: 'knob', name: 'MATERIALIZATION_PERMITS', disposition: 'editable' },
+  { kind: 'knob', name: 'MATERIALIZATION_HEAP_BYTES', disposition: 'editable' },
   { kind: 'knob', name: 'MAX_INFLIGHT', disposition: 'editable' },
   { kind: 'knob', name: 'MAX_QUEUED', disposition: 'editable' },
   { kind: 'knob', name: 'MAX_REQUEST_BYTES', disposition: 'editable' },

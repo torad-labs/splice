@@ -30,23 +30,21 @@ internal class CountTokens(
         // and queueing it on maxInflight let a saturated head stall or 529 Claude Code's
         // pre-flight sizing for minutes (review 2026-07-22). Memory stays bounded by the
         // materialization gate (fastFail: contention 529s instead of queueing, so a count_tokens
-        // flood cannot camp the shared permits) plus the maxRequestBytes cap.
-        val body = admission.materializeOrRespond(call, fastFail = true) {
-            bodyReader.receiveBodyBounded(call, deps.policy.maxRequestBytes)
-        } ?: return
-        val parsed = bodyParse.parseOrNull(body.text)
-        if (parsed == null) {
-            responses.respondInvalidRequest(call, "invalid request body")
-        } else {
-            // Conservative and Unicode-safe: UTF-8 bytes / 3 overestimates ordinary English while
-            // avoiding the old UTF-16 chars / 4 undercount for CJK and emoji. The complete JSON body
-            // intentionally contributes structural/tool overhead.
-            val estimate = PromptTokenEstimate.fromBytes(body.bytes.toLong())
-            deps.log("[${provider.key}] count_tokens estimate=$estimate (local; no upstream turn)\n")
-            call.respondText(
-                buildJsonObject { put("input_tokens", estimate) }.toString(),
-                ContentType.Application.Json,
-            )
+        // flood cannot camp the shared heap budget) plus the maxRequestBytes cap.
+        admission.materializeOrRespond(call, fastFail = true) {
+            val body = bodyReader.receiveBodyBounded(call, deps.policy.maxRequestBytes)
+            val parsed = bodyParse.parseOrNull(body.text)
+            if (parsed == null) {
+                responses.respondInvalidRequest(call, "invalid request body")
+            } else {
+                // Conservative and Unicode-safe: UTF-8 bytes / 3 includes structural/tool overhead.
+                val estimate = PromptTokenEstimate.fromBytes(body.bytes.toLong())
+                deps.log("[${provider.key}] count_tokens estimate=$estimate (local; no upstream turn)\n")
+                call.respondText(
+                    buildJsonObject { put("input_tokens", estimate) }.toString(),
+                    ContentType.Application.Json,
+                )
+            }
         }
     }
 }

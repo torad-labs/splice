@@ -406,18 +406,16 @@ public enum class Knob(
         restartRequired = true,
     ),
 
-    // PROCESS-SHARED, not per head: the count of requests concurrently decoding/translating across
-    // the whole daemon (RequestMaterializationGate). One value for every head, read at daemon boot.
-    // Why 8 (V4-374): permits times the heap one request at MAX_REQUEST_BYTES costs must fit the
-    // daemon's -Xmx2048m beside what else it holds. Measured Sep 28: one 32 MiB body needs a heap of
-    // 208 MiB (fails at 192), 8 of them at once fit 1664 MiB (2048 less the everyday daemon's 384 MiB
-    // resident), 12 fit only the full 2048 and 14 or 16 do not: at 16 a burst of full-size bodies was an
-    // OutOfMemoryError for the whole daemon. RequestHeapBudgetTest holds the product.
-    MATERIALIZATION_PERMITS(
-        "materializationPermits",
+    // PROCESS-SHARED heap bytes for decoding/translating across the daemon, not a request count.
+    // Zero derives the budget from JVM maximum heap minus the measured 384 MiB everyday resident.
+    // RequestMaterializationGate caps overrides at that spare heap and reserves 6.5 times each
+    // declared body (208 MiB measured for 32 MiB; unknown length reserves maxRequestBytes).
+    // RequestHeapBudgetTest sends both everyday and full-size bursts through the real head.
+    MATERIALIZATION_HEAP_BYTES(
+        "materializationHeapBytes",
         KnobKind.NUMBER,
-        listOf("SPLICE_MATERIALIZATION_PERMITS"),
-        default = 8L,
+        listOf("SPLICE_MATERIALIZATION_HEAP_BYTES"),
+        default = 0L,
         restartRequired = true,
     ),
 

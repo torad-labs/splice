@@ -164,7 +164,7 @@ class PeerCloseTest(@param:TempDir private val tmp: Path) {
                 tmp = tmp,
                 upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 2),
                 log = { logs += it },
-                seams = HeadDeps.HeadSeams(requestMaterializationGate = RequestMaterializationGate(2)),
+                seams = HeadDeps.HeadSeams(requestMaterializationGate = RequestMaterializationGate()),
             ).copy(stores = headStores(tmp, suffix = "-${++built}")),
         )
         val before = mock.upstreamBodies.size

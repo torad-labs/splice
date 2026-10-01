@@ -43,7 +43,7 @@ export const KNOB_LABELS = {
   grokAuthPath: 'Grok login file',
   grokModel: 'Grok model',
   grokPort: 'Grok command port',
-  materializationPermits: 'Parallel conversions',
+  materializationHeapBytes: 'Request memory budget',
   maxInflight: 'Concurrent turns',
   maxQueued: 'Queued turns',
   maxRequestBytes: 'Max request size',
@@ -90,7 +90,7 @@ export const KNOB_HELP: Record<string, string> = {
   maxQueued: 'Turns that can wait for a slot; past this, turns are refused.',
   maxRequestBytes: 'The largest request splice accepts from Claude Code.',
   requestReadTimeoutMs: 'How long splice waits for Claude Code to finish sending.',
-  materializationPermits: "Requests converted to a provider's format at once, across all commands.",
+  materializationHeapBytes: 'Heap bytes for requests across all commands. 0 uses spare heap; larger bodies reserve more.',
 
   // retries and timeouts
   upstreamRetries: 'Tries per failing provider call, the first included, before the turn fails.',

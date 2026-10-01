@@ -354,16 +354,16 @@ class HeadServerReviewTest {
 
     @Test
     fun `count_tokens 529s with the busy shape when the materialization gate is saturated`() = runBlocking {
-        val matGate = RequestMaterializationGate(maxConcurrent = 1)
+        val matGate = RequestMaterializationGate(heapBudgetBytes = 208 * 1024 * 1024L)
         val head = buildHead(InflightGate(maxInflight = { 4 }), matGate, tmp.resolve("rl-g.json"))
         head.start()
         val port = head.port
         try {
-            // Hold the sole materialization permit so count_tokens' fast-fail lease is contended.
+            // Reserve the whole heap budget so count_tokens fast-fails without reading its body.
             val acquired = CompletableDeferred<Unit>()
             val release = CompletableDeferred<Unit>()
             val holding = async(Dispatchers.IO) {
-                matGate.withLease {
+                matGate.withLease(32 * 1024 * 1024L) {
                     acquired.complete(Unit)
                     release.await()
                 }

@@ -56,7 +56,12 @@ internal class HeadAdmission(
         val admitted = Admitted(slot, t0, perf)
 
         try {
-            val prepared = admission.materializeOrRespond(call) { preparation.prepareTurn(call, perf) } ?: return
+            // Prepared request trees survive decode and may belong to a detached compaction.
+            // Their heap lease follows the same slot that already owns that drive's lifetime.
+            val owner = MaterializationOwner(admitted.slot::onRelease)
+            val prepared = admission.materializeOrRespond(call, owner = owner) {
+                preparation.prepareTurn(call, perf)
+            } ?: return
             serve(call, prepared, admitted)
         } finally {
             withContext(NonCancellable) { if (!admitted.wasHandedOff()) admitted.slot.release() }

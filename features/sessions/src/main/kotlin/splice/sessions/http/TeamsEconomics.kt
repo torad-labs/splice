@@ -100,6 +100,7 @@ internal class TeamEconomics(private val team: Team, private val heads: Map<Stri
         val window = head.perfRows?.window(team.createdAt) ?: return
         oldest = listOfNotNull(oldest, window.oldestHeldTs ?: window.rows.minOfOrNull { it.ts }).minOrNull()
         for (row in window.rows) {
+            if (row.fields[PerfKeys.LOCAL_STEP] == 1L) continue // No upstream turn to attribute to this team.
             if (row.session == null) unattributed += 1
             row.session?.let(slotOfTag::get)?.let { slot ->
                 bySlot.getValue(slot.id).add(row, head.catalog)

@@ -20,6 +20,7 @@ import splice.core.compaction.CompactionInstructions
 import splice.core.compaction.CompactionProjectConfig
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
+import splice.core.perf.PerfKeys
 import splice.core.util.EnvReader
 import splice.core.util.WallClock
 import splice.sessions.query.SessionHead
@@ -121,6 +122,17 @@ class ProjectsRoutesTest {
         assertEquals("null", row.getValue("cost_today_usd").toString(), "no rate card is no dollar figure, never zero")
         assertEquals("1", row.getValue("unpriced_turns_today").jsonPrimitive.content)
         assertEquals(HttpStatusCode.NotFound, routes(emptyMap()).project("/nowhere").status)
+    }
+
+    @Test
+    fun `a project counts upstream turns, not code-mode steps served without upstream`() {
+        val turn = rig.row(AT, BUILDER, input = 1_000_000)
+        val step = rig.row(AT + 1, BUILDER, input = 0).copy(fields = mapOf(PerfKeys.LOCAL_STEP to 1L))
+        val codex = rig.head("codex", listOf(turn, step))
+        val row = rig.json(routes(mapOf("codex" to codex)).project(rig.repo.toString()).body)
+
+        assertEquals("1", row.getValue("turns_today").jsonPrimitive.content)
+        assertEquals(1.00002, row.getValue("cost_today_usd").jsonPrimitive.double, 1e-9)
     }
 
     // V4-269: a recorded team run's repo read a dash for the day because the lead ran one turn on a

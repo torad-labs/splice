@@ -47,6 +47,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.core.compaction.CompactionInstructions
+import splice.core.perf.PerfKeys
 import splice.core.util.Cancellables
 import splice.core.util.WallClock
 import splice.http.JsonReply
@@ -188,7 +189,9 @@ public class ProjectsRoutes(
             val tags = (sessions.mapNotNull { it.sessionId } + held).map { it.take(PERF_TAG) }.toSet()
             val tally = PerfTally()
             for ((head, window) in today) {
-                window.rows.filter { it.session in tags }.forEach { tally.add(it, head.catalog) }
+                // EconomicsStore counts local code-mode steps separately from turns; a project does too.
+                window.rows.filter { it.session in tags && it.fields[PerfKeys.LOCAL_STEP] != 1L }
+                    .forEach { tally.add(it, head.catalog) }
             }
             val touched = sessions.flatMap { listOfNotNull(it.updatedAt, it.statusUpdatedAt, it.startedAt) }
             val last = (touched + listOfNotNull(tally.lastAt)).maxOrNull()

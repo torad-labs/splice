@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.perf.OutcomeTag
+import splice.core.perf.PerfKeys
 import splice.sessions.query.SessionPerfRow
 import splice.sessions.teams.Team
 import splice.sessions.teams.TeamSlot
@@ -47,6 +48,20 @@ class TeamsEconomicsChecksTest {
     private fun leadSlot(rows: List<SessionPerfRow>) =
         TeamEconomics(team(), mapOf("claude" to rig.head("claude", rows)))
             .json().getValue("slots").jsonArray.single().jsonObject
+
+    @Test
+    fun `a local code-mode step is not a team turn or a check`() {
+        val step = row(CHECKS_AT, OutcomeTag.OK.wire).copy(fields = mapOf(PerfKeys.LOCAL_STEP to 1L))
+        val onlyStep = leadSlot(listOf(step))
+        assertEquals("0", onlyStep.getValue("turns").jsonPrimitive.content)
+        assertEquals("null", onlyStep.getValue("checks").toString())
+        val afterFailure = leadSlot(listOf(row(CHECKS_AT - 1, OutcomeTag.UNEXPECTED.wire), step))
+        assertEquals("1", afterFailure.getValue("turns").jsonPrimitive.content)
+        assertEquals("fail", afterFailure.getValue("checks").jsonPrimitive.content)
+        val unknown = step.copy(session = null)
+        val team = TeamEconomics(team(), mapOf("claude" to rig.head("claude", listOf(unknown)))).json()
+        assertEquals("0", team.getValue("unattributed_turns").jsonPrimitive.content)
+    }
 
     @Test
     fun `no turns at all is the honest empty, never a fabricated pass`() {

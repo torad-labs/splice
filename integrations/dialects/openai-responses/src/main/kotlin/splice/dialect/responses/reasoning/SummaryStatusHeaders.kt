@@ -7,7 +7,7 @@
 // distinct text, and a part with a body streams live exactly as before.
 package splice.dialect.responses.reasoning
 
-private const val BOLD = "**"
+private const val MARKDOWN_BOLD = "**"
 
 // codex's marker for a header whose body is deliberately empty (split_reasoning_summary_parts).
 private const val EMPTY_BODY = "<!-- -->"
@@ -91,7 +91,7 @@ private object HeaderShape {
     fun isHeaderOnly(text: String): Boolean {
         val trimmed = text.trim()
         val close = closingBold(trimmed) ?: return false
-        val body = trimmed.substring(close + BOLD.length).trim()
+        val body = trimmed.substring(close + MARKDOWN_BOLD.length).trim()
         return body.isEmpty() || body == EMPTY_BODY
     }
 
@@ -100,18 +100,18 @@ private object HeaderShape {
         val text = held.trimStart()
         return when {
             text.length > MAX_HEADER_CHARS -> false
-            text.length < BOLD.length -> BOLD.startsWith(text)
-            !text.startsWith(BOLD) -> false
+            text.length < MARKDOWN_BOLD.length -> MARKDOWN_BOLD.startsWith(text)
+            !text.startsWith(MARKDOWN_BOLD) -> false
             else -> {
                 val close = closingBold(text)
-                close == null || EMPTY_BODY.startsWith(text.substring(close + BOLD.length).trim())
+                close == null || EMPTY_BODY.startsWith(text.substring(close + MARKDOWN_BOLD.length).trim())
             }
         }
     }
 
     /** Index of the bold run's closing marker, when [text] opens with a non-empty bold run. */
     private fun closingBold(text: String): Int? {
-        if (!text.startsWith(BOLD)) return null
-        return text.indexOf(BOLD, BOLD.length).takeIf { it > BOLD.length }
+        if (!text.startsWith(MARKDOWN_BOLD)) return null
+        return text.indexOf(MARKDOWN_BOLD, MARKDOWN_BOLD.length).takeIf { it > MARKDOWN_BOLD.length }
     }
 }

@@ -1,4 +1,5 @@
 source	sha256	disposition	destination	reason
+core/src/main/kotlin/splice/core/topology/SummaryDelivery.kt	223dd82c2c4540e7b413cb6b663916100978e13e66dd7b65f0b324d4a456429f	created		summary_delivery modes split out of the quirk-key file by a420f47a7
 app/src/test/kotlin/splice/app/provider/ResponsesQuirksOverlayTest.kt	be81ddb15c4569cf1faa6ed7bdd7a57ac647c9957d9f265feb4bb1d103ec3cee	created		TOML summary_delivery overlay onto the codex quirks added by 88114faf9
 integrations/upstream/src/main/kotlin/splice/upstream/failure/CodeModeStartException.kt	17309eaa1614791baf22f8b33f8a86d71b5594827b657fa37e09831f51e2b831	created		Typed proof that the host failed before source dispatch and an exact retry is safe
 integrations/providers/codex/src/main/kotlin/splice/provider/codex/state/CodeModeStartupAdmissions.kt	b56ba0aa591e452d517166cc44cf021115556c0a7fb5e103555ced0ca7166498	created		Generation admission tickets and durable unexecuted-source retry transitions through the existing per-key changed-cell journal

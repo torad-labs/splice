@@ -442,8 +442,8 @@ private val MERGED_ITEMS = setOf(Keys.SETTINGS, Keys.MCPS)
 
 /** Owns the picker-cache field: provider heads replace it, while client-login heads remove a stale head roster. */
 private object ModelOptionsCache {
-    private const val KEY = "additionalModelOptionsCache"
+    private const val MODEL_OPTIONS_CACHE = "additionalModelOptionsCache"
 
     fun withLaunchCache(local: JsonObject, cache: JsonElement?): JsonObject =
-        JsonObject(if (cache == null) local - KEY else local + (KEY to cache))
+        JsonObject(if (cache == null) local - MODEL_OPTIONS_CACHE else local + (MODEL_OPTIONS_CACHE to cache))
 }

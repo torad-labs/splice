@@ -160,6 +160,7 @@ export const dispositions: readonly Disposition[] = [
   { kind: 'topology', name: 'providers.*.extra_headers.*', disposition: 'editable' },
   { kind: 'topology', name: 'providers.*.extra_windows[].context_window', disposition: 'editable' },
   { kind: 'topology', name: 'providers.*.extra_windows[].id', disposition: 'editable' },
+  { kind: 'topology', name: 'providers.*.extra_windows[].max_context_window', disposition: 'editable' },
   { kind: 'topology', name: 'providers.*.local', disposition: 'editable' },
   { kind: 'topology', name: 'providers.*.models[].client_model', disposition: 'editable' },
   { kind: 'topology', name: 'providers.*.models[].compaction_reserve_tokens', disposition: 'editable' },

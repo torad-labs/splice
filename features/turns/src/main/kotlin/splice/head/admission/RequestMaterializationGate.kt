@@ -21,40 +21,41 @@ private const val HEAP_EXPANSION_DENOMINATOR = 2L
  * Process-shared heap budget for decoding, translation and the request trees retained by a turn.
  *
  * A body reserves 6.5 times its bytes: the measured 208 MiB heap for a 32 MiB body. Zero selects
- * the JVM maximum heap minus the everyday resident allowance; an override can only lower that.
+ * the JVM maximum heap minus the lesser of the resident allowance and half the heap. An override
+ * can only lower that budget. Bodies heavier than the entire budget reserve it exclusively.
  */
 public class RequestMaterializationGate(
     heapBudgetBytes: Long = Knob.MATERIALIZATION_HEAP_BYTES.default as Long,
     heapLimitBytes: Long = Runtime.getRuntime().maxMemory(),
 ) {
-    private val spare = (heapLimitBytes - MATERIALIZATION_RESIDENT_BYTES).coerceAtLeast(1L)
+    private val spare = (heapLimitBytes - minOf(MATERIALIZATION_RESIDENT_BYTES, heapLimitBytes / 2)).coerceAtLeast(1L)
     private val budget = if (heapBudgetBytes <= 0L) spare else minOf(heapBudgetBytes, spare)
     private val available = MutableStateFlow(budget)
     private val lock = Any()
 
-    /** Wait for enough bytes, not a request-count slot. A body larger than the budget fails fast. */
+    /** Wait for enough bytes, not a request-count slot. Bodies larger than the budget run alone. */
     internal suspend fun <T : Any> withLease(
         bodyBytes: Long,
         owner: MaterializationOwner? = null,
         block: MaterializedRequest<T>,
     ): T? {
-        val weight = weight(bodyBytes) ?: return null
+        val weight = weight(bodyBytes)
         while (!acquire(weight)) available.first { it >= weight }
         return leased(weight, owner, block)
     }
 
     /** count_tokens never queues. Null exclusively means insufficient heap admission capacity. */
     internal suspend fun <T : Any> tryWithLease(bodyBytes: Long, block: MaterializedRequest<T>): T? {
-        val weight = weight(bodyBytes) ?: return null
+        val weight = weight(bodyBytes)
         if (!acquire(weight)) return null
         return leased(weight, block = block)
     }
 
-    private fun weight(bodyBytes: Long): Long? {
+    private fun weight(bodyBytes: Long): Long {
         val bytes = bodyBytes.coerceAtLeast(1L)
-        if (bytes > (Long.MAX_VALUE - 1L) / HEAP_EXPANSION_NUMERATOR) return null
+        if (bytes > (Long.MAX_VALUE - 1L) / HEAP_EXPANSION_NUMERATOR) return budget
         val weight = (bytes * HEAP_EXPANSION_NUMERATOR + 1L) / HEAP_EXPANSION_DENOMINATOR
-        return weight.takeIf { it <= budget }
+        return minOf(weight, budget)
     }
 
     private fun acquire(weight: Long): Boolean = synchronized(lock) {

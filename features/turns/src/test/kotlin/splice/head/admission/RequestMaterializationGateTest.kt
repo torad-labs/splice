@@ -20,6 +20,72 @@ private const val DAEMON_HEAP = 2048 * MIB
 @OptIn(ExperimentalCoroutinesApi::class)
 class RequestMaterializationGateTest {
     @Test
+    fun `a small heap admits a tiny preflight body`() = runTest(UnconfinedTestDispatcher()) {
+        val gate = RequestMaterializationGate(heapLimitBytes = 256 * MIB)
+        assertEquals("preflight", gate.withLease(1024) { "preflight" })
+    }
+
+    @Test
+    fun `a small heap reserves half for resident memory`() = runTest(UnconfinedTestDispatcher()) {
+        val gate = RequestMaterializationGate(heapLimitBytes = 256 * MIB)
+        val release = CompletableDeferred<Unit>()
+        var entered = 0
+        val requests = List(10) {
+            async {
+                gate.withLease(2 * MIB) {
+                    entered++
+                    release.await()
+                }
+            }
+        }
+        try {
+            assertEquals(9, entered, "128 MiB admits nine 13 MiB materializations")
+        } finally {
+            release.complete(Unit)
+            requests.forEach { it.await() }
+        }
+        assertEquals(10, entered)
+    }
+
+    @Test
+    fun `an above-budget body enters when idle`() = runTest(UnconfinedTestDispatcher()) {
+        val gate = RequestMaterializationGate(heapBudgetBytes = 13)
+        assertEquals("exclusive", gate.withLease(3) { "exclusive" })
+        assertEquals("overflow", gate.tryWithLease(Long.MAX_VALUE) { "overflow" })
+    }
+
+    @Test
+    fun `an above-budget body waits for an empty gate and then runs alone`() =
+        runTest(UnconfinedTestDispatcher()) {
+            val gate = RequestMaterializationGate(heapBudgetBytes = 13)
+            val releaseSmall = CompletableDeferred<Unit>()
+            val releaseLarge = CompletableDeferred<Unit>()
+            val small = async { gate.withLease(1) { releaseSmall.await() } }
+            var entered = false
+            val large = async {
+                gate.withLease(3) {
+                    entered = true
+                    releaseLarge.await()
+                }
+            }
+            try {
+                assertFalse(large.isCompleted, "an oversized body must wait, not be refused")
+                assertFalse(entered)
+                assertNull(gate.tryWithLease(3) { "fast-fail must not wait or enter" })
+                releaseSmall.complete(Unit)
+                small.await()
+                assertEquals(true, entered)
+                assertNull(gate.tryWithLease(1) { "the oversized body must run alone" })
+            } finally {
+                releaseSmall.complete(Unit)
+                releaseLarge.complete(Unit)
+                small.await()
+                large.await()
+            }
+            assertEquals("refunded", gate.tryWithLease(2) { "refunded" })
+        }
+
+    @Test
     fun `fifty everyday bodies can materialize together`() = runTest(UnconfinedTestDispatcher()) {
         val gate = RequestMaterializationGate(heapLimitBytes = DAEMON_HEAP)
         val release = CompletableDeferred<Unit>()
@@ -130,15 +196,15 @@ class RequestMaterializationGateTest {
     }
 
     @Test
-    fun `odd byte weights round upward and oversized leases fail without waiting`() =
+    fun `odd byte weights round upward and oversized fast-fail leases never wait`() =
         runTest(UnconfinedTestDispatcher()) {
             val gate = RequestMaterializationGate(heapBudgetBytes = 13)
             val release = CompletableDeferred<Unit>()
             val first = async { gate.withLease(1) { release.await() } }
             try {
                 assertNull(gate.tryWithLease(1) { "two odd bodies exceed thirteen bytes" })
-                assertNull(gate.withLease(3) { "larger than the total budget" })
-                assertNull(gate.tryWithLease(Long.MAX_VALUE) { "overflow must never admit" })
+                assertNull(gate.tryWithLease(3) { "larger bodies cannot enter a busy gate" })
+                assertNull(gate.tryWithLease(Long.MAX_VALUE) { "overflow cannot enter a busy gate" })
             } finally {
                 release.complete(Unit)
                 first.await()
@@ -178,7 +244,14 @@ class RequestMaterializationGateTest {
     @Test
     fun `a configured budget cannot exceed spare JVM heap`() = runTest(UnconfinedTestDispatcher()) {
         val gate = RequestMaterializationGate(heapBudgetBytes = Long.MAX_VALUE, heapLimitBytes = DAEMON_HEAP)
-        assertNull(gate.tryWithLease(256 * MIB + 1) { "larger than spare heap" })
+        val release = CompletableDeferred<Unit>()
+        val full = async { gate.withLease(256 * MIB) { release.await() } }
+        try {
+            assertNull(gate.tryWithLease(1) { "the spare heap is fully reserved" })
+        } finally {
+            release.complete(Unit)
+            full.await()
+        }
         assertEquals("fits", gate.tryWithLease(256 * MIB) { "fits" })
     }
 }

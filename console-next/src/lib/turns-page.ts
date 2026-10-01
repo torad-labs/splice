@@ -5,7 +5,7 @@ import { waterfall } from './perf';
 import { colourOfHead } from './model';
 import type { ModelColour } from './model';
 import { STUCK_IDLE_MS, spanText } from './sessions';
-import { STAGE_PHRASE, T } from './words-turns';
+import { OUTCOME_WORD, STAGE_PHRASE, T } from './words-turns';
 import type { TopologyState } from '../types/topology';
 import type { LiveTurn } from '../types/turns';
 import type { InflightTurn, PerfSummaryHead, PerfWindowLabel, TurnRow } from '../types/perf';
@@ -28,28 +28,12 @@ export interface OutcomeRead {
   failed: boolean;
 }
 
-const OUTCOME_WORD: Readonly<Record<string, string>> = {
-  client_abort: 'Stopped',
-  empty_model: 'Empty answer',
-  empty_compact: 'Empty answer',
-  empty_message: 'Empty answer',
-  'error:cancelled': 'Cancelled',
-  'error:unexpected': 'Failed',
-  'error:rate-limited': 'Rate limited',
-  'error:plan-limit': 'Out of quota',
-  'error:all-accounts-exhausted': 'Out of quota',
-  'error:budget-blocked': 'Over budget',
-  'error:auth-missing': 'Signed out',
-  'error:upstream-failed': 'Provider failed',
-  'error:upstream-frame-too-large': 'Answer too large',
-};
-
 /** What a turn's outcome tag reads as. A tag this console does not know is still a failure, and says so plainly. */
 export function outcomeOf(outcome: string): OutcomeRead {
   if (outcome === 'ok') return { word: 'Done', tone: 'work', failed: false };
   if (outcome === '?') return { word: 'Unknown', tone: 'idle', failed: false };
   const word = OUTCOME_WORD[outcome] ?? 'Failed';
-  const quiet = outcome === 'client_abort' || outcome === 'error:cancelled';
+  const quiet = outcome === 'client_abort' || outcome === 'error:cancelled' || outcome === 'error:stopped';
   return { word, tone: quiet ? 'idle' : 'stuck', failed: !quiet };
 }
 

@@ -105,3 +105,33 @@ export const P = {
   wireBody: 'What splice sent',
   close: 'Close',
 } as const;
+
+/** One word per tag the daemon can write, kept exhaustive against its Kotlin source by tests/outcome-words.test.ts. The reason in full is the
+ *  turn page's failure sentence. */
+export const OUTCOME_WORD: Readonly<Record<string, string>> = {
+  client_abort: 'Stopped',
+  empty_model: 'Empty answer',
+  empty_compact: 'Empty answer',
+  empty_message: 'Empty answer',
+  'error:cancelled': 'Cancelled',
+  'error:unexpected': 'Unexpected failure',
+  'error:rate-limited': 'Rate limited',
+  'error:plan-limit': 'Out of quota',
+  'error:all-accounts-exhausted': 'Out of quota',
+  'error:budget-blocked': 'Over budget',
+  'error:auth-missing': 'Signed out',
+  'error:upstream-failed': 'Provider failed',
+  'error:upstream-frame-too-large': 'Answer too large',
+  'error:conn-reset': 'Connection lost',
+  'error:stopped': 'Stopped',
+  'error:compaction-preflight-compactable': 'Too large to send',
+  'error:compaction-preflight-first-exchange': 'First message too large',
+  'error:compaction-preflight-compact-overflow': 'Too large to compact',
+  'failure:invalid_request_error': 'Request rejected',
+  'failure:authentication_error': 'Credentials rejected',
+  'failure:permission_error': 'Not allowed',
+  'failure:not_found_error': 'Not found',
+  'failure:rate_limit_error': 'Rate limited',
+  'failure:api_error': 'Provider failed',
+  'failure:overloaded_error': 'Provider overloaded',
+};

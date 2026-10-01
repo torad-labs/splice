@@ -47,31 +47,22 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.core.compaction.CompactionInstructions
-import splice.core.perf.PerfKeys
 import splice.core.util.Cancellables
 import splice.core.util.WallClock
 import splice.http.JsonReply
 import splice.sessions.query.SessionHead
-import splice.sessions.query.SessionPerfWindow
 import splice.sessions.registry.RepoOrigin
 import splice.sessions.registry.RepoRoot
-import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource
 import splice.sessions.registry.TrustedRoot
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
-import java.time.Instant
-import java.time.ZoneOffset
 
 /** The repo files read as a project's own instructions, in the order they are listed. */
 private val INSTRUCTION_FILES = listOf("CLAUDE.md", "AGENTS.md")
 private const val MEMORY_SUFFIX = ".md"
-
-// why: perf rows are keyed by the first 8 characters of a session id, so a lookup by full id
-// never matches. Truncate here to the same width the perf store tagged with.
-private const val PERF_TAG = 8
 
 /** A session's repo, as the sessions rows resolve it. */
 public fun interface RepoOf {
@@ -173,11 +164,7 @@ public class ProjectsRoutes(
         private val records = registry?.read().orEmpty()
         private val allTeams = teams()?.teams().orEmpty()
         private val byRoot = ProjectRoots(repoOf).grouped(records)
-        private val dayStart = Instant.ofEpochMilli(clock()).atZone(ZoneOffset.UTC).toLocalDate()
-            .atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
-        private val today: List<Pair<SessionHead, SessionPerfWindow>> by lazy {
-            heads.values.mapNotNull { head -> head.perfRows?.window(dayStart)?.let { head to it } }
-        }
+        private val economics = ProjectEconomics(heads, clock())
         private val table = compaction()
         val roots: List<String> =
             (byRoot.keys + allTeams.map { it.repo }.filter { it.isNotBlank() }).distinct().sorted()
@@ -185,28 +172,11 @@ public class ProjectsRoutes(
         fun row(root: String): JsonObject {
             val sessions = byRoot[root].orEmpty()
             val repoTeams = allTeams.filter { it.repo == root }
-            val held = repoTeams.flatMap { team -> team.slots.flatMap { it.sessionsHistory } }
-            val tags = (sessions.mapNotNull { it.sessionId } + held).map { it.take(PERF_TAG) }.toSet()
-            val tally = PerfTally()
-            for ((head, window) in today) {
-                // EconomicsStore counts local code-mode steps separately from turns; a project does too.
-                window.rows.filter { it.session in tags && it.fields[PerfKeys.LOCAL_STEP] != 1L }
-                    .forEach { tally.add(it, head.catalog) }
-            }
-            val touched = sessions.flatMap { listOfNotNull(it.updatedAt, it.statusUpdatedAt, it.startedAt) }
-            val last = (touched + listOfNotNull(tally.lastAt)).maxOrNull()
             return buildJsonObject {
                 put("id", root)
                 put("root", root)
                 RepoOrigin.of(root)?.let { put("remote", it) }
-                // STALE means the registry has not refreshed, not that its pid exited: it is still running.
-                put("live_sessions", sessions.count { it.availability != SessionAvailability.GONE })
-                put("teams", repoTeams.count { !it.archived })
-                put("turns_today", tally.turns)
-                put("cost_today_usd", tally.costUsd)
-                put("unpriced_turns_today", tally.unpricedTurns)
-                put("day_start", dayStart)
-                put("last_activity", last?.let(::JsonPrimitive) ?: JsonNull)
+                economics.row(sessions, repoTeams).forEach { (key, value) -> put(key, value) }
                 put("compaction", compactionOf(root))
                 put("statusline_roots", statuslineRootsOf(root))
             }

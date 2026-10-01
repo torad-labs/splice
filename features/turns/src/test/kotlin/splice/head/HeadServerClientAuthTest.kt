@@ -241,6 +241,20 @@ class HeadServerClientAuthTest {
         assertEquals(before, upstream.requests.size, "a call with no credential must never reach upstream")
     }
 
+    // The no-credential refusal is for calls that forward. count_tokens is a local estimate with
+    // nothing to forward, so it is served without one (CI gate, 2026-10-01: dcec804a6 refused it).
+    @Test
+    fun `a client-auth head counts tokens for a caller with no credential, locally`() = runBlocking {
+        val port = startHead(forwardClientAuth = true)
+        val before = upstream.requests.size
+        val response = client.post("http://127.0.0.1:$port/v1/messages/count_tokens") {
+            header("Content-Type", "application/json")
+            setBody("""{"model":"claude-splice--claude-fable-5","messages":[{"role":"user","content":"hi"}]}""")
+        }
+        assertEquals(HttpStatusCode.OK, response.status, response.bodyAsText())
+        assertEquals(before, upstream.requests.size, "count_tokens must not reach upstream")
+    }
+
     @Test
     fun `a client-auth head forwards the caller's credential and wire knobs upstream, once`() {
         val port = startHead(forwardClientAuth = true)

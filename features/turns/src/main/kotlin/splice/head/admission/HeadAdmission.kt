@@ -43,7 +43,7 @@ internal class HeadAdmission(
     private val wallClock: WallClock = WallClock(System::currentTimeMillis),
 ) {
     suspend fun handleMessages(call: ApplicationCall) {
-        if (!clientAuth.authorize(call) || !admission.acceptingOrRespond(call)) return
+        if (!clientAuth.authorizeUpstream(call) || !admission.acceptingOrRespond(call)) return
         val perf = telemetry.begin()
         val t0 = deps.seams.clock()
         val slot = admission.acquireSlotOrRespond(call) ?: return

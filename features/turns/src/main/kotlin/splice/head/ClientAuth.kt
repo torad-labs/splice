@@ -74,9 +74,9 @@ internal class ClientAuth(
         // launcher plants in a client whose own credentials it replaced, and this head does the
         // opposite — it leaves the client's native auth intact and forwards it. Comparing the
         // inbound header against splice's keys would therefore reject exactly the requests this
-        // head exists to serve. Two exceptions, in [allowForwarding]: a call with no credential, and
-        // splice's own keys, which are never a credential this head may forward.
-        if (deps.policy.forwardClientAuth) return allowForwarding(call)
+        // head exists to serve. ONE exception, below: splice's own keys are never a credential this
+        // head may forward. A call that forwards also needs a credential: [authorizeUpstream].
+        if (deps.policy.forwardClientAuth) return allowUnlessOwnKey(call)
         // The turn key is what a launched client holds; the management key still runs a turn so a
         // session launched before the v0.4.0 split keeps working until it is relaunched.
         val presented = presentedCredential(call)
@@ -148,19 +148,21 @@ internal class ClientAuth(
      * checking `headers[name]`, the FIRST line, while the forwarder sends the first NON-BLANK one let
      * an empty line ahead of the key pass the check and the key ride upstream.
      */
-    /** A client-auth head's front door. On a head that only forwards, a caller presenting NO
-     *  credential, in any scheme, is answered here as every other head answers it: upstream could
-     *  only say 401, and that 401 would be recorded as the forwarded login rejected
+    /** [authorize] for a call that goes upstream (a turn). On a head that only forwards, a caller
+     *  presenting NO credential, in any scheme, is answered here as every other head answers it:
+     *  upstream could only say 401, and that 401 would be recorded as the forwarded login rejected
      *  (ClientAuthProvider.upstreamAnswered) on a call that carried no login. The daemon's own
      *  credential-less liveness probe (TurnPathProbeLoop) rode upstream that way every 30s and
-     *  signed the head out (2026-10-01). A head holding its own credential still serves such a call. */
-    private suspend fun allowForwarding(call: ApplicationCall): Boolean {
-        // The own-key refusal first: it names the header that carried the key, whichever it is.
-        if (!allowUnlessOwnKey(call)) return false
-        if (!forwardsOnly || carriesCredential(call)) return true
+     *  signed the head out (2026-10-01). A head holding its own credential still serves such a call,
+     *  and a local answer (count_tokens, models) never needs one. */
+    suspend fun authorizeUpstream(call: ApplicationCall): Boolean {
+        if (!authorize(call)) return false
+        if (!forwardsCallersOnly() || carriesCredential(call)) return true
         responses.respondUnauthorized(call)
         return false
     }
+
+    private fun forwardsCallersOnly(): Boolean = deps.policy.forwardClientAuth && forwardsOnly
 
     private fun carriesCredential(call: ApplicationCall): Boolean =
         CREDENTIAL_HEADERS.any { !call.request.headers[it].isNullOrBlank() }

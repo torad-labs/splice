@@ -647,7 +647,7 @@ Not a contract: log wording, the console's layout, the format of files under the
 and the Kotlin module API (splice publishes no library).
 
 **Claude Code.** Each release is tested against one Claude Code version in a fresh-machine e2e
-(0.4.0: 2.1.286). When a session runs a newer version, `splice doctor`, `splice status` and
+(0.4.0: 2.1.287). When a session runs a newer version, `splice doctor`, `splice status` and
 the status line say so.
 
 **Security fixes** land on the latest release only. Report a vulnerability privately, as

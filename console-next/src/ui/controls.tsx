@@ -59,7 +59,7 @@ export interface Choice<T extends string> {
 export function Select<T extends string>({ value, options, onChange, label }: { value: T; options: readonly Choice<T>[]; onChange: (next: T) => void; label: string }) {
   const current = options.find((option) => option.id === value);
   return (
-    <Menu.Root>
+    <Menu.Root modal={false}>
       <Menu.Trigger className="select" aria-label={label}>
         {current?.label ?? value}
         <Chevron />

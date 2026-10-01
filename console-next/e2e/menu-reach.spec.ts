@@ -24,10 +24,16 @@ test('a Select with more options than the window holds lets the last one be clic
   const last = 'Synthetic plan ' + String(EXTRA - 1).padStart(2, '0');
   const menu = page.getByRole('menu');
   await expect(menu).toBeVisible();
-  const box = await menu.boundingBox();
-  expect(box, 'the open menu has a box').not.toBeNull();
-  expect((box?.y ?? 0) + (box?.height ?? Infinity), 'the menu ends inside the window').toBeLessThanOrEqual(600);
-  expect(box?.y ?? -1, 'the menu starts inside the window').toBeGreaterThanOrEqual(0);
+  await expect.poll(async () => {
+    const box = await menu.boundingBox();
+    return box !== null && box.y >= 0 && box.y + box.height <= 600;
+  }, { message: 'the positioned menu must fit inside the window' }).toBe(true);
+  const beforeScroll = await page.evaluate(() => window.scrollY);
+  await page.mouse.move(20, 300);
+  await page.mouse.wheel(0, 120);
+  await expect.poll(() => page.evaluate(() => window.scrollY), {
+    message: 'a choice menu must not lock the Settings page scroll',
+  }).toBeGreaterThan(beforeScroll);
   await page.getByRole('menuitemradio', { name: last, exact: true }).click();
   await expect(trigger).toHaveText(last);
   expect(faults.pageErrors).toEqual([]);

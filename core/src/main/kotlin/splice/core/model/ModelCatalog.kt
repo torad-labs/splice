@@ -110,9 +110,14 @@ public data class ModelCatalog(
     val compactionReserveDefaults: CompactionReserveDefaults? = null,
     /** Declared model id to Claude tier, kept even when a listing omits the model. */
     val tierSlots: Map<String, String> = emptyMap(),
+    /** The head forwards the client's own Claude login, so the client picks its models (2026-09-30): any id
+     *  is admitted and nothing about models is declared to the client. Counts ride raw except for
+     *  Claude sessions whose actual divisor was learned from a status-line post. [models] holds
+     *  only labels and rate cards, and may be empty. */
+    val open: Boolean = false,
 ) {
     init {
-        require(models.isNotEmpty()) { "a catalog needs at least one picker model" }
+        require(open || models.isNotEmpty()) { "a catalog needs at least one picker model" }
         require(discoveryPrefix.isNotEmpty()) { "discovery prefix is the picker namespace and is never empty" }
     }
 
@@ -156,8 +161,9 @@ public data class ModelCatalog(
 
     public fun unwrap(id: String): String = id.removePrefix(discoveryPrefix)
 
-    /** True only for a picker model owned by this head (wrapped or upstream id). */
-    public fun contains(id: String): Boolean = liveWindows?.current()?.contains(id) ?: (stripSuffixes(id) in modelIds)
+    /** True for a picker model owned by this head (wrapped or upstream id), and for any id on an [open] one. */
+    public fun contains(id: String): Boolean =
+        open || (liveWindows?.current()?.contains(id) ?: (stripSuffixes(id) in modelIds))
 
     /** Discovery wrapper + any valid trailing numeric tier ("[1m]", "[500k]") stripped — what the
      *  upstream actually sees. Only the [<digits><k|m>] grammar strips (DR-27): a non-numeric
@@ -201,12 +207,10 @@ public data class ModelCatalog(
      *  summary, re-attached files) already read as 84% of a 272k window. */
     public val clientLaunchWindow: Long get() = contextWindowFor(pinnedModel)
 
-    /** The window the CLIENT will actually use for [id] — mirrored from cli 2.1.257 `PL()`, never
-     *  improved on: `/\[1m\]/i` anywhere in the id -> exactly 1e6; an id starting with "claude-"
-     *  (a discovery-wrapped tier, or a passthrough head's native model) ignores our env and
-     *  resolves to the client's own table or its 200k default, so the DECLARED window is returned
-     *  and the counts ride raw — a factor we cannot honestly compute is 1.0; every other id ->
-     *  [clientLaunchWindow], the env the launch planted. */
+    /** The window the CLIENT will actually use for [id]: `[1m]` and presented rows have
+     *  selector-owned windows. A `claude-` id ignores our launch env, but the session's status-line
+     *  post reports its actual divisor; before that post, the declared window keeps the old raw
+     *  fallback. Other ids use the per-session launch env when known. */
     public fun clientContextWindowFor(id: String, sessionWindow: Long? = null): Long = when {
         oneMillionHint.containsMatchIn(unwrap(id)) -> CLAUDE_CODE_ONE_MILLION
         // V4-232: a presented row is one the client knows, so its window is the client's table, and
@@ -215,7 +219,7 @@ public data class ModelCatalog(
         // A Codex discovery wrapper starts with claude- but is not a Claude model from the
         // client's own table. It gets the client's unknown-model 200k fallback, not this row's W.
         compactionReserveDefaults != null && id.startsWith(discoveryPrefix) -> CLIENT_TABLE_WINDOW
-        id.startsWith(CLIENT_OWN_ID_PREFIX) -> contextWindowFor(id)
+        id.startsWith(CLIENT_OWN_ID_PREFIX) -> sessionWindow?.takeIf { it > 0 } ?: contextWindowFor(id)
         // An env-governed id: the window is whatever THIS session's process was launched with.
         // [sessionWindow] is that value when the session has told us (ClientWindows, fed by its
         // status-line posts); a session that has not yet posted is assumed launched with the
@@ -230,14 +234,20 @@ public data class ModelCatalog(
     /** True when Claude Code sizes [id]'s window from the launch env — the ids whose window a
      *  session's status-line post reveals (ClientWindows). False for a "[1m]" id (always 1e6) and
      *  a "claude-" id (Claude Code's own table): their posts say nothing about the env. */
-    public fun envGoverned(id: String): Boolean =
+    public fun envGoverned(id: String): Boolean = !open &&
         !oneMillionHint.containsMatchIn(unwrap(id)) && !id.startsWith(CLIENT_OWN_ID_PREFIX) && !presented.covers(id)
 
     public fun usageScale(id: String, sessionWindow: Long? = null): Double {
         val declared = contextWindowFor(id)
         // An undeclared [1m] tier still resolves its real window through stripSuffixes. An
         // explicit reserve overrides the provider's default, never the client's selector window.
-        val client = clientContextWindowFor(id, sessionWindow)
+        // An open head keeps raw counts except for a Claude session with a learned divisor.
+        val learnedClaude = id.startsWith(CLIENT_OWN_ID_PREFIX) && !presented.selectorSized(id)
+        val client = when {
+            !open -> clientContextWindowFor(id, sessionWindow)
+            sessionWindow?.takeIf { it > 0 } != null && learnedClaude -> clientContextWindowFor(id, sessionWindow)
+            else -> 0L
+        }
         if (declared <= 0 || client <= 0) return 1.0
         val budget = CompactionBudgets.forRow(this, id) ?: return client.toDouble() / declared
         val realInputTarget = (declared - budget.totalTokens).coerceAtLeast(1)
@@ -324,6 +334,9 @@ public class PresentedRows internal constructor(models: List<ModelEntry>, privat
 
     /** Whether the client resolves [id] as the Claude model its row names. */
     public fun covers(id: String): Boolean = (byId[raw(id)] ?: byId[upstream(id)]) == true
+
+    /** Selector-owned windows cannot teach a session's otherwise unknown process divisor. */
+    public fun selectorSized(id: String): Boolean = oneMillionHint.containsMatchIn(raw(id)) || covers(id)
 
     private fun raw(id: String): String = id.removePrefix(discoveryPrefix)
 

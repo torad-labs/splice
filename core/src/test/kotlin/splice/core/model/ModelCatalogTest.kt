@@ -376,19 +376,47 @@ class ModelCatalogTest {
         assertEquals(1_000_000.0 / 272_000.0, after.usageScale("gpt-5.6-sol", sessionWindow = 1_000_000))
     }
 
-    // A passthrough head serves Claude Code's own model ids, which start with "claude-": the client
-    // ignores CLAUDE_CODE_MAX_CONTEXT_TOKENS for those and resolves the window from its own table
-    // (cli 2.1.257 kL/PL), so no window of ours exists to scale against — counts must ride raw.
+    // Claude models ignore the launch env but report the running divisor through the status line.
+    // A live TOML edit scales against that learned number without relaunching.
     @Test
-    fun `a claude- id ignores the launch env so its counts ride raw`() {
-        val anthropic = ModelCatalog(
+    fun `a Claude session's posted divisor scales a live window edit`() {
+        var current = ModelCatalog(
             discoveryPrefix = "claude-splice--",
-            models = listOf(ModelEntry(id = "claude-fable-5", contextWindow = 200_000)),
+            models = listOf(ModelEntry(id = "claude-opus-5-5", contextWindow = 200_000)),
             defaultContextWindow = 200_000,
-            pinnedModel = "claude-fable-5",
+            pinnedModel = "claude-opus-5-5",
         )
-        assertEquals(200_000L, anthropic.clientContextWindowFor("claude-fable-5"), "the declared window, not ours")
-        assertEquals(1.0, anthropic.usageScale("claude-fable-5"))
+        val live = current.copy(liveWindows = LiveWindows { current })
+        assertEquals(1.0, live.usageScale("claude-opus-5-5"))
+        current = current.copy(
+            models = listOf(ModelEntry(id = "claude-opus-5-5", contextWindow = 1_000_000)),
+            defaultContextWindow = 1_000_000,
+        )
+        assertEquals(1.0, live.usageScale("claude-opus-5-5"), "no post keeps the raw fallback")
+        assertEquals(200_000L, live.clientContextWindowFor("claude-opus-5-5", sessionWindow = 200_000))
+        assertEquals(0.2, live.usageScale("claude-opus-5-5", sessionWindow = 200_000))
+        assertEquals(1.0, live.usageScale("claude-opus-5-5", sessionWindow = 0))
+    }
+
+    @Test
+    fun `an open Claude head scales a posted divisor but preserves other open ids`() {
+        val open = ModelCatalog(
+            discoveryPrefix = "claude-splice--",
+            models = emptyList(),
+            defaultContextWindow = 1_000_000,
+            open = true,
+        )
+        assertEquals(1.0, open.usageScale("claude-opus-5-5"))
+        assertEquals(200_000L, open.clientContextWindowFor("claude-opus-5-5", sessionWindow = 200_000))
+        assertEquals(0.2, open.usageScale("claude-opus-5-5", sessionWindow = 200_000))
+        assertEquals(1.0, open.usageScale("other-provider-id", sessionWindow = 200_000))
+        assertEquals(1.0, open.usageScale("claude-opus-5-5[1m]", sessionWindow = 200_000))
+        val presented = open.copy(
+            models = listOf(
+                ModelEntry(id = "claude-sonnet-5", contextWindow = 1_000_000, clientModel = "claude-opus-5-5"),
+            ),
+        )
+        assertEquals(1.0, presented.usageScale("claude-sonnet-5", sessionWindow = 200_000))
     }
 
     @Test
@@ -453,17 +481,9 @@ class SessionWindowScaleTest {
     }
 
     @Test
-    fun `a 1m id and a claude- id ignore the session window - the client sizes those from the id`() {
+    fun `a 1m id ignores the posted session window`() {
         assertEquals(1_000_000L, codex.clientContextWindowFor("gpt-5.6-sol[1m]", sessionWindow = 400_000))
         assertEquals(1.0, codex.usageScale("gpt-5.6-sol[1m]", sessionWindow = 400_000))
-        val anthropic = ModelCatalog(
-            discoveryPrefix = "claude-splice--",
-            models = listOf(ModelEntry(id = "claude-fable-5", contextWindow = 200_000)),
-            defaultContextWindow = 200_000,
-            pinnedModel = "claude-fable-5",
-        )
-        assertEquals(200_000L, anthropic.clientContextWindowFor("claude-fable-5", sessionWindow = 400_000))
-        assertEquals(1.0, anthropic.usageScale("claude-fable-5", sessionWindow = 400_000))
     }
 
     @Test

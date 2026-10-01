@@ -60,10 +60,10 @@ class StatuslineScaledRowTest {
     // 400000), and the head must scale that session's counts against it — the status-line post is
     // where the window is learned. The bar is right by the same arithmetic: counts x 400k/256k on
     // the 256k row, so 200k reported is real 128k.
-    private fun oldSessionBlob(id: String, size: Long) = """
+    private fun oldSessionBlob(id: String, size: Long, input: Int = 28_000, cached: Int = 172_000) = """
         {"session_id":"s-old","model":{"id":"$id","display_name":"$id"},
          "context_window":{"context_window_size":$size,"used_percentage":50,
-           "current_usage":{"input_tokens":28000,"cache_read_input_tokens":172000,"cache_creation_input_tokens":0}}}
+           "current_usage":{"input_tokens":$input,"cache_read_input_tokens":$cached,"cache_creation_input_tokens":0}}}
     """.trimIndent()
 
     @Test
@@ -81,5 +81,52 @@ class StatuslineScaledRowTest {
         val renderer = StatuslineRenderer(label = "grok", catalog = grok, clientWindows = windows)
         render(renderer, oldSessionBlob("grok-4.6[1m]", 1_000_000))
         assertNull(windows.windowFor("s-old"), "a [1m] id is always 1e6 whatever the env")
+    }
+
+    @Test
+    fun `a running Claude session teaches its divisor and renders the declared million`() {
+        val claude = ModelCatalog(
+            discoveryPrefix = "claude-splice--",
+            models = listOf(ModelEntry(id = "claude-opus-5-5", contextWindow = 1_000_000)),
+            defaultContextWindow = 1_000_000,
+            pinnedModel = "claude-opus-5-5",
+        )
+        val windows = ClientWindows()
+        val renderer = StatuslineRenderer(label = "Claude", catalog = claude, clientWindows = windows)
+        val line = render(renderer, oldSessionBlob("claude-opus-5-5", 200_000, 20_000, 80_000))
+        assertEquals(200_000L, windows.windowFor("s-old"), "the posted divisor, not the launch env")
+        assertTrue("500k/1000k" in line, "reported 100k/200k at scale 0.2 means real 500k/1M: $line")
+    }
+
+    @Test
+    fun `an open Claude head learns the divisor while presented and 1m rows do not`() {
+        val open = ModelCatalog(
+            discoveryPrefix = "claude-splice--",
+            models = emptyList(),
+            defaultContextWindow = 1_000_000,
+            open = true,
+        )
+        val windows = ClientWindows()
+        val renderer = StatuslineRenderer(label = "Claude", catalog = open, clientWindows = windows)
+        render(renderer, oldSessionBlob("claude-opus-5-5", 200_000))
+        assertEquals(200_000L, windows.windowFor("s-old"))
+        val hints = ClientWindows()
+        val hinted = StatuslineRenderer(label = "Claude", catalog = open, clientWindows = hints)
+        render(hinted, oldSessionBlob("claude-opus-5-5[1m]", 1_000_000))
+        assertNull(hints.windowFor("s-old"), "a [1m] spelling has a client-owned divisor")
+
+        val presented = open.copy(
+            models = listOf(
+                ModelEntry(id = "claude-sonnet-5", contextWindow = 1_000_000, clientModel = "claude-opus-5-5"),
+            ),
+        )
+        val presentedWindows = ClientWindows()
+        val presentedRenderer = StatuslineRenderer(
+            label = "Claude",
+            catalog = presented,
+            clientWindows = presentedWindows,
+        )
+        render(presentedRenderer, oldSessionBlob("claude-sonnet-5", 200_000))
+        assertNull(presentedWindows.windowFor("s-old"), "a presented row uses the client's model table")
     }
 }

@@ -126,10 +126,13 @@ public class WrappedHead(
     private val vanillaDir: Path get() = home.resolve(Keys.CLAUDE)
 
     /** The real claude binary while wrap is in place (its state file is the proof), else null. A recorded binary
-     *  the updater has since deleted is put right first ([reconcile]), so a launch never execs a dead path. */
+     *  the updater has since deleted, or one a newer installed version has passed, is put right first
+     *  ([reconcile]), so a launch never execs a dead path or an old release. */
     override fun realBinaryPath(): String? {
         val state = stateStore.read() ?: return null
-        if (Files.isExecutable(Paths.get(state.realBinaryPath))) return state.realBinaryPath
+        val recorded = Paths.get(state.realBinaryPath)
+        val current = Files.isExecutable(recorded) && WrapBinaryVersions.newerBeside(recorded) == null
+        if (current) return state.realBinaryPath
         reconcile()
         return stateStore.read()?.realBinaryPath
     }
@@ -185,7 +188,8 @@ public class WrappedHead(
 
     /** Keeps `claude` wrapped across Claude Code's own updates (V4-445). The updater re-points
      *  `~/.local/bin/claude` at the new version and deletes old ones, which replaces the shim and pins
-     *  [WrapState.realBinaryPath] to a file that is gone. When the state says wrapped and `claude` is not the
+     *  [WrapState.realBinaryPath] to a file that is gone; or it downloads a release beside the running one
+     *  and leaves `claude` alone, and then the record moves to it. When the state says wrapped and `claude` is not the
      *  shim, this records what `claude` points at now and puts the shim back, the state first (the crash
      *  ordering in the file header). Idempotent, and quiet when nothing changed, so a directory watch and a
      *  timer can both call it. It never invents a target: a `claude` that is missing, dangling or not a
@@ -196,7 +200,7 @@ public class WrappedHead(
         val shim = shimPath
         when {
             !Files.exists(shim, NOFOLLOW_LINKS) -> ReconcileResult.Waiting("launch shim not found at $shim")
-            isWrapShim(cmd, shim) -> refreshDeadBinary(state)
+            isWrapShim(cmd, shim) -> refreshBinary(state)
             !Files.exists(cmd, NOFOLLOW_LINKS) -> ReconcileResult.Waiting("$cmd is missing")
             !cmd.isSymbolicLink() -> ReconcileResult.Waiting("$cmd is not a symlink, so it is left alone")
             else -> rewrap(cmd, shim, state)
@@ -265,13 +269,16 @@ public class WrappedHead(
         return UnwrapResult.Ok(status())
     }
 
-    /** `claude` is the shim, so the updater has not re-pointed it, but it may have deleted the version the
-     *  state names (its cleanup keeps a few). The newest one beside it stands in, recorded. */
-    private fun refreshDeadBinary(state: WrapState): ReconcileResult {
-        if (Files.isExecutable(Paths.get(state.realBinaryPath))) return ReconcileResult.Intact
-        val gone = state.realBinaryPath
-        val live = WrapBinaryVersions.newestBeside(Paths.get(gone))
-            ?: return ReconcileResult.Waiting("the recorded claude $gone is gone and none sits beside it")
+    /** `claude` is the shim: move the record onto the newest version installed, whether the recorded one was
+     *  deleted or a newer one now sits beside it. */
+    private fun refreshBinary(state: WrapState): ReconcileResult {
+        val recorded = Paths.get(state.realBinaryPath)
+        val live = if (Files.isExecutable(recorded)) {
+            WrapBinaryVersions.newerBeside(recorded) ?: return ReconcileResult.Intact
+        } else {
+            WrapBinaryVersions.newestBeside(recorded)
+                ?: return ReconcileResult.Waiting("the recorded claude $recorded is gone and none sits beside it")
+        }
         stateStore.write(state.copy(realBinaryPath = live.toString(), shadowedSymlinkTarget = live.toString()))
         return ReconcileResult.Rewrapped(live.toString())
     }

@@ -75,6 +75,71 @@ class WrapSurvivesUpdateTest {
     }
 
     @Test
+    fun `a newer version installed beside a recorded one that still exists is what the next launch runs`(
+        @TempDir home: Path,
+    ) {
+        // 2026-09-30: the updater downloaded 2.1.286 beside 2.1.285, kept 2.1.285 and left claude on the shim, so
+        // every launch ran 2.1.285 for five hours.
+        val rig = wrapped(home)
+        val next = rig.versions.resolve("2.1.286").also {
+            it.writeText("#!/bin/sh\n")
+            it.toFile().setExecutable(true)
+        }
+        assertTrue(Files.isExecutable(rig.realBinary), "the recorded version is still there")
+
+        assertEquals(next.toString(), rig.head.realBinaryPath(), "a launch runs the newest installed version")
+        assertEquals(next.toString(), rig.stateStore.read()?.realBinaryPath, "and the record says so")
+        assertEquals(ReconcileResult.Intact, rig.head.reconcile())
+    }
+
+    @Test
+    fun `the periodic reconcile moves an intact wrap onto a newer version`(@TempDir home: Path) {
+        val rig = wrapped(home)
+        val next = rig.versions.resolve("2.1.287").also {
+            it.writeText("#!/bin/sh\n")
+            it.toFile().setExecutable(true)
+        }
+
+        assertEquals(ReconcileResult.Rewrapped(next.toString()), rig.head.reconcile())
+        assertEquals(rig.shim.toRealPath(), rig.cmd.toRealPath(), "claude stays the shim")
+    }
+
+    @Test
+    fun `only a version-named file counts as a version, and never an older one`(@TempDir home: Path) {
+        val rig = wrapped(home)
+        listOf("2.1.300.tmp", "claude-helper", "2.1.1").forEach { name ->
+            rig.versions.resolve(name).also {
+                it.writeText("#!/bin/sh\n")
+                it.toFile().setExecutable(true)
+            }
+        }
+
+        assertEquals(rig.realBinary.toString(), rig.head.realBinaryPath())
+        assertEquals(ReconcileResult.Intact, rig.head.reconcile())
+    }
+
+    @Test
+    fun `a claude installed outside a versions directory is never swapped for another executable beside it`(
+        @TempDir home: Path,
+    ) {
+        val rig = WrapRig(home)
+        val own = home.resolve("opt").also { Files.createDirectories(it) }
+        val real = own.resolve("claude").also {
+            it.writeText("#!/bin/sh\n")
+            it.toFile().setExecutable(true)
+        }
+        own.resolve("9.9.9").also {
+            it.writeText("#!/bin/sh\n")
+            it.toFile().setExecutable(true)
+        }
+        Files.createSymbolicLink(rig.cmd, real)
+        assertTrue(rig.head.wrap() is WrapResult.Ok)
+
+        assertEquals(real.toRealPath().toString(), rig.head.realBinaryPath())
+        assertEquals(ReconcileResult.Intact, rig.head.reconcile())
+    }
+
+    @Test
     fun `the newest version is the highest number, not the last name alphabetically`(@TempDir home: Path) {
         val rig = wrapped(home)
         val newest = listOf("2.1.99", "2.1.285", "2.1.9").map { version ->
@@ -99,6 +164,22 @@ class WrapSurvivesUpdateTest {
 
         assertTrue(result is UnwrapResult.Ok, "$result")
         assertEquals(next.toRealPath(), rig.cmd.toRealPath())
+        assertEquals(null, rig.stateStore.read())
+        vanilla.assertUntouched()
+    }
+
+    @Test
+    fun `unwrap before reconciliation selects a newer version while the recorded binary remains`(@TempDir home: Path) {
+        val rig = wrapped(home)
+        val vanilla = VanillaState(home)
+        val next = rig.versions.resolve("2.1.286").also {
+            it.writeText("#!/bin/sh\n")
+            it.toFile().setExecutable(true)
+        }
+        assertTrue(Files.isExecutable(rig.realBinary))
+
+        assertTrue(rig.head.unwrap() is UnwrapResult.Ok)
+        assertEquals(next, rig.cmd.toRealPath())
         assertEquals(null, rig.stateStore.read())
         vanilla.assertUntouched()
     }

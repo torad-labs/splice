@@ -107,7 +107,7 @@ public class WrapGuard(
         Cancellables.runCatchingCancellable { head.reconcile() }.fold(
             onSuccess = { result ->
                 if (result is ReconcileResult.Rewrapped) {
-                    log("[wrap] claude was re-pointed by an update; wrapped it again, on ${result.realBinaryPath}\n")
+                    log("[wrap] claude now launches ${result.realBinaryPath}, the newest version installed\n")
                 }
             },
             onFailure = { failure -> log("[wrap] reconcile failed (${SafeFailureText.render(failure)})\n") },

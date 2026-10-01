@@ -27,12 +27,6 @@ import splice.launch.LaunchRecipe
 import splice.launch.LaunchSpec
 import java.nio.file.Paths
 
-// Floor for CLAUDE_CODE_AUTO_COMPACT_WINDOW (buildEnv): a small client window must not shrink the
-// auto-compact window below this. The client window is the pinned row's own (LaunchSpec.contextWindow,
-// 2026-09-05), so a row under 60k plants a cap above CLAUDE_CODE_MAX_CONTEXT_TOKENS, which Claude Code
-// resolves with min() — harmless; the floor is kept so a synthetic spec cannot plant a nonsense cap.
-private const val AUTO_COMPACT_FLOOR = 60_000L
-
 // LaunchSpec + LaunchRecipe live in LaunchTypes.kt (concentration, 2026-08-19).
 
 public class LaunchService(
@@ -87,10 +81,12 @@ public class LaunchService(
         val slots = aliasSlots(effective)
         // V4-358: every choice above is made on the rows' own ids; what the client is HANDED is spelled here.
         val held = effective.heldByClient()
+        // V4-449: client-login heads author no roster or picker cache; an explicit pin is a launch default only.
+        val roster = held.availableModelIds.takeUnless { held.forwardClientAuth }
         val materialize = MaterializeSpec(
             configDir = effective.trees.own,
             policy = effective.policy,
-            availableModelIds = held.availableModelIds,
+            availableModelIds = roster,
             defaultModel = held.pinnedModel,
             modelOptionsCache = held.modelOptionsCache,
             statuslineCommand = effective.statuslineCommand,
@@ -108,7 +104,8 @@ public class LaunchService(
         // V4-232: a head's presented rows enter its OWN settings.json only. V4-445: a wrapped launch materializes
         // NOTHING: it runs over the operator's own ~/.claude and ~/.claude.json, which stay as they are, and
         // carries the head's settings as a --settings overlay below.
-        materializeLaunch(materialize, trust, effective.tiers.modelOverrides, wrapped)
+        val modelOverrides = effective.tiers.modelOverrides.takeUnless { effective.forwardClientAuth }.orEmpty()
+        materializeLaunch(materialize, trust, modelOverrides, wrapped)
         // V4-276: a launch never writes a head's .credentials.json. V4-129 copied the selected stored
         // login over it here, and Claude Code's refresh tokens rotate, so every launch put back a
         // superseded token and upstream revoked the login (V4-237, V4-250). The live login is
@@ -131,7 +128,7 @@ public class LaunchService(
             add(wrapState.realBinaryPath() ?: claudeBinary)
             if (dangerouslySkipPermissions) add("--dangerously-skip-permissions")
             wrapped?.let {
-                addAll(listOf("--settings", it.settingsOverlay(held.availableModelIds, held.statuslineCommand)))
+                addAll(listOf("--settings", it.settingsOverlay(roster, held.statuslineCommand)))
             }
             // NB: no --model — the active model is ANTHROPIC_MODEL + settings.json, so the /model
             // picker (populated by the materialized bare-id roster) can freely switch. Forcing it locked the row.
@@ -160,7 +157,7 @@ public class LaunchService(
             spec.trees.siblings,
             sessionId,
             spec.pinnedModel,
-            spec.availableModelIds,
+            spec.availableModelIds.takeUnless { spec.forwardClientAuth },
         )
     }
 
@@ -274,9 +271,18 @@ public class LaunchService(
             }
         val dirs = listOf(spec.trees.own) + spec.trees.siblings
         val config = wrapped?.configRootUnsets(inheritedConfigDir, dirs).orEmpty()
+        // V4-449: what this head no longer plants must not leak in from an outer head's session either.
         val planted = buildEnv(held, slots)
+        val clientModels = if (spec.forwardClientAuth) {
+            LaunchModelEnvironment.inherited(planted)
+        } else {
+            emptyList()
+        }
         val env = if (wrapped == null) planted else planted - CONFIG_DIR_ENV
-        return LaunchEnvironment(env, auth + "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY" + absentTiers + config)
+        return LaunchEnvironment(
+            env,
+            auth + "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY" + absentTiers + clientModels + config,
+        )
     }
 
     private fun buildEnv(spec: LaunchSpec, slots: List<Pair<String, String>>): Map<String, String> {
@@ -291,58 +297,8 @@ public class LaunchService(
             // NO gateway model discovery: the picker reads the materialized roster (settings.json
             // availableModels + .claude.json additionalModelOptionsCache) — see the header for why
             // the wrapped /v1/models spelling must never reach the picker.
-            put("ANTHROPIC_MODEL", spec.pinnedModel)
-            // The picker lists one row per PLANTED TIER (Claude Code 2.1.257: fen()/hen()/uen()
-            // emit a row whenever ANTHROPIC_DEFAULT_<tier>_MODEL is set, value = the alias, label =
-            // _NAME) and dedupes rows by value only, so two tiers on one model drew that model
-            // twice: Sol as opus and as fable on claudex, K2.7 Code as sonnet and as haiku on
-            // claude-kimi (the 2026-09-04 release recording). The tier cannot be left unset: the
-            // alias then resolves to Claude Code's built-in model, which this head rejects
-            // ("proxies its own models only"), and every fable- or haiku-tiered subagent dies.
-            // The one lever is the allowlist: a tier row whose model is not on availableModels is
-            // hidden, while the head accepts its own DISCOVERY-WRAPPED spelling (catalog.contains
-            // unwraps). So a repeated tier is planted as "<prefix><id>": routed like the first, drawn
-            // never. Cache rows are untouched on purpose: Claude Code already drops a cache row that
-            // repeats a tier's model, and the cache row is where the Default line's label comes from
-            // (stripping them printed "currently gpt-5.6-sol[1m]"; verified live 2026-09-04). Known
-            // cost: a subagent on the wrapped tier runs under a wrapped ACTIVE id, for which Claude
-            // Code does not honor CLAUDE_CODE_MAX_CONTEXT_TOKENS (header note).
-            // V4-232: a repeated tier of a PRESENTED row is planted as the Claude model the row is
-            // presented as instead. The client resolves it through settings.json modelOverrides and
-            // sends the row's own id (verified on 2.1.283), so it is routed like the first and, off
-            // availableModels, drawn never, like the wrapped spelling, which the client does not know
-            // and named in a [claude-code:unrecognized_model] line for every haiku-tier title and subagent.
-            val presentedAs = spec.tiers.modelOverrides.entries.associate { (claude, row) -> row to claude }
-            val planted = mutableSetOf<String>()
-            slots.forEach { (slot, model) ->
-                val spelling = when {
-                    planted.add(model) -> spec.tiers.clientId(model)
-                    model in presentedAs -> presentedAs.getValue(model)
-                    spec.discoveryPrefix.isNotBlank() -> spec.discoveryPrefix + model
-                    else -> model
-                }
-                put("ANTHROPIC_DEFAULT_${slot}_MODEL", spelling)
-                val label = spec.modelLabels[model] ?: model
-                put("ANTHROPIC_DEFAULT_${slot}_MODEL_NAME", label)
-                put("ANTHROPIC_DEFAULT_${slot}_MODEL_DESCRIPTION", label)
-            }
-            // The pinned row's declared window (ModelCatalog.clientLaunchWindow). Claude Code's
-            // auto-compact threshold is min(this, AUTO_COMPACT_WINDOW) minus its output reserve
-            // (20k), times the pct below (cli 2.1.257 nxe/dZe): 272k -> 214,200. Other rows and a
-            // later TOML edit are applied by usage scaling on the wire. AUTO_COMPACT_WINDOW rides
-            // the same number: any smaller value would compact early by exactly that ratio.
-            put("CLAUDE_CODE_MAX_CONTEXT_TOKENS", spec.contextWindow.toString())
-            // V4-232: and no lower than the client's own window for a presented row, which ignores the
-            // env above: 2.1.283 compacts at min(window, this), so a presented row on a runtime under
-            // 200k would otherwise compact at a sixth of it. An env row's own window still wins min().
-            // V4-358: and no lower than the client's 1M window when any row is spelled 1M, for the same reason.
-            val compactWindow = maxOf(
-                AUTO_COMPACT_FLOOR,
-                spec.contextWindow,
-                spec.tiers.presentedWindow,
-                spec.tiers.spelledWindow,
-            )
-            put("CLAUDE_CODE_AUTO_COMPACT_WINDOW", compactWindow.toString())
+            putAll(LaunchModelEnvironment.models(spec, slots))
+            putAll(LaunchModelEnvironment.windows(spec))
             put("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "85")
             put("MAX_THINKING_TOKENS", "128000")
             // Claude Code's default request timeout is 600s and it also bounds the first-byte
@@ -408,6 +364,8 @@ public class LaunchService(
     // so declaring anything retires positional order outright: a tier the head does not declare is
     // not emitted, never pointed at an already-claimed model.
     private fun aliasSlots(spec: LaunchSpec): List<Pair<String, String>> {
+        // V4-449: the client picks its own models on a head that forwards its login, so no tier is planted.
+        if (spec.forwardClientAuth) return emptyList()
         val ids = (listOf(spec.pinnedModel) + (spec.tiers.candidates ?: spec.availableModelIds)).distinct()
         val declared = declaredSlots(spec)
         if (spec.tiers.slots.isNotEmpty()) {

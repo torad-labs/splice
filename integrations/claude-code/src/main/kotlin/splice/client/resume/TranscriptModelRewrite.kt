@@ -55,6 +55,9 @@ private const val TRANSCRIPT_TYPE = "type"
 private const val TRANSCRIPT_MESSAGE = "message"
 private const val ASSISTANT_TYPE = "assistant"
 
+/** Anthropic's model namespace: a row there is a model a client on its own login can restore. */
+private const val CLAUDE_ID_PREFIX = "claude-"
+
 /** The two steps of a rewrite a test must fail deterministically: writing the new bytes and the swap. */
 public interface TranscriptFs {
     public fun write(path: Path, bytes: ByteArray)
@@ -98,27 +101,60 @@ public class TranscriptModelRewrite(private val fs: TranscriptFs = ProcessTransc
      *  it is, so it stays (v0.4.0 review: claude-splice's tree is the operator's main
      *  ~/.claude/projects, and moving its opus rows onto fable rewrote history for nothing). Returns
      *  the number of rows changed; throws [IOException] on the first file that could not be read or
-     *  written. */
-    public fun rewrite(transcript: Path, pinnedModel: String, served: Collection<String>): Int {
-        val kept = served.toSet() + pinnedModel
-        var rewritten = rewriteFile(transcript, pinnedModel, kept)
+     *  written. A null [served] is a head whose client picks its own models ([clientPicked]). */
+    public fun rewrite(transcript: Path, pinnedModel: String, served: Collection<String>?): Int {
+        val policy = served?.let { roster ->
+            val kept = roster.toSet() + pinnedModel
+            RowPolicy(pinnedModel) { model -> model in kept }
+        } ?: clientPicked(transcript)
+        var rewritten = rewriteFile(transcript, policy)
         val subdir = transcript.resolveSibling(transcript.fileName.toString().removeSuffix(TRANSCRIPT_SUFFIX))
         if (Files.isDirectory(subdir, NOFOLLOW_LINKS)) {
-            jsonlUnder(subdir).forEach { file -> rewritten += rewriteFile(file, pinnedModel, kept) }
+            jsonlUnder(subdir).forEach { file -> rewritten += rewriteFile(file, policy) }
         }
         return rewritten
     }
+
+    /** Whether a row on this model stays where it is. */
+    private fun interface KeptModel {
+        operator fun invoke(model: String?): Boolean
+    }
+
+    /** Which rows stay ([keeps]) and the model a moved row takes ([target]; null keeps the row's own). */
+    private data class RowPolicy(val target: String?, val keeps: KeptModel)
+
+    /** V4-449: where the client picks its own models no roster exists to move onto. A row on a Claude model
+     *  stays as it is; a row on another vendor's model moves, without its thinking, onto the newest Claude
+     *  model this transcript used. With no Claude row there is nothing to move onto: the row still loses its
+     *  thinking (another vendor's signature fails upstream) and keeps its model, which the picker replaces. */
+    private fun clientPicked(transcript: Path): RowPolicy {
+        val newest = readText(transcript).split("\n").asReversed().firstNotNullOfOrNull(::claudeModelOf)
+        return RowPolicy(newest) { model -> isNativeClaude(model) }
+    }
+
+    private fun claudeModelOf(row: String): String? {
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-30 (V4-449): an unparseable line names no model; rewriteRow keeps it verbatim.
+        val obj = Cancellables.runCatchingCancellable { json.parseToJsonElement(row).jsonObject }
+            .getOrNull() ?: return null
+        return JsonScalars.str(assistantMessage(obj), Keys.MODEL)?.takeIf(::isNativeClaude)
+    }
+
+    /** Discovery IDs use a head's double-hyphen namespace, not the native Claude model namespace. */
+    private fun isNativeClaude(model: String?): Boolean =
+        model?.startsWith(CLAUDE_ID_PREFIX) == true && "--" !in model
+
+    private fun readText(file: Path): String = Cancellables.runCatchingCancellable { Files.readString(file) }
+        .getOrElse { cause -> throw IOException("$file unreadable (${SafeFailureText.render(cause)})") }
 
     private fun jsonlUnder(dir: Path): List<Path> = Files.walk(dir).use { stream ->
         stream.filter { it.fileName.toString().endsWith(TRANSCRIPT_SUFFIX) && Files.isRegularFile(it) }.toList()
     }
 
-    private fun rewriteFile(file: Path, pinnedModel: String, kept: Set<String>): Int {
-        val text = Cancellables.runCatchingCancellable { Files.readString(file) }
-            .getOrElse { cause -> throw IOException("$file unreadable (${SafeFailureText.render(cause)})") }
+    private fun rewriteFile(file: Path, policy: RowPolicy): Int {
+        val text = readText(file)
         var changed = 0
         val rows = text.split("\n").map { row ->
-            val rewritten = rewriteRow(row, pinnedModel, kept)
+            val rewritten = rewriteRow(row, policy)
             if (rewritten != null) changed += 1
             rewritten ?: row
         }
@@ -156,21 +192,27 @@ public class TranscriptModelRewrite(private val fs: TranscriptFs = ProcessTransc
 
     /** The rewritten row, or null when this row is not an assistant row on another model — an
      *  unparseable line included: a transcript is history, and history is never silently dropped. */
-    private fun rewriteRow(row: String, pinnedModel: String, kept: Set<String>): String? {
+    private fun rewriteRow(row: String, policy: RowPolicy): String? {
         // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-19 (V4-169): an unparseable line is kept verbatim BY DESIGN (see the KDoc); null here means "leave this row alone", never a swallowed failure.
         val obj = Cancellables.runCatchingCancellable { json.parseToJsonElement(row).jsonObject }
             .getOrNull() ?: return null
-        val message = assistantMessage(obj)
-        if (message == null || JsonScalars.str(message, Keys.MODEL) in kept) return null
-        val fixedMessage = JsonObject(
-            message.toMutableMap().apply {
-                put(Keys.MODEL, JsonPrimitive(pinnedModel))
-                withoutThinking(message[CONTENT])?.let { put(CONTENT, it) }
-            },
-        )
+        val fixedMessage = assistantMessage(obj)?.let { moved(it, policy) } ?: return null
         return json.encodeToString(
             JsonObject.serializer(),
             JsonObject(obj.toMutableMap().apply { put(TRANSCRIPT_MESSAGE, fixedMessage) }),
+        )
+    }
+
+    /** [message] moved under [policy]: onto its target model, without its thinking. Null when it stays as it is. */
+    private fun moved(message: JsonObject, policy: RowPolicy): JsonObject? {
+        if (policy.keeps(JsonScalars.str(message, Keys.MODEL))) return null
+        val stripped = withoutThinking(message[CONTENT])
+        if (policy.target == null && stripped == null) return null
+        return JsonObject(
+            message.toMutableMap().apply {
+                policy.target?.let { put(Keys.MODEL, JsonPrimitive(it)) }
+                stripped?.let { put(CONTENT, it) }
+            },
         )
     }
 

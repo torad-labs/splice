@@ -144,7 +144,7 @@ public class ResumeAcrossHeads(private val rewriter: TranscriptModelRewrite = Tr
         otherConfigDirs: List<Path>,
         sessionId: String,
         pinnedModel: String,
-        served: Collection<String>,
+        served: Collection<String>?,
         log: LogSink = LogSink(DaemonLog::write),
     ): SessionAdoption {
         val roster = Roster(pinnedModel, served)
@@ -207,7 +207,7 @@ public class ResumeAcrossHeads(private val rewriter: TranscriptModelRewrite = Tr
 
     /** The calling head's model and its whole roster — what the rewrite moves rows onto, and what it
      *  leaves alone. One value because neither means anything to the rewrite without the other. */
-    private data class Roster(val pinned: String, val served: Collection<String>)
+    private data class Roster(val pinned: String, val served: Collection<String>?)
 
     /** The encoded-cwd directory a transcript was found under — Claude Code's name for the session's
      *  own working directory, which the copy must preserve or the resumed session resolves no project. */

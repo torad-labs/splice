@@ -96,6 +96,24 @@ class ResumeHookRouteTest {
     }
 
     @Test
+    fun `a client-login resume hook preserves an unlisted native model`(@TempDir home: Path) {
+        val (own, shared) = linkedHead(home)
+        val nativeRow = FOREIGN_ROW.replace("k3-256k", "claude-synthetic-next")
+        val foreignRow = nativeRow.replace("claude-synthetic-next", "claude-synthetic-provider--foreign-row")
+        val transcript = write(
+            shared.resolve("synthetic-project").resolve("$SESSION.jsonl"),
+            nativeRow + "\n" + foreignRow + "\n",
+        )
+        val managed = head(own, emptyList())
+        val clientHead = managed.copy(
+            spec = checkNotNull(managed.spec).copy(pinnedModel = "", forwardClientAuth = true),
+        )
+        val handler = ResumeHookRoute(launchHeadsOf(clientHead), log = { log.append(it) })
+        assertNull(handler.handle("codex", hookJson(SESSION, transcript)))
+        assertEquals(nativeRow + "\n" + nativeRow + "\n", Files.readString(transcript))
+    }
+
+    @Test
     fun `a transcript outside the head's tree is refused, even when it is real and named exactly`(
         @TempDir home: Path,
     ) {

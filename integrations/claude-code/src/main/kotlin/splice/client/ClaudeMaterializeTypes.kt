@@ -35,11 +35,12 @@ public data class ClaudePolicy(
 }
 
 /** Everything a single head needs materialized. availableModelIds REPLACES the picker;
- *  modelOptionsCache is the catalog for .claude.json; defaultModel is the pinned fallback. */
+ *  modelOptionsCache is the catalog for .claude.json; defaultModel is the pinned fallback. A null
+ *  availableModelIds leaves the client's saved choice intact and writes no head roster or picker cache. */
 public data class MaterializeSpec(
     val configDir: Path,
     val policy: ClaudePolicy,
-    val availableModelIds: List<String>,
+    val availableModelIds: List<String>?,
     val defaultModel: String,
     val modelOptionsCache: JsonElement,
     val statuslineCommand: String,

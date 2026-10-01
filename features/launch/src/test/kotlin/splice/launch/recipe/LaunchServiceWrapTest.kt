@@ -7,9 +7,7 @@
 package splice.launch.recipe
 
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -123,8 +121,9 @@ class LaunchServiceWrapTest(@param:TempDir private val tmp: Path) {
         assertEquals(listOf("/opt/claude/2.1.281", "--settings"), recipe.argv.take(2))
         assertEquals("-p", recipe.argv.last())
         val overlay = Json.parseToJsonElement(recipe.argv[2]).jsonObject
-        assertEquals(listOf("m1"), overlay.getValue("availableModels").jsonArray.map { it.jsonPrimitive.content })
-        assertEquals(true, overlay.getValue("enforceAvailableModels").jsonPrimitive.boolean)
+        assertFalse("availableModels" in overlay, "the client-login picker remains the client's own")
+        assertFalse("enforceAvailableModels" in overlay)
+        assertEquals("m1", recipe.env["ANTHROPIC_MODEL"], "the explicit pin selects only this launch's default")
         assertEquals(
             "\"/bin/curl\" -s :3096/statusline",
             overlay.getValue("statusLine").jsonObject.getValue("command").jsonPrimitive.content,

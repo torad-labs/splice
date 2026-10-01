@@ -26,7 +26,7 @@ class WrapGuardTest {
         binDir = rig.bin,
         log = { line ->
             lines += line
-            if ("wrapped it again" in line) rewrapped.countDown()
+            if ("claude now launches" in line) rewrapped.countDown()
         },
         tickSeconds = TICK_SECONDS,
     )

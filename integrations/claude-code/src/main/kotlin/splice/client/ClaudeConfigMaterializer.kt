@@ -151,12 +151,12 @@ public class ClaudeConfigMaterializer(
         writeSettings(spec, hookAdditions, existingSettings, modelOverrides)
         val mcpCount = writeClaudeJson(
             spec.configDir,
-            spec.modelOptionsCache,
+            spec.modelOptionsCache.takeIf { spec.availableModelIds != null },
             shareMcp = spec.policy.sharesMcp(),
             local = localClaudeJson,
             trust = trust,
         )
-        return MaterializeResult(spec.configDir, spec.availableModelIds.size, mcpCount)
+        return MaterializeResult(spec.configDir, spec.availableModelIds?.size ?: 0, mcpCount)
     }
 
     // Guard the operator's REAL global config: the dir must look like an isolated .claude* dir AND
@@ -313,14 +313,15 @@ public class ClaudeConfigMaterializer(
         // rebuild, and then throws from here — the half-built config dir the header forbids.
         // JsonScalars is the sanctioned throw-free read (and filters JsonNull, which this chain
         // used to leak as the literal string "null"; both shapes now fall back to the default).
-        val savedModel = JsonScalars.str(existing[Keys.MODEL])
-        val model = if (savedModel != null && savedModel in allow) savedModel else spec.defaultModel
+        val model = chosenModel(JsonScalars.str(existing[Keys.MODEL]), spec)
         val hooks = LoginInterception.mergeInto(global[Keys.HOOKS], hookAdditions)
         val merged = buildJsonObject {
-            global.forEach { (k, v) -> if (isCarriedGlobalKey(k)) put(k, v) }
-            putJsonArray(Keys.AVAILABLE_MODELS) { allow.forEach { add(it) } }
-            put("enforceAvailableModels", true)
-            put(Keys.MODEL, model)
+            global.forEach { (k, v) -> if (isCarriedGlobalKey(k, clientPicks = allow == null)) put(k, v) }
+            if (allow != null) {
+                putJsonArray(Keys.AVAILABLE_MODELS) { allow.forEach { add(it) } }
+                put("enforceAvailableModels", true)
+            }
+            model?.let { put(Keys.MODEL, it) }
             put(
                 Keys.STATUS_LINE,
                 buildJsonObject {
@@ -372,12 +373,21 @@ public class ClaudeConfigMaterializer(
         return JsonObject(shared + own.mapValues { (_, id) -> JsonPrimitive(id) })
     }
 
-    private fun isCarriedGlobalKey(key: String): Boolean =
-        key != Keys.MODEL && key != Keys.AVAILABLE_MODELS && key != Keys.STATUS_LINE && key != Keys.HOOKS
+    /** V4-449: with no roster the client picks its own models, so a saved choice stands and none is invented. */
+    private fun chosenModel(saved: String?, spec: MaterializeSpec): String? {
+        val allow = spec.availableModelIds ?: return saved
+        return if (saved != null && saved in allow) saved else spec.defaultModel
+    }
 
+    /** The operator's own model and allowlist carry over only where the client picks its models (V4-449). */
+    private fun isCarriedGlobalKey(key: String, clientPicks: Boolean): Boolean =
+        key != Keys.STATUS_LINE && key != Keys.HOOKS &&
+            (clientPicks || key != Keys.MODEL && key != Keys.AVAILABLE_MODELS)
+
+    /** A null [modelOptionsCache] is a head whose client picks its models: an earlier launch's cache is removed. */
     private fun writeClaudeJson(
         configDir: Path,
-        modelOptionsCache: JsonElement,
+        modelOptionsCache: JsonElement?,
         shareMcp: Boolean,
         local: JsonObject,
         trust: TrustedLaunch?,
@@ -388,8 +398,7 @@ public class ClaudeConfigMaterializer(
         // mutation (DR-11 redo). global stays a tolerant SOURCE read here — it never aborts.
         var mcpCount = 0
         val built = buildJsonObject {
-            local.forEach { (k, v) -> put(k, v) }
-            put("additionalModelOptionsCache", modelOptionsCache)
+            ModelOptionsCache.withLaunchCache(local, modelOptionsCache).forEach { (k, v) -> put(k, v) }
             val globalMcp = (global[Keys.MCP_SERVERS] as? JsonObject)?.takeIf { shareMcp }
             if (globalMcp != null) {
                 mcpCount = globalMcp.size
@@ -430,3 +439,11 @@ private val EMPTY_JSON = JsonObject(emptyMap())
 // via .claude.json. A set rather than two `!=` legs so the loop stays under its complexity budget
 // now that it dispatches two generated-vs-linked shapes (sessions, everything else).
 private val MERGED_ITEMS = setOf(Keys.SETTINGS, Keys.MCPS)
+
+/** Owns the picker-cache field: provider heads replace it, while client-login heads remove a stale head roster. */
+private object ModelOptionsCache {
+    private const val KEY = "additionalModelOptionsCache"
+
+    fun withLaunchCache(local: JsonObject, cache: JsonElement?): JsonObject =
+        JsonObject(if (cache == null) local - KEY else local + (KEY to cache))
+}

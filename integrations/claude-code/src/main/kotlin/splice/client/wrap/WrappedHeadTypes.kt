@@ -50,11 +50,14 @@ public class WrappedLaunch internal constructor(public val configDir: Path) {
     /** The `--settings` JSON a wrapped launch hands Claude Code in place of a materialized settings.json: the
      *  head's model roster (as an enforced allowlist, so the picker offers what the head serves) and its status
      *  line. The client merges it over the operator's own settings for this run only, so nothing is written to
-     *  ~/.claude/settings.json and a plain `claude` afterwards reads the file it always read. */
-    public fun settingsOverlay(availableModelIds: List<String>, statuslineCommand: String): String =
+     *  ~/.claude/settings.json and a plain `claude` afterwards reads the file it always read. A null roster is a
+     *  head whose client picks its own models (V4-449): the overlay then carries the status line alone. */
+    public fun settingsOverlay(availableModelIds: List<String>?, statuslineCommand: String): String =
         buildJsonObject {
-            putJsonArray(Keys.AVAILABLE_MODELS) { availableModelIds.forEach { add(it) } }
-            put("enforceAvailableModels", true)
+            if (availableModelIds != null) {
+                putJsonArray(Keys.AVAILABLE_MODELS) { availableModelIds.forEach { add(it) } }
+                put("enforceAvailableModels", true)
+            }
             putJsonObject(Keys.STATUS_LINE) {
                 put("type", "command")
                 put("command", statuslineCommand)

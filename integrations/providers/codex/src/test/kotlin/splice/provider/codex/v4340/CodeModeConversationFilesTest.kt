@@ -11,22 +11,35 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.util.LogSink
+import splice.core.util.SecureFile
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRecords
 import splice.provider.codex.CodeModeRetention
 import splice.provider.codex.CodeModeStateFiles
 import splice.provider.codex.CodeModeStateLocation
+import splice.provider.codex.CodeModeStateWrite
+import splice.provider.codex.CodeModePersistenceException
 import splice.provider.codex.CodexCodeModeRegistry
+import splice.upstream.codemode.CodeModeResult
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.nio.file.attribute.PosixFilePermissions
 import java.security.MessageDigest
 import java.util.HexFormat
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration.Companion.minutes
 
 class CodeModeConversationFilesTest {
+
+    // Later than the fixture's real-time TTL; persistence tests must not expire on their own.
+    private val futureRecordTs = 1_800_000_000_000L
 
     @TempDir
     lateinit var tempDir: Path
@@ -34,7 +47,10 @@ class CodeModeConversationFilesTest {
     private val logs = mutableListOf<String>()
     private val state by lazy { CodeModeStateFiles(tempDir.resolve("code-mode")) }
 
-    private fun registry(retention: CodeModeRetention = CodeModeRetention()) = CodexCodeModeRegistry(
+    private fun registry(
+        retention: CodeModeRetention = CodeModeRetention(),
+        writer: CodeModeStateWrite? = null,
+    ) = CodexCodeModeRegistry(
         CodeModeBridgeConfig(
             { error("no script runs in a registry test") },
             CodeModeStateLocation(state.dir, tempDir.resolve("state.json")),
@@ -43,6 +59,7 @@ class CodeModeConversationFilesTest {
         ),
         Json { encodeDefaults = true },
         5.minutes,
+        writer,
     )
 
     /** Admits one script of conversation [key] and completes it. */
@@ -57,6 +74,112 @@ class CodeModeConversationFilesTest {
         HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(key.toByteArray())) + ".json"
 
     private fun CodexCodeModeRegistry.outputs(key: String): List<String?> = completed(key).map(CodeModeRecord::output)
+
+    @Test
+    fun `one conversation blocked on disk does not block another conversation`() {
+        val blocked = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val hold = AtomicBoolean(false)
+        val writes = AtomicInteger()
+        val writer = CodeModeStateWrite { path, text ->
+            writes.incrementAndGet()
+            if (hold.get() && path.fileName.toString() == nameOf("alpha")) {
+                blocked.countDown()
+                check(release.await(10, TimeUnit.SECONDS)) { "alpha was not released" }
+            }
+            SecureFile.writeAtomic0600(path, text)
+        }
+        val registry = registry(writer = writer)
+        val alpha = registry.script("alpha")
+        registry.script("beta")
+        assertEquals(1, registry.recordsFor("alpha").size, "alpha must survive beta admission")
+        hold.set(true)
+        val threads = Executors.newFixedThreadPool(2)
+        try {
+            val first = threads.submit { registry.complete(alpha, "done alpha again") }
+            if (!blocked.await(5, TimeUnit.SECONDS)) first.get(1, TimeUnit.SECONDS)
+            assertTrue(
+                blocked.count == 0L,
+                "alpha was not writing; calls=${writes.get()}, completed=${registry.completed("alpha").size}",
+            )
+            val second = threads.submit<Boolean> {
+                val prior = registry.completed("beta")
+                val added = registry.add(CodeModeRecords.of("beta", 2))
+                prior.size == 1 && added
+            }
+            assertTrue(second.get(3, TimeUnit.SECONDS), "beta must read and persist while alpha writes")
+            release.countDown()
+            first.get(5, TimeUnit.SECONDS)
+        } finally {
+            release.countDown()
+            threads.shutdownNow()
+        }
+        assertEquals(1, registry.completed("alpha").size)
+        assertEquals(1, registry.completed("beta").size)
+    }
+
+    @Test
+    fun `parallel admissions of different conversations both survive on disk`() {
+        val blocked = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val writer = CodeModeStateWrite { path, text ->
+            if (path.fileName.toString() == nameOf("alpha")) {
+                blocked.countDown()
+                check(release.await(10, TimeUnit.SECONDS))
+            }
+            SecureFile.writeAtomic0600(path, text)
+        }
+        val registry = registry(writer = writer)
+        val threads = Executors.newFixedThreadPool(2)
+        try {
+            val alpha = CodeModeRecords.of("alpha", 1, updatedAt = futureRecordTs)
+            val first = threads.submit<Boolean> { registry.add(alpha) }
+            assertTrue(blocked.await(5, TimeUnit.SECONDS))
+            val beta = CodeModeRecords.of("beta", 1, updatedAt = futureRecordTs)
+            val second = threads.submit<Boolean> { registry.add(beta) }
+            assertTrue(second.get(3, TimeUnit.SECONDS), "beta persists without waiting for alpha")
+            release.countDown()
+            assertTrue(first.get(5, TimeUnit.SECONDS))
+        } finally {
+            release.countDown()
+            threads.shutdownNow()
+        }
+        assertEquals(1, registry.recordsFor("alpha").size)
+        assertEquals(1, registry.recordsFor("beta").size, "beta remains live before a restart")
+        val restored = registry()
+        assertEquals(1, restored.recordsFor("alpha").size)
+        assertEquals(1, restored.recordsFor("beta").size)
+    }
+
+    @Test
+    fun `a newer generation of the same conversation cannot be overwritten by an older write`() {
+        val blocked = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val firstWrite = AtomicBoolean(false)
+        val writer = CodeModeStateWrite { path, text ->
+            if (path.fileName.toString() == nameOf("alpha") && firstWrite.compareAndSet(true, false)) {
+                blocked.countDown()
+                check(release.await(10, TimeUnit.SECONDS))
+            }
+            SecureFile.writeAtomic0600(path, text)
+        }
+        val registry = registry(writer = writer)
+        val alpha = registry.script("alpha")
+        firstWrite.set(true)
+        val threads = Executors.newFixedThreadPool(2)
+        try {
+            val older = threads.submit { registry.complete(alpha, "older") }
+            assertTrue(blocked.await(5, TimeUnit.SECONDS))
+            val newer = threads.submit { registry.complete(alpha, "newer") }
+            release.countDown()
+            older.get(5, TimeUnit.SECONDS)
+            newer.get(5, TimeUnit.SECONDS)
+        } finally {
+            release.countDown()
+            threads.shutdownNow()
+        }
+        assertEquals(listOf("newer"), registry().outputs("alpha"), "disk retains the latest generation")
+    }
 
     @Test
     fun `a restart restores every conversation whole`() {

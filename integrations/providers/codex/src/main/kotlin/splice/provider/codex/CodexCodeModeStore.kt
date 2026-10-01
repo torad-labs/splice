@@ -15,6 +15,10 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
 import java.util.HexFormat
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.locks.ReentrantLock
 
 /** The free space on the disk that holds a path, null when it cannot be read. A failed save asks it
  *  so the turn's message can say the disk is full (V4-397). */
@@ -33,6 +37,11 @@ internal fun interface StateDiskSpace {
             }
         }
     }
+}
+
+/** One conversation's atomic owner-only write, injectable for a blocked-key concurrency proof. */
+internal fun interface CodeModeStateWrite {
+    fun write(path: Path, text: String)
 }
 
 /**
@@ -59,28 +68,40 @@ internal class CodexCodeModeStore(
     private val json: Json,
     private val log: LogSink,
     private val freeBytes: StateDiskSpace = StateDiskSpace.Usable,
+    private val writer: CodeModeStateWrite = CodeModeStateWrite { path, text ->
+        SecureFile.writeAtomic0600(path, text)
+    },
+    private val registryLock: ReentrantLock? = null,
 ) {
     private val dir = location.dir
     private val legacyFile = location.legacyFile
-    private var needsSave = false
+
+    @Volatile private var needsSave = false
+    private val pendingWrites = AtomicInteger()
+    private val failedKeys = ConcurrentHashMap.newKeySet<String>()
 
     /** Each conversation as its file held it when last read or written, by conversation key. */
-    private val kept = mutableMapOf<String, CodeModePersistedState>()
+    private val kept = ConcurrentHashMap<String, CodeModePersistedState>()
 
-    /** The bytes the save is at (the file being written, or the first one while the directory is made), for
-     *  [save]'s disk-full reading when a step fails. */
-    private var attempt = 0
+    /** Reserved under the registry lock: writes of one conversation finish in generation order. */
+    private val tails = HashMap<String, CompletableFuture<Unit>>()
+    private val savePreparation = SavePreparation()
+
+    private data class Prepared(
+        val key: String,
+        val conversation: CodeModePersistedState?,
+        val previous: CompletableFuture<Unit>?,
+        val done: CompletableFuture<Unit>,
+    )
 
     /** A conversation as its file will hold it. */
-    private data class Encoded(val key: String, val conversation: CodeModePersistedState, val text: String) {
-        val bytes = text.toByteArray().size
-    }
+    private data class Encoded(val key: String, val conversation: CodeModePersistedState, val text: String)
 
     /** Every conversation the directory holds, then the ones only [legacyFile] holds, written to their files. */
     fun load(): CodeModePersistedState {
         readDirectory()
         val legacy = readLegacy()
-        val carried = legacy.orEmpty().filterKeys { it !in kept }
+        val carried = legacy.orEmpty().filterKeys { !kept.containsKey(it) }
         if (legacy != null && carried.count { (key, conversation) -> carry(key, conversation) } == carried.size) {
             removeLegacy()
         }
@@ -90,33 +111,85 @@ internal class CodexCodeModeStore(
     /** Writes each conversation of the given state that differs from what the disk holds, and removes the
      *  file of each that has neither a record nor a marker left. Failing part way leaves [kept] naming what
      *  was written, and the next save (a [retryOnly] one included) writes the rest. */
-    fun save(records: List<CodeModeRecord>, expired: List<CodeModeExpiredSnapshot>, retryOnly: Boolean = false) {
+    fun save(
+        records: List<CodeModeRecord>,
+        expired: List<CodeModeExpiredSnapshot>,
+        retryOnly: Boolean = false,
+        dirtyKeys: Set<String>? = null,
+    ) {
         if (retryOnly && !needsSave) return
         needsSave = true
-        val next = grouped(
-            CodeModePersistedState(records = records.map(CodeModeRecord::snapshot), expired = expired.toList()),
-        )
-        val changed = next.filter { (key, conversation) ->
-            val prior = kept[key]
-            // RecordSnapshot's constructor equality excludes its body-owned issued steps. Persist a
-            // newly served callback before emitting it even when no other record field changed.
-            prior != conversation ||
-                prior.records.map(CodeModeRecordSnapshot::issued) !=
-                conversation.records.map(CodeModeRecordSnapshot::issued)
-        }.map { (key, conversation) ->
-            Encoded(key, conversation, json.encodeToString(conversation))
-        }
+        // The registry lock protects mutable records. Snapshot only changed conversations there;
+        // serialization and disk I/O take place outside that head-wide lock.
+        val prepared = savePreparation.prepare(records, expired, dirtyKeys)
+        pendingWrites.incrementAndGet()
+        val lock = registryLock
+        lock?.unlock()
         try {
-            if (changed.isNotEmpty()) {
-                attempt = changed.first().bytes
-                secureDirectory()
+            prepared.forEach { item ->
+                item.previous?.handle { _, _ -> Unit }?.join()
+                try {
+                    persist(item)
+                    failedKeys.remove(item.key)
+                } finally {
+                    item.done.complete(Unit)
+                }
             }
-            changed.forEach(::write)
-            (kept.keys - next.keys).forEach(::remove)
-            needsSave = false
+        } finally {
+            // A failed batch still releases every reserved key for a retry's next generation.
+            prepared.forEach { it.done.complete(Unit) }
+            lock?.lock()
+            prepared.forEach { item -> if (tails[item.key] === item.done) tails.remove(item.key) }
+            needsSave = pendingWrites.decrementAndGet() > 0 || failedKeys.isNotEmpty()
+        }
+    }
+
+    private inner class SavePreparation {
+        fun prepare(
+            records: List<CodeModeRecord>,
+            expired: List<CodeModeExpiredSnapshot>,
+            dirtyKeys: Set<String>?,
+        ): List<Prepared> {
+            val selected = dirtyKeys ?: buildSet {
+                addAll(records.map(CodeModeRecord::key))
+                addAll(expired.map(CodeModeExpiredSnapshot::key))
+                addAll(kept.keys)
+            }
+            val next = grouped(
+                CodeModePersistedState(
+                    records = records.filter { it.key in selected }.map(CodeModeRecord::snapshot),
+                    expired = expired.filter { it.key in selected },
+                ),
+            )
+            return selected.mapNotNull { key ->
+                val conversation = next[key]
+                val prior = kept[key]
+                val changed = conversation != prior ||
+                    prior?.records?.map(CodeModeRecordSnapshot::issued) !=
+                    conversation?.records?.map(CodeModeRecordSnapshot::issued)
+                if (!changed) return@mapNotNull null
+                val done = CompletableFuture<Unit>()
+                Prepared(key, conversation, tails.put(key, done), done)
+            }
+        }
+    }
+
+    private fun persist(item: Prepared) {
+        var bytes = 0
+        try {
+            val conversation = item.conversation
+            if (conversation == null) {
+                remove(item.key)
+            } else {
+                val text = json.encodeToString(conversation)
+                bytes = text.toByteArray().size
+                secureDirectory()
+                write(Encoded(item.key, conversation, text))
+            }
         } catch (error: IOException) {
+            failedKeys.add(item.key)
             val free = freeBytes(dir)
-            throw CodeModePersistenceException(error, diskFull = free != null && free < attempt)
+            throw CodeModePersistenceException(error, diskFull = free != null && free < bytes)
         }
     }
 
@@ -200,9 +273,7 @@ internal class CodexCodeModeStore(
     }
 
     private fun write(file: Encoded) {
-        attempt = file.bytes
-        SecureFile.writeAtomic0600(fileOf(file.key), file.text)
-        attempt = 0
+        writer.write(fileOf(file.key), file.text)
         kept[file.key] = file.conversation
     }
 

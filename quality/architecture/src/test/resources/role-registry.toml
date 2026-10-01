@@ -514,3 +514,13 @@ names = [
     "RuntimeNotAnswering",
 ]
 reason = """Two maps of strings that are never interchangeable. IdentityHeaders (integrations/dialects/anthropic PassthroughQuirks.kt) computes the header name to value pairs a vendor requires on every upstream call, such as Kimi's X-Msh-* set, and an empty map means the head sends none. RuntimeNotAnswering (app/control ControlPorts.kt, V4-417) names each local head whose runtime did not answer the daemon's last background probe, head key to the endpoint it was asked on (`:8099`), and an empty map means no claim either way, which /health and the heads route leave out of their bodies. Wired the wrong way round, a request to a vendor would carry head keys as headers and /health would report header values as silent runtimes, so they stay two roles."""
+
+# ── 2 names, (Path,String) -> Unit ────────────────────────────────────────────────────────────────
+[[groups]]
+signature = "(Path,String)->Unit"
+dated = "2026-09-30"
+names = [
+    "CodeModeStateWrite",
+    "ProbeWrite",
+]
+reason = """CodeModeStateWrite atomically persists an immutable snapshot for one code-mode conversation to an owner-only 0600 file. It runs after the registry releases its head-wide monitor, and completion is required before its callback is exposed to the client. ProbeWrite writes a disposable byte to a diagnostics probe path to test whether a volume can accept data; failure is a diagnostic result, never a code-mode durability verdict. Substituting either compiles but could turn an unsaved callback into a falsely durable one or turn a diagnostic probe into persisted state."""

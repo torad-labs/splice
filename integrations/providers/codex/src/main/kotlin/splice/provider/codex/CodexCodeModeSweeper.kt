@@ -20,6 +20,8 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 import kotlin.time.Duration
 
 /** V4-287: the timer every code-mode registry sweeps on, one named daemon thread for all heads. */
@@ -44,7 +46,7 @@ internal object CodeModeSweeps {
 /** V4-287: one registry's sweep on [CodeModeSweeps]' timer, running while the registry keeps any
  *  record. It holds the registry's [monitor] for each sweep; [save] writes the registry's state. */
 internal class CodeModeTimedSweep(
-    private val monitor: Any,
+    private val monitor: ReentrantLock,
     private val sweeper: CodexCodeModeSweeper,
     private val records: List<CodeModeRecord>,
     private val save: Runnable,
@@ -64,7 +66,7 @@ internal class CodeModeTimedSweep(
     /** One sweep: what the sweeper changed is saved, a save that fails is logged and made again at the
      *  next sweep, and the sweeps stop once no record is kept. Never throws: a throw would end the
      *  periodic task in silence. */
-    private fun sweep() = synchronized(monitor) {
+    private fun sweep() = monitor.withLock {
         Cancellables.runCatchingBestEffort {
             if (sweeper.sweep() or unsaved) {
                 unsaved = true

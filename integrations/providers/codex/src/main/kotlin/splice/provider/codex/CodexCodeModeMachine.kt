@@ -65,7 +65,7 @@ internal class CodexCodeModeMachine(
             val issued = CodeModeIssuedStep(record.lastDigest, calls.map(CodeModePending::copy))
             record.issued += issued
             try {
-                registry.save()
+                registry.save(record)
             } catch (error: CodeModePersistenceException) {
                 // The worker already advanced, but no callback reached the client. A retry
                 // reuses persisted pending ids and earns this issuance with a successful save.
@@ -173,7 +173,7 @@ internal class CodexCodeModeMachine(
             )
         }
         request.record.updatedAt = config.clock.millis()
-        registry.save()
+        registry.save(request.record)
         return emit(request.record, request.record.visiblePending(), request.sink)
     }
 

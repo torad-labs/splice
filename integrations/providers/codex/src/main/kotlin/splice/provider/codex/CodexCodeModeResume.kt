@@ -141,7 +141,7 @@ internal class CodexCodeModeResume(
         sink: WireSink,
     ): TurnOutcome {
         record.pending.first { !it.exposed }.exposed = true
-        registry.save()
+        registry.save(record)
         val pending = record.visiblePending().filter {
             it.clientId !in record.results && it.clientId !in supplied
         }

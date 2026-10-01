@@ -741,7 +741,8 @@ class RoleRegistryLawTest {
         // names. 111 since 2026-09-26: V4-243's SupervisorUnitName joined `()->String`. 110 since 2026-09-25: DoctorReport
         // left `()->String` when it began taking the daemon's answers (V4-230), and V4-226 wrote WorkerFrameIo and
         // GlobalMcpServers as two roles of one shape.
-        assertEquals(125, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
+        // Oct 1 CT: TranscriptOriginalCopy joins the path-pair group with forced-byte copy semantics.
+        assertEquals(126, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
         assertTrue(config.entries.values.all { !it.text("reason").isNullOrBlank() }) { "every entry is reasoned" }
         assertTrue(config.entries.values.all { !it.text("dated").isNullOrBlank() }) { "every entry is dated" }
 

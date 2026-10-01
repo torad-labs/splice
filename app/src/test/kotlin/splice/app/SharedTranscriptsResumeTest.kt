@@ -38,7 +38,11 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
+import splice.client.resume.ResumeAcrossHeads
+import splice.client.resume.TranscriptModelRewrite
+import splice.client.resume.originals.TranscriptOriginals
 import splice.core.compaction.SessionProject
+import splice.core.config.StatePaths
 import splice.core.util.JsonScalars
 import splice.launch.HeadTrees
 import splice.launch.LaunchSpec
@@ -67,6 +71,13 @@ class SharedTranscriptsResumeTest {
     private val sessionId = "0f6b1c2e-7d3a-4b8e-9c1d-2a5f6e7b8c9d"
     private val headModel = "gpt-5.6-sol"
 
+    private fun service(home: Path): LaunchService = LaunchService(
+        ClaudeConfigMaterializer(home),
+        resumeAcrossHeads = ResumeAcrossHeads(
+            TranscriptModelRewrite(originals = TranscriptOriginals(StatePaths(baseOverride = home.resolve("state")))),
+        ),
+    )
+
     // ───────────────────────────── SHARED: the join ─────────────────────────────
 
     @Test
@@ -74,7 +85,7 @@ class SharedTranscriptsResumeTest {
         @TempDir home: Path,
     ) {
         seedGlobal(home)
-        val service = LaunchService(ClaudeConfigMaterializer(home))
+        val service = service(home)
         val headA = launch(service, home, "a", sharing, siblings = emptyList())
         val headB = launch(service, home, "b", sharing, siblings = listOf(headA))
         val global = home.resolve(".claude/projects")
@@ -115,7 +126,7 @@ class SharedTranscriptsResumeTest {
         @TempDir home: Path,
     ) {
         seedGlobal(home)
-        val service = LaunchService(ClaudeConfigMaterializer(home))
+        val service = service(home)
         val cwd = home.resolve("work/repo")
         val headA = home.resolve(".claude-a")
         val headProject = headA.resolve("projects").resolve(encodedCwd(cwd))
@@ -158,7 +169,7 @@ class SharedTranscriptsResumeTest {
         @TempDir home: Path,
     ) {
         seedGlobal(home)
-        val service = LaunchService(ClaudeConfigMaterializer(home))
+        val service = service(home)
         val cwd = home.resolve("work/repo")
         val headA = launch(service, home, "a", isolating, siblings = emptyList())
         val onA = headA.resolve("projects").resolve(encodedCwd(cwd)).resolve("$sessionId.jsonl")
@@ -192,7 +203,7 @@ class SharedTranscriptsResumeTest {
     @Test
     fun `a resume that names an id no head holds copies nothing`(@TempDir home: Path) {
         seedGlobal(home)
-        val service = LaunchService(ClaudeConfigMaterializer(home))
+        val service = service(home)
         val headA = launch(service, home, "a", isolating, siblings = emptyList())
 
         val recipe = service.launch(

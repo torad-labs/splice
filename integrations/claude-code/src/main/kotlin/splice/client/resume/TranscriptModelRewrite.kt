@@ -35,7 +35,9 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import splice.client.Keys
+import splice.client.resume.originals.TranscriptOriginals
 import splice.client.transcript.CONTENT
+import splice.core.config.StatePaths
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
@@ -81,7 +83,10 @@ private object ProcessTranscriptFs : TranscriptFs {
     }
 }
 
-public class TranscriptModelRewrite(private val fs: TranscriptFs = ProcessTranscriptFs) {
+public class TranscriptModelRewrite(
+    private val fs: TranscriptFs = ProcessTranscriptFs,
+    private val originals: TranscriptOriginals = TranscriptOriginals(StatePaths()),
+) {
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -103,15 +108,24 @@ public class TranscriptModelRewrite(private val fs: TranscriptFs = ProcessTransc
      *  the number of rows changed; throws [IOException] on the first file that could not be read or
      *  written. A null [served] is a head whose client picks its own models ([clientPicked]). */
     public fun rewrite(transcript: Path, pinnedModel: String, served: Collection<String>?): Int {
+        val subdir = transcript.resolveSibling(transcript.fileName.toString().removeSuffix(TRANSCRIPT_SUFFIX))
+        val children = if (Files.isDirectory(subdir, NOFOLLOW_LINKS)) jsonlUnder(subdir) else emptyList()
+        val files = listOf(transcript) + children
         val policy = served?.let { roster ->
             val kept = roster.toSet() + pinnedModel
             RowPolicy(pinnedModel) { model -> model in kept }
         } ?: clientPicked(transcript)
-        var rewritten = rewriteFile(transcript, policy)
-        val subdir = transcript.resolveSibling(transcript.fileName.toString().removeSuffix(TRANSCRIPT_SUFFIX))
-        if (Files.isDirectory(subdir, NOFOLLOW_LINKS)) {
-            jsonlUnder(subdir).forEach { file -> rewritten += rewriteFile(file, policy) }
+        val prepared = files.map { prepareFile(it, policy) }
+        val rewritten = prepared.sumOf { it.changed }
+        if (rewritten == 0) {
+            originals.rememberIfKept(transcript)
+            return 0
         }
+        originals.preserve(transcript, files)
+        if (prepared.any { readText(it.file) != it.original }) {
+            throw IOException("Transcript changed while preserving its original; nothing was rewritten")
+        }
+        prepared.forEach(::publish)
         return rewritten
     }
 
@@ -147,10 +161,19 @@ public class TranscriptModelRewrite(private val fs: TranscriptFs = ProcessTransc
         .getOrElse { cause -> throw IOException("$file unreadable (${SafeFailureText.render(cause)})") }
 
     private fun jsonlUnder(dir: Path): List<Path> = Files.walk(dir).use { stream ->
-        stream.filter { it.fileName.toString().endsWith(TRANSCRIPT_SUFFIX) && Files.isRegularFile(it) }.toList()
+        val root = dir.toRealPath()
+        stream.filter { it.fileName.toString().endsWith(TRANSCRIPT_SUFFIX) && Files.isRegularFile(it) }
+            .map { file ->
+                if (!file.toRealPath().startsWith(root)) {
+                    throw IOException("Nested transcript resolves outside its session")
+                }
+                file
+            }.toList()
     }
 
-    private fun rewriteFile(file: Path, policy: RowPolicy): Int {
+    private data class PreparedRewrite(val file: Path, val changed: Int, val original: String, val bytes: ByteArray?)
+
+    private fun prepareFile(file: Path, policy: RowPolicy): PreparedRewrite {
         val text = readText(file)
         var changed = 0
         val rows = text.split("\n").map { row ->
@@ -158,11 +181,15 @@ public class TranscriptModelRewrite(private val fs: TranscriptFs = ProcessTransc
             if (rewritten != null) changed += 1
             rewritten ?: row
         }
-        if (changed == 0) return 0
-        Cancellables.runCatchingCancellable { replace(file, rows.joinToString("\n").toByteArray(Charsets.UTF_8)) }
+        val bytes = if (changed == 0) null else rows.joinToString("\n").toByteArray(Charsets.UTF_8)
+        return PreparedRewrite(file, changed, text, bytes)
+    }
+
+    private fun publish(prepared: PreparedRewrite) {
+        val bytes = prepared.bytes ?: return
+        Cancellables.runCatchingCancellable { replace(prepared.file, prepared.original, bytes) }
             .exceptionOrNull()
-            ?.let { cause -> throw IOException("$file unwritable (${SafeFailureText.render(cause)})") }
-        return changed
+            ?.let { cause -> throw IOException("${prepared.file} unwritable (${SafeFailureText.render(cause)})") }
     }
 
     /** V4-259: the new bytes go to a temp file beside the transcript, which is moved over it in one step,
@@ -170,7 +197,7 @@ public class TranscriptModelRewrite(private val fs: TranscriptFs = ProcessTransc
      *  either way. The in-place write this replaced wrote through a link and refused a read-only file,
      *  and so does this: the file a link names is the one replaced, and a rename, which a read-only file
      *  does not stop, is not attempted on one. The file's permissions carry over to the new one. */
-    private fun replace(file: Path, bytes: ByteArray) {
+    private fun replace(file: Path, original: String, bytes: ByteArray) {
         val target = file.toRealPath()
         if (!Files.isWritable(target)) throw IOException("$target is read-only")
         val staged = Files.createTempFile(target.parent, ".${target.fileName}.", ".tmp")
@@ -180,6 +207,7 @@ public class TranscriptModelRewrite(private val fs: TranscriptFs = ProcessTransc
                 "no POSIX permissions on this filesystem, so there are none to carry over",
             )
             fs.write(staged, bytes)
+            ensureUnchanged(target, original)
             fs.move(staged, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
         }.onFailure {
             Cancellables.discard(
@@ -188,6 +216,10 @@ public class TranscriptModelRewrite(private val fs: TranscriptFs = ProcessTransc
             )
             throw it
         }
+    }
+
+    private fun ensureUnchanged(file: Path, original: String) {
+        if (readText(file) != original) throw IOException("Transcript changed while staging its rewrite")
     }
 
     /** The rewritten row, or null when this row is not an assistant row on another model — an

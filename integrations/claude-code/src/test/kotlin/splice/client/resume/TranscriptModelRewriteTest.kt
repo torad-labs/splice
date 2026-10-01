@@ -7,6 +7,8 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.client.resume.originals.TranscriptOriginals
+import splice.core.config.StatePaths
 import java.io.IOException
 import java.nio.file.CopyOption
 import java.nio.file.Files
@@ -56,7 +58,10 @@ private object RefusedSwap : TranscriptFs {
 
 class TranscriptModelRewriteTest {
 
-    private val rewriter = TranscriptModelRewrite()
+    @TempDir lateinit var state: Path
+
+    private val originals get() = TranscriptOriginals(StatePaths(baseOverride = state))
+    private val rewriter get() = TranscriptModelRewrite(originals = originals)
 
     private fun write(path: Path, vararg rows: String): Path {
         Files.createDirectories(path.parent)
@@ -76,7 +81,7 @@ class TranscriptModelRewriteTest {
         val transcript = write(dir.resolve("s1.jsonl"), USER_ROW, FOREIGN_ROW)
         val before = Files.readString(transcript)
 
-        val dying = TranscriptModelRewrite(DyingWrite(kept = 10))
+        val dying = TranscriptModelRewrite(DyingWrite(kept = 10), originals)
         assertThrows(IOException::class.java) { dying.rewrite(transcript, "gpt-5.6-sol", SOL_ONLY) }
 
         assertEquals(before, Files.readString(transcript), "the user's transcript is exactly as it was")
@@ -89,7 +94,7 @@ class TranscriptModelRewriteTest {
         val before = Files.readString(transcript)
 
         assertThrows(IOException::class.java) {
-            TranscriptModelRewrite(RefusedSwap).rewrite(transcript, "gpt-5.6-sol", SOL_ONLY)
+            TranscriptModelRewrite(RefusedSwap, originals).rewrite(transcript, "gpt-5.6-sol", SOL_ONLY)
         }
 
         assertEquals(before, Files.readString(transcript), "the user's transcript is exactly as it was")

@@ -246,16 +246,18 @@ names = [
 ]
 reason = """Two GAUGES and a CAP, and InflightGate's own KDoc draws the line: LiveLimit is "a concurrency limit READ FRESH at every admission decision, never captured at construction" — the freshness is why kotlinx Semaphore is banned there, since a live PATCH of maxInflight must change the next admission without a head restart — and it is "distinct from a GAUGE (ControlServer.failedHeads), which is also `() -> Int` but reports what IS rather than bounding what may happen next". FailedHeads is that gauge, counting heads that failed to start, which the control plane turns into `ok:false`. OpenSockets counts live WS sockets on the responses path. A gauge wired where the limit was expected admits traffic against the current occupancy, so the gate stops gating — and both are non-negative Ints, so nothing complains."""
 
-# ── 3 names, (Path, Path) -> Unit ─────────────────────────────────────────────────────────────────
+# ── 4 names, (Path, Path) -> Unit ─────────────────────────────────────────────────────────────────
+# Oct 1 CT: original-copy failure injection requires forced bytes, never a link activation or claim.
 [[groups]]
 signature = "(Path,Path)->Unit"
-dated = "2026-09-17"
+dated = "2026-10-01"
 names = [
     "LinkPointer",
     "SymlinkOp",
     "WrapperClaim",
+    "TranscriptOriginalCopy",
 ]
-reason = """Three link operations at three levels, each a seam for a DIFFERENT safety property that only a fault-injecting test can reach. SymlinkOp creates one symbolic link, and is a seam because "the swap's whole safety property — that a failure NEVER destroys the operator's pre-existing file — is only testable on the production path if the create can be made to fail on demand", the ENOSPC/LSM-EPERM case DR-11 was opened for. LinkPointer "repoints one symlink atomically" (UpgradeLayout.point), which is the upgrade ACTIVATION: its failure must leave the previous release live. WrapperClaim is "the one wrapper name-claiming primitive", whose DR-67 property is that a foreign file appearing AFTER the precheck wins and never gets eaten. One shared port would let the claim's refuse-on-conflict semantics be served by the primitive's plain create, which is how an unrelated binary on PATH gets clobbered."""
+reason = """Three link operations at three levels, each a seam for a DIFFERENT safety property that only a fault-injecting test can reach. SymlinkOp creates one symbolic link, and is a seam because "the swap's whole safety property — that a failure NEVER destroys the operator's pre-existing file — is only testable on the production path if the create can be made to fail on demand", the ENOSPC/LSM-EPERM case DR-11 was opened for. LinkPointer "repoints one symlink atomically" (UpgradeLayout.point), which is the upgrade ACTIVATION: its failure must leave the previous release live. WrapperClaim is "the one wrapper name-claiming primitive", whose DR-67 property is that a foreign file appearing AFTER the precheck wins and never gets eaten. One shared port would let the claim's refuse-on-conflict semantics be served by the primitive's plain create, which is how an unrelated binary on PATH gets clobbered. TranscriptOriginalCopy streams and forces transcript bytes into an already private staged file; its failure must prevent every live rewrite. It neither creates a symbolic pointer nor claims an executable name, so serving it with a link operation would retain mutable live history instead of an immutable copy."""
 
 # ── 4 names, (String) -> String? (ONE MORE IS A DUPLICATE AND IS NOT LISTED) ─────────────────────
 [[groups]]

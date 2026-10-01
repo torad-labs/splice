@@ -31,6 +31,7 @@ import splice.app.head.HeadServerFactory
 import splice.app.head.HeadShutdown
 import splice.app.head.LaunchSpecFactory
 import splice.app.head.ManagedHeadFactory
+import splice.client.resume.originals.TranscriptOriginals
 import splice.core.compaction.CompactionInstructions
 import splice.core.compaction.SessionProject
 import splice.core.config.ConfigService
@@ -194,6 +195,7 @@ public class Daemon(
         // V4-260: a head removed from splice.toml leaves no compaction answers, code-mode state or
         // trace days behind; this start is the first moment it is known to be gone.
         HeadKeptFiles(statePaths, log).ofRemovedHeads(topology.heads.keys)
+        TranscriptOriginals(statePaths).sweep(log)
         // 2026-09-22: every head's endpoint is asked what it serves — all at once, bounded, before any
         // catalog exists — so each picker is its declared rows plus what its provider lists.
         val rosterProviders = topology.heads.mapNotNull { (key, head) ->

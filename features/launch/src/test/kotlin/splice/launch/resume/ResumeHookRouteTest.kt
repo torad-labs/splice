@@ -15,6 +15,9 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.client.ClaudePolicy
 import splice.client.resume.SessionOwnership
+import splice.client.resume.TranscriptModelRewrite
+import splice.client.resume.originals.TranscriptOriginals
+import splice.core.config.StatePaths
 import splice.launch.HeadTrees
 import splice.launch.LaunchHead
 import splice.launch.LaunchSpec
@@ -35,8 +38,15 @@ class ResumeHookRouteTest {
     private val log = StringBuilder()
 
     private fun route(own: Path, served: List<String> = listOf(PINNED)): ResumeHookRoute {
-        return ResumeHookRoute(launchHeadsOf(head(own, served)), log = { log.append(it) })
+        return ResumeHookRoute(
+            launchHeadsOf(head(own, served)),
+            log = { log.append(it) },
+            rewriter = rewriter(own),
+        )
     }
+
+    private fun rewriter(own: Path): TranscriptModelRewrite =
+        TranscriptModelRewrite(originals = TranscriptOriginals(StatePaths(baseOverride = own.parent.resolve("state"))))
 
     private fun hookJson(
         sessionId: String,
@@ -108,7 +118,11 @@ class ResumeHookRouteTest {
         val clientHead = managed.copy(
             spec = checkNotNull(managed.spec).copy(pinnedModel = "", forwardClientAuth = true),
         )
-        val handler = ResumeHookRoute(launchHeadsOf(clientHead), log = { log.append(it) })
+        val handler = ResumeHookRoute(
+            launchHeadsOf(clientHead),
+            log = { log.append(it) },
+            rewriter = rewriter(own),
+        )
         assertNull(handler.handle("codex", hookJson(SESSION, transcript)))
         assertEquals(nativeRow + "\n" + nativeRow + "\n", Files.readString(transcript))
     }

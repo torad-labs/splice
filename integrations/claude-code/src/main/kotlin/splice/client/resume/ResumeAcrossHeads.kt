@@ -134,7 +134,7 @@ public sealed class SessionAdoption {
     public data class Invalid(public val cause: String) : SessionAdoption()
 }
 
-public class ResumeAcrossHeads(private val rewriter: TranscriptModelRewrite = TranscriptModelRewrite()) {
+public class ResumeAcrossHeads(public val rewriter: TranscriptModelRewrite = TranscriptModelRewrite()) {
 
     /** Resolve `-r [sessionId]` for the head launching from [callingConfigDir], looking in every
      *  other head's CLAUDE_CONFIG_DIR. [pinnedModel] is that head's model, and [served] its whole roster:

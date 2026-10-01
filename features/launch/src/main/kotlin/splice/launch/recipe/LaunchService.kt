@@ -18,6 +18,7 @@ import splice.client.TrustedLaunch
 import splice.client.resume.HeadBoundedContinue
 import splice.client.resume.ResumeAcrossHeads
 import splice.client.resume.SessionAdoption
+import splice.client.resume.TranscriptModelRewrite
 import splice.client.wrap.WrapStateRead
 import splice.client.wrap.WrappedHead
 import splice.client.wrap.WrappedLaunch
@@ -54,6 +55,12 @@ public class LaunchService(
 ) {
     /** V4-183: a bare -c resolves to this head's own newest session in the launch cwd. */
     private val headBoundedContinue = HeadBoundedContinue()
+
+    /** The resume hook shares the launch's rewrite and selected original-store root. */
+    public val transcriptRewriter: TranscriptModelRewrite
+        get() {
+            return resumeAcrossHeads.rewriter
+        }
 
     /** Materialize the head's config + build the exec recipe. Safe by default: the flag is added
      *  ONLY when [dangerouslySkipPermissions] is true, and doing so returns a non-null warning.

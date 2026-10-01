@@ -347,6 +347,15 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
         "Files.createSymbolicLink(" to 1,
         "Files.move(" to 1,
     ),
+    "integrations/claude-code/src/main/kotlin/splice/client/resume/originals/TranscriptOriginalCopy.kt" to mapOf(
+        "FileChannel.open(" to 1,
+    ),
+    "integrations/claude-code/src/main/kotlin/splice/client/resume/originals/TranscriptOriginals.kt" to mapOf(
+        "FileChannel.open(" to 1,
+        "Files.createLink(" to 1,
+        "createNew0600(" to 2,
+        "writeAtomic0600(" to 1,
+    ),
     "integrations/claude-code/src/main/kotlin/splice/client/resume/TranscriptModelRewrite.kt" to mapOf(
         "FileChannel.open(" to 1,
         "Files.createTempFile(" to 1,

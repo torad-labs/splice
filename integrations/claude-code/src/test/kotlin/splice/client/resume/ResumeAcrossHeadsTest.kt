@@ -17,6 +17,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.client.Keys
+import splice.client.resume.originals.TranscriptOriginals
+import splice.core.config.StatePaths
 import splice.core.util.JsonScalars
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
@@ -26,6 +28,11 @@ import kotlin.io.path.isSymbolicLink
 class ResumeAcrossHeadsTest {
 
     private val pinned = "head-model"
+
+    @TempDir lateinit var state: Path
+
+    private fun resumer(): ResumeAcrossHeads =
+        ResumeAcrossHeads(TranscriptModelRewrite(originals = TranscriptOriginals(StatePaths(baseOverride = state))))
 
     private fun write(path: Path, text: String): Path {
         Files.createDirectories(path.parent)
@@ -56,7 +63,7 @@ class ResumeAcrossHeadsTest {
         JsonScalars.str(Json.parseToJsonElement(row).jsonObject["message"] as? JsonObject, Keys.MODEL)
 
     private fun adoption(calling: Path, others: List<Path>, sessionId: String): SessionAdoption =
-        ResumeAcrossHeads().adopt(calling, others, sessionId, pinned, listOf(pinned), log = {})
+        resumer().adopt(calling, others, sessionId, pinned, listOf(pinned), log = {})
 
     @Test
     fun `a foreign session is copied in, its models follow the head, and the source is untouched`(@TempDir home: Path) {
@@ -179,7 +186,7 @@ class ResumeAcrossHeadsTest {
         val other = headConfig(home, "kimi")
         val id = "empty-1"
         val foreign = write(other.resolve(Keys.PROJECTS).resolve(encodedCwd("repo")).resolve("$id.jsonl"), "")
-        val resume = ResumeAcrossHeads()
+        val resume = resumer()
         assertTrue(Files.isRegularFile(foreign), "the refusal distinguishes an empty file from no file")
         assertEquals(foreign, (resume.plan(calling, listOf(other), id, log = {}) as ResumePlan.Empty).transcript)
         assertEquals(foreign, (adoption(calling, listOf(other), id) as SessionAdoption.Empty).transcript)
@@ -197,7 +204,7 @@ class ResumeAcrossHeadsTest {
         write(calling.resolve(Keys.PROJECTS).resolve(encodedCwd("repo")).resolve("$id.jsonl"), "")
         val foreign = register(home, "kimi", encodedCwd("repo"), id, model = pinned)
         val other = headConfig(home, "kimi")
-        val plan = ResumeAcrossHeads().plan(calling, listOf(other), id, log = {}) as ResumePlan.Copy
+        val plan = resumer().plan(calling, listOf(other), id, log = {}) as ResumePlan.Copy
         assertEquals(foreign, plan.from)
         val adopted = adoption(calling, listOf(other), id) as SessionAdoption.Adopted
         assertTrue(Files.size(adopted.into) > 0L, "the empty own file was replaced by real conversation bytes")
@@ -214,7 +221,7 @@ class ResumeAcrossHeadsTest {
         register(home, "kimi", encodedCwd("elsewhere"), "abc-123", model = "k3-256k")
         val foreign = register(home, "kimi", encodedCwd("repo"), "abc-123", model = "k3-256k")
         val own = register(home, "codex", encodedCwd("repo"), "own-1", model = pinned)
-        val resume = ResumeAcrossHeads()
+        val resume = resumer()
         val before = files(home)
 
         val copy = resume.plan(calling, listOf(kimi), "abc-123", log = {}) as ResumePlan.Copy

@@ -16,6 +16,8 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
+import splice.client.resume.TranscriptModelRewrite
+import splice.client.resume.originals.TranscriptOriginals
 import splice.core.auth.RefreshAttempt
 import splice.core.config.CODE_MODE_DIR
 import splice.core.config.StatePaths
@@ -96,11 +98,26 @@ class KeptFilesLifetimeTest {
         trace = "enabled"
     """.trimIndent()
 
+    private fun seedTranscriptOriginals(tmp: Path) {
+        val project = Files.createDirectories(tmp.resolve("client/projects/synthetic-project"))
+        val rewrite = TranscriptModelRewrite(originals = TranscriptOriginals(paths))
+        val row = """{"type":"assistant","message":{"model":"synthetic-old","content":[]}}"""
+        for (id in listOf("live", "gone")) {
+            val main = Files.writeString(project.resolve("$id.jsonl"), row)
+            val nested = project.resolve("$id/subagents")
+            Files.createDirectories(nested)
+            Files.writeString(nested.resolve("agent.jsonl"), row)
+            rewrite.rewrite(main, "synthetic-new", listOf("synthetic-new"))
+        }
+        Files.delete(project.resolve("gone.jsonl"))
+    }
+
     @BeforeAll
     fun setUp(@TempDir tmp: Path) {
         val authFile = tmp.resolve("auth.json")
         Files.writeString(authFile, """{"tokens":{"access_token":"tok-1","account_id":"acct-1","refresh_token":"r"}}""")
         paths = StatePaths(baseOverride = tmp.resolve("state"))
+        seedTranscriptOriginals(tmp)
         seed(paths.compactionRecordingsDir("claudex").resolve("expired.json"), ageMs = THREE_HOURS_MS)
         seed(paths.compactionRecordingsDir("claudex").resolve("fresh.json"))
         seed(paths.compactionRecordingsDir("removed").resolve("answer.json"))
@@ -131,6 +148,16 @@ class KeptFilesLifetimeTest {
     fun tearDown() {
         runBlocking { daemon.stop() }
         mock.stop()
+    }
+
+    @Test
+    fun `daemon startup retires only positively orphaned transcript originals in its selected state root`() {
+        val project = paths.transcriptOriginalsDir.resolve("synthetic-project")
+        assertTrue(Files.exists(project.resolve("live.jsonl")))
+        assertTrue(Files.exists(project.resolve("live/subagents/agent.jsonl")))
+        assertFalse(Files.exists(project.resolve("gone.jsonl")))
+        assertFalse(Files.exists(project.resolve("gone")))
+        assertFalse(Files.exists(project.resolve("gone.sources.json")))
     }
 
     @Test

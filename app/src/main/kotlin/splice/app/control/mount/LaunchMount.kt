@@ -10,6 +10,9 @@ import splice.app.control.LaunchHeadAdapter
 import splice.app.control.ManagedHead
 import splice.app.control.api.ControlAudit
 import splice.app.control.api.HeadResolver
+import splice.client.resume.TranscriptModelRewrite
+import splice.client.resume.originals.TranscriptOriginals
+import splice.core.config.StatePaths
 import splice.core.util.LogSink
 import splice.http.JsonBody
 import splice.launch.recipe.LaunchRoutes
@@ -28,6 +31,7 @@ internal class LaunchMount(
     audit: ControlAudit,
     log: LogSink,
     private val guard: ControlGuard,
+    statePaths: StatePaths,
     sessions: SessionSource? = null,
 ) {
     private val launchHeads = LaunchHeadAdapter.heads(heads, resolver)
@@ -41,7 +45,11 @@ internal class LaunchMount(
 
     // V4-169: the SessionStart resume hook's receiving end — session-guarded like the statusline, and
     // reachable only from loopback, because the daemon binds there.
-    private val resumeHookRoute = ResumeHookRoute(launchHeads, log)
+    private val resumeHookRoute = ResumeHookRoute(
+        launchHeads,
+        log,
+        launchService?.transcriptRewriter ?: TranscriptModelRewrite(originals = TranscriptOriginals(statePaths)),
+    )
 
     // V4-320: the recipe asks the launch's own resolution and copies nothing; whether the original still
     // runs is the registry's word.

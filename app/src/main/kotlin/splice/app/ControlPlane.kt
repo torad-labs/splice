@@ -26,7 +26,10 @@ import splice.client.ClaudeConfigMaterializer
 import splice.client.mcp.McpAccessKey
 import splice.client.mcp.McpSharing
 import splice.client.resume.AuthHeaderFile
+import splice.client.resume.ResumeAcrossHeads
 import splice.client.resume.ResumeHookTarget
+import splice.client.resume.TranscriptModelRewrite
+import splice.client.resume.originals.TranscriptOriginals
 import splice.client.wrap.WrappedHead
 import splice.configuration.topology.TopologyStale
 import splice.control.mcp.APP_MCP_SLICE
@@ -133,7 +136,8 @@ internal class ControlPlane(
      *  the guard refuses to every other head. */
     private fun launchService(home: Path, sharing: McpSharing, controlPort: Int): LaunchService {
         val materializer = materializer(home, sharing, controlPort)
-        return LaunchService(materializer, wrap = WrappedHead(home))
+        val rewriter = TranscriptModelRewrite(originals = TranscriptOriginals(statePaths))
+        return LaunchService(materializer, resumeAcrossHeads = ResumeAcrossHeads(rewriter), wrap = WrappedHead(home))
     }
 
     internal fun cancelProbes() {

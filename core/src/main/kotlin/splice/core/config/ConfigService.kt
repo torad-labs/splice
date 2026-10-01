@@ -35,7 +35,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 public class ConfigService(
-    private val statePaths: StatePaths,
+    /** The selected root is shared with stateful control routes, never re-resolved from process defaults. */
+    public val statePaths: StatePaths,
     // NAME IS A TRAP (three agents mis-read it): this is the GLOBAL knob layer sourced from the
     // head-topology FILE ([defaults] + [daemon]), NOT a per-head dimension. Per-head lives in
     // [perHeadOverrides] below.

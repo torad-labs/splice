@@ -205,6 +205,9 @@ public class StatePaths(
      *  splice.toml, whose directory can be linked into a dotfiles repo. */
     public val configBackupsDir: Path = stateDir.resolve("config-backups")
 
+    /** Byte-exact session originals kept before cross-head rewrites, outside Claude Code's projects tree. */
+    public val transcriptOriginalsDir: Path = stateDir.resolve("transcript-originals")
+
     /** Per-head stat files. The codex/grok names are a frozen legacy contract kept for CONTINUITY,
      *  not for an external reader (the header's own words — the HUD that justified them is gone, and
      *  renaming them now would strand usage history for no measured gain); new heads derive

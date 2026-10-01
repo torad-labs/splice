@@ -10,6 +10,8 @@ import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.expectSuccess
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.delay
@@ -18,6 +20,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
@@ -28,6 +31,7 @@ import splice.core.auth.AuthProvider
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
+import splice.core.config.TurnKey
 import splice.core.head.Head
 import splice.core.head.HeadHealth
 import splice.diagnostics.logs.HeadLogSource
@@ -73,6 +77,29 @@ class ResumeRecipeWiringTest {
                 json(reply.bodyAsText()),
             )
             assertEquals(401, bare("/api/sessions/$SESSION/resume?head=codex").status.value)
+        }
+    }
+
+    @Test
+    fun `a resume hook without a launch service preserves originals in the selected control state root`() {
+        serve { get, _ ->
+            val root = get("/health").call.request.url.toString().removeSuffix("/health")
+            val main = tmp.resolve("codex-tree/projects/-work/$SESSION.jsonl")
+            val original = """{"type":"assistant","message":{"model":"synthetic-old","content":[]}}"""
+            Files.writeString(main, original)
+            val paths = StatePaths(baseOverride = tmp.resolve("state"))
+            val client = HttpClient(CIO) { expectSuccess = false }
+            try {
+                val answer = client.post("$root/hooks/resume/codex") {
+                    header("Authorization", "Bearer ${TurnKey(MgmtKey(paths)).get()}")
+                    setBody("""{"source":"resume","session_id":"$SESSION","transcript_path":"$main"}""")
+                }
+                assertEquals(200, answer.status.value, answer.bodyAsText())
+                val saved = paths.transcriptOriginalsDir.resolve("-work/$SESSION.jsonl")
+                assertArrayEquals(original.toByteArray(), Files.readAllBytes(saved))
+            } finally {
+                client.close()
+            }
         }
     }
 

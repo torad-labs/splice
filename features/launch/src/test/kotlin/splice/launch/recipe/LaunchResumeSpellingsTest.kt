@@ -18,7 +18,11 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
+import splice.client.resume.ResumeAcrossHeads
 import splice.client.resume.SessionOwnership
+import splice.client.resume.TranscriptModelRewrite
+import splice.client.resume.originals.TranscriptOriginals
+import splice.core.config.StatePaths
 import splice.launch.HeadTrees
 import splice.launch.LaunchSpec
 import java.nio.file.Files
@@ -26,7 +30,12 @@ import java.nio.file.Path
 
 class LaunchResumeSpellingsTest(@param:TempDir private val tmp: Path) {
 
-    private val service = LaunchService(ClaudeConfigMaterializer(tmp))
+    private val service = LaunchService(
+        ClaudeConfigMaterializer(tmp),
+        resumeAcrossHeads = ResumeAcrossHeads(
+            TranscriptModelRewrite(originals = TranscriptOriginals(StatePaths(baseOverride = tmp.resolve("state")))),
+        ),
+    )
 
     private fun spec(
         head: String,

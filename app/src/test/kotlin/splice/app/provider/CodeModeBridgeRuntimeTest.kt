@@ -37,6 +37,7 @@ import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexCodeModeBridge
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
+import splice.upstream.failure.CodeModeStartException
 import splice.upstream.sse.WireSink
 import java.nio.file.Files
 import java.nio.file.Path
@@ -88,17 +89,26 @@ class CodeModeBridgeRuntimeTest {
     @Test
     fun `a real spawn EOF preserves source and an exact retry boots once`() = runBlocking {
         val spawns = AtomicInteger()
+        val spawned = java.util.concurrent.CompletableFuture<Process>()
         JvmCodeModeRuntime(
             workerClasspath = testClasspath,
             spawn = splice.codemode.WorkerSpawn { builder ->
-                if (spawns.incrementAndGet() == 1) builder.command("/bin/sh", "-c", "exit 0")
-                builder.start()
+                val initial = spawns.incrementAndGet() == 1
+                if (initial) builder.command("/bin/sh", "-c", "exec /bin/sleep 60")
+                builder.start().also { if (initial) spawned.complete(it) }
             },
         ).use { runtime ->
             val manager = bridge(runtime)
-            val first = manager.interceptor(turn(), disableParallel = false)
-                .intercept(BRIDGE_BASE_REQUEST, Sink()) { outer("return 'boot-recovered';") } as TurnOutcome.Failure
-            assertEquals(ErrorType.OVERLOADED, first.type)
+            val pending = async {
+                manager.interceptor(turn(), disableParallel = false)
+                    .intercept(BRIDGE_BASE_REQUEST, Sink()) { outer("return 'boot-recovered';") } as TurnOutcome.Failure
+            }
+            val child = withTimeout(5_000) { spawned.await() }
+            // The turn must select the first boot before its EOF, not race automatic prewarm recovery.
+            yield()
+            child.destroy()
+            val first = pending.await()
+            assertEquals(ErrorType.OVERLOADED, first.type, first.message)
             assertFalse(first.deterministic)
             var posted = ""
             val retry = manager.interceptor(turn(), disableParallel = false)
@@ -224,9 +234,10 @@ class CodeModeBridgeRuntimeTest {
             val after = script(bridge, "return 'after';", "outer-2")
             assertTrue(after is TurnOutcome.Success, "the first script after a restart must run: $after")
             assertEquals(2, opened.size, "the restarted head opened its own runtime")
-            assertThrows(IllegalStateException::class.java) {
+            val closed = assertThrows(CodeModeStartException::class.java) {
                 runBlocking { opened.first().start("return 1;", emptySet()) }
             }
+            assertTrue(closed.cause is IllegalStateException)
         } finally {
             bridge.onHeadStop()
         }

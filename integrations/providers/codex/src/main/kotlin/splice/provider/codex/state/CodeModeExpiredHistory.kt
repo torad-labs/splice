@@ -6,7 +6,7 @@ import splice.provider.codex.CodeModeRecord
 
 internal class CodeModeExpiredHistory(
     val entries: MutableList<CodeModeExpiredSnapshot>,
-    private val limit: Int,
+    private val limit: Int?,
 ) {
     fun remember(record: CodeModeRecord, now: Long) {
         entries += CodeModeExpiredSnapshot(
@@ -15,6 +15,6 @@ internal class CodeModeExpiredHistory(
             resultIds = record.clientIds(),
             expiredAt = now,
         )
-        while (entries.size > limit) entries.removeAt(0)
+        while (limit?.let { entries.size > it } == true) entries.removeAt(0)
     }
 }

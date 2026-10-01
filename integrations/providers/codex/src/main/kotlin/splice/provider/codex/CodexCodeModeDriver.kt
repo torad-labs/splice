@@ -76,7 +76,7 @@ internal class CodexCodeModeDriver(
         return when {
             registry.completed(context.key).any { it.outerCallId == outer.callId } ->
                 "duplicate completed code-mode call id '${outer.callId}'"
-            state.scripts >= config.maxRounds -> "code-mode round limit exceeded"
+            config.maxRounds?.let { state.scripts >= it } == true -> "code-mode round limit exceeded"
             else -> null
         }
     }

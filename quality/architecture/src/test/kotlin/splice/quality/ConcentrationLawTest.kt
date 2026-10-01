@@ -161,8 +161,10 @@ internal object Concentration {
      *  TransportFailureReason.kt (closedReason, and the unnamed-failure sentence). */
     // 2026-09-30: shared-host schema decomposition measured CodeModeWire.kt below HIGH at 2.98;
     // the source-enumerated band fell from 13 to 12 in code-mode-state-complete2.
-    const val RATCHET_RECORDED = "2026-09-30"
-    const val RATCHET_MAX_HIGH = 12
+    // 2026-10-01: removing the orphan standalone worker path measured CodeModeWorker.kt at 2.64;
+    // the band fell from 12 to 11 in code-mode-count-final with all provider count proofs green.
+    const val RATCHET_RECORDED = "2026-10-01"
+    const val RATCHET_MAX_HIGH = 11
 
     /** THE PACKAGE-SCALE BASELINE — the worst package's FILE COUNT. The package is named here so
      *  the diff reads without running anything, but the NAME is not gated: a different package

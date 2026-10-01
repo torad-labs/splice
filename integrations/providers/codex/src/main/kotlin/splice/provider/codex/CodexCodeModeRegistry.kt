@@ -54,6 +54,7 @@ internal class CodexCodeModeRegistry(
     private val timed = CodeModeTimedSweep(
         monitor,
         records,
+        history,
         { PeriodicSweep().run() },
         store,
         config,
@@ -293,7 +294,10 @@ internal class CodexCodeModeRegistry(
         }
 
         fun run() {
-            val keys = monitor.withLock { records.map(CodeModeRecord::key).toSet() + store.pendingKeys }
+            val keys = monitor.withLock {
+                records.map(CodeModeRecord::key).toSet() +
+                    history.entries.map(CodeModeExpiredSnapshot::key) + store.pendingKeys
+            }
             keys.forEach { key ->
                 access.tryKey(key) {
                     val changed = sweeper.sweep(key)

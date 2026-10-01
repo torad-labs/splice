@@ -52,10 +52,10 @@ private const val RETAINED_HEAP_DIVISOR: Long = 4
  *  later one of its conversation with it. The bounds therefore take whole conversations, least
  *  recently used first, and never the conversation a new script belongs to. */
 public data class CodeModeRetention(
-    /** The most records one conversation keeps; past it, that conversation's own oldest finished one goes. */
-    val perConversation: Int = 128,
-    /** The most records the head keeps; a script that no finished record can make room for is refused. */
-    val records: Int = 1024,
+    /** An optional explicit conversation count bound. Null leaves retention to bytes and TTL. */
+    val perConversation: Int? = null,
+    /** An optional explicit head count bound. No fixed count restricts a head by default. */
+    val records: Int? = null,
     /** The most the head's records take as stored (UTF-8 JSON). Never a reason to refuse a script. */
     // A boot-time share of the actual JVM heap, with room for decoded objects and transient wire buffers.
     val bytes: Long = Runtime.getRuntime().maxMemory() / RETAINED_HEAP_DIVISOR,
@@ -64,13 +64,14 @@ public data class CodeModeRetention(
 public data class CodeModeBridgeConfig(
     val runtimes: CodeModeRuntimes,
     val state: CodeModeStateLocation,
-    /** V4-337: per conversation and by total size; was 128 records for the whole head. */
+    /** Heap-derived byte retention with optional explicit conversation and head count bounds. */
     val retention: CodeModeRetention = CodeModeRetention(),
     val ttl: Duration = 24.hours,
     val maxSourceChars: Int = DEFAULT_MAX_SOURCE_CHARS,
     val maxOutputChars: Int = DEFAULT_MAX_OUTPUT_CHARS,
-    val maxCalls: Int = 64,
-    val maxRounds: Int = 32,
+    /** Optional explicit call and round bounds; protocol frame bytes still bound every step. */
+    val maxCalls: Int? = null,
+    val maxRounds: Int? = null,
     val clock: Clock = Clock.systemUTC(),
     /** Head-scoped sink for history-degradation lines; uninstalled it is a no-op. */
     val log: LogSink = LogSink { },
@@ -121,15 +122,17 @@ public class CodexCodeModeBridge(
     private val controller = CodexCodeModeTurn(registry, wire, driver, resume, machine, validation, config.log)
 
     init {
-        require(config.retention.perConversation > 0) { "code-mode retention.perConversation must be positive" }
-        require(config.retention.records > 0) { "code-mode retention.records must be positive" }
+        require(config.retention.perConversation?.let { it > 0 } != false) {
+            "code-mode retention.perConversation must be positive"
+        }
+        require(config.retention.records?.let { it > 0 } != false) { "code-mode retention.records must be positive" }
         require(config.retention.bytes > 0) { "code-mode retention.bytes must be positive" }
         require(config.ttl.isPositive()) { "code-mode ttl must be positive" }
         require(sweepInterval.isPositive()) { "code-mode sweepInterval must be positive" }
         require(config.maxSourceChars > 0) { "code-mode maxSourceChars must be positive" }
         require(config.maxOutputChars > 0) { "code-mode maxOutputChars must be positive" }
-        require(config.maxCalls > 0) { "code-mode maxCalls must be positive" }
-        require(config.maxRounds > 0) { "code-mode maxRounds must be positive" }
+        require(config.maxCalls?.let { it > 0 } != false) { "code-mode maxCalls must be positive" }
+        require(config.maxRounds?.let { it > 0 } != false) { "code-mode maxRounds must be positive" }
     }
 
     public fun interceptor(

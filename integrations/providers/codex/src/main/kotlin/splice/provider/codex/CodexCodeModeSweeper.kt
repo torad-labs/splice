@@ -49,6 +49,7 @@ internal object CodeModeSweeps {
 internal class CodeModeTimedSweep(
     private val monitor: ReentrantLock,
     private val records: List<CodeModeRecord>,
+    private val history: CodeModeExpiredHistory,
     private val save: Runnable,
     private val store: CodexCodeModeStore,
     private val config: CodeModeBridgeConfig,
@@ -61,11 +62,12 @@ internal class CodeModeTimedSweep(
 
     /** Under [monitor]: starts the sweeps when a record is kept and none run. */
     fun arm() {
-        if (running == null && records.isNotEmpty()) running = CodeModeSweeps.every(interval) { sweep() }
+        val retained = records.isNotEmpty() || history.entries.isNotEmpty()
+        if (running == null && retained) running = CodeModeSweeps.every(interval) { sweep() }
     }
 
     /** One sweep: what the sweeper changed is saved, a save that fails is logged and made again at the
-     *  next sweep, and the sweeps stop once no record is kept. Never throws: a throw would end the
+     *  next sweep, and the sweeps stop once no record or expiry marker is kept. Never throws: a throw would end the
      *  periodic task in silence. */
     private fun sweep() {
         Cancellables.runCatchingBestEffort {
@@ -80,7 +82,8 @@ internal class CodeModeTimedSweep(
         }
         monitor.withLock {
             val clean = !unsaved && store.pendingKeys.isEmpty()
-            if (records.isEmpty() && clean) {
+            val empty = records.isEmpty() && history.entries.isEmpty()
+            if (empty && clean) {
                 running?.cancel(false)
                 running = null
             }
@@ -97,7 +100,13 @@ internal class CodexCodeModeSweeper(
     private val history: CodeModeExpiredHistory,
 ) {
     /** Expires records past their TTL and closes positively dead sessions' cells; true when anything changed. */
-    fun sweep(key: String? = null): Boolean = expireRecords(key) or reapIdleCells(key)
+    fun sweep(key: String? = null): Boolean = expireRecords(key) or reapIdleCells(key) or expireMarkers(key)
+
+    /** Without an explicit count bound, old expiry evidence is bounded by the same configured lifetime. */
+    private fun expireMarkers(key: String?): Boolean {
+        val cutoff = config.clock.millis() - config.ttl.inWholeMilliseconds
+        return history.entries.removeAll { (key == null || it.key == key) && it.expiredAt < cutoff }
+    }
 
     /** At capacity, only a cell whose session is positively dead may give up its slot. */
     fun evictIdleCell(key: String? = null): CodeModeRecord? {
@@ -177,17 +186,15 @@ internal class CodeModeRecordRetention(
         if (own.isEmpty() || !own.all(CodeModeRecord::terminal)) return false
         val why = when {
             own.any { it.sessionId?.let(sessionAlive::invoke) == true } -> null
-            own.size >= bounds.perConversation -> "it reached ${bounds.perConversation} records"
+            bounds.perConversation?.let { own.size >= it } == true -> "it reached ${bounds.perConversation} records"
             own.sumOf(::bytesOf) > bounds.bytes -> "it alone holds more than ${bounds.bytes} bytes"
             else -> null
         }
         return why?.let { Gone(records, expired, now).finished(key, it) } != null
     }
 
-    /** Makes room in [records] for [record] by letting other conversations go, least recently used first.
-     *  [record]'s own finished records go only when the head's count leaves no other way, which the
-     *  defaults never reach (records > perConversation). False when nothing finished can go: the registry
-     *  refuses the script, as before V4-337. The byte bound never refuses. */
+    /** Makes room by reclaiming finished conversations within the byte budget. An explicit count
+     *  override can also reclaim this conversation or refuse admission; defaults never refuse by count. */
     fun makeRoom(
         records: MutableList<CodeModeRecord>,
         expired: CodeModeExpiredHistory,
@@ -196,7 +203,7 @@ internal class CodeModeRecordRetention(
     ): Boolean {
         val gone = Gone(records, expired, now)
         val full = "the head holds ${bounds.records} records"
-        while (records.size >= bounds.records) {
+        while (bounds.records?.let { records.size >= it } == true) {
             gone.leastRecent(record.key, full) ?: gone.finished(record.key, "$full, none of them idle") ?: return false
         }
         var held = records.sumOf(::bytesOf) + bytesOf(record)
@@ -217,15 +224,20 @@ internal class CodeModeRecordRetention(
             if (overOwnBound(records, key)) beginTurn(records, expired, key, now)
         }
         val gone = Gone(records, expired, now)
-        while (records.size > bounds.records) gone.leastRecent(null, "the head held ${records.size} records") ?: break
+        while (exceedsHeadCount(records.size)) {
+            gone.leastRecent(null, "the head held ${records.size} records") ?: break
+        }
         var held = records.sumOf(::bytesOf)
         while (held > bounds.bytes) held -= gone.leastRecent(null, "the head's records held $held bytes") ?: break
         return records.size != before
     }
 
+    private fun exceedsHeadCount(count: Int): Boolean = bounds.records?.let { count > it } == true
+
     private fun overOwnBound(records: List<CodeModeRecord>, key: String): Boolean {
         val own = records.filter { it.key == key }
-        return own.size > bounds.perConversation || own.sumOf(::bytesOf) > bounds.bytes
+        val countFull = bounds.perConversation?.let { own.size > it } == true
+        return countFull || own.sumOf(::bytesOf) > bounds.bytes
     }
 
     /** Lets records go from [records] at [now], each remembered in [expired]. */

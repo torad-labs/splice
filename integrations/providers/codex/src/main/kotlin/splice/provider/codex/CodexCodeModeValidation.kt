@@ -32,7 +32,8 @@ internal class CodexCodeModeValidation(private val config: CodeModeBridgeConfig)
         val oversized = calls.firstOrNull { !fitsOutput(it.arguments.toString()) }
         return when {
             calls.isEmpty() -> "code-mode runtime yielded an empty call batch"
-            record.totalCalls + calls.size > config.maxCalls -> "code-mode call limit exceeded"
+            config.maxCalls?.let { record.totalCalls.toLong() + calls.size > it } == true ->
+                "code-mode call limit exceeded"
             duplicateIds.isNotEmpty() -> "code-mode runtime repeated call ids: $duplicateIds"
             unknown != null -> "code-mode tool '${unknown.name}' is not in the current tool catalog"
             oversized != null -> "code-mode tool arguments exceed the size limit"

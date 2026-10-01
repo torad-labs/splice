@@ -3,7 +3,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { Link } from 'react-router';
 import type { ModelColour } from '../../lib/model';
 import type { Handoff, SessionState } from '../../lib/sessions';
-import { cardLine, needsPerson, sessionKey, sessionLabel, stateTone, stateWord, repoName } from '../../lib/sessions';
+import { canResumeSession, cardLine, needsPerson, sessionKey, sessionLabel, stateTone, stateWord, repoName } from '../../lib/sessions';
 import type { SessionRow } from '../../types/sessions';
 import { ModelMark, State, Window } from '../../ui';
 import { S } from '../shared/copy';
@@ -69,7 +69,7 @@ export function SessionCard({ facts, sortable = true }: { facts: CardFacts; sort
           <span key={part}>{part}</span>
         ))}
       </div>
-      {needs || state === 'gone' ? (
+      {needs || (state === 'gone' && canResumeSession(row)) ? (
         <div className="acts">
           {needs ? (state === 'stuck' ? <StopTurn row={row} /> : <OpenLink row={row} />) : null}
           <ResumeCopy row={row} />

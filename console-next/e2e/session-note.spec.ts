@@ -100,11 +100,41 @@ test('a session on a version the daemon has not checked names it, the versions t
     const refusal = page.getByText('This session runs Claude Code 2.1.200, and notes reach only ');
     await expect(refusal).toBeVisible();
     await expect(refusal).toContainText(`Relaunch it on Claude Code ${newest}.`);
-    for (const version of admitted) await expect(refusal).toContainText(version);
+    const oldest = admitted[0];
+    await expect(refusal).toContainText(oldest === newest ? String(newest) : `${oldest} to ${newest}`);
     await expect(page.getByRole('textbox', { name: BOX, exact: true })).toHaveCount(0);
     await healthyExcept(page, faults, ['404 /api/sessions/' + oldId + '/transcript']);
   } finally {
     rmSync(old, { force: true });
+  }
+});
+
+test('a different client has no Claude Code resume act and keeps searched folders behind a disclosure', async ({ page }) => {
+  const file = join(sessionsDir(), 'e2e-telegram.json');
+  const id = 'e2e-telegram-0000-4000-8000-000000000006';
+  writeFileSync(file, JSON.stringify({
+    pid: process.pid, sessionId: id, cwd: env('CONSOLE_E2E_REPO'), name: 'e2e-telegram', kind: 'interactive',
+    version: 'eli-telegram/0.2.0', status: 'idle', startedAt: Date.now(), updatedAt: Date.now(),
+    messagingSocketPath: join(dir, 'noted.sock'),
+  }));
+  try {
+    const faults = await open(page, 'sessions/' + id);
+    await expect(page.getByText('This session has no transcript on disk.', { exact: false })).toBeVisible();
+    const paths = page.locator('details').filter({ has: page.getByText('Show the path', { exact: true }) });
+    await expect(paths).toBeVisible();
+    await expect(paths).not.toHaveAttribute('open');
+    await expect(paths.locator('pre')).not.toBeVisible();
+    await paths.getByText('Show the path', { exact: true }).click();
+    await expect(paths.locator('pre')).toBeVisible();
+    await expect(paths.locator('pre')).not.toBeEmpty();
+    await expect(page.getByText('This session uses eli-telegram/0.2.0. Notes from this console reach Claude Code sessions only.')).toBeVisible();
+    await expect(page.getByText('This session runs Claude Code eli-telegram/0.2.0')).toHaveCount(0);
+    await expect(page.getByText(/Relaunch it on Claude Code/)).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Copy resume command', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /Resume on another command/ })).toHaveCount(0);
+    await healthyExcept(page, faults, ['404 /api/sessions/' + id + '/transcript']);
+  } finally {
+    rmSync(file, { force: true });
   }
 });
 

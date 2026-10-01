@@ -1,4 +1,5 @@
 import { SW } from './words-sessions';
+import { isNonClaudeClient } from './sessions';
 
 // A note to a session: what the box may send. The limit is the daemon's (MAX_NOTE_CHARS in SessionNoteRoute.kt); a longer note is refused there.
 export const NOTE_LIMIT = 8000;
@@ -13,5 +14,6 @@ export function noteRefusal(version: string | null, admitted: readonly string[] 
   const newest = admitted?.[admitted.length - 1];
   if (admitted === undefined || newest === undefined) return null;
   if (version === null) return SW.noteRefusedUnknown(newest);
+  if (isNonClaudeClient(version)) return SW.noteRefusedClient(version);
   return admitted.includes(version) ? null : SW.noteRefusedVersion(version, admitted, newest);
 }

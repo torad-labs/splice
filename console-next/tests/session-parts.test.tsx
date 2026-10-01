@@ -213,6 +213,15 @@ describe('a session card', () => {
     expect(html).not.toContain('Open the session');
     expect(html).not.toContain('Stop the turn');
   });
+  test('a non-Claude client or a measured non-resumable session offers no Claude Code resume recipe', () => {
+    const foreign = render(facts({ state: 'waiting', row: row({ version: 'eli-telegram/0.2.0', resumable: true }) }));
+    expect(foreign).not.toContain('Copy resume command');
+    expect(foreign).not.toContain('Resume on another command');
+    const missing = render(facts({ state: 'gone', row: row({ resumable: false }) }));
+    expect(missing).not.toContain('Copy resume command');
+    expect(missing).not.toContain('Resume on another command');
+    expect(missing).not.toContain('class="acts"');
+  });
   test('a working or idle card offers no resume', () => {
     expect(render(facts({ state: 'idle' }))).not.toContain('Copy resume command');
     expect(render(facts())).not.toContain('Copy resume command');

@@ -12,7 +12,12 @@ describe('noteRefusal', () => {
   });
   test('a version it does not send to is refused in a sentence that names it, the versions it does send to, and the fix', () => {
     expect(noteRefusal('2.1.280', ADMITTED)).toBe(
-      'This session runs Claude Code 2.1.280, and notes reach only 2.1.282, 2.1.283, 2.1.284, 2.1.285 and 2.1.286. Relaunch it on Claude Code 2.1.286.',
+      'This session runs Claude Code 2.1.280, and notes reach only 2.1.282 to 2.1.286. Relaunch it on Claude Code 2.1.286.',
+    );
+  });
+  test('a non-Claude client is named without claiming a Claude Code version or prescribing a relaunch', () => {
+    expect(noteRefusal('eli-telegram/0.2.0', ADMITTED)).toBe(
+      'This session uses eli-telegram/0.2.0. Notes from this console reach Claude Code sessions only.',
     );
   });
   test('a session that registered no version is refused with the same fix', () => {

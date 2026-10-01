@@ -9,7 +9,7 @@ import { colourOfHead } from '../../lib/model';
 import type { ModelColour } from '../../lib/model';
 import { peerRow, railOf } from '../../lib/rail';
 import type { Seat } from '../../lib/rail';
-import { namedPeer, peerLabel, sessionKey, sessionLabel, spanText, stateOf, stateTone, stateWord, repoName, timingOf } from '../../lib/sessions';
+import { canResumeSession, namedPeer, peerLabel, sessionKey, sessionLabel, spanText, stateOf, stateTone, stateWord, repoName, timingOf } from '../../lib/sessions';
 import type { SessionRow } from '../../types/sessions';
 import { UNKNOWN_HEAD } from '../../types/sessions';
 import { Back, Button, Empty, Fault, Markdown, Segmented, State, Window } from '../../ui';
@@ -115,7 +115,7 @@ export function SessionPage() {
             </div>
           )}
         </div>
-        {row === undefined || state === null ? null : (
+        {row === undefined || state === null || (!canResumeSession(row) && !((state === 'working' || state === 'stuck') && turnOf(row) != null)) ? null : (
           <div className="acts">
             {state === 'working' || state === 'stuck' ? <StopTurn row={row} fallback={null} /> : null}
             <ResumeCopy row={row} />
@@ -143,9 +143,18 @@ export function SessionPage() {
             {transcript.isError ? <Fault message={failureText(transcript.error)} onRetry={() => void transcript.refetch()} /> : null}
             {transcript.view?.kind === 'off' ? <p className="hint">{P.transcriptOff} {transcript.view.reason}</p> : null}
             {transcript.view?.kind === 'missing' ? (
-              <p className="hint">
-                {row === undefined && sessions.isSuccess && !history.isFetching ? P.notFound : P.transcriptMissing} {transcript.view.searched.join(', ')}
-              </p>
+              <>
+                <p className="hint">
+                  {row === undefined && sessions.isSuccess && !history.isFetching ? P.notFound : P.transcriptMissing}
+                </p>
+                {transcript.view.searched.length === 0 ? null : (
+                  <details>
+                    <summary>{P.showPath}</summary>
+                    <p className="hint">{P.lookedIn}</p>
+                    <pre>{transcript.view.searched.join('\n')}</pre>
+                  </details>
+                )}
+              </>
             ) : null}
             {transcript.view?.kind === 'messages' && shown.length === 0 && !transcript.hasNextPage ? <Empty title={P.noMessages} /> : null}
             {shown.map((entry) => {

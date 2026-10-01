@@ -7,6 +7,13 @@ import { repoNameOf } from './repo';
 import { cardSays, waitingQuestion } from './session-says';
 import { SW } from './words-sessions';
 
+/** Other clients register a product/version tag; Claude Code registers its bare version. */
+export const isNonClaudeClient = (version: string | null): boolean => version?.includes('/') === true;
+
+/** A Claude Code resume recipe needs an id and no measured refusal from the transcript census. */
+export const canResumeSession = (row: SessionRow): boolean =>
+  row.session_id !== null && row.resumable !== false && !isNonClaudeClient(row.version);
+
 /** A session's key: its session id, else its pid. A registration with no session id still has to be
  *  openable, and its key must not collide with "nothing is open". */
 export function sessionKey(row: SessionRow): string {

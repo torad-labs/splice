@@ -6,7 +6,7 @@ import { failureText } from '../../api/client';
 import { useHeads, useStopTurn } from '../../api/queries';
 import { fetchResume, useLiveTurnOf } from '../../api/sessions';
 import { shellLine } from '../../lib/shell';
-import { sessionKey } from '../../lib/sessions';
+import { canResumeSession, sessionKey } from '../../lib/sessions';
 import type { SessionRow } from '../../types/sessions';
 import { UNKNOWN_HEAD } from '../../types/sessions';
 import { Button, Chevron } from '../../ui';
@@ -52,7 +52,7 @@ export function ResumeCopy({ row }: { row: SessionRow }) {
   useEffect(() => () => window.clearTimeout(reset.current), []);
   const heads = useHeads();
   const id = row.session_id;
-  if (id === null) return null;
+  if (id === null || !canResumeSession(row)) return null;
   const run = async (head: string): Promise<void> => {
     try {
       const recipe = await fetchResume(id, head);

@@ -2,6 +2,7 @@
 package splice.provider.codex
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.upstream.codemode.CodeModeResult
@@ -20,21 +21,6 @@ internal data class CodeModeExpiredSnapshot(
     val resultIds: Set<String>,
     val expiredAt: Long,
 )
-
-internal class CodeModeExpiredHistory(
-    val entries: MutableList<CodeModeExpiredSnapshot>,
-    private val limit: Int,
-) {
-    fun remember(record: CodeModeRecord, now: Long) {
-        entries += CodeModeExpiredSnapshot(
-            key = record.key,
-            lastDigest = record.lastDigest,
-            resultIds = record.clientIds(),
-            expiredAt = now,
-        )
-        while (entries.size > limit) entries.removeAt(0)
-    }
-}
 
 /** The detail an abandoned record carries (V4-342: [CodeModeRecord.abandoned] reads it back). */
 internal const val CODE_MODE_ABANDONED: String = "code-mode history no longer places the running script"
@@ -66,6 +52,9 @@ internal data class CodeModeRecordSnapshot(
 ) {
     /** Kept outside the already-wide constructor; the store compares it explicitly on save. */
     var issued: List<CodeModeIssuedStep> = emptyList()
+    var sessionId: String? = null
+
+    @Transient var retainedBytes: Long? = null
 
     fun restore(): CodeModeRecord = CodeModeRecord(
         id = id,
@@ -100,7 +89,11 @@ internal data class CodeModeRecordSnapshot(
         nativeSegments = nativeSegments,
         continuity = continuity,
         continuityReplay = continuityReplay,
-    ).also { it.issued.addAll(issued) }
+    ).also {
+        it.issued.addAll(issued)
+        it.sessionId = sessionId
+        it.retainedBytes = retainedBytes
+    }
 
     /** A completed record with old metadata is still terminal — the rewrite omits it (and logs) rather
      *  than refusing the conversation; only an unfinished one has nothing left to resume. */
@@ -137,6 +130,9 @@ internal data class CodeModeRecord(
 
     /** In-memory snapshot order; a failed save cannot undo a later reserved snapshot. */
     var saveGeneration: Long = 0
+    var sessionId: String? = null
+
+    @Volatile var retainedBytes: Long? = null
 
     fun visiblePending(): List<CodeModePending> = pending.filter(CodeModePending::exposed)
 
@@ -173,7 +169,10 @@ internal data class CodeModeRecord(
         nativeSegments = nativeSegments,
         continuity = continuity,
         continuityReplay = continuityReplay,
-    ).also { it.issued = issued.toList() }
+    ).also {
+        it.issued = issued.toList()
+        it.sessionId = sessionId
+    }
 }
 
 /**

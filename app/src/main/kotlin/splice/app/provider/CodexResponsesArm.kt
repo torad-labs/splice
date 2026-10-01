@@ -3,6 +3,7 @@ package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
 import splice.app.TokenUrlRefreshCall
+import splice.app.provider.codex.CodeModeSessionLiveness
 import splice.codemode.DEFAULT_ADVANCE_TIMEOUT_MS
 import splice.codemode.DEFAULT_HEAP_MB
 import splice.codemode.DEFAULT_MAX_WORKERS
@@ -17,6 +18,7 @@ import splice.core.util.LogSink
 import splice.oauth.OAuthAccountFiles
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeOnlyModels
+import splice.provider.codex.CodeModeSessionAlive
 import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexAuthProvider
 import splice.provider.codex.CodexCodeModeBridge
@@ -33,6 +35,7 @@ internal class CodexResponsesArm(
     private val probeScope: CoroutineScope,
     private val log: LogSink,
     private val refreshCall: TokenUrlRefreshCall,
+    private val sessionAlive: CodeModeSessionAlive = CodeModeSessionLiveness(probeScope, log = log),
 ) {
     private val quirksOverlay = QuirksOverlay()
     private val accountFiles = OAuthAccountFiles()
@@ -143,6 +146,7 @@ internal class CodexResponsesArm(
                         legacyFile = statePaths.stateDir.resolve("${ctx.key}$CODE_MODE_STATE_SUFFIX"),
                     ),
                     log = HeadScopedLogs.headScopedLog(ctx.key, log),
+                    sessionAlive = sessionAlive,
                 ),
             )
         } else {

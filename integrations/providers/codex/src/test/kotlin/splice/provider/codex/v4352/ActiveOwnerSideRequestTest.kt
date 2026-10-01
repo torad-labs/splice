@@ -10,7 +10,6 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -27,7 +26,6 @@ import splice.provider.codex.CodexCodeModeHistoryCodec
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 import java.io.IOException
-import java.nio.file.Files
 
 private const val DEVELOPER = """{"role":"developer","content":"s"}"""
 
@@ -139,8 +137,7 @@ class ActiveOwnerSideRequestTest : CodeModeBridgeTestSupport() {
         val original = RecordingSink()
         bridge(runtime).interceptor(turn(), outer(), disableParallel = false)
             .intercept(input, original) { outerOutcome() }
-        val saved = Files.list(stateFiles.dir).use { files -> Files.readString(files.findFirst().orElseThrow()) }
-        val snapshot = Json.parseToJsonElement(saved).jsonObject["records"]!!.jsonArray.single().jsonObject
+        val snapshot = stateFiles.records().single()
         val issued = snapshot["issued"]!!.jsonArray
         assertEquals(1, issued.size, "callback id must be durable before serving")
         val restarted = bridge(QueuedRuntime(ArrayDeque()))

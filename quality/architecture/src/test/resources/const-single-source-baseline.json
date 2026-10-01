@@ -389,10 +389,6 @@
       "core/src/main/kotlin/splice/core/usage/QuotaHeaders.kt",
       "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexQuotaHeaderFamily.kt"
     ],
-    "COPY MILLIS_PER_MINUTE": [
-      "integrations/mcp/src/main/kotlin/splice/control/mcp/HostedServers.kt",
-      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeSweeper.kt"
-    ],
     "COPY MILLIS_PER_SECOND": [
       "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeProcess.kt",
       "integrations/mcp/src/main/kotlin/splice/control/mcp/HostedServer.kt",

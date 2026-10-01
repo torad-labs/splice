@@ -9,6 +9,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -30,6 +31,9 @@ import splice.core.topology.ProviderConfig
 import splice.core.topology.QuirksConfig
 import splice.core.turn.WatchdogBudget
 import splice.oauth.OAuthAccountFiles
+import splice.provider.codex.CodeModeBridgeConfig
+import splice.provider.codex.CodeModeSessionAlive
+import splice.provider.codex.CodexCodeModeBridge
 import splice.upstream.BuiltTurn
 import java.nio.file.Files
 import java.nio.file.Path
@@ -81,6 +85,24 @@ class CodexResponsesArmTest {
         assertTrue(after.requestBody.toString().contains("\"name\":\"exec\""), "the refreshed roster marks it")
         assertEquals(1, logged.count { it.contains("[code-mode]") }, "said once, at start: $logged")
         wired.provider.onHeadStop()
+    }
+
+    @Test
+    fun `the production bridge receives the session liveness port`(@TempDir tmp: Path) = runTest {
+        val sessions = CodeModeSessionAlive { false }
+        val arm = CodexResponsesArm(
+            StatePaths(baseOverride = tmp.resolve("state")),
+            backgroundScope,
+            log = {},
+            refreshCall = TokenUrlRefreshCall { _, _ -> RefreshAttempt.Denied("test-denied") },
+            sessionAlive = sessions,
+        )
+        val method = CodexResponsesArm::class.java.getDeclaredMethod("codeModeBridge", ProviderBuild::class.java)
+        method.isAccessible = true
+        val manager = method.invoke(arm, context(tmp, tmp.resolve("auth.json"))) as CodexCodeModeBridge
+        val field = CodexCodeModeBridge::class.java.getDeclaredField("config")
+        field.isAccessible = true
+        assertSame(sessions, (field.get(manager) as CodeModeBridgeConfig).sessionAlive)
     }
 
     private fun writeAccounts(tmp: Path): Path {

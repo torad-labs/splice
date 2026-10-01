@@ -5,23 +5,29 @@
 // [dir] holds, so a change to the naming cannot make a test agree with itself.
 package splice.provider.codex
 
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import splice.provider.codex.state.CodeModeStateJournal
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 
 class CodeModeStateFiles(val dir: Path) {
+    private val json = Json
 
     /** Every conversation file, in name order. Empty when nothing has been saved. A dot-named file is a
      *  save in flight (SecureFile writes `.secure*.tmp`, then renames it over its target), not state. */
     fun files(): List<Path> = if (Files.isDirectory(dir)) {
         Files.list(dir).use { entries ->
-            entries.filter { Files.isRegularFile(it) && !it.fileName.toString().startsWith(".") }.sorted().toList()
+            entries.filter {
+                Files.isRegularFile(it) && !it.fileName.toString().startsWith(".") &&
+                    !it.fileName.toString().endsWith(".lock")
+            }.sorted().toList()
         }
     } else {
         emptyList()
@@ -33,7 +39,7 @@ class CodeModeStateFiles(val dir: Path) {
     fun state(): JsonObject {
         val conversations = files().mapNotNull { file ->
             try {
-                Json.parseToJsonElement(Files.readString(file)).jsonObject
+                Json.parseToJsonElement(json.encodeToString(CodeModeStateJournal.read(file, Json))).jsonObject
             } catch (_: NoSuchFileException) {
                 null
             }
@@ -41,7 +47,7 @@ class CodeModeStateFiles(val dir: Path) {
         return JsonObject(
             mapOf(
                 "version" to JsonPrimitive(1),
-                "records" to JsonArray(conversations.flatMap { it.getValue("records").jsonArray }),
+                "records" to JsonArray(conversations.flatMap { it["records"]?.jsonArray.orEmpty() }),
                 "expired" to JsonArray(conversations.flatMap { it["expired"]?.jsonArray.orEmpty() }),
             ),
         )
@@ -66,7 +72,8 @@ class CodeModeStateFiles(val dir: Path) {
 
     /** What an older daemon wrote: each saved record replaced by [edit] of it, in the file it is in. */
     fun rewriteRecords(edit: (JsonObject) -> JsonObject) = files().forEach { file ->
-        val conversation = Json.parseToJsonElement(Files.readString(file)).jsonObject
+        val restored = CodeModeStateJournal.read(file, Json)
+        val conversation = Json.parseToJsonElement(json.encodeToString(restored)).jsonObject
         val records = conversation.getValue("records").jsonArray.map { edit(it.jsonObject) }
         Files.writeString(file, JsonObject(conversation + ("records" to JsonArray(records))).toString())
     }

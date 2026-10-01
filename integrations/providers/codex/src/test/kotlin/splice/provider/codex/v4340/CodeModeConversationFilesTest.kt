@@ -9,9 +9,9 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import splice.core.util.LogSink
-import splice.core.util.SecureFile
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModePersistenceException
 import splice.provider.codex.CodeModePhase
@@ -22,6 +22,7 @@ import splice.provider.codex.CodeModeStateFiles
 import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodeModeStateWrite
 import splice.provider.codex.CodexCodeModeRegistry
+import splice.provider.codex.state.CodeModeStateJournal
 import splice.upstream.codemode.CodeModeResult
 import java.io.IOException
 import java.nio.file.Files
@@ -39,6 +40,9 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 
 internal open class CodeModeFilesTestSupport {
@@ -90,6 +94,25 @@ internal open class CodeModeFilesTestSupport {
 internal class CodeModeConversationFilesTest : CodeModeFilesTestSupport() {
 
     @Test
+    fun `one changed cell persists no bytes from an earlier completed cell`() {
+        val written = mutableListOf<String>()
+        val writer = CodeModeStateWrite { path, text ->
+            written += text
+            CodeModeStateJournal.write(path, text)
+        }
+        val registry = registry(writer = writer)
+        registry.script("alpha", 1, output = "earlier-cell-" + "x".repeat(512 * 1024))
+        val current = registry.script("alpha", 2, output = "current")
+        written.clear()
+
+        registry.complete(current, "changed current")
+
+        assertEquals(1, written.size)
+        assertTrue(written.single().length < 4096, "a small mutation must not serialize an earlier large cell")
+        assertFalse(written.single().contains("earlier-cell-"))
+    }
+
+    @Test
     fun `one conversation blocked on disk does not block another conversation`() {
         val blocked = CountDownLatch(1)
         val release = CountDownLatch(1)
@@ -101,7 +124,7 @@ internal class CodeModeConversationFilesTest : CodeModeFilesTestSupport() {
                 blocked.countDown()
                 check(release.await(10, TimeUnit.SECONDS)) { "alpha was not released" }
             }
-            SecureFile.writeAtomic0600(path, text)
+            CodeModeStateJournal.write(path, text)
         }
         val registry = registry(writer = writer)
         val alpha = registry.script("alpha")
@@ -141,7 +164,7 @@ internal class CodeModeConversationFilesTest : CodeModeFilesTestSupport() {
                 blocked.countDown()
                 check(release.await(10, TimeUnit.SECONDS))
             }
-            SecureFile.writeAtomic0600(path, text)
+            CodeModeStateJournal.write(path, text)
         }
         val registry = registry(writer = writer)
         val threads = Executors.newFixedThreadPool(2)
@@ -175,7 +198,7 @@ internal class CodeModeConversationFilesTest : CodeModeFilesTestSupport() {
                 blocked.countDown()
                 check(release.await(10, TimeUnit.SECONDS))
             }
-            SecureFile.writeAtomic0600(path, text)
+            CodeModeStateJournal.write(path, text)
         }
         val registry = registry(writer = writer)
         val alpha = registry.script("alpha")
@@ -205,7 +228,7 @@ internal class CodeModeConversationFilesTest : CodeModeFilesTestSupport() {
                 blocked.countDown()
                 check(release.await(10, TimeUnit.SECONDS))
             }
-            SecureFile.writeAtomic0600(path, text)
+            CodeModeStateJournal.write(path, text)
         }
         val registry = registry(writer = writer)
         val alpha = registry.script("alpha", output = "original")
@@ -279,7 +302,7 @@ internal class CodeModeConversationFilesTest : CodeModeFilesTestSupport() {
                 blocked.countDown()
                 check(release.await(10, TimeUnit.SECONDS))
             }
-            SecureFile.writeAtomic0600(path, text)
+            CodeModeStateJournal.write(path, text)
         }
         val registry = registry(writer = writer)
         val threads = Executors.newFixedThreadPool(2)
@@ -312,7 +335,7 @@ internal class CodeModeConversationFilesTest : CodeModeFilesTestSupport() {
                 blocked.countDown()
                 check(release.await(10, TimeUnit.SECONDS))
             }
-            SecureFile.writeAtomic0600(path, text)
+            CodeModeStateJournal.write(path, text)
         }
         val registry = registry(writer = writer)
         val existing = registry.script("alpha", output = "original")
@@ -347,7 +370,7 @@ internal class CodeModeConversationFilesTest : CodeModeFilesTestSupport() {
                 blocked.countDown()
                 check(release.await(10, TimeUnit.SECONDS))
             }
-            SecureFile.writeAtomic0600(path, text)
+            CodeModeStateJournal.write(path, text)
         }
         val registry = registry(writer = writer)
         val alpha = CodeModeRecords.of("alpha", 1, updatedAt = futureRecordTs)
@@ -497,6 +520,103 @@ internal class CodeModeStoreLayoutTest : CodeModeFilesTestSupport() {
     }
 }
 
+internal class CodeModeSweepFailureTest : CodeModeFilesTestSupport() {
+    @Test
+    fun `a read of beta never performs alpha's expired-state disk write`() {
+        val clock = SweepClock(futureRecordTs)
+        var failAlpha = false
+        val writer = CodeModeStateWrite { path, text ->
+            if (failAlpha && path.fileName.toString() == nameOf("alpha")) throw IOException("alpha disk blocked")
+            CodeModeStateJournal.write(path, text)
+        }
+        val registry = registryWith(clock, writer)
+        registry.script("alpha")
+        clock.now += 23.hours.inWholeMilliseconds
+        registry.script("beta")
+        clock.now += 2.hours.inWholeMilliseconds
+        failAlpha = true
+        assertEquals(listOf("done beta/1"), registry.outputs("beta"))
+    }
+
+    @Test
+    fun `failed eviction never persists an admission that was not published`() {
+        var failAlpha = false
+        val writer = CodeModeStateWrite { path, text ->
+            if (failAlpha && path.fileName.toString() == nameOf("alpha")) throw IOException("alpha eviction failed")
+            CodeModeStateJournal.write(path, text)
+        }
+        val registry = registry(retention = CodeModeRetention(records = 1), writer = writer)
+        registry.script("alpha")
+        failAlpha = true
+        assertThrows<CodeModePersistenceException> {
+            registry.add(CodeModeRecords.of("beta", 1, futureRecordTs))
+        }
+        assertFalse(Files.exists(state.dir.resolve(nameOf("beta"))), "a refused admission must not survive a restart")
+    }
+
+    @Test
+    fun `successful eviction stays published when the later admission write fails`() {
+        var failBeta = false
+        val writer = CodeModeStateWrite { path, text ->
+            if (failBeta && path.fileName.toString() == nameOf("beta")) throw IOException("beta admission failed")
+            CodeModeStateJournal.write(path, text)
+        }
+        val registry = registry(retention = CodeModeRetention(records = 1), writer = writer)
+        registry.script("alpha", output = "evicted-private-cell")
+        failBeta = true
+        assertThrows<CodeModePersistenceException> {
+            registry.add(CodeModeRecords.of("beta", 1, futureRecordTs))
+        }
+        assertTrue(
+            registry.recordsFor("alpha").isEmpty(),
+            "durable eviction must be published before the next key write",
+        )
+        assertFalse(state.text().contains("evicted-private-cell"))
+        assertFalse(Files.exists(state.dir.resolve(nameOf("beta"))))
+    }
+
+    @Test
+    fun `a timed sweep retries the last expired key after its write failed`() {
+        val clock = SweepClock(futureRecordTs)
+        val failed = CountDownLatch(1)
+        val repaired = CountDownLatch(1)
+        val failOnce = AtomicBoolean(false)
+        val writer = CodeModeStateWrite { path, text ->
+            if (failOnce.compareAndSet(true, false)) {
+                failed.countDown()
+                throw IOException("first expiry write failed")
+            }
+            CodeModeStateJournal.write(path, text)
+            if (failed.count == 0L) repaired.countDown()
+        }
+        val registry = registryWith(clock, writer, 25.milliseconds)
+        registry.script("alpha", output = "expired-private-output")
+        failOnce.set(true)
+        clock.now += 25.hours.inWholeMilliseconds
+        assertTrue(failed.await(3, TimeUnit.SECONDS), "the expiry write must fail first")
+        assertTrue(repaired.await(3, TimeUnit.SECONDS), "the now-empty registry must retry its failed key")
+        assertFalse(state.text().contains("expired-private-output"))
+    }
+
+    private fun registryWith(clock: Clock, writer: CodeModeStateWrite, interval: Duration = 5.minutes) =
+        CodexCodeModeRegistry(
+            CodeModeBridgeConfig(
+                { error("no worker runs in sweep tests") },
+                CodeModeStateLocation(state.dir, tempDir.resolve("state.json")),
+                clock = clock,
+            ),
+            Json { encodeDefaults = true },
+            interval,
+            writer,
+        )
+
+    private class SweepClock(@Volatile var now: Long) : Clock() {
+        override fun getZone(): java.time.ZoneId = ZoneOffset.UTC
+        override fun withZone(zone: java.time.ZoneId): Clock = this
+        override fun instant(): Instant = Instant.ofEpochMilli(now)
+    }
+}
+
 /** Holds the newer writer until the failed older call has completed its rollback attempt. */
 private class AcceptanceWrites : CodeModeStateWrite {
     val olderWriting = CountDownLatch(1)
@@ -520,6 +640,6 @@ private class AcceptanceWrites : CodeModeStateWrite {
                 }
             }
         }
-        SecureFile.writeAtomic0600(path, text)
+        CodeModeStateJournal.write(path, text)
     }
 }

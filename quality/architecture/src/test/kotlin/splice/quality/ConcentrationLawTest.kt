@@ -159,8 +159,10 @@ internal object Concentration {
      *  moved no file in or out of the band. TurnPreparation.kt 3.10 -> 2.95 left the band, the file
      *  unchanged: it imports splice.upstream.transport's HeaderRedaction, and the row grew that package's
      *  TransportFailureReason.kt (closedReason, and the unnamed-failure sentence). */
-    const val RATCHET_RECORDED = "2026-09-27"
-    const val RATCHET_MAX_HIGH = 13
+    // 2026-09-30: shared-host schema decomposition measured CodeModeWire.kt below HIGH at 2.98;
+    // the source-enumerated band fell from 13 to 12 in code-mode-state-complete2.
+    const val RATCHET_RECORDED = "2026-09-30"
+    const val RATCHET_MAX_HIGH = 12
 
     /** THE PACKAGE-SCALE BASELINE — the worst package's FILE COUNT. The package is named here so
      *  the diff reads without running anything, but the NAME is not gated: a different package

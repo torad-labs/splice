@@ -15,6 +15,7 @@ import kotlinx.serialization.json.Json
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
+import splice.provider.codex.state.CodeModeExpiredHistory
 import splice.upstream.codemode.CodeModeCell
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
@@ -49,6 +50,7 @@ internal class CodeModeTimedSweep(
     private val monitor: ReentrantLock,
     private val records: List<CodeModeRecord>,
     private val save: Runnable,
+    private val store: CodexCodeModeStore,
     private val config: CodeModeBridgeConfig,
     private val interval: Duration,
 ) {
@@ -77,7 +79,8 @@ internal class CodeModeTimedSweep(
             )
         }
         monitor.withLock {
-            if (records.isEmpty() && !unsaved) {
+            val clean = !unsaved && store.pendingKeys.isEmpty()
+            if (records.isEmpty() && clean) {
                 running?.cancel(false)
                 running = null
             }
@@ -93,21 +96,17 @@ internal class CodexCodeModeSweeper(
     private val admissions: MutableMap<String, Long>,
     private val history: CodeModeExpiredHistory,
 ) {
-    /** Expires records past their retention and parks cells past the idle timeout; true when anything changed. */
+    /** Expires records past their TTL and closes positively dead sessions' cells; true when anything changed. */
     fun sweep(key: String? = null): Boolean = expireRecords(key) or reapIdleCells(key)
 
-    /** At capacity: park the oldest cell idle at least [CodeModeBridgeConfig.cellEvictionFloor] so the
-     *  newer script can take its slot. Null when every cell is presumed busy (mid-call, or a prompt). */
+    /** At capacity, only a cell whose session is positively dead may give up its slot. */
     fun evictIdleCell(key: String? = null): CodeModeRecord? {
-        val now = config.clock.millis()
-        val floor = config.cellEvictionFloor.inWholeMilliseconds
         val victim = records
             .filter { (key == null || it.key == key) && it.phase == CodeModePhase.ACTIVE }
-            .filter { now - it.updatedAt >= floor }
+            .filter(::sessionDead)
             .minByOrNull(CodeModeRecord::updatedAt)
             ?: return null
-        val idle = (now - victim.updatedAt) / MILLIS_PER_MINUTE
-        park(victim, "code-mode cell evicted after $idle min without client results to admit a newer script")
+        park(victim, "code-mode cell evicted after its session ended to admit a newer script")
         return victim
     }
 
@@ -126,18 +125,16 @@ internal class CodexCodeModeSweeper(
         return true
     }
 
-    /** A cell parked past [CodeModeBridgeConfig.cellIdleTimeout] is closed: its slot is the scarce resource. */
+    /** Silence is not death. A known-dead session gives up its parked cell immediately. */
     private fun reapIdleCells(key: String?): Boolean {
-        val now = config.clock.millis()
-        val limit = config.cellIdleTimeout.inWholeMilliseconds
-        val idle = records.filter { (key == null || it.key == key) && it.phase == CodeModePhase.ACTIVE }
-            .filter { now - it.updatedAt >= limit }
-        idle.forEach { record ->
-            val minutes = (now - record.updatedAt) / MILLIS_PER_MINUTE
-            park(record, "code-mode cell closed after $minutes min without client results")
-        }
-        return idle.isNotEmpty()
+        val dead = records.filter { (key == null || it.key == key) && it.phase == CodeModePhase.ACTIVE }
+            .filter(::sessionDead)
+        dead.forEach { record -> park(record, "code-mode cell closed after its session ended") }
+        return dead.isNotEmpty()
     }
+
+    private fun sessionDead(record: CodeModeRecord): Boolean =
+        record.sessionId?.let(config.sessionAlive::invoke) == false
 
     /** Closes [record]'s cell and marks it lost. Its updatedAt stays the time of its last use, so its
      *  24 hours are not restarted by the park (V4-287: they were, keeping it past the promise). */
@@ -164,6 +161,7 @@ internal class CodeModeRecordRetention(
     private val bounds: CodeModeRetention,
     private val json: Json,
     private val log: LogSink,
+    private val sessionAlive: CodeModeSessionAlive = CodeModeSessionAlive { null },
 ) {
 
     /** At the start of conversation [key]'s turn: its finished records go together when it reached
@@ -178,11 +176,12 @@ internal class CodeModeRecordRetention(
         val own = records.filter { it.key == key }
         if (own.isEmpty() || !own.all(CodeModeRecord::terminal)) return false
         val why = when {
+            own.any { it.sessionId?.let(sessionAlive::invoke) == true } -> null
             own.size >= bounds.perConversation -> "it reached ${bounds.perConversation} records"
             own.sumOf(::bytesOf) > bounds.bytes -> "it alone holds more than ${bounds.bytes} bytes"
-            else -> return false
+            else -> null
         }
-        return Gone(records, expired, now).finished(key, why) != null
+        return why?.let { Gone(records, expired, now).finished(key, it) } != null
     }
 
     /** Makes room in [records] for [record] by letting other conversations go, least recently used first.
@@ -240,7 +239,13 @@ internal class CodeModeRecordRetention(
         fun leastRecent(except: String?, why: String): Long? {
             val idle = records.groupBy(CodeModeRecord::key)
                 .filter { (key, kept) -> key != except && kept.all(CodeModeRecord::terminal) }
-                .minByOrNull { (_, kept) -> kept.maxOf(CodeModeRecord::updatedAt) }
+                .filterValues { kept -> kept.none { it.sessionId?.let(sessionAlive::invoke) == true } }
+                .minWithOrNull(
+                    compareBy<Map.Entry<String, List<CodeModeRecord>>>(
+                        { (_, kept) -> kept.any { it.sessionId?.let(sessionAlive::invoke) != false } },
+                        { (_, kept) -> kept.maxOf(CodeModeRecord::updatedAt) },
+                    ),
+                )
                 ?: return null
             return finished(idle.key, "least recently used, and $why")
         }
@@ -260,10 +265,9 @@ internal class CodeModeRecordRetention(
         }
     }
 
-    private fun bytesOf(record: CodeModeRecord): Long =
-        json.encodeToString(CodeModeRecordSnapshot.serializer(), record.snapshot())
-            .toByteArray(Charsets.UTF_8).size.toLong()
+    private fun bytesOf(record: CodeModeRecord): Long = record.retainedBytes
+        ?: json.encodeToString(CodeModeRecordSnapshot.serializer(), record.snapshot())
+            .toByteArray(Charsets.UTF_8).size.toLong().also { record.retainedBytes = it }
 }
 
-private const val MILLIS_PER_MINUTE: Long = 60_000L
 private const val RECORD_ID_LOG_CHARS: Int = 8

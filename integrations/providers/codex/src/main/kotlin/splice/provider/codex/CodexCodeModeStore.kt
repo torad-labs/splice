@@ -11,6 +11,7 @@ import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import splice.provider.codex.state.CodeModeKeyLocks
+import splice.provider.codex.state.CodeModeStateJournal
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -53,9 +54,9 @@ internal fun interface CodeModeStateWrite {
  * A conversation's file holds that conversation's records and its expiry markers in the shape the single
  * file had, and is named by the hash of the conversation's key, which is only ever a name: the file's
  * content says which conversation it is, and a file whose content is not exactly the one conversation its
- * name says is corrupt. Each file is swapped in atomically, so a conversation is never torn; a save that
- * touches several conversations is not atomic across them, which a failure repairs at the next save
- * because [kept] says what the disk holds, not what the last save meant to write.
+ * name says is corrupt. Checkpoints are swapped atomically and cell deltas are forced JSONL appends;
+ * recovery ignores only the uncommitted final fragment. A multi-conversation save is not atomic across
+ * files, which a failure repairs at the next save because [kept] names what disk holds, not the intent.
  *
  * FIRST LOAD ON AN UPGRADE. A file that reads back whole is the copy [load] trusts. [legacyFile] fills only
  * the conversations that have no such file, each is written to its own file, and it is deleted once every
@@ -69,7 +70,7 @@ internal class CodexCodeModeStore(
     private val log: LogSink,
     private val freeBytes: StateDiskSpace = StateDiskSpace.Usable,
     private val writer: CodeModeStateWrite = CodeModeStateWrite { path, text ->
-        SecureFile.writeAtomic0600(path, text)
+        CodeModeStateJournal.write(path, text)
     },
     private val registryLock: ReentrantLock? = null,
     private val keyLocks: CodeModeKeyLocks = CodeModeKeyLocks(),
@@ -85,6 +86,9 @@ internal class CodexCodeModeStore(
     private val kept = ConcurrentHashMap<String, CodeModePersistedState>()
 
     private val savePreparation = SavePreparation()
+
+    /** Failed keys outlive their last record, so TTL purges keep retrying until disk agrees. */
+    val pendingKeys: Set<String> get() = failedKeys.toSet()
 
     private data class Prepared(
         val key: String,
@@ -113,22 +117,24 @@ internal class CodexCodeModeStore(
         expired: List<CodeModeExpiredSnapshot>,
         retryOnly: Boolean = false,
         dirtyKeys: Set<String>? = null,
+        changedRecord: CodeModeRecord? = null,
     ) {
         if (retryOnly && !needsSave) return
         needsSave = true
         // The registry lock protects mutable records. Snapshot only changed conversations there;
         // serialization and disk I/O take place outside that head-wide lock.
-        val selected = dirtyKeys ?: buildSet {
+        val keys = dirtyKeys ?: buildSet {
             addAll(records.map(CodeModeRecord::key))
             addAll(expired.map(CodeModeExpiredSnapshot::key))
             addAll(kept.keys)
         }
+        val selected = if (retryOnly) keys.intersect(failedKeys) else keys
         pendingWrites.incrementAndGet()
         failedKeys.addAll(selected)
         registryLock?.unlock()
         try {
             // Reserve each key only when it is about to write. A blocked A never reserves B.
-            selected.forEach { key -> savePreparation.saveKey(key, records, expired) }
+            selected.forEach { key -> savePreparation.saveKey(key, records, expired, changedRecord) }
         } finally {
             registryLock?.lock()
             needsSave = pendingWrites.decrementAndGet() > 0 || failedKeys.isNotEmpty()
@@ -140,16 +146,24 @@ internal class CodexCodeModeStore(
             key: String,
             records: List<CodeModeRecord>,
             expired: List<CodeModeExpiredSnapshot>,
+            changedRecord: CodeModeRecord?,
         ) {
             val entry = keyLocks.acquire(key)
             try {
                 registryLock?.lock()
                 val prepared = try {
-                    savePreparation.prepare(records, expired, setOf(key)).singleOrNull()
+                    prepare(key, records, expired, changedRecord)
                 } finally {
                     registryLock?.unlock()
                 }
                 prepared?.let(::persist)
+                val sizes = kept[key]?.records.orEmpty().associate { it.id to it.retainedBytes }
+                registryLock?.lock()
+                try {
+                    records.filter { it.key == key }.forEach { record -> record.retainedBytes = sizes[record.id] }
+                } finally {
+                    registryLock?.unlock()
+                }
                 failedKeys.remove(key)
             } finally {
                 keyLocks.release(key, entry)
@@ -157,33 +171,35 @@ internal class CodexCodeModeStore(
         }
 
         fun prepare(
+            key: String,
             records: List<CodeModeRecord>,
             expired: List<CodeModeExpiredSnapshot>,
-            dirtyKeys: Set<String>?,
-        ): List<Prepared> {
-            val selected = dirtyKeys ?: buildSet {
-                addAll(records.map(CodeModeRecord::key))
-                addAll(expired.map(CodeModeExpiredSnapshot::key))
-                addAll(kept.keys)
+            changedRecord: CodeModeRecord?,
+        ): Prepared? {
+            val prior = kept[key]
+            val nextRecords = if (changedRecord != null && prior != null) {
+                changedRecord.saveGeneration++
+                val snapshot = changedRecord.snapshot()
+                val indexed = prior.records.associateByTo(linkedMapOf(), CodeModeRecordSnapshot::id)
+                indexed[snapshot.id] = snapshot
+                indexed.values.toList()
+            } else {
+                records.filter { it.key == key }.map { record ->
+                    record.saveGeneration++
+                    record.snapshot()
+                }
             }
-            val next = grouped(
-                CodeModePersistedState(
-                    records = records.filter { it.key in selected }.map { record ->
-                        record.saveGeneration++
-                        record.snapshot()
-                    },
-                    expired = expired.filter { it.key in selected },
-                ),
-            )
-            return selected.mapNotNull { key ->
-                val conversation = next[key]
-                val prior = kept[key]
-                val changed = conversation != prior ||
-                    prior?.records?.map(CodeModeRecordSnapshot::issued) !=
-                    conversation?.records?.map(CodeModeRecordSnapshot::issued)
-                if (!changed) return@mapNotNull null
-                Prepared(key, conversation)
+            val before = prior?.records.orEmpty().associateBy(CodeModeRecordSnapshot::id)
+            nextRecords.forEach { snapshot ->
+                val old = before[snapshot.id]
+                if (CodeModeStateJournal.same(snapshot, old)) snapshot.retainedBytes = old?.retainedBytes
             }
+            val markers = expired.filter { it.key == key }
+            val next = CodeModePersistedState(records = nextRecords, expired = markers)
+                .takeUnless { it.records.isEmpty() && it.expired.isEmpty() }
+            val changed = next != prior || next?.records?.zip(prior?.records.orEmpty())
+                ?.any { (left, right) -> !CodeModeStateJournal.same(left, right) } == true
+            return if (changed) Prepared(key, next) else null
         }
     }
 
@@ -194,7 +210,8 @@ internal class CodexCodeModeStore(
             if (conversation == null) {
                 remove(item.key)
             } else {
-                val text = json.encodeToString(conversation)
+                val prior = kept[item.key].takeIf { Files.exists(fileOf(item.key)) }
+                val text = CodeModeStateJournal.encode(item.key, prior, conversation, json)
                 bytes = text.toByteArray().size
                 secureDirectory()
                 write(Encoded(item.key, conversation, text))
@@ -222,7 +239,10 @@ internal class CodexCodeModeStore(
     private fun read(file: Path): Pair<String, CodeModePersistedState>? {
         val why = try {
             val text = String(Files.readAllBytes(file), Charsets.UTF_8)
-            val conversation = json.decodeFromString<CodeModePersistedState>(text)
+            val conversation = CodeModeStateJournal.decode(text, json)
+            conversation.records.forEach { record ->
+                record.retainedBytes = json.encodeToString(record).encodeToByteArray().size.toLong()
+            }
             val key = (conversation.records.map { it.key } + conversation.expired.map { it.key }).distinct()
                 .singleOrNull()
             if (key != null && fileOf(key) == file) return key to conversation
@@ -262,7 +282,7 @@ internal class CodexCodeModeStore(
 
     private fun carry(key: String, conversation: CodeModePersistedState): Boolean = try {
         secureDirectory()
-        write(Encoded(key, conversation, json.encodeToString(conversation)))
+        write(Encoded(key, conversation, CodeModeStateJournal.encode(key, null, conversation, json)))
         true
     } catch (failure: IOException) {
         log(

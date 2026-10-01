@@ -130,7 +130,7 @@ internal class CodexCodeModeDriver(
             nativeSegments = boundary.nativeSegments,
             continuity = continuity.logicalItems,
             continuityReplay = continuity.replayItems,
-        )
+        ).also { it.sessionId = context.turn.sessionId }
         return if (!registry.add(record)) {
             null to failure("code-mode registry capacity reached")
         } else {

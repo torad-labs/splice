@@ -7,9 +7,6 @@
 package splice.provider.codex.v4340
 
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -19,6 +16,7 @@ import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRecords
 import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexCodeModeRegistry
+import splice.provider.codex.state.CodeModeStateJournal
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
@@ -52,12 +50,13 @@ class CodeModeSaveScopeTest {
     }
 
     /** Every regular file under the test's directory: whatever the store keeps, wherever it keeps it. */
-    private fun files(): List<Path> = Files.walk(tempDir).use { walk -> walk.filter(Files::isRegularFile).toList() }
+    private fun files(): List<Path> = Files.walk(tempDir).use { walk ->
+        walk.filter { Files.isRegularFile(it) && !it.fileName.toString().endsWith(".lock") }.toList()
+    }
 
     /** The conversation keys of the records a file holds: the store's file has a `records` array. */
     private fun keysIn(file: Path): Set<String> =
-        Json.parseToJsonElement(Files.readString(file)).jsonObject.getValue("records").jsonArray
-            .map { it.jsonObject.getValue("key").jsonPrimitive.content }.toSet()
+        CodeModeStateJournal.read(file, Json).records.map { it.key }.toSet()
 
     @Test
     fun `a script round of one conversation changes one file, and that file holds only its records`() {

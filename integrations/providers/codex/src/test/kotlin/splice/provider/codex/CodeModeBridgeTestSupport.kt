@@ -5,6 +5,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.io.TempDir
 import splice.core.index.WireBlockIndex
@@ -52,6 +53,7 @@ abstract class CodeModeBridgeTestSupport {
 
     /** Every line the bridge logged through its head-scoped sink, across every bridge built here. */
     protected val logLines = mutableListOf<String>()
+    protected val deadSessions = mutableSetOf<String>()
 
     /** The code-mode state [bridge] keeps: one file per conversation (V4-340). */
     protected val stateFiles by lazy { CodeModeStateFiles(tempDir.resolve("code-mode")) }
@@ -77,8 +79,17 @@ abstract class CodeModeBridgeTestSupport {
             maxRounds = maxRounds,
             clock = clock,
             log = LogSink { logLines += it },
+            sessionAlive = CodeModeSessionAlive { id -> if (id in deadSessions) false else null },
         ),
     )
+
+    /** Exercise this conversation's history lookup without advancing or resolving its parked script. */
+    protected fun sweepOwnHistory(manager: CodexCodeModeBridge) {
+        val field = CodexCodeModeBridge::class.java.getDeclaredField("registry").apply { isAccessible = true }
+        val registry = field.get(manager) as CodexCodeModeRegistry
+        val key = stateFiles.records().first().getValue("key").jsonPrimitive.content
+        registry.recordsFor(key)
+    }
 
     /** The dialect's tool_result image renderer with codex's own quirks — the one production uses. */
     protected fun media() = ResponsesToolResultMedia(CodexQuirks().defaultQuirks())

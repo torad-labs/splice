@@ -485,16 +485,6 @@ names = [
 ]
 reason = """Two reads that answer with names, where the EMPTY list means opposite things. TurnPathStalled (app/control) names the heads whose turn path is wedged, and empty is the healthy answer `/health` reports as ok. GpuProbe (app/cli/setup) names the NVIDIA cards nvidia-smi sees, and empty is the reason the local-model question is never asked. Wired the wrong way round, a healthy daemon would read as "no card" and a machine's card list as a wedge report on /health, so they stay two roles."""
 
-# ── 2 names, () -> JsonObject ─────────────────────────────────────────────────────────────────────
-[[groups]]
-signature = "()->JsonObject"
-dated = "2026-09-25"
-names = [
-    "GlobalMcpServers",
-    "WorkerFrameIo",
-]
-reason = """A config read and a process round trip. GlobalMcpServers (integrations/mcp McpHost.kt) reads the operator's global `mcpServers` object as it is on disk now, each time the MCP host acquires a hosted server (HostedServers.acquire) or reports its status (McpStatus.json), with no deadline around it. WorkerFrameIo (integrations/codemode WorkerChannel.kt, V4-226) is the blocking framed I/O one code-mode deadline covers: a frame written to the worker process and its reply read back, or the ready frame alone at a start. WorkerChannel.within runs it on the IO dispatcher and destroys the worker when the deadline passes. Wired the wrong way round, a slow disk read would be timed against a worker's deadline and kill a healthy worker, and the MCP host would block on a worker's pipe, so they stay two roles."""
-
 # ── 2 names, () -> Path? ──────────────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "()->Path?"
@@ -523,4 +513,10 @@ names = [
     "CodeModeStateWrite",
     "ProbeWrite",
 ]
-reason = """CodeModeStateWrite atomically persists an immutable snapshot for one code-mode conversation to an owner-only 0600 file. It runs after the registry releases its head-wide monitor, and completion is required before its callback is exposed to the client. ProbeWrite writes a disposable byte to a diagnostics probe path to test whether a volume can accept data; failure is a diagnostic result, never a code-mode durability verdict. Substituting either compiles but could turn an unsaved callback into a falsely durable one or turn a diagnostic probe into persisted state."""
+reason = """CodeModeStateWrite durably appends an immutable changed-cell snapshot, or atomically replaces a retention checkpoint, in one conversation's owner-only 0600 journal. It runs after the registry releases its head-wide monitor, and completion is required before its callback is exposed to the client. ProbeWrite writes a disposable byte to a diagnostics probe path to test whether a volume can accept data; failure is a diagnostic result, never a code-mode durability verdict. Substituting either compiles but could turn an unsaved callback into a falsely durable one or turn a diagnostic probe into persisted state."""
+
+[[groups]]
+signature = "(String)->Boolean?"
+dated = "2026-09-30"
+names = ["CodeModeSessionAlive", "SessionLive"]
+reason = """CodeModeSessionAlive protects a parked code-mode worker from reclamation until its client process is positively dead; null preserves the worker for an unregistered headless client or an unavailable registry. SessionLive decides whether a resume recipe can attach to an already running interactive session, where absence permits a new launch. Both read process liveness but have separate module boundaries and consumers with opposite actions on unknown evidence. The provider cannot depend on the launch feature; the app supplies each boundary its own registry adapter."""

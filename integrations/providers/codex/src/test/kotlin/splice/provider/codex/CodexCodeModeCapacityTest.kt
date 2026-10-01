@@ -60,7 +60,7 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
     }
 
     @Test
-    fun `capacity evicts the oldest parked cell past the eviction floor`() = runTest {
+    fun `capacity reclaims a parked cell only after its session ended`() = runTest {
         val clock = MutableClock(1_000)
         val runtime = BoundedRuntime(capacity = 1)
         val manager = bridge(runtime, clock = clock)
@@ -68,6 +68,7 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
             .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome("outer-a") }
         val parked = runtime.cells.single()
         clock.now += 3.minutes.inWholeMilliseconds
+        deadSessions += "session-a"
 
         val sink = RecordingSink()
         val outcome = manager.interceptor(turn(sessionId = "session-b"), outer("outer-b"), disableParallel = false)
@@ -79,11 +80,11 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
         assertEquals(2, runtime.starts)
         assertEquals(1, runtime.open)
         assertEquals("LOST", phaseOf("outer-a"))
-        assertTrue(logLines.any { "evicted" in it && "outer-a" in it })
+        assertTrue(logLines.any { "session ended" in it && "outer-a" in it })
     }
 
     @Test
-    fun `a cell parked past the idle timeout is reaped on the next code-mode turn`() = runTest {
+    fun `a dead session is reaped on its next history lookup`() = runTest {
         val clock = MutableClock(1_000)
         val runtime = BoundedRuntime(capacity = 4)
         val manager = bridge(runtime, clock = clock)
@@ -91,13 +92,13 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
             .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome("outer-a") }
         val parked = runtime.cells.single()
         clock.now += 31.minutes.inWholeMilliseconds
+        deadSessions += "session-a"
 
-        manager.interceptor(turn(sessionId = "session-b"), null, disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { completedOutcome() }
+        sweepOwnHistory(manager)
 
         assertTrue(parked.closed)
         assertEquals("LOST", phaseOf("outer-a"))
-        assertTrue(logLines.any { "closed after 31 min" in it })
+        assertTrue(logLines.any { "session ended" in it })
     }
 
     @Test
@@ -110,8 +111,8 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
             .intercept(BASE_REQUEST, sink) { outerOutcome("outer-a") }
         val readId = sink.tools.single().id
         clock.now += 31.minutes.inWholeMilliseconds
-        manager.interceptor(turn(sessionId = "session-b"), null, disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { completedOutcome() }
+        deadSessions += "session-a"
+        sweepOwnHistory(manager)
         assertEquals("LOST", phaseOf("outer-a"))
 
         var posted = ""
@@ -158,6 +159,7 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
                 clock = clock,
                 maxOutputChars = SMALL_BUDGET_CHARS,
                 log = LogSink { logLines += it },
+                sessionAlive = CodeModeSessionAlive { id -> if (id in deadSessions) false else null },
             ),
         )
         // Each result fits the budget on its own; together they do not.
@@ -182,8 +184,8 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
             .intercept(BASE_REQUEST, sink) { outerOutcome("outer-a") }
         val ids = sink.tools.map { it.id }
         clock.now += 31.minutes.inWholeMilliseconds
-        manager.interceptor(turn(sessionId = "session-b"), null, disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { completedOutcome() }
+        deadSessions += "session-a"
+        sweepOwnHistory(manager)
         assertEquals("LOST", phaseOf("outer-a"))
 
         val results = ids.mapIndexed { index, id -> CodeModeResult(id, "xy"[index].toString().repeat(resultChars)) }

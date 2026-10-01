@@ -53,6 +53,35 @@ test('a recorded turn opens its own page with the exact received request and ans
   expect(faults.failedReads).toEqual([]);
 });
 
+test('a delayed conversation read stays visibly pending until its real messages arrive', async ({ page }) => {
+  const faults = await open(page, 'turns');
+  const responseId = await driveOneTurn(Number(env('CONSOLE_E2E_SOLO_PORT')), env('CONSOLE_E2E_KEY'), STACK.sender.id, STACK.soloModel);
+  saveTranscript(env('CONSOLE_E2E_TRANSCRIPT_ROOT'), STACK.sender.id, responseId, TURN_PROMPT, 'console e2e answer');
+  const at = await newest(page, STACK.soloHead);
+  let release: (() => void) | undefined;
+  await page.route('**/api/heads/' + STACK.soloHead + '/conversation?*', async (route) => {
+    const response = await route.fetch();
+    await new Promise<void>((resolve) => { release = resolve; });
+    await route.fulfill({ response });
+  });
+  try {
+    await openTurn(page, STACK.soloHead, at);
+    await expect.poll(() => release !== undefined).toBe(true);
+    const loading = page.getByRole('status').filter({ hasText: 'Reading the conversation…' });
+    await expect(loading).toBeVisible();
+    await expect(page.getByRole('main')).not.toContainText(TURN_PROMPT);
+    release?.();
+    await expect(page.getByRole('main')).toContainText(TURN_PROMPT);
+    await expect(page.getByRole('main')).toContainText('console e2e answer');
+    await expect(loading).toHaveCount(0);
+    expect(faults.pageErrors).toEqual([]);
+    expect(faults.failedReads).toEqual([]);
+  } finally {
+    release?.();
+    await page.unrouteAll({ behavior: 'wait' });
+  }
+});
+
 test('a late trace for the previous turn cannot replace the current whole failure sentence on any tab', async ({ page }) => {
   const at = Date.now();
   const rows: TurnRowWire[] = [0, 1].map((offset) => ({

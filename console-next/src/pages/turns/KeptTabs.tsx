@@ -20,7 +20,7 @@ function Conversation({ row, plan }: { row: TurnRow; plan: string }) {
   const read = useConversation(row.head, row.session_id ?? null, row.response_message_id ?? null, row.session_id !== undefined && row.response_message_id !== undefined);
   if (row.session_id === undefined || row.response_message_id === undefined) return <p className="kept-note">{P.conversationNoId}</p>;
   if (read.isError) return <p className="kept-note" role="alert">{failureText(read.error)}</p>;
-  if (read.data === undefined) return null;
+  if (read.data === undefined) return <p className="kept-note" role="status">{P.readingConversation}</p>;
   if (read.data.state !== 'found') return <p className="kept-note">{read.data.reason}</p>;
   const { ask, reply, earlier } = askAndAnswer(read.data.messages);
   const asked = ask === null ? null : readable(ask.text);
@@ -78,7 +78,7 @@ function Request({ row, plan }: { row: TurnRow; plan: string }) {
   const kept = useKeptTurn(row.head, row.turn ?? null, row.turn !== undefined);
   if (row.turn === undefined) return <p className="kept-note">{capture.data?.enabled === false ? P.captureOff(plan) : P.keptGone}</p>;
   if (kept.isError) return <p className="kept-note" role="alert">{failureText(kept.error)}</p>;
-  if (kept.data === undefined) return null;
+  if (kept.data === undefined) return <p className="kept-note" role="status">{P.readingRequest}</p>;
   if ('gone' in kept.data) return <p className="kept-note">{kept.data.gone}</p>;
   const attempts = kept.data.read.records.filter((record) => record.kind === 'attempt');
   return (
@@ -96,7 +96,7 @@ function Request({ row, plan }: { row: TurnRow; plan: string }) {
 function Sent({ row }: { row: TurnRow }) {
   const wire = useWire(row.head);
   if (wire.isError) return <p className="kept-note" role="alert">{failureText(wire.error)}</p>;
-  if (wire.data === undefined) return null;
+  if (wire.data === undefined) return <p className="kept-note" role="status">{P.readingSent}</p>;
   if ('off' in wire.data) return <p className="kept-note">{wire.data.off}</p>;
   const records = wireFor(wire.data.tap.records, row);
   if (records.length === 0) return <p className="kept-note">{P.wireNone}</p>;

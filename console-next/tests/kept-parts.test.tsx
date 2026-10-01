@@ -21,6 +21,18 @@ const page = (element: React.ReactElement, seed: (client: QueryClient) => void):
   return renderToStaticMarkup(<QueryClientProvider client={client}><MemoryRouter>{element}</MemoryRouter></QueryClientProvider>);
 };
 
+describe('a kept panel still being read', () => {
+  test.each([
+    ['conversation', 'Reading the conversation…'],
+    ['request', 'Reading the kept request and answer…'],
+    ['sent', 'Reading what was sent to the model…'],
+  ])('%s says what is being read rather than leaving a blank panel', (tab, sentence) => {
+    const pending = { ...row('a'), session_id: 'session-a', response_message_id: 'response-a' };
+    const html = page(<KeptTabs row={pending} plan="Solo" tab={tab} />, () => undefined);
+    expect(html).toContain(`<p class="kept-note" role="status">${sentence}</p>`);
+  });
+});
+
 describe('a failed turn\'s sentence', () => {
   const seed = (client: QueryClient): void => {
     client.setQueryData(['trace', 'claude-solo', 'a'], kept('a', 'the connection for a closed mid-request; retry'));

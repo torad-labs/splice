@@ -293,7 +293,7 @@ bad = []
 for head, h in t["heads"].items():
     prov = t["providers"][h["provider"]]
     windows = {m["id"]: m.get("context_window") for m in prov.get("models", [])}
-    pinned = h["pinned_model"]
+    pinned = h.get("pinned_model", "")
     want = h.get("context_window") or windows.get(pinned) or prov.get("context_window")
     command = h.get("claude", {}).get("command", head)
     wrapper = os.access(os.path.join(home, ".local", "bin", command), os.X_OK)
@@ -303,10 +303,21 @@ for head, h in t["heads"].items():
         print(f"{head:14} {command:18} launch FAILED: {e}"); bad.append(head); continue
     sessions = os.path.join(env.get("CLAUDE_CONFIG_DIR", ""), "sessions")
     linked = os.path.islink(sessions) and os.path.realpath(sessions) == registry
-    # the env window is the pinned row's declared window on every head
+    # Foreign heads own the declared window. Client-login heads leave window and tier selection to Claude Code.
+    client_picks = prov.get("auth", {}).get("kind", "").lower() == "client"
+    if client_picks:
+        window_ok = not any(k in env for k in ("CLAUDE_CODE_MAX_CONTEXT_TOKENS", "CLAUDE_CODE_AUTO_COMPACT_WINDOW"))
+        tier_ok = not any(k.startswith("ANTHROPIC_DEFAULT_") for k in env)
+        config = env["CLAUDE_CONFIG_DIR"]
+        settings = json.load(open(os.path.join(config, "settings.json")))
+        state = json.load(open(os.path.join(config, ".claude.json")))
+        picker_ok = not any(k in settings for k in ("availableModels", "enforceAvailableModels", "modelOverrides"))
+        picker_ok = picker_ok and "additionalModelOptionsCache" not in state
+    else:
+        window_ok = env.get("CLAUDE_CODE_MAX_CONTEXT_TOKENS") == str(want)
+        tier_ok = picker_ok = True
     ok = (selector_free(env.get("ANTHROPIC_MODEL")) == selector_free(pinned)
-          and env.get("CLAUDE_CODE_MAX_CONTEXT_TOKENS") == str(want)
-          and linked and wrapper)
+          and window_ok and tier_ok and picker_ok and linked and wrapper)
     print(f"{head:14} {command:18} model={env.get('ANTHROPIC_MODEL')} window={env.get('CLAUDE_CODE_MAX_CONTEXT_TOKENS')}"
           f" example={pinned}@{want} sessions_link={linked} wrapper={wrapper} {'OK' if ok else 'MISMATCH'}")
     if not ok:

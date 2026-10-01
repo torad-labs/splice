@@ -3,10 +3,11 @@
 // positional prompt, a system prompt, an agent definition) reached daemon.log and daemon-boot.log.
 //
 // Which words are prompt text is the CLIENT's grammar, so it is read the way the client reads it:
-// commander, as `claude --help` of 2.1.285 declares each option (read 2026-09-26 on 2.1.283: 2.1.282's
+// commander, as `claude --help` of 2.1.286 declares each option (read 2026-09-26 on 2.1.283: 2.1.282's
 // list plus --client-data-url, the only line the two versions' --help differ by; re-read 2026-09-28 on
 // 2.1.284, whose --help differs from 2.1.283's only in --model's description text, and 2026-09-29 on
-// 2.1.285, whose --help adds --desktop, a switch, and nothing else). That version is
+// 2.1.285, whose --help adds --desktop, a switch, and nothing else; re-read 2026-10-01 on
+// 2.1.286, whose --help is byte-identical to 2.1.285). That version is
 // [ClaudeArgv.GRAMMAR_FROM], and a test holds it equal to TESTED_CLAUDE_CODE: when V4-256 moves the pin,
 // the table is re-read from the new version's --help before the test goes green again.
 // A switch takes no value, so the bare word after `-p` is the prompt; `<x>` takes the next word;
@@ -18,7 +19,7 @@ package splice.client
 public object ClaudeArgv {
 
     /** The Claude Code release whose `--help` [OPTIONS] was read from. */
-    public const val GRAMMAR_FROM: String = "2.1.285"
+    public const val GRAMMAR_FROM: String = "2.1.286"
 
     /** [argv] with every prompt's text, and every word it cannot place, replaced by its length. The
      *  program (argv[0]), every flag and every listed option's non-prompt value are kept verbatim, so

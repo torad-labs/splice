@@ -1,18 +1,18 @@
 package splice.codemode
 
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
+import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 
 class CodeModeCapacityTest {
@@ -21,68 +21,51 @@ class CodeModeCapacityTest {
     @ParameterizedTest
     @ValueSource(ints = [1, 2])
     @Timeout(60)
-    fun `one more cell than the pool capacity completes without rejection`(capacity: Int) = runBlocking {
+    fun `a parked script never queues a new script behind a legacy worker hint`(capacity: Int) = runBlocking {
         JvmCodeModeRuntime(maxWorkers = capacity, workerClasspath = testClasspath).use { runtime ->
-            val held = List(capacity) {
-                runtime.start("await tools.call(\"Read\", {});", setOf("Read"))
-            }
-            supervisorScope {
-                val queued = async(start = CoroutineStart.UNDISPATCHED) {
-                    runtime.start("return \"queued\";", emptySet())
+            val held = List(capacity) { runtime.start("return await tools.call('Read', {});", setOf("Read")) }
+            try {
+                held.forEach { assertTrue(it.advance() is CodeModeStep.Calls) }
+                val cell = withTimeout(5_000) { runtime.start("return 'immediate';", emptySet()) }
+                assertEquals("immediate", (cell.advance() as CodeModeStep.Completed).output)
+                held.forEach {
+                    val completed = it.advance(listOf(CodeModeResult("1", "held"))) as CodeModeStep.Completed
+                    assertEquals("held", completed.output)
                 }
-                try {
-                    assertFalse(queued.isCompleted, "the extra cell waits instead of failing")
-                    held.first().close()
-                    val cell = withTimeout(30_000) { queued.await() }
-                    assertEquals("queued", (cell.advance() as CodeModeStep.Completed).output)
-                } finally {
-                    held.forEach { it.close() }
-                    queued.cancelAndJoin()
-                }
+            } finally {
+                held.forEach { it.close() }
             }
         }
     }
 
     @Test
     @Timeout(60)
-    fun `cancelling a queued start does not take the next available permit`() = runBlocking {
+    fun `cancelling an active script leaves a parked sibling resumable`() = runBlocking {
         JvmCodeModeRuntime(maxWorkers = 1, workerClasspath = testClasspath).use { runtime ->
-            val held = runtime.start("await tools.call(\"Read\", {});", setOf("Read"))
+            val held = runtime.start("return await tools.call('Read', {});", setOf("Read"))
+            val running = runtime.start("await tools.call('Read', {}); while (true) {}", setOf("Read"))
+            assertTrue(held.advance() is CodeModeStep.Calls)
+            assertTrue(running.advance() is CodeModeStep.Calls)
             supervisorScope {
-                val cancelled = async(start = CoroutineStart.UNDISPATCHED) {
-                    runtime.start("return \"cancelled\";", emptySet())
-                }
-                assertFalse(cancelled.isCompleted)
+                val cancelled = async { running.advance(listOf(CodeModeResult("1", ""))) }
+                kotlinx.coroutines.yield()
                 cancelled.cancelAndJoin()
-                val next = async(start = CoroutineStart.UNDISPATCHED) {
-                    runtime.start("return \"next\";", emptySet())
-                }
-                held.close()
-                val cell = withTimeout(30_000) { next.await() }
-                assertEquals("next", (cell.advance() as CodeModeStep.Completed).output)
+                val next = withTimeout(5_000) { runtime.start("return 'next';", emptySet()) }
+                assertEquals("next", (next.advance() as CodeModeStep.Completed).output)
+                val completed = held.advance(listOf(CodeModeResult("1", "alive"))) as CodeModeStep.Completed
+                assertEquals("alive", completed.output)
             }
         }
     }
 
     @Test
     @Timeout(60)
-    fun `closing the runtime wakes a queued start without spawning another worker`() = runBlocking {
+    fun `closing the runtime closes parked cells and refuses new starts`() = runBlocking<Unit> {
         val runtime = JvmCodeModeRuntime(maxWorkers = 1, workerClasspath = testClasspath)
-        try {
-            runtime.start("await tools.call(\"Read\", {});", setOf("Read"))
-            supervisorScope {
-                val queued = async(start = CoroutineStart.UNDISPATCHED) {
-                    runtime.start("return \"must not run\";", emptySet())
-                }
-                assertFalse(queued.isCompleted)
-                runtime.close()
-                val failure = assertThrows(IllegalStateException::class.java) {
-                    runBlocking { withTimeout(5_000) { queued.await() } }
-                }
-                assertEquals("Code-mode runtime is closed", failure.message)
-            }
-        } finally {
-            runtime.close()
-        }
+        val held = runtime.start("await tools.call('Read', {});", setOf("Read"))
+        assertTrue(held.advance() is CodeModeStep.Calls)
+        runtime.close()
+        assertThrows(IllegalStateException::class.java) { runBlocking { held.advance() } }
+        assertThrows(IllegalStateException::class.java) { runBlocking { runtime.start("return 'never';", emptySet()) } }
     }
 }

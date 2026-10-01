@@ -13,6 +13,11 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.graaljs.polyglot)
+    // The published aggregator declares platform POMs as runtime artifacts. Shadow consumes ZIPs,
+    // so use its four native JAR dependencies directly, preserving every published platform.
+    for (platform in listOf("linux-amd64", "linux-aarch64", "darwin-aarch64", "windows-amd64")) {
+        runtimeOnly("org.graalvm.js:js-isolate-$platform-community:${libs.versions.graaljs.get()}")
+    }
     implementation(libs.graaljs.community)
     testImplementation(libs.kotlinx.coroutines.test)
     testFixturesImplementation(libs.kotlinx.coroutines.core)

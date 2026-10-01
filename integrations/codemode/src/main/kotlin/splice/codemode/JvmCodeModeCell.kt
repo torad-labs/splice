@@ -1,4 +1,4 @@
-// NEW: serialized stateful callback resumption owns one worker until observed process exit.
+// NEW: serialized stateful callback resumption owns one addressed context until its close acknowledgement.
 package splice.codemode
 
 import kotlinx.coroutines.sync.Mutex
@@ -15,7 +15,7 @@ internal fun interface ReleaseCodeModeCell {
 
 /** Serializes result batches and closes a cell on completion or a failed advance. */
 internal class JvmCodeModeCell(
-    private val channel: WorkerChannel,
+    private val channel: CellChannel,
     initial: WorkerReply,
     private val tools: Set<String>,
     private val onClose: ReleaseCodeModeCell,

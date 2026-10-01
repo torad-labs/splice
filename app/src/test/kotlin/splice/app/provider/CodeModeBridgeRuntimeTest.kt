@@ -4,6 +4,7 @@ package splice.app.provider
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.future.await
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
@@ -38,7 +39,6 @@ import splice.upstream.codemode.CodeModeStep
 import splice.upstream.sse.WireSink
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.concurrent.TimeUnit
 
 private const val BRIDGE_BASE_REQUEST = """{"input":[{"role":"developer","content":"s"}]}"""
 
@@ -54,13 +54,18 @@ class CodeModeBridgeRuntimeTest {
     private val upstreamUsage = Usage(19, 7, 5, 3)
 
     @Test
-    fun `startup deadline is an ordinary bridge failure preserving upstream usage`() = runBlocking {
-        runtime(timeoutMs = 1_000).use { runtime ->
-            val reclamation = CodeModeWorkerReclamation(this)
-            val bridge = bridge(runtime)
-            val source = "/* private source marker */ while (true) {}"
-            val outcome = bridge.interceptor(turn(), disableParallel = false)
-                .intercept(BRIDGE_BASE_REQUEST, Sink()) { outer(source) }
+    fun `host boot deadline is an ordinary bridge failure preserving upstream usage`() = runBlocking {
+        val reclamation = CodeModeWorkerReclamation()
+        JvmCodeModeRuntime(
+            workerClasspath = testClasspath,
+            workerStartTimeoutMs = 1_000,
+            spawn = splice.codemode.WorkerSpawn { builder ->
+                builder.command(listOf("/bin/sh", "-c", "/bin/sleep 8; exec \"\\$0\" \"\\$@\"") + builder.command())
+                reclamation(builder)
+            },
+        ).use { runtime ->
+            val outcome = bridge(runtime).interceptor(turn(), disableParallel = false)
+                .intercept(BRIDGE_BASE_REQUEST, Sink()) { outer("/* private source marker */ return 1;") }
             assertTrue(outcome is TurnOutcome.Failure)
             val failure = outcome as TurnOutcome.Failure
             assertEquals(upstreamUsage, failure.salvagedUsage)
@@ -71,57 +76,58 @@ class CodeModeBridgeRuntimeTest {
         }
     }
 
-    // The deadline under test is the second advance's; the first one carries the worker's start, so the
-    // budget is one a loaded runner's start fits inside.
     @Test
     @Timeout(45)
-    fun `advance deadline is an ordinary bridge failure and does not replay source`() = runBlocking {
-        runtime(timeoutMs = 10_000).use { runtime ->
-            val reclamation = CodeModeWorkerReclamation(this)
+    fun `a long resumed script completes through the bridge without replaying source`() = runBlocking {
+        runtime(timeoutMs = 1).use { runtime ->
             val bridge = bridge(runtime)
             val sink = Sink()
             val first = bridge.interceptor(turn(), disableParallel = false)
                 .intercept(BRIDGE_BASE_REQUEST, sink) {
-                    outer("await tools.call('Read', {}); while (true) {}")
+                    outer(
+                        """
+                        await tools.call('Read', {});
+                        const until = Date.now() + 100;
+                        while (Date.now() < until) {}
+                        return 'done';
+                        """.trimIndent(),
+                    )
                 }
             assertEquals(upstreamUsage.copy(localStep = true), (first as TurnOutcome.Success).usage)
             val id = sink.ids.single()
-            val output = "private result marker"
-            val failure = bridge.interceptor(turn(id, output), disableParallel = false)
-                .intercept(requestWithResult(id, output), Sink()) { error("must not post upstream") }
-            assertTrue(failure is TurnOutcome.Failure)
-            assertTrue((failure as TurnOutcome.Failure).message.contains("timed out"))
-            assertFalse(failure.message.contains(output))
-            assertFalse(failure.message.contains("cancelled"))
-            reclamation.assertReclaimed(runtime)
+            var upstream = ""
+            var posts = 0
+            val completed = bridge.interceptor(turn(id, "result"), disableParallel = false)
+                .intercept(requestWithResult(id, "result"), Sink()) {
+                    posts++
+                    upstream = it
+                    TurnOutcome.Success(false, false, Usage(), messageClosed = true)
+                }
+            assertTrue(completed is TurnOutcome.Success)
+            assertEquals(1, posts)
+            assertEquals("done", completedOutput(upstream))
         }
     }
 
     @Test
-    fun `parent cancellation through bridge stays cancellation and reaps worker`() = runBlocking {
-        runtime(timeoutMs = 10_000).use { runtime ->
+    fun `parent cancellation through bridge stays cancellation and preserves the shared host`() = runBlocking {
+        val spawned = java.util.concurrent.CompletableFuture<Process>()
+        JvmCodeModeRuntime(
+            workerClasspath = testClasspath,
+            spawn = splice.codemode.WorkerSpawn { builder -> builder.start().also { spawned.complete(it) } },
+        ).use { runtime ->
             val bridge = bridge(runtime)
-            val before = ProcessHandle.current().children().use { children -> children.map { it.pid() }.toList() }
             val startup = async {
                 bridge.interceptor(turn(), disableParallel = false)
                     .intercept(BRIDGE_BASE_REQUEST, Sink()) { outer("while (true) {}") }
             }
-            val child = withTimeout(2_000) {
-                var spawned: ProcessHandle? = null
-                while (spawned == null) {
-                    yield()
-                    spawned = ProcessHandle.current().children().use { children ->
-                        children.filter { it.pid() !in before }.findFirst().orElse(null)
-                    }
-                }
-                spawned
-            }
+            val child = withTimeout(5_000) { spawned.await() }
+            yield()
             startup.cancelAndJoin()
             assertThrows(CancellationException::class.java) { runBlocking { startup.await() } }
-            child.onExit().get(1, TimeUnit.SECONDS)
-            assertFalse(child.isAlive)
-            val replacement = runtime.start("return 'reaped';", emptySet())
-            assertEquals("reaped", (replacement.advance() as CodeModeStep.Completed).output)
+            assertTrue(child.isAlive, "a cancelled script must not reap the shared host")
+            val replacement = withTimeout(5_000) { runtime.start("return 'alive';", emptySet()) }
+            assertEquals("alive", (replacement.advance() as CodeModeStep.Completed).output)
         }
     }
 

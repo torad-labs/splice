@@ -1,7 +1,10 @@
 // NEW: V4-226 — a code-mode script's deadline is the script's, never the worker JVM's start.
 package splice.codemode
 
+import kotlinx.coroutines.async
+import kotlinx.coroutines.future.await
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -37,46 +40,80 @@ class CodeModeWorkerBootTest {
 
     @Test
     @Timeout(60)
-    fun `once the worker has started, a script that never yields still meets the advance deadline`() = runBlocking {
-        JvmCodeModeRuntime(workerClasspath = testClasspath, spawn = SlowStartSpawn(SLOW_START_MS)).use { runtime ->
-            val started = System.nanoTime()
-            val timeout = assertThrows(CodeModeTimeoutException::class.java) {
-                runBlocking { runtime.start("while (true) {}", emptySet()) }
-            }
-            val elapsedMs = (System.nanoTime() - started) / 1_000_000
-            assertEquals(DEFAULT_ADVANCE_TIMEOUT_MS, timeout.timeoutMillis)
-            assertTrue(
-                elapsedMs >= SLOW_START_MS,
-                "the deadline ran from the worker's start, not its spawn: $elapsedMs ms",
+    fun `a long execution is not killed by the former advance deadline`() = runBlocking {
+        JvmCodeModeRuntime(advanceTimeoutMs = 1, workerClasspath = testClasspath).use { runtime ->
+            val cell = runtime.start(
+                "const until = Date.now() + 100; while (Date.now() < until) {} return 42;",
+                emptySet(),
             )
+            assertEquals("42", (cell.advance() as CodeModeStep.Completed).output)
         }
     }
 
     @Test
     @Timeout(60)
-    fun `a worker that never starts fails at its start budget and gives its slot back`() = runBlocking {
+    fun `a failed host boot is reaped and a later start boots a healthy replacement`() = runBlocking {
+        val attempts = java.util.concurrent.atomic.AtomicInteger()
+        val failed = java.util.concurrent.CompletableFuture<Process>()
         JvmCodeModeRuntime(
-            maxWorkers = 1,
             workerClasspath = testClasspath,
-            spawn = SlowStartSpawn(NEVER_STARTS_MS),
+            spawn = WorkerSpawn { builder ->
+                if (attempts.incrementAndGet() == 1) {
+                    SlowStartSpawn(NEVER_STARTS_MS)(builder).also { failed.complete(it) }
+                } else {
+                    builder.start()
+                }
+            },
             workerStartTimeoutMs = START_BUDGET_MS,
         ).use { runtime ->
-            val reclamation = CodeModeWorkerReclamation(this)
-            val started = System.nanoTime()
             val timeout = assertThrows(CodeModeTimeoutException::class.java) {
                 runBlocking { runtime.start("return 1;", emptySet()) }
             }
-            val elapsedMs = (System.nanoTime() - started) / 1_000_000
-            assertEquals(
-                START_BUDGET_MS,
-                timeout.timeoutMillis,
-                "the start budget, not the advance deadline, stopped it",
-            )
-            assertTrue(
-                elapsedMs < NEVER_STARTS_MS,
-                "it failed at its budget, not when the worker finally came up: $elapsedMs ms",
-            )
-            reclamation.assertReclaimed(runtime)
+            assertEquals(START_BUDGET_MS, timeout.timeoutMillis)
+            assertTrue(failed.get().waitFor(5, java.util.concurrent.TimeUnit.SECONDS), "failed boot must be reaped")
+            val next = withTimeout(10_000) { runtime.start("return 'replacement';", emptySet()) }
+            assertEquals("replacement", (next.advance() as CodeModeStep.Completed).output)
+            assertEquals(2, attempts.get())
+        }
+    }
+
+    @Test
+    @Timeout(60)
+    fun `concurrent retries after a failed boot elect exactly one replacement host`() = runBlocking {
+        val attempts = java.util.concurrent.atomic.AtomicInteger()
+        val replacementEntered = java.util.concurrent.CompletableFuture<Unit>()
+        val releaseReplacement = java.util.concurrent.CountDownLatch(1)
+        JvmCodeModeRuntime(
+            workerClasspath = testClasspath,
+            workerStartTimeoutMs = START_BUDGET_MS,
+            spawn = WorkerSpawn { builder ->
+                if (attempts.incrementAndGet() == 1) {
+                    SlowStartSpawn(NEVER_STARTS_MS)(builder)
+                } else {
+                    replacementEntered.complete(Unit)
+                    check(releaseReplacement.await(10, java.util.concurrent.TimeUnit.SECONDS))
+                    builder.start()
+                }
+            },
+        ).use { runtime ->
+            assertThrows(CodeModeTimeoutException::class.java) {
+                runBlocking { runtime.start("return 1;", emptySet()) }
+            }
+            kotlinx.coroutines.supervisorScope {
+                val first = async { runtime.start("return 'replacement';", emptySet()) }
+                withTimeout(5_000) { replacementEntered.await() }
+                val followers = List(10) {
+                    async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                        runtime.start("return 'replacement';", emptySet())
+                    }
+                }
+                assertEquals(2, attempts.get(), "all callers must await the same boot")
+                releaseReplacement.countDown()
+                (followers + first).forEach {
+                    val completed = it.await().advance() as CodeModeStep.Completed
+                    assertEquals("replacement", completed.output)
+                }
+            }
         }
     }
 

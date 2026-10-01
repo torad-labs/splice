@@ -1,7 +1,6 @@
 // NEW: bundled JavaScript worker yields privileged operations to permission-checked client tools.
 package splice.codemode
 
-import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
@@ -9,8 +8,10 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.graalvm.polyglot.Context
+import org.graalvm.polyglot.Engine
 import org.graalvm.polyglot.HostAccess
 import org.graalvm.polyglot.PolyglotAccess
+import org.graalvm.polyglot.Source
 import org.graalvm.polyglot.Value
 import org.graalvm.polyglot.io.IOAccess
 import org.graalvm.polyglot.proxy.ProxyExecutable
@@ -18,13 +19,12 @@ import org.graalvm.polyglot.proxy.ProxyObject
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeManual
 import splice.upstream.codemode.CodeModeResult
-import splice.upstream.failure.CodeModeInfrastructureCategory
-import splice.upstream.failure.CodeModeInfrastructureClass
 import java.io.DataInputStream
 import java.io.DataOutputStream
-import java.io.IOException
 
 private const val EXECUTION_FAILURE: String = "Code execution failed"
+
+private val CELL_LAUNCHER: Source by lazy { Source.newBuilder("js", LAUNCHER, "splice-code-mode").build() }
 
 /** Bytes kept free under the worker text ceiling for the truncation marker. */
 private const val TRUNCATION_RESERVE: Int = 64
@@ -38,53 +38,23 @@ private const val CALL_LIMIT_FAILURE: String = "Code-mode tool call limit exceed
 internal object CodeModeWorker {
     @JvmStatic
     fun main(args: Array<String>) {
+        require(args.isEmpty() || args.contentEquals(arrayOf("host"))) { "Unknown code-mode worker mode" }
         DataInputStream(System.`in`.buffered()).use { input ->
             DataOutputStream(System.out.buffered()).use { output ->
-                runWorker(input, output)
+                SharedCodeModeWorker.run(input, output)
             }
         }
     }
-
-    private fun runWorker(input: DataInputStream, output: DataOutputStream) {
-        try {
-            runSession(input, output)
-        } catch (error: CancellationException) {
-            throw error
-        } catch (_: IOException) {
-            CodeModeWire.write(
-                output,
-                CodeModeFatalFrame.create(CodeModeInfrastructureCategory.PROTOCOL, CodeModeInfrastructureClass.IO),
-            )
-        } catch (_: RuntimeException) {
-            CodeModeWire.write(
-                output,
-                CodeModeFatalFrame.create(CodeModeInfrastructureCategory.HOST, CodeModeInfrastructureClass.RUNTIME),
-            )
-        }
-    }
-
-    private fun runSession(input: DataInputStream, output: DataOutputStream) {
-        WorkerSession().use { session ->
-            // V4-226: ready once this JVM and its JavaScript engine are up, so the parent's advance
-            // deadline times the script alone; a start has its own budget on the parent's side.
-            CodeModeWire.write(output, CodeModeWire.readyFrame())
-            var reply = session.start(CodeModeFrames.parseStart(CodeModeWire.read(input)))
-            while (true) {
-                CodeModeWire.write(output, toFrame(reply))
-                if (reply.calls == null) return
-                reply = session.advance(CodeModeFrames.parseResults(CodeModeWire.read(input)))
-            }
-        }
-    }
-
-    private fun toFrame(reply: WorkerReply): JsonObject = reply.calls?.let(CodeModeWire::callsFrame)
-        ?: CodeModeWire.completedFrame(checkNotNull(reply.output), reply.error)
 }
 
-/** One cell's JavaScript engine. It is built before the start frame arrives (the expensive half of a
- *  worker's start), and [start] runs the cell's source in it. */
-internal class WorkerSession : AutoCloseable {
+/** One isolated script context on the explicitly shared host engine, resumed through its own tool results. */
+internal class WorkerSession(
+    engine: Engine,
+    heapLimitBytes: Long = CodeModeHeap.guestBytes(),
+) : AutoCloseable {
     private val context: Context = Context.newBuilder("js")
+        .engine(engine)
+        .option("sandbox.MaxHeapMemory", "${heapLimitBytes}B")
         .allowHostAccess(HostAccess.NONE)
         .allowHostClassLookup { false }
         .allowPolyglotAccess(PolyglotAccess.NONE)
@@ -92,7 +62,6 @@ internal class WorkerSession : AutoCloseable {
         .allowCreateThread(false)
         .allowCreateProcess(false)
         .allowNativeAccess(false)
-        .option("engine.WarnInterpreterOnly", "false")
         .build()
 
     // The launcher is compiled and taken once through a whole cell here, a tool call, its settle and
@@ -102,7 +71,7 @@ internal class WorkerSession : AutoCloseable {
     // script, it spent that much of the advance deadline on an idle box and more on a loaded one (gate
     // run 36180689372). The run is self-contained: its state lives in the launcher's closure and a
     // bridge nothing else holds.
-    private val launcher: Value = context.eval("js", LAUNCHER).also { launcher ->
+    private val launcher: Value = context.eval(CELL_LAUNCHER).also { launcher ->
         val warmUp = launcher.execute(
             "text(ALL_TOOLS.length); await tools.warm({}); return 1;",
             catalog(WorkerStart("", setOf("warm"))),

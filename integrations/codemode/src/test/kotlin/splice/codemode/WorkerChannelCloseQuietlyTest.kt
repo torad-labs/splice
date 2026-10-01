@@ -2,7 +2,6 @@
 // its streams without the blocking process-exit wait that only the lifecycle-owning close() may do.
 package splice.codemode
 
-import kotlinx.coroutines.Dispatchers
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -16,7 +15,7 @@ class WorkerChannelCloseQuietlyTest {
     @Test
     fun `the quiet close destroys and closes streams without a blocking exit wait`() {
         val process = RecordingProcess()
-        val channel = WorkerChannel(process = process, ioDispatcher = Dispatchers.IO, timeoutMs = 1_000)
+        val channel = WorkerChannel(process = process)
 
         channel.closeQuietly()
 

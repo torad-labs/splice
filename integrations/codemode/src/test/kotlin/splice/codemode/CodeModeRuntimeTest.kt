@@ -1,16 +1,10 @@
 package splice.codemode
 
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.supervisorScope
-import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.yield
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -24,7 +18,6 @@ import splice.upstream.codemode.CodeModeStep
 import splice.upstream.failure.CodeModeInfrastructureCategory
 import splice.upstream.failure.CodeModeInfrastructureClass
 import splice.upstream.failure.CodeModeInfrastructureException
-import splice.upstream.failure.CodeModeTimeoutException
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.FilterOutputStream
@@ -130,21 +123,20 @@ class CodeModeRuntimeTest {
             CodeModeWorker::class.java.name,
         ).redirectError(ProcessBuilder.Redirect.DISCARD).start()
         try {
-            DataOutputStream(process.outputStream.buffered()).use { input ->
-                CodeModeWire.write(input, buildJsonObject { put("type", "start") })
-            }
-            val reply = DataInputStream(process.inputStream.buffered()).use { output ->
-                // V4-226: a worker's first frame is its ready; the fault answers the start that follows.
-                CodeModeFrames.parseReady(CodeModeWire.read(output))
-                CodeModeWire.read(output)
-            }
+            val input = DataOutputStream(process.outputStream.buffered())
+            val output = DataInputStream(process.inputStream.buffered())
+            CodeModeFrames.parseReady(CodeModeWire.read(output))
+            CodeModeWire.write(input, HostProtocol.frame(1, 1, buildJsonObject { put("type", "start") }))
+            val reply = HostProtocol.parse(CodeModeWire.read(output)).payload
             assertEquals(setOf("type", "category", "faultClass"), reply.keys)
             val fault = assertThrows(CodeModeInfrastructureException::class.java) {
                 CodeModeFrames.parseReply(reply, emptySet(), 1)
             }
             assertEquals(CodeModeInfrastructureCategory.PROTOCOL, fault.category)
             assertEquals(CodeModeInfrastructureClass.IO, fault.faultClass)
-            assertTrue(process.waitFor(1, TimeUnit.SECONDS), "fatal worker must exit and release its process")
+            assertTrue(process.isAlive, "a cell protocol fault must not destroy the shared host")
+            CodeModeWire.write(input, HostProtocol.frame(1, 2, HostProtocol.close()))
+            assertEquals(2L, HostProtocol.parse(CodeModeWire.read(output)).request)
         } finally {
             process.destroyForcibly()
         }
@@ -213,82 +205,42 @@ class CodeModeRuntimeTest {
     }
 
     @Test
-    fun `active worker cap queues a second live cell until the first completes`() = runBlocking {
-        JvmCodeModeRuntime(
-            maxWorkers = 1,
-            advanceTimeoutMs = SCRIPT_DEADLINE_MS,
-            workerClasspath = testClasspath,
-        ).use { runtime ->
-            val first = runtime.start("await tools.call(\"Read\", {});", setOf("Read"))
-            supervisorScope {
-                val queued = async(start = CoroutineStart.UNDISPATCHED) {
-                    runtime.start("return \"second\";", emptySet())
-                }
-                first.close()
-                val second = withTimeout(30_000) { queued.await() }
-                assertEquals("second", completed(second.advance()).output)
-            }
+    fun `one host runs a second live cell while the first stays parked`() = runBlocking {
+        JvmCodeModeRuntime(maxWorkers = 1, workerClasspath = testClasspath).use { runtime ->
+            val first = runtime.start("return await tools.call('Read', {});", setOf("Read"))
+            calls(first.advance())
+            val second = withTimeout(5_000) { runtime.start("return 'second';", emptySet()) }
+            assertEquals("second", completed(second.advance()).output)
+            assertEquals("first", completed(first.advance(listOf(CodeModeResult("1", "first")))).output)
         }
     }
 
-    // A hang guard only: the worker's start, warm-up included, is outside the deadline under test.
     @Test
     @Timeout(30)
-    fun `runaway source times out and releases its worker slot`() = runBlocking {
-        // Twenty times a cold worker's first yield (98-133 ms measured 2026-09-25), which this deadline
-        // also covers, with the same 1 s of slack the bound always had.
-        val deadlineMs = 2_000L
-        JvmCodeModeRuntime(
-            maxWorkers = 1,
-            advanceTimeoutMs = deadlineMs,
-            workerClasspath = testClasspath,
-        ).use { runtime ->
-            val reclamation = CodeModeWorkerReclamation(this)
-            // V4-226: the deadline times the script, never its worker JVM's start, so the clock starts
-            // once the script is running: it yields a tool call, then runs away on the answer. Timed
-            // from before start() it also counted the boot, and a loaded runner's boot alone broke the
-            // bound (gate run 36180689372).
-            val cell = runtime.start("await tools.call(\"Read\", {}); while (true) {}", setOf("Read"))
+    fun `a long resumed step survives the former advance deadline`() = runBlocking {
+        JvmCodeModeRuntime(advanceTimeoutMs = 1, workerClasspath = testClasspath).use { runtime ->
+            val cell = runtime.start(
+                "await tools.call('Read', {}); const until = Date.now() + 100; while (Date.now() < until) {} return 'done';",
+                setOf("Read"),
+            )
             calls(cell.advance())
-            val startedAt = System.nanoTime()
-            val timeout = assertThrows(IOException::class.java) {
-                runBlocking { cell.advance(listOf(CodeModeResult("1", "{}"))) }
-            }
-            assertEquals("Code-mode worker timed out", timeout.message)
-            assertTrue(timeout is CodeModeTimeoutException)
-            assertEquals(deadlineMs, (timeout as CodeModeTimeoutException).timeoutMillis)
-            assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt) < deadlineMs + 1_000)
-            assertTrue(timeout.cause !is CancellationException)
-
-            reclamation.assertReclaimed(runtime)
+            assertEquals("done", completed(cell.advance(listOf(CodeModeResult("1", "")))).output)
         }
     }
 
-    // Two worker boots under one hang guard: the cancelled start and the replacement.
     @Test
     @Timeout(60)
-    fun `cancelling startup reaps the worker and has its permit back when the cancel returns`() = runBlocking {
-        // V4-214: the permit came back on the process's async onExit callback, so a start() made the
-        // moment the cancel returned could still find capacity 0 (the coverage job's race). Every such
-        // callback is held here until the end: only the cancelled start() itself can return it.
+    fun `cancelling startup closes only its context and reuses the same host`() = runBlocking {
         val spawn = HeldExitSpawn()
-        JvmCodeModeRuntime(
-            maxWorkers = 1,
-            advanceTimeoutMs = SCRIPT_DEADLINE_MS,
-            workerClasspath = testClasspath,
-            spawn = spawn,
-        ).use { runtime ->
+        JvmCodeModeRuntime(workerClasspath = testClasspath, spawn = spawn).use { runtime ->
             try {
                 val startup = async { runtime.start("while (true) {}", emptySet()) }
                 val worker = spawn.first.await()
-                worker.frameSent.await() // the start frame is out: start() is waiting on its reply
+                worker.frameSent.await()
                 startup.cancelAndJoin()
-
-                val replacement = runtime.start("return \"reaped\";", emptySet())
-                assertEquals("reaped", completed(replacement.advance()).output)
-                val child = worker.toHandle()
-                child.onExit().get(1, TimeUnit.SECONDS)
-                assertTrue(reaped(child), "cancelled startup must reap the observed child")
+                assertTrue(worker.isAlive, "a cancelled script must not destroy the shared host")
+                val replacement = withTimeout(5_000) { runtime.start("return 'alive';", emptySet()) }
+                assertEquals("alive", completed(replacement.advance()).output)
             } finally {
                 spawn.releaseExits()
             }
@@ -297,8 +249,8 @@ class CodeModeRuntimeTest {
 
     @Test
     fun `runtime close reaps a worker still waiting for its initial reply`() = runBlocking {
-        val runtime = runtime()
-        val before = ProcessHandle.current().children().use { children -> children.map { it.pid() }.toList() }
+        val spawn = HeldExitSpawn()
+        val runtime = JvmCodeModeRuntime(workerClasspath = testClasspath, spawn = spawn)
         val startup = async {
             try {
                 runtime.start("while (true) {}", emptySet())
@@ -307,21 +259,15 @@ class CodeModeRuntimeTest {
             }
         }
         try {
-            val child = withTimeout(2_000) {
-                var spawned: ProcessHandle? = null
-                while (spawned == null) {
-                    yield()
-                    spawned = ProcessHandle.current().children().use { children ->
-                        children.filter { it.pid() !in before }.findFirst().orElse(null)
-                    }
-                }
-                spawned
-            }
+            val worker = withTimeout(5_000) { spawn.first.await() }
+            withTimeout(5_000) { worker.frameSent.await() }
             runtime.close()
+            val child = worker.toHandle()
             child.onExit().get(1, TimeUnit.SECONDS)
             assertTrue(reaped(child))
         } finally {
             startup.cancelAndJoin()
+            spawn.releaseExits()
             runtime.close()
         }
     }
@@ -347,11 +293,9 @@ class CodeModeRuntimeTest {
                     throw IOException("synthetic output close failure")
                 }
             }),
-            ioDispatcher = Dispatchers.IO,
-            timeoutMs = 1_000,
         )
         val cell = JvmCodeModeCell(
-            channel = channel,
+            channel = cellChannel(channel),
             initial = WorkerReply(calls = null, output = "", error = null),
             tools = emptySet(),
             onClose = ReleaseCodeModeCell { released = true },
@@ -365,47 +309,31 @@ class CodeModeRuntimeTest {
     }
 
     @Test
-    fun `a timed out reap retains capacity and cleanup until actual exit`() {
-        val permits = Semaphore(1, acquiredPermits = 1)
-        val permit = WorkerPermit(permits)
+    fun `a timed out reap retains cleanup ownership until actual host exit`() {
         val process = TestProcess(exitOnDestroy = false)
-        permit.observe(process)
-        val channel = WorkerChannel(
-            process = process,
-            ioDispatcher = Dispatchers.IO,
-            timeoutMs = 1_000,
-            onExit = permit::releaseAfterExit,
-        )
+        val channel = WorkerChannel(process)
         var released = 0
-        val cell = JvmCodeModeCell(
-            channel = channel,
-            initial = WorkerReply(calls = null, output = "", error = null),
-            tools = emptySet(),
-            onClose = ReleaseCodeModeCell { released += 1 },
-        )
-
-        cell.close()
-        permit.releaseIfUnstarted()
+        channel.afterExit { released += 1 }
+        channel.close()
         assertTrue(process.destroyed)
-        assertEquals(0, permits.availablePermits)
         assertEquals(0, released)
-
         process.completeExit()
-        assertEquals(1, permits.availablePermits)
         assertEquals(1, released)
-        cell.close()
+        channel.close()
         process.completeExit()
-        assertEquals(1, permits.availablePermits)
         assertEquals(1, released)
     }
 
     @Test
-    fun `failure before process creation releases capacity once`() {
-        val permits = Semaphore(1, acquiredPermits = 1)
-        val permit = WorkerPermit(permits)
-        permit.releaseIfUnstarted()
-        permit.releaseIfUnstarted()
-        assertEquals(1, permits.availablePermits)
+    fun `an already exited host releases a late cleanup observer exactly once`() {
+        val process = TestProcess()
+        val channel = WorkerChannel(process)
+        process.completeExit()
+        var released = 0
+        channel.afterExit { released += 1 }
+        channel.close()
+        process.completeExit()
+        assertEquals(1, released)
     }
 
     @Test
@@ -420,7 +348,7 @@ class CodeModeRuntimeTest {
 
     @Test
     fun `runtime close tolerates a registry emptying after its size was observed`() {
-        for (name in listOf("cells", "starting")) {
+        for (name in listOf("cells")) {
             val runtime = runtime()
             // Deterministically model ConcurrentHashMap's weakly consistent size/iterator pair.
             val disappearing = object : AbstractMutableSet<Any>() {
@@ -503,6 +431,17 @@ class CodeModeRuntimeTest {
         assertThrows(IllegalStateException::class.java) {
             runBlocking { cell.advance() }
         }
+    }
+
+    private fun cellChannel(transport: WorkerChannel): CellChannel = object : CellChannel {
+        override suspend fun exchange(
+            frame: kotlinx.serialization.json.JsonObject,
+        ): kotlinx.serialization.json.JsonObject =
+            error("the cleanup fixture never exchanges frames")
+
+        override fun afterExit(action: WorkerExited) = transport.afterExit(action)
+
+        override fun close() = transport.close()
     }
 
     private class TestProcess(private val exitOnDestroy: Boolean = true) : Process() {

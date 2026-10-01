@@ -100,7 +100,8 @@ internal object AutoCloseableClosed {
 
     private fun declaration(m: MatchResult, src: String, path: String): Decl {
         val after = m.range.last + 1
-        val tail = src.substring(after, minOf(after + 2000, src.length))
+        val nextDeclaration = DECL.find(src, after)?.range?.first ?: src.length
+        val tail = src.substring(after, minOf(after + 2000, nextDeclaration))
         val line = src.substring(0, m.range.first).count { it == '\n' } + 1
         return Decl(m.groupValues[1], m.groupValues[2], supertypes(tail), path, line)
     }
@@ -314,6 +315,20 @@ internal object AutoCloseableClosed {
 
 class AutoCloseableClosedLawTest {
     private val map = ProjectMap.fromSystemProperties()
+
+    @Test
+    fun `a bodyless data class cannot inherit the following declaration's supertype`() {
+        val source = """
+            data class Reply(val cell: Long)
+            class Host : AutoCloseable {
+                override fun close() {}
+            }
+        """.trimIndent()
+        val declarations = AutoCloseableClosed.declarations(mapOf("fixture.kt" to source))
+        assertEquals(emptyList<String>(), declarations.single { it.name == "Reply" }.supers)
+        assertEquals(listOf("AutoCloseable"), declarations.single { it.name == "Host" }.supers)
+        assertEquals(setOf("Host"), AutoCloseableClosed.closeableClosure(declarations))
+    }
 
     @Test
     fun `every concrete AutoCloseable in main sources is closed from a main source - V4-95`() {

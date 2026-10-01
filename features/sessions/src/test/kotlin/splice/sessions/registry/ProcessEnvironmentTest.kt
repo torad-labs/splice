@@ -12,6 +12,21 @@ import java.nio.file.Path
 
 class ProcessEnvironmentTest {
 
+    @Test
+    fun `owner declarations route without proc and mismatched heads stay unknown`(@TempDir root: Path) {
+        val birth = java.time.Instant.parse("2026-01-01T00:00:00Z")
+        val owners = splice.core.process.LaunchOwners(
+            root,
+            splice.core.process.LaunchProcessIdentity { splice.core.process.LaunchProcess(birth) },
+        )
+        owners.write(41, "claudex", "http://127.0.0.1:3101", "session", "other")
+        val env = ProcessEnvironment(root.resolve("no-proc"), owners)
+        assertEquals(SessionRoute.Head("claudex"), env.route(41, heads))
+        owners.write(41, "codex", "http://127.0.0.1:3101", "session", "other")
+        assertEquals(SessionRoute.Unknown, env.route(41, heads))
+        assertEquals(SessionRoute.Unknown, env.route(42, heads))
+    }
+
     private val heads = HeadOfPort { port -> mapOf(3099 to "codex", 3101 to "claudex")[port] }
 
     private fun environ(root: Path, pid: Long, vararg entries: String): Path {

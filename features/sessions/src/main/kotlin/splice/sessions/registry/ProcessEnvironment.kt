@@ -7,9 +7,12 @@
 // only here is "the environment was read" known apart from "it could not be": a readable environment
 // without SPLICE=1 is DIRECT whatever its base URL says, a splice launch whose local port a head owns
 // is that HEAD, and everything else — unreadable, empty, or a splice launch no head can be found for —
-// is UNKNOWN.
+// is UNKNOWN. On macOS, the launcher declares the head and URL in an owner-only record; ProcessHandle
+// validates its PID and exact process birth. External launches have no declaration and stay UNKNOWN.
 package splice.sessions.registry
 
+import splice.core.config.StatePaths
+import splice.core.process.LaunchOwners
 import splice.core.util.Cancellables
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
@@ -22,12 +25,32 @@ private const val BASE_URL = "ANTHROPIC_BASE_URL"
 private const val CHUNK = 8192
 private const val NUL: Byte = 0
 
-public class ProcessEnvironment(private val procRoot: Path = Paths.get("/proc")) {
+public class ProcessEnvironment(
+    private val procRoot: Path = Paths.get("/proc"),
+    private val owners: LaunchOwners? = if (
+        System.getProperty("os.name").startsWith("Mac") && procRoot == Paths.get("/proc")
+    ) {
+        LaunchOwners(StatePaths().stateDir)
+    } else {
+        null
+    },
+) {
     private val localHead = Regex("^https?://127\\.0\\.0\\.1:(\\d+)")
     private val wanted = listOf("$SPLICE_MARKER=", "$BASE_URL=").map { it.toByteArray() }
 
     /** How [pid] reaches its provider; [headOf] names the head listening on the local port it read. */
-    public fun route(pid: Long, headOf: HeadOfPort): SessionRoute {
+    public fun route(pid: Long, headOf: HeadOfPort): SessionRoute =
+        if (owners != null) declaredRoute(pid, headOf, owners) else environRoute(pid, headOf)
+
+    private fun declaredRoute(pid: Long, headOf: HeadOfPort, source: LaunchOwners): SessionRoute {
+        val owner = source.read(pid) ?: return SessionRoute.Unknown
+        if (owner.kind != "session") return SessionRoute.Unknown
+        val port = localHead.find(owner.baseUrl)?.groupValues?.get(1)?.toIntOrNull()
+        val head = port?.let(headOf::invoke)
+        return if (head == owner.head) SessionRoute.Head(head) else SessionRoute.Unknown
+    }
+
+    private fun environRoute(pid: Long, headOf: HeadOfPort): SessionRoute {
         val markers = markers(pid) ?: return SessionRoute.Unknown
         if (markers[SPLICE_MARKER] != "1") return SessionRoute.Direct
         val port = markers[BASE_URL]?.let { localHead.find(it)?.groupValues?.get(1)?.toIntOrNull() }

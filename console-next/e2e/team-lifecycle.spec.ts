@@ -30,6 +30,10 @@ test('a team created through the console binds real sessions, joins handoff and 
   await seat(2).getByRole('textbox', { name: 'Role', exact: true }).fill('builder');
   await select(page, dialog, 'Seat 2 Command', STACK.oauthHead);
   await select(page, dialog, 'Seat 2 Session', peer?.name ?? '');
+  for (const group of [seat(1), seat(2)]) {
+    await expect.soft(group).toHaveCSS('border-top-width', '0px');
+    await expect(group.getByRole('textbox', { name: 'Role', exact: true })).not.toHaveCSS('border-top-width', '0px');
+  }
   const created = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/teams' && response.request().method() === 'PUT');
   await dialog.getByRole('button', { name: 'Save the team', exact: true }).click();
   const response = await created;
@@ -42,6 +46,7 @@ test('a team created through the console binds real sessions, joins handoff and 
   const builder = page.getByRole('listitem', { name: 'builder', exact: true });
   await expect(lead).toContainText(sender?.name ?? '');
   await expect(builder).toContainText(peer?.name ?? '');
+  for (const row of [lead, builder]) await expect.soft(row).toHaveCSS('border-top-width', '0px');
   await sendHandOff(Number(env('CONSOLE_E2E_OAUTH_PORT')), env('CONSOLE_E2E_KEY'), env('CONSOLE_E2E_PEER_ADDRESS'), 'toolu_synthetic_team_' + Date.now());
   await expect(page.getByRole('main')).toContainText('lead to builder', { timeout: 20_000 });
   const economic = await read<TeamEconomicsPayload>(page, '/api/teams/' + team.id + '/economics');

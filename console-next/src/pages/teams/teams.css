@@ -7,8 +7,7 @@
 .team-section > h2 { font: 520 1.625rem/1.15 var(--display); color: var(--ink); }
 .team-section > .why { margin-top: var(--space-4); font: 400 1rem/1.5 var(--read); color: var(--mute); }
 .seatrows { list-style: none; margin: var(--space-10) 0 0; padding: 0; display: grid; }
-.seatrow { display: grid; grid-template-columns: 13.125rem minmax(0, 1fr) 15rem; gap: var(--space-10); align-items: start; padding: var(--space-9) 0; border-top: 2px solid var(--hair); }
-.seatrow:first-child { border-top: 0; }
+.seatrow { display: grid; grid-template-columns: 13.125rem minmax(0, 1fr) 15rem; gap: var(--space-10); align-items: start; padding: var(--space-9) 0; }
 .seatrow h3 { display: flex; align-items: center; gap: var(--space-5); font: 600 1.1875rem var(--meta); color: var(--ink); }
 .seatrow h3 i { width: 0.875rem; height: 0.875rem; border-radius: 50%; background: var(--c); }
 .seatrow .cmd { margin-top: var(--space-2); font: 500 0.96rem var(--meta); color: var(--mute); }
@@ -27,7 +26,7 @@
 .compose { display: grid; gap: var(--space-8); margin-top: var(--space-7); max-height: 70vh; overflow: auto; padding-right: var(--space-4); }
 .compose .field { display: grid; gap: var(--space-3); }
 .compose textarea.input { min-height: 6rem; resize: vertical; font: 400 1rem/1.5 var(--read); }
-.seatform { display: grid; gap: var(--space-6); padding-top: var(--space-8); border-top: 2px solid var(--hair); }
+.seatform { display: grid; gap: var(--space-6); padding-top: var(--space-8); }
 .seatform .line { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-6); }
 .seatform .acts-row { display: flex; gap: var(--space-5); align-items: center; }
 .problems { margin: 0; padding-left: var(--space-7); font: 400 0.96rem/1.5 var(--read); color: var(--stuck); }

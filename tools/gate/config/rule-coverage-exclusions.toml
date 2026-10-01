@@ -581,6 +581,12 @@ date = "2026-09-20"
 reason = "The successor HTTP boundary: console-next/src/api/client.ts holds the only fetch, and its ESLint wall enforces that boundary."
 
 [[exclusion]]
+rule = "webui-mutation-hooks-never-return-refetch"
+files = ["console-next/src/api/refetch.ts"]
+date = "2026-09-30"
+reason = "The two refetch helpers define the intentional void-or-await choice; they call invalidateQueries outside mutation callbacks. The wall grades callbacks in every other console source and ignores its own implementation file."
+
+[[exclusion]]
 rules = [
   "kt-no-exception-as-outcome", "kt-no-runblocking-exported-bridge", "kt-no-vanilla-config-dir",
   "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly",

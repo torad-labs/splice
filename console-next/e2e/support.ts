@@ -99,7 +99,10 @@ export async function assertHealthy(page: Page, faults: ReturnType<typeof watch>
   await expect(page.getByRole('main')).not.toBeEmpty();
   expect(await page.getByRole('main').innerText()).not.toMatch(/\bundefined\b|\bNaN\b|\[object Object\]/);
   expect(faults.pageErrors, 'uncaught page errors').toEqual([]);
-  expect(faults.consoleErrors, 'console errors').toEqual([]);
+  const consoleFailure = faults.consoleErrors.some((error) => error.includes('net::ERR_NETWORK_CHANGED'))
+    ? 'environment changed: net::ERR_NETWORK_CHANGED'
+    : 'console errors';
+  expect(faults.consoleErrors, consoleFailure).toEqual([]);
   expect(faults.failedReads, 'daemon refused reads').toEqual([]);
 }
 

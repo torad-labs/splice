@@ -54,7 +54,10 @@ The procedure, every time, in this order:
 3. Backup first: `cp -p ~/.local/share/splice/splice.jar
    ~/.local/share/splice/splice.jar.bak-<date>-pre-<sha>`.
 4. Atomic install: `cp` the built jar to a sibling path in the same directory, then `mv` it over
-   `splice.jar`.
+   `splice.jar`. The launcher ships beside it and the jar cannot refresh it: back up
+   `~/.local/share/splice/splice-launch`, then put the same tree's `app/src/main/dist/bin/splice-launch`
+   in place the same way (sibling copy, keep its mode, `mv`). A jar-only install left the launcher at
+   shim-10 under a daemon that wants shim-11 (2026-10-01).
 5. `splice restart --now`, at once, with no gate in front of it (see above).
 6. Verify the OPEN file, not the path: sha256 of the jar fd under `/proc/<pid>/fd/` equals the
    built jar's sha256. Print both beside the result in one command block.

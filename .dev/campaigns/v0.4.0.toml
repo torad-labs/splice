@@ -10337,6 +10337,7 @@ title = "A resume that rewrites a session keeps the original first (Marlin, CPO,
 files = ["integrations/claude-code/src/main/kotlin/splice/client/resume/TranscriptModelRewrite.kt", "integrations/claude-code/src/main/kotlin/splice/client/resume/ResumeAcrossHeads.kt", "features/launch/src/main/kotlin/splice/launch/resume/ResumeHookRoute.kt", "core/src/main/kotlin/splice/core/config/StatePaths.kt", "README.md"]
 status = "in_flight"
 verify = "red first: the original of a transcript and its <id>/ jsonl files survives two rewrites byte-identical; a second rewrite leaves the original untouched; a failed copy leaves the transcript unrewritten; the start sweep removes an orphaned original and keeps a live one; claude-code, launch and core tests, detekt, rules, architecture (DiskWritesLawTest), campaign walls; CI gate"
+# [2026-10-01] Oct 1 CT: splice-builder2 takes the released resume scope. Preserve the entire source-enumerated session file set before the first rewrite, publish forced owner-only files without overwriting originals, retain live source locations locally for positive-absence cleanup at daemon start, and inject the selected StatePaths through launch/hook composition. Startup and composition files/tests are required extensions of the listed scope. No originals or source identities leave the machine.
 
 [[items]]
 id = "V4-449"

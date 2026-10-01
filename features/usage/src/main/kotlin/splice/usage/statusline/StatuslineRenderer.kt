@@ -200,7 +200,7 @@ internal class StatuslineRenderer(
 
     private fun warnSegment(snapshot: UsageView?, warnPct: Int, warnTokens5h: Long): String? {
         snapshot ?: return null
-        val ratelimit = snapshot.ratelimit?.let {
+        val ratelimit = snapshot.ratelimit?.currentAt(TimeUnit.MILLISECONDS.toSeconds(now()))?.let {
             RateLimitState(it.limitTokens, it.remainingTokens, it.resetTokens)
         }
         val warn = UsageWarnPolicy.computeUsageWarn(snapshot.outputTokens5h, ratelimit, warnPct, warnTokens5h)

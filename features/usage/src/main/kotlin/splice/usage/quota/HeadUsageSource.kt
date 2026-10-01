@@ -2,6 +2,7 @@
 // the record that composes a head names each capability's source from its own file.
 package splice.usage.quota
 
+import splice.core.usage.QuotaFreshness
 import splice.core.usage.QuotaView
 
 /** Reads the head's persisted usage/ratelimit (file truth). */
@@ -17,7 +18,12 @@ public data class RateLimitView(
     val remainingTokens: Long?,
     val resetTokens: String?,
     val observedAt: Long? = null,
-)
+) {
+    /** A persisted limit is a current signal only while its observation is fresh. */
+    public fun currentAt(nowSeconds: Long): RateLimitView? =
+        takeIf { QuotaFreshness.current(observedAt, null, nowSeconds) }
+}
+
 public data class UsageView(
     val outputTokens5h: Long,
     val entries: Int,

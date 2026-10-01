@@ -57,7 +57,9 @@ public class UsagePayloads(
                     val pool = m.accountPool?.view(null)
                     val selectedQuota = current(pool?.selectedQuota(), nowSeconds) ?: current(usage.quota, nowSeconds)
                     val rlView = usage.ratelimit
-                    val rl = rlView?.let { RateLimitState(it.limitTokens, it.remainingTokens, it.resetTokens) }
+                    val rl = rlView?.currentAt(nowSeconds)?.let {
+                        RateLimitState(it.limitTokens, it.remainingTokens, it.resetTokens)
+                    }
                     val plan = selectedQuota?.let { PlanWindows(it, nowSeconds) }
                     val warn = refusal(m.key)
                         ?: UsageWarnPolicy.computeUsageWarn(usage.outputTokens5h, rl, m.warnPct, m.warnTokens5h, plan)

@@ -47,12 +47,12 @@ public data class QuotaSnapshot(
  *  started over with nothing read since: its figure is neither the old one nor 0. Take-resume-5's
  *  first status rows read "5h 0%  7d 52%" from a snapshot hours old while the plan stood at 71% and
  *  98%, beside Claude Code's own "98% of your weekly limit". All times in epoch SECONDS. */
-internal object QuotaFreshness {
-    /** Three of QuotaPoller's five-minute polls. A passthrough head reads the windows off every
-     *  round, so only an idle head or a failing probe gets this old. */
-    const val FOR_SECONDS: Long = 15 * 60L
+public object QuotaFreshness {
+    /** Three of QuotaPoller's five-minute polls. Plan windows and token-limit headers share
+     *  this expiry: neither can claim a current limit from an old observation. */
+    public const val FOR_SECONDS: Long = 15 * 60L
 
-    fun current(observedAt: Long?, resetsAt: Long?, nowSeconds: Long): Boolean =
+    public fun current(observedAt: Long?, resetsAt: Long?, nowSeconds: Long): Boolean =
         observedAt != null && nowSeconds - observedAt <= FOR_SECONDS && (resetsAt == null || resetsAt > nowSeconds)
 }
 

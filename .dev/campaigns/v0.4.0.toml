@@ -10147,7 +10147,7 @@ phase = "release"
 title = "No lane label is drawn over a card on the Sessions lanes (Marlin, promised after V4-438, relayed by splice-lead [d1f679] Sep 29 6:28 PM CT): at 1440, the bottom lane's label 'No connected plan ⓘ ·46' is painted over its first card (x 320-540, y 515-540 in the seat's lanes-after-1440.png and lanes-before-1440.png, so it predates V4-437). Reproduce first on the live console at 1440 and at a width where the lane scrolls sideways; find why the label overlaps (a label wider than the names column, or a label that stays in place while the track scrolls); fix so every lane's label and count sit clear of its cards at every width, scrolled or not. The wording of 'No connected plan' stays as it is: Marlin's call, after 0.4.0. Plan raised 217 to 219 by splice-lead [063360]: V4-440 and V4-441 (the operator's GPT-6.1 Sol question) and this row filled the ceiling. @splice-lead"
 files = ["console/src/shared/ui/lanes.css", "console/src/shared/ui/lanes.tsx", "console/e2e/v4442/"]
 status = "blocked"
-verify = "red first: an e2e test at 1440 (and scrolled sideways) measures every lane label's box against every card box in its lane and fails on an overlap; green after; before/after screenshots at 1440; vitest, tsc, eslint; CI consoleE2e on the pushed sha"
+verify = "red first: an e2e test at 1440 (and scrolled sideways) measures every lane label's box against every card box in its lane and fails on an overlap; green after; before/after screenshots at 1440; vitest, tsc, eslint; CI consoleE2e on the pushed sha; CSS bundle verification: cd console-next && npx vite build; historical console/ paths were retired by 79c16ced4 under V4-444; build the successor bundle, not deleted source"
 claimed_by = "claude-console"
 claimed_at = "2026-09-29T23:49:42.137Z"
 # [2026-09-29] CLAIM: owner=claude-console at=2026-09-29T23:49:42Z
@@ -10155,6 +10155,7 @@ claimed_at = "2026-09-29T23:49:42.137Z"
 # [2026-09-30] Closed by the redesign: claude-console stopped with a CSS fix and an e2e uncommitted (lanes.css, console/e2e/v4442/); the old frontend is replaced under V4-444.
 # [2026-09-30] Sep 29 CT orchestrator: parked by name. The uncommitted fix made V4-437's lane-card test fail in a full journeys run (cut 21px, claude-console), so it cannot sit in the shared tree. Recorded here, then lanes.css restores to HEAD and console/e2e/v4442/lane-labels.spec.ts (113 lines, labels against cards at 1440 and 1024, scrolled or not) is removed. The fix was: .myx-lane-head drops min-width 0 and gains flex-wrap wrap, max-width calc(14 * var(--u)), overflow-wrap anywhere, and the narrow-screen rule adds max-width none. The redesign (V4-444) replaces the lanes.
 # [2026-09-30] Sep 30, 4:40 AM CT splice-lead: superseded by V4-444 as its row states. The rebuilt console has no Sessions lanes, so a lane label cannot sit over a card.
+# [2026-10-01] amend by=unattributed: verify was "red first: an e2e test at 1440 (and scrolled sideways) measures every lane label's box against every card box in its lane and fails on an overlap; green after; before/after screenshots at 1440; vitest, tsc, eslint; CI consoleE2e on the pushed sha"
 
 [[items]]
 id = "V4-443"

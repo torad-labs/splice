@@ -165,6 +165,26 @@ describe('every failing check carries its fix', () => {
     expect(said('daemon/turn path', 'WEDGED on claudex')).toBe('WEDGED on claudex');
   });
 
+  test('an instant inside a finding reads as Chicago time, including daylight saving', () => {
+    expect(checkFinding(check('auth/claude-splice', 'warn',
+      'upstream rejected the forwarded Claude login at 2026-10-01T16:18:56.973Z')))
+      .toBe('upstream rejected the forwarded Claude login at 11:18 AM CT');
+    expect(checkFinding(check('auth/claude-splice', 'warn',
+      'upstream rejected the forwarded Claude login at 2026-01-01T16:18:56Z')))
+      .toBe('upstream rejected the forwarded Claude login at 10:18 AM CT');
+  });
+
+  test('a stale launcher finding uses words while its original diagnostic and remedy remain available', () => {
+    const raw = check('installation/shim', 'warn',
+      'stale (installed=shim-10, expected=shim-11). Run ./install.sh from a checkout, or re-run the release installer.',
+      "reinstall splice's launcher");
+    expect(checkFinding(raw)).toBe('splice’s launcher does not match this version. Reinstall it.');
+    expect(checkFinding({ ...raw, detail: 'stale (installed=shim-12, expected=shim-11).' }))
+      .toBe('splice’s launcher does not match this version. Reinstall it.');
+    expect(raw.detail).toContain('installed=shim-10');
+    expect(checkFix(raw)).toBe("reinstall splice's launcher");
+  });
+
   test('a check is titled for what it is about, never by the daemon\'s id', () => {
     const title = (id: string) => collapseChecks([check(id, 'warn', 'x')])[0]?.label;
     expect(title('runtime/head claudex errors')).toBe('claudex errors');

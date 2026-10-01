@@ -75,9 +75,17 @@ export function logsHrefOf(fix: string | null): string | null {
   return target === null ? null : `#/fleet/${encodeURIComponent(target.head)}?tab=log${target.tail === null ? '' : `&tail=${target.tail}`}`;
 }
 
-/** What the check found, which a page prints on its own line apart from the remedy. */
+const FINDING_INSTANT = /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\b/g;
+const findingClock = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', minute: '2-digit' });
+
+/** What the check found, in words and Chicago time, without changing its retained diagnostic or remedy. */
 export function checkFinding(check: DoctorCheck): string {
-  return runtimeFinding(check) ?? check.detail;
+  const finding = check.id === 'installation/shim' && check.detail.startsWith('stale (installed=')
+    ? DF.shimStale : (runtimeFinding(check) ?? check.detail);
+  return finding.replace(FINDING_INSTANT, (raw) => {
+    const at = Date.parse(raw);
+    return Number.isNaN(at) ? raw : `${findingClock.format(at)} CT`;
+  });
 }
 
 const HEAD_ERRORS = /^(\d+) provider \/ (\d+) local error\(s\) since last restart$/;

@@ -8,6 +8,7 @@ export const P = {
   handoffsOnly: 'Hand-offs',
   you: 'You',
   assistant: 'Assistant',
+  system: 'System note',
   handoffFrom: 'Hand-off from',
   handoffTo: 'Hand-off to',
   handoffMissing: 'What was handed over is no longer in the sender’s transcript.',

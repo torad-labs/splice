@@ -5,6 +5,80 @@ import type { HeadsPayload } from '../src/types/core';
 import { FIRST_READ_MS, open, routePath } from './support';
 import { STACK } from './stack';
 
+test('wide Finished rows keep each name beside its measurements', async ({ page }) => {
+  await page.setViewportSize({ width: 3840, height: 2060 });
+  const faults = await open(page, 'turns');
+  const rows = page.locator('li.turn');
+  await expect(rows.first()).toBeVisible({ timeout: FIRST_READ_MS });
+  const distance = await rows.first().evaluate((row) => {
+    const name = row.querySelector('h3 a')?.getBoundingClientRect();
+    const state = row.querySelector('.state')?.getBoundingClientRect();
+    if (name === undefined || state === undefined) throw new Error('turn row lost its name or outcome');
+    return state.left - name.right;
+  });
+  expect(distance, 'a row does not require looking across most of the screen').toBeLessThan(900);
+  expect(faults.pageErrors).toEqual([]);
+});
+
+test('system messages have a system speaker rather than the command or Assistant', async ({ page }) => {
+  await page.route('**/api/sessions/' + STACK.sender.id + '/transcript?*', (route) => route.fulfill({ json: {
+    session_id: STACK.sender.id, path: '/synthetic/transcript.jsonl', earlier: null, messages: [
+      { index: 0, role: 'user', text: 'Synthetic user message.' },
+      { index: 1, role: 'system', text: 'Synthetic metadata message.' },
+      { index: 2, role: 'assistant', text: 'Synthetic model answer.' },
+    ],
+  } }));
+  const faults = await open(page, 'sessions/' + STACK.sender.id);
+  const metadata = page.locator('.msg').filter({ hasText: 'Synthetic metadata message.' });
+  await expect(metadata.locator('.who')).toContainText('System note');
+  await expect(metadata.locator('.who')).not.toContainText('Assistant');
+  await expect(metadata.locator('.who')).not.toContainText(STACK.oauthHead);
+  expect(faults.pageErrors).toEqual([]);
+  await page.unrouteAll({ behavior: 'wait' });
+});
+
+for (const width of [1440, 3840]) {
+  test('turn detail at ' + width + ' separates its sections and attaches the session action', async ({ page }) => {
+    await page.setViewportSize({ width, height: width === 3840 ? 2060 : 1000 });
+    await page.route('**/api/perf/turns?*', async (route) => {
+      const response = await route.fetch();
+      const body = await response.json() as PerfTurnsWire;
+      for (const row of body.heads.flatMap((head) => head.rows ?? [])) {
+        row.session_id = STACK.sender.id;
+        row.session = STACK.sender.id.slice(0, 8);
+      }
+      await route.fulfill({ response, json: body });
+    });
+    await open(page, 'needs-you');
+    const faults = await open(page, await routePath(page, 'turns/:head/:ts'));
+    const link = page.getByRole('link', { name: 'Open the session', exact: true });
+    await expect(link).toBeVisible({ timeout: FIRST_READ_MS });
+    const placement = await page.getByRole('main').evaluate((root) => {
+      const title = root.querySelector('h1')?.getBoundingClientRect();
+      const action = root.querySelector('.hero a')?.getBoundingClientRect();
+      const stages = root.querySelector('.turn-section.wide')?.getBoundingClientRect();
+      const moved = root.querySelector('[aria-labelledby="turn-moved"]')?.getBoundingClientRect();
+      if (title === undefined || action === undefined || stages === undefined || moved === undefined) {
+        throw new Error('turn detail lost its title, action or section');
+      }
+      return { attachment: Math.abs(action.left - title.left), separation: moved.top - stages.bottom };
+    });
+    expect(placement.attachment, 'the action belongs with the session title').toBeLessThan(48);
+    expect(placement.separation, 'separate objects have room between them').toBeGreaterThanOrEqual(width === 1440 ? 56 : 32);
+    expect(faults.pageErrors).toEqual([]);
+  });
+}
+
+test('Fleet exposes reorder handles before hover or keyboard focus', async ({ page }) => {
+  const faults = await open(page, 'fleet');
+  await page.mouse.move(0, 0);
+  const grips = page.getByRole('button', { name: 'Drag to reorder', exact: true });
+  await expect(grips.first()).toBeVisible();
+  const opacity = await grips.first().evaluate((grip) => Number(getComputedStyle(grip).opacity));
+  expect(opacity, 'reordering is discoverable without hover').toBe(1);
+  expect(faults.pageErrors).toEqual([]);
+});
+
 const FRAMES = [
   { width: 3840, height: 2060, used: 0.8, body: 20, caption: 16 },
   { width: 1600, height: 1000, used: 0.7, body: 17, caption: 12 },

@@ -11,8 +11,7 @@
 .card .acts { position: relative; z-index: 1; align-items: center; flex-wrap: wrap; }
 .card .glass.one { padding: var(--space-6) var(--space-7); margin-bottom: var(--space-4); }
 .card .glass.one p { color: var(--glass-ink); }
-.grip { margin: 0 calc(-1 * var(--space-4)) 0 0; padding: var(--space-3); border: 0; background: transparent; color: var(--faint); cursor: grab; opacity: 0; position: relative; z-index: 1; }
-.card:hover .grip, .card:focus-within .grip { opacity: 1; }
+.grip { margin: 0 calc(-1 * var(--space-4)) 0 0; padding: var(--space-3); border: 0; background: transparent; color: var(--faint); cursor: grab; opacity: 1; position: relative; z-index: 1; }
 /* the gauge inside a card's glass: one window, drawn in the glass ink (the head's colour is the shadow, never a second accent) */
 .gauge { display: grid; gap: var(--space-5); }
 .gauge .gl { display: flex; align-items: baseline; gap: var(--space-5); font: 500 0.8125rem var(--mono); }

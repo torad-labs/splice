@@ -2,12 +2,13 @@
 .crumb { display: flex; gap: var(--space-5); margin-bottom: var(--space-7); font: 600 0.96rem var(--meta); color: var(--mute); }
 .crumb a { color: var(--ink); text-decoration: underline; text-underline-offset: 0.25rem; text-decoration-thickness: 2px; text-decoration-color: var(--hair); }
 .hero { max-width: 67.5rem; }
+.hero .session-link { margin-top: var(--space-7); }
 .hero .facts { margin-top: var(--space-7); display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) 0; font: 500 0.96rem var(--meta); color: var(--mute); }
 .hero .facts > span + span::before { content: '·'; margin: 0 var(--space-4); color: var(--faint); }
 .hero .facts > .tag { margin-left: var(--space-4); }
 .hero .facts > .tag::before { content: none; margin: 0; }
 .turn-section { margin-top: var(--space-16); max-width: 67.5rem; }
-.turn-section:first-of-type { margin-top: 0; }
+.hero + .turn-section { margin-top: 0; }
 .turn-section > h2 { font: 520 1.625rem/1.15 var(--display); color: var(--ink); }
 .turn-section > .why { margin-top: var(--space-4); font: 400 1rem/1.5 var(--read); color: var(--mute); }
 .water { margin-top: var(--space-10); display: flex; height: 2.75rem; gap: var(--space-1); }

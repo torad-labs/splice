@@ -179,7 +179,7 @@ export function SessionPage() {
                 <div key={item.index} className={`msg${item.who === 'user' ? ' you' : ''}`}>
                   {same ? null : (
                     <div className="who">
-                      {item.who === 'user' ? <span>{P.you}</span> : <span className="m" style={hue(colour)}>{headLabel ?? P.assistant}</span>}
+                      {item.who === 'user' ? <span>{P.you}</span> : item.who === 'system' ? <span>{P.system}</span> : <span className="m" style={hue(colour)}>{headLabel ?? P.assistant}</span>}
                       {item.ts === null ? null : <span className="t">{clockTime(item.ts)}</span>}
                     </div>
                   )}

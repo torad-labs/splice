@@ -37,6 +37,9 @@
 .unread { margin-top: var(--space-14); }
 .unread h3 { font: 520 1.375rem/1.15 var(--display); color: var(--ink); }
 .unread ul { list-style: none; margin: var(--space-5) 0 0; padding: 0; display: grid; gap: var(--space-3); font: 400 1rem/1.5 var(--read); color: var(--body); }
+@media (min-width: 2400px) {
+  .section > .list { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--space-15); }
+}
 @media (max-width: 1100px) {
   .plan { grid-template-columns: minmax(0, 1fr) 4.375rem 4.375rem; }
   .plan .plan-first, .plan small { grid-column: 1 / -1; }

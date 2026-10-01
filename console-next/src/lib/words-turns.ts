@@ -44,6 +44,7 @@ export const T = {
   in: 'in',
   out: 'out',
   compacted: 'Compacted',
+  notPriced: 'Not priced',
   unreadTitle: 'Not read',
   unread: (head: string, why: string) => `${head}: ${why}`,
   clamped: (head: string) => `${head} has more turns in this window than the list holds; the oldest are cut.`,

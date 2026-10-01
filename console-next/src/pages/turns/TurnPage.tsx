@@ -51,8 +51,8 @@ export function TurnPage() {
             {row.account === undefined ? null : <span>{row.account}</span>}
             {row.compact === true ? <span className="tag">{T.compacted}</span> : null}
           </div>
+          {session === undefined ? null : <div className="session-link"><Link className="btn go" to={sessionPath(session)}>{P.openSession}</Link></div>}
         </div>
-        {session === undefined ? null : <div className="tools"><Link className="btn go" to={sessionPath(session)}>{P.openSession}</Link></div>}
       </header>
 
       <section className="turn-section wide" aria-labelledby="turn-stages">

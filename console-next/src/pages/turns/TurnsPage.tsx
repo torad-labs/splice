@@ -93,7 +93,7 @@ function TurnRowView({ line }: { line: TurnLine }) {
         {line.inTokens === null ? ABSENT : `${fmtTokens(line.inTokens)} ${T.in}`}
         <small>{line.outTokens === null ? `– ${T.out}` : `${fmtTokens(line.outTokens)} ${T.out}`}</small>
       </span>
-      <span className="cost">{line.cost}</span>
+      <span className="cost">{line.cost === ABSENT ? T.notPriced : line.cost}</span>
     </li>
   );
 }

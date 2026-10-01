@@ -135,6 +135,9 @@ internal data class CodeModeRecord(
     val results: Map<String, CodeModeResult> get() = accepted.results
     val issued: MutableList<CodeModeIssuedStep> = mutableListOf()
 
+    /** In-memory snapshot order; a failed save cannot undo a later reserved snapshot. */
+    var saveGeneration: Long = 0
+
     fun visiblePending(): List<CodeModePending> = pending.filter(CodeModePending::exposed)
 
     fun clientIds(): Set<String> = (results.keys + pending.map(CodeModePending::clientId)).toSet()

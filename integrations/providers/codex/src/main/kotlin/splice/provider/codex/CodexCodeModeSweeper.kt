@@ -47,7 +47,6 @@ internal object CodeModeSweeps {
  *  record. It holds the registry's [monitor] for each sweep; [save] writes the registry's state. */
 internal class CodeModeTimedSweep(
     private val monitor: ReentrantLock,
-    private val sweeper: CodexCodeModeSweeper,
     private val records: List<CodeModeRecord>,
     private val save: Runnable,
     private val config: CodeModeBridgeConfig,
@@ -66,22 +65,22 @@ internal class CodeModeTimedSweep(
     /** One sweep: what the sweeper changed is saved, a save that fails is logged and made again at the
      *  next sweep, and the sweeps stop once no record is kept. Never throws: a throw would end the
      *  periodic task in silence. */
-    private fun sweep() = monitor.withLock {
+    private fun sweep() {
         Cancellables.runCatchingBestEffort {
-            if (sweeper.sweep() or unsaved) {
-                unsaved = true
-                save.run()
-                unsaved = false
-            }
+            unsaved = true
+            save.run()
+            unsaved = false
         }.exceptionOrNull()?.let { failure ->
             config.log(
                 "[code-mode] the timed sweep could not save into ${config.state.dir} " +
                     "(${SafeFailureText.render(failure)}); it saves again at the next sweep",
             )
         }
-        if (records.isEmpty() && !unsaved) {
-            running?.cancel(false)
-            running = null
+        monitor.withLock {
+            if (records.isEmpty() && !unsaved) {
+                running?.cancel(false)
+                running = null
+            }
         }
     }
 }
@@ -95,15 +94,16 @@ internal class CodexCodeModeSweeper(
     private val history: CodeModeExpiredHistory,
 ) {
     /** Expires records past their retention and parks cells past the idle timeout; true when anything changed. */
-    fun sweep(): Boolean = expireRecords() or reapIdleCells()
+    fun sweep(key: String? = null): Boolean = expireRecords(key) or reapIdleCells(key)
 
     /** At capacity: park the oldest cell idle at least [CodeModeBridgeConfig.cellEvictionFloor] so the
      *  newer script can take its slot. Null when every cell is presumed busy (mid-call, or a prompt). */
-    fun evictIdleCell(): CodeModeRecord? {
+    fun evictIdleCell(key: String? = null): CodeModeRecord? {
         val now = config.clock.millis()
         val floor = config.cellEvictionFloor.inWholeMilliseconds
         val victim = records
-            .filter { it.phase == CodeModePhase.ACTIVE && now - it.updatedAt >= floor }
+            .filter { (key == null || it.key == key) && it.phase == CodeModePhase.ACTIVE }
+            .filter { now - it.updatedAt >= floor }
             .minByOrNull(CodeModeRecord::updatedAt)
             ?: return null
         val idle = (now - victim.updatedAt) / MILLIS_PER_MINUTE
@@ -111,11 +111,11 @@ internal class CodexCodeModeSweeper(
         return victim
     }
 
-    private fun expireRecords(): Boolean {
+    private fun expireRecords(key: String?): Boolean {
         val cutoff = config.clock.millis() - config.ttl.inWholeMilliseconds
         val lastUse = records.groupBy(CodeModeRecord::key)
             .mapValues { (_, kept) -> kept.maxOf(CodeModeRecord::updatedAt) }
-        val stale = records.filter { lastUse.getValue(it.key) < cutoff }
+        val stale = records.filter { (key == null || it.key == key) && lastUse.getValue(it.key) < cutoff }
         if (stale.isEmpty()) return false
         stale.forEach { record ->
             admissions.remove(record.id)
@@ -127,10 +127,11 @@ internal class CodexCodeModeSweeper(
     }
 
     /** A cell parked past [CodeModeBridgeConfig.cellIdleTimeout] is closed: its slot is the scarce resource. */
-    private fun reapIdleCells(): Boolean {
+    private fun reapIdleCells(key: String?): Boolean {
         val now = config.clock.millis()
         val limit = config.cellIdleTimeout.inWholeMilliseconds
-        val idle = records.filter { it.phase == CodeModePhase.ACTIVE && now - it.updatedAt >= limit }
+        val idle = records.filter { (key == null || it.key == key) && it.phase == CodeModePhase.ACTIVE }
+            .filter { now - it.updatedAt >= limit }
         idle.forEach { record ->
             val minutes = (now - record.updatedAt) / MILLIS_PER_MINUTE
             park(record, "code-mode cell closed after $minutes min without client results")

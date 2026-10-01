@@ -10,12 +10,12 @@ import kotlinx.serialization.json.Json
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
+import splice.provider.codex.state.CodeModeKeyLocks
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
 import java.util.HexFormat
-import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.ReentrantLock
@@ -72,6 +72,7 @@ internal class CodexCodeModeStore(
         SecureFile.writeAtomic0600(path, text)
     },
     private val registryLock: ReentrantLock? = null,
+    private val keyLocks: CodeModeKeyLocks = CodeModeKeyLocks(),
 ) {
     private val dir = location.dir
     private val legacyFile = location.legacyFile
@@ -83,15 +84,11 @@ internal class CodexCodeModeStore(
     /** Each conversation as its file held it when last read or written, by conversation key. */
     private val kept = ConcurrentHashMap<String, CodeModePersistedState>()
 
-    /** Reserved under the registry lock: writes of one conversation finish in generation order. */
-    private val tails = HashMap<String, CompletableFuture<Unit>>()
     private val savePreparation = SavePreparation()
 
     private data class Prepared(
         val key: String,
         val conversation: CodeModePersistedState?,
-        val previous: CompletableFuture<Unit>?,
-        val done: CompletableFuture<Unit>,
     )
 
     /** A conversation as its file will hold it. */
@@ -121,30 +118,44 @@ internal class CodexCodeModeStore(
         needsSave = true
         // The registry lock protects mutable records. Snapshot only changed conversations there;
         // serialization and disk I/O take place outside that head-wide lock.
-        val prepared = savePreparation.prepare(records, expired, dirtyKeys)
+        val selected = dirtyKeys ?: buildSet {
+            addAll(records.map(CodeModeRecord::key))
+            addAll(expired.map(CodeModeExpiredSnapshot::key))
+            addAll(kept.keys)
+        }
         pendingWrites.incrementAndGet()
-        val lock = registryLock
-        lock?.unlock()
+        failedKeys.addAll(selected)
+        registryLock?.unlock()
         try {
-            prepared.forEach { item ->
-                item.previous?.handle { _, _ -> Unit }?.join()
-                try {
-                    persist(item)
-                    failedKeys.remove(item.key)
-                } finally {
-                    item.done.complete(Unit)
-                }
-            }
+            // Reserve each key only when it is about to write. A blocked A never reserves B.
+            selected.forEach { key -> savePreparation.saveKey(key, records, expired) }
         } finally {
-            // A failed batch still releases every reserved key for a retry's next generation.
-            prepared.forEach { it.done.complete(Unit) }
-            lock?.lock()
-            prepared.forEach { item -> if (tails[item.key] === item.done) tails.remove(item.key) }
+            registryLock?.lock()
             needsSave = pendingWrites.decrementAndGet() > 0 || failedKeys.isNotEmpty()
         }
     }
 
     private inner class SavePreparation {
+        fun saveKey(
+            key: String,
+            records: List<CodeModeRecord>,
+            expired: List<CodeModeExpiredSnapshot>,
+        ) {
+            val entry = keyLocks.acquire(key)
+            try {
+                registryLock?.lock()
+                val prepared = try {
+                    savePreparation.prepare(records, expired, setOf(key)).singleOrNull()
+                } finally {
+                    registryLock?.unlock()
+                }
+                prepared?.let(::persist)
+                failedKeys.remove(key)
+            } finally {
+                keyLocks.release(key, entry)
+            }
+        }
+
         fun prepare(
             records: List<CodeModeRecord>,
             expired: List<CodeModeExpiredSnapshot>,
@@ -157,7 +168,10 @@ internal class CodexCodeModeStore(
             }
             val next = grouped(
                 CodeModePersistedState(
-                    records = records.filter { it.key in selected }.map(CodeModeRecord::snapshot),
+                    records = records.filter { it.key in selected }.map { record ->
+                        record.saveGeneration++
+                        record.snapshot()
+                    },
                     expired = expired.filter { it.key in selected },
                 ),
             )
@@ -168,8 +182,7 @@ internal class CodexCodeModeStore(
                     prior?.records?.map(CodeModeRecordSnapshot::issued) !=
                     conversation?.records?.map(CodeModeRecordSnapshot::issued)
                 if (!changed) return@mapNotNull null
-                val done = CompletableFuture<Unit>()
-                Prepared(key, conversation, tails.put(key, done), done)
+                Prepared(key, conversation)
             }
         }
     }

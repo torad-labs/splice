@@ -87,8 +87,12 @@ const END = "mock.listen(0, '127.0.0.1');";
 
 const EMPTY_LOCK_STALE_MS = 30_000; // >> the create->write window; only a crashed pre-write lock survives it
 const REQUEST_TIMEOUT_MS = 60_000; // a replayed fixture answers in ms; 60s means WEDGED, not slow
-const HEAD_PORT = 39490; // CI-hermetic fixed scratch ports (OSS-M pattern)
-const CONTROL_PORT = 39491;
+// CI-hermetic fixed scratch ports (OSS-M pattern), BELOW the kernel's ephemeral range (Linux 32768+,
+// macOS 49152+): at 39490 a parallel ladder task's outbound socket took the head port mid-boot.
+const HEAD_PORT = 29490;
+const CONTROL_PORT = 29491;
+/** The fixed ports the replay daemon binds; oracle.test.ts holds them outside the kernel's ephemeral range. */
+export const ORACLE_PORTS: readonly number[] = [HEAD_PORT, CONTROL_PORT];
 export const HARNESS_EXIT = 2;
 export const DIVERGENCE_EXIT = 1;
 

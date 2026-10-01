@@ -4,13 +4,14 @@
 // is its oracleSelftest leg.
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
   DIVERGENCE_EXIT,
   HARNESS_EXIT,
   ORACLE_DIR,
+  ORACLE_PORTS,
   canonicalize,
   corpusDrift,
   enrolmentDrift,
@@ -34,6 +35,17 @@ function corpusCopy(): { dir: string; done: () => void } {
   cpSync(ORACLE_DIR, dir, { recursive: true });
   return { dir, done: () => rmSync(dir, { recursive: true, force: true }) };
 }
+
+// The replay ran beside the ladder's other test tasks, and on CI run 36806234941 its head lost :39490
+// during the daemon's boot ("[claudex][boot] failed to start: Address already in use") after the
+// preflight had found it free: 39490 is inside Linux's ephemeral range, so any parallel outbound
+// connection or listen(0) can be handed it. Below the range, the kernel never hands a port out.
+test("the replay's fixed ports sit below the kernel's ephemeral port range", () => {
+  const rangeFile = "/proc/sys/net/ipv4/ip_local_port_range";
+  // macOS hands out 49152-65535; Linux reports its own range.
+  const ephemeralLow = existsSync(rangeFile) ? Number(readFileSync(rangeFile, "utf8").trim().split(/\s+/)[0]) : 49152;
+  for (const port of ORACLE_PORTS) expect(port).toBeLessThan(ephemeralLow);
+});
 
 test("listener and fallback probes share one startup deadline", async () => {
   const paths: string[] = [];

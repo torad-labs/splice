@@ -10323,3 +10323,11 @@ title = "A restart never fails a turn that is still running in code mode (operat
 files = ["app/src/main/kotlin/splice/app/console/DrainingRestartAdapter.kt", "integrations/codemode/src/main/kotlin/splice/codemode/JvmCodeModeRuntime.kt"]
 status = "todo"
 verify = "red first: a code-mode turn in flight when a draining stop begins completes ok with the runtime alive until it ends; a forced cut ends as a retryable error type; codemode, app and turns tests, detekt, rules, architecture; CI gate; live: the next install's journal shows no code-mode runtime failure between Stopping and exit"
+
+[[items]]
+id = "V4-448"
+phase = "release"
+title = "A resume that rewrites a session keeps the original first (Marlin, CPO, Sep 30, from the page's viewer rounds 10 and 11: 3 of 5 then 4 of 5 personas would try -r onto another head only on a throwaway session because the rewrite keeps no copy). Today TranscriptModelRewrite rewrites Claude Code's transcript and every jsonl under its <id>/ folder in place (TranscriptModelRewrite.kt:102-110, atomic replace :137-155). OUTCOME, confirmed by Marlin: before splice first rewrites a session, the transcript and every jsonl under <id>/ are kept byte-exact in <state>/transcript-originals/<project dir name>/ (owner-only, 0600 in 0700), outside ~/.claude/projects so no resume list shows them; an existing original is never overwritten; a failed copy leaves the transcript unrewritten; at daemon start an original whose live transcript is gone is deleted, so it lives exactly as long as the session it is the original of; the path comes from StatePaths; the README disk table names it."
+files = ["integrations/claude-code/src/main/kotlin/splice/client/resume/TranscriptModelRewrite.kt", "integrations/claude-code/src/main/kotlin/splice/client/resume/ResumeAcrossHeads.kt", "features/launch/src/main/kotlin/splice/launch/resume/ResumeHookRoute.kt", "core/src/main/kotlin/splice/core/config/StatePaths.kt", "README.md"]
+status = "todo"
+verify = "red first: the original of a transcript and its <id>/ jsonl files survives two rewrites byte-identical; a second rewrite leaves the original untouched; a failed copy leaves the transcript unrewritten; the start sweep removes an orphaned original and keeps a live one; claude-code, launch and core tests, detekt, rules, architecture (DiskWritesLawTest), campaign walls; CI gate"

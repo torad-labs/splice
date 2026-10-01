@@ -41,7 +41,7 @@ public class StatuslineRoute(
         // kt-head-scoped-config-must-be-keyed on its first tree scan (2026-07-26). `key` is
         // non-empty here — the managed == null early return above guarantees it resolved.
         val roots = config.getConfig(key).statuslineGitRoots
-        val renderer = renderers.get(managed.key, managed.label, roots) {
+        val renderer = renderers.get(managed.key, managed.label, roots, managed.catalog) {
             StatuslineRenderer(
                 managed.label,
                 roots,

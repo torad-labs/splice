@@ -4,6 +4,8 @@
 // self-contained unit with its own lock and no reference back to the route, so it stands alone.
 package splice.usage.statusline
 
+import splice.core.model.ModelCatalog
+
 /** Builds the renderer for a head whose cached one no longer matches — the miss branch of
  *  [RendererCache.get], named for that role rather than its `() -> StatuslineRenderer` shape. */
 internal fun interface BuildRenderer {
@@ -16,19 +18,30 @@ internal fun interface BuildRenderer {
 internal class RendererCache {
     // Label is part of the match (DR-22a): the renderer captures it at construction, so a
     // roots-only check rendered a runtime-renamed head's stale label for the daemon's life.
-    private class Entry(val roots: List<String>, val label: String, val renderer: StatuslineRenderer) {
-        fun matches(roots: List<String>, label: String): Boolean = this.roots == roots && this.label == label
+    private class Entry(
+        val roots: List<String>,
+        val label: String,
+        val catalog: ModelCatalog?,
+        val renderer: StatuslineRenderer,
+    ) {
+        fun matches(roots: List<String>, label: String, catalog: ModelCatalog?): Boolean =
+            this.roots == roots && this.label == label && this.catalog === catalog
     }
 
     private val entries = HashMap<String, Entry>()
 
-    fun get(key: String, label: String, roots: List<String>, create: BuildRenderer): StatuslineRenderer =
-        synchronized(entries) {
-            val cached = entries[key]
-            if (cached != null && cached.matches(roots, label)) {
-                cached.renderer
-            } else {
-                create().also { entries[key] = Entry(roots.toList(), label, it) }
-            }
+    fun get(
+        key: String,
+        label: String,
+        roots: List<String>,
+        catalog: ModelCatalog? = null,
+        create: BuildRenderer,
+    ): StatuslineRenderer = synchronized(entries) {
+        val cached = entries[key]
+        if (cached != null && cached.matches(roots, label, catalog)) {
+            cached.renderer
+        } else {
+            create().also { entries[key] = Entry(roots.toList(), label, catalog, it) }
         }
+    }
 }

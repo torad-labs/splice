@@ -12,6 +12,8 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.model.ClientWindows
+import splice.core.model.CodexCompactionReserves
+import splice.core.model.LiveWindows
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 
@@ -81,6 +83,22 @@ class StatuslineScaledRowTest {
         val renderer = StatuslineRenderer(label = "grok", catalog = grok, clientWindows = windows)
         render(renderer, oldSessionBlob("grok-4.6[1m]", 1_000_000))
         assertNull(windows.windowFor("s-old"), "a [1m] id is always 1e6 whatever the env")
+    }
+
+    @Test
+    fun `the next render follows a live row window edit`() {
+        val boot = grok.copy(
+            discoveryPrefix = "claude-codex--",
+            models = listOf(ModelEntry("gpt-6.1-sol", contextWindow = 272_000)),
+            pinnedModel = "gpt-6.1-sol",
+            compactionReserveDefaults = CodexCompactionReserves,
+        )
+        var current = boot
+        val renderer = StatuslineRenderer(label = "codex", catalog = boot.copy(liveWindows = LiveWindows { current }))
+        val stdin = oldSessionBlob("gpt-6.1-sol", 872_000)
+        assertTrue("/272k" in render(renderer, stdin))
+        current = boot.copy(models = listOf(ModelEntry("gpt-6.1-sol", contextWindow = 400_000)))
+        assertTrue("/400k" in render(renderer, stdin))
     }
 
     @Test

@@ -21,6 +21,9 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
+import splice.core.model.CodexCompactionReserves
+import splice.core.model.ModelCatalog
+import splice.core.model.ModelEntry
 import splice.usage.UsageHead
 import splice.usage.UsageHeadLookup
 import splice.usage.quota.HeadUsageSource
@@ -63,6 +66,31 @@ class StatuslineRouteBodyTest {
 
         assertEquals(HttpStatusCode.OK, response.status)
         assertTrue(response.bodyAsText().contains("Codex 5.6 Sol"))
+    }
+
+    @Test
+    fun `a cached route renderer follows the current head catalog`() = testApplication {
+        var catalog = ModelCatalog(
+            discoveryPrefix = "claude-codex--",
+            models = listOf(ModelEntry("gpt-6.1-sol", contextWindow = 272_000)),
+            defaultContextWindow = 272_000,
+            pinnedModel = "gpt-6.1-sol",
+            compactionReserveDefaults = CodexCompactionReserves,
+        )
+        val route = StatuslineRoute(
+            UsageHeadLookup {
+                listOf(UsageHead("codex", "codex", HeadUsageSource { UsageView(0, 0, null) }, 80, 0, catalog = catalog))
+            },
+            ConfigService(StatePaths(baseOverride = tmp.resolve("state"))),
+        )
+        serve(route)
+        val stdin = """{"model":{"id":"gpt-6.1-sol"},"context_window":{"context_window_size":872000,
+            "current_usage":{"input_tokens":100000,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}"""
+        val first = client.post("/statusline/codex") { setBody(stdin) }.bodyAsText()
+        assertTrue("/272k" in first, first)
+        catalog = catalog.copy(models = listOf(ModelEntry("gpt-6.1-sol", contextWindow = 400_000)))
+        val next = client.post("/statusline/codex") { setBody(stdin) }.bodyAsText()
+        assertTrue("/400k" in next, next)
     }
 
     @Test

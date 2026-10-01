@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonElement
 import splice.dialect.responses.request.ResponsesCodeModeReplay
 import splice.provider.codex.CodeModeNativeSegment
 import splice.provider.codex.CodeModeRecord
+import splice.provider.codex.CodeModeRecordSnapshot
 
 internal object CodeModeNativeChain {
     data class Capture(val segments: List<CodeModeNativeSegment>, val parent: CodeModeRecord?)
@@ -46,6 +47,30 @@ internal object CodeModeNativeChain {
             ancestor.nativeSegments + if (ancestor === record) emptyList() else continuity(ancestor)
         }
         return normalized(segments)
+    }
+
+    /** A retention checkpoint transfers inherited payload to the first surviving child, once. */
+    fun snapshot(record: CodeModeRecord, retained: Set<String>): CodeModeRecordSnapshot {
+        val state = record.snapshot()
+        val parent = record.nativeParent
+        return if (parent == null || parent.id in retained) {
+            state
+        } else {
+            state.copy(nativeSegments = replay(record)).also {
+                it.issued = state.issued
+                it.sessionId = state.sessionId
+                it.replayAnchors = state.replayAnchors
+            }
+        }
+    }
+
+    /** Publish a newly independent root only after its checkpoint was forced successfully. */
+    fun publishRoot(record: CodeModeRecord, state: CodeModeRecordSnapshot) {
+        if (record.nativeBaseId != state.nativeBaseId) {
+            record.nativeSegments = state.nativeSegments
+            record.nativeBaseId = state.nativeBaseId
+            record.nativeParent = null
+        }
     }
 
     fun continuity(record: CodeModeRecord): List<CodeModeNativeSegment> =

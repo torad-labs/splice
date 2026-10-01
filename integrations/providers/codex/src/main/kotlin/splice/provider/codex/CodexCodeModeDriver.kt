@@ -112,7 +112,7 @@ internal class CodexCodeModeDriver(
         outcome: TurnOutcome.Success,
     ): Pair<CodeModeRecord?, TurnOutcome> {
         validation.outer(outer)?.let { return null to failure(it) }
-        val boundary = wire.inputBoundary(bodyJson)
+        val boundary = wire.anchoredBoundary(bodyJson, context.completed)
             ?: return null to failure("code mode requires a Responses input array")
         val continuity = wire.continuity(outcome)
         val native = CodeModeNativeChain.capture(boundary.nativeSegments, context.completed.lastOrNull())
@@ -134,6 +134,7 @@ internal class CodexCodeModeDriver(
             continuity = continuity.logicalItems,
             continuityReplay = continuity.replayItems,
         ).also {
+            it.replayAnchors = boundary.replayAnchors
             it.sessionId = context.turn.sessionId
             it.nativeBaseId = native.parent?.id
             it.nativeParent = native.parent

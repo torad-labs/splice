@@ -85,7 +85,8 @@ internal class CodexCodeModeWire(private val json: Json, private val log: LogSin
         return kept
     }
 
-    fun inputBoundary(bodyJson: String): CodeModeInputBoundary? = history.inputBoundary(bodyJson)
+    fun anchoredBoundary(bodyJson: String, completed: List<CodeModeRecord>): CodeModeInputBoundary? =
+        history.anchoredBoundary(bodyJson, completed)
 
     /** An owned call can be present before its result arrives. Keep both wire forms as owner evidence;
      *  a call from a completed record is not an ACTIVE owner's id and cannot claim it. */
@@ -174,7 +175,9 @@ internal data class CodeModeInputBoundary(
     val logicalDigest: String,
     val fullDigest: String,
     val nativeSegments: List<CodeModeNativeSegment>,
-)
+) {
+    var replayAnchors: splice.provider.codex.state.CodeModeReplayAnchors? = null
+}
 
 internal data class CodeModeRewrite(
     val bodyJson: String?,
@@ -195,8 +198,13 @@ internal const val LEGACY_CODE_MODE_TOOL_NAME = "splice_exec"
  *  excluded). A v2 record's numbers point into the whole input, so it is never re-placed: a
  *  completed one is omitted from the rewrite, an unfinished one is LOST.
  *  v4 (2026-09-26, V4-335): continuity carries the phase the client replays. A v3 record's
- *  continuity has none, so the client's preface never matches it and would be placed twice. */
-internal const val CODE_MODE_METADATA_VERSION = 4
+ *  continuity has none, so the client's preface never matches it and would be placed twice.
+ *  v5: minted ids and local continuity anchors place independently of older canonical rewrites.
+ *  v4 records keep their digest-based compatibility path until retention removes them. */
+internal const val CODE_MODE_LEGACY_METADATA_VERSION = 4
+
+// why: v5 placements are independently anchored; v4 keeps its persisted-prefix compatibility reader.
+internal const val CODE_MODE_METADATA_VERSION = 5
 private const val RECORD_ID_LOG_CHARS = 8
 private const val FIELD_INPUT = "input"
 private const val FIELD_TYPE = "type"

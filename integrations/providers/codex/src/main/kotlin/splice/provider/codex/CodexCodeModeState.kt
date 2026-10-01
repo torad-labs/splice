@@ -5,6 +5,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import splice.provider.codex.state.CodeModeReplayAnchors
 import splice.upstream.codemode.CodeModeResult
 
 @Serializable
@@ -54,6 +55,7 @@ internal data class CodeModeRecordSnapshot(
     var issued: List<CodeModeIssuedStep> = emptyList()
     var sessionId: String? = null
     var nativeBaseId: String? = null
+    var replayAnchors: CodeModeReplayAnchors? = null
 
     @Transient var retainedBytes: Long? = null
 
@@ -94,13 +96,15 @@ internal data class CodeModeRecordSnapshot(
         it.issued.addAll(issued)
         it.sessionId = sessionId
         it.nativeBaseId = nativeBaseId
+        it.replayAnchors = replayAnchors
         it.retainedBytes = retainedBytes
     }
 
     /** A completed record with old metadata is still terminal — the rewrite omits it (and logs) rather
      *  than refusing the conversation; only an unfinished one has nothing left to resume. */
     private fun staleMetadata(): Boolean =
-        metadataVersion != CODE_MODE_METADATA_VERSION && phase != CodeModePhase.COMPLETED
+        phase != CodeModePhase.COMPLETED &&
+            metadataVersion !in CODE_MODE_LEGACY_METADATA_VERSION..CODE_MODE_METADATA_VERSION
 }
 
 internal data class CodeModeRecord(
@@ -123,7 +127,7 @@ internal data class CodeModeRecord(
     val metadataVersion: Int,
     val baselineLogicalCount: Int,
     val baselineLogicalDigest: String,
-    val nativeSegments: List<CodeModeNativeSegment>,
+    var nativeSegments: List<CodeModeNativeSegment>,
     val continuity: List<JsonElement>,
     val continuityReplay: List<CodeModeNativeSegment>,
 ) {
@@ -134,6 +138,7 @@ internal data class CodeModeRecord(
     var saveGeneration: Long = 0
     var sessionId: String? = null
     var nativeBaseId: String? = null
+    var replayAnchors: CodeModeReplayAnchors? = null
     var nativeParent: CodeModeRecord? = null
 
     @Volatile var retainedBytes: Long? = null
@@ -177,6 +182,7 @@ internal data class CodeModeRecord(
         it.issued = issued.toList()
         it.sessionId = sessionId
         it.nativeBaseId = nativeBaseId
+        it.replayAnchors = replayAnchors
     }
 }
 

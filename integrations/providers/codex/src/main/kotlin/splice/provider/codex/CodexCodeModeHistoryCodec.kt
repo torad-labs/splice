@@ -12,6 +12,7 @@ import splice.core.util.JsonScalars
 import splice.dialect.responses.request.ResponsesCodeModeInput
 import splice.dialect.responses.request.ResponsesCodeModeProjection
 import splice.dialect.responses.request.ResponsesContextMessage
+import splice.provider.codex.state.CodeModeHistoryIndex
 
 /**
  * Every persisted count, digest and offset is CONVERSATION-relative: the lite preamble (the leading
@@ -40,6 +41,13 @@ internal class CodexCodeModeHistoryCodec(private val json: Json) {
         )
     }
 
+    fun baselineBoundary(items: List<JsonElement>, record: CodeModeRecord): Int? =
+        if (record.metadataVersion == CODE_MODE_METADATA_VERSION && record.replayAnchors != null) {
+            CodeModeHistoryIndex(items, this).boundary(record)
+        } else {
+            record.baselineLogicalCount.takeIf { validPrefix(items, record) }
+        }
+
     /** Splits the projected input into its lite preamble and the conversation the records measure. */
     fun conversation(input: ResponsesCodeModeInput): CodeModeConversation {
         val preamble = input.logicalItems.takeWhile(::isPreamble)
@@ -49,11 +57,15 @@ internal class CodexCodeModeHistoryCodec(private val json: Json) {
     }
 
     fun validPrefix(items: List<JsonElement>, record: CodeModeRecord): Boolean {
+        if (record.metadataVersion == CODE_MODE_METADATA_VERSION && record.replayAnchors != null) {
+            return CodeModeHistoryIndex(items, this).boundary(record) != null
+        }
         if (items.size < record.baselineLogicalCount) return false
         return digest(JsonArray(items.take(record.baselineLogicalCount)).toString()) == record.baselineLogicalDigest
     }
 
     fun validFullPrefix(input: JsonArray, record: CodeModeRecord): Boolean {
+        if (record.metadataVersion == CODE_MODE_METADATA_VERSION) return false
         val rawBody = input.dropWhile(::isPreamble)
         if (rawBody.size < record.baselineInputCount) return false
         return digest(JsonArray(rawBody.take(record.baselineInputCount)).toString()) == record.baselineInputDigest

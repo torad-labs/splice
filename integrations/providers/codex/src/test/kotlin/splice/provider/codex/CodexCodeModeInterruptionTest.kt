@@ -160,6 +160,11 @@ class CodexCodeModeInterruptionTest : CodeModeBridgeTestSupport() {
 
     private fun siblingResults(results: List<CodeModeResult>): String {
         val base = Json.parseToJsonElement(BASE_REQUEST).jsonObject.getValue("input").jsonArray
+        val names = stateFiles.records().flatMap { record ->
+            record.getValue("issued").jsonArray.flatMap { step -> step.jsonObject.getValue("calls").jsonArray }
+        }.associate { call ->
+            call.jsonObject.getValue("clientId").jsonPrimitive.content to call.jsonObject.getValue("name")
+        }
         val items = base + JsonObject(mapOf("role" to JsonPrimitive("user"), "content" to JsonPrimitive("continue"))) +
             results.flatMap { result ->
                 listOf(
@@ -167,7 +172,7 @@ class CodexCodeModeInterruptionTest : CodeModeBridgeTestSupport() {
                         mapOf(
                             "type" to JsonPrimitive("function_call"),
                             "call_id" to JsonPrimitive(result.id),
-                            "name" to JsonPrimitive("Read"),
+                            "name" to (names[result.id] ?: JsonPrimitive("Read")),
                             "arguments" to JsonPrimitive("{}"),
                         ),
                     ),

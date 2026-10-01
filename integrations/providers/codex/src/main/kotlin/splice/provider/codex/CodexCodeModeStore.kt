@@ -12,6 +12,7 @@ import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import splice.provider.codex.state.CodeModeKeptState
 import splice.provider.codex.state.CodeModeKeyLocks
+import splice.provider.codex.state.CodeModeNativeChain
 import splice.provider.codex.state.CodeModeStateDelta
 import splice.provider.codex.state.CodeModeStateJournal
 import java.io.IOException
@@ -96,6 +97,7 @@ internal class CodexCodeModeStore(
         val key: String,
         val conversation: CodeModePersistedState?,
         val cells: List<PreparedCell> = emptyList(),
+        val nativeRoots: List<PreparedCell> = emptyList(),
     )
 
     private data class PreparedCell(val live: CodeModeRecord, val snapshot: CodeModeRecordSnapshot)
@@ -180,6 +182,7 @@ internal class CodexCodeModeStore(
             changedRecord: CodeModeRecord?,
             prepared: Prepared?,
         ) {
+            prepared?.nativeRoots.orEmpty().forEach { CodeModeNativeChain.publishRoot(it.live, it.snapshot) }
             val changed = prepared?.cells.orEmpty()
             if (changed.isNotEmpty()) {
                 changed.forEach { it.live.retainedBytes = it.snapshot.retainedBytes }
@@ -204,10 +207,14 @@ internal class CodexCodeModeStore(
             val indexed = kept[key]
             if (changedRecord != null && indexed != null) return prepareCells(key, indexed, changedRecord)
             val prior = indexed?.snapshot()
-            val nextRecords = records.filter { it.key == key }.map { record ->
+            val live = records.filter { it.key == key }
+            val retained = live.map { it.id }.toSet()
+            val snapshots = live.map { record ->
                 record.saveGeneration++
-                record.snapshot()
+                PreparedCell(record, CodeModeNativeChain.snapshot(record, retained))
             }
+            val nextRecords = snapshots.map { it.snapshot }
+            val roots = snapshots.filter { it.live.nativeBaseId != it.snapshot.nativeBaseId }
             val before = prior?.records.orEmpty().associateBy(CodeModeRecordSnapshot::id)
             nextRecords.forEach { snapshot ->
                 val old = before[snapshot.id]
@@ -218,7 +225,7 @@ internal class CodexCodeModeStore(
                 .takeUnless { it.records.isEmpty() && it.expired.isEmpty() }
             val changed = next != prior || next?.records?.zip(prior?.records.orEmpty())
                 ?.any { (left, right) -> !CodeModeStateJournal.same(left, right) } == true
-            return if (changed) Prepared(key, next) else null
+            return if (changed) Prepared(key, next, nativeRoots = roots) else null
         }
 
         private fun prepareCells(key: String, indexed: CodeModeKeptState, record: CodeModeRecord): Prepared? {

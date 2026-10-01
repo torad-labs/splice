@@ -247,7 +247,7 @@ internal class CodeModeExtraContent(
         candidateMedia: Map<String, List<JsonElement>>,
     ): List<JsonElement> {
         val ownedFollowUps = ownership.followUps(items, record, candidateMedia)
-        val tailStart = record.baselineLogicalCount
+        val tailStart = codec.baselineBoundary(items, record) ?: record.baselineLogicalCount
         val afterContinuity = if (codec.continuityAt(items, tailStart, record.continuity)) {
             tailStart + record.continuity.size
         } else {

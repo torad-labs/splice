@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.reasoning.ReasoningReplay
+import splice.provider.codex.state.CodeModeNativeChain
 import splice.upstream.codemode.CodeModeStep
 import java.time.Clock
 import java.time.Instant
@@ -71,11 +72,40 @@ class CodeModeNativeStorageTest : CodeModeBridgeTestSupport() {
         assertTrue(logLines.none { "history rewrite skipped" in it }, logLines.toString())
     }
 
-    private fun manager(runtime: QueuedRuntime) = CodexCodeModeBridge(
+    @Test
+    fun `removing a parent from the durable checkpoint preserves inherited natives after restart`() = runTest {
+        val runtime = QueuedRuntime(ArrayDeque((1..2).map { ArrayDeque(listOf(CodeModeStep.Completed("done"))) }))
+        val manager = manager(runtime)
+        var posts = 0
+        manager.interceptor(turn(), disableParallel = false).intercept(opening, RecordingSink()) {
+            posts++
+            if (posts <= 2) outerOutcome("outer-$posts") else completedOutcome()
+        }
+        val store = CodexCodeModeStore(stateLocation(), Json, {})
+        val records = store.load().records.map { it.restore() }
+        CodeModeNativeChain.link(records)
+        val child = records.last()
+        store.save(listOf(child), emptyList(), dirtyKeys = setOf(child.key))
+        assertEquals(1, stateFiles.records().size)
+        val restored = manager(QueuedRuntime(ArrayDeque()))
+        val history = """{"input":[{"role":"user","content":"start"},{"role":"user","content":"next"}]}"""
+        var posted = ""
+        restored.interceptor(turn(), disableParallel = false).intercept(history, RecordingSink()) {
+            posted = it
+            completedOutcome()
+        }
+        val items = Json.parseToJsonElement(posted).jsonObject.getValue("input") as JsonArray
+        assertEquals(1, items.count { it.jsonObject["id"]?.toString() == "\"native-root\"" })
+    }
+
+    private fun manager(
+        runtime: QueuedRuntime,
+        clock: Clock = Clock.fixed(Instant.ofEpochMilli(1_000), ZoneOffset.UTC),
+    ) = CodexCodeModeBridge(
         CodeModeBridgeConfig(
             { runtime },
             stateLocation(),
-            clock = Clock.fixed(Instant.ofEpochMilli(1_000), ZoneOffset.UTC),
+            clock = clock,
             log = { logLines += it },
         ),
     )

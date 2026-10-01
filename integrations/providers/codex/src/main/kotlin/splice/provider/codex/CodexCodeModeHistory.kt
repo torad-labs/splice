@@ -6,15 +6,21 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.dialect.responses.request.ResponsesCodeModeInput
 import splice.dialect.responses.request.ResponsesCodeModeReplay
+import splice.provider.codex.state.CodeModeAnchorCapture
+import splice.provider.codex.state.CodeModeCanonicalHistory
+import splice.provider.codex.state.CodeModeHistoryIndex
 import splice.provider.codex.state.CodeModeNativeChain
+import splice.provider.codex.state.CodeModeNativeReplay
 
 internal class CodexCodeModeHistory(json: Json) {
     private val codec = CodexCodeModeHistoryCodec(json)
     private val nativeReplayValidator = NativeReplayValidator()
+    private val metadata = CodeModeMetadataValidator()
     private val ownership = CodeModeOwnership(codec)
     private val extras = CodeModeExtraContent(codec, ownership)
 
-    fun inputBoundary(bodyJson: String): CodeModeInputBoundary? = codec.inputBoundary(bodyJson)
+    fun anchoredBoundary(bodyJson: String, completed: List<CodeModeRecord>): CodeModeInputBoundary? =
+        CodeModeAnchorCapture.inputBoundary(bodyJson, completed, codec)
 
     /** What the client added after the record's baseline that the record does not own (V4-336),
      *  sorted by [CodeModeExtraContent]. [candidateMedia]: follow-ups rendered for results the record
@@ -49,12 +55,18 @@ internal class CodexCodeModeHistory(json: Json) {
         val conversation = codec.conversation(codec.projection.project(root.second))
         var body = conversation.body
         val omitted = mutableListOf<CodeModeOmission>()
-        records.filterNot(CodeModeRecord::abandoned).forEach { record ->
+        val eligible = records.filterNot(CodeModeRecord::abandoned)
+        eligible.filter { it.metadataVersion != CODE_MODE_METADATA_VERSION }.forEach { record ->
             val rewritten = canonicalizeRecord(body, record, replayMedia)
             val error = rewritten.error
             if (error == null) body = checkNotNull(rewritten.input) else omitted += CodeModeOmission(record, error)
         }
-        return codec.rebuilt(root.first, conversation, body).copy(omitted = omitted)
+        val anchored = CodeModeCanonicalHistory(codec).rewrite(
+            body,
+            eligible.filter { it.metadataVersion == CODE_MODE_METADATA_VERSION },
+            replayMedia,
+        )
+        return codec.rebuilt(root.first, conversation, anchored.input).copy(omitted = omitted + anchored.omitted)
     }
 
     fun restoreBaseline(bodyJson: String, record: CodeModeRecord): CodeModeRewrite {
@@ -67,13 +79,23 @@ internal class CodexCodeModeHistory(json: Json) {
     }
 
     private fun restoreProjected(input: ResponsesCodeModeInput, record: CodeModeRecord): ProjectedRewrite {
-        metadataProblem(record)?.let { return ProjectedRewrite(null, it) }
+        metadata.problem(record)?.let { return ProjectedRewrite(null, it) }
         if (!codec.validPrefix(input.logicalItems, record)) {
             return ProjectedRewrite(null, "code-mode logical history does not match its persisted baseline")
         }
-        val replay = mergeNative(input.replayItems, record)
-        return replay.error?.let { ProjectedRewrite(null, it) }
-            ?: ProjectedRewrite(ResponsesCodeModeInput(input.logicalItems, checkNotNull(replay.items)))
+        return if (record.metadataVersion == CODE_MODE_METADATA_VERSION) {
+            val native = CodeModeNativeReplay(
+                codec,
+                input,
+                CodeModeHistoryIndex(input.logicalItems, codec),
+                listOf(record),
+            )
+            native.problem(record)?.let { ProjectedRewrite(null, it) } ?: ProjectedRewrite(native.restore(record))
+        } else {
+            val replay = mergeNative(input.replayItems, record)
+            replay.error?.let { ProjectedRewrite(null, it) }
+                ?: ProjectedRewrite(ResponsesCodeModeInput(input.logicalItems, checkNotNull(replay.items)))
+        }
     }
 
     private fun canonicalizeRecord(
@@ -81,7 +103,7 @@ internal class CodexCodeModeHistory(json: Json) {
         record: CodeModeRecord,
         replayMedia: Map<String, List<JsonElement>>,
     ): ProjectedRewrite {
-        val problem = metadataProblem(record)
+        val problem = metadata.problem(record)
             ?: "code-mode logical history does not match its persisted baseline".takeUnless {
                 codec.validPrefix(input.logicalItems, record)
             }
@@ -196,16 +218,24 @@ internal class CodexCodeModeHistory(json: Json) {
         } else {
             emptySet()
         }
+}
 
-    private fun metadataProblem(record: CodeModeRecord): String? = when {
-        record.metadataVersion != CODE_MODE_METADATA_VERSION -> "code-mode replay metadata is unavailable"
+private class CodeModeMetadataValidator {
+    fun problem(record: CodeModeRecord): String? = when {
+        record.metadataVersion !in CODE_MODE_LEGACY_METADATA_VERSION..CODE_MODE_METADATA_VERSION ->
+            "code-mode replay metadata is unavailable"
         record.baselineLogicalCount < 0 -> "code-mode replay metadata has an invalid logical boundary"
-        record.baselineLogicalDigest.isEmpty() -> "code-mode replay metadata has no logical digest"
-        record.baselineInputDigest.isEmpty() -> "code-mode replay metadata has no wire digest"
         record.nativeSegments.any { it.logicalOffset !in 0..record.baselineLogicalCount } ->
             "code-mode replay metadata has an invalid native offset"
         record.continuityReplay.any { it.logicalOffset !in 0..record.continuity.size } ->
             "code-mode replay metadata has an invalid continuity offset"
+        record.metadataVersion == CODE_MODE_LEGACY_METADATA_VERSION -> legacyProblem(record)
+        else -> null
+    }
+
+    private fun legacyProblem(record: CodeModeRecord): String? = when {
+        record.baselineLogicalDigest.isEmpty() -> "code-mode replay metadata has no logical digest"
+        record.baselineInputDigest.isEmpty() -> "code-mode replay metadata has no wire digest"
         else -> null
     }
 }

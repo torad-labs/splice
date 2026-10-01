@@ -47,7 +47,7 @@ internal object CodeModeStateJournal {
 
     fun same(left: CodeModeRecordSnapshot?, right: CodeModeRecordSnapshot?): Boolean =
         left == right && left?.issued == right?.issued && left?.sessionId == right?.sessionId &&
-            left?.nativeBaseId == right?.nativeBaseId
+            left?.nativeBaseId == right?.nativeBaseId && left?.replayAnchors == right?.replayAnchors
 
     /** Called under the conversation lock. First write creates a 0600 checkpoint; appends are forced. */
     fun write(path: Path, text: String) {

@@ -131,6 +131,7 @@ providers.*.quirks.store
 providers.*.quirks.stream_usage	
 providers.*.quirks.strip_cache_control	
 providers.*.quirks.strip_sampling_params	
+providers.*.quirks.summary_delivery	sequential_cutoff,off
 providers.*.quirks.summary_field	
 providers.*.quirks.synthesize_signatures	
 providers.*.quirks.tool_choice	

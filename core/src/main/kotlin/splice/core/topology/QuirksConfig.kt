@@ -19,6 +19,20 @@ package splice.core.topology
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+/** stream_options.reasoning_summary_delivery on an openai-responses head; [wire] is its TOML and wire spelling. */
+@Serializable
+public enum class SummaryDelivery(public val wire: String) {
+    /** codex-rs's one delivery mode: a summary section still being written when the reasoning item
+     *  ends is cancelled (openai/codex#31306). */
+    @SerialName("sequential_cutoff")
+    SEQUENTIAL_CUTOFF("sequential_cutoff"),
+
+    /** Omit the field: the backend's default delivery, and codex-rs's own default (its
+     *  ConcurrentReasoningSummaries flag is off). */
+    @SerialName("off")
+    OFF("off"),
+}
+
 /** The finite quirk surface of the openai dialects — everything a vendor varies without code. */
 @Serializable
 public data class QuirksConfig(
@@ -50,6 +64,12 @@ public data class QuirksConfig(
      *  chaining (ws-transport). NULLABLE overlay — absent keeps the provider default (false), so
      *  the feature is invisible until an operator opts in. Any failure degrades to the SSE path. */
     @SerialName("websocket") val webSocket: Boolean? = null,
+    /** openai-responses only: stream_options.reasoning_summary_delivery. NULLABLE overlay — absent
+     *  keeps the provider default (codex: "sequential_cutoff"); "off" omits the field, which is
+     *  codex-rs's own default (its ConcurrentReasoningSummaries flag is off). On gpt-6.1-sol the cutoff
+     *  mode returned 161 of 165 reasoning summaries empty (2026-10-01), so the head showed nothing for
+     *  the whole reasoning phase. */
+    @SerialName("summary_delivery") val summaryDelivery: SummaryDelivery? = null,
     /** ChatGPT responses only: splice-owned JavaScript bridge. Absent = on for that shape (0.4.0). */
     @SerialName("code_mode") val codeMode: Boolean? = null,
     /** code-mode only: the JAR-bundled GraalJS worker pool size (JvmCodeModeRuntime maxWorkers).

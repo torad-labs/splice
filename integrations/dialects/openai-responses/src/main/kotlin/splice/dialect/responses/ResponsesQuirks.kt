@@ -162,6 +162,14 @@ public data class ResponsesQuirks(
      *  supportsSummary became an unreachable dead lever. */
     public fun withWebSocketToml(webSocket: Boolean?): ResponsesQuirks =
         copy(webSocket = webSocket ?: this.webSocket)
+
+    /** summary_delivery overlay, NULLABLE like its siblings: absent keeps the provider default,
+     *  "off" omits stream_options, any other value is sent as the delivery mode. */
+    public fun withSummaryDeliveryToml(delivery: String?): ResponsesQuirks = when (delivery) {
+        null -> this
+        "off" -> copy(summaryDelivery = null)
+        else -> copy(summaryDelivery = delivery)
+    }
 }
 
 /** One provider's prompt-cache routing and retention contract, without mutable tool-name state. */

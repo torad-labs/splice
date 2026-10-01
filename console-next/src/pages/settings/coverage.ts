@@ -199,6 +199,7 @@ export const dispositions: readonly Disposition[] = [
   { kind: 'topology', name: 'providers.*.quirks.stream_usage', disposition: 'editable' },
   { kind: 'topology', name: 'providers.*.quirks.strip_cache_control', disposition: 'editable' },
   { kind: 'topology', name: 'providers.*.quirks.strip_sampling_params', disposition: 'editable' },
+  { kind: 'topology', name: 'providers.*.quirks.summary_delivery', disposition: 'editable' },
   { kind: 'topology', name: 'providers.*.quirks.summary_field', disposition: 'editable' },
   { kind: 'topology', name: 'providers.*.quirks.synthesize_signatures', disposition: 'editable' },
   { kind: 'topology', name: 'providers.*.quirks.tool_choice', disposition: 'editable' },

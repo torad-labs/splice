@@ -196,7 +196,8 @@ public class ProjectsRoutes(
                 put("id", root)
                 put("root", root)
                 RepoOrigin.of(root)?.let { put("remote", it) }
-                put("live_sessions", sessions.count { it.availability == SessionAvailability.LIVE })
+                // STALE means the registry has not refreshed, not that its pid exited: it is still running.
+                put("live_sessions", sessions.count { it.availability != SessionAvailability.GONE })
                 put("teams", repoTeams.count { !it.archived })
                 put("turns_today", tally.turns)
                 put("cost_today_usd", tally.costUsd)

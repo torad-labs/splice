@@ -23,6 +23,7 @@ import splice.core.config.StatePaths
 import splice.core.util.EnvReader
 import splice.core.util.WallClock
 import splice.sessions.query.SessionHead
+import splice.sessions.registry.SessionAvailability
 import splice.sessions.transcript.SentTexts
 import java.nio.file.Files
 import java.nio.file.Path
@@ -64,6 +65,21 @@ class ProjectsRoutesTest {
         assertEquals("https://github.com/torad-labs/splice.git", project.getValue("remote").jsonPrimitive.content)
         assertFalse(project.toString().contains("secret"))
         assertFalse(session.toString().contains("secret"))
+    }
+
+    @Test
+    fun `a stale registration still counts as a running project session while its pid lives`() {
+        val repo = rig.repo
+        val file = tmp.resolve("sessions/2.json")
+        val original = Files.readString(file)
+        Files.writeString(file, original.replace("\"updatedAt\":${AT + 2}", "\"updatedAt\":${AT - 31 * 60_000}"))
+        assertEquals(
+            SessionAvailability.STALE,
+            rig.registry.read().single { it.sessionId == BUILDER }.availability,
+            "precondition: this process lives but its registry has not refreshed",
+        )
+        val project = rig.json(routes(emptyMap()).project(repo.toString()).body)
+        assertEquals("2", project.getValue("live_sessions").jsonPrimitive.content)
     }
 
     @Test

@@ -25,12 +25,13 @@ describe('a project in words', () => {
   test('turns with no priced turn state no cost rather than a cost of zero', () => {
     expect(projectLede(row({ cost_today_usd: null, teams: 0, live_sessions: 1 }))).toBe('1 session is running. 12 turns today. No turn here was priced today.');
   });
-  test('only live sessions whose repo is this one count', () => {
+  test('an alive session counts even when its registration is stale; a gone process does not', () => {
     const here = session({ session_id: 'a', repo: { root: ROOT } } as Partial<SessionRow>);
-    const gone = session({ session_id: 'b', availability: 'gone', repo: { root: ROOT } } as Partial<SessionRow>);
-    const other = session({ session_id: 'c', repo: { root: '/home/a/other' } } as Partial<SessionRow>);
-    expect(sessionsIn([here, gone, other], ROOT).map((one) => one.session_id)).toEqual(['a']);
-    expect(liveNames([here, gone, other], ROOT)).toEqual(['Write it']);
+    const stale = session({ session_id: 'b', availability: 'stale', name: 'Still working', repo: { root: ROOT } } as Partial<SessionRow>);
+    const gone = session({ session_id: 'c', availability: 'gone', repo: { root: ROOT } } as Partial<SessionRow>);
+    const other = session({ session_id: 'd', repo: { root: '/home/a/other' } } as Partial<SessionRow>);
+    expect(sessionsIn([here, stale, gone, other], ROOT).map((one) => one.session_id)).toEqual(['a', 'b']);
+    expect(liveNames([here, stale, gone, other], ROOT)).toEqual(['Write it', 'Still working']);
   });
 });
 

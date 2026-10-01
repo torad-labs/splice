@@ -37,7 +37,7 @@ export function rootGroups(
 }
 
 /** The sessions running in the repo now, by the name the console gives them everywhere else. */
-export const sessionsIn = (rows: readonly SessionRow[], root: string): SessionRow[] => rows.filter((row) => row.availability === 'live' && row.repo?.root === root);
+export const sessionsIn = (rows: readonly SessionRow[], root: string): SessionRow[] => rows.filter((row) => row.availability !== 'gone' && row.repo?.root === root);
 export const liveNames = (rows: readonly SessionRow[], root: string): string[] => sessionsIn(rows, root).map(sessionLabel);
 
 // ── the standing prompt and rule ─────────────────────────────────────────────────────────────────

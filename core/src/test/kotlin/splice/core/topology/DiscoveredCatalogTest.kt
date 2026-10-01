@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test
 import splice.core.model.DiscoveredModel
 import splice.core.model.ExtraWindow
 import splice.core.model.ModelEntry
+import splice.core.model.ModelServeWindows
 import splice.core.model.WindowRule
 
 class DiscoveredCatalogTest {
@@ -166,6 +167,25 @@ class DiscoveredCatalogTest {
         assertEquals(listOf("grok-4.6"), unanswered.availableModelIds())
         // The pinned fallback is the operator's own model, so it may stand behind a tier.
         assertEquals(listOf("grok-4.6"), unanswered.tierModelIds())
+    }
+
+    @Test
+    fun `published maxima survive declared targets and aliases without replacing those targets`() {
+        val listed = listOf(
+            DiscoveredModel("grok-4.6", contextWindow = 272_000, maxContextWindow = 872_000),
+            DiscoveredModel("grok-new", contextWindow = 272_000, maxContextWindow = 872_000),
+            DiscoveredModel("grok-build", contextWindow = 300_000, aliases = listOf("grok-build-latest")),
+        )
+        val catalog = provider.catalogFor(head, discovered = listed)
+        assertEquals(500_000L, catalog.contextWindowFor("grok-4.6"))
+        assertEquals(872_000L, ModelServeWindows.forRow(catalog, "claude-grok--grok-4.6[500k]"))
+        assertEquals(272_000L, catalog.contextWindowFor("grok-new"))
+        assertEquals(872_000L, ModelServeWindows.forRow(catalog, "grok-new"))
+        assertEquals(300_000L, ModelServeWindows.forRow(catalog, "grok-build-latest"))
+        val explicit = provider.copy(extraWindows = listOf(ExtraWindow("grok-4.6", 400_000, 800_000)))
+            .catalogFor(head.copy(contextWindow = 400_000), discovered = listed)
+        assertEquals(400_000L, explicit.contextWindowFor("grok-4.6"))
+        assertEquals(800_000L, ModelServeWindows.forRow(explicit, "grok-4.6"))
     }
 
     @Test

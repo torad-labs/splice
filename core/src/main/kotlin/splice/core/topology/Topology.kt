@@ -227,7 +227,7 @@ public data class ProviderConfig(
         contextWindowOverride: Long? = null,
         discovered: List<DiscoveredModel> = emptyList(),
     ): ModelCatalog {
-        val selectedModels = withListedRates(
+        val selectedModels = withListedFacts(
             withHeadRates(modelsFor(head, rosterWith(discovered)), head.rates),
             discovered,
         )
@@ -255,6 +255,7 @@ public data class ProviderConfig(
             headWindow = window,
             compactionReserveDefaults = CodexCompactionReserves.takeIf { auth.kind == AuthKind.ChatgptOAuth.wire },
             tierSlots = head.tierSlots(),
+            open = clientPicksModels,
         )
     }
 
@@ -272,17 +273,17 @@ public data class ProviderConfig(
     /** V4-438: a row with no card of its own takes the one the provider LISTS for its model, under the bare
      *  id or any alias, so a model an operator added by id is priced like one splice.toml carries. Last in
      *  the order head, row, listing: a card somebody wrote is never replaced by one an endpoint published,
-     *  and a model the endpoint lists no price for keeps null, which every reader renders as "no rate card". */
-    private fun withListedRates(entries: List<ModelEntry>, discovered: List<DiscoveredModel>): List<ModelEntry> {
-        val listed = HashMap<String, ModelRates>()
+     *  and a model the endpoint lists no price for keeps null, which every reader renders as "no rate card".
+     *  The listed serve ceiling is retained independently of the declared compaction window. */
+    private fun withListedFacts(entries: List<ModelEntry>, discovered: List<DiscoveredModel>): List<ModelEntry> {
+        val listed = HashMap<String, DiscoveredModel>()
         for (model in discovered) {
-            val card = model.rates ?: continue
-            for (spelling in model.spellings) listed.putIfAbsent(spelling, card)
+            for (spelling in model.spellings) listed.putIfAbsent(spelling, model)
         }
-        if (listed.isEmpty()) return entries
         return entries.map { entry ->
-            val card = if (entry.rates == null) listed[ModelTierSuffix.strip(entry.id)] else null
-            if (card == null) entry else entry.copy(rates = card)
+            val model = listed[ModelTierSuffix.strip(entry.id)]
+            val ceiling = model?.maxContextWindow?.takeIf { it > 0 } ?: model?.contextWindow?.takeIf { it > 0 }
+            entry.copy(rates = entry.rates ?: model?.rates, maxContextWindow = ceiling)
         }
     }
 
@@ -324,7 +325,13 @@ public data class ProviderConfig(
      *  that forwards the client's own login are never asked, and `exclude = ["*"]` admits nothing.
      *  Where none can, a model no row declares is a misspelling, never an endpoint's omission. */
     private val listsModels: Boolean
-        get() = !isLocal && auth.kind != AuthKind.Client.wire && "*" !in discovery.exclude
+        get() = !isLocal && !clientPicksModels && "*" !in discovery.exclude
+
+    /** A provider that forwards the client's own Claude login: Claude Code picks the models, from its own
+     *  picker, so a head on it authors no model list and its catalog is open (operator, 2026-09-30:
+     *  "stop hardcoding models"). */
+    private val clientPicksModels: Boolean
+        get() = auth.kind == AuthKind.Client.wire
 
     /** [roster] with a row for [pinned] when no row serves it under its own spelling. A provider that
      *  lists no models keeps the pre-discovery rule: its declared rows are the catalog, and only an
@@ -342,11 +349,18 @@ public data class ProviderConfig(
      *  the backend accepts (a 1M head window over a 262k model). An unpublished window takes the head's. */
     private fun headWindow(entry: ModelEntry, window: Long, discovered: List<DiscoveredModel>): Long {
         if (models.any { it.id == entry.id }) return window
-        val published = discovered.firstOrNull { it.id == entry.id }?.contextWindow?.takeIf { it > 0 }
+        val model = discovered.firstOrNull { it.id == entry.id }
+        val published = model?.maxContextWindow?.takeIf { it > 0 } ?: model?.contextWindow?.takeIf { it > 0 }
         return published?.let { minOf(window, it) } ?: window
     }
 
     private fun modelsFor(head: HeadConfig, roster: List<ModelEntry>): List<ModelEntry> {
+        // Legacy pins/allowlists never constrain a forwarded login. Provider rows are labels and rates,
+        // not the client's model surface; launches and materialization leave that surface untouched.
+        if (clientPicksModels) return roster
+        require(head.pinnedModel.isNotBlank()) {
+            "pinned_model is required on a head whose provider is not your own Claude login"
+        }
         // The head's pinned model always has a row (2026-09-23): it is the one model the operator
         // named, and a catalog without it refuses every turn the head was launched to serve. With no
         // declared rows the roster is whatever the endpoint listed, which can omit the pinned id — a

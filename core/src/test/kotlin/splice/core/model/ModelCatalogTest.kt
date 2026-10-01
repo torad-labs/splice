@@ -445,7 +445,7 @@ class ModelCatalogTest {
             pinnedModel = "gpt-5.6-luna",
             compactionReserveDefaults = CodexCompactionReserves,
         )
-        assertEquals(CompactionBudget(50_000, 31_791), CompactionBudgets.forRow(codex, "gpt-5.6-luna"))
+        assertEquals(CompactionBudget(50_000, 31_791, 272_000), CompactionBudgets.forRow(codex, "gpt-5.6-luna"))
         assertEquals(153_000.0 / 222_000, codex.usageScale("gpt-5.6-luna", 200_000), 1e-12)
     }
 }

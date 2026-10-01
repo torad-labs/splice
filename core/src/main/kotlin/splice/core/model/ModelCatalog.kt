@@ -61,6 +61,8 @@ public data class ModelEntry(
     @SerialName("client_model") val clientModel: String? = null,
     /** Override the audited headroom for this picker row; absent uses the provider's calibration. */
     @SerialName("compaction_reserve_tokens") val compactionReserveTokens: Long? = null,
+    /** Endpoint fact, never a compaction target or a TOML setting on a picker row. */
+    @Transient val maxContextWindow: Long? = null,
 ) {
 
     init {
@@ -85,7 +87,38 @@ public data class WindowRule(
 public data class ExtraWindow(
     val id: String,
     @SerialName("context_window") val contextWindow: Long,
-)
+    /** Explicit backend serve ceiling; absent uses discovery, then the compaction target. */
+    @SerialName("max_context_window") val maxContextWindow: Long? = null,
+) {
+    init {
+        require(maxContextWindow == null || maxContextWindow > 0) {
+            "max_context_window must be positive for $id"
+        }
+    }
+}
+
+/** Input-size refusal ceiling, independent of the client's chosen compaction target.
+ * Raw picker spellings precede the bare id, just as target-window resolution does. */
+internal object ModelServeWindows {
+    public fun forRow(catalog: ModelCatalog, id: String): Long {
+        val current = catalog.live()
+        val raw = current.unwrap(id)
+        val canonical = current.stripSuffixes(id)
+        for (spelling in listOf(raw, canonical)) {
+            val extra = current.extraWindows.lastOrNull { current.unwrap(it.id) == spelling }
+            val row = current.models.lastOrNull { current.unwrap(it.id) == spelling }
+            if (extra != null || row != null) {
+                val published = row?.maxContextWindow
+                    ?: current.models.lastOrNull { current.unwrap(it.id) == canonical }?.maxContextWindow
+                return extra?.maxContextWindow ?: published ?: current.contextWindowFor(id)
+            }
+        }
+        // The target's suffix-stripped map is associate-last-wins, with extras over picker rows.
+        val extra = current.extraWindows.lastOrNull { current.stripSuffixes(it.id) == canonical }
+        val row = current.models.lastOrNull { current.stripSuffixes(it.id) == canonical }
+        return extra?.maxContextWindow ?: row?.maxContextWindow ?: current.contextWindowFor(id)
+    }
+}
 
 /** One provider's model surface: picker rows, window-only ids, ordered prefix rules. */
 public data class ModelCatalog(

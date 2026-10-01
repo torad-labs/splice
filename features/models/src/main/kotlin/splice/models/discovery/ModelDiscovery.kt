@@ -58,7 +58,17 @@ public class ModelDiscovery(credentials: ModelCredentialSource) {
 
     private fun usable(model: UpstreamModel): DiscoveredModel? =
         model.takeIf { it.unusable == null && it.id.isNotBlank() }
-            ?.let { DiscoveredModel(it.id, it.label, it.contextWindow, it.aliases, it.rates, it.toolMode) }
+            ?.let {
+                DiscoveredModel(
+                    it.id,
+                    it.label,
+                    it.contextWindow,
+                    it.aliases,
+                    it.rates,
+                    it.toolMode,
+                    it.maxContextWindow,
+                )
+            }
 }
 
 private const val LOCAL_NOT_ASKED =

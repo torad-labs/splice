@@ -17,6 +17,8 @@ public data class DiscoveredModel(
     val aliases: List<String> = emptyList(),
     val rates: ModelRates? = null,
     val toolMode: String? = null,
+    /** Backend-published serve ceiling, distinct from its default compaction window. */
+    val maxContextWindow: Long? = null,
 ) {
     /** Whether the endpoint runs this model on the one-`exec` code-mode surface (V4-441): its `tool_mode`
      *  is `code_mode_only`, which is how the Codex backend marks the models it trained on that surface. */

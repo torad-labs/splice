@@ -61,6 +61,19 @@ class ModelDiscoveryTest {
     }
 
     @Test
+    fun `the backend maximum survives discovery and the kept roster`(@TempDir tmp: Path) {
+        val found = answered(
+            """{"models":[{"slug":"synthetic-model","context_window":272000,"max_context_window":872000}]}""",
+        ) as Discovery.Found
+        val model = found.models.single()
+        assertEquals(272_000L, model.contextWindow)
+        assertEquals(872_000L, model.maxContextWindow)
+        val cache = RosterCache(StatePaths(baseOverride = tmp))
+        cache.write("test", found)
+        assertEquals(KeptRoster.Kept(found.models), cache.read("test", remote))
+    }
+
+    @Test
     fun `an unreadable or unpublished list is unavailable, and names where it asked`() {
         val garbled = answered("<html>sign in</html>")
         assertTrue(garbled is Discovery.Unavailable, "got $garbled")

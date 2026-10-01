@@ -45,6 +45,20 @@ class TopologyDiscoveryParseTest {
     }
 
     @Test
+    fun `an explicit serve ceiling decodes independently of the compaction target`() {
+        val parsed = provider(
+            """extra_windows = [{ id = "synthetic-model", context_window = 400000, max_context_window = 872000 }]""",
+        )
+        assertEquals(400_000L, parsed.extraWindows.single().contextWindow)
+        assertEquals(872_000L, parsed.extraWindows.single().maxContextWindow)
+        assertThrows<IllegalArgumentException> {
+            provider(
+                """extra_windows = [{ id = "synthetic-model", context_window = 400000, max_context_window = 0 }]""",
+            )
+        }
+    }
+
+    @Test
     fun `tier mappings reject unknown repeated and competing declarations`() {
         val invalid = listOf(
             """model_slots = { unknown = "m1" }""",

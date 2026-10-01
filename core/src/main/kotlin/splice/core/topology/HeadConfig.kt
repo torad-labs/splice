@@ -23,7 +23,9 @@ public data class HeadConfig(
     val provider: String,
     val port: Int,
     @SerialName("discovery_prefix") val discoveryPrefix: String,
-    @SerialName("pinned_model") val pinnedModel: String,
+    /** Required on every head except one whose provider forwards the client's own Claude login, where
+     *  the client picks its models; a pin there selects only the launch default, never the roster. */
+    @SerialName("pinned_model") val pinnedModel: String = "",
     val models: List<HeadModel>? = null,
     /** Tier mappings without a serving allowlist. [models] still restricts the roster; its entries
      *  must not carry slots alongside this map. Keys are tiers, values are model ids. */

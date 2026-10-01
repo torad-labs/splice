@@ -23,12 +23,18 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.CodexCompactionReserves
+import splice.core.model.DiscoveredModel
+import splice.core.model.ExtraWindow
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.perf.InputDigest
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.storage.ActivityDays
+import splice.core.topology.AuthConfig
+import splice.core.topology.Dialect
+import splice.core.topology.HeadConfig
+import splice.core.topology.ProviderConfig
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
@@ -53,14 +59,27 @@ class HeadServerPreflightTest {
         window: Long = 272_000,
         stats: PerfStats = PerfStats(root.resolve("perf-preflight.jsonl")),
         model: String = "gpt-5.6-sol",
+        servedWindow: Long? = null,
     ): HeadServer {
-        val catalog = ModelCatalog(
-            discoveryPrefix = "claude-codex--",
-            models = listOf(ModelEntry(model, contextWindow = window)),
-            defaultContextWindow = window,
-            pinnedModel = model,
-            compactionReserveDefaults = CodexCompactionReserves,
-        )
+        val catalog = if (servedWindow != null) {
+            ProviderConfig(
+                dialect = Dialect.OPENAI_RESPONSES,
+                baseUrl = upstream.baseUrl,
+                auth = AuthConfig("chatgpt-oauth"),
+                extraWindows = listOf(ExtraWindow(model, window)),
+            ).catalogFor(
+                HeadConfig("codex", 3101, "claude-codex--", model),
+                discovered = listOf(DiscoveredModel(model, contextWindow = servedWindow)),
+            )
+        } else {
+            ModelCatalog(
+                discoveryPrefix = "claude-codex--",
+                models = listOf(ModelEntry(model, contextWindow = window)),
+                defaultContextWindow = window,
+                pinnedModel = model,
+                compactionReserveDefaults = CodexCompactionReserves,
+            )
+        }
         val provider = TestResponsesProvider(
             tuning = ProviderTuning(
                 key = "codex",
@@ -210,6 +229,35 @@ class HeadServerPreflightTest {
             assertTrue("compaction-preflight-compactable" in recorded, recorded)
             assertTrue("compaction-preflight-compact-overflow" in recorded, recorded)
             assertTrue("compaction-preflight-first-exchange" !in recorded, recorded)
+        } finally {
+            server.stop()
+            client.close()
+            upstream.stop()
+        }
+    }
+
+    @Test
+    fun `a compact above its target fits the published serve ceiling`(@TempDir root: Path) = runTest {
+        val upstream = MockChatGptUpstream()
+        val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
+        val stats = PerfStats(root.resolve("perf-preflight.jsonl"))
+        val server = head(root, upstream, window = 400_000, stats = stats, servedWindow = 872_000)
+        try {
+            server.start()
+            compact(client, server.port, "", "seed").bodyAsText()
+            awaitRows(stats, 1)
+            measured(stats, upstream, "seed", tokens = 643_664)
+            val previous = """{"role":"user","content":"seed"},{"role":"assistant","content":"earlier"},"""
+            val summary = compact(client, server.port, previous, "summary")
+            assertEquals(200, summary.status.value, "compaction target is not the backend ceiling")
+            summary.bodyAsText()
+            awaitRows(stats, 2)
+            measured(stats, upstream, "seed", tokens = 900_000)
+            val history = previous + """{"role":"user","content":"summary"},"""
+            val refused = compact(client, server.port, history, "continue")
+            assertEquals(400, refused.status.value)
+            assertRecovery(refused.bodyAsText(), inputTokens = 900_000, window = 872_000)
+            assertEquals(2, upstream.upstreamBodies.size)
         } finally {
             server.stop()
             client.close()

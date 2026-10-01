@@ -219,6 +219,32 @@ class TopologyConfigOverridesTest {
     }
 
     @Test
+    fun `a forwarded client login boots without rows and ignores legacy picker restrictions`() {
+        val provider = ProviderConfig(
+            dialect = Dialect.ANTHROPIC_PASSTHROUGH,
+            baseUrl = "https://api.example.test",
+            auth = AuthConfig("client"),
+        )
+        val head = HeadConfig("client", 3107, "claude-client--")
+        val empty = provider.catalogFor(head)
+        assertTrue(empty.open)
+        assertTrue(empty.models.isEmpty())
+        assertTrue(empty.contains("synthetic-new-model"))
+        val metadata = provider.copy(models = listOf(ModelEntry("synthetic-priced-model", contextWindow = 200_000)))
+        val legacy = metadata.catalogFor(
+            head.copy(pinnedModel = "synthetic-retired-model", models = listOf(HeadModel("synthetic-retired-model"))),
+        )
+        assertTrue(legacy.open)
+        assertEquals(
+            "synthetic-retired-model",
+            legacy.pinnedModel,
+            "the launch default survives without admission limits",
+        )
+        assertEquals(listOf("synthetic-priced-model"), legacy.availableModelIds())
+        assertTrue(legacy.contains("synthetic-new-model"))
+    }
+
+    @Test
     fun `client auth rejects configured upstream credentials case-insensitively`() {
         listOf("\"aUtHoRiZaTiOn\"", "\"X-Api-Key\"").forEach { header ->
             assertThrows(IllegalArgumentException::class.java) {

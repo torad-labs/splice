@@ -96,6 +96,61 @@ class LiveWindowsCatalogTest {
     }
 
     @Test
+    fun `serve ceiling stays separate from the target and follows live explicit edits`() {
+        val published = boot.copy(
+            models = listOf(ModelEntry("bonsai-27b", contextWindow = 400_000, maxContextWindow = 872_000)),
+        )
+        val edited = published.copy(extraWindows = listOf(ExtraWindow("bonsai-27b", 300_000, 800_000)))
+        val live = published.copy(liveWindows = LiveWindows { published.withWindowsOf(edited) })
+        assertEquals(300_000L, live.contextWindowFor("bonsai-27b"))
+        assertEquals(800_000L, ModelServeWindows.forRow(live, "claude-bonsai--bonsai-27b[500k]"))
+        val withoutOverride = published.withWindowsOf(
+            published.copy(models = listOf(ModelEntry("bonsai-27b", contextWindow = 300_000))),
+        )
+        assertEquals(872_000L, ModelServeWindows.forRow(withoutOverride, "bonsai-27b"))
+        assertEquals(131_072.0 / 300_000, withoutOverride.usageScale("bonsai-27b", 131_072))
+    }
+
+    @Test
+    fun `a row without a ceiling retains its target and suffixed rows retain their own override`() {
+        val catalog = boot.copy(
+            models = listOf(ModelEntry("bonsai-27b", contextWindow = 400_000)),
+            extraWindows = listOf(
+                ExtraWindow("bonsai-27b", 400_000, 872_000),
+                ExtraWindow("bonsai-27b[500k]", 300_000, 500_000),
+            ),
+        )
+        assertEquals(872_000L, ModelServeWindows.forRow(catalog, "bonsai-27b"))
+        assertEquals(500_000L, ModelServeWindows.forRow(catalog, "claude-bonsai--bonsai-27b[500k]"))
+        assertEquals(872_000L, ModelServeWindows.forRow(catalog, "bonsai-27b[1m]"))
+        assertEquals(32_768L, ModelServeWindows.forRow(boot, "bonsai-aux"))
+        assertEquals(16_384L, ModelServeWindows.forRow(boot, "bonsai-unknown"))
+    }
+
+    @Test
+    fun `a bare id served only by numeric tiers takes the same last row for target and ceiling`() {
+        val catalog = boot.copy(
+            models = listOf(
+                ModelEntry("bonsai-27b[500k]", contextWindow = 400_000),
+                ModelEntry("bonsai-27b[1m]", contextWindow = 600_000),
+            ),
+            extraWindows = listOf(
+                ExtraWindow("bonsai-27b[500k]", 400_000, 500_000),
+                ExtraWindow("bonsai-27b[1m]", 600_000, 872_000),
+            ),
+        )
+        assertEquals(600_000L, catalog.contextWindowFor("bonsai-27b"))
+        assertEquals(872_000L, ModelServeWindows.forRow(catalog, "bonsai-27b"))
+        val windows = catalog.extraWindows.map {
+            if (it.id.endsWith("[1m]")) it.copy(maxContextWindow = null) else it
+        }
+        val noCeiling = catalog.copy(extraWindows = windows)
+        assertEquals(600_000L, ModelServeWindows.forRow(noCeiling, "bonsai-27b"))
+        val bare = catalog.copy(models = catalog.models + ModelEntry("bonsai-27b", contextWindow = 300_000))
+        assertEquals(300_000L, ModelServeWindows.forRow(bare, "bonsai-27b"))
+    }
+
+    @Test
     fun `live hands a field reader the catalog in force`() {
         val merged = boot.withWindowsOf(declared)
 

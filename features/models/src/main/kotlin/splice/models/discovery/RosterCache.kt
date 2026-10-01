@@ -56,7 +56,15 @@ public class RosterCache(
         json.decodeFromString(CachedRoster.serializer(), Files.readString(file))
 
     private fun cached(model: DiscoveredModel): CachedModel =
-        CachedModel(model.id, model.label, model.contextWindow, model.aliases, model.rates, model.toolMode)
+        CachedModel(
+            model.id,
+            model.label,
+            model.contextWindow,
+            model.aliases,
+            model.rates,
+            model.toolMode,
+            model.maxContextWindow,
+        )
 }
 
 /** A head's kept list, or why there is none to stand in for its endpoint. */
@@ -89,6 +97,7 @@ private data class CachedModel(
     /** V4-441: the endpoint's `tool_mode`, kept so a start with the backend down still knows which models run
      *  code mode. A file written before it decodes to null, which is "no flag". */
     @SerialName("tool_mode") val toolMode: String? = null,
+    @SerialName("max_context_window") val maxContextWindow: Long? = null,
 ) {
-    fun model(): DiscoveredModel = DiscoveredModel(id, label, contextWindow, aliases, rates, toolMode)
+    fun model(): DiscoveredModel = DiscoveredModel(id, label, contextWindow, aliases, rates, toolMode, maxContextWindow)
 }

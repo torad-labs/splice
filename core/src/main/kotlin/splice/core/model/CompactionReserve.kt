@@ -25,8 +25,8 @@ public data class CompactionReserve(val growthAndPromptP95: Long, val generation
     public val totalTokens: Long get() = growthAndPromptP95.coerceAtLeast(0) + generationP99
 }
 
-/** A row's overridable total reserve and the independently calibrated generation allowance. */
-public data class CompactionBudget(val totalTokens: Long, val generationTokens: Long)
+/** Reserve stays tied to the compaction target; input refusal uses the independent serve window. */
+public data class CompactionBudget(val totalTokens: Long, val generationTokens: Long, val serveWindow: Long)
 
 /** Resolves the row override and empirical default once, for both usage scaling and preflight. */
 public object CompactionBudgets {
@@ -38,7 +38,7 @@ public object CompactionBudgets {
             ?: current.models.firstOrNull { current.stripSuffixes(it.id) == canonical }
         val calibrated = current.compactionReserveDefaults?.forRow(canonical, current.contextWindowFor(id))
         val total = row?.compactionReserveTokens ?: calibrated?.totalTokens ?: return null
-        return CompactionBudget(total, calibrated?.generationP99 ?: 0)
+        return CompactionBudget(total, calibrated?.generationP99 ?: 0, ModelServeWindows.forRow(current, id))
     }
 }
 

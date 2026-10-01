@@ -73,6 +73,33 @@ class RosterWindowJoinTest {
     }
 
     @Test
+    fun `a live compaction target edit retains discovery and takes an explicit serve ceiling`(@TempDir tmp: Path) {
+        val file = tmp.resolve("splice.toml")
+        Files.writeString(file, WINDOW_BOOT)
+        val models = listOf(DiscoveredModel("synthetic-original", contextWindow = 272_000, maxContextWindow = 872_000))
+        val source = HeadDiscoveredModels { models }
+        val boot = TopologyLoader.parse(WINDOW_BOOT)
+        val windows = windows(file, boot, source)
+        try {
+            val catalog = windows.attach(context(tmp, boot, source), false).catalog
+            assertEquals(872_000L, catalog.live().models.single().maxContextWindow)
+            val edited = WINDOW_BOOT.replace(
+                "auth = { kind = \"api-key\", env = \"SYNTHETIC_KEY\" }",
+                """auth = { kind = "api-key", env = "SYNTHETIC_KEY" }
+extra_windows = [{ id = "synthetic-original", context_window = 400000, max_context_window = 800000 }]""",
+            )
+            Files.writeString(file, edited)
+            Files.setLastModifiedTime(file, FileTime.fromMillis(5_000))
+            assertEquals(400_000L, catalog.contextWindowFor("synthetic-original"))
+            assertEquals(800_000L, catalog.live().extraWindows.single().maxContextWindow)
+            assertEquals(872_000L, catalog.live().models.single().maxContextWindow)
+            assertFalse(windows.stale())
+        } finally {
+            windows.close()
+        }
+    }
+
+    @Test
     fun `refresh preserves declared rows and cards while removing only discovered membership`(@TempDir tmp: Path) {
         val boot = TopologyLoader.parse(WINDOW_BOOT)
         var models = listOf(

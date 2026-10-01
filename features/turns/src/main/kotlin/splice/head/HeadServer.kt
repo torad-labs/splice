@@ -172,7 +172,7 @@ public class HeadServer(
 internal class CompactionPreflight(private val catalog: ModelCatalog, private val perf: PerfStats) {
     fun refusal(meta: TurnMeta, request: JsonObject, hasPriorExchange: Boolean): String? {
         val budget = CompactionBudgets.forRow(catalog, meta.originalModel) ?: return null
-        val window = catalog.contextWindowFor(meta.originalModel)
+        val window = budget.serveWindow
         val estimate = perf.measuredInputs.estimate(meta.sessionId, meta.conversationKey, meta.upstreamModel, request)
             ?: return null
         // An ordinary continuation may compact early, so use the conservative upper bound.

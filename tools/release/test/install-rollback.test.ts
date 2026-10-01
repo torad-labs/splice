@@ -54,6 +54,7 @@ exec ${JSON.stringify(realMv)} "$@"
   exe(join(bin, "java"), `#!/usr/bin/env bash
 case "$*" in
   -version) echo 'openjdk version "21.0.4" 2024-07-16' >&2 ;;
+  *" shim-version") echo shim-test ;;
   *" version") echo "splice 9.9.9" ;;
   *) : ;;
 esac
@@ -63,7 +64,8 @@ esac
   const candidate = join(dir, "candidate");
   mkdirSync(candidate);
   writeFileSync(join(candidate, "splice.jar"), "new jar\n");
-  writeFileSync(join(candidate, "splice-launch"), "#!/usr/bin/env node\n// new shim\n");
+  // Paired with the fake jar's `shim-version`, so the install reaches the commit the fake mv refuses.
+  writeFileSync(join(candidate, "splice-launch"), '#!/usr/bin/env node\n// new shim\nconst SPLICE_SHIM_VERSION = "shim-test";\n');
   const share = join(dir, "share");
   mkdirSync(share);
   writeFileSync(join(share, "splice.jar"), "previous jar\n");

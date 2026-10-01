@@ -34,7 +34,8 @@ const TOOLS = [
 ];
 
 const JAR = "synthetic splice jar bytes\n";
-const SHIM = "#!/usr/bin/env node\n// synthetic splice-launch\n";
+// The marker pairs it with the fake jar's `shim-version` below; install.sh refuses a pair that does not match.
+const SHIM = '#!/usr/bin/env node\n// synthetic splice-launch\nconst SPLICE_SHIM_VERSION = "shim-test";\n';
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");
 
 function exe(path: string, body: string) {
@@ -57,10 +58,11 @@ function sandbox(gh: Gh, verifyExit = 0) {
   }
   const share = join(dir, "share");
   const binDir = join(dir, "bin");
-  // java: 21 for the preflight, the jar's version, and an `install --all` that links `splice`.
+  // java: 21 for the preflight, the jar's version and launcher, and an `install --all` that links `splice`.
   exe(join(bin, "java"), `#!/usr/bin/env bash
 case "$*" in
   -version) echo 'openjdk version "21.0.4" 2024-07-16' >&2 ;;
+  *" shim-version") echo shim-test ;;
   *" version") echo "splice 9.9.9" ;;
   *" install --all") mkdir -p "$SPLICE_BIN_DIR" && ln -sfn "$SPLICE_JAR" "$SPLICE_BIN_DIR/splice" ;;
   *) : ;;

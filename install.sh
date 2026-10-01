@@ -186,6 +186,21 @@ verify_sum() {
   echo "${name}: OK"
 }
 
+# shim_marker <launcher> — the launcher's SPLICE_SHIM_VERSION, the version it shares with the jar's
+# `shim-version` (InstallShim.kt reads the same line; a 0.3.x bash launcher spells it without
+# `const`). Empty when the file is missing or carries none.
+shim_marker() {
+  [ -f "$1" ] || return 0
+  sed -nE '/^(const )?SPLICE_SHIM_VERSION ?= ?"[^"]*";?$/{s/^[^"]*"([^"]*)".*$/\1/p;q;}' "$1"
+}
+
+# jar_shim <jar> — the launcher version the jar needs (its `shim-version` verb). Empty when the jar
+# cannot say, which no launcher pairs with: the check before the commit refuses it by name.
+jar_shim() {
+  local named
+  if named="$(java -jar "$1" shim-version 2>/dev/null)"; then printf '%s' "$named"; fi
+}
+
 # gh_attestation_gap — empty when gh can verify a build provenance attestation (installed and
 # signed in), else why not: "is not installed" or "is not signed in". Asked once per run.
 GH_GAP_KNOWN=0
@@ -241,10 +256,19 @@ if [ -n "${SPLICE_JAR:-}" ]; then
   cp "$SPLICE_JAR" "$JAR_TMP"
   if [ -n "${SPLICE_SHIM:-}" ]; then
     SHIM_SRC="$SPLICE_SHIM"
-  elif [ -f "$(dirname "$SPLICE_JAR")/splice-launch" ]; then
-    SHIM_SRC="$(dirname "$SPLICE_JAR")/splice-launch"
-  elif [ -x "${SHARE_DIR}/splice-launch" ]; then
-    SHIM_SRC="${SHARE_DIR}/splice-launch"
+  else
+    # The first launcher at hand that pairs with this jar: the bundle's own, the checkout's, the one
+    # already installed. None pairs → empty, and the release's own launcher is fetched below. The
+    # installed one was once reused unchecked, which put a newer jar beside an older launcher.
+    WANT_SHIM="$(jar_shim "$JAR_TMP")"
+    PAIRED=""
+    for candidate in "$(dirname "$SPLICE_JAR")/splice-launch" "$SHIM_SRC" "${SHARE_DIR}/splice-launch"; do
+      if [ -n "$WANT_SHIM" ] && [ "$(shim_marker "$candidate")" = "$WANT_SHIM" ]; then
+        PAIRED="$candidate"
+        break
+      fi
+    done
+    SHIM_SRC="$PAIRED"
   fi
 elif [ -n "$REPO_ROOT" ]; then
   echo "splice: building the fat jar (./gradlew :app:shadowJar)…"
@@ -302,6 +326,17 @@ case "$JAR_VERSION_OUTPUT" in
   "splice "*) ;;
   *) echo "splice: candidate jar failed validation: ${JAR_VERSION_OUTPUT:-<empty>}" >&2; exit 1 ;;
 esac
+
+# The launcher and the jar are version-locked (the launcher refuses a daemon whose version is not its
+# own), so a pair that does not match is refused here, before anything goes live, rather than found at
+# the first launch.
+WANT_SHIM="$(jar_shim "$JAR_TMP")"
+HAVE_SHIM="$(shim_marker "$SHIM_SRC")"
+if [ -z "$WANT_SHIM" ] || [ "$HAVE_SHIM" != "$WANT_SHIM" ]; then
+  echo "splice: the launcher $SHIM_SRC is ${HAVE_SHIM:-unmarked}, but this jar needs ${WANT_SHIM:-a launcher it did not name};" \
+    "install the launcher built with this jar (SPLICE_SHIM=<path>)" >&2
+  exit 1
+fi
 
 # 2. Atomically replace each live artifact only after every download/validation succeeded.
 # A failed install leaves the previous working jar and shim untouched.

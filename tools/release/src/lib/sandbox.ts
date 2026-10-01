@@ -126,26 +126,35 @@ export function breakAttestation(network: FakeNetwork): void {
   writeStub(join(network.dir, "gh"), "process.exit(1);\n");
 }
 
+/** The stub's pre-commit answers, so install.sh reaches the failure each stub is there to cause: the
+ *  preflight's `-version` (Java 21, on stderr as the JDK prints it), the jar's `version`, and its
+ *  `shim-version`, answered with the staged launcher's marker for the pairing check. Without the
+ *  first, both scenarios stopped at "Java 21+ is required" and passed without reaching a commit
+ *  (2026-10-01). The verb follows the jar path: run_jar puts `-Duser.home=…` before `-jar` (V4-231),
+ *  so a fixed argv index read the jar path instead, and neither stub's `install` arm ever ran. */
+function stubPreamble(shimVersion: string): string {
+  return (
+    "const argv = process.argv.slice(2);\n" +
+    'if (argv[0] === "-version") { console.error(\'openjdk version "21.0.4" 2024-07-16\'); process.exit(0); }\n' +
+    'const verb = argv[argv.indexOf("-jar") + 2];\n' +
+    'if (verb === "version") { console.log("splice test"); process.exit(0); }\n' +
+    `if (verb === "shim-version") { console.log(${JSON.stringify(shimVersion)}); process.exit(0); }\n` +
+    'if (verb === "init") process.exit(0);\n'
+  );
+}
+
 /** A `java` whose `install` leaves a DANGLING command; `version` and `init` behave. */
-export function danglingJava(dir: string): void {
+export function danglingJava(dir: string, shimVersion: string): void {
   writeStub(
     join(dir, "java"),
     'import { symlinkSync } from "node:fs";\n' +
       'import { join } from "node:path";\n' +
-      "const verb = process.argv[4];\n" +
-      'if (verb === "version") { console.log("splice test"); process.exit(0); }\n' +
-      'if (verb === "init") process.exit(0);\n' +
+      stubPreamble(shimVersion) +
       'if (verb === "install") symlinkSync("/missing", join(process.env.SPLICE_BIN_DIR, "splice"));\n',
   );
 }
 
 /** A `java` whose `install` fails AFTER the artifacts were committed — the rollback's trigger. */
-export function failingInstallJava(dir: string): void {
-  writeStub(
-    join(dir, "java"),
-    "const verb = process.argv[4];\n" +
-      'if (verb === "version") { console.log("splice test"); process.exit(0); }\n' +
-      'if (verb === "init") process.exit(0);\n' +
-      'if (verb === "install") process.exit(9);\n',
-  );
+export function failingInstallJava(dir: string, shimVersion: string): void {
+  writeStub(join(dir, "java"), stubPreamble(shimVersion) + 'if (verb === "install") process.exit(9);\n');
 }

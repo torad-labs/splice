@@ -28,7 +28,7 @@ import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SUMS, readManifest } from "../lib/dist.ts";
-import { stagedGatewayVersion } from "../lib/shim.ts";
+import { shimMarkers, stagedGatewayVersion } from "../lib/shim.ts";
 import {
   assertFailedWithoutSuccess,
   breakAttestation,
@@ -121,6 +121,9 @@ export async function accept(argv: readonly string[], repoRoot: string): Promise
   if (shimGatewayVersion !== jarVersion) {
     return fail(`release accept: launcher expects gateway ${shimGatewayVersion} but jar is ${jarVersion}`);
   }
+  // The stub jars below pair with the staged launcher through its marker, as install.sh requires.
+  const stagedShim = shimMarkers(join(distDir, "splice-launch"));
+  if (stagedShim instanceof Error) return fail(`release accept: ${stagedShim.message}`);
 
   // `sha256sum -c sha256sums.txt`, and then the leg that line cannot do: the manifest's names are
   // exactly what is STAGED. The old check counted lines against a hand copy of the asset list — a
@@ -314,7 +317,7 @@ export async function accept(argv: readonly string[], repoRoot: string): Promise
   // The two java stubs below only need to be FIRST on PATH; the bundle they install from is the
   // staged one (the script copied dist/ beside each stub, which nothing then read).
   const dangling = mkdtempSync(join(tmpdir(), "release-accept-dangling-"));
-  danglingJava(dangling);
+  danglingJava(dangling, stagedShim.shim);
   const danglingSandbox = makeSandbox();
   const danglingRun = runInstall(distDir, danglingSandbox, {
     ...sandboxEnv(danglingSandbox),
@@ -327,9 +330,12 @@ export async function accept(argv: readonly string[], repoRoot: string): Promise
   if (danglingRun.output.includes("splice: installed")) {
     return fail(`release accept: dangling command printed success\n${danglingRun.output}`);
   }
+  if (!danglingRun.output.includes("missing or dangling")) {
+    return fail(`release accept: dangling command failed for another reason\n${danglingRun.output}`);
+  }
 
   const rollback = mkdtempSync(join(tmpdir(), "release-accept-rollback-"));
-  failingInstallJava(rollback);
+  failingInstallJava(rollback, stagedShim.shim);
   const rollbackSandbox = makeSandbox();
   writeFileSync(join(rollbackSandbox.share, "splice.jar"), "previous jar\n");
   writeFileSync(join(rollbackSandbox.share, "splice-launch"), "previous shim\n");
@@ -341,6 +347,9 @@ export async function accept(argv: readonly string[], repoRoot: string): Promise
   rmSync(rollback, { recursive: true, force: true });
   if (rollbackRun.ok) {
     return fail(`release accept: post-commit install failure unexpectedly succeeded\n${rollbackRun.output}`);
+  }
+  if (!rollbackRun.output.includes("command installation failed; previous installation restored")) {
+    return fail(`release accept: post-commit install failure did not reach its rollback\n${rollbackRun.output}`);
   }
   const restoredJar = readFileSync(join(rollbackSandbox.share, "splice.jar"), "utf8");
   const restoredShim = readFileSync(join(rollbackSandbox.share, "splice-launch"), "utf8");

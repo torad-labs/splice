@@ -101,7 +101,7 @@ export interface TurnLine {
   colour: ModelColour;
   ts: number;
   title: string;
-  model: string;
+  model: string | null;
   outcome: OutcomeRead;
   /** A side note beside the model: `Compacted`, or an account switch. */
   tag: string | null;
@@ -126,7 +126,7 @@ export function lineOf(row: TurnRow, planLabel: (head: string) => string, colour
     colour: colourOf(row.head),
     ts: row.ts,
     title: titleOf(row.session_id, row.session) ?? planLabel(row.head),
-    model: row.model ?? ABSENT,
+    model: row.model?.trim() || null,
     outcome,
     tag: row.compact === true ? 'Compacted' : null,
     compact: row.compact === true,
@@ -144,7 +144,7 @@ export function filterLines(lines: readonly TurnLine[], filter: TurnFilter, quer
   return lines.filter((line) => {
     if (filter === 'failed' && !line.outcome.failed) return false;
     if (filter === 'compacted' && !line.compact) return false;
-    return needle === '' || [line.title, line.plan, line.model, line.head].some((text) => text.toLowerCase().includes(needle));
+    return needle === '' || [line.title, line.plan, line.model, line.head].some((text) => text?.toLowerCase().includes(needle) === true);
   });
 }
 

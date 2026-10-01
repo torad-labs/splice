@@ -1,7 +1,8 @@
 // The Turns pages' arithmetic: outcomes, plan rows, the stuck rule, a turn's four stages, and what was kept.
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { RunningCard } from '../src/pages/turns/TurnsPage';
+import { MemoryRouter } from 'react-router';
+import { RunningCard, TurnRowView } from '../src/pages/turns/TurnsPage';
 import { describe, expect, test } from 'vitest';
 import {
   askAndAnswer, failedCount, filterLines, lineOf, outcomeOf, planRows, localStepsOf, liveTurnFor, runningOf, servedLocally, stagesOf, turnLede, turnsLede, wireFor, WINDOW_MS,
@@ -124,6 +125,19 @@ describe('a turn', () => {
     const line = lineOf(row({ cost_usd: null }), (h) => h, none, () => null);
     expect(line.cost).toBe('–');
     expect(line.title).toBe('claude');
+  });
+  test.each([null, '', '   '])('an absent model %j leaves only the command, with no separator or placeholder', (model) => {
+    const line = lineOf(row({ model }), () => 'claude-splice', none, () => null);
+    const html = renderToStaticMarkup(createElement(MemoryRouter, null, createElement(TurnRowView, { line })));
+    expect(html).toContain('<span>claude-splice</span>');
+    expect(html).not.toContain('claude-splice ·');
+    expect(filterLines([line], 'all', 'no-such-model')).toEqual([]);
+    expect(filterLines([line], 'all', 'splice')).toEqual([line]);
+  });
+  test('a measured model remains after the command and its separator', () => {
+    const line = lineOf(row(), () => 'claude-splice', none, () => null);
+    const html = renderToStaticMarkup(createElement(MemoryRouter, null, createElement(TurnRowView, { line })));
+    expect(html).toContain('claude-splice · opus-5.5');
   });
   test('the filters keep failures and compactions, and a query reads title, plan and model', () => {
     const lines = [

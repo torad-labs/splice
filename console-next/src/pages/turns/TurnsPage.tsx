@@ -75,7 +75,7 @@ function PlanLine({ row, max }: { row: PlanRow; max: number }) {
   );
 }
 
-function TurnRowView({ line }: { line: TurnLine }) {
+export function TurnRowView({ line }: { line: TurnLine }) {
   const clock = new Date(line.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   return (
     <li className={`turn hue ${line.colour}${line.outcome.failed ? ' failed' : ''}`}>
@@ -83,7 +83,7 @@ function TurnRowView({ line }: { line: TurnLine }) {
       <div>
         <h3><Link to={turnPath(line)}>{line.title}</Link></h3>
         <div className="sub">
-          <span>{line.plan} · {line.model}</span>
+          <span>{line.plan}{line.model === null ? null : ` · ${line.model}`}</span>
           {line.tag === null ? null : <span className="tag">{line.tag}</span>}
         </div>
       </div>

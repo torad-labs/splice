@@ -10326,6 +10326,7 @@ title = "A restart never fails a turn that is still running in code mode (operat
 files = ["app/src/main/kotlin/splice/app/console/DrainingRestartAdapter.kt", "integrations/codemode/src/main/kotlin/splice/codemode/JvmCodeModeRuntime.kt"]
 status = "in_flight"
 verify = "red first: a code-mode turn in flight when a draining stop begins completes ok with the runtime alive until it ends; a forced cut ends as a retryable error type; codemode, app and turns tests, detekt, rules, architecture; CI gate; live: the next install's journal shows no code-mode runtime failure between Stopping and exit"
+# [2026-10-01] Oct 1 CT: Current HeadServer stopLocked drains before engine.stop and provider.onHeadStop. Host-owned unit rechecked: KillMode=mixed, TimeoutStopUSec=1min 15s, SuccessExitStatus=143, CPUQuotaPerSecUSec=8s. Extending repair scope to typed worker-loss transport boundary in integrations/upstream/failure, SharedWorkerChannel, Codex driver/machine and real-runtime app tests; protocol failures remain deterministic.
 
 [[items]]
 id = "V4-448"

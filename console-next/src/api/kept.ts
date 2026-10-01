@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { request } from './client';
 import { read } from './queries';
+import { awaitRefetch } from './refetch';
 import type { KeptInventory, KeptStore, TraceInventory } from '../types/kept';
 
 export const keptKey = ['kept'] as const;
@@ -22,6 +23,7 @@ export function useKeptDelete() {
   return useMutation({
     mutationFn: (target: { store: KeptStore } | { head: string }) =>
       request<unknown>('store' in target ? keptPath(target.store) : traceKeptPath(target.head), { method: 'DELETE' }),
-    onSettled: () => Promise.all([keptKey, traceKeptKey].map((key) => client.invalidateQueries({ queryKey: [...key] }))),
+    // Awaited: the confirm dialog closes when this settles, and it should close on the new census, not the old one.
+    onSettled: () => awaitRefetch(client, [keptKey, traceKeptKey]),
   });
 }

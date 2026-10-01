@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { request } from './client';
 import { read } from './queries';
+import { awaitRefetch } from './refetch';
 import type { ClaudeHeadActionResult, ClaudeHeadPayload } from '../types/claude-head';
 
 export const claudeHeadKey = ['claude-head'] as const;
@@ -15,7 +16,8 @@ function useClaudeHeadAction(action: 'wrap' | 'unwrap') {
   const client = useQueryClient();
   return useMutation({
     mutationFn: () => request<ClaudeHeadActionResult>(`/api/claude-head/${action}`, { method: 'POST' }),
-    onSettled: () => client.invalidateQueries({ queryKey: [...claudeHeadKey] }),
+    // Awaited: the card's mode is the daemon's, so the confirm closes on the re-read card.
+    onSettled: () => awaitRefetch(client, [claudeHeadKey]),
   });
 }
 export const useWrapClaudeHead = () => useClaudeHeadAction('wrap');

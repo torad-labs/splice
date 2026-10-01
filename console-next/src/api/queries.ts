@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UseQueryOptions } from '@tanstack/react-query';
 import { accountsFromWire } from '../lib/accounts';
 import { health, request } from './client';
+import { awaitRefetch } from './refetch';
 import type {
   AuthPayload,
   ConfigPayload,
@@ -62,7 +63,8 @@ function useWrite<Vars, Out>(run: (vars: Vars) => Promise<Out>, stale: readonly 
   const client = useQueryClient();
   return useMutation({
     mutationFn: run,
-    onSettled: () => Promise.all(stale.map((key) => client.invalidateQueries({ queryKey: [...key] }))),
+    // Awaited: a head action or a stopped turn is done when the list shows it, and the button stays busy until then.
+    onSettled: () => awaitRefetch(client, stale),
   });
 }
 

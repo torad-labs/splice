@@ -12,6 +12,7 @@ import { pendingOf } from './auth';
 import { topologyKey } from './config';
 import { failureText, MgmtError, request } from './client';
 import { keys } from './queries';
+import { awaitRefetch } from './refetch';
 import { inflightFrom } from '../lib/perf';
 import type { CompactPayload, InstructionRule, InstructionScopeWire, InstructionsState, InstructionsWire } from '../types/compaction';
 import type { HeadsPayload } from '../types/core';
@@ -338,7 +339,7 @@ export function useSetCapture() {
     // The saved value is read from the topology, so the mutation stays pending until that read has the write in it.
     onSuccess: async (change, { head }) => {
       if (change.running !== null) client.setQueryData<CaptureWire>([...captureKey(head)], change.running);
-      await client.invalidateQueries({ queryKey: [...topologyKey] });
+      await awaitRefetch(client, [topologyKey]);
     },
   });
 }

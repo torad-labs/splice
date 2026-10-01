@@ -11,6 +11,7 @@ import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tansta
 import { useEffect, useRef } from 'react';
 import { request } from './client';
 import { keys, read } from './queries';
+import { awaitRefetch } from './refetch';
 import type {
   TeamActivityPayload,
   TeamChatPayload,
@@ -145,7 +146,8 @@ function useTeamWrite<Vars>(run: (vars: Vars) => Promise<TeamRow>) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: run,
-    onSettled: () => Promise.all([keys.teams, keys.sessions, teamPanelsKey].map((key) => client.invalidateQueries({ queryKey: [...key] }))),
+    // Awaited: the dialog closes onto the list, and the list should already carry the team.
+    onSettled: () => awaitRefetch(client, [keys.teams, keys.sessions, teamPanelsKey]),
   });
 }
 

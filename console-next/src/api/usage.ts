@@ -11,6 +11,7 @@ import { MgmtError, request } from './client';
 import { modelsKey } from './models';
 import { topologyKey } from './config';
 import { keys, read } from './queries';
+import { refetch } from './refetch';
 import type { AlertSettings, AlertsSlice } from '../types/alerts';
 import type { Budget, BudgetsPayload, BudgetsSlice, PendingRoute } from '../types/budget';
 import type { AddChecked, AddChecksFailed, AddCheck, AddModelOffers, AddModelsAdded, AddProfilesPayload, AddRequest, AddView } from '../types/add';
@@ -173,7 +174,7 @@ function useAddWrite<Vars, Out>(run: (vars: Vars) => Promise<Out>, viewOf: (out:
       const view = viewOf(out);
       if (view !== null) client.setQueryData<AddView>([...addKey(view.id)], view);
     },
-    onSettled: () => Promise.all(stale.map((key) => client.invalidateQueries({ queryKey: [...key] }))),
+    onSettled: () => refetch(client, stale),
   });
 }
 
@@ -211,7 +212,6 @@ export function useAddModels() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: ({ head, ids }: { head: string; ids: readonly string[] }) => addModels(head, ids),
-    onSettled: () =>
-      Promise.all([addModelOffersKey, modelsKey, topologyKey, keys.heads, keys.status].map((key) => client.invalidateQueries({ queryKey: [...key] }))),
+    onSettled: () => refetch(client, [addModelOffersKey, modelsKey, topologyKey, keys.heads, keys.status]),
   });
 }

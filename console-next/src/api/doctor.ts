@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { MgmtError, request } from './client';
 import { keys } from './queries';
 import { pendingOf } from './auth';
+import { refetch } from './refetch';
 import type { DoctorSlice, DoctorWirePayload } from '../types/doctor';
 
 /** The v0.4.0 item that serves GET /api/doctor: a daemon older than it answers 404. */
@@ -89,6 +90,6 @@ export function useRestartDaemon() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: restartDaemon,
-    onSettled: () => Promise.all([keys.health, keys.status, keys.heads].map((key) => client.invalidateQueries({ queryKey: [...key] }))),
+    onSettled: () => refetch(client, [keys.health, keys.status, keys.heads]),
   });
 }

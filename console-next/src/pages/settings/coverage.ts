@@ -33,6 +33,7 @@ export const dispositions: readonly Disposition[] = [
   { kind: 'verb', name: 'version', disposition: 'read-only', via: '/api/doctor' },
   { kind: 'verb', name: 'init', disposition: 'excluded', reason: 'writes the first splice.toml and state before any daemon runs; the console exists only on a running one' },
   { kind: 'verb', name: 'setup', disposition: 'excluded', reason: 'the first-run wizard that installs and starts the daemon this console runs on' },
+  { kind: 'verb', name: 'record-launch', disposition: 'excluded', reason: 'the launch shim\'s own call just before it starts the client, recording which command started it; an operator never types it' },
   { kind: 'verb', name: 'shim-version', disposition: 'excluded', reason: 'the client shim\'s build stamp for the installer\'s own check; doctor shows the versions an operator reads' },
   { kind: 'verb', name: 'dashboard', disposition: 'excluded', reason: 'opens this console' },
   { kind: 'verb', name: 'uninstall', disposition: 'excluded', reason: 'deletes wrapper commands from the operator\'s bin directory, splice itself with --all; destructive, CLI only' },

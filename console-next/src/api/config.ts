@@ -14,6 +14,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { pendingOf } from './auth';
 import { request } from './client';
 import { keys } from './queries';
+import { refetch } from './refetch';
 import { recordSaved } from '../lib/restart-pending';
 import { PENDING_TOPOLOGY } from '../types/topology';
 import type { ConfigValue, PatchResult } from '../types/core';
@@ -39,7 +40,7 @@ export function useConfigWrite() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: patchConfig,
-    onSettled: () => Promise.all([keys.config, keys.health].map((key) => client.invalidateQueries({ queryKey: [...key] }))),
+    onSettled: () => refetch(client, [keys.config, keys.health]),
   });
 }
 
@@ -53,7 +54,7 @@ export function useKnobSave() {
       if (result.restart_required.length > 0) recordSaved(result.restart_required, await readBootedAt().catch(() => null));
       return result;
     },
-    onSettled: () => Promise.all([keys.config, keys.health].map((key) => client.invalidateQueries({ queryKey: [...key] }))),
+    onSettled: () => refetch(client, [keys.config, keys.health]),
   });
 }
 
@@ -93,7 +94,7 @@ export function useTopologyWrite() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: saveTopology,
-    onSettled: () => Promise.all([topologyKey, keys.health].map((key) => client.invalidateQueries({ queryKey: [...key] }))),
+    onSettled: () => refetch(client, [topologyKey, keys.health]),
   });
 }
 
@@ -107,11 +108,7 @@ export function useTopologyEdit() {
       if (result.ok && result.restart_required) recordSaved(touched, await readBootedAt().catch(() => null));
       return result;
     },
-    // Not returned: React Query keeps the mutation pending until onSettled's promise settles, so returning the refetches made
-    // "Written." wait for the slowest of them (a daemon answering /health or /api/mcp slowly held the page on "Writing…").
-    onSettled: () => {
-      void Promise.all([topologyKey, keys.health, mcpKey].map((key) => client.invalidateQueries({ queryKey: [...key] })));
-    },
+    onSettled: () => refetch(client, [topologyKey, keys.health, mcpKey]),
   });
 }
 

@@ -9,6 +9,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { MgmtError, request } from './client';
 import { keys, read } from './queries';
+import { awaitRefetch } from './refetch';
 import { PENDING_AUTH_WRITES } from '../types/login';
 import type { PendingRoute } from '../types/budget';
 import type { AuthActionResult } from '../types/core';
@@ -135,7 +136,8 @@ function useAuthWrite<Vars, Out>(run: (vars: Vars) => Promise<Out>, stale: reado
   const client = useQueryClient();
   return useMutation({
     mutationFn: run,
-    onSettled: () => Promise.all(stale.map((key) => client.invalidateQueries({ queryKey: [...key] }))),
+    // Awaited: an account switched, removed or relabelled, or a key stored, is done when its rows show it.
+    onSettled: () => awaitRefetch(client, stale),
   });
 }
 
@@ -161,7 +163,7 @@ export function useLoginStatus(head: string, id: string | null, enabled: boolean
     queryFn: async () => {
       const status = await fetchLoginStatus(head, id ?? '');
       if (!isPendingRoute(status) && status.state === 'live_after_restart') {
-        await Promise.all(accountsChanged.map((key) => client.invalidateQueries({ queryKey: [...key] })));
+        await awaitRefetch(client, accountsChanged);
       }
       return status;
     },

@@ -3,7 +3,7 @@ import type { DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, rectSortingStrategy, sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { failureText } from '../../api/client';
 import { useKeyStore } from '../../api/auth';
-import { useAccounts, useAuth, useHealth, useHeads, useSessions, useUsage } from '../../api/queries';
+import { useAccounts, useAuth, useHealth, useHeads, useSessions, useStatus, useUsage } from '../../api/queries';
 import { poolOf } from '../../lib/accounts';
 import { fleetCard, fleetLede } from '../../lib/fleet';
 import { moveKey, setOrder, sortByOrder, useOrder } from '../../lib/order';
@@ -15,6 +15,7 @@ import { FleetFix } from './FleetFix';
 
 export function FleetPage() {
   const heads = useHeads();
+  const status = useStatus();
   const usage = useUsage();
   const auth = useAuth();
   const accounts = useAccounts();
@@ -43,9 +44,10 @@ export function FleetPage() {
   for (const row of sessions.data?.sessions ?? []) {
     if (row.availability !== 'gone') live.set(row.head, (live.get(row.head) ?? 0) + 1);
   }
+  const families = new Map(status.data?.registry.map((row) => [row.key, row.family] as const) ?? []);
   const cards = sortByOrder(heads.data.heads, (head) => head.key, order).map((head) => ({
     head,
-    facts: fleetCard(head, { usage: usage.data ?? null, auth: auth.data ?? null, accounts: rows, sessions: live, topologyStale: health.data?.topologyStale === true, keys: keyStore.data ?? null, now }),
+    facts: fleetCard(head, { usage: usage.data ?? null, auth: auth.data ?? null, accounts: rows, sessions: live, topologyStale: health.data?.topologyStale === true, family: families.get(head.key) ?? null, keys: keyStore.data ?? null, now }),
   }));
   const keys = cards.map((card) => card.head.key);
   const onDragEnd = (event: DragEndEvent): void => {

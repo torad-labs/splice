@@ -1,6 +1,7 @@
 // NEW: V4-444 — runtime/quota/refused-account signals over the actual replacement cards and plan pages.
 import { expect, test, type Page } from '@playwright/test';
-import type { HeadsPayload } from '../src/types/core';
+import type { ControlStatusPayload, HeadsPayload } from '../src/types/core';
+import type { KeysPayload } from '../src/types/login';
 import type { AccountsWire } from '../src/types/accounts';
 import { STACK } from './stack';
 import { env, open, read } from './support';
@@ -10,6 +11,28 @@ async function cardStates(page: Page): Promise<string> {
   const cards = await page.locator('li.card').all();
   return (await Promise.all(cards.map(async (card) => (await card.innerText()).replace(/\s+/g, ' ').trim().slice(0, 160)))).join('\n');
 }
+
+test('a key-auth head with a stored key reads as local when the daemon names its family', async ({ page }) => {
+  await page.route((url) => url.pathname === '/api/status', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json() as ControlStatusPayload;
+    const local = body.registry.find((row) => row.key === STACK.keyHead);
+    if (local === undefined) throw new Error('isolated stack has no API-key head');
+    local.family = 'local';
+    await route.fulfill({ response, json: body });
+  });
+  await page.route((url) => url.pathname === '/api/keys', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json() as KeysPayload;
+    body.keys.push({ name: 'E2E_LOCAL_KEY', stored: true, heads: [{ head: STACK.keyHead, source: 'store' }] });
+    await route.fulfill({ response, json: body });
+  });
+  await open(page, 'fleet');
+  const card = page.locator('li.card').filter({ has: page.getByRole('link', { name: STACK.keyHead, exact: true }) });
+  await expect(card.locator('.quiet-meta').first()).toContainText('this computer');
+  await expect(card.locator('.quiet-meta').first()).not.toContainText('api key');
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
+});
 
 test('a silent runtime is off on its card and detail while unmarked plans remain ready', async ({ page }) => {
   await page.route((url) => url.pathname === '/api/heads', async (route) => {

@@ -18,20 +18,21 @@ const inputs = (over: Partial<FleetInputs> = {}): FleetInputs => ({ usage: usage
 const account = (over: Partial<AccountRow> = {}): AccountRow => ({ heads: ['claude-grok'], label: 'Ava’s Grok', selected: null, ...over }) as AccountRow;
 
 describe('a fleet card', () => {
-  test('a head on this computer says so, and is never called an api key', () => {
+  test('the daemon family names a local runtime even when it has a key, and a remote head stays remote without one', () => {
     const local = head({ key: 'bonsai', label: 'bonsai', authKind: 'api-key' });
-    const keyed = { path: '', keys: [{ name: 'OPENROUTER_API_KEY', stored: true, heads: [{ head: 'openrouter', source: 'store' }] }] } as never;
-    const card = fleetCard(local, inputs({ keys: keyed, sessions: new Map() }));
+    const keyed = { path: '', keys: [{ name: 'BONSAI_API_KEY', stored: true, heads: [{ head: 'bonsai', source: 'store' }] }] } as never;
+    const card = fleetCard(local, inputs({ family: 'local', keys: keyed, sessions: new Map() }));
     expect(card.meta).toEqual(['this computer', 'no sessions']);
     expect(card.colour).toBe('local');
-    const remote = fleetCard(head({ key: 'openrouter', label: 'openrouter', authKind: 'api-key' }), inputs({ keys: keyed, sessions: new Map() }));
-    expect(remote.meta).toEqual(['api key', 'no sessions']);
+    const remote = head({ key: 'openrouter', label: 'openrouter', authKind: 'api-key' });
+    expect(fleetCard(remote, inputs({ family: 'openrouter', keys: keyed, sessions: new Map() })).meta).toEqual(['api key', 'no sessions']);
+    expect(fleetCard(remote, inputs({ family: null, keys: keyed, sessions: new Map() })).meta).toEqual(['api key', 'no sessions']);
   });
   test('a card with no window to draw says why, and only what is true', () => {
     const keyed = { path: '', keys: [{ name: 'K', stored: true, heads: [{ head: 'openrouter', source: 'store' }] }] } as never;
     const key = head({ key: 'openrouter', label: 'openrouter', authKind: 'api-key' });
     expect(fleetCard(key, inputs({ keys: keyed, usage: null })).none).toBe('Pays per token; no window');
-    expect(fleetCard(head({ key: 'bonsai', authKind: 'api-key' }), inputs({ keys: keyed, usage: null })).none).toBeNull();
+    expect(fleetCard(head({ key: 'bonsai', authKind: 'api-key' }), inputs({ family: 'local', keys: keyed, usage: null })).none).toBeNull();
     expect(fleetCard(head(), inputs({ usage: null })).none).toBe('No reading yet');
     const old = usage(41, NOW / 1000 - 60);
     const read = old.heads[0]?.usage?.quota?.five_hour;

@@ -83,7 +83,7 @@ test('a session that did not say which Claude Code it runs has no box, only the 
   const newest = admitted[admitted.length - 1];
   await expect(page.getByText(`This session did not say which Claude Code it runs, so a note cannot be sent. Relaunch it on Claude Code ${newest}.`)).toBeVisible();
   await expect(page.getByRole('textbox', { name: BOX, exact: true })).toHaveCount(0);
-  await healthyExcept(page, faults, ['404 /api/sessions/' + STACK.sender.id + '/transcript']);
+  await healthyExcept(page, faults, []);
 });
 
 test('a session on a version the daemon has not checked names it, the versions that work and the fix, and takes no draft', async ({ page }) => {

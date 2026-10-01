@@ -6,7 +6,6 @@ import type { AuthPayload, HeadStatus, UsagePayload } from '../types/core';
 import type { KeysPayload } from '../types/login';
 import { familyName, headAttention, localInstantText, providerFamily, quotaRefusedUntil } from './heads';
 import type { HeadSignals } from './heads';
-import { headKeys } from './keys';
 import { colourOfHead } from './model';
 import type { ModelColour } from './model';
 import { poolOf, selectedExcluded } from './accounts';
@@ -54,7 +53,8 @@ export interface FleetInputs {
   /** Live sessions riding each head, by head key. */
   sessions: ReadonlyMap<string, number>;
   topologyStale: boolean;
-  /** The key store: a head that reads no key is a runtime on this computer, whatever auth kind the daemon gives it. Null until it answers. */
+  /** The daemon's declared provider family, not a guess from whether a key was stored. Absent while status has not answered. */
+  family?: string | null;
   keys: KeysPayload | null;
   now: number;
 }
@@ -66,9 +66,9 @@ const OAUTH_KINDS = new Set(['chatgpt-oauth', 'grok-oauth', 'kimi-oauth', 'muse-
 /** The start command a stopped local runtime is copied as. */
 export const startCommandOf = (head: HeadStatus): string => `rig up ${head.key}`;
 
-/** The auth kind a card speaks by: the daemon calls a runtime on this computer `api-key`, but it reads no key, and the card must not say it does. */
-export function kindOf(head: HeadStatus, keys: KeysPayload | null): string {
-  return head.authKind === 'api-key' && keys !== null && headKeys(keys, head.key).length === 0 ? 'local' : head.authKind;
+/** The daemon's provider family is authoritative: a loopback runtime can have a stored API key, and a remote provider can have none. */
+export function kindOf(head: HeadStatus, family: string | null | undefined): string {
+  return family === 'local' ? 'local' : head.authKind;
 }
 
 function accountLine(pool: readonly AccountRow[], kind: string): string {
@@ -126,7 +126,7 @@ export function fleetCard(head: HeadStatus, inputs: FleetInputs): FleetCard {
   const gauge = tightest(head, usage, now);
   const count = sessions.get(head.key) ?? 0;
   const said = new Set<string>();
-  const kind = kindOf(head, inputs.keys);
+  const kind = kindOf(head, inputs.family);
   const meta = [familyName(kind), accountLine(pool, kind), `${count === 0 ? 'no' : count} ${noun(count, 'session', 'sessions')}`].filter((part) => {
     const key = part.toLowerCase();
     if (part === '' || said.has(key)) return false;

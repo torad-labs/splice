@@ -130,7 +130,8 @@ internal class CodexCodeModeResume(
         context: CodeModeRunContext,
         bodyJson: String,
     ): TurnOutcome {
-        val rewritten = wire.canonicalize(bodyJson, registry.completed(record.key), context.turn.toolMedia)
+        context.completed += record
+        val rewritten = wire.canonicalize(bodyJson, context.completed, context.turn.toolMedia)
         rewritten.error?.let { return failure(it) }
         val canonicalBody = checkNotNull(rewritten.bodyJson)
         return driver.drive(context, null, canonicalBody, context.post(canonicalBody))

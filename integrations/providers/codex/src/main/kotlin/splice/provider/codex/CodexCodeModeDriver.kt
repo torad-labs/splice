@@ -75,7 +75,7 @@ internal class CodexCodeModeDriver(
         if (hasTooManyCalls || isMissingOuter) return "code mode accepts one outer custom call per round"
         if (outer == null) return null
         return when {
-            registry.completed(context.key).any { it.outerCallId == outer.callId } ->
+            context.completed.any { it.outerCallId == outer.callId } ->
                 "duplicate completed code-mode call id '${outer.callId}'"
             config.maxRounds?.let { state.scripts >= it } == true -> "code-mode round limit exceeded"
             else -> null
@@ -95,7 +95,8 @@ internal class CodexCodeModeDriver(
         return if (record == null || record.phase != CodeModePhase.COMPLETED) {
             accumulated.finishLocal(advanced)
         } else {
-            val rewritten = wire.canonicalize(state.bodyJson, registry.completed(context.key), context.turn.toolMedia)
+            context.completed += record
+            val rewritten = wire.canonicalize(state.bodyJson, context.completed, context.turn.toolMedia)
             rewritten.error?.let { return accumulated.finishLocal(failure(it)) }
             state.bodyJson = checkNotNull(rewritten.bodyJson)
             state.outcome = context.post(state.bodyJson)
@@ -114,7 +115,7 @@ internal class CodexCodeModeDriver(
         val boundary = wire.inputBoundary(bodyJson)
             ?: return null to failure("code mode requires a Responses input array")
         val continuity = wire.continuity(outcome)
-        val native = CodeModeNativeChain.capture(boundary.nativeSegments, registry.completed(context.key).lastOrNull())
+        val native = CodeModeNativeChain.capture(boundary.nativeSegments, context.completed.lastOrNull())
         val record = CodeModeRecord(
             id = UUID.randomUUID().toString(),
             key = context.key,

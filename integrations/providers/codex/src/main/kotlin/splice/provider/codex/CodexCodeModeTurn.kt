@@ -34,7 +34,10 @@ internal data class CodeModeRunContext(
     val digest: String,
     val sink: WireSink,
     val post: InterceptedRoundPost,
-)
+) {
+    /** One filtered history for this request, extended only by its own completed scripts. */
+    val completed: MutableList<CodeModeRecord> = mutableListOf()
+}
 
 /**
  * History that no longer lines up with a record is DEGRADED, never refused. The status quo before
@@ -102,7 +105,8 @@ internal class CodexCodeModeTurn(
         bodyJson: String,
         conflicts: Set<String>,
     ): TurnOutcome {
-        val completed = registry.completed(context.key).filterNot { it.id in conflicts }
+        val completed = context.completed
+        completed += registry.completed(context.key).filterNot { it.id in conflicts }
         val completedHistory = wire.canonicalize(bodyJson, completed, context.turn.toolMedia)
         completedHistory.error?.let { return failure(it) }
         val canonicalBody = checkNotNull(completedHistory.bodyJson)

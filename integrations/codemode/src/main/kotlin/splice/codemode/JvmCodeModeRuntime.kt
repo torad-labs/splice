@@ -1,10 +1,13 @@
 // NEW: prewarmed multiplexed child-JVM execution keeps parked scripts as isolated contexts, not processes.
 package splice.codemode
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -14,6 +17,7 @@ import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeRuntime
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.failure.CodeModeTimeoutException
+import splice.upstream.failure.CodeModeWorkerLostException
 import java.lang.ProcessBuilder.Redirect
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
@@ -105,16 +109,18 @@ public class JvmCodeModeRuntime(
             }
             boot
         }
-        val host = current.await()
-        check(!closed.get()) { "Code-mode runtime is closed" }
+        val host = awaitHost(current)
+        if (closed.get()) throw CodeModeWorkerLostException()
         val pipe = host.cell(sequence.incrementAndGet())
         var started = false
         try {
             val initial = CodeModeFrames.parseReply(pipe.exchange(frame), tools, 1)
             val cell = JvmCodeModeCell(pipe, initial, tools, ReleaseCodeModeCell(::releaseCell))
             cells.add(cell)
-            if (closed.get()) cell.close()
-            check(!closed.get()) { "Code-mode runtime is closed" }
+            if (closed.get()) {
+                cell.stop()
+                throw CodeModeWorkerLostException()
+            }
             started = true
             return cell
         } finally {
@@ -122,10 +128,19 @@ public class JvmCodeModeRuntime(
         }
     }
 
+    private suspend fun awaitHost(current: Deferred<SharedWorkerChannel>): SharedWorkerChannel = try {
+        current.await()
+    } catch (error: CancellationException) {
+        // A stopped runtime owns the cancelled boot, not the still-live caller's turn.
+        currentCoroutineContext().ensureActive()
+        if (closed.get()) throw CodeModeWorkerLostException(error)
+        throw error
+    }
+
     override fun close() {
         if (closed.compareAndSet(false, true)) {
             try {
-                cells.forEach(JvmCodeModeCell::close)
+                cells.forEach(JvmCodeModeCell::stop)
                 channel?.close()
             } finally {
                 scope.cancel()

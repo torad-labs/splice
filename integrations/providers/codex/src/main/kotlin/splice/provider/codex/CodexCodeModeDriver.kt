@@ -7,9 +7,11 @@ import splice.core.turn.FailurePhase
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
 import splice.provider.codex.state.CodeModeNativeChain
+import splice.provider.codex.state.CodeModeWorkerRecovery
 import splice.upstream.failure.CodeModeCapacityException
 import splice.upstream.failure.CodeModeInfrastructureException
 import splice.upstream.failure.CodeModeTimeoutException
+import splice.upstream.failure.CodeModeWorkerLostException
 import java.io.IOException
 import java.util.UUID
 
@@ -28,6 +30,8 @@ internal class CodexCodeModeDriver(
     private val validation: CodexCodeModeValidation,
     private val machine: CodexCodeModeMachine,
 ) {
+    private val workerRecovery = CodeModeWorkerRecovery(registry)
+
     suspend fun drive(
         context: CodeModeRunContext,
         initialOuter: GatewayCustomCall?,
@@ -201,6 +205,7 @@ internal class CodexCodeModeDriver(
     /** The spawn failure's cause chain goes to the head log; the previous `catch (_: …)` hid it, and
      *  an hour of "runtime failed to start" carried no clue that the pool was simply full. */
     private fun startFailure(record: CodeModeRecord, error: Exception?): TurnOutcome.Failure {
+        if (error is CodeModeWorkerLostException) return workerRecovery.lost(record)
         val chain = generateSequence<Throwable>(error) { it.cause }
             .joinToString(": ") { it.message ?: it::class.simpleName.orEmpty() }
             .ifEmpty { "runtime exception" }

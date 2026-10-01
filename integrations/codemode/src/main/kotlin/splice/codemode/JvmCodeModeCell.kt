@@ -7,6 +7,7 @@ import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
+import splice.upstream.failure.CodeModeWorkerLostException
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal fun interface ReleaseCodeModeCell {
@@ -21,12 +22,16 @@ internal class JvmCodeModeCell(
     private val onClose: ReleaseCodeModeCell,
 ) : CodeModeCell {
     private val closed: AtomicBoolean = AtomicBoolean()
+
+    @Volatile private var stopped = false
+
     private val advanceLock: Mutex = Mutex()
     private var cachedReply: WorkerReply? = initial
     private var pendingCalls: List<CodeModeCall> = initial.calls.orEmpty()
     private var nextId: Int = pendingCalls.size + 1
 
     override suspend fun advance(results: List<CodeModeResult>): CodeModeStep = advanceLock.withLock {
+        if (stopped) throw CodeModeWorkerLostException()
         check(!closed.get()) { "Code-mode cell is closed" }
         var advanced = false
         try {
@@ -40,6 +45,11 @@ internal class JvmCodeModeCell(
         }
     }
 
+    fun stop() {
+        stopped = true
+        close()
+    }
+
     override fun close() {
         if (closed.compareAndSet(false, true)) {
             channel.afterExit { onClose(this) }
@@ -48,6 +58,7 @@ internal class JvmCodeModeCell(
     }
 
     private suspend fun receiveAfter(results: List<CodeModeResult>): WorkerReply {
+        if (stopped) throw CodeModeWorkerLostException()
         check(!closed.get()) { "Code-mode cell is closed" }
         CodeModeFrames.validateResultSet(pendingCalls, results)
         val reply = CodeModeFrames.parseReply(

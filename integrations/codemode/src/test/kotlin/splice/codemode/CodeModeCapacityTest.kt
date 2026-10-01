@@ -1,5 +1,7 @@
 package splice.codemode
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
@@ -14,6 +16,7 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
+import splice.upstream.failure.CodeModeWorkerLostException
 
 class CodeModeCapacityTest {
     private val testClasspath = checkNotNull(System.getProperty("codeMode.testClasspath"))
@@ -60,12 +63,33 @@ class CodeModeCapacityTest {
 
     @Test
     @Timeout(60)
+    fun `closing the runtime during an admitted start is worker loss not caller cancellation`() = runBlocking<Unit> {
+        val entered = CompletableDeferred<Unit>()
+        val spawn = WorkerSpawn {
+            entered.complete(Unit)
+            java.util.concurrent.CountDownLatch(1).await()
+            error("the cancelled spawn cannot finish")
+        }
+        JvmCodeModeRuntime(workerClasspath = testClasspath, spawn = spawn).use { runtime ->
+            supervisorScope {
+                val starting = async(start = CoroutineStart.UNDISPATCHED) {
+                    runtime.start("return 'never';", emptySet())
+                }
+                entered.await()
+                runtime.close()
+                assertThrows(CodeModeWorkerLostException::class.java) { runBlocking { starting.await() } }
+            }
+        }
+    }
+
+    @Test
+    @Timeout(60)
     fun `closing the runtime closes parked cells and refuses new starts`() = runBlocking<Unit> {
         val runtime = JvmCodeModeRuntime(maxWorkers = 1, workerClasspath = testClasspath)
         val held = runtime.start("await tools.call('Read', {});", setOf("Read"))
         assertTrue(held.advance() is CodeModeStep.Calls)
         runtime.close()
-        assertThrows(IllegalStateException::class.java) { runBlocking { held.advance() } }
+        assertThrows(CodeModeWorkerLostException::class.java) { runBlocking { held.advance() } }
         assertThrows(IllegalStateException::class.java) { runBlocking { runtime.start("return 'never';", emptySet()) } }
     }
 }

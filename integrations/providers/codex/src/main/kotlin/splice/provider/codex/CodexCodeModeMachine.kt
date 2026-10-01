@@ -6,12 +6,14 @@ import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.provider.codex.state.CodeModeWorkerRecovery
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 import splice.upstream.failure.CodeModeInfrastructureException
 import splice.upstream.failure.CodeModeTimeoutException
+import splice.upstream.failure.CodeModeWorkerLostException
 import splice.upstream.sse.WireSink
 import java.io.IOException
 import java.util.UUID
@@ -33,6 +35,7 @@ internal class CodexCodeModeMachine(
     /** When each running script first advanced, for codex's "Wall time" line. In memory only: a restored
      *  ACTIVE record comes back LOST, so a script completes in the daemon that started it or not at all. */
     private val started: MutableMap<String, Long> = ConcurrentHashMap()
+    private val workerRecovery = CodeModeWorkerRecovery(registry)
 
     suspend fun advance(
         record: CodeModeRecord,
@@ -129,7 +132,7 @@ internal class CodexCodeModeMachine(
             "code-mode infrastructure failure ${error.category}/${error.faultClass}; ${lostMessage(request.record)}",
         )
     } catch (error: IOException) {
-        poison(request.record, runtimeFailure(error, request.record))
+        ioFailure(request.record, error)
     } catch (error: IllegalStateException) {
         poison(request.record, runtimeFailure(error, request.record))
     } catch (error: IllegalArgumentException) {
@@ -141,6 +144,14 @@ internal class CodexCodeModeMachine(
                 "accepted results=${request.record.results.size}; source was not rerun",
         )
     }
+
+    private fun ioFailure(record: CodeModeRecord, error: IOException): TurnOutcome.Failure =
+        if (error is CodeModeWorkerLostException) {
+            started.remove(record.id)
+            workerRecovery.lost(record)
+        } else {
+            poison(record, runtimeFailure(error, record))
+        }
 
     private suspend fun dispatchStep(request: CodeModeAdvanceRequest, step: CodeModeStep): TurnOutcome =
         when (step) {

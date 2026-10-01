@@ -15,12 +15,11 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
+import splice.upstream.failure.CodeModeWorkerLostException
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
-
-private const val HOST_CLOSED = "Code-mode host was closed"
 
 private data class PendingHostReply(val cell: Long, val answer: CompletableDeferred<HostFrame>)
 
@@ -51,7 +50,7 @@ internal class SharedWorkerChannel(
                     deliver(reply)
                 }
             } catch (error: CancellationException) {
-                fail(IOException(HOST_CLOSED, error))
+                fail(CodeModeWorkerLostException(error))
                 throw error
             } catch (error: IOException) {
                 fail(error)
@@ -71,7 +70,7 @@ internal class SharedWorkerChannel(
         cells[id] = exited
         if (closed.get()) {
             cells.remove(id)?.complete(Unit)
-            throw IOException(HOST_CLOSED)
+            throw CodeModeWorkerLostException()
         }
         return HostCellChannel(this, id, exited)
     }
@@ -107,7 +106,7 @@ internal class SharedWorkerChannel(
     }
 
     private fun ensureOpen() {
-        if (closed.get()) throw IOException(HOST_CLOSED)
+        if (closed.get()) throw CodeModeWorkerLostException()
     }
 
     private suspend fun writeFrame(frame: JsonObject) = writes.withLock {
@@ -131,7 +130,7 @@ internal class SharedWorkerChannel(
 
     override fun close() {
         if (closed.compareAndSet(false, true)) {
-            fail(IOException(HOST_CLOSED))
+            fail(CodeModeWorkerLostException())
             try {
                 transport.close()
             } finally {

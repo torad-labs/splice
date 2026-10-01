@@ -46,47 +46,9 @@ internal object CodeModeWire {
     const val maxCallsPerCell: Int = 32
     const val maxToolCatalog: Int = 2_048
 
-    fun write(output: DataOutputStream, frame: JsonObject) {
-        val bytes = CodeModeProtocol.encodeFrame(frame)
-        require(bytes.size <= maxFrameBytes) { "Code-mode frame exceeds $maxFrameBytes bytes" }
-        output.writeInt(bytes.size)
-        output.write(bytes)
-        output.flush()
-    }
+    fun write(output: DataOutputStream, frame: JsonObject) = CodeModeTransport.write(output, frame)
 
-    fun read(input: DataInputStream): JsonObject {
-        val size = readFrameSize(input)
-        val bytes = ByteArray(size)
-        readFrameBytes(input, bytes)
-        return parseFrame(bytes)
-    }
-
-    private fun readFrameSize(input: DataInputStream): Int {
-        val size = try {
-            input.readInt()
-        } catch (error: IOException) {
-            throw IOException("Code-mode worker closed its protocol stream", error)
-        }
-        if (size !in 1..maxFrameBytes) throw IOException("Code-mode worker sent an invalid frame length")
-        return size
-    }
-
-    private fun readFrameBytes(input: DataInputStream, bytes: ByteArray) {
-        try {
-            input.readFully(bytes)
-        } catch (error: IOException) {
-            throw IOException("Code-mode worker closed an incomplete protocol frame", error)
-        }
-    }
-
-    private fun parseFrame(bytes: ByteArray): JsonObject {
-        val element = try {
-            CodeModeJson.codec.parseToJsonElement(bytes.decodeToString())
-        } catch (error: IllegalArgumentException) {
-            throw IOException("Code-mode worker sent invalid JSON", error)
-        }
-        return element as? JsonObject ?: throw IOException("Code-mode worker sent a non-object frame")
-    }
+    fun read(input: DataInputStream): JsonObject = CodeModeTransport.read(input)
 
     /** V4-226: a worker's first frame, sent once its JVM and JavaScript engine are up and before it
      *  reads the start frame, so the parent can time its start apart from the script's advance. */

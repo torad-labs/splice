@@ -11,6 +11,7 @@ import java.security.MessageDigest
 import java.util.jar.JarEntry
 import java.util.jar.JarFile
 import java.util.jar.JarOutputStream
+import java.util.zip.Deflater
 
 internal class SwappedWorkerArchive(root: Path, classpath: String, archiveName: String = "worker.jar") {
     val jar: Path = root.resolve(archiveName)
@@ -50,6 +51,8 @@ internal class SwappedWorkerArchive(root: Path, classpath: String, archiveName: 
         val replacement = jar.resolveSibling("replacement.jar")
         JarFile(jar.toFile()).use { original ->
             JarOutputStream(Files.newOutputStream(replacement)).use { output ->
+                // This fixture changes one class, not compression: re-deflating the fat jar dominates CI's boot budget.
+                output.setLevel(Deflater.NO_COMPRESSION)
                 for (entry in original.entries()) {
                     output.putNextEntry(JarEntry(entry.name))
                     copyEntry(original, entry, output)

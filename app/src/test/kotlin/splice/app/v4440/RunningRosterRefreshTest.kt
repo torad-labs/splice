@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
 import org.opentest4j.AssertionFailedError
 import splice.core.model.DiscoveredModel
@@ -22,6 +23,7 @@ import java.nio.file.Path
 
 private const val JOINED = "synthetic-joined"
 
+@Timeout(60)
 class RunningRosterRefreshTest {
     @Test
     fun `hourly publication reaches the same running head and its retained control readers`(

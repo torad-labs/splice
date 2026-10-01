@@ -2,8 +2,9 @@
 package splice.app.v4440
 
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.job
 import splice.app.TokenUrlRefreshCall
 import splice.app.auth.SignInPlanner
 import splice.app.control.ControlServer
@@ -40,6 +41,7 @@ import splice.sessions.registry.SessionSource
 import splice.sessions.teams.Team
 import splice.sessions.teams.TeamSlot
 import splice.sessions.teams.TeamStore
+import splice.upstream.LifecycleScope
 import splice.upstream.Ticker
 import java.net.URI
 import java.net.http.HttpClient
@@ -48,7 +50,8 @@ import java.net.http.HttpResponse
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 
-internal class RunningRosterFixture(tmp: Path, private val scope: CoroutineScope) {
+internal class RunningRosterFixture(tmp: Path, parent: CoroutineScope) {
+    private val scope = LifecycleScope(parent.coroutineContext)
     val paths = StatePaths(baseOverride = tmp.resolve("state"))
     private val upstream = RosterUpstream()
     private val config = ConfigService(paths, envReader = { null })
@@ -89,7 +92,6 @@ internal class RunningRosterFixture(tmp: Path, private val scope: CoroutineScope
     lateinit var managed: ManagedHead
         private set
     private lateinit var control: ControlServer
-    private lateinit var refreshJob: Job
     private val client = HttpClient.newHttpClient()
     private val teams = TeamStore(tmp.resolve("teams.json"), clock = WallClock { 0L })
     lateinit var teamId: String
@@ -124,7 +126,7 @@ internal class RunningRosterFixture(tmp: Path, private val scope: CoroutineScope
         control.ports.teams = teams
         control.ports.declaredHeads = DeclaredHeads { mapOf("synthetic" to DeclaredHead("synthetic", null)) }
         control.start()
-        refreshJob = rosters.start(scope, mapOf("synthetic" to provider))
+        rosters.start(scope, mapOf("synthetic" to provider))
         check(awaiting.receive() == 3_600_000L)
     }
 
@@ -181,10 +183,7 @@ internal class RunningRosterFixture(tmp: Path, private val scope: CoroutineScope
     }
 
     suspend fun close() {
-        if (::refreshJob.isInitialized) {
-            refreshJob.cancel()
-            refreshJob.join()
-        }
+        scope.coroutineContext.job.cancelAndJoin()
         if (::control.isInitialized) control.stop()
         if (::managed.isInitialized) managed.head.stop()
         windows.close()

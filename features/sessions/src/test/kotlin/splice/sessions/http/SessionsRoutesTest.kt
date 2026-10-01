@@ -47,6 +47,24 @@ class SessionsRoutesTest {
     }
 
     @Test
+    fun `sessions json names the Claude Code versions a note is sent to`(@TempDir dir: Path) {
+        val registry = SessionRegistry(
+            sessionsDir = dir,
+            routeOf = { SessionRoute.Unknown },
+            pidAlive = { true },
+            clock = { now },
+        )
+        fun listed(routes: SessionsRoutes) = Json.parseToJsonElement(routes.sessionsJson())
+            .jsonObject["note_versions"]!!.jsonArray.map { it.jsonPrimitive.content }
+        assertEquals(
+            listOf("2.1.282", "2.1.283", "2.1.284", "2.1.285", "2.1.286"),
+            listed(SessionsRoutes(registry, TestTranscripts())),
+        )
+        val narrowed = SessionsRoutes(registry, TestTranscripts(), noteVersions = setOf("2.1.286", "2.1.285"))
+        assertEquals(listOf("2.1.285", "2.1.286"), listed(narrowed))
+    }
+
+    @Test
     fun `each running session carries its own account instead of the head-wide choice`(@TempDir dir: Path) {
         listOf("first", "second").forEachIndexed { index, id ->
             Files.writeString(

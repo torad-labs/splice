@@ -38,6 +38,7 @@ import kotlinx.serialization.json.put
 import splice.core.config.ConfigService
 import splice.core.config.UserHome
 import splice.http.JsonReply
+import splice.sessions.note.PeerNoteAbi
 import splice.sessions.query.SessionHead
 import splice.sessions.registry.RepoOrigin
 import splice.sessions.registry.RepoResolver
@@ -94,6 +95,8 @@ public class SessionsRoutes(
     private val viewEnabled: SessionTranscriptViewEnabled = SessionTranscriptViewEnabled {
         config?.getConfig()?.transcriptView ?: true
     },
+    /** The Claude Code versions a note is sent to (PeerNoteSocket refuses every other), listed so a page can refuse before anyone types. */
+    private val noteVersions: Set<String> = PeerNoteAbi.AUDITED_VERSIONS,
 ) {
     /** GET /api/sessions/{id}/edges and GET /api/sessions/edges. */
     public val edgeRoutes: ActivityRoutes = ActivityRoutes(registry, activity, SentTextSource(::sentTexts))
@@ -115,6 +118,7 @@ public class SessionsRoutes(
         val resumable = if (viewEnabled()) resumableSessions.among(ids) else Resumability(null)
         addEdgeState(this)
         put("note", HEADLESS_NOTE)
+        put("note_versions", buildJsonArray { noteVersions.sorted().forEach { add(JsonPrimitive(it)) } })
         // An unreadable directory is not an empty one: the error rides beside the (empty) list.
         listing.error?.let { put("error", it) }
         put("sessions", buildJsonArray { listing.sessions.forEach { add(row(it, edges, resumable)) } })

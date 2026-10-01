@@ -1,4 +1,6 @@
 source	sha256	disposition	destination	reason
+integrations/codemode/src/test/kotlin/splice/codemode/CodeModeSharedHostTest.kt	335e796cc7f1c26d1a01313f6fb63a3a65240dc4abd4dcd78021a250c534a70e	created		Shared-host admission, memory, cancellation, protocol and boot proofs
+integrations/codemode/src/test/kotlin/splice/codemode/HostReplyAddressTest.kt	68c7df7651a53d9c93fe08ecef1180f18186592cdd3acb47a894f464648e4a81	created		Unknown-request and wrong-cell addressed-reply regression proofs
 integrations/providers/codex/src/test/kotlin/splice/provider/codex/CodeModeCountPolicyTest.kt	e5dc5728c237351eb7b960552cb501937a20dbde53a35751a6a54ae4b7ce32a8	created		Red-first proofs for default record, call and round count freedom, explicit count limits and expiry-evidence lifetime
 integrations/codemode/src/main/kotlin/splice/codemode/CellChannel.kt	5dfa9ee336a4c02c4fd89ddb6f263b1562460b2171fec062957aa06a242ca5b2	created		Per-cell framed request channel within a multiplexed shared code-mode host
 integrations/codemode/src/main/kotlin/splice/codemode/HostProtocol.kt	5f4b2545db093ae18b567c2eff92fecfed0630706f6b7ec08619ae4cbb36fcfa	created		Framed host protocol routing script identities and cell messages in a shared isolate

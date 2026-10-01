@@ -5,6 +5,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
 import splice.app.TokenUrlRefreshCall
 import splice.app.provider.CodexResponsesArm
@@ -25,6 +26,7 @@ import splice.core.topology.ProviderConfig
 import splice.core.turn.WatchdogBudget
 import splice.core.util.SecureFile
 import splice.models.discovery.Discovery
+import splice.provider.codex.CodeModeSessionAlive
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 
@@ -35,6 +37,7 @@ private const val MODE_BODY = """{"model":"gpt-6-synthetic","max_tokens":8,"stre
 
 class RefreshedCodeModeTest {
     @Test
+    @Timeout(10)
     fun `roster refresh changes tool mode on the next build of the existing provider`(
         @TempDir tmp: Path,
     ) = runBlocking {
@@ -59,6 +62,8 @@ class RefreshedCodeModeTest {
             this,
             {},
             TokenUrlRefreshCall { _, _ -> RefreshAttempt.Denied("synthetic-denied") },
+            // This finite roster fixture owns no interactive session registry or perpetual poll.
+            sessionAlive = CodeModeSessionAlive { null },
         ).codexOAuthProvider(context(paths, provider, rosters), "Synthetic")
         val body = AnthropicParse.parseAnthropicBody(MODE_BODY)
         try {

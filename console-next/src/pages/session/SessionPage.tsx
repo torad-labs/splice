@@ -187,7 +187,7 @@ export function SessionPage() {
                 </div>
               );
             })}
-            {row === undefined ? null : <SessionNote key={id} row={row} />}
+            {row === undefined ? null : <SessionNote key={id} row={row} versions={sessions.data?.note_versions} />}
           </div>
         </Window>
         {rail === null ? <div /> : <Rail rail={rail} colourOf={seatColour} pathOf={seatPath} />}

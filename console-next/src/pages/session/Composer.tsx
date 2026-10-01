@@ -35,6 +35,12 @@ export function Composer({ draft, phase, failure, onDraft, onSend }: ComposerPro
   );
 }
 
+/** What the page shows where a session the daemon will not send a note to would have the box: the reason and the way out, in the
+ *  daemon's own terms (lib/note.ts noteRefusal). */
+export function NoteRefused({ text }: { text: string }) {
+  return <p className="hint">{text}</p>;
+}
+
 /** What the page shows where a session that is not running would have the box. */
 export function NoteClosed() {
   return <p className="hint">{P.noteNotRunning}</p>;

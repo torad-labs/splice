@@ -113,6 +113,8 @@ export interface SessionsPayload {
    * prints this sentence where it would otherwise print "no sessions".
    */
   note: string;
+  /** The Claude Code versions the daemon sends a note to, oldest first (PeerNoteAbi.AUDITED_VERSIONS). Absent from a daemon that predates it. */
+  note_versions?: string[];
   /** Present when the registry DIRECTORY exists but could not be listed: an unreadable directory is
    *  not an empty one, and the console says which happened (SessionRegistry.kt:29-32). */
   error?: string;

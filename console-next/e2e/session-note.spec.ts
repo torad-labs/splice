@@ -76,16 +76,36 @@ test('a note typed on a live session reaches its inbox as a message from another
   await healthyExcept(page, faults, ['404 /api/sessions/' + NOTED.id + '/transcript']);
 });
 
-test('a session on a Claude Code version the daemon has not checked refuses the note in its own words, and the draft stays', async ({ page }) => {
+test('a session that did not say which Claude Code it runs has no box, only the refusal and the way out, before anyone types', async ({ page }) => {
   const faults = await open(page, 'sessions/' + STACK.sender.id);
-  const box = page.getByRole('textbox', { name: BOX, exact: true });
-  await box.fill(NOTE);
-  await page.getByRole('button', { name: 'Send the note', exact: true }).click();
-  await expect(page.getByRole('status').filter({ hasText: 'notes are only sent to' })).toContainText('the session runs Claude Code of unknown version');
-  await expect(box).toHaveValue(NOTE);
-  await box.fill(NOTE + ' Again.');
-  await expect(page.getByRole('status').filter({ hasText: 'notes are only sent to' })).toHaveCount(0);
-  await healthyExcept(page, faults, ['422 /api/sessions/' + STACK.sender.id + '/message']);
+  const admitted = (await read<SessionsPayload>(page, '/api/sessions')).note_versions ?? [];
+  expect(admitted.length, 'the daemon lists the versions it sends a note to').toBeGreaterThan(0);
+  const newest = admitted[admitted.length - 1];
+  await expect(page.getByText(`This session did not say which Claude Code it runs, so a note cannot be sent. Relaunch it on Claude Code ${newest}.`)).toBeVisible();
+  await expect(page.getByRole('textbox', { name: BOX, exact: true })).toHaveCount(0);
+  await healthyExcept(page, faults, ['404 /api/sessions/' + STACK.sender.id + '/transcript']);
+});
+
+test('a session on a version the daemon has not checked names it, the versions that work and the fix, and takes no draft', async ({ page }) => {
+  const old = join(sessionsDir(), 'e2e-old.json');
+  const oldId = 'e2e-old-0000-4000-8000-000000000005';
+  writeFileSync(old, JSON.stringify({
+    pid: process.pid, sessionId: oldId, cwd: env('CONSOLE_E2E_REPO'), name: 'e2e-old', kind: 'interactive', version: '2.1.200',
+    status: 'idle', startedAt: Date.now(), updatedAt: Date.now(), messagingSocketPath: join(dir, 'noted.sock'),
+  }));
+  try {
+    const faults = await open(page, 'sessions/' + oldId);
+    const admitted = (await read<SessionsPayload>(page, '/api/sessions')).note_versions ?? [];
+    const newest = admitted[admitted.length - 1];
+    const refusal = page.getByText('This session runs Claude Code 2.1.200, and notes reach only ');
+    await expect(refusal).toBeVisible();
+    await expect(refusal).toContainText(`Relaunch it on Claude Code ${newest}.`);
+    for (const version of admitted) await expect(refusal).toContainText(version);
+    await expect(page.getByRole('textbox', { name: BOX, exact: true })).toHaveCount(0);
+    await healthyExcept(page, faults, ['404 /api/sessions/' + oldId + '/transcript']);
+  } finally {
+    rmSync(old, { force: true });
+  }
 });
 
 test('a session that is not running has no box, only the reason', async ({ page }) => {

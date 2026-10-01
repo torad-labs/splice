@@ -9,7 +9,7 @@ import type { Item } from '../src/lib/conversation';
 import type { Rail as RailFacts } from '../src/lib/rail';
 import type { HandedEdge, SessionRow } from '../src/types/sessions';
 import { UNKNOWN_HEAD } from '../src/types/sessions';
-import { Composer, NoteClosed } from '../src/pages/session/Composer';
+import { Composer, NoteClosed, NoteRefused } from '../src/pages/session/Composer';
 import type { ComposerProps } from '../src/pages/session/Composer';
 import { NOTE_LIMIT } from '../src/lib/note';
 import { Handoff } from '../src/pages/session/Handoff';
@@ -117,6 +117,11 @@ describe('the note box', () => {
     const html = box({ draft: 'x'.repeat(NOTE_LIMIT + 1) });
     expect(html).toContain('A note is at most 8,000 characters.');
     expect(html).toMatch(/<button[^>]*disabled/);
+  });
+  test('a session on a version notes do not reach has no box, and says why and what to do', () => {
+    const html = renderToStaticMarkup(<NoteRefused text="This session runs Claude Code 2.1.280, and notes reach only 2.1.286. Relaunch it on Claude Code 2.1.286." />);
+    expect(html).toContain('Relaunch it on Claude Code 2.1.286.');
+    expect(html).not.toContain('<textarea');
   });
   test('a session that is not running has no box, and says why', () => {
     expect(renderToStaticMarkup(<NoteClosed />)).toContain('This session is not running, so it cannot take a note.');

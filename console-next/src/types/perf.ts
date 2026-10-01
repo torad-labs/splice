@@ -380,8 +380,6 @@ export interface InflightTurn {
   phase: string;
   ageMs: number;
   idleMs: number;
-  /** The head's own idle threshold, so a turn past it is visibly stalled rather than busy. */
-  streamIdleMs: number;
 }
 
 /** What the turns store holds: the live set beside the landed rows. */

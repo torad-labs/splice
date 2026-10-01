@@ -66,7 +66,7 @@ describe('plan rows', () => {
 });
 
 describe('running turns', () => {
-  const live = (idleMs: number) => ({ head: 'kimi', label: 'Migrate', compact: false, phase: 'streaming', ageMs: 900_000, idleMs, streamIdleMs: 60_000 });
+  const live = (idleMs: number) => ({ head: 'kimi', label: 'Migrate', compact: false, phase: 'streaming', ageMs: 900_000, idleMs });
   test('stuck only past five minutes of silence, and the stuck one comes first', () => {
     const lines = runningOf([live(4 * 60_000), { ...live(6 * 60_000), label: 'Old' }], (h) => h, none);
     expect(lines.map((l) => [l.label, l.stuck])).toEqual([['Old', true], ['Migrate', false]]);
@@ -92,6 +92,13 @@ describe('running turns', () => {
     const html = renderToStaticMarkup(createElement(RunningCard, { turn: line, act: createElement('button', null, 'Stop the turn') }));
     expect(html).toContain('Stop the turn');
     expect(renderToStaticMarkup(createElement(RunningCard, { turn: line }))).not.toContain('Stop the turn');
+  });
+  test('a turn quiet for two minutes says so as a sentence a person understands, with Stop beside it', () => {
+    const line = runningOf([live(2 * 60_000)], (h) => h, none)[0] as RunningLine;
+    const html = renderToStaticMarkup(createElement(RunningCard, { turn: line, act: createElement('button', null, 'Stop the turn') }));
+    expect(html).toContain('No word from the model for 2 min; splice is keeping the turn open.');
+    expect(html).toContain('Stop the turn');
+    expect(html).not.toMatch(/limit/i);
   });
   test('a turn that has just spoken names no silence', () => {
     expect(runningOf([live(2000)], (h) => h, none)[0]?.quiet).toBeNull();

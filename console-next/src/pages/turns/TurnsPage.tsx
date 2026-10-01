@@ -39,13 +39,14 @@ function StopRunning({ turn }: { turn: RunningLine }) {
 }
 
 export function RunningCard({ turn, act }: { turn: RunningLine; act?: ReactNode }) {
-  const say = turn.quiet !== null ? T.quietFor(turn.quiet) : turn.phase === 'streaming' ? T.streaming : T.connecting;
+  const say = turn.phase === 'streaming' ? T.streaming : T.connecting;
   return (
     <Window as="li" colour={turn.colour} attention={turn.stuck} aria-label={`${turn.title}, ${turn.plan}`}>
       <WindowBar title={turn.title}>
         <State tone={turn.stuck ? 'stuck' : 'work'}>{turn.stuck ? 'Stuck' : 'Working'}</State>
       </WindowBar>
-      <p className="say"><b>{turn.plan}</b>{turn.model === null ? '' : ` · ${turn.model}`} · {say} · {T.runningFor(turn.age)}</p>
+      <p className="say"><b>{turn.plan}</b>{turn.model === null ? '' : ` · ${turn.model}`}{turn.quiet === null ? ` · ${say}` : ''} · {T.runningFor(turn.age)}</p>
+      {turn.quiet === null ? null : <p className="say">{T.quietFor(turn.quiet)}</p>}
       {act}
     </Window>
   );

@@ -351,15 +351,13 @@ describe('a refused credential says why and offers no renewal (V4-410)', () => {
 });
 
 describe('turns and team seats', () => {
-  test('a live turn idle past its head\'s own limit is stalled; one within it is working', () => {
+  test('a live turn quiet past its head\'s stream idle limit is not a need: the daemon holds it open and heals it', () => {
     const live = [
       { label: 'impl', compact: false, phase: 'streaming', age_ms: 90_000, idle_ms: 45_000 },
       { label: 'rev', compact: false, phase: 'streaming', age_ms: 9_000, idle_ms: 200 },
     ];
     const out = needsIn({ heads: read([head({ gate: gate({ inflight: 2, live }) })]) });
-    expect(out.map((need) => [need.source, need.kind, need.subject, need.finding, need.at])).toEqual([
-      ['turns', K.turn, 'impl', 'Idle 45.0s, limit 30.0s', '#/turns'],
-    ]);
+    expect(out.filter((need) => need.subject === 'impl' || need.subject === 'rev')).toEqual([]);
   });
 
   test('a live team\'s seat whose session ended or left the registry; an archived team is quiet', () => {
@@ -624,17 +622,16 @@ describe('the doctor', () => {
 
 describe('the list ranks worst first', () => {
   test('SOURCE_ORDER is the printed order of sources within a severity', () => {
-    expect(SOURCE_ORDER).toEqual(['heads', 'daemon', 'plans', 'accounts', 'turns', 'sessions', 'teams', 'doctor']);
+    expect(SOURCE_ORDER).toEqual(['heads', 'daemon', 'plans', 'accounts', 'sessions', 'teams', 'doctor']);
   });
 
   test('danger before warn, and within each, sources in SOURCE_ORDER', () => {
     // Concatenation order puts warn heads before danger heads and the daemon's warn before the plan's
     // danger, so a list that was not sorted could not pass this.
-    const live = [{ label: 'impl', compact: false, phase: 'streaming', age_ms: 90_000, idle_ms: 45_000 }];
     const near = account({ label: 'near', windows: [{ seconds: 18_000, used_percent: 99, reset_epoch_seconds: null }] });
     const excluded = account({ label: 'main', auth_excluded_until_epoch_millis: NOW + 60_000, auth_exclusion_reason: 'refresh rejected' });
     const inputs = quiet({
-      heads: read([head({ versionMatch: false, gate: gate({ inflight: 1, live }) }), head({ key: 'down', label: 'down', running: false })]),
+      heads: read([head({ versionMatch: false }), head({ key: 'down', label: 'down', running: false })]),
       accounts: read({ accounts: [near, excluded] }),
       topology: read(true),
       sessions: read({ note: '', sessions: [session({ status: 'waiting' })] }),
@@ -646,7 +643,7 @@ describe('the list ranks worst first', () => {
     });
     expect(needsOf(inputs, NOW).needs.map((need) => `${need.severity}:${need.source}`)).toEqual([
       'danger:heads', 'danger:plans', 'danger:doctor',
-      'warn:heads', 'warn:daemon', 'warn:accounts', 'warn:turns', 'warn:sessions', 'warn:teams', 'warn:doctor',
+      'warn:heads', 'warn:daemon', 'warn:accounts', 'warn:sessions', 'warn:teams', 'warn:doctor',
     ]);
   });
 });
@@ -667,11 +664,10 @@ describe('each item opens itself on its page, at the console-next routes', () =>
   });
 
   test('every source\'s item carries its own address', () => {
-    const live = [{ label: 'impl', compact: false, phase: 'streaming', age_ms: 90_000, idle_ms: 45_000 }];
     const near = account({ label: 'near', windows: [{ seconds: 18_000, used_percent: 99, reset_epoch_seconds: null }] });
     const excluded = account({ label: 'main', auth_excluded_until_epoch_millis: NOW + 60_000, auth_exclusion_reason: 'refresh rejected' });
     const out = needsIn({
-      heads: read([head({ gate: gate({ inflight: 1, live }) }), head({ key: 'down', label: 'down', running: false })]),
+      heads: read([head({ key: 'down', label: 'down', running: false })]),
       accounts: read({ accounts: [near, excluded] }),
       sessions: read({ note: '', sessions: [session({ status: 'waiting' })] }),
       teams: read({ teams: [team({ slots: [slot({ session: 'sess-lost' })] })] }),
@@ -683,7 +679,6 @@ describe('each item opens itself on its page, at the console-next routes', () =>
     expect(at('daemon')).toEqual([null]);
     expect(at('plans')).toEqual(['#/usage']);
     expect(at('accounts')).toEqual(['#/fleet/claudex']);
-    expect(at('turns')).toEqual(['#/turns']);
     expect(at('sessions')).toEqual(['#/sessions/sess-1']);
     expect(at('teams')).toEqual(['#/sessions?group=team']);
     expect(at('doctor')).toEqual(['#/settings/health']);

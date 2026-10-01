@@ -48,7 +48,7 @@ export const T = {
   unread: (head: string, why: string) => `${head}: ${why}`,
   clamped: (head: string) => `${head} has more turns in this window than the list holds; the oldest are cut.`,
   runningFor: (age: string) => `running ${age}`,
-  quietFor: (quiet: string) => `nothing from the model for ${quiet}`,
+  quietFor: (quiet: string) => `No word from the model for ${quiet}; splice is keeping the turn open.`,
   connecting: 'Waiting for the model to answer',
   streaming: 'Streaming its answer',
   open: 'Open the turn',

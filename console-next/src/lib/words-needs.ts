@@ -41,8 +41,6 @@ export const U = {
   runs: 'Runs',
   wants: 'splice wants',
   notSet: 'not set',
-  idle: 'Idle',
-  limit: 'limit',
   at: 'at',
   resets: 'resets',
   waiting: 'settings waiting',
@@ -73,7 +71,6 @@ export const K = {
   restart: 'Restart needed',
   plan: 'Command near its limit',
   account: 'Account',
-  turn: 'Turn stalled',
   seat: 'Team seat',
   doctor: 'Doctor',
 } as const satisfies Record<string, NeedKind>;

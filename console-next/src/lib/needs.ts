@@ -1,7 +1,7 @@
 // NEEDS YOU (V4-219): the console's first screen, one ranked list of everything that needs the
 // operator, each item with its one fix. Marlin's rule is the page's contract:
 //   - every item comes from a measured signal, read through the definition its own page prints:
-//     headAttention for a head, nearestLimit for a plan window, isStalled for a turn, stateOf for a
+//     headAttention for a head, nearestLimit for a plan window, stateOf for a
 //     session, wantsAttention for a doctor check;
 //   - an input nobody could read is an unknown, listed with why, never silence;
 //   - "Nothing needs you" only when every input was read, as of the oldest of those reads.
@@ -23,10 +23,9 @@ import { UNKNOWN_HEAD } from '../types/sessions';
 import type { TeamRow } from '../types/teams';
 import { exclusionText, isExcluded, poolOf, refusalText } from './accounts';
 import { checkFinding, collapseChecks, fixMasked, logsHrefOf, wantsAttention } from './doctor';
-import { fmtMs, ABSENT } from './format';
+import { ABSENT } from './format';
 import { headAttention, localInstantText, quotaRefusedUntil } from './heads';
 import { nearestLimit } from './nearest-limit';
-import { inflightFrom, isStalled } from './perf';
 import { waitingQuestion } from './session-says';
 import { activityText, needsPerson, repoName, sessionKey, sessionLabel, stateOf, timingOf } from './sessions';
 import type { TurnOf } from './sessions';
@@ -51,9 +50,9 @@ export function readingOf(input: InputName, read: Read<unknown>): Reading {
 /** The hash address of the page an item belongs to, and of its own detail where the page opens one: a
  *  head's card on Fleet (`/fleet/<key>`), a session's own page. The daemon is no page's. */
 export function hrefOf(source: 'daemon'): null;
-export function hrefOf(source: Exclude<Source, 'daemon'>, id?: string): string;
-export function hrefOf(source: Source, id?: string): string | null;
-export function hrefOf(source: Source, id?: string): string | null {
+export function hrefOf(source: Exclude<Source, 'daemon'> | 'turns', id?: string): string;
+export function hrefOf(source: Source | 'turns', id?: string): string | null;
+export function hrefOf(source: Source | 'turns', id?: string): string | null {
   switch (source) {
     case 'heads':
     case 'accounts':
@@ -218,23 +217,6 @@ function accountNeeds(accounts: readonly AccountRow[], now: number): Need[] {
   });
 }
 
-/** Every live turn idle past its head's own stream idle limit, by isStalled, the definition Turns
- *  prints. */
-function turnNeeds(heads: readonly HeadStatus[]): Need[] {
-  return inflightFrom(heads).filter(isStalled).map((turn, at) => ({
-    key: `turns:${turn.head}:${turn.label}:${at}`,
-    severity: 'warn',
-    source: 'turns',
-    kind: K.turn,
-    head: turn.head,
-    subject: turn.label,
-    finding: `${U.idle} ${fmtMs(turn.idleMs)}, ${U.limit} ${fmtMs(turn.streamIdleMs)}`,
-    fix: open(hrefOf('turns'), S.openTurns),
-    // Turns opens a landed turn; a live one has no detail yet, so the page is where it is.
-    at: hrefOf('turns'),
-  }));
-}
-
 /** The daemon cuts a message at 160 characters without saying so: one that stops mid-sentence ends in an ellipsis, so the
  *  sentence after it does not run into it. */
 
@@ -352,7 +334,7 @@ export function doctorFixOf(remedy: string | null, id: string | null, kind: FixK
 
 /** The order sources rank in within one severity: the heads splice runs on first, the daemon's own
  *  checks last. */
-export const SOURCE_ORDER: readonly Source[] = ['heads', 'daemon', 'plans', 'accounts', 'turns', 'sessions', 'teams', 'doctor'];
+export const SOURCE_ORDER: readonly Source[] = ['heads', 'daemon', 'plans', 'accounts', 'sessions', 'teams', 'doctor'];
 
 const noTurns: TurnOf = () => undefined;
 
@@ -379,7 +361,6 @@ export function needsOf(inputs: NeedInputs, now: number): NeedsList {
     ...daemonNeeds(topologyStale, inputs.restartPending, wanted.filter((check) => check.pending_restart === true)),
     ...planNeeds(accounts, usage, auth, now, refused),
     ...accountNeeds(accounts, now),
-    ...turnNeeds(heads),
     ...(registry === null ? [] : sessionNeeds(registry.sessions, now, inputs.turnOf ?? noTurns)),
     ...(registry === null ? [] : teamNeeds(teams, registry.sessions)),
     ...(doctor === null ? [] : doctorNeeds(wanted.filter((check) =>

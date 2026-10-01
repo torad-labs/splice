@@ -1,8 +1,7 @@
 // The turns page's arithmetic: the waterfall, the grouping and the in-flight set. Ported from the pure blocks of
-// console/tests/entities-turns.test.ts ('waterfall', 'groupTurns', 'inflightFrom') and the derivation half of the
-// 'a listed live turn past its head idle limit is stalled' test in console/tests/turns.test.ts.
+// console/tests/entities-turns.test.ts ('waterfall', 'groupTurns', 'inflightFrom').
 import { describe, expect, test } from 'vitest';
-import { groupTurns, inflightFrom, isStalled, marksOf, UNATTRIBUTED, waterfall } from '../src/lib/perf';
+import { groupTurns, inflightFrom, marksOf, UNATTRIBUTED, waterfall } from '../src/lib/perf';
 import type { GateSnapshot, HeadStatus } from '../src/types/core';
 import type { TurnRow } from '../src/types/perf';
 
@@ -193,31 +192,12 @@ describe('inflightFrom', () => {
       head({ key: 'claude-grok' }), // no gate snapshot: contributes nothing, not an empty turn
     ]);
     expect(live).toEqual([
-      { head: 'claudex', label: 'sess-a', compact: false, phase: 'streaming', ageMs: 12_000, idleMs: 400, streamIdleMs: 120_000 },
-      { head: 'claudex', label: 'sess-b', compact: true, phase: 'connect', ageMs: 900, idleMs: 900, streamIdleMs: 120_000 },
+      { head: 'claudex', label: 'sess-a', compact: false, phase: 'streaming', ageMs: 12_000, idleMs: 400 },
+      { head: 'claudex', label: 'sess-b', compact: true, phase: 'connect', ageMs: 900, idleMs: 900 },
     ]);
   });
 
   test('a stopped fleet is idle, not an error', () => {
     expect(inflightFrom([head({ key: 'claudex', running: false, gate: gate() })])).toEqual([]);
-  });
-});
-
-// ── the pending routes ───────────────────────────────────────────────────────
-
-describe('a listed live turn past its head idle limit is stalled', () => {
-  test('a turn idle past its head stream idle limit is stalled, one under it is not', () => {
-    const live = inflightFrom([head({
-      key: 'claudex',
-      gate: gate({
-        stream_idle_ms: 300_000,
-        live: [
-          { label: 'a', compact: false, phase: 'streaming', age_ms: 1000, idle_ms: 400 },
-          { label: 'b', compact: true, phase: 'connect', age_ms: 90_000, idle_ms: 331_000 },
-        ],
-      }),
-    })]);
-    expect(live).toHaveLength(2);
-    expect(live.map((entry) => isStalled(entry))).toEqual([false, true]);
   });
 });

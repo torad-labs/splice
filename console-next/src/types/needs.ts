@@ -52,12 +52,12 @@ export interface Reading {
 export type Severity = 'danger' | 'warn';
 
 /** The page an item belongs to, which is also where its detail lives. */
-export type Source = 'heads' | 'daemon' | 'plans' | 'accounts' | 'turns' | 'sessions' | 'teams' | 'doctor';
+export type Source = 'heads' | 'daemon' | 'plans' | 'accounts' | 'sessions' | 'teams' | 'doctor';
 
 /** The word a card prints as its state. */
 export type NeedKind =
   | 'Waiting on you' | 'Stuck' | 'Out of quota' | 'Signed out' | 'Key missing' | 'Failing' | 'Version mismatch' | 'Queue full'
-  | 'Restart needed' | 'Command near its limit' | 'Account' | 'Turn stalled' | 'Team seat' | 'Doctor';
+  | 'Restart needed' | 'Command near its limit' | 'Account' | 'Team seat' | 'Doctor';
 
 /** The one fix an item offers: a write the console makes here, a command to copy, or the page
  *  where the fix is. */

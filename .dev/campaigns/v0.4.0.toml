@@ -10332,3 +10332,11 @@ title = "A resume that rewrites a session keeps the original first (Marlin, CPO,
 files = ["integrations/claude-code/src/main/kotlin/splice/client/resume/TranscriptModelRewrite.kt", "integrations/claude-code/src/main/kotlin/splice/client/resume/ResumeAcrossHeads.kt", "features/launch/src/main/kotlin/splice/launch/resume/ResumeHookRoute.kt", "core/src/main/kotlin/splice/core/config/StatePaths.kt", "README.md"]
 status = "todo"
 verify = "red first: the original of a transcript and its <id>/ jsonl files survives two rewrites byte-identical; a second rewrite leaves the original untouched; a failed copy leaves the transcript unrewritten; the start sweep removes an orphaned original and keeps a live one; claude-code, launch and core tests, detekt, rules, architecture (DiskWritesLawTest), campaign walls; CI gate"
+
+[[items]]
+id = "V4-449"
+phase = "4"
+title = "plain claude runs the newest installed Claude Code, and a head that forwards your own Claude login authors no model list: the client's own picker is the list (operator, 2026-09-30: stop hardcoding models)"
+files = ["core/src/main/kotlin/splice/core/model/ModelCatalog.kt", "core/src/main/kotlin/splice/core/topology/Topology.kt", "features/launch/src/main/kotlin/splice/launch/recipe/LaunchService.kt", "integrations/claude-code/src/main/kotlin/splice/client/wrap/WrappedHead.kt"]
+status = "in_flight"
+verify = "a client-login head with no pinned_model, models or provider rows boots, admits any id, and launches with no model env, allowlist or picker cache; a newer Claude Code version beside the recorded one is what the next wrapped launch runs (WrapSurvivesUpdateTest)"

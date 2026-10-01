@@ -78,7 +78,7 @@ class CodeModeWorkerBootTest {
             }
             assertEquals(START_BUDGET_MS, (timeout.cause as CodeModeTimeoutException).timeoutMillis)
             assertTrue(failed.get().waitFor(5, java.util.concurrent.TimeUnit.SECONDS), "failed boot must be reaped")
-            val next = withTimeout(10_000) { runtime.start("return 'replacement';", emptySet()) }
+            val next = withTimeout(2 * START_BUDGET_MS) { runtime.start("return 'replacement';", emptySet()) }
             assertEquals("replacement", (next.advance() as CodeModeStep.Completed).output)
             assertEquals(2, attempts.get())
         }
@@ -248,9 +248,12 @@ class CodeModeWorkerBootTest {
     }
 }
 
-// A start budget far below the default, and a worker that would come up only well after it.
-private const val START_BUDGET_MS: Long = 2_000
-private const val NEVER_STARTS_MS: Long = 8_000
+// A start budget below the default, and a worker that would come up only well after it. The budget
+// also bounds the healthy replacement's real boot: 2 s was missed on a CI runner whose packaged boots
+// ran 1.5-3.6x a local single core (run 36913570253), so it carries that margin. The never-starting
+// worker is reaped at the budget, so its delay costs nothing.
+private const val START_BUDGET_MS: Long = 15_000
+private const val NEVER_STARTS_MS: Long = 120_000
 
 /** Spawns the real worker behind a shell that waits [delayMs] first: the process exists, and the
  *  parent's clock runs, while the worker has not started. /bin/sh and /bin/sleep by path, because the

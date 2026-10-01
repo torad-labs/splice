@@ -117,7 +117,7 @@ class ControlServerTest {
                 override fun snapshot() = UsageView(
                     0L,
                     3,
-                    RateLimitView(1000, 100, "6m0s"), // 90% used -> warn
+                    RateLimitView(1000, 100, "6m0s", observedAt = perfNow / 1000L), // fresh 90% -> warn
                 )
             },
             compact = object : HeadCompactSource {

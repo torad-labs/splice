@@ -102,7 +102,7 @@ public enum class Knob(
     ),
 
     // splice's status line on a turn that has gone quiet: "holding this turn open. 4m20s into the
-    // turn, no output from gpt-6-astra yet." A row served buffered end to end (gpt-6-astra, probed
+    // turn, no answer from gpt-6-astra yet." A row served buffered end to end (gpt-6-astra, probed
     // 2026-09-06) shows the user a blank spinner for 5-12 minutes with nothing to distinguish a
     // working turn from a hung one; this is the proxy answering that, and it is NOT the mirror
     // above — no reasoning summary, no claim about the model's thinking, only about the wait.

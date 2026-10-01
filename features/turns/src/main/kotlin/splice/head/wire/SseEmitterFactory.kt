@@ -36,11 +36,12 @@ internal class SseEmitterFactory {
     ): SseEmitter {
         val frames = SseFrameWriter(write)
         val start = MessageStart(frames, model, messageId, usagePayload)
-        // ONE index sequence, two writers: see WireBlockWriter's nextBlockIndex.
+        // ONE index sequence, two writers: see WireBlockWriter's nextBlockIndex. The turn's writer
+        // ends the pinger's notice at its own block boundaries, so the pinger's wire comes first.
         val indexes = AtomicInteger(0)
-        val blocks = WireBlockWriter(frames, start, indexes)
         val progressFrames = SseFrameWriter(progressWrite)
         val progress = ProgressWire(progressFrames, WireBlockWriter(progressFrames, start, indexes))
+        val blocks = WireBlockWriter(frames, start, indexes, notice = progress)
         return SseEmitter(frames, start, blocks, progress, usagePayload, contentReached)
     }
 }

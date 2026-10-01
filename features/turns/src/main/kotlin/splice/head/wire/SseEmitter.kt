@@ -15,7 +15,6 @@
 // L3 split is structural: the object that can describe content literally cannot end a turn.
 package splice.head.wire
 
-import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
@@ -24,7 +23,6 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
-import splice.core.turn.SpliceNotice
 import splice.core.turn.Usage
 import splice.core.wire.ErrorEnvelope
 import splice.upstream.sse.WireSink
@@ -86,15 +84,9 @@ internal class SseEmitter(
 
     override suspend fun ensureStarted(): Unit = start.ensureStart()
 
-    // The status line's block, opened at the FIRST progress line and closed by the terminal. Written
-    // by the pinger's coroutine, read by the terminal's — volatile, like the latch it follows.
-    @Volatile private var progressIndex: WireBlockIndex? = null
-
-    // The pinger's seam is single-access-at-a-time. [progress]'s writers hold mutable state — one
-    // reused frame buffer, one `open` block set — and TWO coroutines reach them: the keepalive
-    // pinger for [heartbeat]/[progress], the turn's own for [closeProgress] at the ending. This is
-    // what makes that legal. The turn's own writers are untouched and stay lock-free single-writer.
-    private val progressMutex = Mutex()
+    // The pinger's seam is single-access-at-a-time: its writers and its open notice block sit behind
+    // ProgressWire.lock, which TWO coroutines reach — the keepalive pinger for [heartbeat]/[progress],
+    // the turn's own at its block boundaries and its ending. The turn's own writers stay lock-free.
 
     /** ClientChannel's heartbeat: a ping after message_start while the turn is still open. A turn
      *  that has claimed or reached its ending writes nothing more (ended-idempotence, as for every
@@ -109,20 +101,21 @@ internal class SseEmitter(
     override suspend fun heartbeat() {
         if (seal.get() != SealState.OPEN) return
         if (!start.hasOpened) return
-        progressMutex.withLock {
-            if (seal.get() == SealState.OPEN) progress.frames.writeVerbatim(PING_FRAME)
+        progress.lock.withLock {
+            if (seal.get() == SealState.OPEN) progress.pingLocked()
         }
     }
 
-    /** splice's own status line on a quiet wire: appended to ONE thinking block for the turn, opened
-     *  lazily at the first line so a turn that never goes quiet carries no empty block (the "walls
-     *  of Thinking" shape). It is NOT model output and is never counted as any — the pinger's write
-     *  port is what excludes it (ClientChannel.timedProgressWrite), so the content_frames_out the
-     *  watchdog tier and G5's reissue probe read stay the model's alone.
+    /** splice's own status line on a quiet wire: appended to ONE thinking block per quiet stretch,
+     *  opened lazily at the stretch's first line so a turn that never goes quiet carries no empty
+     *  block (the "walls of Thinking" shape), and ended by the turn's writer before any block of the
+     *  model's opens or closes (V4-451). It is NOT model output and is never counted as any — the
+     *  pinger's write port is what excludes it (ClientChannel.timedProgressWrite), so the
+     *  content_frames_out the watchdog tier and G5's reissue probe read stay the model's alone.
      *
      *  The ending closes it, and the seal is what orders the two: [emitTerminal]/[emitError] claim
      *  it BEFORE calling [closeProgress], so a line that had already passed the gate and is waiting
-     *  on [progressMutex] re-reads the seal once it holds the lock and writes nothing — the reason
+     *  on ProgressWire.lock re-reads the seal once it holds the lock and writes nothing — the reason
      *  the check is repeated rather than merely guarding the entry. Without that second read a
      *  status line could open a fresh block after the ending had closed the last one.
      *
@@ -135,25 +128,15 @@ internal class SseEmitter(
     override suspend fun progress(line: ProgressLine) {
         if (seal.get() != SealState.OPEN) return
         if (!start.hasOpened) return
-        progressMutex.withLock {
-            if (seal.get() == SealState.OPEN) {
-                val idx = progressIndex ?: progress.blocks.openThinking().also { progressIndex = it }
-                progress.blocks.thinkingDelta(idx, line())
-            }
+        progress.lock.withLock {
+            if (seal.get() == SealState.OPEN) progress.writeNoticeLocked(line)
         }
     }
 
     /** Close the status-line block before a terminal, so nothing of ours sits open across the end.
      *  A no-op for the overwhelming majority of turns, which never went quiet enough to open one. */
     private suspend fun closeProgress() {
-        progressMutex.withLock {
-            progressIndex?.let { index ->
-                // Sign only splice's own progress block after its last thinking delta. Claude Code
-                // stores this marker with the replayed block; upstream scrubbers discard it exactly.
-                progress.blocks.signatureDelta(index, SpliceNotice.SIGNATURE)
-                progress.blocks.closeBlock(index)
-            }
-        }
+        progress.endNotice()
     }
 
     /** The ONLY clean ending — derives stop_reason internally (L3). */

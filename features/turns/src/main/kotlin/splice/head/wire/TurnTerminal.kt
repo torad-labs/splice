@@ -29,9 +29,11 @@ internal fun interface UsagePayloadBuilder {
 
 /** One status line, composed at the instant the wire takes it. A seam rather than a String because
  *  composing a line CONSUMES the caller's ticker state and reads its live clock — see
- *  [TurnTerminal.progress]. `operator fun invoke` keeps every call site a plain lambda. */
+ *  [TurnTerminal.progress]. [fresh] says no notice block is open, so the line opens one and must read
+ *  on its own; null says this beat stays silent (V4-451). `operator fun invoke` keeps every call site
+ *  a plain lambda. */
 internal fun interface ProgressLine {
-    public operator fun invoke(): String
+    public operator fun invoke(fresh: Boolean): String?
 }
 
 internal interface TurnTerminal : WireSink {
@@ -107,8 +109,9 @@ internal interface TurnTerminal : WireSink {
     public suspend fun heartbeat() {}
 
     /** splice's own status line for a turn that has gone quiet: a short sentence about the wait,
-     *  appended to one thinking block so a user watching a long silent turn can see it is being
-     *  HELD rather than hung (gpt-6-astra reasons for 5-12 minutes before its first token). It is
+     *  appended to one thinking block per quiet stretch so a user watching a long silent turn can see
+     *  it is being HELD rather than hung (gpt-6-astra reasons for 5-12 minutes before its first
+     *  token); the stretch's block ends before the model's next block opens or closes. It is
      *  the proxy speaking, not the model, and it is never counted as model output — the pinger's
      *  write port decides that. Written only after message_start and only while the turn is open;
      *  the non-stream sink has no incremental wire, so its default is a no-op.

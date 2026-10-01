@@ -28,7 +28,8 @@ internal class TurnOneDrive(
         val turnJob = Job(parent)
         // V4-319: the operator's stop cancels exactly this job, the one the watchdog cancels (LiveTurns).
         deps.liveTurns.driving(drive.slot, turnJob)
-        // Per TURN: the line remembers whether it has spoken, so the first one explains itself.
+        // Per TURN: the line remembers whether it has spoken, so the first one explains itself, and
+        // counts the heartbeats of the current quiet stretch to thin its lines out.
         val progress = TurnProgressLine()
         try {
             withContext(turnJob) {
@@ -56,11 +57,12 @@ internal class TurnOneDrive(
                             if (deps.policy.progressLine) {
                                 // Composed only if the emitter actually writes it: a line built for
                                 // a dropped write spends the intro and the clock reading with it.
-                                drive.emitter.progress {
+                                drive.emitter.progress { fresh ->
                                     progress.next(
                                         elapsedMs = deps.seams.clock() - drive.t0,
                                         model = drive.upstreamModel,
                                         sawOutput = drive.perf.hasMark(PerfKeys.FIRST_DELTA),
+                                        fresh = fresh,
                                     )
                                 }
                             }

@@ -31,12 +31,19 @@ internal class WireBlockWriter(
      *  index and the sequence stays dense. Only the index is shared: each writer keeps its own
      *  [open] set and its own frame buffer, so the TURN's writer — this file's hot delta path — did
      *  not become concurrent. The pinger's instance is reached by two coroutines and is guarded by
-     *  SseEmitter.progressMutex instead; nothing here is thread-safe on its own. */
+     *  ProgressWire.lock instead; nothing here is thread-safe on its own. */
     private val nextBlockIndex: AtomicInteger = AtomicInteger(0),
+    /** The TURN's writer only: the pinger's notice, ended before this writer opens or closes any
+     *  block, so the notice's content_block_stop precedes the block it waited for and Claude Code,
+     *  which commits blocks in stop order, draws it above that block (V4-451). At these two choke
+     *  points every open verb, present or added later, passes through. Null on the pinger's own
+     *  writer, which is what ends the notice. */
+    private val notice: ProgressWire? = null,
 ) : WireSink {
     private val open = LinkedHashSet<Int>()
 
     private suspend fun openBlock(contentBlock: JsonObject): WireBlockIndex {
+        notice?.endNoticeAtBoundary()
         start.ensureStart()
         val idx = nextBlockIndex.getAndIncrement()
         open.add(idx)
@@ -109,6 +116,7 @@ internal class WireBlockWriter(
 
     override suspend fun closeBlock(index: WireBlockIndex) {
         if (!open.remove(index.value)) return
+        notice?.endNoticeAtBoundary()
         // Fixed shape, no user content — hand-built, no JsonObject.
         frames.writeRawFrame(
             "content_block_stop",

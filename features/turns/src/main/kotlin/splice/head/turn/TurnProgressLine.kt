@@ -8,34 +8,47 @@
 // difference and says so. Every clause is read LIVE at the moment the line is written — elapsed off
 // the turn's own t0, and whether the client has seen a delta off the perf marks — so the line can
 // never claim liveness it is remembering from minutes ago.
+//
+// V4-451 (2026-10-01): one line per 30 s heartbeat stacked 8 lines on a 4-minute wait and 24 on a
+// 12-minute compaction, repeating what Claude Code's own spinner already counts. Within one quiet
+// stretch the line is now written at its 1st, 2nd, 4th and 8th heartbeat, doubling after that; the
+// ping still goes out at every one. A stretch that begins after the model wrote opens its own block,
+// so its first line is a whole sentence, never a "still" continuation of a block the reader no
+// longer sees beside it.
 package splice.head.turn
 
 private const val MS_PER_S = 1000L
 private const val S_PER_MIN = 60L
 
-/** One per turn: composes the status line, and remembers only whether it has spoken before.
- *  Takes the three facts rather than the turn, so what it says is testable without one. */
+/** One per turn: composes the status line, and remembers whether it has introduced itself and how
+ *  many heartbeats the current quiet stretch has had. Takes the facts rather than the turn, so what
+ *  it says is testable without one. */
 internal class TurnProgressLine {
 
-    private var spoken = false
+    private var introduced = false
+    private var beat = 0
 
-    /** The next line for this turn, with the separator that appends it to the block already there.
-     *  The first says what is happening and names the row; the rest are a ticker. [sawOutput] is
-     *  whether the CLIENT has been handed a delta yet, which is the difference between a turn that
-     *  has not started answering and one that stopped mid-answer. */
-    fun next(elapsedMs: Long, model: String, sawOutput: Boolean): String {
+    /** The line for this heartbeat, or null when the beat stays silent. [fresh] is whether the wire
+     *  has no notice block open, so this line opens one: the turn's first quiet stretch, or a later
+     *  one after the model wrote. The turn's first line says what is happening and names the row; a
+     *  later block's first line restates the wait in one sentence; lines inside a block are a ticker
+     *  that leads with the separator. [sawOutput] is whether the CLIENT has been handed a delta yet,
+     *  which is the difference between a turn that has not started answering and one that stopped
+     *  mid-answer. */
+    fun next(elapsedMs: Long, model: String, sawOutput: Boolean, fresh: Boolean): String? {
+        beat = if (fresh) 1 else beat + 1
+        // 1, 2, 4, 8, ... heartbeats into the stretch: a power of two.
+        if (beat and (beat - 1) != 0) return null
         val elapsed = elapsed(elapsedMs)
+        val wait = if (sawOutput) "$model has paused mid-answer" else "no answer from $model yet"
         val line = when {
-            !spoken && sawOutput ->
-                "[splice] holding this turn open. $elapsed into the turn, $model has paused mid-answer."
-            !spoken ->
-                "[splice] holding this turn open. $elapsed into the turn, no output from $model yet."
-            sawOutput -> "[splice] $elapsed, still paused."
-            else -> "[splice] $elapsed, still waiting."
+            !fresh && sawOutput -> "\n[splice] $elapsed, still paused."
+            !fresh -> "\n[splice] $elapsed, still waiting."
+            introduced -> "[splice] $elapsed into the turn, $wait."
+            else -> "[splice] holding this turn open. $elapsed into the turn, $wait."
         }
-        val separator = if (spoken) "\n" else ""
-        spoken = true
-        return separator + line
+        introduced = true
+        return line
     }
 
     private fun elapsed(ms: Long): String {

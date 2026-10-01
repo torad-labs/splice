@@ -205,7 +205,12 @@ class SseEmitterProgressTest {
 
         val idx = e.openText()
         e.textDelta(idx, "hi")
-        assertEquals(3, pinger.size, "and the model's content never travels the pinger's: $pinger")
+        // The model's block ends the notice first (V4-451): its signature and stop are the pinger's
+        // own block, so they ride the pinger's port too.
+        assertEquals(5, pinger.size, "the notice's signature and stop, and nothing else: $pinger")
+        assertTrue(pinger[3].contains("signature_delta"), "the notice is signed: $pinger")
+        assertTrue(pinger[4].startsWith("event: content_block_stop"), "then stopped: $pinger")
+        assertTrue(pinger.none { it.contains("\"hi\"") }, "the model's content never travels the pinger's: $pinger")
         assertTrue(model.size > opener, "it went to the turn's writer instead: $model")
     }
 

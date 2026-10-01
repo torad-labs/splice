@@ -26,7 +26,7 @@ Rules the comps follow (each one is a thing he rejected, turned around):
 4. **Rich where the content is rich.** Messages are Source Serif prose with headings, lists, tables and code (highlighted); tool calls are collapsible dark-glass blocks; hand-offs from another session are a dashed, model-coloured card, visibly not a person's message.
 5. **Human names.** Sessions read by their title, repos by name (`tally`), plans by their command. Ids, paths and TOML keys appear on demand (Settings row's key chip; hover for a path).
 6. **Typed controls.** Toggle, segmented choice, select (drawn open), stepper, slider, folder picker, secret field. Familiar behaviour; the film's paper material.
-7. **Order is the operator's.** Cards carry a grip and drag. Sessions order and Fleet order persist in the browser (no daemon field exists).
+7. **Order is the operator's.** The whole card drags, with no grip on it. Sessions order and Fleet order persist in the browser (no daemon field exists).
 8. **Only live things need him.** Needs you lists waiting, stuck, out-of-quota and signed-out; not an idle session or a runtime he switched off.
 9. Charged act = one vermilion button per item. One fix per item; the second action is quiet text.
 
@@ -123,7 +123,7 @@ Needs you · Sessions · Fleet · Turns · Usage · Settings. Where the rest wen
 | "it looks terrible", "I hate everything about it" | The whole direction: the site's and film's world, one geometry, two hours. |
 | "the buttons look awful, the fields look terrible" | `btn`, `seg`, `switch`, `select`, `step`, `slider`, `folder`, `secret` in the film's paper (Settings, all of them; Sessions cards). |
 | "everything is a fucking edit text" | Settings: a toggle, segmented choice, select (open), stepper, slider, folder picker and secret field replace text boxes. |
-| "everything is fucking list", "we can't reorder" | Sessions and Fleet are windows, not rows; every card has a grip; the order carries to the other page. |
+| "everything is fucking list", "we can't reorder" | Sessions and Fleet are windows, not rows; the whole card drags with no grip; the order carries to the other page. |
 | "everything uses weird names and codes" | Titles, repo names, plan names. The setting key is a chip on demand (Settings › Summarize at). |
 | "open items that are dead" | Needs you: four live items, each with one fix; a "Not listed here" line says an idle session and a stopped runtime are not items. |
 | "the session list page is absolutely confusing" | Sessions groups by what a person must do: Needs you, Working, Idle; each card says what the agent is doing in one line and in whose colour. |

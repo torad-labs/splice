@@ -112,12 +112,12 @@ for (const method of ['keyboard', 'pointer'] as const) {
   test(method + ' dragging plan order survives reload', async ({ page }) => {
     const faults = await open(page, 'fleet');
     const main = page.getByRole('main');
-    const handles = main.getByRole('button', { name: 'Drag to reorder', exact: true });
-    await expect(handles).toHaveCount(3);
+    const cards = main.locator('li.card');
+    await expect(cards).toHaveCount(3);
     const links = main.getByRole('link').filter({ hasText: /^e2e-/ });
     const before = await links.allTextContents();
     if (method === 'keyboard') {
-      await handles.first().focus();
+      await cards.first().focus();
       await page.keyboard.press('Space');
       await expect(page.getByRole('status')).toContainText('over droppable area e2e-codex.');
       // KeyboardSensor attaches on a deferred task; let the real document finish activation/layout.
@@ -128,9 +128,9 @@ for (const method of ['keyboard', 'pointer'] as const) {
       await expect(page.getByRole('status')).toContainText('over droppable area e2e-codex-solo');
       await page.keyboard.press('Space');
     } else {
-      const start = await handles.first().boundingBox();
-      const finish = await handles.nth(1).boundingBox();
-      if (start === null || finish === null) throw new Error('plan drag handles have no layout');
+      const start = await cards.first().locator('.quiet-meta').first().boundingBox();
+      const finish = await cards.nth(1).locator('.quiet-meta').first().boundingBox();
+      if (start === null || finish === null) throw new Error('plan card bodies have no layout');
       await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
       await page.mouse.down();
       await page.mouse.move(finish.x + finish.width / 2, finish.y + finish.height / 2, { steps: 12 });

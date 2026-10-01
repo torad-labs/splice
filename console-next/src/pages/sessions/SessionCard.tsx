@@ -5,7 +5,7 @@ import type { ModelColour } from '../../lib/model';
 import type { Handoff, SessionState } from '../../lib/sessions';
 import { cardLine, needsPerson, sessionKey, sessionLabel, stateTone, stateWord, repoName } from '../../lib/sessions';
 import type { SessionRow } from '../../types/sessions';
-import { Grip, ModelMark, State, Window } from '../../ui';
+import { ModelMark, State, Window } from '../../ui';
 import { S } from '../shared/copy';
 import { OpenLink, ResumeCopy, StopTurn, sessionPath } from '../shared/SessionActions';
 import { P } from './copy';
@@ -41,8 +41,10 @@ export function SessionCard({ facts, sortable = true }: { facts: CardFacts; sort
       colour={colour}
       attention={needs}
       className={`card${drag.isDragging ? ' dragging' : ''}`}
-      ref={drag.setNodeRef}
+      ref={(node) => { drag.setNodeRef(node); drag.setActivatorNodeRef(node); }}
       style={{ transform: CSS.Transform.toString(drag.transform), transition: drag.transition }}
+      {...(sortable ? drag.attributes : {})}
+      role="listitem"
       {...drag.listeners}
     >
       <div className="bar">
@@ -52,11 +54,6 @@ export function SessionCard({ facts, sortable = true }: { facts: CardFacts; sort
           </Link>
         </h3>
         <State tone={stateTone(state)}>{stateWord(state)}</State>
-        {sortable ? (
-          <button type="button" className="grip" ref={drag.setActivatorNodeRef} aria-label={P.dragHandle} aria-describedby={drag.attributes['aria-describedby']}>
-            <Grip />
-          </button>
-        ) : null}
       </div>
       {agent ? (
         <div className="glass one">

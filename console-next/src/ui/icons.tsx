@@ -8,11 +8,6 @@ const line = (size: number, width: number, path: ReactElement, p: P) => (
   </svg>
 );
 
-export const Grip = (p: P) => (
-  <svg width="14" height="18" viewBox="0 0 14 18" fill="currentColor" aria-hidden="true" {...p}>
-    {[3, 9, 15].flatMap((y) => [4, 10].map((x) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1.6" />))}
-  </svg>
-);
 export const Search = (p: P) => line(16, 2, <><circle cx="7" cy="7" r="5" /><path d="M11 11l3.5 3.5" /></>, p);
 export const Back = (p: P) => line(16, 2.2, <path d="M10 3L5 8l5 5" />, p);
 export const Chevron = (p: P) => line(14, 2.2, <path d="M4 5l3 3 3-3" />, p);

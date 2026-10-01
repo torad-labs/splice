@@ -29,6 +29,5 @@ export const P = {
   lastFrom: 'last message from',
   lastTo: 'last message to',
   messaged: (peers: number): string => `messaged ${peers} sessions`,
-  dragHandle: 'Drag to reorder',
   needsAnswer: 'Waiting for your answer',
 } as const;

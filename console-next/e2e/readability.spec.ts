@@ -2,6 +2,8 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { PerfTurnsWire } from '../src/types/perf';
 import type { HeadsPayload } from '../src/types/core';
+import { UNKNOWN_HEAD } from '../src/types/sessions';
+import type { SessionRow } from '../src/types/sessions';
 import { FIRST_READ_MS, open, routePath } from './support';
 import { STACK } from './stack';
 
@@ -69,15 +71,41 @@ for (const width of [1440, 3840]) {
   });
 }
 
-test('Fleet exposes reorder handles before hover or keyboard focus', async ({ page }) => {
-  const faults = await open(page, 'fleet');
-  await page.mouse.move(0, 0);
-  const grips = page.getByRole('button', { name: 'Drag to reorder', exact: true });
-  await expect(grips.first()).toBeVisible();
-  const opacity = await grips.first().evaluate((grip) => Number(getComputedStyle(grip).opacity));
-  expect(opacity, 'reordering is discoverable without hover').toBe(1);
-  expect(faults.pageErrors).toEqual([]);
-});
+for (const board of ['fleet', 'sessions']) {
+  test(board + ' cards reorder by their bodies without rendering grips', async ({ page }) => {
+    if (board === 'sessions') {
+      await page.route('**/api/sessions', async (route) => {
+        const response = await route.fetch();
+        const body = await response.json() as { sessions: SessionRow[] };
+        for (const row of body.sessions) {
+          row.status = 'idle';
+          row.head = UNKNOWN_HEAD;
+          row.availability = 'live';
+        }
+        await route.fulfill({ response, json: body });
+      });
+    }
+    const faults = await open(page, board);
+    const cards = page.locator('li.card');
+    await expect(cards.nth(1)).toBeVisible({ timeout: FIRST_READ_MS });
+    const names = cards.locator('h3');
+    const before = await names.allTextContents();
+    const start = await cards.first().locator('.quiet-meta').first().boundingBox();
+    const finish = await cards.nth(1).locator('.quiet-meta').first().boundingBox();
+    if (start === null || finish === null) throw new Error('card bodies have no layout');
+    await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(finish.x + finish.width / 2, finish.y + finish.height / 2, { steps: 12 });
+    await page.mouse.up();
+    await expect.poll(() => names.allTextContents()).not.toEqual(before);
+    const after = await names.allTextContents();
+    expect([...after].sort()).toEqual([...before].sort());
+    await page.reload();
+    await expect.poll(() => names.allTextContents()).toEqual(after);
+    await expect(page.locator('.grip')).toHaveCount(0);
+    expect(faults.pageErrors).toEqual([]);
+  });
+}
 
 const FRAMES = [
   { width: 3840, height: 2060, used: 0.8, body: 20, caption: 16 },

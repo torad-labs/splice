@@ -5,6 +5,7 @@
 // and the log tail (split from DoctorReportTail.kt, concentration, 2026-09-13).
 package splice.diagnostics.doctor.report
 
+import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
 import splice.core.util.JsonlSink
 import java.nio.file.Files
@@ -23,6 +24,7 @@ internal class DoctorReportFiles(private val redaction: DoctorRedaction) {
      *  head-derived and never printed here). */
     fun tails(file: Path, maxBytes: Int): FileLines {
         val errors = mutableListOf<String>()
+        if (!AsyncFileIo.awaitFile(file)) errors += "pending file write did not settle"
         val generations = listOf("rotated" to file.resolveSibling("${file.fileName}.1"), "active" to file)
         val lines = generations.flatMap { (label, generation) ->
             Cancellables.runCatchingCancellable { JsonlSink.readTail(generation, maxBytes).filter { it.isNotEmpty() } }

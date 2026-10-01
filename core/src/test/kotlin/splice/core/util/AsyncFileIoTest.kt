@@ -10,6 +10,7 @@ package splice.core.util
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
@@ -19,6 +20,18 @@ class AsyncFileIoTest {
 
     @Test
     fun `submit rejects once the pending cap is saturated, then drains clean`() = saturateThenDrain(heldByOthers = 0)
+
+    @Test
+    fun `a failed accepted append is not reported as a settled write`() {
+        val file = Path.of("perf-append-failed.jsonl")
+        assertTrue(AsyncFileIo.submitFor(file) { throw IllegalStateException("synthetic write failure") })
+        assertTrue(!AsyncFileIo.awaitFile(file), "a failed append cannot certify read-your-writes")
+        assertTrue(AsyncFileIo.submitFor(file) {})
+        assertTrue(!AsyncFileIo.awaitFile(file), "a later append cannot erase the missing row")
+        val clean = Path.of("perf-append-healthy.jsonl")
+        assertTrue(AsyncFileIo.submitFor(clean) {})
+        assertTrue(AsyncFileIo.awaitFile(clean), "a different path is unaffected")
+    }
 
     @Test
     fun `a slot another caller's delayed task holds is counted, not assumed free`() =
@@ -72,6 +85,7 @@ class AsyncFileIoTest {
             assertTrue(accepted.get() <= free, "accepted ${accepted.get()} past the $free free slots")
             assertEquals(extraCount, accepted.get() + rejected.get(), "every submit either accepted or rejected")
             assertTrue(rejected.get() >= margin, "expected submit() to return false once the pending cap was saturated")
+            assertRejectedFileRow()
         } finally {
             // A failed assertion above must not leave the process-wide lane blocked: every later test in
             // this JVM that writes through it would then fail for this test's reason, not its own.
@@ -91,6 +105,22 @@ class AsyncFileIoTest {
         assertEquals(accepted.get(), ran.get(), "expected every accepted task to run once the worker was released")
 
         assertTrue(AsyncFileIo.drain(10_000), "drain timed out waiting for the queue to empty")
+        assertAcceptedFileRow()
+    }
+
+    private fun assertRejectedFileRow() {
+        val file = Path.of("perf-admission-rejection.jsonl")
+        assertTrue(!AsyncFileIo.submitFor(file) {}, "a saturated lane must refuse the file row")
+        assertTrue(!AsyncFileIo.awaitFile(file), "a rejected row must not read as settled")
+    }
+
+    private fun assertAcceptedFileRow() {
+        val lost = Path.of("perf-admission-rejection.jsonl")
+        assertTrue(AsyncFileIo.submitFor(lost) {}, "the next file row can be accepted after the lane drains")
+        assertTrue(!AsyncFileIo.awaitFile(lost), "the earlier rejected row remains visible as lost")
+        val healthy = Path.of("perf-admission-healthy.jsonl")
+        assertTrue(AsyncFileIo.submitFor(healthy) {})
+        assertTrue(AsyncFileIo.awaitFile(healthy), "an unrelated file still settles")
     }
 
     private companion object {

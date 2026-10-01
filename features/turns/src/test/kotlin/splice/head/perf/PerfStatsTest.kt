@@ -17,8 +17,13 @@ import splice.core.model.TurnPrice
 import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSnapshot
 import splice.core.perf.TurnPerf
+import splice.core.util.AsyncFileIo
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Semaphore
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 class PerfStatsTest {
 
@@ -62,6 +67,42 @@ class PerfStatsTest {
             stats.measuredInputs.estimate("session", "first", "m", image),
             "a base64 image has no safe token bound from its encoded byte length",
         )
+    }
+
+    @Test
+    fun `a rejected perf append is counted and logged once while saturated`(@TempDir tmp: Path) {
+        val started = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val notices = mutableListOf<String>()
+        val accepted = AtomicInteger()
+        val finished = Semaphore(0)
+        assertTrue(
+            AsyncFileIo.submit {
+                started.countDown()
+                release.await()
+            },
+        )
+        try {
+            assertTrue(started.await(5, TimeUnit.SECONDS))
+            repeat(2_048) {
+                if (AsyncFileIo.submit { finished.release() }) accepted.incrementAndGet()
+            }
+            val file = tmp.resolve("perf.jsonl")
+            val stats = PerfStats(file, clock = { 123L }, log = {
+                notices += it
+                error("synthetic log sink failure")
+            })
+            val snapshot = TurnPerf { 0L }.snapshot()
+            val laneDropsBefore = AsyncFileIo.droppedCount()
+            repeat(2) { stats.record(PerfRowMeta("m", "ok", compact = false), snapshot) }
+            assertEquals(2L, stats.droppedRowCount)
+            assertEquals(laneDropsBefore + 2, AsyncFileIo.droppedCount())
+            assertEquals(1, notices.count { "file lane rejected a turn row" in it })
+            assertTrue(!AsyncFileIo.awaitFile(file), "the latest rejected row is not settled")
+        } finally {
+            release.countDown()
+        }
+        assertTrue(finished.tryAcquire(accepted.get(), 10, TimeUnit.SECONDS), "accepted tasks must finish")
     }
 
     @Test

@@ -1,16 +1,71 @@
 package splice.app.sources
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.perf.PerfArchiveName
+import splice.core.perf.PerfKeys
+import splice.core.perf.TurnPerf
+import splice.core.util.AsyncFileIo
+import splice.head.perf.PerfRowMeta
+import splice.head.perf.PerfStats
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermission
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 class PerfRowsFileSourceTest {
+
+    @Test
+    fun `a file reader waits for an accepted perf row before returning`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        val workerStarted = CountDownLatch(1)
+        val releaseWorker = CountDownLatch(1)
+        assertTrue(
+            AsyncFileIo.submit {
+                workerStarted.countDown()
+                releaseWorker.await()
+            },
+        )
+        assertTrue(workerStarted.await(5, TimeUnit.SECONDS), "the file lane must be held before recording")
+        val perf = TurnPerf { 0L }.apply { setCount(PerfKeys.IN_TOKENS, 7) }
+        val stats = PerfStats(file, clock = { 1_000L })
+        val stamped = stats.record(PerfRowMeta("m", "ok", compact = false), perf.snapshot())
+        val readerStarted = CountDownLatch(1)
+        val readFinished = CountDownLatch(1)
+        val read = CompletableFuture.supplyAsync {
+            readerStarted.countDown()
+            try {
+                PerfRowsFileSource(file).window(0)
+            } finally {
+                readFinished.countDown()
+            }
+        }
+        try {
+            assertTrue(readerStarted.await(5, TimeUnit.SECONDS), "the reader must begin")
+            val unrelated = CompletableFuture.supplyAsync {
+                PerfRowsFileSource(dir.resolve("other-perf.jsonl")).window(0)
+            }
+            assertTrue(unrelated.get(2, TimeUnit.SECONDS).rows.isEmpty(), "an unrelated head must not wait")
+            assertFalse(readFinished.await(250, TimeUnit.MILLISECONDS), "a queued row cannot read as absent")
+        } finally {
+            releaseWorker.countDown()
+        }
+        assertEquals(listOf(stamped), read.get(10, TimeUnit.SECONDS).rows.map { it.ts })
+        assertTrue(AsyncFileIo.submitFor(file) { throw IllegalStateException("synthetic append failure") })
+        val failed = PerfRowsFileSource(file).window(0)
+        assertEquals(listOf(stamped), failed.rows.map { it.ts })
+        assertTrue(failed.readError?.contains("pending perf write did not settle") == true, "${failed.readError}")
+        stats.record(PerfRowMeta("m", "ok", compact = false), perf.snapshot())
+        val later = PerfRowsFileSource(file).window(0)
+        assertEquals(2, later.rows.size)
+        assertTrue(later.readError != null, "the prior lost row cannot be concealed by a later success")
+    }
 
     @Test
     fun `both generations are read, rows before since are skipped, malformed lines are ignored`(@TempDir dir: Path) {

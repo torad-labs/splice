@@ -43,6 +43,8 @@ import splice.core.util.WallClock
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 /** The string facts a perf row carries beside the numeric snapshot. */
 public data class PerfRowMeta(
@@ -167,6 +169,10 @@ public class PerfStats(
     private val skippedRows = java.util.concurrent.atomic.AtomicLong(0)
 
     private val skippedLogged = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val appendDrops = PerfAppendDrops(log)
+
+    /** Count perf rows rejected by the bounded file-lane admission boundary. */
+    public val droppedRowCount: Long get() = appendDrops.count
 
     /** Rows dropped by [tailRows] since this instance was built, for a caller that renders cost and
      *  must say when that number is short. Monotonic: a healthy read does not reset it, because the
@@ -209,14 +215,13 @@ public class PerfStats(
                 "telemetry is best-effort; a turn must never fail on its session's running total",
             )
         }
-        AsyncFileIo.submit {
-            Cancellables.runCatchingCancellable {
-                Files.createDirectories(file.parent)
-                JsonlSink.appendLine(file, row, maxBytes = maxBytes, archive = archive)
-                // The next successful row ends a prior explicit deletion, on the same file lane.
-                Files.deleteIfExists(file.parent.resolve(TURN_STATS_DELETED_MARKER))
-            }
+        val accepted = AsyncFileIo.submitFor(file) {
+            Files.createDirectories(file.parent)
+            JsonlSink.appendLine(file, row, maxBytes = maxBytes, archive = archive)
+            // The next successful row ends a prior explicit deletion, on the same file lane.
+            Files.deleteIfExists(file.parent.resolve(TURN_STATS_DELETED_MARKER))
         }
+        appendDrops.accepted(accepted)
         return ts
     }
 
@@ -273,7 +278,7 @@ public class PerfStats(
 
     // read is best-effort by design: a missing/corrupt file yields empty; a bad line is skipped.
     private fun tailRows(): List<JsonObject> {
-        AsyncFileIo.drain()
+        appendDrops.readSettled(AsyncFileIo.awaitFile(file))
         // DR-60 (class law): only PROVEN absence — NoSuch with no NOFOLLOW entry — is the quiet
         // empty; an inaccessible perf log degrades the same but leaves a trace instead of a
         // silently-blank instrument.
@@ -333,6 +338,37 @@ public class PerfStats(
         val target = dir.resolve(archiveName.of(clock()))
         Files.copy(rolled, target, StandardCopyOption.REPLACE_EXISTING)
         sweepArchive(dir)
+    }
+
+    /** A perf-specific loss counter, separate from the lane's all-task drop count. */
+    private class PerfAppendDrops(private val log: LogSink) {
+        private val lost = AtomicLong()
+        private val warned = AtomicBoolean(false)
+        val count: Long get() = lost.get()
+
+        fun accepted(yes: Boolean) {
+            if (yes) {
+                warned.set(false)
+                return
+            }
+            val total = lost.incrementAndGet()
+            if (warned.compareAndSet(false, true)) {
+                report("[perf] file lane rejected a turn row ($total dropped so far); perf totals may read low\n")
+            }
+        }
+
+        fun readSettled(yes: Boolean) {
+            if (!yes && warned.compareAndSet(false, true)) {
+                report("[perf] pending turn row did not settle before a local perf read; totals may read low\n")
+            }
+        }
+
+        private fun report(message: String) {
+            Cancellables.discard(
+                Cancellables.runCatchingBestEffort { log(message) },
+                "perf loss reporting is best-effort; a broken log sink must not fail the turn",
+            )
+        }
     }
 
     /** Deletes archived generations older than [archiveRetentionDays], relative to now. Today

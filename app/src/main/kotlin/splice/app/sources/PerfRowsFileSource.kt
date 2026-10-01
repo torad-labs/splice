@@ -31,6 +31,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.longOrNull
 import splice.core.perf.PerfArchiveName
 import splice.core.perf.PerfKeys
+import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
@@ -101,6 +102,7 @@ public class PerfRowsFileSource(
     private val generations = listOf(file.resolveSibling("${file.fileName}.1"), file)
 
     override fun window(sinceMs: Long): PerfRowsWindow {
+        val settled = AsyncFileIo.awaitFile(file)
         var keys = fileKeys()
         var read = readAll(sinceMs)
         var again = fileKeys()
@@ -109,7 +111,9 @@ public class PerfRowsFileSource(
             read = readAll(sinceMs)
             again = fileKeys()
         }
-        return if (again == keys) read.window() else read.window("${file.fileName}: rotated during the read")
+        val incomplete = if (settled) null else "${file.fileName}: pending perf write did not settle"
+        val rotated = if (again == keys) null else "${file.fileName}: rotated during the read"
+        return read.window(listOfNotNull(incomplete, rotated).joinToString("; ").ifEmpty { null })
     }
 
     private fun fileKeys(): List<Any?> = generations.map { generation ->

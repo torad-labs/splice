@@ -71,7 +71,12 @@ public class TurnKeptRoutes(
     /** Inventory live, rolled and archived perf rows; session totals count only toward deletion state. */
     public fun kept(): JsonReply {
         val source = paths ?: return refuse(HttpStatusCode.ServiceUnavailable, "turn statistics paths are not wired")
-        return Cancellables.runCatchingCancellable { inventory(source) }.fold(
+        return Cancellables.runCatchingCancellable {
+            if (!AsyncFileIo.awaitDirectory(source.stateDir)) {
+                throw IOException("pending turn-statistics writes did not settle")
+            }
+            inventory(source)
+        }.fold(
             onSuccess = { JsonReply(HttpStatusCode.OK, it) },
             onFailure = { failure ->
                 val detail = when (failure) {

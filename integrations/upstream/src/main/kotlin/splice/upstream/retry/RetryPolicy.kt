@@ -74,10 +74,20 @@ internal class RetryRules(private val maxRetries: Int) {
                 // and speaks the reset, instead of the generic upstream failure this was recorded as.
                 throw UpstreamFailed(cooldown.planHold.clientBody(limit), last.status, layers, planLimit = limit)
             }
+        } else {
+            protectFollowers(last, cooldown)
         }
         // V4-117: [layers] is the loop's own attempt count at the moment it gave up — passed IN
         // rather than counted here, because this file decides and never counts (see the header).
         throw UpstreamFailed(last?.text.orEmpty(), last?.status, layers)
+    }
+
+    /** A long non-429 pushback protects followers only after this observer finishes its retry budget.
+     *  Arming before its backoff made the observer's next attempt fail locally with a synthetic 429. */
+    private fun protectFollowers(last: RetryOutcome.Failed?, cooldown: RateLimitCooldown) {
+        val failed = last ?: return
+        val pushback = failed.retryAfterMs ?: return
+        if (pushback > RETRY_AFTER_GIVE_UP_MS && isRetryableStatus(failed.status)) cooldown.arm(pushback)
     }
 
     suspend fun planRetry(
@@ -225,9 +235,7 @@ internal class RetryRules(private val maxRetries: Int) {
                 "upstream ${failed.status} Retry-After ${pushback}ms exceeds the interactive budget; " +
                     "waiting ${RETRY_AFTER_GIVE_UP_MS}ms instead",
             )
-            // UP-001: a retryable 408/5xx pushback still protects followers on this account. Pool
-            // selection reads unavailableForMs(), not this horizon, so it never switches.
-            if (isRetryableStatus(failed.status)) rateLimit.cooldown.arm(pushback)
+            // giveUp protects followers if this request cannot recover; its own retry stays eligible.
         }
         val decision = if (attempt == maxRetries - 1) RetryDecision.GIVE_UP else RetryDecision.BACKOFF
         return RetryPlan(

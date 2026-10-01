@@ -22,6 +22,55 @@ import java.util.concurrent.atomic.AtomicInteger
 class UpstreamClientRateLimitTest {
 
     @Test
+    fun `a long non-429 pushback does not block the observer's own retry`() = runTest {
+        var elapsed = 0L
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            if (calls.incrementAndGet() == 1) {
+                respond("server busy", HttpStatusCode.ServiceUnavailable, headersOf("Retry-After", "60"))
+            } else {
+                respond("recovered", HttpStatusCode.OK, headersOf())
+            }
+        }
+        val client = UpstreamClient(
+            totalTimeoutMs = 90_000L,
+            maxRetries = 2,
+            client = HttpClient(engine),
+            backoff = { _, delay -> elapsed += delay },
+            clock = ElapsedClock { elapsed },
+        )
+        assertEquals("ok", postOnce(client))
+        assertEquals(2, calls.get(), "the observer retries upstream, not a synthetic local 429")
+        assertEquals(15_000L, elapsed)
+        assertEquals(0L, client.rateLimitedForMs, "a recovered request leaves no follower cooldown")
+    }
+
+    @Test
+    fun `an exhausted non-429 pushback preserves its status and protects followers`() = runTest {
+        var elapsed = 0L
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            calls.incrementAndGet()
+            respond("server busy", HttpStatusCode.ServiceUnavailable, headersOf("Retry-After", "60"))
+        }
+        val client = UpstreamClient(
+            totalTimeoutMs = 90_000L,
+            maxRetries = 2,
+            client = HttpClient(engine),
+            backoff = { _, delay -> elapsed += delay },
+            clock = ElapsedClock { elapsed },
+        )
+        val observer = assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEquals(503, observer.status)
+        assertEquals("server busy", observer.body)
+        assertEquals(2, calls.get())
+        assertEquals(60_000L, client.rateLimitedForMs)
+        val follower = assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEquals(429, follower.status)
+        assertEquals(2, calls.get(), "the follower is held without an upstream request")
+    }
+
+    @Test
     fun `non-pooled bare 429 retries every 15 seconds inside a 900 second budget, then arms`() = runTest {
         val calls = AtomicInteger()
         val capture = Capture()

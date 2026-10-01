@@ -7,11 +7,11 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.future.await
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import java.util.concurrent.Semaphore
 
 class CodeModeWorkerReclamation(scope: CoroutineScope) {
     private val pollMs = 1L
@@ -38,10 +38,10 @@ class CodeModeWorkerReclamation(scope: CoroutineScope) {
         // its release after the reap is a deadline poll.
         withTimeoutOrNull(5_000) {
             child.onExit().await()
-            while (permits.availablePermits() == 0) delay(pollMs)
+            while (permits.availablePermits == 0) delay(pollMs)
         }
         assertFalse(child.isAlive, "timed-out worker must be reaped")
-        assertEquals(1, permits.availablePermits(), "the single worker slot must be released exactly once")
+        assertEquals(1, permits.availablePermits, "the single worker slot must be released exactly once")
     }
 
     private fun children(): List<ProcessHandle> = ProcessHandle.current().children().use { it.toList() }

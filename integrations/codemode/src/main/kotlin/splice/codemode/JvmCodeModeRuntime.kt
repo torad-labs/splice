@@ -5,18 +5,18 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeRuntime
 import splice.upstream.codemode.ProcessDispatchers
-import splice.upstream.failure.CodeModeCapacityException
 import splice.upstream.failure.CodeModeInfrastructureException
 import splice.upstream.failure.CodeModeTimeoutException
 import java.io.IOException
 import java.lang.ProcessBuilder.Redirect
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.Semaphore
 import java.util.concurrent.atomic.AtomicBoolean
 
 public const val DEFAULT_MAX_WORKERS: Int = 4
@@ -73,10 +73,9 @@ public class JvmCodeModeRuntime(
     override suspend fun start(source: String, tools: Set<String>, descriptions: Map<String, String>): CodeModeCell {
         check(!closed.get()) { "Code-mode runtime is closed" }
         val start = CodeModeWire.startFrame(source, tools, descriptions)
-        if (!permits.tryAcquire()) throw CodeModeCapacityException()
+        val permit = awaitPermit()
         var channel: WorkerChannel? = null
         var started = false
-        val permit = WorkerPermit(permits)
         try {
             channel = startWorker(permit)
             channel.awaitReady(workerStartTimeoutMs)
@@ -115,6 +114,28 @@ public class JvmCodeModeRuntime(
             // Concurrent registries may shrink between a snapshot's size check and iteration.
             cells.forEach(JvmCodeModeCell::close)
             starting.forEach(WorkerChannel::close)
+        }
+    }
+
+    /** FIFO suspension keeps a full pool from rejecting work or occupying an I/O thread per waiter.
+     *  Waiting has its own start budget; it does not consume the worker's boot or script deadline. */
+    private suspend fun awaitPermit(): WorkerPermit {
+        var acquired = false
+        var handedOff = false
+        try {
+            val ready = withTimeoutOrNull(workerStartTimeoutMs) {
+                permits.acquire()
+                acquired = true
+                true
+            } ?: false
+            if (!ready) throw CodeModeTimeoutException(workerStartTimeoutMs)
+            check(!closed.get()) { "Code-mode runtime is closed" }
+            val permit = WorkerPermit(permits)
+            handedOff = true
+            return permit
+        } finally {
+            // Cancellation at timeout completion must not leak a just-acquired permit.
+            if (acquired && !handedOff) permits.release()
         }
     }
 

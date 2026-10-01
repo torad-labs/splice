@@ -1,11 +1,14 @@
 package splice.codemode
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
 import kotlinx.serialization.json.buildJsonObject
@@ -29,7 +32,6 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.concurrent.CompletableFuture
-import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.LockSupport
 
@@ -211,23 +213,21 @@ class CodeModeRuntimeTest {
     }
 
     @Test
-    fun `active worker cap rejects a second live cell`() = runBlocking {
+    fun `active worker cap queues a second live cell until the first completes`() = runBlocking {
         JvmCodeModeRuntime(
             maxWorkers = 1,
             advanceTimeoutMs = SCRIPT_DEADLINE_MS,
             workerClasspath = testClasspath,
         ).use { runtime ->
-            val reclamation = CodeModeWorkerReclamation(this)
             val first = runtime.start("await tools.call(\"Read\", {});", setOf("Read"))
-            assertThrows(IOException::class.java) {
-                runBlocking { runtime.start("return \"second\";", emptySet()) }
+            supervisorScope {
+                val queued = async(start = CoroutineStart.UNDISPATCHED) {
+                    runtime.start("return \"second\";", emptySet())
+                }
+                first.close()
+                val second = withTimeout(30_000) { queued.await() }
+                assertEquals("second", completed(second.advance()).output)
             }
-            first.close()
-            // close() destroys the worker; its permit returns only once the exit is observed
-            // (WorkerPermit), so a replacement started at once raced that observer under load.
-            reclamation.assertReclaimed(runtime)
-            val replacement = runtime.start("return \"replacement\";", emptySet())
-            assertEquals("replacement", completed(replacement.advance()).output)
         }
     }
 
@@ -366,7 +366,7 @@ class CodeModeRuntimeTest {
 
     @Test
     fun `a timed out reap retains capacity and cleanup until actual exit`() {
-        val permits = Semaphore(0)
+        val permits = Semaphore(1, acquiredPermits = 1)
         val permit = WorkerPermit(permits)
         val process = TestProcess(exitOnDestroy = false)
         permit.observe(process)
@@ -387,25 +387,25 @@ class CodeModeRuntimeTest {
         cell.close()
         permit.releaseIfUnstarted()
         assertTrue(process.destroyed)
-        assertEquals(0, permits.availablePermits())
+        assertEquals(0, permits.availablePermits)
         assertEquals(0, released)
 
         process.completeExit()
-        assertEquals(1, permits.availablePermits())
+        assertEquals(1, permits.availablePermits)
         assertEquals(1, released)
         cell.close()
         process.completeExit()
-        assertEquals(1, permits.availablePermits())
+        assertEquals(1, permits.availablePermits)
         assertEquals(1, released)
     }
 
     @Test
     fun `failure before process creation releases capacity once`() {
-        val permits = Semaphore(0)
+        val permits = Semaphore(1, acquiredPermits = 1)
         val permit = WorkerPermit(permits)
         permit.releaseIfUnstarted()
         permit.releaseIfUnstarted()
-        assertEquals(1, permits.availablePermits())
+        assertEquals(1, permits.availablePermits)
     }
 
     @Test

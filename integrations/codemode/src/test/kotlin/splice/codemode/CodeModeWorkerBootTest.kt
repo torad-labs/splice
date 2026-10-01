@@ -12,12 +12,19 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import org.junit.jupiter.api.io.TempDir
+import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 import splice.upstream.failure.CodeModeInfrastructureCategory
 import splice.upstream.failure.CodeModeInfrastructureClass
 import splice.upstream.failure.CodeModeInfrastructureException
+import splice.upstream.failure.CodeModeStartException
 import splice.upstream.failure.CodeModeTimeoutException
+import splice.upstream.failure.CodeModeWorkerLostException
+import java.io.File
 import java.io.IOException
+import java.nio.file.Path
+import java.util.concurrent.CopyOnWriteArrayList
 
 // A start slower than the product's advance deadline: the class the gate met under a parallel build,
 // where the first exchange of every cell (JVM boot, JavaScript engine, script) reached 4.9-5.2 s.
@@ -66,10 +73,10 @@ class CodeModeWorkerBootTest {
             },
             workerStartTimeoutMs = START_BUDGET_MS,
         ).use { runtime ->
-            val timeout = assertThrows(CodeModeTimeoutException::class.java) {
+            val timeout = assertThrows(CodeModeStartException::class.java) {
                 runBlocking { runtime.start("return 1;", emptySet()) }
             }
-            assertEquals(START_BUDGET_MS, timeout.timeoutMillis)
+            assertEquals(START_BUDGET_MS, (timeout.cause as CodeModeTimeoutException).timeoutMillis)
             assertTrue(failed.get().waitFor(5, java.util.concurrent.TimeUnit.SECONDS), "failed boot must be reaped")
             val next = withTimeout(10_000) { runtime.start("return 'replacement';", emptySet()) }
             assertEquals("replacement", (next.advance() as CodeModeStep.Completed).output)
@@ -96,7 +103,7 @@ class CodeModeWorkerBootTest {
                 }
             },
         ).use { runtime ->
-            assertThrows(CodeModeTimeoutException::class.java) {
+            assertThrows(CodeModeStartException::class.java) {
                 runBlocking { runtime.start("return 1;", emptySet()) }
             }
             kotlinx.coroutines.supervisorScope {
@@ -114,6 +121,107 @@ class CodeModeWorkerBootTest {
                     assertEquals("replacement", completed.output)
                 }
             }
+        }
+    }
+
+    @Test
+    @Timeout(60)
+    fun `a replacement host uses the daemon archive after the installed path is swapped`(
+        @TempDir root: Path,
+    ) = runBlocking {
+        val archive = SwappedWorkerArchive(root, testClasspath)
+        val processes = CopyOnWriteArrayList<Process>()
+        val hashes = CopyOnWriteArrayList<String>()
+        val originalHash = archive.hash(archive.jar)
+        JvmCodeModeRuntime(
+            workerClasspath = archive.classpath,
+            spawn = WorkerSpawn { builder ->
+                val pinned = Path.of(builder.command()[3].substringBefore(File.pathSeparator))
+                hashes.add(archive.hash(pinned))
+                builder.redirectError(ProcessBuilder.Redirect.INHERIT).start().also { processes.add(it) }
+            },
+        ).use { runtime ->
+            val parked = runtime.start("return await tools.call('Read', {});", setOf("Read"))
+            assertTrue(parked.advance() is CodeModeStep.Calls)
+            archive.replace()
+            processes.single().destroyForcibly().waitFor()
+            assertThrows(CodeModeWorkerLostException::class.java) {
+                runBlocking { parked.advance(listOf(CodeModeResult("1", "unused"))) }
+            }
+            val replacement = runtime.start("return 'original protocol';", emptySet())
+            val completed = replacement.advance() as CodeModeStep.Completed
+            assertEquals("original protocol", completed.output)
+            assertEquals(null, completed.error)
+            assertEquals(2, processes.size)
+            assertEquals(listOf(originalHash, originalHash), hashes)
+        }
+    }
+
+    @Test
+    @Timeout(60)
+    fun `an install before first runtime refuses a mismatched daemon archive before spawn`(
+        @TempDir root: Path,
+    ) {
+        val archive = SwappedWorkerArchive(root, testClasspath)
+        val probeClasses = Path.of(ArchiveBootProbe::class.java.protectionDomain.codeSource.location.toURI())
+        val classpath = archive.classpath + File.pathSeparator + probeClasses
+        val process = ProcessBuilder(
+            Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+            "-cp",
+            classpath,
+            ArchiveBootProbe::class.java.name,
+        ).redirectError(ProcessBuilder.Redirect.INHERIT).start()
+        try {
+            process.inputStream.bufferedReader().use { replies ->
+                assertEquals("loaded original", replies.readLine())
+                archive.replaceWorkerClass()
+                process.outputStream.write(1)
+                process.outputStream.flush()
+                assertEquals("refused before spawn", replies.readLine())
+                assertTrue(process.waitFor(10, java.util.concurrent.TimeUnit.SECONDS))
+                assertEquals(0, process.exitValue())
+            }
+        } finally {
+            process.destroyForcibly().waitFor()
+        }
+    }
+
+    @Test
+    @Timeout(60)
+    fun `boot capture precedes first runtime and survives an install before the first script`(
+        @TempDir root: Path,
+    ) {
+        val archive = SwappedWorkerArchive(root, testClasspath)
+        val probeClasses = Path.of(ArchiveBootProbe::class.java.protectionDomain.codeSource.location.toURI())
+        val process = ProcessBuilder(
+            Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+            "-cp",
+            archive.classpath + File.pathSeparator + probeClasses,
+            ArchiveBootProbe::class.java.name,
+            "eager",
+        ).redirectError(ProcessBuilder.Redirect.INHERIT).start()
+        try {
+            process.inputStream.bufferedReader().use { replies ->
+                assertEquals("loaded original", replies.readLine())
+                archive.replaceWorkerClass()
+                process.outputStream.write(1)
+                process.outputStream.flush()
+                assertEquals("ran original archive", replies.readLine())
+                assertTrue(process.waitFor(10, java.util.concurrent.TimeUnit.SECONDS))
+                assertEquals(0, process.exitValue())
+            }
+        } finally {
+            process.destroyForcibly().waitFor()
+        }
+    }
+
+    @Test
+    fun `worker archive identity is pinned independently of its filename extension`(@TempDir root: Path) {
+        for (name in listOf("worker.JAR", "worker.zip", "worker.archive")) {
+            val archive = SwappedWorkerArchive(root, testClasspath, name)
+            val pinned = Path.of(WorkerArtifacts.pinClasspath(archive.classpath).substringBefore(File.pathSeparator))
+            assertTrue(pinned != archive.jar)
+            assertEquals(archive.hash(archive.jar), archive.hash(pinned))
         }
     }
 

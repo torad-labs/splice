@@ -18,6 +18,7 @@ import splice.upstream.codemode.CodeModeStep
 import splice.upstream.failure.CodeModeInfrastructureCategory
 import splice.upstream.failure.CodeModeInfrastructureClass
 import splice.upstream.failure.CodeModeInfrastructureException
+import splice.upstream.failure.CodeModeStartException
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.FilterOutputStream
@@ -375,9 +376,10 @@ class CodeModeRuntimeTest {
     fun `closed runtime rejects new cells`() = runBlocking<Unit> {
         val runtime = runtime()
         runtime.close()
-        assertThrows(IllegalStateException::class.java) {
+        val failure = assertThrows(CodeModeStartException::class.java) {
             runBlocking { runtime.start("return \"never\";", emptySet()) }
         }
+        assertTrue(failure.cause is IllegalStateException)
     }
 
     @Test

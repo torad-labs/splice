@@ -376,6 +376,13 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
         "Files.move(" to 2,
         "writeAtomic0600(" to 1,
     ),
+    // Daemon-owned archive hardlink, or a verified copy from its already-open source on link failure/race.
+    "integrations/codemode/src/main/kotlin/splice/codemode/WorkerArtifactPins.kt" to mapOf(
+        "Files.copy(" to 1,
+        "Files.createLink(" to 1,
+        "Files.createTempFile(" to 1,
+        "Files.move(" to 1,
+    ),
     "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/" +
         "reasoning/ReasoningCacheFiles.kt" to mapOf("JsonlSink.appendLine(" to 1, "createNew0600(" to 1),
     "integrations/oauth/src/main/kotlin/splice/oauth/LoginIo.kt" to mapOf("writeAtomic0600(" to 1),

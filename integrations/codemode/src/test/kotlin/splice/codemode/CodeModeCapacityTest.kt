@@ -16,6 +16,7 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
+import splice.upstream.failure.CodeModeStartException
 import splice.upstream.failure.CodeModeWorkerLostException
 
 class CodeModeCapacityTest {
@@ -77,7 +78,8 @@ class CodeModeCapacityTest {
                 }
                 entered.await()
                 runtime.close()
-                assertThrows(CodeModeWorkerLostException::class.java) { runBlocking { starting.await() } }
+                val failure = assertThrows(CodeModeStartException::class.java) { runBlocking { starting.await() } }
+                assertTrue(failure.cause is CodeModeWorkerLostException)
             }
         }
     }
@@ -90,6 +92,9 @@ class CodeModeCapacityTest {
         assertTrue(held.advance() is CodeModeStep.Calls)
         runtime.close()
         assertThrows(CodeModeWorkerLostException::class.java) { runBlocking { held.advance() } }
-        assertThrows(IllegalStateException::class.java) { runBlocking { runtime.start("return 'never';", emptySet()) } }
+        val failure = assertThrows(CodeModeStartException::class.java) {
+            runBlocking { runtime.start("return 'never';", emptySet()) }
+        }
+        assertTrue(failure.cause is IllegalStateException)
     }
 }

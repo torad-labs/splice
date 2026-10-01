@@ -32,6 +32,7 @@ import splice.app.head.HeadShutdown
 import splice.app.head.LaunchSpecFactory
 import splice.app.head.ManagedHeadFactory
 import splice.client.resume.originals.TranscriptOriginals
+import splice.codemode.WorkerArtifacts
 import splice.core.compaction.CompactionInstructions
 import splice.core.compaction.SessionProject
 import splice.core.config.ConfigService
@@ -63,6 +64,10 @@ public class Daemon(
     private val topologyDigest: String = "",
     private val topologyPath: Path? = null,
 ) {
+    init {
+        WorkerArtifacts.pinAtBoot()
+    }
+
     // Topology TOML ([daemon] + [defaults]) feeds the headOverrides layer so reasoning
     // display is operator-editable without recompiling. Env and runtime PATCH still win.
     // [heads.<key>.overrides] rides the per-head layer: heads share ONE ConfigService (one JVM,

@@ -12,12 +12,15 @@ import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
+import splice.core.util.Cancellables
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeRuntime
 import splice.upstream.codemode.ProcessDispatchers
+import splice.upstream.failure.CodeModeStartException
 import splice.upstream.failure.CodeModeTimeoutException
 import splice.upstream.failure.CodeModeWorkerLostException
+import java.io.IOException
 import java.lang.ProcessBuilder.Redirect
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
@@ -46,7 +49,7 @@ public class JvmCodeModeRuntime(
     private val heapMb: Int = DEFAULT_HEAP_MB,
     private val ioDispatcher: CoroutineDispatcher = ProcessDispatchers().io(),
     private val javaExecutable: String = Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-    private val workerClasspath: String = System.getProperty("java.class.path"),
+    workerClasspath: String = WorkerArtifacts.runningClasspath(),
     private val spawn: WorkerSpawn = WorkerSpawn(ProcessBuilder::start),
     private val workerStartTimeoutMs: Long = DEFAULT_WORKER_START_TIMEOUT_MS,
 ) : CodeModeRuntime {
@@ -65,6 +68,7 @@ public class JvmCodeModeRuntime(
         require(workerClasspath.isNotBlank()) { "Code-mode worker classpath is required" }
     }
 
+    private val pinnedWorkerClasspath = WorkerArtifacts.pinClasspath(workerClasspath)
     private val boots = Mutex()
     private var boot: Deferred<SharedWorkerChannel> = prewarm()
 
@@ -74,7 +78,7 @@ public class JvmCodeModeRuntime(
                 javaExecutable,
                 "-Xmx${heapMb}m",
                 "-cp",
-                workerClasspath,
+                pinnedWorkerClasspath,
                 WORKER_MAIN_CLASS,
                 "host",
             )
@@ -101,17 +105,8 @@ public class JvmCodeModeRuntime(
     }
 
     override suspend fun start(source: String, tools: Set<String>, descriptions: Map<String, String>): CodeModeCell {
-        check(!closed.get()) { "Code-mode runtime is closed" }
         val frame = CodeModeWire.startFrame(source, tools, descriptions)
-        val current = boots.withLock {
-            if (boot.isCompleted) {
-                if (boot.isCancelled || channel?.isClosed == true) boot = prewarm()
-            }
-            boot
-        }
-        val host = awaitHost(current)
-        if (closed.get()) throw CodeModeWorkerLostException()
-        val pipe = host.cell(sequence.incrementAndGet())
+        val pipe = openCell()
         var started = false
         try {
             val initial = CodeModeFrames.parseReply(pipe.exchange(frame), tools, 1)
@@ -125,6 +120,27 @@ public class JvmCodeModeRuntime(
             return cell
         } finally {
             if (!started) pipe.close()
+        }
+    }
+
+    // This boundary ends before exchange: only these failures prove that source was never dispatched.
+    private suspend fun openCell(): CellChannel = Cancellables.runCatchingBestEffort {
+        check(!closed.get()) { "Code-mode runtime is closed" }
+        val current = boots.withLock {
+            if (boot.isCompleted) {
+                if (boot.isCancelled || channel?.isClosed == true) boot = prewarm()
+            }
+            boot
+        }
+        val host = awaitHost(current)
+        if (closed.get()) throw CodeModeWorkerLostException()
+        host.cell(sequence.incrementAndGet())
+    }.getOrElse { error ->
+        when (error) {
+            is IllegalArgumentException -> throw error
+            is IOException -> throw CodeModeStartException(error)
+            is RuntimeException -> throw CodeModeStartException(error)
+            else -> throw error
         }
     }
 

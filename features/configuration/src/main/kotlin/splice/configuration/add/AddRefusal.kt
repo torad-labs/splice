@@ -67,6 +67,15 @@ internal class AddRefusalText {
         else -> consoleStandard(r)
     }
 
+    /** The editable input an opening refusal names, independent of either surface's sentence. */
+    fun field(r: AddRefusal): String? = when (r) {
+        is AddRefusal.KeyTaken, is AddRefusal.NameRequired -> "name"
+        is AddRefusal.CommandTaken -> "command"
+        is AddRefusal.BaseUrlRequired -> "base_url"
+        is AddRefusal.Models -> "models"
+        is AddRefusal.Unparseable, is AddRefusal.PortUnavailable, AddRefusal.QuotedValue -> null
+    }
+
     private fun consoleStandard(r: AddRefusal): String = when (r) {
         is AddRefusal.KeyTaken -> "'${r.key}' is already configured; pick another name."
         is AddRefusal.CommandTaken -> "The command '${r.command}' already belongs to a head; pick another command."

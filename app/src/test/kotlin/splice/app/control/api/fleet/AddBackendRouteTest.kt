@@ -368,6 +368,10 @@ class AddBackendRouteTest {
         val taken = post("/api/add", """{"profile":"openrouter"}""")
         assertEquals(HttpStatusCode.Conflict, taken.status, taken.bodyAsText())
         assertEquals("'openrouter' is already configured; pick another name.", error(taken))
+        assertEquals("name", body(taken)["field"]?.jsonPrimitive?.content)
+        val renamed = post("/api/add", """{"profile":"openrouter","name":"openrouter-second"}""")
+        assertEquals(HttpStatusCode.OK, renamed.status, renamed.bodyAsText())
+        assertEquals("openrouter-second", body(renamed).getValue("key").jsonPrimitive.content)
         val forwarded = post("/api/add", """{"profile":"claude"}""")
         val login = post("/api/add/${body(forwarded)["id"]!!.jsonPrimitive.content}/login")
         assertEquals(HttpStatusCode.Conflict, login.status)
@@ -376,6 +380,34 @@ class AddBackendRouteTest {
         assertEquals(HttpStatusCode.NotFound, get("/api/add/no-such-id").status)
         val stranger = withTimeout(TIMEOUT_MS) { client.post("$url/api/add") { setBody(fw) } }
         assertEquals(HttpStatusCode.Unauthorized, stranger.status)
+    }
+
+    @Test
+    fun `a taken terminal command names its editable field and accepts an override`() = runBlocking {
+        val original = """
+            [providers.openrouter]
+            dialect = "openai-chat"
+            base_url = "https://example.invalid/v1"
+            auth = { kind = "api-key", env = "OPENROUTER_API_KEY" }
+            [[providers.openrouter.models]]
+            id = "m"
+            context_window = 1000
+            [heads.reserved]
+            provider = "openrouter"
+            port = 3101
+            discovery_prefix = "reserved-"
+            pinned_model = "m"
+            [heads.reserved.claude]
+            command = "claude-splice"
+        """.trimIndent() + "\n"
+        Files.writeString(config, original)
+        val taken = post("/api/add", """{"profile":"claude"}""")
+        assertEquals(HttpStatusCode.Conflict, taken.status, taken.bodyAsText())
+        assertEquals("command", body(taken)["field"]?.jsonPrimitive?.content)
+        assertEquals(original, Files.readString(config), "a conflict writes nothing")
+        val renamed = post("/api/add", """{"profile":"claude","command":"claude-another"}""")
+        assertEquals(HttpStatusCode.OK, renamed.status, renamed.bodyAsText())
+        assertEquals("claude-another", body(renamed).getValue("command").jsonPrimitive.content)
     }
 
     /** Records the flow a login would start and announces it waiting, as a browser flow does. */

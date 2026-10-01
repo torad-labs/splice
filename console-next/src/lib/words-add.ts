@@ -1,5 +1,6 @@
 // What the Add-a-plan flow says, ported from the old console's add-backend and connect-plan strings.
 export const PLAN_NAMES = { codex: 'ChatGPT', grok: 'Grok', kimi: 'Kimi', muse: 'Muse', openrouter: 'OpenRouter key', local: 'Local model' } as const;
+export const PLAN_LABELS = { ...PLAN_NAMES, deepseek: 'DeepSeek', claude: 'Claude', 'api-key': 'API key' } as const;
 
 export const PLAN_WHY = {
   codex: 'Sign in with your ChatGPT plan.',
@@ -29,7 +30,8 @@ export const AD = {
   cancel: 'Cancel',
   closed: 'Close',
   opening: 'Opening…',
-  command: 'Its command',
+  retryOpen: 'Try again',
+  command: 'Terminal command',
   signsIn: 'Signs in with',
   signInBy: { login: 'A browser login', key: 'An API key', none: 'Your Claude login' } as const,
   forwarded: 'Your Claude login is forwarded at launch; nothing to sign in.',

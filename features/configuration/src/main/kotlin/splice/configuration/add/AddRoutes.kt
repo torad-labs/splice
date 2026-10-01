@@ -11,7 +11,8 @@
 // Every answer is the session view (AddViews) or a refusal {error} whose status says which: 400 for a
 // request that cannot mean an add, 404 for no such profile or add, 409 for a refusal the daemon's state
 // causes (a taken key, a failed check, a file changed under the add, a head signed in another way), 503
-// when the add is not wired. A failed check's 409 carries the check rows beside its sentence.
+// when the add is not wired. Opening refusals name an editable field when one can correct them.
+// A failed check's 409 carries the check rows beside its sentence.
 //
 // THE SAVE ANSWERS BEFORE IT DRAINS. Its restart is the console button's (AddDaemonRestart), so a
 // compaction in flight is waited for; with nothing to wait for, the drain is requested only after the
@@ -78,6 +79,7 @@ public class AddRoutes(
                 call,
                 texts.console(opened.refusal),
                 if (opened.conflict) HttpStatusCode.Conflict else HttpStatusCode.BadRequest,
+                texts.field(opened.refusal),
             )
         }
     }
@@ -174,8 +176,12 @@ public class AddRoutes(
         JsonReply(HttpStatusCode.Conflict, body.toString()).send(call)
     }
 
-    private suspend fun refuse(call: ApplicationCall, text: String, status: HttpStatusCode) {
-        JsonReply(status, buildJsonObject { put("error", text) }.toString()).send(call)
+    private suspend fun refuse(call: ApplicationCall, text: String, status: HttpStatusCode, field: String? = null) {
+        val body = buildJsonObject {
+            put("error", text)
+            field?.let { put("field", it) }
+        }
+        JsonReply(status, body.toString()).send(call)
     }
 }
 

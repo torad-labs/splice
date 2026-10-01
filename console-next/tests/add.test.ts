@@ -1,6 +1,6 @@
 // The Add-a-plan draft: what a profile asks, what the request carries, which plans are offered, and when a login saves itself.
 import { describe, expect, test } from 'vitest';
-import { asksAnything, autoSaveTarget, draftFor, loginRunning, planChoices, planLabel, ready, requestOf } from '../src/lib/add';
+import { asksAnything, autoSaveTarget, draftFor, loginRunning, openingField, planChoices, planLabel, ready, requestOf } from '../src/lib/add';
 import type { AddProfile, AddView } from '../src/types/add';
 
 const profile = (over: Partial<AddProfile> = {}): AddProfile => ({
@@ -20,12 +20,15 @@ describe('the plans offered', () => {
   });
   test('every other profile the daemon offers follows under its own name, with its own sentence', () => {
     const choices = planChoices([profile({ name: 'deepseek', summary: 'DeepSeek, compatible' })]);
-    expect(choices.at(-1)).toMatchObject({ id: 'deepseek', label: 'deepseek', why: 'DeepSeek, compatible' });
+    expect(choices.at(-1)).toMatchObject({ id: 'deepseek', label: 'DeepSeek', why: 'DeepSeek, compatible' });
     expect(choices).toHaveLength(7);
   });
   test('a plan reads by its name, and a profile with no name of its own reads as its key', () => {
     expect(planLabel('codex')).toBe('ChatGPT');
-    expect(planLabel('deepseek')).toBe('deepseek');
+    expect(planLabel('deepseek')).toBe('DeepSeek');
+    expect(planLabel('claude')).toBe('Claude');
+    expect(planLabel('api-key')).toBe('API key');
+    expect(planLabel('future-provider')).toBe('future-provider');
   });
 });
 
@@ -48,12 +51,31 @@ describe('what a profile asks', () => {
   });
 });
 
+describe('opening recovery', () => {
+  test('only structured, known refusal fields reveal an input, never error prose', () => {
+    expect(openingField({ field: 'command' })).toBe('command');
+    expect(openingField({ field: 'name' })).toBe('name');
+    expect(openingField({ field: 'base_url' })).toBe('base_url');
+    expect(openingField({ field: 'models' })).toBe('models');
+    for (const body of [null, 'name', { error: 'pick another name' }, { field: 'future' }]) expect(openingField(body)).toBeNull();
+  });
+  test('a conflict makes its field required even when the profile originally asked nothing', () => {
+    const draft = draftFor('claude');
+    expect(ready(draft, profile({ name: 'claude' }), ['name'])).toBe(false);
+    expect(ready({ ...draft, name: 'another' }, profile(), ['name', 'command'])).toBe(false);
+    expect(ready({ ...draft, name: 'another', command: 'claude-another' }, profile(), ['name', 'command'])).toBe(true);
+  });
+  test('an explicit command override reaches the daemon, trimmed', () => {
+    expect(requestOf({ ...draftFor('claude'), command: ' claude-another ' })).toEqual({ profile: 'claude', command: 'claude-another' });
+  });
+});
+
 describe('the request', () => {
   test('a blank field sends nothing, so the daemon’s default holds', () => {
     expect(requestOf(draftFor('codex'))).toEqual({ profile: 'codex' });
   });
   test('what was typed goes as typed, trimmed, and only the named models with their windows', () => {
-    const body = requestOf({ profile: 'openrouter', name: ' mine ', baseUrl: ' https://a ', models: [{ id: ' a ', window: ' 1000 ' }, { id: 'b', window: '' }, { id: '', window: '5' }] });
+    const body = requestOf({ profile: 'openrouter', name: ' mine ', command: '', baseUrl: ' https://a ', models: [{ id: ' a ', window: ' 1000 ' }, { id: 'b', window: '' }, { id: '', window: '5' }] });
     expect(body).toEqual({ profile: 'openrouter', name: 'mine', base_url: 'https://a', models: [{ id: 'a', context_window: 1000 }, { id: 'b' }] });
   });
 });

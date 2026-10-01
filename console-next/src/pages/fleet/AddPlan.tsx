@@ -2,10 +2,10 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useKeyStore, usePutKey } from '../../api/auth';
-import { failureText } from '../../api/client';
+import { failureText, MgmtError } from '../../api/client';
 import { useAddProfiles, useAddView, useDiscardAdd, useOpenAdd, useSaveAdd, useSignInAdd, useVerifyAdd } from '../../api/usage';
-import { EMPTY_ROW, asksAnything, autoSaveTarget, draftFor, loginRunning, planChoices, planLabel, ready, requestOf } from '../../lib/add';
-import type { AddDraft, ModelRow, PlanChoice } from '../../lib/add';
+import { EMPTY_ROW, asksAnything, autoSaveTarget, draftFor, loginRunning, openingField, planChoices, planLabel, ready, requestOf } from '../../lib/add';
+import type { AddDraft, AddField, ModelRow, PlanChoice } from '../../lib/add';
 import { AD } from '../../lib/words-add';
 import type { AddChecksFailed, AddProfile, AddView } from '../../types/add';
 import { Button, Check, Close } from '../../ui';
@@ -31,23 +31,30 @@ function Choices({ choices, onPick }: { choices: readonly PlanChoice[]; onPick: 
   );
 }
 
-function Details({ draft, profile, onDraft }: { draft: AddDraft; profile: AddProfile; onDraft: (next: AddDraft) => void }) {
+function Details({ draft, profile, recovery, onDraft }: { draft: AddDraft; profile: AddProfile; recovery: readonly AddField[]; onDraft: (next: AddDraft) => void }) {
+  const fields = [...profile.asks, ...recovery];
   const setRow = (at: number, row: ModelRow): void => onDraft({ ...draft, models: draft.models.map((each, index) => (index === at ? row : each)) });
   return (
     <>
-      {profile.asks.includes('name') ? (
+      {fields.includes('name') ? (
         <label className="field">
           <span className="eyebrow">{AD.name}</span>
           <input className="input" value={draft.name} onChange={(event) => onDraft({ ...draft, name: event.target.value })} placeholder={profile.head_key} autoFocus spellCheck={false} />
         </label>
       ) : null}
-      {profile.asks.includes('base_url') ? (
+      {fields.includes('command') ? (
+        <label className="field">
+          <span className="eyebrow">{AD.command}</span>
+          <input className="input" value={draft.command} onChange={(event) => onDraft({ ...draft, command: event.target.value })} placeholder={profile.command} autoFocus spellCheck={false} />
+        </label>
+      ) : null}
+      {fields.includes('base_url') ? (
         <label className="field">
           <span className="eyebrow">{AD.baseUrl}</span>
           <input className="input" value={draft.baseUrl} onChange={(event) => onDraft({ ...draft, baseUrl: event.target.value })} spellCheck={false} />
         </label>
       ) : null}
-      {profile.asks.includes('models') ? (
+      {fields.includes('models') ? (
         <fieldset className="model-rows">
           <legend className="eyebrow">{AD.models}</legend>
           {draft.models.map((row, at) => (
@@ -140,6 +147,7 @@ export function AddPlan({ children }: { children: ReactNode }) {
   const [attempted, setAttempted] = useState<string | null>(null);
   const [failed, setFailed] = useState<AddChecksFailed | null>(null);
   const [fault, setFault] = useState<string | null>(null);
+  const [recovery, setRecovery] = useState<AddField[]>([]);
   const profiles = useAddProfiles();
   const opener = useOpenAdd();
   const signIn = useSignInAdd();
@@ -170,6 +178,7 @@ export function AddPlan({ children }: { children: ReactNode }) {
     setAttempted(null);
     setFailed(null);
     setFault(null);
+    setRecovery([]);
   };
   const close = (next: boolean): void => {
     setOpen(next);
@@ -178,16 +187,22 @@ export function AddPlan({ children }: { children: ReactNode }) {
     if (addId !== null && view !== null && view.saved === null) discard.mutate(addId);
     reset();
   };
-  const openAdd = (): void => {
-    if (draft === null) return;
+  const openAdd = (next: AddDraft): void => {
     setFault(null);
-    opener.mutate(requestOf(draft), { onSuccess: (opened) => setAddId(opened.id), onError: (err) => setFault(failureText(err)) });
+    opener.mutate(requestOf(next), {
+      onSuccess: (opened) => setAddId(opened.id),
+      onError: (err) => {
+        setFault(failureText(err));
+        const field = err instanceof MgmtError ? openingField(err.body) : null;
+        if (field !== null) setRecovery((fields) => fields.includes(field) ? fields : [...fields, field]);
+      },
+    });
   };
   const pick = (choice: PlanChoice): void => {
     if (choice.profile === null) return;
     const next = draftFor(choice.id);
     setDraft(next);
-    if (!asksAnything(choice.profile)) opener.mutate(requestOf(next), { onSuccess: (opened) => setAddId(opened.id), onError: (err) => setFault(failureText(err)) });
+    if (!asksAnything(choice.profile)) openAdd(next);
   };
 
   const checks = failed?.checks ?? view?.checks ?? null;
@@ -208,12 +223,12 @@ export function AddPlan({ children }: { children: ReactNode }) {
           {draft === null ? (
             profiles.isPending ? <p className="hint">{AD.loading}</p> : profiles.isError ? <Fault text={failureText(profiles.error)} /> : <Choices choices={planChoices(profiles.data)} onPick={pick} />
           ) : view === null ? (
-            profile !== null && asksAnything(profile) ? (
-              <form onSubmit={(event) => { event.preventDefault(); openAdd(); }}>
-                <Details draft={draft} profile={profile} onDraft={setDraft} />
+            profile !== null && (asksAnything(profile) || recovery.length > 0 || fault !== null) ? (
+              <form onSubmit={(event) => { event.preventDefault(); openAdd(draft); }}>
+                <Details draft={draft} profile={profile} recovery={recovery} onDraft={setDraft} />
                 <div className="acts-row">
-                  <Button kind="go" type="submit" disabled={!ready(draft, profile) || busy}>{opener.isPending ? AD.opening : AD.next}</Button>
-                  <Button onClick={reset}>{AD.back}</Button>
+                  <Button kind="go" type="submit" disabled={!ready(draft, profile, recovery) || busy}>{opener.isPending ? AD.opening : !asksAnything(profile) && recovery.length === 0 ? AD.retryOpen : AD.next}</Button>
+                  <Button disabled={busy} onClick={reset}>{AD.back}</Button>
                 </div>
               </form>
             ) : <p className="hint">{AD.opening}</p>

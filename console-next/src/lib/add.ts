@@ -1,8 +1,17 @@
 // The Add-a-plan draft and what it asks the daemon, pure so both are tested without a renderer. The profile decides what is
 // asked (`asks`): a plan name when the catalogue has none, a provider address when the provider has no fixed one, and models
 // when the catalogue lists none. A blank field sends nothing, so the daemon's own default holds (AddRequestReader).
-import type { AddProfile, AddRequest, AddView } from '../types/add';
-import { PLAN_NAMES, PLAN_WHY } from './words-add';
+import type { AddAsk, AddProfile, AddRequest, AddView } from '../types/add';
+import { PLAN_LABELS, PLAN_NAMES, PLAN_WHY } from './words-add';
+
+/** A field the daemon can ask to correct while opening an add. */
+export type AddField = AddAsk | 'command';
+
+export function openingField(body: unknown): AddField | null {
+  if (body === null || typeof body !== 'object' || !('field' in body)) return null;
+  const field = body.field;
+  return field === 'name' || field === 'command' || field === 'base_url' || field === 'models' ? field : null;
+}
 
 export interface ModelRow {
   id: string;
@@ -13,12 +22,13 @@ export interface ModelRow {
 export interface AddDraft {
   profile: string;
   name: string;
+  command: string;
   baseUrl: string;
   models: ModelRow[];
 }
 
 export const EMPTY_ROW: ModelRow = { id: '', window: '' };
-export const draftFor = (profile: string): AddDraft => ({ profile, name: '', baseUrl: '', models: [EMPTY_ROW] });
+export const draftFor = (profile: string): AddDraft => ({ profile, name: '', command: '', baseUrl: '', models: [EMPTY_ROW] });
 
 export interface PlanChoice {
   /** The profile's name, the key of its add. */
@@ -31,12 +41,12 @@ export interface PlanChoice {
 
 const KNOWN = Object.keys(PLAN_NAMES) as (keyof typeof PLAN_NAMES)[];
 
-/** The six first-hour choices joined to what this daemon can add, then every other profile it offers under its own name. */
+/** The six first-hour choices joined to this daemon, followed by its other profiles with human labels where known. */
 export function planChoices(profiles: readonly AddProfile[]): PlanChoice[] {
   const known = KNOWN.map((id) => ({ id, label: PLAN_NAMES[id], why: PLAN_WHY[id], profile: profiles.find((profile) => profile.name === id) ?? null }));
   const others = profiles
     .filter((profile) => !KNOWN.some((id) => id === profile.name))
-    .map((profile) => ({ id: profile.name, label: profile.name, why: profile.summary, profile }));
+    .map((profile) => ({ id: profile.name, label: planLabel(profile.name), why: profile.summary, profile }));
   return [...known, ...others];
 }
 
@@ -47,11 +57,13 @@ const namedRows = (draft: AddDraft): ModelRow[] => draft.models.filter((row) => 
 export const asksAnything = (profile: AddProfile): boolean => profile.asks.length > 0;
 
 /** Whether the draft can open an add: every ask answered, and every window a whole number. */
-export function ready(draft: AddDraft, profile: AddProfile | null): boolean {
+export function ready(draft: AddDraft, profile: AddProfile | null, recovery: readonly AddField[] = []): boolean {
   if (profile === null) return false;
-  if (profile.asks.includes('name') && draft.name.trim() === '') return false;
-  if (profile.asks.includes('base_url') && draft.baseUrl.trim() === '') return false;
-  if (profile.asks.includes('models') && namedRows(draft).length === 0) return false;
+  const fields = [...profile.asks, ...recovery];
+  if (fields.includes('name') && draft.name.trim() === '') return false;
+  if (fields.includes('command') && draft.command.trim() === '') return false;
+  if (fields.includes('base_url') && draft.baseUrl.trim() === '') return false;
+  if (fields.includes('models') && namedRows(draft).length === 0) return false;
   return namedRows(draft).every((row) => row.window.trim() === '' || WHOLE.test(row.window.trim()));
 }
 
@@ -59,6 +71,7 @@ export function ready(draft: AddDraft, profile: AddProfile | null): boolean {
 export function requestOf(draft: AddDraft): AddRequest {
   const body: AddRequest = { profile: draft.profile };
   if (draft.name.trim() !== '') body.name = draft.name.trim();
+  if (draft.command.trim() !== '') body.command = draft.command.trim();
   if (draft.baseUrl.trim() !== '') body.base_url = draft.baseUrl.trim();
   const rows = namedRows(draft);
   if (rows.length > 0) {
@@ -81,4 +94,4 @@ export function autoSaveTarget(view: AddView | null, attempted: string | null): 
 export const loginRunning = (view: AddView | null): boolean => view?.sign_in?.state === 'starting' || view?.sign_in?.state === 'waiting';
 
 /** The plan's name as a person says it. */
-export const planLabel = (profile: string): string => (PLAN_NAMES as Record<string, string>)[profile] ?? profile;
+export const planLabel = (profile: string): string => (PLAN_LABELS as Record<string, string>)[profile] ?? profile;

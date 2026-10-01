@@ -26,8 +26,10 @@
 // decision.
 package splice.dialect.responses.stream
 
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.takeWhile
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.SharedSummaryParts
 import splice.core.turn.TurnOutcome
@@ -129,6 +131,9 @@ public class ResponsesStreamTranslator(
             // which is what a first pass at this arm did, and what its tests caught.
             if (isSpiTransportSignal(ignored) || !clientSawContent(state)) throw ignored
             unexpected = ignored
+        } finally {
+            // Sign and close client-only progress even when the upstream omits item-done or this turn aborts.
+            withContext(NonCancellable) { itemFold.execProgress.closeAll(sink) }
         }
 
         latchSweptToolBlocks(state)

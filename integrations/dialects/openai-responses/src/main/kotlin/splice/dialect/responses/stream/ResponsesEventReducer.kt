@@ -47,6 +47,7 @@ internal class ResponsesEventReducer(
             "response.reasoning_text.delta",
             "response.reasoning_summary_text.done",
             -> reasoningFold.onReasoningEvent(evt, sink)
+            "response.custom_tool_call_input.delta" -> itemFold.execProgress.delta(evt, sink)
             "response.output_text.delta" -> itemFold.onTextDelta(evt, sink)
             "response.function_call_arguments.delta", "response.function_call_arguments.done" ->
                 itemFold.onArgs(evt, sink)

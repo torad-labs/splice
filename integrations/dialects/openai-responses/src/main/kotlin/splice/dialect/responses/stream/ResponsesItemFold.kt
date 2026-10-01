@@ -19,6 +19,7 @@ internal class ResponsesItemFold(
     private val names: ToolNameShortener = ToolNameShortener(),
 ) {
 
+    val execProgress = ResponsesExecProgress()
     private val frames = ResponsesFrameParse()
     private val customCalls = ResponsesCustomCallParse()
     private val harvest = ResponsesHarvest()
@@ -28,6 +29,7 @@ internal class ResponsesItemFold(
         val item = evt["item"] as? JsonObject ?: return
         state.streamedItemTypes.add(JsonScalars.strOrEmpty(item["type"]).ifEmpty { "?" })
         val oi = frames.intOr(evt[OUTPUT_INDEX]) ?: frames.intOr(item["index"]) ?: state.blocks.size
+        execProgress.added(item, oi, sink)
         // codex parity: EVERY added item (reasoning, message, function_call, search) becomes the
         // active item; summary done-events are rendered only while their item is active.
         state.activeItemId = JsonScalars.strOrEmpty(item["id"]).ifEmpty { null }
@@ -116,6 +118,7 @@ internal class ResponsesItemFold(
      *  this output_index, and clear the salvage-open marker. */
     suspend fun closeOpenBlocks(oi: Int?, sink: WireSink) {
         if (oi == null) return
+        execProgress.close(oi, sink)
         state.removeBlock(oi)?.let { b ->
             // DR-77 (CX-01 completion): output_item.done can close a tool block without ever
             // passing the arguments.done handler — the only site that validated. Corrupt or

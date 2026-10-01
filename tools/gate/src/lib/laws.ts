@@ -31,7 +31,7 @@
 // the CLI costs nothing and keeps one reader.)
 import { execFileSync } from "node:child_process";
 import { readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 
 export interface Row {
   readonly id: string;
@@ -114,8 +114,41 @@ function fenceRoot(entry: string): string {
  * ENOTDIR) is `unknown`, and an unknown fence is a finding, because a check must be able to say it
  * did not run (law 23). A .css found before the unreadable part decides the question: `yes` wins.
  */
+/**
+ * The trees git ignores in the work tree holding `dir`, as git lists them (`build-logic/build/`), with
+ * that work tree's root — or null outside one. Build output no row edits, and present only where a
+ * build ran: walking it, a Gradle test report's own stylesheet made `quality/architecture/` a law-25
+ * fence on a built checkout and not on CI's clean one (2026-10-01). One listing per work tree.
+ */
+const ignoredByTree = new Map<string, ReadonlySet<string>>();
+function ignoredTrees(dir: string): { readonly top: string; readonly paths: ReadonlySet<string> } | null {
+  let top: string;
+  try {
+    top = execFileSync("git", ["rev-parse", "--show-toplevel"], { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch {
+    return null;
+  }
+  let paths = ignoredByTree.get(top);
+  if (paths === undefined) {
+    const listed = execFileSync("git", ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"], {
+      cwd: top,
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    paths = new Set(listed.split("\0").filter((entry) => entry.endsWith("/")));
+    ignoredByTree.set(top, paths);
+  }
+  return { top, paths };
+}
+
 function holdsCss(prefix: string): "yes" | "no" | "unknown" {
   const root = fenceRoot(prefix);
+  let ignored: ReturnType<typeof ignoredTrees> = null;
+  const isIgnored = (dir: string): boolean => {
+    if (ignored === null) return false;
+    const rel = relative(ignored.top, resolve(dir)).split(sep).join("/");
+    return rel !== "" && !rel.startsWith("..") && ignored.paths.has(`${rel}/`);
+  };
   let unknown = false;
   const note = (error: unknown): void => {
     if ((error as { code?: string }).code !== "ENOENT") unknown = true;
@@ -137,7 +170,7 @@ function holdsCss(prefix: string): "yes" | "no" | "unknown" {
       const path = join(dir, entry);
       if (entry.endsWith(".css")) return true;
       try {
-        if (statSync(path).isDirectory() && walk(path, depth + 1)) return true;
+        if (statSync(path).isDirectory() && !isIgnored(path) && walk(path, depth + 1)) return true;
       } catch (error) {
         note(error);
       }
@@ -146,7 +179,12 @@ function holdsCss(prefix: string): "yes" | "no" | "unknown" {
   };
   let found = false;
   try {
-    found = statSync(root).isDirectory() ? walk(root, 0) : root.endsWith(".css");
+    if (statSync(root).isDirectory()) {
+      ignored = ignoredTrees(root);
+      found = walk(root, 0);
+    } else {
+      found = root.endsWith(".css");
+    }
   } catch (error) {
     note(error);
   }

@@ -1,6 +1,7 @@
 // Mutation-proves src/lib/laws.ts: both laws both ways on synthetic rows, the unreadable fence on
 // the REAL filesystem, and the empty ledger as a real subprocess so the exit code is the evidence.
 import { describe, expect, test } from "bun:test";
+import { execFileSync } from "node:child_process";
 import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -136,6 +137,43 @@ describe("gate ledger laws: the fence the walk did not finish", () => {
       expect(undecidableFences(fence)).toEqual(fence);
       const result = check(one(fence, "npx tsc --noEmit"));
       expect([result.dispositions.undecidable, result.dispositions.ok]).toEqual([1, 0]);
+    });
+  });
+});
+
+// 2026-10-01: V4-191 (`quality/architecture/`) and V4-203 (`build-logic/`) read as law-25 rows only on a
+// checkout where Gradle had run, because the walk found the test report's own stylesheet under
+// `build/reports/tests/test/css/`. A gitignored tree is build output no row edits, and CI's clean
+// checkout has none, so walking it made the same ledger answer differently on two machines.
+describe("gate ledger laws: build output git ignores", () => {
+  const repo = join(tmpdir(), `gate-laws-ignored-${process.pid}`);
+  const pkg = join(repo, "pkg");
+  const arm = (body: () => void): void => {
+    mkdirSync(join(pkg, "build", "reports", "tests", "css"), { recursive: true });
+    mkdirSync(join(pkg, "src"), { recursive: true });
+    writeFileSync(join(repo, ".gitignore"), "build/\n");
+    writeFileSync(join(pkg, "build", "reports", "tests", "css", "style.css"), "a{}");
+    writeFileSync(join(pkg, "src", "Main.kt"), "fun main() {}\n");
+    execFileSync("git", ["init", "-q", repo]);
+    try {
+      body();
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  };
+
+  test("a stylesheet only under an ignored build/ tree does not make the fence a law-25 row", () => {
+    arm(() => {
+      expect(cssFences([`${pkg}/`])).toEqual([]);
+      expect(laws(one([`${pkg}/`], "./gradlew :pkg:test"))).toEqual([]);
+    });
+  });
+
+  test("a source stylesheet beside it still does, tracked or not yet added", () => {
+    arm(() => {
+      writeFileSync(join(pkg, "src", "theme.css"), "a{}");
+      expect(cssFences([`${pkg}/`])).toEqual([`${pkg}/`]);
+      expect(laws(one([`${pkg}/`], "./gradlew :pkg:test"))).toEqual(["law-25"]);
     });
   });
 });

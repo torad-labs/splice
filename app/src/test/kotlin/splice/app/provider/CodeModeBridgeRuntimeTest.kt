@@ -28,6 +28,7 @@ import splice.codemode.JvmCodeModeRuntime
 import splice.codemode.SCRIPT_DEADLINE_MS
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
+import splice.core.turn.FailureCause
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
@@ -39,6 +40,7 @@ import splice.upstream.codemode.CodeModeStep
 import splice.upstream.sse.WireSink
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicInteger
 
 private const val BRIDGE_BASE_REQUEST = """{"input":[{"role":"developer","content":"s"}]}"""
 
@@ -54,7 +56,7 @@ class CodeModeBridgeRuntimeTest {
     private val upstreamUsage = Usage(19, 7, 5, 3)
 
     @Test
-    fun `host boot deadline is an ordinary bridge failure preserving upstream usage`() = runBlocking {
+    fun `host boot deadline is retryable and preserves usage and unstarted source`() = runBlocking {
         val reclamation = CodeModeWorkerReclamation()
         JvmCodeModeRuntime(
             workerClasspath = testClasspath,
@@ -69,10 +71,50 @@ class CodeModeBridgeRuntimeTest {
             assertTrue(outcome is TurnOutcome.Failure)
             val failure = outcome as TurnOutcome.Failure
             assertEquals(upstreamUsage, failure.salvagedUsage)
-            assertTrue(failure.message.contains("timed out"))
+            assertEquals(ErrorType.OVERLOADED, failure.type)
+            assertEquals(FailureCause.INTERNAL, failure.cause)
+            assertFalse(failure.deterministic)
+            val persisted = Json.parseToJsonElement(saved().lineSequence().last { it.isNotBlank() }).jsonObject
+            assertEquals(
+                "STARTING",
+                persisted.getValue("records").jsonArray.single().jsonObject.getValue("phase").jsonPrimitive.content,
+            )
             assertFalse(failure.message.contains("private source marker"))
             assertFalse(failure.message.contains("cancelled"))
             reclamation.assertReclaimed(runtime)
+        }
+    }
+
+    @Test
+    fun `a real spawn EOF preserves source and an exact retry boots once`() = runBlocking {
+        val spawns = AtomicInteger()
+        JvmCodeModeRuntime(
+            workerClasspath = testClasspath,
+            spawn = splice.codemode.WorkerSpawn { builder ->
+                if (spawns.incrementAndGet() == 1) builder.command("/bin/sh", "-c", "exit 0")
+                builder.start()
+            },
+        ).use { runtime ->
+            val manager = bridge(runtime)
+            val first = manager.interceptor(turn(), disableParallel = false)
+                .intercept(BRIDGE_BASE_REQUEST, Sink()) { outer("return 'boot-recovered';") } as TurnOutcome.Failure
+            assertEquals(ErrorType.OVERLOADED, first.type)
+            assertFalse(first.deterministic)
+            var posted = ""
+            val retry = manager.interceptor(turn(), disableParallel = false)
+                .intercept(BRIDGE_BASE_REQUEST, Sink()) {
+                    posted = it
+                    TurnOutcome.Success(false, false, Usage(), messageClosed = true)
+                }
+            assertTrue(retry is TurnOutcome.Success)
+            assertEquals("boot-recovered", completedOutput(posted))
+            assertEquals(2, spawns.get())
+            manager.interceptor(turn(), disableParallel = false)
+                .intercept(BRIDGE_BASE_REQUEST, Sink()) {
+                    assertEquals("boot-recovered", completedOutput(it))
+                    TurnOutcome.Success(false, false, Usage(), messageClosed = true)
+                }
+            assertEquals(2, spawns.get())
         }
     }
 

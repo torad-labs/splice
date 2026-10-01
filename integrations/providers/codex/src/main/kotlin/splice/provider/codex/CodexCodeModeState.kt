@@ -255,4 +255,4 @@ internal data class CodeModeResultSnapshot(
 }
 
 @Serializable
-internal enum class CodeModePhase { ACTIVE, COMPLETED, LOST }
+internal enum class CodeModePhase { ACTIVE, COMPLETED, LOST, STARTING }

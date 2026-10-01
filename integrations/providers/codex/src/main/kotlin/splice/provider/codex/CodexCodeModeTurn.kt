@@ -134,10 +134,11 @@ internal class CodexCodeModeTurn(
     }
 
     private suspend fun resumeOwner(placed: PlacedOwner, context: CodeModeRunContext): TurnOutcome =
-        if (placed.record.phase == CodeModePhase.ACTIVE) {
-            resume.active(placed.record, context, placed.bodyJson)
-        } else {
-            resume.lost(placed.record, context, placed.bodyJson)
+        when (placed.record.phase) {
+            CodeModePhase.STARTING -> driver.retryStart(placed.record, context, placed.bodyJson)
+            CodeModePhase.ACTIVE -> resume.active(placed.record, context, placed.bodyJson)
+            CodeModePhase.LOST -> resume.lost(placed.record, context, placed.bodyJson)
+            CodeModePhase.COMPLETED -> error("A completed record cannot own a pending turn")
         }
 
     /** A running script whose history moved underneath it is abandoned: cell closed, evidence kept

@@ -7,11 +7,8 @@ import splice.core.turn.FailurePhase
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
 import splice.provider.codex.state.CodeModeNativeChain
-import splice.provider.codex.state.CodeModeWorkerRecovery
 import splice.upstream.failure.CodeModeCapacityException
-import splice.upstream.failure.CodeModeInfrastructureException
-import splice.upstream.failure.CodeModeTimeoutException
-import splice.upstream.failure.CodeModeWorkerLostException
+import splice.upstream.failure.CodeModeStartException
 import java.io.IOException
 import java.util.UUID
 
@@ -30,8 +27,6 @@ internal class CodexCodeModeDriver(
     private val validation: CodexCodeModeValidation,
     private val machine: CodexCodeModeMachine,
 ) {
-    private val workerRecovery = CodeModeWorkerRecovery(registry)
-
     suspend fun drive(
         context: CodeModeRunContext,
         initialOuter: GatewayCustomCall?,
@@ -126,6 +121,7 @@ internal class CodexCodeModeDriver(
             outer = outer.raw,
             outerCallId = outer.callId,
             source = outer.input,
+            // Crash after admission is an unknown execution, never permission to rerun source.
             phase = CodeModePhase.LOST,
             updatedAt = config.clock.millis(),
             lastDigest = context.digest,
@@ -150,13 +146,29 @@ internal class CodexCodeModeDriver(
         }
     }
 
+    /** A proven failed boot retained unexecuted source, so an exact retry may start it. */
+    suspend fun retryStart(record: CodeModeRecord, context: CodeModeRunContext, bodyJson: String): TurnOutcome {
+        check(registry.add(record)) { "Code-mode record cannot restart" }
+        val (_, advanced) = startRuntime(record, context)
+        if (record.phase != CodeModePhase.COMPLETED) return advanced
+        context.completed += record
+        val rewritten = wire.canonicalize(bodyJson, context.completed, context.turn.toolMedia)
+        rewritten.error?.let { return failure(it) }
+        val canonicalBody = checkNotNull(rewritten.bodyJson)
+        return drive(context, null, canonicalBody, context.post(canonicalBody))
+    }
+
     private suspend fun startRuntime(
         record: CodeModeRecord,
         context: CodeModeRunContext,
     ): Pair<CodeModeRecord, TurnOutcome> = try {
         val cell = startWithEviction(record, context)
         if (!registry.attach(record, cell)) {
-            record to failure(record.error.orEmpty())
+            record to TurnOutcome.Failure(
+                record.error.orEmpty(),
+                cause = FailureCause.INTERNAL,
+                phase = FailurePhase.MID_OUTPUT,
+            )
         } else {
             record to machine.advance(
                 record,
@@ -179,33 +191,36 @@ internal class CodexCodeModeDriver(
             "[code-mode] ${record.id.take(RECORD_ID_LOG_CHARS)} (outer ${record.outerCallId}): $CAPACITY_DETAIL",
         )
         record to machine.interrupt(record, CAPACITY_DETAIL)
-    } catch (_: CodeModeTimeoutException) {
-        registry.lose(record, "code-mode runtime timed out during startup; source was not rerun")
-        record to failure(record.error.orEmpty())
-    } catch (error: CodeModeInfrastructureException) {
-        registry.lose(
-            record,
-            "code-mode infrastructure failure ${error.category}/${error.faultClass}; source was not rerun",
-        )
-        record to failure(record.error.orEmpty())
     } catch (error: IOException) {
         record to startFailure(record, error)
+    } catch (_: IllegalArgumentException) {
+        registry.lose(record, "code-mode runtime rejected its input; source was not rerun")
+        record to failure(record.error.orEmpty())
     } catch (_: RuntimeException) {
         record to startFailure(record, null)
     }
 
     /** One start attempt; at capacity the oldest parked cell is evicted first and the start retried once. */
     private suspend fun startWithEviction(record: CodeModeRecord, context: CodeModeRunContext) = try {
-        run.runtime().start(record.source, context.turn.tools, context.turn.descriptions)
+        runtime().start(record.source, context.turn.tools, context.turn.descriptions)
     } catch (error: CodeModeCapacityException) {
         registry.evictIdleCell() ?: throw error
-        run.runtime().start(record.source, context.turn.tools, context.turn.descriptions)
+        runtime().start(record.source, context.turn.tools, context.turn.descriptions)
+    }
+
+    private fun runtime() = try {
+        run.runtime()
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: IOException) {
+        throw CodeModeStartException(error)
+    } catch (_: RuntimeException) {
+        throw CodeModeStartException(IllegalStateException("code-mode host could not be opened"))
     }
 
     /** The spawn failure's cause chain goes to the head log; the previous `catch (_: …)` hid it, and
      *  an hour of "runtime failed to start" carried no clue that the pool was simply full. */
     private fun startFailure(record: CodeModeRecord, error: Exception?): TurnOutcome.Failure {
-        if (error is CodeModeWorkerLostException) return workerRecovery.lost(record)
         val chain = generateSequence<Throwable>(error) { it.cause }
             .joinToString(": ") { it.message ?: it::class.simpleName.orEmpty() }
             .ifEmpty { "runtime exception" }
@@ -213,8 +228,19 @@ internal class CodexCodeModeDriver(
             "[code-mode] ${record.id.take(RECORD_ID_LOG_CHARS)} (outer ${record.outerCallId}): " +
                 "runtime failed to start: $chain",
         )
-        registry.lose(record, "code-mode runtime failed to start; source was not rerun")
-        return failure(record.error.orEmpty())
+        val detail = if (error is CodeModeStartException) {
+            registry.startup.failed(record)
+            "code-mode runtime failed to start; its unstarted source is retained for retry"
+        } else {
+            val interrupted = "code-mode runtime start was interrupted; source was not rerun"
+            registry.lose(record, interrupted)
+            interrupted
+        }
+        return TurnOutcome.Failure(
+            detail,
+            cause = FailureCause.INTERNAL,
+            phase = FailurePhase.MID_OUTPUT,
+        )
     }
 
     private fun failure(message: String): TurnOutcome.Failure =

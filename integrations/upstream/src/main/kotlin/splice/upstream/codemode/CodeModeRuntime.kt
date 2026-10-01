@@ -5,7 +5,9 @@ import kotlinx.serialization.json.JsonObject
 
 /** Splice-owned script execution. A yielded request is executed by the client, never by this runtime. */
 public interface CodeModeRuntime : AutoCloseable {
-    /** V4-388: [descriptions] (client tool name to description) fill the cell's `ALL_TOOLS`. */
+    /** V4-388: [descriptions] (client tool name to description) fill the cell's `ALL_TOOLS`.
+     *  Only [splice.upstream.failure.CodeModeStartException] proves source was never dispatched.
+     *  Any other failure can follow execution, so a caller must never restart that source. */
     public suspend fun start(
         source: String,
         tools: Set<String>,

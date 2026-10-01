@@ -18,6 +18,7 @@ import splice.provider.codex.state.CodeModeExpiredHistory
 import splice.provider.codex.state.CodeModeKeyLocks
 import splice.provider.codex.state.CodeModeNativeChain
 import splice.provider.codex.state.CodeModeRegistryAccess
+import splice.provider.codex.state.CodeModeStartupAdmissions
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
 import java.time.Clock
@@ -50,9 +51,9 @@ internal class CodexCodeModeRegistry(
     private val history = CodeModeExpiredHistory(loaded.expired.toMutableList(), config.retention.records)
     private val retention = CodeModeRecordRetention(config.retention, json, config.log, config.sessionAlive)
     private val cells = mutableMapOf<String, CodeModeCell>()
-    private val admissions = mutableMapOf<String, Long>()
+    val startup = CodeModeStartupAdmissions(access, records, history, store, config.clock)
+    private val admissions = startup.entries
     private val sweeper = CodexCodeModeSweeper(config, records, cells, admissions, history)
-    private var generation = 0L
     private val timed = CodeModeTimedSweep(
         monitor,
         records,
@@ -87,7 +88,7 @@ internal class CodexCodeModeRegistry(
             record.key == key && record.phase == CodeModePhase.ACTIVE &&
                 CodeModeOwnerMatch.matches(record, digest, activeIds, excluded)
         } ?: records.lastOrNull { record ->
-            record.key == key && record.phase == CodeModePhase.LOST &&
+            record.key == key && (record.phase == CodeModePhase.LOST || record.phase == CodeModePhase.STARTING) &&
                 CodeModeOwnerMatch.matches(record, digest, resultIds, excluded)
         }
     }
@@ -123,6 +124,8 @@ internal class CodexCodeModeRegistry(
         private var blockedKey: String? = null
 
         fun run(): Boolean {
+            // A failed boot already has durable source; an exact retry reuses its identity.
+            startup.resume(record)?.let { return it }
             while (true) {
                 val accepted = attempt()
                 if (accepted != null) return accepted
@@ -148,7 +151,7 @@ internal class CodexCodeModeRegistry(
                         }
                         held[key] = entry
                     }
-                    val admittedGeneration = generation
+                    val admittedGeneration = startup.generation
                     // Commit evictions first. A failure there must not leave an unexecuted admission on disk.
                     plan.changedKeys.filter { it != record.key }.forEach { key ->
                         store.save(plan.candidate, plan.nextHistory.entries, dirtyKeys = setOf(key))
@@ -208,7 +211,7 @@ internal class CodexCodeModeRegistry(
 
     fun attach(record: CodeModeRecord, cell: CodeModeCell): Boolean = access.withKey(record.key) {
         val admittedGeneration = admissions.remove(record.id)
-        val rejected = admittedGeneration != generation || record !in records || record.error != null
+        val rejected = admittedGeneration != startup.generation || record !in records || record.error != null
         if (rejected) {
             cell.close()
             if (record in records) {
@@ -267,16 +270,17 @@ internal class CodexCodeModeRegistry(
      *  their last use: a head stop is not a use (V4-287: a stop 23 hours on kept a record ~47 hours). */
     fun onHeadStop() {
         val keys = monitor.withLock {
-            generation++
+            startup.stop()
             records.map(CodeModeRecord::key).distinct()
         }
         keys.forEach { key ->
             access.withKey(key) {
-                records.filter { it.key == key && !it.terminal() }.forEach { record ->
-                    cells.remove(record.id)?.close()
-                    record.phase = CodeModePhase.LOST
-                    record.error = "completed client call ids=${record.results.keys}; source was not rerun"
-                }
+                records.filter { it.key == key && !it.terminal() }
+                    .filter { it.phase != CodeModePhase.STARTING }.forEach { record ->
+                        cells.remove(record.id)?.close()
+                        record.phase = CodeModePhase.LOST
+                        record.error = "completed client call ids=${record.results.keys}; source was not rerun"
+                    }
                 store.save(records, history.entries, dirtyKeys = setOf(key))
             }
         }

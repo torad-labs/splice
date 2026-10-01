@@ -6,6 +6,7 @@ import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
+import splice.provider.codex.state.CodeModeNativeChain
 import splice.upstream.failure.CodeModeCapacityException
 import splice.upstream.failure.CodeModeInfrastructureException
 import splice.upstream.failure.CodeModeTimeoutException
@@ -113,6 +114,7 @@ internal class CodexCodeModeDriver(
         val boundary = wire.inputBoundary(bodyJson)
             ?: return null to failure("code mode requires a Responses input array")
         val continuity = wire.continuity(outcome)
+        val native = CodeModeNativeChain.capture(boundary.nativeSegments, registry.completed(context.key).lastOrNull())
         val record = CodeModeRecord(
             id = UUID.randomUUID().toString(),
             key = context.key,
@@ -127,10 +129,14 @@ internal class CodexCodeModeDriver(
             metadataVersion = CODE_MODE_METADATA_VERSION,
             baselineLogicalCount = boundary.logicalCount,
             baselineLogicalDigest = boundary.logicalDigest,
-            nativeSegments = boundary.nativeSegments,
+            nativeSegments = native.segments,
             continuity = continuity.logicalItems,
             continuityReplay = continuity.replayItems,
-        ).also { it.sessionId = context.turn.sessionId }
+        ).also {
+            it.sessionId = context.turn.sessionId
+            it.nativeBaseId = native.parent?.id
+            it.nativeParent = native.parent
+        }
         return if (!registry.add(record)) {
             null to failure("code-mode registry capacity reached")
         } else {

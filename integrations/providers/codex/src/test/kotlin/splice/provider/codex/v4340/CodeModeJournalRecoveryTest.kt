@@ -12,6 +12,7 @@ import splice.provider.codex.CodeModePersistedState
 import splice.provider.codex.CodeModeRecords
 import splice.provider.codex.state.CodeModeStateDelta
 import splice.provider.codex.state.CodeModeStateJournal
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
@@ -78,6 +79,15 @@ class CodeModeJournalRecoveryTest {
         )
         Files.writeString(file, "{\"key\":invalid}\n{", StandardOpenOption.APPEND)
         assertThrows<IllegalArgumentException> { CodeModeStateJournal.read(file, Json) }
+    }
+
+    @Test
+    fun `a delta cannot become a checkpoint when the conversation file disappeared`() {
+        val file = dir.resolve("missing.json")
+        val record = CodeModeRecords.of("alpha", 1).snapshot()
+        val delta = CodeModeStateDelta("alpha", listOf(record), emptySet(), emptyList())
+        assertThrows<IOException> { CodeModeStateJournal.write(file, Json.encodeToString(delta)) }
+        assertFalse(Files.exists(file), "a retry must recreate the whole committed checkpoint first")
     }
 
     @Test

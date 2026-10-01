@@ -16,6 +16,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import splice.provider.codex.state.CodeModeExpiredHistory
 import splice.provider.codex.state.CodeModeKeyLocks
+import splice.provider.codex.state.CodeModeNativeChain
 import splice.provider.codex.state.CodeModeRegistryAccess
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
@@ -45,6 +46,7 @@ internal class CodexCodeModeRegistry(
     }
     private val loaded = store.load()
     private val records = loaded.records.map(CodeModeRecordSnapshot::restore).toMutableList()
+        .also(CodeModeNativeChain::link)
     private val history = CodeModeExpiredHistory(loaded.expired.toMutableList(), config.retention.records)
     private val retention = CodeModeRecordRetention(config.retention, json, config.log, config.sessionAlive)
     private val cells = mutableMapOf<String, CodeModeCell>()
@@ -152,7 +154,12 @@ internal class CodexCodeModeRegistry(
                         store.save(plan.candidate, plan.nextHistory.entries, dirtyKeys = setOf(key))
                         plan.publishEvictions(key)
                     }
-                    store.save(plan.candidate, plan.nextHistory.entries, dirtyKeys = setOf(record.key))
+                    store.save(
+                        plan.candidate,
+                        plan.nextHistory.entries,
+                        dirtyKeys = setOf(record.key),
+                        changedRecord = record.takeIf { plan.onlyAdds(it.key) },
+                    )
                     plan.publish(record)
                     admissions[record.id] = admittedGeneration
                     timed.arm()
@@ -182,6 +189,10 @@ internal class CodexCodeModeRegistry(
         private val addedMarkers = nextHistory.entries.filter { it !in history.entries }
         val changedKeys = setOf(candidate.last().key) + records.filter { it.id in evicted }.map(CodeModeRecord::key) +
             removedMarkers.map(CodeModeExpiredSnapshot::key)
+
+        fun onlyAdds(key: String): Boolean =
+            records.none { it.key == key && it.id in evicted } &&
+                removedMarkers.none { it.key == key } && addedMarkers.none { it.key == key }
 
         fun publishEvictions(key: String) {
             records.removeAll { it.key == key && it.id in evicted }

@@ -576,6 +576,58 @@ internal class CodeModeSweepFailureTest : CodeModeFilesTestSupport() {
     }
 
     @Test
+    fun `a later successful cell append carries an earlier failed completion`() {
+        val failOnce = AtomicBoolean(false)
+        val writer = CodeModeStateWrite { path, text ->
+            if (failOnce.compareAndSet(true, false)) throw IOException("earlier cell write failed")
+            CodeModeStateJournal.write(path, text)
+        }
+        val registry = registry(writer = writer)
+        val earlier = registry.script("alpha", 1, "before")
+        failOnce.set(true)
+        assertThrows<CodeModePersistenceException> { registry.complete(earlier, "failed completion") }
+        registry.script("alpha", 2, "later")
+        assertEquals(listOf("failed completion", "later"), registry().outputs("alpha"))
+    }
+
+    @Test
+    fun `a later cell append never revives a rolled back failed acceptance`() {
+        val failOnce = AtomicBoolean(false)
+        val writer = CodeModeStateWrite { path, text ->
+            if (failOnce.compareAndSet(true, false)) throw IOException("acceptance write failed")
+            CodeModeStateJournal.write(path, text)
+        }
+        val registry = registry(writer = writer)
+        val earlier = registry.script("alpha", 1)
+        registry.acceptResults(earlier, "prior", mapOf("one" to CodeModeResult("one", "first")))
+        failOnce.set(true)
+        assertThrows<CodeModePersistenceException> {
+            registry.acceptResults(earlier, "failed", mapOf("two" to CodeModeResult("two", "discarded")))
+        }
+        registry.script("alpha", 2, "later")
+        val restored = registry().recordsFor("alpha").first()
+        assertEquals("prior", restored.lastDigest)
+        assertEquals(setOf("one"), restored.results.keys)
+    }
+
+    @Test
+    fun `retry recreates every committed cell if the checkpoint disappears before its append`() {
+        val removeOnce = AtomicBoolean(false)
+        val writer = CodeModeStateWrite { path, text ->
+            if (removeOnce.compareAndSet(true, false)) Files.delete(path)
+            CodeModeStateJournal.write(path, text)
+        }
+        val registry = registry(writer = writer)
+        registry.script("alpha", 1, "first")
+        val current = registry.script("alpha", 2, "before cut")
+        removeOnce.set(true)
+        assertThrows<CodeModePersistenceException> { registry.complete(current, "after cut") }
+        assertFalse(Files.exists(state.dir.resolve(nameOf("alpha"))))
+        registry.save(current)
+        assertEquals(listOf("first", "after cut"), registry().outputs("alpha"))
+    }
+
+    @Test
     fun `a timed sweep retries the last expired key after its write failed`() {
         val clock = SweepClock(futureRecordTs)
         val failed = CountDownLatch(1)

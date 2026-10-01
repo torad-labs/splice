@@ -14,6 +14,7 @@ import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.file.Files
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 
@@ -45,13 +46,16 @@ internal object CodeModeStateJournal {
     }
 
     fun same(left: CodeModeRecordSnapshot?, right: CodeModeRecordSnapshot?): Boolean =
-        left == right && left?.issued == right?.issued && left?.sessionId == right?.sessionId
+        left == right && left?.issued == right?.issued && left?.sessionId == right?.sessionId &&
+            left?.nativeBaseId == right?.nativeBaseId
 
     /** Called under the conversation lock. First write creates a 0600 checkpoint; appends are forced. */
     fun write(path: Path, text: String) {
-        if (!text.startsWith("{\"key\":") || Files.notExists(path)) {
+        if (!text.startsWith("{\"key\":")) {
             SecureFile.writeAtomic0600(path, text + "\n")
         } else {
+            // A delta is not a checkpoint. Refuse this race so the caller recreates its full durable cache.
+            if (Files.notExists(path)) throw NoSuchFileException(path.toString())
             when (val tightening = SecureFile.ownerOnlyFile(path)) {
                 is splice.core.util.FileTightening.Open -> throw IOException(tightening.why)
                 else -> Unit

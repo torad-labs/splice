@@ -53,6 +53,7 @@ internal data class CodeModeRecordSnapshot(
     /** Kept outside the already-wide constructor; the store compares it explicitly on save. */
     var issued: List<CodeModeIssuedStep> = emptyList()
     var sessionId: String? = null
+    var nativeBaseId: String? = null
 
     @Transient var retainedBytes: Long? = null
 
@@ -92,6 +93,7 @@ internal data class CodeModeRecordSnapshot(
     ).also {
         it.issued.addAll(issued)
         it.sessionId = sessionId
+        it.nativeBaseId = nativeBaseId
         it.retainedBytes = retainedBytes
     }
 
@@ -131,6 +133,8 @@ internal data class CodeModeRecord(
     /** In-memory snapshot order; a failed save cannot undo a later reserved snapshot. */
     var saveGeneration: Long = 0
     var sessionId: String? = null
+    var nativeBaseId: String? = null
+    var nativeParent: CodeModeRecord? = null
 
     @Volatile var retainedBytes: Long? = null
 
@@ -172,6 +176,7 @@ internal data class CodeModeRecord(
     ).also {
         it.issued = issued.toList()
         it.sessionId = sessionId
+        it.nativeBaseId = nativeBaseId
     }
 }
 

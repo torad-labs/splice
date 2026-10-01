@@ -9,6 +9,7 @@ import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.dialect.responses.request.ResponsesCodeModeInput
 import splice.dialect.responses.request.ResponsesContextMessage
+import splice.provider.codex.state.CodeModeNativeChain
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.sse.WireSink
 
@@ -266,13 +267,10 @@ internal class CodeModeExtraContent(
         record: CodeModeRecord,
         owned: Set<String>,
     ): Boolean {
-        val baselineReplay = record.nativeSegments.map { it.logicalOffset to it.items }.toSet()
-        val continuityReplay = record.continuityReplay.map {
-            record.baselineLogicalCount + it.logicalOffset to it.items
-        }.toSet()
+        val allowed = CodeModeNativeChain.allowed(record)
         return projected.replayItems.any { replay ->
             val slot = replay.logicalOffset to replay.items
-            val expected = slot in baselineReplay || slot in continuityReplay
+            val expected = slot in allowed
             replay.logicalOffset >= record.baselineLogicalCount && !expected && replay.callbackId !in owned
         }
     }

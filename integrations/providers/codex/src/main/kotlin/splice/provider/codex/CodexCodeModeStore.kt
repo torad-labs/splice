@@ -10,7 +10,9 @@ import kotlinx.serialization.json.Json
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
+import splice.provider.codex.state.CodeModeKeptState
 import splice.provider.codex.state.CodeModeKeyLocks
+import splice.provider.codex.state.CodeModeStateDelta
 import splice.provider.codex.state.CodeModeStateJournal
 import java.io.IOException
 import java.nio.file.Files
@@ -83,7 +85,7 @@ internal class CodexCodeModeStore(
     private val failedKeys = ConcurrentHashMap.newKeySet<String>()
 
     /** Each conversation as its file held it when last read or written, by conversation key. */
-    private val kept = ConcurrentHashMap<String, CodeModePersistedState>()
+    private val kept = ConcurrentHashMap<String, CodeModeKeptState>()
 
     private val savePreparation = SavePreparation()
 
@@ -93,7 +95,10 @@ internal class CodexCodeModeStore(
     private data class Prepared(
         val key: String,
         val conversation: CodeModePersistedState?,
+        val cells: List<PreparedCell> = emptyList(),
     )
+
+    private data class PreparedCell(val live: CodeModeRecord, val snapshot: CodeModeRecordSnapshot)
 
     /** A conversation as its file will hold it. */
     private data class Encoded(val key: String, val conversation: CodeModePersistedState, val text: String)
@@ -106,7 +111,7 @@ internal class CodexCodeModeStore(
         if (legacy != null && carried.count { (key, conversation) -> carry(key, conversation) } == carried.size) {
             removeLegacy()
         }
-        return merged(kept + carried)
+        return merged(kept.mapValues { it.value.snapshot() } + carried)
     }
 
     /** Writes each conversation of the given state that differs from what the disk holds, and removes the
@@ -157,10 +162,9 @@ internal class CodexCodeModeStore(
                     registryLock?.unlock()
                 }
                 prepared?.let(::persist)
-                val sizes = kept[key]?.records.orEmpty().associate { it.id to it.retainedBytes }
                 registryLock?.lock()
                 try {
-                    records.filter { it.key == key }.forEach { record -> record.retainedBytes = sizes[record.id] }
+                    publishSizes(key, records, changedRecord, prepared)
                 } finally {
                     registryLock?.unlock()
                 }
@@ -170,24 +174,39 @@ internal class CodexCodeModeStore(
             }
         }
 
+        private fun publishSizes(
+            key: String,
+            records: List<CodeModeRecord>,
+            changedRecord: CodeModeRecord?,
+            prepared: Prepared?,
+        ) {
+            val changed = prepared?.cells.orEmpty()
+            if (changed.isNotEmpty()) {
+                changed.forEach { it.live.retainedBytes = it.snapshot.retainedBytes }
+                return
+            }
+            val sizes = kept[key]?.records.orEmpty()
+            if (changedRecord != null) {
+                changedRecord.retainedBytes = sizes[changedRecord.id]?.retainedBytes
+            } else {
+                records.filter { it.key == key }.forEach { record ->
+                    record.retainedBytes = sizes[record.id]?.retainedBytes
+                }
+            }
+        }
+
         fun prepare(
             key: String,
             records: List<CodeModeRecord>,
             expired: List<CodeModeExpiredSnapshot>,
             changedRecord: CodeModeRecord?,
         ): Prepared? {
-            val prior = kept[key]
-            val nextRecords = if (changedRecord != null && prior != null) {
-                changedRecord.saveGeneration++
-                val snapshot = changedRecord.snapshot()
-                val indexed = prior.records.associateByTo(linkedMapOf(), CodeModeRecordSnapshot::id)
-                indexed[snapshot.id] = snapshot
-                indexed.values.toList()
-            } else {
-                records.filter { it.key == key }.map { record ->
-                    record.saveGeneration++
-                    record.snapshot()
-                }
+            val indexed = kept[key]
+            if (changedRecord != null && indexed != null) return prepareCells(key, indexed, changedRecord)
+            val prior = indexed?.snapshot()
+            val nextRecords = records.filter { it.key == key }.map { record ->
+                record.saveGeneration++
+                record.snapshot()
             }
             val before = prior?.records.orEmpty().associateBy(CodeModeRecordSnapshot::id)
             nextRecords.forEach { snapshot ->
@@ -201,16 +220,51 @@ internal class CodexCodeModeStore(
                 ?.any { (left, right) -> !CodeModeStateJournal.same(left, right) } == true
             return if (changed) Prepared(key, next) else null
         }
+
+        private fun prepareCells(key: String, indexed: CodeModeKeptState, record: CodeModeRecord): Prepared? {
+            indexed.dirty[record.id] = record
+            val cells = indexed.dirty.values.map { live ->
+                live.saveGeneration++
+                PreparedCell(live, live.snapshot())
+            }.filterNot { CodeModeStateJournal.same(it.snapshot, indexed.records[it.snapshot.id]) }
+            if (cells.isEmpty()) {
+                indexed.dirty.clear()
+                return null
+            }
+            return Prepared(key, null, cells)
+        }
+
+        fun cellText(key: String, cells: List<CodeModeRecordSnapshot>): String {
+            val prior = checkNotNull(kept[key])
+            cells.forEach { cell ->
+                cell.retainedBytes = json.encodeToString(cell).encodeToByteArray().size.toLong()
+            }
+            return if (Files.exists(fileOf(key))) {
+                json.encodeToString(CodeModeStateDelta(key, cells, emptySet(), prior.expired))
+            } else {
+                // Missing-file recovery must recreate every committed cell before another append.
+                CodeModeStateJournal.encode(key, null, prior.withCells(cells), json)
+            }
+        }
     }
 
     private fun persist(item: Prepared) {
         var bytes = 0
         try {
             val conversation = item.conversation
-            if (conversation == null) {
+            val cells = item.cells.map(PreparedCell::snapshot)
+            if (cells.isNotEmpty()) {
+                val text = savePreparation.cellText(item.key, cells)
+                bytes = text.encodeToByteArray().size
+                secureDirectory()
+                writer.write(fileOf(item.key), text)
+                val indexed = checkNotNull(kept[item.key])
+                cells.forEach { indexed.records[it.id] = it }
+                indexed.dirty.clear()
+            } else if (conversation == null) {
                 remove(item.key)
             } else {
-                val prior = kept[item.key].takeIf { Files.exists(fileOf(item.key)) }
+                val prior = kept[item.key]?.snapshot().takeIf { Files.exists(fileOf(item.key)) }
                 val text = CodeModeStateJournal.encode(item.key, prior, conversation, json)
                 bytes = text.toByteArray().size
                 secureDirectory()
@@ -231,7 +285,7 @@ internal class CodexCodeModeStore(
             log("[code-mode] $dir not listed (${SafeFailureText.render(failure)}): its conversations are not restored")
             return
         }
-        files.forEach { file -> read(file)?.let { (key, conversation) -> kept[key] = conversation } }
+        files.forEach { file -> read(file)?.let { (key, conversation) -> kept[key] = CodeModeKeptState(conversation) } }
     }
 
     /** [file]'s conversation, or null when it does not read back whole: a file that is not code-mode state
@@ -307,7 +361,7 @@ internal class CodexCodeModeStore(
 
     private fun write(file: Encoded) {
         writer.write(fileOf(file.key), file.text)
-        kept[file.key] = file.conversation
+        kept[file.key] = CodeModeKeptState(file.conversation)
     }
 
     private fun remove(key: String) {

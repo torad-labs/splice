@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.dialect.responses.request.ResponsesCodeModeInput
 import splice.dialect.responses.request.ResponsesCodeModeReplay
+import splice.provider.codex.state.CodeModeNativeChain
 
 internal class CodexCodeModeHistory(json: Json) {
     private val codec = CodexCodeModeHistoryCodec(json)
@@ -127,11 +128,11 @@ internal class CodexCodeModeHistory(json: Json) {
         inserted: Int,
     ): List<ResponsesCodeModeReplay> {
         val owned = (record.results.keys + record.pending.map(CodeModePending::clientId)).toSet()
-        val baselineNative = record.nativeSegments.map { it.logicalOffset to it.items }.toSet()
+        val baselineNative = CodeModeNativeChain.replay(record).map { it.logicalOffset to it.items }.toSet()
         val continuityReplay = record.continuityReplay.map {
             record.baselineLogicalCount + it.logicalOffset to it.items
         }.toSet()
-        return replay.mapNotNull { segment ->
+        return CodeModeNativeChain.withoutContinuity(replay, record).mapNotNull { segment ->
             val slot = segment.logicalOffset to segment.items
             when {
                 segment.callbackId in owned -> null
@@ -149,17 +150,15 @@ internal class CodexCodeModeHistory(json: Json) {
     private fun placed(
         natives: List<ResponsesCodeModeReplay>,
         continuity: List<ResponsesCodeModeReplay>,
-    ): List<ResponsesCodeModeReplay> = (natives + continuity).sortedBy(ResponsesCodeModeReplay::logicalOffset)
+    ): List<ResponsesCodeModeReplay> = CodeModeNativeChain.normalizedReplay(natives + continuity)
 
     private fun mergeNative(replay: List<ResponsesCodeModeReplay>, record: CodeModeRecord): ReplayRewrite {
-        val expected = record.nativeSegments.map { it.logicalOffset to it.items }
-        val continuity = record.continuityReplay.map {
-            record.baselineLogicalCount + it.logicalOffset to it.items
-        }
-        val allowed = (expected + continuity).toSet()
+        val expected = CodeModeNativeChain.replay(record).map { it.logicalOffset to it.items }
+        val allowed = CodeModeNativeChain.allowed(record)
         val nativeIds = expected.flatMap { (_, items) -> items.mapNotNull(codec::callId) }.toSet()
         val expectedOffsets = expected.map(Pair<Int, List<JsonElement>>::first).toSet()
-        val conflict = replay.any { segment ->
+        val normalized = CodeModeNativeChain.normalizedReplay(replay)
+        val conflict = normalized.any { segment ->
             val sameId = segment.items.any { codec.callId(it) in nativeIds }
             nativeReplayValidator.conflictsWithBaseline(
                 segment,
@@ -170,11 +169,11 @@ internal class CodexCodeModeHistory(json: Json) {
             )
         }
         if (conflict) return ReplayRewrite(null, "code-mode native discovery history was edited")
-        val merged = replay.toMutableList()
+        val merged = normalized.toMutableList()
         expected.forEach { (offset, items) ->
             val present = merged.any {
                 val sameSlot = it.logicalOffset == offset && it.callbackId == null
-                sameSlot && it.items == items
+                sameSlot && CodeModeNativeChain.startsWith(it.items, items)
             }
             if (!present) merged += ResponsesCodeModeReplay(offset, null, items)
         }

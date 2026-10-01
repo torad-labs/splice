@@ -1,21 +1,19 @@
 // NEW: serializes each conversation's code-mode replay, resume, and fresh-turn decisions.
 package splice.provider.codex
 
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
 import splice.provider.codex.branch.CodexCodeModeBranch
+import splice.provider.codex.state.CodeModeTurnLocks
 import splice.upstream.InterceptedRoundPost
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.sse.WireSink
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 
-private const val CODE_MODE_LOCK_STRIPES: Int = 64
 private const val RECORD_ID_LOG_CHARS: Int = 8
 
 internal data class CodeModeRunInput(
@@ -57,7 +55,7 @@ internal class CodexCodeModeTurn(
 ) {
     private val identity = CodexCodeModeIdentity()
     private val branch = CodexCodeModeBranch(registry, driver, machine, validation, log)
-    private val locks = List(CODE_MODE_LOCK_STRIPES) { Mutex() }
+    private val locks = CodeModeTurnLocks()
 
     /** Conversation-scoped notes already logged — one line per conversation, not one per turn. */
     private val announced: MutableSet<String> = ConcurrentHashMap.newKeySet()
@@ -72,7 +70,8 @@ internal class CodexCodeModeTurn(
             input.sink,
             input.post,
         )
-        return locks[(key.hashCode() and Int.MAX_VALUE) % locks.size].withLock {
+        val held = locks.acquire(key)
+        return try {
             try {
                 // An identical request is served before retention can trim its recorded step.
                 val replay = branch.replay(context)
@@ -85,6 +84,8 @@ internal class CodexCodeModeTurn(
             } catch (error: CodeModePersistenceException) {
                 error.outcome()
             }
+        } finally {
+            locks.release(key, held)
         }
     }
 

@@ -29,6 +29,9 @@ private val FORWARDED_CLIENT_HEADERS: Map<String, String> = mapOf(
     "anthropic-beta" to "ANTHROPIC_CUSTOM_HEADERS",
 )
 
+/** The allowlisted names that carry a caller's credential, in any scheme. */
+private val CREDENTIAL_HEADERS: List<String> = listOf("Authorization", "x-api-key")
+
 /** Identity authored by the client, not by splice. SDK metadata is forwarded as the x-stainless- family. */
 private val CLIENT_IDENTITY_HEADERS: Set<String> = setOf(
     "user-agent",
@@ -54,6 +57,9 @@ internal class ClientAuth(
     private val deps: HeadDeps,
     private val responses: AdmissionResponses,
     private val foreignHosts: ForeignHostLog,
+    /** The head holds no credential of its own (ClientAuthProvider): every upstream credential is
+     *  the caller's, so a call that presents none has nothing upstream could accept. */
+    private val forwardsOnly: Boolean = false,
 ) {
     // Splits each forwarded value into scheme/credential/parameter tokens for the own-key check.
     // The FULL RFC 7235 delimiter class, not just whitespace (third DR-30 redo): auth-params
@@ -68,10 +74,9 @@ internal class ClientAuth(
         // launcher plants in a client whose own credentials it replaced, and this head does the
         // opposite — it leaves the client's native auth intact and forwards it. Comparing the
         // inbound header against splice's keys would therefore reject exactly the requests this
-        // head exists to serve. The listener is loopback-only, and an unauthenticated caller
-        // simply forwards no valid upstream credential and gets the upstream's own 401.
-        // ONE exception, below: splice's own keys are never a credential this head may forward.
-        if (deps.policy.forwardClientAuth) return allowUnlessOwnKey(call)
+        // head exists to serve. Two exceptions, in [allowForwarding]: a call with no credential, and
+        // splice's own keys, which are never a credential this head may forward.
+        if (deps.policy.forwardClientAuth) return allowForwarding(call)
         // The turn key is what a launched client holds; the management key still runs a turn so a
         // session launched before the v0.4.0 split keeps working until it is relaunched.
         val presented = presentedCredential(call)
@@ -143,6 +148,23 @@ internal class ClientAuth(
      * checking `headers[name]`, the FIRST line, while the forwarder sends the first NON-BLANK one let
      * an empty line ahead of the key pass the check and the key ride upstream.
      */
+    /** A client-auth head's front door. On a head that only forwards, a caller presenting NO
+     *  credential, in any scheme, is answered here as every other head answers it: upstream could
+     *  only say 401, and that 401 would be recorded as the forwarded login rejected
+     *  (ClientAuthProvider.upstreamAnswered) on a call that carried no login. The daemon's own
+     *  credential-less liveness probe (TurnPathProbeLoop) rode upstream that way every 30s and
+     *  signed the head out (2026-10-01). A head holding its own credential still serves such a call. */
+    private suspend fun allowForwarding(call: ApplicationCall): Boolean {
+        // The own-key refusal first: it names the header that carried the key, whichever it is.
+        if (!allowUnlessOwnKey(call)) return false
+        if (!forwardsOnly || carriesCredential(call)) return true
+        responses.respondUnauthorized(call)
+        return false
+    }
+
+    private fun carriesCredential(call: ApplicationCall): Boolean =
+        CREDENTIAL_HEADERS.any { !call.request.headers[it].isNullOrBlank() }
+
     private suspend fun allowUnlessOwnKey(call: ApplicationCall): Boolean {
         val carriers = forwardedClientHeaders(call).filterValues { value ->
             value.split(authDelimiterRe).any { matchesInferenceToken(it) || matchesOperatorToken(it) }

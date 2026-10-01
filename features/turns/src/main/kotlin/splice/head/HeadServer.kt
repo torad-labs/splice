@@ -20,6 +20,7 @@ package splice.head
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonObject
+import splice.core.auth.ClientAuthProvider
 import splice.core.auth.ForeignHostLog
 import splice.core.head.Head
 import splice.core.head.HeadHealth
@@ -61,7 +62,12 @@ public class HeadServer(
     private val driver = TurnDriver(provider, deps, compactionReplay)
     private val window = AdmissionWindow()
     private val responses = AdmissionResponses()
-    private val clientAuth = ClientAuth(deps, responses, ForeignHostLog("the ${provider.key} head", deps.log))
+    private val clientAuth = ClientAuth(
+        deps,
+        responses,
+        ForeignHostLog("the ${provider.key} head", deps.log),
+        forwardsOnly = provider.auth is ClientAuthProvider,
+    )
     private val bodyReader = RequestBodyReader(deps.policy.requestReadTimeoutMs)
     private val bodyParse = AnthropicBodyParse()
     private val admissionGate = AdmissionGate(

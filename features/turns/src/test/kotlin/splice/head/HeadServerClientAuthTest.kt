@@ -228,6 +228,19 @@ class HeadServerClientAuthTest {
         assertEquals(HttpStatusCode.OK, status)
     }
 
+    // 2026-10-01: the daemon's own turn-path liveness probe (TurnPathProbeLoop) carries no credential
+    // on purpose and relies on a local 401. On a client-auth head it rode upstream instead: 8 bare
+    // requests a minute reached Anthropic, and each 401 was recorded as the forwarded login REJECTED,
+    // so the console signed the head out. A call with no credential has nothing to forward.
+    @Test
+    fun `a client-auth head answers a caller with no credential itself and sends nothing upstream`() {
+        val port = startHead(forwardClientAuth = true)
+        val before = upstream.requests.size
+        val (status, _) = turn(port, emptyMap())
+        assertEquals(HttpStatusCode.Unauthorized, status)
+        assertEquals(before, upstream.requests.size, "a call with no credential must never reach upstream")
+    }
+
     @Test
     fun `a client-auth head forwards the caller's credential and wire knobs upstream, once`() {
         val port = startHead(forwardClientAuth = true)

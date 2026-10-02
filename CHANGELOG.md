@@ -562,6 +562,16 @@ origin.
   request path, and a rate-limited mint is held rather than retried.
 
 ### Changed
+- **Batched text and thinking are paced on every head.** When visible text or thinking arrives
+  together, splice's shared client write path spreads it over a one-second pacing window.
+  Each 16 ms tick releases at least four queued deltas, or all that remain, without reordering
+  frames. A lone delta after a quiet stretch, or a stream slower than one delta per tick, is
+  written at once.
+- **Claude Code shows a code-mode script as it is written.** While a GPT model writes its `exec`
+  script, Claude Code displays the source in a live thinking block. A tool call dispatched by
+  the script closes and signs that block; remaining script text continues in the next client
+  step. The block carries splice's notice signature and is never sent upstream as model
+  reasoning. Script text held between client steps has a separate byte budget from model output.
 - **The console is rebuilt, and the daemon serves the copy packaged in its jar.** The old console
   is removed. The daemon no longer looks for a console build beside the directory it was started
   from, a lookup that broke once a restart started the daemon from the home directory. To serve

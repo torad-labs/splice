@@ -111,6 +111,8 @@ internal class ClientChannel(
     /** V4-456: holds a burst's deltas for [launchPacer]'s loop; inert until that loop runs. */
     private val pacer: DeltaPacer = DeltaPacer(),
 ) {
+    private var lastWriteMs: Long? = null
+
     /** Client-side write instrumented: frame counts/bytes, first-frame/first-delta marks, and the
      *  summed write+flush time (a slow reader shows up as write_ms, not as fake stream time).
      *  A failed write flips [clientGone] BEFORE rethrowing — the translator's terminal decision
@@ -147,7 +149,7 @@ internal class ClientChannel(
         }
         // A release loop that stopped (a cancelled turn, a ticker that ended) can leave frames behind:
         // they go first, so the wire order stays the order they were written in.
-        pacer.takeAll().forEach { socketWrite(it.frame, it.perf, clock) }
+        pacer.takeAll(clock()).forEach { socketWrite(it.frame, it.perf, clock) }
         if (socketWrite(frame, perf, clock) && modelOutput) ModelAccounting.count(frame, perf)
     }
 
@@ -166,8 +168,11 @@ internal class ClientChannel(
             if (!detachIfRecording()) writeResult.getOrThrow()
             return false
         }
+        val wroteAtMs = clock()
+        lastWriteMs?.let { perf.maxCount(PerfKeys.OUT_GAP_MAX_MS, wroteAtMs - it) }
+        lastWriteMs = wroteAtMs
         socketFrames.incrementAndGet()
-        perf.add(PerfKeys.WRITE_MS, clock() - t)
+        perf.add(PerfKeys.WRITE_MS, wroteAtMs - t)
         perf.add(PerfKeys.FRAMES_OUT, 1)
         perf.add(PerfKeys.BYTES_OUT, frame.length.toLong())
         perf.markOnce(PerfKeys.FIRST_FRAME)
@@ -232,7 +237,7 @@ internal class ClientChannel(
         if (writeMutex.withLock { pacer.stillHeld() }) pacing.join() else pacing.cancel()
         Cancellables.discard(
             Cancellables.runCatchingCleanup {
-                writeMutex.withLock { pacer.takeAll().forEach { socketWrite(it.frame, it.perf, clock) } }
+                writeMutex.withLock { pacer.takeAll(clock()).forEach { socketWrite(it.frame, it.perf, clock) } }
             },
             "a paced tail on a client that left: clientGone is already set and the turn has ended",
         )

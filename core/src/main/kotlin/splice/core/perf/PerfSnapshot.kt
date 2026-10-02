@@ -7,6 +7,7 @@ package splice.core.perf
 public data class PerfSnapshot(
     val marks: Map<String, Long>,
     val counters: Map<String, Long>,
+    val upstreamGapEnd: UpstreamGapEnd = UpstreamGapEnd.OTHER,
 ) {
     /**
      * The one-line perf summary: marks in pipeline order, then counters, skipping absent fields.
@@ -25,7 +26,9 @@ public data class PerfSnapshot(
         val markPart = PerfKeys.markOrder
             .mapNotNull { k -> marks[k]?.let { "$k=$it" } }
             .joinToString(" ")
-        val counterPart = counters.entries.joinToString(" ") { (k, v) -> "$k=$v" }
+        val counterPart = counters.entries.map { (k, v) -> "$k=$v" }
+            .plus("${PerfKeys.UP_GAP_END}=${upstreamGapEnd.wire}")
+            .joinToString(" ")
         return buildString {
             append("[").append(head).append("] perf outcome=").append(outcome)
             append(" compact=").append(compact)

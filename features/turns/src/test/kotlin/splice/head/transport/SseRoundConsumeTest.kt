@@ -12,10 +12,20 @@ import io.ktor.client.engine.cio.CIO
 import io.ktor.client.request.post
 import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
+import io.ktor.utils.io.ByteChannel
+import io.ktor.utils.io.ByteReadChannel
+import io.ktor.utils.io.writeStringUtf8
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.buildJsonObject
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -32,6 +42,7 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
+import splice.core.perf.UpstreamGapEnd
 import splice.core.turn.ErrorType
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
@@ -123,6 +134,7 @@ class SseRoundConsumeTest {
 
     private suspend fun drive(
         budget: WatchdogBudget = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
+        perf: TurnPerf = TurnPerf(),
     ): TurnDrive = TurnDrive(
         requestBody = buildJsonObject { },
         meta = TurnMeta(
@@ -146,7 +158,7 @@ class SseRoundConsumeTest {
         ),
         t0 = 0,
         trace = null,
-        perf = TurnPerf(),
+        perf = perf,
         turnHeaders = emptyMap(),
         signals = RunnerSignals(),
         channel = ClientChannel(
@@ -163,6 +175,65 @@ class SseRoundConsumeTest {
                 setBody("""{"instructions":"SCENARIO:$scenario"}""")
             },
         )
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test
+    fun `upstream silence is measured after the first event and names only its ending kind`() = runTest {
+        val perf = TurnPerf { testScheduler.currentTime }
+        val drive = drive(perf = perf)
+        val body = ByteChannel(autoFlush = true)
+        val reader = async(start = CoroutineStart.UNDISPATCHED) {
+            TearAwareEvents(provider(), {}).run(drive, body, ZeroEventCapture(), ClientFrameEmitted { true }).toList()
+        }
+        try {
+            delay(5_000)
+            body.writeStringUtf8("data: {\"type\":\"ping\"}\n\n")
+            runCurrent()
+            delay(2_500)
+            body.writeStringUtf8(
+                "data: {\"type\":\"content_block_delta\",\"delta\":" +
+                    "{\"type\":\"thinking_delta\",\"thinking\":\"synthetic\"}}\n\n",
+            )
+            runCurrent()
+            delay(500)
+            body.writeStringUtf8("data: {\"type\":\"ping\"}\n\n")
+            body.close()
+            assertEquals(3, reader.await().size)
+            val snapshot = perf.snapshot()
+            assertEquals(2_500L, snapshot.counters[PerfKeys.UP_GAP_MAX_MS])
+            assertEquals(1L, snapshot.counters[PerfKeys.UP_GAPS_2S])
+            assertEquals(UpstreamGapEnd.THINKING_DELTA, snapshot.upstreamGapEnd)
+        } finally {
+            body.cancel(null)
+            reader.cancel()
+            drive.slot.release()
+        }
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test
+    fun `buffered upstream events do not charge downstream processing as provider silence`() = runTest {
+        val perf = TurnPerf { testScheduler.currentTime }
+        val drive = drive(perf = perf)
+        val text = "data: {\"type\":\"ping\"}\n\n" +
+            "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"thinking_delta\"}}\n\n"
+        val body = ByteReadChannel(text.toByteArray())
+        var observed = 0
+        try {
+            val events = TearAwareEvents(provider(), {}).run(
+                drive,
+                body,
+                ZeroEventCapture(),
+                ClientFrameEmitted { true },
+            ).onEach { if (observed++ == 0) delay(2_500) }.toList()
+            assertEquals(2, events.size)
+            assertEquals(0L, perf.snapshot().counters[PerfKeys.UP_GAP_MAX_MS])
+            assertEquals(0L, perf.snapshot().counters[PerfKeys.UP_GAPS_2S])
+            assertEquals(2_500L, perf.snapshot().counters[PerfKeys.UP_BLOCKED_MAX_MS])
+        } finally {
+            drive.slot.release()
+        }
+    }
 
     @Test
     fun `a reissued attempt re-baselines the zero-event count - DR-90`() = runBlocking {

@@ -254,6 +254,7 @@ class CodeModeHostDeadlineTest {
                 assertEquals(Thread.State.TERMINATED, observer.state, "the exit observer must have run")
                 assertFalse(observer.isAlive)
                 assertNull(session.opening, "checking and publishing admission must be one placement-lock region")
+                assertFalse(session.initialized, "an exited generation must not initialize the cleared session")
             } finally {
                 scope.cancel()
             }

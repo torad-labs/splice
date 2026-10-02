@@ -2,6 +2,20 @@
 // so the recorder is not billed for the key catalogue (concentration, 2026-08-19).
 package splice.core.perf
 
+/** Only event kinds, never provider content, may identify the end of an upstream silence. */
+public enum class UpstreamGapEnd {
+    THINKING_DELTA,
+    TEXT_DELTA,
+    INPUT_JSON_DELTA,
+    CONTENT_BLOCK_START,
+    PING,
+    MESSAGE_DELTA,
+    OTHER,
+    ;
+
+    public val wire: String = name.lowercase()
+}
+
 /** The single source of every perf field name (marks are *_ms-since-arrival; counters are raw). */
 public object PerfKeys {
     // stage completion marks (ms since arrival)
@@ -37,6 +51,16 @@ public object PerfKeys {
     public const val UPSTREAM_REQ_BYTES: String = "upstream_req_bytes"
     public const val SSE_BYTES_IN: String = "sse_bytes_in"
     public const val EVENTS_IN: String = "events_in"
+
+    /** Reader-side inter-event silence after the first event, excluding downstream delivery. */
+    public const val UP_GAP_MAX_MS: String = "up_gap_max_ms"
+    public const val UP_GAPS_2S: String = "up_gaps_2s"
+    public const val UP_BLOCKED_MAX_MS: String = "up_blocked_max_ms"
+    public const val UP_GAP_END: String = "up_gap_end"
+
+    /** Longest pacer residence and gap between successful client frame writes. */
+    public const val OUT_HOLD_MAX_MS: String = "out_hold_max_ms"
+    public const val OUT_GAP_MAX_MS: String = "out_gap_max_ms"
     public const val FRAMES_OUT: String = "frames_out"
 
     /** Frames that carried CONTENT — everything except the structural turn-opening pair

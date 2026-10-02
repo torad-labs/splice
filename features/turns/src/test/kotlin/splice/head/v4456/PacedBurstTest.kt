@@ -15,6 +15,7 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.util.ElapsedClock
 import splice.head.wire.ClientChannel
+import splice.head.wire.DeltaPacer
 import splice.head.wire.ImmediateSseWriter
 import splice.head.wire.LostClient
 import splice.upstream.Ticker
@@ -69,6 +70,63 @@ class PacedBurstTest {
     }
 
     private fun deltaTimes(): List<Long> = written.filter { it.frame.contains("_delta\"") }.map { it.atMs }
+
+    @Test
+    fun `successful client write gaps skip the first write and retain the longest interval`() = runBlocking {
+        time.nowMs = 5_000
+        write(structural("message_start"))
+        assertEquals(0L, perf.snapshot().counters[PerfKeys.OUT_GAP_MAX_MS])
+        time.nowMs += 73
+        channel.writeMutex.withLock {
+            channel.timedProgressWrite(structural("ping"), perf, time.clock)
+        }
+        time.nowMs += 16
+        write(delta(0))
+        assertEquals(73L, perf.snapshot().counters[PerfKeys.OUT_GAP_MAX_MS])
+    }
+
+    @Test
+    fun `due and emergency drains record the exact longest residence of their held frames`() {
+        val pacer = DeltaPacer().also { it.active = true }
+        assertTrue(!pacer.hold(delta(0), perf, true, 0))
+        assertTrue(pacer.hold(delta(1), perf, true, 1))
+        assertTrue(pacer.hold(structural("content_block_stop"), perf, false, 2))
+        assertEquals(2, pacer.due(42).size)
+        assertEquals(41L, perf.snapshot().counters[PerfKeys.OUT_HOLD_MAX_MS])
+        assertTrue(pacer.hold(delta(2), perf, true, 43))
+        assertEquals(1, pacer.takeAll(116).size)
+        assertEquals(73L, perf.snapshot().counters[PerfKeys.OUT_HOLD_MAX_MS])
+    }
+
+    @Test
+    fun `finishing a paced turn records its hold and successful client write gaps`() = runBlocking {
+        val pacing = channel.launchPacer(this, Job(), FrameTicker(time), time.clock, LostClient("synthetic", {}))
+        write(delta(0))
+        write(delta(1))
+        channel.finishPacing(pacing, time.clock)
+        assertEquals(16L, perf.snapshot().counters[PerfKeys.OUT_HOLD_MAX_MS])
+        assertEquals(16L, perf.snapshot().counters[PerfKeys.OUT_GAP_MAX_MS])
+        time.nowMs = 100
+        write(structural("message_stop"))
+        assertEquals(84L, perf.snapshot().counters[PerfKeys.OUT_GAP_MAX_MS])
+        assertEquals(16L, perf.snapshot().counters[PerfKeys.OUT_HOLD_MAX_MS])
+    }
+
+    @Test
+    fun `finishing after the release loop stops measures the emergency tail hold`() = runBlocking {
+        val stopped = object : Ticker {
+            override suspend fun awaitTick(intervalMs: Long): Boolean = false
+        }
+        val pacing = channel.launchPacer(this, Job(), stopped, time.clock, LostClient("synthetic", {}))
+        write(delta(0))
+        write(delta(1))
+        pacing.join()
+        time.nowMs = 73
+        channel.finishPacing(pacing, time.clock)
+        assertEquals(2, written.size)
+        assertEquals(73L, perf.snapshot().counters[PerfKeys.OUT_HOLD_MAX_MS])
+        assertEquals(73L, perf.snapshot().counters[PerfKeys.OUT_GAP_MAX_MS])
+    }
 
     @Test
     fun `a 190 delta burst written in 3 ms reaches the client spread over the pacing window`() = runBlocking {

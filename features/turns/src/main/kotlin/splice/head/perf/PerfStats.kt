@@ -209,6 +209,7 @@ public class PerfStats(
             }
             snap.marks.forEach { (k, v) -> put(k, v) }
             snap.counters.forEach { (k, v) -> put(k, v) }
+            put(PerfKeys.UP_GAP_END, snap.upstreamGapEnd.wire)
         }.toString()
         meta.session?.let { session ->
             Cancellables.discard(

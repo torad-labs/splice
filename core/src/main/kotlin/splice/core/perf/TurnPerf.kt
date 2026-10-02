@@ -40,7 +40,14 @@ public class TurnPerf(private val clock: ElapsedClock = ElapsedClock(System::cur
     private val startedAt: Long = clock()
     private val lock = Any()
     private val marks = LinkedHashMap<String, Long>()
-    private val counters = LinkedHashMap<String, Long>()
+    private val counters = linkedMapOf(
+        PerfKeys.UP_GAP_MAX_MS to 0L,
+        PerfKeys.UP_GAPS_2S to 0L,
+        PerfKeys.UP_BLOCKED_MAX_MS to 0L,
+        PerfKeys.OUT_HOLD_MAX_MS to 0L,
+        PerfKeys.OUT_GAP_MAX_MS to 0L,
+    )
+    private var upstreamGapEnd = UpstreamGapEnd.OTHER
 
     public fun elapsedMs(): Long = clock() - startedAt
 
@@ -71,6 +78,16 @@ public class TurnPerf(private val clock: ElapsedClock = ElapsedClock(System::cur
         synchronized(lock) { counters[counter] = value }
     }
 
+    /** Keep a maximum and, for the upstream gap, its event kind atomically. Ties keep the first kind. */
+    public fun maxCount(counter: String, value: Long, end: UpstreamGapEnd = UpstreamGapEnd.OTHER) {
+        synchronized(lock) {
+            if (value > (counters[counter] ?: 0L)) {
+                counters[counter] = value
+                if (counter == PerfKeys.UP_GAP_MAX_MS) upstreamGapEnd = end
+            }
+        }
+    }
+
     /** Time a suspending [block] into [counter] (summed across calls). */
     public suspend fun <T> timed(counter: String, block: TimedWork<T>): T {
         val t0 = clock()
@@ -82,6 +99,6 @@ public class TurnPerf(private val clock: ElapsedClock = ElapsedClock(System::cur
     }
 
     public fun snapshot(): PerfSnapshot = synchronized(lock) {
-        PerfSnapshot(LinkedHashMap(marks), LinkedHashMap(counters))
+        PerfSnapshot(LinkedHashMap(marks), LinkedHashMap(counters), upstreamGapEnd)
     }
 }

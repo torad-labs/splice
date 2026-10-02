@@ -23,6 +23,7 @@
 package splice.head.wire
 
 import kotlinx.coroutines.channels.Channel
+import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 
 /** One release step per frame tick, about sixty a second. */
@@ -81,7 +82,7 @@ internal class DeltaPacer(
         val out = ArrayList<Held>()
         var spent = 0
         while (queue.isNotEmpty() && leaves(queue.first(), spent, budget)) {
-            val next = queue.removeFirst()
+            val next = released(queue.removeFirst(), nowMs)
             if (next.visible) {
                 spent += 1
                 visibleHeld -= 1
@@ -94,9 +95,13 @@ internal class DeltaPacer(
 
     /** Everything held, in order, for a write that cannot wait for the loop (it stopped, or the turn
      *  is ending without it). */
-    fun takeAll(): List<Held> = queue.toList().also {
+    fun takeAll(nowMs: Long): List<Held> = queue.map { released(it, nowMs) }.also {
         queue.clear()
         visibleHeld = 0
+    }
+
+    private fun released(frame: Held, nowMs: Long): Held = frame.also {
+        it.perf.maxCount(PerfKeys.OUT_HOLD_MAX_MS, nowMs - it.atMs)
     }
 
     /** After a release: true while frames still wait. Once the queue is empty on a finishing turn the

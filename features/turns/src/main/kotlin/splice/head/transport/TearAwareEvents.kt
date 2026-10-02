@@ -5,9 +5,13 @@
 package splice.head.transport
 
 import io.ktor.utils.io.ByteReadChannel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.transform
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import splice.core.perf.PerfKeys
+import splice.core.perf.UpstreamGapEnd
 import splice.core.util.ERR_SNIPPET
 import splice.core.util.LogSink
 import splice.head.turn.TurnDrive
@@ -26,13 +30,14 @@ internal class TearAwareEvents(
      *  The translators swallow IOException into the honest terminal — right for every post-frame
      *  case, but it made the pre-frame reissue unreachable (review 2026-07-19). Rethrown as
      *  [StreamTornBeforeClient] (plain RuntimeException) so no translator catch matches. */
-    suspend fun run(
+    fun run(
         drive: TurnDrive,
         body: ByteReadChannel,
         capture: ZeroEventCapture,
         frameEmittedThisRound: ClientFrameEmitted,
-    ) =
-        SseReader().sseJsonEvents(
+    ): Flow<JsonObject> {
+        var previousEventMs: Long? = null
+        return SseReader().sseJsonEvents(
             body,
             onBytes = { chunkBytes ->
                 // Bytes TOUCH the slot (liveness) and stamp FIRST_BYTE; they do not pick the
@@ -60,9 +65,23 @@ internal class TearAwareEvents(
                 drive.trace?.responseText(text)
                 captureWants || drive.trace != null
             },
-        ).onEach {
+        ).transform { event ->
+            val nowMs = drive.perf.elapsedMs()
+            previousEventMs?.let { previous ->
+                val gapMs = nowMs - previous
+                drive.perf.maxCount(PerfKeys.UP_GAP_MAX_MS, gapMs, gapEnd(event))
+                if (gapMs >= LONG_UPSTREAM_GAP_MS) drive.perf.add(PerfKeys.UP_GAPS_2S, 1)
+            }
             capture.sawEvent = true
             drive.perf.add(PerfKeys.EVENTS_IN, 1)
+            val deliveryStartedMs = drive.perf.elapsedMs()
+            try {
+                emit(event)
+            } finally {
+                val resumedAtMs = drive.perf.elapsedMs()
+                drive.perf.maxCount(PerfKeys.UP_BLOCKED_MAX_MS, resumedAtMs - deliveryStartedMs)
+                previousEventMs = resumedAtMs
+            }
         }.catch { e ->
             // Per-round (not per-turn) pre-frame test: a continuation round's early tear is as
             // safely reissuable as a first round's — its own body re-POSTs (code-review 2026-07-24).
@@ -78,9 +97,30 @@ internal class TearAwareEvents(
             }
             throw e
         }
+    }
+
+    private fun gapEnd(event: JsonObject): UpstreamGapEnd =
+        when ((event["type"] as? JsonPrimitive)?.content) {
+            "content_block_delta" -> deltaEnd(event["delta"] as? JsonObject)
+            UpstreamGapEnd.CONTENT_BLOCK_START.wire -> UpstreamGapEnd.CONTENT_BLOCK_START
+            UpstreamGapEnd.PING.wire -> UpstreamGapEnd.PING
+            UpstreamGapEnd.MESSAGE_DELTA.wire -> UpstreamGapEnd.MESSAGE_DELTA
+            else -> UpstreamGapEnd.OTHER
+        }
+
+    private fun deltaEnd(delta: JsonObject?): UpstreamGapEnd =
+        when ((delta?.get("type") as? JsonPrimitive)?.content) {
+            UpstreamGapEnd.THINKING_DELTA.wire -> UpstreamGapEnd.THINKING_DELTA
+            UpstreamGapEnd.TEXT_DELTA.wire -> UpstreamGapEnd.TEXT_DELTA
+            UpstreamGapEnd.INPUT_JSON_DELTA.wire -> UpstreamGapEnd.INPUT_JSON_DELTA
+            else -> UpstreamGapEnd.OTHER
+        }
 
     /** Whether a thrown [e] is a transport tear this round may silently re-POST: an I/O failure,
      *  before any client frame, that the watchdog did NOT cause. */
     private fun reissuable(e: Throwable, drive: TurnDrive, frameEmittedThisRound: ClientFrameEmitted): Boolean =
         e is IOException && !frameEmittedThisRound() && drive.watchdog.fired == null
 }
+
+// why: the long-gap bucket is two seconds; the reader clock measures milliseconds.
+private const val LONG_UPSTREAM_GAP_MS = 2_000L

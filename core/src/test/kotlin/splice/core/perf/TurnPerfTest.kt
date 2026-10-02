@@ -64,6 +64,23 @@ class TurnPerfTest {
     }
 
     @Test
+    fun `maxima keep the longest value and its event kind while snapshots remain immutable`() {
+        val perf = TurnPerf { 0L }
+        perf.maxCount(PerfKeys.UP_GAP_MAX_MS, 2_500, UpstreamGapEnd.THINKING_DELTA)
+        val first = perf.snapshot()
+        perf.maxCount(PerfKeys.UP_GAP_MAX_MS, 500, UpstreamGapEnd.PING)
+        perf.maxCount(PerfKeys.UP_GAP_MAX_MS, 2_500, UpstreamGapEnd.TEXT_DELTA)
+        assertEquals(first, perf.snapshot(), "shorter gaps and ties must not relabel the maximum")
+        perf.maxCount(PerfKeys.OUT_HOLD_MAX_MS, 73)
+        perf.maxCount(PerfKeys.UP_GAP_MAX_MS, 3_000, UpstreamGapEnd.INPUT_JSON_DELTA)
+        assertEquals(2_500L, first.counters[PerfKeys.UP_GAP_MAX_MS])
+        assertEquals(UpstreamGapEnd.THINKING_DELTA, first.upstreamGapEnd)
+        assertEquals(3_000L, perf.snapshot().counters[PerfKeys.UP_GAP_MAX_MS])
+        assertEquals(UpstreamGapEnd.INPUT_JSON_DELTA, perf.snapshot().upstreamGapEnd)
+        assertEquals(73L, perf.snapshot().counters[PerfKeys.OUT_HOLD_MAX_MS])
+    }
+
+    @Test
     fun `timed attributes block duration to the counter and timedOr is a no-op on null`() = runTest {
         val clock = FakeClock()
         val perf = TurnPerf { clock.now }
@@ -90,7 +107,9 @@ class TurnPerfTest {
         perf.add(PerfKeys.OUT_TOKENS, 850)
         val line = perf.snapshot().perfLine("codex", "ok", compact = false, model = "gpt-5.6-sol")
         assertEquals(
-            "[codex] perf outcome=ok compact=false model=gpt-5.6-sol recv=3 headers=903 total=904 | out_tokens=850\n",
+            "[codex] perf outcome=ok compact=false model=gpt-5.6-sol recv=3 headers=903 total=904 | " +
+                "up_gap_max_ms=0 up_gaps_2s=0 up_blocked_max_ms=0 out_hold_max_ms=0 out_gap_max_ms=0 " +
+                "out_tokens=850 up_gap_end=other\n",
             line,
         )
         val tagged = perf.snapshot().perfLine(

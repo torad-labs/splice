@@ -17,6 +17,7 @@ import splice.core.model.TurnPrice
 import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSnapshot
 import splice.core.perf.TurnPerf
+import splice.core.perf.UpstreamGapEnd
 import splice.core.util.AsyncFileIo
 import java.nio.file.Files
 import java.nio.file.Path
@@ -103,6 +104,28 @@ class PerfStatsTest {
             release.countDown()
         }
         assertTrue(finished.tryAcquire(accepted.get(), 10, TimeUnit.SECONDS), "accepted tasks must finish")
+    }
+
+    @Test
+    fun `every turn row carries timing fields and the bounded upstream event kind`(@TempDir tmp: Path) {
+        val file = tmp.resolve("perf.jsonl")
+        val stats = PerfStats(file, clock = { 123L })
+        val perf = TurnPerf { 0L }
+        perf.maxCount(PerfKeys.UP_GAP_MAX_MS, 2_500, UpstreamGapEnd.THINKING_DELTA)
+        perf.add(PerfKeys.UP_GAPS_2S, 1)
+        stats.record(PerfRowMeta("synthetic", "ok", compact = false), perf.snapshot())
+        stats.record(PerfRowMeta("synthetic", "ok", compact = false), TurnPerf { 0L }.snapshot())
+        val numeric = stats.tailNumeric(10)
+        assertEquals(2_500L, numeric[0][PerfKeys.UP_GAP_MAX_MS])
+        assertEquals(1L, numeric[0][PerfKeys.UP_GAPS_2S])
+        for (key in listOf(PerfKeys.UP_BLOCKED_MAX_MS, PerfKeys.OUT_HOLD_MAX_MS, PerfKeys.OUT_GAP_MAX_MS)) {
+            assertEquals(0L, numeric[0][key])
+        }
+        assertTrue(PerfKeys.UP_GAP_END !in numeric[0])
+        val rows = Files.readAllLines(file).map { Json.parseToJsonElement(it).jsonObject }
+        assertEquals("\"thinking_delta\"", rows[0][PerfKeys.UP_GAP_END].toString())
+        assertEquals("\"other\"", rows[1][PerfKeys.UP_GAP_END].toString())
+        assertEquals(0L, numeric[1][PerfKeys.UP_GAP_MAX_MS])
     }
 
     @Test

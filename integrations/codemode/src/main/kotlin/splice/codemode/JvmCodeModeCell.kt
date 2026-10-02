@@ -6,6 +6,8 @@ import kotlinx.coroutines.sync.withLock
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
+import splice.upstream.codemode.CodeModeSource
+import splice.upstream.codemode.CodeModeSourcePart
 import splice.upstream.codemode.CodeModeStep
 import splice.upstream.failure.CodeModeWorkerLostException
 import java.util.concurrent.atomic.AtomicBoolean
@@ -20,6 +22,7 @@ internal class JvmCodeModeCell(
     initial: WorkerReply,
     private val tools: Set<String>,
     private val onClose: ReleaseCodeModeCell,
+    private val source: CodeModeSource? = null,
 ) : CodeModeCell {
     private val closed: AtomicBoolean = AtomicBoolean()
 
@@ -39,7 +42,7 @@ internal class JvmCodeModeCell(
                 CodeModeFrames.validateResultSet(emptyList(), results)
                 cachedReply = null
             } ?: receiveAfter(results)
-            toStep(reply).also { advanced = true }
+            toStep(awaitInput(reply)).also { advanced = true }
         } finally {
             if (!advanced) close()
         }
@@ -68,6 +71,24 @@ internal class JvmCodeModeCell(
         )
         pendingCalls = reply.calls.orEmpty()
         nextId += pendingCalls.size
+        return reply
+    }
+
+    private suspend fun awaitInput(initial: WorkerReply): WorkerReply {
+        var reply = initial
+        while (reply.waitingForInput) {
+            val input = checkNotNull(source) { "Ordinary cell cannot wait for source input" }
+            val part = try {
+                input.read()
+            } catch (error: java.io.IOException) {
+                CodeModeSourcePart.Failed("Upstream source interrupted: ${error.message.orEmpty()}")
+            }
+            reply = CodeModeFrames.parseReply(
+                channel.exchange(StreamingCodeModeWire.inputFrame(part)), tools, nextId,
+            )
+        }
+        pendingCalls = reply.calls.orEmpty()
+        if (initial.waitingForInput) nextId += pendingCalls.size
         return reply
     }
 

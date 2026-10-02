@@ -12,10 +12,13 @@ import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.JsonObject
 import splice.core.util.Cancellables
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeRuntime
+import splice.upstream.codemode.CodeModeSource
+import splice.upstream.codemode.CodeModeSourcePart
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.failure.CodeModeStartException
 import splice.upstream.failure.CodeModeTimeoutException
@@ -104,13 +107,40 @@ public class JvmCodeModeRuntime(
         }
     }
 
-    override suspend fun start(source: String, tools: Set<String>, descriptions: Map<String, String>): CodeModeCell {
-        val frame = CodeModeWire.startFrame(source, tools, descriptions)
+    override suspend fun start(source: String, tools: Set<String>, descriptions: Map<String, String>): CodeModeCell =
+        create(CodeModeWire.startFrame(source, tools, descriptions), tools, null)
+
+    override suspend fun startStreaming(
+        source: CodeModeSource,
+        tools: Set<String>,
+        descriptions: Map<String, String>,
+    ): CodeModeCell = when (val first = source.read()) {
+        is CodeModeSourcePart.Complete -> {
+            val sealed = CodeModeScopeSeal.names(source)
+            if (sealed.isEmpty()) {
+                start(first.text, tools, descriptions)
+            } else {
+                create(
+                    StreamingCodeModeWire.completeFrame(first.text, tools, descriptions, sealed),
+                    tools,
+                    null,
+                )
+            }
+        }
+        is CodeModeSourcePart.Failed -> throw IOException(first.error)
+        is CodeModeSourcePart.Delta -> create(
+            StreamingCodeModeWire.startFrame(first.text, tools, descriptions, CodeModeScopeSeal.names(source)),
+            tools,
+            source,
+        )
+    }
+
+    private suspend fun create(frame: JsonObject, tools: Set<String>, source: CodeModeSource?): CodeModeCell {
         val pipe = openCell()
         var started = false
         try {
             val initial = CodeModeFrames.parseReply(pipe.exchange(frame), tools, 1)
-            val cell = JvmCodeModeCell(pipe, initial, tools, ReleaseCodeModeCell(::releaseCell))
+            val cell = JvmCodeModeCell(pipe, initial, tools, ReleaseCodeModeCell(::releaseCell), source)
             cells.add(cell)
             if (closed.get()) {
                 cell.stop()

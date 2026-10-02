@@ -13,6 +13,27 @@ public interface CodeModeRuntime : AutoCloseable {
         tools: Set<String>,
         descriptions: Map<String, String> = emptyMap(),
     ): CodeModeCell
+
+    /** Incremental-capable runtimes dispatch complete statements before the source item completes. */
+    public suspend fun startStreaming(
+        source: CodeModeSource,
+        tools: Set<String>,
+        descriptions: Map<String, String> = emptyMap(),
+    ): CodeModeCell {
+        val buffered = StringBuilder()
+        while (true) {
+            when (val part = source.read()) {
+                is CodeModeSourcePart.Delta -> buffered.append(part.text)
+                is CodeModeSourcePart.Complete -> return start(
+                    buffered.append(part.text).toString(),
+                    tools,
+                    descriptions,
+                )
+                is CodeModeSourcePart.Failed -> throw java.io.IOException(part.error)
+            }
+            require(CodeModeLimits.fitsText(buffered.toString())) { "Code-mode source exceeds its text budget" }
+        }
+    }
 }
 
 /** One bounded script; resumption delivers only results of previously yielded client requests. */

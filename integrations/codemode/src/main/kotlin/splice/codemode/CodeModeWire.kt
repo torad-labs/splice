@@ -58,12 +58,18 @@ internal object CodeModeWire {
      *  order and charged at their JSON-escaped size, so the encoded frame never passes [maxFrameBytes];
      *  a description that no longer fits is sent as [DESCRIPTION_OVER_BUDGET], so the cell's
      *  `ALL_TOOLS` says why the entry is bare. */
-    fun startFrame(source: String, tools: Set<String>, descriptions: Map<String, String> = emptyMap()): JsonObject {
+    fun startFrame(
+        source: String,
+        tools: Set<String>,
+        descriptions: Map<String, String> = emptyMap(),
+        reserveBytes: Int = 0,
+    ): JsonObject {
         CodeModeFrames.requireText(source, FIELD_SOURCE)
         require(tools.size <= maxToolCatalog) { TOO_MANY_TOOLS }
         tools.forEach(CodeModeFrames::requireToolName)
         val names = tools.sorted()
-        var budget = maxFrameBytes - CodeModeProtocol.encodeFrame(start(source, names, names.associateWith { "" })).size
+        var budget = maxFrameBytes - reserveBytes -
+            CodeModeProtocol.encodeFrame(start(source, names, names.associateWith { "" })).size
         val fitted = names.associateWith { name ->
             val description = CodeModeLimits.boundedText(descriptions[name].orEmpty())
             val entry = listOf(description, DESCRIPTION_OVER_BUDGET, "").firstOrNull { escaped(it) <= budget }.orEmpty()
@@ -129,8 +135,11 @@ internal object CodeModeFrames {
     }
 
     fun parseStart(frame: JsonObject): WorkerStart {
-        CodeModeFields.requireKeys(frame, setOf(FIELD_TYPE, FIELD_SOURCE, FIELD_TOOLS, FIELD_DESCRIPTIONS))
-        require(CodeModeFields.requiredString(frame, FIELD_TYPE) == TYPE_START) { "Expected a code-mode start frame" }
+        val sealField = StreamingCodeModeWire.SOURCE_SCOPE_SEAL
+        val fields = setOf(FIELD_TYPE, FIELD_SOURCE, FIELD_TOOLS, FIELD_DESCRIPTIONS)
+        CodeModeFields.requireKeys(frame, if (sealField in frame) fields + sealField else fields)
+        val type = CodeModeFields.requiredString(frame, FIELD_TYPE)
+        require(type == TYPE_START || type == StreamingCodeModeWire.START) { "Expected a code-mode start frame" }
         val source = CodeModeFields.requiredString(frame, FIELD_SOURCE).also { requireText(it, FIELD_SOURCE) }
         val rawTools = CodeModeFields.requiredArray(frame, FIELD_TOOLS)
         require(rawTools.size <= CodeModeWire.maxToolCatalog) { TOO_MANY_TOOLS }
@@ -145,7 +154,13 @@ internal object CodeModeFrames {
             "Code-mode protocol field $FIELD_DESCRIPTIONS must be an object",
         )
         val descriptions = rawDescriptions.keys.associateWith { CodeModeFields.requiredString(rawDescriptions, it) }
-        return WorkerStart(source, tools, descriptions)
+        return WorkerStart(
+            source,
+            tools,
+            descriptions,
+            streaming = type == StreamingCodeModeWire.START,
+            sealedGlobals = if (sealField in frame) StreamingCodeModeWire.parseSeal(frame) else emptySet(),
+        )
     }
 
     fun parseResults(frame: JsonObject): List<CodeModeResult> {
@@ -171,6 +186,7 @@ internal object CodeModeFrames {
         when (CodeModeFields.requiredString(frame, FIELD_TYPE)) {
             TYPE_CALLS -> parseCalls(frame, tools, nextId)
             TYPE_COMPLETED -> parseCompleted(frame)
+            StreamingCodeModeWire.SOURCE_WAIT_FRAME -> StreamingCodeModeWire.parseWaiting(frame)
             CODE_MODE_FATAL_FRAME_TYPE -> CodeModeFatalFrame.parse(frame)
             else -> throw IOException("Code-mode worker sent an unknown reply type")
         }

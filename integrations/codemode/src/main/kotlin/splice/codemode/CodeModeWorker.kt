@@ -1,6 +1,7 @@
 // NEW: bundled JavaScript worker yields privileged operations to permission-checked client tools.
 package splice.codemode
 
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
@@ -11,6 +12,7 @@ import org.graalvm.polyglot.Context
 import org.graalvm.polyglot.Engine
 import org.graalvm.polyglot.HostAccess
 import org.graalvm.polyglot.PolyglotAccess
+import org.graalvm.polyglot.PolyglotException
 import org.graalvm.polyglot.Source
 import org.graalvm.polyglot.Value
 import org.graalvm.polyglot.io.IOAccess
@@ -24,7 +26,10 @@ import java.io.DataOutputStream
 
 private const val EXECUTION_FAILURE: String = "Code execution failed"
 
-private val CELL_LAUNCHER: Source by lazy { Source.newBuilder("js", LAUNCHER, "splice-code-mode").build() }
+private val CELL_LAUNCHER: Source by lazy {
+    val source = "((makeStream) => ($LAUNCHER))(($STREAMING_CODE_MODE_LAUNCHER))"
+    Source.newBuilder("js", source, "splice-code-mode").build()
+}
 
 /** Bytes kept free under the worker text ceiling for the truncation marker. */
 private const val TRUNCATION_RESERVE: Int = 64
@@ -82,11 +87,32 @@ internal class WorkerSession(
     private var bridge: WorkerBridge? = null
     private var settle: Value? = null
     private var pendingCalls: List<CodeModeCall> = emptyList()
+    private var streaming: StreamingWorkerSession? = null
 
     fun start(start: WorkerStart): WorkerReply {
         val bridge = WorkerBridge(start.tools).also { this.bridge = it }
-        val control = launcher.execute(start.source, catalog(start), bridge.host)
+        scopeViolation(start)?.let { return WorkerReply(null, "", it) }
+        val evalProjection = ProxyExecutable { values ->
+            CodeModeEvalProjection.compile(values[0].asString(), values[1].asString(), values[2].asString())
+        }
+        val control = launcher.execute(
+            if (start.streaming) null else start.source,
+            catalog(start),
+            bridge.host,
+            evalProjection,
+            JsonArray(start.sealedGlobals.sorted().map(::JsonPrimitive)).toString(),
+        )
         settle = control.getMember("settle")
+        if (start.streaming) {
+            streaming = StreamingWorkerSession(
+                control.getMember("stream"),
+                bridge,
+                CodeModeStatementSyntax(::validStatement),
+                start.sealedGlobals,
+            ).also {
+                it.append(start.source, complete = false, error = null)
+            }
+        }
         return reply()
     }
 
@@ -97,6 +123,30 @@ internal class WorkerSession(
         results.forEach { result ->
             checkNotNull(settle).execute(result.id, result.output, result.isError)
         }
+        streaming?.drain()
+        return reply()
+    }
+
+    private fun scopeViolation(start: WorkerStart): String? {
+        if (start.streaming || start.sealedGlobals.isEmpty()) return null
+        val parser = CodeModeStatementParser(CodeModeStatementSyntax(::validStatement))
+        parser.append(start.source, finished = true, error = null)
+        val program = parser.next() as? StatementInput.Program ?: return null
+        return CodeModeScopeSeal.violation(program.bindings, start.sealedGlobals)
+    }
+
+    private fun validStatement(source: String): Boolean = try {
+        val wrapped = "\"use strict\"; (async () => {\n$source\n})"
+        context.parse(Source.newBuilder("js", wrapped, "splice-statement").cached(false).build())
+        true
+    } catch (error: PolyglotException) {
+        if (!error.isSyntaxError) throw error
+        false
+    }
+
+    fun input(frame: JsonObject): WorkerReply {
+        require(pendingCalls.isEmpty()) { "Source input cannot replace pending tool results" }
+        StreamingCodeModeWire.append(frame, checkNotNull(streaming))
         return reply()
     }
 
@@ -130,14 +180,18 @@ internal class WorkerSession(
     private fun reply(): WorkerReply {
         val bridge = checkNotNull(bridge)
         val calls = bridge.calls()
+        pendingCalls = calls
         if (calls.isNotEmpty()) {
-            pendingCalls = calls
             return WorkerReply(calls = calls, output = null, error = null)
         }
         bridge.completion()?.let { completion ->
             return WorkerReply(calls = null, output = completion.output, error = completion.error)
         }
-        return WorkerReply(calls = null, output = "", error = IDLE_FAILURE)
+        return if (streaming != null) {
+            WorkerReply(null, null, null, waitingForInput = true)
+        } else {
+            WorkerReply(calls = null, output = "", error = IDLE_FAILURE)
+        }
     }
 }
 
@@ -250,7 +304,7 @@ internal class WorkerBridge(private val allowedTools: Set<String>) {
 internal data class WorkerCompletion(val output: String, val error: String?)
 
 private const val LAUNCHER: String = """
-(source, catalogJson, host) => {
+(source, catalogJson, host, evalProjection, scopeSeal) => {
   const catalog = JSON.parse(catalogJson);
   const allowed = new Set(catalog.allowed);
   const pending = new Map();
@@ -308,7 +362,8 @@ private const val LAUNCHER: String = """
     const message = error instanceof SyntaxError ? String(error.message).split("\n")[0] : String(error.message);
     return String(error.name || "Error") + ": " + message;
   };
-  try {
+  const stream = source === null ? makeStream({tools, console, text, exit, ALL_TOOLS}, host, EXIT, describe, evalProjection, scopeSeal) : null;
+  if (source !== null) try {
     const program = new Function(
       "tools", "console", "text", "exit", "ALL_TOOLS",
       "\"use strict\"; return (async () => {\n" + source + "\n})()"
@@ -321,6 +376,7 @@ private const val LAUNCHER: String = """
     host.complete(describe(error), true);
   }
   return Object.freeze({
+    stream,
     settle(id, output, isError) {
       const callback = pending.get(id);
       if (!callback) throw new Error("Unknown code-mode call id");

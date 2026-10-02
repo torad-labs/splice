@@ -519,6 +519,10 @@ val codeModePackagedTest = tasks.register<Test>("codeModePackagedTest") {
     filter {
         includeTestsMatching("CodeModeLanguagesTest")
         includeTestsMatching("CodeModeRuntimeTest")
+        includeTestsMatching("CodeModeStatementStreamingTest")
+        includeTestsMatching("CodeModeStatementBoundaryTest")
+        includeTestsMatching("CodeModeStatementCompilerTest")
+        includeTestsMatching("CodeModeScopeSealTest")
         includeTestsMatching("CodeModeSharedHostTest")
         includeTestsMatching("CodeModeWorkerBootTest")
         includeTestsMatching("CodeModeBridgeRuntimeTest")

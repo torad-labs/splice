@@ -67,7 +67,9 @@ private class HostWorkerDispatcher(
         }
     }
 
-    private fun selectCell(id: Long, type: String): HostWorkerCell? = if (type == "start") {
+    private fun selectCell(id: Long, type: String): HostWorkerCell? = if (
+        type == "start" || type == StreamingCodeModeWire.START
+    ) {
         val created = HostWorkerCell(engine)
         if (cells.putIfAbsent(id, created) == null) created else null
     } else {
@@ -93,16 +95,12 @@ private class HostWorkerCell(private val engine: Engine) : AutoCloseable {
     fun reply(frame: JsonObject): JsonObject = lock.withLock {
         try {
             check(!closed.get()) { "Code-mode cell is closed" }
-            val reply = if (CodeModeFields.requiredString(frame, "type") == "start") {
-                val start = CodeModeFrames.parseStart(frame)
-                val current = WorkerSession(engine).also { session = it }
-                if (closed.get()) current.close()
-                current.start(start)
-            } else {
-                checkNotNull(session).advance(CodeModeFrames.parseResults(frame))
+            val reply = execute(frame)
+            when {
+                reply.waitingForInput -> StreamingCodeModeWire.waitingFrame()
+                reply.calls != null -> CodeModeWire.callsFrame(reply.calls)
+                else -> CodeModeWire.completedFrame(checkNotNull(reply.output), reply.error)
             }
-            reply.calls?.let(CodeModeWire::callsFrame)
-                ?: CodeModeWire.completedFrame(checkNotNull(reply.output), reply.error)
         } catch (error: CancellationException) {
             throw error
         } catch (_: IOException) {
@@ -112,6 +110,16 @@ private class HostWorkerCell(private val engine: Engine) : AutoCloseable {
         } catch (_: RuntimeException) {
             CodeModeFatalFrame.create(CodeModeInfrastructureCategory.HOST, CodeModeInfrastructureClass.RUNTIME)
         }
+    }
+
+    private fun execute(frame: JsonObject): WorkerReply = when (CodeModeFields.requiredString(frame, "type")) {
+        "start", StreamingCodeModeWire.START -> {
+            val current = WorkerSession(engine).also { session = it }
+            if (closed.get()) current.close()
+            current.start(CodeModeFrames.parseStart(frame))
+        }
+        StreamingCodeModeWire.SOURCE_INPUT_FRAME -> checkNotNull(session).input(frame)
+        else -> checkNotNull(session).advance(CodeModeFrames.parseResults(frame))
     }
 
     override fun close() {

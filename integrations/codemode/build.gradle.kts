@@ -20,6 +20,8 @@ dependencies {
         runtimeOnly("org.graalvm.js:js-isolate-$platform-community:${libs.versions.graaljs.get()}")
     }
     implementation(libs.graaljs.community)
+    // Statement boundaries and binding scopes come from the exact parser used by the worker.
+    implementation("org.graalvm.js:js-language:${libs.versions.graaljs.get()}")
     testImplementation(libs.kotlinx.coroutines.test)
     testFixturesImplementation(libs.kotlinx.coroutines.core)
     testFixturesImplementation(platform(libs.junit.bom))

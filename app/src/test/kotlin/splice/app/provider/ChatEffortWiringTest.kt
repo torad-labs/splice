@@ -5,9 +5,11 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicParse
+import splice.core.topology.ChatEffortVocabularyConfig
 import splice.core.turn.WatchdogBudget
 import splice.provider.openai.ApiKeyAuthProvider
 import splice.provider.openai.OpenAiChatProvider
@@ -112,6 +114,63 @@ class ChatEffortWiringTest {
         }
     }
 
+    @Test
+    fun `thinking disabled omits effort when the vocabulary has no none level`() {
+        val vocabulary = vocabularyToml.replace("none = \"low\"\n", "")
+        val provider = providerFromToml(baseToml + vocabulary)
+        val built = provider.buildTurn(body("", """{"type":"disabled"}"""), false, null)
+        assertFalse(built.requestBody.containsKey("reasoning_effort"), built.requestBody.toString())
+        assertFalse(built.requestBody.containsKey("reasoning"), built.requestBody.toString())
+        assertEquals("n/a", built.meta.effort)
+        assertEffort(provider, "\"effort\":\"low\"", "low", thinking = """{"type":"disabled"}""")
+    }
+
+    @Test
+    fun `mixed case configured levels and client levels resolve to the configured value not default`() {
+        val vocabulary = vocabularyToml.replace("xhigh = \"max\"", "XHigh = \"high\"")
+            .replace("max = \"max\"", "MAX = \"low\"")
+        val provider = providerFromToml(baseToml + vocabulary)
+        assertEffort(provider, "\"effort\":\"xHIGH\"", "high")
+        assertEffort(provider, "\"output_config\":{\"effort\":\"max\"}", "low")
+    }
+
+    @Test
+    fun `a scoped vocabulary applies only to matching upstream models`() {
+        val vocabulary = vocabularyToml.replace(
+            "default = \"max\"",
+            "default = \"max\"\nmodel_pattern = \"^GLM-5[.]3-Flash\"",
+        )
+        val provider = providerFromToml(baseToml + vocabulary)
+        assertEffort(provider, "\"effort\":\"low\"", "low")
+        for ((model, expected) in listOf("meta-llama/Llama-4-Maverick" to "high", "grok-4.6" to "xhigh")) {
+            val built = provider.buildTurn(body("\"effort\":\"max\"", model = model), false, null)
+            assertEquals(expected, built.requestBody["reasoning_effort"]?.jsonPrimitive?.content, model)
+        }
+    }
+
+    @Test
+    fun `the emission off quirk still suppresses both effort wire fields`() {
+        val disabled = "[providers.glml53.quirks]\nreasoning_effort = false\n"
+        val provider = providerFromToml(baseToml + disabled + vocabularyToml)
+        val built = provider.buildTurn(body("\"effort\":\"low\""), false, null)
+        assertFalse(built.requestBody.containsKey("reasoning_effort"))
+        assertFalse(built.requestBody.containsKey("reasoning"))
+        assertEquals("low", built.meta.effort)
+    }
+
+    @Test
+    fun `blank vocabulary names defaults and values are rejected`() {
+        assertThrows<IllegalArgumentException> { ChatEffortVocabularyConfig("", mapOf("low" to "low")) }
+        assertThrows<IllegalArgumentException> { ChatEffortVocabularyConfig("max", mapOf("" to "low")) }
+        assertThrows<IllegalArgumentException> { ChatEffortVocabularyConfig("max", mapOf("low" to "")) }
+        assertThrows<IllegalArgumentException> {
+            ChatEffortVocabularyConfig("max", mapOf("low" to "low", "LOW" to "high"))
+        }
+        assertThrows<IllegalArgumentException> {
+            ChatEffortVocabularyConfig("max", mapOf("low" to "low"), modelPattern = "[")
+        }
+    }
+
     private fun assertEffort(
         provider: OpenAiChatProvider,
         fields: String,
@@ -124,14 +183,19 @@ class ChatEffortWiringTest {
         assertEquals(expected, built.meta.effort)
     }
 
-    private fun body(fields: String, thinking: String = """{"type":"enabled","budget_tokens":127999}""") =
-        AnthropicParse.parseAnthropicBody(
-            """{"model":"GLM-5.3-Flash","thinking":$thinking,"messages":[{"role":"user","content":"hello"}]""" +
-                (if (fields.isEmpty()) "" else ",$fields") + "}",
-        )
+    private fun body(
+        fields: String,
+        thinking: String = """{"type":"enabled","budget_tokens":127999}""",
+        model: String = "GLM-5.3-Flash",
+    ) = AnthropicParse.parseAnthropicBody(
+        """{"model":"$model","thinking":$thinking,"messages":[{"role":"user","content":"hello"}]""" +
+            (if (fields.isEmpty()) "" else ",$fields") + "}",
+    )
 
-    private fun provider(configured: Boolean): OpenAiChatProvider {
-        val toml = baseToml + if (configured) vocabularyToml else ""
+    private fun provider(configured: Boolean): OpenAiChatProvider =
+        providerFromToml(baseToml + if (configured) vocabularyToml else "")
+
+    private fun providerFromToml(toml: String): OpenAiChatProvider {
         val config = TopologyLoader.parse(toml).providers.getValue("glml53")
         return OpenAiChatProvider(
             ProviderTuning(
@@ -139,7 +203,11 @@ class ChatEffortWiringTest {
                 label = "GLM",
                 catalog = ModelCatalog(
                     discoveryPrefix = "claude-glml53--",
-                    models = listOf(ModelEntry("GLM-5.3-Flash", "GLM", contextWindow = 200_000)),
+                    models = listOf(
+                        ModelEntry("GLM-5.3-Flash", "GLM", contextWindow = 200_000),
+                        ModelEntry("meta-llama/Llama-4-Maverick", "Llama", contextWindow = 200_000),
+                        ModelEntry("grok-4.6", "Grok", contextWindow = 200_000),
+                    ),
                     defaultContextWindow = 200_000,
                 ),
                 pinnedModel = "GLM-5.3-Flash",

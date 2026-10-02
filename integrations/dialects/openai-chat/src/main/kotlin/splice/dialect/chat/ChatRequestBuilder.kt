@@ -35,7 +35,7 @@ public class ChatRequestBuilder(
         // transcript cold. `compact` reaches TurnMeta for the response side only.
         val messages = wire.messagesArray(body.system, body)
         val emitTools = quirks.supportsTools && body.tools.isNotEmpty()
-        val effort = quirks.effortVocabulary?.effort(raw, body)
+        val effort = quirks.effortVocabulary?.effort(raw, body, upstreamModel)
             ?: effortTiers.chatReasoningEffort(body, upstreamModel)
         // TIER-1 (#924): the request is a CLOSED ChatRequest DTO (see chatRequestObject) — a knob
         // that doesn't belong can't be added without a field.

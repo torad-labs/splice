@@ -117,6 +117,7 @@ providers.*.quirks.chat_effort_vocabulary
 providers.*.quirks.chat_effort_vocabulary.default	
 providers.*.quirks.chat_effort_vocabulary.levels	
 providers.*.quirks.chat_effort_vocabulary.levels.*	
+providers.*.quirks.chat_effort_vocabulary.model_pattern	
 providers.*.quirks.code_mode	
 providers.*.quirks.code_mode_heap	
 providers.*.quirks.code_mode_models	

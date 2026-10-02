@@ -253,6 +253,29 @@ context_window = 256000
 # [heads.ollama.claude]
 # command = "claude-ollama"
 
+# A chat_effort_vocabulary opts a provider into explicit client effort instead of budget tiers.
+# Inline shorthand: chat_effort_vocabulary = { default = "max", levels = { none = "low", low = "low", high = "high", max = "max" } }
+# With no vocabulary, request bytes and model-gated xhigh behavior are unchanged.
+# levels maps trimmed, case-insensitive client names to upstream values; duplicate normalized
+# names are rejected. Missing or unknown effort uses default. Explicit effort wins over thinking.
+# Disabled thinking uses the none level if declared; without none it falls back to legacy tiers,
+# which omit effort. reasoning_effort = false still suppresses both upstream effort wire fields.
+# Optional model_pattern is an upstream-model regex; a miss preserves legacy budget tiers.
+# For a GLM-5.3-Flash runtime, add these tables under that runtime's existing provider:
+# [providers.glml53.quirks.chat_effort_vocabulary]
+# default = "max"
+# model_pattern = "^GLM-5[.]3-Flash"
+# [providers.glml53.quirks.chat_effort_vocabulary.levels]
+# none = "low"
+# minimal = "low"
+# light = "low"
+# low = "low"
+# medium = "high"
+# high = "high"
+# xhigh = "max"
+# max = "max"
+# ultra = "max"
+
 # ── openrouter: the "new vendor = pure TOML, zero code" proof (Chat Completions) ─
 # Swap base_url + env for DeepSeek, Fireworks, etc.; a loopback runtime is the local example above.
 # api-key resolution: $OPENROUTER_API_KEY from the daemon's env wins; else the shared

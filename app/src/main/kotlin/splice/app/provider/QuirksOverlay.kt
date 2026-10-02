@@ -91,7 +91,7 @@ internal class QuirksOverlay {
         val usage = providerCfg.quirks.streamUsage ?: true.takeIf { providerCfg.isLocal }
         val configuredVocabulary: ChatEffortVocabularyConfig? = providerCfg.quirks.chatEffortVocabulary
         val vocabulary = configuredVocabulary?.let {
-            ChatEffortVocabulary(it.default, it.levels)
+            ChatEffortVocabulary(it.default, it.levels, it.modelPattern?.let(::Regex))
         }
         return base.withReasoningEffortToml(providerCfg.quirks.reasoningEffort).withStreamUsageToml(usage)
             .copy(effortVocabulary = vocabulary ?: base.effortVocabulary)

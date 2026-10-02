@@ -156,7 +156,7 @@ public object DaemonProbe {
                     ?.toMap()
                     .orEmpty(),
                 full = (obj["quotaFull"] as? JsonObject)
-                    ?.mapNotNull { (key, reading) -> quotaFullReading(reading as? JsonObject)?.let { key to it } }
+                    ?.mapNotNull { (key, reading) -> QuotaFullReading.parse(reading as? JsonObject)?.let { key to it } }
                     ?.toMap()
                     .orEmpty(),
             ),
@@ -289,10 +289,13 @@ public class TraceConfigProbe {
 
 private const val PROBE_TIMEOUT_MS = 400
 
-/** One head's `quotaFull` entry from /health, or null when it names no known window or no reset. File scope:
- *  a pure parse with no probe state, kept out of [DaemonProbe]'s function budget. */
-private fun quotaFullReading(reading: JsonObject?): QuotaFull? {
-    val wire = reading?.let { JsonScalars.str(it, "window") }
-    val window = QuotaFullWindow.entries.firstOrNull { it.wire == wire } ?: return null
-    return JsonScalars.long(reading, "resetsAtEpochSeconds")?.let { QuotaFull(window, it) }
+/** The parse of one head's `quotaFull` entry from /health: a pure read with no probe state, so it sits
+ *  beside [DaemonProbe] rather than in its function budget. */
+private object QuotaFullReading {
+    /** The reading, or null when it names no known window or no reset. */
+    fun parse(reading: JsonObject?): QuotaFull? {
+        val wire = reading?.let { JsonScalars.str(it, "window") }
+        val window = QuotaFullWindow.entries.firstOrNull { it.wire == wire } ?: return null
+        return JsonScalars.long(reading, "resetsAtEpochSeconds")?.let { QuotaFull(window, it) }
+    }
 }

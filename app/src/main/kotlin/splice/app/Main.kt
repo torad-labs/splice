@@ -59,7 +59,8 @@ public fun main(args: Array<String>) {
     // any engine exists. One property covers every embeddedServer in the process, head engines AND
     // ControlServer's, which is why this is a process-wide line and not a per-engine flag.
     when (args.firstOrNull()) {
-        null, "daemon", "start" -> DaemonProcess(args.toList()).runDaemon()
+        null, "daemon" -> DaemonProcess(args.toList()).runDaemon()
+        "start" -> LifecycleWiring.startThroughUnit()?.let(::exitProcess) ?: DaemonProcess(args.toList()).runDaemon()
         else -> exitProcess(splice.app.cli.Cli().runCli(args))
     }
 }

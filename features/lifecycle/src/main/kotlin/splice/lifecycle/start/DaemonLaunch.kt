@@ -41,6 +41,10 @@ public class DaemonColdStart(
      *  own (a selector is set), there is no unit on the box, or the unit is not running a daemon. */
     public fun activeUnit(): String? = launch.activeUnit()
 
+    /** The supervisor unit a start of this shell's daemon goes through, running or not, or null when
+     *  this shell's daemon is its own (a selector is set) or there is no unit on the box. */
+    public fun supervisorUnit(): String? = launch.supervisorUnit()
+
     /** V4-395: what a restart says when the supervisor unit runs another home's daemon (or cannot be shown
      *  to run this one's) on [port], or null when the unit is this home's or this shell's daemon is its own.
      *  A restart that gets a sentence stops there: nothing is signalled and no unit verb is run. */
@@ -121,9 +125,13 @@ internal class DaemonLaunch(
         return up
     }
 
+    /** The unit this shell's cold start routes to, whether or not it is running: a unit that is down
+     *  or restarting is still the one a start goes through (Oct 1: a crash-looping unit lost its port to
+     *  a `splice start` that ran the daemon in a terminal). */
+    internal fun supervisorUnit(): String? = (supervised.route() as? ColdStartRoute.Unit)?.unit
+
     /** V4-243: the unit whose running daemon a restart replaces, when the route is the unit's. */
-    internal fun activeUnit(): String? =
-        (supervised.route() as? ColdStartRoute.Unit)?.unit?.takeIf { supervised.active(it) }
+    internal fun activeUnit(): String? = supervisorUnit()?.takeIf { supervised.active(it) }
 
     /** V4-395: the refusal sentence, composed here from [SupervisedStart.ownership]'s reason. The remedy it
      *  names is real: SPLICE_CONFIG is a harness selector, so [SupervisedStart.route] sends that shell's

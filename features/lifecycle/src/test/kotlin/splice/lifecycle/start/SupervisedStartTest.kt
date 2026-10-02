@@ -27,10 +27,12 @@ private const val CANARY_UNIT = "splice-canary.service"
 
 class SupervisedStartTest {
 
-    /** A systemctl that records every call; `cat` answers [unitPresent], `start` answers [startOk]. */
+    /** A systemctl that records every call; `cat` answers [unitPresent], `start` answers [startOk],
+     *  `is-active` answers [active]. */
     private class FakeSystemctl(
         private val unitPresent: Boolean = true,
         private val startOk: Boolean = true,
+        private val active: Boolean = true,
     ) : Systemctl {
         /** Every call, as the real port receives it: the args after `systemctl --user`. */
         val calls = mutableListOf<List<String>>()
@@ -39,6 +41,7 @@ class SupervisedStartTest {
             val ok = when (args[0]) {
                 "cat" -> unitPresent
                 "start" -> startOk
+                "is-active" -> active
                 else -> error("unexpected verb: $args")
             }
             return if (ok) 0 else 1
@@ -133,6 +136,25 @@ class SupervisedStartTest {
         assertTrue(started, "the unit was never started: ${ctl.calls}\n$out")
         val named = "did not answer" in out && "journalctl --user -u $UNIT" in out
         assertTrue(named, "the failure must name the journal:\n$out")
+    }
+
+    // Oct 1, 11:49 PM CT: splice.service was restarting after a failed boot, a `splice start` typed in a
+    // terminal ran the daemon there, and the unit then lost its port to it. The unit a start goes through
+    // is named whether or not it runs; only a selector or a box without a unit keeps the daemon in the shell.
+    @Test
+    fun `a start goes through the unit even while it is down, and a selector or no unit keeps it here`(
+        @TempDir logs: Path,
+    ) {
+        val launch = { ctl: FakeSystemctl, reader: EnvReader ->
+            val health = DaemonHealth()
+            val supervised = SupervisedStart(ctl, reader, settings, unitName = SupervisorUnitName { UNIT })
+            DaemonLaunch(out, health, RecordingSpawn(health, logs), supervised)
+        }
+        val down = launch(FakeSystemctl(active = false), env())
+        assertEquals(UNIT, down.supervisorUnit(), "a unit that is down is still the one a start goes through")
+        assertEquals(null, down.activeUnit(), "a restart still reads a down unit as running no daemon")
+        assertEquals(null, launch(FakeSystemctl(), env("SPLICE_STATE_DIR" to "/tmp/x")).supervisorUnit())
+        assertEquals(null, launch(FakeSystemctl(unitPresent = false), env()).supervisorUnit())
     }
 
     @Test

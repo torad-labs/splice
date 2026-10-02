@@ -120,6 +120,8 @@ val DISPOSITIONS: Map<String, Disposition> = mapOf(
     "CodexCodeModeSourceTerminalTest" to
         Disposition("1 @ParameterizedTest expands to 5 cases (6 @Test + 5 = 11)", 11),
     "CodexCodeModeReanchorTest" to Disposition("1 @ParameterizedTest expands to 2 cases (1 @Test + 2 = 3)", 3),
+    // 416f077a5: four control-character states that must never be echoed, two valid states that must.
+    "CodexTurnStateSseTest" to Disposition("2 @ParameterizedTest methods expand to 6 cases (2 @Test + 6 = 8)", 8),
     "CodexAuthAbsenceTest" to Disposition("1 @ParameterizedTest expands to 4 cases (2 @Test + 4 = 6)", 6),
     "CodexCodeModeActiveInterruptionTest" to
         Disposition("1 @ParameterizedTest expands to 4 cases; no plain @Test", 4),

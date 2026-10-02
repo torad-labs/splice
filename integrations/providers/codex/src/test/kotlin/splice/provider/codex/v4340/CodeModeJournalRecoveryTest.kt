@@ -7,12 +7,14 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import splice.provider.codex.CodeModeExpiredSnapshot
 import splice.provider.codex.CodeModePersistedState
 import splice.provider.codex.CodeModeRecords
 import splice.provider.codex.CodeModeStateLocation
+import splice.provider.codex.CodeModeStateWrite
 import splice.provider.codex.CodexCodeModeStore
 import splice.provider.codex.state.CodeModeStateDelta
 import splice.provider.codex.state.CodeModeStateJournal
@@ -24,6 +26,21 @@ import java.nio.file.StandardOpenOption
 private const val BLOATED_BYTES = 9L * 1024 * 1024
 private const val MAX_COMPACTED_BYTES = 64L * 1024
 private const val UPDATED_AT = 1_790_000_000_000L
+
+// why: twice the child JVM's whole heap, so a loader that reads the file into memory cannot finish.
+private const val LARGER_THAN_HEAP_BYTES = 64L * 1024 * 1024
+private const val CHILD_HEAP = "-Xmx32m"
+
+// why: one large cell, as a long tool result re-appended at each step makes one.
+private const val DELTA_OUTPUT_CHARS = 64 * 1024
+
+/** The streaming test's child JVM: reads one journal and prints how many cells it holds. */
+internal object JournalReadProbe {
+    @JvmStatic
+    fun main(args: Array<String>) {
+        println(CodeModeStateJournal.read(Path.of(args[0]), Json).records.size)
+    }
+}
 
 class CodeModeJournalRecoveryTest {
     private val pretty = Json { prettyPrint = true }
@@ -137,6 +154,60 @@ class CodeModeJournalRecoveryTest {
         first.output = "whole"
         store.save(listOf(first, second), listOf(marker))
         assertCompacted(file, listOf("whole", "kept"))
+    }
+
+    /** A client may send an unpaired surrogate in a tool result. An append writes it as `?`; a
+     *  compaction must too, or every later save of an outgrown conversation fails. */
+    @Test
+    fun `an outgrown journal holding an unpaired surrogate compacts as an append writes it`() {
+        val (store, file) = bloatedConversation()
+        first.output = "ok" + Char(0xD83D)
+        store.save(listOf(first, second), listOf(marker), dirtyKeys = setOf("alpha"), changedRecord = first)
+        assertCompacted(file, listOf("ok?", "kept"))
+    }
+
+    /** A compaction that cannot be written at load leaves the journal as it was and still loads its
+     *  cells; dropping the conversation there would let its next save overwrite it. */
+    @Test
+    fun `a compaction that fails at load keeps the conversation and its journal`() {
+        val (_, file) = bloatedConversation()
+        val before = Files.readAllBytes(file)
+        val refusing = CodeModeStateWrite { path, text ->
+            if (text.startsWith("{\"key\":")) CodeModeStateJournal.write(path, text) else throw IOException("refused")
+        }
+        val loaded = CodexCodeModeStore(location(), Json { encodeDefaults = true }, {}, writer = refusing).load()
+        assertEquals(listOf(first.id, second.id), loaded.records.map { it.id })
+        assertEquals(listOf(null, "kept"), loaded.records.map { it.output })
+        assertEquals(listOf(marker), loaded.expired)
+        assertTrue(before.contentEquals(Files.readAllBytes(file)), "a compaction that failed changed the journal")
+    }
+
+    /** Loading streams the journal a line at a time: a journal twice the size of a child JVM's whole
+     *  heap loads there, where reading the file into memory cannot. */
+    @Test
+    @Timeout(120)
+    fun `a journal larger than the whole heap loads a line at a time`() {
+        val file = dir.resolve("larger-than-heap.json")
+        val record = CodeModeRecords.of("alpha", 1).snapshot()
+        CodeModeStateJournal.write(file, Json.encodeToString(CodeModePersistedState(records = listOf(record))))
+        val cell = record.copy(output = "x".repeat(DELTA_OUTPUT_CHARS))
+        val delta = Json.encodeToString(CodeModeStateDelta("alpha", listOf(cell), emptySet(), emptyList())) + "\n"
+        Files.newBufferedWriter(file, StandardOpenOption.APPEND).use { out ->
+            repeat((LARGER_THAN_HEAP_BYTES / delta.length).toInt() + 1) { out.write(delta) }
+        }
+        val classpath = checkNotNull(System.getProperty("codex.testClasspath"))
+        val java = "${System.getProperty("java.home")}/bin/java"
+        val child = ProcessBuilder(
+            java,
+            CHILD_HEAP,
+            "-cp",
+            classpath,
+            JournalReadProbe::class.java.name,
+            file.toString(),
+        ).redirectErrorStream(true).start()
+        val output = child.inputStream.bufferedReader().readText()
+        assertEquals(0, child.waitFor(), output)
+        assertEquals("1", output.trim())
     }
 
     private val first = CodeModeRecords.of("alpha", 1, UPDATED_AT)

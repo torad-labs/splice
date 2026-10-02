@@ -62,7 +62,10 @@ internal object CodeModeStateJournal {
     /** Called under the conversation lock. First write creates a 0600 checkpoint; appends are forced. */
     fun write(path: Path, text: String) {
         if (!text.startsWith(DELTA_START)) {
-            SecureFile.writeAtomic0600(path, text + "\n")
+            // A client may send an unpaired surrogate in a tool result. JsonlSink's append writes it as
+            // `?`, and the strict encoder behind writeAtomic0600 refused it, so once a journal outgrew its
+            // cells every save of that conversation failed. A checkpoint carries the bytes an append would.
+            SecureFile.writeAtomic0600(path, String((text + "\n").toByteArray(Charsets.UTF_8), Charsets.UTF_8))
         } else {
             // A delta is not a checkpoint. Refuse this race so the caller recreates its full durable cache.
             if (Files.notExists(path)) throw NoSuchFileException(path.toString())
@@ -81,7 +84,7 @@ internal object CodeModeStateJournal {
         if (!endsWithNewline(path)) {
             // The only full-file rewrite on the request path is recovery or a legacy checkpoint
             // without a terminating newline. Ordinary appends inspect only the final byte.
-            SecureFile.writeAtomic0600(path, codec.encodeToString(read(path, codec)) + "\n")
+            write(path, codec.encodeToString(read(path, codec)))
         }
     }
 

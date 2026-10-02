@@ -10429,7 +10429,7 @@ id = "V4-454"
 phase = "release"
 title = "splice's own liveness probe is never a command's turn (Marlin's V4-444 walk, Oct 1, 4:15-4:25 PM CT): claude-splice's Needs you item reads '20 of its last 20 turns failed; the latest, 55m ago, was Provider failed', and those turns are TurnPathProbeLoop's credential-less loopback POSTs (app/src/main/kotlin/splice/app/probe/TurnPathProbeLoop.kt), not anyone's work. dcec804a6 stopped new probes from reaching Anthropic, but the recorded probe turns keep the item red until 20 real turns land and fill Turns' claude-splice rows. OUTCOME: a probe is never recorded as a command's turn, in Turns, Needs you or Usage, and probe turns already recorded are not counted as the command's work."
 files = ["app/src/main/kotlin/splice/app/probe/TurnPathProbeLoop.kt", "features/turns/src/main/kotlin/splice/head/HeadServer.kt", "features/turns/src/main/kotlin/splice/head/ClientAuth.kt"]
-status = "todo"
+status = "in_flight"
 verify = "red first: a turn-path probe against a forward-only head and an api-key head leaves no turn record, no recent-turns entry and no usage row; recorded probe rows from before the fix are excluded from the failure window and Turns; turns, app tests, detekt, rules; CI gate; live: claude-splice's Needs you item clears after install"
 
 [[items]]

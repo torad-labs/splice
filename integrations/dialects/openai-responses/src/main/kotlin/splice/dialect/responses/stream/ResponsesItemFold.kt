@@ -123,7 +123,7 @@ internal class ResponsesItemFold(
      *  this output_index, and clear the salvage-open marker. */
     suspend fun closeOpenBlocks(oi: Int?, sink: WireSink) {
         if (oi == null) return
-        execProgress.close(oi)
+        execProgress.close(oi, sink)
         state.removeBlock(oi)?.let { b ->
             // DR-77 (CX-01 completion): output_item.done can close a tool block without ever
             // passing the arguments.done handler — the only site that validated. Corrupt or

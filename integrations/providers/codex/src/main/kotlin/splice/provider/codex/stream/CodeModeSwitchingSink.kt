@@ -40,8 +40,13 @@ internal class CodeModeSwitchingSink(
         target = null
     }
 
-    private suspend fun write(bytes: Int = 0, action: BufferedSinkWrite) = mutex.withLock {
-        writes.deliver(target, bytes, action)
+    /** [block] names the block the write belongs to; a write to a notice block is optional (V4-456). */
+    private suspend fun write(
+        bytes: Int = 0,
+        block: WireBlockIndex? = null,
+        action: BufferedSinkWrite,
+    ) = mutex.withLock {
+        writes.deliver(target, bytes, block != null && blocks.isNotice(block), action)
     }
 
     private suspend fun open(
@@ -64,6 +69,8 @@ internal class CodeModeSwitchingSink(
 
     override suspend fun openThinking(): WireBlockIndex = open(CodeModeSinkBlocks.Kind.THINKING)
 
+    override suspend fun openNotice(): WireBlockIndex = open(CodeModeSinkBlocks.Kind.NOTICE)
+
     override suspend fun openTool(id: String, name: String): WireBlockIndex =
         open(CodeModeSinkBlocks.Kind.TOOL, id, name)
 
@@ -77,7 +84,7 @@ internal class CodeModeSwitchingSink(
     }
 
     override suspend fun thinkingDelta(index: WireBlockIndex, thinking: String) {
-        write(thinking.encodeToByteArray().size) { sink ->
+        write(thinking.encodeToByteArray().size, index) { sink ->
             blocks.destination(sink, index)?.let { sink.thinkingDelta(it, thinking) }
         }
     }
@@ -89,8 +96,8 @@ internal class CodeModeSwitchingSink(
     }
 
     override suspend fun signatureDelta(index: WireBlockIndex, signature: String) {
-        write(signature.encodeToByteArray().size) { sink ->
-            blocks.destination(sink, index)?.let { sink.signatureDelta(it, signature) }
+        write(signature.encodeToByteArray().size, index) { sink ->
+            blocks.signatureDestination(sink, index)?.let { sink.signatureDelta(it, signature) }
         }
     }
 

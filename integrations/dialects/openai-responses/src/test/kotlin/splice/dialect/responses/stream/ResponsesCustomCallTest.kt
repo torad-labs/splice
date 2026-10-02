@@ -93,15 +93,17 @@ class ResponsesCustomCallTest {
         assertEquals(2, outcome.customCalls.size)
     }
 
+    /** V4-456: the script streams to the client while the model writes it, and the runtime still
+     *  observes every delta. Oct 1's version fed only the runtime, and the client saw the step at once. */
     @Test
-    fun `exec input is observed before completion but never renders raw source as thinking`() = runTest {
+    fun `exec input is visible before completion and its signed progress does not change replay`() = runTest {
         val sink = ProgressSink()
         val script = "text(await tools.Read({file_path: 'a'}));"
         val call = execItem("live")
         val upstream = flow {
             emit(customEvent("response.output_item.added", call))
             emit(customEvent("response.custom_tool_call_input.delta", delta = script))
-            assertFalse(sink.calls.any { it.startsWith("think#") }, "raw exec source must not reach client text")
+            assertTrue(sink.calls.any { it == "think#0:$script" }, "the input must be visible before item-done")
             emit(customEvent("response.custom_tool_call_input.done", delta = script))
             emit(customEvent("response.output_item.done", call))
             emit(customEvent("response.output_item.done", call))
@@ -111,19 +113,23 @@ class ResponsesCustomCallTest {
         assertEquals("", outcome.thinkingText)
         assertEquals(emptyList<String>(), outcome.reasoningEnvelopes)
         assertEquals(call, outcome.customCalls.single().raw)
-        assertTrue(sink.signatures.isEmpty())
         assertEquals(listOf(script), sink.deltas)
-        assertFalse(sink.calls.any { it.startsWith("openThinking") || it.startsWith("think#") })
+        assertEquals(listOf(SpliceNotice.SIGNATURE), sink.signatures)
+        assertEquals(1, sink.calls.count { it.startsWith("openThinking") })
+        assertEquals(1, sink.calls.count { it == "think#0:$script" })
+        assertEquals(1, sink.calls.count { it == "close#0" })
+        sink.openTool("client-call", "Read")
+        assertTrue(sink.calls.indexOf("close#0") < sink.calls.indexOf("openTool#1(client-call,Read)"))
         val replayed = buildJsonObject {
             put("type", "thinking")
-            put("thinking", "Waiting for the next statement")
-            put("signature", SpliceNotice.SIGNATURE)
+            put("thinking", script)
+            put("signature", sink.signatures.single())
         }
         assertEquals(replayRequest(null).toString(), replayRequest(replayed).toString())
     }
 
     @Test
-    fun `missing item-done still observes source without creating a thinking block`() = runTest {
+    fun `an exec progress block is signed even when item-done is missing`() = runTest {
         val sink = ProgressSink()
         val call = execItem("missing")
         val upstream = flow {
@@ -132,9 +138,10 @@ class ResponsesCustomCallTest {
             emit(terminal(call))
         }
         ResponsesStreamTranslator(ctx()).driveTurn(upstream, sink)
-        assertTrue(sink.signatures.isEmpty())
-        assertFalse(sink.calls.any { it.startsWith("think#") })
         assertEquals(listOf("return 1;"), sink.deltas)
+        assertEquals(listOf("think#0:return 1;"), sink.calls.filter { it.startsWith("think#") })
+        assertEquals(listOf(SpliceNotice.SIGNATURE), sink.signatures)
+        assertEquals(1, sink.calls.count { it == "close#0" })
     }
 
     @Test
@@ -153,7 +160,7 @@ class ResponsesCustomCallTest {
     }
 
     @Test
-    fun `cancelling mid-input propagates without publishing source text`() = runTest {
+    fun `cancelling mid-input signs and closes the exec block before propagation`() = runTest {
         val sink = ProgressSink()
         val upstream = flow {
             emit(customEvent("response.output_item.added", execItem("cancelled")))
@@ -164,10 +171,11 @@ class ResponsesCustomCallTest {
             ResponsesStreamTranslator(ctx()).driveTurn(upstream, sink)
         }
         assertEquals(listOf("await tools.Read("), sink.deltas)
+        assertTrue(sink.calls.contains("think#0:await tools.Read("))
         turn.cancelAndJoin()
         assertTrue(turn.isCancelled)
-        assertTrue(sink.signatures.isEmpty())
-        assertFalse(sink.calls.any { it.startsWith("think#") })
+        assertEquals(listOf(SpliceNotice.SIGNATURE), sink.signatures)
+        assertEquals(1, sink.calls.count { it == "close#0" })
     }
 
     @Test
@@ -189,10 +197,10 @@ class ResponsesCustomCallTest {
             emit(terminal(execItem("original")))
         }
         ResponsesStreamTranslator(ctx()).driveTurn(upstream, sink)
-        assertTrue(sink.signatures.isEmpty())
-        assertTrue(sink.calls.any { it == "openTool#0(client-tool,Read)" })
         assertEquals(listOf("return ", " "), sink.deltas)
-        assertFalse(sink.calls.any { it.startsWith("think#") })
+        assertEquals(listOf(SpliceNotice.SIGNATURE), sink.signatures)
+        assertTrue(sink.calls.indexOf("close#0") < sink.calls.indexOf("openTool#1(client-tool,Read)"))
+        assertEquals(listOf("think#0:return ", "think#0: "), sink.calls.filter { it.startsWith("think#") })
     }
 
     @Test
@@ -210,8 +218,10 @@ class ResponsesCustomCallTest {
         }
         ResponsesStreamTranslator(ctx()).driveTurn(upstream, sink)
         assertEquals(listOf("first", "second"), sink.deltas)
-        assertTrue(sink.signatures.isEmpty())
-        assertFalse(sink.calls.any { it.startsWith("think#") })
+        assertEquals(listOf("think#0:first", "think#1:second"), sink.calls.filter { it.startsWith("think#") })
+        assertEquals(listOf(SpliceNotice.SIGNATURE, SpliceNotice.SIGNATURE), sink.signatures)
+        assertEquals(1, sink.calls.count { it == "close#0" })
+        assertEquals(1, sink.calls.count { it == "close#1" })
     }
 
     private fun execItem(id: String): JsonObject = JsonObject(

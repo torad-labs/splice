@@ -162,8 +162,7 @@ class StatementGatewayTest {
             head.start()
             val first = withTimeout(5_000) { send(firstBody).bodyAsText() }
             assertTrue(first.contains("message_stop"), first)
-            assertFalse(first.contains("await tools."), first)
-            assertFalse(first.contains("await Promise."), first)
+            assertScriptShownAsNotice(first, "tools.Read")
             assertEquals(1L, upstream.terminal.count)
             return toolCalls(first).also { calls ->
                 assertEquals(if (batch == null) 1 else 2, calls.size, first)
@@ -201,8 +200,7 @@ class StatementGatewayTest {
             assertTrue(next.contains("\"name\":\"Edit\""), next)
             assertTrue(next.contains(SpliceNotice.SIGNATURE), next)
             assertTrue(next.indexOf("signature_delta") < next.indexOf("\"name\":\"Edit\""), next)
-            assertFalse(next.contains("await tools."), next)
-            assertFalse(next.contains("await Promise."), next)
+            assertScriptShownAsNotice(next, "tools.Edit")
             assertTrue(next.contains("message_stop"), next)
             assertEquals(1L, upstream.terminal.count, "the callback precedes response.completed")
             assertEquals(1, upstream.posts.get())
@@ -353,9 +351,52 @@ class StatementGatewayTest {
         }
     }
 
+    private fun events(wire: String): List<JsonObject> = wire.lineSequence().filter { it.startsWith("data: ") }
+        .map { Json.parseToJsonElement(it.removePrefix("data: ")).jsonObject }.toList()
+
+    private class WireBlock(val type: String) {
+        val content = StringBuilder()
+        val signatures = mutableListOf<String>()
+
+        fun append(fields: JsonObject, keys: List<String>) = keys.forEach { key ->
+            fields[key]?.let { content.append(it.jsonPrimitive.content) }
+        }
+    }
+
+    /** Every content block on the wire, with its streamed content and signatures, in close order. */
+    private fun blocks(wire: String): List<WireBlock> {
+        val open = linkedMapOf<String, WireBlock>()
+        val closed = mutableListOf<WireBlock>()
+        for (event in events(wire)) {
+            val index = event["index"]?.jsonPrimitive?.content ?: continue
+            when (event["type"]?.jsonPrimitive?.content) {
+                "content_block_start" -> open[index] = startBlock(event.getValue("content_block").jsonObject)
+                "content_block_delta" -> deltaBlock(open.getValue(index), event.getValue("delta").jsonObject)
+                "content_block_stop" -> open.remove(index)?.let { closed += it }
+            }
+        }
+        return closed + open.values
+    }
+
+    private fun startBlock(block: JsonObject): WireBlock =
+        WireBlock(block.getValue("type").jsonPrimitive.content).also { it.append(block, listOf("text", "thinking")) }
+
+    private fun deltaBlock(block: WireBlock, delta: JsonObject) {
+        delta["signature"]?.let { block.signatures += it.jsonPrimitive.content }
+        block.append(delta, listOf("text", "thinking", "partial_json"))
+    }
+
+    /** V4-456: the client sees the live script while the model writes it, and only inside thinking blocks
+     *  carrying splice's notice signature, which every request parser drops: never as text, a tool input or
+     *  reasoning the client would replay. */
+    private fun assertScriptShownAsNotice(wire: String, statement: String) {
+        val script = blocks(wire).filter { it.content.contains("tools.") }
+        assertTrue(script.any { it.content.contains(statement) }, wire)
+        assertTrue(script.all { it.type == "thinking" && it.signatures == listOf(SpliceNotice.SIGNATURE) }, wire)
+    }
+
     private fun toolCalls(wire: String): List<JsonObject> {
-        val events = wire.lineSequence().filter { it.startsWith("data: ") }
-            .map { Json.parseToJsonElement(it.removePrefix("data: ")).jsonObject }.toList()
+        val events = events(wire)
         val calls = events.filter { it["type"]?.jsonPrimitive?.content == "content_block_start" }
             .filter { it.getValue("content_block").jsonObject["type"]?.jsonPrimitive?.content == "tool_use" }
             .associate { it.getValue("index").jsonPrimitive.content to it.getValue("content_block").jsonObject }

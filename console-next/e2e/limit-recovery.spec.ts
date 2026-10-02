@@ -90,7 +90,11 @@ test('a near-limit notice leads through the spare plan to exact cross-plan resum
   await open(page, 'needs-you');
   const notice = page.getByRole('listitem').filter({ hasText: '99%' });
   await expect(notice).toContainText('synthetic-near');
-  await notice.getByRole('link', { name: 'Open usage', exact: true }).click();
+  await expect(notice).not.toHaveClass(/attn/);
+  await expect(notice.getByRole('link', { name: 'Switch account', exact: true })).toHaveCount(0);
+  const usage = notice.getByRole('link', { name: 'Show the details', exact: true });
+  await expect(usage).toHaveAttribute('href', '#/usage');
+  await usage.click();
   await expect(page.getByRole('heading', { name: 'Usage', exact: true })).toBeVisible();
   const spareUsage = page.getByRole('listitem').filter({ hasText: STACK.soloHead });
   await expect(spareUsage).toContainText('20% of its limit');

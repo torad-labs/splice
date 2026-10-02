@@ -17,7 +17,8 @@ internal enum class DetachedSpend {
     NOTICE_TEXT,
 
     /** A live script's signature or close: never dropped, so a block a kept delta opened is always signed
-     *  and closed. Charged to the notice budget; there is at most one pair per block a kept delta opened. */
+     *  and closed. Charged to the notice budget. A round carries one exec call (CodeModeSourceCapture), so it
+     *  queues one signature-and-close pair, which does nothing on drain when no kept delta opened the block. */
     NOTICE_FRAME,
 }
 

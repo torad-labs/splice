@@ -47,7 +47,7 @@ public const val DEFAULT_WORKER_START_TIMEOUT_MS: Long = 30_000
 // why: each host's protocol JVM has 512 MiB, independent of its sessions' native guest heaps.
 public const val DEFAULT_HEAP_MB: Int = 512
 
-// why: twice the observed ten-session peak fits below hostshield app.slice's 44 GiB throttle point.
+// why: twice the observed ten-session peak fits below a 44 GiB memory throttle point on the process's slice.
 // Six hosts at 1152 MiB plus 21 engines at 832 MiB reserve 24384 MiB; the 22nd needs 25216 MiB.
 public const val DEFAULT_POOL_MEMORY_MB: Long = 24L * 1024
 

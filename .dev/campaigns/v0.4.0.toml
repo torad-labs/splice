@@ -10425,3 +10425,11 @@ title = "splice's own liveness probe is never a command's turn (Marlin's V4-444 
 files = ["app/src/main/kotlin/splice/app/probe/TurnPathProbeLoop.kt", "features/turns/src/main/kotlin/splice/head/HeadServer.kt", "features/turns/src/main/kotlin/splice/head/ClientAuth.kt"]
 status = "todo"
 verify = "red first: a turn-path probe against a forward-only head and an api-key head leaves no turn record, no recent-turns entry and no usage row; recorded probe rows from before the fix are excluded from the failure window and Turns; turns, app tests, detekt, rules; CI gate; live: claude-splice's Needs you item clears after install"
+
+[[items]]
+id = "V4-455"
+phase = "release"
+title = "A GPT session resumed on claude-splice is not refused for an unsigned thinking block (operator, Oct 1 ~7:27 PM CT, screenshot: every turn 400 'messages.1.content.0: Invalid signature in thinking block', Opus 5.5 then Opus 5). Cause, from trace and source: the GPT head writes reasoning summaries as thinking blocks with no signature; Claude Code stores and replays them with an empty signature; the passthrough scrubber drops only the exact wait-notice signature and blank text (PassthroughMessageScrubber.kt:132,140); claude-splice has no resume hook to run the transcript rewrite. OUTCOME: on the Anthropic verifying head the request drops every thinking block Anthropic did not sign (empty, missing, or a splice-minted signature) and every redacted_thinking block that decodes as a splice reasoning envelope; other heads' bytes unchanged."
+files = ["integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughMessageScrubber.kt", "integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughBlockRegistry.kt", "core/src/main/kotlin/splice/core/turn/SpliceNotice.kt"]
+status = "in_flight"
+verify = "red first: the traced 7:27:45 PM CT upstream body through the Anthropic profile keeps zero empty-signature thinking blocks; an opaque signature passes verbatim; PassthroughGoldenTest unchanged; dialect tests, detekt, rules, CI gate"

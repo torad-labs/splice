@@ -208,7 +208,7 @@ internal class TurnStreamer(
             // The replay and permit still settle after a fatal recording or flush failure.
             slotEnd.use {
                 AutoCloseable {
-                    kept = completed && drive.channel.detached.get() && drive.emitter.endedCleanly
+                    kept = keepRecording(drive, completed)
                     replay.finish(key, recording, keep = kept)
                 }.use {
                     driveRecorded(drive, recording) { completed = true }
@@ -231,6 +231,9 @@ internal class TurnStreamer(
             throw e
         }
     }
+
+    private fun keepRecording(drive: TurnDrive, completed: Boolean): Boolean =
+        completed && drive.channel.detached.get() && drive.emitter.endedCleanly
 
     private fun interface RecordingCompleted {
         operator fun invoke()

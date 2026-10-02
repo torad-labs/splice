@@ -746,7 +746,8 @@ class RoleRegistryLawTest {
         // 126 since Oct 1 CT: CodeModeStatementSyntax certifies source in the executing Graal isolate.
         // 127 since Oct 2 CT: CodeModeSessionEnd closes a retained engine, never writes diagnostic text.
         // 129 since Oct 2 CT: FieldText defers record encoding and CodeModeSourceCommit gates executable bytes.
-        assertEquals(129, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
+        // 130 since Oct 2 CT: RecordingCompleted acknowledges successful frame-recording completion, never handoff.
+        assertEquals(130, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
         assertTrue(config.entries.values.all { !it.text("reason").isNullOrBlank() }) { "every entry is reasoned" }
         assertTrue(config.entries.values.all { !it.text("dated").isNullOrBlank() }) { "every entry is dated" }
 

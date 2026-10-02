@@ -47,7 +47,7 @@
 # ── 15 names, () -> Unit ──────────────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "()->Unit"
-dated = "2026-09-29"
+dated = "2026-10-02"
 names = [
     "AuthRefreshObserver",
     "CodeModeCleanup",
@@ -59,6 +59,7 @@ names = [
     "PulseTick",
     "RawSseFlush",
     "ReanchorSpentHook",
+    "RecordingCompleted",
     "RestoreStep",
     "ShutdownDaemon",
     "StopControl",
@@ -81,7 +82,10 @@ provider gives back what it held for it, a llama-server slot lease since V4-165)
 process), Teardown and StopControl (shut this component / the control plane down), ShutdownDaemon \
 (the daemon's own stop path), WsRoundAbort (abandon the in-flight WS round), CodeModeCleanup \
 (release the worker's cell), RawSseFlush (push buffered bytes to the client socket), ReanchorSpentHook \
-(stamp one spent re-anchor on the perf row), RestoreStep \
+(stamp one spent re-anchor on the perf row), RecordingCompleted (FrameRecording.complete returned \
+successfully, so the detached drive may keep its recording only if its terminal also ended cleanly; \
+this acknowledgement never runs after failed completion, unlike the earlier HandoffMark or the \
+provider resource release at TurnEnd, proved by TurnStreamerCleanupTest), RestoreStep \
 (undo one already-applied upgrade step), FileIoTask (the body to run on the file-IO dispatcher), \
 MuseMintWriteGuard (the pre-write assertion before a minted key is persisted), HandoffMark (the \
 turn has been handed to upstream — a MARK the pipeline sets once, which is why it is a name of \

@@ -55,6 +55,9 @@ import splice.upstream.ProviderTuning
 import splice.upstream.Ticker
 import splice.upstream.retry.InflightGate
 import java.nio.file.Path
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.seconds
 
 class StatementGatewayTest {
@@ -66,7 +69,7 @@ class StatementGatewayTest {
         val gateway = Gateway(tmp, this)
         try {
             val calls = gateway.firstStep()
-            gateway.rejectUnrelated()
+            rejectUnderCpuLoad(gateway)
             gateway.nextStatement(calls)
             gateway.finish()
         } finally {
@@ -102,6 +105,37 @@ class StatementGatewayTest {
             } finally {
                 gateway.close()
             }
+        }
+    }
+
+    /** Stress the publication boundary only after native startup, without changing its deadlines. */
+    private suspend fun rejectUnderCpuLoad(gateway: Gateway) {
+        val active = AtomicBoolean(true)
+        val started = CountDownLatch(2)
+        val work = AtomicLong()
+        val workers = mutableListOf<Thread>()
+        try {
+            repeat(2) {
+                val worker = Thread(
+                    {
+                        started.countDown()
+                        var value = 1L
+                        while (active.get()) {
+                            repeat(4096) { value = value * 1_664_525L + 1_013_904_223L }
+                            work.addAndGet(value)
+                        }
+                    },
+                    "synthetic-lease-pressure",
+                )
+                workers += worker
+                worker.priority = Thread.MIN_PRIORITY
+                worker.start()
+            }
+            started.await()
+            gateway.rejectUnrelated()
+        } finally {
+            active.set(false)
+            workers.forEach(Thread::join)
         }
     }
 

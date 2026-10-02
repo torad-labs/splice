@@ -20,6 +20,7 @@ import splice.head.turn.TurnDriver
 import splice.head.turn.TurnInputs
 import splice.head.turn.TurnPreparation
 import splice.head.wire.TurnTrace
+import splice.upstream.TurnEnd
 import splice.upstream.credentials.AccountResetText
 import splice.upstream.credentials.Selection
 import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
@@ -54,7 +55,11 @@ internal class HeadAdmission(
             // Prepared request trees survive decode and may belong to a detached compaction.
             // Their heap lease follows the same slot that already owns that drive's lifetime.
             val owner = MaterializationOwner { admitted.materializedEnd = it }
-            val prepared = admission.materializeOrRespond(call, owner = owner) {
+            val prepared = admission.materializeOrRespond(
+                call,
+                owner = owner,
+                beforeRefusal = TurnEnd(admitted::release),
+            ) {
                 preparation.prepareTurn(call, perf)
             } ?: return
             if (admitted.settle(call, prepared, admission)) serve(call, prepared, admitted)
@@ -84,7 +89,6 @@ internal class HeadAdmission(
                 driver.replay(call, prepared)
             }
             is Preparation.Ready -> {
-                admitted.retainRequest()
                 val meta = prepared.built.meta
                 admitted.slot.describe(meta.upstreamModel, meta.compact, tag(meta.sessionId))
                 // V4-165: the turn ends when its admission slot is released — here on a refusal or
@@ -177,6 +181,7 @@ internal class HeadAdmission(
             ),
         )
         val message = rateLimitedMessage(armedMs, windowResetEpochSeconds, plan)
+        admitted.close()
         responses.respondRateLimited(call, message, retryEpochSeconds)
         return true
     }
@@ -205,6 +210,7 @@ internal class HeadAdmission(
             LocalRefusal(tag.wire, message, trace),
         )
         call.response.header("x-should-retry", "false")
+        admitted.close()
         responses.respondInvalidRequest(call, message)
         return true
     }
@@ -231,6 +237,7 @@ internal class HeadAdmission(
             admitted.t0,
             LocalRefusal(OutcomeTag.BUDGET_BLOCKED.wire, block.detail, trace),
         )
+        admitted.close()
         responses.respondBudgetBlocked(call, block.message)
         return true
     }
@@ -317,6 +324,7 @@ internal class HeadAdmission(
         // TurnQuota.forSession is the one resolver for exactly this precedence (V4-99).
         deps.turnQuota.forSession(prepared.built.meta.sessionId, null)?.clientHeadersRejected(retryEpochSeconds)
             ?.forEach { (name, value) -> call.response.header(name, value) }
+        admitted.close()
         responses.respondRateLimited(call, exhausted.message, retryEpochSeconds)
     }
 
@@ -341,6 +349,7 @@ internal class HeadAdmission(
             }
         }
         try {
+            admitted.retainRequest()
             val inputs = TurnInputs(
                 prepared.built,
                 admitted.slot,

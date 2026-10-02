@@ -80,9 +80,10 @@ public class RequestMaterializationGate(
         return try {
             if (owner != null) {
                 owner.onRelease(release)
-                retained = true
             }
-            block()
+            val materialized = block()
+            retained = owner != null
+            materialized
         } finally {
             if (!retained) release.ended()
         }

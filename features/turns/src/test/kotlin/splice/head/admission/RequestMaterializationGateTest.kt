@@ -232,6 +232,29 @@ class RequestMaterializationGateTest {
         }
 
     @Test
+    fun `failed decoding refunds even a loan already registered with its owner`() =
+        runTest(UnconfinedTestDispatcher()) {
+            val gate = RequestMaterializationGate(heapBudgetBytes = 13)
+            var end: TurnEnd? = null
+            val owner = MaterializationOwner { end = it }
+            assertThrows(IllegalStateException::class.java) {
+                kotlinx.coroutines.runBlocking {
+                    gate.withLease<String>(2, owner) { error("synthetic decode failure") }
+                }
+            }
+            assertEquals("free before refusal", gate.tryWithLease(2) { "free before refusal" })
+            requireNotNull(end).ended()
+            val release = CompletableDeferred<Unit>()
+            val holder = async { gate.withLease(2) { release.await() } }
+            try {
+                assertNull(gate.tryWithLease(1) { "a later owner callback must not double refund" })
+            } finally {
+                release.complete(Unit)
+                holder.await()
+            }
+        }
+
+    @Test
     fun `failed owner registration refunds its lease`() = runTest(UnconfinedTestDispatcher()) {
         val gate = RequestMaterializationGate(heapBudgetBytes = 13)
         val owner = MaterializationOwner { error("owner registration failed") }

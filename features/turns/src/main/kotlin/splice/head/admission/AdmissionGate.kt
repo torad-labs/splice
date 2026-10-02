@@ -17,6 +17,7 @@ import splice.head.RequestBodyTooLarge
 import splice.head.turn.MaterializedRequest
 import splice.head.turn.SESSION_HEADER
 import splice.upstream.Provider
+import splice.upstream.TurnEnd
 import splice.upstream.failure.SseSpuriousWakeupException
 import splice.upstream.retry.InflightGate
 
@@ -41,11 +42,16 @@ internal class AdmissionGate(
     }
 
     suspend fun acquireSlotOrRespond(call: ApplicationCall): InflightGate.Slot? =
-        acquireOrRespond(call, gate.resumeSource(call.request.headers[SESSION_HEADER]))
+        acquireOrRespond(call, gate.resumeSource(call.request.headers[SESSION_HEADER]), beforeRefusal = null)
 
-    suspend fun acquireFreshSlotOrRespond(call: ApplicationCall): InflightGate.Slot? = acquireOrRespond(call, null)
+    suspend fun acquireFreshSlotOrRespond(call: ApplicationCall, beforeRefusal: TurnEnd): InflightGate.Slot? =
+        acquireOrRespond(call, null, beforeRefusal)
 
-    private suspend fun acquireOrRespond(call: ApplicationCall, held: InflightGate.Slot?): InflightGate.Slot? {
+    private suspend fun acquireOrRespond(
+        call: ApplicationCall,
+        held: InflightGate.Slot?,
+        beforeRefusal: TurnEnd?,
+    ): InflightGate.Slot? {
         // V4-114: the gate ANSWERS with a value now, so this refusal is a compiler-checked `when`
         // branch rather than a `catch` on a name — the 529 on the wire is unchanged, and the
         // window-closed refusal ten lines below has always been spelled as a returned null.
@@ -53,6 +59,7 @@ internal class AdmissionGate(
             is InflightGate.Admission.Acquired -> admission.slot
             InflightGate.Admission.AtCapacity -> {
                 log("[${provider.key}] admission rejected: gateway at capacity (queued=${gate.snapshot().queued})\n")
+                beforeRefusal?.ended()
                 responses.respondAtCapacity(call, "gateway at capacity")
                 return null
             }
@@ -63,6 +70,7 @@ internal class AdmissionGate(
         // bounce (queued waiters defeated the drain; review 2026-07-22 round 3).
         if (!window.isOpen) {
             withContext(NonCancellable) { slot.release() }
+            beforeRefusal?.ended()
             responses.respondAtCapacity(call, "head is stopping; retry")
             return null
         }
@@ -75,6 +83,7 @@ internal class AdmissionGate(
         call: ApplicationCall,
         fastFail: Boolean = false,
         owner: MaterializationOwner? = null,
+        beforeRefusal: TurnEnd? = null,
         block: MaterializedRequest<T>,
     ): T? = try {
         val declared = call.request.headers[HttpHeaders.ContentLength]?.toLongOrNull()?.takeIf { it >= 0L }
@@ -87,15 +96,21 @@ internal class AdmissionGate(
         } else {
             materialization.withLease(bytes, owner, block)
         }
-        if (leased == null) responses.respondAtCapacity(call, "gateway busy; retry")
+        if (leased == null) {
+            beforeRefusal?.ended()
+            responses.respondAtCapacity(call, "gateway busy; retry")
+        }
         leased
     } catch (tooLarge: RequestBodyTooLarge) {
+        beforeRefusal?.ended()
         responses.respondTooLarge(call, tooLarge.limit)
         null
     } catch (_: TimeoutCancellationException) {
+        beforeRefusal?.ended()
         responses.respondReadTimeout(call)
         null
     } catch (_: SseSpuriousWakeupException) {
+        beforeRefusal?.ended()
         // 408, not 400 (DR-20): a torn client body is a connection event the client may retry;
         // BadRequest told Claude Code the request itself was malformed — a non-retryable class.
         responses.respondReadTimeout(call, "request body stream interrupted")

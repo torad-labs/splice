@@ -21,17 +21,23 @@ internal class AdmittedTurn(
 
     /** The header permits bounded parsing. Only provider proof can retain the borrowed source permit. */
     suspend fun settle(call: ApplicationCall, prepared: Preparation, admission: AdmissionGate): Boolean {
-        if (!slot.resumedSource || prepared !is Preparation.Ready) return true
+        if (prepared !is Preparation.Ready) {
+            close()
+            return true
+        }
         val built = prepared.built
-        if (built.roundInterceptor?.resumesSource() == true) return true
-        return replace(call, prepared, admission)
+        return if (!slot.resumedSource || built.roundInterceptor?.resumesSource() == true) {
+            true
+        } else {
+            replace(call, prepared, admission)
+        }
     }
 
     private suspend fun replace(call: ApplicationCall, prepared: Preparation.Ready, admission: AdmissionGate): Boolean {
         slot.release()
         var replaced = false
         return try {
-            val fresh = admission.acquireFreshSlotOrRespond(call) ?: return false
+            val fresh = admission.acquireFreshSlotOrRespond(call, TurnEnd(::releaseMaterialized)) ?: return false
             slot = fresh
             replaced = true
             true
@@ -52,8 +58,16 @@ internal class AdmittedTurn(
 
     fun wasHandedOff(): Boolean = handedOff.get()
 
-    suspend fun close() = withContext(NonCancellable) {
-        materializedEnd?.ended()
-        if (!handedOff.get()) slot.release()
+    private fun releaseMaterialized() {
+        val end = materializedEnd
+        materializedEnd = null
+        end?.ended()
     }
+
+    /** use preserves the first throwable and suppresses a later release failure, including cancellation. */
+    fun release() {
+        AutoCloseable { if (!handedOff.get()) slot.release() }.use { releaseMaterialized() }
+    }
+
+    suspend fun close() = withContext(NonCancellable) { release() }
 }

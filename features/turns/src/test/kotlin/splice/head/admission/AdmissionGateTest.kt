@@ -1,42 +1,72 @@
 package splice.head.admission
 
+import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.OutgoingContent
+import io.ktor.server.response.ApplicationSendPipeline
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
 import io.ktor.utils.io.ByteReadChannel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.JsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
+import splice.core.auth.ForeignHostLog
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.budget.BudgetBlock
+import splice.core.budget.HeadBudget
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.parse.AnthropicTurnBody
+import splice.core.perf.TurnPerf
 import splice.core.turn.ReasoningDisplay
+import splice.core.turn.TurnMeta
+import splice.core.turn.TurnOutcome
 import splice.core.turn.WatchdogBudget
+import splice.head.AnthropicBodyParse
+import splice.head.ClientAuth
 import splice.head.HeadDeps
 import splice.head.RequestBodyRead
 import splice.head.RequestBodyReader
+import splice.head.RequestBodyTooLarge
 import splice.head.TestResponsesProvider
+import splice.head.compaction.CompactionReplay
 import splice.head.headStores
 import splice.head.noQuota
 import splice.head.turn.LiveTurns
+import splice.head.turn.Preparation
+import splice.head.turn.SESSION_HEADER
+import splice.head.turn.TurnDriver
+import splice.head.turn.TurnPreparation
+import splice.head.wire.FrameRecording
+import splice.upstream.BuiltTurn
+import splice.upstream.InterceptedRoundPost
+import splice.upstream.Provider
 import splice.upstream.ProviderTuning
+import splice.upstream.RoundInterceptor
+import splice.upstream.TurnEnd
 import splice.upstream.failure.SseSpuriousWakeupException
 import splice.upstream.retry.InflightGate
+import splice.upstream.sse.WireSink
 import splice.upstream.transport.UpstreamClient
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
@@ -151,6 +181,306 @@ class AdmissionGateTest {
             }
         }
     }
+
+    @Test
+    fun `local preparation releases its request before any response is published`(
+        @TempDir tmp: Path,
+    ) = testApplication {
+        val heap = RequestMaterializationGate(heapBudgetBytes = 7)
+        val deps = headDeps(tmp)
+        val admission = AdmissionGate(provider(), deps, AdmissionWindow(), AdmissionResponses())
+        val preparations = listOf(
+            Preparation.Rejected("synthetic rejection"),
+            Preparation.Local("synthetic answer", "synthetic-model", null, false),
+            Preparation.Replay(FrameRecording(), "synthetic-key", null, "synthetic-model"),
+        )
+        val releasedAtReply = mutableListOf<Boolean>()
+        var next = 0
+        application {
+            sendPipeline.intercept(ApplicationSendPipeline.Before) {
+                releasedAtReply += heap.tryWithLease(1) { true } == true
+            }
+            routing {
+                post("/probe") {
+                    val slot = (deps.gate.acquire() as InflightGate.Admission.Acquired).slot
+                    val admitted = AdmittedTurn(slot, 0L, TurnPerf())
+                    try {
+                        val prepared = checkNotNull(
+                            heap.withLease(1, MaterializationOwner { admitted.materializedEnd = it }) {
+                                preparations[next++]
+                            },
+                        )
+                        assertEquals(null, heap.tryWithLease(1) { "precondition: the local loan is held" })
+                        assertTrue(admitted.settle(call, prepared, admission))
+                        call.respondText("synthetic local reply")
+                    } finally {
+                        admitted.close()
+                    }
+                }
+            }
+        }
+        repeat(preparations.size) { assertEquals(HttpStatusCode.OK, client.post("/probe").status) }
+        assertEquals(
+            List(preparations.size) { true },
+            releasedAtReply,
+            "every local reply must release before publication",
+        )
+        assertEquals(0, deps.gate.snapshot().inflight)
+    }
+
+    @Test
+    fun `fresh admission refusal releases the request before capacity or stopping replies`(
+        @TempDir tmp: Path,
+    ) = testApplication {
+        val heap = RequestMaterializationGate(heapBudgetBytes = 7)
+        val gate = InflightGate({ 1 }, maxQueued = { 1 })
+        val deps = headDeps(tmp).copy(gate = gate)
+        val window = AdmissionWindow()
+        val admission = AdmissionGate(provider(), deps, window, AdmissionResponses())
+        val releasedAtReply = mutableListOf<Boolean>()
+        var request: AdmittedTurn? = null
+        application {
+            sendPipeline.intercept(ApplicationSendPipeline.Before) {
+                releasedAtReply += heap.tryWithLease(1) { true } == true
+            }
+            routing {
+                post("/probe") {
+                    val admitted = checkNotNull(request)
+                    try {
+                        val prepared = checkNotNull(
+                            heap.withLease(1, MaterializationOwner { admitted.materializedEnd = it }) {
+                                ready()
+                            },
+                        )
+                        assertEquals(null, heap.tryWithLease(1) { "precondition: the candidate loan is held" })
+                        assertFalse(admitted.settle(call, prepared, admission))
+                    } finally {
+                        admitted.close()
+                    }
+                }
+            }
+        }
+        coroutineScope {
+            for (stopping in listOf(false, true)) {
+                val (candidate, source) = retainedCandidate(gate, window, stopping)
+                request = candidate
+                val waiting = if (stopping) null else async(start = CoroutineStart.UNDISPATCHED) { gate.acquire() }
+                try {
+                    assertEquals(529, client.post("/probe").status.value)
+                } finally {
+                    waiting?.cancelAndJoin()
+                    source.release()
+                }
+            }
+        }
+        assertEquals(listOf(true, true), releasedAtReply, "both refusal arms must release before publishing")
+        assertEquals(0, gate.snapshot().inflight)
+    }
+
+    @Test
+    fun `a failed heap release still returns the candidate permit and preserves its throwable`() =
+        kotlinx.coroutines.runBlocking {
+            val gate = InflightGate({ 1 })
+            val slot = (gate.acquire() as InflightGate.Admission.Acquired).slot
+            val admitted = AdmittedTurn(slot, 0L, TurnPerf())
+            val failure = OutOfMemoryError("synthetic materialization release failure")
+            val later = IllegalStateException("synthetic permit release failure")
+            slot.onRelease(TurnEnd { throw later })
+            admitted.materializedEnd = TurnEnd { throw failure }
+            try {
+                val actual = assertThrows(OutOfMemoryError::class.java) {
+                    kotlinx.coroutines.runBlocking { admitted.close() }
+                }
+                assertEquals(0, gate.snapshot().inflight, "a failed heap callback must not strand its permit")
+                assertSame(failure, generateSequence(actual as Throwable) { it.cause }.last())
+                assertEquals(
+                    listOf(later),
+                    failure.suppressed.toList(),
+                    "later cleanup cannot replace the first failure",
+                )
+            } finally {
+                slot.release()
+            }
+        }
+
+    @Test
+    fun `release preserves cancellation after returning the permit and suppressing later failure`() =
+        kotlinx.coroutines.runBlocking {
+            val gate = InflightGate({ 1 })
+            val slot = (gate.acquire() as InflightGate.Admission.Acquired).slot
+            val admitted = AdmittedTurn(slot, 0L, TurnPerf())
+            val cancellation = CancellationException("synthetic release cancellation")
+            val later = IllegalStateException("synthetic permit callback failure")
+            admitted.materializedEnd = TurnEnd { throw cancellation }
+            slot.onRelease(TurnEnd { throw later })
+            val actual = assertThrows(CancellationException::class.java) { admitted.release() }
+            assertSame(cancellation, actual)
+            assertEquals(listOf(later), actual.suppressed.toList())
+            assertEquals(0, gate.snapshot().inflight)
+        }
+
+    @Test
+    fun `body limit and read failures release the borrowed candidate before publishing`(
+        @TempDir tmp: Path,
+    ) = testApplication {
+        val heap = RequestMaterializationGate(heapBudgetBytes = 7)
+        val deps = headDeps(tmp).copy(
+            policy = HeadDeps.HeadPolicy(maxRequestBytes = 4),
+            seams = HeadDeps.HeadSeams(requestMaterializationGate = heap),
+        )
+        val initial = (deps.gate.acquire() as InflightGate.Admission.Acquired).slot
+        val source = initial.retainSource("synthetic-session")
+        initial.release()
+        var next = 0
+        val reader = RequestBodyReader(
+            1_000,
+            RequestBodyRead { _, _ ->
+                when (next) {
+                    1 -> throw RequestBodyTooLarge(4)
+                    2 -> throw SseSpuriousWakeupException(1)
+                    else -> withTimeout(1) { CompletableDeferred<Nothing>().await() }
+                }
+            },
+        )
+        val handler = handler(provider(), deps, reader)
+        val releasedAtReply = mutableListOf<Pair<Boolean, Boolean>>()
+        application {
+            sendPipeline.intercept(ApplicationSendPipeline.Before) {
+                releasedAtReply += availableAtReply(deps, heap)
+            }
+            routing { post("/probe") { handler.handleMessages(call) } }
+        }
+        try {
+            for (expected in listOf(413, 413, 408, 408)) {
+                val response = client.post("/probe") {
+                    header(HttpHeaders.Authorization, "Bearer test-inference-token")
+                    header(SESSION_HEADER, "synthetic-session")
+                    setBody(if (next == 0) "12345" else "x")
+                }
+                assertEquals(expected, response.status.value, response.bodyAsText())
+                next++
+            }
+            assertEquals(List(4) { true to true }, releasedAtReply, "refusal must settle both local claims")
+            assertEquals(1, deps.gate.snapshot().inflight, "the independent source remains alive")
+        } finally {
+            source.release()
+        }
+    }
+
+    @Test
+    fun `a ready budget refusal returns its heap without waiting for the live source`(
+        @TempDir tmp: Path,
+    ) = testApplication {
+        val heap = RequestMaterializationGate(heapBudgetBytes = 7)
+        val budget = object : HeadBudget {
+            override fun admit(): BudgetBlock = BudgetBlock("synthetic budget refusal", "synthetic limit")
+            override fun spent(atMs: Long, model: String, counters: Map<String, Long>) = Unit
+        }
+        val deps = headDeps(tmp).copy(
+            quotaBundle = noQuota().copy(budget = budget),
+            seams = HeadDeps.HeadSeams(requestMaterializationGate = heap),
+        )
+        val initial = (deps.gate.acquire() as InflightGate.Admission.Acquired).slot
+        val source = initial.retainSource("synthetic-session")
+        initial.release()
+        val handler = handler(continuationProvider(), deps)
+        val releasedAtReply = mutableListOf<Pair<Boolean, Boolean>>()
+        application {
+            sendPipeline.intercept(ApplicationSendPipeline.Before) {
+                releasedAtReply += availableAtReply(deps, heap)
+            }
+            routing { post("/probe") { handler.handleMessages(call) } }
+        }
+        try {
+            val response = client.post("/probe") {
+                header(HttpHeaders.Authorization, "Bearer test-inference-token")
+                header(SESSION_HEADER, "synthetic-session")
+                setBody(
+                    """{"model":"claude-codex--gpt-5.6-sol","max_tokens":64,
+                        "messages":[{"role":"user","content":"synthetic continuation"}]}""",
+                )
+            }
+            assertEquals(HttpStatusCode.Forbidden, response.status, response.bodyAsText())
+            assertEquals(listOf(true to true), releasedAtReply, "a local quota refusal must not retain a source loan")
+            assertEquals(1, deps.gate.snapshot().inflight, "quota refusal must not end the independent source")
+        } finally {
+            source.release()
+        }
+    }
+
+    private suspend fun availableAtReply(deps: HeadDeps, heap: RequestMaterializationGate): Pair<Boolean, Boolean> {
+        val loanFree = heap.tryWithLease(1) { true } == true
+        val candidate = deps.gate.resumeSource("synthetic-session")
+        val candidateFree = candidate != null
+        candidate?.release()
+        return loanFree to candidateFree
+    }
+
+    private fun handler(
+        provider: Provider,
+        deps: HeadDeps,
+        reader: RequestBodyReader = RequestBodyReader(1_000),
+    ): HeadAdmission {
+        val responses = AdmissionResponses()
+        val clientAuth = ClientAuth(deps, responses, ForeignHostLog("synthetic head", deps.log))
+        val window = AdmissionWindow().apply { open() }
+        return HeadAdmission(
+            deps,
+            clientAuth,
+            AdmissionGate(provider, deps, window, responses),
+            AdmissionTelemetry(deps.gate, deps.seams.clock),
+            TurnPreparation(provider, deps, reader, AnthropicBodyParse(), clientAuth),
+            responses,
+            TurnDriver(provider, deps, CompactionReplay()),
+        )
+    }
+
+    private fun continuationProvider(): Provider {
+        val delegate = provider()
+        return object : Provider by delegate {
+            override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn =
+                delegate.buildTurn(body, compact, sessionId).copy(
+                    roundInterceptor = object : RoundInterceptor {
+                        override fun resumesSource(): Boolean = true
+                        override suspend fun intercept(
+                            bodyJson: String,
+                            sink: WireSink,
+                            postRound: InterceptedRoundPost,
+                        ): TurnOutcome = error("a refused request must not drive its source")
+                    },
+                )
+        }
+    }
+
+    /** Borrow the source permit while leaving its independent reader owned by the test. */
+    private suspend fun retainedCandidate(
+        gate: InflightGate,
+        window: AdmissionWindow,
+        stopping: Boolean,
+    ): Pair<AdmittedTurn, InflightGate.Slot.Lease> {
+        val initial = (gate.acquire() as InflightGate.Admission.Acquired).slot
+        val source = initial.retainSource("synthetic-session")
+        initial.release()
+        val candidate = checkNotNull(gate.resumeSource("synthetic-session"))
+        if (stopping) {
+            source.release()
+            window.close()
+        } else {
+            window.open()
+        }
+        return AdmittedTurn(candidate, 0L, TurnPerf()) to source
+    }
+
+    private fun ready(): Preparation.Ready = Preparation.Ready(
+        built = BuiltTurn(
+            JsonObject(emptyMap()),
+            TurnMeta(false, ReasoningDisplay.OFF, false, "synthetic-model", "synthetic-model", 100, "high", null, null),
+        ),
+        stream = false,
+        inbound = null,
+        messagesHash = null,
+        hasPriorExchange = false,
+    )
 
     private fun provider(): TestResponsesProvider = TestResponsesProvider(
         tuning = ProviderTuning(

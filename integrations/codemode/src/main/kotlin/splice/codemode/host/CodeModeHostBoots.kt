@@ -41,6 +41,11 @@ internal class CodeModeHostBoots(
         lock.withLock {
             if (host.boot !== boot) return
             host.boot = null
+            host.draining = false
+            host.sessions.filter { it.closing }.forEach {
+                host.sessions.remove(it)
+                it.retired.complete(Unit)
+            }
             host.sessions.forEach { it.initialized = false }
         }
     }

@@ -1,77 +1,82 @@
-// NEW: the engine, isolate, collector and heap belong to a session, never to the host.
+// NEW: session slots are reserved before slow native creation and retained until destruction is confirmed.
 package splice.codemode
 
+import kotlinx.coroutines.CancellationException
 import org.graalvm.polyglot.Engine
+import splice.codemode.engine.HostEngineFactory
+import splice.codemode.engine.HostWorkerSession
+import splice.codemode.engine.NativeHostEngines
 import splice.codemode.engine.WorkerSession
-import java.util.concurrent.Executors
-import java.util.concurrent.RejectedExecutionException
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.withLock
+import splice.codemode.host.HostSessionSlot
+import splice.codemode.host.HostSessionSlots
+import java.io.IOException
 
-internal class HostWorkerSessions : AutoCloseable {
-    private val lock = ReentrantLock()
-    private val sessions = mutableMapOf<Long, HostWorkerSession>()
+internal class HostWorkerSessions(private val factory: HostEngineFactory = NativeHostEngines) : AutoCloseable {
+    private val slots = HostSessionSlots()
 
-    fun open(id: Long): Boolean = lock.withLock {
-        if (id in sessions) return true
-        if (sessions.size >= CodeModeHeap.maxEnginesPerHost) return false
-        val engine = Engine.newBuilder("js")
-            .option("engine.SpawnIsolate", "true")
-            .option("engine.IsolateOption.MaxHeapSize", "${CodeModeHeap.guestBytes()}")
-            .build()
-        var warmed = false
+    fun open(id: Long): Boolean {
+        val slot = slots.reserve(id) ?: return false
+        return if (slot.started.compareAndSet(false, true)) populate(id, slot) else slot.opened.join() != null
+    }
+
+    private fun populate(id: Long, slot: HostSessionSlot): Boolean {
+        var created: HostWorkerSession? = null
         try {
-            WorkerSession(engine).use { }
-            sessions[id] = HostWorkerSession(engine)
-            warmed = true
-            true
-        } finally {
-            if (!warmed) engine.close(true)
+            val installed = if (slot.closing) {
+                false
+            } else {
+                val session = HostWorkerSession(factory.create(), factory)
+                created = session
+                WorkerSession(session.engine).use { }
+                slots.publish(slot, session).also { if (!it) session.close() }
+            }
+            finishOpening(id, slot, created, installed)
+            return installed
+        } catch (error: CancellationException) {
+            failed(id, slot, created, error)
+        } catch (error: IOException) {
+            failed(id, slot, created, error)
+        } catch (ignored: RuntimeException) {
+            failed(id, slot, created, ignored)
         }
     }
 
-    fun engine(id: Long): Engine? = lock.withLock { sessions[id]?.engine }
+    private fun finishOpening(id: Long, slot: HostSessionSlot, created: HostWorkerSession?, installed: Boolean) {
+        if (!installed) slots.gone(id, slot)
+        slot.opened.complete(if (installed) created else null)
+    }
 
-    fun execute(id: Long, task: Runnable): Boolean = lock.withLock { sessions[id]?.execute(task) == true }
+    private fun failed(id: Long, slot: HostSessionSlot, created: HostWorkerSession?, error: Exception): Nothing {
+        try {
+            created?.close()
+        } catch (closing: CancellationException) {
+            slot.opened.completeExceptionally(closing)
+            throw closing
+        } catch (closing: IOException) {
+            error.addSuppressed(closing)
+        } catch (ignored: RuntimeException) {
+            error.addSuppressed(ignored)
+        } finally {
+            if (created == null || created.engineGone) slots.gone(id, slot)
+            slot.opened.completeExceptionally(error)
+        }
+        throw error
+    }
 
-    fun count(): Int = lock.withLock { sessions.values.map { it.engine }.toSet().size }
+    fun engine(id: Long): Engine? = slots.engine(id)
+
+    fun execute(id: Long, task: Runnable): Boolean = slots.execute(id, task)
+
+    fun count(): Int = slots.count()
 
     fun closeSession(id: Long) {
-        val session: HostWorkerSession = lock.withLock { sessions[id] } ?: return
-        session.close()
-        lock.withLock { sessions.remove(id, session) }
+        val slot = slots.end(id) ?: return
+        val session: HostWorkerSession? = slot.opened.join()
+        session?.close()
+        slots.gone(id, slot)
     }
 
     override fun close() {
-        val owned = lock.withLock { sessions.values.toList() }
-        owned.forEach(HostWorkerSession::close)
-        lock.withLock { sessions.clear() }
-    }
-}
-
-private class HostWorkerSession(val engine: Engine) : AutoCloseable {
-    private val closed = AtomicBoolean()
-    private val executor = Executors.newFixedThreadPool(CodeModeHeap.maxExecutionsPerSession)
-
-    fun execute(task: Runnable): Boolean {
-        if (closed.get()) return false
-        return try {
-            executor.execute(task)
-            true
-        } catch (_: RejectedExecutionException) {
-            false
-        }
-    }
-
-    override fun close() {
-        if (closed.compareAndSet(false, true)) {
-            executor.shutdownNow()
-            try {
-                engine.close(true)
-            } finally {
-                executor.close()
-            }
-        }
+        slots.shutdown().mapNotNull { it.session }.forEach(HostWorkerSession::close)
     }
 }

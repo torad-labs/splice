@@ -43,6 +43,15 @@ internal object HostProtocol {
         put("busy", busy)
     }
 
+    fun capacity(): JsonObject = buildJsonObject {
+        put("type", "capacity")
+        put(
+            "detail",
+            "Code-mode host cap: ${CodeModeHeap.maxEnginesPerHost} engines; " +
+                "adjust quirks.code_mode_workers or quirks.code_mode_memory_mb",
+        )
+    }
+
     fun close(): JsonObject = command("close")
 
     private fun number(frame: JsonObject, key: String): Long =

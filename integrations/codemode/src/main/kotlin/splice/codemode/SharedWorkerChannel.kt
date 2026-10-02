@@ -42,6 +42,7 @@ internal class SharedWorkerChannel(
     val isClosed: Boolean get() = closed.get()
 
     init {
+        transport.afterExit { exited.complete(Unit) }
         scope.launch {
             try {
                 runInterruptible(ioDispatcher) { CodeModeFrames.parseReady(CodeModeWire.read(input)) }
@@ -80,7 +81,21 @@ internal class SharedWorkerChannel(
         return HostCellChannel(this, id, exited, session)
     }
 
-    suspend fun exchange(cell: Long, payload: JsonObject, session: Long = 1): JsonObject {
+    suspend fun control(
+        cell: Long,
+        payload: JsonObject,
+        session: Long = 1,
+        timeoutMs: Long = DEFAULT_WORKER_START_TIMEOUT_MS,
+    ): JsonObject = kotlinx.coroutines.withTimeoutOrNull(timeoutMs) {
+        exchange(cell, payload, session, timeoutMs)
+    } ?: throw IOException("Code-mode control reply timed out after $timeoutMs ms")
+
+    suspend fun exchange(
+        cell: Long,
+        payload: JsonObject,
+        session: Long = 1,
+        writeTimeoutMs: Long? = null,
+    ): JsonObject {
         ensureOpen()
         val request = sequence.incrementAndGet()
         val answer = CompletableDeferred<HostFrame>()
@@ -89,7 +104,16 @@ internal class SharedWorkerChannel(
         try {
             // Only the frame write is indivisible; cancelling an execution still cancels its await.
             withContext(NonCancellable) {
-                writeFrame(HostProtocol.frame(cell, request, payload, session))
+                val frame = HostProtocol.frame(cell, request, payload, session)
+                if (writeTimeoutMs == null) {
+                    writeFrame(frame)
+                } else {
+                    kotlinx.coroutines.withTimeoutOrNull(writeTimeoutMs) {
+                        writeFrame(frame)
+                        true
+                    }
+                        ?: throw IOException("Code-mode control write timed out after $writeTimeoutMs ms")
+                }
                 sent = true
             }
             return answer.await().payload
@@ -122,7 +146,7 @@ internal class SharedWorkerChannel(
     fun closeCell(id: Long, session: Long) {
         scope.launch {
             try {
-                if (!closed.get()) exchange(id, HostProtocol.close(), session)
+                if (!closed.get()) control(id, HostProtocol.close(), session)
             } catch (error: CancellationException) {
                 throw error
             } catch (_: IOException) {
@@ -140,7 +164,6 @@ internal class SharedWorkerChannel(
                 transport.close()
             } finally {
                 scope.cancel()
-                exited.complete(Unit)
             }
         }
     }

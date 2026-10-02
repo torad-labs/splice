@@ -6,12 +6,13 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import splice.codemode.CellChannel
-import splice.codemode.CodeModeFields
-import splice.codemode.HostProtocol
+import splice.codemode.SharedWorkerChannel
 import splice.core.util.ElapsedClock
+import splice.core.util.LogSink
 import splice.upstream.Ticker
 import splice.upstream.failure.CodeModeCapacityException
 import splice.upstream.failure.CodeModeWorkerLostException
+import java.io.IOException
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock as locked
@@ -32,13 +33,16 @@ internal class CodeModeHostPool(
     start: CodeModeHostStart,
     private val now: ElapsedClock,
     private val ticker: Ticker,
-    private val idleTimeoutMs: Long,
+    times: CodeModePoolTimes,
+    log: LogSink,
 ) : AutoCloseable {
+    private val idleTimeoutMs = times.idleMs
     private val lock = ReentrantLock()
     private val sequence = AtomicLong()
     private val boots = CodeModeHostBoots(scope, start, lock)
-    private val metrics = CodeModeHostMetrics()
-    private val retirement = CodeModeSessionRetirement(scope, lock, metrics)
+    private val metrics = CodeModeHostMetrics(times.controlMs)
+    private val drains = CodeModeHostDrains(scope, lock, admission, log)
+    private val retirement = CodeModeSessionRetirement(scope, lock, metrics, drains, times.controlMs)
     private val hosts = mutableListOf<CodeModePoolHost>()
     private val sessions = mutableMapOf<String, CodeModePoolSession>()
     private var closed = false
@@ -62,12 +66,7 @@ internal class CodeModeHostPool(
             return session.gate.withLock {
                 val host = lock.locked { boots.open(session.host) }.await()
                 ensureActive(session)
-                if (!session.initialized) {
-                    val reply = host.exchange(session.id, HostProtocol.command("session-open"), session.id)
-                    if (CodeModeFields.requiredString(reply, "type") == "capacity") throw CodeModeCapacityException()
-                    metrics.count(reply)
-                    session.initialized = true
-                }
+                if (!session.initialized) initialize(session, host)
                 val pipe = host.cell(sequence.incrementAndGet(), session.id)
                 lock.locked {
                     ensureActive(session, pipe)
@@ -78,6 +77,17 @@ internal class CodeModeHostPool(
             }
         } finally {
             if (!opened) release(session, null)
+        }
+    }
+
+    private suspend fun initialize(session: CodeModePoolSession, host: SharedWorkerChannel) {
+        try {
+            metrics.admit(session, host, admission)
+        } catch (error: CodeModeCapacityException) {
+            throw error
+        } catch (error: IOException) {
+            drains.failed(session.host, host)
+            throw error
         }
     }
 
@@ -102,14 +112,15 @@ internal class CodeModeHostPool(
     private fun place(key: String): CodeModePlacement {
         check(!closed) { "Code-mode host pool is closed" }
         sessions[key]?.let {
+            if (it.host.draining) throw drains.capacity()
             it.users++
             return CodeModePlacement.Acquired(it)
         }
         val host = admission.select(hosts)
         if (host == null) {
-            val victim = sessions.values.filter { it.users == 0 }.minByOrNull { it.lastUse }
-                ?: hosts.flatMap { it.sessions }.firstOrNull { it.closing }
-                ?: throw admission.capacity()
+            val victim = sessions.values.filter { it.users == 0 && !it.host.draining }.minByOrNull { it.lastUse }
+                ?: hosts.filterNot { it.draining }.flatMap { it.sessions }.firstOrNull { it.closing }
+                ?: throw if (hosts.any { it.draining }) drains.capacity() else admission.capacity()
             retire(victim)
             return CodeModePlacement.Reclaim(victim)
         }
@@ -130,6 +141,7 @@ internal class CodeModeHostPool(
             session.users--
             session.used(now())
         }
+        drains.closeWhenDrained(session.host)
     }
 
     fun closeSession(key: String) {

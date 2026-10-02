@@ -140,7 +140,7 @@ internal class CodexResponsesArm(
                             advanceTimeoutMs = ctx.providerCfg.quirks.codeModeTimeoutMs ?: DEFAULT_ADVANCE_TIMEOUT_MS,
                             heapMb = ctx.providerCfg.quirks.codeModeHeapMb ?: DEFAULT_HEAP_MB,
                             memoryBudgetMb = ctx.providerCfg.quirks.codeModeMemoryMb ?: DEFAULT_POOL_MEMORY_MB,
-                        )
+                        ).also { it.observeHostLifecycle(HeadScopedLogs.headScopedLog(ctx.key, log)) }
                     },
                     state = CodeModeStateLocation(
                         dir = statePaths.headsDir.resolve(ctx.key).resolve(CODE_MODE_DIR),

@@ -6,19 +6,17 @@ import kotlinx.serialization.json.JsonObject
 import org.graalvm.polyglot.Engine
 import org.graalvm.polyglot.PolyglotException
 import splice.codemode.engine.WorkerSession
+import splice.codemode.host.HostWorkerControls
 import splice.upstream.failure.CodeModeInfrastructureCategory
 import splice.upstream.failure.CodeModeInfrastructureClass
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
-// why: control acknowledgments and cancellation must remain live when every bounded guest lane is executing.
-private const val CONTROL_THREADS = 2
 private val CONTROL_FRAMES = setOf("session-open", "session-close", "engines", "close")
 
 internal object SharedCodeModeWorker {
@@ -39,20 +37,20 @@ internal object SharedCodeModeWorker {
     }
 }
 
-private class HostWorkerDispatcher(
+internal class HostWorkerDispatcher(
     private val output: DataOutputStream,
+    private val sessions: HostWorkerSessions = HostWorkerSessions(),
 ) : AutoCloseable {
     private val cells = ConcurrentHashMap<Long, HostWorkerCell>()
-    private val sessions = HostWorkerSessions()
     private val writes = ReentrantLock()
-    private val controls = Executors.newFixedThreadPool(CONTROL_THREADS)
+    private val controls = HostWorkerControls(output, writes)
 
     fun dispatch(frame: HostFrame) {
         val type = CodeModeFields.requiredString(frame.payload, "type")
         if (type in CONTROL_FRAMES) {
-            controls.execute { respond(frame, control(frame, type)) }
+            controls.execute(frame, type) { respond(frame, control(frame, type)) }
         } else if (!dispatchGuest(frame, type)) {
-            controls.execute {
+            controls.execute(frame, type) {
                 // Legacy raw-host starts have no preceding session-open. Warm them on control, never run guest code there.
                 val starting = type == "start" || type == StreamingCodeModeWire.START
                 val opened = starting && sessions.open(frame.session)
@@ -70,7 +68,7 @@ private class HostWorkerDispatcher(
         "session-open" -> if (sessions.open(frame.session)) {
             HostProtocol.count(sessions.count())
         } else {
-            HostProtocol.command("capacity")
+            HostProtocol.capacity()
         }
         "session-close" -> {
             cells.entries.filter { it.value.owner == frame.session }.forEach { (id, cell) ->
@@ -109,7 +107,6 @@ private class HostWorkerDispatcher(
             cells.values.forEach(HostWorkerCell::close)
         } finally {
             sessions.close()
-            controls.shutdownNow()
             controls.close()
         }
     }

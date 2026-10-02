@@ -33,7 +33,7 @@ internal class CodeModePoolAdmission(
     /** Called under the placement lock; retiring engines retain their reservation until acknowledged closed. */
     fun select(hosts: MutableList<CodeModePoolHost>): CodeModePoolHost? {
         val engines = hosts.sumOf(CodeModePoolHost::load)
-        val least = hosts.minByOrNull(CodeModePoolHost::load)
+        val least = hosts.filterNot { it.draining }.minByOrNull(CodeModePoolHost::load)
         val occupied = least?.load() != 0
         val addHost = hosts.size < maxWorkers && occupied
         if (addHost && fits(hosts.size + 1, engines + 1)) {

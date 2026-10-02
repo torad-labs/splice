@@ -14,8 +14,10 @@ import splice.codemode.host.CodeModeHostPool
 import splice.codemode.host.CodeModeHostStart
 import splice.codemode.host.CodeModePoolAdmission
 import splice.codemode.host.CodeModePoolLease
+import splice.codemode.host.CodeModePoolTimes
 import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock
+import splice.core.util.LogSink
 import splice.upstream.LifecycleScope
 import splice.upstream.Ticker
 import splice.upstream.codemode.CodeModeCell
@@ -71,6 +73,8 @@ public class JvmCodeModeRuntime(
     ticker: Ticker = ProcessTicker(),
     memoryBudgetMb: Long = DEFAULT_POOL_MEMORY_MB,
 ) : CodeModeRuntime {
+    @Volatile private var hostLifecycleLog = LogSink {}
+
     private val closed = AtomicBoolean()
     private val scope = LifecycleScope(ioDispatcher)
 
@@ -99,9 +103,15 @@ public class JvmCodeModeRuntime(
         CodeModeHostStart(launcher::open),
         now,
         ticker,
-        idleTimeoutMs,
+        CodeModePoolTimes(idleTimeoutMs, workerStartTimeoutMs),
+        LogSink { hostLifecycleLog(it) },
     )
     private val cells = CodeModeCellStarts(pool, closed)
+
+    /** Observes bounded host quarantine/replacement events; guest source and results are never included. */
+    public fun observeHostLifecycle(log: LogSink) {
+        hostLifecycleLog = log
+    }
 
     override suspend fun start(source: String, tools: Set<String>, descriptions: Map<String, String>): CodeModeCell =
         startSession(LEGACY_SESSION, source, tools, descriptions)

@@ -14,6 +14,11 @@
       "subsystems": 0,
       "reason": "V4-254, 2026-09-30: models supplies provider rows, pinned ids and cards in AddProfiles.toml; discoverRoster selects independent tier mappings versus an allowlist in headExtras"
     },
+    "integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughQuirks.kt PassthroughQuirks": {
+      "params": 13,
+      "subsystems": 0,
+      "reason": "V4-456, 2026-10-02: eagerToolInputs selects the streaming custom-tool input policy on its own; generic profiles stay neutral"
+    },
     "app/src/main/kotlin/splice/app/head/HeadStores.kt HeadStores": {
       "params": 10,
       "subsystems": 7

@@ -248,8 +248,7 @@ internal class CodexCodeModeStore(
             cells.forEach { cell ->
                 cell.retainedBytes = json.encodeToString(cell).encodeToByteArray().size.toLong()
             }
-            val file = fileOf(key)
-            return if (Files.exists(file) && !CodeModeStateJournal.outgrown(file, prior.liveBytesWith(cells))) {
+            return if (CodeModeStateJournal.appendable(fileOf(key), prior.liveBytesWith(cells))) {
                 json.encodeToString(CodeModeStateDelta(key, cells, emptySet(), prior.expired))
             } else {
                 // Missing-file recovery must recreate every committed cell before another append, and an
@@ -275,12 +274,9 @@ internal class CodexCodeModeStore(
             } else if (conversation == null) {
                 remove(item.key)
             } else {
-                val file = fileOf(item.key)
+                val live = CodeModeStateJournal.liveBytes(conversation, json)
                 val prior = kept[item.key]?.snapshot()
-                    .takeIf {
-                        Files.exists(file) &&
-                            !CodeModeStateJournal.outgrown(file, CodeModeStateJournal.liveBytes(conversation, json))
-                    }
+                    ?.takeIf { CodeModeStateJournal.appendable(fileOf(item.key), live) }
                 val text = CodeModeStateJournal.encode(item.key, prior, conversation, json)
                 bytes = text.toByteArray().size
                 secureDirectory()
@@ -309,15 +305,13 @@ internal class CodexCodeModeStore(
     private fun read(file: Path): Pair<String, CodeModePersistedState>? {
         val why = try {
             val conversation = CodeModeStateJournal.read(file, json)
-            conversation.records.forEach { record ->
-                record.retainedBytes = json.encodeToString(record).encodeToByteArray().size.toLong()
-            }
+            // Measuring the live cells keeps each record's size on it, where retention reads it.
+            val live = CodeModeStateJournal.liveBytes(conversation, json)
             val key = (conversation.records.map { it.key } + conversation.expired.map { it.key }).distinct()
                 .singleOrNull()
             if (key != null && fileOf(key) == file) {
                 // Each step re-appends its whole cell, so a long conversation's journal outgrows its cells
                 // (2 GB over 4 MB on Oct 1); one that has is rewritten as one checkpoint as it loads.
-                val live = CodeModeStateJournal.liveBytes(conversation, json)
                 if (CodeModeStateJournal.outgrown(file, live)) checkpoint(key, conversation, "it stays")
                 return key to conversation
             }

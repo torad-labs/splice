@@ -30,7 +30,13 @@ internal data class CodeModeStateDelta(
 /** Checkpoints remain byte-compatible with the old single JSON object. Later lines are cell deltas. */
 internal object CodeModeStateJournal {
     private const val DELTA_START = "{\"key\":"
+
+    // why: under 8 MiB a full rewrite costs less than the bookkeeping to avoid it, so small journals
+    // never compact; Oct 1's 2 GB file held 4 MB of live cells.
     private const val COMPACT_FLOOR_BYTES = 8L * 1024 * 1024
+
+    // why: a journal is rewritten once it holds four times its live cells, so the rewrite's cost is
+    // amortized over at least three journals' worth of appends.
     private const val COMPACT_RATIO = 4
     private val codec = Json { encodeDefaults = true }
     fun delta(
@@ -80,9 +86,11 @@ internal object CodeModeStateJournal {
     }
 
     /** Streams the journal a line at a time, so loading holds the live state and one entry, never the
-     *  whole file: a 2 GB journal read whole into one string failed a 2 GB daemon at boot (Oct 1). */
+     *  whole file: a 2 GB journal read whole into one string failed a 2 GB daemon at boot (Oct 1). The
+     *  reader replaces malformed bytes as the whole-file decode did: a write cut inside a multi-byte
+     *  character leaves a torn last line that is dropped, never a journal that cannot load. */
     fun read(path: Path, json: Json): CodeModePersistedState =
-        Files.newBufferedReader(path, Charsets.UTF_8).use { reader ->
+        Files.newInputStream(path).bufferedReader(Charsets.UTF_8).use { reader ->
             decodeLines(reader.lineSequence().iterator(), endsWithNewline(path), json)
         }
 
@@ -165,6 +173,9 @@ internal object CodeModeStateJournal {
         }
         return size > COMPACT_FLOOR_BYTES && size > liveBytes * COMPACT_RATIO
     }
+
+    /** A delta may append to [path]: it exists, and it has not outgrown [liveBytes] of live cells. */
+    fun appendable(path: Path, liveBytes: Long): Boolean = Files.exists(path) && !outgrown(path, liveBytes)
 
     /** The encoded bytes of [state]'s records, measuring and keeping each record's size the first time. */
     fun liveBytes(state: CodeModePersistedState, json: Json): Long = state.records.sumOf { record ->

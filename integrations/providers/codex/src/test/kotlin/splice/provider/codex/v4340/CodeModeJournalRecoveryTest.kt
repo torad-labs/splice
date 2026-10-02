@@ -9,11 +9,10 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
-import splice.provider.codex.CodeModeBridgeConfig
+import splice.provider.codex.CodeModeExpiredSnapshot
 import splice.provider.codex.CodeModePersistedState
 import splice.provider.codex.CodeModeRecords
 import splice.provider.codex.CodeModeStateLocation
-import splice.provider.codex.CodexCodeModeRegistry
 import splice.provider.codex.CodexCodeModeStore
 import splice.provider.codex.state.CodeModeStateDelta
 import splice.provider.codex.state.CodeModeStateJournal
@@ -21,7 +20,6 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
-import kotlin.time.Duration.Companion.minutes
 
 private const val BLOATED_BYTES = 9L * 1024 * 1024
 private const val MAX_COMPACTED_BYTES = 64L * 1024
@@ -78,6 +76,21 @@ class CodeModeJournalRecoveryTest {
         }
     }
 
+    /** A full disk or a kill can cut a write inside a multi-byte character. The torn tail is dropped and
+     *  the journal still loads; a strict decoder threw and the next save overwrote every cell. */
+    @Test
+    fun `a delta torn inside a multi-byte character keeps the committed checkpoint`() {
+        val file = dir.resolve("torn-utf8.json")
+        val record = CodeModeRecords.of("alpha", 1).snapshot()
+        CodeModeStateJournal.write(file, Json.encodeToString(CodeModePersistedState(records = listOf(record))))
+        val delta = Json.encodeToString(
+            CodeModeStateDelta("alpha", listOf(record.copy(output = "café")), emptySet(), emptyList()),
+        ).encodeToByteArray()
+        val tear = delta.indexOfFirst { it == 0xC3.toByte() } + 1
+        Files.write(file, delta.copyOf(tear), StandardOpenOption.APPEND)
+        assertEquals(record.id, CodeModeStateJournal.read(file, Json).records.single().id)
+    }
+
     @Test
     fun `an uncommitted tail never hides a corrupt committed entry`() {
         val file = dir.resolve("corrupt.json")
@@ -101,69 +114,63 @@ class CodeModeJournalRecoveryTest {
     }
 
     /** Oct 1: each step re-appended its whole cell and only a removal compacted, so one conversation's
-     *  journal reached 2 GB over 4 MB of live cells and a 2 GB daemon died reading it at boot. */
+     *  journal reached 2 GB over 4 MB of live cells and a 2 GB daemon died reading it at boot. Each case
+     *  holds two cells and an expiry marker, so a compaction that drops either fails. */
     @Test
     fun `a journal far past its live cells is compacted when it loads`() {
-        val record = CodeModeRecords.of("alpha", 1, UPDATED_AT)
-        registry().run {
-            assertTrue(add(record))
-            complete(record, "done")
-        }
-        val file = bloated()
-        registry()
-        assertCompactedTo(file, "done")
+        val (_, file) = bloatedConversation()
+        store().load()
+        assertCompacted(file, listOf(null, "kept"))
     }
 
     @Test
     fun `a cell write compacts a journal that outgrew its cells while the head ran`() {
-        val registry = registry()
-        val record = CodeModeRecords.of("alpha", 1, UPDATED_AT)
-        assertTrue(registry.add(record))
-        registry.complete(record, "done")
-        val file = bloated()
-        registry.complete(record, "again")
-        assertCompactedTo(file, "again")
+        val (store, file) = bloatedConversation()
+        first.output = "again"
+        store.save(listOf(first, second), listOf(marker), dirtyKeys = setOf("alpha"), changedRecord = first)
+        assertCompacted(file, listOf("again", "kept"))
     }
 
     @Test
     fun `a whole conversation save compacts a journal that outgrew its cells while the head ran`() {
-        val store = CodexCodeModeStore(location(), Json { encodeDefaults = true }, {})
-        store.load()
-        val record = CodeModeRecords.of("alpha", 1, UPDATED_AT)
-        store.save(listOf(record), emptyList())
-        val file = bloated()
-        record.output = "whole"
-        store.save(listOf(record), emptyList())
-        assertCompactedTo(file, "whole")
+        val (store, file) = bloatedConversation()
+        first.output = "whole"
+        store.save(listOf(first, second), listOf(marker))
+        assertCompacted(file, listOf("whole", "kept"))
     }
 
-    /** Re-appends the one conversation's cell until its journal passes the compaction floor, as each step of
-     *  a long conversation did before compaction. */
-    private fun bloated(): Path {
+    private val first = CodeModeRecords.of("alpha", 1, UPDATED_AT)
+    private val second = CodeModeRecords.of("alpha", 2, UPDATED_AT + 1).apply { output = "kept" }
+    private val marker = CodeModeExpiredSnapshot("alpha", "digest-gone", setOf("gone-result"), UPDATED_AT - 1)
+
+    /** A store holding [first], [second] and [marker], whose journal then re-appends [first]'s cell until
+     *  it passes the compaction floor, as each step of a long conversation did before compaction. */
+    private fun bloatedConversation(): Pair<CodexCodeModeStore, Path> {
+        val store = store().also { it.load() }
+        store.save(listOf(first, second), listOf(marker))
         val file = Files.list(location().dir).use { files ->
             files.toList().single { it.fileName.toString().endsWith(".json") }
         }
-        val cell = CodeModeStateJournal.read(file, Json).records.single()
-        val delta = Json.encodeToString(CodeModeStateDelta("alpha", listOf(cell), emptySet(), emptyList())) + "\n"
+        val cell = CodeModeStateJournal.read(file, Json).records.first()
+        val delta = Json.encodeToString(CodeModeStateDelta("alpha", listOf(cell), emptySet(), listOf(marker))) + "\n"
         Files.writeString(file, delta.repeat((BLOATED_BYTES / delta.length).toInt() + 1), StandardOpenOption.APPEND)
         assertTrue(Files.size(file) > BLOATED_BYTES)
-        return file
+        return store to file
     }
 
-    /** [file] is one small checkpoint holding exactly these outputs, in record order. */
-    private fun assertCompactedTo(file: Path, vararg outputs: String?) {
+    /** [file] is one small checkpoint holding both cells, with these outputs in order, and the marker. */
+    private fun assertCompacted(file: Path, outputs: List<String?>) {
         assertTrue(Files.size(file) < MAX_COMPACTED_BYTES, "the journal stayed ${Files.size(file)} bytes")
         assertEquals(1, Files.readAllLines(file).count(String::isNotBlank), "a compacted journal is one checkpoint")
-        assertEquals(outputs.toList(), CodeModeStateJournal.read(file, Json).records.map { it.output })
+        val state = CodeModeStateJournal.read(file, Json)
+        assertEquals(listOf(first.id, second.id), state.records.map { it.id })
+        assertEquals(outputs, state.records.map { it.output })
+        assertEquals(listOf(marker), state.expired)
     }
 
     private fun location() = CodeModeStateLocation(dir.resolve("state"), dir.resolve("legacy.json"))
 
-    private fun registry() = CodexCodeModeRegistry(
-        CodeModeBridgeConfig({ error("no script runs in a journal test") }, location()),
-        Json { encodeDefaults = true },
-        5.minutes,
-    )
+    private fun store() = CodexCodeModeStore(location(), Json { encodeDefaults = true }, {})
 
     @Test
     fun `committed deletion purges prior payload bytes and does not resurrect its cell`() {

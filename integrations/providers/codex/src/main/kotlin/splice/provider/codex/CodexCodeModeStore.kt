@@ -110,7 +110,9 @@ internal class CodexCodeModeStore(
         readDirectory()
         val legacy = readLegacy()
         val carried = legacy.orEmpty().filterKeys { !kept.containsKey(it) }
-        if (legacy != null && carried.count { (key, conversation) -> carry(key, conversation) } == carried.size) {
+        val stays = "${legacyFile.fileName} stays"
+        val written = carried.count { (key, conversation) -> checkpoint(key, conversation, stays) }
+        if (legacy != null && written == carried.size) {
             removeLegacy()
         }
         return merged(kept.mapValues { it.value.snapshot() } + carried)
@@ -246,10 +248,12 @@ internal class CodexCodeModeStore(
             cells.forEach { cell ->
                 cell.retainedBytes = json.encodeToString(cell).encodeToByteArray().size.toLong()
             }
-            return if (Files.exists(fileOf(key))) {
+            val file = fileOf(key)
+            return if (Files.exists(file) && !CodeModeStateJournal.outgrown(file, prior.liveBytesWith(cells))) {
                 json.encodeToString(CodeModeStateDelta(key, cells, emptySet(), prior.expired))
             } else {
-                // Missing-file recovery must recreate every committed cell before another append.
+                // Missing-file recovery must recreate every committed cell before another append, and an
+                // outgrown journal is replaced by its live cells.
                 CodeModeStateJournal.encode(key, null, prior.withCells(cells), json)
             }
         }
@@ -266,12 +270,17 @@ internal class CodexCodeModeStore(
                 secureDirectory()
                 writer.write(fileOf(item.key), text)
                 val indexed = checkNotNull(kept[item.key])
-                cells.forEach { indexed.records[it.id] = it }
+                indexed.put(cells)
                 indexed.dirty.clear()
             } else if (conversation == null) {
                 remove(item.key)
             } else {
-                val prior = kept[item.key]?.snapshot().takeIf { Files.exists(fileOf(item.key)) }
+                val file = fileOf(item.key)
+                val prior = kept[item.key]?.snapshot()
+                    .takeIf {
+                        Files.exists(file) &&
+                            !CodeModeStateJournal.outgrown(file, CodeModeStateJournal.liveBytes(conversation, json))
+                    }
                 val text = CodeModeStateJournal.encode(item.key, prior, conversation, json)
                 bytes = text.toByteArray().size
                 secureDirectory()
@@ -299,14 +308,19 @@ internal class CodexCodeModeStore(
      *  is removed, so that conversation's scripts go; one that could not be read stays for the next start. */
     private fun read(file: Path): Pair<String, CodeModePersistedState>? {
         val why = try {
-            val text = String(Files.readAllBytes(file), Charsets.UTF_8)
-            val conversation = CodeModeStateJournal.decode(text, json)
+            val conversation = CodeModeStateJournal.read(file, json)
             conversation.records.forEach { record ->
                 record.retainedBytes = json.encodeToString(record).encodeToByteArray().size.toLong()
             }
             val key = (conversation.records.map { it.key } + conversation.expired.map { it.key }).distinct()
                 .singleOrNull()
-            if (key != null && fileOf(key) == file) return key to conversation
+            if (key != null && fileOf(key) == file) {
+                // Each step re-appends its whole cell, so a long conversation's journal outgrows its cells
+                // (2 GB over 4 MB on Oct 1); one that has is rewritten as one checkpoint as it loads.
+                val live = CodeModeStateJournal.liveBytes(conversation, json)
+                if (CodeModeStateJournal.outgrown(file, live)) checkpoint(key, conversation, "it stays")
+                return key to conversation
+            }
             "it does not hold exactly the one conversation its name says"
         } catch (failure: IOException) {
             log(
@@ -341,14 +355,16 @@ internal class CodexCodeModeStore(
         }
     }
 
-    private fun carry(key: String, conversation: CodeModePersistedState): Boolean = try {
+    /** Writes [conversation] to its file as one checkpoint. On failure what [stays] is logged, and the
+     *  conversation's next save writes it. */
+    private fun checkpoint(key: String, conversation: CodeModePersistedState, stays: String): Boolean = try {
         secureDirectory()
         write(Encoded(key, conversation, CodeModeStateJournal.encode(key, null, conversation, json)))
         true
     } catch (failure: IOException) {
         log(
             "[code-mode] conversation ${key.take(CONVERSATION_LOG_CHARS)} not written to $dir " +
-                "(${SafeFailureText.render(failure)}): ${legacyFile.fileName} stays, and the next save writes it",
+                "(${SafeFailureText.render(failure)}): $stays, and the next save writes it",
         )
         false
     }

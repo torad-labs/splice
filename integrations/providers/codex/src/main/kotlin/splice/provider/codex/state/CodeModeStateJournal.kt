@@ -29,6 +29,9 @@ internal data class CodeModeStateDelta(
 
 /** Checkpoints remain byte-compatible with the old single JSON object. Later lines are cell deltas. */
 internal object CodeModeStateJournal {
+    private const val DELTA_START = "{\"key\":"
+    private const val COMPACT_FLOOR_BYTES = 8L * 1024 * 1024
+    private const val COMPACT_RATIO = 4
     private val codec = Json { encodeDefaults = true }
     fun delta(
         key: String,
@@ -52,7 +55,7 @@ internal object CodeModeStateJournal {
 
     /** Called under the conversation lock. First write creates a 0600 checkpoint; appends are forced. */
     fun write(path: Path, text: String) {
-        if (!text.startsWith("{\"key\":")) {
+        if (!text.startsWith(DELTA_START)) {
             SecureFile.writeAtomic0600(path, text + "\n")
         } else {
             // A delta is not a checkpoint. Refuse this race so the caller recreates its full durable cache.
@@ -69,61 +72,108 @@ internal object CodeModeStateJournal {
     /** The append primitive heals telemetry tears by separating lines. Durable state must remove
      *  an uncommitted fragment before retrying, not turn it into a corrupt interior entry. */
     private fun trimTornTail(path: Path) {
-        val complete = FileChannel.open(path, StandardOpenOption.READ).use { channel ->
-            if (channel.size() == 0L) return@use false
-            val byte = ByteBuffer.allocate(1)
-            channel.position(channel.size() - 1)
-            channel.read(byte)
-            byte.array()[0] == '\n'.code.toByte()
-        }
-        if (!complete) {
+        if (!endsWithNewline(path)) {
             // The only full-file rewrite on the request path is recovery or a legacy checkpoint
             // without a terminating newline. Ordinary appends inspect only the final byte.
             SecureFile.writeAtomic0600(path, codec.encodeToString(read(path, codec)) + "\n")
         }
     }
 
-    fun read(path: Path, json: Json): CodeModePersistedState = decode(Files.readString(path), json)
+    /** Streams the journal a line at a time, so loading holds the live state and one entry, never the
+     *  whole file: a 2 GB journal read whole into one string failed a 2 GB daemon at boot (Oct 1). */
+    fun read(path: Path, json: Json): CodeModePersistedState =
+        Files.newBufferedReader(path, Charsets.UTF_8).use { reader ->
+            decodeLines(reader.lineSequence().iterator(), endsWithNewline(path), json)
+        }
 
-    fun decode(text: String, json: Json): CodeModePersistedState {
+    /** Only newline-terminated entries commit: when [committed] is false the final line is a torn
+     *  fragment, which may precede even a delta's key field, and it is never applied. */
+    private fun decodeLines(lines: Iterator<String>, committed: Boolean, json: Json): CodeModePersistedState {
         // Older daemons and operators may have formatted the checkpoint over several lines.
-        try {
-            return json.decodeFromString<CodeModePersistedState>(text)
-        } catch (_: IllegalArgumentException) {
-            // A journal has more than one root object. Its first complete line is the checkpoint.
+        val head = ArrayList<String>()
+        var line: String? = null
+        while (line == null && lines.hasNext()) {
+            val next = lines.next()
+            if (next.startsWith(DELTA_START)) line = next else head += next
         }
-        // A tear may precede even the delta's key field. Only newline-terminated entries commit;
-        // discard any final fragment before looking for a delta, including a torn first append.
-        val committed = if (text.endsWith("\n")) text else text.substring(0, text.lastIndexOf('\n') + 1)
-        try {
-            return json.decodeFromString<CodeModePersistedState>(committed)
-        } catch (_: IllegalArgumentException) {
-            // Committed deltas remain to apply below.
-        }
-        val lines = committed.lineSequence().filter(String::isNotBlank).toList()
-        val start = lines.indexOfFirst { it.startsWith("{\"key\":") }
-        require(start > 0) { "code-mode journal has no checkpoint" }
-        var state = json.decodeFromString<CodeModePersistedState>(lines.take(start).joinToString("\n"))
+        if (line == null) return checkpointOnly(head, committed, json)
+        val checkpoint = head.joinToString("\n")
+        require(checkpoint.isNotBlank()) { "code-mode journal has no checkpoint" }
+        return replayed(json.decodeFromString(checkpoint), line, lines, committed, json)
+    }
+
+    /** [checkpoint] with [first] and every later delta applied, except a torn final line. */
+    private fun replayed(
+        checkpoint: CodeModePersistedState,
+        first: String,
+        lines: Iterator<String>,
+        committed: Boolean,
+        json: Json,
+    ): CodeModePersistedState {
+        var state = checkpoint
         val key = (state.records.map { it.key } + state.expired.map { it.key }).distinct().single()
-        val changes = lines.drop(start)
-        changes.forEach { line ->
-            // The torn tail is already excluded. Every remaining line committed and must decode.
-            val change = json.decodeFromString<CodeModeStateDelta>(line)
-            require(change.key == key && change.records.all { it.key == key } && change.expired.all { it.key == key }) {
-                "code-mode journal crosses conversation keys"
-            }
-            val records = state.records.associateByTo(linkedMapOf(), CodeModeRecordSnapshot::id)
-            change.removed.forEach(records::remove)
-            change.records.forEach { records[it.id] = it }
-            state = CodeModePersistedState(records = records.values.toList(), expired = change.expired)
+        var line: String? = first
+        while (line != null) {
+            val following = if (lines.hasNext()) lines.next() else null
+            if (following == null && !committed) break
+            // Every line before the torn tail committed and must decode.
+            if (line.isNotBlank()) state = applied(state, key, json.decodeFromString<CodeModeStateDelta>(line))
+            line = following
         }
         return state
     }
 
-    fun encode(key: String, prior: CodeModePersistedState?, next: CodeModePersistedState, json: Json): String {
-        next.records.filter { it.retainedBytes == null }.forEach { record ->
-            record.retainedBytes = json.encodeToString(record).encodeToByteArray().size.toLong()
+    private fun checkpointOnly(head: List<String>, committed: Boolean, json: Json): CodeModePersistedState =
+        try {
+            json.decodeFromString<CodeModePersistedState>(head.joinToString("\n"))
+        } catch (whole: IllegalArgumentException) {
+            if (committed) throw whole
+            json.decodeFromString<CodeModePersistedState>(head.dropLast(1).joinToString("\n"))
         }
+
+    private fun applied(
+        state: CodeModePersistedState,
+        key: String,
+        change: CodeModeStateDelta,
+    ): CodeModePersistedState {
+        require(change.key == key && change.records.all { it.key == key } && change.expired.all { it.key == key }) {
+            "code-mode journal crosses conversation keys"
+        }
+        val records = state.records.associateByTo(linkedMapOf(), CodeModeRecordSnapshot::id)
+        change.removed.forEach(records::remove)
+        change.records.forEach { records[it.id] = it }
+        return CodeModePersistedState(records = records.values.toList(), expired = change.expired)
+    }
+
+    private fun endsWithNewline(path: Path): Boolean =
+        FileChannel.open(path, StandardOpenOption.READ).use { channel ->
+            if (channel.size() == 0L) return@use false
+            val byte = ByteBuffer.allocate(1)
+            channel.position(channel.size() - 1)
+            channel.read(byte)
+            byte.array()[0] == '\n'.code.toByte()
+        }
+
+    /** A journal past [COMPACT_RATIO] times its live state, once past [COMPACT_FLOOR_BYTES], is rewritten as
+     *  one checkpoint. Each step re-appends its whole cell and only a removal compacted, so a long
+     *  conversation's file grew without bound: 2 GB holding 4 MB of live cells on Oct 1. */
+    fun outgrown(path: Path, liveBytes: Long): Boolean {
+        val size = try {
+            Files.size(path)
+        } catch (_: NoSuchFileException) {
+            return false
+        }
+        return size > COMPACT_FLOOR_BYTES && size > liveBytes * COMPACT_RATIO
+    }
+
+    /** The encoded bytes of [state]'s records, measuring and keeping each record's size the first time. */
+    fun liveBytes(state: CodeModePersistedState, json: Json): Long = state.records.sumOf { record ->
+        record.retainedBytes ?: json.encodeToString(record).encodeToByteArray().size.toLong()
+            .also { record.retainedBytes = it }
+    }
+
+    fun encode(key: String, prior: CodeModePersistedState?, next: CodeModePersistedState, json: Json): String {
+        liveBytes(next, json)
         if (prior == null) return json.encodeToString(next)
         val change = delta(key, prior, next)
         // Retention deletes payload bytes, not merely their index. Compact deletions so old scripts

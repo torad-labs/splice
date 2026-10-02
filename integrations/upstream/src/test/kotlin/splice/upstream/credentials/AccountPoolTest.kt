@@ -403,6 +403,56 @@ class AccountPoolTest {
         assertFalse(readUnderMonitor, "credential evidence must be read off the sticky-session monitor")
     }
 
+    @Test
+    fun `published horizons use only exhausted windows and wait for the last active reset`() {
+        for ((used, reset) in listOf(10.0 to 8200L, 100.0 to 999L, 100.0 to 8200L)) {
+            val fixture = Fixture()
+            val account = fixture.account("primary", primary = true)
+            fixture.setQuota(
+                account,
+                QuotaSnapshot(
+                    fiveHour = QuotaWindow(used, reset, 18000L),
+                    sevenDay = QuotaWindow(100.0, 433000L, 604800L),
+                ),
+            )
+            val pool = fixture.pool(account)
+            assertEquals(433000L, pool.view(null).blockedUntilEpochSecondsByLabel["primary"])
+            val published = pool.view(null).blockedUntilEpochSecondsByLabel["primary"]
+            assertEquals(pool.exhausted(null).earliestResetEpochSeconds, published)
+            fixture.advanceWall(433000000L)
+            assertEquals(emptyMap<String, Long>(), pool.view(null).blockedUntilEpochSecondsByLabel)
+            assertTrue(pool.view(null).accounts.single().available)
+        }
+    }
+
+    @Test
+    fun `published horizons include credential exclusion and provider cooldown without a second calculation`() {
+        val fixture = Fixture()
+        val account = fixture.account("primary", primary = true)
+        val pool = fixture.pool(account)
+        pool.chosen("session").markCredentialUnavailable()
+        val excluded = requireNotNull(pool.view(null).accounts.single().authExcludedUntilEpochMillis)
+        val authSeconds = excluded / 1000 + if (excluded % 1000 == 0L) 0 else 1
+        assertEquals(authSeconds, pool.view(null).blockedUntilEpochSecondsByLabel["primary"])
+        fixture.setQuota(account, fixture.quota(five = 100.0, reset = 2000L))
+        assertEquals(2000L, pool.view(null).blockedUntilEpochSecondsByLabel["primary"])
+        account.cooldown.markUnavailable(2000000L)
+        assertEquals(3000L, pool.view(null).blockedUntilEpochSecondsByLabel["primary"])
+        val published = pool.view(null).blockedUntilEpochSecondsByLabel["primary"]
+        assertEquals(pool.exhausted(null).earliestResetEpochSeconds, published)
+    }
+
+    @Test
+    fun `pool reset is the earliest published account horizon not the earliest window`() {
+        val fixture = Fixture()
+        val primary = fixture.account("primary", primary = true, five = 100.0, weekly = 100.0, reset = 5000L)
+        val backup = fixture.account("backup", five = 100.0, reset = 2000L)
+        val pool = fixture.pool(primary, backup)
+        val published = pool.view(null).blockedUntilEpochSecondsByLabel
+        assertEquals(mapOf("primary" to 5000L, "backup" to 2000L), published)
+        assertEquals(published.values.minOrNull(), pool.exhausted(null).earliestResetEpochSeconds)
+    }
+
     internal class Fixture {
         val now = AtomicReference(1_000_000L)
         private val quotas = mutableMapOf<PoolAccount, AtomicReference<QuotaSnapshot>>()

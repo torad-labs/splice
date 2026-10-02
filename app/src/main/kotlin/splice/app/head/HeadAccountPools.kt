@@ -76,6 +76,7 @@ internal class HeadAccountPools {
 
     private fun controlView(view: AccountPoolView): HeadAccountPoolView = HeadAccountPoolView(
         selectedLabel = view.selectedLabel,
+        blockedUntilEpochSecondsByLabel = view.blockedUntilEpochSecondsByLabel,
         accounts = view.accounts.map { account ->
             HeadAccountView(
                 label = account.label,

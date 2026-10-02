@@ -42,6 +42,8 @@ public data class HeadAccountPoolView(
     /** V4-132: the label [splice.upstream.credentials.AccountPool.select] would choose next, by the real selector
      *  order — GET /api/accounts "the next target by the real selector order" (FEATURES.md §4.5). */
     val nextTargetLabel: String? = null,
+    /** Authoritative per-account hold deadlines from pool selection, not raw quota window resets. */
+    val blockedUntilEpochSecondsByLabel: Map<String, Long> = emptyMap(),
 ) {
     /** Null when the selection is unknown: a rejected selection never names the primary, on any
      *  surface (status line, usage payload, CLI text, doctor report alike). */

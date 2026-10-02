@@ -10,6 +10,8 @@ import splice.core.util.WallClock
 import splice.upstream.credentials.AccountLabelPolicy
 import splice.upstream.credentials.AccountResetText
 import kotlin.math.roundToInt
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 public class AccountPoolText(private val now: WallClock = WallClock { System.currentTimeMillis() }) {
 
@@ -38,8 +40,13 @@ public class AccountPoolText(private val now: WallClock = WallClock { System.cur
         }
         val exhausted = safe.accounts.isNotEmpty() && safe.accounts.none { it.available && it.credentialPresent }
         if (!exhausted) return DoctorCheck(headKey, CheckStatus.OK, detail)
-        val reset = safe.accounts.mapNotNull(::earliestReset).minOrNull()
-        val at = reset?.let { "earliest reset ${AccountResetText.forPerson(it)}" } ?: "no reset time reported"
+        val atMillis = now()
+        val reset = safe.accounts.mapNotNull { safe.blockedUntilEpochSecondsByLabel[it.label] }
+            .filter { it.seconds > atMillis.milliseconds }.minOrNull()
+        val at = reset?.let {
+            val remaining = (it.seconds - atMillis.milliseconds).inWholeMilliseconds
+            "earliest reset ${AccountResetText.forPerson(it)}, ${DoctorAge.until(remaining)}"
+        } ?: "no reset time reported"
         return DoctorCheck(
             headKey,
             CheckStatus.WARN,
@@ -68,9 +75,6 @@ public class AccountPoolText(private val now: WallClock = WallClock { System.cur
         a.fiveHourUsedPercent?.let { "5h ${it.roundToInt()}%" },
         a.sevenDayUsedPercent?.let { "7d ${it.roundToInt()}%" },
     ).takeIf { it.isNotEmpty() }?.joinToString(" · ")
-
-    private fun earliestReset(a: HeadAccountView): Long? =
-        listOfNotNull(a.fiveHourResetEpochSeconds, a.sevenDayResetEpochSeconds).minOrNull()
 
     private fun ago(atMillis: Long): String = DoctorAge.ago(now() - atMillis)
 }

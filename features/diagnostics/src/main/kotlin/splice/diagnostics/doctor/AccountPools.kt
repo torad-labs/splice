@@ -130,6 +130,10 @@ internal class AccountPoolProjection {
             accounts = accounts,
             lastSwitch = (pool["last_switch"] as? JsonObject)?.let(::switch),
             selectionUnknown = missingSelection || droppedSelected,
+            blockedUntilEpochSecondsByLabel = rawAccounts.mapNotNull { account ->
+                val label = label(account, "label") ?: return@mapNotNull null
+                JsonScalars.long(account, "blocked_until_epoch_seconds")?.let { label to it }
+            }.toMap(),
         )
     }
 

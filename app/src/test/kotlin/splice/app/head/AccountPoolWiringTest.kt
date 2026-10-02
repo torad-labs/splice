@@ -1,9 +1,14 @@
 package splice.app.head
 
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotSame
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.accounts.pool.AccountPoolJson
 import splice.app.provider.Wired
 import splice.app.provider.WiredAccount
 import splice.core.auth.AuthDescription
@@ -15,13 +20,17 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
+import splice.core.util.ElapsedClock
+import splice.core.util.WallClock
 import splice.dialect.chat.ChatQuirks
 import splice.head.usage.QuotaTracker
 import splice.provider.openai.OpenAiChatProvider
 import splice.upstream.ProviderTuning
 import splice.upstream.credentials.AccountPool
+import splice.upstream.credentials.AccountQuotaSource
 import splice.upstream.credentials.PoolAccount
 import splice.upstream.credentials.Selection
+import splice.upstream.retry.RateLimitCooldown
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 
@@ -56,6 +65,27 @@ class AccountPoolWiringTest {
         val projected = requireNotNull(pools.source(pool)).view(SESSION)
         assertEquals(false, projected.accounts.single { it.primary }.credentialPresent)
         assertEquals(true, projected.accounts.single { !it.primary }.credentialPresent)
+    }
+
+    @Test
+    fun `the auth projection carries the pool's blocking horizon rather than either raw window`() {
+        val account = PoolAccount(
+            label = "primary",
+            primary = true,
+            auth = TestAuth("test"),
+            quota = AccountQuotaSource {
+                QuotaSnapshot(
+                    fiveHour = QuotaWindow(10.0, 8200L, 18000L),
+                    sevenDay = QuotaWindow(100.0, 433000L, 604800L),
+                )
+            },
+            cooldown = RateLimitCooldown(ElapsedClock { 0 }),
+        )
+        val pool = AccountPool(listOf(account), WallClock { 1000000L })
+        val view = requireNotNull(HeadAccountPools().source(pool)).view(null)
+        val json = buildJsonObject { AccountPoolJson().write(this, view) }
+        val projected = json["account_pool"]?.jsonObject?.get("accounts")?.jsonArray?.single()?.jsonObject
+        assertEquals("433000", projected?.get("blocked_until_epoch_seconds")?.jsonPrimitive?.content)
     }
 
     private fun trackers(dir: Path, primaryUsed: Double): Map<String, QuotaTracker> {

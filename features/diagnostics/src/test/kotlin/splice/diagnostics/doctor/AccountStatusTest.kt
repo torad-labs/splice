@@ -19,11 +19,11 @@ import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
 import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.AccountQuotaSource
-import splice.upstream.credentials.AccountResetText
 import splice.upstream.credentials.PoolAccount
 import splice.upstream.credentials.Selection
 import splice.upstream.retry.RateLimitCooldown
 import java.time.Instant
+import java.util.TimeZone
 
 class AccountStatusTest {
 
@@ -73,21 +73,62 @@ class AccountStatusTest {
     }
 
     @Test
-    fun `every account out is a warning naming the earliest reset and the login fix`() {
-        val view = HeadAccountPoolView(
-            "primary",
-            listOf(
-                HeadAccountView("primary", true, true, false, "plus", 100.0, 1800000000L, 99.0, 1800100000L),
-                HeadAccountView("work", false, false, false, null, null, null, 100.0, 1799999000L),
-            ),
-            null,
-        )
-        val check = AccountPoolText { 0 }.check("claudex", view)
-        assertEquals(CheckStatus.WARN, check.status)
-        assertTrue(check.detail.contains(AccountResetText.forPerson(1799999000L)), check.detail)
-        assertFalse(check.detail.contains(Instant.ofEpochSecond(1799999000L).toString()), check.detail)
-        assertTrue(check.detail.contains("on primary (0 of 2 open)"), check.detail)
-        assertEquals("splice login claudex --label <name>", check.fix)
+    fun `nonblocking and past windows cannot shorten the published blocked horizon`() {
+        for ((used, reset) in listOf(10 to atSeconds + 7200, 100 to atSeconds - 1, 100 to atSeconds + 7200)) {
+            val windows = """
+                "five_hour_used_percent":$used,"five_hour_reset_epoch_seconds":$reset,
+                "seven_day_used_percent":100,"seven_day_reset_epoch_seconds":${atSeconds + 432000}
+            """.trimIndent()
+            val check = inZone("Asia/Tokyo") { deadlineCheck(windows, atSeconds + 432000) }
+            assertEquals(CheckStatus.WARN, check.status)
+            assertTrue(check.detail.contains("earliest reset Sep 22, 5:02 AM JST, in 5d"), check.detail)
+            assertFalse(check.detail.contains("Sep 17"), check.detail)
+            assertEquals("splice login claudex --label <name>", check.fix)
+        }
+    }
+
+    @Test
+    fun `the published reset has literal machine-zone and injected-clock relative wording`() {
+        val windows = """
+            "five_hour_used_percent":100,"five_hour_reset_epoch_seconds":${atSeconds + 7200}
+        """.trimIndent()
+        val tokyo = inZone("Asia/Tokyo") { deadlineCheck(windows, atSeconds + 7200).detail }
+        val chicago = inZone("America/Chicago") { deadlineCheck(windows, atSeconds + 7200).detail }
+        assertTrue(tokyo.contains("earliest reset Sep 17, 7:02 AM JST, in 2h"), tokyo)
+        assertTrue(chicago.contains("earliest reset Sep 16, 5:02 PM CDT, in 2h"), chicago)
+        assertFalse(tokyo.contains(Instant.ofEpochSecond(atSeconds + 7200).toString()), tokyo)
+    }
+
+    @Test
+    fun `missing and expired published deadlines never invent a reset from raw windows`() {
+        val windows = """
+            "five_hour_used_percent":100,"five_hour_reset_epoch_seconds":${atSeconds - 1},
+            "seven_day_used_percent":100,"seven_day_reset_epoch_seconds":${atSeconds + 432000}
+        """.trimIndent()
+        for (deadline in listOf(null, atSeconds - 1, atSeconds)) {
+            val check = deadlineCheck(windows, deadline)
+            assertTrue(check.detail.contains("no reset time reported"), check.detail)
+        }
+    }
+
+    private val atSeconds = Instant.parse("2026-09-16T20:02:52Z").epochSecond
+
+    private fun deadlineCheck(windows: String, deadline: Long?): DoctorCheck {
+        val payload = """{"claudex":{"account_pool":{"selected_label":"primary","accounts":[
+            {"label":"primary","primary":true,"available":false,"credential_present":true,
+             "blocked_until_epoch_seconds":$deadline,$windows}]}}}"""
+        val view = AccountPoolProjection().parse(payload).getValue("claudex")
+        return AccountPoolText { atSeconds * 1000 }.check("claudex", view)
+    }
+
+    private fun <T> inZone(zone: String, block: () -> T): T {
+        val saved = TimeZone.getDefault()
+        TimeZone.setDefault(TimeZone.getTimeZone(zone))
+        try {
+            return block()
+        } finally {
+            TimeZone.setDefault(saved)
+        }
     }
 
     @Test

@@ -159,6 +159,8 @@ public data class AccountPoolView(
     val selectedLabel: String?,
     val accounts: List<AccountView>,
     val lastSwitch: AccountSwitch?,
+    /** The selector's blocking horizon for each account, in epoch seconds; absent means no reported deadline. */
+    val blockedUntilEpochSecondsByLabel: Map<String, Long> = emptyMap(),
 )
 
 /** One reset timestamp vocabulary for operator responses and turn logs. [format] is the ISO instant a log or journal

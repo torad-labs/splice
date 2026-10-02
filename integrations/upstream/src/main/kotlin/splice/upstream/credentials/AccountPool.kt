@@ -124,6 +124,9 @@ public class AccountPool(
             selectedLabel = session?.label,
             accounts = accounts.map { account -> accountView(account, session?.label, at) },
             lastSwitch = if (sessionId == null) headLastSwitch.get() else session?.lastSwitch,
+            blockedUntilEpochSecondsByLabel = accounts.mapNotNull { account ->
+                AccountAvailability.blockedUntil(account, at)?.let { account.label to it }
+            }.toMap(),
         )
     }
 
@@ -279,7 +282,7 @@ private object AccountAvailability {
     fun earliestReset(accounts: List<PoolAccount>, at: Long): Long? =
         accounts.mapNotNull { blockedUntil(it, at) }.minOrNull()
 
-    private fun blockedUntil(account: PoolAccount, at: Long): Long? {
+    fun blockedUntil(account: PoolAccount, at: Long): Long? {
         val snapshot = account.quota.snapshot()
         val blocked = listOfNotNull(snapshot?.fiveHour, snapshot?.sevenDay).filter { exhausted(it, at) }
         val quotaReset = blocked.mapNotNull(QuotaWindow::resetsAt).maxOrNull()

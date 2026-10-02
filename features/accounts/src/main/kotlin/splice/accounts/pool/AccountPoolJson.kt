@@ -26,6 +26,7 @@ public class AccountPoolJson {
                         put("primary", account.primary)
                         put("selected", account.selected)
                         put("available", account.available)
+                        put("blocked_until_epoch_seconds", view.blockedUntilEpochSecondsByLabel[account.label])
                         put("credential_present", account.credentialPresent)
                         put("auth_excluded_until_epoch_millis", account.authExcludedUntilEpochMillis)
                         put("auth_exclusion_reason", account.authExclusionReason)

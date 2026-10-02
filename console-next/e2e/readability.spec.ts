@@ -1,10 +1,12 @@
 // NEW: V4-444 — retained display floors and whole values on the replacement card/list surfaces.
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { PerfTurnsWire } from '../src/types/perf';
 import type { HeadsPayload } from '../src/types/core';
 import { UNKNOWN_HEAD } from '../src/types/sessions';
 import type { SessionRow } from '../src/types/sessions';
-import { FIRST_READ_MS, open, routePath } from './support';
+import { FIRST_READ_MS, env, open, routePath } from './support';
 import { STACK } from './stack';
 
 test('wide Finished rows keep each name beside its measurements', async ({ page }) => {
@@ -32,11 +34,27 @@ test('system messages have a system speaker rather than the command or Assistant
   } }));
   const faults = await open(page, 'sessions/' + STACK.sender.id);
   const metadata = page.locator('.msg').filter({ hasText: 'Synthetic metadata message.' });
-  await expect(metadata.locator('.who')).toContainText('System note');
+  await expect(metadata.locator('.who')).toContainText('Claude Code note');
   await expect(metadata.locator('.who')).not.toContainText('Assistant');
   await expect(metadata.locator('.who')).not.toContainText(STACK.oauthHead);
   expect(faults.pageErrors).toEqual([]);
   await page.unrouteAll({ behavior: 'wait' });
+});
+
+test('an original user isMeta image annotation is normalized by the daemon and never labelled Assistant', async ({ page }) => {
+  const file = join(env('CONSOLE_E2E_TRANSCRIPT_ROOT'), 'projects', 'console-e2e', STACK.sender.id + '.jsonl');
+  const original = readFileSync(file, 'utf8');
+  const text = '[Image: original 1440x2466, synthetic metadata annotation]';
+  try {
+    appendFileSync(file, JSON.stringify({ type: 'user', isMeta: true, message: { role: 'user', content: text } }) + '\n');
+    const faults = await open(page, 'sessions/' + STACK.sender.id);
+    const metadata = page.locator('.msg').filter({ hasText: text });
+    await expect(metadata.locator('.who')).toContainText('Claude Code note');
+    await expect(metadata.locator('.who')).not.toContainText('Assistant');
+    expect(faults.pageErrors).toEqual([]);
+  } finally {
+    writeFileSync(file, original);
+  }
 });
 
 for (const width of [1440, 3840]) {

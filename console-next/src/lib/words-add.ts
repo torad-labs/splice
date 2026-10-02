@@ -51,6 +51,8 @@ export const AD = {
   checking: 'Checking…',
   checkLive: 'Also send one short turn',
   checksTitle: 'Checks',
+  windowFitsDiagnostic: 'declared rows fit the window sizes the provider lists',
+  windowFits: 'Every model’s context window fits what the provider serves.',
   passed: 'Passed',
   failed: 'Failed',
   save: 'Save and restart',

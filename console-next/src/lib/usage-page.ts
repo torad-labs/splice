@@ -3,7 +3,7 @@
 import { burn, costOf, hitRate, hourly, sum, within } from './economics';
 import type { Totals } from './economics';
 import { ABSENT, fmtShare, fmtTokens, fmtUsd } from './format';
-import { headWindow } from './usage';
+import { headWindow, rateLimitAge } from './usage';
 import type { HeadWindow } from './usage';
 import { U, spanWords } from './words-usage';
 import type { ModelColour } from './model';
@@ -37,6 +37,8 @@ export interface PlanUsage {
   /** Only a refusal the head still holds, never the percentage of a reading. */
   full: boolean;
   reset: string | null;
+  /** The age of any retained rate-limit headers, not a claim about a current limit. */
+  reading: string | null;
   pace: string | null;
   turns: number;
   inTokens: number;
@@ -52,6 +54,7 @@ export function planUsage(head: HeadEconomics, label: string, colour: ModelColou
   const totals = sum(within(head.buckets, hours, now));
   const window: HeadWindow = headWindow(usage, head.key, now);
   const day = sum(within(head.buckets, 24, now));
+  const age = rateLimitAge(usage?.heads.find((row) => row.key === head.key)?.usage ?? null, now);
   return {
     key: head.key,
     label,
@@ -59,6 +62,7 @@ export function planUsage(head: HeadEconomics, label: string, colour: ModelColou
     pct: window.pct,
     full: status !== undefined && quotaRefusedUntil(status, now) !== null,
     reset: window.reset,
+    reading: age === null ? null : U.rateLimitReading(age),
     pace: window.pct === null ? null : paceText(burn(head, now).hoursToExhaustion),
     turns: totals.turns,
     inTokens: totals.inTokens,
@@ -76,7 +80,7 @@ export function orderPlans(plans: readonly PlanUsage[]): PlanUsage[] {
 
 /** Plans that ran a turn in the window, and the ones that did not: an idle plan is one sentence, never a row of zeros. */
 export function splitIdle(plans: readonly PlanUsage[]): { active: PlanUsage[]; idle: PlanUsage[] } {
-  return { active: plans.filter((plan) => plan.turns > 0 || plan.pct !== null || plan.full), idle: plans.filter((plan) => plan.turns === 0 && plan.pct === null && !plan.full) };
+  return { active: plans.filter((plan) => plan.turns > 0 || plan.pct !== null || plan.full || plan.reading !== null), idle: plans.filter((plan) => plan.turns === 0 && plan.pct === null && !plan.full && plan.reading === null) };
 }
 
 export function totalsOf(heads: readonly HeadEconomics[], hours: number, now: number): Totals {

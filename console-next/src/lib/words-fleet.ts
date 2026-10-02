@@ -10,6 +10,7 @@ export const FL = {
   restartNeeded: 'The configuration changed after this command started.',
   payPerToken: 'Pays per token; no window',
   noReading: 'No reading yet',
+  rateLimitReading: (age: string): string => `Last rate-limit reading ${age}`,
   lastReading: (age: string, pct: number, window: string): string => `Last reading ${age}: ${pct}% of ${window}, which has reset since`,
   plans: (label: string, groups: string): string => `${label}${groups === '' ? '' : `: ${groups}`}.`,
   onePlan: 'One command',

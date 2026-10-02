@@ -166,7 +166,9 @@ test('an isolated key backend prints every refused verification check and discar
   await expect(checks).toHaveCount(failed.checks.length);
   for (const check of failed.checks) {
     const row = checks.filter({ has: page.getByText(check.name, { exact: true }) });
-    await expect(row).toContainText(check.detail);
+    const detail = check.name === 'windows' && check.ok && check.detail === 'declared rows fit the window sizes the provider lists'
+      ? 'Every model’s context window fits what the provider serves.' : check.detail;
+    await expect(row).toContainText(detail);
     await expect(row).toContainText(check.ok ? 'Passed' : 'Failed');
   }
   const deletion = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/add/' + view.id && response.request().method() === 'DELETE');

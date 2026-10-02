@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { useKeyStore, usePutKey } from '../../api/auth';
 import { failureText, MgmtError } from '../../api/client';
 import { useAddProfiles, useAddView, useDiscardAdd, useOpenAdd, useSaveAdd, useSignInAdd, useVerifyAdd } from '../../api/usage';
-import { EMPTY_ROW, asksAnything, autoSaveTarget, draftFor, loginRunning, openingField, planChoices, planLabel, ready, requestOf } from '../../lib/add';
+import { EMPTY_ROW, asksAnything, autoSaveTarget, checkDetail, draftFor, loginRunning, openingField, planChoices, planLabel, ready, requestOf } from '../../lib/add';
 import type { AddDraft, AddField, ModelRow, PlanChoice } from '../../lib/add';
 import { AD } from '../../lib/words-add';
 import type { AddChecksFailed, AddProfile, AddView } from '../../types/add';
@@ -246,7 +246,7 @@ export function AddPlan({ children }: { children: ReactNode }) {
                     <li key={check.name}>
                       <span className={`state ${check.ok ? 'work' : 'stuck'}`}><i />{check.ok ? AD.passed : AD.failed}</span>
                       <b>{check.name}</b>
-                      <span>{check.detail}</span>
+                      <span>{checkDetail(check)}</span>
                     </li>
                   ))}
                 </ul>

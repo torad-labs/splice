@@ -100,7 +100,7 @@ export function withServerExcluded(topology: Topology, name: string, excluded: b
 
 /** The daemon's sentence as prose: its markdown backticks dropped and a capital to begin. */
 export function proseOf(sentence: string): string {
-  const plain = sentence.replaceAll('`', '');
+  const plain = sentence.replaceAll('`', '').replaceAll('Claude head', 'Claude command');
   return `${plain.charAt(0).toUpperCase()}${plain.slice(1)}`;
 }
 

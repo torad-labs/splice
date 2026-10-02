@@ -1,6 +1,6 @@
 // The Add-a-plan draft: what a profile asks, what the request carries, which plans are offered, and when a login saves itself.
 import { describe, expect, test } from 'vitest';
-import { asksAnything, autoSaveTarget, draftFor, loginRunning, openingField, planChoices, planLabel, ready, requestOf } from '../src/lib/add';
+import { asksAnything, autoSaveTarget, checkDetail, draftFor, loginRunning, openingField, planChoices, planLabel, ready, requestOf } from '../src/lib/add';
 import type { AddProfile, AddView } from '../src/types/add';
 
 const profile = (over: Partial<AddProfile> = {}): AddProfile => ({
@@ -9,6 +9,13 @@ const profile = (over: Partial<AddProfile> = {}): AddProfile => ({
 const view = (over: Partial<AddView> = {}): AddView => ({
   id: 'a1', profile: 'codex', key: 'claudex', command: 'claudex', auth_kind: 'chatgpt-oauth', base_url: null, models: [], sign_in_by: 'login', key_env: null,
   credential: { present: false, detail: 'none' }, sign_in: null, checks: null, saved: null, ...over,
+});
+
+test('the successful window check uses operator words without replacing a failed or unknown diagnostic', () => {
+  const detail = 'declared rows fit the window sizes the provider lists';
+  expect(checkDetail({ name: 'windows', ok: true, detail })).toBe('Every model’s context window fits what the provider serves.');
+  expect(checkDetail({ name: 'windows', ok: false, detail: 'm declares 200000, provider serves 100000' })).toBe('m declares 200000, provider serves 100000');
+  expect(checkDetail({ name: 'future', ok: true, detail })).toBe(detail);
 });
 
 describe('the plans offered', () => {

@@ -27,8 +27,8 @@ function Spark({ values }: { values: readonly number[] }) {
 
 function PlanRow({ plan }: { plan: PlanUsage }) {
   const words = plan.pct === null
-    ? [plan.full ? U.refused : plan.turns === 0 ? U.idle : U.noLimit]
-    : [plan.reset === null ? null : U.resets(plan.reset), plan.pace].filter((part): part is string => part !== null);
+    ? [plan.full ? U.refused : plan.reading ?? (plan.turns === 0 ? U.idle : U.noLimit)]
+    : [plan.reset === null ? null : U.resets(plan.reset), plan.pace, plan.reading].filter((part): part is string => part !== null);
   return (
     <li className={`uplan hue ${plan.colour}`}>
       <b><i />{plan.label}</b>

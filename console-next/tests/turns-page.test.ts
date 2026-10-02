@@ -151,6 +151,16 @@ describe('a turn', () => {
     expect(line.cost).toBe('–');
     expect(line.title).toBe('claude');
   });
+  test('the rendered cost column distinguishes unpriced turns from a measured API-rate estimate', () => {
+    const render = (cost_usd: number | null) => {
+      const line = lineOf(row({ cost_usd }), (h) => h, none, () => null);
+      return renderToStaticMarkup(createElement(MemoryRouter, null, createElement(TurnRowView, { line })));
+    };
+    expect(render(null)).toContain('<span class="cost">Not priced</span>');
+    expect(render(null)).not.toContain('<span class="cost">–</span>');
+    expect(render(1.25)).toContain('<span class="cost">$1.25</span>');
+    expect(render(1.25)).not.toContain('Not priced');
+  });
   test.each([null, '', '   '])('an absent model %j leaves only the command, with no separator or placeholder', (model) => {
     const line = lineOf(row({ model }), () => 'claude-splice', none, () => null);
     const html = renderToStaticMarkup(createElement(MemoryRouter, null, createElement(TurnRowView, { line })));

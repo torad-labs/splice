@@ -1,6 +1,6 @@
 import { OnRequest } from '../shared/OnRequest';
 import { Link, useParams } from 'react-router';
-import { failureText } from '../../api/client';
+import { failureText, MgmtError } from '../../api/client';
 import { useHeads, useSessions, useTeams } from '../../api/queries';
 import { useProject, useProjectFiles } from '../../api/projects';
 import { clockTime } from '../../lib/format';
@@ -9,7 +9,7 @@ import { liveNames, projectLede, repoLabel, rootGroups, sessionsIn } from '../..
 import { sessionLabel } from '../../lib/sessions';
 import { P } from '../../lib/words-projects';
 import { UNKNOWN_HEAD } from '../../types/sessions';
-import { Empty, PageHead } from '../../ui';
+import { Empty, Fault, PageHead } from '../../ui';
 import { sessionPath } from '../shared/SessionActions';
 import { Standing } from './Standing';
 import './projects.css';
@@ -25,9 +25,13 @@ export function ProjectPage() {
   const crumb = <div className="crumb"><Link to="/sessions?group=repo">{P.back}</Link></div>;
 
   if (row.isPending) return <>{crumb}<PageHead title={repoLabel(id)} lede={P.reading} /></>;
-  if (row.isError) return <>{crumb}<PageHead title={repoLabel(id)} /><Empty title={P.gone} why={`${P.goneWhy} ${failureText(row.error)}`} /></>;
+  if (row.isError) return <>{crumb}<PageHead title={repoLabel(id)} />{row.error instanceof MgmtError && row.error.status === 404
+    ? <Empty title={P.gone} why={P.goneWhy} />
+    : <Fault message={failureText(row.error)} onRetry={() => void row.refetch()} />}</>;
   const project = row.data;
-  const rows = sessions.data?.sessions ?? [];
+  const sessionFailure = sessions.isError ? failureText(sessions.error) : sessions.data?.error;
+  const sessionsReady = sessions.isSuccess && sessionFailure === undefined;
+  const rows = sessionsReady ? sessions.data.sessions : [];
   const here = sessionsIn(rows, project.root);
   const teamsHere = (teams.data?.teams ?? []).filter((team) => team.repo === project.root && !team.archived);
   const labelOf = (key: string): string => heads.data?.heads.find((head) => head.key === key)?.label ?? key;
@@ -35,14 +39,16 @@ export function ProjectPage() {
   return (
     <>
       <div className="crumb"><Link to="/sessions?group=repo">{P.back}</Link><span>/</span><span>{repoLabel(project.root, project.remote)}</span></div>
-      <PageHead title={repoLabel(project.root, project.remote)} lede={projectLede(project)} />
+      <PageHead title={repoLabel(project.root, project.remote)} lede={projectLede(project, sessionsReady ? here.length : project.live_sessions)} />
       <p className="hint">{project.last_activity === null ? P.never : `${P.activity} ${clockTime(project.last_activity)}`}</p>
       <OnRequest label={P.showFolder}>{project.root}</OnRequest>
 
       <div className="frame-cols">
       <section className="proj-section" aria-labelledby="proj-sessions">
         <h2 id="proj-sessions">{P.sessionsTitle}</h2>
-        {here.length === 0 ? <p className="why">{P.sessionsNone}</p> : (
+        {sessionFailure !== undefined ? <Fault message={sessionFailure} onRetry={() => void sessions.refetch()} />
+          : !sessionsReady ? <p className="why">{P.sessionsReading}</p>
+          : here.length === 0 ? <p className="why">{P.sessionsNone}</p> : (
           <ul className="proj-list">
             {here.map((session) => <li key={session.session_id ?? session.pid}><Link to={sessionPath(session)}>{sessionLabel(session)}</Link>{session.head === UNKNOWN_HEAD ? null : <small>{labelOf(session.head)}</small>}</li>)}
           </ul>
@@ -74,7 +80,7 @@ export function ProjectPage() {
       <section className="proj-section" aria-labelledby="proj-standing">
         <h2 id="proj-standing">{P.standingTitle}</h2>
         <p className="why">{P.standingWhy}</p>
-        <Standing key={project.root} root={project.root} live={liveNames(rows, project.root)} />
+        {sessionsReady ? <Standing key={project.root} root={project.root} live={liveNames(rows, project.root)} /> : null}
       </section>
 
       <section className="proj-section" aria-labelledby="proj-files">

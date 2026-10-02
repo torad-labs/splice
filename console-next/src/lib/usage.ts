@@ -9,7 +9,7 @@
 // 2026-09-24). A head whose warn source is `none` and that tracks no plan window reports nothing,
 // and an absence cannot be close to exhaustion.
 import type { AuthPayload, HeadUsage, QuotaWindow, UsagePayload } from '../types/core';
-import { fmtDurationS } from './format';
+import { fmtDurationS, timeAgo } from './format';
 
 /** One plan window of a head, as the page prints it. */
 export interface PlanWindow {
@@ -44,6 +44,12 @@ export function planWindows(usage: HeadUsage | null, nowMs: number): PlanWindow[
   add('5h', quota.five_hour);
   add('7d', quota.seven_day);
   return out;
+}
+
+/** The age of the rate-limit headers the daemon kept, independent of whether they still govern admission. */
+export function rateLimitAge(head: HeadUsage | null, nowMs: number): string | null {
+  const observed = head?.ratelimit?.observed_at;
+  return observed == null ? null : timeAgo(observed * 1000, nowMs);
 }
 
 /** Whether a head's warn reading is its own signal (rate-limit headers, the 5h token count) and not

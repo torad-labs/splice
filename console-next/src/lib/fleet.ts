@@ -9,7 +9,7 @@ import type { HeadSignals } from './heads';
 import { colourOf } from './model';
 import type { ModelColour } from './model';
 import { poolOf, selectedExcluded } from './accounts';
-import { planLevel, planWindows } from './usage';
+import { planLevel, planWindows, rateLimitAge } from './usage';
 import { countWord, noun, timeAgo } from './format';
 import { FL } from './words-fleet';
 
@@ -87,9 +87,14 @@ function accountLine(pool: readonly AccountRow[], kind: string): string {
 function noWindowText(kind: string, keys: KeysPayload | null, usage: UsagePayload | null, head: HeadStatus, now: number): string | null {
   if (kind === 'api-key') return keys === null ? null : FL.payPerToken;
   if (kind === 'local') return null;
-  const windows = planWindows(usage?.heads.find((row) => row.key === head.key)?.usage ?? null, now);
+  const entry = usage?.heads.find((row) => row.key === head.key)?.usage ?? null;
+  const windows = planWindows(entry, now);
   const last = windows.reduce<(typeof windows)[number] | null>((a, b) => (a === null || (b.observedAt ?? 0) >= (a.observedAt ?? 0) ? b : a), null);
-  if (last === null) return FL.noReading;
+  if (last === null) {
+    const age = rateLimitAge(entry, now);
+    if (age !== null) return FL.rateLimitReading(age);
+    return entry?.ratelimit == null ? FL.noReading : null;
+  }
   const when = last.observedAt === null ? 'before its reset' : timeAgo(last.observedAt * 1000, now);
   return FL.lastReading(when, Math.round(last.pct), WINDOW_NAME[last.window]);
 }

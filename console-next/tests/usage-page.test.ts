@@ -13,7 +13,7 @@ const bucket = (agoHours: number, over: Partial<EconomicsBucket> = {}): Economic
 });
 const head = (key: string, buckets: EconomicsBucket[], ceiling: number | null = null): HeadEconomics => ({ key, label: key, ceiling_tokens: ceiling, buckets });
 const plan = (over: Partial<PlanUsage>): PlanUsage => ({
-  key: 'a', label: 'A', colour: 'none', pct: null, full: false, reset: null, pace: null, turns: 1, inTokens: 1, cache: null, cost: null, spark: [], spentToday: null, ...over,
+  key: 'a', label: 'A', colour: 'none', pct: null, full: false, reset: null, reading: null, pace: null, turns: 1, inTokens: 1, cache: null, cost: null, spark: [], spentToday: null, ...over,
 });
 
 describe('windows', () => {
@@ -37,6 +37,16 @@ describe('pace', () => {
 });
 
 describe('a plan', () => {
+  test('a header-only reading keeps its age without presenting a stale token limit as a current percentage', () => {
+    const reading: UsagePayload = { window_hours: 5, warn_pct: 80, warn_tokens_5h: 0, heads: [{ key: 'a', label: 'A', usage: {
+      output_tokens_5h: 0, entries: 0, ratelimit: { limit_tokens: 53_000_000, remaining_tokens: 53_000_000, reset_tokens: '1h', observed_at: NOW / 1000 - 43 * 3600 },
+      warn: { pct: 0, level: 'ok', source: 'none', reset: null },
+    } }] };
+    const held = planUsage(head('a', []), 'A', 'grok', reading, 24, NOW);
+    expect(held.pct).toBeNull();
+    expect(held.reading).toBe('Last rate-limit reading 43h ago');
+    expect(splitIdle([held]).active).toEqual([held]);
+  });
   test('with no turns in the window carries no cost, not $0', () => {
     const idle = planUsage(head('a', []), 'A', 'none', null, 24, NOW);
     expect(idle.cost).toBeNull();

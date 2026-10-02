@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { describe, expect, test } from 'vitest';
 import { projectPath } from '../src/api/projects';
+import { MgmtError } from '../src/api/client';
 import { ProjectPage } from '../src/pages/projects/ProjectPage';
 import type { ProjectRow } from '../src/types/projects';
 
@@ -14,7 +15,7 @@ const project: ProjectRow = {
 };
 
 function render(seed: (client: QueryClient) => unknown, id = ROOT): string {
-  const client = new QueryClient();
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false } } });
   client.setQueryData(['teams', '/api/teams'], { teams: [] });
   client.setQueryData(['sessions', '/api/sessions'], { sessions: [{ session_id: 'sess-1', name: 'Write the limiter', head: 'claude-grok', availability: 'live', status: 'idle', pid: 1, kind: null, version: null, cwd: ROOT, status_updated_at: null, started_at: null, updated_at: 1, address: null, repo: { root: ROOT } }] });
   client.setQueryData(['heads', '/api/heads'], { heads: [{ key: 'claude-grok', label: 'Grok', authKind: 'grok' }] });
@@ -37,6 +38,49 @@ describe('the project page', () => {
     expect(html).toContain('1 session is running');
     expect(html).toContain('Write the limiter');
     expect(html).toContain('Grok');
+  });
+  test('the headline counts the same alive sessions it lists, including stale registrations', () => {
+    const html = render((client) => {
+      seedRow(client);
+      const session = { session_id: 'one', name: 'One', head: 'claude-grok', availability: 'live', status: 'idle', pid: 1, cwd: ROOT, repo: { root: ROOT } };
+      client.setQueryData(['sessions', '/api/sessions'], { sessions: [session, { ...session, session_id: 'two', name: 'Two', availability: 'stale' }, { ...session, session_id: 'gone', name: 'Gone', availability: 'gone' }, { ...session, session_id: 'elsewhere', name: 'Elsewhere', repo: { root: '/another/repo' } }] });
+    });
+    expect(html).toContain('2 sessions are running');
+    expect(html).toContain('Two');
+    expect(html).not.toContain('Gone');
+    expect(html).not.toContain('Elsewhere');
+  });
+  test.each(['envelope', 'transport'])('a failed session enumeration via %s remains a failure, not an empty project', (kind) => {
+    const html = render((client) => {
+      seedRow(client);
+      client.setQueryData(['sessions', '/api/sessions'], { sessions: [], ...(kind === 'envelope' ? { error: 'Synthetic registry permission denied' } : {}) });
+      if (kind === 'transport') client.getQueryCache().find({ queryKey: ['sessions', '/api/sessions'] })?.setState({ status: 'error', error: new MgmtError(500, 'Synthetic registry permission denied') });
+    });
+    expect(html).toContain('Synthetic registry permission denied');
+    expect(html).toContain('1 session is running');
+    expect(html).not.toContain('Nothing is running');
+    expect(html).not.toContain('No session is running in this repo.');
+    expect(html).not.toContain('No live sessions.');
+  });
+  test('a pending session enumeration is visibly pending rather than claiming the project is empty', () => {
+    const html = render((client) => {
+      seedRow(client);
+      client.removeQueries({ queryKey: ['sessions', '/api/sessions'] });
+    });
+    expect(html).toContain('Reading the sessions.');
+    expect(html).not.toContain('No session is running in this repo.');
+    expect(html).not.toContain('No live sessions.');
+  });
+  test.each([404, 500])('a project error %s is not confused with another failure or printed as a raw missing-project diagnostic', (status) => {
+    const html = render((client) => {
+      client.getQueryCache().build(client, { queryKey: ['projects', 'row', projectPath(ROOT)] }).setState({ status: 'error', error: new MgmtError(status, status === 404 ? 'not a project root splice has seen: ' + ROOT : 'Synthetic server failure') });
+    });
+    expect(html).not.toContain('not a project root splice has seen');
+    if (status === 404) expect(html).toContain('No such project');
+    else {
+      expect(html).toContain('Synthetic server failure');
+      expect(html).not.toContain('No such project');
+    }
   });
   test('does not print the folder under the name: it is there on request', () => {
     const html = render(seedRow);

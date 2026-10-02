@@ -51,6 +51,20 @@ describe('a fleet card', () => {
     if (read !== undefined) read.observed_at = NOW / 1000 - 3 * 3600 - 60;
     expect(fleetCard(head(), inputs({ usage: old })).none).toBe('Last reading 3h ago: 41% of 5 hours, which has reset since');
   });
+  test('a header-only rate-limit reading says when it was observed instead of claiming none exists', () => {
+    const reading: UsagePayload = { window_hours: 5, warn_pct: 80, warn_tokens_5h: 0, heads: [{ key: 'claude-grok', label: 'Grok', usage: {
+      output_tokens_5h: 0, entries: 0, ratelimit: { limit_tokens: 53_000_000, remaining_tokens: 53_000_000, reset_tokens: '1h', observed_at: NOW / 1000 - 43 * 3600 },
+      warn: { pct: 0, level: 'ok', source: 'none', reset: null },
+    } }] };
+    expect(fleetCard(head(), inputs({ usage: reading })).none).toBe('Last rate-limit reading 43h ago');
+  });
+  test.each([null, undefined])('a retained header reading with unknown observation %s does not claim it never existed', (observed_at) => {
+    const reading: UsagePayload = { window_hours: 5, warn_pct: 80, warn_tokens_5h: 0, heads: [{ key: 'claude-grok', label: 'Grok', usage: {
+      output_tokens_5h: 0, entries: 0, ratelimit: { limit_tokens: 53_000_000, remaining_tokens: 53_000_000, reset_tokens: '1h', ...(observed_at === undefined ? {} : { observed_at }) },
+      warn: { pct: 0, level: 'ok', source: 'none', reset: null },
+    } }] };
+    expect(fleetCard(head(), inputs({ usage: reading })).none).toBeNull();
+  });
   test('until the key store answers, an api-key head is called what the daemon calls it', () => {
     expect(fleetCard(head({ key: 'bonsai', label: 'bonsai', authKind: 'api-key' }), inputs({ keys: null, sessions: new Map() })).meta[0]).toBe('api key');
   });

@@ -32,7 +32,7 @@ describe('the claude command row', () => {
     expect(html).not.toContain('>Unwrap<');
     expect(html).toContain('/home/a/.local/share/claude/versions/2.1');
     expect(html).not.toContain('It runs');
-    expect(html).toContain('One login per Claude head at a time.');
+    expect(html).toContain('One login per Claude command at a time.');
   });
   test('wrapped offers an unwrap and prints the binary the shim runs, and a missing one as not read', () => {
     const html = render(<ClaudeHead />, seedCard(card({ mode: 'wrapped', real_binary_path: null })));
@@ -43,7 +43,7 @@ describe('the claude command row', () => {
   });
   test('the daemon\'s sentence about logins prints as prose: no backticks, a capital to begin', () => {
     const html = render(<ClaudeHead />, seedCard(card({ claude_logins: { count: 1, selected: 'max', labels: ['max'], constraint: 'one login per Claude head at a time; `splice login <head> --label <name>` saves or switches it' } })));
-    expect(html).toContain('One login per Claude head at a time; splice login &lt;head&gt; --label &lt;name&gt; saves or switches it');
+    expect(html).toContain('One login per Claude command at a time; splice login &lt;head&gt; --label &lt;name&gt; saves or switches it');
     expect(html).not.toContain('`');
   });
   test('a claude that is not on the path says so rather than printing a blank', () => {

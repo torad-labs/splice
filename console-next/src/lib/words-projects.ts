@@ -16,6 +16,7 @@ export const P = {
   showPath: 'Show the path',
   fileName: (kind: string): string => (kind === 'instructions' ? 'This project’s CLAUDE.md' : kind === 'memory' ? 'This project’s memory' : kind),
   sessionsTitle: 'Sessions here',
+  sessionsReading: 'Reading the sessions.',
   sessionsNone: 'No session is running in this repo.',
   teamsTitle: 'Teams',
   compaction: 'Compaction rules',

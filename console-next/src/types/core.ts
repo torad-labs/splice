@@ -123,6 +123,8 @@ export interface RatelimitState {
   limit_tokens: number;
   remaining_tokens: number | null;
   reset_tokens: string | null;
+  /** When the daemon observed these headers, epoch seconds; absent on older daemons. */
+  observed_at?: number | null;
 }
 
 export type WarnLevel = 'ok' | 'warn' | 'critical';

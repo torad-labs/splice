@@ -11,8 +11,8 @@ import type { ProjectRow, ProjectStatuslineRoot } from '../types/projects';
 export const repoLabel = (root: string, remote?: string): string => repoNameOf(root, remote);
 
 /** The sentence under a project's name. */
-export function projectLede(row: ProjectRow): string {
-  const running = row.live_sessions === 0 ? P.noneRunning : P.running(row.live_sessions);
+export function projectLede(row: ProjectRow, runningSessions = row.live_sessions): string {
+  const running = runningSessions === 0 ? P.noneRunning : P.running(runningSessions);
   const teams = row.teams === 0 ? '' : ` ${P.teams(row.teams)}`;
   const today = row.turns_today === 0 ? P.noTurnsToday : row.cost_today_usd === null ? `${P.turnsToday(row.turns_today)} ${P.costUnpriced}` : `${P.turnsToday(row.turns_today)} ${P.costToday(fmtUsd(row.cost_today_usd))}`;
   return `${running}${teams}. ${today}`;

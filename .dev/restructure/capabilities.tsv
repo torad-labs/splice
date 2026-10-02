@@ -1,4 +1,5 @@
 source	sha256	disposition	destination	reason
+integrations/providers/codex/src/test/kotlin/splice/provider/codex/CodeModeLockOrderTest.kt	67a7ef919562a7bc64797f129d85d5b7fc9699758bf657fbf21748c2234502ae	created		Thread-confined source endings after outer registry locks release, key-protected retry ownership, and rejection of late loss after expiry
 core/src/main/kotlin/splice/core/turn/TurnUpstreamHeaders.kt	6efa11b5fa90967003775ea3d1e3d96a7279271ca52f6c2a44106839cd613ed0	created		First-write-wins upstream routing header scoped to one turn and reused by its retries and continuations
 features/turns/src/test/kotlin/splice/head/transport/CodexTurnStateSseTest.kt	6db5b797c299089298a016cb88f2c3e9376f2c03c656b4748a3ffc13efb97ded	created		Product-path HTTP routing capture and continuation echo with isolation across fresh turns
 integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/ResponsesWsRequestMetadata.kt	11b133c71f4fce119464aba4446b1e4f8a05b3037acd4c5f3b7b201211efb468	created		Per-frame lite protocol metadata and WebSocket-only first-write-wins event routing without changing logical request identity

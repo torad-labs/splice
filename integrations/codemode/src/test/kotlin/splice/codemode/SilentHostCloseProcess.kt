@@ -16,6 +16,7 @@ import java.util.concurrent.TimeUnit
 
 internal class SilentHostCloseProcess : Process() {
     var exitOnEngineClose = false
+    var holdEngineOpen = false
     private val replies = PipedInputStream()
     private val writer = DataOutputStream(PipedOutputStream(replies))
     private val exited = CompletableFuture<Process>()
@@ -26,6 +27,7 @@ internal class SilentHostCloseProcess : Process() {
             val frame = HostProtocol.parse(CodeModeWire.read(DataInputStream(ByteArrayInputStream(toByteArray()))))
             reset()
             val type = CodeModeFields.requiredString(frame.payload, "type")
+            if (type == "session-open" && holdEngineOpen) return
             if (type == "session-close") {
                 if (exitOnEngineClose) destroy()
                 return

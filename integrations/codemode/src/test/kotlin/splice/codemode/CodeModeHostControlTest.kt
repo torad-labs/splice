@@ -118,6 +118,28 @@ class CodeModeHostControlTest {
         }
     }
 
+    @Test
+    fun `duplicate opens of a hung engine cannot occupy its sibling's opening lane`() = runBlocking<Unit> {
+        HostControlFixture().use { fixture ->
+            fixture.factory.blockCreation = 1
+            val opening = fixture.send(1, HostProtocol.command("session-open"))
+            assertTrue(fixture.factory.entered.await(5, TimeUnit.SECONDS))
+            val duplicates = List(3) { fixture.send(1, HostProtocol.command("session-open")) }
+            val sibling = fixture.send(2, HostProtocol.command("session-open"))
+            try {
+                assertTrue(
+                    fixture.factory.siblingEntered.await(5, TimeUnit.SECONDS),
+                    "B must enter its factory while A and its three duplicate opens are still held",
+                )
+                fixture.reply(sibling)
+            } finally {
+                fixture.factory.release.countDown()
+            }
+            fixture.reply(opening)
+            duplicates.forEach { fixture.reply(it) }
+        }
+    }
+
     private fun assertFault(reply: kotlinx.serialization.json.JsonObject) {
         val error = assertThrows(CodeModeInfrastructureException::class.java) { CodeModeFatalFrame.parse(reply) }
         assertEquals(CodeModeInfrastructureCategory.HOST, error.category)

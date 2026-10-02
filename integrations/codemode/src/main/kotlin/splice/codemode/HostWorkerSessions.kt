@@ -10,13 +10,15 @@ import splice.codemode.engine.WorkerSession
 import splice.codemode.host.HostSessionSlot
 import splice.codemode.host.HostSessionSlots
 import java.io.IOException
+import java.util.concurrent.CompletableFuture
 
 internal class HostWorkerSessions(private val factory: HostEngineFactory = NativeHostEngines) : AutoCloseable {
     private val slots = HostSessionSlots()
 
-    fun open(id: Long): Boolean {
-        val slot = slots.reserve(id) ?: return false
-        return if (slot.started.compareAndSet(false, true)) populate(id, slot) else slot.opened.join() != null
+    fun open(id: Long): CompletableFuture<Boolean> {
+        val slot = slots.reserve(id) ?: return CompletableFuture.completedFuture(false)
+        if (slot.started.compareAndSet(false, true)) populate(id, slot)
+        return slot.opened.thenApply { it != null }
     }
 
     private fun populate(id: Long, slot: HostSessionSlot): Boolean {

@@ -3,6 +3,7 @@ package splice.codemode.host
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import splice.codemode.SharedWorkerChannel
 import splice.core.util.LogSink
@@ -17,6 +18,22 @@ internal class CodeModeHostDrains(
     private val admission: CodeModePoolAdmission,
     private val log: LogSink,
 ) {
+    suspend fun admit(session: CodeModePoolSession, channel: SharedWorkerChannel, metrics: CodeModeHostMetrics) {
+        val failure = try {
+            metrics.admit(session, channel, admission)
+            return
+        } catch (error: TimeoutCancellationException) {
+            failed(session.host, channel)
+            error
+        } catch (error: CodeModeCapacityException) {
+            error
+        } catch (error: IOException) {
+            failed(session.host, channel)
+            error
+        }
+        throw failure
+    }
+
     fun failed(host: CodeModePoolHost, channel: SharedWorkerChannel): CodeModeCapacityException {
         val changed = lock.withLock {
             if (!host.owns(channel)) return ended()

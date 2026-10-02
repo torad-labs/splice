@@ -63,6 +63,7 @@ internal class HostControlFixture(val factory: ControlledHostEngines = Controlle
 internal class ControlledHostEngines(heldOpens: Int = 1) : HostEngineFactory, AutoCloseable {
     val entered = CountDownLatch(heldOpens)
     val release = CountDownLatch(1)
+    val siblingEntered = CountDownLatch(1)
     var blockCreation: Int? = null
     val blockCreations = mutableSetOf<Int>()
     var failOpen = false
@@ -72,6 +73,7 @@ internal class ControlledHostEngines(heldOpens: Int = 1) : HostEngineFactory, Au
 
     override fun create(): Engine {
         val index = opened.incrementAndGet()
+        if (index == 2) siblingEntered.countDown()
         if (index == blockCreation || index in blockCreations) {
             entered.countDown()
             release.await()

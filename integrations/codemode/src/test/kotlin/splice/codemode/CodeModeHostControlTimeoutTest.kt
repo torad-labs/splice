@@ -18,6 +18,7 @@ import splice.core.util.LogSink
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 import splice.upstream.failure.CodeModeCapacityException
+import splice.upstream.failure.CodeModeStartException
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.locks.ReentrantLock
 
@@ -41,6 +42,35 @@ class CodeModeHostControlTimeoutTest {
             val next = runtime.startSession("next", "return 'fixture';", emptySet())
             assertEquals("fixture", (next.advance() as CodeModeStep.Completed).output)
             assertEquals(2, processes.size)
+        }
+    }
+
+    @Test
+    fun `a start deadline quarantines an unanswered open before its retry can reuse the host`() = runBlocking {
+        val processes = ConcurrentLinkedQueue<SilentHostCloseProcess>()
+        val messages = ConcurrentLinkedQueue<String>()
+        JvmCodeModeRuntime(
+            maxWorkers = 1,
+            workerStartTimeoutMs = 300,
+            spawn = WorkerSpawn {
+                SilentHostCloseProcess().also { process ->
+                    process.holdEngineOpen = processes.isEmpty()
+                    processes.add(process)
+                }
+            },
+        ).also { it.observeHostLifecycle(LogSink(messages::add)) }.use { runtime ->
+            assertThrows(CodeModeStartException::class.java) {
+                runBlocking { runtime.startSession("hung", "return 'never';", emptySet()) }
+            }
+            withTimeout(5_000) { while (messages.none { it.contains("marked for replacement") }) yield() }
+            withTimeout(5_000) { while (processes.first().isAlive) yield() }
+            val retry = runtime.startSession("hung", "return 'fixture';", emptySet())
+            assertEquals("fixture", (retry.advance() as CodeModeStep.Completed).output)
+            assertEquals(
+                2,
+                processes.size,
+                "The retry must boot a replacement instead of rejoining the unanswered open",
+            )
         }
     }
 

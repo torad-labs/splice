@@ -47,15 +47,39 @@ internal class HostWorkerDispatcher(
 
     fun dispatch(frame: HostFrame) {
         val type = CodeModeFields.requiredString(frame.payload, "type")
-        if (type in CONTROL_FRAMES) {
+        if (type == "session-open") {
+            open(frame, type)
+        } else if (type in CONTROL_FRAMES) {
             controls.execute(frame, type) { respond(frame, control(frame, type)) }
         } else if (!dispatchGuest(frame, type)) {
-            controls.execute(frame, type) {
-                // Legacy raw-host starts have no preceding session-open. Warm them on control, never run guest code there.
-                val starting = type == "start" || type == StreamingCodeModeWire.START
-                val opened = starting && sessions.open(frame.session)
-                if (!opened || !dispatchGuest(frame, type)) respond(frame, missingCell())
+            if (type == "start" || type == StreamingCodeModeWire.START) {
+                // Raw-host starts still open their engine, but never wait on another open's lane.
+                open(frame, type)
+            } else {
+                controls.execute(frame, type) { respond(frame, missingCell()) }
             }
+        }
+    }
+
+    private fun open(frame: HostFrame, type: String) {
+        controls.execute(frame, type) {
+            sessions.open(frame.session).whenComplete { opened, error ->
+                controls.execute(frame, "engines") {
+                    if (error != null) {
+                        controls.failed(frame, error)
+                    } else {
+                        opened(frame, type, opened)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun opened(frame: HostFrame, type: String, accepted: Boolean) {
+        if (type == "session-open") {
+            respond(frame, if (accepted) HostProtocol.count(sessions.count()) else HostProtocol.capacity())
+        } else if (!accepted || !dispatchGuest(frame, type)) {
+            respond(frame, missingCell())
         }
     }
 
@@ -65,11 +89,6 @@ internal class HostWorkerDispatcher(
     }
 
     private fun control(frame: HostFrame, type: String): JsonObject = when (type) {
-        "session-open" -> if (sessions.open(frame.session)) {
-            HostProtocol.count(sessions.count())
-        } else {
-            HostProtocol.capacity()
-        }
         "session-close" -> {
             cells.entries.filter { it.value.owner == frame.session }.forEach { (id, cell) ->
                 cells.remove(id)?.close()

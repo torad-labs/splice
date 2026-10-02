@@ -47,6 +47,15 @@ internal class HostWorkerControls(
         }
     }
 
+    fun failed(frame: HostFrame, error: Throwable) {
+        val kind = if (error is IOException || error.cause is IOException) {
+            CodeModeInfrastructureClass.IO
+        } else {
+            CodeModeInfrastructureClass.RUNTIME
+        }
+        failure(frame, kind)
+    }
+
     private fun failure(frame: HostFrame, kind: CodeModeInfrastructureClass) {
         val reply = CodeModeFatalFrame.create(CodeModeInfrastructureCategory.HOST, kind)
         writes.withLock { CodeModeWire.write(output, HostProtocol.frame(frame.cell, frame.request, reply)) }

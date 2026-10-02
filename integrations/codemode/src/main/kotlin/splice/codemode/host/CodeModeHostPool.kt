@@ -6,13 +6,10 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import splice.codemode.CellChannel
-import splice.codemode.SharedWorkerChannel
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.upstream.Ticker
-import splice.upstream.failure.CodeModeCapacityException
 import splice.upstream.failure.CodeModeWorkerLostException
-import java.io.IOException
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock as locked
@@ -66,7 +63,7 @@ internal class CodeModeHostPool(
             return session.gate.withLock {
                 val host = lock.locked { boots.open(session.host) }.await()
                 ensureActive(session)
-                if (!session.initialized) initialize(session, host)
+                if (!session.initialized) drains.admit(session, host, metrics)
                 val pipe = host.cell(sequence.incrementAndGet(), session.id)
                 lock.locked {
                     ensureActive(session, pipe)
@@ -77,17 +74,6 @@ internal class CodeModeHostPool(
             }
         } finally {
             if (!opened) release(session, null)
-        }
-    }
-
-    private suspend fun initialize(session: CodeModePoolSession, host: SharedWorkerChannel) {
-        try {
-            metrics.admit(session, host, admission)
-        } catch (error: CodeModeCapacityException) {
-            throw error
-        } catch (error: IOException) {
-            drains.failed(session.host, host)
-            throw error
         }
     }
 

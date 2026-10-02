@@ -6,6 +6,7 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.yield
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -31,17 +32,31 @@ import splice.dialect.responses.request.ResponsesRequestBuilder
 import splice.upstream.sse.CustomToolSource
 import splice.upstream.sse.WireSink
 
-private class ProgressSink(private val recorded: RecordingSink = RecordingSink()) : WireSink by recorded {
+/** [suspending] makes a signature write suspend first, as a contended client write does. */
+private class ProgressSink(
+    private val recorded: RecordingSink = RecordingSink(),
+    private val suspending: Boolean = false,
+) : WireSink by recorded {
     val calls: List<String> get() = recorded.calls
     val signatures = mutableListOf<String>()
     val source = mutableListOf<CustomToolSource>()
     val deltas: List<String> get() = source.filterIsInstance<CustomToolSource.Delta>().map { it.text }
 
+    /** What the runtime observed and what the client was shown, in one order. */
+    val timeline = mutableListOf<String>()
+
     override suspend fun customToolSource(event: CustomToolSource) {
         source += event
+        if (event is CustomToolSource.Delta) timeline += "runtime:${event.text}"
+    }
+
+    override suspend fun thinkingDelta(index: WireBlockIndex, thinking: String) {
+        timeline += "shown:$thinking"
+        recorded.thinkingDelta(index, thinking)
     }
 
     override suspend fun signatureDelta(index: WireBlockIndex, signature: String) {
+        if (suspending) yield()
         signatures += signature
         recorded.calls += "signature#${index.value}:$signature"
     }
@@ -114,6 +129,7 @@ class ResponsesCustomCallTest {
         assertEquals(emptyList<String>(), outcome.reasoningEnvelopes)
         assertEquals(call, outcome.customCalls.single().raw)
         assertEquals(listOf(script), sink.deltas)
+        assertEquals(listOf("runtime:$script", "shown:$script"), sink.timeline, "showing must never delay a dispatch")
         assertEquals(listOf(SpliceNotice.SIGNATURE), sink.signatures)
         assertEquals(1, sink.calls.count { it.startsWith("openThinking") })
         assertEquals(1, sink.calls.count { it == "think#0:$script" })
@@ -174,6 +190,24 @@ class ResponsesCustomCallTest {
         assertTrue(sink.calls.contains("think#0:await tools.Read("))
         turn.cancelAndJoin()
         assertTrue(turn.isCancelled)
+        assertEquals(listOf(SpliceNotice.SIGNATURE), sink.signatures)
+        assertEquals(1, sink.calls.count { it == "close#0" })
+    }
+
+    /** The cleanup runs NonCancellable: a client write that suspends in a cancelled turn still signs and
+     *  closes the script, where a cancellable one would throw before the signature. */
+    @Test
+    fun `cancelling mid-input signs the exec block even when the client write suspends`() = runTest {
+        val sink = ProgressSink(suspending = true)
+        val upstream = flow {
+            emit(customEvent("response.output_item.added", execItem("contended")))
+            emit(customEvent("response.custom_tool_call_input.delta", delta = "await tools.Read("))
+            awaitCancellation()
+        }
+        val turn = async(start = CoroutineStart.UNDISPATCHED) {
+            ResponsesStreamTranslator(ctx()).driveTurn(upstream, sink)
+        }
+        turn.cancelAndJoin()
         assertEquals(listOf(SpliceNotice.SIGNATURE), sink.signatures)
         assertEquals(1, sink.calls.count { it == "close#0" })
     }

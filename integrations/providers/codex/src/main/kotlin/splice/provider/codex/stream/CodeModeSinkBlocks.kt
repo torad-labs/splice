@@ -15,7 +15,10 @@ internal class CodeModeSinkBlocks {
         val name: String,
         val raw: JsonObject?,
         var index: WireBlockIndex? = null,
-    )
+    ) {
+        /** A notice its writer signed where it is open now; a cut closes it without a second signature. */
+        var signed = false
+    }
 
     private val blocks = linkedMapOf<Int, Block>()
     private var sequence = 0
@@ -46,22 +49,32 @@ internal class CodeModeSinkBlocks {
         return block.index ?: openOn(sink, block)?.also { block.index = it }
     }
 
-    /** Where a signature goes. A notice cut by [detach] was signed there, so its writer's own closing
-     *  signature never reopens it as an empty block in the next client step. */
-    suspend fun signatureDestination(sink: WireSink, index: WireBlockIndex): WireBlockIndex? =
-        if (isNotice(index)) blocks[index.value]?.index else destination(sink, index)
+    /** Signs [index]. A notice is signed only where it is open in this step: one a cut already signed and
+     *  closed, or one no kept delta opened, is never reopened as an empty block just to carry a signature. */
+    suspend fun sign(sink: WireSink, index: WireBlockIndex, signature: String) {
+        val block = blocks[index.value] ?: return
+        if (block.kind != Kind.NOTICE) {
+            destination(sink, index)?.let { sink.signatureDelta(it, signature) }
+            return
+        }
+        val open = block.index ?: return
+        sink.signatureDelta(open, signature)
+        block.signed = true
+    }
 
     fun isNotice(index: WireBlockIndex): Boolean = blocks[index.value]?.kind == Kind.NOTICE
 
-    /** Closes every block open on [sink]. A notice is signed first, as its writer would have signed it:
-     *  cut short unsigned, Claude Code would keep it and replay the script as the model's reasoning. */
+    /** Closes every block open on [sink]. A notice its writer has not signed is signed first, as its writer
+     *  would have signed it: cut short unsigned, Claude Code would keep it and replay the script as the
+     *  model's reasoning. */
     suspend fun detach(sink: WireSink) {
         for (block in blocks.values) {
             block.index?.let { index ->
-                if (block.kind == Kind.NOTICE) sink.signatureDelta(index, SpliceNotice.SIGNATURE)
+                if (block.kind == Kind.NOTICE && !block.signed) sink.signatureDelta(index, SpliceNotice.SIGNATURE)
                 sink.closeBlock(index)
             }
             block.index = null
+            block.signed = false
         }
     }
 

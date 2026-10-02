@@ -40,13 +40,16 @@ internal class CodeModeSwitchingSink(
         target = null
     }
 
-    /** [block] names the block the write belongs to; a write to a notice block is optional (V4-456). */
+    /** [block] names the block the write belongs to; a write to a notice spends [notice] instead of the
+     *  model's budget (V4-456). The block table is read under the lock, with the write. */
     private suspend fun write(
         bytes: Int = 0,
         block: WireBlockIndex? = null,
+        notice: DetachedSpend = DetachedSpend.NOTICE_TEXT,
         action: BufferedSinkWrite,
     ) = mutex.withLock {
-        writes.deliver(target, bytes, block != null && blocks.isNotice(block), action)
+        val spend = if (block != null && blocks.isNotice(block)) notice else DetachedSpend.MODEL
+        writes.deliver(target, bytes, spend, action)
     }
 
     private suspend fun open(
@@ -61,7 +64,7 @@ internal class CodeModeSwitchingSink(
             "stream block exceeds byte budget"
         }
         val index = blocks.open(null, kind, id, name, raw)
-        writes.deliver(target, bytes.toInt()) { sink -> blocks.destination(sink, index) }
+        writes.deliver(target, bytes.toInt(), DetachedSpend.MODEL) { sink -> blocks.destination(sink, index) }
         index
     }
 
@@ -69,7 +72,10 @@ internal class CodeModeSwitchingSink(
 
     override suspend fun openThinking(): WireBlockIndex = open(CodeModeSinkBlocks.Kind.THINKING)
 
-    override suspend fun openNotice(): WireBlockIndex = open(CodeModeSinkBlocks.Kind.NOTICE)
+    /** A notice opens in its first delta's own locked write, never here: a cut between the writer's open
+     *  and its first delta then leaves no empty signed block, and the open spends nothing. */
+    override suspend fun openNotice(): WireBlockIndex =
+        mutex.withLock { blocks.open(null, CodeModeSinkBlocks.Kind.NOTICE) }
 
     override suspend fun openTool(id: String, name: String): WireBlockIndex =
         open(CodeModeSinkBlocks.Kind.TOOL, id, name)
@@ -96,8 +102,8 @@ internal class CodeModeSwitchingSink(
     }
 
     override suspend fun signatureDelta(index: WireBlockIndex, signature: String) {
-        write(signature.encodeToByteArray().size, index) { sink ->
-            blocks.signatureDestination(sink, index)?.let { sink.signatureDelta(it, signature) }
+        write(signature.encodeToByteArray().size, index, DetachedSpend.NOTICE_FRAME) { sink ->
+            blocks.sign(sink, index, signature)
         }
     }
 
@@ -108,7 +114,7 @@ internal class CodeModeSwitchingSink(
     }
 
     override suspend fun closeBlock(index: WireBlockIndex) {
-        write { blocks.close(it, index) }
+        write(block = index, notice = DetachedSpend.NOTICE_FRAME) { blocks.close(it, index) }
     }
 
     override suspend fun closeAll() {

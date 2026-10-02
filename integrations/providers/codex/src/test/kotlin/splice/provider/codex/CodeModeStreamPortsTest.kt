@@ -134,23 +134,68 @@ class CodeModeStreamPortsTest : CodeModeBridgeTestSupport() {
         assertEquals(emptyList<String>(), next.events, "an empty signed block would be drawn in the next step")
     }
 
-    /** A 65,536-character script sent a character a delta outweighs the detached budget in envelopes. It
-     *  is dropped past its own budget, and model output keeps the whole budget it had. */
+    /** A 65,536-character script sent a character a delta outweighs the detached budget in envelopes. Its
+     *  text is dropped past its own budget, its signature and close are kept, so the block the kept deltas
+     *  reopen is signed and closed, and its open and close spend none of the budget model output is held to:
+     *  a model write at that budget's exact edge still passes. */
     @Test
-    fun `live script past the detached byte budget is dropped and never spends the model's budget`() =
+    fun `live script past the detached byte budget is dropped, still signed, and never spends the model's budget`() =
         runBlocking {
             val round = CodeModeSwitchingSink(EventSink()) {}
-            round.detach()
             val script = round.openNotice()
+            round.thinkingDelta(script, "const a = ")
+            round.detach()
             repeat(CodeModeLimits.MAX_FRAME_BYTES / 20) { round.thinkingDelta(script, "x") }
+            round.signatureDelta(script, SpliceNotice.SIGNATURE)
+            round.closeBlock(script)
+            val header = """{"type":"content_block_delta","index":0,"delta":{}}""".encodeToByteArray().size
+            val edge = "y".repeat(CodeModeLimits.MAX_FRAME_BYTES - 2 * header)
             val text = round.openText()
-            round.textDelta(text, "y".repeat(CodeModeLimits.MAX_FRAME_BYTES / 2))
+            round.textDelta(text, edge)
             val next = EventSink()
             round.attach(next)
             val shown = next.events.count { it == "think#0:x" }
             assertTrue(shown in 1 until CodeModeLimits.MAX_FRAME_BYTES / 20, "the script was not cut: $shown")
-            assertTrue(next.events.contains("text#1:" + "y".repeat(CodeModeLimits.MAX_FRAME_BYTES / 2)))
+            val closing = next.events.filter { "#0" in it }.drop(shown + 1)
+            val signedClose = listOf("sig#0:${SpliceNotice.SIGNATURE}", "close#0")
+            assertEquals(signedClose, closing, "the reopened script is unsigned")
+            assertTrue(next.events.contains("text#1:$edge"), "model output lost budget to the live script")
         }
+
+    /** A cut between the writer's open and its first delta: nothing was drawn, so nothing is signed or closed
+     *  in that step, and the script opens where its first delta lands. */
+    @Test
+    fun `a cut before the live script's first delta draws no empty block`() = runBlocking {
+        val first = EventSink()
+        val round = CodeModeSwitchingSink(first) {}
+        val script = round.openNotice()
+        round.detach()
+        round.thinkingDelta(script, "await tools.Read();")
+        val next = EventSink()
+        round.attach(next)
+        round.signatureDelta(script, SpliceNotice.SIGNATURE)
+        round.closeBlock(script)
+        assertEquals(emptyList<String>(), first.events, "an empty signed block would be drawn")
+        val signed = "sig#0:${SpliceNotice.SIGNATURE}"
+        assertEquals(listOf("openThinking#0", "think#0:await tools.Read();", signed, "close#0"), next.events)
+    }
+
+    /** A cut between the writer's signature and its close: the block is closed at the cut, signed once. */
+    @Test
+    fun `a cut after the writer signed the live script never signs it twice`() = runBlocking {
+        val first = EventSink()
+        val round = CodeModeSwitchingSink(first) {}
+        val script = round.openNotice()
+        round.thinkingDelta(script, "return 1;")
+        round.signatureDelta(script, SpliceNotice.SIGNATURE)
+        round.detach()
+        val next = EventSink()
+        round.attach(next)
+        round.closeBlock(script)
+        val signed = "sig#0:${SpliceNotice.SIGNATURE}"
+        assertEquals(listOf("openThinking#0", "think#0:return 1;", signed, "close#0"), first.events)
+        assertEquals(emptyList<String>(), next.events)
+    }
 
     private class EventSink : WireSink {
         val events = mutableListOf<String>()

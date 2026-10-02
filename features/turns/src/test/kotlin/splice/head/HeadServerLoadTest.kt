@@ -38,6 +38,7 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
+import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
@@ -233,6 +234,10 @@ class HeadServerLoadTest {
         head.stop()
         client.close()
         mock.stop()
+        // The perf and compact rows of the cancelled turns are appended on the async file lane, so they can land
+        // after the head stops. JUnit deletes @TempDir right after this returns, and a row landing mid-delete
+        // leaves the root not empty (CI run 36927069787: DirectoryNotEmptyException on the root).
+        assertTrue(AsyncFileIo.drain(), "the file lane drained before the temp directory is deleted")
     }
 
     @Test

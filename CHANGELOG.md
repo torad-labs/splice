@@ -123,7 +123,7 @@ origin.
   compaction and is still streaming after that is cut, and Claude Code does not retry a turn cut
   after its text began. A compaction is let finish first (see Changed). `splice upgrade` waits up to 30 minutes for
   every head to go idle, then leaves the release staged unless you rerun with `--now`.
-- **splice is tested against Claude Code 2.1.285.** When a session runs a newer one, doctor and
+- **splice is tested against Claude Code 2.1.287.** When a session runs a newer one, doctor and
   `splice status` report it; the status line warns once per session during the daemon's lifetime.
 - **Claude Code's header reads `API Usage Billing` on every head but `claude-splice`.** Claude Code
   only has names for Anthropic's plans and the clouds that sell Claude, so it prints that for any
@@ -487,8 +487,7 @@ origin.
   a new one would exceed the server cap; a
   crash fails pending calls honestly and the next call restarts the server, never replaying tool
   operations. `[daemon] mcp_hosting = false` turns it off, `mcp_hosting_exclude` keeps named
-  servers per session; `/api/mcp` shows eligibility and ownership. Measured with four parallel sessions on three servers from `~/.claude.json`, using an earlier
-  Python benchmark. The current benchmark is `tools/e2e/mcp-host/bench.ts`. A client that
+  servers per session; `/api/mcp` shows eligibility and ownership. A client that
   falls a full buffer (256) of notifications behind on its stream loses the stale backlog, never the
   fact that its lists may have changed: the backlog collapses to the three `list_changed`
   notifications plus the newest one when every queued item is a list change. With anything else

@@ -27,7 +27,8 @@ ast-grep walls, hook tests, campaign walls, config guard, console lint/test (the
 with a committed-dist check, the dependency audit, the release-readiness law, and the staged
 release acceptance. The individual commands are listed only so a contributor can run one in
 isolation while iterating. The Gradle build is rooted at the repository root with its own
-JDK 21 toolchain; its modules live under `gateway/`.
+JDK 21 toolchain; its modules live under `core/`, `integrations/`, `features/`, `app/`,
+`quality/` and `console-next/`, as mapped in `settings.gradle.kts`.
 
 A green *diff* is not the bar — a green *merge* is.
 
@@ -40,7 +41,7 @@ changing a rule.
 ## PR title
 
 The org-injected PR-title gate (check name `title`) enforces Conventional Commits on the **PR
-title** — it is the squash-merge subject, so it becomes `main`'s history verbatim. This repo used
+title**. Landing preserves the branch's commits, never squashes them. This repo used
 to ship `.github/workflows/pr-title.yml`; that workflow is deleted. The allowed types live once,
 in `tools/gate/src/lib/conventional.ts`, mirroring the org gate. A second copy is how two types the org gate
 rejects survived here after that deletion.
@@ -55,37 +56,28 @@ so the PR cannot merge.
 **That file is the whole vocabulary.** Inventing a type that reads well — `harden(walls):`,
 `verify(x):` — fails the check.
 
-**Use an allowed type in your branch commit subject as well.** Only the title is linted, but the
-squash subject does not always come from the title: #66 passed with `chore(...)` and landed on `main`
-as `verify(...)`, its branch commit subject. Matching both is the only way to guarantee `main`'s
-history complies.
+**Use an allowed type in every commit subject as well.** The complete gate checks HEAD's subject
+against the same vocabulary. Landing preserves those subjects because commits are never squashed.
 
-## Landing on a version branch: trains
+## Working and landing on the shared branch
 
-Work for an upcoming release targets its version branch (`feat/v0.4.0`), not `main`. Each change
-keeps its own branch and PR and is reviewed on its own. Maintainers land them in **trains**
-rather than one at a time:
+All seats work in one checkout on the same release branch (`feat/v0.4.0`), not in separate feature
+branches or worktrees. Coordinate ownership by file and preserve every other seat's work.
 
-1. Branch `train/v<version>-<N>` off the version branch's tip and merge two to six reviewed PRs into
-   it with `git merge --no-ff` (subject: `chore(merge): <branch> into the v<version> train`).
-2. Push it and open ONE PR against the version branch, titled
-   `chore(merge): the v<version> train, part <N> — <what it carries>`.
-3. CI's `gate` job on that exact head sha is the verdict; a local `npm run gate` is feedback. If it
-   is red, fix forward on the train branch with one commit and let it re-gate; never take the
-   train apart.
-4. When it is green, fast-forward the version branch to exactly that sha:
-   `git push origin <sha>:refs/heads/feat/v<version>`. The member PRs close as merged. Never merge
-   after the run: a new merge is a new sha and needs its own gate.
-5. Build anything you install or ship from a clean detached worktree of that sha
-   (`git worktree add --detach <dir> <sha>`), never from a working tree.
-6. Remove what landed. Each member PR's worktree and local branch go when its train lands, and
-   whoever lands the train sweeps the rest: a local branch merged into the version branch, or one
-   `git cherry` shows nothing left on, goes with its worktree once `git status` is clean and
-   nothing runs in it.
+1. Commit only your own files by explicit path: `git commit -m "docs(scope): subject" -- <paths>`.
+   For new files, add only those paths and commit them in the same command. The index is shared,
+   so leave nothing staged. Never use `git add -A`, `git commit -a`, stash, reset or switch the
+   shared branch.
+2. The maintainer pushes the shared branch and keeps one PR from it to `main`.
+3. CI's `gate` job must pass on the exact SHA being landed and installed. Local gate runs are
+   feedback, not the verdict. A red gate is fixed forward with a commit and another CI run.
+4. Land by fast-forward or merge commit, never squash. If a merge creates a new SHA, that SHA
+   needs its own passing CI gate before landing or installation.
+5. Only for installation, build the gated SHA from a clean detached tree
+   (`git worktree add --detach <dir> <sha>`), never the shared dirty checkout. Confirm the detached
+   tree is clean before building. Nothing is edited or committed there; remove it after the install.
 
-Keep trains small: one red PR holds the whole train. A second train branched from the first can
-gate at the same time (it contains the first), and whichever passes lands. The version branch
-reaches `main` through one PR, and `main` reaches `prod` as described under [Releasing](#releasing).
+`main` reaches `prod` as described under [Releasing](#releasing).
 
 ## No CLA
 

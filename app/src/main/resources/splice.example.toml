@@ -115,18 +115,18 @@ zstd_request_body = true
 # still execute the real operations. Code mode requires neither Codex nor Node. Only chatgpt-oauth +
 # openai-responses providers may enable it; code_mode = false turns it off. Toolless and forced-
 # tool turns retain the ordinary path; a single tool result over 64 KiB is truncated at admission
-# behind a "[truncated N chars]" marker. Child JVMs bound workers/time/heap and deny guest host/I/O
-# access.
+# behind a "[truncated N chars]" marker. One shared worker JVM runs independent GraalJS contexts
+# and denies guest host/I/O access.
 # This setting is shared by every head using providers.codex and read only at boot: finish ongoing
 # work before editing, then run `splice restart` for a FULL daemon restart. A head restart alone does
 # not reload TOML. Finish code-mode work first: restart discards pending execution and splice never
 # reruns the lost JavaScript source automatically.
 # code_mode = false
-# The JAR-bundled JavaScript worker pool, shown with its code defaults. Each is an OVERLAY:
-# leave it out and the default below rides. All are code-mode only (chatgpt-oauth + responses).
-#   code_mode_workers = 4      the GraalJS child-JVM pool size
-#   code_mode_timeout_ms = 5000 ms a running script may take to answer (its worker's start is not counted)
-#   code_mode_heap = 128       MB each child JVM's -Xmx
+# The JAR-bundled runner uses independent GraalJS contexts in one shared worker JVM.
+# These code-mode-only overrides retain the defaults shown when omitted (chatgpt-oauth + responses).
+#   code_mode_workers = 4      retained positive compatibility setting; does not cap script contexts
+#   code_mode_timeout_ms = 5000 retained positive compatibility setting; not a per-script deadline
+#   code_mode_heap = 512       MiB for the shared worker JVM's maximum heap (-Xmx)
 #   code_mode_models = ["codex-auto-review"]  models offered the runner in ADDITION to those the backend marks
 #                              code_mode_only (a model the backend hides from its list is only reachable here)
 # Deferred tool surface: Claude Code advertises 64-87 tools and every schema used to ride every

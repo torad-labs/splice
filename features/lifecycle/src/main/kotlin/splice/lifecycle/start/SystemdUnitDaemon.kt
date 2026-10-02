@@ -26,7 +26,7 @@ internal class SystemctlEnvironmentBlock(private val timeoutMs: Long = SYSTEMCTL
     ManagerEnvironmentBlock {
     override fun invoke(): String? {
         val process = Cancellables.runCatchingCancellable {
-            ProcessBuilder(listOf("systemctl", "--user", "show-environment"))
+            UserManagerBus.supply(ProcessBuilder(listOf("systemctl", "--user", "show-environment")))
                 .redirectError(ProcessBuilder.Redirect.DISCARD)
                 .start()
         }.getOrElse { return null }

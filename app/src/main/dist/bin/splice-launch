@@ -334,9 +334,19 @@ function unitDefaults() {
   return selectors.every((value) => value === undefined || value === "");
 }
 
+// systemctl --user finds the user manager through XDG_RUNTIME_DIR or DBUS_SESSION_BUS_ADDRESS. A shell outside a
+// login session (su, sudo -u, cron) has neither, and every user verb failed as if there were no unit, so the
+// shim ran the daemon in the shell beside the unit. The manager's runtime dir is /run/user/<uid> (pam_systemd);
+// the JVM's UserManagerBus supplies the same, so the two cold-start paths agree.
+function userBusEnv() {
+  if (env.XDG_RUNTIME_DIR || env.DBUS_SESSION_BUS_ADDRESS || typeof process.getuid !== "function") return env;
+  const dir = `/run/user/${process.getuid()}`;
+  return fs.existsSync(dir) ? { ...env, XDG_RUNTIME_DIR: dir } : env;
+}
+
 function unitExists(unit) {
   try {
-    execFileSync("systemctl", ["--user", "cat", unit], { stdio: "ignore" });
+    execFileSync("systemctl", ["--user", "cat", unit], { stdio: "ignore", env: userBusEnv() });
     return true;
   } catch {
     return false; // no systemctl on the box, or no such unit
@@ -347,7 +357,7 @@ function unitExists(unit) {
 // Do not print show-environment: other variables in it may contain credentials.
 function unitEnvironment() {
   try {
-    const text = execFileSync("systemctl", ["--user", "show-environment"], { encoding: "utf8" });
+    const text = execFileSync("systemctl", ["--user", "show-environment"], { encoding: "utf8", env: userBusEnv() });
     const names = new Set([
       "HOME", "SPLICE_CONFIG", "XDG_CONFIG_HOME", "SPLICE_STATE_DIR", "CLAUDEX_STATE_DIR",
       "SPLICE_CONTROL_PORT", "CONTROL_PROXY_PORT",
@@ -369,7 +379,7 @@ async function startThroughUnit(unit, managerHome, present) {
   if (!(HEALTH_JSON === "" && present && HOME === managerHome && unitDefaults())) return;
   warn(`splice: starting ${unit}…`);
   try {
-    execFileSync("systemctl", ["--user", "start", unit], { stdio: "ignore" });
+    execFileSync("systemctl", ["--user", "start", unit], { stdio: "ignore", env: userBusEnv() });
   } catch {
     // the wait below reports the outcome; a failed start is a unit that never answers
   }

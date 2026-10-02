@@ -45,6 +45,15 @@ public class DaemonColdStart(
      *  this shell's daemon is its own (a selector is set) or there is no unit on the box. */
     public fun supervisorUnit(): String? = launch.supervisorUnit()
 
+    /** `splice start`: the exit code once the supervisor unit has the daemon answering on [port], as every
+     *  cold start does where a unit serves this shell (V4-190), running or not; null where none does, and
+     *  the daemon runs in the calling process. Oct 1, 11:49 PM CT: a `start` typed while splice.service
+     *  restarted took its port, with no heap cap and nothing to restart it. */
+    public fun startThroughUnit(port: Int): Int? {
+        supervisorUnit() ?: return null
+        return if (ensureDaemon(port)) 0 else 1
+    }
+
     /** V4-395: what a restart says when the supervisor unit runs another home's daemon (or cannot be shown
      *  to run this one's) on [port], or null when the unit is this home's or this shell's daemon is its own.
      *  A restart that gets a sentence stops there: nothing is signalled and no unit verb is run. */

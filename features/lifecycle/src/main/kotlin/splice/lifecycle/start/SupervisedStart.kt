@@ -14,6 +14,8 @@ package splice.lifecycle.start
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.daemonclient.DaemonSettings
+import java.nio.file.Files
+import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 
 /** The environment selectors that make a shell's daemon its own (a harness, a second install) —
@@ -46,10 +48,39 @@ internal fun interface Systemctl {
     operator fun invoke(args: List<String>): Int
 }
 
+/** `systemctl --user` finds the user manager through XDG_RUNTIME_DIR or DBUS_SESSION_BUS_ADDRESS. A shell
+ *  outside a login session (su, sudo -u, cron, a terminal that drops both) has neither, and every user verb
+ *  then fails "Failed to connect to bus": the route read that as no unit on the box, and `splice start` ran
+ *  the daemon in the shell beside splice.service. The manager's runtime directory is /run/user/<uid>
+ *  (pam_systemd), so a child gets it whenever the shell lacks both and the directory exists. */
+internal object UserManagerBus {
+    private const val RUNTIME_DIR = "XDG_RUNTIME_DIR"
+    private const val BUS_ADDRESS = "DBUS_SESSION_BUS_ADDRESS"
+
+    fun supply(
+        builder: ProcessBuilder,
+        runtimeRoot: Path = Path.of("/run/user"),
+        uid: Int? = processUid(),
+    ): ProcessBuilder {
+        val env = builder.environment()
+        if (uid == null || reachesBus(env)) return builder
+        val dir = runtimeRoot.resolve(uid.toString())
+        if (Files.isDirectory(dir)) env[RUNTIME_DIR] = dir.toString()
+        return builder
+    }
+
+    private fun reachesBus(env: Map<String, String>): Boolean =
+        !env[RUNTIME_DIR].isNullOrEmpty() || !env[BUS_ADDRESS].isNullOrEmpty()
+
+    /** The owner of this process's /proc entry, its uid on Linux; null where there is no /proc (and no systemd). */
+    private fun processUid(): Int? =
+        Cancellables.runCatchingCancellable { Files.getAttribute(Path.of("/proc/self"), "unix:uid") as Int }.getOrNull()
+}
+
 /** The real one: bounded, output discarded; a missing systemctl or a timeout is a non-zero answer. */
 internal class JdkSystemctl(private val timeoutMs: Long = SYSTEMCTL_TIMEOUT_MS) : Systemctl {
     override fun invoke(args: List<String>): Int = Cancellables.runCatchingCancellable {
-        val process = ProcessBuilder(listOf("systemctl", "--user") + args)
+        val process = UserManagerBus.supply(ProcessBuilder(listOf("systemctl", "--user") + args))
             .redirectOutput(ProcessBuilder.Redirect.DISCARD)
             .redirectError(ProcessBuilder.Redirect.DISCARD)
             .start()

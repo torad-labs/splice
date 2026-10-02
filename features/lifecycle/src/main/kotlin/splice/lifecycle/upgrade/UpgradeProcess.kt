@@ -4,6 +4,7 @@
 package splice.lifecycle.upgrade
 
 import splice.core.util.SafeFailureText
+import splice.lifecycle.start.UserManagerBus
 import java.io.IOException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
@@ -27,7 +28,10 @@ internal fun interface UpgradeProcess {
 
 internal class JdkUpgradeProcess(private val timeoutMs: Long = DEFAULT_TIMEOUT_MS) : UpgradeProcess {
     override fun invoke(command: List<String>, inherit: Boolean): UpgradeExit = try {
-        val builder = ProcessBuilder(command).redirectErrorStream(false).redirectError(ProcessBuilder.Redirect.INHERIT)
+        // The upgrade restarts the unit through `systemctl --user`, which needs the user manager's bus.
+        val builder = UserManagerBus.supply(ProcessBuilder(command))
+            .redirectErrorStream(false)
+            .redirectError(ProcessBuilder.Redirect.INHERIT)
         if (inherit) builder.redirectOutput(ProcessBuilder.Redirect.INHERIT)
         val process = builder.start()
         // Read on a thread so a command that neither exits nor closes stdout still hits the deadline.

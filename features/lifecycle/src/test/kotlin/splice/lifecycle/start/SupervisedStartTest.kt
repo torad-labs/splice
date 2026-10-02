@@ -32,7 +32,7 @@ class SupervisedStartTest {
     private class FakeSystemctl(
         private val unitPresent: Boolean = true,
         private val startOk: Boolean = true,
-        private val active: Boolean = true,
+        private val active: Boolean = false,
     ) : Systemctl {
         /** Every call, as the real port receives it: the args after `systemctl --user`. */
         val calls = mutableListOf<List<String>>()
@@ -155,6 +155,48 @@ class SupervisedStartTest {
         assertEquals(null, down.activeUnit(), "a restart still reads a down unit as running no daemon")
         assertEquals(null, launch(FakeSystemctl(), env("SPLICE_STATE_DIR" to "/tmp/x")).supervisorUnit())
         assertEquals(null, launch(FakeSystemctl(unitPresent = false), env()).supervisorUnit())
+    }
+
+    // The verb itself, as Main dispatches it: a unit that is down is started and waited on, never replaced by a
+    // daemon in this process; only a selector or a box without a unit answers null, and nothing is started.
+    @Test
+    fun `splice start goes through a unit that is down, and a selector or no unit starts nothing there`() {
+        val coldStart = { ctl: FakeSystemctl, reader: EnvReader ->
+            val supervised = SupervisedStart(ctl, reader, settings, unitName = SupervisorUnitName { UNIT })
+            DaemonColdStart(out, out, reader, RunningJar { null }, supervised, startupPolls = 2)
+        }
+        val down = FakeSystemctl(active = false)
+        var code: Int? = null
+        val said = captured { code = coldStart(down, env()).startThroughUnit(TestPorts.reserve()) }
+        assertEquals(1, code, "nothing answers on a free port, so the start through the unit fails:\n$said")
+        assertTrue(listOf("start", UNIT) in down.calls, "the down unit was never started: ${down.calls}")
+        val ownDaemon = listOf(
+            FakeSystemctl() to env("SPLICE_STATE_DIR" to "/tmp/x"),
+            FakeSystemctl(unitPresent = false) to env(),
+        )
+        for ((ctl, reader) in ownDaemon) {
+            val code = coldStart(ctl, reader).startThroughUnit(TestPorts.reserve())
+            assertEquals(null, code, "this shell's daemon is its own")
+            assertTrue(ctl.calls.none { it[0] == "start" }, "a unit was started for a shell with its own: ${ctl.calls}")
+        }
+    }
+
+    // A shell outside a login session has neither variable systemctl --user needs, and every user verb failed as if
+    // there were no unit (reproduced Oct 2: "Failed to connect to user scope bus", exit 1; with only
+    // XDG_RUNTIME_DIR set, exit 0). The manager's runtime directory is supplied to the child; a shell's own stands.
+    @Test
+    fun `a shell with no user bus reaches the user manager through its runtime directory`(@TempDir root: Path) {
+        Files.createDirectory(root.resolve("4242"))
+        fun supplied(vararg pairs: Pair<String, String>, uid: Int? = 4242): String? {
+            val builder = ProcessBuilder("true").also { it.environment().clear() }
+            builder.environment().putAll(pairs)
+            return UserManagerBus.supply(builder, root, uid).environment()["XDG_RUNTIME_DIR"]
+        }
+        assertEquals(root.resolve("4242").toString(), supplied(), "no bus in the shell: the manager's runtime dir")
+        assertEquals("/run/user/7", supplied("XDG_RUNTIME_DIR" to "/run/user/7"), "a shell's own runtime dir stands")
+        assertEquals(null, supplied("DBUS_SESSION_BUS_ADDRESS" to "unix:path=/x/bus"), "a shell's own bus stands")
+        assertEquals(null, supplied(uid = 4343), "no runtime directory for this uid: nothing to supply")
+        assertEquals(null, supplied(uid = null), "no uid (no /proc): nothing to supply")
     }
 
     @Test

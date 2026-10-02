@@ -5,13 +5,12 @@ import { useDoctorFix } from '../../api/doctor';
 import { useHeadAction, useStopTurn } from '../../api/queries';
 import { useLiveTurnOf } from '../../api/sessions';
 import { routeOf } from '../../lib/needs-page';
-import type { Need } from '../../types/needs';
+import type { Fix } from '../../types/needs';
 import { Button } from '../../ui';
 import { DaemonRestart } from '../shared/DaemonRestart';
 import { SignIn } from '../shared/SignIn';
 import { A } from './copy';
 
-type Fix = Need['fix'];
 /** `go` is the one charged act (a card's own button); `quiet` is the same act where the page already has its one, as in Settings' health list. */
 type Tone = 'go' | 'quiet';
 

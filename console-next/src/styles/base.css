@@ -132,7 +132,7 @@ svg { display: block; flex: none; }
 
 .state { display: inline-flex; align-items: center; gap: var(--space-4); font: 600 0.96rem/1 var(--meta); padding: 0; border: 0; color: var(--ink); white-space: nowrap; }
 .state i { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: currentColor; }
-.state.work i { background: var(--ok); } .state.wait i { background: var(--charge); } .state.stuck i { background: var(--stuck); } .state.idle i { background: var(--faint); } .state.quota i { background: var(--wait); }
+.state.work i { background: var(--ok); } .state.wait i { background: var(--charge); } .state.stuck i { background: var(--stuck); } .state.idle i { background: var(--faint); } .state.quota i { background: var(--stuck); }
 
 /* the one quiet line under a card's activity: facts a person reads once, never chips */
 .quiet-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) 0; padding: 0 var(--space-7) var(--space-6); font: 500 0.96rem var(--meta); color: var(--mute); }

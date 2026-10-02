@@ -3,6 +3,7 @@ import { describe, expect, test } from 'vitest';
 import { orderPlans, paceText, planUsage, splitIdle, totalsOf, usageLede, windowChoices } from '../src/lib/usage-page';
 import type { PlanUsage } from '../src/lib/usage-page';
 import type { EconomicsBucket, HeadEconomics } from '../src/types/economics';
+import type { HeadStatus, UsagePayload } from '../src/types/core';
 
 const HOUR = 3_600_000;
 const NOW = 1_000 * HOUR + 1000;
@@ -41,6 +42,22 @@ describe('a plan', () => {
     expect(idle.cost).toBeNull();
     expect(idle.turns).toBe(0);
   });
+  test('a full reading is not a refusal, and only a future held refusal makes its gauge full', () => {
+    const reading: UsagePayload = {
+      window_hours: 24, warn_pct: 80, warn_tokens_5h: 0,
+      heads: [{ key: 'a', label: 'A', usage: { output_tokens_5h: 0, entries: 0, ratelimit: null, warn: { pct: 0, level: 'ok', source: 'none', reset: null }, quota: { five_hour: { used_pct: 100, resets_at: NOW / 1000 + 3600 } } } }],
+    };
+    const status = (until?: number) => ({ key: 'a', quotaResetAtEpochSeconds: until }) as HeadStatus;
+    expect(planUsage(head('a', []), 'A', 'gpt', reading, 24, NOW).full).toBe(false);
+    expect(planUsage(head('a', []), 'A', 'gpt', reading, 24, NOW, status(NOW / 1000 + 60)).full).toBe(true);
+    expect(planUsage(head('a', []), 'A', 'gpt', reading, 24, NOW, status(NOW / 1000)).full).toBe(false);
+  });
+  test('an idle refused command without a reading stays visible, not buried among idle plans', () => {
+    const held = plan({ key: 'held', turns: 0, pct: null, full: true });
+    const split = splitIdle([held, plan({ key: 'idle', turns: 0 })]);
+    expect(split.active).toEqual([held]);
+    expect(split.idle.map((item) => item.key)).toEqual(['idle']);
+  });
   test('its sums cover the window, and the cost is null when no turn was priced', () => {
     const unpriced = planUsage(head('a', [bucket(1, { cost_usd: null })]), 'A', 'none', null, 24, NOW);
     expect(unpriced.inTokens).toBe(1_000_000);
@@ -69,7 +86,10 @@ describe('the lede', () => {
   test('names the cost, and the nearest plan only when it is close', () => {
     const totals = totalsOf([head('a', [bucket(1)])], 24, NOW);
     expect(usageLede(totals, [plan({ pct: 40 })], 24)).toBe('About $2.00 of API cost in the last 24 hours.');
-    expect(usageLede(totals, [plan({ label: 'ChatGPT', pct: 100, full: true })], 24)).toContain('ChatGPT is out of quota.');
+    expect(usageLede(totals, [plan({ label: 'ChatGPT', pct: 100, full: false })], 24)).toContain('ChatGPT is at 100% of its limit.');
+    expect(usageLede(totals, [plan({ label: 'ChatGPT', pct: 33, full: true })], 24)).toContain('ChatGPT is out of quota.');
+    expect(usageLede(totals, [plan({ label: 'ChatGPT', pct: null, full: true })], 24)).toContain('ChatGPT is out of quota.');
+    expect(usageLede(totals, [plan({ label: 'Reading', pct: 100 }), plan({ label: 'Held', pct: null, full: true })], 24)).toContain('Held is out of quota.');
     expect(usageLede(totals, [plan({ label: 'Kimi', pct: 82.4 })], 24)).toContain('Kimi is at 82% of its limit.');
   });
   test('says none priced rather than $0 when no turn has a price', () => {

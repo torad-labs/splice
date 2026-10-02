@@ -14,7 +14,7 @@
 .use { display: grid; gap: var(--space-4); }
 .use .track { height: 0.75rem; border-radius: 0.375rem; background: color-mix(in srgb, var(--ink) 7%, transparent); overflow: hidden; }
 .use .track i { display: block; height: 100%; background: var(--c); border-radius: 0.375rem; }
-.use .track.full i { background: repeating-linear-gradient(135deg, var(--c) 0 8px, color-mix(in srgb, var(--c) 45%, transparent) 8px 16px); border-radius: 0.375rem; }
+.use .track.full i { background: repeating-linear-gradient(135deg, var(--stuck) 0 8px, color-mix(in srgb, var(--stuck) 45%, transparent) 8px 16px); border-radius: 0.375rem; }
 .use span { font: 500 0.96rem var(--meta); color: var(--body); }
 .use span b { display: inline; font: 650 0.96rem var(--meta); }
 .uplan .tok { font: 500 0.96rem var(--meta); color: var(--mute); }

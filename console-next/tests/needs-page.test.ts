@@ -35,10 +35,16 @@ describe('tone', () => {
     expect(toneOf(need({ kind: K.signedOut }))).toBe('stuck');
     expect(toneOf(need({ kind: K.restart }))).toBe('wait');
     expect(toneOf(need({ kind: K.plan }))).toBe('wait');
+    expect(toneOf(need({ kind: K.plan, severity: 'danger', fix: null }))).toBe('work');
   });
 });
 
 describe('the summary', () => {
+  test('an informational reading adds no required act, even beside an actionable finding', () => {
+    const reading = need({ kind: K.plan, fix: null });
+    expect(ledeOf(list([reading]))).toBe('Nothing needs you. Everything is running.');
+    expect(ledeOf(list([reading, need({ key: 'action' })]))).toBe('One thing a person has to do. Everything else is running.');
+  });
   test('it says everything else is running only when every input was read', () => {
     expect(ledeOf(list([need(), need({ key: 'b' })]))).toBe('Two things a person has to do. Everything else is running.');
     expect(ledeOf(list([need()], { readAt: null }))).toContain('could not be read');
@@ -77,6 +83,10 @@ describe('the calm figures', () => {
   test('serving counts the heads that answer and have no item, by name', () => {
     const calm = calmOf(list([need({ head: 'b' })]), [], none, [head('a'), head('b'), head('c', { running: false }), head('d', { healthy: false })]);
     expect(calm.serving).toEqual(['a']);
+  });
+  test('a near-limit command still serves even when a pool offers a switch', () => {
+    const reading = need({ kind: K.plan, head: 'a', fix: { kind: 'open', href: '#/fleet/a', label: 'Switch account' } });
+    expect(calmOf(list([reading]), [], none, [head('a')]).serving).toEqual(['a']);
   });
   test('a plan whose local runtime is not answering is not serving, whatever its own health says', () => {
     const calm = calmOf(list([]), [], none, [head('a'), head('b', { runtimeNotAnswering: ':8099' })]);

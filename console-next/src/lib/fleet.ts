@@ -103,8 +103,8 @@ function tightest(head: HeadStatus, usage: UsagePayload | null, now: number): Ex
     kind: 'gauge',
     name: WINDOW_NAME[best.window],
     pct,
-    note: best.resetsAt === null ? '' : `resets ${localInstantText(best.resetsAt)}`,
-    full: pct >= 100,
+    note: `${pct}%${best.resetsAt === null ? '' : ` · resets ${localInstantText(best.resetsAt)}`}`,
+    full: false,
   };
 }
 
@@ -174,7 +174,7 @@ export function fleetCard(head: HeadStatus, inputs: FleetInputs): FleetCard {
       return note('wait', 'other', 'Restart needed', FL.restartNeeded, 'restart', true);
     case 'ok': {
       const level = gauge === null || usage === null ? 'ok' : planLevel(gauge.pct, usage.warn_pct);
-      if (level !== 'ok') return note('quota', 'near', 'Near its limit', '', null, false);
+      if (level !== 'ok' && gauge !== null && gauge.pct < 100) return note('work', 'near', 'Near its limit', '', null, false);
       return { ...base, tone: 'work', standing: 'ready', state: 'Ready', attention: false, line: gauge, fix: null };
     }
   }

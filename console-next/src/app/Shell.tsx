@@ -22,7 +22,7 @@ export function Shell() {
   const status = useStatus();
   const theme = useTheme();
   const answering = status.isSuccess || status.isPending;
-  const waiting = useNeeds(Date.now()).needs.length;
+  const waiting = useNeeds(Date.now()).needs.filter((need) => need.fix !== null).length;
   const stale = useStalePage();
   return (
     <div className="app">

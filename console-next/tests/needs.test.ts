@@ -9,6 +9,7 @@ import { accountsFromWire } from '../src/lib/accounts';
 import { localInstantText } from '../src/lib/heads';
 import { hrefOf, INPUTS, needsOf, readingOf, SOURCE_ORDER } from '../src/lib/needs';
 import { STUCK_IDLE_MS } from '../src/lib/sessions';
+import { calmOf, ledeOf } from '../src/lib/needs-page';
 import type { TurnOf } from '../src/lib/sessions';
 import { H, K, S, U } from '../src/lib/words-needs';
 import type { AccountRow, AccountWire } from '../src/types/accounts';
@@ -248,6 +249,28 @@ describe('a head the provider refuses is one out-of-quota item, with the instant
   });
 });
 
+describe('a full reading is information until a pool offers a switch', () => {
+  const full = account({ windows: [{ seconds: 18_000, used_percent: 100, reset_epoch_seconds: NOW / 1000 + 3600 }] });
+  test('100% is not out of quota, has no act for a single login, and still counts as serving', () => {
+    const inputs = quiet({ accounts: read({ accounts: [full] }) });
+    const list = needsOf(inputs, NOW);
+    expect(list.needs.some((need) => need.kind === K.quota)).toBe(false);
+    expect(list.needs.find((need) => need.kind === K.plan)).toMatchObject({ finding: '5h at 100%, resets in 1h 0m', fix: null });
+    expect(calmOf(list, [], () => undefined, [head()]).serving).toEqual(['claudex']);
+    expect(ledeOf(list)).toBe('Nothing needs you. Everything is running.');
+  });
+  test('a near-limit item offers a switch only to a loadable, unexcluded pool alternative', () => {
+    const near = { ...full, selected: true, windows: [{ seconds: 18_000, used_percent: 90, reset_epoch_seconds: NOW / 1000 + 3600 }] };
+    const spare = account({ label: 'spare' });
+    const plans = (other: AccountRow) => needsIn({ accounts: read({ accounts: [near, other] }) }).find((need) => need.kind === K.plan);
+    expect(plans(spare)?.fix).toEqual({ kind: 'open', href: '#/fleet/claudex', label: 'Switch account' });
+    expect(plans({ ...spare, credential_present: false })?.fix).toBeNull();
+    expect(plans({ ...spare, available: false })?.fix).toBeNull();
+    expect(plans({ ...spare, auth_excluded_until_epoch_millis: NOW + 60_000 })?.fix).toBeNull();
+    expect(plans({ ...spare, refusal: 'credential refused' })?.fix).toBeNull();
+  });
+});
+
 describe('the daemon, the plans and the accounts', () => {
   test('a changed config file and settings waiting are one restart, said once', () => {
     const both = needsIn({ topology: read(true), restartPending: ['a', 'b'] });
@@ -267,7 +290,7 @@ describe('the daemon, the plans and the accounts', () => {
     const full = account({ windows: [{ seconds: 18_000, used_percent: 99, reset_epoch_seconds: null }] });
     const out = needsIn({ accounts: read({ accounts: [full] }) });
     expect(out.find((need) => need.source === 'plans')).toMatchObject({
-      severity: 'danger', kind: K.plan, subject: 'work', finding: '5h at 99%', at: '#/usage', fix: { kind: 'open', href: '#/usage' },
+      severity: 'danger', kind: K.plan, subject: 'work', finding: '5h at 99%', at: '#/usage', fix: null,
     });
   });
 
@@ -283,7 +306,7 @@ describe('the daemon, the plans and the accounts', () => {
     const near = account({ label: 'near', heads: ['e2e-codex'], windows: [{ seconds: 18_000, used_percent: 99, reset_epoch_seconds: NOW / 1000 + 3600 }] });
     const spare = account({ label: 'spare', heads: ['e2e-codex-solo'], windows: [{ seconds: 18_000, used_percent: 20, reset_epoch_seconds: NOW / 1000 + 3600 }] });
     const plans = needsIn({ accounts: read({ accounts: [near, spare] }) }).find((need) => need.source === 'plans');
-    expect(plans).toMatchObject({ finding: '5h at 99%, resets in 1h 0m', fix: { kind: 'open', href: '#/usage' } });
+    expect(plans).toMatchObject({ finding: '5h at 99%, resets in 1h 0m', fix: null });
   });
 
   test('a pooled login gone and an excluded account are their own items; a single login gone is its head\'s', () => {

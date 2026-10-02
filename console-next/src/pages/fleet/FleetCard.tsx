@@ -5,13 +5,13 @@ import { Link } from 'react-router';
 import type { FleetCard as Facts, FleetLine } from '../../lib/fleet';
 import { State, Window } from '../../ui';
 
-/** The plan window a card draws: one line of terminal text and one bar. The bar is the glass ink, never the head's colour. */
+/** One measured window: a command-colour bar, or a red hatch for a held refusal. */
 function Gauge({ line }: { line: Extract<FleetLine, { kind: 'gauge' }> }) {
   return (
     <div className="gauge">
       <div className="gl">
         <span>{line.name}</span>
-        <b>{line.pct}%</b>
+        {line.full ? <b>{line.pct}%</b> : null}
         {line.note === '' ? null : <small>{line.note}</small>}
       </div>
       <div className={`track${line.full ? ' full' : ''}`} role="img" aria-label={`${line.name} ${line.pct}% used`}>

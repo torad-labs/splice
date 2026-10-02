@@ -32,6 +32,15 @@ describe('a need card', () => {
     expect(html).toContain('Not running.');
     expect(html).toContain('>Start<');
   });
+  test('a near-limit reading with no switch is quiet information, with no required act', () => {
+    const html = render(need({ kind: K.plan, source: 'plans', fix: null, at: '#/usage', finding: '5h at 100%' }));
+    expect(html).toContain('5h at 100%');
+    expect(html).toContain('href="/usage"');
+    expect(html).not.toContain('win attn');
+    expect(html).toContain('state work');
+    expect(html).not.toContain('state stuck');
+    expect(html).not.toContain('Switch account');
+  });
   test('a quiet link opens what the card is about, unless the act already goes there', () => {
     expect(render(need())).toContain('href="/fleet/claudex"');
     const same = render(need({ fix: { kind: 'open', href: '#/fleet/claudex', label: 'See the command' } }));

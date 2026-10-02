@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { fleetCard, fleetLede, startCommandOf } from '../src/lib/fleet';
+import { localInstantText } from '../src/lib/heads';
 import type { FleetCard, FleetStanding } from '../src/lib/fleet';
 import type { FleetInputs } from '../src/lib/fleet';
 import type { AccountRow } from '../src/types/accounts';
@@ -56,7 +57,14 @@ describe('a fleet card', () => {
   });
   test('a head near its warn share says so, without needing a person', () => {
     const card = fleetCard(head(), inputs({ usage: usage(90) }));
-    expect(card).toMatchObject({ state: 'Near its limit', tone: 'quota', attention: false });
+    expect(card).toMatchObject({ state: 'Near its limit', tone: 'work', attention: false });
+  });
+  test.each([100, 105])('a %s percent reading without a held refusal stays ready in the command colour', (pct) => {
+    const card = fleetCard(head(), inputs({ usage: usage(pct) }));
+    expect(card).toMatchObject({ state: 'Ready', standing: 'ready', tone: 'work', colour: 'grok', attention: false, fix: null });
+    expect(card.line).toMatchObject({ kind: 'gauge', pct, full: false, note: `${pct}% · resets ${localInstantText(NOW / 1000 + 3600)}` });
+    expect(fleetLede([card])).toContain('one ready');
+    expect(fleetLede([card])).not.toContain('out of quota');
   });
   test('a provider refusal is out of quota with its reset, and a pool offers to switch account', () => {
     const until = NOW / 1000 + 7200;

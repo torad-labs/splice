@@ -1,5 +1,5 @@
 // NEEDS YOU (V4-219): the console's first screen, one ranked list of everything that needs the
-// operator, each item with its one fix. Marlin's rule is the page's contract:
+// operator, beside near-limit readings with no act when a pool cannot switch. Marlin's rule is the page's contract:
 //   - every item comes from a measured signal, read through the definition its own page prints:
 //     headAttention for a head, nearestLimit for a plan window, stateOf for a
 //     session, wantsAttention for a doctor check;
@@ -21,7 +21,7 @@ import type {
 import type { SessionRow } from '../types/sessions';
 import { UNKNOWN_HEAD } from '../types/sessions';
 import type { TeamRow } from '../types/teams';
-import { exclusionText, isExcluded, poolOf, refusalText } from './accounts';
+import { exclusionText, isExcluded, isServable, poolOf, refusalText } from './accounts';
 import { checkFinding, collapseChecks, fixMasked, logsHrefOf, wantsAttention } from './doctor';
 import { ABSENT } from './format';
 import { headAttention, localInstantText, quotaRefusedUntil } from './heads';
@@ -173,6 +173,8 @@ function planNeeds(
   if (nearest === null || nearest.level === 'ok') return [];
   if (nearest.head !== null && refused.has(nearest.head)) return [];
   const reset = nearest.reset === null ? '' : `, ${U.resets} ${nearest.reset}`;
+  const pool = nearest.head === null ? [] : poolOf(accounts, nearest.head);
+  const canSwitch = pool.some((account) => account.label !== nearest.account && account.selected !== true && isServable(account) && !isExcluded(account, now));
   return [{
     key: 'plans',
     severity: nearest.level === 'critical' ? 'danger' : 'warn',
@@ -181,7 +183,7 @@ function planNeeds(
     head: nearest.head,
     subject: nearest.account ?? S.nearest,
     finding: `${nearest.window === null ? '' : `${nearest.window} `}${U.at} ${nearest.pct}%${reset}`,
-    fix: open(hrefOf('plans'), S.openUsage),
+    fix: canSwitch && nearest.head !== null ? open(hrefOf('accounts', nearest.head), S.switchAccount) : null,
     // The nearest limit is the fleet's, read across every account: its page, not one row.
     at: hrefOf('plans'),
   }];

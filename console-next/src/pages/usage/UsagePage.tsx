@@ -27,7 +27,7 @@ function Spark({ values }: { values: readonly number[] }) {
 
 function PlanRow({ plan }: { plan: PlanUsage }) {
   const words = plan.pct === null
-    ? [plan.turns === 0 ? U.idle : U.noLimit]
+    ? [plan.full ? U.refused : plan.turns === 0 ? U.idle : U.noLimit]
     : [plan.reset === null ? null : U.resets(plan.reset), plan.pace].filter((part): part is string => part !== null);
   return (
     <li className={`uplan hue ${plan.colour}`}>
@@ -62,7 +62,7 @@ export function UsagePage() {
   const headRows = heads.data?.heads ?? [];
   const colourOf = colourFromHeads(headRows);
   const label = (key: string): string => headRows.find((head) => head.key === key)?.label ?? key;
-  const plans = orderPlans(economics.data.heads.map((head) => planUsage(head, label(head.key), colourOf(head.key), usage.data ?? null, hours, now)));
+  const plans = orderPlans(economics.data.heads.map((head) => planUsage(head, label(head.key), colourOf(head.key), usage.data ?? null, hours, now, headRows.find((status) => status.key === head.key))));
   const { active, idle } = splitIdle(plans);
   const totals = totalsOf(economics.data.heads, hours, now);
   const cost = costOf(totals);

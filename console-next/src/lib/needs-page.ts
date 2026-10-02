@@ -9,11 +9,12 @@ import type { TurnOf } from './sessions';
 import { K } from './words-needs';
 import { N } from './words-needs-page';
 
-export type NeedTone = 'wait' | 'stuck' | 'quota';
+export type NeedTone = 'work' | 'wait' | 'stuck' | 'quota';
 
 /** The dot a card's state word wears: a session waiting for an answer waits, a quota refusal is its own colour, and anything
  *  else is stuck when it is danger and waiting for the operator when it is a warning. */
 export function toneOf(need: Need): NeedTone {
+  if (need.fix === null) return 'work';
   if (need.kind === K.waiting) return 'wait';
   if (need.kind === K.quota) return 'quota';
   return need.severity === 'danger' || need.kind === K.stuck || need.kind === K.signedOut || need.kind === K.keyMissing ? 'stuck' : 'wait';
@@ -27,8 +28,8 @@ export const routeOf = (href: string): string => (href.startsWith('#') ? href.sl
  *  not read is not running, it is unknown. */
 export function ledeOf(list: NeedsList): string {
   const all = list.readAt !== null;
-  if (list.needs.length === 0) return all ? N.nothing : N.nothingYet;
-  const count = list.needs.length;
+  const count = list.needs.filter((need) => need.fix !== null).length;
+  if (count === 0) return all ? N.nothing : N.nothingYet;
   return `${countWord(count)} ${noun(count, N.thing, N.things)} ${N.aPersonHasToDo}${all ? ` ${N.restRunning}` : ` ${N.restUnread}`}`;
 }
 
@@ -55,13 +56,13 @@ function unreadText(reading: Reading): string {
 export interface Calm {
   /** Sessions with a live turn making progress. */
   working: number;
-  /** The heads that answer and have no item: a plan whose local runtime is off does not answer, as Fleet says. */
+  /** The heads that answer without a blocking finding. A near-limit reading does not stop serving. */
   serving: readonly string[];
 }
 
 export function calmOf(list: NeedsList, sessions: readonly SessionRow[], turnOf: TurnOf, heads: readonly HeadStatus[]): Calm {
   const working = sessions.filter((row) => stateOf(row, turnOf(row)) === 'working').length;
-  const named = new Set(list.needs.flatMap((need) => (need.head === null ? [] : [need.head])));
+  const named = new Set(list.needs.flatMap((need) => (need.head === null || need.kind === K.plan ? [] : [need.head])));
   const serving = heads.filter((head) => head.running && head.healthy && head.runtimeNotAnswering === undefined && !named.has(head.key)).map((head) => head.label);
   return { working, serving };
 }

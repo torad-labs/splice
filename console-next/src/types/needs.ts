@@ -1,5 +1,5 @@
 // The shapes of the Needs-you list: what it reads (one Read per input), and what it says (one Need per
-// thing that wants the operator, each with its one fix). The derivation is lib/needs.ts.
+// finding, with a fix only when the person has an act). The derivation is lib/needs.ts.
 import type { AccountsPayload } from './accounts';
 import type { PendingRoute } from './budget';
 import type { AuthPayload, HeadStatus, UsagePayload } from './core';
@@ -90,7 +90,8 @@ export interface Need {
   /** A session item's own words: the session id it joins to /api/sessions by, the newest message it left (a waiting
    *  session's question), and the repo it works in. Absent on every other source. */
   session?: { id: string | null; said: string | null; repo: string | null };
-  fix: Fix;
+  /** Null for a near-limit reading with no account the person can switch to. */
+  fix: Fix | null;
   /** Where the item itself opens: its detail on its page where the page has one, else the page;
    *  null for the daemon, which no page opens. */
   at: string | null;

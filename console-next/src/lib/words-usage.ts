@@ -22,6 +22,7 @@ export const U = {
   plansNone: 'No command has reported its usage yet.',
   ofLimit: (pct: number) => `${pct}% of its limit`,
   noLimit: 'No limit reported',
+  refused: 'Out of quota',
   resets: (when: string) => `resets ${when}`,
   paceLess: 'less than an hour left at this pace',
   paceHours: (n: number) => `about ${n} ${n === 1 ? 'hour' : 'hours'} left at this pace`,

@@ -13,14 +13,14 @@
 .card .glass.one p { color: var(--glass-ink); }
 .card[tabindex="0"] .card-link::after { cursor: grab; }
 .card.dragging .card-link::after { cursor: grabbing; }
-/* the gauge inside a card's glass: one window, drawn in the glass ink (the head's colour is the shadow, never a second accent) */
+/* A reading wears the command's colour; only a held refusal wears the quota red and hatch. */
 .gauge { display: grid; gap: var(--space-5); }
 .gauge .gl { display: flex; align-items: baseline; gap: var(--space-5); font: 500 0.8125rem var(--mono); }
 .gauge .gl span, .gauge .gl b { color: var(--glass-ink); font-weight: 600; }
 .gauge .gl small { margin-left: auto; font: 400 0.8125rem var(--mono); color: var(--glass-dim); }
 .gauge .track { height: 0.875rem; border-radius: 0.4375rem; background: var(--glass-track); overflow: hidden; }
-.gauge .track i { display: block; height: 100%; border-radius: 0.4375rem 0 0 0.4375rem; background: var(--glass-ink); }
-.gauge .track.full i { background: repeating-linear-gradient(135deg, var(--glass-ink) 0 8px, var(--glass-hatch) 8px 16px); border-radius: 0.4375rem; }
+.gauge .track i { display: block; height: 100%; border-radius: 0.4375rem 0 0 0.4375rem; background: var(--rim); }
+.gauge .track.full i { background: repeating-linear-gradient(135deg, var(--stuck) 0 8px, var(--glass-hatch) 8px 16px); border-radius: 0.4375rem; }
 .add-card { display: grid; place-items: center; align-content: center; gap: var(--space-4); min-height: 15.625rem; padding: var(--space-10); border: 3px dashed var(--hair); border-radius: var(--r2); background: transparent; color: var(--mute); text-align: center; cursor: pointer; font: inherit; }
 .add-card b { font: 520 1.625rem/1.15 var(--display); color: var(--ink); }
 .add-card span { font: 400 1rem/1.5 var(--read); max-width: 30ch; }

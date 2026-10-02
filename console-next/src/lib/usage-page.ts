@@ -1,5 +1,5 @@
 // The arithmetic and words of the Usage page: the window choices the daemon's retention allows, one row per plan
-// against its limit, and the totals. Pure over /api/economics and /api/usage; the page only draws what this returns.
+// against its limit, and the totals. Pure over /api/economics, /api/usage and /api/heads; the page only draws what this returns.
 import { burn, costOf, hitRate, hourly, sum, within } from './economics';
 import type { Totals } from './economics';
 import { ABSENT, fmtShare, fmtTokens, fmtUsd } from './format';
@@ -8,7 +8,8 @@ import type { HeadWindow } from './usage';
 import { U, spanWords } from './words-usage';
 import type { ModelColour } from './model';
 import type { HeadEconomics } from '../types/economics';
-import type { UsagePayload } from '../types/core';
+import type { HeadStatus, UsagePayload } from '../types/core';
+import { quotaRefusedUntil } from './heads';
 
 /** The windows the daemon's own retention can answer: a day always, a week and a month once it keeps them. */
 export function windowChoices(retentionHours: number): readonly (readonly [string, string])[] {
@@ -33,6 +34,7 @@ export interface PlanUsage {
   colour: ModelColour;
   /** The fullest live window's used percentage, null when the plan reports none (never 0). */
   pct: number | null;
+  /** Only a refusal the head still holds, never the percentage of a reading. */
   full: boolean;
   reset: string | null;
   pace: string | null;
@@ -46,7 +48,7 @@ export interface PlanUsage {
   spentToday: number | null;
 }
 
-export function planUsage(head: HeadEconomics, label: string, colour: ModelColour, usage: UsagePayload | null, hours: number, now: number): PlanUsage {
+export function planUsage(head: HeadEconomics, label: string, colour: ModelColour, usage: UsagePayload | null, hours: number, now: number, status?: HeadStatus): PlanUsage {
   const totals = sum(within(head.buckets, hours, now));
   const window: HeadWindow = headWindow(usage, head.key, now);
   const day = sum(within(head.buckets, 24, now));
@@ -55,7 +57,7 @@ export function planUsage(head: HeadEconomics, label: string, colour: ModelColou
     label,
     colour,
     pct: window.pct,
-    full: window.pct !== null && window.pct >= 100,
+    full: status !== undefined && quotaRefusedUntil(status, now) !== null,
     reset: window.reset,
     pace: window.pct === null ? null : paceText(burn(head, now).hoursToExhaustion),
     turns: totals.turns,
@@ -74,7 +76,7 @@ export function orderPlans(plans: readonly PlanUsage[]): PlanUsage[] {
 
 /** Plans that ran a turn in the window, and the ones that did not: an idle plan is one sentence, never a row of zeros. */
 export function splitIdle(plans: readonly PlanUsage[]): { active: PlanUsage[]; idle: PlanUsage[] } {
-  return { active: plans.filter((plan) => plan.turns > 0 || plan.pct !== null), idle: plans.filter((plan) => plan.turns === 0 && plan.pct === null) };
+  return { active: plans.filter((plan) => plan.turns > 0 || plan.pct !== null || plan.full), idle: plans.filter((plan) => plan.turns === 0 && plan.pct === null && !plan.full) };
 }
 
 export function totalsOf(heads: readonly HeadEconomics[], hours: number, now: number): Totals {
@@ -89,9 +91,11 @@ export function usageLede(totals: Totals, plans: readonly PlanUsage[], hours: nu
   const spent = totals.turns === 0
     ? `No turns in ${spanWords(hours)}.`
     : cost === null ? `${totals.turns.toLocaleString('en-US')} turns in ${spanWords(hours)}, none priced.` : `About ${fmtUsd(cost)} of API cost in ${spanWords(hours)}.`;
+  const refused = plans.find((plan) => plan.full);
+  if (refused !== undefined) return `${spent} ${refused.label} is out of quota.`;
   const nearest = plans.find((plan) => plan.pct !== null);
   if (nearest === undefined || nearest.pct === null || nearest.pct < 80) return spent;
-  return nearest.full ? `${spent} ${nearest.label} is out of quota.` : `${spent} ${nearest.label} is at ${Math.round(nearest.pct)}% of its limit.`;
+  return `${spent} ${nearest.label} is at ${Math.round(nearest.pct)}% of its limit.`;
 }
 
 export const cacheLine = (ratio: number | null): string => (ratio === null ? U.noCache : U.cached(fmtShare(ratio)));

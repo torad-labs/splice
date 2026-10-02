@@ -1,10 +1,10 @@
 // NEW: V4-444 — runtime/quota/refused-account signals over the actual replacement cards and plan pages.
 import { expect, test, type Page } from '@playwright/test';
-import type { ControlStatusPayload, HeadsPayload } from '../src/types/core';
+import type { ControlStatusPayload, HeadsPayload, UsagePayload } from '../src/types/core';
 import type { KeysPayload } from '../src/types/login';
 import type { AccountsWire } from '../src/types/accounts';
 import { STACK } from './stack';
-import { env, open, read } from './support';
+import { assertHealthy, env, open, read } from './support';
 
 /** Every card's words on one line each, so a failed count says which head stood in which state. */
 async function cardStates(page: Page): Promise<string> {
@@ -57,6 +57,81 @@ test('a silent runtime is off on its card and detail while unmarked plans remain
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('rig up ' + STACK.oauthHead);
 });
 
+test('a full reading stays Ready in command colour, reads as usage, and still serves without a required act', async ({ page }, testInfo) => {
+  const reset = Math.floor(Date.now() / 1000) + 3600;
+  await page.route((url) => url.pathname === '/api/heads', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json() as HeadsPayload;
+    const marked = body.heads.find((head) => head.key === STACK.oauthHead);
+    if (marked === undefined) throw new Error('isolated stack has no OAuth head');
+    delete marked.quotaResetAtEpochSeconds;
+    await route.fulfill({ response, json: body });
+  });
+  await page.route((url) => url.pathname === '/api/usage', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json() as UsagePayload;
+    const marked = body.heads.find((head) => head.key === STACK.oauthHead);
+    if (marked === undefined || marked.usage === null) throw new Error('isolated stack has no OAuth usage');
+    marked.usage.quota = { five_hour: { used_pct: 100, resets_at: reset, observed_at: Math.floor(Date.now() / 1000) } };
+    await route.fulfill({ response, json: body });
+  });
+  // No switch target: usage remains the source for the head with no account row.
+  await page.route((url) => url.pathname === '/api/accounts', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json() as AccountsWire;
+    body.accounts = body.accounts.filter((account) => !account.heads.includes(STACK.oauthHead));
+    await route.fulfill({ response, json: body });
+  });
+  const faults = await open(page, 'fleet');
+  const card = page.locator('li.card').filter({ has: page.getByRole('link', { name: STACK.oauthHead, exact: true }) });
+  await expect(card.getByText('Ready', { exact: true })).toBeVisible();
+  await expect(card.locator('.track')).not.toHaveClass(/full/);
+  await expect(card.locator('.track i')).toHaveCSS('width', await card.locator('.track').evaluate((node) => getComputedStyle(node).width));
+  const local = await page.evaluate((seconds) => new Intl.DateTimeFormat('en-US', {
+    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+  }).format(new Date(seconds * 1000)), reset);
+  await expect(card.locator('.gl small')).toHaveText('100% · resets ' + local);
+  expect((await card.locator('.gl').innerText()).match(/100%/g)).toHaveLength(1);
+  for (const theme of ['Day', 'Night']) {
+    await page.getByRole('button', { name: theme, exact: true }).click();
+    const colours = await card.locator('.track i').evaluate((node) => {
+      const style = getComputedStyle(node);
+      const probe = document.createElement('i');
+      node.append(probe);
+      probe.style.color = 'var(--gpt)';
+      const command = getComputedStyle(probe).color;
+      probe.style.color = 'var(--stuck)';
+      const refusal = getComputedStyle(probe).color;
+      probe.remove();
+      return { fill: style.backgroundColor, image: style.backgroundImage, command, refusal };
+    });
+    expect(colours.fill).toBe(colours.command);
+    expect(colours.fill).not.toBe(colours.refusal);
+    expect(colours.image).toBe('none');
+    await card.screenshot({ path: testInfo.outputPath('full-reading-' + theme.toLowerCase() + '.png') });
+  }
+  await page.getByRole('link', { name: 'Usage', exact: true }).click();
+  await expect(page.locator('main .lede')).toContainText(STACK.oauthHead + ' is at 100% of its limit.');
+  const plan = page.locator('li.uplan').filter({ hasText: STACK.oauthHead }).first();
+  await expect(plan.locator('.track')).not.toHaveClass(/full/);
+  await page.getByRole('link', { name: /^Needs you/ }).click();
+  const observation = page.getByRole('listitem', { name: /^Command near its limit:/ });
+  await expect(observation).toContainText('at 100%');
+  await expect(observation).not.toHaveClass(/attn/);
+  await expect(observation.locator('.state')).toHaveClass(/work/);
+  const acts = await page.locator('li.need.attn').count();
+  const badge = page.getByRole('link', { name: /^Needs you/ }).locator('.count');
+  if (acts === 0) await expect(badge).toHaveCount(0);
+  else await expect(badge).toHaveText(String(acts));
+  await expect(observation.getByRole('link', { name: 'Switch account', exact: true })).toHaveCount(0);
+  await expect(observation.getByRole('button')).toHaveCount(0);
+  await expect(page.getByRole('listitem', { name: /^Out of quota:/ })).toHaveCount(0);
+  const serving = page.locator('.calm > div').filter({ has: page.getByRole('heading', { name: 'Commands serving', exact: true }) });
+  await expect(serving).toContainText(STACK.oauthHead);
+  await assertHealthy(page, faults);
+  await page.unrouteAll({ behavior: 'wait' });
+});
+
 test('quota refusal moves one card out of ready and keeps its local reset identical on the plan page', async ({ page }) => {
   const reset = Math.floor(Date.now() / 1000) + 3 * 86_400;
   let marking = false;
@@ -90,8 +165,34 @@ test('quota refusal moves one card out of ready and keeps its local reset identi
     throw new Error(`the quota refusal must mark only ${STACK.oauthHead}; every card:\n${await cardStates(page)}`, { cause: error });
   }
   await expect(page.locator('main .lede')).toContainText('one out of quota');
+  await expect(card.locator('.track')).toHaveClass(/full/);
+  const refusal = await card.locator('.track i').evaluate((node) => {
+    const probe = document.createElement('i');
+    node.append(probe);
+    probe.style.color = 'var(--stuck)';
+    const colour = getComputedStyle(probe).color;
+    probe.remove();
+    return { colour, image: getComputedStyle(node).backgroundImage };
+  });
+  expect(refusal.image).toContain(refusal.colour);
   await card.getByRole('link', { name: STACK.oauthHead, exact: true }).click();
   await expect(page.getByRole('main').getByText(sentence, { exact: true })).toBeVisible();
+  await page.getByRole('link', { name: 'Usage', exact: true }).click();
+  await expect(page.locator('main .lede')).toContainText(STACK.oauthHead + ' is out of quota.');
+  const plan = page.locator('li.uplan').filter({ hasText: STACK.oauthHead }).first();
+  await expect(plan.locator('.track')).toHaveClass(/full/);
+  const usageRefusal = await plan.locator('.track i').evaluate((node) => {
+    const probe = document.createElement('i');
+    node.append(probe);
+    probe.style.color = 'var(--stuck)';
+    const colour = getComputedStyle(probe).color;
+    probe.remove();
+    return { colour, image: getComputedStyle(node).backgroundImage };
+  });
+  expect(usageRefusal.image).toContain(usageRefusal.colour);
+  await page.getByRole('link', { name: /^Needs you/ }).click();
+  await expect(page.getByRole('listitem', { name: /^Out of quota:/ })).toContainText(STACK.oauthHead);
+  await page.unrouteAll({ behavior: 'wait' });
 });
 
 test('refused credentials keep the daemon sentence and allow neither switching nor renewal', async ({ page }) => {

@@ -23,6 +23,7 @@
 //     "the opened check prints a masked fix with why" (all DoctorBoard / FixLine renders).
 //   daemon-upgrade: everything but the three wire tests (renders, fetches).
 //   doctor-fix.test.ts, needs-you.test.ts, v4347-console-actions.test.ts: page and store tests.
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -165,13 +166,16 @@ describe('every failing check carries its fix', () => {
     expect(said('daemon/turn path', 'WEDGED on claudex')).toBe('WEDGED on claudex');
   });
 
-  test('an instant inside a finding reads as Chicago time, including daylight saving', () => {
-    expect(checkFinding(check('auth/claude-splice', 'warn',
-      'upstream rejected the forwarded Claude login at 2026-10-01T16:18:56.973Z')))
-      .toBe('upstream rejected the forwarded Claude login at 11:18 AM CT');
-    expect(checkFinding(check('auth/claude-splice', 'warn',
-      'upstream rejected the forwarded Claude login at 2026-01-01T16:18:56Z')))
-      .toBe('upstream rejected the forwarded Claude login at 10:18 AM CT');
+  test('finding instants use the viewer zone, across daylight saving, with no CT suffix', () => {
+    const module = fileURLToPath(new URL('../src/lib/doctor.ts', import.meta.url));
+    const result = execFileSync('bun', ['-e', `
+      import { checkFinding } from ${JSON.stringify(module)};
+      const dates = ['2026-10-01T16:18:56.973Z', '2026-01-01T16:18:56Z'];
+      console.log(JSON.stringify(dates.map((date) => checkFinding({
+        id: 'auth/claude-splice', status: 'warn', detail: 'Login refused at ' + date,
+      }))));
+    `], { env: { ...process.env, TZ: 'America/Los_Angeles' }, encoding: 'utf8' });
+    expect(JSON.parse(result)).toEqual(['Login refused at Oct 1, 9:18 AM', 'Login refused at Jan 1, 8:18 AM']);
   });
 
   test('a stale launcher finding uses words while its original diagnostic and remedy remain available', () => {

@@ -75,12 +75,10 @@ internal class CodexCodeModeRegistry(
     val turnStart = CodeModeTurnStart(access, retention, records, history, store, config.clock, closeSession)
 
     init {
-        CodeModeSourceEnds.unlocked {
-            monitor.withLock {
-                val changed = sweeper.sweep() or retention.trim(records, history, config.clock.millis())
-                if (changed) store.save(records, history.entries)
-                timed.arm()
-            }
+        monitor.withLock {
+            val changed = sweeper.sweep() or retention.trim(records, history, config.clock.millis())
+            if (changed) store.save(records, history.entries)
+            timed.arm()
         }
     }
 
@@ -261,7 +259,6 @@ internal class CodexCodeModeRegistry(
 
     fun lose(record: CodeModeRecord, message: String, cancellation: CancellationException? = null) =
         access.withKey(record.key) {
-            if (record !in records) return@withKey
             admissions.remove(record.id)
             cells.remove(record.id)?.close()
             record.phase = CodeModePhase.LOST

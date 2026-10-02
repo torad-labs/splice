@@ -4,11 +4,14 @@ package splice.codemode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.InternalForInheritanceCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -16,6 +19,7 @@ import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotSame
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -27,6 +31,7 @@ import splice.codemode.host.CodeModeHostPool
 import splice.codemode.host.CodeModeHostStart
 import splice.codemode.host.CodeModePoolAdmission
 import splice.codemode.host.CodeModePoolHost
+import splice.codemode.host.CodeModePoolLease
 import splice.codemode.host.CodeModePoolSession
 import splice.codemode.host.CodeModePoolTimes
 import splice.core.util.ElapsedClock
@@ -42,17 +47,19 @@ import java.io.IOException
 import java.io.InputStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
-@OptIn(ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalCoroutinesApi::class, InternalForInheritanceCoroutinesApi::class)
 @Timeout(30)
 class CodeModeHostDeadlineTest {
     @Test
     fun `a caller deadline after slow boot keeps its independently timed engine open alive`() = runTest {
         val io = LifecycleScope(ProcessDispatchers().io())
         val process = SilentHostCloseProcess().also { it.holdEngineOpen = true }
+        process.holdOpenWrite = true
         val channel = SharedWorkerChannel(process, io)
         val pool = CodeModeHostPool(
             CodeModePoolAdmission(1, DEFAULT_HEAP_MB, DEFAULT_POOL_MEMORY_MB),
@@ -85,12 +92,11 @@ class CodeModeHostDeadlineTest {
             caller.await()
             assertTrue(process.isAlive, "the caller deadline must not quarantine a five-second-old engine open")
             val retry = async(start = CoroutineStart.UNDISPATCHED) { pool.open("deadline-fixture") }
-            runCurrent()
             assertFalse(retry.isCompleted, "the retry must await the original open, not return an uninitialized lease")
             assertEquals(1, process.opens.get(), "a retry must not send a duplicate engine-open exchange")
             advanceTimeBy(3_000)
-            releaseEngine(process, channel)
-            runCurrent()
+            process.releaseOpen()
+            awaitRetry(this, retry)
             assertEquals(1, process.opens.get(), "a retry must join the same engine-open exchange")
             pool.release(retry.await())
         } finally {
@@ -100,12 +106,14 @@ class CodeModeHostDeadlineTest {
         }
     }
 
-    /** The metric reply proves the real reader delivered the released open before virtual time can advance. */
-    private fun releaseEngine(process: SilentHostCloseProcess, channel: SharedWorkerChannel) {
-        process.releaseOpen()
-        runBlocking {
-            assertEquals(1, CodeModeHostMetrics().count(channel.control(1, HostProtocol.command("engines"))))
+    /** Pump only current virtual work while the real IO thread publishes its reply and write continuation. */
+    private fun awaitRetry(scope: TestScope, retry: Deferred<CodeModePoolLease>) {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while (!retry.isCompleted && System.nanoTime() < deadline) {
+            scope.runCurrent()
+            Thread.yield()
         }
+        assertTrue(retry.isCompleted, "the retry must complete without advancing the engine control deadline")
     }
 
     @Test
@@ -202,6 +210,60 @@ class CodeModeHostDeadlineTest {
                 scope.cancel()
             }
         }
+    }
+
+    @Test
+    fun `an exit observer racing an opener cannot leave a stale admission attached after clearing`() = runBlocking {
+        val scope = LifecycleScope(ProcessDispatchers().io())
+        SharedWorkerChannel(SilentHostCloseProcess(), scope).use { channel ->
+            val lock = ReentrantLock(true)
+            val host = CodeModePoolHost()
+            val session = CodeModePoolSession("race-fixture", 1, host)
+            val observer = Thread {
+                lock.withLock {
+                    host.boot = null
+                    session.opening = null
+                    session.initialized = false
+                }
+            }.apply { isDaemon = true }
+            val completed = CompletableDeferred(channel)
+            val once = AtomicBoolean()
+            host.boot = object : Deferred<SharedWorkerChannel> by completed {
+                override fun getCompleted(): SharedWorkerChannel {
+                    if (once.compareAndSet(false, true)) {
+                        observer.start()
+                        waitForPlacement(observer)
+                    }
+                    return completed.getCompleted()
+                }
+            }
+            val drains = CodeModeHostDrains(
+                scope,
+                lock,
+                CodeModePoolAdmission(1, DEFAULT_HEAP_MB, DEFAULT_POOL_MEMORY_MB),
+                LogSink {},
+            )
+            try {
+                channel.awaitReady()
+                try {
+                    drains.admit(session, channel, CodeModeHostMetrics())
+                } catch (_: CodeModeWorkerLostException) {
+                    // The exit observer may win before the independently dispatched open completes.
+                }
+                observer.join(5_000)
+                assertEquals(Thread.State.TERMINATED, observer.state, "the exit observer must have run")
+                assertFalse(observer.isAlive)
+                assertNull(session.opening, "checking and publishing admission must be one placement-lock region")
+            } finally {
+                scope.cancel()
+            }
+        }
+    }
+
+    private fun waitForPlacement(observer: Thread) {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while (observer.state != Thread.State.WAITING && System.nanoTime() < deadline) Thread.onSpinWait()
+        assertEquals(Thread.State.WAITING, observer.state, "the exit observer must queue behind the opener's lock")
     }
 
     @Test

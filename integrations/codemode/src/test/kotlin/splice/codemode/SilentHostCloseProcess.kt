@@ -19,6 +19,8 @@ import java.util.concurrent.atomic.AtomicInteger
 internal open class SilentHostCloseProcess : Process() {
     var exitOnEngineClose = false
     var holdEngineOpen = false
+    var holdOpenWrite = false
+    private val writeRelease = CountDownLatch(1)
     val openEntered = CountDownLatch(1)
     val opens = AtomicInteger()
     private var heldOpen: HostFrame? = null
@@ -37,6 +39,7 @@ internal open class SilentHostCloseProcess : Process() {
                 if (holdEngineOpen) {
                     heldOpen = frame
                     openEntered.countDown()
+                    if (holdOpenWrite) writeRelease.await()
                     return
                 }
             }
@@ -71,6 +74,7 @@ internal open class SilentHostCloseProcess : Process() {
         holdEngineOpen = false
         engines.add(frame.session)
         CodeModeWire.write(writer, HostProtocol.frame(frame.cell, frame.request, HostProtocol.count(engines.size)))
+        writeRelease.countDown()
     }
 
     override fun getInputStream(): InputStream = replies
@@ -85,6 +89,7 @@ internal open class SilentHostCloseProcess : Process() {
     override fun exitValue(): Int = if (exited.isDone) 0 else throw IllegalThreadStateException()
     override fun isAlive(): Boolean = !exited.isDone
     override fun destroy() {
+        writeRelease.countDown()
         writer.close()
         exited.complete(this)
     }

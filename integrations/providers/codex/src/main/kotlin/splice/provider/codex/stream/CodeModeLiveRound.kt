@@ -114,7 +114,7 @@ internal class CodeModeLiveRound(
 
     private fun finish(outcome: TurnOutcome) = synchronized(lifecycle) {
         if (headStopped) throw CancellationException("code-mode head stopped")
-        sourceInterrupted = (outcome as? TurnOutcome.Failure)?.cause in SOURCE_TEAR_CAUSES
+        sourceInterrupted = record != null && (outcome as? TurnOutcome.Failure)?.cause in SOURCE_TEAR_CAUSES
         capture.finish(outcome)
         if (sourceInterrupted && outcome is TurnOutcome.Failure) {
             outcome.copy(
@@ -143,7 +143,7 @@ internal class CodeModeLiveRound(
         upstreamEnded = true
         if (headStopped) throw CancellationException("code-mode head stopped", error)
         val detail = SOURCE_FAILED
-        sourceInterrupted = error is IOException && error !is CodeModePersistenceException
+        sourceInterrupted = record != null && error is IOException && error !is CodeModePersistenceException
         source.fail(detail)
         if (error is CodeModePersistenceException) {
             if (!ready.isCompleted) ready.completeExceptionally(error)

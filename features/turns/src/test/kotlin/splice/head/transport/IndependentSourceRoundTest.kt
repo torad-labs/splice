@@ -9,6 +9,7 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
@@ -19,6 +20,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
+import org.junit.jupiter.api.Assertions.assertDoesNotThrow
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -119,12 +121,14 @@ class IndependentSourceRoundTest {
         }
     }
 
-    @Test
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
     @Timeout(20)
-    fun `the WS source job outlives a completed first client step and its connection`(
+    fun `the WS source job outlives its client and supervises its own cancellation`(
+        cancel: Boolean,
         @TempDir tmp: Path,
     ) = runBlocking {
-        val runner = GatedSourceRunner()
+        val runner = GatedSourceRunner(if (cancel) IllegalStateException("synthetic private abort bytes") else null)
         val delegate = base("http://127.0.0.1:9/responses")
         val interceptor = SourceInterceptor()
         val provider = SourceProvider(
@@ -145,12 +149,20 @@ class IndependentSourceRoundTest {
             assertEquals(0, runner.aborts, "ending the first client step must not abort the source WS round")
             assertEquals(1, gate.snapshot().inflight)
             assertEquals(0, provider.ended.get())
-            runner.release.complete(Unit)
-            val outcome = withTimeout(5_000) { checkNotNull(interceptor.reading).await() }
-            assertTrue(outcome is TurnOutcome.Success, outcome.toString())
-            assertEquals(7L, (outcome as TurnOutcome.Success).usage.outputTokens)
+            val reading = checkNotNull(interceptor.reading)
+            if (cancel) {
+                assertDoesNotThrow { reading.cancel() }
+                reading.join()
+                assertTrue(reading.isCancelled)
+                assertTrue(interceptor.completionFailures.isEmpty(), interceptor.completionFailures.toString())
+            } else {
+                runner.release.complete(Unit)
+                val outcome = withTimeout(5_000) { reading.await() }
+                assertTrue(outcome is TurnOutcome.Success, outcome.toString())
+                assertEquals(7L, (outcome as TurnOutcome.Success).usage.outputTokens)
+            }
             withTimeout(5_000) { while (gate.snapshot().inflight != 0) yield() }
-            assertEquals(0, runner.aborts)
+            assertEquals(if (cancel) 1 else 0, runner.aborts)
             assertEquals(1, runner.posts)
         } finally {
             runner.release.complete(Unit)
@@ -159,7 +171,7 @@ class IndependentSourceRoundTest {
         }
     }
 
-    private class GatedSourceRunner : WsRoundRunner {
+    private class GatedSourceRunner(private val abortFailure: RuntimeException? = null) : WsRoundRunner {
         val release = CompletableDeferred<Unit>()
         var posts = 0
         var aborts = 0
@@ -192,6 +204,7 @@ class IndependentSourceRoundTest {
                 WsRoundAbort {
                     aborts++
                     release.completeExceptionally(java.io.IOException("synthetic WS source aborted"))
+                    abortFailure?.let { throw it }
                 },
             )
         }
@@ -359,7 +372,10 @@ class IndependentSourceRoundTest {
     }
 
     private class SourceInterceptor : RoundInterceptor {
-        private val scope = LifecycleScope(ProcessDispatchers().io())
+        val completionFailures = java.util.concurrent.ConcurrentLinkedQueue<Throwable>()
+        private val scope = LifecycleScope(
+            ProcessDispatchers().io() + CoroutineExceptionHandler { _, failure -> completionFailures.add(failure) },
+        )
         private val first = CompletableDeferred<Unit>()
         val entered = CompletableDeferred<Unit>()
         val observed: CompletableDeferred<Unit> get() = first

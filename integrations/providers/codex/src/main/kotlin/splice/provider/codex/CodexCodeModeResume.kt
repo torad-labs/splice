@@ -26,7 +26,8 @@ internal class CodexCodeModeResume(
         context: CodeModeRunContext,
         bodyJson: String,
     ): TurnOutcome {
-        record.error?.let { return failure(it) }
+        val source = driver.streams.find(record)
+        record.error?.let { return if (source?.sourceInterrupted == true) source.outcome() else failure(it) }
         val attached = context.copy(sink = driver.streams.attach(record, context.sink))
         attached.completed += context.completed
         return try {
@@ -110,6 +111,7 @@ internal class CodexCodeModeResume(
                 context.disableParallel,
                 batch,
                 context.sink,
+                driver.streams.find(record),
             )
         }
     }

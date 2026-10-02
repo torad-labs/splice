@@ -7,6 +7,7 @@ import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.provider.codex.state.CodeModeWorkerRecovery
+import splice.provider.codex.stream.CodeModeLiveRound
 import splice.provider.codex.stream.CodeModeSourceInterruptedException
 import splice.provider.codex.stream.CodeModeStreamingCell
 import splice.upstream.codemode.CodeModeCall
@@ -45,13 +46,18 @@ internal class CodexCodeModeMachine(
         disableParallel: Boolean,
         results: List<CodeModeResult>,
         sink: WireSink,
+        source: CodeModeLiveRound? = null,
     ): TurnOutcome {
         started.putIfAbsent(record.id, config.clock.millis())
         val request = CodeModeAdvanceRequest(record, turn, disableParallel, results, sink)
         return when {
             config.maxRounds?.let { record.rounds >= it } == true -> poison(record, "code-mode round limit exceeded")
             else -> registry.cell(record)?.let { advanceCell(request, it) }
-                ?: poison(record, "code-mode cell is unavailable: ${lostMessage(record)}")
+                ?: if (source?.sourceInterrupted == true) {
+                    source.outcome()
+                } else {
+                    poison(record, "code-mode cell is unavailable: ${lostMessage(record)}")
+                }
         }
     }
 

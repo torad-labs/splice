@@ -83,6 +83,33 @@ class CodexCodeModeReanchorTest {
         assertEquals(9, (finished as TurnOutcome.Success).usage.outputTokens)
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = ["prose", "empty", "first-byte"])
+    fun `a torn code-mode round with no exec retains ordinary healing`(mode: String) = runTest {
+        val runtime = Runtime(fail = false)
+        var posts = 0
+        var finished: TurnOutcome? = null
+        val strategy = strategy(runtime, { finished = it }) {
+            if (posts++ == 0) {
+                TurnOutcome.Failure(
+                    "synthetic prose transport tear",
+                    cause = if (mode == "first-byte") FailureCause.UPSTREAM_CONN_RESET else FailureCause.UPSTREAM_TRUNCATED,
+                    phase = if (mode == "first-byte") FailurePhase.FIRST_BYTE else FailurePhase.MID_OUTPUT,
+                    partial = TurnOutcome.PartialRound(
+                        bodyText = if (mode == "prose") "visible synthetic prose" else "",
+                        emittedText = mode == "prose",
+                    ),
+                )
+            } else {
+                TurnOutcome.Success(false, false, Usage(23, 2), messageClosed = true)
+            }
+        }
+        strategy.run(body, null, ResponsesReanchorController({ null }, maxContinuations = 1))
+        assertTrue(finished is TurnOutcome.Success, finished.toString())
+        assertEquals(2, posts, "prose recovery must not be mistaken for replay of a script")
+        assertEquals(0, runtime.starts)
+    }
+
     private fun strategy(
         runtime: Runtime,
         finish: suspend (TurnOutcome) -> Unit,

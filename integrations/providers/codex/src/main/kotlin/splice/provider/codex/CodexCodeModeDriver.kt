@@ -222,6 +222,7 @@ internal class CodexCodeModeDriver(
                 context.disableParallel,
                 emptyList(),
                 streams.attach(record, context.sink),
+                stream,
             )
         }
     } catch (error: CancellationException) {

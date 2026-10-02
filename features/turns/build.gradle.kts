@@ -27,5 +27,6 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testFixturesImplementation(libs.kotlinx.serialization.json)
     testFixturesImplementation(libs.zstd.jni) // CX-03: the mock decodes zstd like the real upstream
-    testFixturesImplementation(project(":core")) // Result.discard on best-effort test-server teardown
+    testFixturesApi(project(":core")) // Public budget and logging types in the shared head builder
+    testFixturesApi(project(":integrations-upstream")) // Public admission and transport types in that builder
 }

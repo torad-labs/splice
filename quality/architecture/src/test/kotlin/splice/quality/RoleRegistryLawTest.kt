@@ -744,7 +744,8 @@ class RoleRegistryLawTest {
         // Oct 1 CT: TranscriptOriginalCopy joins the path-pair group with forced-byte copy semantics.
         // 125 since Oct 1 CT: V4-451's ProgressLine left `()->String` when it began taking whether a notice is open.
         // 126 since Oct 1 CT: CodeModeStatementSyntax certifies source in the executing Graal isolate.
-        assertEquals(126, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
+        // 127 since Oct 2 CT: CodeModeSessionEnd closes a retained engine, never writes diagnostic text.
+        assertEquals(127, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
         assertTrue(config.entries.values.all { !it.text("reason").isNullOrBlank() }) { "every entry is reasoned" }
         assertTrue(config.entries.values.all { !it.text("dated").isNullOrBlank() }) { "every entry is dated" }
 

@@ -1,6 +1,10 @@
 // NEW: serialized stateful callback resumption owns one addressed context until its close acknowledgement.
 package splice.codemode
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import splice.upstream.codemode.CodeModeCall
@@ -25,6 +29,7 @@ internal class JvmCodeModeCell(
     private val source: CodeModeSource? = null,
 ) : CodeModeCell {
     private val closed: AtomicBoolean = AtomicBoolean()
+    private val lost = CompletableDeferred<Unit>()
 
     @Volatile private var stopped = false
 
@@ -50,6 +55,7 @@ internal class JvmCodeModeCell(
 
     fun stop() {
         stopped = true
+        lost.complete(Unit)
         close()
     }
 
@@ -78,11 +84,7 @@ internal class JvmCodeModeCell(
         var reply = initial
         while (reply.waitingForInput) {
             val input = checkNotNull(source) { "Ordinary cell cannot wait for source input" }
-            val part = try {
-                input.read()
-            } catch (error: java.io.IOException) {
-                CodeModeSourcePart.Failed("Upstream source interrupted: ${error.message.orEmpty()}")
-            }
+            val part = nextInput(input)
             reply = CodeModeFrames.parseReply(
                 channel.exchange(StreamingCodeModeWire.inputFrame(part)), tools, nextId,
             )
@@ -90,6 +92,24 @@ internal class JvmCodeModeCell(
         pendingCalls = reply.calls.orEmpty()
         if (initial.waitingForInput) nextId += pendingCalls.size
         return reply
+    }
+
+    private suspend fun nextInput(input: CodeModeSource): CodeModeSourcePart = coroutineScope {
+        val reading = async {
+            try {
+                input.read()
+            } catch (error: java.io.IOException) {
+                CodeModeSourcePart.Failed("Upstream source interrupted: ${error.message.orEmpty()}")
+            }
+        }
+        try {
+            select {
+                lost.onAwait { throw CodeModeWorkerLostException() }
+                reading.onAwait { it }
+            }
+        } finally {
+            reading.cancel()
+        }
     }
 
     private fun toStep(reply: WorkerReply): CodeModeStep = reply.calls?.let { calls ->

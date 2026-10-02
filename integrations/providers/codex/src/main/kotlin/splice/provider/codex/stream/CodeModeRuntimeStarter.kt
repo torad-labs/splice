@@ -32,9 +32,14 @@ internal class CodeModeRuntimeStarter(
 
     private suspend fun open(record: CodeModeRecord, context: CodeModeRunContext, stream: CodeModeLiveRound?) =
         if (stream == null) {
-            runtime().start(record.source, context.turn.tools, context.turn.descriptions)
+            runtime().startSession(record.key, record.source, context.turn.tools, context.turn.descriptions)
         } else {
-            runtime().startStreaming(stream.source.view(), context.turn.tools, context.turn.descriptions)
+            runtime().startStreamingSession(
+                record.key,
+                stream.source.view(),
+                context.turn.tools,
+                context.turn.descriptions,
+            )
         }
 
     /** A failure before source dispatch has a typed proof; every other start failure stays no-rerun. */

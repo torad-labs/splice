@@ -7,6 +7,7 @@ import splice.app.provider.codex.CodeModeSessionLiveness
 import splice.codemode.DEFAULT_ADVANCE_TIMEOUT_MS
 import splice.codemode.DEFAULT_HEAP_MB
 import splice.codemode.DEFAULT_MAX_WORKERS
+import splice.codemode.DEFAULT_POOL_MEMORY_MB
 import splice.codemode.JvmCodeModeRuntime
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.config.CODE_MODE_DIR
@@ -134,11 +135,11 @@ internal class CodexResponsesArm(
                 CodeModeBridgeConfig(
                     runtimes = {
                         JvmCodeModeRuntime(
-                            // V4-110: the three code-mode pool knobs are TOML quirks overlaid on the code
-                            // defaults — absent keeps today's 4 workers / 5s advance / 128MB heap.
+                            // TOML quirks overlay the native pool's defaults, including its head memory reservation.
                             maxWorkers = ctx.providerCfg.quirks.codeModeWorkers ?: DEFAULT_MAX_WORKERS,
                             advanceTimeoutMs = ctx.providerCfg.quirks.codeModeTimeoutMs ?: DEFAULT_ADVANCE_TIMEOUT_MS,
                             heapMb = ctx.providerCfg.quirks.codeModeHeapMb ?: DEFAULT_HEAP_MB,
+                            memoryBudgetMb = ctx.providerCfg.quirks.codeModeMemoryMb ?: DEFAULT_POOL_MEMORY_MB,
                         )
                     },
                     state = CodeModeStateLocation(

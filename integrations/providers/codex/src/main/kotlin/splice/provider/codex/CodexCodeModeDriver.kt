@@ -226,14 +226,15 @@ internal class CodexCodeModeDriver(
         throw error
     } catch (error: CodeModePersistenceException) {
         throw error
-    } catch (_: CodeModeCapacityException) {
+    } catch (error: CodeModeCapacityException) {
         // Every slot is busy with a presumed-live cell. Nothing ran: tell the MODEL, in the script's
         // own output, and let the turn continue — a 502 here retried identically until new user
         // content arrived (2026-09-07, 87 failed turns on one head).
+        val detail = "$CAPACITY_DETAIL: ${error.message}"
         config.log(
-            "[code-mode] ${record.id.take(CODE_MODE_RECORD_LOG_CHARS)} (outer ${record.outerCallId}): $CAPACITY_DETAIL",
+            "[code-mode] ${record.id.take(CODE_MODE_RECORD_LOG_CHARS)} (outer ${record.outerCallId}): $detail",
         )
-        record to machine.interrupt(record, CAPACITY_DETAIL)
+        record to machine.interrupt(record, detail)
     } catch (error: IOException) {
         record to starter.failed(record, error)
     } catch (_: IllegalArgumentException) {

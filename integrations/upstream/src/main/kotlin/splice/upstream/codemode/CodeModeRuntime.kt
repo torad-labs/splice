@@ -14,6 +14,25 @@ public interface CodeModeRuntime : AutoCloseable {
         descriptions: Map<String, String> = emptyMap(),
     ): CodeModeCell
 
+    /** Address a runtime instance with the provider's existing conversation/session identity. */
+    public suspend fun startSession(
+        sessionKey: String,
+        source: String,
+        tools: Set<String>,
+        descriptions: Map<String, String> = emptyMap(),
+    ): CodeModeCell = start(source, tools, descriptions)
+
+    /** Incremental source retains the same session identity through every callback and result. */
+    public suspend fun startStreamingSession(
+        sessionKey: String,
+        source: CodeModeSource,
+        tools: Set<String>,
+        descriptions: Map<String, String> = emptyMap(),
+    ): CodeModeCell = startStreaming(source, tools, descriptions)
+
+    /** Release the session-owned engine when the provider expires its retained code-mode state. */
+    public fun closeSession(sessionKey: String): Unit = Unit
+
     /** Incremental-capable runtimes dispatch complete statements before the source item completes. */
     public suspend fun startStreaming(
         source: CodeModeSource,

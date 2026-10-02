@@ -30,4 +30,4 @@ public class CodeModeInfrastructureException(
 /** Every worker slot is held by a live cell; nothing of the caller's ran and nothing was spawned.
  *  Distinct from a spawn failure so the bridge can evict a parked cell and retry, or report the
  *  pressure to the model, instead of failing the turn. */
-public class CodeModeCapacityException : IOException("Code-mode worker capacity reached")
+public class CodeModeCapacityException(message: String = "Code-mode worker capacity reached") : IOException(message)

@@ -409,9 +409,10 @@ class CodeModeRuntimeTest {
 
                 override fun add(element: Any): Boolean = error("fixture is read-only")
             }
-            val field = JvmCodeModeRuntime::class.java.getDeclaredField(name)
-            field.isAccessible = true
-            field.set(runtime, disappearing)
+            val ownerField = JvmCodeModeRuntime::class.java.getDeclaredField("cells").apply { isAccessible = true }
+            val owner = ownerField.get(runtime)
+            val field = owner.javaClass.getDeclaredField(name).apply { isAccessible = true }
+            field.set(owner, disappearing)
 
             runtime.close()
         }

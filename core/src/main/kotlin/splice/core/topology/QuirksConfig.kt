@@ -59,14 +59,16 @@ public data class QuirksConfig(
     /** ChatGPT responses only: splice-owned JavaScript bridge. Absent = on for that shape (0.4.0). */
     @SerialName("code_mode") val codeMode: Boolean? = null,
     /** code-mode only: the JAR-bundled GraalJS worker pool size (JvmCodeModeRuntime maxWorkers).
-     *  NULLABLE overlay — absent keeps the code default (4). */
+     *  NULLABLE overlay — absent keeps the code default (6). */
     @SerialName("code_mode_workers") val codeModeWorkers: Int? = null,
     /** code-mode only: how long one worker exchange may wait for the child's answer, in milliseconds
      *  (JvmCodeModeRuntime advanceTimeoutMs). NULLABLE overlay — absent keeps the code default (5000). */
     @SerialName("code_mode_timeout_ms") val codeModeTimeoutMs: Long? = null,
     /** code-mode only: each child JVM's heap, in MB (the -Xmx). NULLABLE overlay — absent keeps the
-     *  code default (128). */
+     *  code default (512). */
     @SerialName("code_mode_heap") val codeModeHeapMb: Int? = null,
+    /** Head-wide host/guest/collector memory reservation in MiB. Absent keeps the 24 GiB admission budget. */
+    @SerialName("code_mode_memory_mb") val codeModeMemoryMb: Long? = null,
     /** Beta ChatGPT responses only: upstream model ids offered the code-mode runner IN ADDITION to those the
      *  backend marks `tool_mode = "code_mode_only"` (V4-441). Absent adds none; a `[Nk|Nm]` context suffix on
      *  the routed model is ignored when matching. */
@@ -138,6 +140,9 @@ public data class QuirksConfig(
     @SerialName("tool_name_cap") val toolNameCap: Int? = null,
 ) {
     init {
+        require(codeModeMemoryMb == null || codeModeMemoryMb > 0) {
+            "[providers.*.quirks] code_mode_memory_mb must be positive"
+        }
         require(compactEffort == null) {
             "[providers.*.quirks] compact_effort = '$compactEffort' is retired: a compaction is built " +
                 "exactly like a turn and inherits the session's model and effort (any pin misses the " +

@@ -1,9 +1,11 @@
-// NEW: one shared engine runs independent cell contexts; parked contexts occupy no executor thread.
+// NEW: session-owned engines share only the host transport; parked contexts occupy no executor thread.
 package splice.codemode
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
 import org.graalvm.polyglot.Engine
+import org.graalvm.polyglot.PolyglotException
+import splice.codemode.engine.WorkerSession
 import splice.upstream.failure.CodeModeInfrastructureCategory
 import splice.upstream.failure.CodeModeInfrastructureClass
 import java.io.DataInputStream
@@ -15,19 +17,16 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
+// why: control acknowledgments and cancellation must remain live when every bounded guest lane is executing.
+private const val CONTROL_THREADS = 2
+private val CONTROL_FRAMES = setOf("session-open", "session-close", "engines", "close")
+
 internal object SharedCodeModeWorker {
     fun run(input: DataInputStream, output: DataOutputStream) {
-        val configuredEngine = Engine.newBuilder("js")
-            .option("engine.SpawnIsolate", "true")
-            .option("engine.IsolateOption.MaxHeapSize", "${CodeModeHeap.guestBytes()}")
-            .build()
-        configuredEngine.use { engine ->
-            // Compile and exercise the common launcher before advertising readiness.
-            WorkerSession(engine).use { }
-            HostWorkerDispatcher(engine, output).use { host ->
-                CodeModeWire.write(output, CodeModeWire.readyFrame())
-                readFrames(input, host)
-            }
+        HostWorkerDispatcher(output).use { host ->
+            // Hosts are cold. Only a session's first cell opens and warms its own isolate.
+            CodeModeWire.write(output, CodeModeWire.readyFrame())
+            readFrames(input, host)
         }
     }
 
@@ -41,36 +40,65 @@ internal object SharedCodeModeWorker {
 }
 
 private class HostWorkerDispatcher(
-    private val engine: Engine,
     private val output: DataOutputStream,
 ) : AutoCloseable {
     private val cells = ConcurrentHashMap<Long, HostWorkerCell>()
+    private val sessions = HostWorkerSessions()
     private val writes = ReentrantLock()
-    private val executor = Executors.newCachedThreadPool()
+    private val controls = Executors.newFixedThreadPool(CONTROL_THREADS)
 
     fun dispatch(frame: HostFrame) {
         val type = CodeModeFields.requiredString(frame.payload, "type")
-        val cell = selectCell(frame.cell, type)
-        executor.execute {
-            val reply = if (type == "close") {
-                val removed: HostWorkerCell? = cells.remove(frame.cell)
-                removed?.close()
-                CodeModeWire.completedFrame("", null)
-            } else {
-                cell?.reply(frame.payload)
-                    ?: CodeModeFatalFrame.create(
-                        CodeModeInfrastructureCategory.PROTOCOL,
-                        CodeModeInfrastructureClass.IO,
-                    )
+        if (type in CONTROL_FRAMES) {
+            controls.execute { respond(frame, control(frame, type)) }
+        } else if (!dispatchGuest(frame, type)) {
+            controls.execute {
+                // Legacy raw-host starts have no preceding session-open. Warm them on control, never run guest code there.
+                val starting = type == "start" || type == StreamingCodeModeWire.START
+                val opened = starting && sessions.open(frame.session)
+                if (!opened || !dispatchGuest(frame, type)) respond(frame, missingCell())
             }
-            writes.withLock { CodeModeWire.write(output, HostProtocol.frame(frame.cell, frame.request, reply)) }
         }
     }
 
-    private fun selectCell(id: Long, type: String): HostWorkerCell? = if (
+    private fun dispatchGuest(frame: HostFrame, type: String): Boolean = sessions.execute(frame.session) {
+        val reply = selectCell(frame.cell, frame.session, type)?.reply(frame.payload) ?: missingCell()
+        respond(frame, reply)
+    }
+
+    private fun control(frame: HostFrame, type: String): JsonObject = when (type) {
+        "session-open" -> if (sessions.open(frame.session)) {
+            HostProtocol.count(sessions.count())
+        } else {
+            HostProtocol.command("capacity")
+        }
+        "session-close" -> {
+            cells.entries.filter { it.value.owner == frame.session }.forEach { (id, cell) ->
+                cells.remove(id)?.close()
+            }
+            sessions.closeSession(frame.session)
+            HostProtocol.count(sessions.count())
+        }
+        "engines" -> HostProtocol.count(sessions.count(), cells.values.count(HostWorkerCell::isRunning))
+        else -> {
+            val removed: HostWorkerCell? = cells.remove(frame.cell)
+            removed?.close()
+            CodeModeWire.completedFrame("", null)
+        }
+    }
+
+    private fun missingCell(): JsonObject =
+        CodeModeFatalFrame.create(CodeModeInfrastructureCategory.PROTOCOL, CodeModeInfrastructureClass.IO)
+
+    private fun respond(frame: HostFrame, reply: JsonObject) {
+        writes.withLock { CodeModeWire.write(output, HostProtocol.frame(frame.cell, frame.request, reply)) }
+    }
+
+    private fun selectCell(id: Long, owner: Long, type: String): HostWorkerCell? = if (
         type == "start" || type == StreamingCodeModeWire.START
     ) {
-        val created = HostWorkerCell(engine)
+        val engine = sessions.engine(owner) ?: return null
+        val created = HostWorkerCell(engine, owner)
         if (cells.putIfAbsent(id, created) == null) created else null
     } else {
         cells[id]
@@ -80,36 +108,50 @@ private class HostWorkerDispatcher(
         try {
             cells.values.forEach(HostWorkerCell::close)
         } finally {
-            executor.shutdownNow()
-            executor.close()
+            sessions.close()
+            controls.shutdownNow()
+            controls.close()
         }
     }
 }
 
-private class HostWorkerCell(private val engine: Engine) : AutoCloseable {
+private class HostWorkerCell(private val engine: Engine, val owner: Long) : AutoCloseable {
     private val lock = ReentrantLock()
     private val closed = AtomicBoolean()
 
     @Volatile private var session: WorkerSession? = null
 
+    @Volatile var isRunning: Boolean = false
+        private set
+
     fun reply(frame: JsonObject): JsonObject = lock.withLock {
         try {
             check(!closed.get()) { "Code-mode cell is closed" }
-            val reply = execute(frame)
-            when {
-                reply.waitingForInput -> StreamingCodeModeWire.waitingFrame()
-                reply.calls != null -> CodeModeWire.callsFrame(reply.calls)
-                else -> CodeModeWire.completedFrame(checkNotNull(reply.output), reply.error)
-            }
+            isRunning = true
+            step(execute(frame))
         } catch (error: CancellationException) {
             throw error
         } catch (_: IOException) {
             CodeModeFatalFrame.create(CodeModeInfrastructureCategory.PROTOCOL, CodeModeInfrastructureClass.IO)
         } catch (_: IllegalArgumentException) {
             CodeModeFatalFrame.create(CodeModeInfrastructureCategory.PROTOCOL, CodeModeInfrastructureClass.RUNTIME)
+        } catch (error: PolyglotException) {
+            if (error.isResourceExhausted) {
+                CodeModeWire.completedFrame("", "Code-mode guest heap exhausted")
+            } else {
+                CodeModeFatalFrame.create(CodeModeInfrastructureCategory.HOST, CodeModeInfrastructureClass.RUNTIME)
+            }
         } catch (_: RuntimeException) {
             CodeModeFatalFrame.create(CodeModeInfrastructureCategory.HOST, CodeModeInfrastructureClass.RUNTIME)
+        } finally {
+            isRunning = false
         }
+    }
+
+    private fun step(reply: WorkerReply): JsonObject = when {
+        reply.waitingForInput -> StreamingCodeModeWire.waitingFrame()
+        reply.calls != null -> CodeModeWire.callsFrame(reply.calls)
+        else -> CodeModeWire.completedFrame(checkNotNull(reply.output), reply.error)
     }
 
     private fun execute(frame: JsonObject): WorkerReply = when (CodeModeFields.requiredString(frame, "type")) {

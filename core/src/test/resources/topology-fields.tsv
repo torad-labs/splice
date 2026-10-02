@@ -120,6 +120,7 @@ providers.*.quirks.chat_effort_vocabulary.levels.*
 providers.*.quirks.chat_effort_vocabulary.model_pattern	
 providers.*.quirks.code_mode	
 providers.*.quirks.code_mode_heap	
+providers.*.quirks.code_mode_memory_mb	
 providers.*.quirks.code_mode_models	
 providers.*.quirks.code_mode_timeout_ms	
 providers.*.quirks.code_mode_workers	

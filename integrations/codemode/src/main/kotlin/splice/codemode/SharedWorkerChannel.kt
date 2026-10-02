@@ -38,6 +38,7 @@ internal class SharedWorkerChannel(
     private val writes = Mutex()
     private val closed = AtomicBoolean()
     private val cells = ConcurrentHashMap<Long, CompletableDeferred<Unit>>()
+    private val exited = CompletableDeferred<Unit>()
     val isClosed: Boolean get() = closed.get()
 
     init {
@@ -64,7 +65,11 @@ internal class SharedWorkerChannel(
 
     suspend fun awaitReady() = ready.await()
 
-    fun cell(id: Long): CellChannel {
+    fun afterExit(action: WorkerExited) {
+        exited.invokeOnCompletion { action() }
+    }
+
+    fun cell(id: Long, session: Long = 1): CellChannel {
         ensureOpen()
         val exited = CompletableDeferred<Unit>()
         cells[id] = exited
@@ -72,10 +77,10 @@ internal class SharedWorkerChannel(
             cells.remove(id)?.complete(Unit)
             throw CodeModeWorkerLostException()
         }
-        return HostCellChannel(this, id, exited)
+        return HostCellChannel(this, id, exited, session)
     }
 
-    suspend fun exchange(cell: Long, payload: JsonObject): JsonObject {
+    suspend fun exchange(cell: Long, payload: JsonObject, session: Long = 1): JsonObject {
         ensureOpen()
         val request = sequence.incrementAndGet()
         val answer = CompletableDeferred<HostFrame>()
@@ -84,7 +89,7 @@ internal class SharedWorkerChannel(
         try {
             // Only the frame write is indivisible; cancelling an execution still cancels its await.
             withContext(NonCancellable) {
-                writeFrame(HostProtocol.frame(cell, request, payload))
+                writeFrame(HostProtocol.frame(cell, request, payload, session))
                 sent = true
             }
             return answer.await().payload
@@ -114,10 +119,10 @@ internal class SharedWorkerChannel(
         runInterruptible(ioDispatcher) { CodeModeWire.write(output, frame) }
     }
 
-    fun closeCell(id: Long) {
+    fun closeCell(id: Long, session: Long) {
         scope.launch {
             try {
-                if (!closed.get()) exchange(id, HostProtocol.close())
+                if (!closed.get()) exchange(id, HostProtocol.close(), session)
             } catch (error: CancellationException) {
                 throw error
             } catch (_: IOException) {
@@ -135,6 +140,7 @@ internal class SharedWorkerChannel(
                 transport.close()
             } finally {
                 scope.cancel()
+                exited.complete(Unit)
             }
         }
     }
@@ -152,12 +158,13 @@ private class HostCellChannel(
     private val host: SharedWorkerChannel,
     private val id: Long,
     private val exited: CompletableDeferred<Unit>,
+    private val session: Long,
 ) : CellChannel {
     private val closed = AtomicBoolean()
 
     override suspend fun exchange(frame: JsonObject): JsonObject {
         check(!closed.get()) { "Code-mode cell is closed" }
-        return host.exchange(id, frame)
+        return host.exchange(id, frame, session)
     }
 
     override fun afterExit(action: WorkerExited) {
@@ -165,6 +172,6 @@ private class HostCellChannel(
     }
 
     override fun close() {
-        if (closed.compareAndSet(false, true)) host.closeCell(id)
+        if (closed.compareAndSet(false, true)) host.closeCell(id, session)
     }
 }

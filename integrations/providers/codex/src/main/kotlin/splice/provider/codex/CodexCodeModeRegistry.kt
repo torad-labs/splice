@@ -18,11 +18,12 @@ import splice.provider.codex.state.CodeModeExpiredHistory
 import splice.provider.codex.state.CodeModeKeyLocks
 import splice.provider.codex.state.CodeModeNativeChain
 import splice.provider.codex.state.CodeModeRegistryAccess
+import splice.provider.codex.state.CodeModeSessionEnd
 import splice.provider.codex.state.CodeModeStartupAdmissions
+import splice.provider.codex.state.CodeModeTurnStart
 import splice.provider.codex.stream.CodeModeSourceRecords
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
-import java.time.Clock
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import kotlin.time.Duration
@@ -37,6 +38,7 @@ internal class CodexCodeModeRegistry(
     json: Json,
     private val sweepInterval: Duration,
     writer: CodeModeStateWrite? = null,
+    private val closeSession: CodeModeSessionEnd = CodeModeSessionEnd {},
 ) {
     private val monitor = ReentrantLock()
     private val keyLocks = CodeModeKeyLocks()
@@ -55,7 +57,7 @@ internal class CodexCodeModeRegistry(
     val startup = CodeModeStartupAdmissions(access, records, history, store, config.clock)
     val source = CodeModeSourceRecords(access, records, history, store)
     private val admissions = startup.entries
-    private val sweeper = CodexCodeModeSweeper(config, records, cells, admissions, history)
+    private val sweeper = CodexCodeModeSweeper(config, records, cells, admissions, history, closeSession)
     private val timed = CodeModeTimedSweep(
         monitor,
         records,
@@ -67,7 +69,7 @@ internal class CodexCodeModeRegistry(
     )
 
     /** V4-337: where each code-mode turn starts, before its history is built. */
-    val turnStart = CodeModeTurnStart(access, retention, records, history, store, config.clock)
+    val turnStart = CodeModeTurnStart(access, retention, records, history, store, config.clock, closeSession)
 
     init {
         monitor.withLock {
@@ -204,7 +206,8 @@ internal class CodexCodeModeRegistry(
                 record.sourceEnd?.ended()
                 record.sourceEnd = null
             }
-            records.removeAll { it.key == key && it.id in evicted }
+            val removed = records.removeAll { it.key == key && it.id in evicted }
+            if (removed && records.none { it.key == key }) closeSession(key)
             history.entries.removeAll { it.key == key && it in removedMarkers }
             history.entries.addAll(addedMarkers.filter { it.key == key })
         }
@@ -364,23 +367,5 @@ internal class CodexCodeModeRegistry(
             }
             throw error
         }
-    }
-}
-
-/** V4-337: the start of a conversation's turn, under the registry's [monitor] and on its own collections.
- *  Only there — the registry's completed() also runs mid-turn, where a record that went could run again. */
-internal class CodeModeTurnStart(
-    private val access: CodeModeRegistryAccess,
-    private val retention: CodeModeRecordRetention,
-    private val records: MutableList<CodeModeRecord>,
-    private val history: CodeModeExpiredHistory,
-    private val store: CodexCodeModeStore,
-    private val clock: Clock,
-) {
-    /** Before [key]'s history is built: a save an earlier turn could not make is made, and
-     *  [CodeModeRecordRetention.beginTurn] runs, so a script this turn starts is measured on what stays. */
-    fun begin(key: String) = access.withKey(key) {
-        val changed = retention.beginTurn(records, history, key, clock.millis())
-        store.save(records, history.entries, retryOnly = !changed, dirtyKeys = setOf(key))
     }
 }

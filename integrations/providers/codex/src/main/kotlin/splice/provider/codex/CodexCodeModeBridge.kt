@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.GatewayCustomCall
 import splice.core.util.LogSink
+import splice.provider.codex.state.CodeModeSessionEnd
 import splice.provider.codex.stream.CodeModeRoundInterceptor
 import splice.upstream.RoundInterceptor
 import splice.upstream.codemode.CodeModeResult
@@ -31,6 +32,10 @@ internal class CodeModeRuntimeRun(private val runtimes: CodeModeRuntimes) {
     private var current: CodeModeRuntime? = null
 
     fun runtime(): CodeModeRuntime = synchronized(monitor) { current ?: runtimes.open().also { current = it } }
+
+    fun closeSession(key: String) {
+        synchronized(monitor) { current?.closeSession(key) }
+    }
 
     fun end() {
         val ending: CodeModeRuntime? = synchronized(monitor) { current.also { current = null } }
@@ -113,10 +118,15 @@ public class CodexCodeModeBridge(
 
     private val json = Json { encodeDefaults = true }
     private val wire = CodexCodeModeWire(json, config.log)
-    private val registry = CodexCodeModeRegistry(config, json, sweepInterval)
+    private val run = CodeModeRuntimeRun(config.runtimes)
+    private val registry = CodexCodeModeRegistry(
+        config,
+        json,
+        sweepInterval,
+        closeSession = CodeModeSessionEnd(run::closeSession),
+    )
     private val validation = CodexCodeModeValidation(config)
     private val machine = CodexCodeModeMachine(config, registry, validation)
-    private val run = CodeModeRuntimeRun(config.runtimes)
     private val driver = CodexCodeModeDriver(config, run, registry, wire, validation, machine)
     private val resume = CodexCodeModeResume(registry, wire, validation, machine, driver)
     private val controller = CodexCodeModeTurn(registry, wire, driver, resume, machine, validation, config.log)

@@ -1,5 +1,6 @@
 package splice.core.topology
 
+import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
@@ -14,6 +15,16 @@ import splice.core.model.ModelEntry
 import java.nio.file.Path
 
 class TopologyConfigOverridesTest {
+    @Test
+    fun `code mode memory budget has its serialized key and rejects a nonpositive limit`() {
+        val config = Json.decodeFromString<QuirksConfig>("""{"code_mode_memory_mb":4096}""")
+        assertEquals(4096L, config.codeModeMemoryMb)
+        assertNull(Json.decodeFromString<QuirksConfig>("{}").codeModeMemoryMb)
+        assertThrows(IllegalArgumentException::class.java) {
+            val invalid = Json.decodeFromString<QuirksConfig>("""{"code_mode_memory_mb":0}""")
+            error("Accepted an invalid memory budget: ${invalid.codeModeMemoryMb}")
+        }
+    }
 
     private val topology = Topology(
         daemon = DaemonConfig(controlPort = 4123),

@@ -16,6 +16,7 @@ import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.provider.codex.state.CodeModeExpiredHistory
+import splice.provider.codex.state.CodeModeSessionEnd
 import splice.upstream.codemode.CodeModeCell
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
@@ -98,6 +99,7 @@ internal class CodexCodeModeSweeper(
     private val cells: MutableMap<String, CodeModeCell>,
     private val admissions: MutableMap<String, Long>,
     private val history: CodeModeExpiredHistory,
+    private val closeSession: CodeModeSessionEnd = CodeModeSessionEnd {},
 ) {
     /** Expires records past their TTL and closes positively dead sessions' cells; true when anything changed. */
     fun sweep(key: String? = null): Boolean = expireRecords(key) or reapIdleCells(key) or expireMarkers(key)
@@ -133,6 +135,7 @@ internal class CodexCodeModeSweeper(
             history.remember(record, config.clock.millis())
         }
         records.removeAll(stale.toSet())
+        stale.map(CodeModeRecord::key).distinct().forEach(closeSession::invoke)
         return true
     }
 
@@ -156,6 +159,7 @@ internal class CodexCodeModeSweeper(
         cells.remove(record.id)?.close()
         record.phase = CodeModePhase.LOST
         record.error = "$message; source was not rerun"
+        if (records.none { it.key == record.key && it.phase == CodeModePhase.ACTIVE }) closeSession(record.key)
         config.log("[code-mode] ${record.id.take(RECORD_ID_LOG_CHARS)} (outer ${record.outerCallId}): $message")
     }
 }

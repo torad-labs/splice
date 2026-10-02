@@ -481,6 +481,8 @@ class CodeModeRuntimeTest {
     }
 
     private fun assertClosed(cell: splice.upstream.codemode.CodeModeCell) {
+        // CodeModeCellStarts also reports the transport exit after a local close has already won.
+        (cell as JvmCodeModeCell).stop()
         assertThrows(IllegalStateException::class.java) {
             runBlocking { cell.advance() }
         }

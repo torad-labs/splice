@@ -16,7 +16,7 @@ import splice.upstream.codemode.CodeModeSourcePersistenceException
 import splice.upstream.codemode.CodeModeStep
 import splice.upstream.failure.CodeModeInfrastructureException
 import splice.upstream.failure.CodeModeWorkerLostException
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 internal fun interface ReleaseCodeModeCell {
     operator fun invoke(cell: JvmCodeModeCell)
@@ -30,19 +30,18 @@ internal class JvmCodeModeCell(
     private val onClose: ReleaseCodeModeCell,
     private val source: CodeModeSource? = null,
 ) : CodeModeCell {
-    private val closed: AtomicBoolean = AtomicBoolean()
+    private enum class End { CLOSED, STOPPED }
+
+    // The first terminal cause wins, including a transport exit arriving after a local close.
+    private val end = AtomicReference<End?>()
     private val lost = CompletableDeferred<Unit>()
-
-    @Volatile private var stopped = false
-
     private val advanceLock: Mutex = Mutex()
     private var cachedReply: WorkerReply? = initial
     private var pendingCalls: List<CodeModeCall> = initial.calls.orEmpty()
     private var nextId: Int = pendingCalls.size + 1
 
     override suspend fun advance(results: List<CodeModeResult>): CodeModeStep = advanceLock.withLock {
-        if (stopped) throw CodeModeWorkerLostException()
-        check(!closed.get()) { "Code-mode cell is closed" }
+        checkOpen()
         var advanced = false
         try {
             val reply = cachedReply?.also {
@@ -50,27 +49,39 @@ internal class JvmCodeModeCell(
                 cachedReply = null
             } ?: receiveAfter(results)
             toStep(awaitInput(reply)).also { advanced = true }
+        } catch (failure: CodeModeWorkerLostException) {
+            stop()
+            throw failure
         } finally {
             if (!advanced) close()
         }
     }
 
     fun stop() {
-        stopped = true
-        lost.complete(Unit)
-        close()
+        if (end.compareAndSet(null, End.STOPPED)) release()
     }
 
     override fun close() {
-        if (closed.compareAndSet(false, true)) {
-            channel.afterExit { onClose(this) }
-            channel.close()
-        }
+        if (end.compareAndSet(null, End.CLOSED)) release()
+    }
+
+    private fun release() {
+        lost.complete(Unit)
+        channel.afterExit { onClose(this) }
+        channel.close()
+    }
+
+    private fun checkOpen() {
+        if (end.get() != null) unavailable()
+    }
+
+    private fun unavailable(): Nothing {
+        if (end.get() == End.STOPPED) throw CodeModeWorkerLostException()
+        error("Code-mode cell is closed")
     }
 
     private suspend fun receiveAfter(results: List<CodeModeResult>): WorkerReply {
-        if (stopped) throw CodeModeWorkerLostException()
-        check(!closed.get()) { "Code-mode cell is closed" }
+        checkOpen()
         CodeModeFrames.validateResultSet(pendingCalls, results)
         val reply = CodeModeFrames.parseReply(
             frame = channel.exchange(CodeModeWire.resultFrame(results)),
@@ -110,7 +121,7 @@ internal class JvmCodeModeCell(
         }
         try {
             select {
-                lost.onAwait { throw CodeModeWorkerLostException() }
+                lost.onAwait { unavailable() }
                 reading.onAwait { it }
             }
         } finally {

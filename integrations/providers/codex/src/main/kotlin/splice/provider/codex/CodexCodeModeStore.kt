@@ -252,6 +252,7 @@ internal class CodexCodeModeStore(
             indexed: CodeModeKeptState?,
         ): Boolean {
             if (record == null || indexed == null) return false
+            if (record.key in uncertainKeys) return false
             return record in records && indexed.dirty.values.all { it in records }
         }
 
@@ -332,7 +333,6 @@ internal class CodexCodeModeStore(
         true
     } catch (failure: IOException) {
         uncertainKeys.add(key)
-        failedKeys.add(key)
         log(
             "[code-mode] conversation ${key.take(CONVERSATION_LOG_CHARS)} not written to $dir " +
                 "(${SafeFailureText.render(failure)}): $stays, and the next save writes it",

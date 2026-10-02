@@ -15,6 +15,10 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption.APPEND
 import java.nio.file.attribute.FileTime
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneOffset
+import kotlin.time.Duration.Companion.hours
 
 class CodeModeStoreDurabilityTest {
     @TempDir
@@ -124,6 +128,57 @@ class CodeModeStoreDurabilityTest {
         assertFalse(Files.exists(oldFile))
         assertEquals(record.id, store().load().records.single().id)
         assertTrue(migrating.pendingKeys.isEmpty())
+    }
+
+    @Test
+    fun `a failed boot migration stays read only after another conversation writes`() {
+        val now = 1_790_000_000_000L
+        val records = listOf("alpha", "beta").map { key ->
+            CodeModeRecords.of(key, 1, now).apply {
+                phase = CodeModePhase.COMPLETED
+                output = "completed $key"
+            }
+        }
+        store().also { it.load() }.save(records, emptyList())
+        val files = CodeModeStateFiles(location.dir).files().associateBy {
+            CodeModeStateJournal.read(it, codec).records.single().key
+        }
+        val newFile = files.getValue("alpha")
+        val oldFile = newFile.resolveSibling(newFile.fileName.toString().substringBefore('.') + ".json")
+        Files.move(newFile, oldFile)
+        var blocked = true
+        var writes = 0
+        var forces = 0
+        val clock = Clock.fixed(Instant.ofEpochMilli(now), ZoneOffset.UTC)
+        val config = CodeModeBridgeConfig({ error("no worker is needed") }, location, clock = clock)
+        val registry = CodexCodeModeRegistry(
+            config,
+            codec,
+            1.hours,
+            writer = CodeModeStateWrite { path, text ->
+                writes++
+                if (blocked && path == newFile) throw IOException("synthetic migration disk full")
+                CodeModeStateJournal.write(path, text) { _, channel ->
+                    forces++
+                    channel.force(true)
+                }
+            },
+        )
+        blocked = false
+        registry.complete(registry.recordsFor("beta").single(), "updated beta")
+        val beforeWrites = writes
+        val beforeForces = forces
+        assertEquals(null, registry.owner("alpha", "", emptySet(), emptySet()))
+        assertEquals(listOf(records.first().id), registry.recordsFor("alpha").map { it.id })
+        val alpha = registry.completed("alpha").single()
+        assertFalse(registry.expiredHistory("alpha", "", emptySet()))
+        assertTrue(registry.resultOwners("alpha", emptySet()).unknown.isEmpty())
+        assertEquals(beforeWrites, writes, "read-only lookups must not retry a boot migration")
+        assertEquals(beforeForces, forces, "read-only lookups must not force a boot migration")
+        assertTrue(Files.exists(oldFile), "only the next real alpha write may migrate its file")
+        registry.complete(alpha, "updated alpha")
+        assertFalse(Files.exists(oldFile))
+        assertEquals("updated alpha", store().load().records.single { it.key == "alpha" }.output)
     }
 
     // Frozen discovery and corruption disposition from c36070bd0^ CodexCodeModeStore.

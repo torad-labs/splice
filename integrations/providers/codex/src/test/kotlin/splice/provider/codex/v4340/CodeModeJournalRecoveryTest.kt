@@ -2,6 +2,7 @@
 package splice.provider.codex.v4340
 
 import com.sun.management.ThreadMXBean
+import kotlinx.serialization.MissingFieldException
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -504,6 +505,7 @@ class CodeModeJournalRecoveryTest {
     }
 }
 
+@OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 class CodeModeJournalIsolationTest {
     private val codec = Json { encodeDefaults = true }
 
@@ -554,6 +556,42 @@ class CodeModeJournalIsolationTest {
             assertEquals(fixture.records.map { it.output }.toSet(), recovered.records.map { it.output }.toSet())
         }
     }
+
+    @Test
+    fun `a committed patch or delta omitting expired is isolated as decode corruption at load`() {
+        incompleteEntries().forEachIndexed { index, entry ->
+            val complete = codec.encodeToJsonElement(CodeModeRecords.of("alpha", 1).snapshot()).jsonObject
+            val fixture = corruptConversation(index, complete)
+            Files.writeString(fixture.file, entry + "\n", StandardOpenOption.APPEND)
+            assertThrows<MissingFieldException> { CodeModeStateJournal.read(fixture.file, codec) }
+            val recovered = CodexCodeModeStore(fixture.location, codec, {}).load()
+            assertEquals(listOf(fixture.records.last().id), recovered.records.map { it.id })
+            assertFalse(Files.exists(fixture.file))
+        }
+    }
+
+    @Test
+    fun `a live torn tail over a committed entry omitting expired is a typed persistence failure`() {
+        incompleteEntries().forEachIndexed { index, entry ->
+            val complete = codec.encodeToJsonElement(CodeModeRecords.of("alpha", 1).snapshot()).jsonObject
+            val fixture = corruptConversation(index, complete)
+            Files.writeString(fixture.file, entry + "\n" + """{"key":""", StandardOpenOption.APPEND)
+            val before = Files.readString(fixture.file)
+            val first = fixture.records.first().apply { output = "new alpha output" }
+            val failure = assertThrows<CodeModePersistenceException> {
+                fixture.store.save(fixture.records, emptyList(), dirtyKeys = setOf(first.key), changedRecord = first)
+            }
+            assertTrue(failure.cause?.cause is MissingFieldException)
+            assertEquals(before, Files.readString(fixture.file))
+            val healthy = CodeModeStateJournal.read(fixture.healthy, codec)
+            assertEquals(fixture.records.last().id, healthy.records.single().id)
+        }
+    }
+
+    private fun incompleteEntries(): List<String> = listOf(
+        """{"key":"alpha","patches":[]}""",
+        """{"key":"alpha","records":[],"removed":[]}""",
+    )
 
     private fun corruptCells(): List<JsonObject?> {
         val complete = codec.encodeToJsonElement(CodeModeRecords.of("alpha", 1).snapshot()).jsonObject

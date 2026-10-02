@@ -19,6 +19,7 @@ import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
 import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.AccountQuotaSource
+import splice.upstream.credentials.AccountResetText
 import splice.upstream.credentials.PoolAccount
 import splice.upstream.credentials.Selection
 import splice.upstream.retry.RateLimitCooldown
@@ -83,7 +84,8 @@ class AccountStatusTest {
         )
         val check = AccountPoolText { 0 }.check("claudex", view)
         assertEquals(CheckStatus.WARN, check.status)
-        assertTrue(check.detail.contains(Instant.ofEpochSecond(1799999000L).toString()), check.detail)
+        assertTrue(check.detail.contains(AccountResetText.forPerson(1799999000L)), check.detail)
+        assertFalse(check.detail.contains(Instant.ofEpochSecond(1799999000L).toString()), check.detail)
         assertTrue(check.detail.contains("on primary (0 of 2 open)"), check.detail)
         assertEquals("splice login claudex --label <name>", check.fix)
     }

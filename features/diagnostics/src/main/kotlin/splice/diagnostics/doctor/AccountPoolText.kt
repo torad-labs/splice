@@ -8,7 +8,7 @@ import splice.accounts.pool.HeadAccountPoolView
 import splice.accounts.pool.HeadAccountView
 import splice.core.util.WallClock
 import splice.upstream.credentials.AccountLabelPolicy
-import java.time.Instant
+import splice.upstream.credentials.AccountResetText
 import kotlin.math.roundToInt
 
 public class AccountPoolText(private val now: WallClock = WallClock { System.currentTimeMillis() }) {
@@ -39,7 +39,7 @@ public class AccountPoolText(private val now: WallClock = WallClock { System.cur
         val exhausted = safe.accounts.isNotEmpty() && safe.accounts.none { it.available && it.credentialPresent }
         if (!exhausted) return DoctorCheck(headKey, CheckStatus.OK, detail)
         val reset = safe.accounts.mapNotNull(::earliestReset).minOrNull()
-        val at = reset?.let { "earliest reset ${Instant.ofEpochSecond(it)}" } ?: "no reset time reported"
+        val at = reset?.let { "earliest reset ${AccountResetText.forPerson(it)}" } ?: "no reset time reported"
         return DoctorCheck(
             headKey,
             CheckStatus.WARN,

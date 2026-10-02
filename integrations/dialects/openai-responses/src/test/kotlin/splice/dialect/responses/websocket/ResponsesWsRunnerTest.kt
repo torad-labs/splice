@@ -9,6 +9,7 @@
 //    empty string re-opens the cross-conversation collision the two-part key exists to close.
 package splice.dialect.responses.websocket
 
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
@@ -167,6 +168,139 @@ private object FakeSocketForPing : WebSocket {
     override fun isOutputClosed() = false
     override fun isInputClosed() = false
     override fun abort() = Unit
+}
+
+class ResponsesWsRunnerProtocolTest {
+    @Test
+    fun `lite websocket requests preserve metadata and stamp the full and chained frames`() = runTest {
+        val rig = Rig { round -> listOf(completed("protocol-$round")) }
+        val turn = meta()
+        val metadata = responsesRequestJson.parseToJsonElement(
+            """{"client":"splice","session_id":"sess-1","thread_id":"splice-abc"}""",
+        ) as JsonObject
+        val headers = mapOf("x-openai-internal-codex-responses-lite" to "true")
+        for (body in listOf(BODY, BODY_COMPACT)) {
+            val original = responsesRequestJson.parseToJsonElement(body) as JsonObject
+            val request = JsonObject(original + ("client_metadata" to metadata))
+            assertNotNull(rig.round(turn, request.toString(), headers))
+            val frame = responsesRequestJson.parseToJsonElement(rig.sent.last()) as JsonObject
+            val sent = frame["client_metadata"] as JsonObject
+            assertEquals(
+                "\"true\"",
+                sent["ws_request_header_x_openai_internal_codex_responses_lite"].toString(),
+                "every lite frame carries the string-valued protocol marker",
+            )
+            metadata.forEach { (key, value) -> assertEquals(value, sent[key], key) }
+            assertEquals(original, responsesRequestJson.parseToJsonElement(body))
+            assertFalse(request.toString().contains("ws_request_header_x_openai_internal_codex_responses_lite"))
+        }
+        val initialFrame = responsesRequestJson.parseToJsonElement(rig.sent.first()) as JsonObject
+        assertFalse(initialFrame.containsKey("previous_response_id"))
+        assertTrue(rig.lastSentChained(), "metadata stamping must not defeat continuation chaining")
+    }
+
+    @Test
+    fun `non-lite websocket requests keep their existing metadata unchanged`() = runTest {
+        val rig = Rig { listOf(completed("non-lite")) }
+        val metadata = responsesRequestJson.parseToJsonElement("""{"client":"splice"}""") as JsonObject
+        val original = responsesRequestJson.parseToJsonElement(BODY) as JsonObject
+        val request = JsonObject(original + ("client_metadata" to metadata))
+        assertNotNull(rig.round(body = request.toString()))
+        val frame = responsesRequestJson.parseToJsonElement(rig.sent.single()) as JsonObject
+        assertEquals(metadata, frame["client_metadata"])
+    }
+}
+
+class ResponsesWsTurnStateTest {
+    @Test
+    fun `metadata captures the first backend turn state and echoes it only on later frames`() = runTest {
+        val rig = Rig { round ->
+            listOf(
+                """{"type":"response.created","headers":{"x-codex-turn-state":"not-metadata"}}""",
+                """{"type":"response.metadata","headers":{"X-Codex-Turn-State":["state-$round"]}}""",
+                completed("routing-$round"),
+            )
+        }
+        val turn = meta()
+        assertNotNull(rig.round(turn))
+        assertNull(state(rig.sent.first()), "nothing is sent before the backend supplies turn state")
+        assertNotNull(rig.round(turn, BODY_COMPACT))
+        assertEquals("\"state-0\"", state(rig.sent.last()))
+        assertTrue(rig.lastSentChained(), "ephemeral turn metadata must not invalidate the logical request prefix")
+        assertNotNull(rig.round(turn, BODY_COMPACT))
+        assertEquals("\"state-0\"", state(rig.sent.last()), "first capture wins, like codex's OnceLock")
+        assertNotNull(rig.round(meta(), BODY))
+        assertNull(state(rig.sent.last()), "a fresh turn in the same session starts without state")
+    }
+
+    @Test
+    fun `concurrent sessions never receive another turn's captured routing state`() = runTest {
+        lateinit var rig: Rig
+        rig = Rig { round ->
+            val request = responsesRequestJson.parseToJsonElement(rig.sent.last()) as JsonObject
+            val metadata = request["client_metadata"] as JsonObject
+            val session = metadata["session_id"].toString().trim('"')
+            listOf(
+                """{"type":"response.metadata","headers":{"x-codex-turn-state":"state-$session"}}""",
+                completed("isolated-$round"),
+            )
+        }
+        val turns = listOf(meta(session = "first"), meta(session = "second"))
+        val bodies = turns.map { turn ->
+            val original = responsesRequestJson.parseToJsonElement(BODY) as JsonObject
+            val metadata = responsesRequestJson.parseToJsonElement(
+                """{"client":"splice","session_id":"${turn.sessionId}"}""",
+            ) as JsonObject
+            JsonObject(original + ("client_metadata" to metadata)).toString()
+        }
+        val initial = turns.mapIndexed { index, turn -> async { rig.round(turn, bodies[index]) } }
+        initial.forEach { assertNotNull(it.await()) }
+        assertTrue(rig.sent.all { state(it) == null }, "both initial requests have fresh state")
+        val continued = turns.mapIndexed { index, turn -> async { rig.round(turn, bodies[index]) } }
+        continued.forEach { assertNotNull(it.await()) }
+        for (frameJson in rig.sent.drop(2)) {
+            val frame = responsesRequestJson.parseToJsonElement(frameJson) as JsonObject
+            val session = (frame["client_metadata"] as JsonObject)["session_id"].toString().trim('"')
+            assertEquals("\"state-$session\"", state(frameJson))
+        }
+    }
+
+    @Test
+    fun `metadata header values follow codex's string-or-first-array-element contract`() = runTest {
+        for (value in listOf("null", "0", "false", "{}", "[]", "[false,\"not-the-first-element\"]")) {
+            val rig = Rig { round ->
+                listOf(
+                    """{"type":"response.metadata","headers":{"x-codex-turn-state":$value}}""",
+                    completed("invalid-$round"),
+                )
+            }
+            val turn = meta()
+            assertNotNull(rig.round(turn))
+            assertNotNull(rig.round(turn, BODY_COMPACT))
+            assertNull(state(rig.sent.last()), "unsupported header shape $value cannot initialize turn state")
+        }
+    }
+
+    @Test
+    fun `metadata accepts string headers and recursively the first array element`() = runTest {
+        val supported = mapOf("\"\"" to "\"\"", "[[\"nested\"],\"ignored\"]" to "\"nested\"")
+        for ((value, expected) in supported) {
+            val rig = Rig { round ->
+                listOf(
+                    """{"type":"response.metadata","headers":{"x-codex-turn-state":$value}}""",
+                    completed("supported-$round"),
+                )
+            }
+            val turn = meta()
+            assertNotNull(rig.round(turn))
+            assertNotNull(rig.round(turn, BODY_COMPACT))
+            assertEquals(expected, state(rig.sent.last()))
+        }
+    }
+
+    private fun state(frame: String): String? =
+        ((responsesRequestJson.parseToJsonElement(frame) as JsonObject)["client_metadata"] as? JsonObject)
+            ?.get("x-codex-turn-state")?.toString()
 }
 
 class ResponsesWsRunnerTest {

@@ -36,8 +36,8 @@ public data class ResponsesQuirks(
     /** Header name emitted on lite turns when [responsesLiteModelRegex] matches. Null omits it.
      *  Travels with the regex so a third-party endpoint cannot inherit a ChatGPT-internal marker. */
     val responsesLiteHeader: String? = null,
-    /** codex-rs serde parity: its non-optional instructions String rides as "" on lite turns.
-     *  Provider-specific wire byte; false keeps the shared responses dialect's historical omission. */
+    /** Explicit legacy profile override. Current codex-rs omits empty lite instructions:
+     *  14a477ea8 codex-api/src/common.rs:286-287,341-342. False preserves that omission. */
     val emitEmptyLiteInstructions: Boolean = false,
     /** Explicit parallel_tool_calls value for responses-lite. Official Codex construction gates
      *  model parallel support with !use_responses_lite, so Lite sends false even when metadata

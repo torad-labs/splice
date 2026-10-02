@@ -14,7 +14,7 @@ import splice.dialect.responses.tools.ToolDeferralPolicy
 class CodexWireGoldenTest {
     private val quirks = ResponsesQuirks(
         providerTag = "claudex",
-        emitEmptyLiteInstructions = true,
+        emitEmptyLiteInstructions = false,
         forceStrictFalse = true,
         normalizeToolSchemas = true,
         responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
@@ -78,7 +78,7 @@ class CodexWireGoldenTest {
         val expected = """{"model":"gpt-5.6-sol","input":[{"type":"additional_tools","role":"developer",""" +
             """"tools":[$liteFunctions,$searchTool]},{"role":"developer","content":"Use tools as needed."},""" +
             """{"role":"user","content":"synthetic prompt"}],"store":false,"stream":true,""" +
-            """"prompt_cache_key":"splice-721967fb7fd9f346d20833536b34a1c1","instructions":"",""" +
+            """"prompt_cache_key":"splice-721967fb7fd9f346d20833536b34a1c1",""" +
             """"tool_choice":"auto","parallel_tool_calls":false,""" +
             """"reasoning":{"effort":"high","summary":"detailed","context":"all_turns"}}"""
         assertEquals(expected, wire("gpt-5.6-sol"))

@@ -35,9 +35,9 @@ internal class ResponsesLiteShape(private val quirks: ResponsesQuirks) {
 
     fun wireShape(lite: Boolean, input: JsonArray, instructions: String, tools: JsonArray?): WireShape =
         if (lite) {
-            // The empty field is codex-only serde parity, never a property of responses-lite itself:
-            // ResponsesApiRequest.instructions is non-optional (core/src/client.rs:874), while the
-            // shared dialect historically omitted top-level instructions after moving them to input.
+            // Current codex-rs omits empty instructions in both transports:
+            // 14a477ea8 codex-api/src/common.rs:286-287,341-342. Only an explicit legacy profile
+            // override keeps the field after moving its text into the developer input item.
             val topLevelInstructions = if (quirks.emitEmptyLiteInstructions) "" else null
             WireShape(liteInput(input, tools, instructions), instructions = topLevelInstructions, tools = null)
         } else {

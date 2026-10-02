@@ -50,6 +50,7 @@ internal class ResponsesWsRunner(
 ) : WsRoundRunner {
 
     private val identity = ResponsesWsIdentity(session, log)
+    private val requestMetadata = ResponsesWsRequestMetadata()
 
     override suspend fun attempt(
         bodyJson: String,
@@ -90,7 +91,8 @@ internal class ResponsesWsRunner(
             // window where a concurrent clear bumped the epoch after the frame was built on
             // now-stale context, and the post-bump epoch still matched at commit — resurrecting the
             // state the clear existed to bar.
-            val built = session.frameAndEpoch(chain, request, conn.generation)
+            val metadata = requestMetadata.forTurn(request, turnHeaders, meta.upstreamHeaders.snapshot())
+            val built = session.frameAndEpoch(chain, request, conn.generation, metadata)
             pending = ResponsesWsIdentity.PendingCommit(request, conn.generation, built.epoch)
             if (built.frame.chained) log("[ws] ${identity.logKey(key)} chained onto the previous response\n")
             built.frame.fullSendReason?.let { log("[ws] ${identity.logKey(key)} full send: $it\n") }
@@ -104,7 +106,10 @@ internal class ResponsesWsRunner(
         // Terminal observation lives HERE, not in the caller: the runner is the only party that
         // knows which events are terminal AND owns the chaining state they commit.
         return WsRound(
-            events = flow.onEach { event -> identity.observeTerminal(chain, pending, event) },
+            events = flow.onEach { event ->
+                requestMetadata.captureEvent(meta, event)
+                identity.observeTerminal(chain, pending, event)
+            },
             abort = abort,
             pathPulse = pathPulse,
         )

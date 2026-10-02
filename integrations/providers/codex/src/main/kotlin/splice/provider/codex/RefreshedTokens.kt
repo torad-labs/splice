@@ -14,8 +14,8 @@ public class CodexQuirks {
     /** The codex quirk profile — injectable so the TOML [providers.*.quirks] table is REAL. */
     public fun defaultQuirks(): ResponsesQuirks = ResponsesQuirks(
         providerTag = "claudex",
-        // codex-rs's non-optional instructions String serializes as "" on responses-lite turns.
-        emitEmptyLiteInstructions = true,
+        // codex-rs 14a477ea8 codex-api/src/common.rs:286-287,341-342 omits empty lite instructions.
+        emitEmptyLiteInstructions = false,
         // richer titled reasoning sections from the ChatGPT backend (probed 2026-07-19)
         summaryDelivery = "sequential_cutoff",
         // codex-rs parity: hard-sets strict:false on every function tool (responses_api.rs:29-32);

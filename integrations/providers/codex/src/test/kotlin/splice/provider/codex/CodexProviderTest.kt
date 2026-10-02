@@ -119,14 +119,29 @@ class CodexProviderTest {
     }
 
     @Test
-    fun `codex production profile emits empty instructions on lite turns`() {
+    fun `SSE metadata events capture routing state without an HTTP header`() = runTest {
+        val codex = provider(accountIdHeader = false)
+        val built = codex.buildTurn(deferrableTurnBody(), compact = false, sessionId = "sse-metadata")
+        val events = listOf(
+            event("""{"type":"response.metadata","headers":{"x-codex-turn-state":"event-only-state"}}"""),
+            event("""{"type":"response.completed","response":{"id":"done","status":"completed","output":[]}}"""),
+        )
+        codex.streamTranslator(
+            built.meta,
+            TurnSignals(clientGone = { false }, watchdogFired = { null }),
+        ).driveTurn(events.asFlow(), SummarySink())
+        assertEquals(mapOf("x-codex-turn-state" to "event-only-state"), built.meta.upstreamHeaders.snapshot())
+    }
+
+    @Test
+    fun `codex production profile omits empty instructions on lite turns`() {
         val built = provider(accountIdHeader = false).buildTurn(
             deferrableTurnBody(),
             compact = false,
             sessionId = "s1",
         )
 
-        assertEquals("", built.requestBody.getValue("instructions").jsonPrimitive.content)
+        assertFalse(built.requestBody.containsKey("instructions"), "current codex-rs omits empty lite instructions")
     }
 
     @Test

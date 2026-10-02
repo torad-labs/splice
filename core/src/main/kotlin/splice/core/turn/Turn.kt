@@ -60,7 +60,10 @@ public data class TurnMeta(
      *  instance only when the turn has both session and conversation identities (the cross-turn
      *  recap staircase, 2026-08-26); this default remains the state otherwise. */
     val summaryParts: SharedSummaryParts = SharedSummaryParts(),
-)
+) {
+    /** Fresh for this turn, never keyed by session. Continuation rounds reuse this meta instance. */
+    public val upstreamHeaders: TurnUpstreamHeaders = TurnUpstreamHeaders()
+}
 
 private const val DEFAULT_SUMMARY_PARTS = 512
 private const val DEFAULT_SUMMARY_BYTES = 1_048_576L

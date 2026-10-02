@@ -122,7 +122,12 @@ internal class ResponsesWsSession(
     /** Build the frame AND capture the commit epoch under ONE lock (F7) — the WS runner must use
      *  this, never frameFor + epochOf, or a concurrent clear between the two invalidates the chain
      *  after the frame is built while the captured epoch still matches at commit. */
-    fun frameAndEpoch(key: String, request: JsonObject, generation: Long): WsFrameAndEpoch = synchronized(lock) {
+    fun frameAndEpoch(
+        key: String,
+        request: JsonObject,
+        generation: Long,
+        clientMetadata: JsonObject? = null,
+    ): WsFrameAndEpoch = synchronized(lock) {
         val now = clock()
         trimLocked(now)
         val chain = chains.remove(key)?.also {
@@ -140,7 +145,7 @@ internal class ResponsesWsSession(
             val items = (request[FIELD_INPUT] as? JsonArray)?.filterIsInstance<JsonObject>().orEmpty()
             val unanswered = chain?.let { unansweredCalls(it.pendingCalls, items) }.orEmpty()
             WsFrame(
-                frame(request, previousResponseId = null, input = null),
+                frame(request, previousResponseId = null, input = null, clientMetadata),
                 chained = false,
                 fullSendReason = unanswered.takeIf { it.isNotEmpty() }?.let {
                     "the server holds ${it.size} unanswered tool call(s) this turn never answers " +
@@ -148,7 +153,10 @@ internal class ResponsesWsSession(
                 },
             )
         } else {
-            WsFrame(frame(request, previousResponseId = chain.responseId, input = JsonArray(delta)), chained = true)
+            WsFrame(
+                frame(request, previousResponseId = chain.responseId, input = JsonArray(delta), clientMetadata),
+                chained = true,
+            )
         }
         // DR-78: materialize the per-key epoch (see epochOf) — the live-seq fallback let an
         // unrelated conversation's clear void this key's commit.
@@ -263,13 +271,18 @@ internal class ResponsesWsSession(
     }
 
     /** [input] null = keep the request's own input array (the full send). */
-    private fun frame(request: JsonObject, previousResponseId: String?, input: JsonArray?): String =
-        buildJsonObject {
-            put("type", "response.create")
-            request.forEach { (k, v) -> if (!(k == FIELD_INPUT && input != null)) put(k, v) }
-            if (input != null) put(FIELD_INPUT, input)
-            if (previousResponseId != null) put("previous_response_id", previousResponseId)
-        }.toString()
+    private fun frame(
+        request: JsonObject,
+        previousResponseId: String?,
+        input: JsonArray?,
+        clientMetadata: JsonObject?,
+    ): String = buildJsonObject {
+        put("type", "response.create")
+        request.forEach { (k, v) -> if (!(k == FIELD_INPUT && input != null)) put(k, v) }
+        if (input != null) put(FIELD_INPUT, input)
+        if (clientMetadata != null) put("client_metadata", clientMetadata)
+        if (previousResponseId != null) put("previous_response_id", previousResponseId)
+    }.toString()
 
     private fun propsOf(request: JsonObject): String =
         JsonObject(request.filterKeys { it != FIELD_INPUT }).toString()

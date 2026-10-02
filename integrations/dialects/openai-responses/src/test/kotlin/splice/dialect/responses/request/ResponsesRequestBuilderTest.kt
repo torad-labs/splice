@@ -29,7 +29,7 @@ private val stableIds = ResponsesStableIds()
 
 private val CODEX = ResponsesQuirks(
     providerTag = "claudex",
-    emitEmptyLiteInstructions = true,
+    emitEmptyLiteInstructions = false,
     responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
     summaryRejectModelRegex = Regex("spark", RegexOption.IGNORE_CASE),
     effortMaxRejectModelRegex = Regex("mini", RegexOption.IGNORE_CASE),
@@ -202,9 +202,9 @@ class ResponsesRequestBuilderTest {
             "tools":[{"name":"Task","input_schema":{"type":"object"}}],
             "messages":[{"role":"user","content":"x"}]}"""
         val req = build(tooled, options = opts(model = "gpt-5.6-sol"))
-        // "" and not omitted: codex's ResponsesApiRequest.instructions is a non-optional String,
-        // so its lite requests carry the empty string (client.rs:874; tools byte-parity 2026-08-26).
-        assertEquals("", req["instructions"]?.jsonPrimitive?.content)
+        // Current codex-rs 14a477ea8 omits the empty field in both transports.
+        // codex-api/src/common.rs:286-287,341-342.
+        assertNull(req["instructions"])
         assertNull(req["tools"])
         // codex-rs parity (client.rs:896): tools ride as additional_tools, so the backend needs an
         // explicit tool_choice:"auto" to enable function-calling — omitting it left the model
@@ -232,7 +232,7 @@ class ResponsesRequestBuilderTest {
             """{"model":"m","system":"harness prompt","messages":[{"role":"user","content":"x"}]}""",
             options = opts(model = "gpt-6-astra"),
         )
-        assertEquals("", req["instructions"]?.jsonPrimitive?.content)
+        assertNull(req["instructions"])
         assertEquals("false", req["parallel_tool_calls"]?.jsonPrimitive?.content)
         assertEquals("all_turns", req["reasoning"]?.jsonObject?.get("context")?.jsonPrimitive?.content)
         assertEquals("developer", req["input"]!!.jsonArray[0].jsonObject["role"]?.jsonPrimitive?.content)
@@ -244,7 +244,7 @@ class ResponsesRequestBuilderTest {
             """{"model":"m","system":"harness prompt","messages":[{"role":"user","content":"x"}]}""",
             options = opts(model = "gpt-5.6-luna"),
         )
-        assertEquals("", req["instructions"]?.jsonPrimitive?.content) // lite parity: "", not omitted
+        assertNull(req["instructions"])
         // the backend REQUIRES an explicit false whenever the lite header rides, tools or not
         assertEquals("false", req["parallel_tool_calls"]?.jsonPrimitive?.content)
         val input = req["input"]!!.jsonArray.map { it.jsonObject }

@@ -92,7 +92,7 @@ class CodeModeExecSurfaceTest : CodeModeBridgeTestSupport() {
         val request = ResponsesRequestBuilder(
             ResponsesQuirks(
                 providerTag = "test",
-                emitEmptyLiteInstructions = true,
+                emitEmptyLiteInstructions = false,
                 responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
             ),
         ).build(body.typed, body.raw, options).req

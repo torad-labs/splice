@@ -15,8 +15,10 @@ import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.request.ResponsesToolResultMedia
 import splice.dialect.responses.stream.FoldConfig
+import splice.dialect.responses.websocket.CODEX_TURN_STATE_HEADER
 import splice.upstream.BuiltTurn
 import splice.upstream.ProviderTuning
+import splice.upstream.transport.UpstreamResponse
 
 public class CodexProvider(
     tuning: ProviderTuning,
@@ -61,6 +63,11 @@ public class CodexProvider(
 
     override fun onHeadStop() {
         codeMode?.onHeadStop()
+    }
+
+    /** codex-rs 14a477ea8 codex-api/src/sse/responses.rs:65-71 captures the first HTTP token. */
+    override fun observeResponseHeaders(meta: TurnMeta, response: UpstreamResponse) {
+        meta.upstreamHeaders.capture(CODEX_TURN_STATE_HEADER, response.header(CODEX_TURN_STATE_HEADER))
     }
 
     override fun extraHeaders(creds: Credentials): Map<String, String> = buildMap {

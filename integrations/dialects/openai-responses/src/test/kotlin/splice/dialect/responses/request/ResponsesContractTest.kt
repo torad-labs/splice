@@ -9,7 +9,6 @@ package splice.dialect.responses.request
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Test
@@ -25,7 +24,7 @@ import java.io.File
 // this module, never the reverse — the dialect can never import a concrete provider).
 private fun codexProfileQuirks(toolSurface: ToolDeferralPolicy? = null) = ResponsesQuirks(
     providerTag = "claudex",
-    emitEmptyLiteInstructions = true,
+    emitEmptyLiteInstructions = false,
     summaryDelivery = "sequential_cutoff",
     forceStrictFalse = true,
     normalizeToolSchemas = true,
@@ -69,7 +68,7 @@ class ResponsesContractTest {
         )
             .build(parsed.typed, parsed.raw, canonicalOpts())
             .req
-        assertFalse("instructions" in req, "empty top-level instructions is a codex-only wire quirk")
+        assertFalse("instructions" in req, "current codex-rs omits the empty field")
         assertGoldenContract("responses-canonical", req) { ResponsesContractTest::class.java }
     }
 
@@ -88,7 +87,7 @@ class ResponsesContractTest {
         val req = ResponsesRequestBuilder(codexProfileQuirks())
             .build(parsed.typed, parsed.raw, canonicalOpts())
             .req
-        assertEquals("", req["instructions"]?.jsonPrimitive?.content, "codex lite keeps its serde-parity field")
+        assertFalse("instructions" in req, "current codex-rs omits the empty field")
         assertGoldenContract("responses-codex-profile", req) { ResponsesContractTest::class.java }
     }
 

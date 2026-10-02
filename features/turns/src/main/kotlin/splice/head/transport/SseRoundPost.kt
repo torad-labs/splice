@@ -38,7 +38,7 @@ internal class SseRoundPost(
                     // The account's headers ride ON TOP of the provider's, never instead of them.
                     provider.extraHeaders(creds) +
                         account?.extraHeaders?.invoke(creds).orEmpty() +
-                        drive.turnHeaders
+                        drive.turnHeaders + drive.meta.upstreamHeaders.snapshot()
                 },
                 onRetry = onRetry,
                 perf = drive.perf,
@@ -52,6 +52,7 @@ internal class SseRoundPost(
             ),
             inputs.bodyJson,
         ) { resp ->
+            provider.observeResponseHeaders(drive.meta, resp)
             // Persist upstream rate-limit headers for /api/usage + statusline soft-warn (Node
             // codex-proxy wired this; the Kotlin split dropped the call site).
             usageStore.persistRateLimit { name -> resp.header(name) }

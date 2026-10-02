@@ -15,6 +15,7 @@ import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.WatchdogBudget
 import splice.upstream.sse.WireSink
+import splice.upstream.transport.UpstreamResponse
 import java.nio.file.Path
 
 /** A per-turn stream state machine: drives the WireSink from upstream events, returns an outcome
@@ -88,6 +89,9 @@ public interface Provider : ProviderIdentity {
      *  credential-derived header (codex's ChatGPT-Account-ID, passthrough's identity headers)
      *  override with more; this covers the three that don't. */
     public fun extraHeaders(creds: Credentials): Map<String, String> = mapOf("Accept" to "text/event-stream")
+
+    /** Observe response headers for this turn before consuming its stream. Unused providers capture nothing. */
+    public fun observeResponseHeaders(meta: TurnMeta, response: UpstreamResponse) {}
 
     /** Reasoning-continuation folding for this turn, or null when the feature is off for this
      *  model/head (the default — every non-codex provider stays pure passthrough). */

@@ -7,6 +7,7 @@
 // on the stream — lives here ONCE.
 package splice.dialect.responses
 
+import kotlinx.coroutines.flow.onEach
 import splice.core.parse.AnthropicTurnBody
 import splice.core.prompt.SystemPromptMode
 import splice.core.turn.ReasoningDisplay
@@ -18,6 +19,7 @@ import splice.dialect.responses.request.ResponsesParts
 import splice.dialect.responses.request.ResponsesPartsInput
 import splice.dialect.responses.request.ResponsesSystemPrompt
 import splice.dialect.responses.stream.FoldConfig
+import splice.dialect.responses.websocket.ResponsesWsRequestMetadata
 import splice.dialect.responses.websocket.ResponsesWsSupport
 import splice.dialect.responses.websocket.WsExtraHeaders
 import splice.upstream.BuiltTurn
@@ -106,8 +108,14 @@ public abstract class ResponsesProvider(
     final override fun withSystemPrompt(turn: BuiltTurn, prompt: String, mode: SystemPromptMode): BuiltTurn =
         turn.copy(requestBody = systemPrompt.apply(turn.requestBody, prompt, mode))
 
-    final override fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator =
-        parts.turnSeams.streamTranslator(meta, signals)
+    final override fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator {
+        val translator = parts.turnSeams.streamTranslator(meta, signals)
+        if (!supportsWebSocket) return translator
+        val metadata = ResponsesWsRequestMetadata()
+        return StreamTranslator { events, sink ->
+            translator.driveTurn(events.onEach { metadata.captureEvent(meta, it) }, sink)
+        }
+    }
 
     final override fun foldController(meta: TurnMeta): FoldController? =
         parts.turnSeams.foldController(meta)

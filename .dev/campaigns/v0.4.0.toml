@@ -10495,3 +10495,4 @@ files = ["app/src/main/kotlin/splice/app/Main.kt", "app/src/main/kotlin/splice/a
 status = "in_flight"
 verify = "SupervisedStartTest names the unit while it is down and none for a selector or a box without one; a lookup that requires a running unit fails it; features-lifecycle and app detekt; CI gate"
 # [2026-10-02] RECEIPT cmd="bun tools/gate slot start-through-unit -- :features-lifecycle:test --tests *SupervisedStartTest :features-lifecycle:detekt :app:detekt" exit=0 tests=8 touched=app/src/main/kotlin/splice/app/Main.kt,app/src/main/kotlin/splice/app/LifecycleWiring.kt,features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonLaunch.kt,features/lifecycle/src/test/kotlin/splice/lifecycle/start/SupervisedStartTest.kt
+# [2026-10-02] Built by splice-lead as cfe9124eb. A mutant whose unit lookup requires a running unit fails the new case (expected splice.service but was null). Pushed after the CI run on d4397d5e8 ends, so that run is not cancelled.

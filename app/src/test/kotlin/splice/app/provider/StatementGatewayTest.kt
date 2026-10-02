@@ -278,10 +278,10 @@ class StatementGatewayTest {
                 assertEquals(1L, upstream.terminal.count)
                 assertEquals(1, upstream.posts.get())
                 upstream.next.countDown()
+                assertNull(withTimeoutOrNull(250) { pending.await() }, "a later statement without EOF must not release")
                 upstream.terminal.countDown()
                 val wire = withTimeout(5_000) { pending.await() }
                 assertEquals(2, toolCalls(wire).size, wire)
-                assertEquals(0L, upstream.terminal.count)
                 assertEquals(1, runtime.starts.get())
             } finally {
                 pending.cancelAndJoin()

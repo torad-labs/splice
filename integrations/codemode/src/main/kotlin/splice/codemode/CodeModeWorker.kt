@@ -119,7 +119,7 @@ internal class WorkerSession(
     fun advance(results: List<CodeModeResult>): WorkerReply {
         CodeModeFrames.validateResultSet(pendingCalls, results)
         val bridge = checkNotNull(bridge)
-        bridge.clearCalls()
+        bridge.clearSent(pendingCalls.size)
         results.forEach { result ->
             checkNotNull(settle).execute(result.id, result.output, result.isError)
         }
@@ -219,16 +219,19 @@ internal class WorkerBridge(private val allowedTools: Set<String>) {
         ),
     )
 
-    fun calls(): List<CodeModeCall> = outboundCalls.toList()
+    /** The next batch, oldest first. A call past the batch cap waits for the next batch rather than
+     *  failing: a failed call had already taken its id in the script, so the call after it reached the
+     *  parent one id ahead and the cell was poisoned (Oct 1, nine reads under Promise.allSettled). */
+    fun calls(): List<CodeModeCall> = outboundCalls.take(CodeModeWire.maxCallsPerBatch)
 
-    fun clearCalls() {
-        outboundCalls.clear()
+    fun clearSent(count: Int) {
+        outboundCalls.subList(0, count).clear()
     }
 
     fun completion(): WorkerCompletion? = completion
 
     private fun recordCall(raw: String) {
-        if (outboundCalls.size >= CodeModeWire.maxCallsPerBatch || callCount >= CodeModeWire.maxCallsPerCell) {
+        if (callCount >= CodeModeWire.maxCallsPerCell) {
             throw IllegalStateException(CALL_LIMIT_FAILURE)
         }
         val call = parseCall(raw)

@@ -84,6 +84,56 @@ class CodeModeRuntimeTest {
         }
     }
 
+    /** Oct 1: nine reads under Promise.allSettled and then a Bash poisoned the cell with "invalid call id".
+     *  The ninth read hit the batch cap and burned id 9, so the Bash call arrived as id 10. */
+    @Test
+    fun `calls past one batch wait for the next batch and keep their ids in step`() = runBlocking {
+        runtime().use { runtime ->
+            val cell = runtime.start(
+                source = """
+                    const reads = await Promise.allSettled(
+                      Array.from({length: 9}, (_, i) => tools.call("Read", {file: "f" + i})));
+                    const shell = await tools.call("Bash", {command: "ls"});
+                    return reads.map(r => r.status + ":" + r.value).join(",") + "|" + shell;
+                """.trimIndent(),
+                tools = setOf("Read", "Bash"),
+            )
+            val first = calls(cell.advance())
+            assertEquals((1..8).map(Int::toString), first.map(CodeModeCall::id))
+            val second = calls(cell.advance(first.map { CodeModeResult(it.id, "r" + it.id) }))
+            assertEquals(listOf("9"), second.map(CodeModeCall::id))
+            assertEquals("Read", second.single().name)
+            val third = calls(cell.advance(listOf(CodeModeResult("9", "r9"))))
+            assertEquals(listOf("10" to "Bash"), third.map { it.id to it.name })
+            val completed = completed(cell.advance(listOf(CodeModeResult("10", "listed"))))
+            assertEquals((1..9).joinToString(",") { "fulfilled:r$it" } + "|listed", completed.output)
+        }
+    }
+
+    @Test
+    fun `four full batches reach the cell cap and the thirty third call is refused`() = runBlocking {
+        runtime().use { runtime ->
+            val cell = runtime.start(
+                source = """
+                    let refused = "";
+                    for (let i = 0; i < 4; i++) {
+                      await Promise.all(Array.from({length: 8}, () => tools.call("Read", {})));
+                    }
+                    try { await tools.call("Read", {}); } catch (e) { refused = String(e.message || e); }
+                    return refused;
+                """.trimIndent(),
+                tools = setOf("Read"),
+            )
+            var step = cell.advance()
+            repeat(4) { batch ->
+                val calls = calls(step)
+                assertEquals((batch * 8 + 1..batch * 8 + 8).map(Int::toString), calls.map(CodeModeCall::id))
+                step = cell.advance(calls.map { CodeModeResult(it.id, "ok") })
+            }
+            assertTrue(completed(step).output.contains("call limit"), completed(step).output)
+        }
+    }
+
     @Test
     fun `approved catalog may exceed execution call limit`() = runBlocking {
         runtime().use { runtime ->

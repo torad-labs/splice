@@ -468,6 +468,25 @@ class AccountPoolTest {
         assertEquals(8200L, pool.exhausted(null).earliestResetEpochSeconds)
     }
 
+    @Test
+    fun `provider reset ignores credentialless backups but includes a newly logged in account`() {
+        val fixture = Fixture()
+        val primary = fixture.account("primary", primary = true, five = 100.0, reset = 19000L)
+        val backup = fixture.account("backup", credentialPresent = false)
+        primary.cooldown.markUnavailable(18000000L)
+        val pool = fixture.pool(primary, backup)
+        assertTrue(pool.select("blocked") is Selection.Exhausted)
+        assertEquals(19000L, pool.exhausted(null).earliestResetEpochSeconds)
+        assertEquals(18000000L, pool.providerResetForMs)
+
+        fixture.rotateCredential(backup)
+        assertEquals("backup", pool.chosen("logged-in").account.label)
+        assertEquals(0L, pool.providerResetForMs)
+        backup.cooldown.markUnavailable(3600000L)
+        assertEquals(3600000L, pool.providerResetForMs)
+        assertEquals(4600L, pool.exhausted(null).earliestResetEpochSeconds)
+    }
+
     internal class Fixture {
         val now = AtomicReference(1_000_000L)
         private val quotas = mutableMapOf<PoolAccount, AtomicReference<QuotaSnapshot>>()

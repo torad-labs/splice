@@ -6,12 +6,13 @@ import splice.upstream.codemode.CodeModeSealedSource
 import splice.upstream.codemode.CodeModeSource
 
 internal object CodeModeScopeSeal {
-    val conversions: Set<String> = CodeModeManual.streamingSealedGlobals
+    val globals: Set<String> = CodeModeManual.streamingSealedGlobals
+    val conversions: Set<String> = globals - "Promise"
     private val hostNames = setOf("tools", "console", "text", "exit", "ALL_TOOLS")
 
     fun names(source: CodeModeSource): Set<String> {
         val names = (source as? CodeModeSealedSource)?.sealedGlobals.orEmpty().toSet()
-        require(names.all { it in conversions }) { "Only primitive conversion intrinsics can be sealed" }
+        require(names.all { it in globals }) { "Only declared streaming intrinsics can be sealed" }
         return names
     }
 

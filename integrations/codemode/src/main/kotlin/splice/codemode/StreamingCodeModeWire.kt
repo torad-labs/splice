@@ -46,7 +46,7 @@ internal object StreamingCodeModeWire {
         val names = CodeModeFields.requiredArray(frame, SOURCE_SCOPE_SEAL).map {
             requireNotNull(splice.core.util.JsonScalars.str(it)) { "Expected a sealed intrinsic name" }
         }.toSet()
-        require(names.all { it in CodeModeScopeSeal.conversions }) { "Unknown sealed intrinsic" }
+        require(names.all { it in CodeModeScopeSeal.globals }) { "Unknown sealed intrinsic" }
         return names
     }
 

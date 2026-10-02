@@ -14,8 +14,8 @@ public object CodeModeManual {
     /** codex-rs code-mode-protocol PUBLIC_TOOL_NAME. */
     public const val TOOL_NAME: String = "exec"
 
-    /** Producer commitment for native conversions that may execute before the source finishes. */
-    public val streamingSealedGlobals: Set<String> = setOf("String", "Number", "Boolean")
+    /** Producer commitment for native intrinsics that may execute before the source finishes. */
+    public val streamingSealedGlobals: Set<String> = setOf("String", "Number", "Boolean", "Promise")
 
     /** codex-rs execute_spec.rs CODE_MODE_FREEFORM_GRAMMAR, byte for byte. */
     public const val GRAMMAR: String = "\nstart: pragma_source | plain_source\n" +
@@ -40,8 +40,9 @@ public object CodeModeManual {
         val sealed = streamingSealedGlobals.sorted().joinToString(", ") { "`$it`" }
         val sections = mutableListOf(
             template,
-            "Streaming fixes the native $sealed conversion functions. Do not redeclare these names " +
-                "at script scope. Other bindings may wait for the complete source before execution.",
+            "Streaming fixes the native $sealed bindings. Do not redeclare these names at script scope. " +
+                "Awaited Promise.all or Promise.allSettled arrays of direct tools calls can run before the " +
+                "remaining source arrives. Other operations may wait for the complete source before execution.",
         )
         if (deferred) sections += DEFERRED_GUIDANCE
         val byName = enabled.associateBy(NestedTool::name)

@@ -132,7 +132,7 @@ internal class CodeModeStatementCompiler(
 
         private fun remember(node: IdentNode) {
             readiness.remember(node, lc)
-            intrinsics.reference(node.name, node.start in intrinsicTargets)
+            intrinsics.reference(node.name, node.start in intrinsicTargets, node.start)
         }
     }
 

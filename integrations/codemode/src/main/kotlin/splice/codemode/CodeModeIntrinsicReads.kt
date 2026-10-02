@@ -1,6 +1,8 @@
 // NEW: only direct conversions of proven primitive expressions can use a producer-sealed intrinsic early.
 package splice.codemode
 
+import com.oracle.js.parser.Token
+import com.oracle.js.parser.TokenType
 import com.oracle.js.parser.ir.AccessNode
 import com.oracle.js.parser.ir.BinaryNode
 import com.oracle.js.parser.ir.CallNode
@@ -11,6 +13,7 @@ import com.oracle.js.parser.ir.JoinPredecessorExpression
 import com.oracle.js.parser.ir.LexicalContext
 import com.oracle.js.parser.ir.LiteralNode
 import com.oracle.js.parser.ir.Scope
+import com.oracle.js.parser.ir.UnaryNode
 import com.oracle.js.parser.ir.VarNode
 import com.oracle.js.parser.ir.visitor.NodeVisitor
 
@@ -20,6 +23,8 @@ internal class CodeModeIntrinsicReads(body: FunctionNode) {
     private val admitted = mutableSetOf<String>()
     private val unsafe = mutableSetOf<String>()
     private val capturedArguments = mutableMapOf<String, MutableSet<String>>()
+    private val awaitedBatches = mutableSetOf<Int>()
+    private val batchReferences = mutableSetOf<Int>()
 
     val names: Map<String, List<String>> get() = (admitted - unsafe).associateWith {
         capturedArguments[it].orEmpty().toList()
@@ -34,10 +39,17 @@ internal class CodeModeIntrinsicReads(body: FunctionNode) {
                 return true
             }
 
+            override fun enterUnaryNode(node: UnaryNode): Boolean {
+                if (Token.descType(node.token) == TokenType.AWAIT) {
+                    (node.expression as? CallNode)?.let { certifyBatch(it, lc.currentScope) }
+                }
+                return true
+            }
+
             override fun enterCallNode(node: CallNode): Boolean {
                 val property = (node.function as? AccessNode)?.property
                 if (property in setOf("then", "catch", "finally")) requiresCompleteSource = true
-                if (!knownCall(node.function)) requiresCompleteSource = true
+                if (node.start !in awaitedBatches && !knownCall(node.function)) requiresCompleteSource = true
                 return true
             }
 
@@ -79,9 +91,28 @@ internal class CodeModeIntrinsicReads(body: FunctionNode) {
         }
     }
 
-    fun reference(name: String, approved: Boolean) {
-        if (name !in CodeModeScopeSeal.conversions) return
-        if (approved) admitted += name else unsafe += name
+    fun reference(name: String, approved: Boolean, position: Int) {
+        if (name !in CodeModeScopeSeal.globals) return
+        val safe = if (name == "Promise") position in batchReferences else approved
+        if (safe) admitted += name else unsafe += name
+    }
+
+    private fun certifyBatch(call: CallNode, scope: Scope?) {
+        val target = call.function as? AccessNode
+        val receiver = target?.base as? IdentNode
+        val array = call.args.singleOrNull() as? LiteralNode.ArrayLiteralNode
+        if (receiver?.name != "Promise" || target.property !in setOf("all", "allSettled")) return
+        if (array == null || key(receiver.name, scope) != null) return
+        if (!array.hasSpread() && array.elementExpressions.all { directToolCall(it, scope) }) {
+            awaitedBatches += call.start
+            batchReferences += receiver.start
+        }
+    }
+
+    private fun directToolCall(expression: Expression?, scope: Scope?): Boolean {
+        val call = expression as? CallNode ?: return false
+        val target = call.function as? AccessNode ?: return false
+        return (target.base as? IdentNode)?.name == "tools" && key("tools", scope) == null
     }
 
     private fun knownCall(expression: Expression): Boolean = when (expression) {

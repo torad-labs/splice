@@ -83,10 +83,11 @@ class CodeModeManualTest {
     }
 
     @Test
-    fun `the manual states every sealed streaming conversion and prohibits script-scope redeclaration`() {
+    fun `the manual states sealed streaming intrinsics and the early tool batch contract`() {
         val manual = CodeModeManual.description(emptyList(), deferred = false)
         CodeModeManual.streamingSealedGlobals.forEach { assertTrue(manual.contains("`$it`")) }
         assertTrue(manual.contains("Do not redeclare these names at script scope."))
+        assertTrue(manual.contains("Awaited Promise.all or Promise.allSettled arrays of direct tools calls"))
     }
 
     @Test

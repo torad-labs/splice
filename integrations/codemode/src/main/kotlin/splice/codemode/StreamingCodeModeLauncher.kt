@@ -7,6 +7,13 @@ internal const val STREAMING_CODE_MODE_LAUNCHER: String = """
   const root = globalThis;
   const dependencies = new Map();
   const nativeJSON = JSON;
+  const nativePromise = Promise;
+  const nativeAll = Promise.all;
+  const nativeAllSettled = Promise.allSettled;
+  const nativeThen = Promise.prototype.then;
+  const arrayPrototype = Array.prototype;
+  const iteratorSymbol = Symbol.iterator;
+  const nativeIterator = arrayPrototype[iteratorSymbol];
   const sealedGlobals = new Set(nativeJSON.parse(rawSeal));
   const NativeFunction = Function;
   const NativeReferenceError = ReferenceError;
@@ -79,6 +86,11 @@ internal const val STREAMING_CODE_MODE_LAUNCHER: String = """
         const value = binding.get();
         return value === null || (typeof value !== "object" && typeof value !== "function");
       };
+      const nativeBatch = name => name !== "Promise" || (
+        values.Promise === nativePromise && nativePromise.all === nativeAll &&
+        nativePromise.allSettled === nativeAllSettled && nativePromise.prototype.then === nativeThen &&
+        arrayPrototype[iteratorSymbol] === nativeIterator
+      );
       const declared = new Map(nativeJSON.parse(rawBindings).map(binding => [binding.name, binding.kind]));
       const incoming = new Map(Object.entries(nativeJSON.parse(rawDependencies)));
       const visited = new Set();
@@ -91,7 +103,8 @@ internal const val STREAMING_CODE_MODE_LAUNCHER: String = """
         if (kind === "function") return false;
         const found = declared.has(name) || bindings.has(name) ||
           Object.prototype.hasOwnProperty.call(base, name) ||
-          (sealedGlobals.has(name) && intrinsics.has(name) && name in root && intrinsics.get(name).every(primitive));
+          (sealedGlobals.has(name) && intrinsics.has(name) && name in root &&
+            nativeBatch(name) && intrinsics.get(name).every(primitive));
         return found && (incoming.get(name) || dependencies.get(name) || []).every(ready);
       };
       return nativeJSON.parse(rawReads).every(ready);

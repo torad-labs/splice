@@ -35,6 +35,37 @@ class CodeModeScopeSealTest {
     }
 
     @Test
+    fun `awaited native tool batches dispatch before the source ends`(): Unit = runBlocking {
+        JvmCodeModeRuntime(workerClasspath = classpath).use { runtime ->
+            runtime.start("return 'warm';", emptySet()).use { it.advance() }
+            for (method in listOf("all", "allSettled")) {
+                val input = Channel<CodeModeSourcePart>(Channel.UNLIMITED)
+                val source = object : CodeModeSealedSource {
+                    override val sealedGlobals = splice.upstream.codemode.CodeModeManual.streamingSealedGlobals
+                    override suspend fun read(): CodeModeSourcePart = input.receive()
+                }
+                input.send(
+                    CodeModeSourcePart.Delta(
+                        "const results=await Promise.$method([" +
+                            "tools.Read({path:'one'}),tools.Read({path:'two'})]);\ntext(",
+                    ),
+                )
+                val first = async { runtime.startStreaming(source, setOf("Read")).let { it to it.advance() } }
+                val (cell, step) = withTimeout(2_000) { first.await() }
+                cell.use {
+                    val calls = (step as CodeModeStep.Calls).calls
+                    assertEquals(listOf("one", "two"), calls.map { it.arguments["path"]?.toString()?.trim('"') })
+                    input.send(CodeModeSourcePart.Complete("results.length);"))
+                    val done = cell.advance(calls.map { CodeModeResult(it.id, "ran") }) as CodeModeStep.Completed
+                    assertEquals("2", done.output)
+                    assertEquals(null, done.error)
+                }
+                input.close()
+            }
+        }
+    }
+
+    @Test
     fun `late sealed declarations fail without rerunning an earlier permitted call`(): Unit = runBlocking {
         JvmCodeModeRuntime(workerClasspath = classpath).use { runtime ->
             val input = Channel<CodeModeSourcePart>(Channel.UNLIMITED)
@@ -78,6 +109,63 @@ class CodeModeScopeSealTest {
             val done = cell.advance(listOf(CodeModeResult("1", "ran"))) as CodeModeStep.Completed
             assertEquals("ran\ndone", done.output)
             assertEquals(null, done.error)
+            input.close()
+        }
+    }
+
+    @Test
+    fun `unawaited and nonjoining batches still wait for complete source`(): Unit = runBlocking {
+        JvmCodeModeRuntime(workerClasspath = classpath).use { runtime ->
+            runtime.start("return 'warm';", emptySet()).use { it.advance() }
+            for (expression in listOf(
+                "Promise.all([tools.Read({path:'one'})])",
+                "await Promise.race([tools.Read({path:'one'})])",
+                "await Promise.any([tools.Read({path:'one'})])",
+                "{ const Promise={all(values){return 0;}}; " +
+                    "await Promise.all([tools.Read({path:'one'}),tools.Read({path:'two'})]); }",
+            )) {
+                val input = Channel<CodeModeSourcePart>(Channel.UNLIMITED)
+                val waiting = kotlinx.coroutines.CompletableDeferred<Unit>()
+                var reads = 0
+                val source = object : CodeModeSealedSource {
+                    override val sealedGlobals = splice.upstream.codemode.CodeModeManual.streamingSealedGlobals
+                    override suspend fun read(): CodeModeSourcePart {
+                        if (++reads == 2) waiting.complete(Unit)
+                        return input.receive()
+                    }
+                }
+                input.send(CodeModeSourcePart.Delta("$expression;\ntext("))
+                val first = async { runtime.startStreaming(source, setOf("Read")).let { it to it.advance() } }
+                withTimeout(2_000) { waiting.await() }
+                assertTrue(!first.isCompleted, expression)
+                input.send(CodeModeSourcePart.Complete("'done');"))
+                val (cell, step) = withTimeout(2_000) { first.await() }
+                cell.use {
+                    val calls = (step as CodeModeStep.Calls).calls
+                    val done = cell.advance(calls.map { CodeModeResult(it.id, "ran") }) as CodeModeStep.Completed
+                    assertEquals("done", done.output)
+                    assertEquals(null, done.error)
+                }
+                input.close()
+            }
+        }
+    }
+
+    @Test
+    fun `late Promise declaration fails without replaying an early batch`(): Unit = runBlocking {
+        JvmCodeModeRuntime(workerClasspath = classpath).use { runtime ->
+            val input = Channel<CodeModeSourcePart>(Channel.UNLIMITED)
+            val source = object : CodeModeSealedSource {
+                override val sealedGlobals = splice.upstream.codemode.CodeModeManual.streamingSealedGlobals
+                override suspend fun read(): CodeModeSourcePart = input.receive()
+            }
+            input.send(CodeModeSourcePart.Delta("await Promise.all([tools.Read({path:'once'})]);\nlet "))
+            runtime.startStreaming(source, setOf("Read")).use { cell ->
+                val calls = (withTimeout(2_000) { cell.advance() } as CodeModeStep.Calls).calls
+                input.send(CodeModeSourcePart.Complete("Promise;"))
+                val done = cell.advance(calls.map { CodeModeResult(it.id, "ran") }) as CodeModeStep.Completed
+                assertEquals("SyntaxError: Streaming source cannot declare sealed binding 'Promise'", done.error)
+            }
             input.close()
         }
     }

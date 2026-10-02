@@ -3,8 +3,6 @@
 // billed for the other's subsystems. Same-package.
 package splice.head.transport
 
-import io.ktor.http.HttpHeaders
-import io.ktor.http.IllegalHeaderValueException
 import kotlinx.coroutines.flow.emptyFlow
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
@@ -31,13 +29,8 @@ internal class SseRoundPost(
     private fun httpRoutingHeaders(inputs: WsRoundInputs): Map<String, String> {
         val holder = inputs.drive.meta.upstreamHeaders
         return holder.snapshot().filterValues { value ->
-            val valid = try {
-                HttpHeaders.checkHeaderValue(value)
-                // Codex's http 1.4.0 header/value.rs:557-559 also rejects DEL, which Ktor permits.
-                '\u007f' !in value
-            } catch (_: IllegalHeaderValueException) {
-                false
-            }
+            // OkHttp's request builder accepts only TAB or printable ASCII, stricter than Ktor's check.
+            val valid = value.all { it == '\t' || it in ' '..'~' }
             if (!valid && holder.claimHttpOmissionNotice()) onRetry("omitting invalid upstream turn-state HTTP header")
             valid
         }

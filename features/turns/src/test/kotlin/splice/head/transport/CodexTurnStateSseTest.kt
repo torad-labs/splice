@@ -59,7 +59,9 @@ class CodexTurnStateSseTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = ["private\nstate", "private\rstate", "private\u0000state", "private\u007fstate"])
+    @ValueSource(
+        strings = ["private\nstate", "private\rstate", "private\u0000state", "private\u007fstate", "privateéstate"],
+    )
     fun `invalid WebSocket state does not poison SSE fallback retries or continuations`(state: String) = runTest {
         val result = probe(wsState = state, retry = true)
         assertEquals(listOf(null, null, null), result.headers)

@@ -72,7 +72,7 @@ class AddPortChoiceTest {
 
     @Test
     fun `an existing local provider port cannot become the next head`(@TempDir home: Path) {
-        val control = TestPorts.reserve()
+        val control = TestPorts.reserveRun(PORTS_FROM_CONTROL)
         val head = control + 1
         val taken = head + 1
         val result = prepare(home, control, head, taken, "http://127.0.0.1:32199/v1")
@@ -82,7 +82,7 @@ class AddPortChoiceTest {
 
     @Test
     fun `the candidate local runtime port cannot become its own new head`(@TempDir home: Path) {
-        val control = TestPorts.reserve()
+        val control = TestPorts.reserveRun(PORTS_FROM_CONTROL)
         val head = control + 1
         val taken = head + 1
         val result = prepare(home, control, head, candidate = "http://localhost:$taken/v1")
@@ -92,7 +92,7 @@ class AddPortChoiceTest {
 
     @Test
     fun `an exhausted port range refuses by name without appending a head`(@TempDir home: Path) {
-        val control = TestPorts.reserve()
+        val control = TestPorts.reserveRun(PORTS_FROM_CONTROL)
         val head = control + 1
         val onlyCandidate = head + 1
         ServerSocket(onlyCandidate).use { listener ->
@@ -116,7 +116,7 @@ class AddPortChoiceTest {
 
     @Test
     fun `a foreign listener on the next port is skipped and not given to the new head`(@TempDir home: Path) {
-        val control = TestPorts.reserve()
+        val control = TestPorts.reserveRun(PORTS_FROM_CONTROL)
         val head = control + 1
         ServerSocket(head + 1).use { listener ->
             assertTrue(listener.isBound)
@@ -126,3 +126,7 @@ class AddPortChoiceTest {
         }
     }
 }
+
+// why: each case derives control, head, a taken or blocked port and the expected next port from one
+// draw, so all four must be free; a foreign listener on any of them shifts the expected head port.
+private const val PORTS_FROM_CONTROL = 4

@@ -50,6 +50,17 @@ class TestPortsTest {
     }
 
     @Test
+    fun `a run with something bound inside it is skipped, and a reserved run binds whole`() {
+        ServerSocket(0, 1, loopback).use { listener ->
+            assertThrows(IllegalStateException::class.java) {
+                TestPorts.reserveRunFrom(listOf(listener.localPort - 1).iterator(), 3)
+            }
+        }
+        val first = TestPorts.reserveRun(4)
+        (first until first + 4).forEach { port -> ServerSocket().use { it.bind(InetSocketAddress(loopback, port)) } }
+    }
+
+    @Test
     fun `a port another JVM holds is skipped, and reserved once that JVM lets go`() {
         // Drawn BELOW the range reserve() uses, so no other test in this JVM can already hold it, and
         // bindable now, so the positive half below can only fail on the lock.

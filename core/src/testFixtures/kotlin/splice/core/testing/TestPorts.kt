@@ -59,12 +59,32 @@ object TestPorts {
      *  neither the kernel's bind(0) nor an outbound connection can be given. */
     @Synchronized
     fun reserve(): Int {
-        val ceiling = ephemeralStart()
-        check(ceiling - FLOOR >= MIN_RANGE) {
-            "no test ports below the ephemeral range: it starts at $ceiling " +
-                "(net.ipv4.ip_local_port_range), which leaves fewer than $MIN_RANGE ports above $FLOOR"
-        }
+        val ceiling = ceiling()
         return reserveFrom(generateSequence { Random.nextInt(FLOOR, ceiling) }.take(ATTEMPTS).iterator())
+    }
+
+    /** The first of [count] consecutive ports, each reserved the way [reserve] reserves one, for a test
+     *  that derives neighbouring ports from the first (a control port and the heads after it). Every
+     *  port of the run is locked and bindable, so a foreign listener inside it (a database on its
+     *  default port) cannot shift the test's arithmetic. A draw that meets a taken port moves on. */
+    @Synchronized
+    fun reserveRun(count: Int): Int {
+        require(count > 0) { "a run holds at least one port; count=$count" }
+        val ceiling = ceiling()
+        val firsts = generateSequence { Random.nextInt(FLOOR, ceiling - count) }.take(ATTEMPTS)
+        return reserveRunFrom(firsts.iterator(), count)
+    }
+
+    /** The first of [firsts] whose [count] consecutive ports are all reservable as [reserveFrom] judges
+     *  one. Split from [reserveRun] so a test can name where a run starts. */
+    @Synchronized
+    fun reserveRunFrom(firsts: Iterator<Int>, count: Int): Int {
+        for (first in firsts) {
+            if ((first until first + count).all { port -> port !in held && lock(port) && bindable(port) }) {
+                return first
+            }
+        }
+        error("no run of $count free test ports among the candidates")
     }
 
     /** The first of [candidates] that this JVM does not hold, no other JVM holds, and that binds.
@@ -99,6 +119,14 @@ object TestPorts {
     private fun bindable(port: Int): Boolean = runCatching {
         ServerSocket().use { it.bind(InetSocketAddress(InetAddress.getLoopbackAddress(), port)) }
     }.isSuccess
+
+    /** The ephemeral range's start, refusing a machine that leaves too few test ports below it. */
+    private fun ceiling(): Int = ephemeralStart().also { ceiling ->
+        check(ceiling - FLOOR >= MIN_RANGE) {
+            "no test ports below the ephemeral range: it starts at $ceiling " +
+                "(net.ipv4.ip_local_port_range), which leaves fewer than $MIN_RANGE ports above $FLOOR"
+        }
+    }
 
     private fun ephemeralStart(): Int = runCatching {
         EPHEMERAL_RANGE_FILE.readText().trim().split(Regex("\\s+")).first().toInt()

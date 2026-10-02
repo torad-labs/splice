@@ -13,8 +13,9 @@
 // thinking config to survive the trip. `PassthroughQuirksDefaults.kimi(tag)` is the one definition
 // of Kimi's set, and its bytes are frozen by PassthroughGoldenTest.
 //
-// Invariants that hold for every head: thinking blocks pass VERBATIM (signature included), and the
-// effort ladder never emits "medium" (Kimi vocab is low|high|max).
+// Invariants that hold for every head: a thinking block that rides passes VERBATIM (signature
+// included), and the effort ladder never emits "medium" (Kimi vocab is low|high|max). A head whose
+// upstream verifies signatures drops the thinking that upstream did not mint (V4-455).
 //
 // SPLIT (2026-08-17, concentration campaign): the JSON-shaping and turn-metadata responsibilities
 // that used to live here now ride dedicated collaborators in this package (PassthroughQuirks,

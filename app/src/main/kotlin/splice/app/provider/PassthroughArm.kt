@@ -12,8 +12,9 @@ import java.nio.file.Paths
 internal class PassthroughArm(
     private val passthroughAssembly: PassthroughAssembly,
 ) {
-    // CLIENT is always neutral: no Moonshot deformations, headers, or device identity. Unregistered
-    // API-key/custom vendors start the same way and declare facts in TOML.
+    // CLIENT is neutral but for one vendor fact: no Moonshot deformations, headers, or device identity.
+    // Its upstream is Anthropic's, which verifies thinking signatures (V4-455). Unregistered
+    // API-key/custom vendors start neutral and declare facts in TOML.
     internal fun passthroughProvider(ctx: ProviderBuild, label: String): Wired {
         val key = ctx.key
         val providerCfg = ctx.providerCfg
@@ -24,7 +25,7 @@ internal class PassthroughArm(
                     ctx,
                     label,
                     auth,
-                    PassthroughQuirks(providerTag = key),
+                    PassthroughQuirks(providerTag = key, verifiesThinkingSignatures = true),
                 ),
                 auth,
             )

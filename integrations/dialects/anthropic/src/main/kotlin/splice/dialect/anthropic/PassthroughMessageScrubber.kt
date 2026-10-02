@@ -32,6 +32,13 @@
 // had to switch model mid-session, and could not compact afterwards, since a compaction replays the
 // same messages. A signature records WHO wrote a block, never that it contains anything, so the rule
 // is now about the thinking text alone.
+//
+// V4-455 (2026-10-01): a head whose upstream verifies thinking signatures drops the thinking it did
+// not mint. A GPT session resumed on claude-splice replayed 115 reasoning-summary blocks with
+// `signature: ""` (the GPT head signs none, and Claude Code stores the empty string); Anthropic
+// refused every turn with 400 `messages.1.content.0: Invalid signature in thinking block`, and the
+// same history came back on the fallback model. Dropped rather than turned into text: they are status
+// headers and wait notices, and as text the model would read them as prose it wrote.
 package splice.dialect.anthropic
 
 import kotlinx.serialization.json.JsonArray
@@ -40,12 +47,18 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.SpliceNotice
+import splice.core.turn.SpliceSignatures
 import splice.core.util.DaemonLog
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.upstream.ToolNameShortener
 import java.util.concurrent.ConcurrentHashMap
+
+private const val SIGNATURE_FIELD = "signature"
+private const val TYPE_REDACTED_THINKING = "redacted_thinking"
+private const val DATA = "data"
 
 internal class PassthroughMessageScrubber(
     private val quirks: PassthroughQuirks,
@@ -112,8 +125,44 @@ internal class PassthroughMessageScrubber(
     private fun scrubBlock(block: JsonObject): JsonObject? {
         val type = JsonScalars.strOrEmpty(block[TYPE])
         quirks.blockAllowlist?.let { if (type !in it) return dropDisallowed(type) }
-        if (isSpliceNotice(type, block) || isEmptyThinking(type, block)) return null
+        if (isDropped(type, block)) return null
         return rebuildBlock(block, type)
+    }
+
+    /** splice's own notice, thinking with no text (V4-157), or thinking a verifying upstream refuses (V4-455). */
+    private fun isDropped(type: String, block: JsonObject): Boolean =
+        isSpliceNotice(type, block) || isEmptyThinking(type, block) || isUnverifiable(type, block)
+
+    /** V4-455: why a signature-verifying upstream would refuse this block, null when it would not. A
+     *  string check cannot tell another vendor's non-empty signature from Anthropic's, so those ride. */
+    private fun unverifiable(type: String, block: JsonObject): String? = when (type) {
+        TYPE_THINKING -> {
+            val signature = JsonScalars.strIfString(block[SIGNATURE_FIELD]).orEmpty()
+            when {
+                signature.isBlank() -> "thinking with no signature"
+                signature in SpliceSignatures.MINTED -> "thinking signed by splice"
+                else -> null
+            }
+        }
+        // The decoder's own log line is for replay; here a non-envelope is Anthropic's data and rides.
+        TYPE_REDACTED_THINKING -> "redacted_thinking holding a splice reasoning envelope".takeIf {
+            ReasoningReplay.decodeReasoningEnvelope(JsonScalars.strIfString(block[DATA])) {} != null
+        }
+        else -> null
+    }
+
+    /** True when the block is dropped for [unverifiable], reporting each reason once for the life of the
+     *  head (the history replays every turn). */
+    private fun isUnverifiable(type: String, block: JsonObject): Boolean {
+        if (!quirks.verifiesThinkingSignatures) return false
+        val reason = unverifiable(type, block) ?: return false
+        if (droppedLogged.add(reason)) {
+            log(
+                "[${quirks.providerTag}] $reason dropped from the request: this upstream verifies " +
+                    "thinking signatures and refuses the whole request for one it did not mint\n",
+            )
+        }
+        return true
     }
 
     /** Drops the block, reporting its type once. An allowlist is only ever as good as the evidence
@@ -130,7 +179,7 @@ internal class PassthroughMessageScrubber(
 
     /** Exact marker only: model thinking with notice-shaped text or another signature stays intact. */
     private fun isSpliceNotice(type: String, block: JsonObject): Boolean =
-        type == TYPE_THINKING && JsonScalars.strIfString(block["signature"]) == SpliceNotice.SIGNATURE
+        type == TYPE_THINKING && JsonScalars.strIfString(block[SIGNATURE_FIELD]) == SpliceNotice.SIGNATURE
 
     /** A whitespace-only thinking block holds nothing worth keeping, SIGNED OR NOT (V4-157 in the
      *  header). The shape has two possible authors and the rule must not care which: an upstream

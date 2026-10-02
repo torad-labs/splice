@@ -70,4 +70,10 @@ public data class PassthroughQuirks(
      *  inferred: deepseek and kimi continue from a prefill, muse rejects the shape with a 400 that
      *  would convert a retryable error into one Claude Code will not retry. */
     val reanchorPrefill: Boolean = false,
+    /** V4-455: the upstream verifies every thinking signature and refuses the WHOLE request for one it
+     *  did not mint (Anthropic: 400 `Invalid signature in thinking block`). Claude Code replays another
+     *  head's unsigned reasoning with `signature: ""`, so such a head drops thinking whose signature is
+     *  empty, missing or splice-minted, and redacted_thinking holding a splice reasoning envelope.
+     *  Neutral keeps every block: Kimi takes its own synthesized signature back. */
+    val verifiesThinkingSignatures: Boolean = false,
 )

@@ -8,12 +8,13 @@ package splice.dialect.anthropic
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.index.WireBlockIndex
+import splice.core.turn.SpliceSignatures
 import splice.core.util.JsonScalars
 import splice.upstream.ToolNameShortener
 import splice.upstream.sse.WireSink
 
-// Short stable constant — Kimi never verifies signatures; Claude Code only needs one present.
-private const val SYNTHETIC_SIGNATURE = "splice-synth-v1"
+// Kimi never verifies signatures; a verifying head drops this one from its requests (V4-455).
+private const val SYNTHETIC_SIGNATURE = SpliceSignatures.SYNTHESIZED
 
 // FILE SCOPE ON PURPOSE: one shared empty object, read on the delta hot path — as a member it would
 // be rebuilt per translator instance (one per turn).

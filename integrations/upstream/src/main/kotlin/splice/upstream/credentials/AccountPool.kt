@@ -283,6 +283,8 @@ private object AccountAvailability {
         accounts.mapNotNull { blockedUntil(it, at) }.minOrNull()
 
     fun blockedUntil(account: PoolAccount, at: Long): Long? {
+        val credential = account.credentialStatus(at)
+        if (!credential.credentialPresent) return null
         val snapshot = account.quota.snapshot()
         val blocked = listOfNotNull(snapshot?.fiveHour, snapshot?.sevenDay).filter { exhausted(it, at) }
         val quotaReset = blocked.mapNotNull(QuotaWindow::resetsAt).maxOrNull()
@@ -291,7 +293,7 @@ private object AccountAvailability {
         val cooldownSeconds = remaining / MS_PER_SECOND + extraSecond
         val epochSeconds = at / MS_PER_SECOND
         val cooldownReset = epochSeconds + cooldownSeconds
-        val authReset = account.credentialStatus(at).excludedUntilEpochMillis?.let { millis ->
+        val authReset = credential.excludedUntilEpochMillis?.let { millis ->
             val seconds = millis / MS_PER_SECOND
             val rounded = millis % MS_PER_SECOND > 0L && seconds < Long.MAX_VALUE
             seconds + if (rounded) 1L else 0L

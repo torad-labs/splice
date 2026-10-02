@@ -453,6 +453,21 @@ class AccountPoolTest {
         assertEquals(published.values.minOrNull(), pool.exhausted(null).earliestResetEpochSeconds)
     }
 
+    @Test
+    fun `credentialless accounts cannot shorten the published pool horizon`() {
+        val fixture = Fixture()
+        val primary = fixture.account("primary", primary = true, weekly = 100.0, reset = 433000L)
+        val backup = fixture.account("backup", five = 100.0, reset = 8200L, credentialPresent = false)
+        val pool = fixture.pool(primary, backup)
+        assertFalse(pool.view(null).accounts.single { it.label == "backup" }.credentialPresent)
+        assertEquals(mapOf("primary" to 433000L), pool.view(null).blockedUntilEpochSecondsByLabel)
+        assertEquals(433000L, pool.exhausted(null).earliestResetEpochSeconds)
+        fixture.rotateCredential(backup)
+        backup.refreshCredentialEvidence()
+        assertEquals(mapOf("primary" to 433000L, "backup" to 8200L), pool.view(null).blockedUntilEpochSecondsByLabel)
+        assertEquals(8200L, pool.exhausted(null).earliestResetEpochSeconds)
+    }
+
     internal class Fixture {
         val now = AtomicReference(1_000_000L)
         private val quotas = mutableMapOf<PoolAccount, AtomicReference<QuotaSnapshot>>()

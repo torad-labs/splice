@@ -111,6 +111,43 @@ class AccountStatusTest {
         }
     }
 
+    @Test
+    fun `the doctor selects the earliest published horizon across accounts regardless of order`() {
+        val primary = """{"label":"primary","primary":true,"available":false,"credential_present":true,
+            "blocked_until_epoch_seconds":${atSeconds + 432000}}"""
+        val backup = """{"label":"backup","primary":false,"available":false,"credential_present":true,
+            "blocked_until_epoch_seconds":${atSeconds + 7200}}"""
+        for (accounts in listOf("$primary,$backup", "$backup,$primary")) {
+            val payload = """{"claudex":{"account_pool":{"selected_label":"primary","accounts":[$accounts]}}}"""
+            val view = AccountPoolProjection().parse(payload).getValue("claudex")
+            val check = inZone("America/Chicago") { AccountPoolText { atSeconds * 1000 }.check("claudex", view) }
+            assertTrue(check.detail.contains("earliest reset Sep 16, 5:02 PM CDT, in 2h"), check.detail)
+            assertFalse(check.detail.contains("in 5d"), check.detail)
+            assertTrue(check.detail.contains("on primary (0 of 2 open)"), check.detail)
+        }
+    }
+
+    @Test
+    fun `future countdowns round up without changing elapsed ages`() {
+        for ((seconds, expected) in listOf(172740L to "in 2d", 7140L to "in 2h", 119L to "in 2m")) {
+            val check = deadlineCheck("\"five_hour_used_percent\":100", atSeconds + seconds)
+            assertTrue(check.detail.contains(", $expected"), check.detail)
+        }
+        for ((millis, expected) in listOf(
+            1L to "in 1s",
+            59001L to "in 60s",
+            60000L to "in 1m",
+            3600000L to "in 1h",
+            86400000L to "in 1d",
+            0L to "in 0s",
+            -1L to "in 0s",
+        )) {
+            assertEquals(expected, DoctorAge.until(millis), "remaining milliseconds: $millis")
+        }
+        assertEquals("1d ago", DoctorAge.ago(172740000L))
+        assertEquals("1h ago", DoctorAge.ago(7140000L))
+    }
+
     private val atSeconds = Instant.parse("2026-09-16T20:02:52Z").epochSecond
 
     private fun deadlineCheck(windows: String, deadline: Long?): DoctorCheck {

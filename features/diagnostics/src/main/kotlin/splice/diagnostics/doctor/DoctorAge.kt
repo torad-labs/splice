@@ -3,14 +3,30 @@
 // for an account switch; both now read the largest whole unit from this one place.
 package splice.diagnostics.doctor
 
+import kotlin.time.Duration.Companion.days
+import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 
 internal object DoctorAge {
     /** [elapsedMillis] as `45s ago`, `3m ago`, `5h ago` or `20d ago`; a clock skew reads as `0s ago`. */
     fun ago(elapsedMillis: Long): String = "${span(elapsedMillis)} ago"
 
-    /** A future deadline uses the same largest whole unit as a past observation. */
-    fun until(remainingMillis: Long): String = "in ${span(remainingMillis)}"
+    /** Future deadlines round the largest unit up so they never promise an earlier opening. */
+    fun until(remainingMillis: Long): String {
+        val millis = remainingMillis.coerceAtLeast(0)
+        val remaining = millis.milliseconds
+        val (unit, suffix) = when {
+            remaining.inWholeMinutes == 0L -> 1.seconds to "s"
+            remaining.inWholeHours == 0L -> 1.minutes to "m"
+            remaining.inWholeDays == 0L -> 1.hours to "h"
+            else -> 1.days to "d"
+        }
+        val unitMillis = unit.inWholeMilliseconds
+        val count = millis / unitMillis + if (millis % unitMillis == 0L) 0L else 1L
+        return "in $count$suffix"
+    }
 
     private fun span(millis: Long): String {
         val elapsed = millis.coerceAtLeast(0).milliseconds

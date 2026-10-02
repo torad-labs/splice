@@ -114,10 +114,10 @@ class ProviderResetStatusTest {
             RESET_SECONDS.toString(),
             health.getValue("quotaResetAtEpochSeconds").jsonObject.getValue(head.key).jsonPrimitive.content,
         )
-        assertEquals(RESET_SECONDS, DaemonProbe.parseHealth(body).quotaResetAtEpochSeconds[head.key])
+        assertEquals(RESET_SECONDS, DaemonProbe.parseHealth(body).quota.refusedUntil[head.key])
         head.remainingMs = 0
         val ready = payloads.controlHealthJson(nowEpochMillis = NOW_MS)
         assertNull(Json.parseToJsonElement(ready).jsonObject["quotaResetAtEpochSeconds"])
-        assertEquals(emptyMap<String, Long>(), DaemonProbe.parseHealth(ready).quotaResetAtEpochSeconds)
+        assertEquals(emptyMap<String, Long>(), DaemonProbe.parseHealth(ready).quota.refusedUntil)
     }
 }

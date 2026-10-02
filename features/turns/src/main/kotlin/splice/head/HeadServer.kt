@@ -27,6 +27,7 @@ import splice.core.head.HeadHealth
 import splice.core.model.CompactionBudgets
 import splice.core.model.ModelCatalog
 import splice.core.turn.TurnMeta
+import splice.core.usage.QuotaFull
 import splice.head.admission.AdmissionGate
 import splice.head.admission.AdmissionResponses
 import splice.head.admission.AdmissionTelemetry
@@ -119,12 +120,13 @@ public class HeadServer(
 
     override fun healthSnapshot(): HeadHealth = diagnostics.healthSnapshot(engine.isRunning, engine.port)
 
-    /** A refusal's instant first (V4-398), else the provider's own current reading (V4-418). Reporting only:
-     *  nothing here reaches admission, which still lets the first turn probe the upstream (V4-47). */
-    override fun providerResetForMs(): Long {
-        val refused = deps.quotaBundle.accountPool?.providerResetForMs ?: deps.upstream.providerResetForMs
-        return if (refused > 0L) refused else deps.turnQuota.spentForMs()
-    }
+    /** The refusal this head holds (V4-398/V4-412), and nothing else: a full reading is [quotaFull] (V4-452). */
+    override fun providerResetForMs(): Long =
+        deps.quotaBundle.accountPool?.providerResetForMs ?: deps.upstream.providerResetForMs
+
+    /** The provider's own current reading (V4-418, renamed V4-452). Reporting only: nothing here reaches
+     *  admission, which still lets the first turn probe the upstream (V4-47). */
+    override fun quotaFull(): QuotaFull? = deps.turnQuota.full()
 
     private suspend fun startLocked() {
         if (engine.isRunning) return

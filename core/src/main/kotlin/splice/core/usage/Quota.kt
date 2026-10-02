@@ -25,6 +25,19 @@ public data class QuotaSnapshot(
 ) {
     public val isEmpty: Boolean get() = fiveHour == null && sevenDay == null
 
+    /** V4-452: the window this snapshot's CURRENT reading at [nowMillis] names fully used, and its reset; the
+     *  later-resetting one when both are. Null when none is, or when a full window names no reset: a reading with
+     *  no instant says nothing to report. */
+    public fun fullAt(nowMillis: Long): QuotaFull? {
+        val current = currentAt(nowMillis) ?: return null
+        val full = listOfNotNull(
+            current.fiveHour?.let { QuotaFullWindow.FIVE_HOUR to it },
+            current.sevenDay?.let { QuotaFullWindow.SEVEN_DAY to it },
+        ).filter { (_, window) -> window.usedPercent >= FULLY_USED_PERCENT }
+        val reset = full.map { (name, window) -> QuotaFull(name, window.resetsAt ?: return null) }
+        return reset.maxByOrNull { it.resetsAtEpochSeconds }
+    }
+
     /** When both windows were observed, in epoch SECONDS — the unit [QuotaWindow.resetsAt] carries,
      *  so a surface can print the pair side by side. Null when the snapshot names no observation: 0
      *  is what a file written before `updated_at` decodes to, and it would read as 1970. */
@@ -76,6 +89,21 @@ public class QuotaSlots {
         return if (remaining > FIVE_HOUR_SLOT_MAX_SECONDS) remaining else SEVEN_DAYS_SECONDS
     }
 }
+
+/** V4-452: a plan window the provider's own current reading names fully used, and when it resets (epoch SECONDS).
+ *  A READING, never a refusal: on Oct 1 claudex served 1,163 turns while its week read 100%, so a surface reports it
+ *  beside a head that stays ready. Only a refusal splice holds (V4-398/V4-412) says out of quota. */
+public data class QuotaFull(val window: QuotaFullWindow, val resetsAtEpochSeconds: Long)
+
+/** The two slots a reading can name full. [wire] is the slot's name on every payload that carries one. */
+public enum class QuotaFullWindow(public val wire: String) {
+    FIVE_HOUR("five_hour"),
+    SEVEN_DAY("seven_day"),
+}
+
+// why: the providers report a full window as exactly 100 (AccountPool's own gate reads the same line), and a
+// figure under it is not a statement that the plan is spent
+private const val FULLY_USED_PERCENT = 100.0
 
 public const val FIVE_HOURS_SECONDS: Long = 5 * 3600L
 public const val SEVEN_DAYS_SECONDS: Long = 7 * 24 * 3600L

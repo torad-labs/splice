@@ -11,6 +11,8 @@ import splice.core.topology.Dialect
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
+import splice.core.usage.QuotaFull
+import splice.core.usage.QuotaFullWindow
 import splice.core.util.EnvReader
 import splice.core.util.LocalTimeText
 import splice.core.util.WallClock
@@ -45,12 +47,14 @@ internal class StatusTable(
         failedHeads: Map<String, String> = emptyMap(),
         quotaResetAtEpochSeconds: Map<String, Long> = emptyMap(),
         runtimeNotAnswering: Map<String, String> = emptyMap(),
+        quotaFull: Map<String, QuotaFull> = emptyMap(),
     ): List<String> {
         // V4-406: a row per configured head, and one per head the daemon names failed that this
         // topology does not know — the join to providers used to DROP a head it could not resolve,
         // hiding exactly the head whose boot failure the operator needs to read.
         val configured = topology.heads.map { (key, head) ->
-            val word = HeadWord(failedHeads[key], quotaResetAtEpochSeconds[key], runtimeNotAnswering[key])
+            val word =
+                HeadWord(failedHeads[key], quotaResetAtEpochSeconds[key], runtimeNotAnswering[key], quotaFull[key])
             topology.providers[head.provider]?.let { row(key, head, it, envReader, word) }
                 ?: unresolvedRow(
                     listOf(key, head.claude.command ?: key, head.port.toString(), "-"),
@@ -107,7 +111,7 @@ internal class StatusTable(
         // "wrapper missing" and "not signed in" to act on first. V4-394: the running daemon's word
         // outranks both, because a head it could not build serves nothing however it is set up.
         val action = bootFailure?.let { palette.paint(palette.strain, "not running: $it") }
-            ?: action(selfManaged, authed, wrapped, command, refusal)
+            ?: action(ready(selfManaged, word), authed, wrapped, command, refusal)
         val configured = authed && wrapped && refusal == null
         val glyph = if (bootFailure == null && configured) {
             palette.paint(palette.live, LIVE_GLYPH)
@@ -130,6 +134,20 @@ internal class StatusTable(
         return resetAt?.let { "out of quota until ${times.at(it)}" }
     }
 
+    /** The ready word, and beside it the provider's reading when that names a window fully used (V4-452).
+     *  The reading is not a refusal: claudex served turns all day at a week read 100%, so the row stays ready
+     *  and only says it. A reading whose reset has passed says nothing. */
+    private fun ready(selfManaged: Boolean, word: HeadWord): String {
+        val ready = if (selfManaged) "ready (your login)" else "ready"
+        val full = word.quotaFull?.takeIf { TimeUnit.SECONDS.toMillis(it.resetsAtEpochSeconds) > clock() }
+            ?: return ready
+        val window = when (full.window) {
+            QuotaFullWindow.FIVE_HOUR -> "5 hours"
+            QuotaFullWindow.SEVEN_DAY -> "week"
+        }
+        return "$ready · $window at 100%, resets ${times.at(full.resetsAtEpochSeconds)}"
+    }
+
     /** A head whose provider the topology cannot resolve, or that only the daemon knows: it cannot
      *  serve, so the row says not running with the daemon's reason, else the config's own. */
     private fun unresolvedRow(cells: List<String>, reason: String): Row =
@@ -148,7 +166,7 @@ internal class StatusTable(
      *  every head, and LoginCommand prompts an api-key head for its key and stores it where the
      *  daemon reads it. */
     private fun action(
-        selfManaged: Boolean,
+        ready: String,
         authed: Boolean,
         wrapped: Boolean,
         command: String,
@@ -157,7 +175,7 @@ internal class StatusTable(
         !wrapped -> palette.paint(palette.signal, "splice install")
         !authed -> palette.paint(palette.signal, "$command login")
         refusal != null -> palette.paint(palette.strain, refusal)
-        else -> palette.paint(palette.quiet, if (selfManaged) "ready (your login)" else "ready")
+        else -> palette.paint(palette.quiet, ready)
     }
 
     /** DR-175: the status table's backend column, and it named the wrong vendor for kimi.
@@ -207,12 +225,14 @@ internal class StatusTable(
 private data class Row(val glyph: String, val cells: List<String>, val action: String)
 
 /** What status learned about one head beyond its config: why the daemon could not boot it (V4-394),
- *  the instant its provider stops refusing turns, epoch seconds (V4-398), and the endpoint of its
- *  local runtime when that does not answer (V4-415). All null for a head that is fine. */
+ *  the instant its provider stops refusing turns, epoch seconds (V4-398), the endpoint of its
+ *  local runtime when that does not answer (V4-415), and the provider's reading when it names a window
+ *  fully used (V4-452). All null for a head that is fine. */
 private data class HeadWord(
     val bootFailure: String?,
     val quotaResetAtEpochSeconds: Long?,
     val runtimeEndpoint: String?,
+    val quotaFull: QuotaFull? = null,
 )
 
 /** The labelled columns, in order. A row's cells line up with these by index. */

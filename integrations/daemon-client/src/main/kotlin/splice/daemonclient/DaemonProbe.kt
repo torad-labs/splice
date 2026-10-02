@@ -14,6 +14,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import splice.core.auth.CredentialVerdict
 import splice.core.auth.CredentialVerdictRead
+import splice.core.usage.QuotaFull
+import splice.core.usage.QuotaFullWindow
 import splice.core.util.Cancellables
 import splice.core.util.FormEncoding
 import splice.core.util.JsonScalars
@@ -49,8 +51,17 @@ public object DaemonProbe {
         public val clientVersionWarning: String? = null,
         /** V4-394: each failed head's key and boot reason; empty on a healthy boot or an older daemon. */
         public val failedHeadReasons: Map<String, String> = emptyMap(),
-        /** Per-head upstream quota reset, epoch seconds; absent for ready or older daemons. */
-        public val quotaResetAtEpochSeconds: Map<String, Long> = emptyMap(),
+        /** V4-452: the two quota facts /health names apart, per head. */
+        public val quota: HealthQuota = HealthQuota(),
+    )
+
+    /** V4-452: what /health says about each head's quota, the two facts kept apart. [refusedUntil] is the reset of
+     *  a refusal the head HOLDS, epoch seconds (`quotaResetAtEpochSeconds`); [full] is the provider's reading when
+     *  it names a window fully used, beside a head that stays ready (`quotaFull`). Both empty for ready heads or an
+     *  older daemon. */
+    public data class HealthQuota(
+        public val refusedUntil: Map<String, Long> = emptyMap(),
+        public val full: Map<String, QuotaFull> = emptyMap(),
     )
 
     /** JW-05: the per-head runtime counters from /api/heads (bearer-guarded) — the
@@ -139,10 +150,16 @@ public object DaemonProbe {
                 ?.mapNotNull { (key, reason) -> JsonScalars.str(reason)?.let { key to it } }
                 ?.toMap()
                 .orEmpty(),
-            quotaResetAtEpochSeconds = (obj["quotaResetAtEpochSeconds"] as? JsonObject)
-                ?.mapNotNull { (key, reset) -> (reset as? JsonPrimitive)?.longOrNull?.let { key to it } }
-                ?.toMap()
-                .orEmpty(),
+            quota = HealthQuota(
+                refusedUntil = (obj["quotaResetAtEpochSeconds"] as? JsonObject)
+                    ?.mapNotNull { (key, reset) -> (reset as? JsonPrimitive)?.longOrNull?.let { key to it } }
+                    ?.toMap()
+                    .orEmpty(),
+                full = (obj["quotaFull"] as? JsonObject)
+                    ?.mapNotNull { (key, reading) -> quotaFullReading(reading as? JsonObject)?.let { key to it } }
+                    ?.toMap()
+                    .orEmpty(),
+            ),
         )
     }
 
@@ -271,3 +288,11 @@ public class TraceConfigProbe {
 }
 
 private const val PROBE_TIMEOUT_MS = 400
+
+/** One head's `quotaFull` entry from /health, or null when it names no known window or no reset. File scope:
+ *  a pure parse with no probe state, kept out of [DaemonProbe]'s function budget. */
+private fun quotaFullReading(reading: JsonObject?): QuotaFull? {
+    val wire = reading?.let { JsonScalars.str(it, "window") }
+    val window = QuotaFullWindow.entries.firstOrNull { it.wire == wire } ?: return null
+    return JsonScalars.long(reading, "resetsAtEpochSeconds")?.let { QuotaFull(window, it) }
+}

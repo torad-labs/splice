@@ -1,9 +1,12 @@
-// NEW: V4-418 — the three surfaces an operator reads (status, /health, usage) say "out of quota until <reset>" from a
-// head's CURRENT quota reading at 100%, before any turn has been refused. Marlin (f7f1e9308): claudex read ready and
-// Fleet OK while its own poll said the week was spent. Driven through the production wiring: ManagedHeadFactory
-// assembles the real head (its real primary QuotaTracker, its real HeadServer), a reading is recorded on that tracker the
-// way the poller records one, and each surface is read from the head. The reset is rendered by V4-419's one zone rule, so
-// the zone is pinned here instead of hoping the runner is in Chicago.
+// NEW: V4-418 — the three surfaces an operator reads (status, /health, usage) say what a head's CURRENT quota
+// reading at 100% says, before any turn has been refused. Marlin (f7f1e9308): claudex read ready and Fleet OK while
+// its own poll said the week was spent. V4-452 ruled the words: a full reading is not a refusal (claudex served 1,163
+// turns on Oct 1 at a week read 100%), so status stays ready and says "week at 100%, resets <reset>", /health names
+// it quotaFull apart from quotaResetAtEpochSeconds, and usage reports the plan window rather than a provider reset.
+// Only a refusal the head holds reads "out of quota until". Driven through the production wiring: ManagedHeadFactory
+// assembles the real head (its real primary QuotaTracker, its real HeadServer), a reading is recorded on that tracker
+// the way the poller records one, and each surface is read from the head. The reset is rendered by V4-419's one zone
+// rule, so the zone is pinned here instead of hoping the runner is in Chicago.
 package splice.app.cli.status.v4418
 
 import kotlinx.coroutines.CoroutineScope
@@ -63,7 +66,6 @@ import splice.head.usage.QuotaTracker
 import splice.usage.quota.UsagePayloads
 import java.nio.file.Files
 import java.nio.file.Path
-import java.time.Instant
 import java.time.ZoneId
 import kotlin.time.Duration.Companion.seconds
 
@@ -143,7 +145,8 @@ class SpentReadingSurfacesTest {
     private fun weekAt(used: Double): Pair<QuotaSnapshot, Long> {
         val now = System.currentTimeMillis()
         val resets = now / MS + SIX_DAYS_S
-        return QuotaSnapshot(sevenDay = QuotaWindow(used, resets, SEVEN_DAY_S), plan = "plus", updatedAt = now) to resets
+        val week = QuotaWindow(used, resets, SEVEN_DAY_S)
+        return QuotaSnapshot(sevenDay = week, plan = "plus", updatedAt = now) to resets
     }
 
     private val topology = Topology(
@@ -162,15 +165,21 @@ class SpentReadingSurfacesTest {
         ),
     )
 
+    private val chicago = LocalTimeText(ZoneId.of("America/Chicago"))
+
     /** The status row the CLI prints from what the daemon's /health said. */
     private fun statusLine(tmp: Path, health: String): String {
         val bin = Files.createDirectory(tmp.resolve("bin"))
-        val resets = DaemonProbe.parseHealth(health).quotaResetAtEpochSeconds
+        val view = DaemonProbe.parseHealth(health)
         Files.createSymbolicLink(bin.resolve("claudex"), bin.resolve("target"))
         val env = EnvReader(mapOf("SPLICE_BIN_DIR" to bin.toString(), "TEST_CODEX_KEY" to "synthetic-key")::get)
-        val chicago = LocalTimeText(ZoneId.of("America/Chicago"))
         val table = StatusTable(CliPalette(ColorDepth.NONE), WallClock(System::currentTimeMillis), chicago)
-        return table.lines(topology, env, quotaResetAtEpochSeconds = resets)[1]
+        return table.lines(
+            topology,
+            env,
+            quotaResetAtEpochSeconds = view.quota.refusedUntil,
+            quotaFull = view.quota.full,
+        )[1]
     }
 
     private fun warn(head: ManagedHead, state: StatePaths): JsonObject {
@@ -184,7 +193,7 @@ class SpentReadingSurfacesTest {
     }
 
     @Test
-    fun `a current week at 100 percent reads out of quota in status, health and usage with no turn refused`(
+    fun `a current week at 100 percent stays ready and says the week is full, with no turn refused`(
         @TempDir tmp: Path,
     ) {
         val state = StatePaths(baseOverride = tmp.resolve("state"))
@@ -194,23 +203,23 @@ class SpentReadingSurfacesTest {
         tracker.record(spent)
 
         val health = ControlPayloads(mapOf(KEY to head), { 0 }, configuredHeads = 1).controlHealthJson()
-        val named = Json.parseToJsonElement(health).jsonObject.getValue("quotaResetAtEpochSeconds").jsonObject
-        // Two reads of the real clock (the payload's, then the tracker's) may straddle a second boundary.
-        assertEquals(resets.toDouble(), named.getValue(KEY).jsonPrimitive.content.toDouble(), 1.0, health)
+        val body = Json.parseToJsonElement(health).jsonObject
+        assertNull(body["quotaResetAtEpochSeconds"], "a reading is not a refusal: $health")
+        val full = body.getValue("quotaFull").jsonObject.getValue(KEY).jsonObject
+        assertEquals("seven_day", full.getValue("window").jsonPrimitive.content, health)
+        assertEquals(resets, full.getValue("resetsAtEpochSeconds").jsonPrimitive.content.toLong(), health)
 
         val line = statusLine(tmp, health)
-        assertTrue(line.contains("out of quota until"), line)
-        assertFalse(line.trimEnd().endsWith("ready"), line)
+        assertTrue(line.trimEnd().endsWith("ready · week at 100%, resets ${chicago.at(resets)}"), line)
+        assertFalse(line.contains("out of quota"), line)
 
         val usage = warn(head, state)
-        assertEquals("critical", usage.getValue("level").jsonPrimitive.content)
         assertEquals("100", usage.getValue("pct").jsonPrimitive.content)
-        assertEquals("provider_reset", usage.getValue("source").jsonPrimitive.content)
-        assertEquals(Instant.ofEpochSecond(resets).toString(), usage.getValue("reset").jsonPrimitive.content)
+        assertNotEquals("provider_reset", usage.getValue("source").jsonPrimitive.content, usage.toString())
     }
 
     @Test
-    fun `a week at 99 percent reads ready in all three`(@TempDir tmp: Path) {
+    fun `a week at 99 percent reads ready in all three, with nothing beside it`(@TempDir tmp: Path) {
         val state = StatePaths(baseOverride = tmp.resolve("state"))
         lateinit var tracker: QuotaTracker
         val head = assemble(state) { tracker = it }
@@ -218,9 +227,22 @@ class SpentReadingSurfacesTest {
 
         val health = ControlPayloads(mapOf(KEY to head), { 0 }, configuredHeads = 1).controlHealthJson()
         assertNull(Json.parseToJsonElement(health).jsonObject["quotaResetAtEpochSeconds"], health)
+        assertNull(Json.parseToJsonElement(health).jsonObject["quotaFull"], health)
 
         val line = statusLine(tmp, health)
         assertTrue(line.trimEnd().endsWith("ready"), line)
         assertNotEquals("provider_reset", warn(head, state).getValue("source").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `a refusal the head holds still reads out of quota, whatever the reading beside it`(@TempDir tmp: Path) {
+        val refusedUntil = System.currentTimeMillis() / MS + SIX_DAYS_S
+        val health = """{"version":"x","heads":1,"readyHeads":1,"failedHeads":0,
+            "quotaResetAtEpochSeconds":{"$KEY":$refusedUntil},
+            "quotaFull":{"$KEY":{"window":"seven_day","resetsAtEpochSeconds":$refusedUntil}}}"""
+
+        val line = statusLine(tmp, health)
+        assertTrue(line.trimEnd().endsWith("out of quota until ${chicago.at(refusedUntil)}"), line)
+        assertFalse(line.contains("ready"), line)
     }
 }

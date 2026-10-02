@@ -70,15 +70,18 @@ internal class HeadResolver(
      *  head whose runtime is silent (V4-417) the endpoint it was asked on as `runtimeNotAnswering`, from
      *  the daemon's held probe; and for a running head whose provider refuses turns until a known instant
      *  (V4-429) that instant in epoch seconds as `quotaResetAtEpochSeconds`, the figure /health carries.
-     *  The console reads the first as down and the second as out of quota. */
+     *  The console reads the first as down and the second as out of quota. A provider reading that names a
+     *  window fully used rides apart as `quotaFull` (V4-452): a reading, beside a head that stays ready. */
     fun headStatuses(nowEpochMillis: Long = System.currentTimeMillis()): List<JsonObject> {
         val silent = payloads.silentRuntimes()
         val quotaResets = payloads.quotaResets(nowEpochMillis)
+        val quotaFull = payloads.quotaFull()
         return heads.values.map { managed ->
             val key = managed.head.key
             val marks = listOfNotNull(
                 silent[key]?.let { "runtimeNotAnswering" to JsonPrimitive(it) },
                 quotaResets[key]?.let { "quotaResetAtEpochSeconds" to JsonPrimitive(it) },
+                quotaFull[key]?.let { "quotaFull" to payloads.quotaFullJson(it) },
             )
             JsonObject(HeadStatus.json(managed.head, managed.authKind) + marks)
         }

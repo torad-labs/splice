@@ -6,6 +6,7 @@
 // config at all.
 package splice.app.control.api
 
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
@@ -21,6 +22,7 @@ import splice.app.control.TurnPathStalled
 import splice.configuration.topology.TopologyStale
 import splice.core.GATEWAY_VERSION
 import splice.core.SHIM_VERSION
+import splice.core.usage.QuotaFull
 import splice.core.version.ClientVersionTracker
 import java.util.concurrent.TimeUnit
 
@@ -90,6 +92,7 @@ internal class ControlPayloads(
         putFailedHeadReasons(this)
         putRuntimeNotAnswering(this)
         putQuotaResets(this, nowEpochMillis)
+        putQuotaFull(this)
         if (configuredHeads == 0 && running == 0) {
             if (failed == 0) {
                 put("setupState", "not_set_up")
@@ -139,6 +142,26 @@ internal class ControlPayloads(
         val resets = quotaResets(nowEpochMillis)
         if (resets.isEmpty()) return
         into.putJsonObject("quotaResetAtEpochSeconds") { resets.forEach { (key, reset) -> put(key, reset) } }
+    }
+
+    /** V4-452: for each running head whose provider's current reading names a window fully used, that reading.
+     *  Never a refusal ([quotaResets] is), so /health and the heads route carry it under its own name. */
+    fun quotaFull(): Map<String, QuotaFull> =
+        heads.filterValues { it.head.healthSnapshot().running }
+            .mapNotNull { (key, managed) -> managed.head.quotaFull()?.let { key to it } }.toMap()
+
+    /** V4-452: [quotaFull] as /health's object, one `{window, resetsAtEpochSeconds}` per head; absent when no
+     *  reading is full, so a healthy daemon's shape is unchanged. */
+    private fun putQuotaFull(into: JsonObjectBuilder) {
+        val full = quotaFull()
+        if (full.isEmpty()) return
+        into.putJsonObject("quotaFull") { full.forEach { (key, reading) -> put(key, quotaFullJson(reading)) } }
+    }
+
+    /** One head's full reading as the wire carries it, on /health and on the heads route alike. */
+    fun quotaFullJson(reading: QuotaFull): JsonObject = buildJsonObject {
+        put("window", reading.window.wire)
+        put("resetsAtEpochSeconds", reading.resetsAtEpochSeconds)
     }
 
     /** [families] is each head's vendor family by key (the declared roster's), null where splice

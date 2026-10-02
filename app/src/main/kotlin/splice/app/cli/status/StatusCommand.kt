@@ -13,6 +13,7 @@ import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
 import splice.core.util.EnvReader
 import splice.daemonclient.DaemonHealth
+import splice.daemonclient.DaemonProbe.HealthQuota
 import splice.daemonclient.DaemonProbe.HealthView
 import splice.diagnostics.doctor.AccountPoolRead
 import splice.diagnostics.doctor.JdkAccountPoolRead
@@ -62,11 +63,12 @@ internal class StatusCommand(
         clientVersionWarning(health)?.let { println("  " + palette.paint(palette.strain, "! $it")) }
         println()
         val failedHeads = health?.takeIf { up }?.failedHeadReasons.orEmpty()
-        val quotaResets = health?.takeIf { up }?.quotaResetAtEpochSeconds.orEmpty()
+        val quota = health?.takeIf { up }?.quota ?: HealthQuota()
         // V4-415: probed whether or not the daemon is up, since the runtime is the operator's own
         // process and a stopped daemon says nothing about it.
         val notAnswering = localRuntimes.notAnswering(topology)
-        for (line in table.lines(topology, envReader, failedHeads, quotaResets, notAnswering)) println(line)
+        val rows = table.lines(topology, envReader, failedHeads, quota.refusedUntil, notAnswering, quota.full)
+        for (line in rows) println(line)
         if (up) extras.printAccounts(port, envReader)
         println()
         // Paths sink below the table: they are reference, not the answer, and an operator who wants

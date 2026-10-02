@@ -8,6 +8,7 @@
 // while six siblings kept the old shape. This file is the single place the decision lives.
 package splice.head.admission
 
+import splice.core.usage.QuotaFull
 import splice.head.usage.QuotaTracker
 import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.AccountSelection
@@ -25,11 +26,12 @@ internal class TurnQuota(
         return label?.let(accountQuotas::get) ?: primary
     }
 
-    /** V4-418: milliseconds until the head is out of quota by the providers' own CURRENT readings, 0 when it is
-     *  not. A head is out when every account it holds is, so a pool needs all of its trackers spent and answers
-     *  with the earliest reset; a head with no tracker is never out. Head-wide, so no session or selection is asked. */
-    fun spentForMs(): Long {
-        val remaining = accountQuotas.values.ifEmpty { listOfNotNull(primary) }.map(QuotaTracker::spentForMs)
-        return if (remaining.any { it <= 0L }) 0L else remaining.minOrNull() ?: 0L
+    /** V4-452: the head's full reading by the providers' own CURRENT readings, null when there is none. A head
+     *  reads full when every account it holds does, so a pool needs all of its trackers full and answers with the
+     *  earliest reset; a head with no tracker never reads full. Head-wide, so no session or selection is asked. */
+    fun full(): QuotaFull? {
+        val readings = accountQuotas.values.ifEmpty { listOfNotNull(primary) }.map(QuotaTracker::full)
+        if (readings.any { it == null }) return null
+        return readings.filterNotNull().minByOrNull { it.resetsAtEpochSeconds }
     }
 }

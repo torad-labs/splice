@@ -2,6 +2,8 @@
 // preserving the separation the old process boundary gave for free; :app wires the map).
 package splice.core.head
 
+import splice.core.usage.QuotaFull
+
 public interface Head {
     public val key: String
     public val label: String
@@ -18,8 +20,13 @@ public interface Head {
 
     public fun healthSnapshot(): HeadHealth
 
-    /** Remaining provider-reported quota reset, zero when no current reset is known. */
+    /** Milliseconds left on a refusal this head is HOLDING (V4-398/V4-412), zero when it holds none. The one value
+     *  any surface may print as out of quota (V4-452). */
     public fun providerResetForMs(): Long = 0L
+
+    /** V4-452: the window the provider's current reading names fully used, null when none is. A reading, not a
+     *  refusal: the head stays ready beside it. */
+    public fun quotaFull(): QuotaFull? = null
 }
 
 public data class HeadHealth(

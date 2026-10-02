@@ -1,6 +1,7 @@
-// NEW: V4-418 — reporting only. A head that READS as out of quota from a current 100% reading still lets its first turn
-// reach the upstream (V4-47's gate is unchanged): only a refused turn arms a hold, so the reading can never turn a week that
-// has just reset, or a plan the provider has since topped up, into a refusal splice invented.
+// NEW: V4-418 — reporting only. A head whose current reading names a window fully used still lets its first turn
+// reach the upstream (V4-47's gate is unchanged): only a refused turn arms a hold, so the reading can never turn a week
+// that has just reset, or a plan the provider has since topped up, into a refusal splice invented. V4-452: the reading
+// is HeadServer.quotaFull, and it is not a refusal, so providerResetForMs stays 0 beside it.
 package splice.head.v4418
 
 import io.ktor.client.HttpClient
@@ -103,8 +104,9 @@ class SpentReadingStillProbesTest {
     }
 
     @Test
-    fun `a head that reads out of quota still sends its first turn upstream and streams the answer`() = runBlocking<Unit> {
-        assertTrue(head.providerResetForMs() > 0L, "the reading is held as the head's reset")
+    fun `a head whose reading is full still sends its first turn upstream`() = runBlocking<Unit> {
+        assertTrue(head.quotaFull() != null, "the reading is held as the head's full reading")
+        assertEquals(0L, head.providerResetForMs(), "a full reading is not a refusal")
 
         val response = client.post("http://127.0.0.1:${head.port}/v1/messages") {
             header("Content-Type", "application/json")

@@ -1,12 +1,13 @@
-// NEW: V4-418 — a head reads "out of quota until <reset>" from the provider's own CURRENT quota reading, before any turn
-// has been refused. Marlin (f7f1e9308): claudex read ready while its poll said the week was 100% with a reset days out,
-// because V4-398 and V4-412 learn a hold only from a refused turn. The reading is the provider saying what a refusal says.
-// Driven through HeadServer.providerResetForMs, the one value status, /health and usage all read. A window that is not
-// full, a reading older than QuotaFreshness's 15 minutes and a window past its reset must read ready: a stale figure is
-// not a statement about now.
+// NEW: V4-418 — a head reads the provider's own CURRENT quota reading when it names a window fully used, before
+// any turn has been refused. Marlin (f7f1e9308): claudex said nothing while its poll said the week was 100% with a
+// reset days out. V4-452 ruled what the reading IS: a reading, not a refusal. On Oct 1 claudex served 1,163 turns at a
+// week read 100%, so HeadServer.quotaFull carries it beside a head that stays ready, and providerResetForMs, the one
+// value any surface prints as out of quota, stays the held refusal's alone. A window that is not full, a reading
+// older than QuotaFreshness's 15 minutes and a window past its reset read nothing: a stale figure says nothing of now.
 package splice.head.v4418
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
@@ -16,6 +17,8 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
+import splice.core.usage.QuotaFull
+import splice.core.usage.QuotaFullWindow
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
 import splice.core.util.WallClock
@@ -115,72 +118,75 @@ class SpentReadingResetTest {
         return head(tmp, quotaFor(first, pool, mapOf("primary" to first, "backup" to second)))
     }
 
-    @Test
-    fun `a current week at 100 percent reads out of quota until its reset, with no turn ever refused`(
-        @TempDir tmp: Path,
-    ) {
-        val remaining = single(tmp, reading(seven = week(100.0))).providerResetForMs()
+    private fun fullWeek(resetsInSeconds: Long = SIX_DAYS_S) =
+        QuotaFull(QuotaFullWindow.SEVEN_DAY, NOW_MS / SECOND_MS + resetsInSeconds)
 
-        assertEquals(SIX_DAYS_S * SECOND_MS, remaining)
+    @Test
+    fun `a current week at 100 percent reads full until its reset, with no turn ever refused`(@TempDir tmp: Path) {
+        assertEquals(fullWeek(), single(tmp, reading(seven = week(100.0))).quotaFull())
     }
 
     @Test
-    fun `a week at 99 percent reads ready`(@TempDir tmp: Path) {
-        assertEquals(0L, single(tmp, reading(seven = week(99.0))).providerResetForMs())
+    fun `a full reading is not a refusal`(@TempDir tmp: Path) {
+        // claudex served turns all day at a week read 100%: only a refusal the head holds is out of quota.
+        assertEquals(0L, single(tmp, reading(seven = week(100.0))).providerResetForMs())
     }
 
     @Test
-    fun `a full reading older than the freshness window reads ready`(@TempDir tmp: Path) {
+    fun `a week at 99 percent reads nothing`(@TempDir tmp: Path) {
+        assertNull(single(tmp, reading(seven = week(99.0))).quotaFull())
+    }
+
+    @Test
+    fun `a full reading older than the freshness window reads nothing`(@TempDir tmp: Path) {
         val stale = reading(seven = week(100.0), readSecondsAgo = READ_SIXTEEN_MINUTES_AGO_S)
 
-        assertEquals(0L, single(tmp, stale).providerResetForMs())
+        assertNull(single(tmp, stale).quotaFull())
     }
 
     @Test
-    fun `a full window whose reset has passed reads ready`(@TempDir tmp: Path) {
-        assertEquals(0L, single(tmp, reading(seven = week(100.0, resetsInSeconds = -60L))).providerResetForMs())
+    fun `a full window whose reset has passed reads nothing`(@TempDir tmp: Path) {
+        assertNull(single(tmp, reading(seven = week(100.0, resetsInSeconds = -60L))).quotaFull())
     }
 
     @Test
-    fun `the deadline moves down the week as the clock does, and drops out when the week resets`(@TempDir tmp: Path) {
+    fun `the reading holds its reset as the clock moves, and drops out when the week resets`(@TempDir tmp: Path) {
         val head = single(tmp, reading(seven = week(100.0, resetsInSeconds = TWO_HOURS_S)))
-        assertEquals(TWO_HOURS_S * SECOND_MS, head.providerResetForMs())
+        assertEquals(fullWeek(TWO_HOURS_S), head.quotaFull())
 
         elapsed.set(SECOND_MS * 60)
-        assertEquals((TWO_HOURS_S - 60L) * SECOND_MS, head.providerResetForMs())
+        assertEquals(fullWeek(TWO_HOURS_S), head.quotaFull())
 
         elapsed.set(TWO_HOURS_S * SECOND_MS)
-        assertEquals(0L, head.providerResetForMs())
+        assertNull(head.quotaFull())
     }
 
     @Test
-    fun `a spent five-hour window alone reads out until it resets, and both spent read the later reset`(
-        @TempDir tmp: Path,
-    ) {
+    fun `a full five-hour window alone is named, and both full name the later reset`(@TempDir tmp: Path) {
         val five = single(tmp, reading(five = fiveHour(100.0), seven = week(40.0)), tag = "-five")
-        assertEquals(TWO_HOURS_S * SECOND_MS, five.providerResetForMs())
+        assertEquals(QuotaFull(QuotaFullWindow.FIVE_HOUR, NOW_MS / SECOND_MS + TWO_HOURS_S), five.quotaFull())
 
         val both = single(tmp, reading(five = fiveHour(100.0), seven = week(100.0)), tag = "-both")
-        assertEquals(SIX_DAYS_S * SECOND_MS, both.providerResetForMs())
+        assertEquals(fullWeek(), both.quotaFull())
     }
 
     @Test
-    fun `a spent window that names no reset names no instant`(@TempDir tmp: Path) {
-        assertEquals(0L, single(tmp, reading(seven = week(100.0, resetsInSeconds = null))).providerResetForMs())
+    fun `a full window that names no reset names nothing`(@TempDir tmp: Path) {
+        assertNull(single(tmp, reading(seven = week(100.0, resetsInSeconds = null))).quotaFull())
     }
 
     @Test
-    fun `a head with no quota tracker reads ready`(@TempDir tmp: Path) {
-        assertEquals(0L, head(tmp, noQuota()).providerResetForMs())
+    fun `a head with no quota tracker reads nothing`(@TempDir tmp: Path) {
+        assertNull(head(tmp, noQuota()).quotaFull())
     }
 
     @Test
-    fun `a pool reads out only when every account is spent, until the earliest of their resets`(@TempDir tmp: Path) {
+    fun `a pool reads full only when every account does, with the earliest of their resets`(@TempDir tmp: Path) {
         val spent = reading(seven = week(100.0))
         val sooner = reading(seven = week(100.0, resetsInSeconds = TWO_HOURS_S))
         val free = reading(seven = week(20.0))
 
-        assertEquals(TWO_HOURS_S * SECOND_MS, pooled(tmp, spent, sooner, "-all").providerResetForMs())
-        assertEquals(0L, pooled(tmp, spent, free, "-one").providerResetForMs())
+        assertEquals(fullWeek(TWO_HOURS_S), pooled(tmp, spent, sooner, "-all").quotaFull())
+        assertNull(pooled(tmp, spent, free, "-one").quotaFull())
     }
 }

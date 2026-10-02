@@ -487,6 +487,23 @@ class AccountPoolTest {
         assertEquals(4600L, pool.exhausted(null).earliestResetEpochSeconds)
     }
 
+    @Test
+    fun `an authentication-held backup cannot hide the selector's next opening`() {
+        for (reject in listOf(AccountSelection::markCredentialUnavailable, AccountSelection::markCredentialMissing)) {
+            val fixture = Fixture()
+            val primary = fixture.account("primary", primary = true, five = 100.0, reset = 19000L)
+            val backup = fixture.account("backup")
+            primary.cooldown.markUnavailable(18000000L)
+            val pool = fixture.pool(primary, backup)
+            val chosen = pool.chosen("backup-turn")
+            assertEquals("backup", chosen.account.label)
+            reject(chosen)
+            assertTrue(pool.view(null).accounts.single { it.label == "backup" }.credentialPresent)
+            assertEquals(1300L, pool.exhausted(null).earliestResetEpochSeconds)
+            assertEquals(300000L, pool.providerResetForMs)
+        }
+    }
+
     internal class Fixture {
         val now = AtomicReference(1_000_000L)
         private val quotas = mutableMapOf<PoolAccount, AtomicReference<QuotaSnapshot>>()

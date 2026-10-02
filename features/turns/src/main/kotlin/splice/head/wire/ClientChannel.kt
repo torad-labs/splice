@@ -15,6 +15,12 @@
 // channel instead of failing or cancelling the turn: no more bytes reach the socket, the turn runs
 // on, and the recording answers the retry (TurnStreamer.driveDetachable, CompactionReplay). A
 // channel with no recording behaves exactly as before — ordinary turns still cancel on a lost client.
+//
+// PACED (V4-456, 2026-10-01): a provider that sends a whole thinking summary in one read used to reach
+// Claude Code in one frame. While a streaming turn's release loop runs ([launchPacer]), a visible delta
+// arriving within a tick of the last one is held by [DeltaPacer], every later frame queues behind it,
+// and the loop writes them out spread over a bounded window. Recording and trace still see every
+// frame at the moment it is written here; only the socket write waits.
 package splice.head.wire
 
 import kotlinx.coroutines.CoroutineScope
@@ -64,6 +70,23 @@ private const val CLIENT_PING_INTERVAL_MS = 2_000L
 
 private const val DETACHED_NOTE = "compaction continues detached; its answer is held for a retry"
 private const val KEEPALIVE_FAILURE = "client connection closed while writing a keepalive"
+private const val PACED_FAILURE = "client connection closed while writing a paced delta"
+
+/** Who a background write names when it finds the client gone: the head, its log, the session if known. */
+internal data class LostClient(val headKey: String, val log: LogSink, val session: String? = null)
+
+/** Model accounting for a frame committed to the client: written, or held by the pacer. */
+private object ModelAccounting {
+    fun count(frame: String, perf: TurnPerf) {
+        if (carriesContent(frame)) perf.add(PerfKeys.CONTENT_FRAMES_OUT, 1)
+        if (frame.startsWith(DELTA_FRAME_PREFIX)) perf.markOnce(PerfKeys.FIRST_DELTA)
+    }
+
+    /** The structural turn-opening pair carries no content — see PerfKeys.CONTENT_FRAMES_OUT for
+     *  why G5 must not count it as "the client saw output". */
+    private fun carriesContent(frame: String): Boolean =
+        !frame.startsWith(START_FRAME_PREFIX) && !frame.startsWith(PING_FRAME_PREFIX)
+}
 
 /** Per-turn client write surface: the coalesced writer, a mutex serializing the emitter vs the
  *  keepalive pinger, and the clientGone flag a failed write flips. A class, not a `data class`:
@@ -85,6 +108,8 @@ internal class ClientChannel(
     /** Frames that reached the socket: the pinger's silence gauge (unchanged tick after tick =
      *  a silent wire, time for a heartbeat). */
     val socketFrames: AtomicLong = AtomicLong(0),
+    /** V4-456: holds a burst's deltas for [launchPacer]'s loop; inert until that loop runs. */
+    private val pacer: DeltaPacer = DeltaPacer(),
 ) {
     /** Client-side write instrumented: frame counts/bytes, first-frame/first-delta marks, and the
      *  summed write+flush time (a slow reader shows up as write_ms, not as fake stream time).
@@ -109,10 +134,27 @@ internal class ClientChannel(
         write(frame, perf, clock, modelOutput = false)
     }
 
+    /** V4-456: a frame the [pacer] holds is COMMITTED — it leaves before anything written after it — so
+     *  its model accounting happens here, at the hold. CONTENT_FRAMES_OUT is what forbids a pre-content
+     *  reissue (SseRoundDriver), and a reissue behind a held delta would put two answers on one wire. */
     private fun write(frame: String, perf: TurnPerf, clock: ElapsedClock, modelOutput: Boolean) {
         recording?.append(frame)
         trace?.clientFrame(frame)
         if (detached.get()) return
+        if (pacer.hold(frame, perf, modelOutput, clock())) {
+            if (modelOutput) ModelAccounting.count(frame, perf)
+            return
+        }
+        // A release loop that stopped (a cancelled turn, a ticker that ended) can leave frames behind:
+        // they go first, so the wire order stays the order they were written in.
+        pacer.takeAll().forEach { socketWrite(it.frame, it.perf, clock) }
+        if (socketWrite(frame, perf, clock) && modelOutput) ModelAccounting.count(frame, perf)
+    }
+
+    /** One frame onto the socket, counted as transport: true when it got there, false when the channel
+     *  is (or just became) detached. An ordinary turn's lost client throws, after clientGone is set. */
+    private fun socketWrite(frame: String, perf: TurnPerf, clock: ElapsedClock): Boolean {
+        if (detached.get()) return false
         val t = clock()
         // A dead client fails the write in two shapes: IOException from the engine write, and
         // IllegalStateException from a channel Ktor already closed. runCatchingCleanup captures both
@@ -122,21 +164,79 @@ internal class ClientChannel(
         if (writeResult.isFailure) {
             clientGone.set(true)
             if (!detachIfRecording()) writeResult.getOrThrow()
-            return
+            return false
         }
         socketFrames.incrementAndGet()
         perf.add(PerfKeys.WRITE_MS, clock() - t)
         perf.add(PerfKeys.FRAMES_OUT, 1)
-        if (modelOutput && carriesContent(frame)) perf.add(PerfKeys.CONTENT_FRAMES_OUT, 1)
         perf.add(PerfKeys.BYTES_OUT, frame.length.toLong())
         perf.markOnce(PerfKeys.FIRST_FRAME)
-        if (modelOutput && frame.startsWith(DELTA_FRAME_PREFIX)) perf.markOnce(PerfKeys.FIRST_DELTA)
+        return true
     }
 
-    /** The structural turn-opening pair carries no content — see PerfKeys.CONTENT_FRAMES_OUT for
-     *  why G5 must not count it as "the client saw output". */
-    private fun carriesContent(frame: String): Boolean =
-        !frame.startsWith(START_FRAME_PREFIX) && !frame.startsWith(PING_FRAME_PREFIX)
+    /** V4-456: the turn's release loop. Wakes when the [pacer] first holds a frame, then releases what
+     *  is due once a tick until nothing waits. Launched beside the pinger for a streaming turn only; a
+     *  channel with no loop never holds a frame, so every other caller writes exactly as before. A
+     *  release that fails on a lost client is the pinger's case: clientGone, then cancel the turn. */
+    fun launchPacer(
+        scope: CoroutineScope,
+        turnJob: Job,
+        ticker: Ticker,
+        clock: ElapsedClock,
+        lost: LostClient,
+    ): Job {
+        pacer.active = true
+        return scope.launch {
+            try {
+                while (pacer.active) {
+                    pacer.awaitSignal()
+                    if (!releaseUntilEmpty(turnJob, ticker, clock, lost)) return@launch
+                }
+            } finally {
+                pacer.active = false
+            }
+        }
+    }
+
+    /** One wake's work: a release each tick until nothing waits. False when the loop has to stop — the
+     *  ticker ended, or a release found the client gone (handled here, like a failed keepalive). */
+    private suspend fun releaseUntilEmpty(
+        turnJob: Job,
+        ticker: Ticker,
+        clock: ElapsedClock,
+        lost: LostClient,
+    ): Boolean {
+        do {
+            if (!ticker.awaitTick(PACE_TICK_MS)) return false
+            val release = Cancellables.runCatchingCleanup { releaseDue(clock) }
+            if (release.isFailure) {
+                clientLost(turnJob, lost, PACED_FAILURE)
+                return false
+            }
+        } while (release.getOrThrow())
+        return true
+    }
+
+    /** Writes this tick's due frames under writeMutex; true while frames still wait. */
+    private suspend fun releaseDue(clock: ElapsedClock): Boolean = writeMutex.withLock {
+        pacer.due(clock()).forEach { socketWrite(it.frame, it.perf, clock) }
+        pacer.stillHeld()
+    }
+
+    /** The turn's last frame is written: let the loop release what it holds, at its pace (bounded by the
+     *  pacing window), then stop it — at once when nothing is held, so an ordinary turn's response closes
+     *  without waiting a tick. Whatever a loop that ended early left behind goes out now, in order; a
+     *  failure here is the lost client the turn's own writes already reported, so it is discarded. */
+    suspend fun finishPacing(pacing: Job, clock: ElapsedClock) {
+        pacer.finish()
+        if (writeMutex.withLock { pacer.stillHeld() }) pacing.join() else pacing.cancel()
+        Cancellables.discard(
+            Cancellables.runCatchingCleanup {
+                writeMutex.withLock { pacer.takeAll().forEach { socketWrite(it.frame, it.perf, clock) } }
+            },
+            "a paced tail on a client that left: clientGone is already set and the turn has ended",
+        )
+    }
 
     /** Stop writing to the socket for good; the turn runs on and the recording stands in for the
      *  client. False — and nothing changes — for a channel without a recording, so every caller
@@ -227,20 +327,21 @@ internal class ClientChannel(
                     }
                 }.exceptionOrNull()
                 if (pingFailure != null) {
-                    pingFailed(turnJob, headKey, log, session)
+                    clientLost(turnJob, LostClient(headKey, log, session), KEEPALIVE_FAILURE)
                     return@launch
                 }
             }
         }
 
-    private fun pingFailed(turnJob: Job, headKey: String, log: LogSink, session: String?) {
+    /** A background write (a keepalive, a paced release) found the client gone: the pinger's and the
+     *  pacer's one handler. [cause] names the write that failed, never Ktor's message-free exception
+     *  class or its unsafe text. */
+    private fun clientLost(turnJob: Job, lost: LostClient, cause: String) {
         clientGone.set(true)
-        // Every failure in this path came from writing a keepalive to the downstream socket.
-        // Name that connection, not Ktor's message-free exception class or its unsafe text.
         if (detachIfRecording()) {
-            log("[$headKey] client gone (${who(session)}$KEEPALIVE_FAILURE); $DETACHED_NOTE\n")
+            lost.log("[${lost.headKey}] client gone (${who(lost.session)}$cause); $DETACHED_NOTE\n")
         } else {
-            log("[$headKey] client gone (${who(session)}$KEEPALIVE_FAILURE); cancelling turn\n")
+            lost.log("[${lost.headKey}] client gone (${who(lost.session)}$cause); cancelling turn\n")
             turnJob.cancel()
         }
     }

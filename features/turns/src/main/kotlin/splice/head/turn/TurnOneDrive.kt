@@ -3,18 +3,27 @@
 // billed for the other's subsystems. Same-package.
 package splice.head.turn
 
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
 import splice.core.perf.PerfKeys
 import splice.head.HeadDeps
 import splice.head.wire.Heartbeat
+import splice.head.wire.LostClient
 import splice.upstream.Provider
+import splice.upstream.Ticker
+import splice.upstream.codemode.ProcessTicker
 
 internal class TurnOneDrive(
     private val provider: Provider,
     private val deps: HeadDeps,
     private val roundRun: TurnRoundRun,
+    /** V4-456: the frame tick paced output is released on (ClientChannel.launchPacer). Not
+     *  [HeadDeps.HeadSeams.ticker]: that is the client pinger's two-second liveness cadence, and a test
+     *  that feeds the pinger its ticks one at a time must not have the pacer consume them — a paced tail
+     *  waiting on a tick nobody sends holds the turn's admission slot after message_stop. */
+    private val paceTicker: Ticker = ProcessTicker(),
 ) {
     // The turn coroutine is a CHILD job: the watchdog cancels just the turn subtree (then the
     // blocking Writer still lets the honest error frame out), while a client disconnect cancels
@@ -74,10 +83,14 @@ internal class TurnOneDrive(
                 // NF-03: whole-turn totalCap poller, unconditional (non-stream turns burn wall
                 // clock too). launchIn keeps the idle tiers stream-scoped; this one only samples
                 // elapsed, so connect/backoff/refresh/between-rounds time finally counts.
+                // V4-456: streaming only, like the pinger — the collect path has no wire to pace.
+                val pacing = if (pingClient) launchPacing(drive, self, turnJob) else null
                 val capPoller = drive.watchdog.launchTotalCap(self, turnJob)
                 try {
                     roundRun.run(drive, self, turnJob)
+                    pacing?.let { drive.channel.finishPacing(it, deps.seams.clock) }
                 } finally {
+                    pacing?.cancel()
                     pinger?.cancel()
                     capPoller.cancel()
                 }
@@ -86,4 +99,16 @@ internal class TurnOneDrive(
             turnJob.complete()
         }
     }
+
+    /** V4-456: a provider batch (a whole thinking summary in one read) reaches the client spread over the
+     *  pacing window instead of in one frame. driveOneTurn waits for the paced tail before it returns
+     *  (ClientChannel.finishPacing), so the response never closes on a held frame. */
+    private fun launchPacing(drive: TurnDrive, scope: CoroutineScope, turnJob: Job): Job =
+        drive.channel.launchPacer(
+            scope,
+            turnJob,
+            paceTicker,
+            deps.seams.clock,
+            LostClient(provider.key, deps.log, drive.sessionTag()),
+        )
 }

@@ -18,6 +18,7 @@ import kotlinx.coroutines.withContext
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.auth.Credentials
 import java.io.IOException
 import java.io.InputStream
 import java.net.ServerSocket
@@ -29,6 +30,7 @@ import java.util.concurrent.TimeUnit
 // Longer than any per-read bound a first-byte tier would set in this test, far under its total cap.
 private const val SILENT_GAP_MS = 1_500
 private const val SSE_HEAD = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n"
+private val BODY = "{}".toByteArray()
 
 class UpstreamTransportOkHttpTest {
 
@@ -98,6 +100,45 @@ class UpstreamTransportOkHttpTest {
         }
     }
 
+    /** Oct 2: with no Accept-Encoding of splice's own, OkHttp asked every upstream for gzip on the wire and
+     *  inflated the answer out of the trace's sight; a compressed event stream reaches the reader in blocks,
+     *  not one event at a time. The head as the socket reads it is the only place OkHttp's own header shows. */
+    @Test
+    fun `an upstream post asks for an uncompressed answer on the wire`() {
+        assertEquals("identity", wireAcceptEncoding(provider = emptyMap()))
+    }
+
+    @Test
+    fun `a provider's own Accept-Encoding still replaces the uncompressed default`() {
+        assertEquals("br", wireAcceptEncoding(provider = mapOf("accept-encoding" to "br")))
+    }
+
+    /** The Accept-Encoding the socket read on one prepared upstream POST, null when there was none. */
+    private fun wireAcceptEncoding(provider: Map<String, String>): String? = ServerSocket(0).use { server ->
+        val head = CompletableFuture.supplyAsync {
+            server.accept().use { peer ->
+                val text = readRequestHead(peer.getInputStream())
+                peer.getOutputStream().write((SSE_HEAD + chunk("data: one\n\n") + "0\r\n\r\n").toByteArray())
+                peer.getOutputStream().flush()
+                text
+            }
+        }
+        val client = UpstreamTransport().defaultClient(totalTimeoutMs = 10_000)
+        try {
+            runBlocking {
+                UpstreamRequest(client, zstdRequestBody = false)
+                    .prepare("http://127.0.0.1:${server.localPort}/", Credentials.ClientForwarded, { provider }, BODY)
+                    .execute { it.bodyAsText() }
+            }
+        } finally {
+            client.close()
+        }
+        head.get(10, TimeUnit.SECONDS).lineSequence()
+            .map { it.split(":", limit = 2) }
+            .firstOrNull { it.size == 2 && it[0].trim().equals("accept-encoding", ignoreCase = true) }
+            ?.get(1)?.trim()
+    }
+
     private fun serveWithSilentGap(server: ServerSocket): String = server.accept().use { peer ->
         val input = peer.getInputStream()
         val output = peer.getOutputStream()
@@ -118,13 +159,14 @@ class UpstreamTransportOkHttpTest {
         "stayed connected"
     }
 
-    private fun readRequestHead(input: InputStream) {
+    private fun readRequestHead(input: InputStream): String {
         val head = StringBuilder()
         while (!head.endsWith("\r\n\r\n")) {
             val next = input.read()
-            if (next == -1) return
+            if (next == -1) break
             head.append(next.toChar())
         }
+        return head.toString()
     }
 
     private fun chunk(text: String) = "${text.length.toString(16)}\r\n$text\r\n"

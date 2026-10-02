@@ -37,10 +37,11 @@ public class TurnTrace internal constructor(
     private val store: TraceStore,
     public val turnId: String,
     private val meta: TurnMeta,
-    private val inbound: ClientInbound,
+    inbound: ClientInbound,
     private val now: WallClock,
 ) : WireObserver {
     private val lock = Any()
+    private var inbound: ClientInbound? = inbound
     private val response = BoundedText(store.maxBodyChars)
     private val streamed = BoundedText(store.maxBodyChars)
     private var collected: ClientAnswerSource? = null
@@ -126,7 +127,10 @@ public class TurnTrace internal constructor(
 
     /** The turn ended with [outcomeTag]; [perf] is the row's snapshot. Writes the turn record. */
     public fun finish(outcomeTag: String, perf: PerfSnapshot) {
-        val record = synchronized(lock) { turnRecord(outcomeTag, perf) }
+        val record = synchronized(lock) {
+            val client = inbound ?: return
+            turnRecord(client, outcomeTag, perf).also { inbound = null }
+        }
         store.write(record)
     }
 
@@ -158,7 +162,7 @@ public class TurnTrace internal constructor(
         }
     }
 
-    private fun turnRecord(outcomeTag: String, perf: PerfSnapshot): JsonObject {
+    private fun turnRecord(inbound: ClientInbound, outcomeTag: String, perf: PerfSnapshot): JsonObject {
         val (clientBody, clientTruncated) = store.bounded(inbound.body)
         val answer = collected?.answer()
         val (answerBody, answerTruncated) = answer?.let { store.bounded(it.body) } ?: streamed.take()

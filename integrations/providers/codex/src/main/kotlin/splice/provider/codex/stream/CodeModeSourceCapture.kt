@@ -15,8 +15,10 @@ internal class CodeModeSourceCapture(
     private val config: CodeModeBridgeConfig,
     private val registry: CodexCodeModeRegistry,
     private val wire: CodexCodeModeWire,
-    private val admission: CodeModeStreamAdmission,
+    admission: CodeModeStreamAdmission,
 ) {
+    // One use only: the driver's closure reaches the raw request, context and client call.
+    private var admission: CodeModeStreamAdmission? = admission
     val source = CodeModeSourceBuffer()
     val ready = CompletableDeferred<CodeModeRecord?>()
     var record: CodeModeRecord? = null
@@ -43,7 +45,9 @@ internal class CodeModeSourceCapture(
 
     private fun begin(call: GatewayCustomCall) {
         check(record == null) { "code mode accepts one outer custom call per round" }
-        val admitted = admission.admit(call)
+        val admit = checkNotNull(admission) { "code-mode source admission was already used" }
+        admission = null
+        val admitted = admit.admit(call)
         record = admitted
         startedCall = call
         if (call.input.isNotEmpty()) {

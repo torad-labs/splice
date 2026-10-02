@@ -62,11 +62,14 @@ internal sealed class Preparation {
     data class Ready(
         val built: BuiltTurn,
         val stream: Boolean,
-        val inbound: ClientInbound?,
+        private var inbound: ClientInbound?,
         val messagesHash: String?,
         /** The installed client can only compact after at least one assistant exchange exists. */
         val hasPriorExchange: Boolean,
-    ) : Preparation()
+    ) : Preparation() {
+        /** Transfers the raw request to its trace without retaining a second post-handoff owner. */
+        fun takeInbound(): ClientInbound? = inbound.also { inbound = null }
+    }
     data class Rejected(val message: String) : Preparation()
 
     /** Answered by the proxy itself: the activity side query (ActivityLabel). No upstream turn. */

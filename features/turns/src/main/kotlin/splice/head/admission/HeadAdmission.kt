@@ -329,7 +329,7 @@ internal class HeadAdmission(
         // V4-174: the trace begins HERE, before the two local refusals, because a refused turn is a
         // request the head received and answered — a trace that skipped it would show a client
         // retrying for no visible reason. Null for every head whose trace is off.
-        val trace = prepared.inbound?.let { deps.stores.trace?.begin(prepared.built.meta, it) }
+        val trace = prepared.takeInbound()?.let { deps.stores.trace?.begin(prepared.built.meta, it) }
         if (refuseIfOverBudget(call, prepared, admitted, trace)) return
         if (refuseIfRateLimited(call, prepared, admitted, trace)) return
         val account = when (val selection = deps.quotaBundle.accountPool?.select(prepared.built.meta.sessionId)) {

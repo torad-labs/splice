@@ -19,11 +19,58 @@ import splice.core.turn.Usage
 import splice.provider.codex.state.CodeModeExpiredHistory
 import splice.provider.codex.state.CodeModeKeyLocks
 import splice.provider.codex.state.CodeModeRegistryAccess
+import splice.provider.codex.stream.CodeModeLiveRound
 import splice.provider.codex.stream.CodeModeSourceRecords
 import splice.provider.codex.stream.CodeModeSourceState
+import splice.provider.codex.stream.CodeModeStreamAdmission
+import splice.upstream.sse.CustomToolSource
+import java.lang.ref.Reference
+import java.lang.ref.WeakReference
 import java.util.concurrent.locks.ReentrantLock
+import kotlin.time.Duration.Companion.hours
 
 class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
+    @Test
+    @Timeout(20)
+    fun `an admitted retained round releases the raw body captured by admission`() {
+        val (round, body) = admittedRound()
+        try {
+            assertTrue(round.ready.isCompleted, "the source is admitted but its round stays retained")
+            assertTrue(collected(body), "retained round still reaches its one-use admission request body")
+            assertTrue(round.ready.isCompleted, "collection must not require releasing the retained round")
+        } finally {
+            Reference.reachabilityFence(round)
+        }
+    }
+
+    private fun admittedRound(): Pair<CodeModeLiveRound, WeakReference<String>> {
+        val body = "synthetic request body ".repeat(400_000)
+        val weak = WeakReference(body)
+        val config = CodeModeBridgeConfig({ error("runtime is not used by admission") }, stateLocation())
+        val registry = CodexCodeModeRegistry(config, Json, 1.hours)
+        val record = CodeModeRecords.of("admission-heap", 0).also { it.sourceState = CodeModeSourceState() }
+        val round = CodeModeLiveRound(
+            config,
+            registry,
+            CodexCodeModeWire(Json, {}),
+            CodeModeStreamAdmission {
+                check(body.length == 9_200_000)
+                record
+            },
+            StepSink(),
+        )
+        runBlocking { round.switching.customToolSource(CustomToolSource.Started(outer(source = ""))) }
+        return round to weak
+    }
+
+    private fun collected(body: WeakReference<String>): Boolean {
+        repeat(20) {
+            System.gc()
+            if (body.get() == null) return true
+        }
+        return false
+    }
+
     @Test
     @Timeout(20)
     fun `the bridge recovers completed raw usage after its durable claim fails without rerunning source`() = runBlocking {

@@ -199,6 +199,13 @@ internal class CodexCodeModeDriver(
         return if (record.phase == CodeModePhase.COMPLETED) finishGenerated(record, context, bodyJson) else advanced
     }
 
+    private suspend fun attachmentFailure(record: CodeModeRecord, stream: CodeModeLiveRound?): TurnOutcome =
+        if (stream?.sourceInterrupted == true) {
+            stream.outcome()
+        } else {
+            TurnOutcome.Failure(record.error.orEmpty(), cause = FailureCause.INTERNAL, phase = FailurePhase.MID_OUTPUT)
+        }
+
     private suspend fun startRuntime(
         record: CodeModeRecord,
         context: CodeModeRunContext,
@@ -207,11 +214,7 @@ internal class CodexCodeModeDriver(
         val started = starter.start(record, context, stream)
         val cell = if (stream == null) started else CodeModeStreamingCell(started, record, stream)
         if (!registry.attach(record, cell)) {
-            record to TurnOutcome.Failure(
-                record.error.orEmpty(),
-                cause = FailureCause.INTERNAL,
-                phase = FailurePhase.MID_OUTPUT,
-            )
+            record to attachmentFailure(record, stream)
         } else {
             record to machine.advance(
                 record,

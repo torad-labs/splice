@@ -13,9 +13,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -31,6 +34,7 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicTurnBody
 import splice.core.turn.ReasoningDisplay
+import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
@@ -45,6 +49,9 @@ import splice.upstream.Provider
 import splice.upstream.ProviderTuning
 import splice.upstream.RedirectableRoundPost
 import splice.upstream.RoundInterceptor
+import splice.upstream.WsRound
+import splice.upstream.WsRoundAbort
+import splice.upstream.WsRoundRunner
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.retry.InflightGate
 import splice.upstream.sse.CustomToolSource
@@ -110,6 +117,87 @@ class IndependentSourceRoundTest {
             client.close()
             upstream.close()
         }
+    }
+
+    @Test
+    @Timeout(20)
+    fun `the WS source job outlives a completed first client step and its connection`(
+        @TempDir tmp: Path,
+    ) = runBlocking {
+        val runner = GatedSourceRunner()
+        val delegate = base("http://127.0.0.1:9/responses")
+        val interceptor = SourceInterceptor()
+        val provider = SourceProvider(
+            object : Provider by delegate {
+                override val wsRunner: WsRoundRunner = runner
+            },
+            interceptor,
+        )
+        val gate = InflightGate({ 1 })
+        val head = HeadServer(provider, 0, headDeps(tmp, gate = gate))
+        val client = HttpClient(CIO)
+        head.start()
+        try {
+            val body = sourceStep(client, head.port, "ws-source-owner", """[{"role":"user","content":"go"}]""")
+            assertTrue(body.contains("tool_use"))
+            assertTrue(body.contains("message_stop"))
+            client.close()
+            assertEquals(0, runner.aborts, "ending the first client step must not abort the source WS round")
+            assertEquals(1, gate.snapshot().inflight)
+            assertEquals(0, provider.ended.get())
+            runner.release.complete(Unit)
+            val outcome = withTimeout(5_000) { checkNotNull(interceptor.reading).await() }
+            assertTrue(outcome is TurnOutcome.Success, outcome.toString())
+            assertEquals(7L, (outcome as TurnOutcome.Success).usage.outputTokens)
+            withTimeout(5_000) { while (gate.snapshot().inflight != 0) yield() }
+            assertEquals(0, runner.aborts)
+            assertEquals(1, runner.posts)
+        } finally {
+            runner.release.complete(Unit)
+            head.stop()
+            client.close()
+        }
+    }
+
+    private class GatedSourceRunner : WsRoundRunner {
+        val release = CompletableDeferred<Unit>()
+        var posts = 0
+        var aborts = 0
+        override suspend fun attempt(
+            bodyJson: String,
+            meta: TurnMeta,
+            turnHeaders: Map<String, String>,
+            creds: Credentials,
+        ): WsRound {
+            posts++
+            return WsRound(
+                flow {
+                    emit(
+                        Json.parseToJsonElement(
+                            """{"type":"response.output_item.added","output_index":0,"item":{"type":"custom_tool_call","id":"source-item","call_id":"source-call","name":"exec","input":""}}""",
+                        ).jsonObject,
+                    )
+                    emit(
+                        Json.parseToJsonElement(
+                            """{"type":"response.custom_tool_call_input.delta","output_index":0,"delta":"await tools.Read({});"}""",
+                        ).jsonObject,
+                    )
+                    release.await()
+                    emit(
+                        Json.parseToJsonElement(
+                            """{"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":100,"output_tokens":7},"output":[{"type":"custom_tool_call","id":"source-item","call_id":"source-call","name":"exec","input":"await tools.Read({});"}]}}""",
+                        ).jsonObject,
+                    )
+                },
+                WsRoundAbort {
+                    aborts++
+                    release.completeExceptionally(java.io.IOException("synthetic WS source aborted"))
+                },
+            )
+        }
+        override fun isFailureTerminal(event: kotlinx.serialization.json.JsonObject): Boolean = false
+        override fun roundEnded(meta: TurnMeta, ok: Boolean) = Unit
+        override fun roundBypassed(meta: TurnMeta) = Unit
     }
 
     @ParameterizedTest

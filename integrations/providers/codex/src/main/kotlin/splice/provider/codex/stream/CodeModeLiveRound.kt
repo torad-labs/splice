@@ -2,15 +2,19 @@
 package splice.provider.codex.stream
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
 import splice.core.util.Cancellables
+import splice.core.util.SafeFailureText
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModePersistenceException
 import splice.provider.codex.CodeModeRecord
@@ -47,6 +51,9 @@ internal class CodeModeLiveRound(
 
     @Volatile private var upstreamEnded = false
 
+    @Volatile var sourceInterrupted = false
+        private set
+
     fun start(scope: CoroutineScope, post: RedirectableRoundPost, body: String, end: TurnEnd) {
         check(finished == null)
         finished = scope.async(start = CoroutineStart.UNDISPATCHED) {
@@ -55,7 +62,6 @@ internal class CodeModeLiveRound(
                 val outcome = post.into(body, switching)
                 upstreamEnded = true
                 finish(outcome)
-                outcome
             } catch (error: CancellationException) {
                 cancelled(error)
                 throw error
@@ -71,12 +77,20 @@ internal class CodeModeLiveRound(
                 if (!ready.isCompleted) ready.complete(null)
             }
         }.also { reader ->
-            reader.invokeOnCompletion { cause ->
-                try {
-                    died(cause)
-                } finally {
-                    end.ended()
-                }
+            reader.invokeOnCompletion { cause -> completed(scope, cause, end) }
+        }
+    }
+
+    /** Non-suspending cleanup runs immediately even on cancellation, outside coroutine completion machinery. */
+    private fun completed(scope: CoroutineScope, cause: Throwable?, end: TurnEnd) {
+        val handler = CoroutineExceptionHandler { _, failure ->
+            config.log("[code-mode] source completion callback failed: ${SafeFailureText.render(failure)}")
+        }
+        scope.launch(NonCancellable + handler, CoroutineStart.UNDISPATCHED) {
+            try {
+                died(cause)
+            } finally {
+                end.ended()
             }
         }
     }
@@ -100,7 +114,18 @@ internal class CodeModeLiveRound(
 
     private fun finish(outcome: TurnOutcome) = synchronized(lifecycle) {
         if (headStopped) throw CancellationException("code-mode head stopped")
+        sourceInterrupted = (outcome as? TurnOutcome.Failure)?.cause in SOURCE_TEAR_CAUSES
         capture.finish(outcome)
+        if (sourceInterrupted && outcome is TurnOutcome.Failure) {
+            outcome.copy(
+                cause = FailureCause.UPSTREAM_CONN_RESET,
+                phase = FailurePhase.MID_OUTPUT,
+                deterministic = false,
+                partial = null,
+            )
+        } else {
+            outcome
+        }
     }
 
     private fun cancelled(error: CancellationException) {
@@ -118,13 +143,18 @@ internal class CodeModeLiveRound(
         upstreamEnded = true
         if (headStopped) throw CancellationException("code-mode head stopped", error)
         val detail = SOURCE_FAILED
+        sourceInterrupted = error is IOException && error !is CodeModePersistenceException
         source.fail(detail)
         if (error is CodeModePersistenceException) {
             if (!ready.isCompleted) ready.completeExceptionally(error)
             throw error
         }
         record?.takeUnless(CodeModeRecord::terminal)?.let { registry.lose(it, detail) }
-        TurnOutcome.Failure(detail, cause = FailureCause.INTERNAL, phase = FailurePhase.MID_OUTPUT)
+        TurnOutcome.Failure(
+            detail,
+            cause = if (sourceInterrupted) FailureCause.UPSTREAM_CONN_RESET else FailureCause.INTERNAL,
+            phase = FailurePhase.MID_OUTPUT,
+        )
     }
 
     fun owns(turn: CodexCodeModeBridge.Turn): Boolean = synchronized(lifecycle) {
@@ -163,3 +193,8 @@ internal class CodeModeLiveRound(
 }
 
 private const val SOURCE_FAILED = "upstream source failed; source was not rerun"
+private val SOURCE_TEAR_CAUSES = setOf(
+    FailureCause.UPSTREAM_CONN_RESET,
+    FailureCause.UPSTREAM_TRUNCATED,
+    FailureCause.UPSTREAM_STALLED,
+)

@@ -7,6 +7,8 @@ import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.provider.codex.state.CodeModeWorkerRecovery
+import splice.provider.codex.stream.CodeModeSourceInterruptedException
+import splice.provider.codex.stream.CodeModeStreamingCell
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
@@ -53,7 +55,13 @@ internal class CodexCodeModeMachine(
         }
     }
 
-    suspend fun emit(record: CodeModeRecord, calls: List<CodeModePending>, sink: WireSink): TurnOutcome {
+    suspend fun emit(
+        record: CodeModeRecord,
+        calls: List<CodeModePending>,
+        sink: WireSink,
+        cell: CodeModeCell? = null,
+    ): TurnOutcome {
+        registry.changes.edit(record) { checkIssuable(it, cell) }
         val previous = record.issued.firstOrNull { it.requestDigest == record.lastDigest }
         val served = previous?.calls ?: calls
         if (served.isEmpty()) {
@@ -68,7 +76,10 @@ internal class CodexCodeModeMachine(
             val issued = CodeModeIssuedStep(record.lastDigest, calls.map(CodeModePending::copy))
             // A failed save: the worker already advanced, but no callback reached the client. A retry
             // reuses persisted pending ids and earns this issuance with a successful save.
-            registry.changes.save(record, undo = { it.issued.remove(issued) }) { it.issued += issued }
+            registry.changes.save(record, undo = { it.issued.remove(issued) }) {
+                checkIssuable(it, cell)
+                it.issued += issued
+            }
         }
         return replay(served, sink)
     }
@@ -111,7 +122,7 @@ internal class CodexCodeModeMachine(
 
     private suspend fun advanceCell(request: CodeModeAdvanceRequest, cell: CodeModeCell): TurnOutcome = try {
         registry.changes.edit(request.record) { it.rounds++ }
-        dispatchStep(request, cell.advance(request.results))
+        dispatchStep(request, cell, cell.advance(request.results))
     } catch (error: CancellationException) {
         started.remove(request.record.id)
         registry.lose(request.record, "code-mode cell cancelled: ${lostMessage(request.record)}", error)
@@ -139,17 +150,27 @@ internal class CodexCodeModeMachine(
         )
     }
 
-    private fun ioFailure(record: CodeModeRecord, error: IOException): TurnOutcome.Failure =
-        if (error is CodeModeWorkerLostException) {
+    private fun ioFailure(record: CodeModeRecord, error: IOException): TurnOutcome.Failure = when (error) {
+        is CodeModeSourceInterruptedException -> {
+            started.remove(record.id)
+            val message = "upstream code-mode source interrupted; ${lostMessage(record)}"
+            registry.lose(record, message)
+            TurnOutcome.Failure(message, cause = FailureCause.UPSTREAM_CONN_RESET, phase = FailurePhase.MID_OUTPUT)
+        }
+        is CodeModeWorkerLostException -> {
             started.remove(record.id)
             workerRecovery.lost(record)
-        } else {
-            poison(record, runtimeFailure(error, record))
         }
+        else -> poison(record, runtimeFailure(error, record))
+    }
 
-    private suspend fun dispatchStep(request: CodeModeAdvanceRequest, step: CodeModeStep): TurnOutcome =
+    private suspend fun dispatchStep(
+        request: CodeModeAdvanceRequest,
+        cell: CodeModeCell,
+        step: CodeModeStep,
+    ): TurnOutcome =
         when (step) {
-            is CodeModeStep.Calls -> acceptCalls(request, step.calls)
+            is CodeModeStep.Calls -> acceptCalls(request, cell, step.calls)
             is CodeModeStep.Completed -> complete(request.record, step)
         }
 
@@ -162,8 +183,15 @@ internal class CodexCodeModeMachine(
             "accepted results=${record.results.size}; source was not rerun"
     }
 
+    private fun checkIssuable(record: CodeModeRecord, cell: CodeModeCell?) {
+        val streaming = cell as? CodeModeStreamingCell ?: return
+        streaming.checkSource()
+        check(record.phase != CodeModePhase.LOST) { "code-mode source is lost; source was not rerun" }
+    }
+
     private suspend fun acceptCalls(
         request: CodeModeAdvanceRequest,
+        cell: CodeModeCell,
         calls: List<CodeModeCall>,
     ): TurnOutcome {
         validation.calls(request.record, request.turn.tools, calls)?.let { return poison(request.record, it) }
@@ -177,11 +205,12 @@ internal class CodexCodeModeMachine(
             )
         }
         registry.changes.save(request.record) { record ->
+            checkIssuable(record, cell)
             record.totalCalls += calls.size
             record.pending += pending
             record.updatedAt = config.clock.millis()
         }
-        return emit(request.record, request.record.visiblePending(), request.sink)
+        return emit(request.record, request.record.visiblePending(), request.sink, cell)
     }
 
     private fun complete(record: CodeModeRecord, step: CodeModeStep.Completed): TurnOutcome {

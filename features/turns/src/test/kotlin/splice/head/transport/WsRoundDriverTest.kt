@@ -33,6 +33,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.Assertions.assertDoesNotThrow
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
@@ -42,6 +43,8 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -159,6 +162,7 @@ private class StallingRunner(
     private val events: List<String>,
     /** The socket's last-ping age the round reports to the watchdog; never pinged by default. */
     private val pingAgoMs: Long = NEVER_PINGED_MS,
+    private val abortFailure: RuntimeException? = null,
 ) : WsRoundRunner {
     var aborts = 0
     var endedOk = 0
@@ -179,6 +183,7 @@ private class StallingRunner(
         abort = WsRoundAbort {
             aborts += 1
             torn.complete(Unit)
+            abortFailure?.let { throw it }
         },
         pathPulse = WsPathPulse { pingAgoMs },
     )
@@ -661,24 +666,33 @@ class WsRoundDriverTest {
     // runCurrent, not advanceUntilIdle: the watchdog poller loops on delay forever, so advancing
     // virtual time to idle would never return. Opted in narrowly, on this arm alone.
     @OptIn(ExperimentalCoroutinesApi::class)
-    @Test
-    fun `cancelling the turn still aborts the round beneath it - DR-7`() = runTest {
-        val runner = StallingRunner(listOf("""{"type":"response.created","response":{"id":"r1"}}"""))
+    @ParameterizedTest
+    @ValueSource(strings = ["clean", "throwing"])
+    fun `cancelling the turn supervises the round abort - DR-7`(variant: String) = runTest {
+        val runner = StallingRunner(
+            listOf("""{"type":"response.created","response":{"id":"r1"}}"""),
+            abortFailure = if (variant == "throwing") {
+                IllegalStateException("synthetic private transport bytes")
+            } else {
+                null
+            },
+        )
         val inputs = coldFlowInputs(RecordingTerminal(), this)
+        val lines = mutableListOf<String>()
         val driver = WsRoundDriver(
             provider(runner),
-            log = {},
+            log = { lines += it },
             classifyZeroEvent = ZeroEventClassifier { _, outcome, _, _ -> outcome },
         )
-
         val round = launch { driver.run(inputs) }
         runCurrent()
         assertEquals(0, runner.aborts, "nothing has cancelled anything yet")
-        inputs.turnJob.cancel()
+        assertDoesNotThrow { inputs.turnJob.cancel() }
         round.join()
         inputs.drive.slot.release()
-
         assertEquals(1, runner.aborts, "the cancelled turn must abort the round beneath it")
+        assertEquals(variant == "throwing", lines.any { "websocket round abort failed" in it }, lines.toString())
+        assertFalse(lines.any { "synthetic private transport bytes" in it })
     }
 
     /** THE BOUND on both of the above: an ordinary round must never abort itself. The round job is

@@ -12,14 +12,20 @@
 package splice.head.transport
 
 import kotlinx.coroutines.CompletableJob
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.head.turn.TurnDrive
 import splice.head.turn.ZeroEventClassifier
 import splice.upstream.Provider
+import splice.upstream.WsRoundAbort
 import splice.upstream.WsRoundRunner
 import splice.upstream.transport.HeaderRedaction
 
@@ -121,7 +127,7 @@ internal class WsRoundDriver(
             // which is what makes this paragraph true as written.
             val round = Job(inputs.turnJob)
             roundJob = round
-            round.invokeOnCompletion { cause -> if (cause != null) accepted.abort.abort() }
+            round.invokeOnCompletion { cause -> if (cause != null) abortRound(inputs, accepted.abort) }
             // The round's socket pulse rides along (2026-09-06): a silent round on a path the server
             // is still pinging is held, not reaped — see TurnWatchdog.launchIn.
             poller = drive.watchdog.launchIn(
@@ -153,6 +159,17 @@ internal class WsRoundDriver(
             // connection alone; a no-op if the watchdog already cancelled it. Without this the job
             // stays an incomplete child of turnJob and the turn cannot finish.
             roundJob?.complete()
+        }
+    }
+
+    /** The abort must run even after its owner is cancelled, but must not throw through Job's handlers.
+     *  It cannot suspend, so an undispatched root completes before returning and reports failure by class. */
+    private fun abortRound(inputs: WsRoundInputs, abort: WsRoundAbort) {
+        val handler = CoroutineExceptionHandler { _, failure ->
+            log("[${provider.key}] websocket round abort failed: ${SafeFailureText.render(failure)}\n")
+        }
+        inputs.scope.launch(NonCancellable + handler, CoroutineStart.UNDISPATCHED) {
+            abort.abort()
         }
     }
 

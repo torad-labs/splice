@@ -242,8 +242,19 @@ internal class DaemonBoundary(private val listing: DirectoryListing = FilesListi
      *  content of the file whose parse failed — so the frames carry the whole diagnostic value of
      *  a stack trace and none of its DR-65 hazard. Bounded because an uncaught boot failure can
      *  carry a deep or recursive trace, and this writes synchronously into a rotating log. */
-    private fun bootFrames(failure: Throwable): String =
-        failure.stackTrace.take(BOOT_TRACE_FRAMES).joinToString("") { frame -> "    at $frame\n" }
+    private fun bootFrames(failure: Throwable): String = buildString {
+        val seen = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Throwable, Boolean>())
+        val pending = ArrayDeque<Pair<String, Throwable>>()
+        pending.addLast("failure" to failure)
+        while (pending.isNotEmpty() && seen.size < BOOT_TRACE_FAILURES) {
+            val (relation, current) = pending.removeFirst()
+            if (!seen.add(current)) continue
+            append("$relation: ${SafeFailureText.render(current)}\n")
+            current.stackTrace.take(BOOT_TRACE_FRAMES).forEach { frame -> append("    at $frame\n") }
+            current.cause?.let { pending.addLast("caused by" to it) }
+            current.suppressed.take(BOOT_TRACE_FAILURES).forEach { pending.addLast("suppressed" to it) }
+        }
+    }
 }
 
 // A log line has to date itself. daemon.log rotates by SIZE, never by day, so one file spans
@@ -270,3 +281,6 @@ private const val MAX_LOG_BYTES = 64L * 1024 * 1024
 // DR-170: deep enough to name the failing call chain through the daemon's own boot, short enough
 // that a recursive trace cannot flood a synchronous write into the log.
 private const val BOOT_TRACE_FRAMES = 20
+
+// Eight links cover nested coroutine/transport wrappers while capping a synchronous crash write at 160 frames.
+private const val BOOT_TRACE_FAILURES = 8

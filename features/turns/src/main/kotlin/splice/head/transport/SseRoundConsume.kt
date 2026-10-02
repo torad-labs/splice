@@ -6,6 +6,7 @@ package splice.head.transport
 import kotlinx.coroutines.Job
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
+import splice.head.turn.TurnDrive
 import splice.head.turn.TurnTelemetry
 import splice.upstream.NEVER_PINGED_MS
 import splice.upstream.Provider
@@ -22,6 +23,17 @@ internal class SseRoundConsume(
     private val telemetry: TurnTelemetry,
     private val tearAwareEvents: TearAwareEvents,
 ) {
+    /** The first-event wait excludes client opening, which is synchronous downstream delivery too. */
+    private suspend fun openClient(drive: TurnDrive) {
+        val openingStartedMs = drive.perf.elapsedMs()
+        try {
+            drive.emitter.ensureStarted()
+        } finally {
+            val blockedMs = drive.perf.elapsedMs() - openingStartedMs
+            drive.perf.maxCount(PerfKeys.UP_BLOCKED_MAX_MS, blockedMs)
+        }
+    }
+
     suspend fun consume(inputs: WsRoundInputs, resp: UpstreamResponse): TurnOutcome {
         val drive = inputs.drive
         drive.slot.touch()
@@ -30,7 +42,9 @@ internal class SseRoundConsume(
         // UpstreamClient.attemptRequest), so a pre-stream failure still writes its error frame
         // first and nothing here pre-empts it. Recovers p50 2840ms of frozen screen per codex
         // turn; also gives the keepalive pinger an opened stream to ping into.
-        drive.emitter.ensureStarted()
+        val openingStartedMs = drive.perf.elapsedMs()
+        openClient(drive)
+        val postedAtMs = resp.postedAtMs?.plus(drive.perf.elapsedMs() - openingStartedMs)
         // Fresh upstream round/attempt: clear a stale Idle sentinel (DR-7). The idle TIER needs no
         // reset — the poller below reads this round's own client-frame probe, so a (possibly long,
         // silent) prefill is judged against firstByteTimeout until the client has seen content.
@@ -95,7 +109,7 @@ internal class SseRoundConsume(
             // stays for the WS overlay, which runs at most once per round and always FIRST.
             val eventsBase = drive.perfCounter(PerfKeys.EVENTS_IN)
             val capture = ZeroEventCapture()
-            val events = tearAwareEvents.run(drive, body, capture, inputs.frameEmittedThisRound)
+            val events = tearAwareEvents.run(drive, body, capture, inputs.frameEmittedThisRound, postedAtMs)
             val signals = TurnSignals(
                 watchdogFired = { drive.watchdog.fired },
                 clientGone = { inputs.clientGone() },

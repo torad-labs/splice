@@ -8,18 +8,28 @@
 package splice.head.turn
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.FailureCause
@@ -58,6 +68,171 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
+/** One TurnFinish with observable instruments; [tag] isolates each test's files. */
+private class Rig(tmp: Path, tag: String, clock: ElapsedClock = ElapsedClock { 5L }) {
+    val logs = mutableListOf<String>()
+    val log = LogSink { logs.add(it) }
+    val health = HeadHealthCounters()
+    val perfFile: Path = tmp.resolve("perf-$tag.jsonl")
+    val telemetry = TurnTelemetry("codex", PerfStats(perfFile), log, clock)
+    val usageStore = UsageStore(tmp.resolve("u-$tag.json"), tmp.resolve("rl-$tag.json"))
+    val usageStamp = TurnUsageStamp(usageStore, log, telemetry)
+    val finish = TurnFinish(
+        ElapsedClock { 5L },
+        log,
+        usageStamp,
+        health,
+        telemetry,
+    )
+
+    suspend fun drive(
+        emitter: TurnTerminal,
+        watchdog: TurnWatchdog = TurnWatchdog(WatchdogBudget(10.seconds, 10.seconds, 30.seconds)),
+    ): TurnDrive = TurnDrive(
+        requestBody = buildJsonObject { },
+        meta = TurnMeta(
+            compact = false,
+            showReasoning = ReasoningDisplay.TEXT,
+            stream = false,
+            originalModel = "claude-codex--gpt-5.6-sol",
+            upstreamModel = "gpt-5.6-sol",
+            clientMaxTokens = 100,
+            effort = "high",
+            summary = "detailed",
+            budgetTokens = null,
+        ),
+        emitter = emitter,
+        watchdog = watchdog,
+        slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
+        pipeline = TurnPipeline(
+            CompactStats(perfFile.resolveSibling("compact-dr8x.jsonl")),
+            log = log,
+            clampOutput = OutputClamp { it },
+        ),
+        t0 = 0,
+        trace = null,
+        perf = TurnPerf(),
+        turnHeaders = emptyMap(),
+        signals = RunnerSignals(),
+        channel = ClientChannel(
+            ImmediateSseWriter(writeRaw = { _ -> }, flushRaw = {}),
+            Mutex(),
+            AtomicBoolean(false),
+        ),
+        toolSearch = null,
+    )
+}
+
+/** The actual persisted row must include paced delivery, including cancellation's cleanup. */
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class TurnPerfRowTest {
+    private lateinit var tmp: Path
+
+    @BeforeAll
+    fun setUp(@TempDir tempDir: Path) {
+        tmp = tempDir
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    fun `persisted perf row includes the completed paced tail`(cancelBeforeRecording: Boolean) = runTest {
+        val clock = ElapsedClock { testScheduler.currentTime }
+        val rig = Rig(tmp, "paced-row-$cancelBeforeRecording", clock)
+        val emitter = CollectingTerminal("synthetic", UsagePayloadBuilder { buildJsonObject { } })
+        val drive = rig.drive(emitter).copy(perf = TurnPerf(clock))
+        val pacing = drive.channel.launchPacer(
+            this,
+            kotlinx.coroutines.Job(),
+            Ticker { interval ->
+                delay(interval)
+                true
+            },
+            clock,
+            splice.head.wire.LostClient("synthetic", {}),
+        )
+        try {
+            drive.channel.writeMutex.withLock {
+                repeat(190) {
+                    drive.channel.timedClientWrite(
+                        "event: content_block_delta\ndata: {\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"synthetic\"}}\n\n",
+                        drive.perf,
+                        clock,
+                    )
+                }
+                drive.channel.timedClientWrite("event: message_stop\ndata: {}\n\n", drive.perf, clock)
+            }
+            launch(start = CoroutineStart.UNDISPATCHED) {
+                if (cancelBeforeRecording) currentCoroutineContext().cancel()
+                rig.telemetry.recordPerf(drive, "ok")
+            }.join()
+            drive.channel.finishPacing(pacing, clock)
+            AsyncFileIo.drain()
+            val row = Json.parseToJsonElement(Files.readAllLines(rig.perfFile).single()).jsonObject
+            val held = row[PerfKeys.OUT_HOLD_MAX_MS]?.jsonPrimitive?.long ?: 0L
+            assertTrue(held > 0, "the persisted row must include the held tail, not just the first write")
+            assertEquals(drive.perf.snapshot().counters[PerfKeys.OUT_HOLD_MAX_MS], held)
+            assertEquals(191L, row.getValue(PerfKeys.FRAMES_OUT).jsonPrimitive.long)
+            assertEquals(
+                drive.perf.snapshot().counters[PerfKeys.OUT_GAP_MAX_MS],
+                row.getValue(PerfKeys.OUT_GAP_MAX_MS).jsonPrimitive.long,
+            )
+        } finally {
+            pacing.cancel()
+            drive.slot.release()
+        }
+    }
+
+    @Test
+    fun `a cancelled paced socket write still publishes its row and preserves cancellation`() = runBlocking {
+        val rig = Rig(tmp, "paced-write-cancel")
+        val emitter = CollectingTerminal("synthetic", UsagePayloadBuilder { buildJsonObject { } })
+        val cancellation = CancellationException("synthetic cancelled socket")
+        var writes = 0
+        val channel = ClientChannel(
+            ImmediateSseWriter(writeRaw = { if (++writes > 1) throw cancellation }, flushRaw = {}),
+            Mutex(),
+            AtomicBoolean(false),
+        )
+        val drive = rig.drive(emitter).copy(channel = channel)
+        val pacing = channel.launchPacer(
+            this,
+            kotlinx.coroutines.Job(),
+            Ticker { false },
+            ElapsedClock { 5L },
+            splice.head.wire.LostClient("synthetic", {}),
+        )
+        try {
+            channel.writeMutex.withLock {
+                repeat(2) {
+                    channel.timedClientWrite(
+                        "event: content_block_delta\ndata: {\"delta\":{\"type\":\"text_delta\",\"text\":\"synthetic\"}}\n\n",
+                        drive.perf,
+                        ElapsedClock { 5L },
+                    )
+                }
+            }
+            pacing.cancel()
+            var thrown: CancellationException? = null
+            try {
+                rig.telemetry.recordPerf(drive, "cancelled")
+            } catch (failure: CancellationException) {
+                thrown = failure
+            }
+            assertTrue(
+                generateSequence<Throwable>(thrown) { it.cause }.any { it === cancellation },
+                "coroutine stack recovery may wrap the cancellation, but must retain its original cause",
+            )
+            assertTrue(AsyncFileIo.drain())
+            val row = Json.parseToJsonElement(Files.readAllLines(rig.perfFile).single()).jsonObject
+            assertEquals(1L, row.getValue(PerfKeys.FRAMES_OUT).jsonPrimitive.long)
+        } finally {
+            pacing.cancel()
+            drive.slot.release()
+        }
+    }
+}
+
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TurnFinishTest {
 
@@ -76,61 +251,6 @@ class TurnFinishTest {
             now += intervalMs
             true
         }
-    }
-
-    /** One TurnFinish with observable instruments; [tag] isolates each test's files. */
-    private class Rig(tmp: Path, tag: String) {
-        val logs = mutableListOf<String>()
-        val log = LogSink { logs.add(it) }
-        val health = HeadHealthCounters()
-        val perfFile: Path = tmp.resolve("perf-$tag.jsonl")
-        val telemetry = TurnTelemetry("codex", PerfStats(perfFile), log, ElapsedClock { 5L })
-        val usageStore = UsageStore(tmp.resolve("u-$tag.json"), tmp.resolve("rl-$tag.json"))
-        val usageStamp = TurnUsageStamp(usageStore, log, telemetry)
-        val finish = TurnFinish(
-            ElapsedClock { 5L },
-            log,
-            usageStamp,
-            health,
-            telemetry,
-        )
-
-        suspend fun drive(
-            emitter: TurnTerminal,
-            watchdog: TurnWatchdog = TurnWatchdog(WatchdogBudget(10.seconds, 10.seconds, 30.seconds)),
-        ): TurnDrive = TurnDrive(
-            requestBody = buildJsonObject { },
-            meta = TurnMeta(
-                compact = false,
-                showReasoning = ReasoningDisplay.TEXT,
-                stream = false,
-                originalModel = "claude-codex--gpt-5.6-sol",
-                upstreamModel = "gpt-5.6-sol",
-                clientMaxTokens = 100,
-                effort = "high",
-                summary = "detailed",
-                budgetTokens = null,
-            ),
-            emitter = emitter,
-            watchdog = watchdog,
-            slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
-            pipeline = TurnPipeline(
-                CompactStats(perfFile.resolveSibling("compact-dr8x.jsonl")),
-                log = log,
-                clampOutput = OutputClamp { it },
-            ),
-            t0 = 0,
-            trace = null,
-            perf = TurnPerf(),
-            turnHeaders = emptyMap(),
-            signals = RunnerSignals(),
-            channel = ClientChannel(
-                ImmediateSseWriter(writeRaw = { _ -> }, flushRaw = {}),
-                Mutex(),
-                AtomicBoolean(false),
-            ),
-            toolSearch = null,
-        )
     }
 
     private suspend fun finishAndReadTurnLine(tag: String, watchdog: TurnWatchdog): String {

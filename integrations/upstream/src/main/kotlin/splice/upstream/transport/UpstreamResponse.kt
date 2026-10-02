@@ -15,6 +15,11 @@ public class UpstreamResponse(
      *  double in the DR-21 production-path test. Default references the ctor's [resp]. */
     private val bodyChannelSource: BodyChannelSource = BodyChannelSource { resp.bodyAsChannel() },
 ) {
+    /** This attempt's POST start on its TurnPerf clock; absent when the request was not instrumented.
+     *  Written by the transport before this response reaches its consumer, never inherited from a retry. */
+    public var postedAtMs: Long? = null
+        internal set
+
     public val status: Int get() = resp.status.value
 
     public fun header(name: String): String? = resp.headers[name]

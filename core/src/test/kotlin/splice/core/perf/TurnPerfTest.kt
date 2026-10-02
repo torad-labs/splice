@@ -64,6 +64,25 @@ class TurnPerfTest {
     }
 
     @Test
+    fun `unmeasured timings are absent and a measured zero retains its event kind`() {
+        val perf = TurnPerf { 0L }
+        val unmeasured = perf.snapshot()
+        for (key in listOf(
+            PerfKeys.UP_GAP_MAX_MS,
+            PerfKeys.UP_GAPS_2S,
+            PerfKeys.UP_BLOCKED_MAX_MS,
+            PerfKeys.OUT_HOLD_MAX_MS,
+            PerfKeys.OUT_GAP_MAX_MS,
+        )) {
+            assertTrue(key !in unmeasured.counters, "unmeasured $key must be absent")
+        }
+        assertEquals(null, unmeasured.upstreamGapEnd)
+        perf.maxCount(PerfKeys.UP_GAP_MAX_MS, 0, UpstreamGapEnd.TEXT_DELTA)
+        assertEquals(0L, perf.snapshot().counters[PerfKeys.UP_GAP_MAX_MS])
+        assertEquals(UpstreamGapEnd.TEXT_DELTA, perf.snapshot().upstreamGapEnd)
+    }
+
+    @Test
     fun `maxima keep the longest value and its event kind while snapshots remain immutable`() {
         val perf = TurnPerf { 0L }
         perf.maxCount(PerfKeys.UP_GAP_MAX_MS, 2_500, UpstreamGapEnd.THINKING_DELTA)
@@ -108,8 +127,7 @@ class TurnPerfTest {
         val line = perf.snapshot().perfLine("codex", "ok", compact = false, model = "gpt-5.6-sol")
         assertEquals(
             "[codex] perf outcome=ok compact=false model=gpt-5.6-sol recv=3 headers=903 total=904 | " +
-                "up_gap_max_ms=0 up_gaps_2s=0 up_blocked_max_ms=0 out_hold_max_ms=0 out_gap_max_ms=0 " +
-                "out_tokens=850 up_gap_end=other\n",
+                "out_tokens=850\n",
             line,
         )
         val tagged = perf.snapshot().perfLine(

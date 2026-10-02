@@ -9,6 +9,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.perf.PerfKeys
@@ -75,7 +76,8 @@ class PacedBurstTest {
     fun `successful client write gaps skip the first write and retain the longest interval`() = runBlocking {
         time.nowMs = 5_000
         write(structural("message_start"))
-        assertEquals(0L, perf.snapshot().counters[PerfKeys.OUT_GAP_MAX_MS])
+        assertNull(perf.snapshot().counters[PerfKeys.OUT_GAP_MAX_MS], "a single write has no inter-write interval")
+        assertEquals(0L, perf.snapshot().counters[PerfKeys.OUT_HOLD_MAX_MS])
         time.nowMs += 73
         channel.writeMutex.withLock {
             channel.timedProgressWrite(structural("ping"), perf, time.clock)

@@ -20,6 +20,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
@@ -53,6 +55,7 @@ import splice.core.util.ElapsedClock
 import splice.head.MockChatGptUpstream
 import splice.head.RecordingSink2
 import splice.head.TestResponsesProvider
+import splice.head.admission.TurnQuota
 import splice.head.admission.admittedSlot
 import splice.head.compact.CompactStats
 import splice.head.perf.PerfStats
@@ -61,18 +64,26 @@ import splice.head.round.RunnerSignals
 import splice.head.turn.TurnDrive
 import splice.head.turn.TurnTelemetry
 import splice.head.usage.OutputClamp
+import splice.head.usage.UsageStore
 import splice.head.wire.ClientChannel
 import splice.head.wire.ImmediateSseWriter
 import splice.head.wire.TurnTerminal
 import splice.upstream.ClientFrameEmitted
 import splice.upstream.Provider
 import splice.upstream.ProviderTuning
+import splice.upstream.RetryBackoff
+import splice.upstream.RetryNotice
+import splice.upstream.StreamTranslator
+import splice.upstream.TurnSignals
 import splice.upstream.retry.InflightGate
 import splice.upstream.retry.LiveLimit
 import splice.upstream.retry.TurnWatchdog
 import splice.upstream.retry.WatchdogFired
 import splice.upstream.sse.WireSink
+import splice.upstream.transport.StreamTornBeforeClient
+import splice.upstream.transport.UpstreamClient
 import splice.upstream.transport.UpstreamResponse
+import java.net.SocketException
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.seconds
@@ -135,6 +146,7 @@ class SseRoundConsumeTest {
     private suspend fun drive(
         budget: WatchdogBudget = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
         perf: TurnPerf = TurnPerf(),
+        emitter: TurnTerminal = NoopTerminal(),
     ): TurnDrive = TurnDrive(
         requestBody = buildJsonObject { },
         meta = TurnMeta(
@@ -148,7 +160,7 @@ class SseRoundConsumeTest {
             summary = "detailed",
             budgetTokens = null,
         ),
-        emitter = NoopTerminal(),
+        emitter = emitter,
         watchdog = TurnWatchdog(budget),
         slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
         pipeline = TurnPipeline(
@@ -233,6 +245,180 @@ class SseRoundConsumeTest {
         } finally {
             drive.slot.release()
         }
+    }
+
+    @Test
+    fun `continuation POST wait reaches upstream timing without prior round processing`() = runBlocking {
+        var now = 0L
+        var waitMs = 2_500L
+        val perf = TurnPerf { now }
+        val timedProvider = object : Provider by provider() {
+            override fun extraHeaders(creds: Credentials): Map<String, String> {
+                now += waitMs
+                return emptyMap()
+            }
+        }
+        val upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 1, client = client)
+        val post = SseRoundPost(
+            timedProvider,
+            upstream,
+            UsageStore(tmp.resolve("continuation-usage.json"), tmp.resolve("continuation-rate.json")),
+            TurnQuota(null, emptyMap(), null),
+            SseRoundConsume(
+                timedProvider,
+                ZeroEventFailure(timedProvider, {}),
+                TurnTelemetry("synthetic", PerfStats(tmp.resolve("continuation-perf.jsonl")), {}, ElapsedClock { now }),
+                TearAwareEvents(timedProvider, {}),
+            ),
+            RetryNotice {},
+        )
+        val drive = drive(
+            perf = perf,
+            emitter = object : TurnTerminal by NoopTerminal() {
+                override suspend fun ensureStarted() {
+                    now += 10_000 // Slow downstream opening must not look like upstream silence.
+                }
+            },
+        )
+        val inputs = WsRoundInputs(
+            drive,
+            """{"instructions":"SCENARIO:hello"}""",
+            RecordingSink2(),
+            this,
+            Job(),
+            ClientFrameEmitted { true },
+            0,
+        )
+        try {
+            post.post(inputs)
+            now += 10_000 // Outside either POST: must not be charged to the next round's upstream wait.
+            waitMs = 3_500
+            post.post(inputs)
+            assertEquals(3_500L, perf.snapshot().counters[PerfKeys.UP_GAP_MAX_MS])
+            assertEquals(2L, perf.snapshot().counters[PerfKeys.UP_GAPS_2S])
+            assertEquals(10_000L, perf.snapshot().counters[PerfKeys.UP_BLOCKED_MAX_MS])
+        } finally {
+            inputs.turnJob.cancel()
+            drive.slot.release()
+        }
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test
+    fun `unclassified Responses and chat events are unknown rather than Anthropic other`() = runTest {
+        for (event in listOf(
+            """{"type":"response.output_text.delta","delta":"synthetic"}""",
+            """{"choices":[{"delta":{"content":"synthetic"}}]}""",
+        )) {
+            val perf = TurnPerf { testScheduler.currentTime }
+            val drive = drive(perf = perf)
+            val body = ByteChannel(autoFlush = true)
+            val reader = async(start = CoroutineStart.UNDISPATCHED) {
+                TearAwareEvents(provider(), {}).run(
+                    drive,
+                    body,
+                    ZeroEventCapture(),
+                    ClientFrameEmitted { true },
+                ).toList()
+            }
+            try {
+                body.writeStringUtf8("data: {\"type\":\"ping\"}\n\n")
+                delay(1)
+                delay(2_500)
+                body.writeStringUtf8("data: $event\n\n")
+                body.close()
+                reader.await()
+                assertEquals(2_501L, perf.snapshot().counters[PerfKeys.UP_GAP_MAX_MS])
+                assertEquals("unknown", perf.snapshot().upstreamGapEnd?.wire)
+            } finally {
+                body.cancel(null)
+                reader.cancel()
+                drive.slot.release()
+            }
+        }
+    }
+
+    @Test
+    fun `a pre-content reissue does not count the first attempt or backoff as upstream silence`() = runBlocking {
+        var now = 0L
+        var consumes = 0
+        val perf = TurnPerf { now }
+        val base = provider()
+        val timedProvider = object : Provider by base {
+            override fun extraHeaders(creds: Credentials): Map<String, String> {
+                now += 1_000
+                return emptyMap()
+            }
+
+            override fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator {
+                val normal = base.streamTranslator(meta, signals)
+                return StreamTranslator { events, sink ->
+                    if (++consumes == 1) {
+                        events.first()
+                        throw StreamTornBeforeClient(SocketException("synthetic pre-content reset"))
+                    }
+                    normal.driveTurn(events, sink)
+                }
+            }
+        }
+        val upstream = UpstreamClient(
+            totalTimeoutMs = 30_000,
+            maxRetries = 1,
+            client = client,
+            backoff = RetryBackoff { _, _ -> now += 200 },
+            clock = ElapsedClock { now },
+        )
+        val post = SseRoundPost(
+            timedProvider,
+            upstream,
+            UsageStore(tmp.resolve("reissue-usage.json"), tmp.resolve("reissue-rate.json")),
+            TurnQuota(null, emptyMap(), null),
+            SseRoundConsume(
+                timedProvider,
+                ZeroEventFailure(timedProvider, {}),
+                TurnTelemetry("synthetic", PerfStats(tmp.resolve("reissue-perf.jsonl")), {}, ElapsedClock { now }),
+                TearAwareEvents(timedProvider, {}),
+            ),
+            RetryNotice {},
+        )
+        val drive = drive(perf = perf)
+        val inputs = WsRoundInputs(
+            drive,
+            """{"instructions":"SCENARIO:hello"}""",
+            RecordingSink2(),
+            this,
+            Job(),
+            ClientFrameEmitted { false },
+            0,
+        )
+        try {
+            assertTrue(post.post(inputs) is TurnOutcome.Success)
+            assertEquals(2, consumes)
+            assertEquals(200L, perf.snapshot().counters[PerfKeys.BACKOFF_MS])
+            assertEquals(1_000L, perf.snapshot().counters[PerfKeys.UP_GAP_MAX_MS])
+            assertEquals(0L, perf.snapshot().counters[PerfKeys.UP_GAPS_2S])
+        } finally {
+            inputs.turnJob.cancel()
+            drive.slot.release()
+        }
+    }
+
+    @Test
+    fun `each timing flow collection owns its reader stopwatch`() = runBlocking {
+        var now = 0L
+        val perf = TurnPerf { now }
+        val events = flow {
+            emit(buildJsonObject { })
+            now += 41
+            emit(buildJsonObject { })
+        }
+        val timed = UpstreamEventTiming(perf, null).observe(events)
+        timed.toList()
+        now += 10_000
+        timed.toList()
+        assertEquals(41L, perf.snapshot().counters[PerfKeys.UP_GAP_MAX_MS])
+        assertEquals(0L, perf.snapshot().counters[PerfKeys.UP_GAPS_2S])
+        assertEquals(0L, perf.snapshot().counters[PerfKeys.UP_BLOCKED_MAX_MS])
     }
 
     @Test

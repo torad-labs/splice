@@ -207,9 +207,8 @@ public class PerfStats(
                 put("account", account)
                 put("cache_cold", meta.cacheCold)
             }
-            snap.marks.forEach { (k, v) -> put(k, v) }
-            snap.counters.forEach { (k, v) -> put(k, v) }
-            put(PerfKeys.UP_GAP_END, snap.upstreamGapEnd.wire)
+            (snap.marks.asSequence() + snap.counters.asSequence()).forEach { (k, v) -> put(k, v) }
+            snap.upstreamGapEnd?.let { put(PerfKeys.UP_GAP_END, it.wire) }
         }.toString()
         meta.session?.let { session ->
             Cancellables.discard(

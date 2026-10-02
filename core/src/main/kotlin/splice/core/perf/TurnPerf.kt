@@ -40,14 +40,8 @@ public class TurnPerf(private val clock: ElapsedClock = ElapsedClock(System::cur
     private val startedAt: Long = clock()
     private val lock = Any()
     private val marks = LinkedHashMap<String, Long>()
-    private val counters = linkedMapOf(
-        PerfKeys.UP_GAP_MAX_MS to 0L,
-        PerfKeys.UP_GAPS_2S to 0L,
-        PerfKeys.UP_BLOCKED_MAX_MS to 0L,
-        PerfKeys.OUT_HOLD_MAX_MS to 0L,
-        PerfKeys.OUT_GAP_MAX_MS to 0L,
-    )
-    private var upstreamGapEnd = UpstreamGapEnd.OTHER
+    private val counters = LinkedHashMap<String, Long>()
+    private var upstreamGapEnd: UpstreamGapEnd? = null
 
     public fun elapsedMs(): Long = clock() - startedAt
 
@@ -79,9 +73,10 @@ public class TurnPerf(private val clock: ElapsedClock = ElapsedClock(System::cur
     }
 
     /** Keep a maximum and, for the upstream gap, its event kind atomically. Ties keep the first kind. */
-    public fun maxCount(counter: String, value: Long, end: UpstreamGapEnd = UpstreamGapEnd.OTHER) {
+    public fun maxCount(counter: String, value: Long, end: UpstreamGapEnd = UpstreamGapEnd.UNKNOWN) {
         synchronized(lock) {
-            if (value > (counters[counter] ?: 0L)) {
+            val previous = counters[counter]
+            if (previous == null || value > previous) {
                 counters[counter] = value
                 if (counter == PerfKeys.UP_GAP_MAX_MS) upstreamGapEnd = end
             }

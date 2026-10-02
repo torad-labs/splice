@@ -21,6 +21,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.onCompletion
@@ -253,29 +254,9 @@ private class ScriptedWsProvider(
     override val wsRunner: WsRoundRunner get() = runner
 }
 
-@TestInstance(TestInstance.Lifecycle.PER_CLASS)
-class WsRoundDriverTest {
-
-    private val mock = MockChatGptUpstream()
-    private val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
-    private lateinit var tmp: Path
-
-    @BeforeAll
-    fun setUp(@TempDir tempDir: Path) {
-        tmp = tempDir
-    }
-
-    @AfterAll
-    fun tearDown() {
-        client.close()
-        mock.stop()
-    }
-
-    /** Heads built so far: each one's store files are keyed by it, since the port it binds (0, so
-     *  the OS assigns one with no lease-then-bind window) is not known until it starts. */
-    private var built = 0
-
-    private fun provider(runner: WsRoundRunner): Provider = ScriptedWsProvider(
+/** Provider and cold-flow construction shared by the driver's transport and timing controls. */
+private class WsDriverFixture(private val tmp: Path, private val baseUrl: String) {
+    fun provider(runner: WsRoundRunner): Provider = ScriptedWsProvider(
         TestResponsesProvider(
             tuning = ProviderTuning(
                 key = "codex",
@@ -287,7 +268,7 @@ class WsRoundDriverTest {
                 ),
                 pinnedModel = "gpt-5.6-sol",
                 auth = WsFakeAuth(),
-                baseUrl = mock.baseUrl,
+                baseUrl = baseUrl,
                 watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
                 loginCommand = "claudex login",
             ),
@@ -299,18 +280,7 @@ class WsRoundDriverTest {
         runner,
     )
 
-    private fun head(runner: ScriptedRunner, log: (String) -> Unit = {}): HeadServer = HeadServer(
-        provider = provider(runner),
-        listenPort = 0,
-        deps = headDeps(
-            tmp = tmp,
-            upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 2),
-            log = log,
-            seams = HeadDeps.HeadSeams(requestMaterializationGate = RequestMaterializationGate()),
-        ).copy(stores = headStores(tmp, suffix = "-${++built}")),
-    )
-
-    private suspend fun coldFlowInputs(
+    suspend fun inputs(
         emitter: TurnTerminal,
         scope: CoroutineScope,
         budget: WatchdogBudget = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
@@ -359,6 +329,48 @@ class WsRoundDriverTest {
             eventsBase = 0,
         )
     }
+}
+
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class WsRoundDriverTest {
+
+    private val mock = MockChatGptUpstream()
+    private val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
+    private lateinit var tmp: Path
+
+    @BeforeAll
+    fun setUp(@TempDir tempDir: Path) {
+        tmp = tempDir
+    }
+
+    @AfterAll
+    fun tearDown() {
+        client.close()
+        mock.stop()
+    }
+
+    /** Heads built so far: each one's store files are keyed by it, since the port it binds (0, so
+     *  the OS assigns one with no lease-then-bind window) is not known until it starts. */
+    private var built = 0
+
+    private fun provider(runner: WsRoundRunner): Provider = WsDriverFixture(tmp, mock.baseUrl).provider(runner)
+
+    private fun head(runner: ScriptedRunner, log: (String) -> Unit = {}): HeadServer = HeadServer(
+        provider = provider(runner),
+        listenPort = 0,
+        deps = headDeps(
+            tmp = tmp,
+            upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 2),
+            log = log,
+            seams = HeadDeps.HeadSeams(requestMaterializationGate = RequestMaterializationGate()),
+        ).copy(stores = headStores(tmp, suffix = "-${++built}")),
+    )
+
+    private suspend fun coldFlowInputs(
+        emitter: TurnTerminal,
+        scope: CoroutineScope,
+        budget: WatchdogBudget = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
+    ): WsRoundInputs = WsDriverFixture(tmp, mock.baseUrl).inputs(emitter, scope, budget)
 
     private fun turn(port: Int): String = runBlocking {
         client.post("http://127.0.0.1:$port/v1/messages") {
@@ -367,6 +379,58 @@ class WsRoundDriverTest {
                     "messages":[{"role":"user","content":"hi"}]}""",
             )
         }.bodyAsText()
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @ParameterizedTest
+    @ValueSource(longs = [1_000, 4_000])
+    fun `WebSocket gaps exclude client opening and measure blocked delivery`(attemptWaitMs: Long) = runTest {
+        val perf = TurnPerf { testScheduler.currentTime }
+        var opened = false
+        val terminal = object : TurnTerminal by RecordingTerminal() {
+            override suspend fun ensureStarted() {
+                if (!opened) {
+                    opened = true
+                    delay(2_500)
+                }
+            }
+        }
+        val scripted = ScriptedRunner(emptyList())
+        val runner = object : WsRoundRunner by scripted {
+            override suspend fun attempt(
+                bodyJson: String,
+                meta: TurnMeta,
+                turnHeaders: Map<String, String>,
+                creds: Credentials,
+            ): WsRound {
+                delay(attemptWaitMs)
+                return WsRound(
+                    flow {
+                        emit(ev("""{"type":"response.created","response":{"id":"synthetic"}}"""))
+                        delay(3_000)
+                        emit(ev("""{"type":"response.output_text.delta","delta":"synthetic"}"""))
+                        emit(ev("""{"type":"response.completed","response":{"status":"completed"}}"""))
+                    },
+                    WsRoundAbort {},
+                )
+            }
+        }
+        val inputs = coldFlowInputs(terminal, this).let { it.copy(drive = it.drive.copy(perf = perf)) }
+        try {
+            val result = WsRoundDriver(
+                provider(runner),
+                log = {},
+                classifyZeroEvent = ZeroEventClassifier { _, outcome, _, _ -> outcome },
+            ).run(inputs)
+            assertTrue(result is TurnOutcome.Success)
+            assertEquals(maxOf(3_000L, attemptWaitMs), perf.snapshot().counters[PerfKeys.UP_GAP_MAX_MS])
+            assertEquals(if (attemptWaitMs >= 2_000) 2L else 1L, perf.snapshot().counters[PerfKeys.UP_GAPS_2S])
+            assertEquals(2_500L, perf.snapshot().counters[PerfKeys.UP_BLOCKED_MAX_MS])
+            assertEquals("unknown", perf.snapshot().upstreamGapEnd?.wire)
+        } finally {
+            inputs.turnJob.cancel()
+            inputs.drive.slot.release()
+        }
     }
 
     @Test

@@ -112,6 +112,7 @@ internal class ClientChannel(
     private val pacer: DeltaPacer = DeltaPacer(),
 ) {
     private var lastWriteMs: Long? = null
+    private var pacingJob: Job? = null
 
     /** Client-side write instrumented: frame counts/bytes, first-frame/first-delta marks, and the
      *  summed write+flush time (a slow reader shows up as write_ms, not as fake stream time).
@@ -150,7 +151,10 @@ internal class ClientChannel(
         // A release loop that stopped (a cancelled turn, a ticker that ended) can leave frames behind:
         // they go first, so the wire order stays the order they were written in.
         pacer.takeAll(clock()).forEach { socketWrite(it.frame, it.perf, clock) }
-        if (socketWrite(frame, perf, clock) && modelOutput) ModelAccounting.count(frame, perf)
+        if (socketWrite(frame, perf, clock)) {
+            perf.maxCount(PerfKeys.OUT_HOLD_MAX_MS, 0)
+            if (modelOutput) ModelAccounting.count(frame, perf)
+        }
     }
 
     /** One frame onto the socket, counted as transport: true when it got there, false when the channel
@@ -200,7 +204,7 @@ internal class ClientChannel(
             } finally {
                 pacer.active = false
             }
-        }
+        }.also { pacingJob = it }
     }
 
     /** One wake's work: a release each tick until nothing waits. False when the loop has to stop — the
@@ -232,7 +236,8 @@ internal class ClientChannel(
      *  pacing window), then stop it — at once when nothing is held, so an ordinary turn's response closes
      *  without waiting a tick. Whatever a loop that ended early left behind goes out now, in order; a
      *  failure here is the lost client the turn's own writes already reported, so it is discarded. */
-    suspend fun finishPacing(pacing: Job, clock: ElapsedClock) {
+    suspend fun finishPacing(pacing: Job? = pacingJob, clock: ElapsedClock) {
+        if (pacing == null) return
         pacer.finish()
         if (writeMutex.withLock { pacer.stillHeld() }) pacing.join() else pacing.cancel()
         Cancellables.discard(
@@ -241,6 +246,7 @@ internal class ClientChannel(
             },
             "a paced tail on a client that left: clientGone is already set and the turn has ended",
         )
+        if (pacingJob === pacing) pacingJob = null
     }
 
     /** Stop writing to the socket for good; the turn runs on and the recording stands in for the

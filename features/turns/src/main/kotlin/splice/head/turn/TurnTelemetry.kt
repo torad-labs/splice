@@ -5,6 +5,8 @@
 // is telemetry.
 package splice.head.turn
 
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import splice.core.budget.HeadBudget
 import splice.core.budget.NoHeadBudget
 import splice.core.perf.PerfKeys
@@ -55,14 +57,29 @@ internal class TurnTelemetry(
     private val cache = TurnCacheLine(headKey)
     private val line = TurnLine(headKey)
 
-    /** The sole perf-row emitter: total mark, one JSONL row, one log line. Never throws.
+    /** Drain the paced tail before the sole perf snapshot; publish even if cleanup throws cancellation.
      *  [rateLimited] marks the one turn the upstream refused with a 429 — see [recordEconomics]. */
-    fun recordPerf(
+    suspend fun recordPerf(
         drive: TurnDrive,
         outcomeTag: String,
         rateLimited: Boolean = false,
         cause: String? = null,
         layers: Int = 0,
+    ) = withContext(NonCancellable) {
+        // Cancellation still owes its row, even if a paced socket write itself throws cancellation.
+        try {
+            drive.channel.finishPacing(clock = clock)
+        } finally {
+            recordSnapshot(drive, outcomeTag, rateLimited, cause, layers)
+        }
+    }
+
+    private fun recordSnapshot(
+        drive: TurnDrive,
+        outcomeTag: String,
+        rateLimited: Boolean,
+        cause: String?,
+        layers: Int,
     ) {
         drive.perf.mark(PerfKeys.TOTAL)
         drive.perf.setCount(PerfKeys.ATTEMPTS, drive.perfCounter(PerfKeys.ATTEMPTS))

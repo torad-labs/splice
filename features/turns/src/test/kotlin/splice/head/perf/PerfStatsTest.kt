@@ -107,12 +107,15 @@ class PerfStatsTest {
     }
 
     @Test
-    fun `every turn row carries timing fields and the bounded upstream event kind`(@TempDir tmp: Path) {
+    fun `measured rows carry timing fields while unmeasured rows omit them`(@TempDir tmp: Path) {
         val file = tmp.resolve("perf.jsonl")
         val stats = PerfStats(file, clock = { 123L })
         val perf = TurnPerf { 0L }
         perf.maxCount(PerfKeys.UP_GAP_MAX_MS, 2_500, UpstreamGapEnd.THINKING_DELTA)
         perf.add(PerfKeys.UP_GAPS_2S, 1)
+        for (key in listOf(PerfKeys.UP_BLOCKED_MAX_MS, PerfKeys.OUT_HOLD_MAX_MS, PerfKeys.OUT_GAP_MAX_MS)) {
+            perf.maxCount(key, 0)
+        }
         stats.record(PerfRowMeta("synthetic", "ok", compact = false), perf.snapshot())
         stats.record(PerfRowMeta("synthetic", "ok", compact = false), TurnPerf { 0L }.snapshot())
         val numeric = stats.tailNumeric(10)
@@ -124,8 +127,8 @@ class PerfStatsTest {
         assertTrue(PerfKeys.UP_GAP_END !in numeric[0])
         val rows = Files.readAllLines(file).map { Json.parseToJsonElement(it).jsonObject }
         assertEquals("\"thinking_delta\"", rows[0][PerfKeys.UP_GAP_END].toString())
-        assertEquals("\"other\"", rows[1][PerfKeys.UP_GAP_END].toString())
-        assertEquals(0L, numeric[1][PerfKeys.UP_GAP_MAX_MS])
+        assertNull(rows[1][PerfKeys.UP_GAP_END])
+        assertNull(numeric[1][PerfKeys.UP_GAP_MAX_MS])
     }
 
     @Test

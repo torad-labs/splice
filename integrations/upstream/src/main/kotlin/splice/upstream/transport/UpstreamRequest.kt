@@ -142,6 +142,7 @@ internal class UpstreamRequest(
         block: UpstreamHandler<T>,
         recorder: AttemptRecorder? = null,
     ): RetryOutcome<T> {
+        val postedAtMs = ctx.perf?.elapsedMs()
         val statement = prepare(ctx.url, creds, ctx.extraHeaders, bodyBytes, recorder)
         return statement.execute { resp ->
             ctx.markHeaders()
@@ -150,7 +151,7 @@ internal class UpstreamRequest(
             recorder?.response(resp.status.value, resp.headers.entries().associate { (k, v) -> k to v.joinToString() })
             if (resp.status.isSuccess()) {
                 onStreamStart()
-                RetryOutcome.Done(block(UpstreamResponse(resp)))
+                RetryOutcome.Done(block(UpstreamResponse(resp).also { it.postedAtMs = postedAtMs }))
             } else {
                 val realStatus = resp.status.value
                 val text = UpstreamResponse(resp).bodyTextLimited(MAX_ERROR_BODY_BYTES)

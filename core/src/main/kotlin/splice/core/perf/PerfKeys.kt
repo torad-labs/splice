@@ -10,7 +10,7 @@ public enum class UpstreamGapEnd {
     CONTENT_BLOCK_START,
     PING,
     MESSAGE_DELTA,
-    OTHER,
+    UNKNOWN,
     ;
 
     public val wire: String = name.lowercase()
@@ -52,7 +52,7 @@ public object PerfKeys {
     public const val SSE_BYTES_IN: String = "sse_bytes_in"
     public const val EVENTS_IN: String = "events_in"
 
-    /** Reader-side inter-event silence after the first event, excluding downstream delivery. */
+    /** POST-to-first-event wait and later reader-side silence, excluding synchronous downstream delivery. */
     public const val UP_GAP_MAX_MS: String = "up_gap_max_ms"
     public const val UP_GAPS_2S: String = "up_gaps_2s"
     public const val UP_BLOCKED_MAX_MS: String = "up_blocked_max_ms"

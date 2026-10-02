@@ -25,6 +25,7 @@ import splice.core.util.SafeFailureText
 import splice.head.turn.TurnDrive
 import splice.head.turn.ZeroEventClassifier
 import splice.upstream.Provider
+import splice.upstream.WsRound
 import splice.upstream.WsRoundAbort
 import splice.upstream.WsRoundRunner
 import splice.upstream.transport.HeaderRedaction
@@ -42,6 +43,14 @@ internal class WsRoundDriver(
         val drive = inputs.drive
         clearAccountBoundary(runner, drive)
         return driveRound(runner, drive, inputs)
+    }
+
+    /** Start the reader clock at the attempt, before client opening, without changing the round's lease. */
+    private suspend fun timedRound(runner: WsRoundRunner, drive: TurnDrive, bodyJson: String): WsRound? {
+        val credentials = (drive.account?.account?.auth ?: provider.auth).credentials() ?: return null
+        val postedAtMs = drive.perf.elapsedMs()
+        val accepted = runner.attempt(bodyJson, drive.meta, drive.turnHeaders, credentials) ?: return null
+        return accepted.copy(events = UpstreamEventTiming(drive.perf, postedAtMs).observe(accepted.events))
     }
 
     /** The round body, extracted (V4-114 continuation) so [run] stays inside detekt's
@@ -71,8 +80,7 @@ internal class WsRoundDriver(
             // Credentials come from the provider's auth surface, NOT from a WS-side refresh: L5
             // keeps the single-flight 401 refresh in UpstreamClient, so a missing/expired
             // credential here simply rides SSE and gets refreshed there.
-            val accepted = (drive.account?.account?.auth ?: provider.auth).credentials()
-                ?.let { creds -> runner.attempt(inputs.bodyJson, drive.meta, drive.turnHeaders, creds) }
+            val accepted = timedRound(runner, drive, inputs.bodyJson)
             if (accepted == null) {
                 // SSE is about to serve this round, so the conversation advances outside any chain.
                 runner.roundBypassed(drive.meta)

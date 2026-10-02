@@ -3,6 +3,8 @@
 // billed for the other's subsystems. Same-package.
 package splice.head.transport
 
+import io.ktor.http.HttpHeaders
+import io.ktor.http.IllegalHeaderValueException
 import kotlinx.coroutines.flow.emptyFlow
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
@@ -25,6 +27,22 @@ internal class SseRoundPost(
     private val consume: SseRoundConsume,
     private val onRetry: RetryNotice,
 ) {
+    /** codex-rs client.rs:2336-2340 validates HTTP echoes; WS retains the untouched raw snapshot. */
+    private fun httpRoutingHeaders(inputs: WsRoundInputs): Map<String, String> {
+        val holder = inputs.drive.meta.upstreamHeaders
+        return holder.snapshot().filterValues { value ->
+            val valid = try {
+                HttpHeaders.checkHeaderValue(value)
+                // Codex's http 1.4.0 header/value.rs:557-559 also rejects DEL, which Ktor permits.
+                '\u007f' !in value
+            } catch (_: IllegalHeaderValueException) {
+                false
+            }
+            if (!valid && holder.claimHttpOmissionNotice()) onRetry("omitting invalid upstream turn-state HTTP header")
+            valid
+        }
+    }
+
     suspend fun post(inputs: WsRoundInputs): TurnOutcome {
         val drive = inputs.drive
         val selection = drive.account
@@ -38,7 +56,7 @@ internal class SseRoundPost(
                     // The account's headers ride ON TOP of the provider's, never instead of them.
                     provider.extraHeaders(creds) +
                         account?.extraHeaders?.invoke(creds).orEmpty() +
-                        drive.turnHeaders + drive.meta.upstreamHeaders.snapshot()
+                        drive.turnHeaders + httpRoutingHeaders(inputs)
                 },
                 onRetry = onRetry,
                 perf = drive.perf,

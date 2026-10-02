@@ -283,7 +283,11 @@ class ResponsesWsTurnStateTest {
 
     @Test
     fun `metadata accepts string headers and recursively the first array element`() = runTest {
-        val supported = mapOf("\"\"" to "\"\"", "[[\"nested\"],\"ignored\"]" to "\"nested\"")
+        val supported = mapOf(
+            "\"\"" to "\"\"",
+            "[[\"nested\"],\"ignored\"]" to "\"nested\"",
+            "\"raw\\nstate\"" to "\"raw\\nstate\"",
+        )
         for ((value, expected) in supported) {
             val rig = Rig { round ->
                 listOf(

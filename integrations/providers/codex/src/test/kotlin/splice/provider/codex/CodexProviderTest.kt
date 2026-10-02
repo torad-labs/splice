@@ -119,7 +119,7 @@ class CodexProviderTest {
     }
 
     @Test
-    fun `SSE metadata events capture routing state without an HTTP header`() = runTest {
+    fun `SSE metadata events do not capture routing state without an HTTP header`() = runTest {
         val codex = provider(accountIdHeader = false)
         val built = codex.buildTurn(deferrableTurnBody(), compact = false, sessionId = "sse-metadata")
         val events = listOf(
@@ -130,7 +130,7 @@ class CodexProviderTest {
             built.meta,
             TurnSignals(clientGone = { false }, watchdogFired = { null }),
         ).driveTurn(events.asFlow(), SummarySink())
-        assertEquals(mapOf("x-codex-turn-state" to "event-only-state"), built.meta.upstreamHeaders.snapshot())
+        assertTrue(built.meta.upstreamHeaders.snapshot().isEmpty(), "SSE captures only the HTTP response header")
     }
 
     @Test

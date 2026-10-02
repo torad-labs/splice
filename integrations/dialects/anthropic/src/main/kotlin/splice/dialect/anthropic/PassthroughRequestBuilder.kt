@@ -64,7 +64,7 @@ internal class PassthroughRequestBuilder(
             put(STREAM, true)
             raw[SYSTEM]?.let { put(SYSTEM, cache.stripCacheControl(it)) }
             raw[MESSAGES]?.let { put(MESSAGES, messages.scrubMessages(it)) }
-            raw[TOOLS]?.let { put(TOOLS, tools.sanitizeTools(it)) }
+            raw[TOOLS]?.let { put(TOOLS, tools.sanitizeTools(it, clientStreams = typed.stream)) }
             raw[TOOL_CHOICE]?.let { put(TOOL_CHOICE, cache.stripCacheControl(it)) }
             thinking.putThinking(this, typed, raw[THINKING], effort)
         }

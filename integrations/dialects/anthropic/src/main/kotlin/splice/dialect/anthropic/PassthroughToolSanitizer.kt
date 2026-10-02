@@ -28,14 +28,14 @@ internal class PassthroughToolSanitizer(
         if (quirks.stripCacheControl) add(CACHE_CONTROL)
     }
 
-    fun sanitizeTools(tools: JsonElement): JsonArray {
+    fun sanitizeTools(tools: JsonElement, clientStreams: Boolean): JsonArray {
         val arr = tools as? JsonArray ?: return buildJsonArray { }
         return buildJsonArray {
-            arr.forEach { tool -> (tool as? JsonObject)?.let { add(sanitizeTool(it)) } }
+            arr.forEach { tool -> (tool as? JsonObject)?.let { add(sanitizeTool(it, clientStreams)) } }
         }
     }
 
-    private fun sanitizeTool(tool: JsonObject): JsonObject = buildJsonObject {
+    private fun sanitizeTool(tool: JsonObject, clientStreams: Boolean): JsonObject = buildJsonObject {
         for ((key, value) in tool) {
             if (key in droppedToolKeys) continue
             put(key, sanitizedValue(key, value))
@@ -43,11 +43,12 @@ internal class PassthroughToolSanitizer(
         // Kimi 400s a tool with no description; inventing one on a faithful passthrough would be
         // splice putting words in the client's request, so it rides with the schema shaping.
         if (quirks.mfjsSanitize && DESCRIPTION !in tool) put(DESCRIPTION, "")
-        if (eagerInputDefault(tool)) put(EAGER_INPUT_STREAMING, true)
+        if (eagerInputDefault(tool, clientStreams)) put(EAGER_INPUT_STREAMING, true)
     }
 
-    private fun eagerInputDefault(tool: JsonObject): Boolean {
-        if (!quirks.eagerToolInputs || EAGER_INPUT_STREAMING in tool) return false
+    private fun eagerInputDefault(tool: JsonObject, clientStreams: Boolean): Boolean {
+        val enabled = clientStreams && quirks.eagerToolInputs
+        if (!enabled || EAGER_INPUT_STREAMING in tool) return false
         val type = tool["type"]
         return type == null || type == JsonPrimitive("custom")
     }

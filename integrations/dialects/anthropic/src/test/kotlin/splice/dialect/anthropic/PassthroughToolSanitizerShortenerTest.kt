@@ -28,7 +28,8 @@ class PassthroughToolSanitizerShortenerTest {
                 },
             )
         }
-        val wireName = (sanitizer.sanitizeTools(tools)[0] as JsonObject)["name"]!!.jsonPrimitive.content
+        val wireName = (sanitizer.sanitizeTools(tools, clientStreams = true)[0] as JsonObject)["name"]!!
+            .jsonPrimitive.content
         assertEquals(64, wireName.length)
         assertEquals(name, shortener.restore(wireName))
     }

@@ -6,6 +6,7 @@ package splice.diagnostics.doctor
 
 import kotlinx.serialization.json.jsonObject
 import splice.core.config.UserHome
+import splice.core.perf.LivenessProbe
 import splice.core.perf.OutcomeTag
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
@@ -74,7 +75,7 @@ internal class DoctorProbeWrite(
      *  never presented as no turns. Missing/empty files = INFO (a fresh head has no turns). */
     internal fun perfTailRow(headKey: String, perfFile: Path): DoctorCheck {
         val read = files.tails(perfFile, PROBE_TAIL_BYTES)
-        val rows = read.lines.takeLast(PERF_TAIL_TURNS * 2).mapNotNull(::perfRow).takeLast(PERF_TAIL_TURNS)
+        val rows = read.lines.mapNotNull(::perfRow).takeLast(PERF_TAIL_TURNS)
         val failures = rows.filter { (outcome, _) -> outcome != OutcomeTag.OK.wire }
         val name = "head $headKey turns"
         val unread = read.error?.let { " (a perf file could not be read: $it)" }.orEmpty()
@@ -120,7 +121,11 @@ internal class DoctorProbeWrite(
         Cancellables.runCatchingCancellable {
             val obj = kotlinx.serialization.json.Json.parseToJsonElement(line).jsonObject
             val outcome = JsonScalars.str(obj, "outcome")
-            if (outcome == null) null else outcome to (JsonScalars.long(obj, "ts") ?: 0L)
+            if (outcome == null || LivenessProbe.legacyRow(obj)) {
+                null
+            } else {
+                outcome to (JsonScalars.long(obj, "ts") ?: 0L)
+            }
         }.getOrNull()
 
     /** An outcome is a tag from the daemon's vocabulary; a perf row is a plain file, so anything

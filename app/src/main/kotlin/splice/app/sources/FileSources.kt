@@ -15,6 +15,7 @@ import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
 import splice.head.perf.PerfStats
 import splice.head.perf.SessionTotals
+import splice.head.usage.EconomicsBucket
 import splice.head.usage.EconomicsStore
 import splice.head.usage.QuotaTracker
 import splice.head.usage.UsageStore
@@ -75,8 +76,18 @@ public class CompactStatsSource(private val stats: CompactStats) : HeadCompactSo
 /** The hourly quota rollup, projected onto the control plane's row type. A straight field-for-field
  *  copy on purpose: [EconomicsRow] is :daemon-control's own vocabulary and :daemon-control may not see :daemon-head,
  *  so the translation belongs here, in the composition root, and nowhere else. */
-public class EconomicsStoreSource(private val store: EconomicsStore) : HeadEconomicsSource {
-    override fun buckets(): List<EconomicsRow> = store.read().map {
+public class EconomicsStoreSource(
+    private val store: EconomicsStore,
+    perfRows: PerfRowsFileSource? = null,
+) : HeadEconomicsSource {
+    private val probes = perfRows?.let(::ProbeEconomics)
+
+    override fun buckets(): List<EconomicsRow> {
+        val held = store.read()
+        return (probes?.withoutProbes(held) ?: held).map { row(it) }
+    }
+
+    private fun row(it: EconomicsBucket): EconomicsRow =
         EconomicsRow(
             hour = it.hour,
             counts = EconomicsTurnCounts(it.turns, it.localSteps),
@@ -93,7 +104,6 @@ public class EconomicsStoreSource(private val store: EconomicsStore) : HeadEcono
             costUsd = it.costUsd,
             unpricedTurns = it.unpricedTurns,
         )
-    }
 }
 
 public class PerfStatsSource(private val stats: PerfStats) :

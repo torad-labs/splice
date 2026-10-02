@@ -11,6 +11,7 @@ import io.ktor.server.application.ApplicationCall
 import splice.core.auth.BearerScheme
 import splice.core.auth.ForeignHostLog
 import splice.core.auth.LoopbackHost
+import splice.core.perf.LivenessProbe
 import splice.head.admission.AdmissionResponses
 import java.security.MessageDigest
 
@@ -156,10 +157,15 @@ internal class ClientAuth(
      *  signed the head out (2026-10-01). A head holding its own credential still serves such a call,
      *  and a local answer (count_tokens, models) never needs one. */
     suspend fun authorizeUpstream(call: ApplicationCall): Boolean {
+        // Header presence only REFUSES dispatch. No credential or body can turn it into hidden work.
+        if (call.request.headers.getAll(LivenessProbe.PROBE_HEADER_NAME) != null) {
+            responses.respondInvalidRequest(call, "a liveness probe does not dispatch a turn")
+            return false
+        }
         if (!authorize(call)) return false
-        if (!forwardsCallersOnly() || carriesCredential(call)) return true
-        responses.respondUnauthorized(call)
-        return false
+        val accepted = !forwardsCallersOnly() || carriesCredential(call)
+        if (!accepted) responses.respondUnauthorized(call)
+        return accepted
     }
 
     private fun forwardsCallersOnly(): Boolean = deps.policy.forwardClientAuth && forwardsOnly

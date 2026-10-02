@@ -75,6 +75,29 @@ class TurnPathProbeLoopTest {
         TurnPathProbeLoop("t", port, stalled, { logs.add(it) }, intervalMs = 10, timeoutMs = 300)
 
     @Test
+    fun `the loop marks its POST as non-dispatching without carrying credentials`() {
+        val received = CopyOnWriteArrayList<Pair<Map<String, List<String>>, String>>()
+        val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/v1/messages") { exchange ->
+            received += exchange.requestHeaders.entries.associate { it.key.lowercase() to it.value.toList() } to
+                exchange.requestBody.readAllBytes().toString(Charsets.UTF_8)
+            exchange.sendResponseHeaders(400, -1)
+            exchange.close()
+        }
+        server.start()
+        try {
+            probe(server.address.port, ConcurrentHashMap()).tick()
+            val (headers, body) = received.single()
+            assertEquals(listOf("1"), headers["x-splice-liveness-probe"])
+            assertFalse(headers.containsKey("authorization"))
+            assertFalse(headers.containsKey("x-api-key"))
+            assertEquals("""{"splice_liveness_probe":true}""", body)
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
     fun `an error response is proof of life - never stalls`() {
         val stalled = ConcurrentHashMap<String, Boolean>()
         val p = probe(answeringServer(), stalled)

@@ -29,6 +29,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.longOrNull
+import splice.core.perf.LivenessProbe
 import splice.core.perf.PerfArchiveName
 import splice.core.perf.PerfKeys
 import splice.core.util.AsyncFileIo
@@ -61,6 +62,10 @@ private data class Baseline(val drops: Long? = null, val raw: String? = null)
 
 /** A pre-cutoff line skipped unparsed, ordered by its leading-ts [hint]; only its parse is a row. */
 private data class Skipped(val hint: Long, val raw: String)
+private enum class PerfSelection { WORK, ECONOMICS }
+
+/** One settled scan supplies the work and probe sides of historical economics reconciliation. */
+internal data class EconomicsPerfEvidence(val work: PerfRowsWindow, val probes: List<PerfRow>)
 private const val UNATTRIBUTED = "?"
 
 // V4-127: the perf ROW HEADER keys — the writer's string-and-flag facts, spelled as PerfStats.record
@@ -99,21 +104,33 @@ public class PerfRowsFileSource(
     /** A skipped line that carries the cumulative drops counter (any JSON spacing): a candidate. */
     private val dropsField = Regex(""""${PerfKeys.ASYNC_IO_DROPS}"\s*:\s*-?\d""")
 
+    // Only empty-model candidates pay for parsing before the cutoff; JSON remains the authority.
+    private val emptyModel = Regex(""""model"\s*:\s*""""")
+
     private val generations = listOf(file.resolveSibling("${file.fileName}.1"), file)
 
-    override fun window(sinceMs: Long): PerfRowsWindow {
+    override fun window(sinceMs: Long): PerfRowsWindow = settledRead(sinceMs, PerfSelection.WORK).window()
+
+    /** Both sides are read together, so lost or clock-shifted evidence cannot justify subtraction. */
+    internal fun economicsEvidence(sinceMs: Long): EconomicsPerfEvidence {
+        val scan = settledRead(sinceMs, PerfSelection.ECONOMICS)
+        return EconomicsPerfEvidence(scan.window(), scan.probes)
+    }
+
+    private fun settledRead(sinceMs: Long, selection: PerfSelection): Scan {
         val settled = AsyncFileIo.awaitFile(file)
         var keys = fileKeys()
-        var read = readAll(sinceMs)
+        var read = readAll(sinceMs, selection)
         var again = fileKeys()
         if (again != keys) {
             keys = again
-            read = readAll(sinceMs)
+            read = readAll(sinceMs, selection)
             again = fileKeys()
         }
         val incomplete = if (settled) null else "${file.fileName}: pending perf write did not settle"
         val rotated = if (again == keys) null else "${file.fileName}: rotated during the read"
-        return read.window(listOfNotNull(incomplete, rotated).joinToString("; ").ifEmpty { null })
+        read.errors += listOfNotNull(incomplete, rotated)
+        return read
     }
 
     private fun fileKeys(): List<Any?> = generations.map { generation ->
@@ -123,8 +140,8 @@ public class PerfRowsFileSource(
         }.getOrNull()
     }
 
-    private fun readAll(sinceMs: Long): Scan {
-        val scan = Scan(sinceMs)
+    private fun readAll(sinceMs: Long, selection: PerfSelection): Scan {
+        val scan = Scan(sinceMs, selection)
         archived(scan).forEach { (generation, rotatedAt) ->
             if (archiveName.endsBefore(rotatedAt, sinceMs)) scan.heldBack(rotatedAt) else read(scan, generation)
         }
@@ -161,8 +178,9 @@ public class PerfRowsFileSource(
     }
 
     /** The state one window read accumulates across both generations, oldest generation first. */
-    private inner class Scan(private val sinceMs: Long) {
+    private inner class Scan(private val sinceMs: Long, private val selection: PerfSelection) {
         val rows = ArrayList<PerfRow>()
+        val probes = ArrayList<PerfRow>()
         val errors = ArrayList<String>()
         private var skipped = 0
 
@@ -186,7 +204,7 @@ public class PerfRowsFileSource(
          *  every other line is parsed and its top-level unquoted ts decides where it goes. */
         fun line(line: String) {
             val hint = provablyBefore(line)
-            if (hint != null) {
+            if (hint != null && !emptyModel.containsMatchIn(line)) {
                 if (dropsField.containsMatchIn(line)) candidate(Baseline(raw = line))
                 latestCandidate(Skipped(hint, line))
                 return
@@ -197,9 +215,22 @@ public class PerfRowsFileSource(
                 skipped += 1
                 return
             }
+            parsed(ts, obj)
+        }
+
+        private fun parsed(ts: Long, obj: JsonObject) {
             oldest = minOf(oldest ?: ts, ts)
+            if (ts < sinceMs) drops(obj)?.let { candidate(Baseline(drops = it)) }
+            if (LivenessProbe.legacyRow(obj)) {
+                probe(ts, obj)
+                return
+            }
             newest = maxOf(newest ?: ts, ts)
-            if (ts >= sinceMs) rows += row(ts, obj) else drops(obj)?.let { candidate(Baseline(drops = it)) }
+            if (ts >= sinceMs) rows += row(ts, obj)
+        }
+
+        private fun probe(ts: Long, obj: JsonObject) {
+            if (ts >= sinceMs && selection == PerfSelection.ECONOMICS) probes += row(ts, obj)
         }
 
         /** The leading ts of a writer-shaped line that is before the cutoff and not older than the
@@ -244,11 +275,11 @@ public class PerfRowsFileSource(
 
         private fun drops(obj: JsonObject): Long? = (obj[PerfKeys.ASYNC_IO_DROPS] as? JsonPrimitive)?.longOrNull
 
-        fun window(rotated: String? = null): PerfRowsWindow = PerfRowsWindow(
+        fun window(): PerfRowsWindow = PerfRowsWindow(
             rows = rows,
             oldestHeldTs = oldest,
             dropsBefore = before.asReversed().firstNotNullOfOrNull { it.drops ?: it.raw?.let(::parse)?.let(::drops) },
-            readError = (errors + listOfNotNull(rotated)).takeIf { it.isNotEmpty() }?.joinToString("; "),
+            readError = errors.takeIf { it.isNotEmpty() }?.joinToString("; "),
             skipped = skipped,
             newestHeldTs = newestHeld(),
         )

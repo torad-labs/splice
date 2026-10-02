@@ -27,6 +27,7 @@ import kotlinx.serialization.json.put
 import splice.core.config.Knob
 import splice.core.perf.InputDigest
 import splice.core.perf.InputPrefix
+import splice.core.perf.LivenessProbe
 import splice.core.perf.PerfArchiveName
 import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSessionTail
@@ -287,7 +288,7 @@ public class PerfStats(
                 // ast-grep-ignore: kt-no-silent-result-collapse -- null is counted and logged by noteSkippedRow, PerfStats.kt:142 and :167
                 val row = Cancellables.runCatchingCancellable { json.parseToJsonElement(line).jsonObject }.getOrNull()
                 if (row == null) noteSkippedRow()
-                row
+                row?.takeUnless(LivenessProbe::legacyRow)
             }
         }.onSuccess {
             // ANY healthy read — an empty or all-skipped tail included — closes the unreadable

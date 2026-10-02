@@ -12,13 +12,13 @@
 // is the flip that makes 99.9% monitorable.
 //
 // EXACTLY WHAT THIS PROVES, and what it does not (review 2026-08-12 — the earlier wording claimed
-// more than the code does). HeadServer.handleMessages runs `authorize(call)` FIRST, so an
-// unauthenticated probe is answered 401 and returns before acceptingOrRespond, the InflightGate,
+// more than the code does). HeadAdmission.handleMessages runs `authorizeUpstream(call)` FIRST:
+// a marked probe is refused before authentication, acceptingOrRespond, the InflightGate,
 // the TurnDriver, or any upstream client. So this proves the head's Netty acceptor and request
 // path are RESPONSIVE — which is precisely the 91h wedge, where the event loops spun and nothing,
-// 401 included, ever came back. It does NOT prove an end-to-end turn completes: a saturated or
-// deadlocked gate, a HeadServer stuck draining in stopLocked, a wedged upstream client or a hung
-// translator would all keep answering 401s at 30s intervals while real turns died.
+// any refusal included, ever came back. It does NOT prove an end-to-end turn completes: a saturated
+// or deadlocked gate, a HeadServer stuck draining in stopLocked, a wedged upstream client or a hung
+// translator would all keep answering probes at 30s intervals while real turns died.
 //
 // Going deeper was considered and REJECTED for now: an authenticated probe reaches
 // acquireSlotOrRespond, so it would consume a real inflight slot every 30s and, under legitimate
@@ -37,6 +37,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import splice.core.perf.LivenessProbe
 import splice.core.util.LogSink
 import splice.upstream.Ticker
 import splice.upstream.codemode.ProcessDispatchers
@@ -131,6 +132,7 @@ public class TurnPathProbeLoop(
             conn.readTimeout = timeoutMs
             conn.doOutput = true
             conn.setRequestProperty("Content-Type", "application/json")
+            conn.setRequestProperty(LivenessProbe.PROBE_HEADER_NAME, LivenessProbe.PROBE_HEADER_VALUE)
             conn.outputStream.use { it.write(PROBE_BODY) }
             conn.responseCode // blocks up to readTimeout; a wedge never answers
             true
@@ -148,4 +150,4 @@ public class TurnPathProbeLoop(
 private const val PROBE_INTERVAL_MS = 30_000L
 private const val PROBE_TIMEOUT_MS = 5_000
 private const val STALL_THRESHOLD = 2
-private val PROBE_BODY = """{"splice_liveness_probe":true}""".toByteArray()
+private val PROBE_BODY = LivenessProbe.PROBE_REQUEST_JSON.toByteArray(Charsets.UTF_8)

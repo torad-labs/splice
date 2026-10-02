@@ -70,6 +70,39 @@ class PerfRowFactsTest {
     }
 
     @Test
+    fun `only the exact legacy probe shape is removed from command work`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        val probe = """{"ts":1000,"model":"","outcome":"error:upstream-failed","req_bytes":30}"""
+        val work = listOf(
+            probe.replace("\"model\":\"\"", "\"model\":\"real\""),
+            probe.replace("\"req_bytes\":30", "\"req_bytes\":31"),
+            probe.replace("\"outcome\":\"error:upstream-failed\"", "\"outcome\":\"ok\""),
+            probe.dropLast(1) + ""","session":"real-session"}""",
+            probe.dropLast(1) + ""","session_id":"real-session"}""",
+            probe.dropLast(1) + ""","in_tokens":0}""",
+            probe.dropLast(1) + ""","out_tokens":0}""",
+            probe.dropLast(1) + ""","cached_tokens":0}""",
+            probe.dropLast(1) + ""","cache_write_tokens":0}""",
+            probe.dropLast(1) + ""","account":"real-account"}""",
+            probe.dropLast(1) + ""","compact":true}""",
+            probe.dropLast(1) + ""","local_step":1}""",
+            probe.replace("\"model\":\"\"", "\"model\":null"),
+            probe.replace("\"req_bytes\":30", "\"req_bytes\":\"30\""),
+        )
+        Files.writeString(file, (work + List(60) { probe }).joinToString("\n") + "\n")
+        val window = PerfRowsFileSource(file).window(0)
+        assertEquals(work.size, window.rows.size)
+        assertEquals(0, window.skipped, "excluded probes are not corrupt rows")
+        Files.writeString(
+            file,
+            """{"ts":100,"model":"real","outcome":"ok"}""" + "\n" +
+                List(60) { probe }.joinToString("\n") + "\n",
+        )
+        val idle = PerfRowsFileSource(file).window(2000)
+        assertEquals(100L, idle.newestHeldTs, "pre-cutoff probes cannot hide the newest real work")
+    }
+
+    @Test
     fun `a torn fact reads absent rather than carrying a replacement character`(@TempDir dir: Path) {
         val file = dir.resolve("head-perf.jsonl")
         // A torn multi-byte char inside the model. The reader decodes with REPLACE, so the value is

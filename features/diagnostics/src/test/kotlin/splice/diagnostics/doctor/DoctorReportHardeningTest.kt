@@ -124,6 +124,21 @@ class DoctorReportHardeningTest {
     }
 
     @Test
+    fun `the report excludes legacy probes before selecting recent work`() {
+        val state = Files.createDirectories(tmp.resolve("state"))
+        val clean = """{"ts":1,"model":"synthetic-model","outcome":"ok","total":3}"""
+        val probe = """{"ts":2,"model":"","outcome":"error:upstream-failed","req_bytes":30}"""
+        Files.writeString(
+            state.resolve("codex-perf.jsonl"),
+            (listOf(clean) + List(500) { probe }).joinToString("\n") + "\n",
+        )
+        val rows = build(DoctorRun(topology("codex"), emptyList()))
+            .getValue("perf").jsonObject.getValue("codex").jsonObject.getValue("rows").jsonArray
+        assertEquals(1, rows.size)
+        assertEquals("ok", rows.single().jsonObject.getValue("outcome").jsonPrimitive.content)
+    }
+
+    @Test
     fun `a dangling rotated generation is reported under a fixed label, the active rows still count`() {
         val state = Files.createDirectories(tmp.resolve("state"))
         Files.createSymbolicLink(state.resolve("codex-perf.jsonl.1"), state.resolve("vanished"))
@@ -229,6 +244,26 @@ class DoctorReportHardeningTest {
         Files.writeString(perf, """{"outcome":"error:auth-missing"}""" + "\n")
         val undated = probe.perfTailRow("codex", perf)
         assertEquals(CheckStatus.WARN, undated.status, "a failure with no time is never called old: ${undated.detail}")
+    }
+
+    @Test
+    fun `legacy liveness probes neither fail a command nor fill its recent work window`() {
+        val perf = Files.createDirectories(tmp.resolve("probe-state")).resolve("synthetic-perf.jsonl")
+        val reader = DoctorProbeWrite(files = DoctorReportFiles(DoctorRedaction(tmp)))
+        val now = System.currentTimeMillis()
+        val probe = """{"ts":$now,"model":"","outcome":"error:upstream-failed","compact":false,"req_bytes":30}"""
+        val clean = """{"ts":$now,"model":"synthetic-model","outcome":"ok","compact":false}"""
+        Files.writeString(perf, (listOf(clean) + List(60) { probe }).joinToString("\n") + "\n")
+        val healthy = reader.perfTailRow("synthetic", perf)
+        assertEquals(CheckStatus.OK, healthy.status, healthy.detail)
+        assertEquals("last 1 turn(s) clean", healthy.detail)
+        Files.writeString(perf, List(20) { probe }.joinToString("\n") + "\n")
+        assertEquals(CheckStatus.INFO, reader.perfTailRow("synthetic", perf).status)
+        val failure = """{"ts":$now,"model":"synthetic-model","outcome":"error:upstream-failed"}"""
+        Files.writeString(perf, (listOf(failure) + List(60) { probe }).joinToString("\n") + "\n")
+        val failed = reader.perfTailRow("synthetic", perf)
+        assertEquals(CheckStatus.WARN, failed.status, "real failure must remain: ${failed.detail}")
+        assertTrue(failed.detail.startsWith("1 of last 1 turn(s) failed"), failed.detail)
     }
 
     // V4-444, console review 2026-09-29: claude-splice failed 18 of its last 20 turns in a burst, then

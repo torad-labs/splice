@@ -103,6 +103,7 @@ internal class ManagedHeadFactory(
         val keyPresence = splice.launch.KeyPresenceProbe {
             (wired.auth as? ApiKeyAuthProvider)?.hasKeyNow() != false
         }
+        val perfRows = PerfRowsFileSource(statePaths.perfStatsFile(key), statePaths.perfArchiveDir)
         return ManagedHead(
             head = server,
             auth = wired.auth,
@@ -118,8 +119,8 @@ internal class ManagedHeadFactory(
                 forwardClientAuth = forwardClientAuth,
             ),
             perf = PerfStatsSource(stores.perfStats),
-            perfRows = PerfRowsFileSource(statePaths.perfStatsFile(key), statePaths.perfArchiveDir),
-            economics = EconomicsStoreSource(stores.economics),
+            perfRows = perfRows,
+            economics = EconomicsStoreSource(stores.economics, perfRows),
             keyPresence = keyPresence,
             catalog = ctx.catalog,
             clientWindows = stores.clientWindows,

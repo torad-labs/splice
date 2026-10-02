@@ -14,6 +14,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.core.config.StatePaths
+import splice.core.perf.LivenessProbe
 import splice.core.perf.PerfKeys
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
@@ -95,8 +96,8 @@ internal class DoctorReportPerf(
             put(
                 ROWS,
                 buildJsonArray {
-                    read.lines.takeLast(PERF_TAIL_ROWS * 2)
-                        .mapNotNull { line -> parsed(line) }
+                    read.lines.mapNotNull { line -> parsed(line) }
+                        .filterNot(LivenessProbe::legacyRow)
                         .takeLast(PERF_TAIL_ROWS)
                         .forEach { row -> add(allowlisted(row, names)) }
                 },

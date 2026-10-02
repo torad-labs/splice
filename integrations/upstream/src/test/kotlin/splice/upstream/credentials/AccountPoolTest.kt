@@ -593,3 +593,19 @@ class AccountPoolTest {
         )
     }
 }
+
+class AccountPoolTestAuthOnly {
+    @Test
+    fun `authentication holds alone do not report provider quota exhaustion`() {
+        for (count in listOf(1, 2)) {
+            val fixture = AccountPoolTest.Fixture()
+            val accounts = List(count) { fixture.account("account-$it", primary = it == 0) }
+            val pool = fixture.pool(*accounts.toTypedArray())
+            repeat(count) { (pool.select("rejected-$it") as Selection.Chosen).account.markCredentialUnavailable() }
+            assertTrue(pool.view(null).accounts.all { it.credentialPresent })
+            val exhausted = pool.select("held") as Selection.Exhausted
+            assertEquals(1300L, exhausted.earliestResetEpochSeconds)
+            assertEquals(0L, pool.providerResetForMs)
+        }
+    }
+}

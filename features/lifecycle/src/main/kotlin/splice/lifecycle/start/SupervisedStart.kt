@@ -72,9 +72,13 @@ internal object UserManagerBus {
     private fun reachesBus(env: Map<String, String>): Boolean =
         !env[RUNTIME_DIR].isNullOrEmpty() || !env[BUS_ADDRESS].isNullOrEmpty()
 
-    /** The owner of this process's /proc entry, its uid on Linux; null where there is no /proc (and no systemd). */
-    private fun processUid(): Int? =
-        Cancellables.runCatchingCancellable { Files.getAttribute(Path.of("/proc/self"), "unix:uid") as Int }.getOrNull()
+    /** The owner of this process's /proc entry, its uid on Linux; null where there is no /proc (and no systemd).
+     *  A failed read propagates to the caller, which runs every systemctl child inside its own failure handling. */
+    private fun processUid(): Int? {
+        val self = Path.of("/proc/self")
+        if (!Files.exists(self)) return null
+        return Files.getAttribute(self, "unix:uid") as? Int
+    }
 }
 
 /** The real one: bounded, output discarded; a missing systemctl or a timeout is a non-zero answer. */

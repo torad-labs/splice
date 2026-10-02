@@ -238,7 +238,7 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
         val pool = Executors.newFixedThreadPool(2)
         try {
             hold.set(true)
-            val reader = pool.submit { registry.source.append(record, "await tools.Read({});") }
+            val reader = pool.submit { registry.source.append(record, record.source + "; await tools.Read({});") }
             assertTrue(saving.await(WAIT_SECONDS, TimeUnit.SECONDS), "the reader's save never reached the disk")
             val driverThread = CompletableFuture<Thread>()
             val driver = pool.submit {
@@ -299,7 +299,7 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
             }
             assertTrue(advancing.await(WAIT_SECONDS, TimeUnit.SECONDS), "the worker never reached its advance")
             hold.set(true)
-            val reader = pool.submit { registry.source.append(record, "await tools.Read({});") }
+            val reader = pool.submit { registry.source.append(record, record.source + "; await tools.Read({});") }
             assertTrue(saving.await(WAIT_SECONDS, TimeUnit.SECONDS), "the source reader never held its save")
             advance.countDown()
             assertTrue(advanced.await(WAIT_SECONDS, TimeUnit.SECONDS), "the worker never left its advance latch")

@@ -19,7 +19,9 @@ internal class CodeModeSourceCapture(
 ) {
     // One use only: the driver's closure reaches the raw request, context and client call.
     private var admission: CodeModeStreamAdmission? = admission
-    val source = CodeModeSourceBuffer()
+    val source = CodeModeSourceBuffer(
+        CodeModeSourceCommit { text -> registry.source.append(checkNotNull(record), text) },
+    )
     val ready = CompletableDeferred<CodeModeRecord?>()
     var record: CodeModeRecord? = null
         private set
@@ -32,9 +34,8 @@ internal class CodeModeSourceCapture(
             is CustomToolSource.Delta -> delta(event)
             is CustomToolSource.Completed -> {
                 if (record == null) begin(event.call.copy(input = ""))
-                val current = checkNotNull(record)
                 checkIdentity(event.call, checkNotNull(startedCall))
-                check(event.call.input.startsWith(current.source)) {
+                check(event.call.input.startsWith(source.text)) {
                     "completed exec source changed its dispatched prefix"
                 }
                 checkSource(event.call.input)
@@ -52,7 +53,6 @@ internal class CodeModeSourceCapture(
         startedCall = call
         if (call.input.isNotEmpty()) {
             checkSource(call.input)
-            registry.source.append(admitted, call.input)
             source.publish(call.input)
         }
         ready.complete(admitted)
@@ -62,9 +62,8 @@ internal class CodeModeSourceCapture(
         val current = checkNotNull(record) { "exec source has no admitted item" }
         check(event.callId == current.outerCallId) { "streamed exec identity changed" }
         check(completedCall == null) { "exec source continued after item completion" }
-        val appended = current.source + event.text
+        val appended = source.text + event.text
         checkSource(appended)
-        registry.source.append(current, appended)
         source.publish(appended)
     }
 
@@ -96,7 +95,7 @@ internal class CodeModeSourceCapture(
             checkIdentity(call, captured)
             check(captured.input == call.input) { "terminal exec source changed its completed item" }
         }
-        check(call.input.startsWith(current.source)) { "terminal exec source changed its dispatched prefix" }
+        check(call.input.startsWith(source.text)) { "terminal exec source changed its dispatched prefix" }
         checkSource(call.input)
         registry.source.finish(current, call, wire.continuity(success), success.usage)
         source.complete(call.input)

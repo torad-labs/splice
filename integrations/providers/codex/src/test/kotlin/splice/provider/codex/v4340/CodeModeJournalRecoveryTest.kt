@@ -1,24 +1,36 @@
 // NEW: append recovery never loses a committed cell and can still persist after a torn final delta.
 package splice.provider.codex.v4340
 
+import com.sun.management.ThreadMXBean
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestReporter
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import splice.provider.codex.CodeModeExpiredSnapshot
+import splice.provider.codex.CodeModeNativeSegment
 import splice.provider.codex.CodeModePersistedState
+import splice.provider.codex.CodeModeRecordSnapshot
 import splice.provider.codex.CodeModeRecords
 import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodeModeStateWrite
 import splice.provider.codex.CodexCodeModeStore
 import splice.provider.codex.state.CodeModeStateDelta
 import splice.provider.codex.state.CodeModeStateJournal
+import splice.provider.codex.state.CodeModeStateText
 import java.io.IOException
+import java.lang.management.ManagementFactory
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
@@ -44,9 +56,44 @@ internal object JournalReadProbe {
 
 class CodeModeJournalRecoveryTest {
     private val pretty = Json { prettyPrint = true }
+    private val codec = Json { encodeDefaults = true }
 
     @TempDir
     lateinit var dir: Path
+
+    @Test
+    fun `a source-only save neither rewrites nor reencodes a large root history`(reporter: TestReporter) {
+        val root = CodeModeRecords.of("alpha", 1).apply {
+            nativeSegments = listOf(CodeModeNativeSegment(0, listOf(JsonPrimitive("x".repeat(1024 * 1024)))))
+        }
+        val store = store().also { it.load() }
+        store.save(listOf(root), emptyList())
+        val file = Files.list(location().dir).use { it.toList().single { path -> path.toString().endsWith(".json") } }
+        // Warm the append implementation and coverage instrumentation, not the measured source change.
+        root.output = "warm append"
+        store.save(listOf(root), emptyList(), dirtyKeys = setOf(root.key), changedRecord = root)
+        root.output = null
+        store.save(listOf(root), emptyList(), dirtyKeys = setOf(root.key), changedRecord = root)
+        val beforeBytes = Files.size(file)
+        val bean = checkNotNull(ManagementFactory.getThreadMXBean() as? ThreadMXBean)
+        bean.isThreadAllocatedMemoryEnabled = true
+        val thread = Thread.currentThread().threadId()
+        root.source += "; next source fragment"
+        val beforeAllocated = bean.getThreadAllocatedBytes(thread)
+        store.save(listOf(root), emptyList(), dirtyKeys = setOf(root.key), changedRecord = root)
+        val allocated = bean.getThreadAllocatedBytes(thread) - beforeAllocated
+        val written = Files.size(file) - beforeBytes
+        val measured = mapOf("sourceSaveBytes" to written.toString(), "sourceSaveAllocated" to allocated.toString())
+        reporter.publishEntry(measured)
+        val receipt = Path.of("build/reports/source-save-cost.json")
+        Files.createDirectories(receipt.parent)
+        Files.writeString(receipt, "{\"bytesWritten\":$written,\"bytesAllocated\":$allocated}\n")
+        assertTrue(written < 32 * 1024, "source-only save wrote $written bytes and allocated $allocated bytes")
+        assertTrue(allocated < 512 * 1024, "source-only save allocated $allocated bytes for a 1 MiB unchanged history")
+        val restored = CodeModeStateJournal.read(file, Json).records.single()
+        assertEquals(root.source, restored.source)
+        assertEquals(root.nativeSegments, restored.nativeSegments)
+    }
 
     @Test
     fun `a legacy formatted checkpoint accepts new cell deltas`() {
@@ -208,6 +255,165 @@ class CodeModeJournalRecoveryTest {
         val output = child.inputStream.bufferedReader().readText()
         assertEquals(0, child.waitFor(), output)
         assertEquals("1", output.trim())
+    }
+
+    /** Every serialized field except immutable cell and conversation identities earns a replacement. */
+    private fun populated(base: CodeModeRecordSnapshot): CodeModeRecordSnapshot {
+        val fields = codec.encodeToJsonElement(base).jsonObject
+        val values = codec.parseToJsonElement(
+            """
+            {
+              "outer":{"synthetic":"payload"},"outerCallId":"changed-call","source":"changed source",
+              "phase":"COMPLETED","pending":[{"runtimeId":"r","clientId":"c","name":"Read",
+              "arguments":{"synthetic":true},"exposed":true}],
+              "results":{"r":{"output":"synthetic result","isError":true,"media":["synthetic media"]}},
+              "output":"synthetic output","error":"synthetic error","totalCalls":71,"rounds":72,
+              "updatedAt":73,"lastDigest":"changed digest","baselineInputCount":74,
+              "baselineInputDigest":"changed input","metadataVersion":75,"baselineLogicalCount":76,
+              "baselineLogicalDigest":"changed logical","nativeSegments":[{"logicalOffset":77,"items":["native"]}],
+              "continuity":["logical"],"continuityReplay":[{"logicalOffset":78,"items":["replay"]}],
+              "issued":[{"requestDigest":"issued digest","calls":[]}],"sessionId":"synthetic session",
+              "nativeBaseId":"synthetic parent","replayAnchors":{"baseline":{"itemDigest":"anchor","occurrence":79},
+              "native":{}},"sourceState":{"complete":true,"consumed":true}
+            }
+            """.trimIndent(),
+        ).jsonObject
+        assertEquals(fields.keys - setOf("id", "key"), values.keys, "fixture covers the serializer's field denominator")
+        assertTrue(values.all { (name, value) -> fields[name] != value }, "each fixture field must actually differ")
+        return codec.decodeFromJsonElement(JsonObject(fields + values))
+    }
+
+    @Test
+    fun `patches replace every serialized field including defaults empty collections and nullable body state`() {
+        val file = dir.resolve("all-fields.json")
+        val empty = CodeModeRecords.of("alpha", 1).snapshot()
+        val full = populated(empty)
+        val prior = CodeModePersistedState(records = listOf(full))
+        CodeModeStateJournal.write(file, CodeModeStateJournal.encode("alpha", null, prior, codec))
+        val next = CodeModePersistedState(records = listOf(empty))
+        val patch = CodeModeStateJournal.encode("alpha", prior, next, codec, file)
+        val fields = codec.parseToJsonElement(patch).jsonObject.getValue("patches")
+            .jsonArray.single().jsonObject.getValue("fields").jsonObject
+        assertEquals(codec.encodeToJsonElement(full).jsonObject.keys - setOf("id", "key"), fields.keys)
+        CodeModeStateJournal.write(file, patch)
+        assertEquals(codec.encodeToJsonElement(next), codec.encodeToJsonElement(CodeModeStateJournal.read(file, codec)))
+        assertEquals(codec.encodeToString(empty).toByteArray(Charsets.UTF_8).size.toLong(), empty.retainedBytes)
+    }
+
+    @Test
+    fun `older full-cell readers reject patch rows even when unknown fields are ignored`() {
+        val prior = CodeModePersistedState(records = listOf(CodeModeRecords.of("alpha", 1).snapshot()))
+        val next = CodeModePersistedState(records = listOf(prior.records.single().copy(source = "new source")))
+        val patch = CodeModeStateJournal.encode("alpha", prior, next, codec)
+        val oldReader = Json { ignoreUnknownKeys = true }
+        assertThrows<IllegalArgumentException> {
+            assertEquals("alpha", oldReader.decodeFromString<CodeModeStateDelta>(patch).key)
+        }
+    }
+
+    @Test
+    fun `an old full-cell delta can be followed by patches without losing its heavy fields`() {
+        val file = dir.resolve("mixed-journal.json")
+        val original = populated(CodeModeRecords.of("alpha", 1).snapshot())
+        CodeModeStateJournal.write(file, pretty.encodeToString(CodeModePersistedState(records = listOf(original))))
+        val old = original.copy(source = "legacy source")
+        val delta = CodeModeStateDelta("alpha", listOf(old), emptySet(), emptyList())
+        CodeModeStateJournal.write(file, codec.encodeToString(delta))
+        val prior = CodeModeStateJournal.read(file, codec)
+        CodeModeStateJournal.liveBytes(prior, codec)
+        val changed = prior.records.single().copy(source = "patch source").also {
+            it.issued = original.issued
+            it.sessionId = original.sessionId
+            it.nativeBaseId = original.nativeBaseId
+            it.replayAnchors = original.replayAnchors
+            it.sourceState = original.sourceState
+        }
+        val next = CodeModePersistedState(records = listOf(changed))
+        CodeModeStateJournal.write(file, CodeModeStateJournal.encode("alpha", prior, next, codec, file))
+        assertEquals(codec.encodeToJsonElement(next), codec.encodeToJsonElement(CodeModeStateJournal.read(file, codec)))
+    }
+
+    @Test
+    fun `every torn patch prefix remains uncommitted and a retry preserves all base fields`() {
+        val original = populated(CodeModeRecords.of("alpha", 1).snapshot())
+        val prior = CodeModePersistedState(records = listOf(original))
+        val checkpoint = CodeModeStateJournal.encode("alpha", null, prior, codec)
+        val next = CodeModePersistedState(records = listOf(original.copy(output = "café")))
+        val patch = CodeModeStateJournal.encode("alpha", prior, next, codec)
+        patch.indices.drop(1).forEach { prefix ->
+            val file = dir.resolve("patch-tear-$prefix.json")
+            CodeModeStateJournal.write(file, checkpoint)
+            Files.writeString(file, patch.take(prefix), StandardOpenOption.APPEND)
+            val loaded = codec.encodeToJsonElement(CodeModeStateJournal.read(file, codec))
+            assertEquals(codec.encodeToJsonElement(prior), loaded)
+            CodeModeStateJournal.write(file, patch)
+            val retried = codec.encodeToJsonElement(CodeModeStateJournal.read(file, codec))
+            assertEquals(codec.encodeToJsonElement(next), retried)
+        }
+    }
+
+    @Test
+    fun `a patch torn inside UTF-8 keeps its base and retry commits the complete field`() {
+        val file = dir.resolve("patch-utf8.json")
+        val original = CodeModeRecords.of("alpha", 1).snapshot()
+        val prior = CodeModePersistedState(records = listOf(original))
+        CodeModeStateJournal.write(file, CodeModeStateJournal.encode("alpha", null, prior, codec))
+        val next = CodeModePersistedState(records = listOf(original.copy(output = "café")))
+        val patch = CodeModeStateJournal.encode("alpha", prior, next, codec)
+        val bytes = patch.toByteArray(Charsets.UTF_8)
+        val tear = bytes.indexOfFirst { it == 0xC3.toByte() } + 1
+        Files.write(file, bytes.copyOf(tear), StandardOpenOption.APPEND)
+        val loaded = codec.encodeToJsonElement(CodeModeStateJournal.read(file, codec))
+        assertEquals(codec.encodeToJsonElement(prior), loaded)
+        CodeModeStateJournal.write(file, patch)
+        assertEquals("café", CodeModeStateJournal.read(file, codec).records.single().output)
+    }
+
+    @Test
+    fun `new patch cells require all descriptor fields and identity changes fail loudly`() {
+        val original = CodeModeRecords.of("alpha", 1).snapshot()
+        val next = CodeModeRecords.of("alpha", 2).snapshot()
+        val file = dir.resolve("insert.json")
+        val prior = CodeModePersistedState(records = listOf(original))
+        val checkpoint = CodeModeStateJournal.encode("alpha", null, prior, codec)
+        CodeModeStateJournal.write(file, checkpoint)
+        val state = CodeModePersistedState(records = listOf(original, next))
+        val patch = CodeModeStateJournal.encode("alpha", prior, state, codec, file)
+        CodeModeStateJournal.write(file, patch)
+        val loaded = codec.encodeToJsonElement(CodeModeStateJournal.read(file, codec))
+        assertEquals(codec.encodeToJsonElement(state), loaded)
+        listOf(
+            """{"id":"${next.id}","fields":{"id":"${next.id}","key":"alpha","source":"truncated"}}""",
+            """{"id":"${original.id}","fields":{"id":"other"}}""",
+            """{"id":"${original.id}","fields":{"key":"other"}}""",
+        ).forEach { cell ->
+            CodeModeStateJournal.write(file, checkpoint)
+            CodeModeStateJournal.write(file, """{"key":"alpha","patches":[$cell],"expired":[]}""")
+            assertThrows<IllegalArgumentException> { CodeModeStateJournal.read(file, codec) }
+        }
+    }
+
+    @Test
+    fun `changed-cell recovery recreates a missing file with every live cell and expiry marker`() {
+        val store = store().also { it.load() }
+        store.save(listOf(first, second), listOf(marker))
+        val file = Files.list(location().dir).use { it.toList().single() }
+        Files.delete(file)
+        first.source = "recovered source"
+        store.save(listOf(first, second), listOf(marker), dirtyKeys = setOf("alpha"), changedRecord = first)
+        assertEquals(listOf(first.id, second.id), CodeModeStateJournal.read(file, codec).records.map { it.id })
+        assertEquals(listOf(marker), CodeModeStateJournal.read(file, codec).expired)
+        assertEquals(1, Files.readAllLines(file).size)
+    }
+
+    @Test
+    fun `retained byte accounting matches actual UTF-8 for every character width and malformed surrogates`() {
+        listOf("ascii", "café", "你好", "😀", "a\uD83Db", "\uDC00").forEach { text ->
+            assertEquals(text.toByteArray(Charsets.UTF_8).size.toLong(), CodeModeStateText(text).bytes)
+            val record = CodeModeRecords.of("alpha", 1).snapshot().copy(output = text)
+            CodeModeStateJournal.liveBytes(CodeModePersistedState(records = listOf(record)), codec)
+            assertEquals(codec.encodeToString(record).toByteArray(Charsets.UTF_8).size.toLong(), record.retainedBytes)
+        }
     }
 
     private val first = CodeModeRecords.of("alpha", 1, UPDATED_AT)

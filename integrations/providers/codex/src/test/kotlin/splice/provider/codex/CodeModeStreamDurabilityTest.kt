@@ -19,13 +19,19 @@ import splice.core.turn.Usage
 import splice.provider.codex.state.CodeModeExpiredHistory
 import splice.provider.codex.state.CodeModeKeyLocks
 import splice.provider.codex.state.CodeModeRegistryAccess
+import splice.provider.codex.state.CodeModeStateJournal
 import splice.provider.codex.stream.CodeModeLiveRound
+import splice.provider.codex.stream.CodeModeSourceCapture
 import splice.provider.codex.stream.CodeModeSourceRecords
 import splice.provider.codex.stream.CodeModeSourceState
 import splice.provider.codex.stream.CodeModeStreamAdmission
+import splice.upstream.codemode.CodeModeSourcePart
 import splice.upstream.sse.CustomToolSource
+import java.io.IOException
 import java.lang.ref.Reference
 import java.lang.ref.WeakReference
+import java.nio.file.Files
+import java.nio.file.Path
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.time.Duration.Companion.hours
 
@@ -109,6 +115,79 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
         } finally {
             manager.onHeadStop()
         }
+    }
+
+    private inner class SourceRound {
+        var forcedWrites = 0
+        var refuseWrites = false
+        val record = CodeModeRecords.of("source-cost", 0).also {
+            it.source = ""
+            it.sourceState = CodeModeSourceState()
+        }
+        private val config = CodeModeBridgeConfig({ error("no worker is needed") }, stateLocation())
+        private val registry = CodexCodeModeRegistry(
+            config,
+            Json,
+            1.hours,
+            writer = CodeModeStateWrite { path, text ->
+                if (refuseWrites) throw IOException("synthetic refused source write")
+                CodeModeStateJournal.write(path, text)
+                forcedWrites++
+            },
+        )
+        val capture = CodeModeSourceCapture(
+            config,
+            registry,
+            CodexCodeModeWire(Json, {}),
+            CodeModeStreamAdmission {
+                check(registry.add(record))
+                record
+            },
+        )
+        private val call = GatewayCustomCall(record.outerCallId, CODE_MODE_TOOL_NAME, "", record.outer)
+
+        suspend fun begin() {
+            capture.observe(CustomToolSource.Started(call))
+        }
+
+        suspend fun append(text: String) {
+            capture.observe(CustomToolSource.Delta(record.outerCallId, text))
+        }
+
+        fun finish(text: String) {
+            capture.finish(TurnOutcome.Success(false, false, Usage(), customCalls = listOf(call.copy(input = text))))
+        }
+    }
+
+    @Test
+    fun `two hundred producer deltas force only admission consumption and round completion`() = runBlocking {
+        val state = SourceRound()
+        state.begin()
+        repeat(200) { state.append("x") }
+        val reader = state.capture.source.view()
+        assertEquals(CodeModeSourcePart.Delta("x".repeat(200)), reader.read())
+        assertEquals("x".repeat(200), stateFiles.records().single().getValue("source").jsonPrimitive.content)
+        state.finish("x".repeat(200))
+        assertEquals(CodeModeSourcePart.Complete(), reader.read())
+        assertEquals(CodeModeSourcePart.Complete("x".repeat(200)), state.capture.source.view().read())
+        val receipt = Path.of("build/reports/source-force-cost.json")
+        Files.createDirectories(receipt.parent)
+        Files.writeString(receipt, "{\"deltas\":200,\"forcedWrites\":${state.forcedWrites}}\n")
+        assertEquals(3, state.forcedWrites, "forced writes for 200 producer deltas")
+    }
+
+    @Test
+    fun `a refused consumption write cannot hand undurable source bytes to a cell`() = runBlocking {
+        val state = SourceRound()
+        state.begin()
+        state.refuseWrites = true
+        state.append("await tools.Read({});")
+        val reader = state.capture.source.view()
+        assertThrows(CodeModePersistenceException::class.java) { runBlocking { reader.read() } }
+        assertEquals("", stateFiles.records().single().getValue("source").jsonPrimitive.content)
+        state.refuseWrites = false
+        assertEquals(CodeModeSourcePart.Delta("await tools.Read({});"), reader.read())
+        assertEquals("await tools.Read({});", stateFiles.records().single().getValue("source").jsonPrimitive.content)
     }
 
     private inner class SourceState {

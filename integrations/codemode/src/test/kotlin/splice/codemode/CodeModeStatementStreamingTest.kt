@@ -5,15 +5,68 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertSame
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeSource
 import splice.upstream.codemode.CodeModeSourcePart
+import splice.upstream.codemode.CodeModeSourcePersistenceException
 import splice.upstream.codemode.CodeModeStep
+import splice.upstream.failure.CodeModeInfrastructureCategory
+import splice.upstream.failure.CodeModeInfrastructureClass
+import splice.upstream.failure.CodeModeInfrastructureException
+import java.io.IOException
 
 class CodeModeStatementStreamingTest {
     private val classpath = checkNotNull(System.getProperty("codeMode.testClasspath"))
+
+    private class DurableSourceFailure(val diskFull: Boolean) :
+        CodeModeSourcePersistenceException(IOException("synthetic durable source write refused"))
+
+    @Test
+    fun `a failed durable source read escapes unchanged and closes only its cell`(): Unit = runBlocking {
+        JvmCodeModeRuntime(workerClasspath = classpath).use { runtime ->
+            runtime.start("return 'warm';", emptySet()).use { it.advance() }
+            val fault = DurableSourceFailure(diskFull = true)
+            var reads = 0
+            val source = CodeModeSource {
+                if (reads++ == 0) CodeModeSourcePart.Delta("await tools.Read({});\n") else throw fault
+            }
+            runtime.startStreaming(source, setOf("Read")).use { cell ->
+                val actual = assertThrows<DurableSourceFailure> { runBlocking { cell.advance() } }
+                assertSame(fault, actual, "the caller must retain the original persistence failure category")
+                assertTrue(actual.diskFull, "the source failure must retain its disk classification")
+                assertEquals(2, reads, "uncommitted source must never be reread automatically")
+            }
+            val healthy = runtime.start("return 'healthy';", emptySet()).use { it.advance() } as CodeModeStep.Completed
+            assertEquals("healthy", healthy.output)
+        }
+    }
+
+    @Test
+    fun `an infrastructure read failure stays a worker fault rather than an upstream source terminal`(): Unit =
+        runBlocking {
+            JvmCodeModeRuntime(workerClasspath = classpath).use { runtime ->
+                runtime.start("return 'warm';", emptySet()).use { it.advance() }
+                val fault = CodeModeInfrastructureException(
+                    CodeModeInfrastructureCategory.HOST,
+                    CodeModeInfrastructureClass.IO,
+                )
+                var reads = 0
+                val source = CodeModeSource {
+                    if (reads++ == 0) CodeModeSourcePart.Delta("await tools.Read({});\n") else throw fault
+                }
+                runtime.startStreaming(source, setOf("Read")).use { cell ->
+                    val actual = assertThrows<CodeModeInfrastructureException> { runBlocking { cell.advance() } }
+                    assertSame(fault, actual)
+                    assertEquals(CodeModeInfrastructureCategory.HOST, actual.category)
+                    assertEquals(CodeModeInfrastructureClass.IO, actual.faultClass)
+                }
+            }
+        }
 
     @Test
     fun `a complete statement calls its tool before source completion`(): Unit = runBlocking {

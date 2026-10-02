@@ -75,11 +75,17 @@ class CodeModeBridgeRuntimeTest {
             assertEquals(ErrorType.OVERLOADED, failure.type)
             assertEquals(FailureCause.INTERNAL, failure.cause)
             assertFalse(failure.deterministic)
-            val persisted = Json.parseToJsonElement(saved().lineSequence().last { it.isNotBlank() }).jsonObject
-            assertEquals(
-                "STARTING",
-                persisted.getValue("records").jsonArray.single().jsonObject.getValue("phase").jsonPrimitive.content,
-            )
+            // Reload through the public bridge, so checkpoint and patch layouts share one recovery contract.
+            runtime().use { recovered ->
+                var posted = ""
+                val retry = bridge(recovered).interceptor(turn(), disableParallel = false)
+                    .intercept(BRIDGE_BASE_REQUEST, Sink()) {
+                        posted = it
+                        TurnOutcome.Success(false, false, Usage(), messageClosed = true)
+                    }
+                assertTrue(retry is TurnOutcome.Success, retry.toString())
+                assertEquals("1", completedOutput(posted), "the failed boot's retained source must be retryable")
+            }
             assertFalse(failure.message.contains("private source marker"))
             assertFalse(failure.message.contains("cancelled"))
             reclamation.assertReclaimed(runtime)

@@ -12,7 +12,9 @@ import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeSource
 import splice.upstream.codemode.CodeModeSourcePart
+import splice.upstream.codemode.CodeModeSourcePersistenceException
 import splice.upstream.codemode.CodeModeStep
+import splice.upstream.failure.CodeModeInfrastructureException
 import splice.upstream.failure.CodeModeWorkerLostException
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -98,6 +100,10 @@ internal class JvmCodeModeCell(
         val reading = async {
             try {
                 input.read()
+            } catch (error: CodeModeSourcePersistenceException) {
+                throw error
+            } catch (error: CodeModeInfrastructureException) {
+                throw error
             } catch (error: java.io.IOException) {
                 CodeModeSourcePart.Failed("Upstream source interrupted: ${error.message.orEmpty()}")
             }

@@ -155,7 +155,7 @@ class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
             stateFiles.block()
             post.gates[1].complete(Unit)
             withTimeout(1_500) { post.sent[1].await() }
-            stateFiles.unblock()
+            // Buffered producer bytes need not write; keep disk blocked through the executable read boundary.
             val next = StepSink()
             val outcome = manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
                 .intercept(history(listOf(first)), next, post)
@@ -164,6 +164,7 @@ class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
             assertEquals(1, runtime.starts)
             assertEquals(1, post.posts)
         } finally {
+            stateFiles.unblock()
             manager.onHeadStop()
         }
     }

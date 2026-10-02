@@ -19,6 +19,9 @@ internal class CodeModeSourceRecords(
     /** Bytes are persisted before a source view can return them to an executable cell. */
     fun append(record: CodeModeRecord, text: String) = access.withKey(record.key) {
         check(record in records && record.error == null) { "code-mode source no longer owns its record" }
+        // Completion may already have committed a longer prefix while this cursor was waking.
+        if (record.source.startsWith(text)) return@withKey
+        check(text.startsWith(record.source)) { "dispatched source changed" }
         val previous = record.source
         record.source = text
         val generation = record.saveGeneration + 1

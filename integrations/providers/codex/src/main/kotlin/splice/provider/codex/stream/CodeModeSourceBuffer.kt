@@ -11,8 +11,16 @@ import splice.upstream.codemode.CodeModeSourcePart
 
 private data class SourceSnapshot(val text: String, val terminal: CodeModeSourcePart? = null)
 
-internal class CodeModeSourceBuffer {
+/** Makes an accumulated executable prefix durable before any cursor hands it to a worker. */
+internal fun interface CodeModeSourceCommit {
+    fun commit(text: String)
+}
+
+internal class CodeModeSourceBuffer(
+    private val beforeRead: CodeModeSourceCommit = CodeModeSourceCommit {},
+) {
     private val state = MutableStateFlow(SourceSnapshot(""))
+    val text: String get() = state.value.text
 
     fun publish(text: String) {
         state.update { previous ->
@@ -43,6 +51,7 @@ internal class CodeModeSourceBuffer {
 
             override suspend fun read(): CodeModeSourcePart {
                 val next = state.first { it.text.length > position || it.terminal != null }
+                if (next.terminal !is CodeModeSourcePart.Failed) beforeRead.commit(next.text)
                 return when (val terminal = next.terminal) {
                     is CodeModeSourcePart.Failed -> terminal
                     is CodeModeSourcePart.Complete -> CodeModeSourcePart.Complete(next.text.substring(position)).also {

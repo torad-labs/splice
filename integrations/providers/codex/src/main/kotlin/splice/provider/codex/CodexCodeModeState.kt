@@ -63,6 +63,8 @@ internal data class CodeModeRecordSnapshot(
 
     @Transient var retainedBytes: Long? = null
 
+    @Transient var encodedFieldBytes: Map<String, Long>? = null
+
     fun restore(): CodeModeRecord = CodeModeRecordRestorer().restore(this)
 }
 

@@ -2,9 +2,16 @@
 // CREDENTIAL-WRITE-EXEMPT[2026-09-30]: private code-mode state, never credentials; compaction keeps every live cell.
 package splice.provider.codex.state
 
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import splice.core.util.JsonScalars
 import splice.core.util.JsonlSink
 import splice.core.util.SecureFile
 import splice.provider.codex.CodeModeExpiredSnapshot
@@ -27,7 +34,21 @@ internal data class CodeModeStateDelta(
     val expired: List<CodeModeExpiredSnapshot>,
 )
 
-/** Checkpoints remain byte-compatible with the old single JSON object. Later lines are cell deltas. */
+@Serializable
+internal data class CodeModeCellPatch(val id: String, val fields: JsonObject)
+
+@Serializable
+internal data class CodeModeStatePatch(
+    val key: String,
+    val patches: List<CodeModeCellPatch>,
+    val expired: List<CodeModeExpiredSnapshot>,
+)
+
+/**
+ * Full checkpoints and old full-cell deltas still load. Patch lines deliberately omit legacy deltas'
+ * mandatory records field: an older jar rejects them, even with unknown keys ignored, rather than
+ * restoring a cell with missing heavy fields.
+ */
 internal object CodeModeStateJournal {
     private const val DELTA_START = "{\"key\":"
 
@@ -39,21 +60,6 @@ internal object CodeModeStateJournal {
     // amortized over at least three journals' worth of appends.
     private const val COMPACT_RATIO = 4
     private val codec = Json { encodeDefaults = true }
-    fun delta(
-        key: String,
-        prior: CodeModePersistedState,
-        next: CodeModePersistedState,
-    ): CodeModeStateDelta {
-        val before = prior.records.associateBy(CodeModeRecordSnapshot::id)
-        val after = next.records.map(CodeModeRecordSnapshot::id).toSet()
-        return CodeModeStateDelta(
-            key,
-            next.records.filter { record -> !same(record, before[record.id]) },
-            before.keys - after,
-            next.expired,
-        )
-    }
-
     fun same(left: CodeModeRecordSnapshot?, right: CodeModeRecordSnapshot?): Boolean =
         left == right && left?.issued == right?.issued && left?.sessionId == right?.sessionId &&
             left?.nativeBaseId == right?.nativeBaseId && left?.replayAnchors == right?.replayAnchors &&
@@ -110,28 +116,26 @@ internal object CodeModeStateJournal {
         if (line == null) return checkpointOnly(head, committed, json)
         val checkpoint = head.joinToString("\n")
         require(checkpoint.isNotBlank()) { "code-mode journal has no checkpoint" }
-        return replayed(json.decodeFromString(checkpoint), line, lines, committed, json)
+        return replayed(json.parseToJsonElement(checkpoint).jsonObject, line, lines, committed, json)
     }
 
     /** [checkpoint] with [first] and every later delta applied, except a torn final line. */
     private fun replayed(
-        checkpoint: CodeModePersistedState,
+        checkpoint: JsonObject,
         first: String,
         lines: Iterator<String>,
         committed: Boolean,
         json: Json,
     ): CodeModePersistedState {
-        var state = checkpoint
-        val key = (state.records.map { it.key } + state.expired.map { it.key }).distinct().single()
+        val replay = Replay(checkpoint, json)
         var line: String? = first
         while (line != null) {
             val following = if (lines.hasNext()) lines.next() else null
             if (following == null && !committed) break
-            // Every line before the torn tail committed and must decode.
-            if (line.isNotBlank()) state = applied(state, key, json.decodeFromString<CodeModeStateDelta>(line))
+            if (line.isNotBlank()) replay.apply(json.parseToJsonElement(line).jsonObject)
             line = following
         }
-        return state
+        return replay.finish()
     }
 
     private fun checkpointOnly(head: List<String>, committed: Boolean, json: Json): CodeModePersistedState =
@@ -142,18 +146,58 @@ internal object CodeModeStateJournal {
             json.decodeFromString<CodeModePersistedState>(head.dropLast(1).joinToString("\n"))
         }
 
-    private fun applied(
-        state: CodeModePersistedState,
-        key: String,
-        change: CodeModeStateDelta,
-    ): CodeModePersistedState {
-        require(change.key == key && change.records.all { it.key == key } && change.expired.all { it.key == key }) {
-            "code-mode journal crosses conversation keys"
+    /** Keeps raw field trees through replay, so patches never re-encode an unchanged history while loading. */
+    @OptIn(ExperimentalSerializationApi::class)
+    private class Replay(private val checkpoint: JsonObject, private val json: Json) {
+        private val records = checkpoint["records"]?.jsonArray.orEmpty()
+            .associateByTo(linkedMapOf()) { checkNotNull(JsonScalars.str(it.jsonObject["id"])) }
+        private var expired = checkpoint["expired"]?.jsonArray ?: JsonArray(emptyList())
+        private val key = (records.values + expired)
+            .map { checkNotNull(JsonScalars.str(it.jsonObject["key"])) }.distinct().single()
+        private val descriptor = CodeModeRecordSnapshot.serializer().descriptor
+        private val fields = (0 until descriptor.elementsCount).map(descriptor::getElementName).toSet()
+
+        init {
+            // Validate before a later replacement could hide a corrupt committed checkpoint.
+            val validated = json.decodeFromJsonElement<CodeModePersistedState>(checkpoint)
+            require(validated.records.size == records.size) { "code-mode checkpoint repeats cell identities" }
         }
-        val records = state.records.associateByTo(linkedMapOf(), CodeModeRecordSnapshot::id)
-        change.removed.forEach(records::remove)
-        change.records.forEach { records[it.id] = it }
-        return CodeModePersistedState(records = records.values.toList(), expired = change.expired)
+
+        fun apply(change: JsonObject) {
+            if ("patches" in change) {
+                val patch = json.decodeFromJsonElement<CodeModeStatePatch>(change)
+                require(patch.key == key && patch.expired.all { it.key == key }) {
+                    "code-mode journal crosses conversation keys"
+                }
+                patch.patches.forEach { cell ->
+                    val before = records[cell.id]?.jsonObject
+                    require(before != null || cell.fields.keys.containsAll(fields)) {
+                        "code-mode journal patch has no complete base cell"
+                    }
+                    val next = JsonObject(before.orEmpty() + cell.fields)
+                    val restored = json.decodeFromJsonElement<CodeModeRecordSnapshot>(next)
+                    require(restored.id == cell.id && restored.key == key) {
+                        "code-mode journal crosses cell identities"
+                    }
+                    records[cell.id] = next
+                }
+            } else {
+                val delta = json.decodeFromJsonElement<CodeModeStateDelta>(change)
+                val sameRecords = delta.key == key && delta.records.all { it.key == key }
+                require(sameRecords && delta.expired.all { it.key == key }) {
+                    "code-mode journal crosses conversation keys"
+                }
+                delta.removed.forEach(records::remove)
+                change.getValue("records").jsonArray.forEach { cell ->
+                    records[checkNotNull(JsonScalars.str(cell.jsonObject["id"]))] = cell
+                }
+            }
+            expired = change.getValue("expired").jsonArray
+        }
+
+        fun finish(): CodeModePersistedState = json.decodeFromJsonElement(
+            JsonObject(checkpoint + mapOf("records" to JsonArray(records.values.toList()), "expired" to expired)),
+        )
     }
 
     private fun endsWithNewline(path: Path): Boolean =
@@ -180,18 +224,52 @@ internal object CodeModeStateJournal {
     /** A delta may append to [path]: it exists, and it has not outgrown [liveBytes] of live cells. */
     fun appendable(path: Path, liveBytes: Long): Boolean = Files.exists(path) && !outgrown(path, liveBytes)
 
-    /** The encoded bytes of [state]'s records, measuring and keeping each record's size the first time. */
+    /** Measures a loaded cell once; subsequent saves update only the encoded field sizes that changed. */
     fun liveBytes(state: CodeModePersistedState, json: Json): Long = state.records.sumOf { record ->
-        record.retainedBytes ?: json.encodeToString(record).encodeToByteArray().size.toLong()
-            .also { record.retainedBytes = it }
+        if (record.encodedFieldBytes == null) CodeModeKeptState.CellEncoding(record, null, json)
+        checkNotNull(record.retainedBytes)
     }
 
-    fun encode(key: String, prior: CodeModePersistedState?, next: CodeModePersistedState, json: Json): String {
-        liveBytes(next, json)
-        if (prior == null) return json.encodeToString(next)
-        val change = delta(key, prior, next)
-        // Retention deletes payload bytes, not merely their index. Compact deletions so old scripts
-        // and private results do not remain recoverable in earlier journal entries past their TTL.
-        return if (change.removed.isNotEmpty()) json.encodeToString(next) else json.encodeToString(change)
+    fun cellText(
+        key: String,
+        cells: List<CodeModeRecordSnapshot>,
+        prior: CodeModeKeptState,
+        json: Json,
+        path: Path,
+    ): String {
+        val encoded = cells.map { CodeModeKeptState.CellEncoding(it, prior.records[it.id], json) }
+        val encoding = CodeModeKeptState.Encoding(json)
+        return if (appendable(path, prior.liveBytesWith(cells))) {
+            encoding.patch(key, encoded, prior.expired)
+        } else {
+            encoding.checkpoint(prior.withCells(cells), encoded)
+        }
+    }
+
+    fun encode(
+        key: String,
+        prior: CodeModePersistedState?,
+        next: CodeModePersistedState,
+        json: Json,
+        path: Path? = null,
+    ): String {
+        val before = prior?.records.orEmpty().associateBy(CodeModeRecordSnapshot::id)
+        val changed = next.records.filterNot { same(it, before[it.id]) && before[it.id]?.encodedFieldBytes != null }
+        val encoded = changed.map { CodeModeKeptState.CellEncoding(it, before[it.id], json) }
+        next.records.filter { same(it, before[it.id]) && before[it.id]?.encodedFieldBytes != null }.forEach {
+            it.retainedBytes = before[it.id]?.retainedBytes
+            it.encodedFieldBytes = before[it.id]?.encodedFieldBytes
+        }
+        val removed = before.keys - next.records.map(CodeModeRecordSnapshot::id).toSet()
+        val live = next.records.sumOf { checkNotNull(it.retainedBytes) }
+        // Deletions compact so the removed payload cannot be recovered from an older journal line.
+        val fullState = prior == null || removed.isNotEmpty()
+        val cannotAppend = path?.let { !appendable(it, live) } == true
+        val encoding = CodeModeKeptState.Encoding(json)
+        return if (fullState || cannotAppend) {
+            encoding.checkpoint(next, encoded)
+        } else {
+            encoding.patch(key, encoded, next.expired)
+        }
     }
 }

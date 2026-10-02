@@ -436,14 +436,20 @@ describe('a session needs a person only when the client waits for an answer', ()
       for (const idle_ms of [90_001, 5 * MIN, 5 * MIN + 1, 40 * MIN]) {
         const busy = session({ status });
         const live = [{ label: 'impl', compact: false, phase: 'streaming', age_ms: 40 * MIN, idle_ms }];
-        expect(sessionItems({ sessions: read({ note: '', sessions: [busy] }), heads: read([head({ gate: gate({ inflight: 1, live, stream_idle_ms: 90_000 }) })]) })).toEqual([]);
+        expect(sessionItems({ sessions: read({ note: '', sessions: [busy] }), heads: read([head({ gate: gate({ inflight: 1, live, stream_idle_ms: 90_000 }) })]),
+          // @ts-expect-error -- the legacy session-linked turn input must never produce an intervention.
+          turnOf: () => ({ id: 'quiet-provider', session: busy.session_id, model: 'model', compact: false, age_ms: 40 * MIN, idle_ms, stopped: false }),
+        })).toEqual([]);
       }
     }
   });
 
   test('a working session with no known head needs no intervention', () => {
     const unknown = session({ status: 'busy', head: 'unknown head' });
-    expect(sessionItems({ sessions: read({ note: '', sessions: [unknown] }) })).toEqual([]);
+    expect(sessionItems({ sessions: read({ note: '', sessions: [unknown] }),
+      // @ts-expect-error -- an unknown head does not turn legacy provider silence into a session need.
+      turnOf: () => ({ id: 'quiet-provider', session: unknown.session_id, model: 'model', compact: false, age_ms: 40 * MIN, idle_ms: 7 * MIN, stopped: false }),
+    })).toEqual([]);
   });
 
   test('an idle session, however stale, and a gone one need no one', () => {

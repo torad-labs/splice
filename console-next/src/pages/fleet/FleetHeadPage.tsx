@@ -1,6 +1,6 @@
 import { Link, useParams, useSearchParams } from 'react-router';
 import { useKeyStore } from '../../api/auth';
-import { useAccounts, useAuth, useHealth, useHeads, useSessions, useUsage } from '../../api/queries';
+import { useAccounts, useAuth, useHealth, useHeads, useSessions, useStatus, useUsage } from '../../api/queries';
 import { SELECTOR_ORDER_TEXT, canRefresh, poolOf } from '../../lib/accounts';
 import { fleetCard } from '../../lib/fleet';
 import { localInstantText } from '../../lib/heads';
@@ -35,6 +35,7 @@ export function FleetHeadPage() {
   const [params, setParams] = useSearchParams();
   const tab = tabOf(params.get('tab'));
   const heads = useHeads();
+  const status = useStatus();
   const usage = useUsage();
   const auth = useAuth();
   const accounts = useAccounts();
@@ -58,7 +59,7 @@ export function FleetHeadPage() {
   const pool = poolOf(rows, head.key);
   const live = new Map<string, number>();
   for (const row of sessions.data?.sessions ?? []) if (row.availability !== 'gone') live.set(row.head, (live.get(row.head) ?? 0) + 1);
-  const facts = fleetCard(head, { usage: usage.data ?? null, auth: auth.data ?? null, accounts: rows, sessions: live, topologyStale: health.data?.topologyStale === true, keys: keyStore.data ?? null, now });
+  const facts = fleetCard(head, { usage: usage.data ?? null, auth: auth.data ?? null, accounts: rows, sessions: live, topologyStale: health.data?.topologyStale === true, family: status.data?.registry.find((row) => row.key === head.key)?.family ?? null, keys: keyStore.data ?? null, now });
   const windows = planWindows(usage.data?.heads.find((row) => row.key === head.key)?.usage ?? null, now);
 
   return (

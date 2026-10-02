@@ -53,8 +53,8 @@ export interface FleetInputs {
   /** Live sessions riding each head, by head key. */
   sessions: ReadonlyMap<string, number>;
   topologyStale: boolean;
-  /** The daemon's declared provider family, not a guess from whether a key was stored. Absent while status has not answered. */
-  family?: string | null;
+  /** The daemon's declared provider family, not a guess from whether a key was stored. Null while status has not answered. */
+  family: string | null;
   keys: KeysPayload | null;
   now: number;
 }
@@ -68,7 +68,8 @@ export const startCommandOf = (head: HeadStatus): string => `rig up ${head.key}`
 
 /** The daemon's provider family is authoritative: a loopback runtime can have a stored API key, and a remote provider can have none. */
 export function kindOf(head: HeadStatus, family: string | null | undefined): string {
-  return family === 'local' ? 'local' : head.authKind;
+  if (family === 'local') return 'local';
+  return providerFamily(head.authKind) === 'local' ? 'api-key' : head.authKind;
 }
 
 function accountLine(pool: readonly AccountRow[], kind: string): string {

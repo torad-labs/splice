@@ -11,6 +11,8 @@ const row = (over: Partial<SessionRow> = {}): SessionRow => ({
   head: 'claude-splice', availability: 'live', ...over,
 });
 
+const quietTurnOf = (session: SessionRow): LiveTurn => ({ id: 'quiet-provider', session: session.session_id, model: 'model', compact: false, age_ms: 40 * 60_000, idle_ms: 7 * 60_000, stopped: false });
+
 describe('a session\'s state', () => {
   test('waiting is the client\'s own word', () => expect(stateOf(row({ status: 'waiting' }))).toBe('waiting'));
   test('busy is working, however old its status stamp: the stamp only moves when the client changes status', () => {
@@ -20,7 +22,9 @@ describe('a session\'s state', () => {
   });
   test('provider silence cannot change the client state: busy and shell remain working', () => {
     for (const status of ['busy', 'shell']) {
-      expect(stateOf(row({ status, status_updated_at: NOW - 40 * 60_000 }))).toBe('working');
+      const busy = row({ status, status_updated_at: NOW - 40 * 60_000 });
+      // @ts-expect-error -- a legacy live-turn argument must never override client state.
+      expect(stateOf(busy, quietTurnOf(busy))).toBe('working');
     }
   });
   test('idle stays idle, and only the client can say it waits for an answer', () => {
@@ -80,7 +84,8 @@ describe('grouping', () => {
   const rows = [row({ status: 'waiting', session_id: 'w' }), row({ session_id: 'b1' }), row({ session_id: 'b2' }), row({ status: 'idle', session_id: 'i' })];
   test('by state keeps only client waiting in Needs, with provider waits among Working', () => {
     const providerWait = row({ session_id: 's' });
-    const groups = groupSessions([...rows, providerWait], 'state');
+    // @ts-expect-error -- legacy provider silence must not change session grouping.
+    const groups = groupSessions([...rows, providerWait], 'state', (session: SessionRow) => session.session_id === 's' ? quietTurnOf(session) : null);
     expect(groups.map((group) => [group.key, group.sessions.length])).toEqual([['needs', 1], ['working', 3], ['idle', 1]]);
   });
   test('by repo, biggest first, an unplaced row is unattributed and not dropped', () => {
@@ -210,7 +215,8 @@ describe('the lede', () => {
       row({ session_id: 'e' }),
       row({ session_id: 'f', status: 'idle' }), row({ session_id: 'g', status: 'idle' }),
     ];
-    expect(sessionsLede(rows)).toBe('Four are working, one is waiting on you. Two finished earlier.');
+    // @ts-expect-error -- legacy provider silence must not remove a Working session from the count.
+    expect(sessionsLede(rows, (session: SessionRow) => session.session_id === 'e' ? quietTurnOf(session) : null)).toBe('Four are working, one is waiting on you. Two finished earlier.');
   });
   test('an empty registry has no sentence to print', () => {
     expect(sessionsLede([])).toBe('');
@@ -233,6 +239,10 @@ describe('the two durations of a card', () => {
     expect(timingOf(row(), 'working', undefined, NOW).quiet).toBeNull();
   });
   test('a quiet provider does not replace the session duration with upstream silence', () => {
-    expect(timingOf(row(), 'working', turn({ age_ms: 40 * 60_000, idle_ms: 7 * 60_000 }), NOW)).toEqual({ since: 60_000, quiet: null });
+    const session = row();
+    const live = quietTurnOf(session);
+    // @ts-expect-error -- the former inference must not change the state or its duration.
+    const state = stateOf(session, live);
+    expect(timingOf(session, state, live, NOW)).toEqual({ since: 60_000, quiet: null });
   });
 });

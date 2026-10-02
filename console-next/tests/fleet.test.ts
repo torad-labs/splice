@@ -15,7 +15,7 @@ const usage = (pct: number, resetsAt: number | null = NOW / 1000 + 3600): UsageP
   window_hours: 1, warn_pct: 80, warn_tokens_5h: 0,
   heads: [{ key: 'claude-grok', label: 'claude-grok', usage: { warn: { pct: 0, level: 'ok', source: 'none', reset: null }, quota: { five_hour: { used_pct: pct, resets_at: resetsAt } } } as never }],
 });
-const inputs = (over: Partial<FleetInputs> = {}): FleetInputs => ({ usage: usage(41), auth: null, accounts: [], sessions: new Map([['claude-grok', 2]]), topologyStale: false, keys: null, now: NOW, ...over });
+const inputs = (over: Partial<FleetInputs> = {}): FleetInputs => ({ usage: usage(41), auth: null, accounts: [], sessions: new Map([['claude-grok', 2]]), topologyStale: false, family: null, keys: null, now: NOW, ...over });
 const account = (over: Partial<AccountRow> = {}): AccountRow => ({ heads: ['claude-grok'], label: 'Ava’s Grok', selected: null, ...over }) as AccountRow;
 
 describe('a fleet card', () => {
@@ -28,6 +28,13 @@ describe('a fleet card', () => {
     const remote = head({ key: 'openrouter', label: 'openrouter', authKind: 'api-key' });
     expect(fleetCard(remote, inputs({ family: 'openrouter', keys: keyed, sessions: new Map() })).meta).toEqual(['api key', 'no sessions']);
     expect(fleetCard(remote, inputs({ family: null, keys: keyed, sessions: new Map() })).meta).toEqual(['api key', 'no sessions']);
+  });
+  test.each(['bearer', 'local'])('a remote daemon family never reads as local with auth kind %s', (authKind) => {
+    const remote = head({ key: 'openrouter', authKind });
+    const card = fleetCard(remote, inputs({ family: 'openrouter', keys: { path: '', keys: [] }, usage: null, sessions: new Map() }));
+    expect(card.meta).toEqual(['api key', 'no sessions']);
+    expect(card.colour).toBe('router');
+    expect(card.none).toBe('Pays per token; no window');
   });
   test('a card with no window to draw says why, and only what is true', () => {
     const keyed = { path: '', keys: [{ name: 'K', stored: true, heads: [{ head: 'openrouter', source: 'store' }] }] } as never;
@@ -87,7 +94,7 @@ describe('a fleet card', () => {
   });
   test('a stopped head is stopped and can be started; a silent local runtime is off, never an item, and is copied not started', () => {
     expect(fleetCard(head({ running: false }), inputs())).toMatchObject({ state: 'Stopped', attention: false, fix: 'start' });
-    const off = fleetCard(head({ authKind: 'local', runtimeNotAnswering: ':8099' }), inputs());
+    const off = fleetCard(head({ authKind: 'local', runtimeNotAnswering: ':8099' }), inputs({ family: 'local' }));
     expect(off).toMatchObject({ state: 'Runtime off', tone: 'idle', attention: false, fix: 'copy-start' });
     expect(off.line).toEqual({ kind: 'note', text: 'The runtime is not answering on :8099.' });
     expect(off.meta[0]).toBe('this computer');

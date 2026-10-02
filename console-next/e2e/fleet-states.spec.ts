@@ -31,8 +31,43 @@ test('a key-auth head with a stored key reads as local when the daemon names its
   const card = page.locator('li.card').filter({ has: page.getByRole('link', { name: STACK.keyHead, exact: true }) });
   await expect(card.locator('.quiet-meta').first()).toContainText('this computer');
   await expect(card.locator('.quiet-meta').first()).not.toContainText('api key');
+  await card.getByRole('link', { name: STACK.keyHead, exact: true }).click();
+  await expect(page.locator('header.top .quiet-meta')).toContainText('this computer');
+  await expect(page.locator('header.top .quiet-meta')).not.toContainText('api key');
+  await expect(page.getByRole('main')).not.toContainText('Pays per token; no window');
   await page.unrouteAll({ behavior: 'ignoreErrors' });
 });
+
+for (const authKind of ['bearer', 'local']) {
+  test(`a remote family stays remote on Fleet and detail with auth kind ${authKind}`, async ({ page }) => {
+    await page.route((url) => url.pathname === '/api/heads', async (route) => {
+      const response = await route.fetch();
+      const body = await response.json() as HeadsPayload;
+      const head = body.heads.find((row) => row.key === STACK.keyHead);
+      if (head === undefined) throw new Error('isolated stack has no key head');
+      head.authKind = authKind;
+      await route.fulfill({ response, json: body });
+    });
+    await page.route((url) => url.pathname === '/api/status', async (route) => {
+      const response = await route.fetch();
+      const body = await response.json() as ControlStatusPayload;
+      const head = body.registry.find((row) => row.key === STACK.keyHead);
+      if (head === undefined) throw new Error('isolated stack has no key head');
+      head.family = 'openrouter';
+      await route.fulfill({ response, json: body });
+    });
+    const faults = await open(page, 'fleet');
+    const card = page.locator('li.card').filter({ has: page.getByRole('link', { name: STACK.keyHead, exact: true }) });
+    await expect(card.locator('.quiet-meta').first()).toContainText('api key');
+    await expect(card.locator('.quiet-meta').first()).not.toContainText('this computer');
+    await card.getByRole('link', { name: STACK.keyHead, exact: true }).click();
+    await expect(page.locator('header.top .quiet-meta')).toContainText('api key');
+    await expect(page.locator('header.top .quiet-meta')).not.toContainText('this computer');
+    await expect(page.getByRole('main')).toContainText('Pays per token; no window');
+    await assertHealthy(page, faults);
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+  });
+}
 
 test('a silent runtime is off on its card and detail while unmarked plans remain ready', async ({ page }) => {
   await page.route((url) => url.pathname === '/api/heads', async (route) => {

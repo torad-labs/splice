@@ -108,9 +108,11 @@ class UpstreamTransportOkHttpTest {
         assertEquals("identity", wireAcceptEncoding(provider = emptyMap()))
     }
 
+    /** splice decodes no content encoding, and OkHttp inflates only what it asked for itself: a configured
+     *  gzip would reach the event parser as raw gzip bytes. */
     @Test
-    fun `a provider's own Accept-Encoding still replaces the uncompressed default`() {
-        assertEquals("br", wireAcceptEncoding(provider = mapOf("accept-encoding" to "br")))
+    fun `a configured Accept-Encoding cannot ask for an encoding splice does not decode`() {
+        assertEquals("identity", wireAcceptEncoding(provider = mapOf("accept-encoding" to "gzip")))
     }
 
     /** The Accept-Encoding the socket read on one prepared upstream POST, null when there was none. */

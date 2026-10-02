@@ -82,9 +82,11 @@ internal class HeaderRules {
             .toMap()
 }
 
-/** Every upstream answer is asked for uncompressed, unless a provider's own headers say otherwise (the
- *  case-insensitive merge lets a configured Accept-Encoding replace it). With no Accept-Encoding of ours,
- *  OkHttp's BridgeInterceptor asks for gzip on its own and inflates the answer out of sight of the trace.
+/** Every upstream answer is asked for uncompressed, whatever a provider's headers say: it is merged last, so
+ *  a configured Accept-Encoding cannot replace it. splice decodes no content encoding itself, and OkHttp
+ *  inflates only an encoding it asked for, so a configured gzip would hand raw gzip to the event parser.
+ *  With no Accept-Encoding of ours, OkHttp's BridgeInterceptor asks for gzip on its own and inflates the
+ *  answer out of sight of the trace.
  *  Anthropic's event streams answer with Vary: Accept-Encoding, and a compressed event stream is flushed in
  *  compressed blocks, not one event at a time. On Oct 2, 12 to 27 percent of Claude-head turns an hour had
  *  their first delta past 90% of the turn, the whole thinking and tool input landing in its last tens of
@@ -113,7 +115,7 @@ internal class UpstreamRequest(
         bodyBytes: ByteArray,
         recorder: AttemptRecorder? = null,
     ): HttpStatement {
-        val allHeaders = headerRules.dedupeCaseInsensitive(IDENTITY_RESPONSE + applyAuth(creds, extraHeaders(creds)))
+        val allHeaders = headerRules.dedupeCaseInsensitive(applyAuth(creds, extraHeaders(creds)) + IDENTITY_RESPONSE)
         // V4-174: the recorder sees the SAME map the wire gets, after the dedupe — redacted on the
         // way in (AttemptRecorder.request), so the credential never leaves this assembly.
         recorder?.request(allHeaders)

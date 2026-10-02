@@ -195,27 +195,26 @@ internal class TurnStreamer(
         recording: FrameRecording,
         pending: PendingSse,
     ) {
+        val slotEnd = AutoCloseable { inputs.slot.release() }
         replay.begin(key, recording)
         inputs.markHandedOff()
         // ATOMIC: the body starts even if the scope was cancelled, so the finally below always runs;
         // the drive's first suspension then throws the cancellation and the seal writes the honest
         // error frame to the still-attached client.
         val job = detachedScope.launch(detachedContext, start = CoroutineStart.ATOMIC) {
-            try {
-                sealedDrive.driveSealingCancellation(drive)
-            } finally {
-                // The terminal's own verdict, not a frame literal (L3): an error frame or an
-                // abandon is not an answer a retry may be handed. It goes into the recording too,
-                // for a retry already following it (LocalResponses.replay seals on a false).
-                val whole = drive.emitter.endedCleanly
-                recording.complete(whole)
-                drive.channel.flushQuietly()
-                val wasDetached = drive.channel.detached.get()
-                val kept = wasDetached && whole
-                replay.finish(key, recording, keep = kept)
-                inputs.slot.release()
-                if (wasDetached) deps.log(finishLine(drive, recording, kept))
+            var completed = false
+            var kept = false
+            // Nested use keeps the first throwable and suppresses later cleanup failures in order.
+            // The replay and permit still settle after a fatal recording or flush failure.
+            slotEnd.use {
+                AutoCloseable {
+                    kept = completed && drive.channel.detached.get() && drive.emitter.endedCleanly
+                    replay.finish(key, recording, keep = kept)
+                }.use {
+                    driveRecorded(drive, recording) { completed = true }
+                }
             }
+            if (drive.channel.detached.get()) deps.log(finishLine(drive, recording, kept))
         }
         try {
             job.join()
@@ -230,6 +229,26 @@ internal class TurnStreamer(
                 )
             }
             throw e
+        }
+    }
+
+    private fun interface RecordingCompleted {
+        operator fun invoke()
+    }
+
+    /** Record the terminal's verdict, then flush even when completion fails; neither replaces the drive failure. */
+    private suspend fun driveRecorded(
+        drive: TurnDrive,
+        recording: FrameRecording,
+        completed: RecordingCompleted,
+    ) {
+        AutoCloseable { drive.channel.flushQuietly() }.use {
+            AutoCloseable {
+                recording.complete(drive.emitter.endedCleanly)
+                completed()
+            }.use {
+                sealedDrive.driveSealingCancellation(drive)
+            }
         }
     }
 

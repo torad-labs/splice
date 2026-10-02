@@ -623,7 +623,7 @@ internal class CodeModeSweepFailureTest : CodeModeFilesTestSupport() {
         removeOnce.set(true)
         assertThrows<CodeModePersistenceException> { registry.complete(current, "after cut") }
         assertFalse(Files.exists(state.dir.resolve(nameOf("alpha"))))
-        registry.save(current)
+        registry.changes.save(current) {}
         assertEquals(listOf("first", "after cut"), registry().outputs("alpha"))
     }
 

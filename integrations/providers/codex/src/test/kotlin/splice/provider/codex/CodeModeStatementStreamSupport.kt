@@ -83,6 +83,9 @@ abstract class CodeModeStatementStreamSupport : CodeModeBridgeTestSupport() {
         var wholeOnly = false
         var repeatOuter = false
         var tearAfterFirst = false
+
+        /** The reader dies on a throwable none of its catches names, as the record's save once did. */
+        var dieAfterFirst = false
         var posts = 0
         var continuation = ""
         private val fragments = listOf("await tools.Read({});\n", "await tools.Edit({});\n", "await tools.Read({});\n")
@@ -109,8 +112,7 @@ abstract class CodeModeStatementStreamSupport : CodeModeBridgeTestSupport() {
             sink.customToolSource(CustomToolSource.Started(startedCall()))
             val indices = if (wholeOnly) emptyList() else fragments.indices.toList()
             for (index in indices) {
-                if (index > 0) gates[index].await()
-                if (index > 0 && tearAfterFirst) throw IOException("mock source transport torn")
+                if (index > 0) breakAfterFirst(index)
                 try {
                     source(sink, fragments[index])
                 } finally {
@@ -145,6 +147,13 @@ abstract class CodeModeStatementStreamSupport : CodeModeBridgeTestSupport() {
                 customCalls = listOf(completed),
                 reasoningEnvelopes = listOf(checkNotNull(ReasoningReplay.encodeReasoningEnvelope(reasoning))),
             )
+        }
+
+        /** A later fragment waits for its gate, then the transport tears or the reader dies when told to. */
+        private suspend fun breakAfterFirst(index: Int) {
+            gates[index].await()
+            if (tearAfterFirst) throw IOException("mock source transport torn")
+            if (dieAfterFirst) throw ConcurrentModificationException("mock record snapshot raced")
         }
 
         private fun startedCall(): GatewayCustomCall {

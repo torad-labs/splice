@@ -103,7 +103,7 @@ internal class CodexCodeModeResume(
         }
         else -> {
             val batch = runtimeResults(record)
-            record.pending.clear()
+            registry.changes.edit(record) { it.pending.clear() }
             machine.advance(
                 record,
                 context.turn,
@@ -140,8 +140,7 @@ internal class CodexCodeModeResume(
         supplied: Map<String, CodeModeResult>,
         sink: WireSink,
     ): TurnOutcome {
-        record.pending.first { !it.exposed }.exposed = true
-        registry.save(record)
+        registry.changes.save(record) { live -> live.pending.first { !it.exposed }.exposed = true }
         val pending = record.visiblePending().filter {
             it.clientId !in record.results && it.clientId !in supplied
         }

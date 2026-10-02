@@ -66,15 +66,9 @@ internal class CodexCodeModeMachine(
         }
         if (previous == null) {
             val issued = CodeModeIssuedStep(record.lastDigest, calls.map(CodeModePending::copy))
-            record.issued += issued
-            try {
-                registry.save(record)
-            } catch (error: CodeModePersistenceException) {
-                // The worker already advanced, but no callback reached the client. A retry
-                // reuses persisted pending ids and earns this issuance with a successful save.
-                record.issued.remove(issued)
-                throw error
-            }
+            // A failed save: the worker already advanced, but no callback reached the client. A retry
+            // reuses persisted pending ids and earns this issuance with a successful save.
+            registry.changes.save(record, undo = { it.issued.remove(issued) }) { it.issued += issued }
         }
         return replay(served, sink)
     }
@@ -116,7 +110,7 @@ internal class CodexCodeModeMachine(
         "completed client call ids=${record.results.keys}; source was not rerun"
 
     private suspend fun advanceCell(request: CodeModeAdvanceRequest, cell: CodeModeCell): TurnOutcome = try {
-        request.record.rounds++
+        registry.changes.edit(request.record) { it.rounds++ }
         dispatchStep(request, cell.advance(request.results))
     } catch (error: CancellationException) {
         started.remove(request.record.id)
@@ -173,8 +167,7 @@ internal class CodexCodeModeMachine(
         calls: List<CodeModeCall>,
     ): TurnOutcome {
         validation.calls(request.record, request.turn.tools, calls)?.let { return poison(request.record, it) }
-        request.record.totalCalls += calls.size
-        request.record.pending += calls.mapIndexed { index, call ->
+        val pending = calls.mapIndexed { index, call ->
             CodeModePending(
                 runtimeId = call.id,
                 clientId = "$CODE_MODE_CLIENT_ID_PREFIX${UUID.randomUUID()}",
@@ -183,8 +176,11 @@ internal class CodexCodeModeMachine(
                 exposed = !request.disableParallel || index == 0,
             )
         }
-        request.record.updatedAt = config.clock.millis()
-        registry.save(request.record)
+        registry.changes.save(request.record) { record ->
+            record.totalCalls += calls.size
+            record.pending += pending
+            record.updatedAt = config.clock.millis()
+        }
         return emit(request.record, request.record.visiblePending(), request.sink)
     }
 

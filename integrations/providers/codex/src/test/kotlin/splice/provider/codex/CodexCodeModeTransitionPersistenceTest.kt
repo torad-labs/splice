@@ -1,8 +1,10 @@
 // NEW: failed post-runtime persistence retries captured transitions, never worker execution.
 package splice.provider.codex
 
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -12,6 +14,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
+import splice.provider.codex.state.CodeModeStateJournal
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeRuntime
@@ -19,6 +22,11 @@ import splice.upstream.codemode.CodeModeStep
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.minutes
 
 class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
@@ -199,6 +207,59 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
         assertEquals(2, stateFiles.records().single().getValue("issued").jsonArray.size)
     }
 
+    /** Oct 2: the source reader saves a live record under its conversation key while the script's driver adds
+     *  to it. The driver wrote outside the key, the save's snapshot met the write mid-iteration, and the
+     *  ConcurrentModificationException killed the reader with the script's source unended. A driver's change
+     *  now waits for the key the reader's save holds. */
+    @Test
+    fun `a driver change to a live record waits while the source reader saves it`() {
+        val saving = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val hold = AtomicBoolean(false)
+        val writer = CodeModeStateWrite { path, text ->
+            if (hold.compareAndSet(true, false)) {
+                saving.countDown()
+                release.await(WAIT_SECONDS, TimeUnit.SECONDS)
+            }
+            CodeModeStateJournal.write(path, text)
+        }
+        val config = CodeModeBridgeConfig({ error("no script runs in this test") }, stateLocation())
+        val registry = CodexCodeModeRegistry(config, Json, 5.minutes, writer)
+        val record = CodeModeRecords.of("alpha", 1)
+        assertTrue(registry.add(record))
+        val machine = CodexCodeModeMachine(config, registry, CodexCodeModeValidation(config))
+        val call = CodeModePending(
+            runtimeId = "runtime-1",
+            clientId = "${CODE_MODE_CLIENT_ID_PREFIX}one",
+            name = "Read",
+            arguments = JsonObject(emptyMap()),
+            exposed = true,
+        )
+        val pool = Executors.newFixedThreadPool(2)
+        try {
+            hold.set(true)
+            val reader = pool.submit { registry.source.append(record, "await tools.Read({});") }
+            assertTrue(saving.await(WAIT_SECONDS, TimeUnit.SECONDS), "the reader's save never reached the disk")
+            val driverThread = CompletableFuture<Thread>()
+            val driver = pool.submit {
+                driverThread.complete(Thread.currentThread())
+                runBlocking { machine.emit(record, listOf(call), RecordingSink()) }
+            }
+            val thread = driverThread.get(WAIT_SECONDS, TimeUnit.SECONDS)
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT_SECONDS)
+            while (thread.state != Thread.State.WAITING && System.nanoTime() < deadline) Thread.onSpinWait()
+            assertEquals(Thread.State.WAITING, thread.state, "the driver never waited for the record's key")
+            assertTrue(record.issued.isEmpty(), "the driver changed the record while the reader's save held its key")
+            release.countDown()
+            reader.get(WAIT_SECONDS, TimeUnit.SECONDS)
+            driver.get(WAIT_SECONDS, TimeUnit.SECONDS)
+            assertEquals(1, record.issued.size)
+        } finally {
+            release.countDown()
+            pool.shutdownNow()
+        }
+    }
+
     private fun assertPersistenceFailure(outcome: TurnOutcome) {
         assertTrue(outcome is TurnOutcome.Failure)
         assertTrue((outcome as TurnOutcome.Failure).message.contains("could not be saved"), outcome.message)
@@ -242,3 +303,7 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
         }
     }
 }
+
+// why: a bound on each wait in the record-race test, far above the milliseconds each step takes, so a hang
+// fails the test by name instead of reaching the suite's timeout.
+private const val WAIT_SECONDS = 5L

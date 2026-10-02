@@ -17,6 +17,7 @@ import kotlinx.serialization.json.JsonElement
 import splice.provider.codex.state.CodeModeExpiredHistory
 import splice.provider.codex.state.CodeModeKeyLocks
 import splice.provider.codex.state.CodeModeNativeChain
+import splice.provider.codex.state.CodeModeRecordChanges
 import splice.provider.codex.state.CodeModeRegistryAccess
 import splice.provider.codex.state.CodeModeSessionEnd
 import splice.provider.codex.state.CodeModeStartupAdmissions
@@ -56,6 +57,7 @@ internal class CodexCodeModeRegistry(
     private val cells = mutableMapOf<String, CodeModeCell>()
     val startup = CodeModeStartupAdmissions(access, records, history, store, config.clock)
     val source = CodeModeSourceRecords(access, records, history, store)
+    val changes = CodeModeRecordChanges(access, records, history, store)
     private val admissions = startup.entries
     private val sweeper = CodexCodeModeSweeper(config, records, cells, admissions, history, closeSession)
     private val timed = CodeModeTimedSweep(
@@ -240,15 +242,9 @@ internal class CodexCodeModeRegistry(
 
     fun cell(record: CodeModeRecord): CodeModeCell? = access.withKey(record.key) { cells[record.id] }
 
-    /** A known record saves only its conversation; a no-arg call retries a failed whole-head carry. */
-    fun save(record: CodeModeRecord? = null) {
-        if (record == null) {
-            monitor.withLock { store.save(records, history.entries) }
-        } else {
-            access.withKey(record.key) {
-                store.save(records, history.entries, dirtyKeys = setOf(record.key), changedRecord = record)
-            }
-        }
+    /** Retries a failed whole-head carry; a known record's conversation saves through [changes]. */
+    fun save() {
+        monitor.withLock { store.save(records, history.entries) }
     }
 
     fun complete(record: CodeModeRecord, output: String) = access.withKey(record.key) {

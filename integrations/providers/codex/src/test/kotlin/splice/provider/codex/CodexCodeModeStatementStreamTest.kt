@@ -245,6 +245,36 @@ class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
         }
     }
 
+    /** Oct 2: a ConcurrentModificationException out of the record's save killed the reader, which none of its
+     *  catches names. The source had no terminal, so the next step's cell read it forever and the session
+     *  hung with nothing logged. Any throwable that ends the reader now fails the source and is named. */
+    @Test
+    @Timeout(20)
+    fun `a reader that dies on an unnamed throwable fails its source instead of hanging the script`() = runBlocking {
+        val runtime = IncrementalRuntime()
+        val manager = bridge(runtime)
+        val firstSink = StepSink()
+        val post = GatedPost(firstSink)
+        try {
+            manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, firstSink, post)
+            val first = firstSink.callback.await()
+            post.dieAfterFirst = true
+            post.gates[1].complete(Unit)
+            withTimeout(1_500) { post.stopped.await() }
+            val next = StepSink()
+            withTimeout(5_000) {
+                manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
+                    .intercept(history(listOf(first)), next, post)
+            }
+            assertFalse(next.callback.isCompleted)
+            assertEquals(1, runtime.starts)
+            assertTrue(post.continuation.contains("source was not rerun"))
+            assertTrue(logLines.any { "ConcurrentModificationException" in it }, logLines.toString())
+        } finally {
+            manager.onHeadStop()
+        }
+    }
+
     @Test
     @Timeout(20)
     fun `steering interrupts a live source and still continues without swallowing client cancellation`() = runBlocking {

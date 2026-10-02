@@ -10,6 +10,7 @@ import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
+import splice.core.util.Cancellables
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModePersistenceException
 import splice.provider.codex.CodeModeRecord
@@ -28,7 +29,7 @@ internal fun interface CodeModeStreamAdmission {
 }
 
 internal class CodeModeLiveRound(
-    config: CodeModeBridgeConfig,
+    private val config: CodeModeBridgeConfig,
     private val registry: CodexCodeModeRegistry,
     wire: CodexCodeModeWire,
     admission: CodeModeStreamAdmission,
@@ -69,7 +70,32 @@ internal class CodeModeLiveRound(
             } finally {
                 if (!ready.isCompleted) ready.complete(null)
             }
-        }.also { it.invokeOnCompletion { end.ended() } }
+        }.also { reader ->
+            reader.invokeOnCompletion { cause ->
+                try {
+                    died(cause)
+                } finally {
+                    end.ended()
+                }
+            }
+        }
+    }
+
+    /** The reader ended on a throwable none of [start]'s catches names (Oct 2: a ConcurrentModificationException
+     *  out of the record's save). Its source had no terminal, so the cell reading it waited forever and nothing
+     *  was logged. The source fails, the record is lost as [failed] loses it, and the throwable's class is named. */
+    private fun died(cause: Throwable?) {
+        val unnamed = cause?.takeUnless { it is CancellationException || it is CodeModePersistenceException } ?: return
+        upstreamEnded = true
+        config.log("[code-mode] upstream source reader died (${unnamed::class.simpleName}): $SOURCE_FAILED")
+        source.fail(SOURCE_FAILED)
+        synchronized(lifecycle) {
+            if (headStopped) return
+            val current = record?.takeUnless(CodeModeRecord::terminal) ?: return
+            Cancellables.runCatchingBestEffort { registry.lose(current, SOURCE_FAILED) }.onFailure { failure ->
+                config.log("[code-mode] the dead reader's record was not saved as lost (${failure::class.simpleName})")
+            }
+        }
     }
 
     private fun finish(outcome: TurnOutcome) = synchronized(lifecycle) {
@@ -91,7 +117,7 @@ internal class CodeModeLiveRound(
     private fun failed(error: Exception): TurnOutcome.Failure = synchronized(lifecycle) {
         upstreamEnded = true
         if (headStopped) throw CancellationException("code-mode head stopped", error)
-        val detail = "upstream source failed; source was not rerun"
+        val detail = SOURCE_FAILED
         source.fail(detail)
         if (error is CodeModePersistenceException) {
             if (!ready.isCompleted) ready.completeExceptionally(error)
@@ -107,7 +133,15 @@ internal class CodeModeLiveRound(
             turn.toolResults.any { it.id in current.clientIds() }
     }
 
-    suspend fun outcome(): TurnOutcome = checkNotNull(finished).await()
+    /** A reader that died on an unnamed throwable ends the round as a torn transport does, with [failed]'s
+     *  outcome, never by throwing its throwable through the next client step. */
+    suspend fun outcome(): TurnOutcome {
+        val reader = checkNotNull(finished)
+        val awaited = Cancellables.runCatchingBestEffort { reader.await() }
+        val failure = awaited.exceptionOrNull() ?: return awaited.getOrThrow()
+        if (failure is CodeModePersistenceException) throw failure
+        return TurnOutcome.Failure(SOURCE_FAILED, cause = FailureCause.INTERNAL, phase = FailurePhase.MID_OUTPUT)
+    }
 
     fun cancel() {
         if (!upstreamEnded) finished?.cancel()
@@ -124,3 +158,5 @@ internal class CodeModeLiveRound(
         capture.observe(event)
     }
 }
+
+private const val SOURCE_FAILED = "upstream source failed; source was not rerun"

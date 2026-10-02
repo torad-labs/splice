@@ -25,13 +25,14 @@ while the green jar sat on disk.
 
 The procedure, every time, in this order:
 
-1. Clean build tree of the exact sha, never the dirty worktree:
-   `git worktree add --detach <scratch>/export-<sha> <sha>`, then confirm `git status` there is
-   empty before building. Not `git archive | tar`: an archive has no `.git`, and `bun tools/gate
-   slot` finds the repository by walking UP to the first `.git` (tools/gate/src/lib/repo.ts), so an
-   archive extracted inside a checkout silently builds THAT checkout instead (caught 2026-09-23: a
-   jar built from the main checkout that way). A detached worktree is its own root. It exists to
-   BUILD the jar; remove it with `git worktree remove` after the install.
+1. Install the jar the gate of record built, never a local build: `gh run download <run> -n
+   splice-jar -D <scratch>/splice-jar-<sha>`, where `<run>` is the `ci` run of step 2. CI uploads
+   that artifact only on a green run (`.github/workflows/ci.yml`, "keep the gate-built jar"); it
+   holds `build/libs/app-all.jar` and `src/main/dist/bin/splice-launch` from that exact sha. No
+   worktree, detached or not, no clone, no archive, no copy of the tree: the operator forbids every
+   second checkout, build trees included (2026-09-28, again 2026-10-01). The build is
+   reproducible: run 36954147029's artifact for b97c74a77 hashed identically to the jar built
+   locally from that sha. The artifact lives 14 days; an older sha gets a fresh CI run.
 2. Gate of record is CI's `gate` job — `npm run gate` = `bun tools/gate run`, the WHOLE ladder —
    passing on the EXACT sha being landed and installed: `gh run view <run> --json
    headSha,conclusion` names that sha and `success`, or `gh pr checks <pr>` shows `gate pass` with
@@ -53,13 +54,12 @@ The procedure, every time, in this order:
    the ladder lints HEAD's subject.
 3. Backup first: `cp -p ~/.local/share/splice/splice.jar
    ~/.local/share/splice/splice.jar.bak-<date>-pre-<sha>`.
-4. Atomic install: `cp` the built jar to a sibling path in the same directory, then `mv` it over
-   `splice.jar`. The launcher ships beside it and the jar cannot refresh it: back up
-   `~/.local/share/splice/splice-launch`, then put the same tree's `app/src/main/dist/bin/splice-launch`
-   in place the same way (sibling copy, keep its mode, `mv`). A jar-only install left the launcher at
+4. Atomic install: `cp` the artifact's jar to a sibling path in the same directory, then `mv` it
+   over `splice.jar`. The launcher ships beside it and the jar cannot refresh it: back up
+   `~/.local/share/splice/splice-launch`, then put the artifact's `splice-launch` in place the same
+   way (sibling copy, mode 0755, `mv`). A jar-only install left the launcher at
    shim-10 under a daemon that wants shim-11 (2026-10-01).
 5. `splice restart --now`, at once, with no gate in front of it (see above).
 6. Verify the OPEN file, not the path: sha256 of the jar fd under `/proc/<pid>/fd/` equals the
-   built jar's sha256. Print both beside the result in one command block.
-7. One ledger note naming the sha, the CI run, the pid, and the backup path. Announce "gradle busy"
-   before the jar build in step 1 and "gradle free" after.
+   artifact jar's sha256. Print both beside the result in one command block.
+7. One ledger note naming the sha, the CI run, the pid, and the backup path.

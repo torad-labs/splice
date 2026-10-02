@@ -73,9 +73,9 @@ branches or worktrees. Coordinate ownership by file and preserve every other sea
    feedback, not the verdict. A red gate is fixed forward with a commit and another CI run.
 4. Land by fast-forward or merge commit, never squash. If a merge creates a new SHA, that SHA
    needs its own passing CI gate before landing or installation.
-5. Only for installation, build the gated SHA from a clean detached tree
-   (`git worktree add --detach <dir> <sha>`), never the shared dirty checkout. Confirm the detached
-   tree is clean before building. Nothing is edited or committed there; remove it after the install.
+5. Install the jar CI built: download the `splice-jar` artifact of the green gate run on that SHA
+   (`gh run download <run> -n splice-jar`). Never build an install from the shared checkout, and
+   never make a second checkout of any kind (worktree, clone, archive or copy), not even to build.
 
 `main` reaches `prod` as described under [Releasing](#releasing).
 

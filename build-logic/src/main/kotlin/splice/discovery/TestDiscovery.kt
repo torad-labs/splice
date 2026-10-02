@@ -114,12 +114,16 @@ val DISPOSITIONS: Map<String, Disposition> = mapOf(
     "CodeModeCapacityTest" to Disposition("1 @ParameterizedTest expands to 2 cases (3 @Test + 2 = 5)", 5),
     "ResponsesWsRunnerTest" to
         Disposition("3 @ParameterizedTest methods expand to 9 cases (13 @Test + 9 = 22)", 22),
-    // V4-447: source-slot adoption runs with one held reader and three saturated readers.
-    "IndependentSourceRoundTest" to Disposition("1 @ParameterizedTest expands to 2 cases (3 @Test + 2 = 5)", 5),
+    // Source-slot adoption and retained WS cancellation each expand into two XML-observed cases.
+    "IndependentSourceRoundTest" to Disposition("2 @ParameterizedTest methods expand to 4 cases (3 @Test + 4 = 7)", 7),
     // V4-447: reject changed source prefix, call ID, tool name, item ID and incomplete completion.
     "CodexCodeModeSourceTerminalTest" to
         Disposition("1 @ParameterizedTest expands to 5 cases (6 @Test + 5 = 11)", 11),
-    "CodexCodeModeReanchorTest" to Disposition("1 @ParameterizedTest expands to 2 cases (1 @Test + 2 = 3)", 3),
+    "CodexCodeModeReanchorTest" to Disposition("2 @ParameterizedTest methods expand to 5 cases (1 @Test + 5 = 6)", 6),
+    "WsRoundDriverTest" to Disposition("1 @ParameterizedTest expands to 2 cases (13 @Test + 2 = 15)", 15),
+    "CodeModePreAdvanceTearTest" to Disposition("1 @ParameterizedTest expands to 2 cases; no plain @Test", 2),
+    "CodexCodeModeSourceTearTest" to
+        Disposition("2 @ParameterizedTest methods expand to 12 cases (9 source tears + 3 startup tears)", 12),
     // 416f077a5: four control-character states that must never be echoed, two valid states that must.
     "CodexTurnStateSseTest" to Disposition("2 @ParameterizedTest methods expand to 6 cases (2 @Test + 6 = 8)", 8),
     "CodexAuthAbsenceTest" to Disposition("1 @ParameterizedTest expands to 4 cases (2 @Test + 4 = 6)", 6),

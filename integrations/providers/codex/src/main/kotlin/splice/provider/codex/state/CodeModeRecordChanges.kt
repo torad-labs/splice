@@ -23,6 +23,9 @@ internal class CodeModeRecordChanges(
     private val history: CodeModeExpiredHistory,
     private val store: CodexCodeModeStore,
 ) {
+    /** A retry's ownership read shares the driver's key, without sweeping or ending any source. */
+    fun clientIds(record: CodeModeRecord): Set<String> = access.withKey(record.key) { record.clientIds() }
+
     /** A change the record's next save carries. */
     fun edit(record: CodeModeRecord, change: CodeModeRecordChange) = access.withKey(record.key) { change(record) }
 

@@ -19,6 +19,29 @@ import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.sse.WireSink
 import java.util.concurrent.ConcurrentHashMap
 
+/** Source stops stay on the ending thread, after its outermost registry scope releases every lock. */
+internal object CodeModeSourceEnds {
+    private val pending = ThreadLocal<MutableList<CodeModeSourceLease>>()
+
+    fun defer(lease: CodeModeSourceLease?) {
+        if (lease == null) return
+        val held = pending.get()
+        if (held == null) lease.ended() else held.add(lease)
+    }
+
+    inline fun <T> unlocked(block: () -> T): T {
+        if (pending.get() != null) return block()
+        val leases = mutableListOf<CodeModeSourceLease>()
+        pending.set(leases)
+        return try {
+            block()
+        } finally {
+            pending.remove()
+            leases.forEach(CodeModeSourceLease::ended)
+        }
+    }
+}
+
 /** A retained record owns its reader until finalization, disposal or head stop. */
 internal class CodeModeSourceLease(
     private val id: String,

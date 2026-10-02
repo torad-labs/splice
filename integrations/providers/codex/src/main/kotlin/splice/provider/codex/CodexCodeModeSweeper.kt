@@ -17,6 +17,7 @@ import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.provider.codex.state.CodeModeExpiredHistory
 import splice.provider.codex.state.CodeModeSessionEnd
+import splice.provider.codex.stream.CodeModeSourceEnds
 import splice.upstream.codemode.CodeModeCell
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
@@ -129,7 +130,7 @@ internal class CodexCodeModeSweeper(
         if (stale.isEmpty()) return false
         stale.forEach { record ->
             admissions.remove(record.id)
-            record.sourceEnd?.ended()
+            CodeModeSourceEnds.defer(record.sourceEnd)
             record.sourceEnd = null
             cells.remove(record.id)?.close()
             history.remember(record, config.clock.millis())
@@ -154,7 +155,7 @@ internal class CodexCodeModeSweeper(
      *  24 hours are not restarted by the park (V4-287: they were, keeping it past the promise). */
     private fun park(record: CodeModeRecord, message: String) {
         admissions.remove(record.id)
-        record.sourceEnd?.ended()
+        CodeModeSourceEnds.defer(record.sourceEnd)
         record.sourceEnd = null
         cells.remove(record.id)?.close()
         record.phase = CodeModePhase.LOST

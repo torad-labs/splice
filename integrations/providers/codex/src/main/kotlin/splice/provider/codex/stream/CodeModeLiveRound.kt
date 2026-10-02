@@ -129,8 +129,11 @@ internal class CodeModeLiveRound(
 
     fun owns(turn: CodexCodeModeBridge.Turn): Boolean = synchronized(lifecycle) {
         val current = record ?: return@synchronized false
-        current.sessionId == turn.sessionId && current.key == CodeModeTurnIdentity().turnKey(turn) &&
-            turn.toolResults.any { it.id in current.clientIds() }
+        if (current.sessionId != turn.sessionId || current.key != CodeModeTurnIdentity().turnKey(turn)) {
+            return@synchronized false
+        }
+        val ids = registry.changes.clientIds(current)
+        turn.toolResults.any { it.id in ids }
     }
 
     /** A reader that died on an unnamed throwable ends the round as a torn transport does, with [failed]'s

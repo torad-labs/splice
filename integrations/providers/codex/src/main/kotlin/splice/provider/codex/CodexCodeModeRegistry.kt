@@ -22,6 +22,7 @@ import splice.provider.codex.state.CodeModeRegistryAccess
 import splice.provider.codex.state.CodeModeSessionEnd
 import splice.provider.codex.state.CodeModeStartupAdmissions
 import splice.provider.codex.state.CodeModeTurnStart
+import splice.provider.codex.stream.CodeModeSourceEnds
 import splice.provider.codex.stream.CodeModeSourceRecords
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
@@ -74,10 +75,12 @@ internal class CodexCodeModeRegistry(
     val turnStart = CodeModeTurnStart(access, retention, records, history, store, config.clock, closeSession)
 
     init {
-        monitor.withLock {
-            val changed = sweeper.sweep() or retention.trim(records, history, config.clock.millis())
-            if (changed) store.save(records, history.entries)
-            timed.arm()
+        CodeModeSourceEnds.unlocked {
+            monitor.withLock {
+                val changed = sweeper.sweep() or retention.trim(records, history, config.clock.millis())
+                if (changed) store.save(records, history.entries)
+                timed.arm()
+            }
         }
     }
 
@@ -140,10 +143,10 @@ internal class CodexCodeModeRegistry(
             }
         }
 
-        private fun attempt(): Boolean? {
+        private fun attempt(): Boolean? = CodeModeSourceEnds.unlocked {
             val own = keyLocks.acquire(record.key)
             val held = mutableMapOf<String, CodeModeKeyLocks.Entry>()
-            return try {
+            try {
                 monitor.withLock {
                     if (sweeper.sweep(record.key)) {
                         store.save(records, history.entries, dirtyKeys = setOf(record.key))
@@ -205,7 +208,7 @@ internal class CodexCodeModeRegistry(
 
         fun publishEvictions(key: String) {
             records.filter { it.key == key && it.id in evicted }.forEach { record ->
-                record.sourceEnd?.ended()
+                CodeModeSourceEnds.defer(record.sourceEnd)
                 record.sourceEnd = null
             }
             val removed = records.removeAll { it.key == key && it.id in evicted }
@@ -258,6 +261,7 @@ internal class CodexCodeModeRegistry(
 
     fun lose(record: CodeModeRecord, message: String, cancellation: CancellationException? = null) =
         access.withKey(record.key) {
+            if (record !in records) return@withKey
             admissions.remove(record.id)
             cells.remove(record.id)?.close()
             record.phase = CodeModePhase.LOST

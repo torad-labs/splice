@@ -260,6 +260,70 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
         }
     }
 
+    @Test
+    fun `new pending calls wait for a source save after the worker advances`() {
+        val advancing = CountDownLatch(1)
+        val advance = CountDownLatch(1)
+        val advanced = CountDownLatch(1)
+        val saving = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val hold = AtomicBoolean(false)
+        val writer = CodeModeStateWrite { path, text ->
+            if (hold.compareAndSet(true, false)) {
+                saving.countDown()
+                check(release.await(WAIT_SECONDS, TimeUnit.SECONDS))
+            }
+            CodeModeStateJournal.write(path, text)
+        }
+        val config = CodeModeBridgeConfig({ error("no runtime starts") }, stateLocation())
+        val registry = CodexCodeModeRegistry(config, Json, 5.minutes, writer)
+        val record = CodeModeRecords.of("pending-race", 1)
+        assertTrue(registry.add(record))
+        val cell = object : CodeModeCell {
+            override suspend fun advance(results: List<CodeModeResult>): CodeModeStep {
+                advancing.countDown()
+                check(advance.await(WAIT_SECONDS, TimeUnit.SECONDS))
+                advanced.countDown()
+                return CodeModeStep.Calls(listOf(call("runtime-next", "Read")))
+            }
+            override fun close() = Unit
+        }
+        assertTrue(registry.attach(record, cell))
+        val machine = CodexCodeModeMachine(config, registry, CodexCodeModeValidation(config))
+        val pool = Executors.newFixedThreadPool(2)
+        val driverThread = CompletableFuture<Thread>()
+        try {
+            val driver = pool.submit {
+                driverThread.complete(Thread.currentThread())
+                runBlocking { machine.advance(record, turn(), false, emptyList(), RecordingSink()) }
+            }
+            assertTrue(advancing.await(WAIT_SECONDS, TimeUnit.SECONDS), "the worker never reached its advance")
+            hold.set(true)
+            val reader = pool.submit { registry.source.append(record, "await tools.Read({});") }
+            assertTrue(saving.await(WAIT_SECONDS, TimeUnit.SECONDS), "the source reader never held its save")
+            advance.countDown()
+            assertTrue(advanced.await(WAIT_SECONDS, TimeUnit.SECONDS), "the worker never left its advance latch")
+            val thread = driverThread.get(WAIT_SECONDS, TimeUnit.SECONDS)
+            awaitPendingKey(thread)
+            assertTrue(record.pending.isEmpty(), "acceptCalls changed pending while the source save held its key")
+            release.countDown()
+            reader.get(WAIT_SECONDS, TimeUnit.SECONDS)
+            driver.get(WAIT_SECONDS, TimeUnit.SECONDS)
+            assertEquals(1, record.pending.size)
+            assertEquals(1, stateFiles.records().single().getValue("pending").jsonArray.size)
+        } finally {
+            advance.countDown()
+            release.countDown()
+            pool.shutdownNow()
+        }
+    }
+
+    private fun awaitPendingKey(thread: Thread) {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT_SECONDS)
+        while (thread.state != Thread.State.WAITING && System.nanoTime() < deadline) Thread.onSpinWait()
+        assertEquals(Thread.State.WAITING, thread.state, "acceptCalls must wait for the source reader's key")
+    }
+
     private fun assertPersistenceFailure(outcome: TurnOutcome) {
         assertTrue(outcome is TurnOutcome.Failure)
         assertTrue((outcome as TurnOutcome.Failure).message.contains("could not be saved"), outcome.message)

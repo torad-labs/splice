@@ -1,6 +1,7 @@
 // NEW: per-conversation transition locks are separate from the head-wide state lock.
 package splice.provider.codex.state
 
+import splice.provider.codex.stream.CodeModeSourceEnds
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
@@ -44,8 +45,8 @@ internal class CodeModeRegistryAccess(
     val monitor: ReentrantLock,
     val keys: CodeModeKeyLocks,
 ) {
-    inline fun tryKey(key: String, block: () -> Unit) {
-        val entry = keys.tryAcquire(key) ?: return
+    inline fun tryKey(key: String, block: () -> Unit) = CodeModeSourceEnds.unlocked {
+        val entry = keys.tryAcquire(key) ?: return@unlocked
         try {
             monitor.withLock(block)
         } finally {
@@ -53,9 +54,9 @@ internal class CodeModeRegistryAccess(
         }
     }
 
-    inline fun <T> withKey(key: String, block: () -> T): T {
+    inline fun <T> withKey(key: String, block: () -> T): T = CodeModeSourceEnds.unlocked {
         val entry = keys.acquire(key)
-        return try {
+        try {
             monitor.withLock(block)
         } finally {
             keys.release(key, entry)

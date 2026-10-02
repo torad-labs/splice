@@ -135,6 +135,34 @@ class ChatEffortWiringTest {
     }
 
     @Test
+    fun `quoted TOML effort names resolve thinking off and nondefault explicit levels`() {
+        for (quote in listOf("\"", "'")) {
+            val vocabulary = vocabularyToml.replace("none = \"low\"", "${quote}none$quote =\"low\"")
+                .replace("xhigh = \"max\"", "${quote}XHigh$quote =\"high\"")
+                .replace("low = \"low\"", "${quote}low$quote =\"low\"")
+            val provider = providerFromToml(baseToml + vocabulary)
+            assertEffort(provider, "", "low", thinking = """{"type":"disabled"}""")
+            assertEffort(provider, "\"effort\":\"xHIGH\"", "high")
+            assertEffort(provider, "\"output_config\":{\"effort\":\"low\"}", "low")
+        }
+    }
+
+    @Test
+    fun `quoted and bare TOML names cannot evade duplicate or blank validation`() {
+        for (levels in listOf(
+            "\"low\" = \"high\"\nlow = \"max\"",
+            "'LOW' = \"high\"\nlow = \"max\"",
+            "\" LOW \" = \"high\"\nlow = \"max\"",
+            "\"\" = \"low\"",
+            "' ' = \"low\"",
+        )) {
+            val vocabulary = "[providers.glml53.quirks.chat_effort_vocabulary]\ndefault = \"max\"\n" +
+                "[providers.glml53.quirks.chat_effort_vocabulary.levels]\n$levels\n"
+            assertThrows<IllegalArgumentException> { providerFromToml(baseToml + vocabulary) }
+        }
+    }
+
+    @Test
     fun `a scoped vocabulary applies only to matching upstream models`() {
         val vocabulary = vocabularyToml.replace(
             "default = \"max\"",

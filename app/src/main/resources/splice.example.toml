@@ -261,7 +261,11 @@ context_window = 256000
 # Disabled thinking uses the none level if declared; without none it falls back to legacy tiers,
 # which omit effort. reasoning_effort = false still suppresses both upstream effort wire fields.
 # Optional model_pattern is an upstream-model regex; a miss preserves legacy budget tiers.
-# For a GLM-5.3-Flash runtime, add these tables under that runtime's existing provider:
+# Complete optional GLM-5.3-Flash runtime example; keep your existing provider URL and auth:
+# [providers.glml53]
+# dialect = "openai-chat"
+# base_url = "http://localhost:8000/v1"
+# auth = { kind = "api-key", env = "GLM_API_KEY" }
 # [providers.glml53.quirks.chat_effort_vocabulary]
 # default = "max"
 # model_pattern = "^GLM-5[.]3-Flash"

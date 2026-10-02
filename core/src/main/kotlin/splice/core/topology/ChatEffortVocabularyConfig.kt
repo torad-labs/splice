@@ -14,12 +14,19 @@ public data class ChatEffortVocabularyConfig(
 ) {
     init {
         require(default.isNotBlank()) { "chat_effort_vocabulary.default must not be blank" }
-        require(levels.all { (key, value) -> key.isNotBlank() && value.isNotBlank() }) {
+        val normalized = normalizedLevels()
+        require(normalized.all { (key, value) -> key.isNotBlank() && value.isNotBlank() }) {
             "chat_effort_vocabulary.levels must contain nonblank effort names and values"
         }
-        require(levels.keys.map { it.trim().lowercase() }.toSet().size == levels.size) {
+        require(normalized.size == levels.size) {
             "chat_effort_vocabulary.levels contains duplicate normalized effort names"
         }
         modelPattern?.let { Regex(it) }
+    }
+
+    /** Canonical TOML effort names, shared by validation and production vocabulary assembly. */
+    public fun normalizedLevels(): Map<String, String> {
+        val keys = TomlKeys()
+        return levels.mapKeys { keys.unquote(it.key).trim().lowercase() }
     }
 }

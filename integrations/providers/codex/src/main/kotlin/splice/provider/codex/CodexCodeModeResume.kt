@@ -3,13 +3,9 @@
 package splice.provider.codex
 
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
-import splice.dialect.responses.request.ResponsesCodeModeInput
-import splice.dialect.responses.request.ResponsesContextMessage
-import splice.provider.codex.state.CodeModeNativeChain
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.sse.WireSink
 
@@ -31,11 +27,17 @@ internal class CodexCodeModeResume(
         bodyJson: String,
     ): TurnOutcome {
         record.error?.let { return failure(it) }
-        if (record.lastDigest == context.digest && record.pending.isNotEmpty()) {
-            val pending = record.visiblePending().filter { it.clientId !in record.results }
-            if (pending.isNotEmpty()) return machine.emit(record, pending, context.sink)
+        val attached = context.copy(sink = driver.streams.attach(record, context.sink))
+        attached.completed += context.completed
+        return try {
+            if (record.lastDigest == context.digest && record.pending.isNotEmpty()) {
+                val pending = record.visiblePending().filter { it.clientId !in record.results }
+                if (pending.isNotEmpty()) return machine.emit(record, pending, attached.sink)
+            }
+            fresh(record, attached, bodyJson)
+        } finally {
+            driver.streams.endStep(record)
         }
-        return fresh(record, context, bodyJson)
     }
 
     /** A lost cell can never resume, so the same request retried can never succeed: rather than
@@ -130,11 +132,7 @@ internal class CodexCodeModeResume(
         context: CodeModeRunContext,
         bodyJson: String,
     ): TurnOutcome {
-        context.completed += record
-        val rewritten = wire.canonicalize(bodyJson, context.completed, context.turn.toolMedia)
-        rewritten.error?.let { return failure(it) }
-        val canonicalBody = checkNotNull(rewritten.bodyJson)
-        return driver.drive(context, null, canonicalBody, context.post(canonicalBody))
+        return driver.finishGenerated(record, context, bodyJson)
     }
 
     private suspend fun exposeNext(
@@ -210,82 +208,3 @@ internal class CodexCodeModeResume(
  * nobody expected, a baseline that no longer matches), which stops the script as it always did.
  */
 internal enum class CodeModeExtra { NONE, SYSTEM, STEERING }
-
-/**
- * The logical items after the baseline (and after its continuity, while that is intact) that are
- * neither the script's callbacks nor their follow-ups, and any replay item in the tail nothing put there.
- */
-internal class CodeModeExtraContent(
-    private val codec: CodexCodeModeHistoryCodec,
-    private val ownership: CodeModeOwnership,
-) {
-    fun of(bodyJson: String, record: CodeModeRecord, candidateMedia: Map<String, List<JsonElement>>): CodeModeExtra {
-        val projected = onBaseline(bodyJson, record) ?: return CodeModeExtra.STEERING
-        val owned = (record.results.keys + record.pending.map(CodeModePending::clientId)).toSet()
-        val logicalExtra = unownedItems(projected.logicalItems, record, owned, candidateMedia)
-        return when {
-            unexpectedReplay(projected, record, owned) || logicalExtra.any { !isSystemMessage(it) } ->
-                CodeModeExtra.STEERING
-            logicalExtra.isNotEmpty() -> CodeModeExtra.SYSTEM
-            else -> CodeModeExtra.NONE
-        }
-    }
-
-    /** The request's conversation, or null when it no longer starts with the record's baseline. */
-    private fun onBaseline(bodyJson: String, record: CodeModeRecord): ResponsesCodeModeInput? {
-        val input = codec.root(bodyJson)?.second ?: return null
-        val projected = codec.conversation(codec.projection.project(input)).body
-        val validBaseline = codec.validFullPrefix(input, record) ||
-            codec.validPrefix(projected.logicalItems, record)
-        return projected.takeIf { validBaseline }
-    }
-
-    private fun unownedItems(
-        items: List<JsonElement>,
-        record: CodeModeRecord,
-        owned: Set<String>,
-        candidateMedia: Map<String, List<JsonElement>>,
-    ): List<JsonElement> {
-        val ownedFollowUps = ownership.followUps(items, record, candidateMedia)
-        val tailStart = codec.baselineBoundary(items, record) ?: record.baselineLogicalCount
-        val afterContinuity = if (codec.continuityAt(items, tailStart, record.continuity)) {
-            tailStart + record.continuity.size
-        } else {
-            tailStart
-        }
-        return (afterContinuity until items.size).filter { index ->
-            !ownership.isCallback(items[index], owned) && index !in ownedFollowUps
-        }.map(items::get)
-    }
-
-    /** A replay item in the tail (from the baseline's end on) that neither the record put there nor an
-     *  owned callback carries. Replay inside the baseline is history, held by the baseline's digest and
-     *  native segments before this runs; reasoning before an earlier ordinary call is never recorded
-     *  (native segments keep only replay no function_call follows), and read as new it stopped every
-     *  resume in a conversation with reasoning (live after the V4-336 install: 35 of 49 records). */
-    private fun unexpectedReplay(
-        projected: ResponsesCodeModeInput,
-        record: CodeModeRecord,
-        owned: Set<String>,
-    ): Boolean {
-        val allowed = CodeModeNativeChain.allowed(record)
-        return projected.replayItems.any { replay ->
-            val slot = replay.logicalOffset to replay.items
-            val expected = slot in allowed
-            replay.logicalOffset >= record.baselineLogicalCount && !expected && replay.callbackId !in owned
-        }
-    }
-
-    /** A role=system message: how Claude Code sends a peer's message, a task notification or a hook's
-     *  output (the live claudex wire, 2026-09-26). V4-390: a lite turn sends it as the dialect's
-     *  context message; the role=system form stays recognized for requests built before that. */
-    private fun isSystemMessage(element: JsonElement): Boolean {
-        val item = element as? JsonObject
-        val message = codec.string(item, CODE_MODE_FIELD_TYPE) in MESSAGE_TYPES
-        return (message && codec.string(item, CODE_MODE_FIELD_ROLE) == ResponsesContextMessage.CLIENT_ROLE) ||
-            ResponsesContextMessage.isContext(item)
-    }
-}
-
-/** The builder writes a plain {role, content} message with no `type`; an explicit one says message. */
-private val MESSAGE_TYPES = setOf("", "message")

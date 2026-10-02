@@ -8,6 +8,7 @@ import kotlinx.coroutines.Job
 import splice.core.util.LogSink
 import splice.head.round.RoundInterception
 import splice.head.round.RoundStrategy
+import splice.head.transport.IndependentSourcePost
 import splice.head.transport.SseRoundDriver
 import splice.head.wire.WireTap
 import splice.upstream.Provider
@@ -19,8 +20,13 @@ internal class TurnRoundRun(
     private val turnFinish: TurnFinish,
     /** V4-173: the head's opt-in upstream wire tap, null on every head that did not turn it on. */
     private val wireTap: WireTap?,
+    usageStamp: TurnUsageStamp,
 ) {
+    private val sourceRound = IndependentSourcePost(sseRoundDriver, usageStamp)
+
     suspend fun run(drive: TurnDrive, self: CoroutineScope, turnJob: Job) {
+        // No upstream POST opens an adopted source step. Open it here so signed live progress can flow.
+        if (drive.roundInterceptor?.resumesSource() == true) drive.emitter.ensureStarted()
         // Folding is null for sol / every non-codex head → the single-round path is
         // byte-for-byte the pre-fold behaviour (drive straight to the real emitter,
         // finish once). A fold-eligible turn hands the loop to FoldRunner. Which runner
@@ -38,7 +44,7 @@ internal class TurnRoundRun(
             // driver POSTs. Recorded here, an audit sees exactly the bytes, not the turn's first draft.
             postRoundToSink = { bodyJson, sink ->
                 wireTap?.record(drive.meta, bodyJson)
-                sseRoundDriver.postRound(drive, bodyJson, sink, self, turnJob)
+                sourceRound.post(drive, bodyJson, sink, self, turnJob)
             },
             postRound = { bodyJson ->
                 wireTap?.record(drive.meta, bodyJson)

@@ -106,6 +106,55 @@ class TurnUsageStampTest {
         TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = usage)
 
     @Test
+    fun `raw completion after a local step bills once and a later continuation bills only new output`() =
+        runBlocking {
+            val rig = Rig(tmp, "independent")
+            val first = rig.drive()
+            val resumed = rig.drive()
+            try {
+                rig.stamp.stampSuccess(first, success(Usage(localStep = true)))
+                val raw = rig.stamp.stampIndependent(success(Usage(inputTokens = 100, outputTokens = 7)))
+                    as TurnOutcome.Success
+                assertEquals(7L, rig.usageStore.readState().outputTokens5h)
+                assertEquals(7L, raw.usage.recordedOutputTokens)
+                val total = splice.head.round.RoundUsage()
+                    .plusRound(raw.usage)
+                    .plusRound(Usage(inputTokens = 150, outputTokens = 5))
+                    .toUsage()
+                rig.stamp.stampSuccess(resumed, success(total))
+                rig.stamp.stampKnownOnCancellation(resumed)
+                assertEquals(12L, rig.usageStore.readState().outputTokens5h)
+                assertEquals(12L, resumed.perf.snapshot().counters[PerfKeys.OUT_TOKENS])
+            } finally {
+                first.slot.release()
+                resumed.slot.release()
+                rig.usageStore.flushNow()
+            }
+        }
+
+    @Test
+    fun `a torn independent round records partial billing without billing its salvage twice`() =
+        runBlocking {
+            val rig = Rig(tmp, "independent-torn")
+            val resumed = rig.drive()
+            try {
+                val failure = TurnOutcome.Failure(
+                    "source torn",
+                    cause = splice.core.turn.FailureCause.UPSTREAM_TRUNCATED,
+                    phase = splice.core.turn.FailurePhase.MID_OUTPUT,
+                    partial = TurnOutcome.PartialRound(usage = Usage(outputTokens = 7)),
+                )
+                val raw = rig.stamp.stampIndependent(failure) as TurnOutcome.Failure
+                val usage = checkNotNull(raw.partial).usage
+                rig.stamp.stampSalvaged(resumed, usage + Usage(outputTokens = 5))
+                assertEquals(12L, rig.usageStore.readState().outputTokens5h)
+            } finally {
+                resumed.slot.release()
+                rig.usageStore.flushNow()
+            }
+        }
+
+    @Test
     fun `a success stamp writes cache_write_tokens from the usage's cacheWriteTokens`() = runBlocking {
         val rig = Rig(tmp, "success")
         val drive = rig.drive()

@@ -15,6 +15,7 @@ import splice.head.CompactionPreflight
 import splice.head.HeadDeps
 import splice.head.RequestBodyTooLarge
 import splice.head.turn.MaterializedRequest
+import splice.head.turn.SESSION_HEADER
 import splice.upstream.Provider
 import splice.upstream.failure.SseSpuriousWakeupException
 import splice.upstream.retry.InflightGate
@@ -39,11 +40,16 @@ internal class AdmissionGate(
         return false
     }
 
-    suspend fun acquireSlotOrRespond(call: ApplicationCall): InflightGate.Slot? {
+    suspend fun acquireSlotOrRespond(call: ApplicationCall): InflightGate.Slot? =
+        acquireOrRespond(call, gate.resumeSource(call.request.headers[SESSION_HEADER]))
+
+    suspend fun acquireFreshSlotOrRespond(call: ApplicationCall): InflightGate.Slot? = acquireOrRespond(call, null)
+
+    private suspend fun acquireOrRespond(call: ApplicationCall, held: InflightGate.Slot?): InflightGate.Slot? {
         // V4-114: the gate ANSWERS with a value now, so this refusal is a compiler-checked `when`
         // branch rather than a `catch` on a name — the 529 on the wire is unchanged, and the
         // window-closed refusal ten lines below has always been spelled as a returned null.
-        val slot = when (val admission = gate.acquire()) {
+        val slot = held ?: when (val admission = gate.acquire()) {
             is InflightGate.Admission.Acquired -> admission.slot
             InflightGate.Admission.AtCapacity -> {
                 log("[${provider.key}] admission rejected: gateway at capacity (queued=${gate.snapshot().queued})\n")

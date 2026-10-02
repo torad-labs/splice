@@ -29,7 +29,11 @@ public data class Usage(
     val localStep: Boolean = false,
     /** A code-mode branch changed a result already accepted on this conversation key. */
     val codeModeDiverged: Boolean = false,
+    /** Output already recorded by an independently owned raw round, not a client-turn stamp. */
+    val recordedOutputTokens: Long = 0,
 ) {
+    public val unrecordedOutputTokens: Long get() = outputTokens - recordedOutputTokens
+
     /** Sum two rounds' usage — reasoning-continuation folding accumulates across hidden rounds. */
     public operator fun plus(other: Usage): Usage = Usage(
         inputTokens = inputTokens + other.inputTokens,
@@ -39,6 +43,7 @@ public data class Usage(
         cacheWriteTokens = cacheWriteTokens + other.cacheWriteTokens,
         localStep = localStep || other.localStep,
         codeModeDiverged = codeModeDiverged || other.codeModeDiverged,
+        recordedOutputTokens = recordedOutputTokens + other.recordedOutputTokens,
     )
 }
 

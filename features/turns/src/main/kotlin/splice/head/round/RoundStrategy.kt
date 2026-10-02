@@ -48,10 +48,10 @@ internal class RoundStrategy(
     suspend fun run(requestBody: JsonObject, fold: FoldController?, reanchor: ReanchorController?) {
         val notice = RetryNotice { log(it) }
         val interceptedPost = PostRound { body ->
-            intercept(body, emitter, observeRawPost(InterceptedRoundPost(postRound::invoke)))
+            intercept(body, emitter, observedPost(InterceptedRoundPost(postRound::invoke)))
         }
         val interceptedPostToSink = PostRoundToSink { body, sink ->
-            intercept(body, sink, observeRawPost(InterceptedRoundPost { posted -> postRoundToSink(posted, sink) }))
+            intercept(body, sink, observedPost(InterceptedRoundPost { posted -> postRoundToSink(posted, sink) }))
         }
         if (fold != null) {
             FoldRunner(
@@ -85,11 +85,11 @@ internal class RoundStrategy(
         }
     }
 
-    private fun observeRawPost(post: InterceptedRoundPost): InterceptedRoundPost = InterceptedRoundPost { bodyJson ->
-        val outcome = post(bodyJson)
-        if (interception.interceptor != null) interception.rawRoundObserved?.invoke(outcome)
-        outcome
-    }
+    private fun observedPost(ordinary: InterceptedRoundPost): InterceptedRoundPost = ObservedRoundPost(
+        postRoundToSink,
+        ordinary,
+        if (interception.interceptor != null) interception.rawRoundObserved else null,
+    )
 
     private suspend fun intercept(
         bodyJson: String,

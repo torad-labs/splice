@@ -113,7 +113,12 @@ internal data class TurnDrive(
         fun claimAccountBoundary(): Boolean = accountBoundaryClaim.compareAndSet(false, true)
     }
 
+    fun interface SourceRoundStarted {
+        fun started(job: kotlinx.coroutines.Job)
+    }
+
     private val claims = TurnClaims()
+    var sourceRoundStarted: SourceRoundStarted? = null
 
     /** The model the upstream is asked for: the meta's, read rather than copied. */
     val upstreamModel: String get() = meta.upstreamModel

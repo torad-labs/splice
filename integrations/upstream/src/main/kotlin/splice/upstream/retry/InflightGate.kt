@@ -29,9 +29,8 @@ import splice.core.util.MonoClock
 import splice.upstream.TurnEnd
 import splice.upstream.Waiter
 import java.util.ArrayDeque
-import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.resume
 
 /**
@@ -58,6 +57,10 @@ public class InflightGate(
     private val lock = Any()
     private var inflight = 0
     private val queue = ArrayDeque<Waiter>()
+    private val sources = ConcurrentHashMap<String, Slot>()
+
+    /** A matching session may prepare one continuation on its already-held source permit. */
+    public fun resumeSource(session: String?): Slot? = session?.let { sources[it]?.resume() }
 
     // V4-213, all guarded by [lock]. Insertion order is admission order, so [snapshot] lists the
     // oldest slot first (the console reads the first live row as a head's current turn).
@@ -287,46 +290,39 @@ public class InflightGate(
     public class Slot internal constructor(
         private val gate: InflightGate,
         private val clock: ElapsedClock,
+        private val original: Slot? = null,
     ) {
         private val released = AtomicBoolean(false)
-        private val admittedAt = clock()
-        private val lastTouch = AtomicLong(admittedAt)
-        private val onRelease = ConcurrentLinkedQueue<TurnEnd>()
+        private val state: InflightSlotState = original?.state ?: InflightSlotState(clock)
 
-        @Volatile private var upstreamBytes: UpstreamBytes? = null
+        /** A borrowed handle has its own release claim, but shares the source's one live permit. */
+        public val resumedSource: Boolean get() = original != null
 
-        // V4-213: what the live reading says about this slot. The slot is taken BEFORE the request
-        // body is read (HeadAdmission), so the turn names itself through [describe] once it is
-        // prepared; until then it reads [UNREAD_LABEL]. Every touch comes from the upstream (its 2xx,
-        // its bytes, its WebSocket frames), so the first one is the phase's move to streaming.
-        @Volatile private var label: String = UNREAD_LABEL
-
-        @Volatile private var compact: Boolean = false
-
-        @Volatile private var streaming: Boolean = false
+        /** Stable identity of the one counted permit, shared by every continuation handle. */
+        public val countedSlot: Slot get() = original ?: this
 
         /** Names the turn this slot carries: [session] (the caller's short tag) then [model], or the
          *  model alone when the client sent no session, so two sessions on one model stay two tellable
          *  rows. A compaction keeps its model; [compact] is the flag that marks it. */
         public fun describe(model: String, compact: Boolean, session: String?) {
-            this.compact = compact
-            label = listOfNotNull(session, model).joinToString(" ")
+            state.compact = compact
+            state.label = listOfNotNull(session, model).joinToString(" ")
         }
 
         public fun touch() {
-            lastTouch.set(clock())
-            streaming = true
+            state.lastTouch.set(clock())
+            state.streaming = true
         }
 
         /** Provider body bytes or a received WebSocket event, never headers or client keep-alives. */
         public fun received() {
             touch()
-            upstreamBytes?.received()
+            state.upstreamBytes?.received()
         }
 
         /** Registered once when the turn is named, before its upstream drive starts. */
         public fun onReceived(observer: UpstreamBytes) {
-            upstreamBytes = observer
+            state.upstreamBytes = observer
         }
 
         /** The turn-owned receipt stamp, kept separate from this slot's watchdog liveness. */
@@ -334,19 +330,64 @@ public class InflightGate(
             public fun received()
         }
 
-        public fun idleForMs(): Long = clock() - lastTouch.get()
+        public fun idleForMs(): Long = clock() - state.lastTouch.get()
 
         internal fun reading(now: Long): GateSlot = GateSlot(
-            label = label,
-            compact = compact,
-            phase = if (streaming) GatePhase.STREAMING else GatePhase.CONNECT,
-            ageMs = now - admittedAt,
-            idleMs = now - lastTouch.get(),
+            label = state.label,
+            compact = state.compact,
+            phase = if (state.streaming) GatePhase.STREAMING else GatePhase.CONNECT,
+            ageMs = now - state.admittedAt,
+            idleMs = now - state.lastTouch.get(),
         )
 
+        /** A raw source round keeps admission and the materialized request heap until it really ends. */
+        public fun retain(): Lease = retainSource(null)
+
+        /** The session header identifies a possible continuation before request materialization. */
+        public fun retainSource(session: String?): Lease = synchronized(state.ownership) {
+            check(!released.get()) { "admission owner already released" }
+            state.owners++
+            if (session != null) {
+                state.readers++
+                gate.sources[session] = original ?: this
+            }
+            Lease(this, session)
+        }
+
+        internal fun resume(): Slot? = synchronized(state.ownership) {
+            val root = original ?: this
+            val available = state.readers > 0 && !state.continuation && !state.finalized
+            if (!root.released.get() || !available) {
+                null
+            } else {
+                state.owners++
+                state.continuation = true
+                Slot(gate, clock, root)
+            }
+        }
+
+        public class Lease internal constructor(private val slot: Slot, private val session: String?) {
+            private val released = AtomicBoolean(false)
+
+            public fun release() {
+                if (released.compareAndSet(false, true)) slot.releaseOwner(session)
+            }
+        }
+
         public fun release() {
-            if (released.compareAndSet(false, true)) {
-                gate.release(this)
+            if (released.compareAndSet(false, true)) releaseOwner(continuation = resumedSource)
+        }
+
+        private fun releaseOwner(session: String? = null, continuation: Boolean = false) {
+            val root = original ?: this
+            val last = synchronized(state.ownership) {
+                if (session != null && --state.readers == 0) gate.sources.remove(session, root)
+                if (continuation) state.continuation = false
+                state.owners--
+                (state.owners == 0).also { if (it) state.finalized = true }
+            }
+            if (last) {
+                gate.release(root)
                 drainOnRelease()
             }
         }
@@ -357,16 +398,12 @@ public class InflightGate(
          *  re-derived at each exit. A registration racing the release still runs exactly once: each
          *  entry is polled off the queue by whichever drain reaches it first. */
         public fun onRelease(end: TurnEnd) {
-            onRelease.add(end)
-            if (released.get()) drainOnRelease()
+            state.onRelease.add(end)
+            if (state.finalized) drainOnRelease()
         }
 
         private fun drainOnRelease() {
-            generateSequence { onRelease.poll() }.forEach { it.ended() }
+            generateSequence { state.onRelease.poll() }.forEach { it.ended() }
         }
     }
 }
-
-/** The live label of a slot whose request has not been read yet: the Node gate's own word
- *  (codex-proxy.mjs: `model || 'req'`). */
-private const val UNREAD_LABEL = "req"

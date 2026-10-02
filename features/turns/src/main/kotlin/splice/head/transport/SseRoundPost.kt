@@ -72,7 +72,7 @@ internal class SseRoundPost(
                 val totalCap = WatchdogFired.TotalCap(provider.watchdog.totalCap.inWholeMilliseconds)
                 val signals = TurnSignals(
                     watchdogFired = { totalCap },
-                    clientGone = { drive.channel.clientGone.get() },
+                    clientGone = { inputs.clientGone() },
                 )
                 val outcome = provider.streamTranslator(drive.meta, signals).driveTurn(emptyFlow(), inputs.sink)
                 drive.perf.mark(PerfKeys.STREAM_END)

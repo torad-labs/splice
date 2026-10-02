@@ -71,7 +71,12 @@ internal class ResponsesItemFold(
             captureToolSearch(item)
             return
         }
-        if (item != null) customCalls.parse(item)?.let { state.customCalls.add(it) }
+        if (item != null) {
+            customCalls.parse(item)?.let { call ->
+                state.customCalls.add(call)
+                sink.customToolSource(splice.upstream.sse.CustomToolSource.Completed(call))
+            }
+        }
         val oi = frames.intOr(evt[OUTPUT_INDEX]) ?: frames.intOr(item?.get("index"))
         // Some backends only attach readable reasoning on the completed item (no per-token
         // summary deltas). Surface that text NOW so Claude Code's thinking UI fills live,
@@ -118,7 +123,7 @@ internal class ResponsesItemFold(
      *  this output_index, and clear the salvage-open marker. */
     suspend fun closeOpenBlocks(oi: Int?, sink: WireSink) {
         if (oi == null) return
-        execProgress.close(oi, sink)
+        execProgress.close(oi)
         state.removeBlock(oi)?.let { b ->
             // DR-77 (CX-01 completion): output_item.done can close a tool block without ever
             // passing the arguments.done handler — the only site that validated. Corrupt or

@@ -74,6 +74,8 @@ internal class TurnDriveFactory(
             roundInterceptor = built.roundInterceptor,
             remainingTurnWait = remainingTurnWait,
             quota = inputs.quota,
-        )
+        ).also { drive ->
+            drive.sourceRoundStarted = TurnDrive.SourceRoundStarted { job -> deps.liveTurns.driving(inputs.slot, job) }
+        }
     }
 }

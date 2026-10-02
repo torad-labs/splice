@@ -124,6 +124,33 @@ class LiveTurnsTest {
     }
 
     @Test
+    fun `a held source and its continuation share one live row and stop both jobs`() {
+        val original = slot()
+        turns.admitted(original, meta("source-session"), hash("go"))
+        val first = Job()
+        val raw = Job()
+        turns.driving(original, first)
+        turns.driving(original, raw)
+        val lease = original.retainSource("source-session")
+        first.complete()
+        original.release()
+        val resumed = checkNotNull(gate.resumeSource("source-session"))
+        val current = Job()
+        turns.admitted(resumed, meta("source-session"), hash("result"))
+        turns.driving(resumed, current)
+
+        assertEquals(listOf("turn-1"), turns.list().map { it.id }, "one counted source is one listed turn")
+        turns.stop("turn-1")
+        assertTrue(causeOf(raw) is OperatorStop)
+        assertTrue(causeOf(current) is OperatorStop)
+        assertTrue(turns.refusesResend("source-session", request("result", stream = false)))
+        resumed.release()
+        assertEquals(1, turns.list().size, "the raw owner still holds the live row")
+        lease.release()
+        assertTrue(turns.list().isEmpty())
+    }
+
+    @Test
     fun `the stop's mark refuses that session's re-send of the same messages once, inside the window`() {
         val slot = slot()
         turns.admitted(slot, meta("sess-a"), hash("go"))

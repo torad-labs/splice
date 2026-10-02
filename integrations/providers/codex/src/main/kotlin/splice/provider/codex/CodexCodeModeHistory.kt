@@ -8,6 +8,7 @@ import splice.dialect.responses.request.ResponsesCodeModeInput
 import splice.dialect.responses.request.ResponsesCodeModeReplay
 import splice.provider.codex.state.CodeModeAnchorCapture
 import splice.provider.codex.state.CodeModeCanonicalHistory
+import splice.provider.codex.state.CodeModeExtraContent
 import splice.provider.codex.state.CodeModeHistoryIndex
 import splice.provider.codex.state.CodeModeNativeChain
 import splice.provider.codex.state.CodeModeNativeReplay

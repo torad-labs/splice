@@ -171,6 +171,33 @@ private object FakeSocketForPing : WebSocket {
 
 class ResponsesWsRunnerTest {
 
+    @Test
+    fun `source item completion never commits a response id before the response terminal`() {
+        val session = ResponsesWsSession()
+        val identity = ResponsesWsIdentity(session, {})
+        val request = responsesRequestJson.parseToJsonElement(BODY) as JsonObject
+        val next = responsesRequestJson.parseToJsonElement(
+            """{"model":"gpt-5.6-sol","input":[{"role":"user","content":"hi"},
+                {"type":"custom_tool_call","id":"source-item","call_id":"source-call","name":"exec","input":"return 1;"},
+                {"type":"custom_tool_call_output","call_id":"source-call","output":"done"}]}""",
+        ) as JsonObject
+        val built = session.frameAndEpoch("source-chain", request, 1)
+        val pending = ResponsesWsIdentity.PendingCommit(request, 1, built.epoch)
+        val item = responsesRequestJson.parseToJsonElement(
+            """{"type":"response.output_item.done","output_index":0,"item":{
+                "type":"custom_tool_call","id":"source-item","call_id":"source-call","name":"exec","input":"return 1;"}}""",
+        ) as JsonObject
+        identity.observeTerminal("source-chain", pending, item)
+        val waiting = session.frameAndEpoch("source-chain", next, 1).frame.json
+        assertFalse(waiting.contains("previous_response_id"))
+        val terminal = responsesRequestJson.parseToJsonElement(completedEmptyOutput("response-terminal")) as JsonObject
+        identity.observeTerminal("source-chain", pending, terminal)
+        val resumed = session.frameAndEpoch("source-chain", next, 1).frame
+        assertTrue(resumed.chained)
+        val frame = responsesRequestJson.parseToJsonElement(resumed.json) as JsonObject
+        assertEquals("\"response-terminal\"", frame["previous_response_id"].toString())
+    }
+
     /** codex-rs names its thread a second time on the WS handshake, as the client request id —
      *  derived from the provider's per-turn `thread-id` at the handshake, so an SSE POST never
      *  carries it and a turn without a thread id sends none (2026-09-05). */

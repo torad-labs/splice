@@ -467,9 +467,7 @@
       "features/turns/src/main/kotlin/splice/head/perf/PerfStats.kt"
     ],
     "COPY RECORD_ID_LOG_CHARS": [
-      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeDriver.kt",
       "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeSweeper.kt",
-      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeTurn.kt",
       "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
     ],
     "COPY RED": [

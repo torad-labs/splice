@@ -270,4 +270,4 @@ internal class TurnPreparation(
     private fun who(sessionId: String?): String = sessionId?.let { "session ${it.take(SESSION_TAG_CHARS)}, " } ?: ""
 }
 
-private const val SESSION_HEADER = "x-claude-code-session-id"
+internal const val SESSION_HEADER = "x-claude-code-session-id"

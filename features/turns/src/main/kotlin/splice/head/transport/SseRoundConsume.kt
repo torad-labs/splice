@@ -98,7 +98,7 @@ internal class SseRoundConsume(
             val events = tearAwareEvents.run(drive, body, capture, inputs.frameEmittedThisRound)
             val signals = TurnSignals(
                 watchdogFired = { drive.watchdog.fired },
-                clientGone = { drive.channel.clientGone.get() },
+                clientGone = { inputs.clientGone() },
             )
             val rawOutcome = provider.streamTranslator(drive.meta, signals).driveTurn(events, inputs.sink)
             drive.perf.mark(PerfKeys.STREAM_END)

@@ -7,14 +7,12 @@ import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
 import splice.provider.codex.branch.CodexCodeModeBranch
+import splice.provider.codex.state.CodeModeTurnIdentity
 import splice.provider.codex.state.CodeModeTurnLocks
+import splice.provider.codex.state.CodeModeTurnNotes
 import splice.upstream.InterceptedRoundPost
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.sse.WireSink
-import java.security.MessageDigest
-import java.util.concurrent.ConcurrentHashMap
-
-private const val RECORD_ID_LOG_CHARS: Int = 8
 
 internal data class CodeModeRunInput(
     val turn: CodexCodeModeBridge.Turn,
@@ -35,6 +33,7 @@ internal data class CodeModeRunContext(
 ) {
     /** One filtered history for this request, extended only by its own completed scripts. */
     val completed: MutableList<CodeModeRecord> = mutableListOf()
+    var scripts: Int = 0
 }
 
 /**
@@ -53,12 +52,12 @@ internal class CodexCodeModeTurn(
     private val validation: CodexCodeModeValidation,
     private val log: LogSink,
 ) {
-    private val identity = CodexCodeModeIdentity()
+    private val identity = CodeModeTurnIdentity()
+    private val notes = CodeModeTurnNotes(registry, log)
     private val branch = CodexCodeModeBranch(registry, driver, machine, validation, log)
     private val locks = CodeModeTurnLocks()
 
-    /** Conversation-scoped notes already logged — one line per conversation, not one per turn. */
-    private val announced: MutableSet<String> = ConcurrentHashMap.newKeySet()
+    private data class PlacedOwner(val record: CodeModeRecord, val bodyJson: String)
 
     suspend fun run(input: CodeModeRunInput): TurnOutcome {
         val key = identity.turnKey(input.turn)
@@ -94,9 +93,7 @@ internal class CodexCodeModeTurn(
         initialOuter: GatewayCustomCall?,
         bodyJson: String,
     ): TurnOutcome {
-        historyNotes(context.turn, context.key, context.digest)
-            .filter { announced.add("${context.key}|$it") }
-            .forEach { log("[code-mode] $it") }
+        notes.announce(context)
         return ordinary(context, initialOuter, bodyJson, branch.conflictingRecords(context))
     }
 
@@ -112,12 +109,14 @@ internal class CodexCodeModeTurn(
         completedHistory.error?.let { return failure(it) }
         val canonicalBody = checkNotNull(completedHistory.bodyJson)
         val owner = placedOwner(context, canonicalBody, conflicts)
+        val terminal = completed.lastOrNull { it.sourceState?.usage != null && it.sourceState?.consumed == false }
         return when {
+            terminal != null -> driver.finishGenerated(terminal, context, canonicalBody)
             owner != null -> resumeOwner(owner, context)
             conflicts.isNotEmpty() -> branch.sendOwnHistory(context, canonicalBody)
             completed.any { it.lastDigest == context.digest } ->
-                driver.drive(context, null, canonicalBody, context.post(canonicalBody))
-            else -> driver.drive(context, initialOuter, canonicalBody, context.post(canonicalBody))
+                driver.post(context, null, canonicalBody)
+            else -> driver.post(context, initialOuter, canonicalBody)
         }
     }
 
@@ -151,34 +150,9 @@ internal class CodexCodeModeTurn(
         // turn of the conversation (82 identical lines for one record on 2026-09-20).
         machine.interrupt(owner, detail)
         log(
-            "[code-mode] abandoned record ${owner.id.take(RECORD_ID_LOG_CHARS)} (outer ${owner.outerCallId}): " +
+            "[code-mode] abandoned record ${owner.id.take(CODE_MODE_RECORD_LOG_CHARS)} (outer ${owner.outerCallId}): " +
                 "$error; continuing upstream on the client's history",
         )
-    }
-
-    /** Diagnostics only. Each of these used to refuse the turn; none of them makes the client's
-     *  history invalid, so they are logged and the turn proceeds without a rewrite for those ids. */
-    private fun historyNotes(
-        turn: CodexCodeModeBridge.Turn,
-        key: String,
-        digest: String,
-    ): List<String> {
-        val resultIds = turn.toolResults.map(CodeModeResult::id).toSet()
-        val owners = registry.resultOwners(key, resultIds)
-        return buildList {
-            if (registry.expiredHistory(key, digest, resultIds)) {
-                add("expired code-mode history for this conversation; its client calls stay ordinary tool calls")
-            }
-            owners.foreign?.let { foreign ->
-                add(
-                    "code-mode results in this history belong to another session or model " +
-                        "(record ${foreign.id.take(RECORD_ID_LOG_CHARS)}); they stay ordinary tool calls",
-                )
-            }
-            if (owners.unknown.isNotEmpty()) {
-                add("unknown or expired code-mode tool results stay ordinary tool calls: ${owners.unknown}")
-            }
-        }
     }
 
     private fun failure(message: String): TurnOutcome.Failure =
@@ -188,16 +162,4 @@ internal class CodexCodeModeTurn(
             cause = FailureCause.CODE_MODE_PROTOCOL,
             phase = FailurePhase.MID_OUTPUT,
         )
-}
-
-private data class PlacedOwner(val record: CodeModeRecord, val bodyJson: String)
-
-private class CodexCodeModeIdentity {
-    fun turnKey(turn: CodexCodeModeBridge.Turn): String = digest(
-        "${turn.sessionId}${0.toChar()}${turn.conversationKey}${0.toChar()}${turn.model}",
-    )
-
-    fun digest(value: String): String = MessageDigest.getInstance("SHA-256")
-        .digest(value.toByteArray())
-        .joinToString("") { "%02x".format(it) }
 }

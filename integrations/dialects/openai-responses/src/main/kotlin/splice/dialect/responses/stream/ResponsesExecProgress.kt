@@ -1,27 +1,33 @@
-// NEW: client-visible exec input progress, signed for replay removal and never buffered as model reasoning.
+// NEW: exec input feeds the runtime observer, never client prose or model reasoning.
 package splice.dialect.responses.stream
 
 import kotlinx.serialization.json.JsonObject
-import splice.core.index.WireBlockIndex
-import splice.core.turn.SpliceNotice
+import splice.core.turn.GatewayCustomCall
 import splice.core.util.JsonScalars
 import splice.upstream.codemode.CodeModeManual
+import splice.upstream.sse.CustomToolSource
 import splice.upstream.sse.WireSink
 
-private data class ExecProgressItem(val id: String?) {
-    var block: WireBlockIndex? = null
-}
+private data class ExecProgressItem(val id: String?, val callId: String)
 
-/** Only an added exec item can render input. Its live block closes before any replacement or tool call. */
+/** The real tool calls are the readable script. Quiet intervals use the head's signed wait notice. */
 internal class ResponsesExecProgress {
     private val frames = ResponsesFrameParse()
     private val items = HashMap<Int, ExecProgressItem>()
 
     suspend fun added(item: JsonObject, outputIndex: Int, sink: WireSink) {
-        close(outputIndex, sink)
+        close(outputIndex)
         val isExec = JsonScalars.str(item, "type") == "custom_tool_call" &&
             JsonScalars.str(item, "name") == CodeModeManual.TOOL_NAME
-        if (isExec) items[outputIndex] = ExecProgressItem(JsonScalars.str(item, "id"))
+        if (isExec) {
+            val callId = JsonScalars.strOrEmpty(item["call_id"])
+            items[outputIndex] = ExecProgressItem(JsonScalars.str(item, "id"), callId)
+            sink.customToolSource(
+                CustomToolSource.Started(
+                    GatewayCustomCall(callId, CodeModeManual.TOOL_NAME, JsonScalars.strOrEmpty(item["input"]), item),
+                ),
+            )
+        }
     }
 
     suspend fun delta(event: JsonObject, sink: WireSink) {
@@ -30,23 +36,14 @@ internal class ResponsesExecProgress {
         val eventId = JsonScalars.str(event, "item_id")
         val stale = eventId != null && item.id != null && eventId != item.id
         val text = JsonScalars.strOrEmpty(event[DELTA])
-        if (!stale && text.isNotEmpty()) {
-            val block = item.block ?: sink.openThinking().also { item.block = it }
-            sink.thinkingDelta(block, text)
-        }
+        if (!stale && text.isNotEmpty()) sink.customToolSource(CustomToolSource.Delta(item.callId, text))
     }
 
-    suspend fun close(outputIndex: Int, sink: WireSink) {
-        val item = items[outputIndex] ?: return
-        item.block?.let { block ->
-            // The same client-only signature used by splice's live wait notices. Request parsers drop it.
-            sink.signatureDelta(block, SpliceNotice.SIGNATURE)
-            sink.closeBlock(block)
-        }
+    fun close(outputIndex: Int) {
         items.remove(outputIndex)
     }
 
-    suspend fun closeAll(sink: WireSink) {
-        items.keys.toList().forEach { close(it, sink) }
+    fun closeAll() {
+        items.clear()
     }
 }

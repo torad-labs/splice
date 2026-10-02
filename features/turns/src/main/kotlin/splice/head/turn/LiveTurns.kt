@@ -7,8 +7,8 @@
 // a stop provokes is refused before it becomes a turn at all (below). The slot is the turn's identity
 // here because it is the one object already carried from admission into the drive (TurnDrive.slot).
 //
-// WHAT A STOP DOES: it cancels exactly the turn's own job (TurnOneDrive's child job, the one the
-// watchdog cancels) with an [OperatorStop], so the cancellation seal writes the stop's frame, an
+// WHAT A STOP DOES: it cancels the turn's attached client job and any retained raw source reader
+// with an [OperatorStop], so the cancellation seal writes the stop's frame, an
 // invalid_request_error saying the operator stopped the turn and never "retry" (CancellationSeal),
 // and the slot is released on the path every cancelled turn takes.
 //
@@ -74,13 +74,13 @@ public class LiveTurns(
     private class Live(
         val id: String,
         val session: String?,
-        val messages: String?,
+        @Volatile var messages: String?,
         private val model: String,
         private val compact: Boolean,
         val since: Long,
         private val clock: ElapsedClock,
     ) : InflightGate.Slot.UpstreamBytes {
-        @Volatile private var job: Job? = null
+        private val jobs: MutableSet<Job> = ConcurrentHashMap.newKeySet()
         private val stopped = AtomicBoolean(false)
         private val lastByte = AtomicLong(since)
 
@@ -89,17 +89,19 @@ public class LiveTurns(
         }
 
         fun driving(job: Job) {
-            this.job = job
+            jobs += job
+            job.invokeOnCompletion { jobs.remove(job) }
             if (stopped.get()) job.cancel(OperatorStop())
         }
+
+        fun isStopped(): Boolean = stopped.get()
 
         /** True for the first stop only: a second stop of the same turn changes nothing. */
         fun claimStop(): Boolean = stopped.compareAndSet(false, true)
 
-        /** Cancels the drive's job when the drive has one yet; one that starts later is cancelled by
-         *  [driving]. */
+        /** Cancels every active reader and client drive; one that starts later is cancelled by [driving]. */
         fun cancel() {
-            job?.cancel(OperatorStop())
+            jobs.forEach { it.cancel(OperatorStop()) }
         }
 
         fun view(now: Long): LiveTurn = LiveTurn(
@@ -123,20 +125,33 @@ public class LiveTurns(
     /** A streaming turn admitted on [slot], listed until the slot is released. [messagesHash] is
      *  [MessagesHash.of] the client's request, null when it sent no session (no re-send can be told). */
     internal fun admitted(slot: InflightGate.Slot, meta: TurnMeta, messagesHash: String?) {
-        val turn = Live(ids.next(), meta.sessionId, messagesHash, meta.upstreamModel, meta.compact, clock(), clock)
-        live[turn.id] = turn
-        bySlot[slot] = turn
-        slot.onReceived(turn)
-        slot.onRelease {
-            live.remove(turn.id)
-            bySlot.remove(slot)
+        val counted = slot.countedSlot
+        val turn = bySlot.computeIfAbsent(counted) {
+            val created = Live(
+                ids.next(),
+                meta.sessionId,
+                messagesHash,
+                meta.upstreamModel,
+                meta.compact,
+                clock(),
+                clock,
+            )
+            live[created.id] = created
+            counted.onReceived(created)
+            counted.onRelease {
+                live.remove(created.id)
+                bySlot.remove(counted, created)
+            }
+            created
         }
+        turn.messages = messagesHash
+        if (turn.isStopped()) mark(turn)
     }
 
     /** The drive's own job for the turn on [slot], so a stop cancels exactly that turn. A stop that
      *  arrived before the drive started cancels it here. */
     internal fun driving(slot: InflightGate.Slot, job: Job) {
-        bySlot[slot]?.driving(job)
+        bySlot[slot.countedSlot]?.driving(job)
     }
 
     /** Oldest first, the order the turns were admitted in. */

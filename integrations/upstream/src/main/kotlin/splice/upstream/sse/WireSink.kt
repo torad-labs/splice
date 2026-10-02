@@ -7,10 +7,14 @@ package splice.upstream.sse
 import kotlinx.serialization.json.JsonObject
 import splice.core.index.WireBlockIndex
 
-public interface WireSink {
-    public suspend fun openText(): WireBlockIndex
-
+/** Source observation is independent of callback publication and carries no terminal verbs. */
+public interface SourceProgressSink {
     public suspend fun openThinking(): WireBlockIndex
+    public suspend fun customToolSource(event: CustomToolSource) {}
+}
+
+public interface WireSink : SourceProgressSink {
+    public suspend fun openText(): WireBlockIndex
 
     public suspend fun openTool(id: String, name: String): WireBlockIndex
 

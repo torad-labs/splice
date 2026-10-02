@@ -127,6 +127,8 @@ internal class CodexCodeModeSweeper(
         if (stale.isEmpty()) return false
         stale.forEach { record ->
             admissions.remove(record.id)
+            record.sourceEnd?.ended()
+            record.sourceEnd = null
             cells.remove(record.id)?.close()
             history.remember(record, config.clock.millis())
         }
@@ -149,6 +151,8 @@ internal class CodexCodeModeSweeper(
      *  24 hours are not restarted by the park (V4-287: they were, keeping it past the promise). */
     private fun park(record: CodeModeRecord, message: String) {
         admissions.remove(record.id)
+        record.sourceEnd?.ended()
+        record.sourceEnd = null
         cells.remove(record.id)?.close()
         record.phase = CodeModePhase.LOST
         record.error = "$message; source was not rerun"

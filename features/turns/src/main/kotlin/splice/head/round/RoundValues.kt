@@ -28,6 +28,7 @@ internal data class RoundUsage(
     val lastCacheWrite: Long = 0,
     val localStep: Boolean = false,
     val codeModeDiverged: Boolean = false,
+    val recordedOutputSum: Long = 0,
 ) {
     fun plusRound(u: Usage) = RoundUsage(
         lastInput = u.inputTokens,
@@ -37,6 +38,7 @@ internal data class RoundUsage(
         lastCacheWrite = u.cacheWriteTokens,
         localStep = localStep || u.localStep,
         codeModeDiverged = codeModeDiverged || u.codeModeDiverged,
+        recordedOutputSum = recordedOutputSum + u.recordedOutputTokens,
     )
 
     /** DR-124: fold the TERMINAL failed round's harvested usage (Failure.partial.usage) under the
@@ -51,6 +53,7 @@ internal data class RoundUsage(
         lastCacheWrite = if (u.cacheWriteTokens > 0) u.cacheWriteTokens else lastCacheWrite,
         localStep = localStep || u.localStep,
         codeModeDiverged = codeModeDiverged || u.codeModeDiverged,
+        recordedOutputSum = recordedOutputSum + u.recordedOutputTokens,
     )
 
     fun toUsage() = Usage(
@@ -61,5 +64,6 @@ internal data class RoundUsage(
         cacheWriteTokens = lastCacheWrite,
         localStep = localStep,
         codeModeDiverged = codeModeDiverged,
+        recordedOutputTokens = recordedOutputSum,
     )
 }

@@ -47,7 +47,7 @@ internal class WsRoundDrive(
         }
         val signals = TurnSignals(
             watchdogFired = { drive.watchdog.fired },
-            clientGone = { drive.channel.clientGone.get() },
+            clientGone = { inputs.clientGone() },
         )
         // V4-114: [RoundNeedsSse] is caught HERE, one frame below the throw, and leaves as a value.
         // The three statements after it are exactly the ones this round must NOT run when it is

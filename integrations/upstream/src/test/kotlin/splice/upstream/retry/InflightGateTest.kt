@@ -22,6 +22,80 @@ import splice.core.head.GateSlot
 class InflightGateTest {
 
     @Test
+    fun `an independent raw round keeps admission and heap cleanup after its client finishes`() = runTest {
+        val gate = InflightGate({ 1 })
+        val slot = gate.admittedSlot()
+        var heapReleased = 0
+        slot.onRelease { heapReleased++ }
+        val rawRound = slot.retain()
+        slot.release()
+        slot.release()
+        assertEquals(1, gate.snapshot().inflight)
+        assertEquals(0, heapReleased)
+        val queued = async { gate.admittedSlot() }
+        yield()
+        assertFalse(queued.isCompleted)
+        rawRound.release()
+        rawRound.release()
+        val next = queued.await()
+        assertEquals(1, heapReleased)
+        assertEquals(1, gate.snapshot().inflight)
+        next.release()
+        assertEquals(0, gate.snapshot().inflight)
+    }
+
+    @Test
+    fun `a reader finishing before its client does not release the client admission`() = runTest {
+        val gate = InflightGate({ 1 })
+        val slot = gate.admittedSlot()
+        slot.retain().release()
+        assertEquals(1, gate.snapshot().inflight)
+        slot.release()
+        assertEquals(0, gate.snapshot().inflight)
+    }
+
+    @Test
+    fun `held sources at the full limit lend one handle per session without another permit`() = runTest {
+        val count = 3
+        val gate = InflightGate({ count })
+        val originals = List(count) { gate.admittedSlot() }
+        val readers = originals.mapIndexed { index, slot -> slot.retainSource("source-$index") }
+        originals.forEach { it.release() }
+        val continuations = originals.indices.map { checkNotNull(gate.resumeSource("source-$it")) }
+        assertEquals(count, gate.snapshot().inflight)
+        assertEquals(count.toLong(), gate.snapshot().acquired)
+        assertTrue(continuations.all { it.resumedSource })
+        assertTrue(gate.resumeSource("source-0") == null, "only one continuation may share a source at a time")
+        assertTrue(gate.resumeSource("other-session") == null)
+        readers.forEach { it.release() }
+        assertEquals(count, gate.snapshot().inflight, "borrowers outlive their upstream completion")
+        continuations.forEach {
+            it.release()
+            it.release()
+        }
+        assertEquals(0, gate.snapshot().inflight)
+        assertEquals(count.toLong(), gate.snapshot().released)
+    }
+
+    @Test
+    fun `a borrowed handle can own the next source after the original handle released`() = runTest {
+        val gate = InflightGate({ 1 })
+        val original = gate.admittedSlot()
+        val first = original.retainSource("source")
+        original.release()
+        val resumed = checkNotNull(gate.resumeSource("source"))
+        first.release()
+        val next = resumed.retainSource("source")
+        resumed.release()
+        val last = checkNotNull(gate.resumeSource("source"))
+        next.release()
+        last.release()
+        assertEquals(0, gate.snapshot().inflight)
+        assertEquals(1L, gate.snapshot().acquired)
+        assertEquals(1L, gate.snapshot().released)
+    }
+
+    @Test
     fun `fifo admission under a limit of one`() = runTest {
         var limit = 1
         val gate = InflightGate({ limit })

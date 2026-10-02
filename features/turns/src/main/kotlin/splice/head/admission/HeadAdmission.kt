@@ -8,10 +8,7 @@ package splice.head.admission
 
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.header
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.withContext
 import splice.core.perf.OutcomeTag
-import splice.core.perf.TurnPerf
 import splice.core.usage.PlanLimit
 import splice.core.util.WallClock
 import splice.head.ClientAuth
@@ -25,9 +22,7 @@ import splice.head.turn.TurnPreparation
 import splice.head.wire.TurnTrace
 import splice.upstream.credentials.AccountResetText
 import splice.upstream.credentials.Selection
-import splice.upstream.retry.InflightGate
 import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
-import java.util.concurrent.atomic.AtomicBoolean
 
 internal class HeadAdmission(
     private val deps: HeadDeps,
@@ -53,49 +48,22 @@ internal class HeadAdmission(
         // is this call's from the start, never a return value: the drive's cancelled-call path
         // THROWS out of serve (review of PR 137), and a finally must not read the flag off a call
         // that never returned.
-        val admitted = Admitted(slot, t0, perf)
+        val admitted = AdmittedTurn(slot, t0, perf)
 
         try {
             // Prepared request trees survive decode and may belong to a detached compaction.
             // Their heap lease follows the same slot that already owns that drive's lifetime.
-            val owner = MaterializationOwner(admitted.slot::onRelease)
+            val owner = MaterializationOwner { admitted.materializedEnd = it }
             val prepared = admission.materializeOrRespond(call, owner = owner) {
                 preparation.prepareTurn(call, perf)
             } ?: return
-            serve(call, prepared, admitted)
+            if (admitted.settle(call, prepared, admission)) serve(call, prepared, admitted)
         } finally {
-            withContext(NonCancellable) { if (!admitted.wasHandedOff()) admitted.slot.release() }
+            admitted.close()
         }
     }
 
-    /** What one admitted call holds: its gate slot, its start, its perf row — and the hand-off flag
-     *  it OWNS.
-     *
-     *  A PLAIN class, deliberately, not a `data class` (kt-no-atomic-in-data-class). The rule names
-     *  a real harm and that harm is value semantics: `equals`/`hashCode` would compare the handle by
-     *  reference and `copy()` would either share the flag with a second Admitted or silently drop
-     *  it — two admits that compare equal while holding ONE slot. Neither could happen here (nothing
-     *  copies or compares an Admitted), and the rule's own note names the owner's shape: whoever
-     *  calls `set` gives it a private atomic and a named method, and the bundle gets a port onto
-     *  that method. So `handedOff` is private, `markHandedOff()`/`wasHandedOff()` are the two names
-     *  it is allowed to be reached by, and the `data` contract — never used, and only able to
-     *  mislead — is gone. This is a per-call lifecycle owner, which is what it always was. */
-    private class Admitted(
-        val slot: InflightGate.Slot,
-        val t0: Long,
-        val perf: TurnPerf,
-    ) {
-        private val handedOff = AtomicBoolean(false)
-
-        /** The drive took the slot with it: the admission's finally must now leave it alone. */
-        fun markHandedOff() {
-            handedOff.set(true)
-        }
-
-        fun wasHandedOff(): Boolean = handedOff.get()
-    }
-
-    private suspend fun serve(call: ApplicationCall, prepared: Preparation, admitted: Admitted) {
+    private suspend fun serve(call: ApplicationCall, prepared: Preparation, admitted: AdmittedTurn) {
         // V4-213: the slot was taken before the body was read; once the turn is prepared it names
         // itself on the gate's live list (describe), led by its session's tag. A replay is always a
         // compaction retry.
@@ -116,6 +84,7 @@ internal class HeadAdmission(
                 driver.replay(call, prepared)
             }
             is Preparation.Ready -> {
+                admitted.retainRequest()
                 val meta = prepared.built.meta
                 admitted.slot.describe(meta.upstreamModel, meta.compact, tag(meta.sessionId))
                 // V4-165: the turn ends when its admission slot is released — here on a refusal or
@@ -170,7 +139,7 @@ internal class HeadAdmission(
     private suspend fun refuseIfRateLimited(
         call: ApplicationCall,
         prepared: Preparation.Ready,
-        admitted: Admitted,
+        admitted: AdmittedTurn,
         trace: TurnTrace?,
     ): Boolean {
         val armedMs = deps.upstream.rateLimitedForMs
@@ -217,7 +186,7 @@ internal class HeadAdmission(
     private suspend fun refuseIfOversized(
         call: ApplicationCall,
         prepared: Preparation.Ready,
-        admitted: Admitted,
+        admitted: AdmittedTurn,
         trace: TurnTrace?,
     ): Boolean {
         val meta = prepared.built.meta
@@ -252,7 +221,7 @@ internal class HeadAdmission(
     private suspend fun refuseIfOverBudget(
         call: ApplicationCall,
         prepared: Preparation.Ready,
-        admitted: Admitted,
+        admitted: AdmittedTurn,
         trace: TurnTrace?,
     ): Boolean {
         val block = deps.quotaBundle.budget.admit() ?: return false
@@ -322,7 +291,7 @@ internal class HeadAdmission(
     private suspend fun refuseExhausted(
         call: ApplicationCall,
         prepared: Preparation.Ready,
-        admitted: Admitted,
+        admitted: AdmittedTurn,
         exhausted: Selection.Exhausted,
         trace: TurnTrace?,
     ) {
@@ -351,7 +320,7 @@ internal class HeadAdmission(
         responses.respondRateLimited(call, exhausted.message, retryEpochSeconds)
     }
 
-    private suspend fun serveReady(call: ApplicationCall, prepared: Preparation.Ready, admitted: Admitted) {
+    private suspend fun serveReady(call: ApplicationCall, prepared: Preparation.Ready, admitted: AdmittedTurn) {
         // V4-134: turn.start fires HERE and nowhere earlier because this is the one path whose every
         // exit writes a perf row — the two local refusals below and the drive all go through
         // TurnTelemetry's emitters, which fire turn.end. Rejected, Local and Replay write no row, so

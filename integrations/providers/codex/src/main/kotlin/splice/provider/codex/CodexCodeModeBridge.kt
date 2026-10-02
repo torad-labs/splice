@@ -6,7 +6,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.GatewayCustomCall
 import splice.core.util.LogSink
-import splice.upstream.InterceptedRoundPost
+import splice.provider.codex.stream.CodeModeRoundInterceptor
 import splice.upstream.RoundInterceptor
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeRuntime
@@ -144,17 +144,14 @@ public class CodexCodeModeBridge(
             toolResults = turn.toolResults.map(validation::admit),
             legacyResults = turn.legacyResults.map(validation::admit),
         )
-        return RoundInterceptor { bodyJson, sink, post ->
-            // Every round a code-mode turn posts leaves through here, so the wire projection has one seam.
-            val upstream = InterceptedRoundPost { body -> post(wire.upstream(body)) }
-            controller.run(CodeModeRunInput(admitted, initialOuter, disableParallel, bodyJson, sink, upstream))
-        }
+        return CodeModeRoundInterceptor(admitted, initialOuter, disableParallel, wire, controller, driver.streams)
     }
 
     public fun injectTool(request: JsonObject, clientTools: Set<String>): JsonObject =
         wire.injectTool(request, clientTools)
 
     public fun onHeadStop() {
+        driver.streams.stop()
         registry.onHeadStop()
         // The runtime owns child JVM worker processes; a head stop is the one production path that
         // releases them, so it is closed here and nowhere else (AutoCloseableClosedLawTest). The

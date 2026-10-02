@@ -15,10 +15,29 @@ internal class TurnUsageStamp(
     private val log: LogSink,
     private val telemetry: TurnTelemetry,
 ) {
+    /** Raw completion can follow the last HTTP response. Its receipt prevents later client billing twice. */
+    suspend fun stampIndependent(outcome: TurnOutcome): TurnOutcome = withContext(NonCancellable) {
+        val recorded = when (outcome) {
+            is TurnOutcome.Success -> outcome.copy(usage = record(outcome.usage))
+            is TurnOutcome.Failure -> outcome.copy(
+                partial = outcome.partial?.let { it.copy(usage = record(it.usage)) },
+                salvagedUsage = record(outcome.salvagedUsage),
+            )
+            is TurnOutcome.ClientAbandoned -> outcome.copy(salvagedUsage = record(outcome.salvagedUsage))
+        }
+        usageStore.flushNow()
+        recorded
+    }
+
+    private fun record(usage: Usage): Usage {
+        usageStore.appendOutputTokens(usage.unrecordedOutputTokens)
+        return usage.copy(recordedOutputTokens = usage.outputTokens)
+    }
+
     suspend fun stampSuccess(drive: TurnDrive, success: TurnOutcome.Success) = withContext(NonCancellable) {
         if (!drive.claimUsageStamp()) return@withContext
         setKnownCounters(drive, success.usage)
-        drive.perf.timed(PerfKeys.USAGE_MS) { usageStore.appendOutputTokens(success.usage.outputTokens) }
+        drive.perf.timed(PerfKeys.USAGE_MS) { usageStore.appendOutputTokens(success.usage.unrecordedOutputTokens) }
         log(telemetry.cacheLine(drive.upstreamModel, success.usage, drive.meta.compact))
     }
 
@@ -28,8 +47,8 @@ internal class TurnUsageStamp(
         // and perf row (review-pr 2026-07-24).
         if (!drive.claimUsageStamp()) return@withContext
         setKnownCounters(drive, salvaged)
-        if (salvaged.outputTokens > 0) {
-            drive.perf.timed(PerfKeys.USAGE_MS) { usageStore.appendOutputTokens(salvaged.outputTokens) }
+        if (salvaged.unrecordedOutputTokens > 0) {
+            drive.perf.timed(PerfKeys.USAGE_MS) { usageStore.appendOutputTokens(salvaged.unrecordedOutputTokens) }
         }
     }
 
@@ -39,8 +58,8 @@ internal class TurnUsageStamp(
         val known = drive.rawRoundUsage() ?: return@withContext
         if (!drive.claimUsageStamp()) return@withContext
         setKnownCounters(drive, known)
-        if (known.outputTokens > 0) {
-            drive.perf.timed(PerfKeys.USAGE_MS) { usageStore.appendOutputTokens(known.outputTokens) }
+        if (known.unrecordedOutputTokens > 0) {
+            drive.perf.timed(PerfKeys.USAGE_MS) { usageStore.appendOutputTokens(known.unrecordedOutputTokens) }
         }
     }
 

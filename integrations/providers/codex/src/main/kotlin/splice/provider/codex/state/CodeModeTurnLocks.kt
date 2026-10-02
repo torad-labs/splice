@@ -2,6 +2,8 @@
 package splice.provider.codex.state
 
 import kotlinx.coroutines.sync.Mutex
+import splice.provider.codex.CodexCodeModeBridge
+import java.security.MessageDigest
 
 /** Full upstream drives share a mutex only when their conversation keys are equal. */
 internal class CodeModeTurnLocks {
@@ -36,4 +38,15 @@ internal class CodeModeTurnLocks {
         entry.users--
         if (entry.users == 0) keys.remove(key)
     }
+}
+
+/** The exact conversation key and request digest that acquire the coroutine turn lock. */
+internal class CodeModeTurnIdentity {
+    fun turnKey(turn: CodexCodeModeBridge.Turn): String = digest(
+        "${turn.sessionId}${0.toChar()}${turn.conversationKey}${0.toChar()}${turn.model}",
+    )
+
+    fun digest(value: String): String = MessageDigest.getInstance("SHA-256")
+        .digest(value.toByteArray())
+        .joinToString("") { "%02x".format(it) }
 }

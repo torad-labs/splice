@@ -19,6 +19,7 @@ import splice.provider.codex.state.CodeModeKeyLocks
 import splice.provider.codex.state.CodeModeNativeChain
 import splice.provider.codex.state.CodeModeRegistryAccess
 import splice.provider.codex.state.CodeModeStartupAdmissions
+import splice.provider.codex.stream.CodeModeSourceRecords
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
 import java.time.Clock
@@ -52,6 +53,7 @@ internal class CodexCodeModeRegistry(
     private val retention = CodeModeRecordRetention(config.retention, json, config.log, config.sessionAlive)
     private val cells = mutableMapOf<String, CodeModeCell>()
     val startup = CodeModeStartupAdmissions(access, records, history, store, config.clock)
+    val source = CodeModeSourceRecords(access, records, history, store)
     private val admissions = startup.entries
     private val sweeper = CodexCodeModeSweeper(config, records, cells, admissions, history)
     private val timed = CodeModeTimedSweep(
@@ -198,6 +200,10 @@ internal class CodexCodeModeRegistry(
                 removedMarkers.none { it.key == key } && addedMarkers.none { it.key == key }
 
         fun publishEvictions(key: String) {
+            records.filter { it.key == key && it.id in evicted }.forEach { record ->
+                record.sourceEnd?.ended()
+                record.sourceEnd = null
+            }
             records.removeAll { it.key == key && it.id in evicted }
             history.entries.removeAll { it.key == key && it in removedMarkers }
             history.entries.addAll(addedMarkers.filter { it.key == key })
@@ -300,6 +306,17 @@ internal class CodexCodeModeRegistry(
         return null
     }
 
+    /** A retry or this record's client ids, never just another turn on the same conversation key. */
+    private object CodeModeOwnerMatch {
+        fun matches(
+            record: CodeModeRecord,
+            digest: String,
+            ids: Set<String>,
+            excluded: Set<String>,
+        ): Boolean = record.id !in excluded &&
+            (record.lastDigest == digest || (ids.isNotEmpty() && record.clientIds().any { it in ids }))
+    }
+
     private inner class PeriodicSweep {
         inline fun <T> withKey(key: String, block: () -> T): T = access.withKey(key) {
             // Requests only clean their own key. The timer owns cross-key housekeeping and its I/O.
@@ -348,17 +365,6 @@ internal class CodexCodeModeRegistry(
             throw error
         }
     }
-}
-
-/** A retry or one of this record's client ids, never just another turn with the same conversation key. */
-private object CodeModeOwnerMatch {
-    fun matches(
-        record: CodeModeRecord,
-        digest: String,
-        ids: Set<String>,
-        excluded: Set<String>,
-    ): Boolean = record.id !in excluded &&
-        (record.lastDigest == digest || (ids.isNotEmpty() && record.clientIds().any { it in ids }))
 }
 
 /** V4-337: the start of a conversation's turn, under the registry's [monitor] and on its own collections.

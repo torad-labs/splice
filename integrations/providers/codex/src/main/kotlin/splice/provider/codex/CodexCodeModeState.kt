@@ -5,7 +5,10 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import splice.provider.codex.state.CodeModeRecordRestorer
 import splice.provider.codex.state.CodeModeReplayAnchors
+import splice.provider.codex.stream.CodeModeSourceLease
+import splice.provider.codex.stream.CodeModeSourceState
 import splice.upstream.codemode.CodeModeResult
 
 @Serializable
@@ -56,63 +59,19 @@ internal data class CodeModeRecordSnapshot(
     var sessionId: String? = null
     var nativeBaseId: String? = null
     var replayAnchors: CodeModeReplayAnchors? = null
+    var sourceState: CodeModeSourceState? = null
 
     @Transient var retainedBytes: Long? = null
 
-    fun restore(): CodeModeRecord = CodeModeRecord(
-        id = id,
-        key = key,
-        outer = outer,
-        outerCallId = outerCallId,
-        source = source,
-        phase = when {
-            phase == CodeModePhase.ACTIVE -> CodeModePhase.LOST
-            staleMetadata() -> CodeModePhase.LOST
-            else -> phase
-        },
-        pending = pending.toMutableList(),
-        accepted = CodeModeAccepted(results.mapValues { (id, value) -> value.restore(id) }),
-        output = output,
-        error = when {
-            staleMetadata() ->
-                "code-mode replay metadata is unavailable; source was not rerun"
-            phase == CodeModePhase.ACTIVE ->
-                "code-mode process state was lost after completed client calls: ${results.keys}; source was not rerun"
-            else -> error
-        },
-        totalCalls = totalCalls,
-        rounds = rounds,
-        updatedAt = updatedAt,
-        lastDigest = lastDigest,
-        baselineInputCount = baselineInputCount,
-        baselineInputDigest = baselineInputDigest,
-        metadataVersion = metadataVersion,
-        baselineLogicalCount = baselineLogicalCount,
-        baselineLogicalDigest = baselineLogicalDigest,
-        nativeSegments = nativeSegments,
-        continuity = continuity,
-        continuityReplay = continuityReplay,
-    ).also {
-        it.issued.addAll(issued)
-        it.sessionId = sessionId
-        it.nativeBaseId = nativeBaseId
-        it.replayAnchors = replayAnchors
-        it.retainedBytes = retainedBytes
-    }
-
-    /** A completed record with old metadata is still terminal — the rewrite omits it (and logs) rather
-     *  than refusing the conversation; only an unfinished one has nothing left to resume. */
-    private fun staleMetadata(): Boolean =
-        phase != CodeModePhase.COMPLETED &&
-            metadataVersion !in CODE_MODE_LEGACY_METADATA_VERSION..CODE_MODE_METADATA_VERSION
+    fun restore(): CodeModeRecord = CodeModeRecordRestorer().restore(this)
 }
 
 internal data class CodeModeRecord(
     val id: String,
     val key: String,
-    val outer: JsonObject,
+    var outer: JsonObject,
     val outerCallId: String,
-    val source: String,
+    var source: String,
     var phase: CodeModePhase,
     val pending: MutableList<CodeModePending> = mutableListOf(),
     val accepted: CodeModeAccepted = CodeModeAccepted(),
@@ -128,8 +87,8 @@ internal data class CodeModeRecord(
     val baselineLogicalCount: Int,
     val baselineLogicalDigest: String,
     var nativeSegments: List<CodeModeNativeSegment>,
-    val continuity: List<JsonElement>,
-    val continuityReplay: List<CodeModeNativeSegment>,
+    var continuity: List<JsonElement>,
+    var continuityReplay: List<CodeModeNativeSegment>,
 ) {
     val results: Map<String, CodeModeResult> get() = accepted.results
     val issued: MutableList<CodeModeIssuedStep> = mutableListOf()
@@ -140,6 +99,8 @@ internal data class CodeModeRecord(
     var nativeBaseId: String? = null
     var replayAnchors: CodeModeReplayAnchors? = null
     var nativeParent: CodeModeRecord? = null
+    var sourceState: CodeModeSourceState? = null
+    var sourceEnd: CodeModeSourceLease? = null
 
     @Volatile var retainedBytes: Long? = null
 
@@ -183,6 +144,7 @@ internal data class CodeModeRecord(
         it.sessionId = sessionId
         it.nativeBaseId = nativeBaseId
         it.replayAnchors = replayAnchors
+        it.sourceState = sourceState
     }
 }
 

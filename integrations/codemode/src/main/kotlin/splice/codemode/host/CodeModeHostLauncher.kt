@@ -1,7 +1,9 @@
 // NEW: one process-launch boundary owns classpath pins, child cleanup and pre-dispatch readiness.
 package splice.codemode.host
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withTimeoutOrNull
 import splice.codemode.SharedWorkerChannel
@@ -55,8 +57,16 @@ internal class CodeModeHostLauncher(
             initialized = true
             return host
         } finally {
-            if (!initialized) host.close()
+            if (!initialized) retire(host)
         }
+    }
+
+    /** Confirm native process death before replacement; old stream cleanup cannot hold the boot result. */
+    private suspend fun retire(host: SharedWorkerChannel) {
+        val exited = CompletableDeferred<Unit>()
+        host.afterExit { exited.complete(Unit) }
+        scope.launch { runInterruptible(ioDispatcher) { host.close() } }
+        exited.await()
     }
 
     override fun close() {

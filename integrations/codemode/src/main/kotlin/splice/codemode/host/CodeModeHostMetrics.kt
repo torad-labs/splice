@@ -40,7 +40,6 @@ internal class CodeModeHostMetrics(private val timeoutMs: Long = DEFAULT_WORKER_
             )
         }
         count(reply)
-        session.initialized = true
     }
 
     fun count(reply: JsonObject): Int = metric(reply, "count").also {

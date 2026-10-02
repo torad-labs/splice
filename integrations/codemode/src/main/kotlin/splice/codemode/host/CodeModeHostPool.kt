@@ -36,7 +36,7 @@ internal class CodeModeHostPool(
     private val idleTimeoutMs = times.idleMs
     private val lock = ReentrantLock()
     private val sequence = AtomicLong()
-    private val boots = CodeModeHostBoots(scope, start, lock)
+    private val boots = CodeModeHostBoots(scope, start, lock, log)
     private val metrics = CodeModeHostMetrics(times.controlMs)
     private val drains = CodeModeHostDrains(scope, lock, admission, log)
     private val retirement = CodeModeSessionRetirement(scope, lock, metrics, drains, times.controlMs)

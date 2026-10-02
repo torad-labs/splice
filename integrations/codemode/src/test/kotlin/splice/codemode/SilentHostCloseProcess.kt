@@ -12,11 +12,16 @@ import java.io.OutputStream
 import java.io.PipedInputStream
 import java.io.PipedOutputStream
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
-internal class SilentHostCloseProcess : Process() {
+internal open class SilentHostCloseProcess : Process() {
     var exitOnEngineClose = false
     var holdEngineOpen = false
+    val openEntered = CountDownLatch(1)
+    val opens = AtomicInteger()
+    private var heldOpen: HostFrame? = null
     private val replies = PipedInputStream()
     private val writer = DataOutputStream(PipedOutputStream(replies))
     private val exited = CompletableFuture<Process>()
@@ -27,7 +32,14 @@ internal class SilentHostCloseProcess : Process() {
             val frame = HostProtocol.parse(CodeModeWire.read(DataInputStream(ByteArrayInputStream(toByteArray()))))
             reset()
             val type = CodeModeFields.requiredString(frame.payload, "type")
-            if (type == "session-open" && holdEngineOpen) return
+            if (type == "session-open") {
+                opens.incrementAndGet()
+                if (holdEngineOpen) {
+                    heldOpen = frame
+                    openEntered.countDown()
+                    return
+                }
+            }
             if (type == "session-close") {
                 if (exitOnEngineClose) destroy()
                 return
@@ -51,6 +63,14 @@ internal class SilentHostCloseProcess : Process() {
 
     init {
         CodeModeWire.write(writer, CodeModeWire.readyFrame())
+    }
+
+    fun releaseOpen() {
+        val frame = checkNotNull(heldOpen)
+        heldOpen = null
+        holdEngineOpen = false
+        engines.add(frame.session)
+        CodeModeWire.write(writer, HostProtocol.frame(frame.cell, frame.request, HostProtocol.count(engines.size)))
     }
 
     override fun getInputStream(): InputStream = replies

@@ -8,6 +8,7 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import splice.codemode.SharedWorkerChannel
+import splice.core.util.LogSink
 import java.io.IOException
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -16,10 +17,14 @@ internal class CodeModeHostBoots(
     private val scope: CoroutineScope,
     private val start: CodeModeHostStart,
     private val lock: ReentrantLock,
+    private val log: LogSink = LogSink {},
 ) {
     /** Called under the placement lock; opening a cell is the only action that boots a host. */
     fun open(host: CodeModePoolHost): Deferred<SharedWorkerChannel> {
-        host.boot?.let { return it }
+        host.boot?.let {
+            if (!it.isCancelled) return it
+            lost(host, it)
+        }
         val boot = scope.async(start = CoroutineStart.LAZY) { start.open() }
         host.boot = boot
         scope.launch {
@@ -46,7 +51,11 @@ internal class CodeModeHostBoots(
                 host.sessions.remove(it)
                 it.retired.complete(Unit)
             }
-            host.sessions.forEach { it.initialized = false }
+            host.sessions.forEach {
+                it.initialized = false
+                it.opening = null
+            }
         }
+        log("[code-mode] host generation ended; placement cleared")
     }
 }

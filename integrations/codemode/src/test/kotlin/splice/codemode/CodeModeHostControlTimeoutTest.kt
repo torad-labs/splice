@@ -27,17 +27,18 @@ class CodeModeHostControlTimeoutTest {
     @Test
     fun `an unanswered engine close has a bounded retirement and replaces the drained host`() = runBlocking {
         val processes = ConcurrentLinkedQueue<SilentHostCloseProcess>()
+        val messages = ConcurrentLinkedQueue<String>()
         JvmCodeModeRuntime(
             maxWorkers = 1,
             workerStartTimeoutMs = 300,
             spawn = WorkerSpawn { SilentHostCloseProcess().also(processes::add) },
-        ).use { runtime ->
+        ).also { it.observeHostLifecycle(LogSink(messages::add)) }.use { runtime ->
             val cell = runtime.startSession("first", "return 'fixture';", emptySet())
             assertEquals("fixture", (cell.advance() as CodeModeStep.Completed).output)
             withTimeout(5_000) { while (runtime.liveCells() != 0) yield() }
             runtime.closeSession("first")
             withTimeout(5_000) { while (runtime.liveEngines() != 0) yield() }
-            withTimeout(5_000) { while (processes.first().isAlive) yield() }
+            HostLifecycleAwait.ended(messages)
             assertFalse(processes.first().isAlive)
             val next = runtime.startSession("next", "return 'fixture';", emptySet())
             assertEquals("fixture", (next.advance() as CodeModeStep.Completed).output)
@@ -46,7 +47,7 @@ class CodeModeHostControlTimeoutTest {
     }
 
     @Test
-    fun `a start deadline quarantines an unanswered open before its retry can reuse the host`() = runBlocking {
+    fun `an engine control deadline quarantines an unanswered open before its retry can reuse the host`() = runBlocking {
         val processes = ConcurrentLinkedQueue<SilentHostCloseProcess>()
         val messages = ConcurrentLinkedQueue<String>()
         JvmCodeModeRuntime(
@@ -63,7 +64,7 @@ class CodeModeHostControlTimeoutTest {
                 runBlocking { runtime.startSession("hung", "return 'never';", emptySet()) }
             }
             withTimeout(5_000) { while (messages.none { it.contains("marked for replacement") }) yield() }
-            withTimeout(5_000) { while (processes.first().isAlive) yield() }
+            HostLifecycleAwait.ended(messages)
             val retry = runtime.startSession("hung", "return 'fixture';", emptySet())
             assertEquals("fixture", (retry.advance() as CodeModeStep.Completed).output)
             assertEquals(
@@ -101,17 +102,18 @@ class CodeModeHostControlTimeoutTest {
     @Test
     fun `a dying control generation cannot quarantine its already cleared replacement slot`() = runBlocking {
         val processes = ConcurrentLinkedQueue<SilentHostCloseProcess>()
+        val messages = ConcurrentLinkedQueue<String>()
         JvmCodeModeRuntime(
             maxWorkers = 1,
             workerStartTimeoutMs = 300,
             spawn = WorkerSpawn { SilentHostCloseProcess().also(processes::add) },
-        ).use { runtime ->
+        ).also { it.observeHostLifecycle(LogSink(messages::add)) }.use { runtime ->
             val first = runtime.startSession("first", "return 'fixture';", emptySet())
             assertTrue(first.advance() is CodeModeStep.Completed)
             withTimeout(5_000) { while (runtime.liveCells() != 0) yield() }
             processes.first().exitOnEngineClose = true
             runtime.closeSession("first")
-            withTimeout(5_000) { while (processes.first().isAlive) yield() }
+            HostLifecycleAwait.ended(messages)
             val next = withTimeout(5_000) { runtime.startSession("new", "return 'fixture';", emptySet()) }
             assertTrue(next.advance() is CodeModeStep.Completed)
             assertEquals(2, processes.size)
@@ -145,7 +147,7 @@ class CodeModeHostControlTimeoutTest {
             assertTrue(error.message.orEmpty().contains("quirks.code_mode_memory_mb"))
             val completed = held.advance(listOf(CodeModeResult("1", "alive"))) as CodeModeStep.Completed
             assertEquals("fixture", completed.output)
-            withTimeout(5_000) { while (processes.first().isAlive) yield() }
+            HostLifecycleAwait.ended(messages)
             val next = runtime.startSession("new", "return 'fixture';", emptySet())
             assertTrue(next.advance() is CodeModeStep.Completed)
             assertEquals(2, processes.size)

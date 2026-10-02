@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
+import splice.core.util.LogSink
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 import splice.upstream.failure.CodeModeInfrastructureCategory
@@ -62,6 +63,7 @@ class CodeModeWorkerBootTest {
     fun `a failed host boot is reaped and a later start boots a healthy replacement`() = runBlocking {
         val attempts = java.util.concurrent.atomic.AtomicInteger()
         val failed = java.util.concurrent.CompletableFuture<Process>()
+        val messages = java.util.concurrent.ConcurrentLinkedQueue<String>()
         JvmCodeModeRuntime(
             workerClasspath = testClasspath,
             spawn = WorkerSpawn { builder ->
@@ -72,12 +74,13 @@ class CodeModeWorkerBootTest {
                 }
             },
             workerStartTimeoutMs = START_BUDGET_MS,
-        ).use { runtime ->
+        ).also { it.observeHostLifecycle(LogSink(messages::add)) }.use { runtime ->
             val timeout = assertThrows(CodeModeStartException::class.java) {
                 runBlocking { runtime.start("return 1;", emptySet()) }
             }
             assertEquals(START_BUDGET_MS, (timeout.cause as CodeModeTimeoutException).timeoutMillis)
             assertTrue(failed.get().waitFor(5, java.util.concurrent.TimeUnit.SECONDS), "failed boot must be reaped")
+            HostLifecycleAwait.ended(messages)
             val next = withTimeout(2 * START_BUDGET_MS) { runtime.start("return 'replacement';", emptySet()) }
             assertEquals("replacement", (next.advance() as CodeModeStep.Completed).output)
             assertEquals(2, attempts.get())
@@ -90,6 +93,7 @@ class CodeModeWorkerBootTest {
         val attempts = java.util.concurrent.atomic.AtomicInteger()
         val replacementEntered = java.util.concurrent.CompletableFuture<Unit>()
         val releaseReplacement = java.util.concurrent.CountDownLatch(1)
+        val messages = java.util.concurrent.ConcurrentLinkedQueue<String>()
         JvmCodeModeRuntime(
             workerClasspath = testClasspath,
             workerStartTimeoutMs = START_BUDGET_MS,
@@ -102,10 +106,11 @@ class CodeModeWorkerBootTest {
                     builder.start()
                 }
             },
-        ).use { runtime ->
+        ).also { it.observeHostLifecycle(LogSink(messages::add)) }.use { runtime ->
             assertThrows(CodeModeStartException::class.java) {
                 runBlocking { runtime.start("return 1;", emptySet()) }
             }
+            HostLifecycleAwait.ended(messages)
             kotlinx.coroutines.supervisorScope {
                 val first = async { runtime.start("return 'replacement';", emptySet()) }
                 withTimeout(5_000) { replacementEntered.await() }

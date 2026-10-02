@@ -3,11 +3,13 @@ package splice.codemode.host
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import splice.codemode.SharedWorkerChannel
 import splice.core.util.LogSink
 import splice.upstream.failure.CodeModeCapacityException
+import splice.upstream.failure.CodeModeWorkerLostException
 import java.io.IOException
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -18,13 +20,39 @@ internal class CodeModeHostDrains(
     private val admission: CodeModePoolAdmission,
     private val log: LogSink,
 ) {
+    /** Caller cancellation abandons a wait, never the independently timed engine exchange on this pool scope. */
     suspend fun admit(session: CodeModePoolSession, channel: SharedWorkerChannel, metrics: CodeModeHostMetrics) {
+        val opening = lock.withLock {
+            requireCurrent(session, channel)
+            session.opening ?: scope.async(start = CoroutineStart.LAZY) {
+                exchange(session, channel, metrics)
+                lock.withLock {
+                    requireCurrent(session, channel)
+                    session.initialized = true
+                }
+            }.also { session.opening = it }
+        }
+        try {
+            opening.await()
+        } catch (error: CodeModeCapacityException) {
+            session.opening = null
+            throw error
+        }
+    }
+
+    /** Both the opening future and its result belong to this generation under the placement lock. */
+    private fun requireCurrent(session: CodeModePoolSession, channel: SharedWorkerChannel) {
+        if (session.closing || !session.host.owns(channel)) throw CodeModeWorkerLostException()
+    }
+
+    private suspend fun exchange(
+        session: CodeModePoolSession,
+        channel: SharedWorkerChannel,
+        metrics: CodeModeHostMetrics,
+    ) {
         val failure = try {
             metrics.admit(session, channel, admission)
             return
-        } catch (error: TimeoutCancellationException) {
-            failed(session.host, channel)
-            error
         } catch (error: CodeModeCapacityException) {
             error
         } catch (error: IOException) {

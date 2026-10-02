@@ -19,6 +19,13 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
+/** Waits for the pool to clear a generation, not merely for its underlying process to exit. */
+internal object HostLifecycleAwait {
+    suspend fun ended(messages: Collection<String>) = withTimeout(5_000) {
+        while (messages.none { it.contains("placement cleared") }) yield()
+    }
+}
+
 internal class HostControlFixture(val factory: ControlledHostEngines = ControlledHostEngines()) : AutoCloseable {
     private val replies = ConcurrentLinkedQueue<HostFrame>()
     private val seen = mutableMapOf<Long, JsonObject>()

@@ -34,6 +34,9 @@ internal class CodeModePoolSession(val key: String, val id: Long, val host: Code
     var lastUse = 0L
 
     @Volatile var initialized = false
+
+    @Volatile var opening: Deferred<Unit>? = null
+
     var closing = false
 
     fun used(at: Long) {

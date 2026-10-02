@@ -1,4 +1,7 @@
 source	sha256	disposition	destination	reason
+app/src/test/kotlin/splice/app/provider/ChatEffortWiringTest.kt	f7d9a8e23d28bf173693e083840d41e21e126f3d00306631f5b8295708e505c9	created		Red-first TOML-to-production chat effort wiring alias precedence vendor mapping and legacy byte compatibility
+core/src/main/kotlin/splice/core/topology/ChatEffortVocabularyConfig.kt	0a250bc2621395352341da3ffaa56242e4fb137411c5b4cc8b85725544cb657e	created		Optional per-provider chat effort vocabulary schema with explicit default and level mapping
+integrations/dialects/openai-chat/src/main/kotlin/splice/dialect/chat/ChatEffortVocabulary.kt	3f15af04f651fd2ac6991dc4857c2531d23a2bdcea9fcb720eae22dacdee66cc	created		Provider-opted raw client effort alias selection with thinking-off and vendor-default fallback
 integrations/codemode/src/main/java/splice/codemode/WorkerArchiveStamp.java	78e9d872efd5de6857d78847fa0c4218da5b6538eb5420d5ab2741866c9ab837	created		Loaded class metadata bridge to the post-Kotlin-compile worker fingerprint without mutable resource URLs
 integrations/codemode/src/test/kotlin/splice/codemode/ArchiveBootProbe.kt	46207ff3b9b2073165aa2cd86e3267958aac84a8dc07d581c3c208200988f8e2	created		Separate JVM proof of pre-runtime install refusal and eager boot capture before the first script
 integrations/codemode/src/main/kotlin/splice/codemode/WorkerArtifactPins.kt	4c40acd8531e2f88a134357a2f90eb4f229b612698e3153c0808064537028424	created		Daemon-owned content-addressed archive pins with opened-byte verification and portable dead-owner cleanup

@@ -42,7 +42,7 @@ public class OpenAiChatProvider(
 
     override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {
         val upstreamModel = catalog.stripSuffixes(body.typed.model)
-        val built = builder.build(body.typed, upstreamModel, body.typed.model, compact, sessionId)
+        val built = builder.build(body.typed, upstreamModel, body.typed.model, compact, sessionId, body.raw)
         // The slot is held until the gateway says the turn is over (BuiltTurn.onEnd); the slot id
         // routes the turn and is no part of what it asks (BuiltTurn.routingFields).
         return BuiltTurn(

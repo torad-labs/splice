@@ -113,6 +113,10 @@ providers.*.quirks
 providers.*.quirks.account_id_header	
 providers.*.quirks.block_allowlist	
 providers.*.quirks.cache_key	
+providers.*.quirks.chat_effort_vocabulary	
+providers.*.quirks.chat_effort_vocabulary.default	
+providers.*.quirks.chat_effort_vocabulary.levels	
+providers.*.quirks.chat_effort_vocabulary.levels.*	
 providers.*.quirks.code_mode	
 providers.*.quirks.code_mode_heap	
 providers.*.quirks.code_mode_models	

@@ -34,6 +34,8 @@ public data class ChatQuirks(
     val minImageEdgePx: Int? = null,
     /** Models that accept reasoning_effort=xhigh. null = never emit xhigh (unknown vendors). */
     val xhighModels: Regex? = null,
+    /** Opt-in client effort aliases. null preserves the existing thinking-budget tiers. */
+    val effortVocabulary: ChatEffortVocabulary? = null,
 ) {
     /** Overlay TOML `[providers.*.quirks].reasoning_effort` onto a chat-dialect quirk profile — null
      *  keeps the provider's own default (see [emitReasoningEffort]). A member rather than the

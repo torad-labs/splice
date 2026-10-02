@@ -5,6 +5,7 @@
 // max_tokens IS honored (unlike the ChatGPT backend); reasoning is a plain field where supported.
 package splice.dialect.chat
 
+import kotlinx.serialization.json.JsonObject
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.wire.AnthropicRequest
@@ -25,6 +26,7 @@ public class ChatRequestBuilder(
         originalModel: String,
         compact: Boolean,
         sessionId: String? = null,
+        raw: JsonObject = JsonObject(emptyMap()),
     ): BuiltChatRequest {
         // A compact turn is built EXACTLY like any other turn (2026-09-05, operator law): same
         // system, same tools, same tool_choice, same effort. Every compact-only reshaping this
@@ -33,7 +35,8 @@ public class ChatRequestBuilder(
         // transcript cold. `compact` reaches TurnMeta for the response side only.
         val messages = wire.messagesArray(body.system, body)
         val emitTools = quirks.supportsTools && body.tools.isNotEmpty()
-        val effort = effortTiers.chatReasoningEffort(body, upstreamModel)
+        val effort = quirks.effortVocabulary?.effort(raw, body)
+            ?: effortTiers.chatReasoningEffort(body, upstreamModel)
         // TIER-1 (#924): the request is a CLOSED ChatRequest DTO (see chatRequestObject) — a knob
         // that doesn't belong can't be added without a field.
         val cacheKey = quirks.sessionCacheKeyPrefix?.let { prefix -> sessionId?.let { "$prefix:$it" } }

@@ -181,6 +181,8 @@ export const dispositions: readonly Disposition[] = [
   { kind: 'topology', name: 'providers.*.quirks.account_id_header', disposition: 'editable' },
   { kind: 'topology', name: 'providers.*.quirks.block_allowlist', disposition: 'editable' },
   { kind: 'topology', name: 'providers.*.quirks.cache_key', disposition: 'editable' },
+  { kind: 'topology', name: 'providers.*.quirks.chat_effort_vocabulary.default', disposition: 'editable' },
+  { kind: 'topology', name: 'providers.*.quirks.chat_effort_vocabulary.levels.*', disposition: 'editable' },
   { kind: 'topology', name: 'providers.*.quirks.code_mode', disposition: 'editable' },
   { kind: 'topology', name: 'providers.*.quirks.code_mode_heap', disposition: 'editable' },
   { kind: 'topology', name: 'providers.*.quirks.code_mode_models', disposition: 'editable' },

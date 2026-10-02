@@ -6,10 +6,12 @@
 package splice.app.provider
 
 import splice.core.config.SpliceConfig
+import splice.core.topology.ChatEffortVocabularyConfig
 import splice.core.topology.ProviderConfig
 import splice.core.topology.SummaryDelivery
 import splice.core.topology.ToolSurfaceConfig
 import splice.dialect.anthropic.PassthroughQuirks
+import splice.dialect.chat.ChatEffortVocabulary
 import splice.dialect.chat.ChatQuirks
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.stream.DEFAULT_MARKER_TEXT
@@ -87,7 +89,12 @@ internal class QuirksOverlay {
         // stream_options members. TOML wins over both, and null keeps the base — which is what
         // leaves grok-oauth's own `true` and every other head's request bytes untouched.
         val usage = providerCfg.quirks.streamUsage ?: true.takeIf { providerCfg.isLocal }
+        val configuredVocabulary: ChatEffortVocabularyConfig? = providerCfg.quirks.chatEffortVocabulary
+        val vocabulary = configuredVocabulary?.let {
+            ChatEffortVocabulary(it.default, it.levels)
+        }
         return base.withReasoningEffortToml(providerCfg.quirks.reasoningEffort).withStreamUsageToml(usage)
+            .copy(effortVocabulary = vocabulary ?: base.effortVocabulary)
     }
 
     /** Overlay the head's TOML [providers.*.quirks] onto a passthrough head's BASE quirk profile.

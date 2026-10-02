@@ -80,6 +80,8 @@ public data class QuirksConfig(
      *  backends read them). null keeps the provider's own default (true); set false for strict
      *  OpenAI-compatible vendors (Fireworks — issue #21) that 400 on unrecognized fields. */
     @SerialName("reasoning_effort") val reasoningEffort: Boolean? = null,
+    /** openai-chat only: explicit client effort mapped to the provider vocabulary. Absent keeps budget tiers. */
+    @SerialName("chat_effort_vocabulary") val chatEffortVocabulary: ChatEffortVocabularyConfig? = null,
     /** openai-chat only: send stream_options.include_usage, so the stream ends with a usage frame.
      *  null keeps the provider's own default — ON for a LOCAL runtime (V4-163) and for grok-oauth,
      *  OFF for every other vendor, whose tolerance for extra fields is unknown. Without the frame a

@@ -69,23 +69,13 @@ internal class HeadAdmission(
     }
 
     private suspend fun serve(call: ApplicationCall, prepared: Preparation, admitted: AdmittedTurn) {
-        // V4-213: the slot was taken before the body was read; once the turn is prepared it names
-        // itself on the gate's live list (describe), led by its session's tag. A replay is always a
-        // compaction retry.
+        // Only a Ready turn names a live row. settle already returned Local/Replay ownership,
+        // including a borrowed handle whose row still belongs to its independent source.
         when (prepared) {
             is Preparation.Rejected -> responses.respondInvalidRequest(call, prepared.message)
-            is Preparation.Local -> {
-                admitted.slot.describe(prepared.model, compact = false, tag(prepared.sessionId))
-                driver.answerLocally(call, prepared)
-            }
+            is Preparation.Local -> driver.answerLocally(call, prepared)
             is Preparation.Replay -> {
-                admitted.slot.describe(prepared.model, compact = true, tag(prepared.sessionId))
-                // A retry following a compaction still in flight is not an admission: the drive it
-                // follows holds a slot already (TurnStreamer.driveDetachable), so this one goes
-                // back before the wait — else one compaction counts twice against the gate for
-                // however long the upstream turn still runs (review of PR 137). Release is
-                // idempotent (InflightGate.Slot), so the finally above stays a no-op for it.
-                if (!prepared.recording.isComplete) admitted.slot.release()
+                // settle returned this retry's candidate before it follows the independently held drive.
                 driver.replay(call, prepared)
             }
             is Preparation.Ready -> {

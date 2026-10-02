@@ -104,7 +104,7 @@ class AdmissionGateTest {
     fun `a lying request channel is a retryable timeout rather than a malformed request`(
         @TempDir tmp: Path,
     ) = testApplication {
-        val provider = provider()
+        val provider = testProvider
         val deps = headDeps(tmp)
         val responses = AdmissionResponses()
         val admission = AdmissionGate(provider, deps, AdmissionWindow(), responses)
@@ -141,7 +141,7 @@ class AdmissionGateTest {
             policy = HeadDeps.HeadPolicy(maxRequestBytes = 4),
             seams = HeadDeps.HeadSeams(requestMaterializationGate = materialization),
         )
-        val admission = AdmissionGate(provider(), deps, AdmissionWindow(), AdmissionResponses())
+        val admission = AdmissionGate(testProvider, deps, AdmissionWindow(), AdmissionResponses())
         val lengths = mutableListOf<String?>()
         application {
             routing {
@@ -188,7 +188,7 @@ class AdmissionGateTest {
     ) = testApplication {
         val heap = RequestMaterializationGate(heapBudgetBytes = 7)
         val deps = headDeps(tmp)
-        val admission = AdmissionGate(provider(), deps, AdmissionWindow(), AdmissionResponses())
+        val admission = AdmissionGate(testProvider, deps, AdmissionWindow(), AdmissionResponses())
         val preparations = listOf(
             Preparation.Rejected("synthetic rejection"),
             Preparation.Local("synthetic answer", "synthetic-model", null, false),
@@ -236,7 +236,7 @@ class AdmissionGateTest {
         val gate = InflightGate({ 1 }, maxQueued = { 1 })
         val deps = headDeps(tmp).copy(gate = gate)
         val window = AdmissionWindow()
-        val admission = AdmissionGate(provider(), deps, window, AdmissionResponses())
+        val admission = AdmissionGate(testProvider, deps, window, AdmissionResponses())
         val releasedAtReply = mutableListOf<Boolean>()
         var request: AdmittedTurn? = null
         application {
@@ -342,7 +342,7 @@ class AdmissionGateTest {
                 }
             },
         )
-        val handler = handler(provider(), deps, reader)
+        val handler = handler(testProvider, deps, reader)
         val releasedAtReply = mutableListOf<Pair<Boolean, Boolean>>()
         application {
             sendPipeline.intercept(ApplicationSendPipeline.Before) {
@@ -408,6 +408,37 @@ class AdmissionGateTest {
         }
     }
 
+    @Test
+    fun `a local activity query does not relabel the retained source it borrowed`(
+        @TempDir tmp: Path,
+    ) = testApplication {
+        val deps = headDeps(tmp)
+        val initial = (deps.gate.acquire() as InflightGate.Admission.Acquired).slot
+        initial.describe("synthetic-source-model", compact = true, "source-tag")
+        val source = initial.retainSource("synthetic-session")
+        initial.release()
+        val handler = handler(testProvider, deps)
+        application { routing { post("/probe") { handler.handleMessages(call) } } }
+        try {
+            val response = client.post("/probe") {
+                header(HttpHeaders.Authorization, "Bearer test-inference-token")
+                header(SESSION_HEADER, "synthetic-session")
+                setBody(
+                    """{"model":"claude-codex--gpt-5.6-sol","max_tokens":16,"messages":[{
+                        "role":"user","content":"Describe your most recent action in 3-5 words using present tense (-ing)."
+                    }]}""",
+                )
+            }
+            assertEquals(HttpStatusCode.OK, response.status, response.bodyAsText())
+            val row = deps.gate.snapshot().live.single()
+            assertEquals("source-tag synthetic-source-model", row.label, "local replies never own the source row")
+            assertTrue(row.compact, "a local query must not change the source's compact flag")
+            assertEquals(1, deps.gate.snapshot().inflight)
+        } finally {
+            source.release()
+        }
+    }
+
     private suspend fun availableAtReply(deps: HeadDeps, heap: RequestMaterializationGate): Pair<Boolean, Boolean> {
         val loanFree = heap.tryWithLease(1) { true } == true
         val candidate = deps.gate.resumeSource("synthetic-session")
@@ -436,7 +467,7 @@ class AdmissionGateTest {
     }
 
     private fun continuationProvider(): Provider {
-        val delegate = provider()
+        val delegate = testProvider
         return object : Provider by delegate {
             override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn =
                 delegate.buildTurn(body, compact, sessionId).copy(
@@ -482,7 +513,7 @@ class AdmissionGateTest {
         hasPriorExchange = false,
     )
 
-    private fun provider(): TestResponsesProvider = TestResponsesProvider(
+    private val testProvider: TestResponsesProvider = TestResponsesProvider(
         tuning = ProviderTuning(
             key = "codex",
             label = "claudex",

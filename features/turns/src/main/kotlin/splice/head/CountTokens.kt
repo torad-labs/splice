@@ -31,20 +31,21 @@ internal class CountTokens(
         // pre-flight sizing for minutes (review 2026-07-22). Memory stays bounded by the
         // materialization gate (fastFail: contention 529s instead of queueing, so a count_tokens
         // flood cannot camp the shared heap budget) plus the maxRequestBytes cap.
-        admission.materializeOrRespond(call, fastFail = true) {
+        val prepared = admission.materializeOrRespond(call, fastFail = true) {
             val body = bodyReader.receiveBodyBounded(call, deps.policy.maxRequestBytes)
-            val parsed = bodyParse.parseOrNull(body.text)
-            if (parsed == null) {
-                responses.respondInvalidRequest(call, "invalid request body")
-            } else {
-                // Conservative and Unicode-safe: UTF-8 bytes / 3 includes structural/tool overhead.
-                val estimate = PromptTokenEstimate.fromBytes(body.bytes.toLong())
-                deps.log("[${provider.key}] count_tokens estimate=$estimate (local; no upstream turn)\n")
-                call.respondText(
-                    buildJsonObject { put("input_tokens", estimate) }.toString(),
-                    ContentType.Application.Json,
-                )
-            }
+            bodyParse.parse(body.text).map { PromptTokenEstimate.fromBytes(body.bytes.toLong()) }
+        } ?: return
+        // Both success and invalid-body replies publish only after materialization returned its loan.
+        val estimate = prepared.getOrNull()
+        if (estimate == null) {
+            responses.respondInvalidRequest(call, "invalid request body")
+            return
         }
+        // Conservative and Unicode-safe: UTF-8 bytes / 3 includes structural/tool overhead.
+        deps.log("[${provider.key}] count_tokens estimate=$estimate (local; no upstream turn)\n")
+        call.respondText(
+            buildJsonObject { put("input_tokens", estimate) }.toString(),
+            ContentType.Application.Json,
+        )
     }
 }

@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { failureText } from '../../api/client';
 import { useHeads, useSessions, useTeams } from '../../api/queries';
-import { useTurnOf } from '../../api/sessions';
 import { useArchiveTeam, useTeamActivity, useTeamChat, useTeamEconomics } from '../../api/teams';
 import { ABSENT, clockTime, fmtUsd } from '../../lib/format';
 import { colourFromHeads } from '../../lib/turns-page';
@@ -47,7 +46,6 @@ export function TeamPage() {
   const activity = useTeamActivity(team === null ? null : team.id, day, back === 0);
   const economics = useTeamEconomics(team === null ? null : team.id);
   const rows = sessions.data?.sessions ?? [];
-  const turnOf = useTurnOf(team === null ? [] : team.slots.flatMap((slot) => (slot.head === '' ? [] : [slot.head])));
   const crumb = <div className="crumb"><Link to="/sessions?group=team">{M.back}</Link></div>;
 
   if (teams.isPending) return <>{crumb}<PageHead title={M.back} lede={M.reading} /></>;
@@ -59,7 +57,7 @@ export function TeamPage() {
   const seats = seatsOf(team);
   const working = seats.filter((slot) => {
     const row = sessionIn(slot, rows);
-    return row !== null && stateOf(row, turnOf(row)) === 'working';
+    return row !== null && stateOf(row) === 'working';
   }).length;
   const tallies = new Map((economics.data?.slots ?? []).map((tally) => [tally.slot, tally] as const));
   const nameOf = (session: string): string => {
@@ -95,7 +93,7 @@ export function TeamPage() {
         <ul className="seatrows">
           {seats.map((slot) => {
             const row = sessionIn(slot, rows);
-            const state = row === null ? null : stateOf(row, turnOf(row));
+            const state = row === null ? null : stateOf(row);
             return (
               <li key={slot.id} className={`seatrow hue ${colourOf(slot.head)}`} aria-label={slot.role}>
                 <div>

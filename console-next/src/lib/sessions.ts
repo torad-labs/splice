@@ -38,46 +38,35 @@ export function repoName(row: SessionRow): string | null {
   return root === null || root === undefined || root === '' ? null : repoNameOf(root, row.repo?.remote);
 }
 
-/** Where a session stands, in the words the board groups by. `waiting` is the client's own status; `stuck` is a busy
- *  session whose live turn has gone quiet upstream past STUCK_IDLE_MS. `gone` is a registration whose process exited. */
-export type SessionState = 'waiting' | 'stuck' | 'working' | 'idle' | 'gone';
-
-/** A turn silent this long, with no byte from upstream, is stuck.
- *  // why: splice's own watchdog asks after a silent path at STREAM_IDLE_MS / FIRST_BYTE_TIMEOUT_MS (90 s, Knob.kt:225-268)
- *  and holds a path that answers, so the proxy is already healing at 90 s; five minutes of that is what the operator
- *  experiences as a hang (the knob's own comment: "five minutes of the former is experienced as a hang"). */
-export const STUCK_IDLE_MS = 5 * 60_000;
+/** Where a session stands, in the words the board groups by. `waiting` is the client's own status;
+ *  upstream silence is not a failure signal. `gone` is a registration whose process exited. */
+export type SessionState = 'waiting' | 'working' | 'idle' | 'gone';
 
 /** The live turn a session runs, when the caller has read its head's turns: undefined = not read (unknown),
  *  null = the head runs none for it. */
 export type TurnOf = (row: SessionRow) => LiveTurn | null | undefined;
 
-/** A session's state. Busy is Working unless its live turn reports itself quiet past STUCK_IDLE_MS: a busy session
- *  with no live turn is Claude Code running a tool locally (a long Bash, a monitor wait), and the registry's
- *  `status_updated_at` only moves when the client changes status, so its age proves nothing (measured 2026-09-29: six
- *  busy seats on this machine, every one working, all with an old timestamp). A daemon that does not send `idle_ms`
- *  yet leaves every busy session Working: absence claims nothing. */
-export function stateOf(row: SessionRow, turn?: LiveTurn | null): SessionState {
+/** Busy and shell are Working, whether the provider is quiet or a tool runs locally. Neither a live
+ *  turn's silence nor the registry timestamp proves splice cannot recover. Only the client says it needs an answer. */
+export function stateOf(row: SessionRow): SessionState {
   if (row.availability === 'gone') return 'gone';
   const status = row.status ?? '';
   if (status === 'waiting') return 'waiting';
-  if (status === 'busy' || status === 'shell') {
-    return turn !== undefined && turn !== null && !turn.stopped && turn.idle_ms !== undefined && turn.idle_ms > STUCK_IDLE_MS ? 'stuck' : 'working';
-  }
+  if (status === 'busy' || status === 'shell') return 'working';
   return 'idle';
 }
 
-export const needsPerson = (state: SessionState): boolean => state === 'waiting' || state === 'stuck';
+export const needsPerson = (state: SessionState): boolean => state === 'waiting';
 
 export type GroupBy = 'state' | 'repo' | 'head' | 'team';
 
 /** What a session with no value for the grouping field is filed under, so no row is dropped from a count. */
 export const UNATTRIBUTED = 'unattributed';
 
-export function groupKeyOf(row: SessionRow, by: GroupBy, turnOf?: TurnOf): string {
+export function groupKeyOf(row: SessionRow, by: GroupBy): string {
   switch (by) {
     case 'state': {
-      const state = stateOf(row, turnOf?.(row));
+      const state = stateOf(row);
       return needsPerson(state) ? 'needs' : state;
     }
     case 'head':
@@ -98,10 +87,10 @@ const STATE_ORDER = ['needs', 'working', 'idle', 'gone'];
 
 /** The rows filed by [by]. State groups keep their fixed order; the others put the biggest group first,
  *  ties broken by key so the order is stable. */
-export function groupSessions(rows: readonly SessionRow[], by: GroupBy, turnOf?: TurnOf): SessionGroup[] {
+export function groupSessions(rows: readonly SessionRow[], by: GroupBy): SessionGroup[] {
   const groups = new Map<string, SessionGroup>();
   for (const row of rows) {
-    const key = groupKeyOf(row, by, turnOf);
+    const key = groupKeyOf(row, by);
     const group = groups.get(key) ?? { key, sessions: [] };
     group.sessions.push(row);
     groups.set(key, group);
@@ -167,15 +156,15 @@ export function noConversation(row: SessionRow): NoConversation | null {
   return row.source === undefined ? 'nothing-to-resume' : 'empty-transcript';
 }
 
-export type SessionTone = 'work' | 'wait' | 'stuck' | 'idle';
+export type SessionTone = 'work' | 'wait' | 'idle';
 
 const STATE_WORD: Readonly<Record<SessionState, string>> = {
-  working: 'Working', waiting: 'Waiting on you', stuck: 'Stuck', idle: 'Idle', gone: 'Ended',
+  working: 'Working', waiting: 'Waiting on you', idle: 'Idle', gone: 'Ended',
 };
 export const stateWord = (state: SessionState): string => STATE_WORD[state];
 
 const STATE_TONE: Readonly<Record<SessionState, SessionTone>> = {
-  working: 'work', waiting: 'wait', stuck: 'stuck', idle: 'idle', gone: 'idle',
+  working: 'work', waiting: 'wait', idle: 'idle', gone: 'idle',
 };
 export const stateTone = (state: SessionState): SessionTone => STATE_TONE[state];
 
@@ -206,7 +195,6 @@ function noteText(state: SessionState, since: number | null): string | null {
   const span = spanText(since);
   switch (state) {
     case 'waiting': return SW.waitingNote(span);
-    case 'stuck': return SW.stuckNote(span);
     case 'working': return SW.workingNote(span);
     case 'idle': return SW.idleNote(span);
     case 'gone': return null;
@@ -220,8 +208,6 @@ export function activityText(state: SessionState, since: number | null, quiet: n
   switch (state) {
     case 'waiting':
       return span === null ? SW.waiting : SW.waitingFor(span);
-    case 'stuck':
-      return span === null ? SW.stuck : SW.stuckFor(span);
     case 'working':
       if (quiet !== null && quiet >= QUIET_AFTER_MS) return SW.toolQuiet(spanText(quiet));
       return span === null ? SW.working : SW.workingFor(span);
@@ -246,24 +232,23 @@ const capital = (text: string): string => text.charAt(0).toUpperCase() + text.sl
 
 /** The page's one-sentence summary: what is working, what needs a person, what finished. A registry with no
  *  live session says so. Counts are words up to twelve, digits after. */
-export function sessionsLede(rows: readonly SessionRow[], turnOf?: TurnOf): string {
-  const count = { working: 0, waiting: 0, stuck: 0, idle: 0, gone: 0 };
-  for (const row of rows) count[stateOf(row, turnOf?.(row))] += 1;
+export function sessionsLede(rows: readonly SessionRow[]): string {
+  const count = { working: 0, waiting: 0, idle: 0, gone: 0 };
+  for (const row of rows) count[stateOf(row)] += 1;
   const parts: string[] = [];
   if (count.working > 0) parts.push(`${numberWord(count.working)} ${count.working === 1 ? 'is' : 'are'} working`);
   if (count.waiting > 0) parts.push(`${numberWord(count.waiting)} ${count.waiting === 1 ? 'is' : 'are'} waiting on you`);
-  if (count.stuck > 0) parts.push(`${numberWord(count.stuck)} ${count.stuck === 1 ? 'is' : 'are'} stuck`);
   const finished = count.idle + count.gone;
   const first = parts.length === 0 ? '' : `${capital(parts.join(', '))}.`;
   const last = finished === 0 ? '' : `${capital(numberWord(finished))} finished earlier.`;
   return [first, last].filter((sentence) => sentence !== '').join(' ');
 }
 
-/** The two durations a card's line needs. `since` is how long the session has been in its state (a stuck one counts
- *  its live turn's own silence); `quiet` is set only for a busy session the head confirms runs no turn, which is
+/** The two durations a card's line needs. `since` is how long the session has been in its state;
+ *  `quiet` is set only for a busy session the head confirms runs no turn, which is
  *  Claude Code running a tool locally: how long the registry has heard nothing from it. */
 export function timingOf(row: SessionRow, state: SessionState, turn: LiveTurn | null | undefined, now: number): { since: number | null; quiet: number | null } {
-  const since = state === 'stuck' && turn?.idle_ms !== undefined ? turn.idle_ms : sinceOf(row, now);
+  const since = sinceOf(row, now);
   const quiet = state === 'working' && turn === null && row.status_updated_at !== null ? Math.max(0, now - row.status_updated_at) : null;
   return { since, quiet };
 }

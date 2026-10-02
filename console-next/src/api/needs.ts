@@ -5,10 +5,8 @@ import { useEffect } from 'react';
 import { failureText } from './client';
 import { useDoctor } from './doctor';
 import { useAccounts, useAuth, useHealth, useHeads, useSessions, useTeams, useUsage } from './queries';
-import { useTurnOf } from './sessions';
 import { needsOf } from '../lib/needs';
 import { observeBoot, useRestartPending } from '../lib/restart-pending';
-import { UNKNOWN_HEAD } from '../types/sessions';
 import type { NeedsList, Read } from '../types/needs';
 
 /** A query as a Read: what it holds (kept across a failed poll), the error of its newest poll, and when it last answered. */
@@ -30,9 +28,6 @@ export function useNeeds(now: number): NeedsList {
   const doctor = useDoctor();
   const health = useHealth();
   const restartPending = useRestartPending();
-  const turnOf = useTurnOf(
-    (sessions.data?.sessions ?? []).filter((row) => row.head !== UNKNOWN_HEAD && (row.status === 'busy' || row.status === 'shell')).map((row) => row.head),
-  );
   // a replacement boot is what clears the settings that waited for one
   const boot = health.data?.bootedAtEpochMillis;
   useEffect(() => {
@@ -49,6 +44,5 @@ export function useNeeds(now: number): NeedsList {
     doctor: readOf(doctor),
     topology: { ...topology, data: health.data === undefined ? null : health.data.topologyStale === true },
     restartPending,
-    turnOf,
   }, now);
 }

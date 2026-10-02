@@ -58,9 +58,9 @@ export function SessionPage() {
   }, [transcript.view, handed, rows]);
 
   const turnOf = useTurnOf(row === undefined || row.head === UNKNOWN_HEAD ? [] : [row.head]);
-  const state = row === undefined ? null : stateOf(row, turnOf(row));
+  const state = row === undefined ? null : stateOf(row);
   const timing = row === undefined || state === null ? null : timingOf(row, state, turnOf(row), now);
-  const rail = row === undefined ? null : railOf(row, rows, handed, teams.data?.teams ?? [], turnOf);
+  const rail = row === undefined ? null : railOf(row, rows, handed, teams.data?.teams ?? []);
   const seatColour = (seat: Seat): ModelColour => colourOfKey(seat.head);
   const seatPath = (seat: Seat): string | null => {
     const found = rows.find((candidate) => sessionKey(candidate) === seat.key);
@@ -115,9 +115,9 @@ export function SessionPage() {
             </div>
           )}
         </div>
-        {row === undefined || state === null || (!canResumeSession(row) && !((state === 'working' || state === 'stuck') && turnOf(row) != null)) ? null : (
+        {row === undefined || state === null || (!canResumeSession(row) && !(state === 'working' && turnOf(row) != null)) ? null : (
           <div className="acts">
-            {state === 'working' || state === 'stuck' ? <StopTurn row={row} fallback={null} /> : null}
+            {state === 'working' ? <StopTurn row={row} fallback={null} /> : null}
             <ResumeCopy row={row} />
           </div>
         )}

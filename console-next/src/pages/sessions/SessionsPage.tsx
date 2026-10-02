@@ -63,7 +63,7 @@ export function SessionsPage() {
   };
   const factsOf = (row: SessionRow): CardFacts => {
     const turn = turnOf(row);
-    const state = stateOf(row, turn);
+    const state = stateOf(row);
     return {
     row,
     state,
@@ -91,7 +91,7 @@ export function SessionsPage() {
     );
   }
 
-  const groups = groupSessions(live, by, turnOf);
+  const groups = groupSessions(live, by);
   const liveKeys = new Set(allKeys);
   const pages = history.data?.pages ?? [];
   const found = pages.flatMap((page) => ('sessions' in page ? page.sessions : []));
@@ -103,7 +103,7 @@ export function SessionsPage() {
     <>
       <PageHead
         title={P.title}
-        {...(sessionsLede(sessions.data.sessions, turnOf) === '' ? {} : { lede: sessionsLede(sessions.data.sessions, turnOf) })}
+        {...(sessionsLede(sessions.data.sessions) === '' ? {} : { lede: sessionsLede(sessions.data.sessions) })}
         tools={
           <>
             <Segmented label={P.groupBy} value={by} options={GROUPS} onChange={setBy} />

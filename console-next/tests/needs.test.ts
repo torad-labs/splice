@@ -2,15 +2,13 @@
 // definition its own page prints; an input nobody could read is an unknown, never silence; and "Nothing needs
 // you" is true only when every input was read, with the time of the read. Ported from the old console's
 // needs-you, refused-account, v4347 and v4379 tests (their pure halves), then extended with the operator's
-// rulings: a session needs a person only when it waits or is stuck, a stopped runtime is no item, and a head the
+// rulings: a session needs a person only when the client waits for an answer, a stopped runtime is no item, and a head the
 // provider refuses is one explicit out-of-quota item.
 import { describe, expect, test } from 'vitest';
 import { accountsFromWire } from '../src/lib/accounts';
 import { localInstantText } from '../src/lib/heads';
 import { hrefOf, INPUTS, needsOf, readingOf, SOURCE_ORDER } from '../src/lib/needs';
-import { STUCK_IDLE_MS } from '../src/lib/sessions';
 import { calmOf, ledeOf } from '../src/lib/needs-page';
-import type { TurnOf } from '../src/lib/sessions';
 import { H, K, S, U } from '../src/lib/words-needs';
 import type { AccountRow, AccountWire } from '../src/types/accounts';
 import type { AuthPayload, GateSnapshot, HeadStatus, UsagePayload } from '../src/types/core';
@@ -18,7 +16,6 @@ import type { DoctorCheck, DoctorPayload, FixKind } from '../src/types/doctor';
 import type { Need, NeedInputs, Read } from '../src/types/needs';
 import type { SessionRow } from '../src/types/sessions';
 import type { TeamRow, TeamSlot } from '../src/types/teams';
-import type { LiveTurn } from '../src/types/turns';
 
 const NOW = 1_790_000_000_000;
 const AT = NOW - 4_000;
@@ -80,10 +77,6 @@ function doctor(checks: DoctorCheck[]): DoctorPayload {
     os: { name: 'linux', version: '6', arch: 'x64' }, jvm: { version: '21', vendor: 'x' }, topology: null, checks,
     accounts: null, perf: null,
   };
-}
-
-function turn(over: Partial<LiveTurn> = {}): LiveTurn {
-  return { id: 't1', session: 'sess-1', model: 'm', compact: false, age_ms: 10 * MIN, stopped: false, ...over };
 }
 
 const USAGE: UsagePayload = { window_hours: 24, warn_pct: 80, warn_tokens_5h: 0, heads: [] };
@@ -256,7 +249,7 @@ describe('a full reading is information until a pool offers a switch', () => {
     const list = needsOf(inputs, NOW);
     expect(list.needs.some((need) => need.kind === K.quota)).toBe(false);
     expect(list.needs.find((need) => need.kind === K.plan)).toMatchObject({ finding: '5h at 100%, resets in 1h 0m', fix: null });
-    expect(calmOf(list, [], () => undefined, [head()]).serving).toEqual(['claudex']);
+    expect(calmOf(list, [], [head()]).serving).toEqual(['claudex']);
     expect(ledeOf(list)).toBe('Nothing needs you. Everything is running.');
   });
   test('a near-limit item offers a switch only to a loadable, unexcluded pool alternative', () => {
@@ -402,8 +395,7 @@ describe('turns and team seats', () => {
   });
 });
 
-describe('a session needs a person only when it waits or is stuck (operator ruling)', () => {
-  const byId = (turns: Record<string, LiveTurn | null>): TurnOf => (row) => (row.session_id === null ? undefined : turns[row.session_id]);
+describe('a session needs a person only when the client waits for an answer', () => {
 
   test('a session waiting for an answer needs the operator, with how long, and opens its own page', () => {
     const [item, ...rest] = sessionItems({ sessions: read({ note: '', sessions: [session({ status: 'waiting' })] }) });
@@ -434,32 +426,24 @@ describe('a session needs a person only when it waits or is stuck (operator ruli
     expect(said('assistant', 'Which plan takes the session?', 'AskUserQuestion')).toBe('Which plan takes the session?');
   });
 
-  test('a busy session with no live turn is running a tool: no item, whether the head says none or was not read', () => {
+  test('a busy session running a local tool needs no intervention, however old its status stamp', () => {
     const busy = session({ status: 'busy', status_updated_at: NOW - 8 * 60 * MIN });
-    expect(sessionItems({ sessions: read({ note: '', sessions: [busy] }), turnOf: byId({ 'sess-1': null }) })).toEqual([]);
     expect(sessionItems({ sessions: read({ note: '', sessions: [busy] }) })).toEqual([]);
-    expect(sessionItems({ sessions: read({ note: '', sessions: [busy] }), turnOf: () => undefined })).toEqual([]);
   });
 
-  test('a busy session is stuck only when its live turn idles past STUCK_IDLE_MS, and stop-turn is its fix', () => {
-    const busy = session({ status: 'busy' });
-    const stuck = (turns: LiveTurn | null) => sessionItems({ sessions: read({ note: '', sessions: [busy] }), turnOf: byId({ 'sess-1': turns }) });
-    expect(stuck(turn({ idle_ms: 7 * MIN }))).toEqual([{
-      key: 'sessions:sess-1', severity: 'warn', source: 'sessions', kind: 'Stuck', state: 'stuck', head: 'claudex',
-      subject: 'implementer', finding: 'Quiet for 7 min', session: { id: 'sess-1', said: null, repo: 'repo' },
-      fix: { kind: 'stop-turn', head: 'claudex', session: 'sess-1' }, at: '#/sessions/sess-1',
-    }]);
-    // at the limit is not past it; a daemon that sends no idle_ms claims nothing; a stopped turn is already ending
-    expect(stuck(turn({ idle_ms: STUCK_IDLE_MS }))).toEqual([]);
-    expect(stuck(turn({ idle_ms: STUCK_IDLE_MS + 1 }))).toHaveLength(1);
-    expect(stuck(turn())).toEqual([]);
-    expect(stuck(turn({ idle_ms: 9 * MIN, stopped: true }))).toEqual([]);
+  test('a busy or shell session waiting on the provider never asks a person to stop its turn', () => {
+    for (const status of ['busy', 'shell']) {
+      for (const idle_ms of [90_001, 5 * MIN, 5 * MIN + 1, 40 * MIN]) {
+        const busy = session({ status });
+        const live = [{ label: 'impl', compact: false, phase: 'streaming', age_ms: 40 * MIN, idle_ms }];
+        expect(sessionItems({ sessions: read({ note: '', sessions: [busy] }), heads: read([head({ gate: gate({ inflight: 1, live, stream_idle_ms: 90_000 }) })]) })).toEqual([]);
+      }
+    }
   });
 
-  test('a stuck session with no known head opens its page instead of offering a stop', () => {
+  test('a working session with no known head needs no intervention', () => {
     const unknown = session({ status: 'busy', head: 'unknown head' });
-    const [item] = sessionItems({ sessions: read({ note: '', sessions: [unknown] }), turnOf: byId({ 'sess-1': turn({ idle_ms: 9 * MIN }) }) });
-    expect(item).toMatchObject({ kind: K.stuck, head: null, fix: { kind: 'open', href: '#/sessions/sess-1' } });
+    expect(sessionItems({ sessions: read({ note: '', sessions: [unknown] }) })).toEqual([]);
   });
 
   test('an idle session, however stale, and a gone one need no one', () => {
@@ -469,7 +453,7 @@ describe('a session needs a person only when it waits or is stuck (operator ruli
       session({ session_id: 'c', availability: 'gone', status: 'waiting' }),
       session({ session_id: 'd', availability: 'stale', status: 'busy' }),
     ];
-    expect(sessionItems({ sessions: read({ note: '', sessions: rows }), turnOf: byId({ d: null }) })).toEqual([]);
+    expect(sessionItems({ sessions: read({ note: '', sessions: rows }) })).toEqual([]);
   });
 
   test('the machine\'s shape: six busy seats with old timestamps and four idle stale ones make no session item', () => {
@@ -479,8 +463,6 @@ describe('a session needs a person only when it waits or is stuck (operator ruli
     const sessions = read({ note: '', sessions: [...busy, ...idle] });
     const teams = read({ teams: [] });
     expect(needsOf(quiet({ sessions, teams }), NOW).needs).toEqual([]);
-    const noTurn: TurnOf = () => null;
-    expect(needsOf(quiet({ sessions, teams, turnOf: noTurn }), NOW).needs).toEqual([]);
   });
 
   test('a session with no session id opens by its pid, and keys are encoded into the address', () => {

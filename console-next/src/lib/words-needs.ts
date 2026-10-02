@@ -62,7 +62,6 @@ export const DF = {
 /** The state word each kind of item prints. */
 export const K = {
   waiting: 'Waiting on you',
-  stuck: 'Stuck',
   quota: 'Out of quota',
   signedOut: 'Signed out',
   keyMissing: 'Key missing',

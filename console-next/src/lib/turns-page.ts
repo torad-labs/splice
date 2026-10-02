@@ -4,7 +4,7 @@ import { ABSENT, fmtDurationS, fmtShare, fmtUsd } from './format';
 import { waterfall } from './perf';
 import { colourOfHead } from './model';
 import type { ModelColour } from './model';
-import { STUCK_IDLE_MS, spanText } from './sessions';
+import { spanText } from './sessions';
 import { OUTCOME_WORD, STAGE_PHRASE, T } from './words-turns';
 import type { TopologyState } from '../types/topology';
 import type { LiveTurn } from '../types/turns';
@@ -165,7 +165,8 @@ export interface RunningLine {
   title: string;
   /** The model, when the title is the session's name. */
   model: string | null;
-  stuck: boolean;
+  /** Long silence worth explaining, not a daemon failure signal. */
+  longQuiet: boolean;
   age: string;
   /** The age the card's figure was made from, to tell a session's turns apart. */
   ageMs: number;
@@ -183,7 +184,8 @@ function liveTitle(label: string, nameOf: (prefix: string) => string | null): { 
   return name === null ? { title: coded[2], model: null } : { title: name, model: coded[2] };
 }
 
-/** A live turn is stuck once the plan has said nothing for the same five minutes a session is. */
+/** Bring long-quiet turns forward for inspection, not as a failure or a required intervention. */
+const LONG_QUIET_MS = 5 * 60_000;
 export function runningOf(turns: readonly InflightTurn[], planLabel: (head: string) => string, colourOf: ColourOf, nameOf: (prefix: string) => string | null = () => null): RunningLine[] {
   return turns
     .map((turn, index) => ({
@@ -193,13 +195,13 @@ export function runningOf(turns: readonly InflightTurn[], planLabel: (head: stri
       colour: colourOf(turn.head),
       label: turn.label,
       ...liveTitle(turn.label, nameOf),
-      stuck: turn.idleMs > STUCK_IDLE_MS,
+      longQuiet: turn.idleMs > LONG_QUIET_MS,
       age: spanText(turn.ageMs),
       ageMs: turn.ageMs,
       quiet: turn.idleMs >= 30_000 ? spanText(turn.idleMs) : null,
       phase: turn.phase === 'streaming' ? ('streaming' as const) : ('connect' as const),
     }))
-    .sort((left, right) => Number(right.stuck) - Number(left.stuck));
+    .sort((left, right) => Number(right.longQuiet) - Number(left.longQuiet));
 }
 
 /** The live turn a running card stands for. The card is read off the gate, which labels a turn with the first eight of its session id

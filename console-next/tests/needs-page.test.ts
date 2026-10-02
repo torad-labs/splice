@@ -2,7 +2,6 @@
 import { describe, expect, test } from 'vitest';
 import { hrefOf } from '../src/lib/needs';
 import { asOfText, calmOf, ledeOf, listText, routeOf, toneOf, unreadOf } from '../src/lib/needs-page';
-import type { TurnOf } from '../src/lib/sessions';
 import { INPUTS } from '../src/types/needs';
 import type { Need, NeedsList, Reading } from '../src/types/needs';
 import type { HeadStatus } from '../src/types/core';
@@ -29,9 +28,8 @@ describe('tone', () => {
     expect(toneOf(need({ kind: K.waiting }))).toBe('wait');
     expect(toneOf(need({ kind: K.quota }))).toBe('quota');
   });
-  test('a head that is down, a stuck session and a sign-in that lapsed are stuck; the rest waits for the operator', () => {
+  test('a head that is down and a sign-in that lapsed are stuck; the rest waits for the operator', () => {
     expect(toneOf(need({ kind: K.failing, severity: 'danger' }))).toBe('stuck');
-    expect(toneOf(need({ kind: K.stuck }))).toBe('stuck');
     expect(toneOf(need({ kind: K.signedOut }))).toBe('stuck');
     expect(toneOf(need({ kind: K.restart }))).toBe('wait');
     expect(toneOf(need({ kind: K.plan }))).toBe('wait');
@@ -79,24 +77,21 @@ describe('what could not be read', () => {
 });
 
 describe('the calm figures', () => {
-  const none: TurnOf = () => undefined;
   test('serving counts the heads that answer and have no item, by name', () => {
-    const calm = calmOf(list([need({ head: 'b' })]), [], none, [head('a'), head('b'), head('c', { running: false }), head('d', { healthy: false })]);
+    const calm = calmOf(list([need({ head: 'b' })]), [], [head('a'), head('b'), head('c', { running: false }), head('d', { healthy: false })]);
     expect(calm.serving).toEqual(['a']);
   });
   test('a near-limit command still serves even when a pool offers a switch', () => {
     const reading = need({ kind: K.plan, head: 'a', fix: { kind: 'open', href: '#/fleet/a', label: 'Switch account' } });
-    expect(calmOf(list([reading]), [], none, [head('a')]).serving).toEqual(['a']);
+    expect(calmOf(list([reading]), [], [head('a')]).serving).toEqual(['a']);
   });
   test('a plan whose local runtime is not answering is not serving, whatever its own health says', () => {
-    const calm = calmOf(list([]), [], none, [head('a'), head('b', { runtimeNotAnswering: ':8099' })]);
+    const calm = calmOf(list([]), [], [head('a'), head('b', { runtimeNotAnswering: ':8099' })]);
     expect(calm.serving).toEqual(['a']);
   });
-  test('working counts busy sessions, with or without a live turn (a tool running), but not a stuck, idle or gone one', () => {
-    const turn = (idle: number) => ({ id: 't', session: 's1', model: 'm', compact: false, age_ms: 1, stopped: false, idle_ms: idle }) as never;
-    const live: TurnOf = (row) => (row.session_id === 's1' ? turn(1_000) : row.session_id === 's3' ? turn(6 * 60_000) : null);
+  test('working counts provider-wait sessions and local tools, but not idle or gone sessions', () => {
     const rows = [session(), session({ session_id: 's2' }), session({ session_id: 's3' }), session({ session_id: 's4', status: 'idle' }), session({ session_id: 's5', availability: 'gone' })];
-    expect(calmOf(list([]), rows, live, []).working).toBe(2);
+    expect(calmOf(list([]), rows, []).working).toBe(3);
   });
   test('names read as a list', () => {
     expect(listText([])).toBe('');

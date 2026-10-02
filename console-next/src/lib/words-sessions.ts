@@ -11,8 +11,6 @@ export const SW = {
   waiting: 'Waiting for your answer',
   compacted: 'Compacted its context',
   waitingFor: (span: string): string => `Waiting for your answer for ${span}`,
-  stuck: 'Quiet for a while',
-  stuckFor: (span: string): string => `Quiet for ${span}`,
   toolQuiet: (span: string): string => `Running a tool, quiet for ${span}`,
   working: 'Working',
   workingFor: (span: string): string => `Working for ${span}`,
@@ -25,7 +23,6 @@ export const SW = {
   aSession: 'a session',
   anEndedSession: 'an ended session',
   waitingNote: (span: string): string => `Waiting ${span}`,
-  stuckNote: (span: string): string => `Quiet ${span}`,
   workingNote: (span: string): string => `Working ${span}`,
   idleNote: (span: string): string => `Idle ${span}`,
 } as const;

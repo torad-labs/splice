@@ -16,6 +16,7 @@ export const T = {
   windowSpoken: { '1h': 'the last hour', '24h': 'the last 24 hours', '7d': 'the last 7 days' } as Record<PerfWindowLabel, string>,
   reading: 'Reading the turns.',
   runningTitle: 'Running now',
+  working: 'Working',
   runningWhy: 'A turn stays here until its answer lands.',
   runningNone: 'Nothing is running.',
   runningQuiet: (n: number, quiet: string) => `${n === 1 ? 'One has' : `${n} have`} been quiet for ${quiet}.`,

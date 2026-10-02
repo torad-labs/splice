@@ -62,11 +62,6 @@ describe('a need card', () => {
     expect(html).not.toContain('Drain and restart');
     expect(html).not.toContain('Turns in flight finish first');
   });
-  test('a stop-turn with no live turn to name opens the session instead', () => {
-    const html = render(need({ kind: K.stuck, fix: { kind: 'stop-turn', head: 'claudex', session: 's1' }, at: null }));
-    expect(html).toContain('href="/sessions/s1"');
-    expect(html).toContain('Open the session');
-  });
   test('a waiting session quotes its question in bold, names its repo, and offers a resume copy beside the open act', () => {
     const waiting = need({
       kind: K.waiting, state: 'waiting', source: 'sessions', head: 'claudex', subject: 'implementer', finding: 'Waiting for your answer for 2 min',
@@ -78,7 +73,6 @@ describe('a need card', () => {
     expect(html).toContain('It is a session in <b>tally</b>.');
     expect(html).toContain('Copy resume command');
     expect(render(waiting)).not.toContain('Copy resume command');
-    expect(render(need({ kind: K.stuck, state: 'stuck', session: { id: 's1', said: null, repo: null }, at: null }), row)).not.toContain('Copy resume command');
   });
   test('a fix whose command holds a redacted value is never copyable and never printed', () => {
     const html = render(need({ fix: { kind: 'masked', command: 'splice key set <redacted:key>' }, at: null }));

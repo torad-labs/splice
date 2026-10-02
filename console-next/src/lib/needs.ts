@@ -5,8 +5,8 @@
 //     session, wantsAttention for a doctor check;
 //   - an input nobody could read is an unknown, listed with why, never silence;
 //   - "Nothing needs you" only when every input was read, as of the oldest of those reads.
-// Only live things need the operator: a session needs a person only when it waits for an answer or its
-// live turn has gone quiet (lib/sessions.ts needsPerson), and a deliberately stopped local runtime is a
+// Only live things need the operator: a session needs a person only when it waits for an answer
+// (lib/sessions.ts needsPerson), and a deliberately stopped local runtime is a
 // Fleet state, never an item.
 // Pure: no React, no store and no clock (the caller passes `now`), so each rule is held in a test
 // against plain payloads. Ported from the old console's pages/needs-you/model.ts.
@@ -27,8 +27,7 @@ import { ABSENT } from './format';
 import { headAttention, localInstantText, quotaRefusedUntil } from './heads';
 import { nearestLimit } from './nearest-limit';
 import { waitingQuestion } from './session-says';
-import { activityText, needsPerson, repoName, sessionKey, sessionLabel, stateOf, timingOf } from './sessions';
-import type { TurnOf } from './sessions';
+import { activityText, needsPerson, repoName, sessionKey, sessionLabel, stateOf, sinceOf } from './sessions';
 import { H, K, S, U } from './words-needs';
 
 export { INPUTS };
@@ -222,31 +221,26 @@ function accountNeeds(accounts: readonly AccountRow[], now: number): Need[] {
 /** The daemon cuts a message at 160 characters without saying so: one that stops mid-sentence ends in an ellipsis, so the
  *  sentence after it does not run into it. */
 
-/** Every session that needs a person by lib/sessions.ts: one waiting for an answer, or a busy one whose
- *  live turn reports itself quiet past STUCK_IDLE_MS. Never a session merely called stale by the daemon:
- *  a busy session with no live turn is running a tool, and an idle one is waiting for its next message. */
-function sessionNeeds(rows: readonly SessionRow[], now: number, turnOf: TurnOf): Need[] {
+/** Only the client's waiting status asks a person for an answer. Busy sessions may be waiting on a
+ *  provider or running tools; neither silence nor a stale registration is an unrecoverable failure. */
+function sessionNeeds(rows: readonly SessionRow[], now: number): Need[] {
   return rows.flatMap((row): Need[] => {
-    const turn = turnOf(row);
-    const state = stateOf(row, turn);
+    const state = stateOf(row);
     if (!needsPerson(state)) return [];
-    const stuck = state === 'stuck';
     const head = row.head === UNKNOWN_HEAD || row.head === '' ? null : row.head;
     const at = hrefOf('sessions', sessionKey(row));
     return [{
       key: `sessions:${row.session_id ?? row.pid ?? sessionLabel(row)}`,
       severity: 'warn',
       source: 'sessions',
-      kind: stuck ? K.stuck : K.waiting,
-      state: stuck ? 'stuck' : 'waiting',
+      kind: K.waiting,
+      state: 'waiting',
       head,
       subject: sessionLabel(row),
-      finding: activityText(state, timingOf(row, state, turn, now).since),
+      finding: activityText(state, sinceOf(row, now)),
       // Only a question the session itself asked is quoted: a system notice or a tool's output is not one.
       session: { id: row.session_id, said: waitingQuestion(row.last), repo: repoName(row) },
-      fix: stuck && head !== null && row.session_id !== null
-        ? { kind: 'stop-turn', head, session: row.session_id }
-        : open(at, S.openSession),
+      fix: open(at, S.openSession),
       at,
     }];
   });
@@ -338,8 +332,6 @@ export function doctorFixOf(remedy: string | null, id: string | null, kind: FixK
  *  checks last. */
 export const SOURCE_ORDER: readonly Source[] = ['heads', 'daemon', 'plans', 'accounts', 'sessions', 'teams', 'doctor'];
 
-const noTurns: TurnOf = () => undefined;
-
 export function needsOf(inputs: NeedInputs, now: number): NeedsList {
   const heads = answered(inputs.heads) ?? [];
   const auth = answered(inputs.auth);
@@ -363,7 +355,7 @@ export function needsOf(inputs: NeedInputs, now: number): NeedsList {
     ...daemonNeeds(topologyStale, inputs.restartPending, wanted.filter((check) => check.pending_restart === true)),
     ...planNeeds(accounts, usage, auth, now, refused),
     ...accountNeeds(accounts, now),
-    ...(registry === null ? [] : sessionNeeds(registry.sessions, now, inputs.turnOf ?? noTurns)),
+    ...(registry === null ? [] : sessionNeeds(registry.sessions, now)),
     ...(registry === null ? [] : teamNeeds(teams, registry.sessions)),
     ...(doctor === null ? [] : doctorNeeds(wanted.filter((check) =>
       about.get(check)?.length === 0 && check.pending_restart !== true &&

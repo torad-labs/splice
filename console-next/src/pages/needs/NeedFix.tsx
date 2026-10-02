@@ -2,8 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { failureText } from '../../api/client';
 import { useDoctorFix } from '../../api/doctor';
-import { useHeadAction, useStopTurn } from '../../api/queries';
-import { useLiveTurnOf } from '../../api/sessions';
+import { useHeadAction } from '../../api/queries';
 import { routeOf } from '../../lib/needs-page';
 import type { Fix } from '../../types/needs';
 import { Button } from '../../ui';
@@ -64,19 +63,6 @@ function HeadAct({ head, act, tone }: { head: string; act: 'start' | 'restart'; 
   );
 }
 
-/** Stops the live turn of one session. A session whose head runs no turn for it has nothing to stop, so its one act is opening it. */
-function StopFix({ head, session, tone }: { head: string; session: string; tone: Tone }) {
-  const turn = useLiveTurnOf(head, session);
-  const stop = useStopTurn();
-  if (turn === null) return <Link className={`btn ${tone}`} to={`/sessions/${encodeURIComponent(session)}`}>{A.openSession}</Link>;
-  return (
-    <>
-      <Button kind={tone} disabled={stop.isPending} onClick={() => stop.mutate({ head, id: turn })}>{stop.isPending ? A.stopping : A.stopTurn}</Button>
-      {stop.isError ? <span className="hint alert" role="alert">{A.failed} {failureText(stop.error)}</span> : null}
-    </>
-  );
-}
-
 function DoctorFix({ id, fallback, tone }: { id: string; fallback: string | undefined; tone: Tone }) {
   const fix = useDoctorFix();
   const refused = fix.data !== undefined && !fix.data.applied ? fix.data.refusal : null;
@@ -105,8 +91,6 @@ export function NeedFix({ fix, tone = 'go' }: { fix: Fix; tone?: Tone }) {
           <Button kind={tone}>{fix.label === undefined ? A.signIn : A.signInAgain}</Button>
         </SignIn>
       );
-    case 'stop-turn':
-      return <StopFix head={fix.head} session={fix.session} tone={tone} />;
     case 'copy':
       return <CopyCommand command={fix.command} tone={tone} />;
     case 'masked':

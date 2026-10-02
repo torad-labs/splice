@@ -1,4 +1,4 @@
-// The Turns pages' arithmetic: outcomes, plan rows, the stuck rule, a turn's four stages, and what was kept.
+// The Turns pages' arithmetic: outcomes, plan rows, the quiet-turn explanation, a turn's four stages, and what was kept.
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router';
@@ -68,9 +68,9 @@ describe('plan rows', () => {
 
 describe('running turns', () => {
   const live = (idleMs: number) => ({ head: 'kimi', label: 'Migrate', compact: false, phase: 'streaming', ageMs: 900_000, idleMs });
-  test('stuck only past five minutes of silence, and the stuck one comes first', () => {
+  test('long-quiet turns come first for inspection, without claiming they failed', () => {
     const lines = runningOf([live(4 * 60_000), { ...live(6 * 60_000), label: 'Old' }], (h) => h, none);
-    expect(lines.map((l) => [l.label, l.stuck])).toEqual([['Old', true], ['Migrate', false]]);
+    expect(lines.map((l) => [l.label, l.longQuiet])).toEqual([['Old', true], ['Migrate', false]]);
   });
   test('a live turn is titled by its session, never by the code the gate labels it with', () => {
     const coded = { ...live(1000), label: '544af4b6 gpt-6-sol' };
@@ -100,6 +100,15 @@ describe('running turns', () => {
     expect(html).toContain('No word from the model for 2 min; splice is keeping the turn open.');
     expect(html).toContain('Stop the turn');
     expect(html).not.toMatch(/limit/i);
+  });
+  test('even a long-quiet provider is Working, not a failure or attention card', () => {
+    const line = runningOf([live(7 * 60_000)], (h) => h, none)[0] as RunningLine;
+    const html = renderToStaticMarkup(createElement(RunningCard, { turn: line, act: createElement('button', null, 'Stop the turn') }));
+    expect(html).toContain('Working');
+    expect(html).not.toContain('Stuck');
+    expect(html).not.toContain('win attn');
+    expect(html).toContain('No word from the model for 7 min; splice is keeping the turn open.');
+    expect(html).toContain('Stop the turn');
   });
   test('a turn that has just spoken names no silence', () => {
     expect(runningOf([live(2000)], (h) => h, none)[0]?.quiet).toBeNull();

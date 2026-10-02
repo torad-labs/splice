@@ -5,7 +5,6 @@ import type { InputName, Need, NeedsList, Reading } from '../types/needs';
 import type { SessionRow } from '../types/sessions';
 import { clockTime, countWord, noun } from './format';
 import { stateOf } from './sessions';
-import type { TurnOf } from './sessions';
 import { K } from './words-needs';
 import { N } from './words-needs-page';
 
@@ -17,7 +16,7 @@ export function toneOf(need: Need): NeedTone {
   if (need.fix === null) return 'work';
   if (need.kind === K.waiting) return 'wait';
   if (need.kind === K.quota) return 'quota';
-  return need.severity === 'danger' || need.kind === K.stuck || need.kind === K.signedOut || need.kind === K.keyMissing ? 'stuck' : 'wait';
+  return need.severity === 'danger' || need.kind === K.signedOut || need.kind === K.keyMissing ? 'stuck' : 'wait';
 }
 
 /** A hash address (`#/fleet/claudex`) as the router path it names. */
@@ -54,14 +53,14 @@ function unreadText(reading: Reading): string {
 }
 
 export interface Calm {
-  /** Sessions with a live turn making progress. */
+  /** Busy or shell sessions, including provider waits and local tools. */
   working: number;
   /** The heads that answer without a blocking finding. A near-limit reading does not stop serving. */
   serving: readonly string[];
 }
 
-export function calmOf(list: NeedsList, sessions: readonly SessionRow[], turnOf: TurnOf, heads: readonly HeadStatus[]): Calm {
-  const working = sessions.filter((row) => stateOf(row, turnOf(row)) === 'working').length;
+export function calmOf(list: NeedsList, sessions: readonly SessionRow[], heads: readonly HeadStatus[]): Calm {
+  const working = sessions.filter((row) => stateOf(row) === 'working').length;
   const named = new Set(list.needs.flatMap((need) => (need.head === null || need.kind === K.plan ? [] : [need.head])));
   const serving = heads.filter((head) => head.running && head.healthy && head.runtimeNotAnswering === undefined && !named.has(head.key)).map((head) => head.label);
   return { working, serving };

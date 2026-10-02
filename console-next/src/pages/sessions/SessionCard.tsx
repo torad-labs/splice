@@ -7,7 +7,7 @@ import { canResumeSession, cardLine, needsPerson, sessionKey, sessionLabel, stat
 import type { SessionRow } from '../../types/sessions';
 import { ModelMark, State, Window } from '../../ui';
 import { S } from '../shared/copy';
-import { OpenLink, ResumeCopy, StopTurn, sessionPath } from '../shared/SessionActions';
+import { OpenLink, ResumeCopy, sessionPath } from '../shared/SessionActions';
 import { P } from './copy';
 import './sessions.css';
 
@@ -71,7 +71,7 @@ export function SessionCard({ facts, sortable = true }: { facts: CardFacts; sort
       </div>
       {needs || (state === 'gone' && canResumeSession(row)) ? (
         <div className="acts">
-          {needs ? (state === 'stuck' ? <StopTurn row={row} /> : <OpenLink row={row} />) : null}
+          {needs ? <OpenLink row={row} /> : null}
           <ResumeCopy row={row} />
         </div>
       ) : null}

@@ -41,9 +41,9 @@ function StopRunning({ turn }: { turn: RunningLine }) {
 export function RunningCard({ turn, act }: { turn: RunningLine; act?: ReactNode }) {
   const say = turn.phase === 'streaming' ? T.streaming : T.connecting;
   return (
-    <Window as="li" colour={turn.colour} attention={turn.stuck} aria-label={`${turn.title}, ${turn.plan}`}>
+    <Window as="li" colour={turn.colour} aria-label={`${turn.title}, ${turn.plan}`}>
       <WindowBar title={turn.title}>
-        <State tone={turn.stuck ? 'stuck' : 'work'}>{turn.stuck ? 'Stuck' : 'Working'}</State>
+        <State tone="work">{T.working}</State>
       </WindowBar>
       <p className="say"><b>{turn.plan}</b>{turn.model === null ? '' : ` · ${turn.model}`}{turn.quiet === null ? ` · ${say}` : ''} · {T.runningFor(turn.age)}</p>
       {turn.quiet === null ? null : <p className="say">{T.quietFor(turn.quiet)}</p>}
@@ -133,16 +133,16 @@ export function TurnsPage() {
   const all = newestFirst(inWindow.filter((row) => !servedLocally(row)).map((row) => lineOf(row, planLabel, colourOf, titleOf)));
   const lines = filterLines(all, filter, query);
   const running = runningOf(slice.inflight, planLabel, colourOf, (prefix) => titleOf(undefined, prefix));
-  const quiet = running.filter((turn) => turn.stuck);
+  const quiet = running.filter((turn) => turn.longQuiet);
   const held = plans.reduce((n, row) => n + row.turns, 0);
-  const stuck = quiet[0];
+  const longestQuiet = quiet[0];
 
   return (
     <>
       <PageHead title={T.title} lede={turnsLede(plans, window)} tools={tools} />
       <section className="section" aria-labelledby="turns-running">
         <h2 id="turns-running">{T.runningTitle}</h2>
-        <p className="why">{running.length === 0 ? T.runningNone : `${T.runningWhy}${stuck === undefined || stuck.quiet === null ? '' : ` ${T.runningQuiet(quiet.length, stuck.quiet)}`}`}</p>
+        <p className="why">{running.length === 0 ? T.runningNone : `${T.runningWhy}${longestQuiet === undefined || longestQuiet.quiet === null ? '' : ` ${T.runningQuiet(quiet.length, longestQuiet.quiet)}`}`}</p>
         {running.length === 0 ? null : <ul className="running-list">{running.map((turn) => <RunningCard key={turn.key} turn={turn} act={<StopRunning turn={turn} />} />)}</ul>}
       </section>
       <section className="section" aria-labelledby="turns-plans">

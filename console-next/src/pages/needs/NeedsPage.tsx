@@ -1,10 +1,8 @@
 import { failureText } from '../../api/client';
 import { useHeads, useSessions } from '../../api/queries';
 import { useNeeds } from '../../api/needs';
-import { useTurnOf } from '../../api/sessions';
 import { asOfText, calmOf, ledeOf, listText, unreadOf } from '../../lib/needs-page';
 import { N } from '../../lib/words-needs-page';
-import { UNKNOWN_HEAD } from '../../types/sessions';
 import { Fault, PageHead } from '../../ui';
 import { NeedCard } from './NeedCard';
 import './needs.css';
@@ -16,8 +14,7 @@ export function NeedsPage() {
   const heads = useHeads();
   const sessions = useSessions();
   const rows = sessions.data?.sessions ?? [];
-  const turnOf = useTurnOf(rows.filter((row) => row.head !== UNKNOWN_HEAD && (row.status === 'busy' || row.status === 'shell')).map((row) => row.head));
-  const calm = calmOf(list, rows, turnOf, heads.data?.heads ?? []);
+  const calm = calmOf(list, rows, heads.data?.heads ?? []);
   const unread = unreadOf(list);
   const reading = list.readings.every((reading) => reading.state === 'reading');
   const asOf = asOfText(list);

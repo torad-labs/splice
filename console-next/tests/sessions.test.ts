@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import type { SessionRow } from '../src/types/sessions';
 import type { LiveTurn } from '../src/types/turns';
 import { cardSays } from '../src/lib/session-says';
-import { activityText, cardLine, groupSessions, timingOf, handoffOf, matchesQuery, noConversation, sessionsLede, peerLabel, repoName, sessionKey, sessionLabel, sinceOf, spanText, stateOf, stateTone, stateWord, STUCK_IDLE_MS } from '../src/lib/sessions';
+import { activityText, cardLine, groupSessions, timingOf, handoffOf, matchesQuery, noConversation, sessionsLede, peerLabel, repoName, sessionKey, sessionLabel, sinceOf, spanText, stateOf, stateTone, stateWord } from '../src/lib/sessions';
 
 const NOW = 1_790_000_000_000;
 const row = (over: Partial<SessionRow> = {}): SessionRow => ({
@@ -12,27 +12,19 @@ const row = (over: Partial<SessionRow> = {}): SessionRow => ({
 });
 
 describe('a session\'s state', () => {
-  const turn = (over: Partial<LiveTurn> = {}): LiveTurn => ({ id: 't1', session: 'aaaaaaaa-1111', model: 'm', compact: false, age_ms: 60_000, stopped: false, ...over });
   test('waiting is the client\'s own word', () => expect(stateOf(row({ status: 'waiting' }))).toBe('waiting'));
   test('busy is working, however old its status stamp: the stamp only moves when the client changes status', () => {
     expect(stateOf(row())).toBe('working');
     expect(stateOf(row({ status_updated_at: NOW - 3 * 3_600_000, availability: 'stale' }))).toBe('working');
     expect(stateOf(row({ status: 'shell' }))).toBe('working');
   });
-  test('a busy session with a live turn that streamed a moment ago is working', () =>
-    expect(stateOf(row(), turn({ idle_ms: 4_000 }))).toBe('working'));
-  test('a live turn quiet past the window is stuck, exactly at it is not, and one that streamed then hung counts', () => {
-    expect(stateOf(row(), turn({ idle_ms: STUCK_IDLE_MS + 1 }))).toBe('stuck');
-    expect(stateOf(row(), turn({ idle_ms: STUCK_IDLE_MS }))).toBe('working');
-    expect(stateOf(row(), turn({ age_ms: 40 * 60_000, idle_ms: 6 * 60_000 }))).toBe('stuck');
+  test('provider silence cannot change the client state: busy and shell remain working', () => {
+    for (const status of ['busy', 'shell']) {
+      expect(stateOf(row({ status, status_updated_at: NOW - 40 * 60_000 }))).toBe('working');
+    }
   });
-  test('a daemon that sends no idle figure, no live turn, or a turn already stopping never makes a session stuck', () => {
-    expect(stateOf(row(), turn())).toBe('working');
-    expect(stateOf(row(), null)).toBe('working');
-    expect(stateOf(row(), turn({ idle_ms: STUCK_IDLE_MS * 10, stopped: true }))).toBe('working');
-  });
-  test('a quiet live turn on an idle session says nothing: idle is idle, stale or not', () => {
-    expect(stateOf(row({ status: 'idle', availability: 'stale' }), turn({ idle_ms: STUCK_IDLE_MS * 2 }))).toBe('idle');
+  test('idle stays idle, and only the client can say it waits for an answer', () => {
+    expect(stateOf(row({ status: 'idle', availability: 'stale' }))).toBe('idle');
     expect(stateOf(row({ availability: 'stale', status: 'waiting' }))).toBe('waiting');
   });
   test('a gone registration is gone, whatever the status', () =>
@@ -86,11 +78,10 @@ describe('what a session is called', () => {
 
 describe('grouping', () => {
   const rows = [row({ status: 'waiting', session_id: 'w' }), row({ session_id: 'b1' }), row({ session_id: 'b2' }), row({ status: 'idle', session_id: 'i' })];
-  test('by state keeps its fixed order and puts both person-needing states in one group', () => {
-    const stuck = row({ session_id: 's' });
-    const quiet = (r: SessionRow): LiveTurn | null => (r.session_id === 's' ? { id: 't', session: 's', model: 'm', compact: false, age_ms: 9e5, idle_ms: STUCK_IDLE_MS + 5, stopped: false } : null);
-    const groups = groupSessions([...rows, stuck], 'state', quiet);
-    expect(groups.map((group) => [group.key, group.sessions.length])).toEqual([['needs', 2], ['working', 2], ['idle', 1]]);
+  test('by state keeps only client waiting in Needs, with provider waits among Working', () => {
+    const providerWait = row({ session_id: 's' });
+    const groups = groupSessions([...rows, providerWait], 'state');
+    expect(groups.map((group) => [group.key, group.sessions.length])).toEqual([['needs', 1], ['working', 3], ['idle', 1]]);
   });
   test('by repo, biggest first, an unplaced row is unattributed and not dropped', () => {
     const groups = groupSessions([row(), row(), row({ cwd: '/x/other' }), row({ cwd: null })], 'repo');
@@ -147,12 +138,11 @@ describe('what a card says', () => {
   });
 
   test('every state has a word, a tone and an activity line that claims only what is known', () => {
-    for (const state of ['working', 'waiting', 'stuck', 'idle', 'gone'] as const) {
+    for (const state of ['working', 'waiting', 'idle', 'gone'] as const) {
       expect(stateWord(state)).not.toBe('');
       expect(activityText(state, null)).not.toMatch(/\bfor \d/);
     }
     expect(activityText('waiting', 2 * 60_000)).toBe('Waiting for your answer for 2 min');
-    expect(activityText('stuck', 14 * 60_000)).toBe('Quiet for 14 min');
     expect(stateTone('waiting')).toBe('wait');
     expect(stateTone('gone')).toBe('idle');
   });
@@ -213,15 +203,14 @@ describe('what a card says', () => {
 });
 
 describe('the lede', () => {
-  test('it counts what works, waits, is stuck and finished, in words', () => {
+  test('it counts working provider waits, client questions and finished sessions, in words', () => {
     const rows = [
       row(), row({ session_id: 'b' }), row({ session_id: 'c' }),
       row({ session_id: 'd', status: 'waiting' }),
       row({ session_id: 'e' }),
       row({ session_id: 'f', status: 'idle' }), row({ session_id: 'g', status: 'idle' }),
     ];
-    const quiet = (r: SessionRow): LiveTurn | null => (r.session_id === 'e' ? { id: 't', session: 'e', model: 'm', compact: false, age_ms: 9e5, idle_ms: STUCK_IDLE_MS + 1, stopped: false } : null);
-    expect(sessionsLede(rows, quiet)).toBe('Three are working, one is waiting on you, one is stuck. Two finished earlier.');
+    expect(sessionsLede(rows)).toBe('Four are working, one is waiting on you. Two finished earlier.');
   });
   test('an empty registry has no sentence to print', () => {
     expect(sessionsLede([])).toBe('');
@@ -243,7 +232,7 @@ describe('the two durations of a card', () => {
     expect(timingOf(row(), 'working', turn({ idle_ms: 1_000 }), NOW).quiet).toBeNull();
     expect(timingOf(row(), 'working', undefined, NOW).quiet).toBeNull();
   });
-  test('a stuck session counts the live turn\'s own silence', () => {
-    expect(timingOf(row(), 'stuck', turn({ idle_ms: 7 * 60_000 }), NOW).since).toBe(7 * 60_000);
+  test('a quiet provider does not replace the session duration with upstream silence', () => {
+    expect(timingOf(row(), 'working', turn({ age_ms: 40 * 60_000, idle_ms: 7 * 60_000 }), NOW)).toEqual({ since: 60_000, quiet: null });
   });
 });

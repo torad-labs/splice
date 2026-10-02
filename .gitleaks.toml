@@ -5,8 +5,12 @@ useDefault = true
 
 [allowlist]
 description = "splice fixture shapes that pattern-match generic-api-key but are not credentials"
+# Tested against each finding's MATCH. The default target is the bare secret, which never holds the
+# key name, so the regex below allowed nothing (Oct 2: a CodexWireGoldenTest fixture failed the scan).
+# A match is one finding, so another secret on the same line is still its own finding and still fails.
+regexTarget = "match"
 regexes = [
-  # Oracle/contract fixture cache keys: "splice-" + md5 hex. Exact value shape —
-  # cannot mask an arbitrary real secret on the same line.
-  '''"prompt_cache_key":\s*"splice-[0-9a-f]{32}"''',
+  # Oracle/contract fixture cache keys: "splice-" + md5 hex. Exact value shape. The match may start
+  # inside the key name (gitleaks 8.21.2 reports it from "mpt_cache_key"), so only the key's tail is required.
+  '''cache_key"?\s*:\s*"splice-[0-9a-f]{32}"''',
 ]

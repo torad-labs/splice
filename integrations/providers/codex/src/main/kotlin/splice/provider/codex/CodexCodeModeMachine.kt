@@ -54,6 +54,7 @@ internal class CodexCodeModeMachine(
             config.maxRounds?.let { record.rounds >= it } == true -> poison(record, "code-mode round limit exceeded")
             else -> registry.cell(record)?.let { advanceCell(request, it) }
                 ?: if (source?.sourceInterrupted == true) {
+                    started.remove(record.id)
                     source.outcome()
                 } else {
                     poison(record, "code-mode cell is unavailable: ${lostMessage(record)}")

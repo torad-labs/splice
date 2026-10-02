@@ -12,13 +12,14 @@ import splice.core.util.SecureFile
 import splice.provider.codex.state.CodeModeKeptState
 import splice.provider.codex.state.CodeModeKeyLocks
 import splice.provider.codex.state.CodeModeNativeChain
+import splice.provider.codex.state.CodeModeStateDirectory
 import splice.provider.codex.state.CodeModeStateJournal
 import splice.provider.codex.state.CodeModeStateText
 import java.io.IOException
+import java.nio.channels.FileChannel
 import java.nio.file.Files
 import java.nio.file.Path
-import java.security.MessageDigest
-import java.util.HexFormat
+import java.nio.file.StandardOpenOption
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.ReentrantLock
@@ -57,8 +58,13 @@ internal fun interface CodeModeStateWrite {
  * file had, and is named by the hash of the conversation's key, which is only ever a name: the file's
  * content says which conversation it is, and a file whose content is not exactly the one conversation its
  * name says is corrupt. Checkpoints are swapped atomically and cell deltas are forced JSONL appends;
- * recovery ignores only the uncommitted final fragment. A multi-conversation save is not atomic across
- * files, which a failure repairs at the next save because [kept] names what disk holds, not the intent.
+ * recovery ignores only the uncommitted final fragment. New journals use .jsonl so an older .json-only
+ * daemon cannot discover and delete patch-bearing state. If a downgrade creates a fresh .json beside it,
+ * the next upgrade selects the latest record or expiry timestamp. Divergent clock ties use file time;
+ * identical states prefer .jsonl.
+ * Migration forces the replacement before removing the older copy. A multi-conversation save is not
+ * atomic across files. A failed write marks disk uncertain, and the next save replaces the full state,
+ * even if every live field rolled back to [kept]'s last successfully committed snapshot.
  *
  * FIRST LOAD ON AN UPGRADE. A file that reads back whole is the copy [load] trusts. [legacyFile] fills only
  * the conversations that have no such file, each is written to its own file, and it is deleted once every
@@ -79,10 +85,14 @@ internal class CodexCodeModeStore(
 ) {
     private val dir = location.dir
     private val legacyFile = location.legacyFile
+    private val files = CodeModeStateDirectory(dir, json, log)
 
     @Volatile private var needsSave = false
     private val pendingWrites = AtomicInteger()
     private val failedKeys = ConcurrentHashMap.newKeySet<String>()
+
+    // A failed force can leave complete bytes on disk without publishing them to the durable index.
+    private val uncertainKeys = ConcurrentHashMap.newKeySet<String>()
 
     /** Each conversation as its file held it when last read or written, by conversation key. */
     private val kept = ConcurrentHashMap<String, CodeModeKeptState>()
@@ -175,6 +185,7 @@ internal class CodexCodeModeStore(
                 } finally {
                     registryLock?.unlock()
                 }
+                uncertainKeys.remove(key)
                 failedKeys.remove(key)
             } finally {
                 keyLocks.release(key, entry)
@@ -230,7 +241,7 @@ internal class CodexCodeModeStore(
             val markers = expired.filter { it.key == key }
             val next = CodeModePersistedState(records = nextRecords, expired = markers)
                 .takeUnless { it.records.isEmpty() && it.expired.isEmpty() }
-            val changed = next != prior || next?.records?.zip(prior?.records.orEmpty())
+            val changed = key in uncertainKeys || next != prior || next?.records?.zip(prior?.records.orEmpty())
                 ?.any { (left, right) -> !CodeModeStateJournal.same(left, right) } == true
             return if (changed) Prepared(key, next, nativeRoots = roots) else null
         }
@@ -277,13 +288,14 @@ internal class CodexCodeModeStore(
             } else if (conversation == null) {
                 remove(item.key)
             } else {
-                val prior = kept[item.key]?.snapshot()
+                val prior = kept[item.key]?.snapshot().takeUnless { item.key in uncertainKeys }
                 val text = CodeModeStateJournal.encode(item.key, prior, conversation, json, fileOf(item.key))
                 bytes = CodeModeStateText(text).bytes
                 secureDirectory()
                 write(Encoded(item.key, conversation, text))
             }
         } catch (error: IOException) {
+            uncertainKeys.add(item.key)
             failedKeys.add(item.key)
             val free = freeBytes(dir)
             throw CodeModePersistenceException(error, diskFull = free != null && free < bytes)
@@ -291,48 +303,10 @@ internal class CodexCodeModeStore(
     }
 
     private fun readDirectory() {
-        if (!Files.isDirectory(dir)) return
-        val files = try {
-            Files.list(dir).use { entries -> entries.filter { FILE_NAME.matches(it.fileName.toString()) }.toList() }
-        } catch (failure: IOException) {
-            log("[code-mode] $dir not listed (${SafeFailureText.render(failure)}): its conversations are not restored")
-            return
+        files.load().forEach { (key, selected) ->
+            kept[key] = CodeModeKeptState(selected.state)
+            if (selected.checkpoint) checkpoint(key, selected.state, "the selected conversation stays")
         }
-        files.forEach { file -> read(file)?.let { (key, conversation) -> kept[key] = CodeModeKeptState(conversation) } }
-    }
-
-    /** [file]'s conversation, or null when it does not read back whole: a file that is not code-mode state
-     *  is removed, so that conversation's scripts go; one that could not be read stays for the next start. */
-    private fun read(file: Path): Pair<String, CodeModePersistedState>? {
-        val why = try {
-            val conversation = CodeModeStateJournal.read(file, json)
-            // Measuring the live cells keeps each record's size on it, where retention reads it.
-            val live = CodeModeStateJournal.liveBytes(conversation, json)
-            val key = (conversation.records.map { it.key } + conversation.expired.map { it.key }).distinct()
-                .singleOrNull()
-            if (key != null && fileOf(key) == file) {
-                // Each step re-appends its whole cell, so a long conversation's journal outgrows its cells
-                // (2 GB over 4 MB on Oct 1); one that has is rewritten as one checkpoint as it loads.
-                if (CodeModeStateJournal.outgrown(file, live)) checkpoint(key, conversation, "it stays")
-                return key to conversation
-            }
-            "it does not hold exactly the one conversation its name says"
-        } catch (failure: IOException) {
-            log(
-                "[code-mode] conversation file ${file.fileName} not read " +
-                    "(${SafeFailureText.render(failure)}): it stays",
-            )
-            return null
-        } catch (_: IllegalArgumentException) {
-            "it is not code-mode state"
-        }
-        log("[code-mode] conversation file ${file.fileName} unreadable ($why): removed, so its scripts are dropped")
-        try {
-            Files.deleteIfExists(file)
-        } catch (failure: IOException) {
-            log("[code-mode] ${file.fileName} not removed (${SafeFailureText.render(failure)})")
-        }
-        return null
     }
 
     /** Every conversation [legacyFile] holds, or null when there is none or it could not be read. */
@@ -357,6 +331,8 @@ internal class CodexCodeModeStore(
         write(Encoded(key, conversation, CodeModeStateJournal.encode(key, null, conversation, json)))
         true
     } catch (failure: IOException) {
+        uncertainKeys.add(key)
+        failedKeys.add(key)
         log(
             "[code-mode] conversation ${key.take(CONVERSATION_LOG_CHARS)} not written to $dir " +
                 "(${SafeFailureText.render(failure)}): $stays, and the next save writes it",
@@ -379,19 +355,21 @@ internal class CodexCodeModeStore(
 
     private fun write(file: Encoded) {
         writer.write(fileOf(file.key), file.text)
+        // Remove the downgrade-visible copy only after the new checkpoint and rename are durable.
+        if (Files.deleteIfExists(files.olderPath(file.key))) {
+            FileChannel.open(dir, StandardOpenOption.READ).use { it.force(true) }
+        }
         kept[file.key] = CodeModeKeptState(file.conversation)
     }
 
     private fun remove(key: String) {
         Files.deleteIfExists(fileOf(key))
+        Files.deleteIfExists(files.olderPath(key))
+        if (Files.exists(dir)) FileChannel.open(dir, StandardOpenOption.READ).use { it.force(true) }
         kept.remove(key)
     }
 
-    private fun fileOf(key: String): Path {
-        val digest = MessageDigest.getInstance("SHA-256").digest(key.toByteArray(Charsets.UTF_8))
-        val name = HexFormat.of().formatHex(digest)
-        return dir.resolve("$name$CONVERSATION_STATE_SUFFIX")
-    }
+    private fun fileOf(key: String): Path = files.path(key)
 
     /** [state] by conversation key: its records and its markers. */
     private fun grouped(state: CodeModePersistedState): Map<String, CodeModePersistedState> {
@@ -417,9 +395,6 @@ internal class CodexCodeModeStore(
         )
     }
 }
-
-private val FILE_NAME = Regex("[0-9a-f]{64}\\.json")
-private const val CONVERSATION_STATE_SUFFIX = ".json"
 
 // why: the retention log names a conversation by the first 8 characters of its key (RECORD_ID_LOG_CHARS in
 // CodexCodeModeSweeper.kt), enough to tell a head's conversations apart in daemon.log; this names it the same way.

@@ -117,14 +117,17 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
         }
     }
 
-    private inner class SourceRound {
+    private inner class SourceRound(
+        key: String = "source-cost",
+        location: CodeModeStateLocation = stateLocation(),
+    ) {
         var forcedWrites = 0
         var refuseWrites = false
-        val record = CodeModeRecords.of("source-cost", 0).also {
+        val record = CodeModeRecords.of(key, 0).also {
             it.source = ""
             it.sourceState = CodeModeSourceState()
         }
-        private val config = CodeModeBridgeConfig({ error("no worker is needed") }, stateLocation())
+        private val config = CodeModeBridgeConfig({ error("no worker is needed") }, location)
         private val registry = CodexCodeModeRegistry(
             config,
             Json,
@@ -160,7 +163,7 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
     }
 
     @Test
-    fun `two hundred producer deltas force only admission consumption and round completion`() = runBlocking {
+    fun `two hundred fully buffered producer deltas force admission one read and completion`() = runBlocking {
         val state = SourceRound()
         state.begin()
         repeat(200) { state.append("x") }
@@ -174,6 +177,37 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
         Files.createDirectories(receipt.parent)
         Files.writeString(receipt, "{\"deltas\":200,\"forcedWrites\":${state.forcedWrites}}\n")
         assertEquals(3, state.forcedWrites, "forced writes for 200 producer deltas")
+    }
+
+    @Test
+    fun `source forces follow statement reads rather than a blanket producer delta reduction`() = runBlocking {
+        val statement = listOf("await ", "tools.", "Read(", "{}", ");", "\n")
+        val batched = SourceRound("statement-schedule")
+        batched.begin()
+        val reader = batched.capture.source.view()
+        repeat(20) {
+            statement.forEach { fragment -> batched.append(fragment) }
+            assertEquals(CodeModeSourcePart.Delta(statement.joinToString("")), reader.read())
+        }
+        batched.finish(statement.joinToString("").repeat(20))
+        assertEquals(CodeModeSourcePart.Complete(), reader.read())
+        assertEquals(22, batched.forcedWrites, "admission, twenty durable statement reads and completion")
+
+        val location = stateLocation()
+        val eagerLocation = CodeModeStateLocation(
+            location.dir.resolveSibling("eager-schedule"),
+            location.legacyFile.resolveSibling("eager-schedule.json"),
+        )
+        val eager = SourceRound("eager-schedule", eagerLocation)
+        eager.begin()
+        val eagerReader = eager.capture.source.view()
+        repeat(200) {
+            eager.append("x")
+            assertEquals(CodeModeSourcePart.Delta("x"), eagerReader.read())
+        }
+        eager.finish("x".repeat(200))
+        assertEquals(CodeModeSourcePart.Complete(), eagerReader.read())
+        assertEquals(202, eager.forcedWrites, "one read per delta retains one force per delta")
     }
 
     @Test

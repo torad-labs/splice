@@ -68,7 +68,7 @@ class CodeModeJournalRecoveryTest {
         }
         val store = store().also { it.load() }
         store.save(listOf(root), emptyList())
-        val file = Files.list(location().dir).use { it.toList().single { path -> path.toString().endsWith(".json") } }
+        val file = Files.list(location().dir).use { it.toList().single { path -> path.toString().endsWith(".jsonl") } }
         // Warm the append implementation and coverage instrumentation, not the measured source change.
         root.output = "warm append"
         store.save(listOf(root), emptyList(), dirtyKeys = setOf(root.key), changedRecord = root)
@@ -370,6 +370,44 @@ class CodeModeJournalRecoveryTest {
     }
 
     @Test
+    fun `a new patch cell missing only defaulted source state has no complete base`() {
+        val original = CodeModeRecords.of("alpha", 1).snapshot()
+        val inserted = CodeModeRecords.of("alpha", 2).snapshot()
+        val fields = JsonObject(codec.encodeToJsonElement(inserted).jsonObject - "sourceState")
+        // The serializer accepts this row; only the patch completeness boundary can reject it.
+        assertEquals(inserted.id, codec.decodeFromJsonElement<CodeModeRecordSnapshot>(fields).id)
+        val file = dir.resolve("default-insertion.json")
+        CodeModeStateJournal.write(file, codec.encodeToString(CodeModePersistedState(records = listOf(original))))
+        val cell = """{"id":"${inserted.id}","fields":$fields}"""
+        CodeModeStateJournal.write(file, """{"key":"alpha","patches":[$cell],"expired":[]}""")
+        val failure = assertThrows<IllegalArgumentException> { CodeModeStateJournal.read(file, codec) }
+        assertEquals("code-mode journal patch has no complete base cell", failure.message)
+    }
+
+    @Test
+    fun `checkpoint forces its temporary file before replacement and its directory afterward`() {
+        val file = dir.resolve("forced-checkpoint.json")
+        Files.writeString(file, "old checkpoint")
+        val record = CodeModeRecords.of("alpha", 1).snapshot()
+        val text = codec.encodeToString(CodeModePersistedState(records = listOf(record)))
+        val events = mutableListOf<String>()
+        CodeModeStateJournal.write(file, text) { target, channel ->
+            if (Files.isDirectory(target)) {
+                assertEquals(dir.toAbsolutePath(), target)
+                assertEquals(text + "\n", Files.readString(file), "directory force must follow the atomic replacement")
+                events += "directory"
+            } else {
+                assertFalse(target == file, "file force must use the temporary file, never the replaced path")
+                assertEquals("old checkpoint", Files.readString(file), "replacement must follow the file force")
+                assertEquals(text + "\n", Files.readString(target))
+                events += "file"
+            }
+            channel.force(true)
+        }
+        assertEquals(listOf("file", "directory"), events)
+    }
+
+    @Test
     fun `new patch cells require all descriptor fields and identity changes fail loudly`() {
         val original = CodeModeRecords.of("alpha", 1).snapshot()
         val next = CodeModeRecords.of("alpha", 2).snapshot()
@@ -426,7 +464,7 @@ class CodeModeJournalRecoveryTest {
         val store = store().also { it.load() }
         store.save(listOf(first, second), listOf(marker))
         val file = Files.list(location().dir).use { files ->
-            files.toList().single { it.fileName.toString().endsWith(".json") }
+            files.toList().single { it.fileName.toString().endsWith(".jsonl") }
         }
         val cell = CodeModeStateJournal.read(file, Json).records.first()
         val delta = Json.encodeToString(CodeModeStateDelta("alpha", listOf(cell), emptySet(), listOf(marker))) + "\n"

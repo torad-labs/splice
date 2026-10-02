@@ -398,6 +398,9 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     // The same per-conversation file now has an atomic checkpoint plus forced cell-delta appends.
     // A torn tail is compacted to its last committed state before another append.
     "integrations/providers/codex/src/main/kotlin/splice/provider/codex/state/CodeModeStateJournal.kt" to mapOf(
+        "FileChannel.open(" to 1,
+        "Files.createTempFile(" to 1,
+        "Files.move(" to 1,
         "writeAtomic0600(" to 1,
         "JsonlSink.appendLine(" to 1,
     ),

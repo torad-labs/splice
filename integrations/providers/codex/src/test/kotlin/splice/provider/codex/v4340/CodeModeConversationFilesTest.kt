@@ -85,7 +85,7 @@ internal open class CodeModeFilesTestSupport {
     }
 
     protected fun nameOf(key: String): String =
-        HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(key.toByteArray())) + ".json"
+        HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(key.toByteArray())) + ".jsonl"
 
     protected fun CodexCodeModeRegistry.outputs(key: String): List<String?> =
         completed(key).map(CodeModeRecord::output)

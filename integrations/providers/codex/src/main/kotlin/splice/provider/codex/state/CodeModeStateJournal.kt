@@ -11,6 +11,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.JsonlSink
 import splice.core.util.SecureFile
@@ -23,6 +24,7 @@ import java.nio.channels.FileChannel
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
 
 /** Each committed entry replaces only changed records and the conversation's bounded expiry markers. */
@@ -44,10 +46,16 @@ internal data class CodeModeStatePatch(
     val expired: List<CodeModeExpiredSnapshot>,
 )
 
+/** Flushes the file or directory that makes a checkpoint durable, with its path visible to tests. */
+internal fun interface CodeModeCheckpointForce {
+    operator fun invoke(path: Path, channel: FileChannel)
+}
+
 /**
  * Full checkpoints and old full-cell deltas still load. Patch lines deliberately omit legacy deltas'
- * mandatory records field: an older jar rejects them, even with unknown keys ignored, rather than
- * restoring a cell with missing heavy fields.
+ * mandatory records field: an older decoder rejects them rather than restoring incomplete cells.
+ * The store writes these journals as .jsonl, outside older jars' .json discovery, so a downgrade
+ * preserves them instead of treating the rejected patch as corruption and deleting the conversation.
  */
 internal object CodeModeStateJournal {
     private const val DELTA_START = "{\"key\":"
@@ -66,12 +74,16 @@ internal object CodeModeStateJournal {
             left?.sourceState == right?.sourceState
 
     /** Called under the conversation lock. First write creates a 0600 checkpoint; appends are forced. */
-    fun write(path: Path, text: String) {
+    fun write(
+        path: Path,
+        text: String,
+        force: CodeModeCheckpointForce = CodeModeCheckpointForce { _, channel -> channel.force(true) },
+    ) {
         if (!text.startsWith(DELTA_START)) {
             // A client may send an unpaired surrogate in a tool result. JsonlSink's append writes it as
             // `?`, and the strict encoder behind writeAtomic0600 refused it, so once a journal outgrew its
             // cells every save of that conversation failed. A checkpoint carries the bytes an append would.
-            SecureFile.writeAtomic0600(path, String((text + "\n").toByteArray(Charsets.UTF_8), Charsets.UTF_8))
+            Checkpoint(force).write(path, text)
         } else {
             // A delta is not a checkpoint. Refuse this race so the caller recreates its full durable cache.
             if (Files.notExists(path)) throw NoSuchFileException(path.toString())
@@ -81,6 +93,26 @@ internal object CodeModeStateJournal {
             }
             trimTornTail(path)
             JsonlSink.appendLine(path, text, maxBytes = Long.MAX_VALUE)
+        }
+    }
+
+    private class Checkpoint(private val force: CodeModeCheckpointForce) {
+        fun write(path: Path, text: String) {
+            val parent = path.toAbsolutePath().parent
+            Files.createDirectories(parent)
+            val temporary = Files.createTempFile(parent, ".code-mode", ".tmp")
+            try {
+                // Reuse the secure writer without changing credential writes' existing contract.
+                SecureFile.writeAtomic0600(temporary, String((text + "\n").toByteArray(Charsets.UTF_8), Charsets.UTF_8))
+                FileChannel.open(temporary, StandardOpenOption.WRITE).use { force(temporary, it) }
+                Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+                FileChannel.open(parent, StandardOpenOption.READ).use { force(parent, it) }
+            } finally {
+                Cancellables.discard(
+                    runCatching { Files.deleteIfExists(temporary) },
+                    "checkpoint temp cleanup is best-effort",
+                )
+            }
         }
     }
 

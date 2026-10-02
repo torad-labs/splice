@@ -4,6 +4,8 @@ package splice.provider.codex.v4340
 import com.sun.management.ThreadMXBean
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.decodeFromJsonElement
@@ -21,6 +23,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.provider.codex.CodeModeExpiredSnapshot
 import splice.provider.codex.CodeModeNativeSegment
 import splice.provider.codex.CodeModePersistedState
+import splice.provider.codex.CodeModePersistenceException
 import splice.provider.codex.CodeModeRecordSnapshot
 import splice.provider.codex.CodeModeRecords
 import splice.provider.codex.CodeModeStateLocation
@@ -498,5 +501,85 @@ class CodeModeJournalRecoveryTest {
         CodeModeStateJournal.write(file, CodeModeStateJournal.encode("alpha", checkpoint, next, Json))
         assertEquals(listOf(second.id), CodeModeStateJournal.read(file, Json).records.map { it.id })
         assertFalse(Files.readString(file).contains("private-expired-payload"))
+    }
+}
+
+class CodeModeJournalIsolationTest {
+    private val codec = Json { encodeDefaults = true }
+
+    @TempDir
+    lateinit var dir: Path
+
+    private data class Conversation(
+        val store: CodexCodeModeStore,
+        val location: CodeModeStateLocation,
+        val records: List<splice.provider.codex.CodeModeRecord>,
+        val file: Path,
+        val healthy: Path,
+    )
+
+    @Test
+    fun `a corrupt committed checkpoint cannot abort recovery of another conversation`() {
+        corruptCells().forEachIndexed { index, cell ->
+            val fixture = corruptConversation(index, cell)
+            val recovered = CodexCodeModeStore(fixture.location, codec, {}).load()
+            assertEquals(listOf(fixture.records.last().id), recovered.records.map { it.id }, "corrupt base $index")
+            assertFalse(Files.exists(fixture.file), "only the malformed conversation is dropped")
+            assertTrue(Files.exists(fixture.healthy))
+        }
+    }
+
+    @Test
+    fun `a live append over corrupt committed state and a torn tail fails only that conversation`() {
+        corruptCells().forEachIndexed { index, cell ->
+            val fixture = corruptConversation(index, cell)
+            Files.writeString(fixture.file, """{"key":""", StandardOpenOption.APPEND)
+            val before = Files.readString(fixture.file)
+            val first = fixture.records.first().apply { output = "new alpha output" }
+            val failure = assertThrows<CodeModePersistenceException> {
+                fixture.store.save(fixture.records, emptyList(), dirtyKeys = setOf(first.key), changedRecord = first)
+            }
+            assertTrue(failure.cause is IOException)
+            assertTrue(failure.cause?.cause is IllegalArgumentException)
+            assertEquals("code-mode journal has corrupt committed state", failure.cause?.message)
+            assertEquals(before, Files.readString(fixture.file), "corrupt committed bytes must not be appended")
+            assertEquals(setOf(first.key), fixture.store.pendingKeys)
+            val second = fixture.records.last().apply { output = "healthy beta output" }
+            fixture.store.save(fixture.records, emptyList(), dirtyKeys = setOf(second.key), changedRecord = second)
+            assertEquals(second.output, CodeModeStateJournal.read(fixture.healthy, codec).records.single().output)
+            // The failed append marks only alpha uncertain; its explicit retry replaces the complete state.
+            fixture.store.save(fixture.records, emptyList(), dirtyKeys = setOf(first.key), changedRecord = first)
+            assertTrue(fixture.store.pendingKeys.isEmpty())
+            val recovered = CodexCodeModeStore(fixture.location, codec, {}).load()
+            assertEquals(fixture.records.map { it.output }.toSet(), recovered.records.map { it.output }.toSet())
+        }
+    }
+
+    private fun corruptCells(): List<JsonObject?> {
+        val complete = codec.encodeToJsonElement(CodeModeRecords.of("alpha", 1).snapshot()).jsonObject
+        return listOf(JsonObject(complete - "id"), JsonObject(complete + ("id" to JsonNull)), null)
+    }
+
+    private fun corruptConversation(index: Int, cell: JsonObject?): Conversation {
+        val records = listOf(CodeModeRecords.of("alpha", 1), CodeModeRecords.of("beta", 1))
+        val location = CodeModeStateLocation(dir.resolve("corrupt-$index"), dir.resolve("legacy-$index.json"))
+        val store = CodexCodeModeStore(location, codec, {}).also { it.load() }
+        store.save(records, emptyList())
+        val files = Files.list(location.dir).use { paths ->
+            paths.toList().associateBy { CodeModeStateJournal.read(it, codec).records.single().key }
+        }
+        val checkpoint = JsonObject(
+            mapOf(
+                "version" to JsonPrimitive(1),
+                "records" to JsonArray(cell?.let { listOf(it) }.orEmpty()),
+                "expired" to JsonArray(emptyList()),
+            ),
+        )
+        val file = files.getValue("alpha")
+        Files.writeString(
+            file,
+            checkpoint.toString() + "\n" + """{"key":"alpha","patches":[],"expired":[]}""" + "\n",
+        )
+        return Conversation(store, location, records, file, files.getValue("beta"))
     }
 }

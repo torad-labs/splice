@@ -122,7 +122,12 @@ internal object CodeModeStateJournal {
         if (!endsWithNewline(path)) {
             // The only full-file rewrite on the request path is recovery or a legacy checkpoint
             // without a terminating newline. Ordinary appends inspect only the final byte.
-            write(path, codec.encodeToString(read(path, codec)))
+            val recovered = try {
+                read(path, codec)
+            } catch (failure: IllegalArgumentException) {
+                throw IOException("code-mode journal has corrupt committed state", failure)
+            }
+            write(path, codec.encodeToString(recovered))
         }
     }
 
@@ -181,19 +186,20 @@ internal object CodeModeStateJournal {
     /** Keeps raw field trees through replay, so patches never re-encode an unchanged history while loading. */
     @OptIn(ExperimentalSerializationApi::class)
     private class Replay(private val checkpoint: JsonObject, private val json: Json) {
-        private val records = checkpoint["records"]?.jsonArray.orEmpty()
-            .associateByTo(linkedMapOf()) { checkNotNull(JsonScalars.str(it.jsonObject["id"])) }
+        // Validate before raw indexing, but do not retain a second decoded copy through replay.
+        private val records = json.decodeFromJsonElement<CodeModePersistedState>(checkpoint).let { validated ->
+            val indexed = checkpoint["records"]?.jsonArray.orEmpty()
+                .associateByTo(linkedMapOf()) { checkNotNull(JsonScalars.str(it.jsonObject["id"])) }
+            require(validated.records.size == indexed.size) { "code-mode checkpoint repeats cell identities" }
+            indexed
+        }
         private var expired = checkpoint["expired"]?.jsonArray ?: JsonArray(emptyList())
-        private val key = (records.values + expired)
-            .map { checkNotNull(JsonScalars.str(it.jsonObject["key"])) }.distinct().single()
+        private val key = requireNotNull(
+            (records.values + expired)
+                .map { checkNotNull(JsonScalars.str(it.jsonObject["key"])) }.distinct().singleOrNull(),
+        ) { "code-mode checkpoint has no unique conversation key" }
         private val descriptor = CodeModeRecordSnapshot.serializer().descriptor
         private val fields = (0 until descriptor.elementsCount).map(descriptor::getElementName).toSet()
-
-        init {
-            // Validate before a later replacement could hide a corrupt committed checkpoint.
-            val validated = json.decodeFromJsonElement<CodeModePersistedState>(checkpoint)
-            require(validated.records.size == records.size) { "code-mode checkpoint repeats cell identities" }
-        }
 
         fun apply(change: JsonObject) {
             if ("patches" in change) {

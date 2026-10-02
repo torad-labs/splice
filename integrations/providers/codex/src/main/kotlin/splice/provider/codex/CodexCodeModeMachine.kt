@@ -6,6 +6,7 @@ import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.util.SafeFailureText
 import splice.provider.codex.state.CodeModeWorkerRecovery
 import splice.provider.codex.stream.CodeModeLiveRound
 import splice.provider.codex.stream.CodeModeSourceInterruptedException
@@ -182,11 +183,12 @@ internal class CodexCodeModeMachine(
         }
 
     /** Throwable messages may quote script or tool bytes. Only audited operational text is safe
-     * for daemon.log; every other message keeps its concrete exception class but not its content. */
+     * for daemon.log; every other message keeps its concrete exception class and splice throw site
+     * but not its content. */
     private fun runtimeFailure(error: Throwable, record: CodeModeRecord): String {
         val firstLine = error.message?.lineSequence()?.firstOrNull()?.trim()
         val detail = if (firstLine == "worker pool exhausted") firstLine else "message withheld"
-        return "code-mode runtime failed: ${error::class.simpleName}: $detail; " +
+        return "code-mode runtime failed: ${error::class.simpleName}: $detail${SafeFailureText.site(error)}; " +
             "accepted results=${record.results.size}; source was not rerun"
     }
 

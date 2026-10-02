@@ -63,6 +63,7 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
         assertTrue(privateOutcome is TurnOutcome.Failure)
         val privateMessage = (privateOutcome as TurnOutcome.Failure).message
         assertTrue("IllegalStateException: message withheld" in privateMessage, privateMessage)
+        assertTrue(" at CodexCodeModeTransitionPersistenceTest.kt:" in privateMessage, privateMessage)
         assertFalse("PRIVATE_TOOL_RESULT" in privateMessage, "private worker text must never enter the log")
     }
 

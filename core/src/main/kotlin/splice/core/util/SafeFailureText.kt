@@ -82,4 +82,17 @@ public object SafeFailureText {
         -> failure.toString()
         else -> "failure (message withheld: it may quote file bytes)"
     }
+
+    /** Where [failure] was thrown, as ` at File.kt:LINE` for the first frame in splice's own code. A
+     *  code location never quotes content, so an invariant that fires on a live turn is locatable from
+     *  daemon.log while its message stays withheld. Only a splice-package frame with a plain Kotlin
+     *  source name counts; anything else, or a stackless throwable, renders as nothing. */
+    public fun site(failure: Throwable): String {
+        val frame = failure.stackTrace.firstOrNull { it.className.startsWith(SPLICE_PACKAGE) } ?: return ""
+        val file = frame.fileName?.takeIf(KOTLIN_SOURCE::matches) ?: return ""
+        return " at $file:${frame.lineNumber}"
+    }
 }
+
+private const val SPLICE_PACKAGE = "splice."
+private val KOTLIN_SOURCE = Regex("[A-Za-z0-9_]+\\.kt")

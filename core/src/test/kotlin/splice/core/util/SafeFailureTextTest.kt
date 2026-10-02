@@ -56,4 +56,14 @@ class SafeFailureTextTest {
         val fs = java.nio.file.NoSuchFileException("/somewhere/auth.json")
         assertTrue(SafeFailureText.render(fs).contains("/somewhere/auth.json"))
     }
+
+    @Test
+    fun `a throw site names the splice source line and never the message`() {
+        val thrown = checkNotNull(runCatching { check(false) { "PRIVATE_SCRIPT_BYTES" } }.exceptionOrNull())
+        val site = SafeFailureText.site(thrown)
+        assertTrue(site.matches(Regex(" at SafeFailureTextTest\\.kt:\\d+")), site)
+        assertFalse(site.contains("PRIVATE_SCRIPT_BYTES"), site)
+        val stackless = IllegalStateException("PRIVATE_SCRIPT_BYTES").apply { stackTrace = emptyArray() }
+        assertEquals("", SafeFailureText.site(stackless))
+    }
 }

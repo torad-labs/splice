@@ -83,6 +83,13 @@ class CodeModeManualTest {
     }
 
     @Test
+    fun `the manual states every sealed streaming conversion and prohibits script-scope redeclaration`() {
+        val manual = CodeModeManual.description(emptyList(), deferred = false)
+        CodeModeManual.streamingSealedGlobals.forEach { assertTrue(manual.contains("`$it`")) }
+        assertTrue(manual.contains("Do not redeclare these names at script scope."))
+    }
+
+    @Test
     fun `the grammar is codex's CODE_MODE_FREEFORM_GRAMMAR byte for byte`() {
         val codex = """
 start: pragma_source | plain_source

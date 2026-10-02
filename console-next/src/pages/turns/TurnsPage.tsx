@@ -2,13 +2,14 @@ import { Link, useSearchParams } from 'react-router';
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { failureText } from '../../api/client';
-import { useHeads, useLiveTurns, useSessions, useStopTurn } from '../../api/queries';
+import { useHeads, useLiveTurns, useSessions, useStatus, useStopTurn } from '../../api/queries';
 import { isPendingRoute } from '../../api/auth';
 import { usePerfSummary, usePerfTurns } from '../../api/turns';
 import { ABSENT, fmtInt, fmtTokens } from '../../lib/format';
 import { sessionLabel } from '../../lib/sessions';
+import { colourFromRegistry } from '../../lib/model';
 import {
-  WINDOW_MS, barMax, cacheText, colourFromHeads, filterLines, liveTurnFor, lineOf, newestFirst, planRows, runningOf, secondsText, localStepsOf, servedLocally, tookText, turnsLede,
+  WINDOW_MS, barMax, cacheText, filterLines, liveTurnFor, lineOf, newestFirst, planRows, runningOf, secondsText, localStepsOf, servedLocally, tookText, turnsLede,
 } from '../../lib/turns-page';
 import type { TurnFilter, TurnLine, PlanRow, RunningLine } from '../../lib/turns-page';
 import { T } from '../../lib/words-turns';
@@ -107,11 +108,12 @@ export function TurnsPage() {
   const summary = usePerfSummary(window);
   const turns = usePerfTurns();
   const heads = useHeads();
+  const status = useStatus();
   const sessions = useSessions();
 
   const headRows = heads.data?.heads ?? [];
   const planLabel = (key: string): string => headRows.find((head) => head.key === key)?.label ?? key;
-  const colourOf = colourFromHeads(headRows);
+  const colourOf = colourFromRegistry(status.data);
   const sessionRows = sessions.data?.sessions ?? [];
   const titleOf = (sessionId: string | undefined, short: string | undefined): string | null => {
     const row = sessionRows.find((candidate) => (sessionId !== undefined && candidate.session_id === sessionId) || (short !== undefined && candidate.session_id?.startsWith(short) === true));

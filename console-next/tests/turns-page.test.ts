@@ -8,6 +8,7 @@ import {
   askAndAnswer, failedCount, filterLines, lineOf, outcomeOf, planRows, localStepsOf, liveTurnFor, runningOf, servedLocally, stagesOf, turnLede, turnsLede, wireFor, WINDOW_MS,
 } from '../src/lib/turns-page';
 import type { RunningLine } from '../src/lib/turns-page';
+import { colourFromRegistry } from '../src/lib/model';
 import type { PerfSummaryHead, TurnRow } from '../src/types/perf';
 
 const none = () => 'none' as const;
@@ -15,6 +16,21 @@ const row = (over: Partial<TurnRow> = {}): TurnRow => ({ head: 'claude', ts: 1_0
 const summary = (over: Partial<PerfSummaryHead> = {}): PerfSummaryHead => ({
   key: 'claude', label: 'Claude', window: '1h', count: 10, empty: false, coverage_known: true, clamped: false, covers_ms: 3_600_000,
   time_before_first_byte_ms: { count: 10, p50: 1400, p95: 3900, max: 5000 }, outcomes: { ok: 8, '?': 1, 'error:upstream-failed': 1 }, cache_hit_ratio: 0.86, ...over,
+});
+
+test('the status-registry family chooses provider colour, never the configured auth kind', () => {
+  const registry = [
+    { key: 'local-key', label: 'Local', authKind: 'api-key', family: 'local' },
+    { key: 'remote-bearer', label: 'Remote', authKind: 'bearer', family: 'openrouter' },
+    { key: 'claude-key', label: 'Claude', authKind: 'api-key', family: 'anthropic' },
+  ];
+  const colours = colourFromRegistry({ registry });
+  expect(registry.map((head) => colours(head.key))).toEqual(['local', 'router', 'claude']);
+  expect(colours('unknown')).toBe('none');
+  expect(colourFromRegistry(undefined)('local-key')).toBe('none');
+  expect(colourFromRegistry({ registry: [{ key: 'unmapped', label: 'Unmapped', authKind: 'api-key', family: null }] })('unmapped')).toBe('none');
+  const reordered = colourFromRegistry({ registry: [...registry].reverse() });
+  expect(registry.map((head) => reordered(head.key))).toEqual(['local', 'router', 'claude']);
 });
 
 describe('outcomes', () => {

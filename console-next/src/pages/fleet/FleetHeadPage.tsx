@@ -3,7 +3,7 @@ import { useKeyStore } from '../../api/auth';
 import { useAccounts, useAuth, useHealth, useHeads, useSessions, useStatus, useUsage } from '../../api/queries';
 import { SELECTOR_ORDER_TEXT, canRefresh, poolOf } from '../../lib/accounts';
 import { fleetCard } from '../../lib/fleet';
-import { localInstantText } from '../../lib/heads';
+import { isKeyHead, localInstantText } from '../../lib/heads';
 import { planWindows } from '../../lib/usage';
 import { Back, Button, Empty, Fault, PageHead, Plus, Segmented, State, Window } from '../../ui';
 import { failureText } from '../../api/client';
@@ -55,6 +55,8 @@ export function FleetHeadPage() {
   const head = heads.data.heads.find((candidate) => candidate.key === key);
   if (head === undefined) return <>{back}<Empty title={D.notFound} /></>;
 
+  const keyless = isKeyHead(head, auth.data?.[head.key]?.kind);
+  const oauth = !keyless && OAUTH.has(head.authKind);
   const rows = accounts.data?.accounts ?? [];
   const pool = poolOf(rows, head.key);
   const live = new Map<string, number>();
@@ -97,13 +99,13 @@ export function FleetHeadPage() {
                 </ul>
                 </>
               )}
-              {OAUTH.has(head.authKind) ? (
+              {oauth ? (
                 <SignIn head={head.key} purpose="add">
                   <Button small><Plus />{D.addAccount}</Button>
                 </SignIn>
               ) : null}
-              {OAUTH.has(head.authKind) && canRefresh(pool) ? <RefreshSignIn head={head.key} /> : null}
-              {head.authKind === 'api-key' ? <HeadKey head={head.key} /> : null}
+              {oauth && canRefresh(pool) ? <RefreshSignIn head={head.key} /> : null}
+              {keyless ? <HeadKey head={head.key} /> : null}
             </>
           )}
         </div>

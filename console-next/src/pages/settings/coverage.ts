@@ -186,6 +186,7 @@ export const dispositions: readonly Disposition[] = [
   { kind: 'topology', name: 'providers.*.quirks.chat_effort_vocabulary.model_pattern', disposition: 'editable' },
   { kind: 'topology', name: 'providers.*.quirks.code_mode', disposition: 'editable' },
   { kind: 'topology', name: 'providers.*.quirks.code_mode_heap', disposition: 'editable' },
+  { kind: 'topology', name: 'providers.*.quirks.code_mode_memory_mb', disposition: 'editable' },
   { kind: 'topology', name: 'providers.*.quirks.code_mode_models', disposition: 'editable' },
   { kind: 'topology', name: 'providers.*.quirks.code_mode_timeout_ms', disposition: 'editable' },
   { kind: 'topology', name: 'providers.*.quirks.code_mode_workers', disposition: 'editable' },

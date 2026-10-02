@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { failureText } from '../../api/client';
-import { useHeads, useSessions, useTeams } from '../../api/queries';
+import { useHeads, useSessions, useStatus, useTeams } from '../../api/queries';
 import { useArchiveTeam, useTeamActivity, useTeamChat, useTeamEconomics } from '../../api/teams';
 import { ABSENT, clockTime, fmtUsd } from '../../lib/format';
-import { colourFromHeads } from '../../lib/turns-page';
+import { colourFromRegistry } from '../../lib/model';
 import { stateOf, stateTone, stateWord } from '../../lib/sessions';
 import { repoLabel } from '../../lib/projects';
 import { atRetentionEdge, dayOf, dayWords, peerName, seatsOf, sessionIn, teamLede } from '../../lib/teams-page';
@@ -36,6 +36,7 @@ export function TeamPage() {
   const teams = useTeams();
   const sessions = useSessions();
   const heads = useHeads();
+  const status = useStatus();
   const [back, setBack] = useState(0);
   const [editing, setEditing] = useState(false);
   const archive = useArchiveTeam();
@@ -52,7 +53,7 @@ export function TeamPage() {
   if (teams.isError) return <>{crumb}<Fault message={failureText(teams.error)} onRetry={() => void teams.refetch()} /></>;
   if (team === null) return <>{crumb}<PageHead title={M.back} /><Empty title={M.gone} why={M.goneWhy} /></>;
 
-  const colourOf = colourFromHeads(heads.data?.heads ?? []);
+  const colourOf = colourFromRegistry(status.data);
   const labelOf = (key: string): string => heads.data?.heads.find((head) => head.key === key)?.label ?? key;
   const seats = seatsOf(team);
   const working = seats.filter((slot) => {

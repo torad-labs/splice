@@ -113,6 +113,10 @@ describe('one printed cause, and the worst one wins', () => {
       .toBe('signed out');
   });
 
+  test('the provider-reported API-key kind makes a custom head key-missing, not signed-out', () => {
+    expect(headAttention(head({ authKind: 'bearer' }), signals({ credentialKind: 'api-key', credentialPresent: false })).cause).toBe('key missing');
+  });
+
   test('a warning is amber and cocked, never red', () => {
     const state = headAttention(head({ versionMatch: false }), signals());
     expect(state.edge).toBe('amber');

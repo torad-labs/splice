@@ -5,10 +5,9 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { failureText } from '../../api/client';
 import { useProjects } from '../../api/projects';
-import { useHeads, useSessions, useTeams } from '../../api/queries';
+import { useHeads, useSessions, useStatus, useTeams } from '../../api/queries';
 import { useBoardEdges, useSessionHistory, useTurnOf } from '../../api/sessions';
-import { colourOfHead } from '../../lib/model';
-import type { ModelColour } from '../../lib/model';
+import { colourFromRegistry } from '../../lib/model';
 import { moveKey, setOrder, sortByOrder, useOrder } from '../../lib/order';
 import type { GroupBy } from '../../lib/sessions';
 import { UNATTRIBUTED, groupSessions, handoffOf, matchesQuery, sessionKey, sessionsLede, stateOf, timingOf } from '../../lib/sessions';
@@ -42,6 +41,7 @@ export function SessionsPage() {
   const projects = useProjects();
   const sessions = useSessions();
   const heads = useHeads();
+  const status = useStatus();
   const edges = useBoardEdges();
   const order = useOrder('sessions');
   const sensors = useSensors(
@@ -57,10 +57,7 @@ export function SessionsPage() {
   );
 
   const headOf = (row: SessionRow) => (row.head === UNKNOWN_HEAD ? undefined : heads.data?.heads.find((candidate) => candidate.key === row.head));
-  const colourOf = (row: SessionRow): ModelColour => {
-    const head = headOf(row);
-    return head === undefined ? 'none' : colourOfHead(head.authKind);
-  };
+  const colourOf = colourFromRegistry(status.data);
   const factsOf = (row: SessionRow): CardFacts => {
     const turn = turnOf(row);
     const state = stateOf(row);
@@ -68,7 +65,7 @@ export function SessionsPage() {
     row,
     state,
     ...timingOf(row, state, turn, now),
-    colour: colourOf(row),
+    colour: row.head === UNKNOWN_HEAD ? 'none' : colourOf(row.head),
     head: row.head === UNKNOWN_HEAD ? null : (headOf(row)?.label ?? row.head),
     hand: handoffOf(sessions.data?.sessions ?? [], row.session_id === null ? [] : (edges.data?.sessions[row.session_id] ?? [])),
     };

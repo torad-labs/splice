@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { failureText } from '../../api/client';
-import { useHeads, useSessions, useTeams } from '../../api/queries';
+import { useHeads, useSessions, useStatus, useTeams } from '../../api/queries';
 import { useSessionEdges, useSessionHistory, useTranscript, useTurnOf } from '../../api/sessions';
 import { clockTime } from '../../lib/format';
 import { foldTranscript, interleave, withoutEchoed } from '../../lib/conversation';
-import { colourOfHead } from '../../lib/model';
+import { colourFromRegistry } from '../../lib/model';
 import type { ModelColour } from '../../lib/model';
 import { peerRow, railOf } from '../../lib/rail';
 import type { Seat } from '../../lib/rail';
@@ -30,6 +30,7 @@ export function SessionPage() {
   const { id = '' } = useParams();
   const sessions = useSessions();
   const heads = useHeads();
+  const status = useStatus();
   const teams = useTeams();
   const edges = useSessionEdges(id);
   const transcript = useTranscript(id);
@@ -42,11 +43,9 @@ export function SessionPage() {
   const history = useSessionHistory(id, sessions.isSuccess && liveRow === undefined && id !== '');
   const pastRow = (history.data?.pages ?? []).flatMap((page) => ('sessions' in page ? page.sessions : [])).find((candidate) => sessionKey(candidate) === id);
   const row: SessionRow | undefined = liveRow ?? pastRow;
-  const colourOfKey = (headKey: string | null): ModelColour => {
-    if (headKey === null || headKey === UNKNOWN_HEAD) return 'none';
-    const head = heads.data?.heads.find((candidate) => candidate.key === headKey);
-    return head === undefined ? 'none' : colourOfHead(head.authKind);
-  };
+  const registryColour = colourFromRegistry(status.data);
+  const colourOfKey = (headKey: string | null): ModelColour =>
+    headKey === null || headKey === UNKNOWN_HEAD ? 'none' : registryColour(headKey);
   const colour = colourOfKey(row?.head ?? null);
   const headLabel = row === undefined || row.head === UNKNOWN_HEAD ? null : (heads.data?.heads.find((head) => head.key === row.head)?.label ?? row.head);
 

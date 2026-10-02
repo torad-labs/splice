@@ -2,7 +2,6 @@
 // turn's four stages. Pure over the daemon's payloads; the pages only draw what this returns.
 import { ABSENT, fmtDurationS, fmtShare, fmtUsd } from './format';
 import { waterfall } from './perf';
-import { colourOfHead } from './model';
 import type { ModelColour } from './model';
 import { spanText } from './sessions';
 import { OUTCOME_WORD, STAGE_PHRASE, T } from './words-turns';
@@ -14,10 +13,6 @@ export const WINDOW_MS: Record<PerfWindowLabel, number> = { '1h': 3_600_000, '24
 
 /** The plan a head key belongs to, for its colour: unknown heads wear the neutral. */
 export type ColourOf = (head: string) => ModelColour;
-export const colourFromHeads = (heads: readonly { key: string; authKind: string }[]): ColourOf => {
-  const table = new Map(heads.map((head) => [head.key, colourOfHead(head.authKind)] as const));
-  return (head) => table.get(head) ?? 'none';
-};
 
 // ── outcomes ────────────────────────────────────────────────────────────────────────────────────
 

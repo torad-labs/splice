@@ -105,6 +105,7 @@ function headNeeds(heads: readonly HeadStatus[], auth: AuthPayload | null, accou
     const card = auth?.[head.key];
     const attention = headAttention(head, {
       credentialPresent: card?.present ?? null,
+      credentialKind: card?.kind ?? null,
       refreshLatched: card?.refresh_latched ?? null,
       accountExcluded: false,
       topologyStale: false,

@@ -60,10 +60,15 @@ for (const authKind of ['bearer', 'local']) {
     const card = page.locator('li.card').filter({ has: page.getByRole('link', { name: STACK.keyHead, exact: true }) });
     await expect(card.locator('.quiet-meta').first()).toContainText('api key');
     await expect(card.locator('.quiet-meta').first()).not.toContainText('this computer');
+    await expect(card.getByText('Key missing', { exact: true })).toBeVisible();
+    await expect(card.getByRole('button', { name: 'Copy the key command', exact: true })).toBeVisible();
+    await expect(card).not.toContainText('until you sign in');
     await card.getByRole('link', { name: STACK.keyHead, exact: true }).click();
     await expect(page.locator('header.top .quiet-meta')).toContainText('api key');
     await expect(page.locator('header.top .quiet-meta')).not.toContainText('this computer');
     await expect(page.getByRole('main')).toContainText('Pays per token; no window');
+    await expect(page.getByRole('button', { name: 'Store key', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Copy the key command', exact: true })).toBeVisible();
     await assertHealthy(page, faults);
     await page.unrouteAll({ behavior: 'ignoreErrors' });
   });
@@ -93,6 +98,14 @@ test('a silent runtime is off on its card and detail while unmarked plans remain
 });
 
 test('a full reading stays Ready in command colour, reads as usage, and still serves without a required act', async ({ page }, testInfo) => {
+  await page.route('**/api/status', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json() as ControlStatusPayload;
+    const head = body.registry.find((row) => row.key === STACK.oauthHead);
+    if (head === undefined) throw new Error('isolated stack has no OAuth registry head');
+    head.family = 'openai';
+    await route.fulfill({ response, json: body });
+  });
   const reset = Math.floor(Date.now() / 1000) + 3600;
   await page.route((url) => url.pathname === '/api/heads', async (route) => {
     const response = await route.fetch();

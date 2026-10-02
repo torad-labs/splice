@@ -34,6 +34,15 @@ function render(seed: (client: QueryClient) => void): string {
 }
 
 describe('the team page', () => {
+  test('seat colours follow registry vendor families rather than their auth labels', () => {
+    const html = render((client) => client.setQueryData(['status', '/api/status'], { registry: [
+      { key: 'claude-grok', label: 'Grok', authKind: 'api-key', family: 'local' },
+      { key: 'claude-splice', label: 'Claude', authKind: 'bearer', family: 'anthropic' },
+    ] }));
+    expect(html).toContain('seatrow hue local');
+    expect(html).toContain('seatrow hue claude');
+    expect(html).not.toContain('seatrow hue router');
+  });
   test('a seat says its role once, and the session under it names itself only when that adds something', () => {
     const named = render((client) => {
       client.setQueryData(['sessions', '/api/sessions'], { sessions: [{ session_id: 'sess-1', name: 'builder', head: 'claude-grok', availability: 'live', status: 'idle', pid: 1, kind: null, version: null, cwd: null, status_updated_at: null, started_at: null, updated_at: NOW, address: null }] });

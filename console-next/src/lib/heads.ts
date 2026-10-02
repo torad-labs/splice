@@ -55,6 +55,8 @@ export const EDGE_WORDS: Record<HeadState, string> = {
 export interface HeadSignals {
   /** /api/auth: false means no credential on disk for that head. */
   credentialPresent: boolean | null;
+  /** /api/auth: the running provider's credential kind, not the configured auth label. */
+  credentialKind: string | null;
   /** /api/auth: a non-null latch means the refresh is blocked, i.e. the credential expired. */
   refreshLatched: string | null;
   /** /api/accounts: true when this head rides a pool whose selected account is excluded. */
@@ -66,6 +68,7 @@ export interface HeadSignals {
 /** No signals yet: every nullable field unknown, every flag off. */
 export const NO_SIGNALS: HeadSignals = {
   credentialPresent: null,
+  credentialKind: null,
   refreshLatched: null,
   accountExcluded: false,
   topologyStale: false,
@@ -100,6 +103,11 @@ export function quotaRefusedUntil(head: HeadStatus, nowMs: number): number | nul
   return until !== undefined && until * 1000 > nowMs ? until : null;
 }
 
+/** The running provider names its credential mechanism; before that read, only a declared api-key kind proves it. */
+export function isKeyHead(head: Pick<HeadStatus, 'authKind'>, credentialKind: string | null | undefined): boolean {
+  return (credentialKind ?? head.authKind) === 'api-key';
+}
+
 export function headAttention(head: HeadStatus, signals: HeadSignals = NO_SIGNALS, nowMs: number = Date.now()): HeadAttention {
   if (!head.running) {
     return { edge: 'grey', cocked: false, struck: true, label: EDGE_WORDS.down, cause: 'down' };
@@ -121,7 +129,7 @@ export function headAttention(head: HeadStatus, signals: HeadSignals = NO_SIGNAL
   if (quotaRefusedUntil(head, nowMs) !== null) {
     return { edge: 'amber', cocked: true, struck: false, label: EDGE_WORDS['out of quota'], cause: 'out of quota' };
   }
-  const noCredential: AttentionCause = head.authKind === 'api-key' ? 'key missing' : 'signed out';
+  const noCredential: AttentionCause = isKeyHead(head, signals.credentialKind) ? 'key missing' : 'signed out';
   const cause: AttentionCause | null =
     head.versionMatch === false ? 'version mismatch'
       : signals.credentialPresent === false ? noCredential

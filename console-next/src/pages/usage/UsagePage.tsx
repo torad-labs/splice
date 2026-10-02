@@ -1,10 +1,10 @@
 import { useSearchParams } from 'react-router';
 import { failureText } from '../../api/client';
-import { useHeads, useUsage } from '../../api/queries';
+import { useHeads, useStatus, useUsage } from '../../api/queries';
 import { useEconomics } from '../../api/usage';
 import { ABSENT, fmtInt, fmtShare } from '../../lib/format';
 import { costOf, hitRate } from '../../lib/economics';
-import { colourFromHeads } from '../../lib/turns-page';
+import { colourFromRegistry } from '../../lib/model';
 import { cacheLine, costLine, orderPlans, planUsage, splitIdle, tokensText, totalsOf, usageLede, windowChoices } from '../../lib/usage-page';
 import type { PlanUsage } from '../../lib/usage-page';
 import { U, spanWords } from '../../lib/words-usage';
@@ -50,6 +50,7 @@ export function UsagePage() {
   const [params, setParams] = useSearchParams();
   const economics = useEconomics();
   const heads = useHeads();
+  const status = useStatus();
   const usage = useUsage();
 
   if (economics.isPending) return <PageHead title={U.title} lede={U.reading} />;
@@ -60,7 +61,7 @@ export function UsagePage() {
   const asked = params.get('window') ?? '24';
   const hours = Number((choices.find(([id]) => id === asked) ?? choices[0])?.[0] ?? '24');
   const headRows = heads.data?.heads ?? [];
-  const colourOf = colourFromHeads(headRows);
+  const colourOf = colourFromRegistry(status.data);
   const label = (key: string): string => headRows.find((head) => head.key === key)?.label ?? key;
   const plans = orderPlans(economics.data.heads.map((head) => planUsage(head, label(head.key), colourOf(head.key), usage.data ?? null, hours, now, headRows.find((status) => status.key === head.key))));
   const { active, idle } = splitIdle(plans);

@@ -4,9 +4,9 @@
 import type { AccountRow } from '../types/accounts';
 import type { AuthPayload, HeadStatus, UsagePayload } from '../types/core';
 import type { KeysPayload } from '../types/login';
-import { familyName, headAttention, localInstantText, providerFamily, quotaRefusedUntil } from './heads';
+import { familyName, headAttention, isKeyHead, localInstantText, providerFamily, quotaRefusedUntil } from './heads';
 import type { HeadSignals } from './heads';
-import { colourOfHead } from './model';
+import { colourOf } from './model';
 import type { ModelColour } from './model';
 import { poolOf, selectedExcluded } from './accounts';
 import { planLevel, planWindows } from './usage';
@@ -118,6 +118,7 @@ export function fleetCard(head: HeadStatus, inputs: FleetInputs): FleetCard {
   const card = auth?.[head.key];
   const signals: HeadSignals = {
     credentialPresent: card?.present ?? null,
+    credentialKind: card?.kind ?? null,
     refreshLatched: card?.refresh_latched ?? null,
     accountExcluded: selectedExcluded(pool, now),
     topologyStale,
@@ -134,8 +135,9 @@ export function fleetCard(head: HeadStatus, inputs: FleetInputs): FleetCard {
     said.add(key);
     return true;
   });
-  const oauth = OAUTH_KINDS.has(head.authKind);
-  const base = { key: head.key, title: head.label, colour: colourOfHead(kind), meta, none: noWindowText(kind, inputs.keys, inputs.usage, head, now) };
+  const keyless = isKeyHead(head, card?.kind);
+  const oauth = !keyless && OAUTH_KINDS.has(head.authKind);
+  const base = { key: head.key, title: head.label, colour: colourOf(inputs.family), meta, none: noWindowText(kind, inputs.keys, inputs.usage, head, now) };
 
   const note = (tone: FleetTone, standing: FleetStanding, state: string, text: string, fix: FleetFix | null, needsPerson: boolean): FleetCard => ({
     ...base, tone, standing, state, attention: needsPerson, line: gauge === null || tone === 'idle' ? { kind: 'note', text } : gauge, fix,
@@ -158,7 +160,6 @@ export function fleetCard(head: HeadStatus, inputs: FleetInputs): FleetCard {
     }
     case 'signed out':
     case 'key missing': {
-      const keyless = head.authKind === 'api-key';
       const variable = card?.env_var;
       const fix = oauth ? 'sign-in' : keyless && variable !== undefined ? 'copy-key' : null;
       return { ...note('stuck', 'signed-out', keyless ? 'Key missing' : 'Signed out', keyless ? FL.keyMissing : FL.signedOut, fix, true), keyCommand: variable === undefined ? null : keyCommandOf(variable) };

@@ -1,10 +1,11 @@
 import { Link, useParams, useSearchParams } from 'react-router';
 import { failureText } from '../../api/client';
-import { useHeads, useSessions } from '../../api/queries';
+import { useHeads, useSessions, useStatus } from '../../api/queries';
 import { usePerfTurns } from '../../api/turns';
 import { ABSENT, fmtInt, fmtUsd } from '../../lib/format';
 import { sessionLabel } from '../../lib/sessions';
-import { STAGE_ORDER, colourFromHeads, movedOf, outcomeOf, servedLocally, stagesOf, secondsText, turnLede } from '../../lib/turns-page';
+import { colourFromRegistry } from '../../lib/model';
+import { STAGE_ORDER, movedOf, outcomeOf, servedLocally, stagesOf, secondsText, turnLede } from '../../lib/turns-page';
 import { P, T } from '../../lib/words-turns';
 import { Empty, Fault, PageHead, State } from '../../ui';
 import { sessionPath } from '../shared/SessionActions';
@@ -18,6 +19,7 @@ export function TurnPage() {
   const at = Number(ts);
   const turns = usePerfTurns({ head, n: 200, since: Number.isFinite(at) ? at - 1 : 0 }, false);
   const heads = useHeads();
+  const status = useStatus();
   const sessions = useSessions();
   const crumb = <div className="crumb"><Link to="/turns">{P.back}</Link></div>;
 
@@ -29,7 +31,7 @@ export function TurnPage() {
 
   const headRow = heads.data?.heads.find((candidate) => candidate.key === head);
   const plan = headRow?.label ?? head;
-  const colour = colourFromHeads(heads.data?.heads ?? [])(head);
+  const colour = colourFromRegistry(status.data)(head);
   const session = (sessions.data?.sessions ?? []).find((candidate) => candidate.session_id !== null && (candidate.session_id === row.session_id || (row.session !== undefined && candidate.session_id.startsWith(row.session))));
   const title = session === undefined ? plan : sessionLabel(session);
   const outcome = outcomeOf(row.outcome);

@@ -15,7 +15,7 @@ const usage = (pct: number, resetsAt: number | null = NOW / 1000 + 3600): UsageP
   window_hours: 1, warn_pct: 80, warn_tokens_5h: 0,
   heads: [{ key: 'claude-grok', label: 'claude-grok', usage: { warn: { pct: 0, level: 'ok', source: 'none', reset: null }, quota: { five_hour: { used_pct: pct, resets_at: resetsAt } } } as never }],
 });
-const inputs = (over: Partial<FleetInputs> = {}): FleetInputs => ({ usage: usage(41), auth: null, accounts: [], sessions: new Map([['claude-grok', 2]]), topologyStale: false, family: null, keys: null, now: NOW, ...over });
+const inputs = (over: Partial<FleetInputs> = {}): FleetInputs => ({ usage: usage(41), auth: null, accounts: [], sessions: new Map([['claude-grok', 2]]), topologyStale: false, family: 'xai', keys: null, now: NOW, ...over });
 const account = (over: Partial<AccountRow> = {}): AccountRow => ({ heads: ['claude-grok'], label: 'Ava’s Grok', selected: null, ...over }) as AccountRow;
 
 describe('a fleet card', () => {
@@ -35,6 +35,10 @@ describe('a fleet card', () => {
     expect(card.meta).toEqual(['api key', 'no sessions']);
     expect(card.colour).toBe('router');
     expect(card.none).toBe('Pays per token; no window');
+  });
+  test('an API-key head uses its declared vendor colour rather than the generic key colour', () => {
+    expect(fleetCard(head({ authKind: 'api-key' }), inputs({ family: 'anthropic' })).colour).toBe('claude');
+    expect(fleetCard(head({ authKind: 'api-key' }), inputs({ family: null })).colour).toBe('none');
   });
   test('a card with no window to draw says why, and only what is true', () => {
     const keyed = { path: '', keys: [{ name: 'K', stored: true, heads: [{ head: 'openrouter', source: 'store' }] }] } as never;
@@ -88,6 +92,13 @@ describe('a fleet card', () => {
     const missing = { 'claude-grok': { kind: 'grok-oauth', login: '', present: false } };
     expect(fleetCard(head(), inputs({ auth: missing }))).toMatchObject({ state: 'Signed out', tone: 'stuck', attention: true, fix: 'sign-in' });
     expect(fleetCard(head({ authKind: 'api-key' }), inputs({ auth: { 'claude-grok': { kind: 'api-key', login: '', present: false } } }))).toMatchObject({ state: 'Key missing', fix: null });
+  });
+  test.each(['bearer', 'grok-oauth'])('the provider-reported API-key kind exposes key recovery for configured auth %s', (authKind) => {
+    const key = head({ key: 'custom-key', authKind });
+    const auth = { 'custom-key': { kind: 'api-key', login: '', present: false, env_var: 'CUSTOM_API_KEY' } };
+    const card = fleetCard(key, inputs({ family: 'openrouter', auth, usage: null, sessions: new Map() }));
+    expect(card).toMatchObject({ state: 'Key missing', fix: 'copy-key', keyCommand: 'splice key set CUSTOM_API_KEY' });
+    expect(card.line).toMatchObject({ kind: 'note', text: 'Its next turn will fail until its key is set.' });
   });
   test('a latched refresh is an expired sign-in', () => {
     expect(fleetCard(head(), inputs({ auth: { 'claude-grok': { kind: 'grok-oauth', login: '', present: true, refresh_latched: 'invalid_grant' } } })).state).toBe('Sign-in expired');

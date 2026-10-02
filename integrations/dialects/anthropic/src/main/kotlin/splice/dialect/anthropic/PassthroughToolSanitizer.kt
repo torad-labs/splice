@@ -43,6 +43,13 @@ internal class PassthroughToolSanitizer(
         // Kimi 400s a tool with no description; inventing one on a faithful passthrough would be
         // splice putting words in the client's request, so it rides with the schema shaping.
         if (quirks.mfjsSanitize && DESCRIPTION !in tool) put(DESCRIPTION, "")
+        if (eagerInputDefault(tool)) put(EAGER_INPUT_STREAMING, true)
+    }
+
+    private fun eagerInputDefault(tool: JsonObject): Boolean {
+        if (!quirks.eagerToolInputs || EAGER_INPUT_STREAMING in tool) return false
+        val type = tool["type"]
+        return type == null || type == JsonPrimitive("custom")
     }
 
     /** Split from [sanitizeTool] so the per-key decision does not push the loop over detekt's
@@ -60,6 +67,7 @@ internal class PassthroughToolSanitizer(
 private const val STRICT = "strict"
 private const val INPUT_SCHEMA = "input_schema"
 private const val DESCRIPTION = "description"
+private const val EAGER_INPUT_STREAMING = "eager_input_streaming"
 
 // FILE SCOPE ON PURPOSE: one shared empty object read on the tool-sanitizing path; as a member it
 // would be rebuilt per builder instance.

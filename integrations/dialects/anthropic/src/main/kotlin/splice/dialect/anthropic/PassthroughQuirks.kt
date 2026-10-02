@@ -25,8 +25,8 @@ public fun interface IdentityHeaders {
  * has its tool schemas rewritten by [mfjsSanitize], has `redacted_thinking` silently dropped by
  * [blockAllowlist], and can be handed a forged thinking signature by [synthesizeSignatures] that a
  * signature-VERIFYING upstream later rejects. Assembly selects the kimi provider's own profile
- * only for provider ID `kimi` on OAuth/API-key arms, then applies TOML overrides. Generic and CLIENT
- * arms receive no vendor deformations unless TOML opts into them.
+ * only for provider ID `kimi` on OAuth/API-key arms, then applies TOML overrides. Generic arms stay
+ * neutral; CLIENT selects Anthropic's signature verification and eager custom-tool input policy.
  */
 public data class PassthroughQuirks(
     val providerTag: String,
@@ -64,6 +64,9 @@ public data class PassthroughQuirks(
     /** V4-32: cap on tool `name` length, 0 = no cap. Muse's endpoint enforces 64 where
      *  Anthropic's does not; every other head leaves this off and nothing is rewritten. */
     val toolNameCap: Int = 0,
+    /** Anthropic can stream custom-tool arguments before an entire parameter is generated.
+     *  Only its profile enables the default; an explicit per-tool choice always wins. */
+    val eagerToolInputs: Boolean = false,
     /** V4-41: may a re-anchor continuation APPEND the salvaged answer as a trailing assistant
      *  message? Neutral is FALSE, which leaves a truncated turn ending exactly as it does today
      *  except for the whole-stream restart that duplicates nothing. Measured per vendor, never

@@ -1,12 +1,14 @@
 // NEW: serialized stateful callback resumption owns one addressed context until its close acknowledgement.
 package splice.codemode
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.json.JsonObject
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
@@ -51,6 +53,7 @@ internal class JvmCodeModeCell(
             toStep(awaitInput(reply)).also { advanced = true }
         } catch (failure: CodeModeWorkerLostException) {
             stop()
+            if (end.get() == End.CLOSED) unavailable()
             throw failure
         } finally {
             if (!advanced) close()
@@ -80,11 +83,21 @@ internal class JvmCodeModeCell(
         error("Code-mode cell is closed")
     }
 
+    /** A stop can close the channel after the caller passed its open check. */
+    private suspend fun exchange(frame: JsonObject): JsonObject = try {
+        channel.exchange(frame)
+    } catch (failure: CancellationException) {
+        throw failure
+    } catch (failure: IllegalStateException) {
+        if (end.get() == End.STOPPED) unavailable()
+        throw failure
+    }
+
     private suspend fun receiveAfter(results: List<CodeModeResult>): WorkerReply {
         checkOpen()
         CodeModeFrames.validateResultSet(pendingCalls, results)
         val reply = CodeModeFrames.parseReply(
-            frame = channel.exchange(CodeModeWire.resultFrame(results)),
+            frame = exchange(CodeModeWire.resultFrame(results)),
             tools = tools,
             nextId = nextId,
         )
@@ -99,7 +112,7 @@ internal class JvmCodeModeCell(
             val input = checkNotNull(source) { "Ordinary cell cannot wait for source input" }
             val part = nextInput(input)
             reply = CodeModeFrames.parseReply(
-                channel.exchange(StreamingCodeModeWire.inputFrame(part)), tools, nextId,
+                exchange(StreamingCodeModeWire.inputFrame(part)), tools, nextId,
             )
         }
         pendingCalls = reply.calls.orEmpty()

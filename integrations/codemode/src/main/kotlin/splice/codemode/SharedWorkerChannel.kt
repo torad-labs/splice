@@ -186,6 +186,7 @@ private class HostCellChannel(
     private val closed = AtomicBoolean()
 
     override suspend fun exchange(frame: JsonObject): JsonObject {
+        if (host.isClosed) throw CodeModeWorkerLostException()
         check(!closed.get()) { "Code-mode cell is closed" }
         return host.exchange(id, frame, session)
     }

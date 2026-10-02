@@ -1,10 +1,14 @@
 package splice.codemode
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -14,11 +18,14 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeResult
+import splice.upstream.codemode.CodeModeSource
+import splice.upstream.codemode.CodeModeSourcePart
 import splice.upstream.codemode.CodeModeStep
 import splice.upstream.failure.CodeModeInfrastructureCategory
 import splice.upstream.failure.CodeModeInfrastructureClass
 import splice.upstream.failure.CodeModeInfrastructureException
 import splice.upstream.failure.CodeModeStartException
+import splice.upstream.failure.CodeModeWorkerLostException
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.FilterOutputStream
@@ -600,5 +607,161 @@ class CodeModeRuntimeTest {
         override fun pid(): Long = real.pid()
 
         override fun toHandle(): ProcessHandle = real.toHandle()
+    }
+}
+
+class CodeModeStopRaceTest {
+    @Test
+    @Timeout(10)
+    fun `stop during a result exchange remains worker loss`() = runBlocking {
+        val channel = PausedCellChannel()
+        val cell = resultCell(channel)
+        assertTrue(cell.advance() is CodeModeStep.Calls)
+        assertStoppedExchange(cell, channel, listOf(CodeModeResult("1", "result")))
+    }
+
+    @Test
+    @Timeout(10)
+    fun `stop after reading source but during its exchange remains worker loss`() = runBlocking {
+        val channel = PausedCellChannel()
+        val cell = JvmCodeModeCell(
+            channel,
+            WorkerReply(null, null, null, waitingForInput = true),
+            emptySet(),
+            ReleaseCodeModeCell {},
+            CodeModeSource { CodeModeSourcePart.Delta("text('source');") },
+        )
+        assertStoppedExchange(cell, channel, emptyList())
+    }
+
+    @Test
+    @Timeout(10)
+    fun `local close during an exchange is not relabeled worker loss`() = runBlocking<Unit> {
+        listOf(null, CodeModeWorkerLostException()).forEach { laterFailure ->
+            supervisorScope {
+                val channel = PausedCellChannel().apply { exchangeFailure = laterFailure }
+                val cell = resultCell(channel)
+                cell.advance()
+                val advancing = async { cell.advance(listOf(CodeModeResult("1", "result"))) }
+                channel.entered.await()
+                cell.close()
+                channel.proceed.complete(Unit)
+                assertThrows(IllegalStateException::class.java) { runBlocking { advancing.await() } }
+                assertEquals(1, channel.closes)
+            }
+        }
+    }
+
+    @Test
+    @Timeout(10)
+    fun `exchange cancellation is preserved even when a stop has won`() = runBlocking<Unit> {
+        supervisorScope {
+            val cancelled = CancellationException("synthetic exchange cancellation")
+            val channel = PausedCellChannel().apply { exchangeFailure = cancelled }
+            val cell = resultCell(channel)
+            cell.advance()
+            val advancing = async { cell.advance(listOf(CodeModeResult("1", "result"))) }
+            channel.entered.await()
+            cell.stop()
+            channel.proceed.complete(Unit)
+            val failure = assertThrows(CancellationException::class.java) { runBlocking { advancing.await() } }
+            assertEquals(cancelled.message, failure.message)
+            assertTrue(advancing.isCancelled)
+            assertEquals(1, channel.closes)
+        }
+    }
+
+    @Test
+    fun `a stopped host classifies even an already closed channel as worker loss`() = runBlocking<Unit> {
+        SharedWorkerChannel(IdleProcess(), this).use { host ->
+            val channel = host.cell(1)
+            channel.close()
+            host.close()
+            assertThrows(CodeModeWorkerLostException::class.java) {
+                runBlocking { channel.exchange(CodeModeWire.completedFrame("", null)) }
+            }
+        }
+    }
+
+    @Test
+    fun `an explicitly closed channel on a live host stays a local closure`() = runBlocking<Unit> {
+        SharedWorkerChannel(IdleProcess(), this).use { host ->
+            val channel = host.cell(1)
+            channel.close()
+            assertThrows(IllegalStateException::class.java) {
+                runBlocking { channel.exchange(CodeModeWire.completedFrame("", null)) }
+            }
+        }
+    }
+
+    private fun resultCell(channel: CellChannel) = JvmCodeModeCell(
+        channel,
+        WorkerReply(listOf(CodeModeCall("1", "Read", JsonObject(emptyMap()))), null, null),
+        setOf("Read"),
+        ReleaseCodeModeCell {},
+    )
+
+    private suspend fun assertStoppedExchange(
+        cell: JvmCodeModeCell,
+        channel: PausedCellChannel,
+        results: List<CodeModeResult>,
+    ) = supervisorScope {
+        val advancing = async { cell.advance(results) }
+        channel.entered.await()
+        cell.stop()
+        channel.proceed.complete(Unit)
+        assertThrows(CodeModeWorkerLostException::class.java) { runBlocking { advancing.await() } }
+        assertEquals(1, channel.closes)
+        cell.close()
+        cell.stop()
+        assertEquals(1, channel.closes)
+    }
+
+    private class PausedCellChannel : CellChannel {
+        val entered = CompletableDeferred<Unit>()
+        val proceed = CompletableDeferred<Unit>()
+        var closes = 0
+        var exchangeFailure: Exception? = null
+        private var onExit: WorkerExited? = null
+
+        override suspend fun exchange(frame: JsonObject): JsonObject {
+            entered.complete(Unit)
+            proceed.await()
+            exchangeFailure?.let { throw it }
+            check(closes == 0) { "Code-mode cell is closed" }
+            return CodeModeWire.completedFrame("unused", null)
+        }
+
+        override fun afterExit(action: WorkerExited) {
+            onExit = action
+        }
+
+        override fun close() {
+            closes++
+            onExit?.invoke()
+        }
+    }
+
+    private class IdleProcess : Process() {
+        private val exited = CompletableFuture<Process>()
+
+        override fun getInputStream(): InputStream = InputStream.nullInputStream()
+        override fun getOutputStream(): OutputStream = OutputStream.nullOutputStream()
+        override fun getErrorStream(): InputStream = InputStream.nullInputStream()
+        override fun onExit(): CompletableFuture<Process> = exited
+        override fun waitFor(): Int {
+            exited.get()
+            return 0
+        }
+        override fun waitFor(timeout: Long, unit: TimeUnit): Boolean = exited.isDone
+        override fun exitValue(): Int = if (exited.isDone) 0 else throw IllegalThreadStateException()
+        override fun isAlive(): Boolean = !exited.isDone
+        override fun destroy() {
+            exited.complete(this)
+        }
+        override fun destroyForcibly(): Process {
+            destroy()
+            return this
+        }
     }
 }

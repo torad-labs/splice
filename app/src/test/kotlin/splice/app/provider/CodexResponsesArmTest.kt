@@ -141,7 +141,8 @@ class CodexResponsesArmTest {
         // V4-388: a code-mode turn declares the client tools inside exec's manual, none top-level.
         assertFalse(wire.contains("\"type\":\"function\""))
         assertFalse(wire.contains("\"strict\":true"))
-        assertEquals("", built.requestBody["instructions"]?.jsonPrimitive?.content)
+        // f6a29a77f: current codex-rs omits empty lite instructions (codex-api/src/common.rs:286-287).
+        assertFalse("instructions" in built.requestBody, "current codex-rs omits the empty field")
         assertEquals("true", built.requestBody["store"]?.jsonPrimitive?.content)
         assertNotNull(built.roundInterceptor)
         assertTrue(wire.contains("\"name\":\"exec\""))

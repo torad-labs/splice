@@ -3371,8 +3371,3 @@ integrations/providers/codex/src/test/kotlin/splice/provider/codex/CodexCodeMode
 integrations/providers/codex/src/test/kotlin/splice/provider/codex/CodexCodeModeStatementStreamTest.kt	c8a31643031ed4f4d66af3dc8fa62a2fbc12c3a015d5e55f9fed3534f43d4120	created		V4-447: early statement callbacks, durable results, no-rerun tears and restart controls
 integrations/upstream/src/main/kotlin/splice/upstream/retry/InflightSlotState.kt	ecf1520c833b21ecf52ccbfd7d08271ec4e8b648c0a3fa04915336ff1e19c30d	created		V4-447: counted source permit ownership shared by readers and continuation handles
 integrations/upstream/src/main/kotlin/splice/upstream/sse/CustomToolSource.kt	14352038cef484c4a1401cc15c08979a16be18c28482dec9b52864f746306f55	created		V4-447: typed custom source observations separate from client tool publication
-core/src/main/kotlin/splice/core/perf/LivenessProbe.kt	861b08d0d4ec093cfaab6aac6bc973d4afed0fd41c0c262a08ddd36ee78e4968	created		V4-454 probe work isolation
-features/turns/src/test/kotlin/splice/head/HeadServerLivenessProbeTest.kt	9fb821a2f833290d05f6aed126b8da73c9ff209464291de63b86e8ad7af583db	created		V4-454 probe work isolation
-features/turns/src/test/kotlin/splice/head/perf/PerfProbeFilterTest.kt	31f1426375c238fa15213fe44cab2bd557601b3dac310fe9691f3c79d45af3b9	created		V4-454 probe work isolation
-app/src/main/kotlin/splice/app/sources/ProbeEconomics.kt	23e2392edf2b6a48769367f7490928f18686f0ee5faa711a33d7d372b8353423	created		V4-454 probe work isolation
-app/src/test/kotlin/splice/app/sources/ProbeEconomicsTest.kt	695fd108ec5ed97f7b5a4ed442e793b2ccc14b02c1083901797556f46f87f8aa	created		V4-454 probe work isolation

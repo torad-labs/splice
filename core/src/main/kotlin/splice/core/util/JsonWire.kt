@@ -16,8 +16,10 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonUnquotedLiteral
-import kotlinx.serialization.json.encodeToStream
 import java.io.OutputStream
+import java.nio.ByteBuffer
+import java.nio.CharBuffer
+import java.nio.charset.CodingErrorAction
 
 // why: ASCII code points fit in one UTF-8 byte; the first non-ASCII value is 2^7.
 private const val UTF8_ASCII_CEILING = 0x80
@@ -31,13 +33,32 @@ private const val UTF8_BMP_WIDTH = 3
 // why: a supplementary code point occupies four UTF-8 bytes rather than two UTF-16 code units.
 private const val UTF8_SUPPLEMENTARY_WIDTH = 4
 
+// Fixed scratch, independent of prompt length; enough for ordinary stream writes without whole-string copies.
+private const val WIRE_BUFFER_BYTES = 8_192
+
+// The pinned library owns escaping. Borrow its exact ASCII escape spellings, never a second escape algorithm.
+private val WIRE_ESCAPES = Array(UTF8_ASCII_CEILING) { code ->
+    val character = code.toChar().toString()
+    val quoted = Json.encodeToString(String.serializer(), character)
+    quoted.substring(1, quoted.length - 1).takeUnless { it == character }
+}
+
 /** Streams borrowed tree nodes while retaining the legacy wire's numeric lexemes and string escaping. */
 public object JsonWire {
     public fun string(element: JsonElement): String = Json.encodeToString(WireElementSerializer, element)
 
-    @OptIn(ExperimentalSerializationApi::class)
+    /** Writes with fixed scratch and leaves the caller's stream open. */
     public fun write(element: JsonElement, output: OutputStream) {
-        Json.encodeToStream(WireElementSerializer, element, output)
+        val wire = BoundedWire(output)
+        wire.tree(element)
+        wire.drain()
+    }
+
+    /** Counts the exact streamed bytes without materializing a wire string or byte array. */
+    public fun byteSize(element: JsonElement): Long {
+        val counter = WireByteCount()
+        write(element, counter)
+        return counter.bytes
     }
 
     /** UTF-8 wire length, including the JVM encoder's single-byte replacement for an unpaired surrogate. */
@@ -56,6 +77,89 @@ public object JsonWire {
             }
         }
         return bytes
+    }
+
+    private class WireByteCount : OutputStream() {
+        var bytes = 0L
+            private set
+
+        override fun write(value: Int) {
+            bytes += 1
+        }
+
+        override fun write(buffer: ByteArray, offset: Int, length: Int) {
+            bytes += length
+        }
+    }
+
+    private class BoundedWire(private val output: OutputStream) {
+        private var buffer = ByteBuffer.allocate(WIRE_BUFFER_BYTES)
+        private val encoder = Charsets.UTF_8.newEncoder()
+            .onMalformedInput(CodingErrorAction.REPLACE)
+            .onUnmappableCharacter(CodingErrorAction.REPLACE)
+
+        fun tree(element: JsonElement) {
+            when (element) {
+                JsonNull -> raw("null")
+                is JsonObject -> {
+                    byte('{')
+                    element.entries.forEachIndexed { index, (key, value) ->
+                        if (index > 0) byte(',')
+                        quoted(key)
+                        byte(':')
+                        tree(value)
+                    }
+                    byte('}')
+                }
+                is JsonArray -> {
+                    byte('[')
+                    element.forEachIndexed { index, value ->
+                        if (index > 0) byte(',')
+                        tree(value)
+                    }
+                    byte(']')
+                }
+                is JsonPrimitive -> if (element.isString) quoted(element.content) else raw(element.content)
+            }
+        }
+
+        private fun quoted(text: String) {
+            byte('"')
+            val borrowed = CharBuffer.wrap(text)
+            var start = 0
+            for (index in text.indices) {
+                val escape = WIRE_ESCAPES.getOrNull(text[index].code)
+                if (escape != null) {
+                    span(borrowed, start, index)
+                    escape.forEach(::byte)
+                    start = index + 1
+                }
+            }
+            span(borrowed, start, text.length)
+            byte('"')
+        }
+
+        private fun raw(text: String) {
+            span(CharBuffer.wrap(text), 0, text.length)
+        }
+
+        private fun span(borrowed: CharBuffer, start: Int, end: Int) {
+            if (start == end) return
+            val input = borrowed.limit(end).position(start)
+            val encoding = encoder.reset()
+            while (encoding.encode(input, buffer, true).isOverflow) drain()
+            while (encoding.flush(buffer).isOverflow) drain()
+        }
+
+        private fun byte(character: Char) {
+            if (!buffer.hasRemaining()) drain()
+            buffer = buffer.put(character.code.toByte())
+        }
+
+        fun drain() {
+            if (buffer.position() > 0) output.write(buffer.array(), 0, buffer.position())
+            buffer = buffer.clear()
+        }
     }
 
     /** Map/list serializers traverse the original nodes; raw literals avoid normalizing 1e2 into 100.0. */

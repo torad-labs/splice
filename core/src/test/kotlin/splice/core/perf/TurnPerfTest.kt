@@ -287,6 +287,21 @@ class TurnPerfTest {
     }
 
     @Test
+    fun `binding an older WS demand cannot replace the demand already observed`() {
+        val clock = FakeClock()
+        val perf = TurnPerf(ElapsedClock { clock.now }, WallClock { 1_000_000 })
+        val timing = WsAttemptTiming(perf)
+        timing.requested(clock.now)
+        clock.tick(10)
+        timing.requested(clock.now)
+        timing.requested(clock.now - 10)
+        clock.tick(10)
+        timing.firstFragment()
+        assertEquals(10L, perf.snapshot().counters[PerfKeys.UP_READ_WAIT_MAX_MS])
+        assertEquals(1_000_010L, perf.snapshot().counters[PerfKeys.UP_READ_WAIT_MAX_START_EPOCH_MS])
+    }
+
+    @Test
     fun `timed attributes block duration to the counter and timedOr is a no-op on null`() = runTest {
         val clock = FakeClock()
         val perf = TurnPerf { clock.now }

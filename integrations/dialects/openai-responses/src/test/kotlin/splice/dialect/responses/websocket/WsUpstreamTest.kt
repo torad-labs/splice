@@ -726,6 +726,12 @@ class WsUpstreamInboxListenerTest {
         assertEquals(3, socket.requests, "observing demand must not add or remove requests")
         assertEquals(DELTA, inbox.tryReceive().getOrNull()?.toString())
         assertEquals(DELTA, inbox.tryReceive().getOrNull()?.toString())
+        now += 30_000
+        listener.onPong(socket, ByteBuffer.allocate(0))
+        now += 10
+        listener.onText(socket, DELTA, true)
+        assertEquals(10L, perf.snapshot().counters["up_read_wait_max_ms"], "Pong replaces the outstanding demand")
+        assertEquals(5, socket.requests, "Pong still rearms exactly once")
     }
 
     @Test

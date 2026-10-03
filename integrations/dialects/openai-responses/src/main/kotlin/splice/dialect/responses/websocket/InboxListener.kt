@@ -103,6 +103,11 @@ internal class InboxListener(
         return null
     }
 
+    override fun onPong(webSocket: WebSocket, message: java.nio.ByteBuffer): CompletionStage<*>? {
+        requestNext(webSocket)
+        return null
+    }
+
     override fun onBinary(webSocket: WebSocket, data: java.nio.ByteBuffer, last: Boolean): CompletionStage<*>? {
         log("[ws] unexpected binary frame; anomaly\n")
         onAnomaly() // the protocol is text-JSON; a binary frame means we misunderstand the stream

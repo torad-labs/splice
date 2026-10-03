@@ -10,6 +10,7 @@ public class WsAttemptTiming(private val perf: TurnPerf) {
     private var fragmentAt: Long? = null
     private var earlyFragment = false
     private var requestedAt: Long? = null
+    private var latestDemandAt: Long? = null
     private var callbackAt: Long? = null
     private var previousFragmentAt: Long? = null
 
@@ -26,6 +27,9 @@ public class WsAttemptTiming(private val perf: TurnPerf) {
     public fun requested(atMs: Long) {
         val at = maxOf(attemptStartedAt, atMs - perf.clockOriginMs)
         synchronized(lock) {
+            // Binding can replay an idle demand after a newer callback has rearmed the listener.
+            if (latestDemandAt?.let { at < it } == true) return
+            latestDemandAt = at
             callbackAt?.let { perf.intervals.record(PerfKeys.UP_READ_IDLE_MAX_MS, it, at, attempt = attempt) }
             callbackAt = null
             requestedAt = at

@@ -171,8 +171,13 @@ export async function fetchTurns({ head, n = DEFAULT_TAIL, since, until, last, f
   try {
     const heads = await request<HeadsPayload>('/api/heads');
     const asked = head !== undefined && head !== '' ? [head] : heads.heads.map((status) => status.key);
-    const from = since ?? (last === undefined ? undefined : now() - last);
-    const reads = await Promise.all(asked.map((key) => readHeadTurns(key, n, { since: from, until, filter })));
+    // A rolling window is pinned to ONE instant, read once: every head is asked the same since and the same exclusive until, and
+    // the state says that window, so a link built from its count opens the very range that count was taken over.
+    const at = now();
+    const rolling = since === undefined && last !== undefined;
+    const from = since ?? (rolling ? at - last : undefined);
+    const to = until ?? (rolling ? at : undefined);
+    const reads = await Promise.all(asked.map((key) => readHeadTurns(key, n, { since: from, until: to, filter })));
     const failed = reads.flatMap((read) => (read.ok ? [] : [read]));
     const first = failed[0];
     if (first !== undefined && failed.length === reads.length) throw first.err;
@@ -191,6 +196,7 @@ export async function fetchTurns({ head, n = DEFAULT_TAIL, since, until, last, f
       truncated: merged.truncated,
       matched: merged.matched,
       matchedBy: merged.matchedBy,
+      ...(from === undefined ? {} : { window: { since: from, until: to ?? null } }),
       ...(cuts.length === 0 ? {} : { completeFrom: Math.max(...cuts) }),
     };
   } catch (err) {

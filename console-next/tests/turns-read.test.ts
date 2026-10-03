@@ -23,14 +23,28 @@ function daemon(urls: string[], countB: number | null = 3) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('the filtered read', () => {
-  test('every head is asked the same window and filters, a rolling window from the moment of the read', async () => {
+  test('every head is asked the same window and filters, a rolling window pinned to the moment of the read', async () => {
     const urls: string[] = [];
     daemon(urls);
     await fetchTurns({ last: 3_600_000, until: undefined, filter: { outcome: 'failed', model: 'gpt 6', local: false } }, () => 10_000_000);
     expect(urls.slice(1).sort()).toEqual([
-      '/api/perf/turns?head=a&n=200&since=6400000&outcome=failed&model=gpt+6&local=0',
-      '/api/perf/turns?head=b&n=200&since=6400000&outcome=failed&model=gpt+6&local=0',
+      '/api/perf/turns?head=a&n=200&since=6400000&until=10000000&outcome=failed&model=gpt+6&local=0',
+      '/api/perf/turns?head=b&n=200&since=6400000&until=10000000&outcome=failed&model=gpt+6&local=0',
     ]);
+  });
+
+  test('the state says the window it read: a rolling one pinned to its one instant, a span as asked, a tail none', async () => {
+    daemon([]);
+    let clock = 10_000_000;
+    const read = await fetchTurns({ last: 3_600_000 }, () => (clock += 1));
+    if ('pending' in read) throw new Error('not a pending route');
+    expect(read.window).toEqual({ since: 6_400_001, until: 10_000_001 });
+    const span = await fetchTurns({ since: 1000, until: 2000 });
+    expect('window' in span ? span.window : null).toEqual({ since: 1000, until: 2000 });
+    const open = await fetchTurns({ since: 1000 });
+    expect('window' in open ? open.window : null).toEqual({ since: 1000, until: null });
+    const tail = await fetchTurns({});
+    expect('window' in tail).toBe(false);
   });
 
   test('the matching count is the daemon\'s per head and summed, however few rows came back', async () => {

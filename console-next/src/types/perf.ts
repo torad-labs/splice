@@ -423,6 +423,10 @@ export interface TurnsState {
   matched: number | null;
   /** The same count per head that said one. */
   matchedBy: Record<string, number>;
+  /** The window every head was asked, epoch ms, until exclusive: a rolling read is pinned to the one instant it ran at, and
+   *  null `until` is a span left open to the daemon's now. Absent on a tail read, which asks the daemon's default window. A link
+   *  that carries `matched` carries this range, never a clock read again later. */
+  window?: { since: number; until: number | null };
   /** The instant from which `landed` holds every turn: the window the daemon read from, or later
    *  where a cap cut earlier ones (a clamped head's oldest row, or the oldest row a tail read's fleet
    *  cut kept). Before it the list is short, so an hour there with no rows is unread, not idle

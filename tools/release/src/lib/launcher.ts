@@ -275,6 +275,44 @@ const ARMS: readonly Arm[] = [
     },
   },
   {
+    name: "V4-457 daemon OOM diagnostics use one fixed state path even with custom JVM options",
+    run: async (ctx) => {
+      const stateDir = join(ctx.dir, "state with spaces ' and $ characters");
+      mkdirSync(stateDir, { recursive: true });
+      writeFileSync(join(stateDir, "mgmt-key"), "test-key\n");
+      const paths: readonly (readonly [string, readonly string[]])[] = [
+        ["test", []],
+        ["splice", ["daemon", "--stderr-is-boot-log", "literal argument with spaces"]],
+      ];
+      for (const [head, argv] of paths) {
+        ctx.cold();
+        const run = await ctx.launch({
+          ...ctx.harness,
+          SPLICE_HEAD: head,
+          SPLICE_STATE_DIR: stateDir,
+          SPLICE_JVM_OPTS: "-Xmx96m -XX:-ExitOnOutOfMemoryError -XX:-HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=wrong.hprof",
+          LAUNCHER_UNIT_PRESENT: "0",
+        }, argv);
+        if (run.code !== 0) return `${head}: the isolated daemon must launch: ${run.output}`;
+        const runs = read(ctx.captures.javaArgv).split("\n").filter(Boolean).map((line) => JSON.parse(line) as string[]);
+        const daemon = runs.find((args) => args.includes("daemon"));
+        if (daemon === undefined) return `${head}: java never ran the daemon`;
+        const flags = daemon.slice(0, daemon.indexOf("-jar"));
+        const exitFlags = flags.filter((flag) => /^-XX:[+-]ExitOnOutOfMemoryError$/.test(flag));
+        const dumpFlags = flags.filter((flag) => /^-XX:[+-]HeapDumpOnOutOfMemoryError$/.test(flag));
+        const dumpPaths = flags.filter((flag) => flag.startsWith("-XX:HeapDumpPath="));
+        const expectedPath = `-XX:HeapDumpPath=${join(stateDir, "splice-oom.hprof")}`;
+        if (exitFlags.at(-1) !== "-XX:+ExitOnOutOfMemoryError") return `${head}: OOM must terminate with custom JVM options`;
+        if (dumpFlags.at(-1) !== "-XX:+HeapDumpOnOutOfMemoryError") return `${head}: OOM must dump with custom JVM options`;
+        if (dumpPaths.at(-1) !== expectedPath) return `${head}: the fixed dump path must be one argv item under the state`;
+        if (head === "splice" && JSON.stringify(daemon.slice(daemon.indexOf("daemon"))) !== JSON.stringify(argv)) {
+          return "the admin daemon argv must remain unchanged";
+        }
+      }
+      return null;
+    },
+  },
+  {
     // V4-218: the jar resolves ~ from HOME first (splice.core.config.UserHome), and every JVM the shim
     // starts is given that same home as -Duser.home, so the JDK and any library that reads user.home agree
     // with it instead of naming the passwd entry's home. All three paths: a CLI verb, `<head> login`, and

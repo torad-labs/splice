@@ -55,7 +55,7 @@ module.exports = { liveStateDir };
 
 // Hand-paired with splice.core.SHIM_VERSION (core/src/main/kotlin/splice/core/Versions.kt)
 // — bump both together whenever this shim's behavior changes. No code generation.
-const SPLICE_SHIM_VERSION = "shim-11";
+const SPLICE_SHIM_VERSION = "shim-12";
 // Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.
 const SPLICE_GATEWAY_VERSION = "0.4.0";
 
@@ -138,6 +138,14 @@ const CLI_CONSOLE = "-Djdk.console=java.base";
 // (splice.core.config.UserHome), and this names the same home to the JDK and to any library that
 // reads user.home, which is otherwise the passwd home.
 const USER_HOME = `-Duser.home=${HOME}`;
+// Required daemon diagnostics follow caller options, so a custom heap does not disable them.
+// The resolved dump path is one argv item, never split with the caller's whitespace-delimited options.
+const DAEMON_JVM_ARGS = [
+  ...SPLICE_JVM_OPTS.split(/\s+/).filter(Boolean),
+  "-XX:+ExitOnOutOfMemoryError",
+  "-XX:+HeapDumpOnOutOfMemoryError",
+  `-XX:HeapDumpPath=${path.join(STATE_DIR, "splice-oom.hprof")}`,
+];
 // JW-01: the spawned JVM's output lands here, never /dev/null — a boot-dead daemon must leave a
 // tailable stack trace. One rolled generation at 1MB, same cap discipline as daemon.log.
 const LOGS_DIR = path.join(STATE_DIR, "..", "logs");
@@ -219,7 +227,8 @@ function loginHead(words) {
 if (HEAD === "splice") {
   needJar();
   const head = args[0] === "login" ? loginHead(args.slice(1)) : undefined;
-  exec(["java", CLI_CONSOLE, USER_HOME, "-jar", JAR, ...args], env,
+  const daemonArgs = args[0] === "daemon" ? DAEMON_JVM_ARGS : [];
+  exec(["java", CLI_CONSOLE, USER_HOME, ...daemonArgs, "-jar", JAR, ...args], env,
     head ? { head, baseUrl: "", kind: "login" } : undefined);
 }
 
@@ -431,7 +440,7 @@ async function coldStart() {
   // V4-258: a daemon whose stderr is the boot log is told so, and keeps daemon.log's lines out of it.
   const bootLogged = Array.isArray(stdio) ? [BOOT_LOG_FLAG] : [];
   // USER_HOME goes first, so a -Duser.home in SPLICE_JVM_OPTS (the later flag wins) still overrides it.
-  const argv = [USER_HOME, ...SPLICE_JVM_OPTS.split(/\s+/).filter(Boolean), "-jar", JAR, "daemon", ...bootLogged];
+  const argv = [USER_HOME, ...DAEMON_JVM_ARGS, "-jar", JAR, "daemon", ...bootLogged];
   const daemon = spawn("java", argv, { detached: true, stdio });
   daemon.on("error", (failure) => {
     // A java that cannot be run leaves no JVM output, so the boot log says so itself (nohup used

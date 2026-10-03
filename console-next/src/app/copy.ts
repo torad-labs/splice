@@ -6,10 +6,12 @@ export const C = {
   unlockAsk: 'Paste the management key to open the console.',
   unlockRejected: 'That key was not accepted. Paste it again.',
   unlockHint: 'It is the file mgmt-key in splice’s state folder. splice dashboard opens this page with it.',
-  needs: 'Needs you',
+  accounts: 'Accounts',
+  requests: 'Requests',
+  teams: 'Teams',
+  models: 'Models',
+  playground: 'Playground',
   sessions: 'Sessions',
-  fleet: 'Fleet',
-  turns: 'Turns',
   usage: 'Usage',
   settings: 'Settings',
   running: 'Daemon running',
@@ -23,3 +25,14 @@ export const C = {
   stale: 'splice was upgraded after this page opened, so this page is out of date.',
   reload: 'Reload the page',
 } as const;
+
+export const NAV = [
+  ['accounts', C.accounts],
+  ['requests', C.requests],
+  ['sessions', C.sessions],
+  ['teams', C.teams],
+  ['usage', C.usage],
+  ['models', C.models],
+  ['playground', C.playground],
+  ['settings', C.settings],
+] as const;

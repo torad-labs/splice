@@ -1,28 +1,17 @@
 import { NavLink, Outlet, useLocation } from 'react-router';
-import { useNeeds } from '../api/needs';
 import { useStatus } from '../api/queries';
 import { setTheme, useTheme } from '../lib/theme';
-import { C } from './copy';
+import { C, NAV } from './copy';
 import { StaleBanner, useStalePage } from './StalePage';
 
-const NAV = [
-  ['needs-you', C.needs],
-  ['sessions', C.sessions],
-  ['fleet', C.fleet],
-  ['turns', C.turns],
-  ['usage', C.usage],
-  ['settings', C.settings],
-] as const;
-
-/** A team or a project is a place inside Sessions: its nav item stays lit there. */
-const INSIDE_SESSIONS = /^\/(teams|projects)\//;
+/** A bookmarked project still opens inside Sessions, rather than adding another nav place. */
+const INSIDE_SESSIONS = /^\/projects\//;
 
 export function Shell() {
   const { pathname } = useLocation();
   const status = useStatus();
   const theme = useTheme();
   const answering = status.isSuccess || status.isPending;
-  const waiting = useNeeds(Date.now()).needs.filter((need) => need.fix !== null).length;
   const stale = useStalePage();
   return (
     <div className="app">
@@ -32,7 +21,6 @@ export function Shell() {
           {NAV.map(([path, label]) => (
             <NavLink key={path} to={`/${path}`} {...(path === 'sessions' && INSIDE_SESSIONS.test(pathname) ? { className: 'here' } : {})}>
               {label}
-              {path === 'needs-you' && waiting > 0 ? <span className="count" aria-hidden="true">{waiting}</span> : null}
             </NavLink>
           ))}
         </nav>

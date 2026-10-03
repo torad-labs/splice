@@ -1,38 +1,39 @@
-// The console's addresses. The six nav places are canonical; the retired addresses of the console this
-// one replaces redirect to where their content now lives, so an old link or bookmark still lands.
-import { Navigate, createHashRouter } from 'react-router';
+// The operator's eight nav places. Old bookmarks lead to the screen that now owns their content.
+import { Navigate, createHashRouter, useParams } from 'react-router';
 import { Shell } from './Shell';
 import { Pending } from './Pending';
-import { FleetHeadPage } from '../pages/fleet/FleetHeadPage';
-import { FleetPage } from '../pages/fleet/FleetPage';
-import { NeedsPage } from '../pages/needs/NeedsPage';
+import { NAV } from './copy';
 import { SessionPage } from '../pages/session/SessionPage';
 import { SessionsPage } from '../pages/sessions/SessionsPage';
 import { ProjectPage } from '../pages/projects/ProjectPage';
 import { TeamPage } from '../pages/teams/TeamPage';
 import { UsagePage } from '../pages/usage/UsagePage';
 import { TurnPage } from '../pages/turns/TurnPage';
-import { TurnsPage } from '../pages/turns/TurnsPage';
 import { SettingsPage } from '../pages/settings/SettingsPage';
 
-/** Retired address -> where it went (DIRECTION.md, "Nav"). */
+/** Retired addresses keep bookmarks usable without creating more navigation places. */
 export const RETIRED: Readonly<Record<string, string>> = {
-  accounts: '/fleet',
-  teams: '/sessions?group=team',
-  models: '/fleet',
-  logs: '/fleet',
+  'needs-you': '/accounts',
+  fleet: '/accounts',
+  turns: '/requests',
+  logs: '/requests',
   projects: '/sessions?group=repo',
   compaction: '/settings/conversation',
   mcp: '/settings/tools',
   doctor: '/settings/health',
   kept: '/settings/storage',
   burn: '/usage',
-  auth: '/fleet',
+  auth: '/accounts',
   config: '/settings',
 };
 
-export const PLACES = ['needs-you', 'sessions', 'fleet', 'turns', 'usage', 'settings'] as const;
-export const HOME = '/needs-you';
+export const PLACES = NAV.map(([path]) => path);
+export const HOME = '/accounts';
+
+function RequestBookmark() {
+  const { head, ts } = useParams();
+  return <Navigate to={`/requests/${encodeURIComponent(head ?? '')}/${encodeURIComponent(ts ?? '')}`} replace />;
+}
 
 export const router = createHashRouter([
   {
@@ -40,18 +41,17 @@ export const router = createHashRouter([
     element: <Shell />,
     children: [
       { index: true, element: <Navigate to={HOME} replace /> },
-      { path: 'needs-you', element: <NeedsPage /> },
       { path: 'settings/:section?', element: <SettingsPage /> },
-      { path: 'fleet', element: <FleetPage /> },
-      { path: 'fleet/:head', element: <FleetHeadPage /> },
       { path: 'sessions', element: <SessionsPage /> },
       { path: 'sessions/:id', element: <SessionPage /> },
       { path: 'teams/:id', element: <TeamPage /> },
       { path: 'projects/:id', element: <ProjectPage /> },
-      { path: 'turns', element: <TurnsPage /> },
       { path: 'usage', element: <UsagePage /> },
-      { path: 'turns/:head/:ts', element: <TurnPage /> },
-      ...PLACES.filter((path) => path !== 'sessions' && path !== 'fleet' && path !== 'needs-you' && path !== 'settings' && path !== 'turns' && path !== 'usage').map((path) => ({ path, element: <Pending place={path} /> })),
+      { path: 'requests/:head/:ts', element: <TurnPage /> },
+      { path: 'turns/:head/:ts', element: <RequestBookmark /> },
+      { path: 'fleet/:head', element: <Navigate to="/accounts" replace /> },
+      ...NAV.filter(([path]) => path !== 'sessions' && path !== 'settings' && path !== 'usage')
+        .map(([path, label]) => ({ path, element: <Pending place={label} /> })),
       ...Object.entries(RETIRED).map(([path, to]) => ({ path, element: <Navigate to={to} replace /> })),
       { path: '*', element: <Navigate to={HOME} replace /> },
     ],

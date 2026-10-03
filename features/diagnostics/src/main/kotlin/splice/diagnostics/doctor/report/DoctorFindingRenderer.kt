@@ -1,3 +1,5 @@
+// NEW: split from DoctorCommand.kt so the command stays under the concentration ceiling — one finding's
+// CLI lines (glyph, headline, details, remedy), byte-identical to the output it replaced.
 package splice.diagnostics.doctor.report
 
 import splice.core.terminal.CliPalette

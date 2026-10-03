@@ -28,6 +28,7 @@ import splice.core.model.CompactionBudgets
 import splice.core.model.ModelCatalog
 import splice.core.turn.TurnMeta
 import splice.core.usage.QuotaFull
+import splice.head.admission.AdmissionErrorBody
 import splice.head.admission.AdmissionGate
 import splice.head.admission.AdmissionResponses
 import splice.head.admission.AdmissionTelemetry
@@ -108,6 +109,7 @@ public class HeadServer(
         HeapIngress(
             deps.seams.requestMaterializationGate.heap,
             deps.policy.maxRequestBytes.toLong(),
+            AdmissionErrorBody,
             deps.seams.requestMaterializationGate.limitBytes,
         ),
     )

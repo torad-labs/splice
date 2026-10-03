@@ -14,11 +14,15 @@ import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapLease
 import splice.core.memory.HeapWeights
-import splice.core.wire.ErrorEnvelope
 import splice.core.wire.HttpStatus
 
 private val connectionKey = io.netty.util.AttributeKey.valueOf<IngressOwnership>("splice.heap.ingress")
 private val leaseKey = AttributeKey<HeapLease>("splice.heap.request")
+
+/** The listener supplies its canonical pre-turn HTTP error renderer; transport never builds an SSE error. */
+public fun interface IngressErrorBody {
+    public fun render(type: String, message: String): String
+}
 
 /** Admission runs after the HTTP codec but before automatic continue and Ktor's body actor.
  *  Unknown-length bodies reserve the listener's cap. Refused bodies are never forwarded to Ktor.
@@ -27,6 +31,7 @@ private val leaseKey = AttributeKey<HeapLease>("splice.heap.request")
 public class HeapIngress(
     private val heap: HeapBudget,
     private val maxBodyBytes: Long,
+    private val errorBody: IngressErrorBody,
     private val requestLimit: Long = heap.limitBytes,
 ) {
     private val requests = NettyIngressRequest()
@@ -78,7 +83,7 @@ public class HeapIngress(
         val message = detail ?: if (large) "request body exceeds $maxBodyBytes bytes" else "gateway busy; retry"
         val type = if (large) "invalid_request_error" else "overloaded_error"
         call.respondText(
-            ErrorEnvelope.of(type, message).toString(),
+            errorBody.render(type, message),
             ContentType.Application.Json,
             HttpStatusCode(status, if (large) "Content Too Large" else "Gateway At Capacity"),
         )

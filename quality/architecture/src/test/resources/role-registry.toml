@@ -407,15 +407,16 @@ SystemPromptFileRead reads a head's system-prompt file. The v0.4.0 laws make the
 invariant — no row may change it — so a swap would put compaction instructions into the system \
 prompt, silently busting every session's cache prefix while both reads still \"succeed\"."""
 
-# ── 2 names, (String, String) -> String ───────────────────────────────────────────────────────────
+# ── 3 names, (String, String) -> String ───────────────────────────────────────────────────────────
 [[groups]]
 signature = "(String,String)->String"
-dated = "2026-09-17"
+dated = "2026-10-03"
 names = [
     "AddPrompter",
+    "IngressErrorBody",
     "TokenPollForm",
 ]
-reason = """AddPrompter is INTERACTIVE and has a terminal-absent contract: it "answers a question with the operator's line, or [default] when there is no terminal", which is what makes `splice add --yes` non-interactive without a second code path. TokenPollForm is a pure encoder: the RFC 8628 token-poll request body (`client_id` + `device_code` + grant_type). A seam that may block on a human and a seam that formats bytes cannot share a type — the prompter wired into the device-flow poll loop would block on stdin nobody is watching, and the encoder wired into the wizard would answer every question with a form body."""
+reason = """AddPrompter is INTERACTIVE and has a terminal-absent contract: it "answers a question with the operator's line, or [default] when there is no terminal", which is what makes `splice add --yes` non-interactive without a second code path. TokenPollForm is a pure encoder: the RFC 8628 token-poll request body (`client_id` + `device_code` + grant_type). A seam that may block on a human and a seam that formats bytes cannot share a type — the prompter wired into the device-flow poll loop would block on stdin nobody is watching, and the encoder wired into the wizard would answer every question with a form body. IngressErrorBody renders the canonical pre-turn HTTP error envelope from an error type and message; neither human input nor OAuth form encoding can implement that wire contract."""
 
 # ── 2 names, (String, String) -> Unit ─────────────────────────────────────────────────────────────
 [[groups]]

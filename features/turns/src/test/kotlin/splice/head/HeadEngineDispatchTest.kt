@@ -26,6 +26,7 @@ import splice.core.perf.PerfKeys
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
+import splice.head.admission.AdmissionErrorBody
 import splice.head.admission.AdmissionGate
 import splice.head.admission.AdmissionResponses
 import splice.head.admission.AdmissionTelemetry
@@ -352,6 +353,7 @@ private fun dispatchEngine(provider: Provider, deps: HeadDeps): HeadEngine {
         HeapIngress(
             deps.seams.requestMaterializationGate.heap,
             deps.policy.maxRequestBytes.toLong(),
+            AdmissionErrorBody,
             deps.seams.requestMaterializationGate.limitBytes,
         ),
     )

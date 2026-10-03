@@ -15,6 +15,7 @@ import io.ktor.server.response.respondText
 import splice.core.auth.LoopbackHost
 import splice.core.wire.ErrorEnvelope
 import splice.core.wire.HttpStatus
+import splice.http.ingress.IngressErrorBody
 import splice.upstream.credentials.AccountResetText
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -22,6 +23,11 @@ import java.util.Locale
 
 private const val INVALID_REQUEST_ERROR = "invalid_request_error"
 private const val PERMISSION_ERROR = "permission_error"
+
+/** Shared pre-turn HTTP bodies. The real response status owns retry semantics, not the SSE rule. */
+public object AdmissionErrorBody : IngressErrorBody {
+    override fun render(type: String, message: String): String = ErrorEnvelope.of(type, message).toString()
+}
 
 /** The admission plane's response shapes: one owner for every wire terminal a request can meet
  *  before a turn exists (400, 401, 403, 408, 413, 429, 529). No instance state; pure response
@@ -36,7 +42,7 @@ internal class AdmissionResponses {
     // same envelope — it cannot import :daemon-head. Kept as a named delegate so the six admission
     // callers read unchanged; the local builder is gone, which is what the wall actually asks for.
     private fun errorBodyJson(type: String, message: String): String =
-        ErrorEnvelope.of(type, message).toString()
+        AdmissionErrorBody.render(type, message)
 
     /** The 529 capacity terminal built once: every admission path must answer IDENTICALLY because
      *  client retry logic keys on the shape (three hand-built copies drifted; review 2026-07-22

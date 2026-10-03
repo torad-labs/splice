@@ -59,6 +59,7 @@ import splice.core.version.ClientVersionTracker
 import splice.daemonclient.DaemonProbe
 import splice.diagnostics.doctor.DaemonAnswers
 import splice.diagnostics.doctor.DaemonAnswersSource
+import splice.head.admission.AdmissionErrorBody
 import splice.http.ingress.HeapIngress
 import splice.launch.recipe.LaunchService
 import splice.lifecycle.restart.DaemonSuccessor
@@ -168,7 +169,7 @@ public class ControlServer(
     private val models = ModelsMount(heads, ports, guard)
     private val launch = LaunchMount(heads, resolver, launchService, audit, log, guard, config.statePaths, sessions)
     private val mcp = mcpHost?.let { McpMount(it, guard) }
-    private val ingress = HeapIngress(JvmHeap.budget, Knob.MAX_REQUEST_BYTES.default as Long)
+    private val ingress = HeapIngress(JvmHeap.budget, Knob.MAX_REQUEST_BYTES.default as Long, AdmissionErrorBody)
 
     @Volatile
     private var server: EmbeddedServer<NettyApplicationEngine, *>? = null

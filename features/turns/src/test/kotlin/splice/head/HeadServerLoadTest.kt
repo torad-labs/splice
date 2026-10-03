@@ -24,12 +24,11 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
-import org.junit.jupiter.api.BeforeAll
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
@@ -164,7 +163,7 @@ private class StaticAuth : RefreshableAuthProvider {
     override suspend fun describe() = AuthDescription(true, "chatgpt-oauth", emptyMap())
 }
 
-@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+// Each scenario owns its gate and server; message_stop can precede another scenario's final cleanup.
 class HeadServerLoadTest {
 
     private val n = System.getenv("SPLICE_LOAD_N")?.toIntOrNull() ?: 1000
@@ -194,7 +193,7 @@ class HeadServerLoadTest {
         }
     }
 
-    @BeforeAll
+    @BeforeEach
     fun setUp(@TempDir tmp: Path) = runBlocking {
         mock = HoldingSseUpstream()
         val catalog = ModelCatalog(
@@ -229,7 +228,7 @@ class HeadServerLoadTest {
         head.start() // binds before returning (Ktor Netty bind(...).sync()); no warm-up (V4-139)
     }
 
-    @AfterAll
+    @AfterEach
     fun tearDown() = runBlocking {
         head.stop()
         client.close()

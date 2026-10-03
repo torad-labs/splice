@@ -8,6 +8,7 @@ import splice.core.config.ConfigService
 import splice.core.storage.DayFiles
 import splice.core.storage.DayInventory
 import splice.core.util.Cancellables
+import splice.core.util.JsonWire
 import splice.core.util.SafeFailureText
 import splice.head.TurnsHeadLookup
 import splice.head.trace.TRACE_DELETED_REASON
@@ -72,8 +73,8 @@ public class TraceDeleteRoutes(
         put("bytes", inventory.bytes)
         put("oldest", inventory.oldest?.toString())
         put("ages_out", inventory.agesOut?.toString())
-    }.toString()
+    }.let(JsonWire::string)
 
     private fun refuse(status: HttpStatusCode, message: String): JsonReply =
-        JsonReply(status, buildJsonObject { put("error", message) }.toString())
+        JsonReply(status, buildJsonObject { put("error", message) }.let(JsonWire::string))
 }

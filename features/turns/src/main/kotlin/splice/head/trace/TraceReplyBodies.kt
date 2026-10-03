@@ -10,6 +10,7 @@ import splice.core.model.TurnPrice
 import splice.core.perf.PerfKeys
 import splice.core.storage.DayFiles
 import splice.core.util.JsonScalars
+import splice.core.util.JsonWire
 import splice.head.TurnsHead
 import splice.head.turn.OutcomeSentences
 import java.nio.file.Path
@@ -28,7 +29,7 @@ internal class TraceReplyBodies {
             put("skipped_lines", read.skippedLines)
             put("unavailable_records", read.unavailableRecords)
             putJsonArray("turns") { read.turns.forEach { add(summary(it)) } }
-        }.toString()
+        }.let(JsonWire::string)
 
     fun turn(head: TurnsHead, turn: TracedTurn): String = buildJsonObject {
         put("head", head.key)
@@ -44,7 +45,7 @@ internal class TraceReplyBodies {
             turn.attempts.forEach { add(it) }
             turn.turn?.let { add(it) }
         }
-    }.toString()
+    }.let(JsonWire::string)
 
     /** A turn record's perf counters, as stored by TurnTrace.turnRecord. */
     private fun countersOf(ending: JsonObject): Map<String, Long> {

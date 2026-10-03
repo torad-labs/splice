@@ -21,7 +21,7 @@ import { P } from './copy';
 import { SessionCard } from './SessionCard';
 import type { CardFacts } from './SessionCard';
 
-const GROUPS = [['state', P.byState], ['repo', P.byRepo], ['head', P.byModel], ['team', P.byTeam]] as const;
+const GROUPS = [['state', P.byState], ['repo', P.byRepo], ['head', P.byCommand], ['team', P.byTeam]] as const;
 const groupFrom = (value: string | null): GroupBy => GROUPS.find(([id]) => id === value)?.[0] ?? 'state';
 
 const STATE_HEAD: Readonly<Record<string, { title: string; why: string }>> = {

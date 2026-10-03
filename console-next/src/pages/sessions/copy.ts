@@ -4,7 +4,7 @@ export const P = {
   groupBy: 'Group by',
   byState: 'State',
   byRepo: 'Repo',
-  byModel: 'Model',
+  byCommand: 'Command',
   byTeam: 'Team',
   search: 'Find a session',
   needs: 'Needs you',

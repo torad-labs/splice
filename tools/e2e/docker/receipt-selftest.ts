@@ -28,7 +28,7 @@ function rel(p: string): string {
 
 function match(path: string, pattern: RegExp, label: string): string {
   const found = pattern.exec(readFileSync(path, "utf8"));
-  if (found === null) {
+  if (found === null || found[1] === undefined) {
     throw new Error(`${label} is missing or malformed in ${rel(path)}`);
   }
   return found[1];
@@ -113,7 +113,7 @@ function validateReceipt(path: string, tested: string): void {
   const versionSteps = steps.filter(
     (step) => step["step"] === "Claude Code version matches the splice tested pin",
   );
-  if (versionSteps.length !== 1 || versionSteps[0]["verdict"] !== "PASS") {
+  if (versionSteps.length !== 1 || versionSteps[0]?.["verdict"] !== "PASS") {
     throw new Error("receipt lacks one passing Claude Code version step");
   }
 }
@@ -132,8 +132,9 @@ function main(): void {
     process.stderr.write("usage: receipt-selftest.py [receipt.json]\n");
     process.exit(1);
   }
-  if (argv.length === 1) {
-    validateReceipt(argv[0], tested);
+  const receiptPath = argv[0];
+  if (receiptPath !== undefined) {
+    validateReceipt(receiptPath, tested);
   }
   process.stdout.write(`receipt selftest: PASS (Claude Code ${tested})\n`);
 }

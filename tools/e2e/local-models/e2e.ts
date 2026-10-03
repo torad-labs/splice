@@ -158,7 +158,7 @@ function truthy(v: PyValue): boolean {
 const num = (x: number): PyValue =>
   Number.isInteger(x) ? { __pyNum: String(x), isFloat: false } : { __pyNum: x.toString(), isFloat: true };
 const round1 = (x: number): number => Math.round(x * 10) / 10;
-const lastLine = (s: string): string => s.trim().split("\n").slice(-1)[0];
+const lastLine = (s: string): string => s.trim().split("\n").at(-1) ?? "";
 const tail = (s: string, n: number): string => s.slice(-n);
 
 /** Python repr() of any value — the shape print()/f-string use. Strings get quotes, dicts braces. */
@@ -286,7 +286,7 @@ async function lmstudioFacts(base: string, model: string): Promise<Mapping> {
   for (const m of (get(await runtimeJson(base, "/api/v0/models"), "data") as PyValue[])) {
     after[String(get(m, "id"))] = m;
   }
-  const row = after[model];
+  const row = after[model] ?? null;
   const served = get(row, "loaded_context_length");
   if (served === null) throw new Failed("/api/v0/models reports no loaded_context_length after the warm-up");
   let version: string;
@@ -315,7 +315,7 @@ async function ollamaFacts(base: string, model: string): Promise<Mapping> {
   const show = await runtimeJson(base, "/api/show", obj([["model", model]]));
   const info = jsMap(get(show, "model_info"));
   const cardKey = Object.keys(info).find((k) => k.endsWith(".context_length"));
-  const cardValue = cardKey === undefined ? null : info[cardKey];
+  const cardValue = cardKey === undefined ? null : info[cardKey]!;
   // re.search(r"^\s*num_ctx\s+(\d+)", parameters, re.M) — MULTILINE, so ^ anchors at every line.
   const paramsRaw = get(show, "parameters");
   const numCtx = /^[ \t]*num_ctx[ \t]+(\d+)/m.exec(typeof paramsRaw === "string" ? paramsRaw : "");
@@ -329,7 +329,7 @@ async function ollamaFacts(base: string, model: string): Promise<Mapping> {
   const served = loaded === undefined ? null : get(loaded, "context_length");
   if (served === null) throw new Failed("/api/ps reports no context_length for the loaded model");
   return [
-    ["runtime", "Ollama"], ["version", version], ["model", model], ["digest", get(tags[model], "digest")],
+    ["runtime", "Ollama"], ["version", version], ["model", model], ["digest", get(tags[model]!, "digest")],
     ["card_context_length", cardValue],
     ["num_ctx", numCtx === null ? null : num(Number(numCtx[1]))],
     ["served_context_length", served], ["warm_load_s", num(loadS)], ["capabilities", get(show, "capabilities")],
@@ -496,9 +496,9 @@ export function textOf(events: [string, PyValue][]): string {
     if (pyGetD(pyGetD(d, "delta", obj([])), "type", null) !== "text_delta") continue;
     parts.push(pyGetD(pyGetD(d, "delta", obj([])), "text", ""));
   }
-  for (let i = 0; i < parts.length; i++) {
-    if (typeof parts[i] !== "string") {
-      throw new TypeError(`sequence item ${i}: expected str instance, ${pyTypeName(parts[i])} found`);
+  for (const [i, part] of parts.entries()) {
+    if (typeof part !== "string") {
+      throw new TypeError(`sequence item ${i}: expected str instance, ${pyTypeName(part)} found`);
     }
   }
   return (parts as string[]).join("");
@@ -532,23 +532,24 @@ export function toolUseBlocks(events: [string, PyValue][]): Mapping[] {
         const pairs = blocks.get(hashKey(pySub(d, "index")))!;
         const j = pairs.findIndex(([k]) => k === "_json");
         const piece = pySub(delta, "partial_json");
-        if (typeof piece !== "string" || typeof pairs[j][1] !== "string") {
+        const jsonPair = pairs[j]!;
+        if (typeof piece !== "string" || typeof jsonPair[1] !== "string") {
           throw new TypeError("can only concatenate str to str");
         }
-        pairs[j][1] = pairs[j][1] + piece;
+        jsonPair[1] = jsonPair[1] + piece;
       }
     }
   }
   const out: Mapping[] = [];
   for (const pairs of blocks.values()) {
     const j = pairs.findIndex(([k]) => k === "_json");
-    const raw = pairs[j][1] as string;
+    const raw = pairs[j]![1] as string;
     pairs.splice(j, 1);
     // b["input"] = json.loads(raw) if raw.strip() else b.get("input", {})
     if (raw.trim()) {
       const value = loads(raw);
       const at = pairs.findIndex(([k]) => k === "input");
-      if (at >= 0) pairs[at][1] = value;
+      if (at >= 0) pairs[at]![1] = value;
       else pairs.push(["input", value]);
     } else {
       const at = pairs.findIndex(([k]) => k === "input");
@@ -571,14 +572,14 @@ async function checkBoot(d: Daemon, good: string, bad: string[]): Promise<Mappin
     for (const h of (get(await d.get("/api/heads"), "heads") as PyValue[]) ?? []) {
       heads[String(get(h, "key"))] = h;
     }
-    if (good in heads && truthy(get(heads[good], "healthy"))) break;
+    if (good in heads && truthy(get(heads[good]!, "healthy"))) break;
     await Bun.sleep(1000);
   }
   if (!(good in heads)) {
     throw new Failed(`good head ${good} missing from /api/heads: ${pyRepr(Object.keys(heads).sort())}`);
   }
-  if (!truthy(get(heads[good], "healthy"))) {
-    throw new Failed(`good head ${good} never became healthy: ${pyStr(heads[good])}`);
+  if (!truthy(get(heads[good]!, "healthy"))) {
+    throw new Failed(`good head ${good} never became healthy: ${pyStr(heads[good]!)}`);
   }
   const present = bad.filter((b) => b in heads);
   if (present.length > 0) throw new Failed(`bad heads served instead of refused: ${pyRepr(present)}`);
@@ -594,7 +595,7 @@ async function checkBoot(d: Daemon, good: string, bad: string[]): Promise<Mappin
   if (!up.includes("DEGRADED=") || !bad.every((b) => up.includes(b))) {
     throw new Failed(`[daemon] up line does not list the refused heads: ${up}`);
   }
-  const gh = heads[good];
+  const gh = heads[good]!;
   return [
     ["good_head", obj(["key", "port", "healthy", "authKind"].map((k) => [k, get(gh, k)] as [string, PyValue]))],
     ["refused", obj(refusals)],
@@ -684,7 +685,7 @@ async function checkToolContinuity(port: number, bearer: string, model: string):
     ["model", model], ["max_tokens", num(512)], ["tools", [obj(TOOL)]], ["messages", [user]],
   ]));
   const uses = toolUseBlocks(first);
-  if (uses.length === 0 || get(obj(uses[0]), "name") !== "get_weather") {
+  if (uses.length === 0 || get(obj(uses[0]!), "name") !== "get_weather") {
     throw new Failed(
       `no get_weather tool_use in the first turn (stop=${pyRepr(stopReason(first))}, text=${pyRepr(textOf(first).slice(0, 120))})`,
     );
@@ -692,7 +693,7 @@ async function checkToolContinuity(port: number, bearer: string, model: string):
   if (stopReason(first) !== "tool_use") {
     throw new Failed(`stop_reason ${pyRepr(stopReason(first))}, expected tool_use`);
   }
-  const use = obj(uses[0]);
+  const use = obj(uses[0]!);
   const assistant = obj([
     ["role", "assistant"],
     ["content", [obj([
@@ -749,22 +750,22 @@ async function checkDoctor(
   // `f"local:{b}/{row}"` — an f-string of a str, so NO quotes around the model id.
   const wantFail = badRows.map(([b, row]) => `local:${b}/${String(row)}`);
   for (const name of wantOk) {
-    if (name in local && get(local[name], "status") === "ok") continue;
+    if (name in local && get(local[name]!, "status") === "ok") continue;
     throw new Failed(`doctor ${name}: ${pyStr(local[name] ?? null)}`);
   }
   for (const name of wantFail) {
-    if (name in local && get(local[name], "status") === "fail") continue;
+    if (name in local && get(local[name]!, "status") === "fail") continue;
     throw new Failed(`doctor ${name}: ${pyStr(local[name] ?? null)}`);
   }
   // The original's second clause — `"local" not in f"local:{good}"` — is a constantly-false
   // expression, so the runtime label is the whole condition. Carried as the original behaves.
-  const summary = get(local[`local:${good}`], "detail");
+  const summary = get(local[`local:${good}`]!, "detail");
   if (typeof summary !== "string" || !summary.includes(label)) {
     throw new Failed(`doctor summary does not name the runtime: ${pyStr(summary)}`);
   }
-  return Object.keys(local).map((name) => [
+  return Object.entries(local).map(([name, value]) => [
     name,
-    obj([["status", get(local[name], "status")], ["detail", get(local[name], "detail")]]),
+    obj([["status", get(value, "status")], ["detail", get(value, "detail")]]),
   ] as [string, PyValue]);
 }
 
@@ -786,8 +787,8 @@ export function parseArgs(argv: string[]): Args | null {
       out.keep_daemon = true;
       continue;
     }
-    if (argv[i + 1] === undefined) return null;
     const v = argv[++i];
+    if (v === undefined) return null;
     switch (a) {
       case "--jar": out.jar = v; break;
       case "--config": out.config = v; break;
@@ -814,12 +815,12 @@ export async function main(argv: string[]): Promise<number> {
     process.stderr.write("e2e.ts: --jar, --config, --home and --out are required\n");
     return 2;
   }
-  const runtimeUrl = args.runtime_url ?? RUNTIME_URL[args.runtime];
+  const runtimeUrl = args.runtime_url ?? RUNTIME_URL[args.runtime]!;
   const bad = args.bad_heads.split(",").filter((b) => b !== "");
   const topo = fromJs(Bun.TOML.parse(readFileSync(args.config, "utf8")));
   const providers = jsMap(get(topo, "providers"));
   // topo["providers"][head]["models"][0]
-  const firstModel = (key: string): PyValue => ((jsMap(providers[key] ?? null)["models"] ?? []) as PyValue[])[0];
+  const firstModel = (key: string): PyValue => ((jsMap(providers[key] ?? null)["models"] ?? []) as PyValue[])[0] ?? null;
   const goodRow = firstModel(args.good_head);
   const goodModel = get(goodRow, "id");
   const badRows: Mapping = bad.map((b) => [b, get(firstModel(b), "id")]);
@@ -831,7 +832,7 @@ export async function main(argv: string[]): Promise<number> {
     ["jar_sha256", createHash("sha256").update(readFileSync(args.jar)).digest("hex")],
     ["vllm", obj([["tested", false], ["documented", "tools/e2e/local-models/README.md"]])],
   ];
-  const label = RUNTIME_LABEL[args.runtime];
+  const label = RUNTIME_LABEL[args.runtime]!;
   try {
     const runtime = await runtimeFacts(args.runtime, runtimeUrl, String(goodModel));
     receipt.push(["runtime", obj(runtime)]);
@@ -856,7 +857,7 @@ export async function main(argv: string[]): Promise<number> {
     });
     // models["data"][0]["id"] — the first advertised model on the good head.
     const models = loads(await modelsResp.text());
-    const model = String(get((get(models, "data") as PyValue[])[0], "id"));
+    const model = String(get((get(models, "data") as PyValue[])[0] ?? null, "id"));
     receipt.push(["head_model", model]);
     const streaming = await checkStreaming(port, bearer, model, args.good_head);
     receipt.push(["streaming", streaming]);

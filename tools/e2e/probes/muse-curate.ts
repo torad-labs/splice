@@ -111,7 +111,7 @@ function main(argv: string[]): number {
     process.stderr.write("       muse-curate.ts --selftest\n");
     return 2;
   }
-  const written = curate(argv[0], argv[1]);
+  const written = curate(argv[0]!, argv[1]!);
   process.stdout.write(`wrote ${written}\n`);
   return 0;
 }

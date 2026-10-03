@@ -42,7 +42,7 @@ const SCENARIO = /SCENARIO:([a-z_]+)/;
 
 function scenario(raw: string): string {
   const m = SCENARIO.exec(raw);
-  return m === null ? "basic" : m[1];
+  return m?.[1] ?? "basic";
 }
 
 function toolText(message: PyObj): string {

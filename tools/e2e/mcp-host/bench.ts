@@ -107,8 +107,8 @@ const PY_WS = " \t\n\r\x0b\x0c\x1c\x1d\x1e\x1f\x85\xa0        �
 export function pyStrip(s: string): string {
   let a = 0;
   let b = s.length;
-  while (a < b && PY_WS.includes(s[a])) a++;
-  while (b > a && PY_WS.includes(s[b - 1])) b--;
+  while (a < b && PY_WS.includes(s[a]!)) a++;
+  while (b > a && PY_WS.includes(s[b - 1]!)) b--;
   return s.slice(a, b);
 }
 /** str.split() with no separator. */
@@ -130,7 +130,7 @@ export function pySplitlines(s: string): string[] {
   const out: string[] = [];
   let cur = "";
   for (let i = 0; i < s.length; i++) {
-    const ch = s[i];
+    const ch = s[i]!;
     if (ch === "\r" && s[i + 1] === "\n") {
       out.push(cur);
       cur = "";
@@ -173,7 +173,7 @@ function cpCompare(a: string, b: string): number {
   const x = Array.from(a);
   const y = Array.from(b);
   for (let i = 0; i < Math.min(x.length, y.length); i++) {
-    const d = (x[i].codePointAt(0) as number) - (y[i].codePointAt(0) as number);
+    const d = (x[i]!.codePointAt(0) as number) - (y[i]!.codePointAt(0) as number);
     if (d !== 0) return d;
   }
   return x.length - y.length;
@@ -202,7 +202,7 @@ function has(m: PyValue, key: string): boolean {
 /** `d[k] = v`: a new key appends, an existing key keeps its position. */
 function setKey(pairs: Mapping, key: string, value: PyValue): void {
   const at = pairs.findIndex(([k]) => k === key);
-  if (at >= 0) pairs[at][1] = value;
+  if (at >= 0) pairs[at]![1] = value;
   else pairs.push([key, value]);
 }
 function typeName(v: PyValue): string {
@@ -235,7 +235,7 @@ export function pyEq(a: PyValue, b: PyValue): boolean {
   if (numeric(a) && numeric(b)) return num(a) === num(b);
   if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return a === b;
   if (Array.isArray(a) || Array.isArray(b)) {
-    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => pyEq(x, b[i]));
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => pyEq(x, b[i]!));
   }
   if (isPyObj(a) && isPyObj(b)) {
     if (a.__pyObj.length !== b.__pyObj.length) return false;
@@ -246,7 +246,7 @@ export function pyEq(a: PyValue, b: PyValue): boolean {
 /** Python repr() — the shape every f-string of a list, dict, tuple or None renders. */
 export function pyRepr(v: PyValue | PyTuple): string {
   if (v instanceof PyTuple) {
-    return v.items.length === 1 ? `(${pyRepr(v.items[0])},)` : "(" + v.items.map(pyRepr).join(", ") + ")";
+    return v.items.length === 1 ? `(${pyRepr(v.items[0]!)},)` : "(" + v.items.map(pyRepr).join(", ") + ")";
   }
   if (v === null) return "None";
   if (v === true) return "True";
@@ -290,10 +290,10 @@ export function pyRound(x: number, nd: number): number {
   if (!Number.isFinite(x)) return x;
   const neg = x < 0 || Object.is(x, -0);
   const [ip, fp] = Math.abs(x).toFixed(100).split(".");
-  const keep = fp.slice(0, nd);
-  const rest = fp.slice(nd);
+  const keep = (fp as string).slice(0, nd);
+  const rest = (fp as string).slice(nd);
   let digits = BigInt(ip + keep);
-  if (rest[0] > "5" || (rest[0] === "5" && /[1-9]/.test(rest.slice(1)))) digits += 1n;
+  if ((rest[0] as string) > "5" || (rest[0] === "5" && /[1-9]/.test(rest.slice(1)))) digits += 1n;
   else if (rest[0] === "5" && digits % 2n === 1n) digits += 1n;
   const s = digits.toString().padStart(nd + 1, "0");
   const text = nd > 0 ? `${s.slice(0, s.length - nd)}.${s.slice(s.length - nd)}` : s;
@@ -441,7 +441,7 @@ function killpg(pgid: number, sig: Sig): void {
 
 /** subprocess.Popen for this benchmark's one launch shape. */
 function spawnProc(argv: string[], opts: SpawnOpts): Proc {
-  const child = nodeSpawn(argv[0], argv.slice(1), {
+  const child = nodeSpawn(argv[0] as string, argv.slice(1), {
     cwd: opts.cwd,
     env: opts.env,
     stdio: ["inherit", opts.stdoutFd, opts.stdoutFd],
@@ -537,7 +537,7 @@ export class Sampler {
     let workload = 0;
     let daemon = 0;
     for (const [pid, , rss, cmd] of table) {
-      const isClaude = cmd !== null && cmd.split(" ")[0].includes("claude");
+      const isClaude = cmd !== null && (cmd.split(" ")[0] as string).includes("claude");
       const isServer = (underSessions.has(pid) && !isClaude) || underDaemon.has(pid);
       const isWorkload = this.sessionPids.has(pid) || underSessions.has(pid) || underDaemon.has(pid);
       if (isServer) this.serverPidsSeen.add(pid);
@@ -586,9 +586,9 @@ export class Sampler {
 /** The one splice JVM running `app-all.jar daemon`; pass --daemon-pid when several run. */
 export function findDaemonPid(): number | null {
   const pids = procTable()
-    .filter(([, , , cmd]) => cmd && cmd.includes("app-all.jar daemon") && cmd.split(" ")[0].endsWith("java"))
+    .filter(([, , , cmd]) => cmd && cmd.includes("app-all.jar daemon") && (cmd.split(" ")[0] as string).endsWith("java"))
     .map(([pid]) => pid);
-  return pids.length === 1 ? pids[0] : null;
+  return pids.length === 1 ? pids[0]! : null;
 }
 
 /** Path.resolve(strict=False): resolve what can be resolved, keep the rest literal. */
@@ -621,7 +621,7 @@ export function daemonJarSha256(pid: number, procRoot = "/proc"): string | null 
     const cwd = resolveLoose(join(proc, "cwd"));
     let jar: string | null = null;
     for (let i = 0; i < argv.length - 1; i++) {
-      if (argv[i].toString("latin1") === "-jar") {
+      if (argv[i]!.toString("latin1") === "-jar") {
         jar = strictUtf8.decode(argv[i + 1]);
         break;
       }
@@ -848,11 +848,11 @@ export function receiptProblems(a: PyValue, b: PyValue, names: string[], saving:
     const tools = iter(sub(run, "mcp_tools"));
     const statuses = iter(sub(run, "mcp_servers"));
     for (let i = 0; i < Math.min(tools.length, statuses.length); i++) {
-      const absent = names.filter((s) => !truthy(get(tools[i], s)));
+      const absent = names.filter((s) => !truthy(get(tools[i]!, s)));
       if (absent.length > 0) problems.push(`${mode} session ${i} loaded no tools for ${pyRepr(absent)}`);
       const down: Mapping = [];
       for (const s of names) {
-        if (get(statuses[i], s) !== "connected") setKey(down, s, get(statuses[i], s));
+        if (get(statuses[i]!, s) !== "connected") setKey(down, s, get(statuses[i]!, s));
       }
       if (down.length > 0) problems.push(`${mode} session ${i} MCP server status not connected: ${pyRepr(obj(down))}`);
     }
@@ -877,7 +877,7 @@ function assert(cond: boolean, message: string): void {
 }
 const eqSet = (a: Set<number>, b: number[]) => a.size === b.length && b.every((x) => a.has(x));
 const eqSignals = (a: [number, Sig][], b: [number, Sig][]) =>
-  a.length === b.length && a.every(([p, s], i) => p === b[i][0] && s === b[i][1]);
+  a.length === b.length && a.every(([p, s], i) => p === b[i]![0] && s === b[i]![1]);
 const reprSignals = (a: [number, Sig][]) =>
   "[" + a.map(([p, s]) => `(${p}, <Signals.${s}: ${os.constants.signals[s]}>)`).join(", ") + "]";
 
@@ -1228,7 +1228,7 @@ function parseArgs(argv: string[]): Args | { error: string } {
   };
   const vals: Record<string, string> = {};
   for (let i = 0; i < argv.length; i++) {
-    let flag = argv[i];
+    let flag = argv[i]!;
     let value: string | undefined;
     const eq = flag.indexOf("=");
     if (flag.startsWith("--") && eq > 0) {
@@ -1239,7 +1239,7 @@ function parseArgs(argv: string[]): Args | { error: string } {
     const exact = matches.includes(flag) ? [flag] : matches;
     if (exact.length === 0) return { error: `unrecognized arguments: ${argv.slice(i).join(" ")}` };
     if (exact.length > 1) return { error: `ambiguous option: ${flag} could match ${exact.join(", ")}` };
-    const key = exact[0];
+    const key = exact[0]!;
     if (value === undefined) {
       value = argv[++i];
       if (value === undefined) return { error: `argument ${key}: expected one argument` };
@@ -1254,12 +1254,12 @@ function parseArgs(argv: string[]): Args | { error: string } {
   const n = (k: string) => pyInt(vals[k]);
   return {
     control_port: n("--control-port"),
-    mgmt_key_file: vals["--mgmt-key-file"],
-    servers: vals["--servers"],
+    mgmt_key_file: vals["--mgmt-key-file"]!,
+    servers: vals["--servers"]!,
     sessions: "--sessions" in vals ? n("--sessions") : 4,
     model: vals["--model"] ?? "claude-haiku-4-5-20251001",
     daemon_pid: "--daemon-pid" in vals ? n("--daemon-pid") : null,
-    out: vals["--out"],
+    out: vals["--out"]!,
   };
 }
 

@@ -166,7 +166,7 @@ function serve(loopRef: () => Loop, plane: string): Listener {
         }
         const head = buf.slice(0, headerEnd);
         const lines = head.split("\r\n");
-        const [method, target] = lines[0].split(" ");
+        const [method = "", target] = (lines[0] ?? "").split(" ");
         const headers: Record<string, string> = {};
         for (const line of lines.slice(1)) {
           const idx = line.indexOf(":");
@@ -179,7 +179,7 @@ function serve(loopRef: () => Loop, plane: string): Listener {
           return;
         }
         buffers.set(socket, body.slice(want));
-        const path = (target ?? "/").split("?")[0];
+        const path = (target ?? "/").split("?")[0] ?? "/";
         const loop = loopRef();
         const out = handle(loop, plane, { method, path, headers, body: body.slice(0, want) });
         if (out === null) {
@@ -207,7 +207,7 @@ function parseArgs(argv: string[]): Record<string, string | null> | null {
   const out: Record<string, string | null> = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (!known.has(a)) return null;
+    if (a === undefined || !known.has(a)) return null;
     const v = argv[++i];
     if (v === undefined) return null;
     out[a.slice(2)] = v;

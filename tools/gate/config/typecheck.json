@@ -11,13 +11,5 @@
     ".claude/hooks/tsconfig.json"
   ],
   "excused": {},
-  "baseline": {
-    "tools/e2e/docker/mock_chat.ts": 1,
-    "tools/e2e/docker/receipt-selftest.ts": 3,
-    "tools/e2e/fixtures/loopback_control.ts": 5,
-    "tools/e2e/local-models/e2e.ts": 37,
-    "tools/e2e/mcp-host/bench.ts": 41,
-    "tools/e2e/probes/muse-curate.ts": 1,
-    "tools/e2e/probes/stream_probe.ts": 9
-  }
+  "baseline": {}
 }

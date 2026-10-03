@@ -60,6 +60,11 @@
       "command": ["bun", "test", "tools/e2e/test/conformance.test.ts"]
     },
     {
+      "task": "e2eTypecheck",
+      "why": "94 strict TypeScript errors accumulated in tools/e2e because its older per-file debt baseline masked the project. Check the whole project without a baseline so new drift fails CI immediately.",
+      "command": ["bun", "node_modules/@typescript/native/bin/tsc", "--noEmit", "--project", "tools/e2e/tsconfig.json"]
+    },
+    {
       "task": "e2eHeadsSelftest",
       "why": "Local, no quota: skip / fake-token / FATAL-mgmt-key against a loopback control+head. The live `e2e:heads` lane is billed and stays out of the ladder.",
       "command": ["bun", "tools/e2e", "heads", "--selftest"]

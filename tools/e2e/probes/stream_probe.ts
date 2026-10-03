@@ -82,9 +82,11 @@ const FLAGS: Record<string, keyof Args> = {
 function parseArgs(argv: string[]): Args | null {
   const out: Args = { ...DEFAULTS };
   for (let i = 0; i < argv.length; i += 2) {
-    const key = FLAGS[argv[i]];
-    if (key === undefined || argv[i + 1] === undefined) return null;
+    const flag = argv[i];
     const raw = argv[i + 1];
+    if (flag === undefined || raw === undefined) return null;
+    const key = FLAGS[flag];
+    if (key === undefined) return null;
     if (typeof DEFAULTS[key] === "number") {
       (out[key] as number) = Number(raw);
     } else {
@@ -299,7 +301,7 @@ function validate(
   }
 
   const stops = events.filter(([, n]) => n === "message_delta").map(([, , d]) => d);
-  const lastStop = stops.length > 0 ? stops[stops.length - 1] : null;
+  const lastStop = stops.at(-1) ?? null;
   const stopReason = pyGet(pyGet(lastStop, "delta", obj([])), "stop_reason", null);
   if (stops.length === 0 || !pyTruthy(stopReason)) {
     v.push("message_delta with a stop_reason missing before message_stop");
@@ -389,12 +391,14 @@ async function main(): Promise<number> {
     clearTimeout(timer);
   }
 
-  const totalMs = eventTimes.length > 0 ? eventTimes[eventTimes.length - 1] : Math.round(performance.now() - t0);
+  const totalMs = eventTimes.at(-1) ?? Math.round(performance.now() - t0);
   const firstDelta = col.events.find(([, n]) => n === "content_block_delta");
   const firstDeltaMs = firstDelta === undefined ? null : firstDelta[0];
   let maxGapMs = 0;
-  for (let i = 1; i < eventTimes.length; i++) {
-    maxGapMs = Math.max(maxGapMs, eventTimes[i] - eventTimes[i - 1]);
+  let previousEventMs: number | undefined;
+  for (const eventMs of eventTimes) {
+    if (previousEventMs !== undefined) maxGapMs = Math.max(maxGapMs, eventMs - previousEventMs);
+    previousEventMs = eventMs;
   }
   const timings: Record<string, number | null> = {
     ttfb_ms: ttfbMs,

@@ -131,6 +131,8 @@ internal class TurnDriver(
      *  /api/heads aggregation, never the per-head /health liveness route (external contract). */
     internal fun healthCounters(): HeadHealthCounts = health.snapshot()
 
+    internal fun rateLimitSnapshot(): splice.core.head.RateLimitHealth = health.rateLimitSnapshot()
+
     /** Open the SSE writer, wire the per-turn collaborators, run the single turn. */
     suspend fun stream(call: ApplicationCall, inputs: TurnInputs): Boolean =
         streamer.stream(call, inputs)
@@ -168,6 +170,7 @@ internal class TurnDriver(
      *  upstream health — and it must be VISIBLE: see TurnTelemetry.recordLocalRefusal. */
     fun recordLocalRefusal(meta: TurnMeta, perf: TurnPerf, t0: Long, refusal: LocalRefusal) {
         health.local()
+        if (refusal.tag == splice.core.perf.OutcomeTag.RATE_LIMITED.wire) health.cooldownHeld()
         telemetry.recordLocalRefusal(meta, perf, t0, refusal)
     }
 

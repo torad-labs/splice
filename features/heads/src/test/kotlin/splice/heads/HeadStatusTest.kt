@@ -15,16 +15,32 @@ import splice.core.head.GateSlot
 import splice.core.head.Head
 import splice.core.head.HeadHealth
 
-private class MeasuredHead(private val health: HeadHealth) : Head {
+private class MeasuredHead(
+    private val health: HeadHealth,
+    private val rates: splice.core.head.RateLimitHealth? = null,
+) : Head {
     override val key: String = "claudex"
     override val label: String = "claudex"
     override val port: Int = 3099
     override suspend fun start() = Unit
     override suspend fun stop() = Unit
     override fun healthSnapshot(): HeadHealth = health
+    override fun rateLimitSnapshot(): splice.core.head.RateLimitHealth? = rates
 }
 
 class HeadStatusTest {
+
+    @Test
+    fun `rate turns are unit-bearing fields and an uninstrumented head stays unknown`() {
+        val measured = measured(emptyList())
+        val head = MeasuredHead(measured, splice.core.head.RateLimitHealth(4, 6))
+        val health = HeadStatus.json(head, "client").getValue("health").jsonObject
+        assertEquals("4", health.getValue("provider_rate_limit_turns").jsonPrimitive.content)
+        assertEquals("6", health.getValue("cooldown_held_turns").jsonPrimitive.content)
+        val unknown = HeadStatus.json(MeasuredHead(measured), "client").getValue("health").jsonObject
+        assertEquals(kotlinx.serialization.json.JsonNull, unknown["provider_rate_limit_turns"])
+        assertEquals(kotlinx.serialization.json.JsonNull, unknown["cooldown_held_turns"])
+    }
 
     private fun gateOf(health: HeadHealth): JsonObject =
         HeadStatus.json(MeasuredHead(health), "chatgpt-oauth")["gate"]!!.jsonObject

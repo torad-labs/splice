@@ -64,9 +64,7 @@ internal class TurnFinish(
         // the ErrorType — the old OVERLOADED-implies-local heuristic misfiled a passthrough
         // provider's genuine overloaded_error as local-origin. providerReported is set ONLY where a
         // translator parsed an error the upstream actually sent.
-        if (outcome is TurnOutcome.Failure) {
-            if (outcome.providerReported) health.provider() else health.local()
-        }
+        if (outcome is TurnOutcome.Failure) health.failure(outcome)
         // DR-87/DR-88: a Success outcome can still end in an ERROR terminal — the collect-path
         // malformed-tool/capacity rewrite (surfaced via TurnTerminal.degradedReason) and the
         // promote-time empty_compact/empty_model. The turn line above rendered the Success; this

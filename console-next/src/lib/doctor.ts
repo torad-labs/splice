@@ -88,7 +88,7 @@ export function checkFinding(check: DoctorCheck): string {
 }
 
 const HEAD_ERRORS = /^(\d+) provider \/ (\d+) local error\(s\) since last restart$/;
-const HEAD_TURNS = /^(\d+) of last (\d+) turn\(s\) failed; last failure: (.+?) \(([^()]*)\)$/;
+const HEAD_TURNS = /^(\d+) of last (\d+) turn\(s\) failed; last failure: (.+?) \(([^()]*)\)(?:; couldn't reach its runtime on :(\d+))?$/;
 
 /** A head's runtime checks in words (`runtime/head <key> errors|turns`), from the counters the daemon prints; null for any other
  *  check or a detail of another shape, which prints as the daemon wrote it. */
@@ -100,13 +100,11 @@ function runtimeFinding(check: DoctorCheck): string | null {
     const counts = HEAD_ERRORS.exec(check.detail);
     if (counts === null) return null;
     const [provider, local] = [Number(counts[1]), Number(counts[2])];
-    const parts = [provider > 0 ? DF.failedAt(provider, 'the provider') : null, local > 0 ? DF.failedAt(local, 'inside splice') : null].filter((part) => part !== null);
-    // Two kinds read as one sentence with its verb said once.
-    return parts.length === 0 ? null : DF.errors(head, parts.length === 2 ? `${parts[0]} and ${local} inside splice` : (parts[0] ?? ''));
+    return DF.events(head, provider, local);
   }
   const turns = HEAD_TURNS.exec(check.detail);
   if (turns === null) return null;
-  return DF.recent(head, Number(turns[1]), Number(turns[2]), turns[3] ?? '', outcomeOf(turns[4] ?? '?').word);
+  return DF.recent(head, Number(turns[1]), Number(turns[2]), turns[3] ?? '', outcomeOf(turns[4] ?? '?', turns[5] === undefined ? undefined : Number(turns[5])).word);
 }
 
 /**

@@ -20,6 +20,20 @@ import java.nio.file.Path
 class DaemonClientTest {
 
     @Test
+    fun `rate turn counts stay unknown when either field is absent or invalid`() {
+        fun rate(fields: String): splice.core.head.RateLimitHealth? = DaemonProbe.parseHeadsRuntime(
+            """{"heads":[{"key":"synthetic","health":{$fields}}]}""",
+        ).single().rateLimit
+        assertEquals(null, rate(""))
+        assertEquals(null, rate(""""provider_rate_limit_turns":4"""))
+        assertEquals(null, rate(""""provider_rate_limit_turns":4,"cooldown_held_turns":-1"""))
+        assertEquals(
+            splice.core.head.RateLimitHealth(4, 6),
+            rate(""""provider_rate_limit_turns":4,"cooldown_held_turns":6"""),
+        )
+    }
+
+    @Test
     fun `controlPort diagnoses corrupt production topology before using defaults`(@TempDir tmp: Path) {
         val config = tmp.resolve("config/splice/splice.toml")
         Files.createDirectories(config.parent)

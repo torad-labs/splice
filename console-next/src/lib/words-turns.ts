@@ -46,6 +46,7 @@ export const T = {
   out: 'out',
   compacted: 'Compacted',
   notPriced: 'Not priced',
+  runtimeRefused: (port: number) => `Couldn't reach its runtime on :${port}`,
   unreadTitle: 'Not read',
   unread: (head: string, why: string) => `${head}: ${why}`,
   clamped: (head: string) => `${head} has more turns in this window than the list holds; the oldest are cut.`,

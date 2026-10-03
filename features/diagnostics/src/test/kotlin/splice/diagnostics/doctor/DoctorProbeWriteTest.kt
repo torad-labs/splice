@@ -25,6 +25,21 @@ private const val SENTINEL = "do-not-truncate-me"
 class DoctorProbeWriteTest {
 
     @Test
+    fun `a perf refusal preserves the runtime port while an ordinary reset stays generic`(@TempDir tmp: Path) {
+        val file = tmp.resolve("synthetic-perf.jsonl")
+        val ts = System.currentTimeMillis()
+        Files.writeString(
+            file,
+            """{"ts":$ts,"outcome":"error:conn-reset","cause":"CONNECT_REFUSED","refused_runtime_port":8123}""" + "\n",
+        )
+        val refused = DoctorProbeWrite().perfTailRow("synthetic", file)
+        assertTrue(refused.detail.contains("couldn't reach its runtime on :8123"), refused.detail)
+        Files.writeString(file, """{"ts":$ts,"outcome":"error:conn-reset"}""" + "\n")
+        val reset = DoctorProbeWrite().perfTailRow("synthetic", file)
+        assertTrue(!reset.detail.contains("runtime on"), reset.detail)
+    }
+
+    @Test
     fun `a symlink planted at the old probe name cannot truncate its victim - DR-171`(@TempDir tmp: Path) {
         val dir = Files.createDirectories(tmp.resolve("state"))
         val victim = tmp.resolve("victim.txt")

@@ -8,6 +8,7 @@ import kotlinx.serialization.json.jsonObject
 import splice.core.config.UserHome
 import splice.core.perf.LivenessProbe
 import splice.core.perf.OutcomeTag
+import splice.core.perf.PerfKeys
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
@@ -91,13 +92,14 @@ internal class DoctorProbeWrite(
     private fun failed(
         name: String,
         headKey: String,
-        rows: List<Pair<String, Long>>,
-        failures: List<Pair<String, Long>>,
+        rows: List<Triple<String, Long, Long?>>,
+        failures: List<Triple<String, Long, Long?>>,
         unread: String,
     ): DoctorCheck {
-        val (outcome, ts) = failures.last()
+        val (outcome, ts, refusedPort) = failures.last()
         val ageMs = System.currentTimeMillis() - ts
-        val last = "last failure: ${DoctorAge.ago(ageMs)} (${tag(outcome)})"
+        val refusal = refusedPort?.let { "; couldn't reach its runtime on :$it" }.orEmpty()
+        val last = "last failure: ${DoctorAge.ago(ageMs)} (${tag(outcome)})$refusal"
         val detail = "${failures.size} of last ${rows.size} turn(s) failed; $last$unread"
         // A row with no time (perfRow reads it as 0) is never called old.
         val recent = ts <= 0L || ageMs <= RECENT_FAILURE_MS
@@ -109,14 +111,14 @@ internal class DoctorProbeWrite(
      *  [FAILING_OF_NEWEST] of its newest [NEWEST_TURNS] did and the newest two are not both clean. A burst of
      *  failures followed by two good turns has recovered and reads as history (V4-444, console review
      *  2026-09-29: claude-splice failed 18 of 20 turns, then answered twice, and still sat in Needs you). */
-    private fun stillFailing(rows: List<Pair<String, Long>>): Boolean {
+    private fun stillFailing(rows: List<Triple<String, Long, Long?>>): Boolean {
         val newest = rows.takeLast(NEWEST_TURNS).map { (outcome, _) -> outcome != OutcomeTag.OK.wire }
         val recovered = newest.takeLast(RECOVERY_RUN).let { it.size == RECOVERY_RUN && it.none { failed -> failed } }
         return newest.last() || (newest.count { it } >= FAILING_OF_NEWEST && !recovered)
     }
 
-    /** One perf JSONL row -> (outcome, ts); null on a malformed line (tail readers stay tolerant). */
-    internal fun perfRow(line: String): Pair<String, Long>? =
+    /** One perf JSONL row -> (outcome, ts, refused runtime port); null on a malformed line (tail readers stay tolerant). */
+    internal fun perfRow(line: String): Triple<String, Long, Long?>? =
         // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): a torn or malformed JSONL tail line is normal — the daemon appends while doctor reads — so the row is skipped and the count of readable rows is what the check reports.
         Cancellables.runCatchingCancellable {
             val obj = kotlinx.serialization.json.Json.parseToJsonElement(line).jsonObject
@@ -124,7 +126,8 @@ internal class DoctorProbeWrite(
             if (outcome == null || LivenessProbe.legacyRow(obj)) {
                 null
             } else {
-                outcome to (JsonScalars.long(obj, "ts") ?: 0L)
+                val port = JsonScalars.long(obj, PerfKeys.REFUSED_RUNTIME_PORT)?.takeIf { it in 1..MAX_RUNTIME_PORT }
+                Triple(outcome, JsonScalars.long(obj, "ts") ?: 0L, port)
             }
         }.getOrNull()
 
@@ -132,6 +135,9 @@ internal class DoctorProbeWrite(
      *  else shaped is shown as ?, never quoted. */
     private fun tag(outcome: String): String = outcome.takeIf { OUTCOME_TAG.matches(it) } ?: "?"
 }
+
+// why: TCP ports occupy the unsigned 16-bit range; zero names no listener.
+private const val MAX_RUNTIME_PORT = 65_535L
 
 private const val PERF_TAIL_TURNS = 20
 

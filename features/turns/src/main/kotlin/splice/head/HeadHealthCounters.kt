@@ -8,6 +8,8 @@ import java.util.concurrent.atomic.AtomicLong
 internal class HeadHealthCounters {
     private val localOrigin = AtomicLong(0)
     private val providerError = AtomicLong(0)
+    private val rateLimitTurns = AtomicLong(0)
+    private val cooldownHeldTurns = AtomicLong(0)
 
     fun local() {
         localOrigin.incrementAndGet()
@@ -17,12 +19,33 @@ internal class HeadHealthCounters {
         providerError.incrementAndGet()
     }
 
+    fun failure(outcome: splice.core.turn.TurnOutcome.Failure) {
+        if (outcome.providerReported) provider() else local()
+        if (outcome.providerReported && outcome.cause == splice.core.turn.FailureCause.VENDOR_RATE_LIMITED) {
+            rateLimited()
+        }
+    }
+
+    /** Called only at final-turn classification, never from absorbed-round signals. */
+    fun rateLimited() {
+        rateLimitTurns.incrementAndGet()
+    }
+
+    fun cooldownHeld() {
+        cooldownHeldTurns.incrementAndGet()
+    }
+
+    fun rateLimitSnapshot(): splice.core.head.RateLimitHealth =
+        splice.core.head.RateLimitHealth(rateLimitTurns.get(), cooldownHeldTurns.get())
+
     fun snapshot(): HeadHealthCounts = HeadHealthCounts(localOrigin.get(), providerError.get())
 
     /** Fresh diagnostic baseline on head restart — the documented contract (review 2026-07-19). */
     fun reset() {
         localOrigin.set(0)
         providerError.set(0)
+        rateLimitTurns.set(0)
+        cooldownHeldTurns.set(0)
     }
 }
 

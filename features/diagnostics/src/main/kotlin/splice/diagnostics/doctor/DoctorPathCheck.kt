@@ -7,13 +7,23 @@ import splice.core.config.UserHome
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 internal class DoctorPathCheck(private val probes: DoctorProbes) {
     fun check(binDir: Path, envReader: EnvReader): DoctorCheck {
-        val onPath = envReader("PATH").orEmpty().split(':')
+        val value = Cancellables.runCatchingCancellable { envReader("PATH") }
+            .getOrElse {
+                return DoctorCheck("PATH", CheckStatus.WARN, "user shell PATH could not be read; not checked")
+            }
+        val onPath = value.orEmpty().split(':')
             .filter { it.isNotEmpty() }
             .mapNotNull { probes.safePath(it) }
             .any { it == binDir }
@@ -137,5 +147,62 @@ internal class DoctorPathCheck(private val probes: DoctorProbes) {
             .map { it.resolve(name) }
             .firstOrNull { Files.isExecutable(it) && !Files.isDirectory(it) }
 }
+
+/** Only the console asks a login shell; a CLI doctor keeps the caller's PATH unchanged. */
+internal class DoctorShellPath {
+    fun environment(env: EnvReader): EnvReader {
+        val captured = Cancellables.runCatchingCancellable { capture(env) }
+        return EnvReader { name ->
+            if (name == "PATH") captured.getOrThrow() else env(name)
+        }
+    }
+
+    private fun framedPath(bytes: ByteArray): String {
+        val text = bytes.toString(Charsets.UTF_8)
+        val end = text.lastIndexOf('\u0000')
+        val start = if (end > 0) text.lastIndexOf('\u0000', end - 1) else -1
+        if (start < 0) throw IOException("user shell PATH unavailable: shell supplied no path")
+        return text.substring(start + 1, end)
+    }
+
+    private fun readOutput(output: Future<ByteArray>): ByteArray = try {
+        output.get(PROBE_SECONDS, TimeUnit.SECONDS)
+    } catch (_: TimeoutException) {
+        throw IOException("user shell PATH unavailable: output timed out")
+    } catch (_: ExecutionException) {
+        throw IOException("user shell PATH unavailable: output could not be read")
+    }
+
+    private fun shell(env: EnvReader): String = env("SHELL")?.takeIf { it.isNotBlank() }
+        ?: throw IOException("user shell PATH unavailable: no shell declared")
+
+    private fun capture(env: EnvReader): String {
+        val shell = shell(env)
+        val process = ProcessBuilder(shell, "-lic", "printf '\\0%s\\0' \"\$PATH\"")
+            .redirectError(ProcessBuilder.Redirect.DISCARD)
+            .apply { environment()["HOME"] = UserHome.dir(env).toString() }
+            .start()
+        val pool = Executors.newSingleThreadExecutor()
+        return try {
+            val output = pool.submit<ByteArray> { process.inputStream.use { it.readNBytes(SHELL_PATH_BYTES + 1) } }
+            if (!process.waitFor(PROBE_SECONDS, TimeUnit.SECONDS) || process.exitValue() != 0) {
+                throw IOException("user shell PATH unavailable: shell did not complete")
+            }
+            val bytes = readOutput(output)
+            if (bytes.size > SHELL_PATH_BYTES) throw IOException("user shell PATH unavailable: output exceeded bound")
+            framedPath(bytes)
+        } finally {
+            // Only descendants of our probe are stopped, never another session's shell.
+            process.descendants().forEach { it.destroy() }
+            process.destroy()
+            process.waitFor(PROBE_SECONDS, TimeUnit.SECONDS)
+            process.inputStream.close()
+            pool.shutdownNow()
+        }
+    }
+}
+
+// why: shell startup output is not a report input; bound it before extracting only the framed PATH.
+private const val SHELL_PATH_BYTES = 64 * 1024
 
 private const val CHECK_WRAPPER = "wrapper"

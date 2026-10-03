@@ -120,6 +120,8 @@ public class HeadServer(
 
     override fun healthSnapshot(): HeadHealth = diagnostics.healthSnapshot(engine.isRunning, engine.port)
 
+    override fun rateLimitSnapshot(): splice.core.head.RateLimitHealth = diagnostics.rateLimitSnapshot()
+
     /** The refusal this head holds (V4-398/V4-412), and nothing else: a full reading is [quotaFull] (V4-452). */
     override fun providerResetForMs(): Long =
         deps.quotaBundle.accountPool?.providerResetForMs ?: deps.upstream.providerResetForMs

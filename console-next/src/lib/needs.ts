@@ -283,7 +283,7 @@ function doctorNeeds(checks: readonly DoctorCheck[]): Need[] {
     head: null,
     subject: row.label,
     finding: [...new Set(row.members.map(checkFinding))].join('; '),
-    fix: doctorFixOf(row.fix, row.fixId, row.fixKind),
+    fix: row.status === 'fail' && (row.fix !== null || row.fixId !== null) ? doctorFixOf(row.fix, row.fixId, row.fixKind) : null,
     at: hrefOf('doctor'),
   }));
 }

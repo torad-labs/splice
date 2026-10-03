@@ -7,7 +7,7 @@
 import { describe, expect, test } from 'vitest';
 import { accountsFromWire } from '../src/lib/accounts';
 import { localInstantText } from '../src/lib/heads';
-import { hrefOf, INPUTS, needsOf, readingOf, SOURCE_ORDER } from '../src/lib/needs';
+import { doctorFixOf, hrefOf, INPUTS, needsOf, readingOf, SOURCE_ORDER } from '../src/lib/needs';
 import { calmOf, ledeOf } from '../src/lib/needs-page';
 import { H, K, S, U } from '../src/lib/words-needs';
 import type { AccountRow, AccountWire } from '../src/types/accounts';
@@ -99,6 +99,20 @@ function quiet(over: Partial<NeedInputs> = {}): NeedInputs {
 
 const signedOut = (): AuthPayload => ({ claudex: { kind: 'chatgpt-oauth', login: 'x', present: false } });
 const needsIn = (over: Partial<NeedInputs>): Need[] => needsOf(quiet(over), NOW).needs;
+
+test('doctor observations stay Worth a look beside an actual required remedy', () => {
+  const checks: DoctorCheck[] = [
+    { id: 'prerequisites/claude-version', status: 'warn', detail: 'Synthetic client is newer than the tested version.', fix: 'check the release notes' },
+    { id: 'runtime/head first errors', status: 'warn', detail: '3 provider / 2 local error(s) since last restart', fix: 'splice logs --head first --tail 50', fix_kind: 'command' },
+    { id: 'runtime/head second errors', status: 'warn', detail: '1 provider / 0 local error(s) since last restart', fix: 'splice logs --head second --tail 50', fix_kind: 'command' },
+    { id: 'configuration/local:runner', status: 'warn', detail: 'Synthetic runtime is not answering.', fix: 'inspect the runtime' },
+    { id: 'installation/PATH', status: 'fail', detail: 'Synthetic launcher directory is missing from the user shell path.', fix: 'add it to the shell path', fix_kind: 'advice' },
+  ];
+  const result = needsOf(quiet({ doctor: read(doctor(checks)) }), NOW);
+  expect(result.needs.filter((need) => need.fix !== null).map((need) => need.subject)).toEqual(['Search path']);
+  expect(result.needs.filter((need) => need.fix === null)).toHaveLength(4);
+  expect(ledeOf(result)).toBe('One thing a person has to do. Everything else is running.');
+});
 const sessionItems = (over: Partial<NeedInputs>): Need[] => needsIn(over).filter((need) => need.source === 'sessions');
 
 describe('an input is read, still out, failed or not served, and only read counts', () => {
@@ -531,7 +545,8 @@ describe('the doctor', () => {
       ['warn', K.doctor, 'Disk', 'disk 91% full'],
     ]);
     expect(out[0]?.fix).toEqual({ kind: 'copy', command: 'splice install --all' });
-    expect(out[1]?.fix).toMatchObject({ kind: 'open', href: '#/settings/health' });
+    expect(out[1]?.fix).toBeNull();
+    expect(out[1]?.at).toBe('#/settings/health');
   });
 
   test('a remedy the report masked is printed with why, never offered to copy (Marlin, 2026-09-25)', () => {
@@ -548,11 +563,12 @@ describe('the doctor', () => {
 
   test('a remedy without a console action keeps its honest CLI fallback', () => {
     const checks: DoctorCheck[] = [{ id: 'daemon/manual', status: 'warn', detail: 'manual repair needed', fix: 'repair by hand', fix_kind: 'advice' }];
-    expect(needsIn({ doctor: read(doctor(checks)) })[0]?.fix).toEqual({ kind: 'open', href: '#/settings/health', label: 'Open doctor', fallback: 'repair by hand' });
+    expect(needsIn({ doctor: read(doctor(checks)) })[0]?.fix).toBeNull();
+    expect(doctorFixOf('repair by hand', null, 'advice')).toEqual({ kind: 'open', href: '#/settings/health', label: 'Open doctor', fallback: 'repair by hand' });
   });
 
   test('only a fix the daemon marked a command is offered to paste; advice, and a fix with no kind, are printed beside Open doctor', () => {
-    const fixOf = (fix: string, fix_kind?: FixKind | null) => needsIn({ doctor: read(doctor([{ id: 'daemon/x', status: 'warn', detail: 'd', fix, ...(fix_kind === undefined ? {} : { fix_kind }) }])) })[0]?.fix;
+    const fixOf = (fix: string, fix_kind?: FixKind | null) => doctorFixOf(fix, null, fix_kind ?? null);
     expect(fixOf('rm ~/.local/bin/claudeor', 'command')).toEqual({ kind: 'copy', command: 'rm ~/.local/bin/claudeor' });
     expect(fixOf('set system_prompt_mode = "append" to add your text', 'advice')).toMatchObject({ kind: 'open', fallback: 'set system_prompt_mode = "append" to add your text' });
     // a daemon older than the field says nothing, and a first word is not evidence: no Copy
@@ -569,9 +585,9 @@ describe('the doctor', () => {
   test('a splice logs remedy opens the requested head and tail instead of copying the command, and restart restarts', () => {
     const command = 'splice logs --head codex --tail 50';
     const logs: DoctorCheck[] = [{ id: 'daemon/logs', status: 'warn', detail: 'look at the head log', fix: command }];
-    expect(needsIn({ doctor: read(doctor(logs)) })[0]?.fix).toEqual({ kind: 'open', href: '#/fleet/codex?tab=log&tail=50', label: S.openLog, fallback: command });
-    const restart: DoctorCheck[] = [{ id: 'daemon/x', status: 'warn', detail: 'stale', fix: ' splice restart ' }];
-    expect(needsIn({ doctor: read(doctor(restart)) })[0]?.fix).toEqual({ kind: 'restart-daemon' });
+    expect(needsIn({ doctor: read(doctor(logs)) })[0]?.fix).toBeNull();
+    expect(doctorFixOf(command, null, 'command')).toEqual({ kind: 'open', href: '#/fleet/codex?tab=log&tail=50', label: S.openLog, fallback: command });
+    expect(doctorFixOf(' splice restart ', null, 'command')).toEqual({ kind: 'restart-daemon' });
   });
 
   test('four unlinked launchers are one item', () => {

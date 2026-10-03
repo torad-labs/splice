@@ -47,8 +47,9 @@ public class DoctorFixes(private val doctor: DoctorCommand, private val env: Env
             DoctorFix.INSTALL_ALL ->
                 FIX_RELINK to Cancellables.runCatchingCleanup { install.install(INSTALL_ALL_ARG, env) }
         }
-        val after = doctor.collect(env, answers = answers)
-        val report = doctor.reportJson(after, env)
+        val userEnv = DoctorShellPath().environment(env)
+        val after = doctor.collect(userEnv, answers = answers)
+        val report = doctor.reportJson(after, userEnv)
         val remaining = after.sections.flatMap { it.second }.count { it.fixId == fix }
         val refusal = ran.exceptionOrNull()?.let(InstallFailureText::render)
             ?: "$verb ran, but $remaining doctor row(s) still call for it".takeIf { remaining > 0 }

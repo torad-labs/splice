@@ -72,7 +72,10 @@ internal class DoctorProbes(
             ?: CLAUDE_NOT_FOUND
 
     private fun binaryCheck(spec: BinarySpec, envReader: EnvReader): DoctorCheck {
-        val found = path.binaryOnPath(spec.name, envReader) ?: return DoctorCheck(
+        val found = Cancellables.runCatchingCancellable { path.binaryOnPath(spec.name, envReader) }
+            .getOrElse {
+                return DoctorCheck(spec.name, CheckStatus.WARN, "user shell PATH could not be read; not checked")
+            } ?: return DoctorCheck(
             spec.name,
             CheckStatus.FAIL,
             spec.missingDetail,

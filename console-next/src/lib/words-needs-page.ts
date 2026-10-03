@@ -20,6 +20,7 @@ export const N = {
   servingNone: 'No command is running.',
   notListedTitle: 'Not listed here',
   notListedWhy: 'An idle session and a local runtime you switched off are not problems, so they are not items.',
+  worthTitle: 'Worth a look',
   unreadTitle: 'Not read',
   couldNotRead: 'Could not read',
   stillReading: 'Still reading',

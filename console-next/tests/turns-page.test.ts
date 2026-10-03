@@ -146,6 +146,13 @@ describe('a turn', () => {
     expect(turnLede(row(marks), stagesOf(row(marks)))).toContain('Most of it, 8.5 s, was the answer arriving.');
     expect(turnLede(row({ ...marks, outcome: 'error:upstream-failed' }), stagesOf(row(marks)))).toBe('Provider failed after 14.2 s.');
   });
+  test('the finished line and detail both read the proven runtime port', () => {
+    const refused = row({ outcome: 'error:conn-reset', refused_runtime_port: 8123, total: 20 });
+    expect(lineOf(refused, (head) => head, none, () => null).outcome.word)
+      .toBe("Couldn't reach its runtime on :8123");
+    expect(turnLede(refused, [])).toBe("Couldn't reach its runtime on :8123 after 20 ms.");
+  });
+
   test('a list line carries no cost when the row is not priced', () => {
     const line = lineOf(row({ cost_usd: null }), (h) => h, none, () => null);
     expect(line.cost).toBe('–');

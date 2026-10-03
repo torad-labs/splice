@@ -20,6 +20,9 @@ public interface Head {
 
     public fun healthSnapshot(): HeadHealth
 
+    /** Distinct ended-turn rate refusals since restart, absent on an uninstrumented head. */
+    public fun rateLimitSnapshot(): RateLimitHealth? = null
+
     /** Milliseconds left on a refusal this head is HOLDING (V4-398/V4-412), zero when it holds none. The one value
      *  any surface may print as out of quota (V4-452). */
     public fun providerResetForMs(): Long = 0L
@@ -28,6 +31,9 @@ public interface Head {
      *  refusal: the head stays ready beside it. */
     public fun quotaFull(): QuotaFull? = null
 }
+
+/** Provider rate failures and local cooldown holds are disjoint, not absorbed-round error events. */
+public data class RateLimitHealth(val providerTurns: Long, val heldTurns: Long)
 
 public data class HeadHealth(
     val ok: Boolean,

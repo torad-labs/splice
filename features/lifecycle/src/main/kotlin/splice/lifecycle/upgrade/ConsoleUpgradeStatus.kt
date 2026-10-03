@@ -34,6 +34,7 @@ package splice.lifecycle.upgrade
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.GATEWAY_VERSION
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
@@ -55,9 +56,8 @@ public class ConsoleUpgradeStatus(env: EnvReader) {
     public fun json(): String {
         val rollback = rollbackTarget()
         return buildJsonObject {
-            // ALWAYS MEASURED: the current link's target, or this build's own version on a flat
-            // install. Nothing to be unavailable about, so no basis field is needed to qualify it.
-            put("installed", layout.installedVersion())
+            // This endpoint answers what the daemon runs, not a release link that a jar-copy install can leave stale.
+            put("installed", GATEWAY_VERSION)
 
             put("latest", JsonNull)
             put("latest_basis", BASIS_UNAVAILABLE)

@@ -68,4 +68,6 @@ public class UpstreamFailed(
      *  crosses to the turn's ending, which records a plan-limit outcome and speaks the reset. Null for
      *  every other failure, a burst 429 with no named reset included. */
     public val planLimit: PlanLimit? = null,
+    /** A synthetic cooldown refusal, not a response sent by the provider. */
+    public val localHold: Boolean = false,
 ) : RuntimeException("upstream failed after retries (status=$status)")

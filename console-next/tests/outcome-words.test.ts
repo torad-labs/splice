@@ -36,6 +36,14 @@ const tags = [...new Set([
 ])].filter((tag) => tag !== 'ok');
 
 describe('outcome words', () => {
+  test('a proven refused runtime carries its actual port while a reset stays a lost connection', () => {
+    expect(outcomeOf('error:conn-reset', 8123)).toMatchObject({ word: "Couldn't reach its runtime on :8123", failed: true });
+    expect(outcomeOf('error:conn-reset')).toMatchObject({ word: 'Connection lost', failed: true });
+    expect(outcomeOf('error:conn-reset', -1)).toMatchObject({ word: 'Connection lost', failed: true });
+    expect(outcomeOf('error:conn-reset', 65536)).toMatchObject({ word: 'Connection lost', failed: true });
+    expect(outcomeOf('ok', 8123)).toMatchObject({ word: 'Done', failed: false });
+  });
+
   test('the denominator is parsed from the source', () => {
     expect(tags.length, `parsed ${tags.length} tags: ${tags.join(' ')}`).toBeGreaterThanOrEqual(25);
     expect(tags).toEqual(expect.arrayContaining(['error:conn-reset', 'error:stopped', 'error:compaction-preflight-compact-overflow', 'failure:api_error']));

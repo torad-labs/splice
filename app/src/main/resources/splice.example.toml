@@ -935,6 +935,8 @@ command = "claude-splice"
 #                           the detached CLI and the daemon it starts keep the original home and
 #                           test browser guard. JVMs print these options to the private boot log.
 #   OPENROUTER_API_KEY      the openrouter head's api-key; when set it always beats the key store
+#   SHELL                   the user's login shell for console doctor PATH probes; the CLI keeps
+#                           its caller's PATH. This is ambient context, not a config knob.
 #   PATH and no_proxy / NO_PROXY are read from the ambient environment (the two proxy spellings are
 #                               separate variables and both are honoured)
 #   TERM / NO_COLOR / COLORTERM are read from the ambient environment to pick the CLI's colour

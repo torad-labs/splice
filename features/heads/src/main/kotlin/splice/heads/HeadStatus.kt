@@ -57,10 +57,15 @@ public object HeadStatus {
             put("stream_idle_ms", gate.streamIdleMs)
         }
         put("maxInflight", if (gate.limit <= 0) null else gate.limit)
-        putJsonObject("health") {
-            put("localOriginErrors", h.localOriginErrors)
-            put("providerErrors", h.providerErrors)
-        }
+        put("health", healthJson(head, h))
         putJsonArray("pids") {}
+    }
+
+    private fun healthJson(head: Head, h: splice.core.head.HeadHealth): JsonObject = buildJsonObject {
+        put("localOriginErrors", h.localOriginErrors)
+        put("providerErrors", h.providerErrors)
+        val rates = head.rateLimitSnapshot()
+        put("provider_rate_limit_turns", rates?.providerTurns)
+        put("cooldown_held_turns", rates?.heldTurns)
     }
 }

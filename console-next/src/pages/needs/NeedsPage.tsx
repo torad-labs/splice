@@ -18,6 +18,8 @@ export function NeedsPage() {
   const unread = unreadOf(list);
   const reading = list.readings.every((reading) => reading.state === 'reading');
   const asOf = asOfText(list);
+  const acts = list.needs.filter((need) => need.fix !== null);
+  const observations = list.needs.filter((need) => need.fix === null);
 
   if (reading) return <PageHead title={N.title} lede={N.reading} />;
   if (heads.isError && heads.data === undefined) {
@@ -34,12 +36,20 @@ export function NeedsPage() {
       <PageHead title={N.title} lede={ledeOf(list)} />
       <div className="needs-layout">
         <div>
-          {list.needs.length === 0 ? null : (
+          {acts.length === 0 ? null : (
             <ul className="stack">
-              {list.needs.map((need) => (
+              {acts.map((need) => (
                 <NeedCard key={need.key} need={need} row={need.session?.id == null ? null : rows.find((candidate) => candidate.session_id === need.session?.id) ?? null} />
               ))}
             </ul>
+          )}
+          {observations.length === 0 ? null : (
+            <section aria-label={N.worthTitle}>
+              <h3>{N.worthTitle}</h3>
+              <ul className="stack">
+                {observations.map((need) => <NeedCard key={need.key} need={need} row={null} />)}
+              </ul>
+            </section>
           )}
           {unread.length === 0 ? null : (
             <section className="needs-unread" aria-label={N.unreadTitle}>

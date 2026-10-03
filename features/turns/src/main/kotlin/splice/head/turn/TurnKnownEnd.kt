@@ -69,7 +69,7 @@ internal class TurnKnownEnd(
             // The emitter first decides the pending HTTP status. Record the resulting trace and
             // perf row in finally, so a dead-client write still counts the exact failure, its cause,
             // and the retry loop's attempt count. The pre-commit 400 must not leave a 200 trace.
-            health.provider() // e.status/e.body are the literal HTTP response the upstream host gave
+            accountFailure(e, failure.type)
             // V4-81: the emitter still chooses the wire type and preserves the classifier's
             // permanence. A 429 remains an in-band retryable failure; only a classified context
             // overflow before any client content can take the new HTTP 400 status.
@@ -87,6 +87,13 @@ internal class TurnKnownEnd(
             true
         }
         else -> false
+    }
+
+    private fun accountFailure(error: UpstreamFailed, type: ErrorType) {
+        if (error.localHold) health.local() else health.provider()
+        if (error.planLimit == null && type == ErrorType.RATE_LIMIT) {
+            if (error.localHold) health.cooldownHeld() else health.rateLimited()
+        }
     }
 
     /** V4-419: the tag an upstream failure ends the turn on. One caused by a spent plan window ends

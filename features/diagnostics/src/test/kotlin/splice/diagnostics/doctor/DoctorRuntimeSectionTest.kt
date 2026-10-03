@@ -19,6 +19,66 @@ import java.nio.file.attribute.PosixFilePermissions
 
 class DoctorRuntimeSectionTest {
 
+    @Test
+    fun `provider rate failures and cooldown holds are distinct ended turns`(@TempDir tmp: Path) {
+        val head = splice.daemonclient.DaemonProbe.parseHeadsRuntime(
+            """{"heads":[{"key":"synthetic","health":{"localOriginErrors":91,"providerErrors":57,
+                "provider_rate_limit_turns":4,"cooldown_held_turns":6}}]}""",
+        ).single()
+        val row = DoctorRuntime().headRuntimeRows(
+            head,
+            splice.core.config.StatePaths(baseOverride = tmp),
+        ).single { it.name == "head synthetic errors" }
+        assertTrue(row.detail.contains("10 turns hit the provider's rate limit"), row.detail)
+        assertTrue(row.detail.contains("splice held back 6 of them"), row.detail)
+        assertTrue(!row.detail.contains("inside splice"), row.detail)
+    }
+
+    @Test
+    fun `the rate-limit vendor comes from the declared provider even when the head name suggests another`(
+        @TempDir tmp: Path,
+    ) {
+        val topology = splice.core.topology.Topology(
+            providers = mapOf(
+                "my-provider" to splice.core.topology.ProviderConfig(
+                    splice.core.topology.Dialect.ANTHROPIC_PASSTHROUGH,
+                    "http://127.0.0.1:1",
+                    splice.core.topology.AuthConfig("client"),
+                ),
+            ),
+            heads = mapOf("claude-openai" to splice.core.topology.HeadConfig("my-provider", 12345, "synthetic--")),
+        )
+        val answers = DaemonAnswers(
+            health = """{"version":"0.4.0","heads":1,"readyHeads":1,"failedHeads":0}""",
+            heads = """{"heads":[{"key":"claude-openai","health":{
+                "provider_rate_limit_turns":4,"cooldown_held_turns":6}}]}""",
+            auth = "{}",
+            trace = emptyMap(),
+            unmappedTiers = emptyMap(),
+        )
+        val reads = AnsweredDaemon(answers)
+        val env = splice.core.util.EnvReader { if (it == "SPLICE_STATE_DIR") tmp.toString() else null }
+        val row = DoctorRuntime().runtimeChecks(DaemonSnapshot(1, reads.health(1)), env, reads, topology)
+            .single { it.name == "head claude-openai errors" }
+        assertTrue(row.detail.contains("10 turns hit Anthropic's rate limit"), row.detail)
+        assertTrue(!row.detail.contains("OpenAI's rate limit"), row.detail)
+    }
+
+    @Test
+    fun `measured zero rate turns are not presented as unavailable aggregate attribution`(@TempDir tmp: Path) {
+        val head = splice.daemonclient.DaemonProbe.parseHeadsRuntime(
+            """{"heads":[{"key":"synthetic","health":{"localOriginErrors":3,"providerErrors":2,
+                "provider_rate_limit_turns":0,"cooldown_held_turns":0}}]}""",
+        ).single()
+        val row = DoctorRuntime().headRuntimeRows(
+            head,
+            splice.core.config.StatePaths(baseOverride = tmp),
+        ).single { it.name == "head synthetic errors" }
+        assertTrue(row.detail.contains("diagnostic error events"), row.detail)
+        assertTrue(row.detail.contains("No turns ended on a rate limit or cooldown hold"), row.detail)
+        assertTrue(!row.detail.contains("unavailable"), row.detail)
+    }
+
     private fun runDoctor(env: Map<String, String?>): Pair<Boolean, String> {
         val buf = ByteArrayOutputStream()
         val original = System.out

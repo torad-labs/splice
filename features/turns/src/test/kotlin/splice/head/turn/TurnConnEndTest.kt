@@ -285,6 +285,43 @@ class TurnConnEndTest {
     }
 
     @Test
+    fun `a refused local connect retains its cause and runtime port instead of a generic reset`() = runBlocking {
+        val rig = Rig("refused-port")
+        val drive = rig.drive()
+        try {
+            val error = java.net.ConnectException().apply { initCause(java.nio.channels.ClosedChannelException()) }
+            assertEquals(true, rig.connEnd.tryEmit(drive, error))
+        } finally {
+            drive.slot.release()
+            assertEquals(true, AsyncFileIo.drain())
+        }
+        val row = Json.parseToJsonElement(Files.readAllLines(rig.perfFile).last()).jsonObject
+        assertEquals("CONNECT_REFUSED", row["cause"]?.jsonPrimitive?.content)
+        assertEquals("1", row["refused_runtime_port"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `a genuine reset and a DNS connect failure never acquire a refused runtime port`() = runBlocking {
+        val failures = listOf(
+            java.net.SocketException("synthetic reset"),
+            java.net.ConnectException().apply { initCause(java.nio.channels.UnresolvedAddressException()) },
+        )
+        failures.forEachIndexed { index, failure ->
+            val rig = Rig("not-refused-$index")
+            val drive = rig.drive()
+            try {
+                assertEquals(true, rig.connEnd.tryEmit(drive, failure))
+            } finally {
+                drive.slot.release()
+                assertEquals(true, AsyncFileIo.drain())
+            }
+            val row = Json.parseToJsonElement(Files.readAllLines(rig.perfFile).last()).jsonObject
+            assertEquals(null, row["refused_runtime_port"])
+            assertEquals(null, row["cause"])
+        }
+    }
+
+    @Test
     fun `a divergent upstream tear remains countable on its connection-reset trace`() = runBlocking {
         val rig = Rig("diverged-tear", traceEnabled = true)
         val drive = rig.drive()
@@ -302,6 +339,36 @@ class TurnConnEndTest {
         val divergence = turn.getValue("perf").jsonObject.getValue("counters").jsonObject
             .getValue(PerfKeys.CODE_MODE_DIVERGENCE).jsonPrimitive.content
         assertEquals("1", divergence)
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource("false,false,1,0", "true,false,0,1", "false,true,0,0", "true,true,0,0")
+    fun `final rate accounting excludes plan holds and absorbed diagnostic events`(
+        held: Boolean,
+        plan: Boolean,
+        providerTurns: Long,
+        heldTurns: Long,
+    ) = runBlocking {
+        val rig = Rig("rate-$held-$plan")
+        val drive = rig.drive()
+        repeat(3) { rig.health.provider() }
+        repeat(5) { rig.health.local() }
+        val p = provider()
+        val ending = TurnKnownEnd(p, rig.log, rig.telemetry, TurnFailures(p), rig.health)
+        val failure = splice.upstream.transport.UpstreamFailed(
+            """{"error":{"type":"rate_limit_error","message":"synthetic rate limit"}}""",
+            429,
+            planLimit = if (plan) splice.core.usage.PlanLimit("five_hour", 1000) else null,
+            localHold = held,
+        )
+        try {
+            assertEquals(true, ending.tryEmit(drive, failure))
+            assertEquals(providerTurns, rig.health.rateLimitSnapshot().providerTurns)
+            assertEquals(heldTurns, rig.health.rateLimitSnapshot().heldTurns)
+        } finally {
+            drive.slot.release()
+            assertEquals(true, AsyncFileIo.drain())
+        }
     }
 
     @Test

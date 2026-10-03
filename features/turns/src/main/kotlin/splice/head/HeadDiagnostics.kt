@@ -59,6 +59,8 @@ internal class HeadDiagnostics(
         )
     }
 
+    fun rateLimitSnapshot(): splice.core.head.RateLimitHealth = driver.rateLimitSnapshot()
+
     /** GET /health. [port] is the one the head listens on (HeadEngine.port), not the configured one. */
     fun healthJson(port: Int): String = buildJsonObject {
         put("ok", true)

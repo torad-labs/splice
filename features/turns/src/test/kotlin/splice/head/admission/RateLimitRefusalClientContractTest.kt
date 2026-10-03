@@ -169,6 +169,12 @@ class RateLimitRefusalClientContractTest {
             )
 
             val body = refused.bodyAsText()
+            val rates = rig.head.rateLimitSnapshot()
+            assertEquals(1L, rates.providerTurns, "one ended provider failure, not its retry attempts")
+            assertEquals(1L, rates.heldTurns, "one local cooldown refusal")
+            rig.head.restart()
+            assertEquals(0L, rig.head.rateLimitSnapshot().providerTurns, "restart clears the provider baseline")
+            assertEquals(0L, rig.head.rateLimitSnapshot().heldTurns, "restart clears the hold baseline")
             // POSITIVE FIRST: this must be the refusal, or the sweep below scans an error page.
             assertTrue(
                 body.contains("rate_limit_error"),

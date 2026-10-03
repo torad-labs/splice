@@ -112,6 +112,13 @@ describe('the doctor report is gated on redaction', () => {
 });
 
 describe('the report accessors', () => {
+  test('legacy error events never manufacture failed turns or cooldown totals', () => {
+    const finding = checkFinding(check('runtime/head synthetic errors', 'warn', '3 provider / 7 local error(s) since last restart'));
+    expect(finding).toBe('synthetic: 3 provider / 7 local diagnostic error events since the restart. Rate-limit turn counts are unavailable.');
+    expect(finding).not.toContain('turns failed');
+    expect(finding).not.toContain('inside splice');
+  });
+
   // entities-sessions.test.ts, "doctor"
   test('reads the section and the remedy the report carries beside the detail', () => {
     expect(checkSection({ id: 'daemon/port', status: 'ok', detail: 'x' })).toBe('daemon');
@@ -157,13 +164,22 @@ describe('every failing check carries its fix', () => {
 
   test('a head\'s error and turn counts are said in words, not in the daemon\'s counters', () => {
     const said = (id: string, detail: string) => checkFinding(check(id, 'warn', detail));
-    expect(said('runtime/head claudex errors', '0 provider / 2 local error(s) since last restart')).toBe('claudex: 2 turns failed inside splice since the restart');
-    expect(said('runtime/head claudex errors', '1 provider / 0 local error(s) since last restart')).toBe('claudex: 1 turn failed at the provider since the restart');
-    expect(said('runtime/head claudex errors', '3 provider / 1 local error(s) since last restart')).toBe('claudex: 3 turns failed at the provider and 1 inside splice since the restart');
+    expect(said('runtime/head claudex errors', '0 provider / 2 local error(s) since last restart')).toBe('claudex: 0 provider / 2 local diagnostic error events since the restart. Rate-limit turn counts are unavailable.');
+    expect(said('runtime/head claudex errors', '1 provider / 0 local error(s) since last restart')).toBe('claudex: 1 provider / 0 local diagnostic error events since the restart. Rate-limit turn counts are unavailable.');
+    expect(said('runtime/head claudex errors', '3 provider / 1 local error(s) since last restart')).toBe('claudex: 3 provider / 1 local diagnostic error events since the restart. Rate-limit turn counts are unavailable.');
     expect(said('runtime/head claudex turns', '2 of last 5 turn(s) failed; last failure: 4m ago (error:upstream-failed)')).toBe('claudex: 2 of its last 5 turns failed; the latest, 4m ago, was Provider failed');
     expect(said('runtime/head claudex turns', '1 of last 1 turn(s) failed; last failure: 9s ago (?)')).toBe('claudex: 1 of its last 1 turn failed; the latest, 9s ago, was Unknown');
     expect(said('runtime/head claudex turns', 'perf file could not be read: denied')).toBe('perf file could not be read: denied');
     expect(said('daemon/turn path', 'WEDGED on claudex')).toBe('WEDGED on claudex');
+  });
+
+  test('a refused runtime port survives the doctor tail while old resets stay generic', () => {
+    expect(checkFinding(check('runtime/head synthetic turns', 'warn',
+      "1 of last 3 turn(s) failed; last failure: 4m ago (error:conn-reset); couldn't reach its runtime on :8123")))
+      .toContain("Couldn't reach its runtime on :8123");
+    expect(checkFinding(check('runtime/head synthetic turns', 'warn',
+      '1 of last 3 turn(s) failed; last failure: 4m ago (error:conn-reset)')))
+      .toContain('Connection lost');
   });
 
   test('finding instants use the viewer zone, across daylight saving, with no CT suffix', () => {

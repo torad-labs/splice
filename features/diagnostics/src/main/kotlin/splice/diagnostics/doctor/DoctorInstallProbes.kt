@@ -138,9 +138,18 @@ internal class DoctorInstallProbes(private val probes: DoctorProbes, private val
     // build provenance attestation, and without one the install proceeds on the sha256 match alone
     // (V4-217). So neither a missing nor a signed-out gh is a problem; each is the one fact that
     // says whether the next release install checks provenance.
-    internal fun ghCheck(envReader: EnvReader): DoctorCheck {
-        val gh = path.binaryOnPath("gh", envReader)
-            ?: return DoctorCheck("gh", CheckStatus.INFO, "not installed (only needed to verify release-mode installs)")
+    internal fun ghCheck(envReader: EnvReader): DoctorCheck =
+        Cancellables.runCatchingCancellable { path.binaryOnPath("gh", envReader) }.fold(
+            onSuccess = ::ghPathCheck,
+            onFailure = { DoctorCheck("gh", CheckStatus.WARN, "user shell PATH could not be read; not checked") },
+        )
+
+    private fun ghPathCheck(found: Path?): DoctorCheck {
+        val gh = found ?: return DoctorCheck(
+            "gh",
+            CheckStatus.INFO,
+            "not installed (only needed to verify release-mode installs)",
+        )
         val probe = Cancellables.runCatchingCancellable {
             val process = ProcessBuilder(gh.toString(), "auth", "status")
                 .redirectOutput(ProcessBuilder.Redirect.DISCARD)

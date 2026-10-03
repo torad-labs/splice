@@ -70,6 +70,7 @@ public object DaemonProbe {
         public val key: String,
         public val localOriginErrors: Long,
         public val providerErrors: Long,
+        public val rateLimit: splice.core.head.RateLimitHealth? = null,
     )
 
     /** The effective head-only trace switch this running head booted with. */
@@ -176,10 +177,18 @@ public object DaemonProbe {
         return (obj["heads"] as? JsonArray).orEmpty().mapNotNull { el ->
             val head = el as? JsonObject ?: return@mapNotNull null
             val health = head["health"] as? JsonObject ?: return@mapNotNull null
+            val providerTurns = JsonScalars.long(health, "provider_rate_limit_turns")?.takeIf { it >= 0 }
+            val heldTurns = JsonScalars.long(health, "cooldown_held_turns")?.takeIf { it >= 0 }
+            val rates = if (providerTurns == null || heldTurns == null) {
+                null
+            } else {
+                splice.core.head.RateLimitHealth(providerTurns, heldTurns)
+            }
             HeadRuntime(
                 key = JsonScalars.str(head, "key") ?: return@mapNotNull null,
                 localOriginErrors = JsonScalars.long(health, "localOriginErrors") ?: 0L,
                 providerErrors = JsonScalars.long(health, "providerErrors") ?: 0L,
+                rateLimit = rates,
             )
         }
     }

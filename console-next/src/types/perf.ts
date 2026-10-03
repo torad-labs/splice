@@ -115,6 +115,8 @@ export interface TurnRow {
   model: string | null;
   /** The daemon's outcome tag; "?" is its own tag for a row whose outcome would not parse. */
   outcome: string;
+  /** Present only for a proven refused connection to a loopback runtime, never for an ordinary reset. */
+  refused_runtime_port?: number;
   /** Null for a legacy or torn row, as `model`. */
   compact: boolean | null;
   /** First 8 characters of the client's session id, or absent when the turn carried none. */

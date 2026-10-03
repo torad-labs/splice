@@ -278,6 +278,8 @@ class RateLimitCooldownTest {
         val failure = assertThrows<UpstreamFailed> { cooldown.failFastIfArmed(RetryNotice { }) }
 
         assertEquals(429, failure.status)
+        assertTrue(failure.localHold, "the same client error retains its local-hold provenance")
+        assertEquals(0, failure.layers, "a held turn made no upstream attempts")
         assertTrue(failure.body.contains("this gateway is holding retries for 18s"), failure.body)
         assertFalse(failure.body.contains("provider"), "no provider reset is knowable here: ${failure.body}")
         assertFalse(failure.body.contains("retry in"), "the old wording read as an instruction: ${failure.body}")

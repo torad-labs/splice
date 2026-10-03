@@ -27,6 +27,35 @@ test('Settings reads the isolated whole doctor report and offers the API-key rem
   expect(faults.failedReads).toEqual([]);
 });
 
+test('Needs you counts one required act and groups doctor observations under Worth a look', async ({ page }) => {
+  await page.route('**/api/heads', (route) => route.fulfill({ json: { heads: [] } }));
+  await page.route('**/api/accounts', (route) => route.fulfill({ json: { accounts: [] } }));
+  await page.route('**/api/sessions', (route) => route.fulfill({ json: { note: '', sessions: [] } }));
+  await page.route('**/api/teams', (route) => route.fulfill({ json: { teams: [] } }));
+  await page.route('**/api/usage*', (route) => route.fulfill({ json: { window_hours: 24, warn_pct: 80, warn_tokens_5h: 0, heads: [] } }));
+  await page.route('**/api/doctor', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json() as DoctorPayload;
+    body.checks = [
+      { id: 'prerequisites/claude-version', status: 'warn', detail: 'Synthetic client is newer than the tested version.', fix: 'check the release notes' },
+      { id: 'runtime/head first errors', status: 'warn', detail: '3 provider / 2 local error(s) since last restart', fix: 'splice logs --head first --tail 50', fix_kind: 'command' },
+      { id: 'runtime/head second errors', status: 'warn', detail: '1 provider / 0 local error(s) since last restart', fix: 'splice logs --head second --tail 50', fix_kind: 'command' },
+      { id: 'configuration/local:runner', status: 'warn', detail: 'Synthetic runtime is not answering.', fix: 'inspect the runtime' },
+      { id: 'installation/PATH', status: 'fail', detail: 'Synthetic launcher directory is missing from the user shell path.', fix: 'add it to the shell path', fix_kind: 'advice' },
+    ];
+    await route.fulfill({ response, json: body });
+  });
+  await open(page, 'needs-you');
+  await expect(page.locator('main .lede')).toHaveText('One thing a person has to do. Everything else is running.');
+  const observations = page.getByRole('region', { name: 'Worth a look', exact: true });
+  await expect(observations.getByRole('listitem')).toHaveCount(4);
+  await expect(observations).toContainText('Synthetic client is newer than the tested version.');
+  await expect(observations).toContainText('Synthetic runtime is not answering.');
+  await expect(observations).not.toContainText('Synthetic launcher directory');
+  const badge = page.getByRole('navigation', { name: 'Pages', exact: true }).getByRole('link', { name: /^Needs you/ }).locator('.count');
+  await expect(badge).toHaveText('1');
+});
+
 test('Needs you opens the intended plan and the full Health report from its doctor item', async ({ page }) => {
   const faults = await open(page, 'needs-you');
   const wrapper = page.getByRole('listitem', { name: /^Doctor: Launcher/ });
@@ -119,7 +148,7 @@ test('masked remedies remain noncopyable in Health and Needs you, while own-page
   await expect(row.getByRole('button', { name: 'Copy the command', exact: true })).toHaveCount(0);
   await page.getByRole('navigation', { name: 'Pages', exact: true }).getByRole('link', { name: 'Needs you', exact: true }).click();
   const item = page.getByRole('listitem', { name: 'Doctor: Masked', exact: true });
-  await expect(item).toContainText('Run splice doctor in a terminal to see it.');
+  await expect(item.getByRole('link', { name: 'Show the details', exact: true })).toBeVisible();
   await expect(item.getByRole('button', { name: 'Copy the command', exact: true })).toHaveCount(0);
   await page.evaluate((head) => { location.hash = '#/fleet/' + head; }, STACK.keyHead);
   await expect(page.getByRole('heading', { name: STACK.keyHead, level: 1, exact: true })).toBeVisible();
@@ -130,6 +159,52 @@ test('masked remedies remain noncopyable in Health and Needs you, while own-page
   await expect(page.getByRole('heading', { name: STACK.oauthHead, level: 1, exact: true })).toHaveCount(0);
   expect(faults.pageErrors).toEqual([]);
   await page.unrouteAll({ behavior: 'wait' });
+});
+
+test('the Running version follows the real daemon despite its stale disk release link', async ({ page }) => {
+  await open(page, 'settings/health');
+  const health = await read<{ version: string }>(page, '/health');
+  const upgrade = await read<{ installed: string; rollback_target: string }>(page, '/api/upgrade');
+  expect(upgrade.installed).toBe(health.version);
+  expect(upgrade.installed).not.toBe('0.0.1');
+  expect(upgrade.rollback_target).toBe('0.0.0');
+  await expect(page.getByRole('region', { name: 'Health', exact: true })).toContainText('Running ' + health.version + '.');
+});
+
+test('rate-limit observations use actual counts and the declared vendor without requiring an act', async ({ page }) => {
+  await page.route('**/api/doctor', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json() as DoctorPayload;
+    body.checks = [{ id: 'runtime/head misleading errors', status: 'warn',
+      detail: "misleading: 10 turns hit Anthropic's rate limit after the restart; splice held back 6 of them while it cooled down.",
+      fix: 'splice logs --head misleading --tail 50', fix_kind: 'command' }];
+    await route.fulfill({ response, json: body });
+  });
+  await open(page, 'settings/health');
+  const health = page.getByRole('region', { name: 'Health', exact: true });
+  await expect(health).toContainText("10 turns hit Anthropic's rate limit");
+  await expect(health).toContainText('splice held back 6 of them');
+  await expect(health).not.toContainText('inside splice');
+  await page.getByRole('navigation', { name: 'Pages', exact: true }).getByRole('link', { name: 'Needs you', exact: true }).click();
+  const observations = page.getByRole('region', { name: 'Worth a look', exact: true });
+  await expect(observations).toContainText("10 turns hit Anthropic's rate limit");
+  await expect(observations.getByRole('link', { name: 'Show the details', exact: true })).toBeVisible();
+});
+
+test('a local connection refusal names its port while a genuine reset remains Connection lost', async ({ page }) => {
+  await page.route('**/api/doctor', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json() as DoctorPayload;
+    body.checks = [
+      { id: 'runtime/head refused turns', status: 'warn', detail: "1 of last 3 turn(s) failed; last failure: 4m ago (error:conn-reset); couldn't reach its runtime on :8123" },
+      { id: 'runtime/head reset turns', status: 'warn', detail: '1 of last 3 turn(s) failed; last failure: 4m ago (error:conn-reset)' },
+    ];
+    await route.fulfill({ response, json: body });
+  });
+  await open(page, 'settings/health');
+  const health = page.getByRole('region', { name: 'Health', exact: true });
+  await expect(health).toContainText("Couldn't reach its runtime on :8123");
+  await expect(health).toContainText('Connection lost');
 });
 
 test('an unstarted upgrade has no run or run alert and sends no upgrade command', async ({ page }) => {

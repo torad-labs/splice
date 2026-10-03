@@ -196,8 +196,10 @@ public class DoctorCommand(
 
     /** The daemon's own report (GET /api/doctor): the same run, reading the daemon from the
      *  [answers] it took in process rather than from its own port (V4-230). */
-    public fun reportJson(envReader: EnvReader, answers: DaemonAnswers): String =
-        reportJson(collect(envReader, answers = answers), envReader)
+    public fun reportJson(envReader: EnvReader, answers: DaemonAnswers): String {
+        val userEnv = DoctorShellPath().environment(envReader)
+        return reportJson(collect(userEnv, answers = answers), userEnv)
+    }
 
     /** The same report over a run already collected: DoctorFixes reads the rows that still need its
      *  fix and serves the report of that SAME run, never a second collection that could disagree. */
@@ -209,7 +211,10 @@ public class DoctorCommand(
     /** Both JSON paths' report, over the state root the daemon itself resolves (V4-109). */
     private fun jsonReport(envReader: EnvReader): DoctorJsonReport = DoctorJsonReport(
         envReader,
-        claudeVersion = { probes.claudeVersion(envReader) },
+        claudeVersion = {
+            Cancellables.runCatchingCancellable { probes.claudeVersion(envReader) }
+                .getOrElse { "version unavailable: ${SafeFailureText.render(it)}" }
+        },
         statePaths = TopologyStatePaths(envReader).current(),
     )
 
@@ -246,7 +251,7 @@ public class DoctorCommand(
             "accounts" to guarded { accountChecks(pools, snapshot) },
             // JW-05: what actually HAPPENED — every section above reads configuration and presence;
             // this one reads the runtime instruments (health counters + perf outcome tail).
-            "runtime" to guarded { doctorRuntime.runtimeChecks(snapshot, envReader, reads) },
+            "runtime" to guarded { doctorRuntime.runtimeChecks(snapshot, envReader, reads, topology) },
         )
         return DoctorRun(topology, sections, read)
     }

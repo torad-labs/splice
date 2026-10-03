@@ -17,13 +17,31 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import splice.core.GATEWAY_VERSION
 import splice.core.util.EnvReader
+import java.nio.file.Files
+import java.nio.file.Path
 
 class UpgradeBodyTest {
 
     private val json = Json { ignoreUnknownKeys = true }
 
     private fun payload() = json.parseToJsonElement(ConsoleUpgradeStatus(EnvReader(System::getenv)).json()).jsonObject
+
+    @Test
+    fun `the console running version ignores a stale current release after a jar-copy install`(@TempDir home: Path) {
+        val share = Files.createDirectories(home.resolve("share"))
+        val releases = Files.createDirectories(share.resolve("releases"))
+        Files.createSymbolicLink(releases.resolve("current"), Path.of("0.0.1"))
+        Files.createSymbolicLink(releases.resolve("previous"), Path.of("0.0.0"))
+        Files.writeString(share.resolve("splice.jar"), "synthetic flat live jar")
+        val env = EnvReader { name -> if (name == "SPLICE_SHARE_DIR") share.toString() else null }
+        val report = json.parseToJsonElement(ConsoleUpgradeStatus(env).json()).jsonObject
+        assertEquals(GATEWAY_VERSION, report["installed"]!!.jsonPrimitive.content)
+        assertEquals("0.0.0", report["rollback_target"]!!.jsonPrimitive.content, "disk rollback history stays separate")
+        assertEquals(Path.of("0.0.1"), Files.readSymbolicLink(releases.resolve("current")))
+    }
 
     @Test
     fun `latest is never filled in from installed`() {

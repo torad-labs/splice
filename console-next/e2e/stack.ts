@@ -30,7 +30,7 @@
 // that never answers, a turn that fails or a row that never lands each throws with the daemon log's
 // tail, and Playwright reports the setup as the failure.
 import { spawn, type ChildProcess } from 'node:child_process';
-import { copyFileSync, createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { createServer as createNetServer, type AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -416,6 +416,11 @@ export async function startStack(): Promise<Stack> {
   }
 
   const home = mkdtempSync(join(tmpdir(), 'console-e2e-'));
+  // A jar-copy daemon must not report the stale disk-release link as the version it runs.
+  const releases = join(home, '.local/share/splice/releases');
+  mkdirSync(releases, { recursive: true });
+  symlinkSync('0.0.1', join(releases, 'current'));
+  symlinkSync('0.0.0', join(releases, 'previous'));
   const ports = { control: await freePort(), mock: await freePort(), oauth: await freePort(), solo: await freePort(), key: await freePort() };
   const authFiles = { pooled: join(home, 'codex/auth.json'), solo: join(home, 'codex-solo/auth.json') };
   mkdirSync(dirname(authFiles.pooled), { recursive: true });

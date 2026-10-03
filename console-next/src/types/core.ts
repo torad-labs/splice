@@ -41,6 +41,9 @@ export interface GateSnapshot {
 export interface HeadHealthCounters {
   localOriginErrors: number;
   providerErrors: number;
+  /** Distinct final rate refusals since restart; absent or null on an uninstrumented daemon. */
+  provider_rate_limit_turns?: number | null;
+  cooldown_held_turns?: number | null;
 }
 
 export interface HeadStatus {

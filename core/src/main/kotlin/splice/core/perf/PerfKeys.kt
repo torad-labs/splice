@@ -50,6 +50,9 @@ public object PerfKeys {
     public const val USAGE_MS: String = "usage_ms"
     public const val ATTEMPTS: String = "attempts"
 
+    /** Port of a proven refused connect to a loopback runtime, absent for resets and remote failures. */
+    public const val REFUSED_RUNTIME_PORT: String = "refused_runtime_port"
+
     /** One client-facing code-mode step synthesized without an upstream post, not a turn. */
     public const val LOCAL_STEP: String = "local_step"
 

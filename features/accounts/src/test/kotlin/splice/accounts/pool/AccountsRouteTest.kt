@@ -1,7 +1,7 @@
 // NEW: V4-132 — GET /api/accounts (FEATURES.md §6, §4.5 "All accounts, one screen"). Direct unit
 // tests of the join, one level below the HTTP rig AuthAndAccountsRoutesTest uses for the routes
 // around it: two heads sharing a credential path fold into one row with both head keys, an
-// api-key head contributes nothing (a different feature row), and a head with no pool at all still
+// api-key command reports credential presence without invented quota, and a head with no pool still
 // appears, `single_login: true`, from its /api/auth view alone.
 package splice.accounts.pool
 
@@ -12,7 +12,6 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.accounts.AccountHead
 import splice.accounts.HeadQuotaSource
@@ -61,12 +60,17 @@ class AccountsRouteTest {
     }
 
     @Test
-    fun `an api-key head contributes no rows — a different feature row entirely`() = runBlocking {
+    fun `api-key commands appear with credential presence and no invented plan windows`() = runBlocking {
         val heads = mapOf("keyed" to apiKeyHead("keyed"))
 
         val body = json.parseToJsonElement(AccountsRoute(heads).accountsJson()).jsonObject
+        val row = body["accounts"]!!.jsonArray.single().jsonObject
 
-        assertTrue(body["accounts"]!!.jsonArray.isEmpty())
+        assertEquals("api-key", row["kind"]!!.jsonPrimitive.content)
+        assertEquals(true, row["credential_present"]!!.jsonPrimitive.content.toBoolean())
+        assertEquals(listOf("keyed"), row["heads"]!!.jsonArray.map { it.jsonPrimitive.content })
+        assertEquals(JsonNull, row["five_hour_used_percent"])
+        assertEquals(JsonNull, row["seven_day_used_percent"])
     }
 
     @Test

@@ -49,11 +49,11 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
 
     private suspend fun fold(head: AccountHead, joined: MutableMap<String, JoinedAccount>) {
         val description = head.auth.describe()
-        // Api-key and client-forwarded heads (Claude on the client's own login) are a different
-        // feature row (§4.5 "Key providers", "Claude logins") — this join is OAuth accounts only.
-        if (!AuthKindRegistry.isOAuth(description.kind)) return
+        // Client-forwarded Claude logins are added from their command-local stores above.
+        // Key commands still need a credential-presence row so their daily budgets are reachable.
+        if (!AuthKindRegistry.isOAuth(description.kind) && description.kind != "api-key") return
         val pool = head.pool
-        if (pool == null) {
+        if (pool == null || description.kind == "api-key") {
             foldSingleLogin(head.key, description, head.quota?.quota(), joined)
             return
         }

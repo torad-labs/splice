@@ -32,7 +32,7 @@ export function FailoverOrder({ head, accounts }: { head: string; accounts: read
   const data = read.data;
   if (single) return <p className="hint">{A.orderSingle}</p>;
   if (data === undefined) return read.isError ? <Fault message={failureText(read.error)} onRetry={() => void read.refetch()} /> : <p className="hint">{A.orderReading}</p>;
-  if ('unavailable' in data) return <p className="hint">{A.orderUnavailable} {data.unavailable}</p>;
+  if ('unavailable' in data) return <p className="hint">{A.orderUnavailable}</p>;
   const order = data.effective_order;
   if (order.length < 2) return null;
   const move = (from: number, to: number): void => {

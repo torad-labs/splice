@@ -35,7 +35,7 @@ export function AccountsPage() {
         const addHead = heads[0];
         return <section className="accounts-provider" key={provider}>
           <GroupHead title={PROVIDERS[provider] ?? provider} {...(claude && CLAUDE_PLACES.some(place => !rows.some(row => row.login_place?.id === place)) ? {} : { count: rows.filter(row => row.credential_present).length })}
-            {...(claude || addHead === undefined ? {} : { action: <SignIn head={addHead} purpose="add"><Button small>{A.add}</Button></SignIn> })} />
+            {...(claude || addHead === undefined || rows.every(row => row.kind === 'api-key') ? {} : { action: <SignIn head={addHead} purpose="add"><Button small>{A.add}</Button></SignIn> })} />
           <ul className="accounts-grid">
             {claude ? CLAUDE_PLACES.map(place => <AccountCard key={place} place={place} account={rows.find(row => row.login_place?.id === place) ?? null} colour={colour('claude-splice')} now={now} />) : null}
             {rows.filter(row => !claude || row.login_place == null).map(row => <AccountCard key={accountIdentity(row)} account={row} colour={colour(row.heads[0] ?? '')} now={now} />)}

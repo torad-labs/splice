@@ -25,6 +25,17 @@ describe('account limit facts', () => {
     expect(html).not.toContain('Refresh login');
   });
 
+  test('an API-key command reports key presence without an impossible browser login or plan windows', () => {
+    const html = renderToStaticMarkup(<QueryClientProvider client={new QueryClient()}>
+      <AccountCard account={{ ...saved, kind: 'api-key', single_login: true, label: null, credential_present: true }} colour="gpt" now={now} />
+    </QueryClientProvider>);
+    expect(html).toContain('API key configured');
+    expect(html).toContain('synthetic-head');
+    expect(html).not.toContain('Sign in');
+    expect(html).not.toContain('Renew saved token');
+    expect(html).not.toContain('Weekly');
+  });
+
   test('a full reading does not invent a held account when the daemon says it can serve', () => {
     const html = renderToStaticMarkup(<QueryClientProvider client={new QueryClient()}>
       <AccountCard account={{ ...saved, credential_present: true, held: false,
@@ -73,16 +84,44 @@ describe('account limit facts', () => {
     expect(html).toContain('30 days');
     expect(html).toContain('72% used');
     expect(html).not.toContain('Weekly');
-    expect(html).toContain('Oct 4, 8:00 AM CT');
+    expect(html).toContain(new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(reset * 1000)));
   });
 
-  test('a previous window keeps its reading visibly stale instead of looking like current capacity', () => {
+  test('an old reading with a future reset does not claim the window has already passed', () => {
     const html = renderToStaticMarkup(<AccountLimits windows={[{
       seconds: 604_800, used_percent: 100, reset_epoch_seconds: reset, current: false,
     }]} now={now} />);
-    expect(html).toContain('100% used');
-    expect(html).toContain('Previous window');
-    expect(html).toContain('data-stale=""');
+    expect(html).not.toContain('100% used');
+    expect(html).not.toContain('Previous window');
+    expect(html).not.toContain('role="img"');
+    expect(html).toContain('Usage reading is out of date');
+    expect(html).toContain('Resets');
+  });
+
+  test('a passed reset removes the old percentage and bar and states when the window reset', () => {
+    const html = renderToStaticMarkup(<AccountLimits windows={[{
+      seconds: 604_800, used_percent: 65, reset_epoch_seconds: now / 1000 - 60,
+    }]} now={now} />);
+    expect(html).not.toContain('65% used');
+    expect(html).not.toContain('role="img"');
+    expect(html).toContain('Window reset');
+  });
+
+  test('an irregular duration names its long window rather than a remaining-time measurement', () => {
+    const html = renderToStaticMarkup(<AccountLimits windows={[{
+      seconds: 530_160, used_percent: 65, reset_epoch_seconds: reset,
+    }]} now={now} />);
+    expect(html).not.toContain('147h');
+    expect(html).toContain('Long window');
+  });
+
+  test('Muse names a weekly allowance even when the daemon reports only time remaining', () => {
+    const html = renderToStaticMarkup(<AccountLimits kind="muse-oauth" windows={[{
+      seconds: 530_160, used_percent: 65, reset_epoch_seconds: reset,
+    }]} now={now} />);
+    expect(html).toContain('Weekly');
+    expect(html).not.toContain('147h');
+    expect(html).not.toContain('Long window');
   });
 
   test('separate Claude model limits retain their own model and reset', () => {
@@ -94,6 +133,6 @@ describe('account limit facts', () => {
     expect(html).toContain('Weekly · sonnet');
     expect(html).toContain('91% used');
     expect(html).toContain('17% used');
-    expect(html).toContain('Oct 4, 9:00 AM CT');
+    expect(html).toContain(new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date((reset + 3600) * 1000)));
   });
 });

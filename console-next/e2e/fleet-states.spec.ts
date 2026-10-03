@@ -137,7 +137,7 @@ test('a full reading stays Ready in command colour, reads as usage, and still se
   await expect(card.locator('.track')).not.toHaveClass(/full/);
   await expect(card.locator('.track i')).toHaveCSS('width', await card.locator('.track').evaluate((node) => getComputedStyle(node).width));
   const local = await page.evaluate((seconds) => new Intl.DateTimeFormat('en-US', {
-    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
   }).format(new Date(seconds * 1000)), reset);
   await expect(card.locator('.gl small')).toHaveText('near its limit · 100%, resets ' + local);
   pct = 85;
@@ -197,7 +197,7 @@ test('quota refusal moves one card out of ready and keeps its local reset identi
   await expect(state).toBeVisible();
   const sentence = await state.innerText();
   const local = await page.evaluate((seconds) => new Intl.DateTimeFormat('en-US', {
-    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
   }).format(new Date(seconds * 1000)), reset);
   expect(sentence).toBe('Out of quota until ' + local);
   // The marked card alone must leave Ready and be the only one out of quota. No count of the other cards is taken: the

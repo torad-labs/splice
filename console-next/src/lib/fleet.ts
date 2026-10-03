@@ -4,7 +4,7 @@
 import type { AccountRow } from '../types/accounts';
 import type { AuthPayload, HeadStatus, UsagePayload } from '../types/core';
 import type { KeysPayload } from '../types/login';
-import { familyName, headAttention, isKeyHead, localInstantText, providerFamily, quotaRefusedUntil } from './heads';
+import { familyName, headAttention, isKeyHead, localZonedInstantText, providerFamily, quotaRefusedUntil } from './heads';
 import type { HeadSignals } from './heads';
 import { colourOf } from './model';
 import type { ModelColour } from './model';
@@ -109,7 +109,7 @@ function tightest(head: HeadStatus, usage: UsagePayload | null, now: number): Ex
     kind: 'gauge',
     name: WINDOW_NAME[best.window],
     pct,
-    note: `${pct}%${best.resetsAt === null ? '' : ` · resets ${localInstantText(best.resetsAt)}`}`,
+    note: `${pct}%${best.resetsAt === null ? '' : ` · resets ${localZonedInstantText(best.resetsAt)}`}`,
     full: false,
   };
 }
@@ -159,7 +159,7 @@ export function fleetCard(head: HeadStatus, inputs: FleetInputs): FleetCard {
     case 'unhealthy':
       return note('stuck', 'other', 'Failing', FL.unhealthy, 'restart', true);
     case 'out of quota': {
-      const when = until === null ? '' : ` until ${localInstantText(until)}`;
+      const when = until === null ? '' : ` until ${localZonedInstantText(until)}`;
       const full: FleetLine = gauge === null ? { kind: 'note', text: `The provider refuses new turns${when}.` } : { ...gauge, full: true, note: until === null ? gauge.note : `out${when}` };
       return { ...base, tone: 'quota', standing: 'quota', state: `Out of quota${when}`, attention: true, line: full, fix: pool.length > 1 ? 'switch' : null };
     }

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { fleetCard, fleetLede, startCommandOf } from '../src/lib/fleet';
-import { localInstantText } from '../src/lib/heads';
+import { localInstantText, localZonedInstantText } from '../src/lib/heads';
 import type { FleetCard, FleetStanding } from '../src/lib/fleet';
 import type { FleetInputs } from '../src/lib/fleet';
 import type { AccountRow } from '../src/types/accounts';
@@ -83,20 +83,21 @@ describe('a fleet card', () => {
   test('a head near its warn share says so, without needing a person', () => {
     const card = fleetCard(head(), inputs({ usage: usage(90) }));
     expect(card).toMatchObject({ state: 'Ready', standing: 'ready', tone: 'work', attention: false });
-    expect(card.line).toMatchObject({ kind: 'gauge', note: `near its limit · 90%, resets ${localInstantText(NOW / 1000 + 3600)}` });
+    expect(card.line).toMatchObject({ kind: 'gauge', note: `near its limit · 90%, resets ${localZonedInstantText(NOW / 1000 + 3600)}` });
     expect(fleetLede([card])).toContain('one ready');
   });
   test.each([100, 105])('a %s percent reading without a held refusal stays ready in the command colour', (pct) => {
     const card = fleetCard(head(), inputs({ usage: usage(pct) }));
     expect(card).toMatchObject({ state: 'Ready', standing: 'ready', tone: 'work', colour: 'grok', attention: false, fix: null });
-    expect(card.line).toMatchObject({ kind: 'gauge', pct, full: false, note: `near its limit · ${pct}%, resets ${localInstantText(NOW / 1000 + 3600)}` });
+    expect(card.line).toMatchObject({ kind: 'gauge', pct, full: false, note: `near its limit · ${pct}%, resets ${localZonedInstantText(NOW / 1000 + 3600)}` });
     expect(fleetLede([card])).toContain('one ready');
     expect(fleetLede([card])).not.toContain('out of quota');
   });
   test('a provider refusal is out of quota with its reset, and a pool offers to switch account', () => {
     const until = NOW / 1000 + 7200;
     const card = fleetCard(head({ quotaResetAtEpochSeconds: until }), inputs({ accounts: [account(), account({ label: 'Second' })] }));
-    expect(card.state).toMatch(/^Out of quota until /);
+    expect(card.state).toBe(`Out of quota until ${localZonedInstantText(until)}`);
+    expect(localZonedInstantText(until)).not.toBe(localInstantText(until));
     expect(card).toMatchObject({ tone: 'quota', attention: true, fix: 'switch' });
     expect(card.line).toMatchObject({ kind: 'gauge', full: true });
     expect(card.meta).toContain('Pool · 2 accounts');

@@ -9,6 +9,8 @@ import type { FleetCard } from '../src/lib/fleet';
 import type { AccountRow } from '../src/types/accounts';
 import { AccountRowView } from '../src/pages/fleet/AccountRows';
 import { FleetCardView } from '../src/pages/fleet/FleetCard';
+import { WindowBars } from '../src/pages/fleet/WindowBars';
+import { localInstantText, localZonedInstantText } from '../src/lib/heads';
 
 const card = (over: Partial<FleetCard> = {}): FleetCard => ({
   key: 'claude-grok', title: 'claude-grok', colour: 'grok', tone: 'work', standing: 'ready', state: 'Ready', attention: false,
@@ -116,5 +118,15 @@ describe('an account row', () => {
     const html = row(acct({ credential_present: false }));
     expect(html).not.toContain('Switch to this one');
     expect(html).toContain('Its login file is gone');
+  });
+});
+
+describe('a command page\'s plan windows', () => {
+  test('a reset reads in the viewer\'s own zone, the clock style Accounts and Usage use', () => {
+    const now = Date.UTC(2026, 9, 5, 18, 0) ;
+    const at = now / 1000 + 3600;
+    const html = renderToStaticMarkup(<WindowBars windows={[{ window: '5h', pct: 41, resetsAt: at, observedAt: null, stale: false }]} now={now} />);
+    expect(html).toContain(`resets ${localZonedInstantText(at)}`);
+    expect(localZonedInstantText(at)).not.toBe(localInstantText(at));
   });
 });

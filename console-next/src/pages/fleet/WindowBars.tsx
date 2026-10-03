@@ -1,11 +1,12 @@
+import { localZonedInstantText } from '../../lib/heads';
 import type { PlanWindow } from '../../lib/usage';
 import { D } from './copy';
 
 const NAME = { '5h': '5 hours', '7d': 'Week' } as const;
 
 /** Every plan window a head tracks, one bar each, in the glass ink. A window whose reset has passed since it was read is not
- *  a figure any more, and says so. */
-export function WindowBars({ windows, now, format }: { windows: readonly PlanWindow[]; now: number; format: (epochSeconds: number) => string }) {
+ *  a figure any more, and says so. A reset reads in the viewer's own zone, the one clock style resets share. */
+export function WindowBars({ windows, now }: { windows: readonly PlanWindow[]; now: number }) {
   return (
     <div className="glass window-bars">
       {windows.map((window) => (
@@ -15,7 +16,7 @@ export function WindowBars({ windows, now, format }: { windows: readonly PlanWin
             {window.stale ? <small>{D.resetPassed}</small> : (
               <>
                 <b>{Math.round(window.pct)}%</b>
-                {window.resetsAt === null ? null : <small>{window.resetsAt * 1000 > now ? 'resets' : 'reset'} {format(window.resetsAt)}</small>}
+                {window.resetsAt === null ? null : <small>{window.resetsAt * 1000 > now ? 'resets' : 'reset'} {localZonedInstantText(window.resetsAt)}</small>}
               </>
             )}
           </div>

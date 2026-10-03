@@ -3,7 +3,7 @@ import { useKeyStore } from '../../api/auth';
 import { useAccounts, useAuth, useHealth, useHeads, useSessions, useStatus, useUsage } from '../../api/queries';
 import { SELECTOR_ORDER_TEXT, canRefresh, poolOf } from '../../lib/accounts';
 import { fleetCard } from '../../lib/fleet';
-import { isKeyHead, localInstantText } from '../../lib/heads';
+import { isKeyHead } from '../../lib/heads';
 import { planWindows } from '../../lib/usage';
 import { Back, Button, Empty, Fault, PageHead, Plus, Segmented, State, Window } from '../../ui';
 import { failureText } from '../../api/client';
@@ -87,7 +87,7 @@ export function FleetHeadPage() {
         <div className="head-body">
           {tab === 'models' ? <ModelsTab head={head.key} /> : tab === 'log' ? <LogTab head={head.key} initialTail={tailOf(params.get('tail'))} /> : (
             <>
-              {windows.length === 0 ? <p className="hint">{facts.none ?? D.noWindows}</p> : <WindowBars windows={windows} now={now} format={localInstantText} />}
+              {windows.length === 0 ? <p className="hint">{facts.none ?? D.noWindows}</p> : <WindowBars windows={windows} now={now} />}
               <h2 className="sub-head">{D.accounts}</h2>
               {pool.length === 0 ? <p className="hint">{D.noAccounts}</p> : (
                 <>

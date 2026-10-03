@@ -4,8 +4,9 @@
 // configure or run a command for it. The answer is 202 "submitted": writing the frame is transport, and the client gives no
 // receipt for an accepted message, so delivery is always unknown.
 //
-// The target is resolved HERE from the registry, never from the client: one live session, alone on its socket. Whatever the
-// request names besides the text is ignored.
+// The target is resolved HERE from the registry, never from the client: one running session, alone on its socket. Running
+// is every registration that is not GONE: the registry's STALE is a pid still alive that has not refreshed its file
+// (SessionRegistry.kt), and its socket is that same process's. Whatever the request names besides the text is ignored.
 package splice.sessions.note
 
 import io.ktor.http.HttpStatusCode
@@ -98,16 +99,17 @@ public class SessionNoteRoute(
         }
     }
 
-    /** The one live session with this id that owns its socket alone. */
+    /** The one running session with this id that owns its socket alone. */
     private fun target(sessionId: String): Step<SessionRecord> {
         val all = registry.read()
-        val live = all.filter { it.sessionId == sessionId && it.availability == SessionAvailability.LIVE }
-        val record = live.singleOrNull()
+        val running = all.filter { it.availability != SessionAvailability.GONE }
+        val mine = running.filter { it.sessionId == sessionId }
+        val record = mine.singleOrNull()
         val socket = record?.messagingSocketPath
-        val sharing = all.count { it.availability == SessionAvailability.LIVE && it.messagingSocketPath == socket }
+        val sharing = running.count { it.messagingSocketPath == socket }
         return when {
             all.none { it.sessionId == sessionId } -> stop(HttpStatusCode.NotFound, NO_SESSION)
-            live.isEmpty() -> stop(HttpStatusCode.Conflict, NOT_RUNNING)
+            mine.isEmpty() -> stop(HttpStatusCode.Conflict, NOT_RUNNING)
             record == null -> stop(HttpStatusCode.Conflict, SEVERAL_WITH_ID)
             socket == null -> stop(HttpStatusCode.Conflict, NO_SOCKET)
             sharing > 1 -> stop(HttpStatusCode.Conflict, SHARED_SOCKET)

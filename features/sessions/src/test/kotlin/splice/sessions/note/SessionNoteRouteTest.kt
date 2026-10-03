@@ -105,16 +105,24 @@ class SessionNoteRouteTest {
     }
 
     @Test
-    fun `no such session, one that is not running and one with no socket are each refused by name`() {
+    fun `no such session, one that is gone and one with no socket are each refused by name`() {
         val sender = Recording()
         assertEquals(HttpStatusCode.NotFound, post(route(sender, record()), "other", hi).status)
         val gone = post(route(sender, record(availability = SessionAvailability.GONE)), "s-1", hi)
         assertEquals("the session is not running", field(gone, "error"))
-        val stale = post(route(sender, record(availability = SessionAvailability.STALE)), "s-1", hi)
-        assertEquals(HttpStatusCode.Conflict, stale.status)
         val bare = post(route(sender, record(socket = null)), "s-1", hi)
         assertEquals("the session has no messaging socket", field(bare, "error"))
         assertTrue(sender.sent.isEmpty())
+    }
+
+    @Test
+    fun `a stale session is running, only not heard from lately, so it takes the note`() {
+        // why: STALE is a pid still alive whose registration has not refreshed (SessionRegistry.kt). Refusing it, the
+        // session page said claude-builder was not running while Sessions listed it Working and Requests streaming.
+        val sender = Recording()
+        val stale = post(route(sender, record(availability = SessionAvailability.STALE)), "s-1", hi)
+        assertEquals(HttpStatusCode.Accepted, stale.status)
+        assertEquals(listOf("s-1"), sender.sent.map { it.first.sessionId })
     }
 
     @Test
@@ -122,6 +130,8 @@ class SessionNoteRouteTest {
         val sender = Recording()
         val shared = post(route(sender, record("s-1"), record("s-2")), "s-1", hi)
         assertEquals(HttpStatusCode.Conflict, shared.status)
+        val staleTwin = record("s-2", availability = SessionAvailability.STALE)
+        assertEquals(HttpStatusCode.Conflict, post(route(sender, record("s-1"), staleTwin), "s-1", hi).status)
         val other = record("s-1", socket = "/run/user/1000/cc-socks/2.sock")
         val twice = post(route(sender, record("s-1"), other), "s-1", hi)
         assertEquals("more than one running session has that id", field(twice, "error"))

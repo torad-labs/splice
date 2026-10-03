@@ -35,6 +35,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
+import splice.codemode.DEFAULT_WORKER_START_TIMEOUT_MS
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -62,7 +63,7 @@ import kotlin.time.Duration.Companion.seconds
 
 class StatementGatewayTest {
     @Test
-    @Timeout(30)
+    @Timeout(60)
     fun `a real result request waits with a signed notice for the same raw round's next statement`(
         @TempDir tmp: Path,
     ) = runBlocking {
@@ -194,7 +195,7 @@ class StatementGatewayTest {
 
         suspend fun firstStep(): List<JsonObject> {
             head.start()
-            val first = withTimeout(5_000) { send(firstBody).bodyAsText() }
+            val first = withTimeout(WORKER_START_BOUND_MS) { send(firstBody).bodyAsText() }
             assertTrue(first.contains("message_stop"), first)
             assertScriptShownAsNotice(first, "tools.Read")
             assertEquals(1L, upstream.terminal.count)
@@ -307,7 +308,7 @@ class StatementGatewayTest {
             head.start()
             val pending = async { send(firstBody).bodyAsText() }
             try {
-                withTimeout(35_000) { runtime.started.await() }
+                withTimeout(WORKER_START_BOUND_MS) { runtime.started.await() }
                 assertNull(withTimeoutOrNull(250) { pending.await() }, "removing admission must block early dispatch")
                 assertEquals(1L, upstream.terminal.count)
                 assertEquals(1, upstream.posts.get())
@@ -479,3 +480,7 @@ class StatementGatewayTest {
         log = {},
     )
 }
+
+// why: the first step boots a real code-mode worker JVM, which the product allows 30 s to start; a 5 s bound
+// failed under CI compile load (run 37112725473). The worker's own bound plus 5 s still catches a hang.
+private const val WORKER_START_BOUND_MS: Long = DEFAULT_WORKER_START_TIMEOUT_MS + 5_000L

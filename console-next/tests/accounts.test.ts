@@ -23,6 +23,7 @@ import {
   isServable,
   nearestOverall,
   nearestWindow,
+  poolOf,
   nextRuleOf,
   readAgeText,
   refusalText,
@@ -77,6 +78,16 @@ function window5hResetting(used: number | null): AccountWindow {
 function window7d(used: number | null): AccountWindow {
   return { seconds: DAY_7, used_percent: used, reset_epoch_seconds: null };
 }
+
+describe('selectable account rows', () => {
+  test('API-key credential rows remain visible to Accounts but are never pool candidates', () => {
+    const oauth = account();
+    const key = account({ kind: 'api-key', single_login: true, label: null });
+    const other = account({ heads: ['another-command'] });
+    expect(poolOf([key, oauth, other], 'claudex')).toEqual([oauth]);
+    expect(key.credential_present).toBe(true);
+  });
+});
 
 describe('the strip state', () => {
   test('a spent window goes red and cocked', () => {

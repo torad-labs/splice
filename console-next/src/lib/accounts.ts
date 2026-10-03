@@ -308,14 +308,14 @@ export function readAgeText(account: AccountRow, nowMs: number): string | null {
 }
 
 /**
- * The accounts one head rides, out of GET /api/accounts: every row whose `heads` names it.
+ * Login accounts one head rides, out of GET /api/accounts. Key-presence rows are not pool candidates.
  *
  * Read off the row rather than joined on anything the console knows, because the daemon already did
  * the join: a login two heads share is ONE row carrying both keys (AccountsRoute.merge, joined on the
  * credential path), so it belongs to both pools and appears in both.
  */
 export function poolOf(accounts: readonly AccountRow[], headKey: string): AccountRow[] {
-  return accounts.filter((account) => account.heads.includes(headKey));
+  return accounts.filter((account) => account.kind !== 'api-key' && account.heads.includes(headKey));
 }
 
 /**

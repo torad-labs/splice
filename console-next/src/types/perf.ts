@@ -270,8 +270,16 @@ export interface TracedTurnWire {
   total_ms: number | null;
 }
 
-/** A request or response side of a traced record, as the TraceStore wrote it: headers redacted by
- *  name when written, the body exact up to the cap (`truncated` says it was cut). */
+/** The daemon retained the reference and metadata but could not read or store its body. */
+export interface UnavailableTraceBody {
+  unavailable: true;
+  reason?: string;
+  truncated?: boolean;
+}
+
+export type TraceBody = string | UnavailableTraceBody;
+
+/** A request or response side of a traced record, with exact bodies or explicit unavailable markers. */
 export interface TraceSide {
   method?: string;
   path?: string;
@@ -279,9 +287,9 @@ export interface TraceSide {
   stream?: boolean;
   encoding?: string;
   headers?: Record<string, string>;
-  body?: string;
+  body?: TraceBody;
   /** A response's text, where a request carries `body`. */
-  text?: string;
+  text?: TraceBody;
   truncated?: boolean;
 }
 

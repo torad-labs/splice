@@ -46,10 +46,11 @@ function Conversation({ row, plan }: { row: TurnRow; plan: string }) {
 function Side({ label, side }: { label: string; side: TraceSide | undefined }) {
   const text = side?.body ?? side?.text;
   if (side === undefined || text === undefined) return null;
+  const reason = typeof text !== 'string' && typeof text?.reason === 'string' ? text.reason : undefined;
   return (
     <details>
       <summary>{label}{side.status === undefined ? '' : ` · ${side.status}`}</summary>
-      <pre>{text}</pre>
+      {typeof text === 'string' ? <pre>{text}</pre> : <p className="kept-note" role="status">{P.bodyUnavailable}{reason === undefined ? '' : ` ${reason}`}</p>}
       {side.truncated === true ? <p className="sub">{P.truncated}</p> : null}
     </details>
   );

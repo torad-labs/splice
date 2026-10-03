@@ -105,6 +105,7 @@ export const P = {
   sentRequest: 'Sent',
   received: 'Came back',
   truncated: 'Cut at the size limit.',
+  bodyUnavailable: 'Body unavailable.',
   wireOff: 'Sent bodies are not kept for this command.',
   wireNone: 'No kept body matches this turn.',
   wireBody: 'What splice sent',

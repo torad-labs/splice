@@ -11,7 +11,7 @@ import type { CaptureWire, KeptTurn, TurnRow } from '../src/types/perf';
 import type { TopologyState } from '../src/types/topology';
 
 const row = (turn: string): TurnRow => ({ head: 'claude-solo', ts: 1_000_000, model: 'm', outcome: 'error:conn-reset', compact: false, turn });
-const kept = (id: string, sentence: string | null): KeptTurn => ({
+const kept = (id: string, sentence: string | null): Extract<KeptTurn, { read: unknown }> => ({
   read: { head: 'claude-solo', turn: { id, ts: 1, session: null, model: 'm', compact: false, open: false, outcome: 'error:conn-reset', failure_sentence: sentence, rounds: 1, attempts: 1, total_ms: 20 }, records: [] },
 });
 const capture = (enabled: boolean): CaptureWire => ({ head: 'claude-solo', enabled, retention_days: 7, max_body_chars: 1000, restart_required: true });
@@ -96,6 +96,63 @@ describe('the body capture control', () => {
     expect(captureState(true, true)).toEqual({ on: true, recording: true, pending: false });
     expect(captureState(false, false)).toEqual({ on: false, recording: false, pending: false });
     expect(captureState(null, null).on).toBe(false);
+  });
+});
+
+describe('unavailable kept bodies', () => {
+  const requestPage = (body: unknown, reason?: unknown): string => page(
+    <KeptTabs row={row('synthetic')} plan="Solo" tab="request" />,
+    (client) => {
+      const data = kept('synthetic', null);
+      client.setQueryData(['trace', 'claude-solo', 'synthetic'], {
+        read: {
+          ...data.read,
+          records: [{
+            kind: 'attempt', ts: 1, attempt: 1,
+            request: { body: reason === undefined ? body : { unavailable: true, reason } },
+            response: { text: 'synthetic intact answer' },
+          }],
+        },
+      });
+    },
+  );
+
+  test('a missing or corrupt body stays legible beside the intact answer', () => {
+    const html = requestPage({ trace_chunks: 1, parts: [], unavailable: true });
+    expect(html).toContain('Body unavailable.');
+    expect(html).toContain('<pre>synthetic intact answer</pre>');
+  });
+
+  test('a capacity omission shows its stored reason, escaped as text', () => {
+    const html = requestPage(null, 'daily trace body budget exhausted <synthetic>');
+    expect(html).toContain('Body unavailable. daily trace body budget exhausted &lt;synthetic&gt;');
+    expect(html).toContain('synthetic intact answer');
+  });
+
+  test('an unexpected non-string reason cannot become a React child', () => {
+    expect(requestPage(null, { malformed: 'synthetic' })).toContain('Body unavailable.');
+  });
+
+  test('unavailable response text and answer bodies cannot blank the panel', () => {
+    const html = page(<KeptTabs row={row('synthetic')} plan="Solo" tab="request" />, (client) => {
+      const data = kept('synthetic', null);
+      client.setQueryData(['trace', 'claude-solo', 'synthetic'], {
+        read: {
+          ...data.read,
+          records: [
+            { kind: 'attempt', ts: 1, attempt: 1, request: { body: 'synthetic intact request' }, response: { text: { unavailable: true } } },
+            { kind: 'turn', ts: 2, answer: { body: { unavailable: true, reason: 'daily trace body budget exhausted' } } },
+          ],
+        },
+      });
+    });
+    expect(html).toContain('<pre>synthetic intact request</pre>');
+    expect(html.match(/Body unavailable\./g)).toHaveLength(2);
+    expect(html).toContain('daily trace body budget exhausted');
+  });
+
+  test('legacy literals remain verbatim', () => {
+    expect(requestPage('synthetic legacy body')).toContain('<pre>synthetic legacy body</pre>');
   });
 });
 

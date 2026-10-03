@@ -45,6 +45,7 @@ import splice.upstream.failure.CodeModeWorkerLostException
 import java.io.FilterInputStream
 import java.io.IOException
 import java.io.InputStream
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -149,6 +150,49 @@ class CodeModeHostDeadlineTest {
             } finally {
                 scope.cancel()
             }
+        }
+    }
+
+    @Test
+    fun `a closed cached host is replaced before its exit notification is published`() = runBlocking {
+        val scope = LifecycleScope(ProcessDispatchers().io())
+        val ended = AtomicBoolean()
+        val previousProcess = DelayedHostExitProcess()
+        val nextProcess = SilentHostCloseProcess()
+        val previous = SharedWorkerChannel(previousProcess, scope)
+        val next = SharedWorkerChannel(nextProcess, scope)
+        val attempts = AtomicInteger()
+        val pool = CodeModeHostPool(
+            CodeModePoolAdmission(1, DEFAULT_HEAP_MB, DEFAULT_POOL_MEMORY_MB),
+            scope,
+            CodeModeHostStart { if (attempts.incrementAndGet() == 1) previous else next },
+            ElapsedClock { 0L },
+            Ticker { false },
+            CodeModePoolTimes(60_000, 30_000),
+            LogSink {},
+        )
+        try {
+            previous.awaitReady()
+            next.awaitReady()
+            previous.afterExit { ended.set(true) }
+            pool.release(pool.open("closed-before-exit"))
+            previous.close()
+            assertTrue(previous.isClosed)
+            assertFalse(ended.get(), "the process exit notification is deliberately still withheld")
+            pool.release(pool.open("closed-before-exit"))
+            assertEquals(2, attempts.get(), "the start must replace the already closed cached channel")
+            assertEquals(1, nextProcess.opens.get())
+            previousProcess.publishExit()
+            assertTrue(ended.get())
+            pool.release(pool.open("closed-before-exit"))
+            assertEquals(2, attempts.get(), "a late old exit must not clear the replacement generation")
+            assertEquals(1, nextProcess.opens.get(), "the initialized replacement engine is reused")
+        } finally {
+            previousProcess.publishExit()
+            pool.close()
+            previous.close()
+            next.close()
+            scope.cancel()
         }
     }
 
@@ -307,6 +351,17 @@ class CodeModeHostDeadlineTest {
                 scope.cancel()
             }
         }
+    }
+}
+
+private class DelayedHostExitProcess : SilentHostCloseProcess() {
+    private val published = CompletableFuture<Process>()
+
+    override fun onExit(): CompletableFuture<Process> = published
+    override fun waitFor(timeout: Long, unit: TimeUnit): Boolean = published.isDone
+
+    fun publishExit() {
+        published.complete(this)
     }
 }
 

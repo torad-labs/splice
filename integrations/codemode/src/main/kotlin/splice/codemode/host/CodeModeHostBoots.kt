@@ -5,6 +5,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import splice.codemode.SharedWorkerChannel
@@ -22,7 +23,7 @@ internal class CodeModeHostBoots(
     /** Called under the placement lock; opening a cell is the only action that boots a host. */
     fun open(host: CodeModePoolHost): Deferred<SharedWorkerChannel> {
         host.boot?.let {
-            if (!it.isCancelled) return it
+            if (reusable(it)) return it
             lost(host, it)
         }
         val boot = scope.async(start = CoroutineStart.LAZY) { start.open() }
@@ -40,6 +41,14 @@ internal class CodeModeHostBoots(
             }
         }
         return boot
+    }
+
+    /** Completion is immutable: inspect a cached result without awaiting under the placement lock. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun reusable(boot: Deferred<SharedWorkerChannel>): Boolean = if (boot.isCompleted) {
+        boot.getCompletionExceptionOrNull() == null && !boot.getCompleted().isClosed
+    } else {
+        !boot.isCancelled
     }
 
     private fun lost(host: CodeModePoolHost, boot: Deferred<SharedWorkerChannel>) {

@@ -140,6 +140,70 @@ class QuotaPollerTest {
         assertNull(recorded.last().sevenDay!!.resetsAt)
     }
 
+    // A daemon that starts before the network does (every reboot on 2026-10-01 and 2026-10-03) had its
+    // boot probe refused, then waited the whole interval: the GPT head drew no 7d bar for five minutes.
+    @Test
+    fun `a failed probe retries within seconds and a success restores the full interval`() = runTest {
+        val calls = AtomicInteger(0)
+        val recorded = mutableListOf<QuotaSnapshot>()
+        val scope = kotlinx.coroutines.CoroutineScope(
+            StandardTestDispatcher(testScheduler) + SupervisorJob() +
+                CoroutineExceptionHandler { _, _ -> },
+        )
+        val poller = QuotaPoller(
+            scope = scope,
+            head = "claudex",
+            probe = RefusedTwiceThenAnswersProbe(calls),
+            sink = QuotaSnapshotSink(recorded::add),
+            log = { },
+            intervalMs = QUOTA_POLL_INTERVAL_MS,
+            clock = WallClock { 0L },
+        )
+        poller.start()
+        // stop() in finally: a failed assertion that skipped it left the loop running, and runTest's
+        // final drain of the shared virtual scheduler then looped forever filling `recorded` (OOM).
+        try {
+            advanceTimeBy(31_000)
+            assertEquals(3, calls.get(), "refused at 0s and 10s, answered at 30s")
+            assertEquals(1, recorded.size, "the bars have a reading 30s after a refused boot probe")
+            advanceTimeBy(QUOTA_POLL_INTERVAL_MS - 2_000)
+            assertEquals(3, calls.get(), "after an answer the poller waits the full interval again")
+            advanceTimeBy(2_000)
+            assertEquals(4, calls.get())
+        } finally {
+            poller.stop()
+        }
+    }
+
+    // An HTTP refusal is an answer: a 429 asks for less traffic and a 401 does not heal in seconds, so
+    // only an endpoint that could not be reached is retried early.
+    @Test
+    fun `an HTTP refusal waits the full interval`() = runTest {
+        val calls = AtomicInteger(0)
+        val scope = kotlinx.coroutines.CoroutineScope(
+            StandardTestDispatcher(testScheduler) + SupervisorJob() +
+                CoroutineExceptionHandler { _, _ -> },
+        )
+        val poller = QuotaPoller(
+            scope = scope,
+            head = "claudex",
+            probe = AlwaysRefusedProbe(calls),
+            sink = QuotaSnapshotSink { },
+            log = { },
+            intervalMs = QUOTA_POLL_INTERVAL_MS,
+            clock = WallClock { 0L },
+        )
+        poller.start()
+        try {
+            advanceTimeBy(QUOTA_POLL_INTERVAL_MS - 1_000)
+            assertEquals(1, calls.get(), "a refused poll is not retried before the interval")
+            advanceTimeBy(2_000)
+            assertEquals(2, calls.get())
+        } finally {
+            poller.stop()
+        }
+    }
+
     // V4-296: a usage endpoint answering 401 on every poll read as "nothing to record", so the bars froze on
     // the last snapshot and no line said why, while a thrown failure logged once.
     @Test
@@ -176,6 +240,22 @@ class QuotaPollerTest {
             1, 2 -> error("provider invariant blew up")
             3 -> QuotaSnapshot(updatedAt = 0L)
             else -> error("provider invariant blew up again")
+        }
+    }
+
+    /** Refused like a boot before the network is up, twice, then answers on every later call. */
+    private class RefusedTwiceThenAnswersProbe(private val calls: AtomicInteger) : QuotaProbe {
+        override suspend fun probe(): QuotaSnapshot? {
+            if (calls.incrementAndGet() <= 2) throw java.net.ConnectException("Connection refused")
+            return QuotaSnapshot(updatedAt = 0L)
+        }
+    }
+
+    /** The usage endpoint answers 429 on every call. */
+    private class AlwaysRefusedProbe(private val calls: AtomicInteger) : QuotaProbe {
+        override suspend fun probe(): QuotaSnapshot? {
+            calls.incrementAndGet()
+            throw QuotaEndpointRefused(429)
         }
     }
 

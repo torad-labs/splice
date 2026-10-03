@@ -2,6 +2,11 @@
 // then one every few minutes for the daemon's life. Runs on the daemon's own probe scope so
 // Daemon.stop() ends it with everything else. A failing endpoint is logged once, then silence
 // until it recovers — the bars simply keep the last snapshot.
+//
+// A probe that cannot reach the endpoint retries after 10 s, doubling up to the interval; an HTTP
+// refusal is an answer and waits the full interval. The daemon starts at boot before
+// the network is up, so its first probe is refused; waiting the whole interval after that left the
+// GPT head with no 7d bar for five minutes after every reboot (2026-10-01, 2026-10-03).
 package splice.usage.quota
 
 import kotlinx.coroutines.CoroutineScope
@@ -62,9 +67,10 @@ public class QuotaPoller(
 
     private fun launchSupervised(): Job {
         val launched = scope.launch {
+            var failures = 0
             while (isActive) {
-                pollOnce()
-                if (!ticker.awaitTick(intervalMs)) return@launch
+                failures = if (pollOnce()) 0 else failures + 1
+                if (!ticker.awaitTick(waitAfter(failures))) return@launch
             }
         }
         job = launched
@@ -108,7 +114,15 @@ public class QuotaPoller(
         restartTimes.size
     }
 
-    internal suspend fun pollOnce() {
+    /** The full interval after an answer; after the Nth failure in a row, 10 s doubled N-1 times, capped at it. */
+    private fun waitAfter(failures: Int): Long = when (failures) {
+        0 -> intervalMs
+        else -> minOf(intervalMs, QUOTA_RETRY_FIRST_MS shl minOf(failures - 1, RETRY_DOUBLINGS_MAX))
+    }
+
+    /** True when the endpoint answered, an HTTP refusal included, so only an unreachable endpoint is retried
+     *  early: a 429 asks for less traffic and a 401 does not heal in seconds. */
+    internal suspend fun pollOnce(): Boolean =
         Cancellables.runCatchingBestEffort { probe.probe() }
             .onSuccess { snapshot -> snapshot?.let(::accept) }
             .onFailure { failure ->
@@ -122,7 +136,7 @@ public class QuotaPoller(
                     )
                 }
             }
-    }
+            .let { result -> result.isSuccess || result.exceptionOrNull() is QuotaEndpointRefused }
 
     private fun accept(snapshot: QuotaSnapshot) {
         sink.record(snapshot)
@@ -137,6 +151,12 @@ public class QuotaPoller(
 }
 
 internal const val QUOTA_POLL_INTERVAL_MS: Long = 5 * 60 * 1000L
+
+// why: a boot's network comes up within seconds of the daemon, so the first retry is 10 s.
+private const val QUOTA_RETRY_FIRST_MS = 10_000L
+
+// why: eight doublings of 10 s is about 43 minutes, past any poll interval; the cap keeps the shift from overflowing.
+private const val RETRY_DOUBLINGS_MAX = 8
 private const val MAX_RESTARTS = 5
 private const val RESTART_WINDOW_MS = 600_000L
 private const val MS_PER_MIN = 60_000L

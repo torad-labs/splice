@@ -24,6 +24,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import splice.core.model.ClientWindows
+import splice.core.util.JsonWire
 import splice.head.ClientWindowWitness
 import splice.head.admission.TurnQuota
 import splice.head.wire.ClientAnswer
@@ -65,7 +66,9 @@ internal class CollectTurn(
         )
         // V4-174: no frames cross this channel, so the trace reads the collected answer instead —
         // at the turn record, once the terminal has closed and the body exists.
-        inputs.trace?.collectedAnswer { ClientAnswer(terminal.httpStatus(), terminal.responseBody().toString()) }
+        inputs.trace?.collectedAnswer {
+            ClientAnswer(terminal.httpStatus(), terminal.responseBody().let(JsonWire::string))
+        }
         val drive = driveFactory.assembleDrive(inputs, terminal, channel)
         // collect never commits a 200 before its terminal respondText — a cancelled collect is a
         // native connection abort client-side, and sealing there only wrote an error body nobody
@@ -93,7 +96,7 @@ internal class CollectTurn(
                     ?.clientHeaders()
                     ?.forEach { (name, value) -> call.response.header(name, value) }
                 call.respondText(
-                    terminal.responseBody().toString(),
+                    terminal.responseBody().let(JsonWire::string),
                     ContentType.Application.Json,
                     HttpStatusCode.fromValue(terminal.httpStatus()),
                 )

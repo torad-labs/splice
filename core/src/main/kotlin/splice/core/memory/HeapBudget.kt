@@ -64,6 +64,12 @@ public object HeapWeights {
     // why: V4-374 measured 208 MiB of request heap for a 32 MiB wire body.
     private const val REQUEST_NUMERATOR = 13L
 
+    /** One charged socket decoder and its bounded raw read buffer. */
+    public const val CONNECTION_BYTES: Long = 64 * 1024L
+
+    // why: headers, per-call channels and ordering metadata exist before any decoded body.
+    private const val REQUEST_METADATA_BYTES = 32 * 1024L
+
     /** Decoding and translation use the measured 13/2 request expansion, rounded upward. */
     public fun request(bytes: Long): Long =
         if (bytes > (Long.MAX_VALUE - 1L) / REQUEST_NUMERATOR) {
@@ -71,6 +77,12 @@ public object HeapWeights {
         } else {
             (bytes.coerceAtLeast(1L) * REQUEST_NUMERATOR + 1L) / 2L
         }
+
+    /** Full pre-decoding request ownership, including empty-body metadata, with saturating arithmetic. */
+    public fun ingress(bytes: Long): Long {
+        val body = request(bytes)
+        return if (body > Long.MAX_VALUE - REQUEST_METADATA_BYTES) Long.MAX_VALUE else body + REQUEST_METADATA_BYTES
+    }
 
     public fun multiply(bytes: Long, factor: Long): Long {
         require(bytes >= 0L && factor > 0L)

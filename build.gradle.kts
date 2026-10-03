@@ -109,7 +109,11 @@ subprojects {
                     "io.netty:netty-codec-http",
                     "io.netty:netty-codec-http2",
                     "io.netty:netty-codec-compression",
-                ).forEach { add("implementation", "$it:${libs.versions.netty.get()}") }
+                ).forEach {
+                    add("implementation", "$it:${libs.versions.netty.get()}")
+                    // Ingress exports Netty types, so its API must carry the existing security floor.
+                    if (path == ":integrations-http") add("api", "$it:${libs.versions.netty.get()}")
+                }
             }
         }
     }

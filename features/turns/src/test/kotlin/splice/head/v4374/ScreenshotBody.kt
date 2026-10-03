@@ -26,10 +26,11 @@ private val COMMA = ",".toByteArray()
 /** The V4-360 p20 request: a Messages body of exactly [bytes] whose last tool_result carries screenshots,
  *  base64 in `image` blocks. Held as segments that share one screenshot's bytes, so a 32 MiB body costs the
  *  sender about a megabyte and [stream] never materializes it. */
-internal class ScreenshotBody(private val bytes: Int) {
+internal class ScreenshotBody(val bytes: Int) {
     private fun base64(chars: Int) = ByteArray(chars) { 'A'.code.toByte() }
 
     private val shot = base64(SCREENSHOT_BASE64_CHARS)
+    private val parts = segments()
 
     private fun segments(): List<ByteArray> {
         val image = IMAGE_OPENING.size + SCREENSHOT_BASE64_CHARS + IMAGE_CLOSING.size
@@ -41,15 +42,15 @@ internal class ScreenshotBody(private val bytes: Int) {
         repeat(count) { index ->
             if (index > 0) out += COMMA
             out += IMAGE_OPENING
-            out += if (index == count - 1 && spare > 0) base64(SCREENSHOT_BASE64_CHARS + spare) else shot
+            out += if (index == count - 1 && spare != 0) base64(SCREENSHOT_BASE64_CHARS + spare) else shot
             out += IMAGE_CLOSING
         }
         out += CLOSING
         return out
     }
 
-    val text: String get() = segments().joinToString("") { it.decodeToString() }
+    val text: String get() = parts.joinToString("") { it.decodeToString() }
 
     fun stream(): InputStream =
-        SequenceInputStream(Collections.enumeration(segments().map { ByteArrayInputStream(it) }))
+        SequenceInputStream(Collections.enumeration(parts.map { ByteArrayInputStream(it) }))
 }

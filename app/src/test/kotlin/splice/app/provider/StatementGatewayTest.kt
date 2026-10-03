@@ -63,6 +63,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.seconds
 
+// why: the release probe also leaves room for an active socket and a retiring refused socket.
+private const val RELEASE_PROBE_BYTES = 24_000
+
 class StatementGatewayTest {
     @Test
     @Timeout(60)
@@ -173,10 +176,11 @@ class StatementGatewayTest {
         private val ticks = Channel<Unit>(Channel.UNLIMITED)
         private val gate = InflightGate({ 1 }, maxQueued = { 1 })
         private val firstBody = body("""[{"role":"user","content":"go"}]""")
-        private val firstWeight = (firstBody.toByteArray().size * 13L + 1L) / 2L
+        private val firstWeight = splice.core.memory.HeapWeights.ingress(firstBody.toByteArray().size.toLong())
 
-        // The probe fits only after the held source releases; both result trees also fit this ceiling.
-        private val heapBudget = splice.core.memory.HeapWeights.request(14_000L)
+        // The probe plus one socket exactly fills the ceiling, so any retained source blocks it.
+        private val heapBudget = splice.core.memory.HeapWeights.CONNECTION_BYTES +
+            splice.core.memory.HeapWeights.ingress(RELEASE_PROBE_BYTES.toLong())
         private val retainedWeights = mutableListOf(firstWeight)
         private val heap = RequestMaterializationGate(heap = HeapBudget(JvmHeap.limitBytes, heapBudget))
         private var waiting: Deferred<InflightGate.Admission>? = null
@@ -204,7 +208,11 @@ class StatementGatewayTest {
             return toolCalls(first).also { calls ->
                 assertEquals(if (batch == null) 1 else 2, calls.size, first)
                 assertTrue(calls.all { it.getValue("name").jsonPrimitive.content == "Read" }, first)
-                assertEquals(529, heapProbe(14_000), "the held raw source retains its materialized request")
+                assertEquals(
+                    529,
+                    heapProbe(RELEASE_PROBE_BYTES),
+                    "the held raw source retains its materialized request",
+                )
             }
         }
 
@@ -330,7 +338,7 @@ class StatementGatewayTest {
                 while (gate.snapshot().inflight != 0) yield()
                 while (deps.stores.usageStore.readState().outputTokens5h != outputTokens) yield()
                 // The permit is counted down before its release callbacks finish.
-                while (heapProbe(14_000) != 200) yield()
+                while (heapProbe(RELEASE_PROBE_BYTES) != 200) yield()
                 while (deps.liveTurns.list().isNotEmpty()) yield()
             }
             assertTrue(deps.liveTurns.list().isEmpty())
@@ -354,7 +362,7 @@ class StatementGatewayTest {
                 put("content", JsonArray(results))
             }
             return body(JsonArray(history).toString()).also { request ->
-                retainedWeights += (request.toByteArray().size * 13L + 1L) / 2L
+                retainedWeights += splice.core.memory.HeapWeights.ingress(request.toByteArray().size.toLong())
             }
         }
 

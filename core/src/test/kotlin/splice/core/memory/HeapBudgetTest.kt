@@ -55,6 +55,22 @@ class HeapBudgetTest {
     }
 
     @Test
+    fun `empty and overflowing ingress sizes cannot escape metadata charging`() {
+        val empty = HeapWeights.ingress(0)
+        assertTrue(empty > HeapWeights.request(0))
+        assertEquals(empty, HeapWeights.ingress(-1))
+        assertEquals(Long.MAX_VALUE, HeapWeights.ingress(Long.MAX_VALUE))
+        val heap = HeapBudget(Long.MAX_VALUE, empty + HeapWeights.CONNECTION_BYTES)
+        val connection = requireNotNull(heap.reserve(HeapWeights.CONNECTION_BYTES))
+        val request = requireNotNull(heap.reserve(empty))
+        assertNull(heap.reserve(1))
+        assertNull(heap.reserve(HeapWeights.ingress(Long.MAX_VALUE)))
+        request.close()
+        connection.close()
+        assertEquals(heap.limitBytes, heap.available.value)
+    }
+
+    @Test
     fun `concurrent admissions cannot overspend`() {
         val budget = HeapBudget(256, 100)
         val executor = Executors.newFixedThreadPool(8)

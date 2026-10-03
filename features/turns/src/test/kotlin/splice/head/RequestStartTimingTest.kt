@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -107,30 +108,34 @@ class RequestStartTimingTest {
     }
 
     @Test
-    fun `heap lease queue time is numeric and excluded from preparation`(@TempDir root: Path) = runBlocking<Unit> {
-        val budget = splice.core.memory.HeapWeights.request(timingBody("blocked").toByteArray().size.toLong())
-        TimingRig(root, heapBytes = budget).use { rig ->
-            rig.start()
-            val first = async(Dispatchers.IO) { timingPost(rig.port, "blocked") }
-            try {
-                assertTrue(rig.provider.entered.await(TIMING_TIMEOUT_MS, TimeUnit.MILLISECONDS))
-                val second = async(Dispatchers.IO) { timingPost(rig.port, "timed") }
-                awaitTiming { rig.gate.snapshot().inflight == 2 }
-                assertEquals(null, rig.heap.tryWithLease(1) { "capacity positive control" })
-                delay(TIMING_WAIT_MS)
-                rig.provider.release.countDown()
-                assertTrue(first.await().contains("message_stop"))
-                assertTrue(second.await().contains("message_stop"))
-                val row = timingRow(root)
-                assertTrue(duration(row, LEASE_KEY) >= TIMING_WAIT_MS, row.toString())
-                assertTrue(duration(row, CLIENT_BYTE_KEY) >= duration(row, LEASE_KEY), row.toString())
-                assertTrue(duration(row, PREP_KEY) < duration(row, LEASE_KEY), row.toString())
-                duration(row, ADMIT_KEY)
-            } finally {
-                rig.provider.release.countDown()
+    fun `heap capacity refuses before preparation while accepted timing stays numeric`(@TempDir root: Path) =
+        runBlocking<Unit> {
+            TimingRig(root).use { rig ->
+                rig.start()
+                val first = async(Dispatchers.IO) { timingPost(rig.port, "blocked") }
+                try {
+                    assertTrue(rig.provider.entered.await(TIMING_TIMEOUT_MS, TimeUnit.MILLISECONDS))
+                    val hold = checkNotNull(rig.heap.heap.reserve(rig.heap.heap.available.value))
+                    try {
+                        val refused = withContext(Dispatchers.IO) { timingPost(rig.port, "timed") }
+                        assertTrue(refused.startsWith("HTTP/1.1 529"), refused)
+                        assertTrue(refused.contains("overloaded_error"), refused)
+                        assertEquals(1, rig.gate.snapshot().inflight)
+                    } finally {
+                        hold.close()
+                    }
+                    rig.provider.release.countDown()
+                    assertTrue(first.await().contains("message_stop"))
+                    val row = timingRow(root, "blocked")
+                    duration(row, LEASE_KEY)
+                    duration(row, CLIENT_BYTE_KEY)
+                    duration(row, PREP_KEY)
+                    duration(row, ADMIT_KEY)
+                } finally {
+                    rig.provider.release.countDown()
+                }
             }
         }
-    }
 
     @Test
     fun `a collected reply records its actual client write before publishing the perf row`(
@@ -302,14 +307,14 @@ private fun timingPost(port: Int, label: String, stream: Boolean = true): String
  *  its row in collect's finally, after the client write returns (CollectPerf.publish), so the client can
  *  read the closed response before the row reaches the file lane: one drain and one read raced it (CI run
  *  37103873666, NoSuchFileException on perf.jsonl). */
-private fun timingRow(root: Path): JsonObject {
+private fun timingRow(root: Path, session: String = "timed"): JsonObject {
     val file = root.resolve("perf.jsonl")
     val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(ROW_WAIT_SECONDS)
     while (true) {
         assertTrue(AsyncFileIo.drain())
         val lines = if (Files.exists(file)) Files.readAllLines(file) else emptyList()
         val timed = lines.map { Json.parseToJsonElement(it).jsonObject }
-            .filter { it["session_id"]?.jsonPrimitive?.content == "timed" }
+            .filter { it["session_id"]?.jsonPrimitive?.content == session }
         if (timed.isNotEmpty()) return timed.single()
         check(System.nanoTime() < deadline) { "no perf row for the timed session within $ROW_WAIT_SECONDS s" }
         LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(ROW_POLL_MS))

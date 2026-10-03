@@ -35,8 +35,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import splice.core.util.LogSink
 import splice.head.admission.HeadAdmission
-import splice.head.wire.WIRE_TAP_OFF
-import splice.upstream.Provider
+import splice.http.ingress.HeapIngress
 import splice.upstream.codemode.ProcessDispatchers
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -60,7 +59,6 @@ private const val WRITE_TIMEOUT_S = 60
 /** The head's Ktor/Netty listener: POST /v1/messages EXACTLY, POST /v1/messages/count_tokens,
  *  GET /v1/models (discovery-wrapped) and GET /health {ok,port,version}. */
 internal class HeadEngine(
-    private val provider: Provider,
     private val listenPort: Int,
     /** The ONE thing this collaborator needs from the head (V4-105 item 3): it read `deps.log` and
      *  nothing else, so it depended on a 25-parameter bundle to write a line. */
@@ -69,6 +67,7 @@ internal class HeadEngine(
     private val clientAuth: ClientAuth,
     private val admission: HeadAdmission,
     private val countTokens: CountTokens,
+    private val ingress: HeapIngress,
 ) {
     @Volatile
     private var server: EmbeddedServer<NettyApplicationEngine, *>? = null
@@ -95,6 +94,7 @@ internal class HeadEngine(
             Netty,
             serverConfig {
                 module {
+                    ingress.install(this)
                     install(SSE)
                     // v0.4.0: a DNS-rebinding page is refused before routing (ClientAuth.admitsHost).
                     intercept(ApplicationCallPipeline.Plugins) { if (!clientAuth.admitsHost(call)) finish() }
@@ -140,9 +140,10 @@ internal class HeadEngine(
             // client connection with a real, already-connected socket (NettyChannelInitializer
             // .initChannel), logged once per start() so N connections don't spam the log.
             channelPipelineConfig = { pipeline ->
+                ingress.install(pipeline)
                 if (nodelayLogged.compareAndSet(false, true)) {
                     val noDelay = (pipeline.channel().config() as? SocketChannelConfig)?.isTcpNoDelay
-                    log("[${provider.key}] tcp_nodelay(server)=${noDelay ?: "unknown"}\n")
+                    log("tcp_nodelay(server)=${noDelay ?: "unknown"}\n")
                 }
             }
         }
@@ -169,7 +170,7 @@ internal class HeadEngine(
         val payload = diagnostics.wireJson(last)
         if (payload == null) {
             call.respondText(
-                WIRE_TAP_OFF.replace("KEY", provider.key),
+                diagnostics.wireOffJson(),
                 ContentType.Application.Json,
                 HttpStatusCode.NotFound,
             )

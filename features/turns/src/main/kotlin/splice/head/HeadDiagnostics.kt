@@ -18,6 +18,7 @@ import splice.core.head.GateHealth
 import splice.core.head.HeadHealth
 import splice.core.model.DiscoveryRow
 import splice.head.turn.TurnDriver
+import splice.head.wire.WIRE_TAP_OFF
 import splice.head.wire.WireTap
 import splice.upstream.Provider
 import splice.upstream.retry.InflightGate
@@ -73,6 +74,8 @@ internal class HeadDiagnostics(
      *  tap is off so the route can say which knob turns it on rather than answer an empty list a
      *  reader would take for "nothing was sent". */
     fun wireJson(last: Int): String? = wireTap?.json(provider.key, last)
+
+    fun wireOffJson(): String = WIRE_TAP_OFF.replace("KEY", provider.key)
 
     fun modelsJson(): String {
         // EVERY catalog model gets a discovery row, including the pinned one — Claude Code needs

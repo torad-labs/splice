@@ -18,7 +18,9 @@
 package splice.app.control
 
 import io.ktor.server.application.pluginOrNull
+import io.ktor.server.application.serverConfig
 import io.ktor.server.engine.EmbeddedServer
+import io.ktor.server.engine.connector
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.netty.NettyApplicationEngine
@@ -50,16 +52,19 @@ import splice.app.control.mount.UsageMount
 import splice.configuration.topology.TopologyStale
 import splice.control.mcp.McpHost
 import splice.core.config.ConfigService
+import splice.core.config.Knob
 import splice.core.config.MgmtKey
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
 import splice.daemonclient.DaemonProbe
 import splice.diagnostics.doctor.DaemonAnswers
 import splice.diagnostics.doctor.DaemonAnswersSource
+import splice.http.ingress.HeapIngress
 import splice.launch.recipe.LaunchService
 import splice.lifecycle.restart.DaemonSuccessor
 import splice.lifecycle.restart.ShutdownDaemon
 import splice.sessions.registry.SessionSource
+import splice.upstream.memory.JvmHeap
 
 // ControlServer's lifecycle/limit constants, at their sanctioned file-scope home.
 private const val STOP_GRACE_MS = 100L
@@ -163,6 +168,7 @@ public class ControlServer(
     private val models = ModelsMount(heads, ports, guard)
     private val launch = LaunchMount(heads, resolver, launchService, audit, log, guard, config.statePaths, sessions)
     private val mcp = mcpHost?.let { McpMount(it, guard) }
+    private val ingress = HeapIngress(JvmHeap.budget, Knob.MAX_REQUEST_BYTES.default as Long)
 
     @Volatile
     private var server: EmbeddedServer<NettyApplicationEngine, *>? = null
@@ -202,26 +208,38 @@ public class ControlServer(
      *  measuring the TABLE rather than the startup sequence — two different jobs that never belonged
      *  in one body. Adding a route should not be a reason to restructure startup, or the reverse. */
     private fun controlEngine(): EmbeddedServer<NettyApplicationEngine, *> =
-        embeddedServer(Netty, port = port, host = "127.0.0.1") {
-            guard.refuseForeignHosts(this)
-            routing {
-                fleet.register(this)
-                lifecycle.register(this)
-                add.register(this)
-                configuration.register(this)
-                usage.register(this)
-                accounts.register(this)
-                turns.register(this)
-                trace.register(this)
-                sessionMount.register(this)
-                teams.register(this)
-                projects.register(this)
-                events.register(this)
-                diagnostics.register(this)
-                models.register(this)
-                launch.register(this)
-                mcp?.register(this)
+        embeddedServer(
+            Netty,
+            serverConfig {
+                module {
+                    ingress.install(this)
+                    guard.refuseForeignHosts(this)
+                    routing {
+                        fleet.register(this)
+                        lifecycle.register(this)
+                        add.register(this)
+                        configuration.register(this)
+                        usage.register(this)
+                        accounts.register(this)
+                        turns.register(this)
+                        trace.register(this)
+                        sessionMount.register(this)
+                        teams.register(this)
+                        projects.register(this)
+                        events.register(this)
+                        diagnostics.register(this)
+                        models.register(this)
+                        launch.register(this)
+                        mcp?.register(this)
+                    }
+                }
+            },
+        ) {
+            connector {
+                host = "127.0.0.1"
+                port = this@ControlServer.port
             }
+            channelPipelineConfig = { pipeline -> ingress.install(pipeline) }
         }
 
     @Synchronized

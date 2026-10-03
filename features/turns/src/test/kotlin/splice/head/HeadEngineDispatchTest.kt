@@ -34,6 +34,7 @@ import splice.head.admission.HeadAdmission
 import splice.head.compaction.CompactionReplay
 import splice.head.turn.TurnDriver
 import splice.head.turn.TurnPreparation
+import splice.http.ingress.HeapIngress
 import splice.upstream.BuiltTurn
 import splice.upstream.Provider
 import splice.upstream.ProviderTuning
@@ -341,7 +342,19 @@ private fun dispatchEngine(provider: Provider, deps: HeadDeps): HeadEngine {
         driver,
     )
     val count = CountTokens(provider, deps, auth, gate, reader, parse, responses)
-    return HeadEngine(provider, 0, deps.log, diagnostics, auth, admission, count)
+    return HeadEngine(
+        0,
+        { line -> deps.log("[${provider.key}] $line") },
+        diagnostics,
+        auth,
+        admission,
+        count,
+        HeapIngress(
+            deps.seams.requestMaterializationGate.heap,
+            deps.policy.maxRequestBytes.toLong(),
+            deps.seams.requestMaterializationGate.limitBytes,
+        ),
+    )
 }
 
 private class DispatchStream(private val port: Int) : AutoCloseable {

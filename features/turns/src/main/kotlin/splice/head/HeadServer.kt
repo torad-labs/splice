@@ -37,6 +37,7 @@ import splice.head.compaction.CompactionReplay
 import splice.head.perf.PerfStats
 import splice.head.turn.TurnDriver
 import splice.head.turn.TurnPreparation
+import splice.http.ingress.HeapIngress
 import splice.upstream.Provider
 
 // Wait for in-flight SSE turns to finish (or cancel cleanly) before tearing the engine.
@@ -97,7 +98,19 @@ public class HeadServer(
         bodyParse,
         responses,
     )
-    private val engine = HeadEngine(provider, listenPort, deps.log, diagnostics, clientAuth, admission, countTokens)
+    private val engine = HeadEngine(
+        listenPort,
+        { line -> deps.log("[${provider.key}] $line") },
+        diagnostics,
+        clientAuth,
+        admission,
+        countTokens,
+        HeapIngress(
+            deps.seams.requestMaterializationGate.heap,
+            deps.policy.maxRequestBytes.toLong(),
+            deps.seams.requestMaterializationGate.limitBytes,
+        ),
+    )
 
     private val lifecycle = Mutex()
 

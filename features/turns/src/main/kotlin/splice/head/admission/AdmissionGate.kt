@@ -91,10 +91,11 @@ internal class AdmissionGate(
         if (declared != null && declared > cap) throw RequestBodyTooLarge(cap)
         val bytes = declared ?: cap.toLong()
         val materialization = deps.seams.requestMaterializationGate
+        val reservation = splice.http.ingress.IngressLeases.borrow(call)
         val leased = if (fastFail) {
-            materialization.tryWithLease(bytes, block = block)
+            materialization.tryWithLease(bytes, reservation, block)
         } else {
-            materialization.withLease(bytes, owner, block = block)
+            materialization.withLease(bytes, owner, reservation, block)
         }
         if (leased == null) {
             beforeRefusal?.ended()

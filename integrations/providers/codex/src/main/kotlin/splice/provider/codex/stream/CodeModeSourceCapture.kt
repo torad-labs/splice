@@ -34,6 +34,7 @@ internal class CodeModeSourceCapture(
             is CustomToolSource.Delta -> delta(event)
             is CustomToolSource.Completed -> {
                 if (record == null) begin(event.call.copy(input = ""))
+                source.seal()
                 checkIdentity(event.call, checkNotNull(startedCall))
                 check(event.call.input.startsWith(source.text)) {
                     "completed exec source changed its dispatched prefix"

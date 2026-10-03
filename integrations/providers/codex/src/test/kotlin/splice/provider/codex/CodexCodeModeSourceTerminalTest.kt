@@ -1,5 +1,6 @@
 package splice.provider.codex
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -11,6 +12,9 @@ import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import splice.core.turn.TurnOutcome
+import splice.core.util.JsonScalars
+import splice.upstream.RedirectableRoundPost
+import splice.upstream.sse.WireSink
 
 class CodexCodeModeSourceTerminalTest : CodeModeStatementStreamSupport() {
     @ParameterizedTest
@@ -22,21 +26,42 @@ class CodexCodeModeSourceTerminalTest : CodeModeStatementStreamSupport() {
         val sink = StepSink()
         val post = GatedPost(sink)
         post.terminalProblem = problem
+        val terminalReached = CompletableDeferred<Unit>()
+        val releaseTerminal = CompletableDeferred<Unit>()
+        val sourcePost = object : RedirectableRoundPost by post {
+            override suspend fun into(bodyJson: String, sink: WireSink): TurnOutcome {
+                val outcome = post.into(bodyJson, sink)
+                if (outcome is TurnOutcome.Success && outcome.incomplete) {
+                    terminalReached.complete(Unit)
+                    releaseTerminal.await()
+                }
+                return outcome
+            }
+        }
         try {
-            manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, post)
+            manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, sourcePost)
             val first = sink.callback.await()
             post.gates.drop(1).forEach { it.complete(Unit) }
             withTimeout(1_500) { post.sent.last().await() }
             post.complete.complete(Unit)
             withTimeout(1_500) { post.stopped.await() }
+            if (problem == "incomplete") withTimeout(1_500) { terminalReached.await() }
+            releaseTerminal.complete(Unit)
+            // The post has stopped before LiveRound receives its outcome. Only published rejection
+            // proves the terminal invalid; admission is already LOST and is not that proof.
+            withTimeout(5_000) {
+                while (JsonScalars.str(stateFiles.records().single()["error"]) == null) kotlinx.coroutines.yield()
+            }
             val next = StepSink()
             val outcome = manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
-                .intercept(history(listOf(first)), next, post)
+                .intercept(history(listOf(first)), next, sourcePost)
             assertFalse(next.callback.isCompleted, "invalid terminal source must not execute a later Edit")
+            assertEquals(1, runtime.delivered.size, "terminal rejection must prevent another runtime advance")
             assertTrue(outcome is TurnOutcome.Success || outcome is TurnOutcome.Failure)
             assertEquals(1, runtime.starts)
             assertFalse(stateFiles.records().single()["sourceState"].toString().contains("\"complete\":true"))
         } finally {
+            releaseTerminal.complete(Unit)
             manager.onHeadStop()
         }
     }

@@ -22,6 +22,7 @@ internal class CodeModeStreamingCell(
         checkSource()
         return try {
             val step = cell.advance(results)
+            round.source.awaitCertification()
             checkSource()
             step
         } catch (error: CancellationException) {

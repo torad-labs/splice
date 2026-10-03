@@ -100,6 +100,40 @@ class UpstreamTransportOkHttpTest {
         }
     }
 
+    @Test
+    fun `a continuously progressing response can outlive its per-read timeout`() {
+        ServerSocket(0).use { server ->
+            val served = CompletableFuture.supplyAsync {
+                server.accept().use { peer ->
+                    val input = peer.getInputStream()
+                    readRequestHead(input)
+                    val output = peer.getOutputStream()
+                    output.write(SSE_HEAD.toByteArray())
+                    peer.soTimeout = 250
+                    repeat(6) {
+                        output.write(chunk("data: synthetic-$it\n\n").toByteArray())
+                        output.flush()
+                        try {
+                            check(input.read() != -1) { "the client cut a progressing response" }
+                        } catch (_: SocketTimeoutException) {
+                            // Poll client disconnect with a socket deadline while generation continues.
+                        }
+                    }
+                    output.write("0\r\n\r\n".toByteArray())
+                    output.flush()
+                }
+            }
+            val client = UpstreamTransport().defaultClient(totalTimeoutMs = 1_000)
+            try {
+                val body = runBlocking { client.get("http://127.0.0.1:${server.localPort}/").bodyAsText() }
+                assertTrue("data: synthetic-5" in body, "all progress must survive the old request deadline")
+                served.get(5, TimeUnit.SECONDS)
+            } finally {
+                client.close()
+            }
+        }
+    }
+
     /** Oct 2: with no Accept-Encoding of splice's own, OkHttp asked every upstream for gzip on the wire and
      *  inflated the answer out of the trace's sight; a compressed event stream reaches the reader in blocks,
      *  not one event at a time. The head as the socket reads it is the only place OkHttp's own header shows. */

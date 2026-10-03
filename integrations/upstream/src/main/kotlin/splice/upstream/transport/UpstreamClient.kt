@@ -227,7 +227,7 @@ public class UpstreamClient(
         t0: Long,
         block: UpstreamHandler<T>,
     ): LoopStep<T> {
-        if (deadlineExceeded(t0)) {
+        if (deadlineExceeded(ctx, t0)) {
             ctx.onRetry(
                 "upstream retry deadline exceeded (${totalTimeoutMs}ms budget) before attempt " +
                     "${state.attempt + 1}/$maxRetries",
@@ -312,7 +312,7 @@ public class UpstreamClient(
         if (reissueRules.canReissueStream(streamHandedOff, e, ctx.clientFrameEmitted, state.streamReissues)) {
             // G4d: same re-check the sibling BACKOFF path (applyBackoff) does before its sleep — a
             // budget that expired mid-turn must not pay for one more real delay it can't use.
-            if (deadlineExceeded(t0)) {
+            if (deadlineExceeded(ctx, t0)) {
                 ctx.onRetry(
                     "upstream retry deadline exceeded (${totalTimeoutMs}ms budget) before stream " +
                         "reissue ${state.streamReissues + 1}/$MAX_STREAM_REISSUES",
@@ -330,7 +330,7 @@ public class UpstreamClient(
         }
         val phase = transportFailures.rethrowUnlessRetryableTransport(
             e,
-            deadlineHit = streamHandedOff || deadlineExceeded(t0),
+            deadlineHit = streamHandedOff || deadlineExceeded(ctx, t0),
             lastAttempt = state.attempt == maxRetries - 1,
         )
         val label = if (phase == TransportFailurePhase.POST_SEND) "transport-possible-duplicate" else "transport"
@@ -355,7 +355,7 @@ public class UpstreamClient(
         t0: Long,
     ): LoopStep<Nothing> {
         ctx.markRetry()
-        if (deadlineExceeded(t0)) {
+        if (deadlineExceeded(ctx, t0)) {
             ctx.onRetry(
                 "upstream retry deadline exceeded (${totalTimeoutMs}ms budget) before backoff, " +
                     "attempt ${state.attempt + 1}/$maxRetries",
@@ -393,16 +393,16 @@ public class UpstreamClient(
         return fits
     }
 
-    /** Cross-attempt wall-clock budget: the same [totalTimeoutMs] that caps each try's HTTP call. */
-    private fun deadlineExceeded(t0: Long): Boolean = clock() - t0 >= totalTimeoutMs
+    /** Without a turn owner, direct callers retain their legacy cross-attempt elapsed budget. */
+    private fun deadlineExceeded(ctx: PostContext, t0: Long): Boolean =
+        ctx.remainingTurnWait == null && clock() - t0 >= totalTimeoutMs
 
     private fun turnWaitExhausted(ctx: PostContext): Boolean =
         ctx.remainingTurnWait?.invoke()?.coerceAtLeast(0L) == 0L
 
     private fun remainingBudgetMs(ctx: PostContext, t0: Long): Long {
-        val postRemainingMs = (totalTimeoutMs - (clock() - t0)).coerceAtLeast(0L)
-        val turnRemainingMs = ctx.remainingTurnWait?.invoke()?.coerceAtLeast(0L) ?: postRemainingMs
-        return minOf(postRemainingMs, turnRemainingMs)
+        return ctx.remainingTurnWait?.invoke()?.coerceAtLeast(0L)
+            ?: (totalTimeoutMs - (clock() - t0)).coerceAtLeast(0L)
     }
 
     /** Conservative ceiling of the shipped generic or DNS jittered curve. */

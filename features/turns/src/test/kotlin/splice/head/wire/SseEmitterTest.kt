@@ -2,16 +2,22 @@
 // framing bytes, stop_reason derivation order, error path, abandon, ended idempotence.
 package splice.head.wire
 
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
+import splice.core.perf.TurnPerf
 import splice.core.turn.ErrorType
 import splice.core.turn.Usage
+import splice.core.util.ElapsedClock
+import splice.head.turn.stream.PendingSse
 import java.io.IOException
+import java.io.StringWriter
 import java.util.concurrent.CancellationException
 
 class SseEmitterTest {
@@ -251,6 +257,37 @@ class SseEmitterTest {
         emitter.emitError(ErrorType.OVERLOADED, "turn cancelled; retry")
         assertTrue(emitter.hasEnded, "the seal after a cancelled terminal must land")
         assertTrue(frames.any { it.startsWith("event: error") && it.contains("turn cancelled") })
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test
+    fun `the production client channel seals a delivered error before flush cancellation returns`() = runTest {
+        val writing = Job()
+        val writer = object : StringWriter() {
+            override fun flush() {
+                writing.cancel()
+            }
+        }
+        val perf = TurnPerf { testScheduler.currentTime }
+        val pending = PendingSse(perf, ElapsedClock { testScheduler.currentTime }, null, null)
+        pending.finish()
+        pending.attach(writer)
+        val emitter = emitters.create(
+            write = pending::model,
+            model = "synthetic",
+            usagePayload = { buildJsonObject { } },
+            messageId = "synthetic-message",
+        )
+        try {
+            withContext(writing) { emitter.emitError(ErrorType.OVERLOADED, "splice watchdog ended this turn; retry") }
+        } catch (_: CancellationException) {
+            // PendingSseWriter waits before writing; its synchronous flush cannot reopen a delivered frame.
+        }
+        emitter.emitError(ErrorType.OVERLOADED, "splice turn cancelled; retry")
+        assertEquals(1, writer.toString().split("event: error").size - 1)
+        assertTrue(writer.toString().contains("splice watchdog ended this turn; retry"))
+        assertTrue(!writer.toString().contains("splice turn cancelled; retry"))
+        assertTrue(emitter.hasEnded)
     }
 
     @Test

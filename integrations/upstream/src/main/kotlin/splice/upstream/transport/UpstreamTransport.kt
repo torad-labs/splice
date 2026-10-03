@@ -100,10 +100,9 @@ public class UpstreamTransport {
         return HttpClient(OkHttp) {
             install(HttpTimeout) {
                 connectTimeoutMillis = CONNECT_TIMEOUT_MS
-                requestTimeoutMillis = totalTimeoutMs
-                // Under OkHttp this is the PER-READ timeout. A silent-but-alive peer is the watchdog's
-                // to probe and hold, and nothing short of the total cap may tear it (V4-125), so a
-                // read may block as long as the turn itself may last, and no longer.
+                // The watchdog owns the renewable protocol-progress deadline. A whole-request
+                // timeout would still kill a progressing SSE stream solely for elapsed wall time.
+                // Under OkHttp this bounds each blocked read, including the wait for headers.
                 socketTimeoutMillis = totalTimeoutMs
             }
             engine {

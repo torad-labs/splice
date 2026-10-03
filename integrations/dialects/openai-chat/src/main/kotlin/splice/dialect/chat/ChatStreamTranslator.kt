@@ -121,8 +121,11 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
      *  The stall line names the TIER and the number it compared; "upstream stalled" alone left the
      *  operator unable to tell a 300s mid-output verdict from a 20s stall-tier one. */
     private fun stalledOutcome(fired: WatchdogFired): TurnOutcome = TurnOutcome.Failure(
-        "chat: ${stallDetail(fired)}; retry",
-        partial = partialRound(),
+        when (fired) {
+            is WatchdogFired.TotalCap -> fired.retryMessage
+            is WatchdogFired.Idle -> "chat: ${stallDetail(fired)}; retry"
+        },
+        partial = if (fired is WatchdogFired.Idle) partialRound() else null,
         cause = FailureCause.UPSTREAM_STALLED,
         phase = FailurePhase.MID_OUTPUT,
     )
@@ -161,13 +164,9 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
     private fun isSpiTransportSignal(e: RuntimeException): Boolean =
         e is StreamTornBeforeClient || e is SseFrameTooLargeException
 
-    private fun stallDetail(fired: WatchdogFired): String = when (fired) {
-        is WatchdogFired.Idle ->
-            "upstream silent ${fired.idleMs / MS_PER_S}s past the ${fired.limitMs / MS_PER_S}s " +
-                "${if (fired.sawClientFrame) MID_OUTPUT_TIER else FIRST_OUTPUT_TIER} tier"
-        is WatchdogFired.TotalCap ->
-            "upstream silent past the ${fired.elapsedMs / MS_PER_S}s total cap"
-    }
+    private fun stallDetail(fired: WatchdogFired.Idle): String =
+        "splice idle watchdog fired after ${fired.idleMs / MS_PER_S}s past the ${fired.limitMs / MS_PER_S}s " +
+            "${if (fired.sawClientFrame) MID_OUTPUT_TIER else FIRST_OUTPUT_TIER} tier"
 
     /** What this round produced before it died, for [splice.upstream.ReanchorController]. Mirrors
      *  [successOutcome]'s reads so a continuation and a success see the SAME buffers. [toolTearOpen]

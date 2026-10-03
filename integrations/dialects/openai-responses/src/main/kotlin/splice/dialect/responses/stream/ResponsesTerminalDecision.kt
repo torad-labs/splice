@@ -165,10 +165,15 @@ internal class ResponsesTerminalDecision(
                 "no first output within the ${fired.limitMs / MS_PER_S}s first-output cap"
             }
             is WatchdogFired.TotalCap ->
-                "no completion within the ${ctx.upstreamTimeoutMsForMessage / MS_PER_S}s total cap"
+                "no upstream progress for ${fired.idleMs / MS_PER_S}s"
+        }
+        val message = if (fired is WatchdogFired.TotalCap) {
+            fired.retryMessage
+        } else {
+            "splice watchdog ended the round ($why); retry"
         }
         return TurnOutcome.Failure(
-            "splice: upstream stream stalled ($why), aborted; retry",
+            message,
             partial = when (fired) {
                 is WatchdogFired.Idle -> payload.partialOrNull(state)
                 is WatchdogFired.TotalCap -> null

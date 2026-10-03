@@ -238,7 +238,7 @@ public const val DEFAULT_MAX_CONTINUATIONS: Int = 5
 
 /** The watchdog knobs (v35 doctrine): before the client has seen output the idle limit is
  *  firstByteTimeout (prefill is legitimately silent for minutes); after, [stallReanchor] when the
- *  round can be continued and [streamIdle] otherwise; totalCap bounds the whole turn. */
+ *  round can be continued and [streamIdle] otherwise; the legacy totalCap bounds time without protocol progress. */
 public data class WatchdogBudget(
     val firstByteTimeout: Duration,
     val streamIdle: Duration,
@@ -269,21 +269,9 @@ public data class WatchdogBudget(
      *  declines and the round finishes with the honest error). */
     val stallReanchor: Duration = Duration.INFINITE,
 ) {
-    /** The budget a COMPACT turn runs under: its pre-output silence is bounded by [totalCap] alone.
-     *  A compaction's prefill + reasoning over the whole transcript is the case the v35 doctrine
-     *  calls legitimately silent for minutes, and once the watchdog tier was corrected to key on
-     *  the first client frame (2026-09-01) the very first compaction on the corrected tier still
-     *  died at "no first output within the 300s first-output cap" — 1.13MB body, first byte at 3s,
-     *  then silence past five minutes, the same session that had looped all day. Idle is a stall
-     *  detector, not a budget (operator, DR-7): the one wall before a compaction's first output is
-     *  the whole-turn cap. Normal turns keep [firstByteTimeout].
-     *
-     *  The tier is OFF ([Duration.INFINITE]), not merely raised to [totalCap]: two pollers on one
-     *  deadline are a coin flip. TurnWatchdog's idle poller and its cap poller sample on the same
-     *  ~cap/3 cadence, so at the tick past the wall whichever coroutine is dispatched first names
-     *  the verdict — "first-output cap" (a ROUND reaped, salvage invited) or "total cap" (the TURN
-     *  ended). Gate run 33575037270 lost that flip on a loaded runner; production would have lost
-     *  it the same way at 300s. With no pre-output tier there is nothing to race: the wall alone
-     *  ends a silent compaction, and [streamIdle] still reaps a stall once output has begun. */
+    /** A compaction has no pre-output idle tier. Its prefill can be silent for minutes.
+     *  The renewable [totalCap] still ends it when no protocol progress arrives for that budget.
+     *  Reasoning items renew that budget even when they contain no visible summary.
+     *  [streamIdle] and the optional re-anchor tier remain unchanged after client output. */
     public fun forCompact(): WatchdogBudget = copy(firstByteTimeout = Duration.INFINITE)
 }

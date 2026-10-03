@@ -41,8 +41,7 @@ internal object OutcomeSentences {
             "the model returned no content for the compaction, so the conversation was not compacted; " +
             "retry the compaction",
         OutcomeTag.CANCELLED to
-            "the turn was cancelled before it finished, for example when the provider stopped responding; " +
-            "retry the request",
+            "the turn was cancelled before it finished; retry the request",
         OutcomeTag.UNEXPECTED to
             "splice hit an internal error on this turn; retry the request, and if it repeats read the daemon " +
             "log around this turn's time",

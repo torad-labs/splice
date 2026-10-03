@@ -136,6 +136,36 @@ class CodexCodeModeSourceTerminalTest : CodeModeStatementStreamSupport() {
 
     @Test
     @Timeout(20)
+    fun `a failed parked reader stops claiming source resumption before any client result`() = runBlocking {
+        val runtime = IncrementalRuntime()
+        val manager = bridge(runtime)
+        val sink = StepSink()
+        val post = GatedPost(sink)
+        try {
+            manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, post)
+            val first = sink.callback.await()
+            val resumed = manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
+            assertTrue(resumed.resumesSource(), "the parked reader is genuinely live before failure")
+            post.dieAfterFirst = true
+            post.gates[1].complete(Unit)
+            withTimeout(5_000) {
+                while (JsonScalars.str(stateFiles.records().single()["phase"]) != CodeModePhase.LOST.name) {
+                    kotlinx.coroutines.yield()
+                }
+            }
+            assertFalse(
+                resumed.resumesSource(),
+                "failed source ownership cannot retain admission on a later client step",
+            )
+            assertEquals(1, runtime.starts)
+            assertEquals(1, post.posts, "the failed source is never re-dispatched")
+        } finally {
+            manager.onHeadStop()
+        }
+    }
+
+    @Test
+    @Timeout(20)
     fun `whole source with no early statement stays gated until the real response terminal`() = runBlocking {
         val runtime = IncrementalRuntime()
         val manager = bridge(runtime)

@@ -16,11 +16,14 @@ import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import io.ktor.utils.io.ByteChannel
+import io.ktor.utils.io.writeStringUtf8
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
@@ -62,6 +65,7 @@ import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
+import splice.core.util.ElapsedClock
 import splice.head.HeadDeps
 import splice.head.HeadServer
 import splice.head.MockChatGptUpstream
@@ -97,6 +101,7 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 private class WsFakeAuth : RefreshableAuthProvider {
@@ -328,6 +333,127 @@ private class WsDriverFixture(private val tmp: Path, private val baseUrl: String
             frameEmittedThisRound = ClientFrameEmitted { false },
             eventsBase = 0,
         )
+    }
+}
+
+/** Reasoning without cleartext is progress, but transport-only traffic cannot renew a turn. */
+@OptIn(ExperimentalCoroutinesApi::class)
+class WatchdogProgressRoundTest {
+    @ParameterizedTest
+    @ValueSource(
+        strings = [
+            "ws-reasoning", "ws-text", "sse-reasoning", "sse-text", "ws-ping", "sse-ping",
+            "ws-empty", "sse-empty", "ws-metadata", "sse-metadata", "ws-rate-limits", "sse-rate-limits",
+        ],
+    )
+    fun `protocol progress survives the elapsed cap on both transports`(
+        scenario: String,
+        @TempDir tmp: Path,
+    ) = runTest {
+        val budget = WatchdogBudget(10.seconds, 10.seconds, 600.milliseconds)
+        val dog = TurnWatchdog(budget, clock = ElapsedClock { testScheduler.currentTime })
+        val fixture = WsDriverFixture(tmp, "http://127.0.0.1:9")
+        val source = progressSource(scenario.substringAfter('-')) { delay(37) }
+        val provider = fixture.provider(progressRunner(source))
+        val original = fixture.inputs(RecordingTerminal(), this, budget)
+        val inputs = original.copy(
+            drive = original.drive.copy(watchdog = dog, perf = TurnPerf { testScheduler.currentTime }),
+        )
+        val channel = ByteChannel(autoFlush = true)
+        val feeder = if (scenario.startsWith("sse")) {
+            launch {
+                source.collect { channel.writeStringUtf8("data: " + it.toString() + "\n\n") }
+                channel.close()
+            }
+        } else {
+            null
+        }
+        val reading = async { consumeProgress(inputs, provider, channel.takeIf { feeder != null }) }
+        val cap = dog.launchTotalCap(this, reading)
+        var outcome: TurnOutcome? = null
+        try {
+            outcome = reading.await()
+        } catch (_: CancellationException) {
+            // A fired deadline cancels its owner; the assertions distinguish it from clean completion.
+        } finally {
+            cap.cancel()
+            feeder?.cancel()
+            channel.cancel(null)
+            inputs.turnJob.cancel()
+            inputs.drive.slot.release()
+        }
+        if (!scenario.endsWith("reasoning") && !scenario.endsWith("text")) {
+            assertTrue(dog.fired is splice.upstream.retry.WatchdogFired.TotalCap)
+            assertFalse(outcome is TurnOutcome.Success, "keepalives cannot buy another progress budget")
+        } else {
+            assertNull(dog.fired, "active $scenario was cut solely for elapsed wall time")
+            assertTrue(outcome is TurnOutcome.Success, "the actual translator must consume completion: $outcome")
+            assertTrue(testScheduler.currentTime > 600, "the stream really crossed its old cap")
+        }
+    }
+
+    private fun progressSource(
+        kind: String,
+        awaitTick: suspend () -> Unit,
+    ): kotlinx.coroutines.flow.Flow<JsonObject> = flow {
+        repeat(30) { index ->
+            awaitTick()
+            emit(progressEvent(kind, index))
+        }
+        emit(ev("""{"type":"response.completed","response":{"status":"completed","output":[]}}"""))
+    }
+
+    private fun progressRunner(source: kotlinx.coroutines.flow.Flow<JsonObject>): WsRoundRunner =
+        object : WsRoundRunner by ScriptedRunner(emptyList()) {
+            override suspend fun attempt(
+                bodyJson: String,
+                meta: TurnMeta,
+                turnHeaders: Map<String, String>,
+                creds: Credentials,
+            ): WsRound = WsRound(source, WsRoundAbort {}, WsPathPulse { 0 })
+
+            override suspend fun attempt(
+                bodyJson: String,
+                meta: TurnMeta,
+                turnHeaders: Map<String, String>,
+                creds: Credentials,
+                perf: TurnPerf?,
+            ): WsRound = attempt(bodyJson, meta, turnHeaders, creds)
+        }
+
+    private suspend fun consumeProgress(
+        inputs: WsRoundInputs,
+        provider: Provider,
+        channel: ByteChannel?,
+    ): TurnOutcome? {
+        if (channel == null) {
+            return WsRoundDriver(provider, {}, ZeroEventClassifier { _, outcome, _, _ -> outcome }).run(inputs)
+        }
+        val events = TearAwareEvents(provider, {}).run(
+            inputs.drive,
+            channel,
+            ZeroEventCapture(),
+            inputs.frameEmittedThisRound,
+        )
+        val signals = splice.upstream.TurnSignals(
+            watchdogFired = { inputs.drive.watchdog.fired },
+            clientGone = { false },
+        )
+        return provider.streamTranslator(inputs.drive.meta, signals).driveTurn(events, inputs.sink)
+    }
+
+    private fun progressEvent(kind: String, index: Int): JsonObject = when (kind) {
+        "text" -> ev("""{"type":"response.output_text.delta","delta":"synthetic"}""")
+        "reasoning" -> {
+            val stage = if (index % 2 == 0) "added" else "done"
+            ev(
+                """{"type":"response.output_item.$stage","output_index":${index / 2},"item":{"type":"reasoning","id":"synthetic-${index / 2}","summary":[],"encrypted_content":"synthetic-opaque"}}""",
+            )
+        }
+        "empty" -> ev("""{"type":"response.output_text.delta","delta":""}""")
+        "metadata" -> ev("""{"type":"codex.response.metadata"}""")
+        "rate-limits" -> ev("""{"type":"codex.rate_limits"}""")
+        else -> ev("""{"type":"ping"}""")
     }
 }
 

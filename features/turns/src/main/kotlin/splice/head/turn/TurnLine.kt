@@ -50,7 +50,8 @@ internal class TurnLine(
             val tier = if (fired.sawClientFrame) "mid-output" else "first-output"
             " watchdog=idle(tier=$tier limit=${fired.limitMs}ms idle=${fired.idleMs}ms)"
         }
-        is WatchdogFired.TotalCap -> " watchdog=total-cap(elapsed=${fired.elapsedMs}ms)"
+        is WatchdogFired.TotalCap ->
+            " watchdog=progress-timeout(idle=${fired.idleMs}ms elapsed=${fired.elapsedMs}ms)"
     }
 
     /** The poller saw the round past its tier and held it because the socket was still being

@@ -43,15 +43,9 @@ internal class TurnDriveFactory(
         // WatchdogBudget.forCompact for the live evidence. Normal turns keep the provider budget.
         val budget = if (meta.compact) provider.watchdog.forCompact() else provider.watchdog
         val watchdog = TurnWatchdog(budget, deps.seams.clock, log = { deps.log("[${provider.key}] $it") })
-        val totalCapMs = budget.totalCap.inWholeMilliseconds
-        // The wait budget's origin is the watchdog's: this instant, after admission and preparation.
-        // Measured from inputs.t0 it charged time queued behind the inflight gate to the provider, so
-        // a turn queued longer than the cap was refused on its first attempt with zero upstream
-        // calls (review 2026-09-14). t0 stays the end-to-end latency origin (TurnFinish).
-        val driveStart = deps.seams.clock()
-        val remainingTurnWait = RemainingTurnWait {
-            (totalCapMs - (deps.seams.clock() - driveStart)).coerceAtLeast(0L)
-        }
+        // Retry admission shares the watchdog's renewal, rather than a second elapsed-time cap.
+        // The origin remains after admission and preparation, never the time spent queued.
+        val remainingTurnWait = RemainingTurnWait(watchdog::remainingMs)
         val signals = driveSignals.make(watchdog, channel, perf)
         return TurnDrive(
             requestBody = built.requestBody,

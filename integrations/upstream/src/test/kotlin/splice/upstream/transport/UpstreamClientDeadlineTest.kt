@@ -77,6 +77,34 @@ class UpstreamClientDeadlineTest {
     }
 
     @Test
+    fun `a renewed outer progress budget is not capped again by post elapsed time`() = runTest {
+        val calls = AtomicInteger()
+        var now = 0L
+        val engine = MockEngine {
+            calls.incrementAndGet()
+            respond("fine", HttpStatusCode.OK, headersOf())
+        }
+        val client = clientOver(engine, totalTimeoutMs = 1_000, maxRetries = 3) { now }
+        val context = PostContext(
+            url = "https://api.example.test/v1",
+            auth = fakeAuth,
+            extraHeaders = { emptyMap() },
+            remainingTurnWait = RemainingTurnWait { 5_000 },
+            clientFrameEmitted = { false },
+        )
+        var deliveries = 0
+        val result = client.posted(context, "{}") {
+            if (deliveries++ == 0) {
+                now = 2_000
+                throw StreamTornBeforeClient(java.net.SocketException("synthetic pre-content tear after reasoning"))
+            }
+            "ok"
+        }
+        assertEquals("ok", result, "the still-renewed owner, not a second wall clock, decides the retry budget")
+        assertEquals(2, calls.get())
+    }
+
+    @Test
     fun `ample deadline still allows the full attempt budget`() = runTest {
         val calls = AtomicInteger()
         val engine = MockEngine {

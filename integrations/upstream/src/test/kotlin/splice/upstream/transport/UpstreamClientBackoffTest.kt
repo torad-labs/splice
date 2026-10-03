@@ -117,11 +117,15 @@ class UpstreamClientBackoffTest {
     }
 
     @Test
-    fun `transport waits must fit both budgets including the worst case jitter`() = runTest {
+    fun `transport waits must fit the owning budget including the worst case jitter`() = runTest {
         for (kind in FailureKind.entries) {
             for (remaining in listOf(100L, kind.ceilingMs)) {
                 for (postLimited in listOf(false, true)) {
-                    val fixture = Fixture(kind, totalTimeoutMs = if (postLimited) remaining else 5_000L)
+                    val fixture = Fixture(
+                        kind,
+                        totalTimeoutMs = if (postLimited) remaining else 5_000L,
+                        withTurnBudget = !postLimited,
+                    )
                     if (!postLimited) fixture.elapsed = 5_000L - remaining
 
                     val failure = assertThrows<Exception> { fixture.post() }
@@ -280,7 +284,11 @@ class UpstreamClientBackoffTest {
         }
     }
 
-    private class Fixture(kind: FailureKind, totalTimeoutMs: Long = 5_000L) {
+    private class Fixture(
+        kind: FailureKind,
+        totalTimeoutMs: Long = 5_000L,
+        withTurnBudget: Boolean = true,
+    ) {
         var elapsed = 0L
         var consumeOnAttemptMs = 0L
         var failuresLeft = 1
@@ -319,7 +327,7 @@ class UpstreamClientBackoffTest {
             extraHeaders = { emptyMap() },
             onRetry = { notices.add(it) },
             perf = perf,
-            remainingTurnWait = RemainingTurnWait { 5_000L - elapsed },
+            remainingTurnWait = if (withTurnBudget) RemainingTurnWait { 5_000L - elapsed } else null,
         )
 
         fun assertFailure(actual: Exception) {

@@ -64,7 +64,8 @@ internal class TearAwareEvents(
                 captureWants || drive.trace != null
             },
         )
-        return UpstreamEventTiming(drive.perf, postedAtMs).observe(events).onEach {
+        return UpstreamEventTiming(drive.perf, postedAtMs).observe(events).onEach { event ->
+            UpstreamProgress.observe(event, drive.watchdog)
             capture.sawEvent = true
             drive.perf.add(PerfKeys.EVENTS_IN, 1)
         }.catch { e ->

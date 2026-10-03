@@ -160,7 +160,10 @@ class HeadServerCompactCapTest(@param:TempDir private val root: Path) {
                 sse.contains("first-output cap"),
                 "the 1s first-output tier is a probe now: a live path is HELD, never reaped by it: ${evidence(sse)}",
             )
-            assertTrue(sse.contains("stalled (watchdog)"), "only the whole-turn wall may end it: ${evidence(sse)}")
+            assertTrue(
+                sse.contains("splice progress timeout expired after 4000ms without upstream progress; retry"),
+                "only the progress deadline may end this silent turn: ${evidence(sse)}",
+            )
         }
 
     // The system prompt carries Claude Code's verbatim summarizer marker, so the gateway classifies
@@ -180,6 +183,9 @@ class HeadServerCompactCapTest(@param:TempDir private val root: Path) {
             // The whole-turn cap cancels the TURN, so it surfaces through the cancellation seal's
             // generic watchdog wording (as HeadServerFoldTest's NF-03 arm pins), not a tier-named
             // message — which is exactly the discriminator: the 1s tier would have said its name.
-            assertTrue(sse.contains("stalled (watchdog)"), "only the whole-turn wall may end it: ${evidence(sse)}")
+            assertTrue(
+                sse.contains("splice progress timeout expired after 4000ms without upstream progress; retry"),
+                "only the progress deadline may end this silent turn: ${evidence(sse)}",
+            )
         }
 }

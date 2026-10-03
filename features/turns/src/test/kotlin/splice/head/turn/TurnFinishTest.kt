@@ -625,7 +625,7 @@ class TurnFinishTest {
 
         val line = finishAndReadTurnLine("watchdog-cap", watchdog)
 
-        assertTrue("watchdog=total-cap(elapsed=500ms)" in line, line)
+        assertTrue("watchdog=progress-timeout(idle=500ms elapsed=500ms)" in line, line)
     }
 
     @Test

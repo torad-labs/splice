@@ -19,6 +19,7 @@ import splice.core.perf.OutcomeTags
 import splice.core.turn.ErrorType
 import splice.core.util.LogSink
 import splice.head.HeadHealthCounters
+import splice.head.pipeline.FailurePresenter
 import splice.upstream.Provider
 import java.io.IOException
 
@@ -29,6 +30,8 @@ internal class CancellationSeal(
     private val health: HeadHealthCounters,
     private val usageStamp: TurnUsageStamp,
 ) {
+    private val presenter = FailurePresenter()
+
     private fun retainCleanup(original: CancellationException, cleanup: Throwable) {
         if (cleanup !== original) original.addSuppressed(cleanup)
     }
@@ -65,10 +68,7 @@ internal class CancellationSeal(
         // Flat when (not nested if) so the still-connected try/catch stays shallow:
         // catch → if(seal) → if(clientGone) → try would trip NestedBlockDepth's depth-4 ceiling.
         when {
-            !seal -> telemetry.recordPerf(
-                drive,
-                if (drive.channel.clientGone.get()) OutcomeTag.CLIENT_ABORT.wire else endingOf(drive, cause).outcome,
-            )
+            !seal -> recordUnstreamed(drive, cause)
             drive.emitter.hasEnded -> Unit
             drive.channel.clientGone.get() -> {
                 drive.emitter.abandon()
@@ -86,10 +86,19 @@ internal class CancellationSeal(
             // frame. That is not an IOException, so the catch below would MISS it and the log, the
             // perf row, the health bump and the abandon() reclassification would all be skipped,
             // handing the client exactly the truncated 200 this file exists to prevent.
-            // SseEmitter.emitError releases its seal claim on cancellation "so a later seal can
-            // still retry" — this IS that later seal, and nothing runs after it. Same leak-safe
-            // teardown idiom as the slot release in HeadAdmission/AdmissionGate.
+            // A delivered terminal is already sealed. A cancellation before its write can release
+            // that claim, so this seal still owes the connected client its one honest error frame.
             else -> withContext(NonCancellable) { sealConnected(drive, endingOf(drive, cause)) }
+        }
+    }
+
+    private suspend fun recordUnstreamed(drive: TurnDrive, cause: Throwable) {
+        if (drive.channel.clientGone.get()) {
+            telemetry.recordPerf(drive, OutcomeTag.CLIENT_ABORT.wire)
+        } else {
+            val ending = endingOf(drive, cause)
+            drive.trace?.failureSentence(ending.message)
+            telemetry.recordPerf(drive, ending.outcome)
         }
     }
 
@@ -105,22 +114,24 @@ internal class CancellationSeal(
         val local: Boolean,
     )
 
-    private fun endingOf(drive: TurnDrive, cause: Throwable): Ending = when {
-        // V4-319: the operator's stop says so, as a request error no retry changes, and never "retry".
-        // Read down the cause chain because coroutine stack recovery may hand the seal a wrapped copy.
-        generateSequence(cause) { it.cause }.take(CAUSE_DEPTH).any { it is OperatorStop } -> Ending(
-            type = ErrorType.INVALID_REQUEST,
-            message = "${provider.key}: $OPERATOR_STOPPED",
-            kind = "stopped",
-            detail = ": the operator stopped the turn",
-            outcome = OutcomeTags.error("stopped"),
-            local = false,
-        )
-        // NF-03: a watchdog-fired cancellation names its reason. Pre-stream reaps (total cap
-        // during connect/backoff/refresh) land HERE, not in a translator's watchdogOutcome —
-        // the generic "cancelled" hid them.
-        drive.watchdog.fired != null -> cancelled("${provider.key}: upstream stalled (watchdog), aborted; retry")
-        else -> cancelled("${provider.key}: turn cancelled; retry")
+    private fun endingOf(drive: TurnDrive, cause: Throwable): Ending {
+        val fired = drive.watchdog.fired
+        return when {
+            // The operator's stop is permanent and never advertises a retry.
+            generateSequence(cause) { it.cause }.take(CAUSE_DEPTH).any { it is OperatorStop } -> Ending(
+                type = ErrorType.INVALID_REQUEST,
+                message = "${provider.key}: $OPERATOR_STOPPED",
+                kind = "stopped",
+                detail = ": the operator stopped the turn",
+                outcome = OutcomeTags.error("stopped"),
+                local = false,
+            )
+            // Pre-stream and independent-source cancellation use the stream's own cap sentence.
+            fired is splice.upstream.retry.WatchdogFired.TotalCap ->
+                cancelled(presenter.spoken(ErrorType.OVERLOADED, fired.retryMessage))
+            fired != null -> cancelled("${provider.key}: splice idle watchdog ended the round; retry")
+            else -> cancelled("${provider.key}: splice turn cancelled; retry")
+        }
     }
 
     private fun cancelled(message: String): Ending = Ending(
@@ -135,6 +146,7 @@ internal class CancellationSeal(
     private suspend fun sealConnected(drive: TurnDrive, ending: Ending) {
         try {
             drive.emitter.emitError(ending.type, ending.message)
+            drive.trace?.failureSentence(ending.message)
             log(telemetry.errTurn(ending.kind, drive, ending.detail))
             telemetry.recordPerf(drive, ending.outcome)
             if (ending.local) health.local()

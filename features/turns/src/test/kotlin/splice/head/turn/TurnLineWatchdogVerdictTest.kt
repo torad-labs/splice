@@ -76,7 +76,7 @@ class TurnLineWatchdogVerdictTest {
             latencyMs = 900_030,
             fired = WatchdogFired.TotalCap(elapsedMs = 900_002),
         )
-        assertTrue("watchdog=total-cap(elapsed=900002ms)" in rendered, rendered)
+        assertTrue("watchdog=progress-timeout(idle=900002ms elapsed=900002ms)" in rendered, rendered)
         assertFalse("first-output" in rendered, "a compact turn has no pre-output idle tier: $rendered")
     }
 

@@ -154,8 +154,11 @@ public class PassthroughStreamTranslator(
      *  decision rather than this branch's. [partialRound] is deliberately the SAME builder
      *  [unfinishedOutcome] uses, so a continuation and a success read identical buffers. */
     private fun stalledOutcome(fired: WatchdogFired): TurnOutcome = TurnOutcome.Failure(
-        "${quirks.providerTag}: ${stallDetail(fired)}; retry",
-        partial = partialRound(),
+        when (fired) {
+            is WatchdogFired.TotalCap -> fired.retryMessage
+            is WatchdogFired.Idle -> "${quirks.providerTag}: ${stallDetail(fired)}; retry"
+        },
+        partial = if (fired is WatchdogFired.Idle) partialRound() else null,
         cause = FailureCause.UPSTREAM_STALLED,
         phase = FailurePhase.MID_OUTPUT,
     )
@@ -176,13 +179,9 @@ public class PassthroughStreamTranslator(
     private fun isSpiTransportSignal(e: RuntimeException): Boolean =
         e is StreamTornBeforeClient || e is SseFrameTooLargeException
 
-    private fun stallDetail(fired: WatchdogFired): String = when (fired) {
-        is WatchdogFired.Idle ->
-            "upstream silent ${fired.idleMs / MS_PER_S}s past the ${fired.limitMs / MS_PER_S}s " +
-                "${if (fired.sawClientFrame) MID_OUTPUT_TIER else FIRST_OUTPUT_TIER} tier"
-        is WatchdogFired.TotalCap ->
-            "upstream silent past the ${fired.elapsedMs / MS_PER_S}s total cap"
-    }
+    private fun stallDetail(fired: WatchdogFired.Idle): String =
+        "splice idle watchdog fired after ${fired.idleMs / MS_PER_S}s past the ${fired.limitMs / MS_PER_S}s " +
+            "${if (fired.sawClientFrame) MID_OUTPUT_TIER else FIRST_OUTPUT_TIER} tier"
 
     private fun unfinishedOutcome(): TurnOutcome =
         if (ctx.clientGone()) {

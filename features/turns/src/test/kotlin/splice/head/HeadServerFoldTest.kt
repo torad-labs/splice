@@ -346,7 +346,10 @@ class HeadServerFoldTest {
             val diag = "status=${response.status} bodyLen=${sse.length} tookMs=$tookMs " +
                 "head=[${headLines.joinToString(" ~ ")}] sse=$sse"
             assertTrue(sse.contains("\"type\":\"error\""), "expected an honest error terminal: $diag")
-            assertTrue(sse.contains("stalled (watchdog)"), "expected the watchdog-named reason: $diag")
+            assertTrue(
+                sse.contains("splice progress timeout expired after 1000ms without upstream progress; retry"),
+                "expected the local progress-timeout reason: $diag",
+            )
             assertTrue(tookMs < 2_500, "reaped by the 1s cap, not the 3s stall: $diag")
             // the slot must come back within ~one poll interval, not ride the stall. A deadline poll
             // (the release happens on a server thread, with no signal to await), on IO so it waits in

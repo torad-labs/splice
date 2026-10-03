@@ -130,11 +130,11 @@ internal class CodeModeLiveRound(
 
     private fun cancelled(error: CancellationException) {
         upstreamEnded = true
-        source.fail("upstream source cancelled; source was not rerun")
+        source.fail("splice code-mode source reader cancelled; source was not rerun")
         synchronized(lifecycle) {
             if (!headStopped) {
                 record?.takeUnless(CodeModeRecord::terminal)
-                    ?.let { registry.lose(it, "upstream source cancelled; source was not rerun", error) }
+                    ?.let { registry.lose(it, "splice code-mode source reader cancelled; source was not rerun", error) }
             }
         }
     }
@@ -162,6 +162,8 @@ internal class CodeModeLiveRound(
     }
 
     fun owns(turn: CodexCodeModeBridge.Turn): Boolean = synchronized(lifecycle) {
+        if (upstreamEnded) return@synchronized false
+        if (localFailure != null || headStopped) return@synchronized false
         val current = record ?: return@synchronized false
         if (current.sessionId != turn.sessionId || current.key != CodeModeTurnIdentity().turnKey(turn)) {
             return@synchronized false

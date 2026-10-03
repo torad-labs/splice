@@ -3,9 +3,9 @@
 // firstByteTimeout — a big-context prefill (compaction re-reading ~160k tokens) is legitimately
 // silent for minutes; reaping prefill on streamIdle caused the abort->retry->cold-re-read loop
 // ("compaction ate my quota"). AFTER the first client content frame the limit is streamIdle.
-// totalCap bounds the whole turn (an overloaded backend can trickle keepalives forever and leak
-// the slot — the "55 inflight, 2 agents" class). Poll interval = min(15s, max(250ms, tier/3)) for
-// the tighter of the two idle tiers.
+// The legacy totalCap bounds time without protocol progress, not elapsed generation time.
+// Model/tool/reasoning events renew it; transport keepalives do not. Poll interval is
+// min(15s, max(250ms, tier/3)) for the tighter of the two idle tiers.
 // The fired reason is a TYPED SENTINEL set BEFORE cancelling, so catch sites can tell
 // watchdog-fired from client-gone from shutdown.
 //
@@ -58,7 +58,17 @@ public sealed class WatchdogFired {
      *  against streamIdle, which is what TurnWatchdog's own hold line does. */
     public data class Idle(val idleMs: Long, val sawClientFrame: Boolean, val limitMs: Long) : WatchdogFired()
 
-    public data class TotalCap(val elapsedMs: Long) : WatchdogFired()
+    /** Legacy type name. The final turn boundary measures silence since protocol progress. */
+    public data class TotalCap(val elapsedMs: Long) : WatchdogFired() {
+        public var idleMs: Long = elapsedMs
+            internal set
+        public var limitMs: Long = elapsedMs
+            internal set
+
+        /** Shared by the stream outcome and cancellation seal on every transport. */
+        public val retryMessage: String
+            get() = "splice progress timeout expired after ${limitMs}ms without upstream progress; retry"
+    }
 }
 
 /** What proved the round's path alive at the moment a poll held it, because the two transports
@@ -132,6 +142,18 @@ public class TurnWatchdog(
     private val firedRef = AtomicReference<WatchdogFired?>(null)
     private val heldRef = AtomicReference<WatchdogHeld?>(null)
     private val startedAt = clock()
+    private val progressLock = Any()
+    private var progressedAt = startedAt
+
+    /** Only protocol progress renews this deadline, never transport pings or client keepalives. */
+    public fun progress(): Unit = synchronized(progressLock) {
+        if (firedRef.get() !is WatchdogFired.TotalCap) progressedAt = maxOf(progressedAt, clock())
+    }
+
+    /** The same renewable budget governs the turn poller, independent readers and retry admission. */
+    public fun remainingMs(): Long = synchronized(progressLock) {
+        (budget.totalCap.inWholeMilliseconds - (clock() - progressedAt)).coerceAtLeast(0L)
+    }
 
     public val fired: WatchdogFired? get() = firedRef.get()
 
@@ -335,18 +357,16 @@ public class TurnWatchdog(
         }
         log(
             "silent ${idleMs / MS_PER_S}s past the ${limitMs / MS_PER_S}s $tier tier on a live path " +
-                "($proof); holding the round, since the whole-turn cap " +
+                "($proof); holding the round, since the protocol-progress timeout " +
                 "(${budget.totalCap.inWholeSeconds}s) is its wall\n",
         )
     }
 
-    /** NF-03: the whole-turn wall clock, armed from admission to terminal, and since DR-7 the ONLY
-     *  place a totalCap breach is raised. It was once a second sampler beside [launchIn]'s, which
-     *  ran only while an upstream stream was open — so connect, headers-wait, retry backoff,
-     *  refresh, and between-round gaps went uncounted and an N-round fold/re-anchor turn got N x
-     *  the per-round budget against one totalCap while pinning its gate slot. Idle tiers stay with
-     *  [launchIn] (they need the slot, and they reap a round rather than the turn); breach
-     *  semantics are identical: the typed sentinel is set FIRST, then [target] is cancelled. */
+    /** The final turn deadline, also armed while no stream is open. Only protocol progress
+     *  renews it, so headers-wait, retries, refresh and between-round gaps remain bounded.
+     *  The legacy name is retained for callers. [launchIn] still owns round-level idle tiers.
+     *  The typed sentinel is set before cancellation, and both client and independent-source
+     *  pollers read this same renewal state. */
     public fun launchTotalCap(scope: CoroutineScope, target: Job): Job =
         scope.launch {
             // Paced against totalCap as well as streamIdle: pollInterval() alone is streamIdle/3,
@@ -359,14 +379,25 @@ public class TurnWatchdog(
             while (isActive) {
                 // Same coercion floor (250ms) as launchIn, so this is delay(interval)'s exact value.
                 if (!ticker.awaitTick(interval.inWholeMilliseconds)) return@launch
-                val elapsed = clock() - startedAt
-                if (elapsed >= budget.totalCap.inWholeMilliseconds) {
-                    firedRef.compareAndSet(null, WatchdogFired.TotalCap(elapsed))
+                if (progressExpired()) {
                     target.cancel()
                     return@launch
                 }
             }
         }
+
+    /** Renewal and expiry share a lock: an observed event cannot race a stale clock sample. */
+    private fun progressExpired(): Boolean = synchronized(progressLock) {
+        val now = clock()
+        val idle = now - progressedAt
+        if (idle < budget.totalCap.inWholeMilliseconds) return@synchronized false
+        val cap = WatchdogFired.TotalCap(now - startedAt).also {
+            it.idleMs = idle
+            it.limitMs = budget.totalCap.inWholeMilliseconds
+        }
+        firedRef.updateAndGet { previous -> previous as? WatchdogFired.TotalCap ?: cap }
+        true
+    }
 }
 
 private const val IDLE_DIVISOR = 3

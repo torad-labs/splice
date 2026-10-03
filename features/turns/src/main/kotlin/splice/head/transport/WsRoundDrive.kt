@@ -39,6 +39,7 @@ internal class WsRoundDrive(
         // I/O failure into its honest terminal.
         val instrumented = events.catch { torn -> throw reissued(torn, inputs) ?: torn }.onEach { evt ->
             drive.slot.received()
+            UpstreamProgress.observe(evt, drive.watchdog)
             if (runner.isFailureTerminal(evt) && !inputs.frameEmittedThisRound()) {
                 throw RoundNeedsSse(failureDetail(evt))
             }

@@ -24,9 +24,14 @@
 package splice.upstream.retry
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -52,6 +57,48 @@ import kotlin.time.Duration.Companion.seconds
 // fail the suite, it wedges it — which is the whole of DR-186, in a shape that sweep did not
 // enumerate because it looked for spin predicates rather than for the property.
 private const val HANG_BACKSTOP_S = 60L
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class WatchdogProgressDeadlineTest {
+    @Test
+    fun `client and independent reader share renewal and expire after actual progress stops`() = runTest {
+        val dog = TurnWatchdog(
+            WatchdogBudget(10.seconds, 10.seconds, 600.milliseconds),
+            clock = ElapsedClock { testScheduler.currentTime },
+        )
+        val client = Job()
+        val reader = Job()
+        val clientCap = dog.launchTotalCap(this, client)
+        val readerCap = dog.launchTotalCap(this, reader)
+        try {
+            runCurrent()
+            advanceTimeBy(500)
+            dog.progress()
+            assertEquals(600L, dog.remainingMs(), "retry admission gets the same renewed budget")
+            advanceTimeBy(500)
+            runCurrent()
+            assertTrue(client.isActive)
+            assertTrue(reader.isActive)
+            assertNull(dog.fired, "both owners survive the former elapsed deadline")
+            advanceTimeBy(250)
+            runCurrent()
+            val fired = dog.fired as WatchdogFired.TotalCap
+            assertEquals(1_250L, fired.elapsedMs)
+            assertEquals(750L, fired.idleMs)
+            assertTrue(client.isCancelled)
+            assertTrue(reader.isCancelled)
+            dog.progress()
+            dog.resetRound()
+            assertEquals(0L, dog.remainingMs(), "a final verdict cannot be renewed or erased")
+            assertTrue(dog.fired is WatchdogFired.TotalCap)
+        } finally {
+            clientCap.cancel()
+            readerCap.cancel()
+            client.cancel()
+            reader.cancel()
+        }
+    }
+}
 
 class WatchdogTest {
 
@@ -422,7 +469,7 @@ class WatchdogTest {
     // not the idle poller, is the right owner of the whole-turn cancel.
     @Test
     @Timeout(HANG_BACKSTOP_S) // DR-186: the target below never ends on its own; only the cap ends it
-    fun `the whole-turn cap still reaps a lively stream - DR-7`() {
+    fun `the progress deadline ends a running task with no recorded upstream progress`() {
         runBlocking {
             val ticks = VirtualTicks()
             val dog = TurnWatchdog(

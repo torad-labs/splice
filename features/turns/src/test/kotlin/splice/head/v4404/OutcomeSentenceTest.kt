@@ -6,8 +6,11 @@
 // so a new tag without a sentence fails BY NAME and cannot be missed by a list nobody updated.
 package splice.head.v4404
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
@@ -18,6 +21,8 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -44,14 +49,17 @@ import splice.head.TestResponsesProvider
 import splice.head.admission.LocalRefusal
 import splice.head.admission.admittedSlot
 import splice.head.compact.CompactStats
+import splice.head.headDeps
 import splice.head.perf.PerfStats
 import splice.head.pipeline.TurnPipeline
 import splice.head.round.RunnerSignals
+import splice.head.turn.CancellationSeal
 import splice.head.turn.OutcomeSentences
 import splice.head.turn.TurnDrive
 import splice.head.turn.TurnFailures
 import splice.head.turn.TurnKnownEnd
 import splice.head.turn.TurnTelemetry
+import splice.head.turn.TurnUsageStamp
 import splice.head.usage.OutputClamp
 import splice.head.wire.ClientChannel
 import splice.head.wire.ClientInbound
@@ -60,6 +68,7 @@ import splice.head.wire.TraceStore
 import splice.head.wire.TurnTerminal
 import splice.upstream.Provider
 import splice.upstream.ProviderTuning
+import splice.upstream.Ticker
 import splice.upstream.retry.InflightGate
 import splice.upstream.retry.LiveLimit
 import splice.upstream.retry.TurnWatchdog
@@ -67,6 +76,7 @@ import splice.upstream.transport.UpstreamFailed
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 private const val TRACE_DAY_EPOCH_MS = 1_789_725_600_000L
@@ -269,6 +279,55 @@ class OutcomeSentenceTest {
             val said = sentenceOf(record)
             assertEquals(OutcomeSentences.of(tag), said, "outcome tag $tag: the turn record's failure_sentence")
         }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    fun `progress timeout records the same splice sentence as its client terminal`(
+        stream: Boolean,
+        @TempDir tmp: Path,
+    ) = runBlocking {
+        val rig = Rig("progress-timeout", tmp)
+        var now = 0L
+        val dog = TurnWatchdog(
+            WatchdogBudget(10.seconds, 10.seconds, 600.milliseconds),
+            clock = ElapsedClock { now },
+            ticker = Ticker { interval ->
+                now += interval
+                true
+            },
+        )
+        val target = Job()
+        val cap = dog.launchTotalCap(this, target)
+        withTimeout(1_000) { target.join() }
+        cap.cancel()
+        var wireMessage: String? = null
+        var wireType: ErrorType? = null
+        val terminal = object : TurnTerminal by RecordingTerminal() {
+            override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean) {
+                wireType = type
+                wireMessage = message
+            }
+        }
+        val drive = rig.drive().copy(watchdog = dog, emitter = terminal)
+        val deps = headDeps(tmp.resolve("stores"))
+        val seal = CancellationSeal(
+            provider(),
+            rig.log,
+            rig.telemetry,
+            HeadHealthCounters(),
+            TurnUsageStamp(deps.stores.usageStore, rig.log, rig.telemetry),
+        )
+        try {
+            seal.seal(drive, stream, CancellationException("synthetic progress timeout"))
+        } finally {
+            drive.slot.release()
+        }
+        val expected = "[SPLICE-OVERLOADED] splice progress timeout expired after 600ms " +
+            "without upstream progress; retry"
+        assertEquals(expected, sentenceOf(rig.turnRecord()))
+        assertEquals(if (stream) expected else null, wireMessage)
+        assertEquals(if (stream) ErrorType.OVERLOADED else null, wireType)
     }
 
     @Test

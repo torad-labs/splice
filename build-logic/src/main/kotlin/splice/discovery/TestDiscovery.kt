@@ -151,7 +151,7 @@ val DISPOSITIONS: Map<String, Disposition> = mapOf(
     // V4-457: a failed or a cancelled attached flush records no first client byte.
     "PendingSseTest" to Disposition("1 @ParameterizedTest expands to 2 cases (11 @Test + 2 = 13)", 13),
     // Completed/torn/cancelled tails and zero/slow ping delivery expand the two timing methods.
-    "UpstreamEventTimingTest" to Disposition("2 @ParameterizedTest methods expand to 5 cases (6 @Test + 5 = 11)", 11),
+    "UpstreamEventTimingTest" to Disposition("2 @ParameterizedTest methods expand to 5 cases (7 @Test + 5 = 12)", 12),
     "CodeModePreAdvanceTearTest" to Disposition("1 @ParameterizedTest expands to 2 cases (2 @Test + 2 = 4)", 4),
     "CodexCodeModeSourceTearTest" to
         Disposition("2 @ParameterizedTest methods expand to 12 cases (9 source tears + 3 startup tears)", 12),

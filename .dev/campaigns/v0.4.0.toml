@@ -231,6 +231,7 @@
 # 2026-10-03 FOLLOW-UP: FOLLOWUP (lies) console Health version card (Marlin walk, Oct 3): it says Running 0.3.2 under a 0.4.0 daemon because installedVersion reads releases/current (UpgradeLayout.kt:60), which a jar-copy install never moves. A card that says Running names the running daemon's version.
 # 2026-10-03 FOLLOW-UP: FOLLOWUP (later) console wording (Marlin walk, Oct 3): glml53's refused connect reads Connection lost; say couldn't reach its runtime on :8102.
 # 2026-10-03 FOLLOW-UP: FOLLOWUP (later) ledger tool: plain next returns the first in_flight row of any seat before any todo row (.dev/campaigns/ledger.ts pickNext), so a seat starting the four-step finish with next can be handed a peer's row. Return todo rows only, or the caller's own in_flight row; next --claim already skips claimed rows.
+# 2026-10-03 FOLLOW-UP: FOLLOWUP resolved (breaks, raised from later by eli-gh-manager): plain next now names only the first todo row, so the four-step finish cannot hand a seat a peer's in_flight row; fixed in the commit that carries this line.
 [campaign]
 id = "v0.4.0"
 title = "splice 0.4.0 — everything but the console: setup, drift warning, perf/sessions data, upgrade, doctor --json, compaction instructions, shared MCP hosting, local models, account pools, code-mode graduation"

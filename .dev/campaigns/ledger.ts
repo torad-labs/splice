@@ -73,7 +73,7 @@ const USAGE = `usage: bun .dev/campaigns/manifest.ts <ledger.toml> <command> [ar
 read
   list [--status S] [--phase P]     compact table of items
   get <ID>                          one item with its notes (~15 lines, not the whole file)
-  next                              the next actionable item
+  next                              the first todo row (resume your own in_flight row with get <ID>)
   laws                              the law sheet from the ledger header
   packet <ID>                       a self-contained dispatch brief with computed fences
   phase-status <P>                  one line per item in a phase (milestone) with its status
@@ -371,15 +371,12 @@ function renderItem(lines: readonly string[], block: ItemBlock): string {
 }
 
 /**
- * The next actionable item: an in-flight one if any is open (finish before starting), otherwise
- * the first todo. Blocked items are never "next" — a blocked item needs a ruling, not a builder.
+ * The first todo row. An in_flight row is never "next": step one of the finish is `next` then
+ * `set-status <ID> in_flight`, so handing out an in_flight row put two seats on one row (2026-10-03);
+ * a seat resumes its own row with `get <ID>`. Blocked items need a ruling, not a builder.
  */
 function pickNext(blocks: readonly ItemBlock[]): ItemBlock | null {
-  return (
-    blocks.find((block) => block.item.status === "in_flight") ??
-    blocks.find((block) => block.item.status === "todo") ??
-    null
-  );
+  return blocks.find((block) => block.item.status === "todo") ?? null;
 }
 
 /**
@@ -2358,6 +2355,8 @@ async function selftest(): Promise<number> {
   await run("set-status", "H1", "in_flight");
   await run("note", "H1", "a note added by the selftest");
   await run("claim", "H1", "builder-1");
+  check("next never hands out an in_flight row (a seat resumes its own with get <ID>)",
+    (await run("next")).includes("queue empty"));
 
   const afterWrites = await Bun.file(path).text();
 

@@ -3,7 +3,8 @@
 // never register). Every field is optional because Claude Code owns the schema and may add,
 // rename or omit keys; a malformed file is skipped, never fatal. Availability is derived, never
 // trusted from the file: a registration whose pid is gone is GONE whatever its status says, and
-// one whose updatedAt is older than the stale window is STALE (alive, but not heard from). The
+// one not heard from within the stale window is STALE (alive, but not heard from): heard is the later
+// of the file's updatedAt and the last turn this daemon served for its session (SessionsHeard). The
 // pid is read in the DOMAIN the file names (PidIdentity): another namespace's pid, or a pid whose
 // start time moved since the registration, is GONE.
 package splice.sessions.registry
@@ -75,6 +76,13 @@ public fun interface PidStartedAt {
     public operator fun invoke(pid: Long): Long?
 }
 
+/** When this daemon last served a turn for each session id (epoch ms). Claude Code rewrites a
+ *  registration only when its status changes, so a session busy for hours keeps an old updatedAt
+ *  while its turns run; a turn served here is the session being heard from too (V4-444). */
+public fun interface SessionsHeard {
+    public operator fun invoke(): Map<String, Long>
+}
+
 /** A process that started this long after its registration's startedAt is a reused pid, not the session. */
 private const val PID_REUSE_TOLERANCE_MS = 300_000L
 
@@ -95,6 +103,7 @@ public class SessionRegistry(
     private val clock: WallClock = WallClock { System.currentTimeMillis() },
     private val staleAfterMs: Long = DEFAULT_STALE_MS,
     private val identity: PidIdentity = ProcPidIdentity(),
+    private val heard: SessionsHeard = SessionsHeard { emptyMap() },
 ) : SessionSource {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -106,12 +115,14 @@ public class SessionRegistry(
         val entries = Cancellables
             .runCatchingCancellable { Files.newDirectoryStream(sessionsDir, "*.json").use { it.toList() } }
         val error = entries.exceptionOrNull()?.takeUnless { it is NoSuchFileException }
+        val heardAt = heard()
         // ast-grep-ignore: kt-no-silent-result-collapse -- the failure is consumed on the line above: it becomes the listing's error, and only a missing directory reads as empty
-        val records = entries.getOrDefault(emptyList()).mapNotNull(::record).sortedByDescending { it.updatedAt ?: 0L }
+        val records = entries.getOrDefault(emptyList()).mapNotNull { record(it, heardAt) }
+            .sortedByDescending { it.updatedAt ?: 0L }
         return SessionListing(records, error?.let { "$sessionsDir: ${SafeFailureText.render(it)}" })
     }
 
-    private fun record(file: Path): SessionRecord? {
+    private fun record(file: Path, heardAt: Map<String, Long>): SessionRecord? {
         // ast-grep-ignore: kt-no-silent-result-collapse -- an oversized, unreadable or malformed registration file names no session; it is left out of the listing
         val obj = Cancellables
             .runCatchingCancellable {
@@ -119,17 +130,18 @@ public class SessionRegistry(
             }
             .getOrNull() as? JsonObject ?: return null
         val pid = JsonScalars.long(obj, "pid")
+        val sessionId = JsonScalars.str(obj, "sessionId")
         val updatedAt = JsonScalars.long(obj, "updatedAt")
         val availability = availability(
             pid,
-            updatedAt,
+            listOfNotNull(updatedAt, sessionId?.let(heardAt::get)).maxOrNull(),
             JsonScalars.long(obj, "startedAt"),
             JsonScalars.str(obj, "pidDomain"),
             JsonScalars.str(obj, "procStart"),
         )
         return SessionRecord(
             pid = pid,
-            sessionId = JsonScalars.str(obj, "sessionId"),
+            sessionId = sessionId,
             cwd = JsonScalars.str(obj, "cwd"),
             name = JsonScalars.str(obj, "name"),
             kind = JsonScalars.str(obj, "kind"),
@@ -161,16 +173,17 @@ public class SessionRegistry(
         !pidAlive(pid) || foreignPid(pid, domain, procStart, startedAt)
 
     /** A pid that is absent or not a real process id (0, negative) is GONE for this one row only; so
-     *  is a live pid that is not the registered process (foreignPid). */
+     *  is a live pid that is not the registered process (foreignPid). [heardAt] is the later of the
+     *  registration's updatedAt and the last turn this daemon served for its session. */
     private fun availability(
         pid: Long?,
-        updatedAt: Long?,
+        heardAt: Long?,
         startedAt: Long?,
         domain: String?,
         procStart: String?,
     ): SessionAvailability = when {
         pid == null || pid <= 0 || gone(pid, domain, procStart, startedAt) -> SessionAvailability.GONE
-        updatedAt == null || clock() - updatedAt > staleAfterMs -> SessionAvailability.STALE
+        heardAt == null || clock() - heardAt > staleAfterMs -> SessionAvailability.STALE
         else -> SessionAvailability.LIVE
     }
 }

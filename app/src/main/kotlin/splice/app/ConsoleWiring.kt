@@ -70,6 +70,7 @@ import splice.sessions.prompt.SlotInstructions
 import splice.sessions.registry.RouteOfPid
 import splice.sessions.registry.SessionRegistry
 import splice.sessions.registry.SessionRoute
+import splice.sessions.registry.SessionsHeard
 import splice.sessions.teams.TEAMS_FILE
 import splice.sessions.teams.TeamStore
 import splice.topology.TopologyLoader
@@ -225,10 +226,10 @@ internal object ConsoleWiring {
     }
 }
 
-/** How many sessions [ConsoleEventPublisher] remembers the head of. A session past this many
- *  more-recent ones is forgotten, and its next turn reads as a first sight again: one extra
- *  session.change for a session that did not move, never a missed move. Sized well above the
- *  sessions one daemon serves at once. */
+/** How many sessions [ConsoleEventPublisher] remembers the head and latest turn of. A session past
+ *  this many more-recent ones is forgotten, and its next turn reads as a first sight again: one extra
+ *  session.change for a session that did not move, never a missed move, and until then the registry
+ *  hears from it only through its own file. Sized well above the sessions one daemon serves at once. */
 private const val REMEMBERED_SESSIONS = 4096
 
 internal class ConsoleEventPublisher(
@@ -257,8 +258,17 @@ internal class ConsoleEventPublisher(
      *  by the console's live-turn routes, here for the reason [wires] is. */
     internal val liveTurns: LiveTurnsByHead = LiveTurnsByHead()
 
-    /** Session id -> the head its latest turn ran on, in least-recently-used order. */
-    private val sessionHeads = LinkedHashMap<String, String>()
+    /** Session id -> the head its latest turn ran on and when it started, in least-recently-used order. */
+    private val sessionsSeen = LinkedHashMap<String, Seen>()
+
+    /** V4-444: when each remembered session's latest turn started here, read by the daemon's session
+     *  registry. Claude Code rewrites a registration only when its status changes, so a turn served is
+     *  how a session busy for hours is heard from. A copy, so the registry never reads under the lock. */
+    internal val sessionsHeard: SessionsHeard = SessionsHeard {
+        synchronized(sessionsSeen) { sessionsSeen.mapValues { it.value.at } }
+    }
+
+    private data class Seen(val head: String, val at: Long)
 
     /** The reporter for one head. Keyed here so a head can never report under another's name. */
     internal fun forHead(head: String): HeadEvents = HeadPublisher(head)
@@ -316,12 +326,12 @@ internal class ConsoleEventPublisher(
             if (session != null) stores?.activity?.upstream(session, head, clock())
         }
 
-        /** Records [session] on this head and says whether that is news. */
-        private fun moved(session: String): Boolean = synchronized(sessionHeads) {
-            val previous = sessionHeads.remove(session)
-            sessionHeads[session] = head
-            if (sessionHeads.size > REMEMBERED_SESSIONS) sessionHeads.remove(sessionHeads.keys.first())
-            previous != head
+        /** Records [session]'s turn on this head, now, and says whether the head is news. */
+        private fun moved(session: String): Boolean = synchronized(sessionsSeen) {
+            val previous = sessionsSeen.remove(session)
+            sessionsSeen[session] = Seen(head, clock())
+            if (sessionsSeen.size > REMEMBERED_SESSIONS) sessionsSeen.remove(sessionsSeen.keys.first())
+            previous?.head != head
         }
     }
 }

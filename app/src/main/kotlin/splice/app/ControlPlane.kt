@@ -209,6 +209,7 @@ internal class ControlPlane(
             sessions = SessionRegistry(
                 home.resolve(".claude").resolve("sessions"),
                 RouteOfPid { pid -> environment.route(pid) { port -> headOfPort(heads, port) } },
+                heard = console.sessionsHeard,
             ),
             clientVersions = clientVersions,
         )

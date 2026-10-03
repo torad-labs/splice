@@ -31,6 +31,7 @@ class SessionRegistryTest {
         alive: Set<Long>,
         started: Map<Long, Long> = emptyMap(),
         identity: PidIdentity = identity(),
+        heard: Map<String, Long> = emptyMap(),
     ) = SessionRegistry(
         sessionsDir = dir,
         routeOf = { pid -> if (pid == 11L) SessionRoute.Head("claudex") else SessionRoute.Direct },
@@ -39,6 +40,7 @@ class SessionRegistryTest {
         clock = { now },
         staleAfterMs = 60_000L,
         identity = identity,
+        heard = { heard },
     )
 
     /** Claude Code writes pidDomain and procStart; they decide before the start-time tolerance does. */
@@ -62,6 +64,24 @@ class SessionRegistryTest {
         val noHost = registry(dir, alive = setOf(12L), identity = identity(starts, domain = null)).read()
         val unjudged = noHost.single { it.pid == 12L }.availability
         assertEquals(SessionAvailability.LIVE, unjudged, "no host domain: not judged")
+    }
+
+    /** V4-444: Claude Code rewrites its registration only when the session's status changes, so a
+     *  session busy for hours kept a 12-hour-old updatedAt and read STALE while this daemon served its
+     *  turns. A turn served for the session's id is the session being heard from too. */
+    @Test
+    fun `a turn the daemon served for the session counts as hearing from it, inside the window only`(
+        @TempDir dir: Path,
+    ) {
+        val old = now - 12 * 3_600_000L
+        for (pid in 11L..14L) write(dir, pid, """{"pid":$pid,"sessionId":"s-$pid","status":"busy","updatedAt":$old}""")
+        val heard = mapOf("s-11" to now - 5_000, "s-12" to now - 120_000, "s-14" to now - 5_000)
+        val rows = registry(dir, alive = setOf(11L, 12L, 13L), heard = heard).read().associateBy { it.pid }
+        assertEquals(SessionAvailability.LIVE, rows.getValue(11L).availability, "a turn 5 s ago, its file 12 h old")
+        assertEquals(SessionAvailability.STALE, rows.getValue(12L).availability, "its last turn is past the window")
+        assertEquals(SessionAvailability.STALE, rows.getValue(13L).availability, "no turn heard")
+        assertEquals(SessionAvailability.GONE, rows.getValue(14L).availability, "a turn never revives an ended pid")
+        assertEquals(old, rows.getValue(11L).updatedAt, "the registration's own updatedAt is reported as written")
     }
 
     @Test

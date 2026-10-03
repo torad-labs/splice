@@ -54,6 +54,10 @@ import splice.sessions.teams.Team
 import splice.sessions.teams.TeamSlot
 import splice.sessions.teams.TeamStore
 import splice.sessions.transcript.SentTexts
+import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -105,13 +109,31 @@ class ConsoleActivityPublishTest {
 
     /** Registers [session] under [name] on [pid] in the Claude Code registry of the home [paths] lives
      *  under, where ConsoleWiring reads it. */
-    private fun register(paths: StatePaths, session: String, name: String, pid: Long, socket: String? = null) {
+    private fun register(
+        paths: StatePaths,
+        session: String,
+        name: String,
+        pid: Long,
+        socket: String? = null,
+        updatedAt: Long = System.currentTimeMillis(),
+    ) {
         val dir = Files.createDirectories(checkNotNull(paths.rootDir.parent).resolve(".claude/sessions"))
         val at = socket?.let { ""","messagingSocketPath":"$it"""" }.orEmpty()
         Files.writeString(
             dir.resolve("$session.json"),
-            """{"pid":$pid,"sessionId":"$session","name":"$name","updatedAt":${System.currentTimeMillis()}$at}""",
+            """{"pid":$pid,"sessionId":"$session","name":"$name","updatedAt":$updatedAt$at}""",
         )
+    }
+
+    /** One session's availability as GET /api/sessions serves it. */
+    private fun availability(port: Int, key: String, session: String): String {
+        val ask = HttpRequest.newBuilder(URI("http://127.0.0.1:$port/api/sessions"))
+            .header("Authorization", "Bearer $key")
+            .build()
+        val body = HttpClient.newHttpClient().send(ask, HttpResponse.BodyHandlers.ofString()).body()
+        return Json.parseToJsonElement(body).jsonObject.getValue("sessions").jsonArray
+            .single { it.jsonObject["session_id"]?.jsonPrimitive?.content == session }
+            .jsonObject.getValue("availability").jsonPrimitive.content
     }
 
     @Test
@@ -228,6 +250,44 @@ class ConsoleActivityPublishTest {
             val stores = checkNotNull(plane.console.stores) { "the daemon's publisher must own the stores" }
             assertEquals(listOf("s-gpt"), await({ stores.edges.edges() }, 1).map { it.toSession })
         } finally {
+            plane.cancelProbes()
+        }
+    }
+
+    /** V4-444: Claude Code rewrites a registration only when its status changes, so a session busy for
+     *  hours read stale on the console while this daemon served its turns. The control plane's registry
+     *  hears a session through the turns its heads start. */
+    @Test
+    fun `the control plane's sessions read a turn its heads served as hearing from that session`() {
+        val paths = StatePaths(baseOverride = tmp.resolve("heard/.splice/state"))
+        val old = System.currentTimeMillis() - 12 * 3_600_000L
+        register(paths, "s-busy", "builder", ProcessHandle.current().pid(), updatedAt = old)
+        val plane = ControlPlane(
+            paths,
+            ConfigService(paths),
+            MgmtKey(paths),
+            DashboardPage { "<!doctype html>" },
+            { },
+            { },
+        )
+        val srv = checkNotNull(
+            runBlocking {
+                plane.start(
+                    controlPort = 0,
+                    heads = emptyMap(),
+                    failedHeads = { 0 },
+                    headCount = 0,
+                    turnPathStalled = TurnPathStalled { emptyList() },
+                )
+            },
+        ) { "the control plane did not bind" }
+        try {
+            val key = MgmtKey(paths).get()
+            assertEquals("stale", availability(srv.listeningPort, key, "s-busy"), "no turn yet; its file is 12 h old")
+            plane.console.forHead("claudex").turnStarted("s-busy")
+            assertEquals("live", availability(srv.listeningPort, key, "s-busy"), "a turn served now")
+        } finally {
+            srv.stop()
             plane.cancelProbes()
         }
     }

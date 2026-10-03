@@ -1,86 +1,68 @@
-// NEW: process-shared memory admission for request decoding and translation.
+// NEW: decoding, ingress and retained owners spend the same process heap ledger.
 package splice.head.admission
 
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import splice.core.config.Knob
+import splice.core.memory.HEAP_RESIDENT_BYTES
+import splice.core.memory.HeapBudget
+import splice.core.memory.HeapLease
+import splice.core.memory.HeapWeights
 import splice.head.turn.MaterializedRequest
 import splice.upstream.TurnEnd
-import java.util.concurrent.atomic.AtomicBoolean
+import splice.upstream.memory.JvmHeap
 
-// Measured everyday daemon footprint, reserved before request admission (V4-374).
-internal const val MATERIALIZATION_RESIDENT_BYTES: Long = 384 * 1024 * 1024L
+internal const val MATERIALIZATION_RESIDENT_BYTES: Long = HEAP_RESIDENT_BYTES
 
-// why: the measured 208 MiB for a 32 MiB body is a 13/2 heap expansion, rounded upward.
-private const val HEAP_EXPANSION_NUMERATOR = 13L
-
-// why: retain the measured half-byte expansion without floating-point admission arithmetic.
-private const val HEAP_EXPANSION_DENOMINATOR = 2L
-
-/**
- * Process-shared heap budget for decoding, translation and the request trees retained by a turn.
- *
- * A body reserves 6.5 times its bytes: the measured 208 MiB heap for a 32 MiB body. Zero selects
- * the JVM maximum heap minus the lesser of the resident allowance and half the heap. An override
- * can only lower that budget. Bodies heavier than the entire budget reserve it exclusively.
- */
+/** Decoding and retained request trees use the measured 13/2 expansion, without oversized clamping. */
 public class RequestMaterializationGate(
     heapBudgetBytes: Long = Knob.MATERIALIZATION_HEAP_BYTES.default as Long,
-    heapLimitBytes: Long = Runtime.getRuntime().maxMemory(),
+    heapLimitBytes: Long = JvmHeap.limitBytes,
+    /** Production injects the daemon ledger, shared with every retained owner and both listeners. */
+    public val heap: HeapBudget = HeapBudget(heapLimitBytes, heapBudgetBytes),
 ) {
-    private val spare = (heapLimitBytes - minOf(MATERIALIZATION_RESIDENT_BYTES, heapLimitBytes / 2)).coerceAtLeast(1L)
-    private val budget = if (heapBudgetBytes <= 0L) spare else minOf(heapBudgetBytes, spare)
-    private val available = MutableStateFlow(budget)
-    private val lock = Any()
+    public val limitBytes: Long =
+        if (heapBudgetBytes > 0L) minOf(heapBudgetBytes, heap.limitBytes) else heap.limitBytes
 
-    /** Wait for enough bytes, not a request-count slot. Bodies larger than the budget run alone. */
+    public fun requestBytes(bodyBytes: Long): Long = HeapWeights.request(bodyBytes)
+
     internal suspend fun <T : Any> withLease(
         bodyBytes: Long,
         owner: MaterializationOwner? = null,
+        reservation: HeapLease? = null,
         block: MaterializedRequest<T>,
     ): T? {
-        val weight = weight(bodyBytes)
-        while (!acquire(weight)) available.first { it >= weight }
-        return leased(weight, owner, block)
-    }
-
-    /** count_tokens never queues. Null exclusively means insufficient heap admission capacity. */
-    internal suspend fun <T : Any> tryWithLease(bodyBytes: Long, block: MaterializedRequest<T>): T? {
-        val weight = weight(bodyBytes)
-        if (!acquire(weight)) return null
-        return leased(weight, block = block)
-    }
-
-    private fun weight(bodyBytes: Long): Long {
-        val bytes = bodyBytes.coerceAtLeast(1L)
-        if (bytes > (Long.MAX_VALUE - 1L) / HEAP_EXPANSION_NUMERATOR) return budget
-        val weight = (bytes * HEAP_EXPANSION_NUMERATOR + 1L) / HEAP_EXPANSION_DENOMINATOR
-        return minOf(weight, budget)
-    }
-
-    private fun acquire(weight: Long): Boolean = synchronized(lock) {
-        if (available.value < weight) {
-            false
-        } else {
-            available.value -= weight
-            true
+        if (reservation != null) return leased(reservation, owner, block)
+        val weight = requestBytes(bodyBytes)
+        if (weight > limitBytes) return null
+        var lease = heap.reserve(weight)
+        while (lease == null) {
+            heap.available.first { it >= weight }
+            lease = heap.reserve(weight)
         }
+        return leased(lease, owner, block)
+    }
+
+    /** count_tokens does not queue. Null only means insufficient heap admission capacity. */
+    internal suspend fun <T : Any> tryWithLease(
+        bodyBytes: Long,
+        reservation: HeapLease? = null,
+        block: MaterializedRequest<T>,
+    ): T? {
+        val weight = requestBytes(bodyBytes)
+        if (reservation == null && weight > limitBytes) return null
+        val lease = reservation ?: heap.reserve(weight) ?: return null
+        return leased(lease, block = block)
     }
 
     private suspend fun <T : Any> leased(
-        weight: Long,
+        lease: HeapLease,
         owner: MaterializationOwner? = null,
         block: MaterializedRequest<T>,
     ): T {
-        val released = AtomicBoolean()
-        val release = TurnEnd {
-            if (released.compareAndSet(false, true)) synchronized(lock) { available.value += weight }
-        }
+        val release = TurnEnd { lease.close() }
         var retained = false
         return try {
-            if (owner != null) {
-                owner.onRelease(release)
-            }
+            owner?.onRelease(release)
             val materialized = block()
             retained = owner != null
             materialized
@@ -90,7 +72,7 @@ public class RequestMaterializationGate(
     }
 }
 
-/** A retained request's owner releases its heap lease only when its request trees are no longer live. */
+/** A retained request's owner releases its charge only when its request trees are no longer live. */
 internal fun interface MaterializationOwner {
     fun onRelease(release: TurnEnd)
 }

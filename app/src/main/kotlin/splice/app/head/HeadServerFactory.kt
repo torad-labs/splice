@@ -50,7 +50,10 @@ internal class HeadServerFactory(
     // v0.4.0: what a launched session holds, derived from the management key (see [TurnKey]).
     private val turnKey = TurnKey(mgmtKey)
 
-    private val requestMaterializationGate = RequestMaterializationGate(materializationHeapBytes())
+    private val requestMaterializationGate = RequestMaterializationGate(
+        materializationHeapBytes(),
+        heap = splice.upstream.memory.JvmHeap.budget,
+    )
 
     internal fun headServerFor(
         ctx: ProviderBuild,

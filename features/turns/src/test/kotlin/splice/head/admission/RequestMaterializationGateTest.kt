@@ -48,14 +48,15 @@ class RequestMaterializationGateTest {
     }
 
     @Test
-    fun `an above-budget body enters when idle`() = runTest(UnconfinedTestDispatcher()) {
+    fun `an above-budget body is refused even when idle`() = runTest(UnconfinedTestDispatcher()) {
         val gate = RequestMaterializationGate(heapBudgetBytes = 13)
-        assertEquals("exclusive", gate.withLease(3) { "exclusive" })
-        assertEquals("overflow", gate.tryWithLease(Long.MAX_VALUE) { "overflow" })
+        assertNull(gate.withLease(3) { "must not allocate beyond the budget" })
+        assertNull(gate.tryWithLease(Long.MAX_VALUE) { "overflow must not enter" })
+        assertEquals("fits", gate.tryWithLease(2) { "fits" })
     }
 
     @Test
-    fun `an above-budget body waits for an empty gate and then runs alone`() =
+    fun `a full-budget body waits for an empty gate and then runs alone`() =
         runTest(UnconfinedTestDispatcher()) {
             val gate = RequestMaterializationGate(heapBudgetBytes = 13)
             val releaseSmall = CompletableDeferred<Unit>()
@@ -63,13 +64,13 @@ class RequestMaterializationGateTest {
             val small = async { gate.withLease(1) { releaseSmall.await() } }
             var entered = false
             val large = async {
-                gate.withLease(3) {
+                gate.withLease(2) {
                     entered = true
                     releaseLarge.await()
                 }
             }
             try {
-                assertFalse(large.isCompleted, "an oversized body must wait, not be refused")
+                assertFalse(large.isCompleted, "a fitting full-budget body waits instead of exceeding the budget")
                 assertFalse(entered)
                 assertNull(gate.tryWithLease(3) { "fast-fail must not wait or enter" })
                 releaseSmall.complete(Unit)

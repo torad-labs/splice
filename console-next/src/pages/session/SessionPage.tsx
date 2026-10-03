@@ -92,8 +92,19 @@ export function SessionPage() {
     if (anchor.current !== null) {
       window.scrollBy(0, document.documentElement.scrollHeight - anchor.current);
       anchor.current = null;
+      // The reader is at the earlier page now; the growth that page caused is not news to follow.
+      nearBottom.current = false;
     } else if (nearBottom.current) window.scrollTo(0, document.documentElement.scrollHeight);
   }, [shown.length]);
+  // What lands after the messages (the team rail, the note box, a hint under the conversation) grows the page with no new
+  // message; on a cold daemon it lands 20 ms after them. A reader still at the bottom stays there.
+  useEffect(() => {
+    const follow = new ResizeObserver(() => {
+      if (nearBottom.current) window.scrollTo(0, document.documentElement.scrollHeight);
+    });
+    follow.observe(document.body);
+    return () => follow.disconnect();
+  }, []);
 
   let previous: string | null = null;
   return (

@@ -36,6 +36,7 @@ import splice.core.perf.PerfSnapshot
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
+import splice.core.util.JsonWire
 import splice.core.util.JsonlSink
 import splice.core.util.LogSink
 import splice.core.util.RotationArchive
@@ -193,23 +194,25 @@ public class PerfStats(
     public fun record(meta: PerfRowMeta, snap: PerfSnapshot, request: JsonObject? = null): Long {
         measuredInputs.remember(meta, snap, request)
         val ts = clock()
-        val row = buildJsonObject {
-            put("ts", ts)
-            put("model", meta.model)
-            put("outcome", meta.outcome)
-            put("compact", meta.compact)
-            meta.session?.let { put("session", it) }
-            meta.putTranscriptFacts(this)
-            meta.turn?.let { put("turn", it) }
-            meta.cause?.let { put("cause", it) }
-            if (meta.layers > 0) put("layers", meta.layers)
-            meta.account?.let { account ->
-                put("account", account)
-                put("cache_cold", meta.cacheCold)
-            }
-            (snap.marks.asSequence() + snap.counters.asSequence()).forEach { (k, v) -> put(k, v) }
-            snap.upstreamGapEnd?.let { put(PerfKeys.UP_GAP_END, it.wire) }
-        }.toString()
+        val row = JsonWire.string(
+            buildJsonObject {
+                put("ts", ts)
+                put("model", meta.model)
+                put("outcome", meta.outcome)
+                put("compact", meta.compact)
+                meta.session?.let { put("session", it) }
+                meta.putTranscriptFacts(this)
+                meta.turn?.let { put("turn", it) }
+                meta.cause?.let { put("cause", it) }
+                if (meta.layers > 0) put("layers", meta.layers)
+                meta.account?.let { account ->
+                    put("account", account)
+                    put("cache_cold", meta.cacheCold)
+                }
+                (snap.marks.asSequence() + snap.counters.asSequence()).forEach { (k, v) -> put(k, v) }
+                snap.upstreamGapEnd?.let { put(PerfKeys.UP_GAP_END, it.wire) }
+            },
+        )
         meta.session?.let { session ->
             Cancellables.discard(
                 Cancellables.runCatchingCancellable { totals?.add(session, meta.model, snap.counters, ts) },
@@ -218,7 +221,13 @@ public class PerfStats(
         }
         val accepted = AsyncFileIo.submitFor(file) {
             Files.createDirectories(file.parent)
-            JsonlSink.appendLine(file, row, maxBytes = maxBytes, archive = archive)
+            JsonlSink.appendLine(
+                file,
+                row,
+                maxBytes = maxBytes,
+                archive = archive,
+                force = JsonlSink.PAGE_CACHE_FORCE,
+            )
             // The next successful row ends a prior explicit deletion, on the same file lane.
             Files.deleteIfExists(file.parent.resolve(TURN_STATS_DELETED_MARKER))
         }

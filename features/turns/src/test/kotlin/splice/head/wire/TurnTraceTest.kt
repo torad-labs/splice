@@ -23,6 +23,7 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.util.AsyncFileIo
 import splice.core.util.WallClock
+import splice.head.trace.body.TraceBodies
 import splice.upstream.sse.WireAttempt
 import java.lang.ref.Reference
 import java.lang.ref.WeakReference
@@ -83,8 +84,10 @@ class TurnTraceTest {
 
     private fun lines(): List<JsonObject> {
         assertTrue(AsyncFileIo.drain(), "the file lane drained")
-        return Files.readAllLines(tmp.resolve("trace/kimi-2026-09-18.jsonl")).map { line ->
-            json.parseToJsonElement(line).jsonObject
+        val file = tmp.resolve("trace/kimi-2026-09-18.jsonl")
+        val bodies = TraceBodies()
+        return Files.readAllLines(file).map { line ->
+            bodies.hydrate(json.parseToJsonElement(line).jsonObject, file)
         }
     }
 

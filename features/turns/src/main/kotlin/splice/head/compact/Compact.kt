@@ -19,6 +19,7 @@ import kotlinx.serialization.json.put
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
+import splice.core.util.JsonWire
 import splice.core.util.JsonlSink
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
@@ -79,22 +80,24 @@ public class CompactStats(
     // append is best-effort by design: the turn builds an immutable row and the bounded file lane
     // owns filesystem latency.
     public fun record(fields: Map<String, Any?>) {
-        val row = buildJsonObject {
-            put("ts", clock())
-            fields.forEach { (k, v) ->
-                when (v) {
-                    null -> Unit
-                    is Boolean -> put(k, v)
-                    is Int -> put(k, v)
-                    is Long -> put(k, v)
-                    else -> put(k, v.toString())
+        val row = JsonWire.string(
+            buildJsonObject {
+                put("ts", clock())
+                fields.forEach { (k, v) ->
+                    when (v) {
+                        null -> Unit
+                        is Boolean -> put(k, v)
+                        is Int -> put(k, v)
+                        is Long -> put(k, v)
+                        else -> put(k, v.toString())
+                    }
                 }
-            }
-        }.toString()
+            },
+        )
         AsyncFileIo.submit {
             Cancellables.runCatchingCancellable {
                 Files.createDirectories(file.parent)
-                JsonlSink.appendLine(file, row)
+                JsonlSink.appendLine(file, row, force = JsonlSink.PAGE_CACHE_FORCE)
             }
         }
     }

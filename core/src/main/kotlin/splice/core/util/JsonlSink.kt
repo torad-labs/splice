@@ -52,6 +52,9 @@ public object JsonlSink {
     public val NO_ARCHIVE: RotationArchive = RotationArchive { }
     private val OS_FORCE = JsonlForce { _, channel -> channel.force(true) }
 
+    /** Telemetry is allowed to lose its last page-cache writes on host loss, never on daemon restart. */
+    public val PAGE_CACHE_FORCE: JsonlForce = JsonlForce { _, _ -> }
+
     /**
      * Append [line], rotating one generation before [maxBytes] can grow without bound.
      *
@@ -91,10 +94,20 @@ public object JsonlSink {
     public fun appendLine(
         file: Path,
         line: String,
+        maxBytes: Long = DEFAULT_MAX_BYTES,
+        archive: RotationArchive = NO_ARCHIVE,
+        force: JsonlForce,
+    ): Unit = appendLine(file, (line + "\n").toByteArray(StandardCharsets.UTF_8), maxBytes, archive, force)
+
+    /** Append one already UTF-8 encoded, newline-terminated record without creating a whole record String. */
+    public fun appendLine(
+        file: Path,
+        line: ByteArray,
         maxBytes: Long,
         archive: RotationArchive,
         force: JsonlForce,
     ) {
+        require(line.isNotEmpty() && line.last() == NEWLINE_BYTE) { "an encoded JSONL record ends in a newline" }
         val normalized = file.toAbsolutePath().normalize()
         synchronized(locks.computeIfAbsent(normalized) { Any() }) {
             val lockPath = normalized.resolveSibling("${normalized.fileName}.lock")
@@ -142,8 +155,7 @@ public object JsonlSink {
      * lands, because that is the 2026-08-25 ENOSPC fix — a heal after the write fuses the fragment
      * with the row that followed it and costs both.
      */
-    private fun append(file: Path, line: String, policy: RotatePolicy) {
-        val encoded = (line + "\n").toByteArray(StandardCharsets.UTF_8)
+    private fun append(file: Path, encoded: ByteArray, policy: RotatePolicy) {
         val currentSize = if (Files.exists(file)) Files.size(file) else 0L
         val rotated = rotateIfOver(file, currentSize, encoded.size, policy)
         writeForced(file, healedBytes(file, encoded, currentSize, rotated), policy.force)

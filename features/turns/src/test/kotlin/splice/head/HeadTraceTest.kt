@@ -23,6 +23,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTimeoutPreemptively
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -38,6 +39,7 @@ import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
 import splice.dialect.anthropic.PassthroughProvider
 import splice.dialect.anthropic.PassthroughQuirks
+import splice.head.trace.body.TraceBodies
 import splice.head.wire.TraceStore
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
@@ -45,7 +47,10 @@ import splice.upstream.transport.UpstreamClient
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Duration
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.time.Duration.Companion.seconds
 
 private const val MGMT_KEY = "mgmt-key-for-the-trace-test"
@@ -179,7 +184,9 @@ class HeadTraceTest {
     private fun records(port: Int): List<JsonObject> {
         assertTrue(AsyncFileIo.drain(), "the file lane drained")
         val files = Files.list(traceDir(port)).use { it.toList() }.filter { it.toString().endsWith(".jsonl") }
-        return files.single().let(Files::readAllLines).map { json.parseToJsonElement(it).jsonObject }
+        val file = files.single()
+        val bodies = TraceBodies()
+        return Files.readAllLines(file).map { bodies.hydrate(json.parseToJsonElement(it).jsonObject, file) }
     }
 
     private fun JsonObject.at(vararg path: String): String? =
@@ -217,10 +224,47 @@ class HeadTraceTest {
         assertEquals("1", turn.at("attempts"))
         assertTrue(turn.getValue("perf").jsonObject.getValue("marks").jsonObject.containsKey("total"))
 
-        val dayFile = Files.list(traceDir(port)).use { it.toList() }.single { "$it".endsWith(".jsonl") }
-        val file = Files.readString(dayFile)
-        assertFalse(file.contains(MGMT_KEY), "the client's bearer is not on disk")
-        assertFalse(file.contains(UPSTREAM_SECRET), "the head's API key is not on disk")
+        Files.list(traceDir(port)).use { it.toList() }.forEach { dayFile ->
+            val bytes = Files.readAllBytes(dayFile).decodeToString()
+            assertFalse(bytes.contains(MGMT_KEY), "the client's bearer is not on disk: $dayFile")
+            assertFalse(bytes.contains(UPSTREAM_SECRET), "the head's API key is not on disk: $dayFile")
+        }
+    }
+
+    @Test
+    fun `a writer held for five seconds delays neither final frames nor the next POST`() {
+        val port = startHead(traced = true)
+        val held = CountDownLatch(1)
+        val released = CountDownLatch(1)
+        assertTrue(AsyncFileIo.drain())
+        assertTrue(
+            AsyncFileIo.submit {
+                held.countDown()
+                try {
+                    TimeUnit.SECONDS.sleep(5)
+                } finally {
+                    released.countDown()
+                }
+            },
+        )
+        assertTrue(held.await(5, TimeUnit.SECONDS))
+        val posted = """{"model":"claude-splice--claude-fable-5","max_tokens":16,"messages":[{"role":"user","content":"synthetic held writer"}],"stream":true}"""
+        val before = upstream.bodies.size
+        try {
+            assertTimeoutPreemptively(Duration.ofSeconds(2)) {
+                repeat(2) {
+                    val (status, streamed) = turn(port, posted, "synthetic-held-session")
+                    assertEquals(HttpStatusCode.OK, status)
+                    assertTrue(streamed.contains("message_stop"), "the complete final frames arrived")
+                }
+                assertEquals(before + 2, upstream.bodies.size, "both POSTs reached the actual loopback upstream")
+                assertEquals(1L, released.count, "the writer remained gated throughout both responses")
+            }
+        } finally {
+            assertTrue(released.await(5, TimeUnit.SECONDS))
+            assertTrue(AsyncFileIo.drain())
+        }
+        assertEquals(4, records(port).size, "both deferred traces were actually written")
     }
 
     @Test

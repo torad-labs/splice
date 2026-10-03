@@ -15,6 +15,7 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.util.AsyncFileIo
 import splice.core.util.WallClock
+import splice.head.trace.body.TraceBodies
 import splice.head.wire.ClientInbound
 import splice.head.wire.TraceStore
 import java.nio.file.Files
@@ -51,7 +52,8 @@ class FullBodyTraceTest {
             .finish("ok", PerfSnapshot(emptyMap(), emptyMap()))
         assertTrue(AsyncFileIo.drain(), "the trace write must finish before checking it")
         val file = paths.traceDir.resolve("muse-2026-09-18.jsonl")
-        val client = Json.parseToJsonElement(Files.readString(file).trim()).jsonObject.getValue("client").jsonObject
+        val record = Json.parseToJsonElement(Files.readString(file).trim()).jsonObject
+        val client = TraceBodies().hydrate(record, file).getValue("client").jsonObject
         assertTrue(client.getValue("body").jsonPrimitive.content == body, "the five Mi body changed or was truncated")
         assertFalse(client.getValue("truncated").jsonPrimitive.content.toBoolean())
     }

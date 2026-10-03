@@ -13,6 +13,7 @@ import kotlinx.serialization.json.jsonObject
 import splice.core.storage.DayLine
 import splice.core.storage.LineVisit
 import splice.core.util.JsonScalars
+import splice.head.trace.body.TraceBodies
 
 // why: how far before a turn's first attempt its turn record can lie when the attempt was written late. A
 // record is stamped when it is built and the file lane writes in order, so the gap is the lane's queue:
@@ -29,6 +30,7 @@ internal class TraceTail(private val ask: TraceAsk, private val json: Json) : Li
      *  file lane, V4-174) and lies a little further back. */
     private val unended = HashMap<String, Long>()
     private val stamps = TraceStamps(json)
+    private val bodies = TraceBodies()
 
     override fun line(line: DayLine): Boolean {
         val stamp = stamps.of(line)
@@ -47,7 +49,8 @@ internal class TraceTail(private val ask: TraceAsk, private val json: Json) : Li
 
     private fun take(id: String, stamp: TraceStamp, line: DayLine) {
         val held = taken[id] ?: admit(id, stamp) ?: return
-        held.add(json.parseToJsonElement(line.text()).jsonObject, stamp.isTurnRecord)
+        val record = json.parseToJsonElement(line.text()).jsonObject
+        held.add(bodies.hydrate(record, line.file), stamp.isTurnRecord)
         if (stamp.isTurnRecord) unended -= id
         if (stamp.opens) {
             unopened -= id

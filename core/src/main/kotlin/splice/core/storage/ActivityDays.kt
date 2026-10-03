@@ -2,7 +2,7 @@
 // `<prefix>-YYYY-MM-DD.jsonl` under the state dir's `activity/` directory, the shape the contract
 // chose over SQLite: no dependency, no native library, files the operator can read and delete by hand.
 //
-// WRITES go through JsonlSink (per-row fsync, torn-append heal, the cross-process lock) on the
+// WRITES go through JsonlSink (page-cache telemetry, torn-append heal, cross-process locking) on the
 // AsyncFileIo lane, because the callers sit on the turn path and must return at once. The lane is
 // best-effort by contract (a full lane drops the row and counts it), which is the right degrade for
 // metadata about a turn that has already been served.
@@ -17,8 +17,8 @@
 //
 // RETENTION deletes whole day files older than the store's window (message edges: the
 // activityRetentionDays knob, default 90; activity labels: today and yesterday, V4-285; a head's trace days:
-// traceRetentionDays), WITH JsonlSink's two siblings of that file: its cross-process `.lock` and a
-// rolled `.1` generation. Leaving them would leak one lock file per store per day forever. Reads
+// traceRetentionDays), WITH the day's `.lock`, rolled `.1` generation and trace `.bodies` pack.
+// One stable `<prefix>.days.lock` excludes appends and purges and is never unlinked by either. Reads
 // ignore files older than the window too, so an unswept file never re-enters a view.
 //
 // WHEN A DAY GOES (V4-273): at the store's open, at each UTC midnight after it, and on the first
@@ -59,7 +59,6 @@ import java.nio.file.Path
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
-import java.time.format.DateTimeParseException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledThreadPoolExecutor
@@ -70,6 +69,9 @@ import java.util.concurrent.atomic.AtomicReference
 /** The state-dir subdirectory every activity store writes under. */
 public const val ACTIVITY_DIRECTORY: String = "activity"
 
+/** The content-addressed body pack shared by both JSONL generations of a trace day. */
+public const val DAY_BODY_SUFFIX: String = ".bodies"
+
 // why: 512 MiB, chosen against JsonlSink's rotate rather than against disk — the file header
 // above states the contract: JsonlSink rolls ONE generation away when a day file passes this.
 private const val DAY_MAX_BYTES = 512L shl 20
@@ -77,7 +79,7 @@ private const val DAY_MAX_BYTES = 512L shl 20
 /** A day file's own name, then JsonlSink's lock and its one rolled generation beside it. */
 /** JsonlSink's rotated generation of a day file: that day's OLDER rows, once it passed DAY_MAX_BYTES. */
 private const val ROLLED_SUFFIX = ".1"
-private val DAY_SIBLINGS = listOf("", ".lock", ROLLED_SUFFIX)
+private val DAY_SIBLINGS = listOf("", ".lock", ROLLED_SUFFIX, DAY_BODY_SUFFIX)
 
 // why: a floor under the wait for the next midnight sweep. A run that starts a moment before
 // midnight (the wait is monotonic, the day is wall time) re-arms for the few ms left; a clock that
@@ -111,6 +113,11 @@ private object MidnightSweeps {
     }
 }
 
+/** Encodes a queued record for its actual day file, so body companions and its JSONL index agree. */
+public fun interface DayRecord {
+    public fun encode(file: Path): ByteArray
+}
+
 public class ActivityDays(
     private val dir: Path,
     private val prefix: String,
@@ -136,7 +143,10 @@ public class ActivityDays(
     }
 
     /** Queues [line] for today's file. Returns at once; never throws. */
-    public fun append(line: String) {
+    public fun append(line: String): Unit = append(DayRecord { (line + "\n").toByteArray(Charsets.UTF_8) })
+
+    /** Queues an immutable record, encoded only when its day is ready on the file lane. */
+    public fun append(record: DayRecord) {
         val now = clock()
         armMidnightSweep(now)
         val today = day(now)
@@ -152,8 +162,16 @@ public class ActivityDays(
                     } else {
                         Files.createDirectories(dir)
                     }
-                    JsonlSink.appendLine(file, line, DAY_MAX_BYTES)
-                    deleted.clear()
+                    files.mutation.withLock {
+                        JsonlSink.appendLine(
+                            file,
+                            record.encode(file),
+                            DAY_MAX_BYTES,
+                            JsonlSink.NO_ARCHIVE,
+                            JsonlSink.PAGE_CACHE_FORCE,
+                        )
+                        deleted.clear()
+                    }
                     if (sweptFor.getAndSet(today) != today) sweep(today)
                 },
                 "a best-effort metadata row on the file lane; AsyncFileIo counts lane drops, and a failed " +
@@ -232,67 +250,6 @@ private class DayDeleteMarker(private val dir: Path, prefix: String, private val
     }
 }
 
-/** Source-derived inventory of real day files; neither sizes nor lines follow a symlink target. */
-private class DayFileMetadata(prefix: String) {
-    private val namePattern = Regex("${Regex.escape(prefix)}-(\\d{4}-\\d{2}-\\d{2})\\.jsonl(?:\\.lock|\\.1)?")
-
-    fun inventory(days: List<Pair<LocalDate, Path>>, retentionDays: Int): DayInventory {
-        require(retentionDays > 0)
-        val kept = days.mapNotNull { (date, file) ->
-            val content = listOf(file.resolveSibling("${file.fileName}$ROLLED_SUFFIX"), file)
-                .mapNotNull { path -> regularSize(path)?.let { path to it } }
-            if (content.isEmpty()) null else date to content
-        }
-        return DayInventory(
-            days = kept.size,
-            rows = kept.sumOf { (_, content) -> content.sumOf { (file, _) -> countLines(file) } },
-            bytes = kept.sumOf { (_, content) -> content.sumOf { (_, size) -> size } },
-            oldest = kept.firstOrNull()?.first,
-            agesOut = kept.lastOrNull()?.first?.plusDays(retentionDays.toLong()),
-        )
-    }
-
-    fun regularSize(file: Path): Long? = try {
-        val attrs = Files.readAttributes(file, "basic:size,isRegularFile", LinkOption.NOFOLLOW_LINKS)
-        when {
-            attrs["isRegularFile"] == true -> attrs["size"] as? Long
-            Files.isSymbolicLink(file) -> null
-            else -> throw IOException("not a regular day file: $file")
-        }
-    } catch (_: NoSuchFileException) {
-        null
-    }
-
-    /** Only a calendar day carried by a regular file or a removable symlink is a store entry. */
-    fun dateOf(file: Path): LocalDate? {
-        val name = namePattern.matchEntire(file.fileName.toString())?.groupValues?.get(1) ?: return null
-        val date = try {
-            LocalDate.parse(name)
-        } catch (_: DateTimeParseException) {
-            null
-        }
-        if (date != null) {
-            val attrs = try {
-                Files.readAttributes(file, "basic:isRegularFile,isSymbolicLink", LinkOption.NOFOLLOW_LINKS)
-            } catch (_: NoSuchFileException) {
-                return null
-            }
-            if (attrs["isRegularFile"] != true && attrs["isSymbolicLink"] != true) {
-                throw IOException("not a day file: $file")
-            }
-        }
-        return date
-    }
-
-    private fun countLines(file: Path): Long {
-        val decoder = Charsets.UTF_8.newDecoder()
-            .onMalformedInput(CodingErrorAction.REPLACE)
-            .onUnmappableCharacter(CodingErrorAction.REPLACE)
-        return InputStreamReader(Files.newInputStream(file, LinkOption.NOFOLLOW_LINKS), decoder)
-            .useLines { lines -> lines.fold(0L) { count, _ -> count + 1 } }
-    }
-}
-
 /** Bounded wait for the file lane, keeping refusal and incomplete work distinct from a completed delete. */
 private class DayDeleteWait {
     val ready = CountDownLatch(1)
@@ -313,8 +270,9 @@ private class DayDeleteWait {
  *  store that writes the files ([ActivityDays]). */
 public class DayFiles(private val dir: Path, private val prefix: String, private val ownerOnly: Boolean = false) {
     private val marker = DayDeleteMarker(dir, prefix, ownerOnly)
-    private val metadata = DayFileMetadata(prefix)
+    private val metadata = DayFileInventory(prefix)
     private val backward = BackwardLines()
+    internal val mutation = DayMutationLock(dir, prefix)
 
     /** Every line of every day on disk, oldest day first. */
     public fun lines(): Sequence<String> = linesFrom(LocalDate.MIN)
@@ -357,15 +315,22 @@ public class DayFiles(private val dir: Path, private val prefix: String, private
         val queued = AsyncFileIo.submit {
             try {
                 val attempt = Cancellables.runCatchingCancellable {
-                    val before = inventory(retentionDays)
-                    when (val purged = purge()) {
-                        is DayPurge.Unlisted -> throw IOException("cannot list ${purged.dir}", purged.failure)
-                        is DayPurge.Listed -> purged.failed.entries.firstOrNull()?.let { (file, failure) ->
-                            throw IOException("could not delete $file", failure)
-                        }
+                    if (ownerOnly) {
+                        val _ = SecureFile.ownerOnlyDirectory(dir)
+                    } else {
+                        Files.createDirectories(dir)
                     }
-                    marker.mark()
-                    before
+                    mutation.withLock {
+                        val before = inventory(retentionDays)
+                        when (val purged = purge()) {
+                            is DayPurge.Unlisted -> throw IOException("cannot list ${purged.dir}", purged.failure)
+                            is DayPurge.Listed -> purged.failed.entries.firstOrNull()?.let { (file, failure) ->
+                                throw IOException("could not delete $file", failure)
+                            }
+                        }
+                        marker.mark()
+                        before
+                    }
                 }
                 wait.result.set(attempt)
             } finally {
@@ -383,17 +348,21 @@ public class DayFiles(private val dir: Path, private val prefix: String, private
     /** V4-174: deletes EVERY day file of this store, whatever its age, with JsonlSink's siblings —
      *  the `splice trace --purge` verb. Answers what went and what did not (V4-286: it answered the
      *  files it listed, deleted or not, and a directory it could not list as one with no files). */
-    public fun purge(): DayPurge {
-        val listed = Cancellables.runCatchingCancellable { days() }
-            .getOrElse { failure -> return DayPurge.Unlisted(dir, failure) }
-        val failed = LinkedHashMap<Path, Throwable>()
-        val deleted = listed.map { (_, file) -> file }.filter { file ->
-            val undeleted = deleteDay(file)
-            failed.putAll(undeleted)
-            file !in undeleted
+    public fun purge(): DayPurge = Cancellables.runCatchingCancellable {
+        if (Files.notExists(dir, LinkOption.NOFOLLOW_LINKS)) {
+            DayPurge.Listed(emptyList(), emptyMap())
+        } else {
+            mutation.withLock {
+                val failed = LinkedHashMap<Path, Throwable>()
+                val deleted = days().map { (_, file) -> file }.filter { file ->
+                    val undeleted = deleteDay(file)
+                    failed.putAll(undeleted)
+                    file !in undeleted
+                }
+                DayPurge.Listed(deleted, failed)
+            }
         }
-        return DayPurge.Listed(deleted, failed)
-    }
+    }.getOrElse { failure -> DayPurge.Unlisted(dir, failure) }
 
     /** Every line of the days from [oldest] on, oldest day first, each day's rolled half first. */
     @Throws(IOException::class)
@@ -405,10 +374,13 @@ public class DayFiles(private val dir: Path, private val prefix: String, private
     /** Deletes every day file dated before [oldest], with its siblings. */
     @Throws(IOException::class)
     internal fun deleteBefore(oldest: LocalDate) {
-        for ((date, file) in days()) {
-            // A day that cannot be deleted now is swept again next time, and reads already leave it out.
-            if (date.isBefore(oldest)) {
-                val _ = deleteDay(file)
+        if (Files.notExists(dir, LinkOption.NOFOLLOW_LINKS)) return
+        mutation.withLock {
+            for ((date, file) in days()) {
+                // A day that cannot be deleted now is swept again next time, and reads already leave it out.
+                if (date.isBefore(oldest)) {
+                    val _ = deleteDay(file)
+                }
             }
         }
     }
@@ -460,7 +432,7 @@ public sealed class DayPurge {
 }
 
 /** A day file's name: its store's prefix, then the UTC day. */
-private val DAY_FILE = Regex("(.+)-\\d{4}-\\d{2}-\\d{2}\\.jsonl(?:\\.1|\\.lock)?")
+private val DAY_FILE = Regex("(.+)-\\d{4}-\\d{2}-\\d{2}\\.jsonl(?:\\.1|\\.lock|\\.bodies)?")
 
 /** V4-260: the [ActivityDays] stores that have day files in [dir], by prefix. For the trace dir that
  *  is every head with trace days on disk, so the days of a head splice.toml no longer names can go. */

@@ -8,16 +8,18 @@
 // whole conversations (ActivityDays ownerOnly → SecureFile.ownerOnlyDirectory).
 //
 // DERIVED FROM ActivityDays, not a second file store: UTC day files, the AsyncFileIo lane (a trace
-// append never blocks the turn), JsonlSink's per-row fsync and cross-process lock, and the
-// retention sweep at the store's open and at each UTC midnight. One addition, the owner-only mode.
+// append never blocks the turn), page-cache telemetry appends, cross-process mutation locking,
+// and retention at open and UTC midnight. JSONL stamps reference shared daily body chunks.
 package splice.head.wire
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.storage.ActivityDays
+import splice.core.storage.DayRecord
 import splice.core.turn.TurnMeta
 import splice.core.util.WallClock
+import splice.head.trace.body.TraceBodies
 import java.util.UUID
 
 /** The record kinds a trace file holds, spelled once for the writer and the `splice trace` reader. */
@@ -54,6 +56,8 @@ public class TraceStore(
     private val now: WallClock = WallClock(System::currentTimeMillis),
     private val ids: TurnIdMint = randomTurnIds,
 ) {
+    private val bodies = TraceBodies()
+
     init {
         require(maxBodyChars > 0) { "a trace keeps at least one character of a body; maxBodyChars=$maxBodyChars" }
     }
@@ -67,7 +71,7 @@ public class TraceStore(
         if (text.length <= maxBodyChars) text.toString() to false else text.substring(0, maxBodyChars) to true
 
     internal fun write(record: JsonObject) {
-        days.append(record.toString())
+        days.append(DayRecord { file -> bodies.encode(record, file) })
     }
 
     /** The fields every record of this head carries, in front of the kind's own. */

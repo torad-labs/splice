@@ -44,6 +44,9 @@ public class DayLine internal constructor(
     private val start: Long,
     private val end: Long,
 ) {
+    /** The actual source day, including a rolled generation, for resolving selected record companions. */
+    public val file: Path get() = reads.file
+
     /** Its bytes in order, its terminator not among them, read from the file as they are asked for. */
     public fun bytes(): InputStream = SpanStream(reads, start, end)
 
@@ -61,7 +64,7 @@ public class DayLine internal constructor(
 }
 
 /** Positional reads of one open file, shared by the cursor that finds its lines and the lines it hands out. */
-internal class ChannelReads(private val channel: FileChannel) {
+internal class ChannelReads(private val channel: FileChannel, val file: Path) {
     fun size(): Long = channel.size()
 
     /** Reads [into] full from [position]. The size was read at the start and a day file only grows, so a
@@ -139,7 +142,7 @@ internal class BackwardLines {
         } catch (_: NoSuchFileException) {
             return null
         }
-        return channel.use { visit.file(LineFile(ChannelReads(it))) }
+        return channel.use { visit.file(LineFile(ChannelReads(it, file))) }
     }
 }
 

@@ -78,7 +78,11 @@ class ActivityDaysOwnerOnlyTest {
         val both = listOf(dir.resolve("kimi-2026-09-18.jsonl"), dir.resolve("kimi-2026-09-19.jsonl"))
         assertEquals(DayPurge.Listed(both, emptyMap()), gone)
         assertEquals(0, days.lines().count())
-        assertTrue(Files.list(dir).use { it.toList() }.isEmpty(), "the lock siblings went with the files")
+        assertEquals(
+            listOf(dir.resolve("kimi.days.lock")),
+            Files.list(dir).use { it.toList() },
+            "day siblings went with the files, while the store mutation lock keeps its stable inode",
+        )
         assertEquals(DayPurge.Listed(emptyList(), emptyMap()), DayFiles(dir, "kimi").purge(), "a second has nothing")
     }
 

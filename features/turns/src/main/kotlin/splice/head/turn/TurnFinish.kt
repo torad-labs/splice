@@ -71,9 +71,15 @@ internal class TurnFinish(
         // makes the downgrade visible to the log and to head health (perf carries the honest tag
         // below). Local attribution: the downgrade is the gateway's own call — G20's
         // providerReported stays translator-owned.
-        if (outcome is TurnOutcome.Success && outcomeTag != OutcomeTag.OK.wire) {
-            log(telemetry.errTurn("finish-degraded", drive, "tag=$outcomeTag; client received an error terminal"))
-            health.local()
+        if (outcome is TurnOutcome.Success) {
+            when (outcomeTag) {
+                OutcomeTag.OK.wire, OutcomeTag.EMPTY_MESSAGE.wire -> Unit
+                else -> {
+                    val detail = "tag=$outcomeTag; client received an error terminal"
+                    log(telemetry.errTurn("finish-degraded", drive, detail))
+                    health.local()
+                }
+            }
         }
         // V4-117: the failing outcome is in scope here, so the perf row gets its cause and the
         // attempt count the retry loop stamped on it. A Success carries neither, and both default to

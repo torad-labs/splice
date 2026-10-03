@@ -37,6 +37,7 @@ import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
+import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.FailureCause
@@ -670,6 +671,51 @@ class TurnFinishTest {
         assertTrue(rig.logs.any { it.contains("finish-degraded") }, "the downgrade must reach the log")
         AsyncFileIo.drain() // perf rows are appended asynchronously
         assertTrue(Files.readString(rig.perfFile).contains("empty_model"), "perf keeps the honest tag")
+    }
+
+    @Test
+    fun `closed empty messages stay clean while empty model and compact errors stay degraded`() = runBlocking {
+        for (tag in listOf(OutcomeTag.EMPTY_MODEL, OutcomeTag.EMPTY_COMPACT, OutcomeTag.EMPTY_MESSAGE)) {
+            val rig = Rig(tmp, "ending-${tag.wire}")
+            val emitter = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } })
+            val original = rig.drive(emitter)
+            val drive = original.copy(meta = original.meta.copy(compact = tag == OutcomeTag.EMPTY_COMPACT))
+            val degraded = tag != OutcomeTag.EMPTY_MESSAGE
+            try {
+                rig.finish.finishTurn(
+                    drive,
+                    TurnOutcome.Success(
+                        hasToolUse = false,
+                        incomplete = false,
+                        usage = Usage(),
+                        messageClosed = tag == OutcomeTag.EMPTY_MESSAGE,
+                    ),
+                )
+                assertEquals(if (degraded) 529 else 200, emitter.httpStatus(), tag.wire)
+                assertEquals(if (degraded) 1L else 0L, rig.health.snapshot().localOrigin, tag.wire)
+                assertEquals(degraded, rig.logs.any { it.contains("finish-degraded") }, tag.wire)
+                assertTrue(AsyncFileIo.drain())
+                assertTrue(Files.readString(rig.perfFile).contains("\"outcome\":\"${tag.wire}\""), tag.wire)
+            } finally {
+                drive.slot.release()
+            }
+        }
+    }
+
+    @Test
+    fun `client abandonment does not enter success degradation accounting`() = runBlocking {
+        val rig = Rig(tmp, "ending-abandoned")
+        val emitter = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } })
+        val drive = rig.drive(emitter)
+        try {
+            rig.finish.finishTurn(drive, TurnOutcome.ClientAbandoned())
+            assertEquals(0L, rig.health.snapshot().localOrigin)
+            assertTrue(rig.logs.none { it.contains("finish-degraded") })
+            assertTrue(AsyncFileIo.drain())
+            assertTrue(Files.readString(rig.perfFile).contains("\"outcome\":\"${OutcomeTag.CLIENT_ABORT.wire}\""))
+        } finally {
+            drive.slot.release()
+        }
     }
 
     /** Blocker #5: completed raw posts are a cancellation prefix. The normal final aggregate already

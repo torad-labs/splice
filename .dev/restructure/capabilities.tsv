@@ -1,4 +1,6 @@
 source	sha256	disposition	destination	reason
+core/src/main/kotlin/splice/core/util/JsonWire.kt	85bf546875cc0b71cf1a16189f262b19b3d8f605f650a5e34a602ecd7c237c92	created		V4-457: destination-directed streaming JSON preserves raw numeric spellings without recursively materializing nested trees
+core/src/test/kotlin/splice/core/util/JsonWireTest.kt	0b06064d0e3730e0e9a4db8efdd3d330e9a5f9d356ab3cb7d3cc04c5e6f96590	created		V4-457: byte identity pins numeric spellings escaping Unicode and surrogate behavior across string and stream emission
 app/src/test/kotlin/splice/app/DaemonFailureChainTest.kt	7e591b7d629ecc358a1d80c44653b89739aaab5fea9f92c57a52702f1982d6ee	created		Bounded cycle-safe fatal cause and suppressed frame diagnostics without private throwable messages
 integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeSourceInterruptedException.kt	b191cecd73bd4d5c67505c25460ea87253e212baf4d108adf4d587a80a1c5817	created		Typed retained-source transport interruption preserves retry attribution without partial script replay
 integrations/providers/codex/src/test/kotlin/splice/provider/codex/CodeModeCompletionCallbackTest.kt	b49dbb350c5283fd2e5d514687a80e05a3fb5b7a919854b8cbdcd2f8ef85ff63	created		Synthetic retained-reader completion failure proves supervised cleanup and withheld callback messages

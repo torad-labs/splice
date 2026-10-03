@@ -1,4 +1,5 @@
 source	sha256	disposition	destination	reason
+features/turns/src/main/kotlin/splice/head/transport/UpstreamChatEventKinds.kt	27bc415223e8cc2d6aa3dc54ba818ed0264ee0d09efbf88d3bafd1c37490e22f	created		V4-456: chat choice content and lifecycle classification is separate from Responses and Anthropic event envelopes
 integrations/providers/codex/src/main/kotlin/splice/provider/codex/state/CodeModeCellCleanup.kt	ab3413a7854187276e70efcd1ef67aba20b6ef13de5aaf0a9fd20c7747f88222	created		V4-457: rejected-cell cleanup preserves lost-record persistence while containing safely rendered close failures
 integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeRejection.kt	7b7cdb054f74441f85ea75f88dc164b74fa333ece0287c6d1d840e4a6851c360	created		V4-457: local source rejection owns safe outcome construction and best-effort lost-record cleanup
 core/src/main/kotlin/splice/core/perf/WsAttemptTiming.kt	ad7e19a3455025ad92335f2c829325a9796ee9656fa5e73489009a34a9788d7b	created		V4-456: latest-attempt JDK send acceptance and first decoded text fragment retain unobserved socket milestones as absent

@@ -7,9 +7,6 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.perf.UpstreamGapEnd
 import splice.core.util.JsonScalars
 
-// The cleartext reasoning keys served by ChatProseFold; values are never retained here.
-private val CHAT_REASONING_FIELDS = listOf("reasoning_content", "reasoning", "thinking", "reasoning_text")
-
 // why: Anthropic blocks and chat choices carry their fragments in the same delta field.
 private const val UPSTREAM_EVENT_DELTA_FIELD = "delta"
 
@@ -20,11 +17,12 @@ private val CONTENT_NODES = listOf("item", "part", "content_block", "content", "
 internal object UpstreamEventKinds {
     fun kind(event: JsonObject): UpstreamGapEnd {
         val type = JsonScalars.str(event, "type")
-        return responsesContent(type) ?: responsesLifecycle(type) ?: anthropic(type, event) ?: chat(event)
+        return responsesContent(type) ?: responsesLifecycle(type) ?: anthropic(type, event)
+            ?: UpstreamChatEventKinds.kind(event)
     }
 
     fun hasContent(event: JsonObject, kind: UpstreamGapEnd): Boolean {
-        if (event["choices"] is JsonArray) return chatHasContent(event)
+        if (event["choices"] is JsonArray) return UpstreamChatEventKinds.hasContent(event)
         return when (kind) {
             UpstreamGapEnd.CONTENT_BLOCK_START, UpstreamGapEnd.CONTENT_BLOCK_STOP,
             UpstreamGapEnd.COMPLETED, UpstreamGapEnd.TORN,
@@ -79,46 +77,6 @@ internal object UpstreamEventKinds {
         }
     }
 
-    private fun chat(event: JsonObject): UpstreamGapEnd {
-        var fallback: UpstreamGapEnd? = null
-        for (entry in (event["choices"] as? JsonArray).orEmpty()) {
-            val choice = entry as? JsonObject ?: continue
-            val kind = chatDelta(choice[UPSTREAM_EVENT_DELTA_FIELD] as? JsonObject)
-                ?: chatDelta(choice["message"] as? JsonObject)
-            if (kind != null) return kind
-            fallback = fallback ?: chatLifecycle(choice)
-        }
-        return fallback ?: UpstreamGapEnd.UNKNOWN
-    }
-
-    private fun chatDelta(delta: JsonObject?): UpstreamGapEnd? {
-        val tools = (delta?.get("tool_calls") as? JsonArray).orEmpty()
-        return when {
-            tools.any { JsonScalars.strIfString(toolFunction(it)?.get("arguments")).isNotEmpty() } ->
-                UpstreamGapEnd.INPUT_JSON_DELTA
-            tools.any { JsonScalars.strIfString(toolFunction(it)?.get("name")).isNotEmpty() } ->
-                UpstreamGapEnd.CONTENT_BLOCK_START
-            CHAT_REASONING_FIELDS.any { JsonScalars.strIfString(delta?.get(it)).isNotEmpty() } ->
-                UpstreamGapEnd.THINKING_DELTA
-            JsonScalars.strIfString(delta?.get("content")).isNotEmpty() -> UpstreamGapEnd.TEXT_DELTA
-            else -> null
-        }
-    }
-
-    private fun chatLifecycle(choice: JsonObject): UpstreamGapEnd? {
-        val delta = choice[UPSTREAM_EVENT_DELTA_FIELD] as? JsonObject
-        return when {
-            JsonScalars.str(delta, "role") == "assistant" -> UpstreamGapEnd.MESSAGE_START
-            (delta?.get("tool_calls") as? JsonArray).orEmpty().any {
-                toolFunction(it)?.containsKey("arguments") == true
-            } -> UpstreamGapEnd.INPUT_JSON_DELTA
-            CHAT_REASONING_FIELDS.any { delta?.containsKey(it) == true } -> UpstreamGapEnd.THINKING_DELTA
-            delta?.containsKey("content") == true -> UpstreamGapEnd.TEXT_DELTA
-            JsonScalars.str(choice, "finish_reason") != null -> UpstreamGapEnd.MESSAGE_DELTA
-            else -> null
-        }
-    }
-
     private fun payloadHasContent(payload: JsonElement?): Boolean = when (payload) {
         is JsonArray -> payload.any(::payloadHasContent)
         is JsonObject -> CONTENT_STRINGS.any { JsonScalars.strIfString(payload[it]).isNotEmpty() } ||
@@ -138,17 +96,7 @@ internal object UpstreamEventKinds {
                 JsonScalars.strIfString(delta[field]).isNotEmpty()
             }
             JsonScalars.strIfString(delta).isNotEmpty() -> true
-            else -> chatHasContent(event)
+            else -> UpstreamChatEventKinds.hasContent(event)
         }
     }
-
-    private fun chatHasContent(event: JsonObject): Boolean =
-        (event["choices"] as? JsonArray).orEmpty().any { entry ->
-            val choice = entry as? JsonObject ?: return@any false
-            chatDelta(choice[UPSTREAM_EVENT_DELTA_FIELD] as? JsonObject) != null ||
-                chatDelta(choice["message"] as? JsonObject) != null
-        }
-
-    private fun toolFunction(entry: JsonElement): JsonObject? =
-        (entry as? JsonObject)?.get("function") as? JsonObject
 }

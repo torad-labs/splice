@@ -51,31 +51,53 @@ internal object CodeModeSweeps {
  *  record. It holds the registry's [monitor] for each sweep; [save] writes the registry's state. */
 internal class CodeModeTimedSweep(
     private val monitor: ReentrantLock,
-    private val records: List<CodeModeRecord>,
+    private val records: MutableList<CodeModeRecord>,
     private val history: CodeModeExpiredHistory,
     private val save: Runnable,
     private val store: CodexCodeModeStore,
     private val config: CodeModeBridgeConfig,
     private val interval: Duration,
 ) {
+    private val lifecycle = Any()
     private var running: ScheduledFuture<*>? = null
+    private var terminal: Runnable? = null
+    private var released = false
 
     /** A sweep changed the records and could not save them yet; the next sweep saves again. */
     private var unsaved = false
 
+    /** Terminal retries save the final state without further TTL mutation, then release hot ownership. */
+    fun finish(settle: Runnable) = synchronized(lifecycle) {
+        if (released || terminal != null) return@synchronized
+        terminal = settle
+        sweep()
+        monitor.withLock { arm() }
+    }
+
     /** Under [monitor]: starts the sweeps when a record is kept and none run. */
     fun arm() {
-        val retained = records.isNotEmpty() || history.entries.isNotEmpty()
+        val retained = records.isNotEmpty() || history.entries.isNotEmpty() || terminal != null
+        if (released) return
         if (running == null && retained) running = CodeModeSweeps.every(interval) { sweep() }
+    }
+
+    private fun saveFinal() = monitor.withLock {
+        store.save(records, history.entries)
+        if (store.release()) {
+            records.clear()
+            history.entries.clear()
+        }
     }
 
     /** One sweep: what the sweeper changed is saved, a save that fails is logged and made again at the
      *  next sweep, and the sweeps stop once no record or expiry marker is kept. Never throws: a throw would end the
      *  periodic task in silence. */
-    private fun sweep() {
+    private fun sweep() = synchronized(lifecycle) {
+        if (released) return@synchronized
         Cancellables.runCatchingBestEffort {
             unsaved = true
-            save.run()
+            (terminal ?: save).run()
+            if (terminal != null) saveFinal()
             unsaved = false
         }.exceptionOrNull()?.let { failure ->
             config.log(
@@ -84,11 +106,12 @@ internal class CodeModeTimedSweep(
             )
         }
         monitor.withLock {
-            val clean = !unsaved && store.pendingKeys.isEmpty()
+            val clean = !unsaved && store.settled
             val empty = records.isEmpty() && history.entries.isEmpty()
             if (empty && clean) {
                 running?.cancel(false)
                 running = null
+                released = terminal != null
             }
         }
     }

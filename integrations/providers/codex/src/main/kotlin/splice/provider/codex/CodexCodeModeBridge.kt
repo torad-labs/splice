@@ -166,10 +166,17 @@ public class CodexCodeModeBridge(
 
     public fun onHeadStop() {
         driver.streams.stop()
-        registry.onHeadStop()
-        // The runtime owns child JVM worker processes; a head stop is the one production path that
-        // releases them, so it is closed here and nowhere else (AutoCloseableClosedLawTest). The
-        // provider outlives the stop (Provider.onHeadStop), so the next start opens a fresh runtime.
-        run.end()
+        try {
+            registry.onHeadStop()
+        } finally {
+            // Head stop releases child JVM workers even when the final durable write needs a retry.
+            // The reusable provider opens a fresh runtime after its next start.
+            run.end()
+        }
+    }
+
+    /** Ends daemon ownership, unlike a reusable head stop. Unsaved evidence retains its retry owner. */
+    public fun onProviderStop() {
+        registry.timed.finish { onHeadStop() }
     }
 }

@@ -102,6 +102,17 @@ internal class CodexCodeModeStore(
     /** Failed keys outlive their last record, so TTL purges keep retrying until disk agrees. */
     val pendingKeys: Set<String> get() = failedKeys.toSet()
 
+    /** Terminal disposal may drop hot snapshots only after every write and failed purge settles. */
+    val settled: Boolean
+        get() = !needsSave && pendingWrites.get() == 0 && failedKeys.isEmpty() && uncertainKeys.isEmpty()
+
+    /** Drops only in-memory owners. Durable files and escaped graph owners are left intact. */
+    fun release(): Boolean {
+        if (!settled) return false
+        kept.clear()
+        return true
+    }
+
     private data class Prepared(
         val key: String,
         val conversation: CodeModePersistedState?,

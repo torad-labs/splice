@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
+import splice.provider.codex.state.CodeModeExpiredHistory
 import splice.provider.codex.state.CodeModeStateDelta
 import splice.provider.codex.state.CodeModeStateJournal
 import java.io.IOException
@@ -18,7 +19,14 @@ import java.nio.file.attribute.FileTime
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.locks.LockSupport
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.milliseconds
 
 class CodeModeStoreDurabilityTest {
     @TempDir
@@ -179,6 +187,87 @@ class CodeModeStoreDurabilityTest {
         registry.complete(alpha, "updated alpha")
         assertFalse(Files.exists(oldFile))
         assertEquals("updated alpha", store().load().records.single { it.key == "alpha" }.output)
+    }
+
+    @Test
+    fun `terminal disposal retains a failed completion until its forced retry settles`() {
+        val blocked = AtomicBoolean()
+        val record = CodeModeRecords.of("alpha", 1)
+        val store = store(retryWriter(blocked))
+        store.load()
+        store.save(listOf(record), emptyList())
+        record.output = "final completion not yet forced"
+        record.phase = CodeModePhase.COMPLETED
+        blocked.set(true)
+        assertThrows<CodeModePersistenceException> { store.save(listOf(record), emptyList(), changedRecord = record) }
+        assertFalse(store.release(), "an unsaved completion cannot lose its retry index")
+        val records = mutableListOf(record)
+        val sweep = terminalSweep(store, records, mutableListOf())
+        assertFalse(sweep.isCancelled)
+        assertEquals(listOf(record), records, "failed terminal save keeps the live completion")
+        blocked.set(false)
+        awaitCancelled(sweep)
+        assertTrue(records.isEmpty(), "hot ownership ends only after persistence settles")
+        assertEquals(record.output, store().load().records.single().output)
+        assertTrue(store.settled)
+    }
+
+    @Test
+    fun `terminal disposal retries a failed purge instead of restoring its old record`() {
+        val blocked = AtomicBoolean()
+        val record = CodeModeRecords.of("alpha", 1)
+        val store = store(retryWriter(blocked))
+        store.load()
+        store.save(listOf(record), emptyList())
+        val marker = CodeModeExpiredSnapshot("alpha", "expired-first", setOf(record.id), record.updatedAt)
+        val markers = mutableListOf(marker)
+        blocked.set(true)
+        assertThrows<CodeModePersistenceException> { store.save(emptyList(), markers) }
+        assertFalse(store.release(), "failed purge retains the durable index until disk agrees")
+        val sweep = terminalSweep(store, mutableListOf(), markers)
+        assertFalse(sweep.isCancelled)
+        assertEquals(listOf(marker), markers, "terminal retries do not expire the unforced marker")
+        blocked.set(false)
+        awaitCancelled(sweep)
+        val restored = store().load()
+        assertTrue(restored.records.isEmpty())
+        assertEquals(listOf(marker), restored.expired)
+        assertTrue(markers.isEmpty(), "durable expiry evidence no longer needs hot owners")
+    }
+
+    private fun retryWriter(blocked: AtomicBoolean): CodeModeStateWrite = CodeModeStateWrite { path, text ->
+        if (blocked.get()) throw IOException("synthetic terminal force refused")
+        CodeModeStateJournal.write(path, text)
+    }
+
+    private fun terminalSweep(
+        store: CodexCodeModeStore,
+        records: MutableList<CodeModeRecord>,
+        markers: MutableList<CodeModeExpiredSnapshot>,
+    ): ScheduledFuture<*> {
+        val monitor = ReentrantLock()
+        val timed = CodeModeTimedSweep(
+            monitor,
+            records,
+            CodeModeExpiredHistory(markers, null),
+            { error("terminal retry must not run TTL housekeeping") },
+            store,
+            CodeModeBridgeConfig({ error("terminal retry never starts a worker") }, location),
+            50.milliseconds,
+        )
+        monitor.withLock { timed.arm() }
+        val future = CodeModeTimedSweep::class.java.getDeclaredField("running")
+            .apply { isAccessible = true }.get(timed) as ScheduledFuture<*>
+        timed.finish {}
+        return future
+    }
+
+    private fun awaitCancelled(sweep: ScheduledFuture<*>) {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+        while (!sweep.isCancelled) {
+            check(System.nanoTime() < deadline) { "terminal retry did not settle before its deadline" }
+            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(5))
+        }
     }
 
     // Frozen discovery and corruption disposition from c36070bd0^ CodexCodeModeStore.

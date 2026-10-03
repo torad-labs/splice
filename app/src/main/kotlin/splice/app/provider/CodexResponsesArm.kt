@@ -2,6 +2,7 @@
 package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import splice.app.TokenUrlRefreshCall
 import splice.app.provider.codex.CodeModeSessionLiveness
 import splice.codemode.DEFAULT_ADVANCE_TIMEOUT_MS
@@ -14,8 +15,10 @@ import splice.core.config.CODE_MODE_DIR
 import splice.core.config.CODE_MODE_STATE_SUFFIX
 import splice.core.config.StatePaths
 import splice.core.topology.AuthKind
+import splice.core.util.Cancellables
 import splice.core.util.HeadScopedLogs
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.oauth.OAuthAccountFiles
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeOnlyModels
@@ -149,7 +152,16 @@ internal class CodexResponsesArm(
                     log = HeadScopedLogs.headScopedLog(ctx.key, log),
                     sessionAlive = sessionAlive,
                 ),
-            )
+            ).also { bridge ->
+                checkNotNull(probeScope.coroutineContext[Job]).invokeOnCompletion {
+                    Cancellables.runCatchingBestEffort { bridge.onProviderStop() }.exceptionOrNull()?.let { failure ->
+                        HeadScopedLogs.headScopedLog(ctx.key, log).invoke(
+                            "[code-mode] terminal save needs its retained retry owner " +
+                                "(${SafeFailureText.render(failure)})",
+                        )
+                    }
+                }
+            }
         } else {
             null
         }

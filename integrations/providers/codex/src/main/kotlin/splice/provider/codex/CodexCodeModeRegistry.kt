@@ -71,7 +71,7 @@ internal class CodexCodeModeRegistry(
     private val admissions = startup.entries
     val retainedCells = CodeModeCellRetention(config, access, records, cells, admissions, closeSession)
     private val sweeper = CodexCodeModeSweeper(config, records, cells, admissions, history, closeSession, retainedCells)
-    private val timed = CodeModeTimedSweep(
+    val timed = CodeModeTimedSweep(
         monitor,
         records,
         history,

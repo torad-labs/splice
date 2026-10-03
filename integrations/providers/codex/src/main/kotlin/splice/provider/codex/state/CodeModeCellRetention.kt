@@ -49,12 +49,15 @@ internal class CodeModeCellRetention(
         return idle.isNotEmpty()
     }
 
-    /** Dead first, then grace-expired unknown, then sufficiently idle alive workers. */
-    fun candidateKeys(): List<String> = ranked(null).map { it.second.key }.distinct()
+    /** Capacity pressure ignores liveness and idle grace, but never an executing or borrowed cell. */
+    fun capacityCandidates(): List<CodeModeRecord> = records.filter {
+        it.phase == CodeModePhase.ACTIVE && it.id in cells && !running(it)
+    }.sortedBy(CodeModeRecord::cellIdleSince)
 
     fun evict(key: String): CodeModeRecord? {
-        val (priority, victim) = ranked(key).firstOrNull() ?: return null
-        park(victim, "${reasons[priority]} to admit a newer script")
+        val victim = capacityCandidates().firstOrNull { it.key == key } ?: return null
+        val reason = if (alive(victim) == false) reasons[0] else "code-mode parked cell closed at capacity"
+        park(victim, "$reason to admit a newer script")
         return victim
     }
 
@@ -114,7 +117,6 @@ internal class CodeModeCellRetention(
     private val reasons = listOf(
         "code-mode cell closed after its session ended",
         "code-mode cell closed after unknown session exceeded its idle lifetime",
-        "code-mode alive cell closed at capacity after its idle lifetime",
     )
 
     fun closeEmpty(key: String) {

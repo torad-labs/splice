@@ -31,34 +31,109 @@ import kotlin.time.Duration.Companion.minutes
  */
 class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
     @Test
-    fun `capacity with every cell busy reports to the model and the turn continues`() = runTest {
-        val runtime = BoundedRuntime(capacity = 1)
-        val manager = bridge(runtime)
-        manager.interceptor(turn(sessionId = "session-a"), outer("outer-a"), disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome("outer-a") }
-        assertEquals(1, runtime.open)
-
-        var posted = ""
-        var posts = 0
-        val outcome = manager.interceptor(turn(sessionId = "session-b"), null, disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { body ->
+    fun `four alive parked cells with detached histories yield the oldest engine to a fifth session`() = runTest {
+        val clock = MutableClock(1_000)
+        val runtime = BoundedRuntime(capacity = 4)
+        val manager = CodexCodeModeBridge(
+            CodeModeBridgeConfig(
+                { runtime },
+                stateLocation(),
+                clock = clock,
+                cellClock = splice.core.util.ElapsedClock(clock::millis),
+                log = LogSink { logLines += it },
+                sessionAlive = CodeModeSessionAlive { true },
+            ),
+        )
+        try {
+            val sinks = parkDetachedCohort(manager, clock)
+            assertEquals(4, runtime.open)
+            assertTrue(runtime.cells.none { it.closed }, "detached side histories do not evict without pressure")
+            assertTrue(stateFiles.records().all { it.getValue("phase").jsonPrimitive.content == "ACTIVE" })
+            var posts = 0
+            val incoming = RecordingSink()
+            val outcome = manager.interceptor(turn(sessionId = "fifth"), null, false)
+                .intercept(BASE_REQUEST, incoming) {
+                    if (posts++ == 0) outerOutcome("outer-fifth") else completedOutcome()
+                }
+            assertTrue(outcome is TurnOutcome.Success && outcome.hasToolUse, "pool-full refusal: $outcome; $logLines")
+            assertEquals(listOf(false, true, false, false, false), runtime.cells.map { it.closed })
+            assertEquals(4, runtime.open)
+            assertEquals(5, runtime.starts)
+            val lost = stateFiles.records().single { it.getValue("phase").jsonPrimitive.content == "LOST" }
+            assertEquals("outer-1", lost.getValue("outerCallId").jsonPrimitive.content)
+            assertTrue("capacity" in lost.getValue("error").jsonPrimitive.content)
+            val id = sinks[1].tools.single().id
+            var posted = ""
+            val late = manager.interceptor(
+                turn(id, "A", sessionId = "session-1").copy(conversationKey = "original-1"),
+                null,
+                false,
+            ).intercept(requestWithResult(id, "A"), RecordingSink()) { body ->
                 posted = body
-                if (posts++ == 0) outerOutcome("outer-b") else completedOutcome()
+                completedOutcome()
             }
+            assertTrue(late is TurnOutcome.Success && !late.hasToolUse)
+            assertTrue("source was not rerun" in interruptionOutput(posted))
+            assertEquals(5, runtime.starts, "a late callback never restarts the evicted source")
+        } finally {
+            manager.onHeadStop()
+        }
+    }
 
-        assertTrue(outcome is TurnOutcome.Success, outcome.toString())
-        assertEquals(1, runtime.open)
-        val output = Json.parseToJsonElement(posted).jsonObject.getValue("input").jsonArray
-            .map { it.jsonObject }
-            .single { item ->
-                item["call_id"]?.jsonPrimitive?.content == "outer-b" &&
-                    item.getValue("type").jsonPrimitive.content == "custom_tool_call_output"
+    private suspend fun parkDetachedCohort(
+        manager: CodexCodeModeBridge,
+        clock: MutableClock,
+    ): List<RecordingSink> {
+        val sinks = List(4) { RecordingSink() }
+        for ((index, idleAt) in listOf(2_000L, 1_000L, 3_000L, 4_000L).withIndex()) {
+            clock.now = idleAt
+            manager.interceptor(
+                turn(sessionId = "session-$index").copy(conversationKey = "original-$index"),
+                outer("outer-$index"),
+                false,
+            ).intercept(BASE_REQUEST, sinks[index]) { outerOutcome("outer-$index") }
+            val detached = """{"input":[{"role":"user","content":"detached-$index"}]}"""
+            manager.interceptor(
+                turn(sessionId = "session-$index").copy(conversationKey = "detached-$index"),
+                null,
+                false,
+            ).intercept(detached, RecordingSink()) { completedOutcome() }
+        }
+        return sinks
+    }
+
+    @Test
+    fun `capacity retries after each parked reclamation rather than refusing after the first`() = runTest {
+        val runtime = BoundedRuntime(capacity = 2)
+        var denials = 2
+        val contended = object : CodeModeRuntime by runtime {
+            override suspend fun startSession(
+                sessionKey: String,
+                source: String,
+                tools: Set<String>,
+                descriptions: Map<String, String>,
+            ): CodeModeCell {
+                if (runtime.starts >= 2 && denials-- > 0) throw CodeModeCapacityException("synthetic contention")
+                return runtime.start(source, tools, descriptions)
             }
-            .getValue("output").jsonPrimitive.content
-        assertTrue("capacity reached" in output, output)
-        assertTrue("Call exec again" in output && "directly" !in output, output)
-        assertTrue("\"sourceRerun\":false" in output)
-        assertTrue(logLines.any { "capacity reached" in it })
+        }
+        val manager = bridge(contended)
+        try {
+            repeat(2) { index ->
+                manager.interceptor(turn(sessionId = "parked-$index"), outer("outer-$index"), false)
+                    .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome("outer-$index") }
+            }
+            var posts = 0
+            val admitted = manager.interceptor(turn(sessionId = "incoming"), null, false)
+                .intercept(BASE_REQUEST, RecordingSink()) {
+                    if (posts++ == 0) outerOutcome("outer-incoming") else completedOutcome()
+                }
+            assertTrue(admitted is TurnOutcome.Success && admitted.hasToolUse)
+            assertEquals(listOf(true, true, false), runtime.cells.map { it.closed })
+            assertEquals(3, runtime.starts, "capacity refusals never dispatch the incoming source")
+        } finally {
+            manager.onHeadStop()
+        }
     }
 
     @Test
@@ -298,7 +373,7 @@ class CodeModeUnknownCapacityTest : CodeModeBridgeTestSupport() {
     }
 
     @Test
-    fun `capacity protects positively alive cells and reports unknown and alive shares`() = runTest {
+    fun `capacity reclaims the oldest alive cell before the younger unknown cell`() = runTest {
         val clock = MutableClock(1_000)
         val runtime = BoundedRuntime(capacity = 2)
         val manager = CodexCodeModeBridge(
@@ -317,13 +392,11 @@ class CodeModeUnknownCapacityTest : CodeModeBridgeTestSupport() {
             clock.now += 29.minutes.inWholeMilliseconds
             manager.interceptor(turn(sessionId = "unknown"), outer("outer-unknown"), false)
                 .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome("outer-unknown") }
-            val refusal = incoming(manager)
-            assertTrue(refusal is TurnOutcome.Success && !refusal.hasToolUse)
-            assertTrue(runtime.cells.none { it.closed })
-            assertTrue(
-                logLines.any { "dead=0 unknown=1 alive=1" in it && "oldestIdleMs=1740000" in it },
-                logLines.toString(),
-            )
+            val admitted = incoming(manager)
+            assertTrue(admitted is TurnOutcome.Success && admitted.hasToolUse)
+            assertTrue(runtime.cells[0].closed)
+            assertFalse(runtime.cells[1].closed)
+            assertEquals(3, runtime.starts)
         } finally {
             manager.onHeadStop()
         }

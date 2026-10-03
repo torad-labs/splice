@@ -311,8 +311,8 @@ internal class CodexCodeModeRegistry(
     }
 
     /** Global idle order is snapshotted, then each candidate is rechecked and saved under its own key. */
-    fun evictIdleCell(protectedKey: String? = null): CodeModeRecord? {
-        val keys = monitor.withLock { retainedCells.candidateKeys().filter { it != protectedKey } }
+    fun evictIdleCell(): CodeModeRecord? {
+        val keys = monitor.withLock { retainedCells.capacityCandidates().map(CodeModeRecord::key).distinct() }
         keys.forEach { key ->
             val victim = access.withKey(key) {
                 retainedCells.evict(key)?.also {

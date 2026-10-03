@@ -23,16 +23,15 @@ internal class CodeModeRuntimeStarter(
     private val config: CodeModeBridgeConfig,
 ) {
     suspend fun start(record: CodeModeRecord, context: CodeModeRunContext, stream: CodeModeLiveRound?): CodeModeCell {
-        var reclaimed = false
         while (true) {
             try {
                 return open(record, context, stream)
             } catch (error: CodeModeCapacityException) {
-                if (reclaimed || registry.evictIdleCell(record.key) == null) {
+                // Capacity refused before source dispatch. Reclaim one parked engine, then recheck capacity.
+                if (registry.evictIdleCell() == null) {
                     registry.retainedCells.logRefusal()
                     throw error
                 }
-                reclaimed = true
             }
         }
     }

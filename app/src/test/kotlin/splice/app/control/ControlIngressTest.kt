@@ -1,7 +1,9 @@
 // NEW: the real control listener spends the same JVM ledger as inference heads.
 package splice.app.control
 
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -17,7 +19,19 @@ import java.util.concurrent.atomic.AtomicInteger
 
 class ControlIngressTest {
     @Test
+    fun `stopping the control listener preserves another heap owner's charge`(@TempDir tmp: Path) {
+        val other = checkNotNull(JvmHeap.budget.reserve(splice.core.memory.HeapWeights.CONNECTION_BYTES))
+        try {
+            `control routes refuse shared pressure before rendering and recover after release`(tmp)
+            assertTrue(JvmHeap.budget.available.value <= JvmHeap.budget.limitBytes - other.bytes)
+        } finally {
+            other.close()
+        }
+    }
+
+    @Test
     fun `control routes refuse shared pressure before rendering and recover after release`(@TempDir tmp: Path) {
+        val before = JvmHeap.budget.available.value
         val paths = StatePaths(baseOverride = tmp)
         val renders = AtomicInteger()
         val server = ControlServer(
@@ -50,7 +64,8 @@ class ControlIngressTest {
         } finally {
             server.stop()
         }
-        assertEquals(JvmHeap.budget.limitBytes, JvmHeap.budget.available.value)
+        runBlocking { withTimeout(5000) { JvmHeap.budget.available.first { it >= before } } }
+        assertTrue(JvmHeap.budget.available.value >= before, "the listener returns its own starting capacity")
     }
 
     private fun request(port: Int): String = Socket("127.0.0.1", port).use { socket ->

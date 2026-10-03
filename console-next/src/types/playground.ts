@@ -2,6 +2,8 @@
 export interface PlaygroundBody {
   head: string;
   prompt: string;
+  /** The model to run; absent runs the head's pinned model. */
+  model?: string;
 }
 
 /** The request the daemon sent upstream, every auth header redacted before it left the process. */

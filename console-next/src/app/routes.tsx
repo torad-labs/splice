@@ -14,6 +14,7 @@ import { TurnPage } from '../pages/turns/TurnPage';
 import { TurnsPage } from '../pages/turns/TurnsPage';
 import { FleetPage } from '../pages/fleet/FleetPage';
 import { FleetHeadPage } from '../pages/fleet/FleetHeadPage';
+import { PlaygroundPage } from '../pages/playground/PlaygroundPage';
 import { SettingsPage } from '../pages/settings/SettingsPage';
 
 /** Retired addresses keep bookmarks usable without creating more navigation places. */
@@ -56,11 +57,12 @@ export const router = createHashRouter([
       { path: 'usage', element: <UsagePage /> },
       { path: 'requests', element: <TurnsPage /> },
       { path: 'models', element: <FleetPage /> },
+      { path: 'playground', element: <PlaygroundPage /> },
       { path: 'models/:head', element: <FleetHeadPage /> },
       { path: 'requests/:head/:ts', element: <TurnPage /> },
       { path: 'turns/:head/:ts', element: <RequestBookmark /> },
       { path: 'fleet/:head', element: <Navigate to="/accounts" replace /> },
-      ...NAV.filter(([path]) => path !== 'accounts' && path !== 'sessions' && path !== 'teams' && path !== 'settings' && path !== 'usage' && path !== 'requests' && path !== 'models')
+      ...NAV.filter(([path]) => path !== 'accounts' && path !== 'sessions' && path !== 'teams' && path !== 'settings' && path !== 'usage' && path !== 'requests' && path !== 'models' && path !== 'playground')
         .map(([path, label]) => ({ path, element: <Pending place={label} /> })),
       ...Object.entries(RETIRED).map(([path, to]) => ({ path, element: <Navigate to={to} replace /> })),
       { path: '*', element: <Navigate to={HOME} replace /> },

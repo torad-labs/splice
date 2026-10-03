@@ -1,15 +1,6 @@
-// What the try-a-plan row says. Copy lives in modules like this one, never inline in a component.
+// What Settings › Health says about the Playground, which has its own place now. Copy lives in modules like this one, never inline.
 export const Y = {
   title: 'Try a command',
-  why: 'One prompt through one command. Nothing is recorded.',
-  plan: 'Command',
-  pick: 'Choose a command',
-  prompt: 'Prompt',
-  placeholder: 'Say something short',
-  send: 'Send',
-  sending: 'Sending…',
-  clear: 'Clear',
-  sent: 'Sent',
-  answer: (status: number): string => `Answered with ${status}`,
-  failed: 'That did not run:',
+  why: 'Send one prompt to several models and read their answers side by side, on the Playground. Nothing is recorded.',
+  open: 'Open the Playground',
 } as const;

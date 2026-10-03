@@ -1,4 +1,4 @@
-// The Claude command, upgrade and try-a-plan rows rendered to markup from a seeded cache.
+// The Claude command and upgrade rows rendered to markup from a seeded cache. The try-a-command form moved to the Playground (playground.test.tsx).
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -7,7 +7,6 @@ import { describe, expect, test } from 'vitest';
 import { collapseChecks } from '../src/lib/doctor';
 import { CheckMembers } from '../src/pages/settings/CheckMembers';
 import { ClaudeHead } from '../src/pages/settings/ClaudeHead';
-import { Playground } from '../src/pages/settings/Playground';
 import { Upgrade } from '../src/pages/settings/Upgrade';
 import type { ClaudeHeadPayload } from '../src/types/claude-head';
 import type { DoctorCheck, UpgradePayload, UpgradeRun } from '../src/types/doctor';
@@ -74,16 +73,6 @@ describe('the upgrade rows', () => {
   });
   test('a run read while splice restarts says it is restarting', () => {
     expect(render(<Upgrade />, (client) => { client.setQueryData(['upgrade'], status); client.setQueryData(['upgrade-run'], { run: { ...run, state: 'running', exit_code: null }, away: true }); })).toContain('splice is restarting');
-  });
-});
-
-describe('try a plan', () => {
-  test('starts with nothing sent, the send held until a command and a prompt exist', () => {
-    const html = render(<Playground />, (client) => client.setQueryData(['heads', '/api/heads'], { heads: [{ key: 'claude-grok', label: 'Grok', authKind: 'grok' }] }));
-    expect(html).toContain('Try a command');
-    expect(html).toContain('Choose a command');
-    expect(html).toMatch(/<button[^>]*disabled[^>]*>Send<\/button>/);
-    expect(html).not.toContain('Answered with');
   });
 });
 

@@ -97,7 +97,7 @@ class UpstreamPlaygroundProbeTest {
             respond(content = """{"content":[{"text":"hi back"}]}""", status = HttpStatusCode.OK)
         }
         val probe = UpstreamPlaygroundProbe(configFile(tmp), HttpClient(engine))
-        val outcome = probe.run(head("claude"), "hello")
+        val outcome = probe.run(head("claude"), "hello", null)
 
         val sent = requireNotNull(captured)
         assertEquals("https://api.example.com/v1/messages", sent.url.toString())
@@ -129,12 +129,28 @@ class UpstreamPlaygroundProbeTest {
             respond(content = "{}", status = HttpStatusCode.OK)
         }
         val probe = UpstreamPlaygroundProbe(configFile(tmp), HttpClient(engine))
-        probe.run(head("chatty"), "hello")
+        probe.run(head("chatty"), "hello", null)
         val sent = requireNotNull(captured)
         assertEquals("https://chat.example.com/v1/chat/completions", sent.url.toString())
         val body = Json.parseToJsonElement((sent.body as TextContent).text).jsonObject
         assertEquals("m2", body["model"]!!.jsonPrimitive.content)
         assertTrue(body.containsKey("messages"), body.toString())
+    }
+
+    /** V4-444: the Playground compares models, two on one command as readily as two commands, so a run
+     *  names its model and the head's pinned model is only the default. */
+    @Test
+    fun `a model the caller names is sent in place of the head's pinned one`(@TempDir tmp: Path) = runTest {
+        val sent = mutableListOf<String>()
+        val engine = MockEngine { request ->
+            val body = Json.parseToJsonElement((request.body as TextContent).text).jsonObject
+            sent += body["model"]!!.jsonPrimitive.content
+            respond(content = "{}", status = HttpStatusCode.OK)
+        }
+        val probe = UpstreamPlaygroundProbe(configFile(tmp), HttpClient(engine))
+        probe.run(head("chatty"), "hello", "m9")
+        probe.run(head("chatty"), "hello", null)
+        assertEquals(listOf("m9", "m2"), sent, "the named model, then the pinned one when none is named")
     }
 
     @Test
@@ -145,7 +161,7 @@ class UpstreamPlaygroundProbeTest {
             respond(content = "{}", status = HttpStatusCode.OK)
         }
         val probe = UpstreamPlaygroundProbe(configFile(tmp), HttpClient(engine))
-        probe.run(head("respy"), "hello")
+        probe.run(head("respy"), "hello", null)
         val sent = requireNotNull(captured)
         assertEquals("https://resp.example.com/v1/responses", sent.url.toString())
         val body = Json.parseToJsonElement((sent.body as TextContent).text).jsonObject
@@ -159,19 +175,20 @@ class UpstreamPlaygroundProbeTest {
         val client = HttpClient(engine)
         val file = configFile(tmp)
 
-        val noFile = UpstreamPlaygroundProbe(null, client).run(head("claude"), "hi")
+        val noFile = UpstreamPlaygroundProbe(null, client).run(head("claude"), "hi", null)
         assertTrue((noFile as PlaygroundFailure).message.contains("no topology file"), noFile.message)
 
-        val unknownHead = UpstreamPlaygroundProbe(file, client).run(head("no-such-head"), "hi")
+        val unknownHead = UpstreamPlaygroundProbe(file, client).run(head("no-such-head"), "hi", null)
         assertTrue((unknownHead as PlaygroundFailure).message.contains("is not in the current topology"))
 
-        val undeclaredProvider = UpstreamPlaygroundProbe(file, client).run(head("orphan"), "hi")
+        val undeclaredProvider = UpstreamPlaygroundProbe(file, client).run(head("orphan"), "hi", null)
         assertTrue((undeclaredProvider as PlaygroundFailure).message.contains("is not declared"))
 
-        val forwarded = UpstreamPlaygroundProbe(file, client).run(head("claude", Credentials.ClientForwarded), "hi")
+        val forwarded = UpstreamPlaygroundProbe(file, client)
+            .run(head("claude", Credentials.ClientForwarded), "hi", null)
         assertTrue((forwarded as PlaygroundFailure).message.contains("forwards the caller's own auth"))
 
-        val noCred = UpstreamPlaygroundProbe(file, client).run(head("claude", null), "hi")
+        val noCred = UpstreamPlaygroundProbe(file, client).run(head("claude", null), "hi", null)
         assertTrue((noCred as PlaygroundFailure).message.contains("has no credential configured"))
     }
 
@@ -179,7 +196,7 @@ class UpstreamPlaygroundProbeTest {
     fun `an upstream failure is a named PlaygroundFailure, not a crash`(@TempDir tmp: Path) = runTest {
         val engine = MockEngine { throw java.io.IOException("connection refused") }
         val probe = UpstreamPlaygroundProbe(configFile(tmp), HttpClient(engine))
-        val outcome = probe.run(head("claude"), "hi")
+        val outcome = probe.run(head("claude"), "hi", null)
         assertTrue((outcome as PlaygroundFailure).message.contains("upstream call"), outcome.message)
     }
 }

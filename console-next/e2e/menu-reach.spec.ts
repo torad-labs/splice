@@ -16,9 +16,9 @@ test('a Select with more options than the window holds lets the last one be clic
     const extra = Array.from({ length: EXTRA }, (_, at) => ({ ...first, key: 'synthetic-plan-' + at, label: 'Synthetic plan ' + String(at).padStart(2, '0') }));
     await route.fulfill({ response, json: { ...body, heads: [...body.heads, ...extra] } });
   });
-  const faults = await open(page, 'settings/health');
-  const health = page.getByRole('region', { name: 'Health', exact: true });
-  const trigger = health.getByRole('button', { name: 'Command', exact: true });
+  // Four lanes wrap the Playground onto a second row, so the last lane's command picker sits low on a page that still scrolls.
+  const faults = await open(page, `playground?try=${STACK.oauthHead}&try=${STACK.soloHead}&try=${STACK.keyHead}&try=${STACK.oauthHead}`);
+  const trigger = page.getByRole('button', { name: 'Command 4', exact: true });
   await trigger.evaluate((element) => element.scrollIntoView({ block: 'end' }));
   await trigger.click();
   const last = 'Synthetic plan ' + String(EXTRA - 1).padStart(2, '0');
@@ -32,7 +32,7 @@ test('a Select with more options than the window holds lets the last one be clic
   await page.mouse.move(20, 300);
   await page.mouse.wheel(0, 120);
   await expect.poll(() => page.evaluate(() => window.scrollY), {
-    message: 'a choice menu must not lock the Settings page scroll',
+    message: 'a choice menu must not lock the page scroll',
   }).toBeGreaterThan(beforeScroll);
   await page.getByRole('menuitemradio', { name: last, exact: true }).click();
   await expect(trigger).toHaveText(last);

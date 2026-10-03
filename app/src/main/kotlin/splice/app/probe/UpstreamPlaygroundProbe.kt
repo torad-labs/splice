@@ -78,19 +78,26 @@ internal class UpstreamPlaygroundProbe(
 
     // Each step below is its own function (ReturnCount: max 3 per function) rather than one long
     // chain of guards — the same split CaptureRoutes.write/PlaygroundRoute.run use for the same wall.
-    override suspend fun run(head: PlaygroundHead, prompt: String): PlaygroundOutcome {
+    override suspend fun run(head: PlaygroundHead, prompt: String, model: String?): PlaygroundOutcome {
         val path = configPath
             ?: return PlaygroundFailure("no topology file; this daemon has no configured provider")
         val topology = readTopology(path).getOrElse { return PlaygroundFailure(SafeFailureText.render(it)) }
-        return resolveProvider(topology, head, prompt)
+        return resolveProvider(topology, head, prompt, model)
     }
 
-    private suspend fun resolveProvider(topology: Topology, head: PlaygroundHead, prompt: String): PlaygroundOutcome {
+    /** [model] null runs the head's pinned model. A named one is sent as written, and an id its provider
+     *  does not serve comes back as the provider's own answer, shown like any other. */
+    private suspend fun resolveProvider(
+        topology: Topology,
+        head: PlaygroundHead,
+        prompt: String,
+        model: String?,
+    ): PlaygroundOutcome {
         val headConfig = topology.heads[head.key]
             ?: return PlaygroundFailure("head '${head.key}' is not in the current topology")
         val provider = topology.providers[headConfig.provider]
             ?: return PlaygroundFailure("provider '${headConfig.provider}' is not declared")
-        return resolveCredentials(provider, headConfig.pinnedModel, head, prompt)
+        return resolveCredentials(provider, model ?: headConfig.pinnedModel, head, prompt)
     }
 
     private suspend fun resolveCredentials(

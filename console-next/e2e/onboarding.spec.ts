@@ -83,7 +83,7 @@ test('a first plan follows a late sign-in URL while hidden, saves once and tries
     return route.fulfill({ json: {
       request: { url: 'https://api.fixture.invalid/responses', method: 'POST', headers: {}, body: { model: STACK.model } },
       response: tries === 1
-        ? { status: 200, body: { model: STACK.model, answer: 'Synthetic hello' } }
+        ? { status: 200, body: { model: STACK.model, output: [{ type: 'message', content: [{ type: 'output_text', text: 'Synthetic hello' }] }], usage: { input_tokens: 9, output_tokens: 2 } } }
         : { status: 429, body: { error: { message: 'Synthetic limit reached' } } },
     } });
   });
@@ -112,9 +112,11 @@ test('a first plan follows a late sign-in URL while hidden, saves once and tries
     document.dispatchEvent(new Event('visibilitychange'));
   });
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
-  await page.goto(env('CONSOLE_E2E_BASE') + '/#/settings/health');
-  const health = page.getByRole('region', { name: 'Health', exact: true });
-  await health.getByRole('button', { name: 'Command', exact: true }).click();
+  // The new command is tried on the Playground, where the one-command form in Settings › Health moved.
+  await page.goto(env('CONSOLE_E2E_BASE') + '/#/playground');
+  const lane = page.getByRole('list', { name: 'Answers', exact: true }).getByRole('listitem');
+  await expect(lane).toHaveCount(1);
+  await lane.getByRole('button', { name: 'Command 1', exact: true }).click();
   const choice = page.getByRole('menuitemradio', { name: connected.label, exact: true });
   await expect.poll(async () => {
     const box = await choice.boundingBox();
@@ -122,13 +124,16 @@ test('a first plan follows a late sign-in URL while hidden, saves once and tries
     return box !== null && box.y + box.height / 2 >= 0 && box.y + box.height / 2 < height;
   }, { message: 'the opened command menu must remain inside the viewport' }).toBe(true);
   await choice.click();
-  await health.getByLabel('Prompt', { exact: true }).fill('Say hello and name your model.');
-  await health.getByRole('button', { name: 'Send', exact: true }).click();
-  await expect(health.getByRole('region', { name: 'Answered with 200', exact: true })).toContainText('Synthetic hello');
-  await expect(health.getByRole('region', { name: 'Answered with 200', exact: true })).toContainText(STACK.model);
-  await health.getByRole('button', { name: 'Send', exact: true }).click();
-  await expect(health.getByRole('region', { name: 'Answered with 429', exact: true })).toContainText('Synthetic limit reached');
-  await expect(health.getByRole('region', { name: 'Answered with 200', exact: true })).toHaveCount(0);
+  const main = page.getByRole('main');
+  await main.getByLabel('Prompt', { exact: true }).fill('Say hello and name your model.');
+  await main.getByRole('button', { name: 'Send', exact: true }).click();
+  await expect(lane).toContainText('Synthetic hello');
+  await expect(lane).toContainText('Answered with 200');
+  await expect(lane).toContainText('9 tokens in, 2 out');
+  await main.getByRole('button', { name: 'Send', exact: true }).click();
+  await expect(lane.getByRole('alert')).toHaveText('Synthetic limit reached');
+  await expect(lane).toContainText('Answered with 429');
+  await expect(lane).not.toContainText('Synthetic hello');
   expect(tries).toBe(2);
   expect(saves).toBe(1);
   expect(errors).toEqual([]);

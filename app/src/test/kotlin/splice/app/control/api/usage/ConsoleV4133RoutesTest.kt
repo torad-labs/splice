@@ -359,23 +359,42 @@ class ConsoleV4133RoutesTest {
         assertTrue(failed.bodyAsText().contains("upstream rejected it"), failed.bodyAsText())
     }
 
+    /** V4-444: the Playground runs a model the operator picks; a body that names none runs the head's pinned model. */
+    @Test
+    fun `playground hands the probe the model the body names, and none for none or a blank one`() = runBlocking {
+        control.ports.playground = echoProbe()
+        suspend fun modelOf(model: String?): String {
+            val reply = req { post("$url/api/playground") { playgroundBody(HEAD_KEY, "hello", model) } }
+            assertEquals(HttpStatusCode.OK, reply.status)
+            val request = Json.parseToJsonElement(reply.bodyAsText()).jsonObject["request"]!!.jsonObject
+            return request["model"]!!.jsonPrimitive.content
+        }
+        assertEquals("gpt-6-luna", modelOf("gpt-6-luna"))
+        assertEquals("pinned", modelOf(null))
+        assertEquals("pinned", modelOf(" "))
+    }
+
     // ---- shared rig ----------------------------------------------------------------------------
 
     /** A fake probe: "fail" answers a [PlaygroundFailure], anything else echoes the prompt back. */
-    private fun echoProbe() = PlaygroundProbe { _, prompt ->
+    private fun echoProbe() = PlaygroundProbe { _, prompt, model ->
         if (prompt == "fail") {
             PlaygroundFailure("upstream rejected it")
         } else {
-            val request = buildJsonObject { put("prompt", prompt) }
+            val request = buildJsonObject {
+                put("prompt", prompt)
+                put("model", model ?: "pinned")
+            }
             val response = buildJsonObject { put("text", "echo: $prompt") }
             PlaygroundResult(request, response)
         }
     }
 
-    private fun HttpRequestBuilder.playgroundBody(head: String, prompt: String) {
+    private fun HttpRequestBuilder.playgroundBody(head: String, prompt: String, model: String? = null) {
         auth()
         contentType(ContentType.Application.Json)
-        setBody("""{"head":"$head","prompt":"$prompt"}""")
+        val named = model?.let { ""","model":"$it"""" }.orEmpty()
+        setBody("""{"head":"$head","prompt":"$prompt"$named}""")
     }
 
     private suspend fun req(request: suspend HttpClient.() -> HttpResponse): HttpResponse =

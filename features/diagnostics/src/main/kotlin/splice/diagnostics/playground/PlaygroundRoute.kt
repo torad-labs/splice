@@ -1,7 +1,7 @@
 // NEW: V4-133, FEATURES.md §5/§6 — POST /api/playground: "one prompt through one head, raw request
 // and response back, never recorded".
 //
-//   POST /api/playground   body {head: string, prompt: string} -> {request: {...}, response: {...}}
+//   POST /api/playground   body {head: string, prompt: string, model?: string} -> {request: {...}, response: {...}}
 //                           or {error: string} naming why (unknown head, no head-owned credential,
 //                           the upstream call itself failing)
 //
@@ -19,8 +19,9 @@
 // DELIBERATELY MINIMAL, NOT A SECOND TRANSLATION PIPELINE. A real turn carries tool schemas, the
 // system prompt layers, compaction and cache-control markers — reproducing that here would
 // duplicate :daemon-head's dialect modules, incorrectly, outside their own tests. The playground sends
-// exactly what "one prompt through one head" says: the head's pinned model and the prompt text,
-// nothing else. See PlaygroundProbe.kt (:app) for the per-dialect request shape.
+// exactly what "one prompt through one head" says: the head's pinned model, or the model the body
+// names (V4-444: the console's Playground compares models, two on one head as readily as two
+// heads), and the prompt text, nothing else. See PlaygroundProbe.kt (:app) for the per-dialect request shape.
 package splice.diagnostics.playground
 
 import io.ktor.http.HttpStatusCode
@@ -58,15 +59,16 @@ public data class PlaygroundFailure(val message: String) : PlaygroundOutcome()
  *  interactive; a per-call read is simpler than threading a cached Topology through ControlPlane
  *  for one route). */
 public fun interface PlaygroundProbe {
-    public suspend fun run(head: PlaygroundHead, prompt: String): PlaygroundOutcome
+    /** [model] is the model to run, or null for the head's pinned model. */
+    public suspend fun run(head: PlaygroundHead, prompt: String, model: String?): PlaygroundOutcome
 }
 
 internal const val PLAYGROUND_UNWIRED = "the daemon wired no playground probe; /api/playground cannot run"
 
-private const val BAD_PLAYGROUND_BODY = "the body must be {\"head\": string, \"prompt\": string}"
+private const val BAD_PLAYGROUND_BODY = "the body must be {\"head\": string, \"prompt\": string, \"model\"?: string}"
 
 @Serializable
-private data class PlaygroundBody(val head: String = "", val prompt: String = "")
+private data class PlaygroundBody(val head: String = "", val prompt: String = "", val model: String? = null)
 
 public class PlaygroundRoute(
     private val heads: PlaygroundHeadLookup,
@@ -88,7 +90,7 @@ public class PlaygroundRoute(
         if (parsed.prompt.isBlank()) return refuse(HttpStatusCode.BadRequest, "prompt must not be blank")
         val head = heads.byName(parsed.head).firstOrNull()
             ?: return refuse(HttpStatusCode.BadRequest, "unknown head: ${parsed.head}")
-        return when (val outcome = probe.run(head, parsed.prompt)) {
+        return when (val outcome = probe.run(head, parsed.prompt, parsed.model?.takeIf { it.isNotBlank() })) {
             is PlaygroundResult -> JsonReply(HttpStatusCode.OK, resultJson(outcome))
             is PlaygroundFailure -> refuse(HttpStatusCode.BadGateway, outcome.message)
         }

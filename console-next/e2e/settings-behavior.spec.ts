@@ -214,15 +214,11 @@ test('a refused instruction file disables Save and the daemon refuses a direct w
   await expect(save).toBeDisabled();
 });
 
-test('Settings playground sends one synthetic prompt through the isolated loopback head and shows both sides', async ({ page }) => {
+test('Settings › Health points to the Playground, where trying a command now lives, and no longer holds the form', async ({ page }) => {
   const faults = await open(page, 'settings/health');
   const section = page.getByRole('region', { name: 'Health', exact: true });
-  await pick(page, section, 'Command', STACK.oauthHead);
-  await section.getByRole('textbox', { name: 'Prompt', exact: true }).fill('one synthetic prompt from the console e2e');
-  await section.getByRole('button', { name: 'Send', exact: true }).click();
-  await expect(section.getByRole('region', { name: 'Answered with 200', exact: true })).toContainText('console e2e answer', { timeout: 30_000 });
-  await expect(section.getByRole('region', { name: 'Sent', exact: true })).toContainText('/responses');
-  await expect(section.getByRole('region', { name: 'Sent', exact: true })).toContainText('one synthetic prompt from the console e2e');
+  await expect(section.getByRole('link', { name: 'Open the Playground', exact: true })).toHaveAttribute('href', '#/playground');
+  await expect(section.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveCount(0);
   expect(faults.pageErrors).toEqual([]);
   expect(faults.failedReads).toEqual([]);
 });

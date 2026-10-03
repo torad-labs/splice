@@ -78,7 +78,7 @@
 .recent.rules li { justify-content: flex-start; text-align: left; }
 .recent li b { color: var(--ink); font-weight: 650; }
 
-/* The plan-instructions editor, the upgrade run and the try-a-plan form sit under their rows on the same sheet. */
+/* The plan-instructions editor and the upgrade run sit under their rows on the same sheet. */
 .try { display: flex; align-items: center; gap: var(--space-6); flex-wrap: wrap; padding: var(--space-6) 0; }
 .try .input.wide { flex: 1 1 20rem; min-width: 0; }
 .input.release { width: 12ch; }
@@ -86,9 +86,8 @@
 .instructions .pickers { display: flex; gap: var(--space-9); flex-wrap: wrap; align-items: center; }
 .instructions .field { display: grid; gap: var(--space-3); }
 .instructions textarea.input { min-height: 7.5rem; padding: var(--space-5) var(--space-6); resize: vertical; font: 400 1rem/1.5 var(--read); width: 100%; box-sizing: border-box; height: auto; }
-.preview h4, .exchange h4 { font: 600 0.96rem var(--meta); color: var(--mute); }
-.preview pre, .exchange pre, .run pre { margin: var(--space-4) 0 0; padding: var(--space-6) var(--space-7); max-height: 20rem; overflow: auto; background: var(--glass); color: var(--glass-ink); border-radius: 0.625rem; font: 400 0.8125rem/1.55 var(--mono); white-space: pre-wrap; word-break: break-word; }
-.exchange { display: grid; grid-template-columns: repeat(auto-fit, minmax(17.5rem, 1fr)); gap: var(--space-8); padding: var(--space-6) 0; }
+.preview h4 { font: 600 0.96rem var(--meta); color: var(--mute); }
+.preview pre, .run pre { margin: var(--space-4) 0 0; padding: var(--space-6) var(--space-7); max-height: 20rem; overflow: auto; background: var(--glass); color: var(--glass-ink); border-radius: 0.625rem; font: 400 0.8125rem/1.55 var(--mono); white-space: pre-wrap; word-break: break-word; }
 .run { padding: var(--space-6) 0; }
 .run-head { display: flex; align-items: center; gap: var(--space-6); flex-wrap: wrap; font: 500 0.96rem var(--meta); color: var(--mute); }
 .run-head code { font: 500 0.875rem var(--mono); color: var(--ink); }

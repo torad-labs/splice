@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router';
 import { failureText } from '../../api/client';
 import { useKeyStore, useDeleteKey, usePutKey } from '../../api/auth';
 import { useHealth } from '../../api/queries';
@@ -9,6 +10,7 @@ import { collapseChecks, checkFinding, wantsAttention } from '../../lib/doctor';
 import { timeAgo } from '../../lib/format';
 import { doctorFixOf } from '../../lib/needs';
 import { serverRows } from '../../lib/mcp';
+import { Y } from '../../lib/words-playground';
 import {
   ACTIVITY_DAYS, EFFORT_CHOICES, REASONING_CHOICES, TRACE_DAYS, daysOptions, effortChoice, excludedOf, folderOf, gitRootsOf, gitRootsValue, healthOf, numberOf, textOf,
   toolState, withMcpHosting, withServerExcluded,
@@ -27,7 +29,6 @@ import { ConfigFile } from './ConfigFile';
 import { Compaction } from './Compaction';
 import { Kept } from './Kept';
 import { PlanInstructions } from './PlanInstructions';
-import { Playground } from './Playground';
 import { CheckMembers } from './CheckMembers';
 import { Row, SaveNote, useSetting } from './Row';
 import { Upgrade } from './Upgrade';
@@ -321,7 +322,7 @@ export const Health = () => (
   <>
     <Checks />
     <Upgrade />
-    <Playground />
+    <Row title={Y.title} why={Y.why} control={<Link className="btn" to="/playground">{Y.open}</Link>} />
   </>
 );
 

@@ -31,7 +31,17 @@ public fun interface RotationArchive {
 /** The three rotation-policy values [JsonlSink.append]/[JsonlSink.rotateIfOver] need together —
  *  bundled so adding [archive] (V4-133) did not take [JsonlSink.rotateIfOver] past the
  *  LongParameterList wall's 6-parameter ceiling. */
-private data class RotatePolicy(val maxBytes: Long, val rotate: Boolean, val archive: RotationArchive)
+private data class RotatePolicy(
+    val maxBytes: Long,
+    val rotate: Boolean,
+    val archive: RotationArchive,
+    val force: JsonlForce,
+)
+
+/** Forces each completed append; a caller may observe the actual file force without replacing the writer. */
+public fun interface JsonlForce {
+    public fun force(path: Path, channel: FileChannel)
+}
 
 public object JsonlSink {
     private val locks = ConcurrentHashMap<Path, Any>()
@@ -40,6 +50,7 @@ public object JsonlSink {
     /** The default for every caller that does not name an archive: discard the rolled generation,
      *  exactly as [JsonlSink] always has. */
     public val NO_ARCHIVE: RotationArchive = RotationArchive { }
+    private val OS_FORCE = JsonlForce { _, channel -> channel.force(true) }
 
     /**
      * Append [line], rotating one generation before [maxBytes] can grow without bound.
@@ -74,6 +85,15 @@ public object JsonlSink {
         line: String,
         maxBytes: Long = DEFAULT_MAX_BYTES,
         archive: RotationArchive = NO_ARCHIVE,
+    ): Unit = appendLine(file, line, maxBytes, archive, OS_FORCE)
+
+    /** The existing append contract, with its completed file force observable through [force]. */
+    public fun appendLine(
+        file: Path,
+        line: String,
+        maxBytes: Long,
+        archive: RotationArchive,
+        force: JsonlForce,
     ) {
         val normalized = file.toAbsolutePath().normalize()
         synchronized(locks.computeIfAbsent(normalized) { Any() }) {
@@ -81,7 +101,7 @@ public object JsonlSink {
             FileChannel.open(lockPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE).use { channel ->
                 val lock = acquireBounded(channel)
                 try {
-                    append(file, line, RotatePolicy(maxBytes, rotate = lock != null, archive))
+                    append(file, line, RotatePolicy(maxBytes, rotate = lock != null, archive, force))
                 } finally {
                     lock?.release()
                 }
@@ -126,7 +146,7 @@ public object JsonlSink {
         val encoded = (line + "\n").toByteArray(StandardCharsets.UTF_8)
         val currentSize = if (Files.exists(file)) Files.size(file) else 0L
         val rotated = rotateIfOver(file, currentSize, encoded.size, policy)
-        writeForced(file, healedBytes(file, encoded, currentSize, rotated))
+        writeForced(file, healedBytes(file, encoded, currentSize, rotated), policy.force)
     }
 
     /** Rolls one generation when this row would take the file past [RotatePolicy.maxBytes], and
@@ -190,7 +210,7 @@ public object JsonlSink {
      * The loop is load-bearing: `channel.write` is not obliged to consume the buffer, and the
      * `Files.write` this replaced hid that. JsonlSinkDurabilityTest drives it.
      */
-    private fun writeForced(file: Path, bytes: ByteArray) {
+    private fun writeForced(file: Path, bytes: ByteArray, force: JsonlForce) {
         FileChannel.open(
             file,
             StandardOpenOption.CREATE,
@@ -199,7 +219,7 @@ public object JsonlSink {
         ).use { channel ->
             val buffer = ByteBuffer.wrap(bytes)
             while (buffer.hasRemaining()) channel.write(buffer)
-            channel.force(true)
+            force.force(file, channel)
         }
     }
 

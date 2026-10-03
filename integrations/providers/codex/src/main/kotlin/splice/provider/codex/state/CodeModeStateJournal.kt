@@ -13,6 +13,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
+import splice.core.util.JsonlForce
 import splice.core.util.JsonlSink
 import splice.core.util.SecureFile
 import splice.provider.codex.CodeModeExpiredSnapshot
@@ -46,11 +47,6 @@ internal data class CodeModeStatePatch(
     val expired: List<CodeModeExpiredSnapshot>,
 )
 
-/** Flushes the file or directory that makes a checkpoint durable, with its path visible to tests. */
-internal fun interface CodeModeCheckpointForce {
-    operator fun invoke(path: Path, channel: FileChannel)
-}
-
 /**
  * Full checkpoints and old full-cell deltas still load. Patch lines deliberately omit legacy deltas'
  * mandatory records field: an older decoder rejects them rather than restoring incomplete cells.
@@ -77,7 +73,7 @@ internal object CodeModeStateJournal {
     fun write(
         path: Path,
         text: String,
-        force: CodeModeCheckpointForce = CodeModeCheckpointForce { _, channel -> channel.force(true) },
+        force: JsonlForce = JsonlForce { _, channel -> channel.force(true) },
     ) {
         if (!text.startsWith(DELTA_START)) {
             // A client may send an unpaired surrogate in a tool result. JsonlSink's append writes it as
@@ -92,11 +88,17 @@ internal object CodeModeStateJournal {
                 else -> Unit
             }
             trimTornTail(path)
-            JsonlSink.appendLine(path, text, maxBytes = Long.MAX_VALUE)
+            JsonlSink.appendLine(
+                path,
+                text,
+                maxBytes = Long.MAX_VALUE,
+                archive = JsonlSink.NO_ARCHIVE,
+                force = force,
+            )
         }
     }
 
-    private class Checkpoint(private val force: CodeModeCheckpointForce) {
+    private class Checkpoint(private val force: JsonlForce) {
         fun write(path: Path, text: String) {
             val parent = path.toAbsolutePath().parent
             Files.createDirectories(parent)
@@ -104,9 +106,9 @@ internal object CodeModeStateJournal {
             try {
                 // Reuse the secure writer without changing credential writes' existing contract.
                 SecureFile.writeAtomic0600(temporary, String((text + "\n").toByteArray(Charsets.UTF_8), Charsets.UTF_8))
-                FileChannel.open(temporary, StandardOpenOption.WRITE).use { force(temporary, it) }
+                FileChannel.open(temporary, StandardOpenOption.WRITE).use { force.force(temporary, it) }
                 Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-                FileChannel.open(parent, StandardOpenOption.READ).use { force(parent, it) }
+                FileChannel.open(parent, StandardOpenOption.READ).use { force.force(parent, it) }
             } finally {
                 Cancellables.discard(
                     runCatching { Files.deleteIfExists(temporary) },

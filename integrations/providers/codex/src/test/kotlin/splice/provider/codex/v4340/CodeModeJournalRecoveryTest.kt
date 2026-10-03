@@ -588,6 +588,23 @@ class CodeModeJournalIsolationTest {
         }
     }
 
+    @Test
+    fun `the actual append force is observable separately from checkpoint directory force`() {
+        val file = dir.resolve("observed-force.jsonl")
+        val original = CodeModeRecords.of("alpha", 1).snapshot()
+        val prior = CodeModePersistedState(records = listOf(original))
+        CodeModeStateJournal.write(file, codec.encodeToString(prior))
+        val next = CodeModePersistedState(records = listOf(original.copy(output = "changed")))
+        var forces = 0
+        CodeModeStateJournal.write(file, CodeModeStateJournal.encode("alpha", prior, next, codec)) { target, channel ->
+            assertEquals(file, target)
+            forces++
+            channel.force(true)
+        }
+        assertEquals(1, forces, "one actual file force, not one counted journal line")
+        assertEquals("changed", CodeModeStateJournal.read(file, codec).records.single().output)
+    }
+
     private fun incompleteEntries(): List<String> = listOf(
         """{"key":"alpha","patches":[]}""",
         """{"key":"alpha","records":[],"removed":[]}""",

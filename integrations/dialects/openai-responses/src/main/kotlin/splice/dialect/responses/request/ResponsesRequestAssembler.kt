@@ -43,6 +43,7 @@ internal data class RequestParts(
     val instructions: String,
     val reasoning: JsonObject?,
     val partition: ToolPartition?,
+    val conversationKey: String?,
 )
 
 internal class ResponsesRequestAssembler(
@@ -53,7 +54,6 @@ internal class ResponsesRequestAssembler(
     private val toolWire = ToolWireObjects(toolNames)
     private val liteShape = ResponsesLiteShape(quirks)
     private val hints = ResponsesClientHints()
-    private val ids = ResponsesStableIds()
     private val toolPlan = ResponsesToolPlan(quirks)
     private val knobs = ResponsesReasoningKnobs(quirks)
 
@@ -80,13 +80,14 @@ internal class ResponsesRequestAssembler(
         val emitToolChoice = tools != null && (quirks.emitToolChoice || lite)
         val include = if (opts.includeEncryptedReasoning.v) listOf(ENCRYPTED_CONTENT_INCLUDE) else null
         val shape = liteShape.wireShape(lite, parts.input, parts.instructions, tools)
+        val cacheKey = cacheKey(opts, parts.conversationKey)
         val dto = ResponsesRequest(
             model = opts.upstreamModel,
             input = shape.input,
             store = quirks.store,
             stream = true,
             include = include,
-            promptCacheKey = cacheKey(body, opts),
+            promptCacheKey = cacheKey,
             promptCacheRetention = quirks.promptCache.retention,
             instructions = shape.instructions,
             tools = shape.tools,
@@ -94,7 +95,7 @@ internal class ResponsesRequestAssembler(
             parallelToolCalls = parallelToolCallsFor(emitToolChoice, body, opts),
             reasoning = parts.reasoning,
             text = hints.liteTextBlock(quirks, lite),
-            clientMetadata = hints.clientMetadataBlock(quirks, lite, opts, cacheKey(body, opts)),
+            clientMetadata = hints.clientMetadataBlock(quirks, lite, opts, cacheKey),
             streamOptions = knobs.summaryDeliveryOptions(parts.reasoning),
         )
         val req = responsesRequestJson.encodeToJsonElement(ResponsesRequest.serializer(), dto) as JsonObject
@@ -156,13 +157,13 @@ internal class ResponsesRequestAssembler(
         else -> null
     }
 
-    internal fun cacheKey(body: AnthropicRequest, opts: BuildOptions): String? = when (quirks.promptCache.key) {
+    internal fun cacheKey(opts: BuildOptions, conversationKey: String?): String? = when (quirks.promptCache.key) {
         CacheKeyStrategy.OFF -> null
         // Prefix from quirks.providerTag (not a hard-coded "claude-grok:") so TOML cache_key=session-id
         // on any Responses provider stays in its own cache namespace.
         CacheKeyStrategy.SESSION_ID -> opts.sessionId?.let { "${quirks.providerTag}:$it" }
         CacheKeyStrategy.SESSION_OR_FIRST_MESSAGE_HASH ->
-            opts.sessionId?.let { "${quirks.providerTag}:$it" } ?: ids.stablePromptCacheKey(body)
-        CacheKeyStrategy.FIRST_MESSAGE_HASH -> ids.stablePromptCacheKey(body)
+            opts.sessionId?.let { "${quirks.providerTag}:$it" } ?: conversationKey
+        CacheKeyStrategy.FIRST_MESSAGE_HASH -> conversationKey
     }
 }

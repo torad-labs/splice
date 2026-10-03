@@ -1,28 +1,17 @@
 // NEW: V4-457 — streaming JSON encoding for wire strings and bounded-output consumers.
 package splice.core.util
 
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.KSerializer
-import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
-import kotlinx.serialization.descriptors.SerialDescriptor
-import kotlinx.serialization.encoding.Decoder
-import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.JsonUnquotedLiteral
 import java.io.OutputStream
-import java.nio.ByteBuffer
-import java.nio.CharBuffer
-import java.nio.charset.CodingErrorAction
 
 // why: ASCII code points fit in one UTF-8 byte; the first non-ASCII value is 2^7.
-private const val UTF8_ASCII_CEILING = 0x80
+internal const val UTF8_ASCII_CEILING = 0x80
 
 // why: code points below 2^11 fit in two UTF-8 bytes.
 private const val UTF8_TWO_BYTE_CEILING = 0x800
@@ -32,9 +21,6 @@ private const val UTF8_BMP_WIDTH = 3
 
 // why: a supplementary code point occupies four UTF-8 bytes rather than two UTF-16 code units.
 private const val UTF8_SUPPLEMENTARY_WIDTH = 4
-
-// Fixed scratch, independent of prompt length; enough for ordinary stream writes without whole-string copies.
-internal const val WIRE_BUFFER_BYTES = 8_192
 
 // The pinned library owns escaping. Borrow its exact ASCII escape spellings, never a second escape algorithm.
 private val WIRE_ESCAPES = Array(UTF8_ASCII_CEILING) { code ->
@@ -70,12 +56,18 @@ public object JsonWire {
         }
     }
 
-    public fun string(element: JsonElement): String = Json.encodeToString(WireElementSerializer, element)
+    public fun string(element: JsonElement): String {
+        val count = WireCharCount()
+        WireTree(count).tree(element)
+        val wire = StringWire(count.chars)
+        WireTree(wire).tree(element)
+        return wire.value.toString()
+    }
 
     /** Writes with fixed scratch and leaves the caller's stream open. */
     public fun write(element: JsonElement, output: OutputStream) {
-        val wire = BoundedWire(output)
-        wire.tree(element)
+        val wire = StreamWire(output)
+        WireTree(wire).tree(element)
         wire.drain()
     }
 
@@ -117,98 +109,91 @@ public object JsonWire {
         }
     }
 
-    private class BoundedWire(private val output: OutputStream) {
-        private var buffer = ByteBuffer.allocate(WIRE_BUFFER_BYTES)
-        private val encoder = Charsets.UTF_8.newEncoder()
-            .onMalformedInput(CodingErrorAction.REPLACE)
-            .onUnmappableCharacter(CodingErrorAction.REPLACE)
+    private interface WireText {
+        fun raw(text: String, start: Int = 0, end: Int = text.length)
+        fun ascii(character: Char)
+    }
 
+    /** Both outputs walk the original nodes and retain raw scalar spellings. */
+    private class WireTree(private val output: WireText) {
         fun tree(element: JsonElement) {
             when (element) {
-                JsonNull -> raw("null")
+                JsonNull -> output.raw("null")
                 is JsonObject -> {
-                    byte('{')
+                    output.ascii('{')
                     element.entries.forEachIndexed { index, (key, value) ->
-                        if (index > 0) byte(',')
+                        if (index > 0) output.ascii(',')
                         quoted(key)
-                        byte(':')
+                        output.ascii(':')
                         tree(value)
                     }
-                    byte('}')
+                    output.ascii('}')
                 }
                 is JsonArray -> {
-                    byte('[')
+                    output.ascii('[')
                     element.forEachIndexed { index, value ->
-                        if (index > 0) byte(',')
+                        if (index > 0) output.ascii(',')
                         tree(value)
                     }
-                    byte(']')
+                    output.ascii(']')
                 }
-                is JsonPrimitive -> if (element.isString) quoted(element.content) else raw(element.content)
+                is JsonPrimitive -> if (element.isString) quoted(element.content) else output.raw(element.content)
             }
         }
 
         private fun quoted(text: String) {
-            byte('"')
-            val borrowed = CharBuffer.wrap(text)
+            output.ascii('"')
             var start = 0
             for (index in text.indices) {
                 val escape = WIRE_ESCAPES.getOrNull(text[index].code)
                 if (escape != null) {
-                    span(borrowed, start, index)
-                    escape.forEach(::byte)
+                    output.raw(text, start, index)
+                    output.raw(escape)
                     start = index + 1
                 }
             }
-            span(borrowed, start, text.length)
-            byte('"')
-        }
-
-        private fun raw(text: String) {
-            span(CharBuffer.wrap(text), 0, text.length)
-        }
-
-        private fun span(borrowed: CharBuffer, start: Int, end: Int) {
-            if (start == end) return
-            val input = borrowed.limit(end).position(start)
-            val encoding = encoder.reset()
-            while (encoding.encode(input, buffer, true).isOverflow) drain()
-            while (encoding.flush(buffer).isOverflow) drain()
-        }
-
-        private fun byte(character: Char) {
-            if (!buffer.hasRemaining()) drain()
-            buffer = buffer.put(character.code.toByte())
-        }
-
-        fun drain() {
-            if (buffer.position() > 0) output.write(buffer.array(), 0, buffer.position())
-            buffer = buffer.clear()
+            output.raw(text, start, text.length)
+            output.ascii('"')
         }
     }
 
-    /** Map/list serializers traverse the original nodes; raw literals avoid normalizing 1e2 into 100.0. */
-    private object WireElementSerializer : KSerializer<JsonElement> {
-        override val descriptor: SerialDescriptor = JsonElement.serializer().descriptor
-        private val objects = MapSerializer(String.serializer(), this)
-        private val arrays = ListSerializer(this)
+    /** Measure UTF-16 output without scratch so materialization reserves its final size exactly. */
+    private class WireCharCount : WireText {
+        var chars = 0
+            private set
 
-        @OptIn(ExperimentalSerializationApi::class)
-        override fun serialize(encoder: Encoder, value: JsonElement) {
-            when (value) {
-                JsonNull -> encoder.encodeNull()
-                is JsonObject -> encoder.encodeSerializableValue(objects, value)
-                is JsonArray -> encoder.encodeSerializableValue(arrays, value)
-                is JsonPrimitive -> {
-                    if (value.isString) {
-                        encoder.encodeString(value.content)
-                    } else {
-                        encoder.encodeSerializableValue(JsonElement.serializer(), JsonUnquotedLiteral(value.content))
-                    }
-                }
-            }
+        override fun raw(text: String, start: Int, end: Int) {
+            chars += end - start
         }
 
-        override fun deserialize(decoder: Decoder): JsonElement = JsonElement.serializer().deserialize(decoder)
+        override fun ascii(character: Char) {
+            chars++
+        }
+    }
+
+    private class StringWire(size: Int) : WireText {
+        val value = StringBuilder(size)
+
+        override fun raw(text: String, start: Int, end: Int) {
+            value.append(text, start, end)
+        }
+
+        override fun ascii(character: Char) {
+            value.append(character)
+        }
+    }
+
+    private class StreamWire(output: OutputStream) : WireText {
+        private val utf8 = Utf8Wire(output)
+
+        override fun raw(text: String, start: Int, end: Int) {
+            utf8.span(text, start, end)
+        }
+
+        override fun ascii(character: Char) {
+            utf8.ascii(character)
+        }
+
+        fun drain() = utf8.drain()
     }
 }

@@ -87,7 +87,9 @@ public class ResponsesRequestBuilder(
         val summary = knobs.resolveSummary(raw, opts, effort)
         val reasoning = knobs.reasoningBlock(effort, summary, opts)
 
-        val built = assembler.buildRequestObject(body, opts, RequestParts(input, instructions, reasoning, partition))
+        val conversationKey = ids.stablePromptCacheKey(body)
+        val parts = RequestParts(input, instructions, reasoning, partition, conversationKey)
+        val built = assembler.buildRequestObject(body, opts, parts)
         // meta.summary reflects what was ACTUALLY sent (spark drops it → "none"), like Node's
         // `req.reasoning?.summary ?? 'none'` — not the computed-but-maybe-dropped value.
         val sentSummary = looseFields.sentSummary(reasoning)
@@ -104,7 +106,7 @@ public class ResponsesRequestBuilder(
             budgetTokens = body.thinking?.budgetTokens,
             // The reasoning cache's conversation scope — the SAME derivation the provider's
             // lookup closure uses, so capture (which only sees TurnMeta) and injection agree.
-            conversationKey = ids.stablePromptCacheKey(body),
+            conversationKey = conversationKey,
             sessionId = opts.sessionId,
             // summaryParts is NOT passed: TurnMeta's default constructs the turn's one instance.
             // Every continuation round reuses this meta object (continuationRequest bypasses

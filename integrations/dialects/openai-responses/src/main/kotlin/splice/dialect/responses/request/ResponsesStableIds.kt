@@ -4,8 +4,11 @@
 // member kept its identical name and argument list.
 package splice.dialect.responses.request
 
+import splice.core.util.Utf8Wire
 import splice.core.wire.AnthropicRequest
 import splice.core.wire.TextBlock
+import java.io.OutputStream
+import java.security.DigestOutputStream
 import java.security.MessageDigest
 
 /**
@@ -18,11 +21,17 @@ internal class ResponsesStableIds {
     /** Codex-parity cache key: sha256 of the FIRST user message's text, stable per conversation. */
     public fun stablePromptCacheKey(body: AnthropicRequest): String? {
         val first = body.messages.firstOrNull { it.role == "user" } ?: return null
-        val seed = first.content.filterIsInstance<TextBlock>().joinToString("\n") { it.text }
-        if (seed.isEmpty()) return null
+        val text = first.content.filterIsInstance<TextBlock>()
+        if (text.isEmpty() || text.singleOrNull()?.text?.isEmpty() == true) return null
         val md = SHA256.get()
         md.reset()
-        val digest = md.digest(seed.toByteArray(Charsets.UTF_8))
+        val utf8 = Utf8Wire(DigestOutputStream(OutputStream.nullOutputStream(), md))
+        text.forEachIndexed { index, block ->
+            if (index > 0) utf8.write("\n")
+            utf8.write(block.text)
+        }
+        utf8.drain()
+        val digest = md.digest()
         // Only the first HASH_PREFIX_LEN/2 bytes → HASH_PREFIX_LEN hex chars ("splice-" + 32).
         val hexChars = CharArray(HASH_PREFIX_LEN)
         var hi = 0

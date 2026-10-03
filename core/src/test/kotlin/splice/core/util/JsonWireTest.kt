@@ -85,6 +85,37 @@ class JsonWireTest {
         }
     }
 
+    @Test
+    fun `wide request strings avoid per-scalar serialization scratch`(reporter: TestReporter) {
+        val source = (0 until 10_000).joinToString(",", prefix = "{", postfix = "}") { "\"key_$it\":$it" }
+        val tree = Json.parseToJsonElement(source)
+        var wire = ""
+        val referenceBytes = allocated { wire = tree.toString() }
+        val referenceCpu = threadCpu { wire = tree.toString() }
+        val bytes = allocated { wire = JsonWire.string(tree) }
+        val cpu = threadCpu { wire = JsonWire.string(tree) }
+        reporter.publishEntry("wide_reference_allocated_bytes", referenceBytes.toString())
+        reporter.publishEntry("wide_reference_thread_cpu_ns", referenceCpu.toString())
+        reporter.publishEntry("wide_wire_allocated_bytes", bytes.toString())
+        reporter.publishEntry("wide_wire_thread_cpu_ns", cpu.toString())
+        reporter.publishEntry("wide_wire_chars", source.length.toString())
+        assertEquals(source, wire)
+        // The independent tree renderer proves this budget rejects per-node allocation.
+        val budget = source.length * 4L + 32_000L
+        assertTrue(referenceBytes >= budget, "wide_reference_allocated_bytes=$referenceBytes")
+        assertTrue(bytes < budget, "wide_wire_allocated_bytes=$bytes")
+    }
+
+    private fun threadCpu(action: () -> Unit): Long {
+        val bean = ManagementFactory.getThreadMXBean() as ThreadMXBean
+        assertTrue(bean.isCurrentThreadCpuTimeSupported)
+        bean.isThreadCpuTimeEnabled = true
+        repeat(128) { action() }
+        val before = bean.currentThreadCpuTime
+        repeat(32) { action() }
+        return (bean.currentThreadCpuTime - before) / 32
+    }
+
     private fun allocated(action: () -> Unit): Long {
         val bean = ManagementFactory.getThreadMXBean() as ThreadMXBean
         assertTrue(bean.isThreadAllocatedMemorySupported)
@@ -99,7 +130,11 @@ class JsonWireTest {
     @Test
     fun `stream escaping and UTF8 spans remain exact at scratch buffer boundaries`() {
         val controls = (0..127).map(Int::toChar).joinToString("")
-        val texts = listOf(controls) + listOf(-2, -1, 0).flatMap { offset ->
+        val texts = listOf(
+            controls,
+            "é" + "x".repeat(WIRE_BUFFER_BYTES - 2) + "🧪",
+            "é" + "x".repeat(WIRE_BUFFER_BYTES - 1) + "\uD800",
+        ) + listOf(-2, -1, 0).flatMap { offset ->
             // The opening quote takes one byte; sweep both sides of the actual scratch boundary.
             val prefix = "x".repeat(WIRE_BUFFER_BYTES - 1 + offset)
             listOf(
@@ -112,6 +147,7 @@ class JsonWireTest {
             val output = ByteArrayOutputStream()
             JsonWire.write(tree, output)
             val expected = tree.toString().toByteArray(Charsets.UTF_8)
+            assertEquals(tree.toString(), JsonWire.string(tree))
             assertArrayEquals(expected, output.toByteArray())
             assertEquals(expected.size.toLong(), JsonWire.byteSize(tree))
         }

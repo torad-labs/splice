@@ -1,4 +1,6 @@
 source	sha256	disposition	destination	reason
+core/src/main/kotlin/splice/core/util/Utf8Wire.kt	0c1d783e6bd06e655ee7f0a3186a1304808e8412c9cc687ce914ee2baf68b32c	created		V4-457: bounded array-backed UTF-8 encoding shares JVM replacement semantics between identity digests and JSON streams
+integrations/dialects/openai-responses/src/test/kotlin/splice/dialect/responses/request/ResponsesPreparationBudgetTest.kt	d9901b2306c77be5c61d8534a50f070c26f128c63d56ca53729bcb0c293b7446	created		V4-457: allocation budgets and legacy identity parity cover empty separators malformed surrogates and concurrent preparation
 app/src/main/kotlin/splice/app/auth/claude/ClaudeLoginFacts.kt	43d4fe0862adbd8f3beb0cef81329b6b8e5d7a1728083b110ba6dacb57e0fa25	created		native identity and the private standing join are read from the files each command actually uses.
 app/src/main/kotlin/splice/app/auth/claude/ClaudeLoginLocations.kt	f956c69b295df1fee0f4cfd48bb526ccfa77ca78d5e40e9ce66ee72829471202	created		the two native command destinations share a head, never a live folder or selection marker.
 app/src/main/kotlin/splice/app/auth/claude/ClaudeLoginOwner.kt	6d8d087021a8b23f0a833904825b8434542abf221de9fa1398dad79c53f7d7b2	created		destination-scoped native login attempts share the daemon lifecycle and preserve save-back policy.

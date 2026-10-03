@@ -75,6 +75,43 @@ class SessionsActivityTest {
         assertEquals("Which plan should take the session?", last.getValue("text").jsonPrimitive.content)
     }
 
+    /** V4-444: a waiting session's card shows its questions and their options, so each question is sent whole with its
+     *  option labels; the descriptions stay in the terminal where it is answered. */
+    @Test
+    fun `an ask-the-user call carries each question with its option labels and whether several may be chosen`(
+        @TempDir tmp: Path,
+    ) {
+        val input = """{"questions":[
+            {"question":"Cut v0.1.14 now?","header":"Release","multiSelect":false,
+             "options":[{"label":"Cut now (Recommended)","description":"Publish it."},{"label":"Hold","description":"Wait."}]},
+            {"question":"Which checks run?","header":"Checks","multiSelect":true,
+             "options":[{"label":"Unit"},{"label":"E2E"},{"label":"Lint"}]}]}"""
+        val last = row(tmp, LastSource(call("AskUserQuestion", input))).getValue("last").jsonObject
+        val expected = """[{"question":"Cut v0.1.14 now?","options":["Cut now (Recommended)","Hold"],"multi":false},
+            {"question":"Which checks run?","options":["Unit","E2E","Lint"],"multi":true}]"""
+        assertEquals(Json.parseToJsonElement(expected), last["asks"])
+    }
+
+    @Test
+    fun `a question is sent whole up to its cap, and no other call or message carries asks`(@TempDir tmp: Path) {
+        val long = "Should it ship? " + "x".repeat(700)
+        val input = """{"questions":[{"question":"$long","options":[{"label":"Yes"},{"label":"No"}]}]}"""
+        val asks = row(tmp, LastSource(call("AskUserQuestion", input))).getValue("last").jsonObject.getValue("asks")
+        val question = asks.jsonArray.single().jsonObject.getValue("question").jsonPrimitive.content
+        assertEquals(long.take(500), question)
+        val bash = row(tmp, LastSource(call("Bash", """{"description":"Build"}"""))).getValue("last").jsonObject
+        assertFalse("asks" in bash)
+        val said = TranscriptMessage(0, TranscriptRole.ASSISTANT, 7L, "Which one?")
+        assertFalse("asks" in row(tmp, LastSource(said)).getValue("last").jsonObject)
+    }
+
+    @Test
+    fun `a row says what a waiting session waits for and how it was started`(@TempDir tmp: Path) {
+        val body = row(tmp, LastSource(null), waitingFor = "permission prompt", entrypoint = "cli")
+        assertEquals("permission prompt", body.getValue("waiting_for").jsonPrimitive.content)
+        assertEquals("cli", body.getValue("entrypoint").jsonPrimitive.content)
+    }
+
     @Test
     fun `what a person or the model said is passed through as text`(@TempDir tmp: Path) {
         val said = TranscriptMessage(0, TranscriptRole.ASSISTANT, 7L, "I built it. {\"command\":\"x\"}")
@@ -98,11 +135,14 @@ class SessionsActivityTest {
         source: LastSource,
         enabled: Boolean = true,
         id: String? = "synthetic-activity",
+        waitingFor: String? = null,
+        entrypoint: String? = null,
     ): JsonObject {
         val record = SessionRecord(
             pid = null, sessionId = id, cwd = null, name = null, kind = null, version = null,
             status = null, statusUpdatedAt = null, startedAt = null, updatedAt = null, messagingSocketPath = null,
             route = SessionRoute.Unknown, availability = SessionAvailability.LIVE,
+            waitingFor = waitingFor, entrypoint = entrypoint,
         )
         val registry = object : SessionSource {
             override fun read(): List<SessionRecord> = listOf(record)

@@ -13,7 +13,6 @@ import java.net.URI
  *  touched. The command is never one of them, and a path is cut to its file name. Empty when the call says nothing
  *  worth reading or its input is not an object. */
 internal object CallSummary {
-    private const val ASK_USER = "AskUserQuestion"
     private val pathKeys = listOf("file_path", "notebook_path", "path")
     private val targetKeys = listOf("pattern", "query")
 
@@ -21,7 +20,7 @@ internal object CallSummary {
         // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-30 (V4-444): an input that is not JSON has nothing a card may say; empty is the answer, not a lost failure.
         val body = Cancellables.runCatchingCancellable { Json.parseToJsonElement(input) }.getOrNull() as? JsonObject
             ?: return ""
-        if (tool == ASK_USER) return question(body) ?: ""
+        if (tool == AskedQuestions.TOOL) return question(body) ?: ""
         return text(body["description"]) ?: pathName(body) ?: target(body) ?: host(body) ?: ""
     }
 

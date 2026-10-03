@@ -48,6 +48,10 @@ public data class SessionRecord(
      *  never read, so it is [SessionRoute.Unknown]). */
     val route: SessionRoute,
     val availability: SessionAvailability,
+    /** What a waiting session waits for, as Claude Code words it (`input needed`, `permission prompt`). */
+    val waitingFor: String? = null,
+    /** How the session was started (`cli` is a terminal), which is where a person answers it. */
+    val entrypoint: String? = null,
 ) {
     /** The cross-session address a SendMessage can use when the session carries no name. */
     public val address: String? get() = messagingSocketPath?.let { "uds:$it" }
@@ -155,6 +159,8 @@ public class SessionRegistry(
             route = pid?.takeIf { availability != SessionAvailability.GONE }?.let(routeOf::invoke)
                 ?: SessionRoute.Unknown,
             availability = availability,
+            waitingFor = JsonScalars.str(obj, "waitingFor"),
+            entrypoint = JsonScalars.str(obj, "entrypoint"),
         )
     }
 

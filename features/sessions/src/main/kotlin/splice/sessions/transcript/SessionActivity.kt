@@ -39,6 +39,9 @@ internal object SessionActivity {
             put("tool", message.tool)
             put("text", shown(message).replace(whitespace, " ").trim().take(ACTIVITY_TEXT_CHARS))
             put("ts", message.ts)
+            val asked = message.role == TranscriptRole.ASSISTANT
+            val asks = if (asked) AskedQuestions.of(message.tool, message.text) else null
+            if (asks != null) put("asks", asks)
         }
     }
 }

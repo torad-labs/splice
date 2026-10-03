@@ -171,6 +171,8 @@ public class SessionsRoutes(
         put("version", s.version)
         put("cwd", s.cwd)
         put("status", s.status)
+        put("waiting_for", s.waitingFor)
+        put("entrypoint", s.entrypoint)
         put("status_updated_at", s.statusUpdatedAt)
         put("started_at", s.startedAt)
         put("updated_at", s.updatedAt)

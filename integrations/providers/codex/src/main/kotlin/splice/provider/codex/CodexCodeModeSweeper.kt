@@ -15,6 +15,7 @@ import kotlinx.serialization.json.Json
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
+import splice.provider.codex.state.CodeModeCellRetention
 import splice.provider.codex.state.CodeModeExpiredHistory
 import splice.provider.codex.state.CodeModeSessionEnd
 import splice.provider.codex.stream.CodeModeSourceEnds
@@ -100,26 +101,16 @@ internal class CodexCodeModeSweeper(
     private val cells: MutableMap<String, CodeModeCell>,
     private val admissions: MutableMap<String, Long>,
     private val history: CodeModeExpiredHistory,
-    private val closeSession: CodeModeSessionEnd = CodeModeSessionEnd {},
+    private val closeSession: CodeModeSessionEnd,
+    private val retainedCells: CodeModeCellRetention,
 ) {
-    /** Expires records past their TTL and closes positively dead sessions' cells; true when anything changed. */
-    fun sweep(key: String? = null): Boolean = expireRecords(key) or reapIdleCells(key) or expireMarkers(key)
+    /** Expires records and reaps dead or over-age unknown parked cells; true when anything changed. */
+    fun sweep(key: String? = null): Boolean = expireRecords(key) or retainedCells.sweep(key) or expireMarkers(key)
 
     /** Without an explicit count bound, old expiry evidence is bounded by the same configured lifetime. */
     private fun expireMarkers(key: String?): Boolean {
         val cutoff = config.clock.millis() - config.ttl.inWholeMilliseconds
         return history.entries.removeAll { (key == null || it.key == key) && it.expiredAt < cutoff }
-    }
-
-    /** At capacity, only a cell whose session is positively dead may give up its slot. */
-    fun evictIdleCell(key: String? = null): CodeModeRecord? {
-        val victim = records
-            .filter { (key == null || it.key == key) && it.phase == CodeModePhase.ACTIVE }
-            .filter(::sessionDead)
-            .minByOrNull(CodeModeRecord::updatedAt)
-            ?: return null
-        park(victim, "code-mode cell evicted after its session ended to admit a newer script")
-        return victim
     }
 
     private fun expireRecords(key: String?): Boolean {
@@ -138,30 +129,6 @@ internal class CodexCodeModeSweeper(
         records.removeAll(stale.toSet())
         stale.map(CodeModeRecord::key).distinct().forEach(closeSession::invoke)
         return true
-    }
-
-    /** Silence is not death. A known-dead session gives up its parked cell immediately. */
-    private fun reapIdleCells(key: String?): Boolean {
-        val dead = records.filter { (key == null || it.key == key) && it.phase == CodeModePhase.ACTIVE }
-            .filter(::sessionDead)
-        dead.forEach { record -> park(record, "code-mode cell closed after its session ended") }
-        return dead.isNotEmpty()
-    }
-
-    private fun sessionDead(record: CodeModeRecord): Boolean =
-        record.sessionId?.let(config.sessionAlive::invoke) == false
-
-    /** Closes [record]'s cell and marks it lost. Its updatedAt stays the time of its last use, so its
-     *  24 hours are not restarted by the park (V4-287: they were, keeping it past the promise). */
-    private fun park(record: CodeModeRecord, message: String) {
-        admissions.remove(record.id)
-        CodeModeSourceEnds.defer(record.sourceEnd)
-        record.sourceEnd = null
-        cells.remove(record.id)?.close()
-        record.phase = CodeModePhase.LOST
-        record.error = "$message; source was not rerun"
-        if (records.none { it.key == record.key && it.phase == CodeModePhase.ACTIVE }) closeSession(record.key)
-        config.log("[code-mode] ${record.id.take(RECORD_ID_LOG_CHARS)} (outer ${record.outerCallId}): $message")
     }
 }
 

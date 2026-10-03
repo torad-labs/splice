@@ -8,6 +8,7 @@ package splice.provider.codex
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -118,6 +119,25 @@ class CodexCodeModeRetentionTest : CodeModeBridgeTestSupport() {
         clock.now = START + 31.minutes.inWholeMilliseconds
         touch(manager)
         assertFalse(runtime.cell.closed, "a quiet client is not evidence that its session died")
+    }
+
+    @Test
+    fun `unknown sessions lose their parked cells after the idle bound without another turn`() = runTest {
+        val clock = WallTime(START)
+        val (manager, state) = recording(clock, "unknown-idle", sweepInterval = 50.milliseconds)
+        try {
+            startScript(manager)
+            clock.now = START + 30.minutes.inWholeMilliseconds
+            awaitUntil("unknown session's parked cell was durably lost") {
+                state.records().single()["error"]?.jsonPrimitive?.content?.contains("idle") == true
+            }
+            val lost = state.records().single()
+            assertEquals("LOST", lost.getValue("phase").jsonPrimitive.content)
+            assertEquals(START, lost.getValue("updatedAt").jsonPrimitive.content.toLong())
+            assertTrue(SOURCE in state.text(), "the record and its source remain no-rerun evidence")
+        } finally {
+            manager.onHeadStop()
+        }
     }
 
     /** A bridge over its own state directory [name], whose one script waits on a client call that never returns. */

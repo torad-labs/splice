@@ -53,7 +53,13 @@ internal class CodexCodeModeMachine(
         val request = CodeModeAdvanceRequest(record, turn, disableParallel, results, sink)
         return when {
             config.maxRounds?.let { record.rounds >= it } == true -> poison(record, "code-mode round limit exceeded")
-            else -> registry.cell(record)?.let { advanceCell(request, it) }
+            else -> registry.retainedCells.acquire(record)?.let { cell ->
+                try {
+                    advanceCell(request, cell)
+                } finally {
+                    registry.retainedCells.release(record)
+                }
+            }
                 ?: if (source?.sourceInterrupted == true) {
                     started.remove(record.id)
                     source.outcome()

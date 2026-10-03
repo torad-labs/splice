@@ -104,6 +104,9 @@ internal data class CodeModeRecord(
     var sourceState: CodeModeSourceState? = null
     var sourceEnd: CodeModeSourceLease? = null
 
+    /** Null while the cell is executing; set only when its caller releases the runtime step. Never persisted. */
+    var cellIdleSince: Long? = null
+
     @Volatile var retainedBytes: Long? = null
 
     fun visiblePending(): List<CodeModePending> = pending.filter(CodeModePending::exposed)

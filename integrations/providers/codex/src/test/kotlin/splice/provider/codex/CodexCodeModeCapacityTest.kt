@@ -1,5 +1,7 @@
 package splice.provider.codex
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
@@ -217,40 +219,169 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
         stateFiles.records()
             .single { it.getValue("outerCallId").jsonPrimitive.content == outerCallId }
             .getValue("phase").jsonPrimitive.content
+}
 
-    /** Each started cell emits [callsPerCell] Read calls and then parks until closed; at most [capacity] are open. */
-    private class BoundedRuntime(private val capacity: Int, private val callsPerCell: Int = 1) : CodeModeRuntime {
-        val cells = mutableListOf<ParkedCell>()
-        var starts = 0
-        val open: Int get() = cells.count { !it.closed }
+/** Each started cell emits [callsPerCell] Read calls and then parks until closed; at most [capacity] are open. */
+private class BoundedRuntime(private val capacity: Int, private val callsPerCell: Int = 1) : CodeModeRuntime {
+    val cells = mutableListOf<ParkedCell>()
+    var starts = 0
+    val open: Int get() = cells.count { !it.closed }
 
-        override suspend fun start(
-            source: String,
-            tools: Set<String>,
-            descriptions: Map<String, String>,
-        ): CodeModeCell {
-            if (open >= capacity) throw CodeModeCapacityException()
-            starts++
-            return ParkedCell(callsPerCell).also(cells::add)
+    override suspend fun start(
+        source: String,
+        tools: Set<String>,
+        descriptions: Map<String, String>,
+    ): CodeModeCell {
+        if (open >= capacity) {
+            throw CodeModeCapacityException("synthetic pool full: every retained engine has a live cell")
         }
-
-        override fun close() = Unit
+        starts++
+        return ParkedCell(callsPerCell).also(cells::add)
     }
 
-    private class ParkedCell(private val calls: Int) : CodeModeCell {
-        var closed = false
-        private var advances = 0
+    override fun close() = Unit
+}
 
-        override suspend fun advance(results: List<CodeModeResult>): CodeModeStep =
-            if (advances++ == 0) {
-                CodeModeStep.Calls(List(calls) { CodeModeCall("read-$it", "Read", buildJsonObject {}) })
-            } else {
-                CodeModeStep.Completed("done")
-            }
+private class ParkedCell(private val calls: Int) : CodeModeCell {
+    var closed = false
+    private var advances = 0
 
-        override fun close() {
-            closed = true
+    override suspend fun advance(results: List<CodeModeResult>): CodeModeStep =
+        if (advances++ == 0) {
+            CodeModeStep.Calls(List(calls) { CodeModeCall("read-$it", "Read", buildJsonObject {}) })
+        } else {
+            CodeModeStep.Completed("done")
         }
+
+    override fun close() {
+        closed = true
+    }
+}
+
+/** Unknown liveness cannot keep parked worker slots forever, but an advancing cell is never idle. */
+class CodeModeUnknownCapacityTest : CodeModeBridgeTestSupport() {
+    @Test
+    fun `full pool reclaims the globally oldest unknown parked cell at the idle bound`() = runTest {
+        val clock = MutableClock(2_000)
+        val runtime = BoundedRuntime(capacity = 2)
+        val manager = bridge(runtime, clock = clock)
+        manager.interceptor(turn(sessionId = "newer"), outer("outer-newer"), false)
+            .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome("outer-newer") }
+        clock.now = 1_000
+        val olderSink = RecordingSink()
+        manager.interceptor(turn(sessionId = "older"), outer("outer-older"), false)
+            .intercept(BASE_REQUEST, olderSink) { outerOutcome("outer-older") }
+        clock.now = 1_000 + 30.minutes.inWholeMilliseconds
+        try {
+            val sink = RecordingSink()
+            val outcome = incoming(manager, sink)
+            assertTrue(outcome is TurnOutcome.Success && outcome.hasToolUse, "pool-full refusal: $outcome; $logLines")
+            assertFalse(runtime.cells[0].closed, "record insertion order is not least-recently-used order")
+            assertTrue(runtime.cells[1].closed)
+            assertEquals(3, runtime.starts)
+            val lost = stateFiles.records().single { it["outerCallId"]?.jsonPrimitive?.content == "outer-older" }
+            assertEquals("LOST", lost.getValue("phase").jsonPrimitive.content)
+            assertEquals(1, lost.getValue("pending").jsonArray.size, "callback evidence survives the eviction")
+            assertTrue("source was not rerun" in lost.getValue("error").jsonPrimitive.content)
+            assertEquals(1_000L, lost.getValue("updatedAt").jsonPrimitive.content.toLong())
+            assertEquals(1, lost.getValue("issued").jsonArray.size, "durable issuance survives the eviction")
+            val callback = olderSink.tools.single().id
+            val resumedSink = RecordingSink()
+            val resumed = manager.interceptor(turn(callback, "A", sessionId = "older"), null, false)
+                .intercept(requestWithResult(callback, "A"), resumedSink) { completedOutcome() }
+            assertTrue(resumed is TurnOutcome.Success && !resumed.hasToolUse)
+            assertTrue(resumedSink.tools.isEmpty())
+            assertEquals(3, runtime.starts, "the reclaimed source is never restarted")
+        } finally {
+            manager.onHeadStop()
+        }
+    }
+
+    @Test
+    fun `capacity protects positively alive cells and reports unknown and alive shares`() = runTest {
+        val clock = MutableClock(1_000)
+        val runtime = BoundedRuntime(capacity = 2)
+        val manager = CodexCodeModeBridge(
+            CodeModeBridgeConfig(
+                { runtime },
+                stateLocation(),
+                clock = clock,
+                log = LogSink { logLines += it },
+                sessionAlive = CodeModeSessionAlive { if (it == "alive") true else null },
+            ),
+        )
+        try {
+            manager.interceptor(turn(sessionId = "alive"), outer("outer-alive"), false)
+                .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome("outer-alive") }
+            clock.now += 30.minutes.inWholeMilliseconds
+            manager.interceptor(turn(sessionId = "unknown"), outer("outer-unknown"), false)
+                .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome("outer-unknown") }
+            val refusal = incoming(manager)
+            assertTrue(refusal is TurnOutcome.Success && !refusal.hasToolUse)
+            assertTrue(runtime.cells.none { it.closed })
+            assertTrue(
+                logLines.any { "dead=0 unknown=1 alive=1" in it && "oldestIdleMs=1800000" in it },
+                logLines.toString(),
+            )
+        } finally {
+            manager.onHeadStop()
+        }
+    }
+
+    @Test
+    fun `an unknown session executing past the idle bound cannot be evicted`() = runTest {
+        val clock = MutableClock(1_000)
+        val runtime = BoundedRuntime(capacity = 1)
+        val advancing = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val gated = object : CodeModeRuntime by runtime {
+            override suspend fun startSession(
+                sessionKey: String,
+                source: String,
+                tools: Set<String>,
+                descriptions: Map<String, String>,
+            ): CodeModeCell {
+                val cell = runtime.start(source, tools, descriptions)
+                return object : CodeModeCell by cell {
+                    override suspend fun advance(results: List<CodeModeResult>): CodeModeStep {
+                        if (results.isNotEmpty()) {
+                            advancing.complete(Unit)
+                            release.await()
+                        }
+                        return cell.advance(results)
+                    }
+                }
+            }
+        }
+        val manager = bridge(gated, clock = clock)
+        val sink = RecordingSink()
+        manager.interceptor(turn(), outer("outer-running"), false)
+            .intercept(BASE_REQUEST, sink) { outerOutcome("outer-running") }
+        val id = sink.tools.single().id
+        val request = async {
+            manager.interceptor(turn(id, "A"), null, false)
+                .intercept(requestWithResult(id, "A"), RecordingSink()) { completedOutcome() }
+        }
+        advancing.await()
+        clock.now += 31.minutes.inWholeMilliseconds
+        try {
+            val refusal = incoming(manager)
+            assertTrue(refusal is TurnOutcome.Success && !refusal.hasToolUse)
+            assertFalse(runtime.cells.single().closed)
+            assertTrue(logLines.any { "executing=1" in it }, logLines.toString())
+        } finally {
+            release.complete(Unit)
+            request.await()
+            manager.onHeadStop()
+        }
+    }
+
+    private suspend fun incoming(manager: CodexCodeModeBridge, sink: RecordingSink = RecordingSink()): TurnOutcome {
+        var posts = 0
+        return manager.interceptor(turn(sessionId = "incoming"), null, false)
+            .intercept(BASE_REQUEST, sink) {
+                if (posts++ == 0) outerOutcome("outer-incoming") else completedOutcome()
+            }
     }
 }
 

@@ -80,7 +80,7 @@ public data class CodeModeBridgeConfig(
     val clock: Clock = Clock.systemUTC(),
     /** Head-scoped sink for history-degradation lines; uninstalled it is a no-op. */
     val log: LogSink = LogSink { },
-    /** A parked cell stays with its session until positive death evidence or the record's TTL. */
+    /** Positive liveness protects parked cells. Unknown sessions have a thirty-minute cell idle lease. */
     val sessionAlive: CodeModeSessionAlive = CodeModeSessionAlive { null },
 )
 

@@ -14,6 +14,7 @@ package splice.provider.codex
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import splice.provider.codex.state.CodeModeCellRetention
 import splice.provider.codex.state.CodeModeExpiredHistory
 import splice.provider.codex.state.CodeModeKeyLocks
 import splice.provider.codex.state.CodeModeNativeChain
@@ -60,7 +61,8 @@ internal class CodexCodeModeRegistry(
     val source = CodeModeSourceRecords(access, records, history, store)
     val changes = CodeModeRecordChanges(access, records, history, store)
     private val admissions = startup.entries
-    private val sweeper = CodexCodeModeSweeper(config, records, cells, admissions, history, closeSession)
+    val retainedCells = CodeModeCellRetention(config, access, records, cells, admissions, closeSession)
+    private val sweeper = CodexCodeModeSweeper(config, records, cells, admissions, history, closeSession, retainedCells)
     private val timed = CodeModeTimedSweep(
         monitor,
         records,
@@ -291,12 +293,12 @@ internal class CodexCodeModeRegistry(
         }
     }
 
-    /** See [CodexCodeModeSweeper.evictIdleCell]; the eviction is persisted before the slot is reused. */
+    /** Global idle order is snapshotted, then each candidate is rechecked and saved under its own key. */
     fun evictIdleCell(): CodeModeRecord? {
-        val keys = monitor.withLock { records.map(CodeModeRecord::key).distinct() }
+        val keys = monitor.withLock { retainedCells.candidateKeys() }
         keys.forEach { key ->
             val victim = access.withKey(key) {
-                sweeper.evictIdleCell(key)?.also {
+                retainedCells.evict(key)?.also {
                     store.save(records, history.entries, dirtyKeys = setOf(key))
                 }
             }

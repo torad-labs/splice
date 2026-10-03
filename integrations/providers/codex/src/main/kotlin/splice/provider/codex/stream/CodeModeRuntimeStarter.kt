@@ -22,13 +22,20 @@ internal class CodeModeRuntimeStarter(
     private val registry: CodexCodeModeRegistry,
     private val config: CodeModeBridgeConfig,
 ) {
-    suspend fun start(record: CodeModeRecord, context: CodeModeRunContext, stream: CodeModeLiveRound?): CodeModeCell =
-        try {
-            open(record, context, stream)
-        } catch (error: CodeModeCapacityException) {
-            registry.evictIdleCell() ?: throw error
-            open(record, context, stream)
+    suspend fun start(record: CodeModeRecord, context: CodeModeRunContext, stream: CodeModeLiveRound?): CodeModeCell {
+        var reclaimed = false
+        while (true) {
+            try {
+                return open(record, context, stream)
+            } catch (error: CodeModeCapacityException) {
+                if (reclaimed || registry.evictIdleCell() == null) {
+                    registry.retainedCells.logRefusal()
+                    throw error
+                }
+                reclaimed = true
+            }
         }
+    }
 
     private suspend fun open(record: CodeModeRecord, context: CodeModeRunContext, stream: CodeModeLiveRound?) =
         if (stream == null) {

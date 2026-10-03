@@ -153,6 +153,10 @@ const DISPOSITIONED: Record<string, string> = {
     "a saved response id exists only after a head serves a turn; TranscriptRequestRouteTest holds the serializer",
   "api/models.ts|upstreamModelsPath(provider)":
     "this read reaches provider model endpoints; the isolated wire probe must not send live provider traffic",
+  "api/account-order.ts|orderPath(head)":
+    "the isolated boot's only head signs in with an api key, which has no selectable account order and answers 409 " +
+    "(the console renders that as unavailable by design); AccountOrderRouteTest pins the 200 payload's head and " +
+    "effective_order and the 409",
 };
 /** Non-request fetch() sites in console-next/src, which the same scan enumerates. */
 const FETCH_DISPOSITIONED: Record<string, string> = {

@@ -33,7 +33,7 @@ class PerfTurnsFilterTest {
     // newest-n slice holds none of it.
     private val oks = (1..2_001).map { i -> row(ts = 10_000L + i, outcome = "ok", session = "s1") }
     private val failure = row(ts = 5_000L, outcome = "error:rate-limited", session = "s2")
-    private val unknown = row(ts = 6_000L, outcome = "?", session = "s1")
+    private val unknown = row(ts = 6_000L, outcome = "?", session = "s1", compact = true)
     private val bare = PerfRow(ts = 7_000L, outcome = "ok", fields = emptyMap())
     private val local = row(ts = 8_000L, outcome = "ok", session = "s1", fields = mapOf(PerfKeys.LOCAL_STEP to 1L))
     private val rows = listOf(failure, unknown, bare, local) + oks
@@ -51,8 +51,22 @@ class PerfTurnsFilterTest {
         WallClock { 20_000 },
     )
 
-    private fun row(ts: Long, outcome: String, session: String, fields: Map<String, Long> = emptyMap()): PerfRow =
-        PerfRow(ts = ts, outcome = outcome, fields = fields, model = "opus", account = "work", session = session)
+    private fun row(
+        ts: Long,
+        outcome: String,
+        session: String,
+        fields: Map<String, Long> = emptyMap(),
+        compact: Boolean = false,
+    ): PerfRow =
+        PerfRow(
+            ts = ts,
+            outcome = outcome,
+            fields = fields,
+            model = "opus",
+            account = "work",
+            session = session,
+            compact = compact,
+        )
 
     private fun ApplicationTestBuilder.mount() {
         application { routing { get("/api/perf/turns") { routes.turns(call) } } }
@@ -104,9 +118,24 @@ class PerfTurnsFilterTest {
     }
 
     @Test
+    fun `compact=1 finds the compactions in the window, and compact=0 every request that was not one`() = testApplication {
+        mount()
+        val compacted = ask(client, "compact=1")
+        assertEquals(listOf(6_000L), stamps(compacted))
+        assertEquals(1L, count(compacted))
+        val rest = stamps(ask(client, "until=10000&compact=0"))
+        assertEquals(listOf(5_000L, 7_000L, 8_000L), rest, "a row with no compact field is not one")
+    }
+
+    @Test
     fun `a filter spelled wrong is refused by name, never ignored`() = testApplication {
         mount()
-        val spelled = listOf("until=soon" to "soon", "unattributed=session" to "session", "local=maybe" to "maybe")
+        val spelled = listOf(
+            "until=soon" to "soon",
+            "unattributed=session" to "session",
+            "local=maybe" to "maybe",
+            "compact=yes" to "yes",
+        )
         for ((query, named) in spelled) {
             val response = client.get("/api/perf/turns?head=kimi&since=0&$query")
             assertEquals(HttpStatusCode.BadRequest, response.status, query)

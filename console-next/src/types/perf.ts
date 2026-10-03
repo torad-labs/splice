@@ -206,6 +206,20 @@ export interface PerfTurnsHeadWire {
   rows?: TurnRowWire[];
 }
 
+/** What GET /api/perf/turns narrows a head's window by, before its newest-n clamp (TurnsFilter.kt). `outcome` is a tag, or
+ *  `failed` for every row that ended anywhere but ok, the unattributed `?` excluded. `unattributed` asks for the rows that
+ *  carry no model or no account. `compact` true asks for compactions, false for every request that was not one. `local`
+ *  false leaves out the steps splice answered itself. An absent field asks nothing. */
+export interface PerfTurnsFilter {
+  outcome?: string;
+  model?: string;
+  account?: string;
+  session?: string;
+  unattributed?: 'model' | 'account';
+  compact?: boolean;
+  local?: boolean;
+}
+
 /** GET /api/perf/turns?head=&n=&since= exactly as the daemon writes it. The type
  *  tools/e2e/probes/console-wire-keys.ts checks against a live daemon. */
 export interface PerfTurnsWire {
@@ -403,6 +417,12 @@ export interface TurnsState {
   /** Heads the route clamped: their earliest rows in the asked window are missing from `landed`. A
    *  tail read's window is the daemon's default, the last 24 hours, so there too it is a gap. */
   truncated: TruncatedHead[];
+  /** The rows the read's window and filters match, summed over every head that answered: the daemon's own `count`, taken
+   *  before its newest-n clamp, so it is the whole window however few rows came back. Null when an answering head did not
+   *  say its count. A head in `unread` is not in it. */
+  matched: number | null;
+  /** The same count per head that said one. */
+  matchedBy: Record<string, number>;
   /** The instant from which `landed` holds every turn: the window the daemon read from, or later
    *  where a cap cut earlier ones (a clamped head's oldest row, or the oldest row a tail read's fleet
    *  cut kept). Before it the list is short, so an hour there with no rows is unread, not idle

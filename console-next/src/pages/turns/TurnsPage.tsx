@@ -1,25 +1,25 @@
 import { Link, useSearchParams } from 'react-router';
-import { useState } from 'react';
+import { Fragment } from 'react';
 import type { ReactNode } from 'react';
 import { failureText } from '../../api/client';
 import { useHeads, useLiveTurns, useSessions, useStatus, useStopTurn } from '../../api/queries';
 import { isPendingRoute } from '../../api/auth';
-import { usePerfSummary, usePerfTurns } from '../../api/turns';
+import { SUMMARY_POLL_MS, TURNS_POLL_MS, usePerfSummary, usePerfTurns } from '../../api/turns';
 import { ABSENT, fmtInt, fmtTokens } from '../../lib/format';
 import { sessionLabel } from '../../lib/sessions';
 import { colourFromRegistry } from '../../lib/model';
-import {
-  WINDOW_MS, barMax, cacheText, filterLines, liveTurnFor, lineOf, newestFirst, planRows, runningOf, secondsText, localStepsOf, servedLocally, tookText, turnsLede,
-} from '../../lib/turns-page';
-import type { TurnFilter, TurnLine, PlanRow, RunningLine } from '../../lib/turns-page';
+import { askOf, narrowed, requestsHref, searchOf, SELECTORS, viewOf } from '../../lib/requests-view';
+import type { RequestsView, Selector } from '../../lib/requests-view';
+import { barMax, cacheText, liveTurnFor, lineOf, newestFirst, pageLede, planRows, runningOf, secondsText, localStepsOf, tookText } from '../../lib/turns-page';
+import type { TurnLine, PlanRow, RunningLine } from '../../lib/turns-page';
 import { T } from '../../lib/words-turns';
-import { PERF_WINDOWS } from '../../types/perf';
 import type { PerfWindowLabel } from '../../types/perf';
-import { Button, Empty, Fault, PageHead, SearchField, Segmented, State, Window, WindowBar } from '../../ui';
+import { Button, Close, Empty, Fault, PageHead, Segmented, State, Window, WindowBar } from '../../ui';
 import { S } from '../shared/copy';
 import './turns.css';
 
-const windowOf = (raw: string | null): PerfWindowLabel => PERF_WINDOWS.find((label) => label === raw) ?? '1h';
+/** The most finished requests the list draws, newest first across every command; the count says how many matched. */
+const LIST_CAP = 200;
 
 export function turnPath(line: Pick<TurnLine, 'head' | 'ts'>): string {
   return `/requests/${encodeURIComponent(line.head)}/${line.ts}`;
@@ -53,13 +53,13 @@ export function RunningCard({ turn, act }: { turn: RunningLine; act?: ReactNode 
   );
 }
 
-function PlanLine({ row, max }: { row: PlanRow; max: number }) {
+function PlanLine({ row, max, failedHref }: { row: PlanRow; max: number; failedHref: string }) {
   const slow = row.firstP95 ?? row.firstP50;
   return (
     <li className={`plan hue ${row.colour}`}>
       <b><i />{row.label}</b>
       <span className="n">{fmtInt(row.turns)}</span>
-      <span className={`n${row.failed > 0 ? ' bad' : ''}`}>{fmtInt(row.failed)}</span>
+      {row.failed > 0 ? <Link className="n bad" to={failedHref} aria-label={T.failedOf(row.failed, row.label)}>{fmtInt(row.failed)}</Link> : <span className="n">{fmtInt(0)}</span>}
       {row.firstP50 === null || slow === null ? (
         <span className="plan-first">{ABSENT}</span>
       ) : (
@@ -76,16 +76,27 @@ function PlanLine({ row, max }: { row: PlanRow; max: number }) {
   );
 }
 
-export function TurnRowView({ line }: { line: TurnLine }) {
+/** Each part of a row that names a command, a model or an account opens the requests narrowed to it. */
+export type NarrowTo = (selector: Selector, value: string) => string;
+
+export function TurnRowView({ line, narrow }: { line: TurnLine; narrow: NarrowTo }) {
   const clock = new Date(line.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const parts: [Selector, string, string][] = [['head', line.head, line.plan]];
+  if (line.model !== null) parts.push(['model', line.model, line.model]);
+  if (line.account !== null) parts.push(['account', line.account, line.account]);
   return (
     <li className={`turn hue ${line.colour}${line.outcome.failed ? ' failed' : ''}`}>
       <span className="t">{clock}</span>
       <div>
         <h3><Link to={turnPath(line)}>{line.title}</Link></h3>
         <div className="sub">
-          <span>{line.plan}{line.model === null ? null : ` · ${line.model}`}</span>
-          {line.tag === null ? null : <span className="tag">{line.tag}</span>}
+          <span>
+            {parts.map(([selector, value, text], i) => (
+              <Fragment key={selector}>{i === 0 ? null : ' · '}<Link to={narrow(selector, value)}>{text}</Link></Fragment>
+            ))}
+          </span>
+          {line.tags.map((tag) => <span key={tag} className="tag">{tag}</span>)}
+          {line.session === null ? null : <Link className="same" to={narrow('session', line.session)}>{T.sameSession}</Link>}
         </div>
       </div>
       <State tone={line.outcome.tone}>{line.outcome.word}</State>
@@ -99,14 +110,43 @@ export function TurnRowView({ line }: { line: TurnLine }) {
   );
 }
 
-/** How the plans are answering, and every turn that finished: each opens its own page. */
+/** What the list is narrowed to, each part one click from the wider list. */
+function Narrowing({ view, labelOf }: { view: RequestsView; labelOf: (head: string) => string }) {
+  const chips: { key: string; label: string; value: string; wider: RequestsView }[] = SELECTORS.flatMap((selector) => {
+    const value = view[selector];
+    return value === null ? [] : [{ key: selector, label: T.selector[selector], value: selector === 'head' ? labelOf(value) : value, wider: { ...view, [selector]: null } }];
+  });
+  if (view.unattributed !== null) chips.push({ key: 'unattributed', label: T.unattributed[view.unattributed], value: '', wider: { ...view, unattributed: null } });
+  if (chips.length === 0) return null;
+  return (
+    <ul className="narrowing" aria-label={T.narrowedLabel}>
+      {chips.map((chip) => (
+        <li key={chip.key}>
+          <Link to={requestsHref(chip.wider)} aria-label={T.widen(`${chip.label} ${chip.value}`.trim())}>
+            <span>{chip.label}</span>
+            {chip.value === '' ? null : <b>{chip.value}</b>}
+            <Close />
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** How the commands are answering, and every request that finished, narrowed by the address: each opens its own page. */
 export function TurnsPage() {
   const [params, setParams] = useSearchParams();
-  const window = windowOf(params.get('window'));
-  const [filter, setFilter] = useState<TurnFilter>('all');
-  const [query, setQuery] = useState('');
-  const summary = usePerfSummary(window);
-  const turns = usePerfTurns();
+  const view = viewOf(params);
+  const go = (next: RequestsView): void => setParams(searchOf(next), { replace: true });
+  const window = view.range.kind === 'last' ? view.range.window : null;
+  const closed = view.range.kind === 'span' && view.range.until !== null && view.range.until <= Date.now();
+  const readable = view.unread === null;
+  const summary = usePerfSummary(window ?? '1h', readable && window !== null);
+  const turns = usePerfTurns(
+    { ...askOf(view), live: window === '1h' || window === '24h' },
+    closed ? false : window === '7d' ? SUMMARY_POLL_MS : TURNS_POLL_MS,
+    readable,
+  );
   const heads = useHeads();
   const status = useStatus();
   const sessions = useSessions();
@@ -120,60 +160,63 @@ export function TurnsPage() {
     return row === undefined ? null : sessionLabel(row);
   };
 
-  const plans = planRows(summary.data?.heads ?? [], colourOf);
-  const pick = (next: PerfWindowLabel): void => setParams(next === '1h' ? {} : { window: next }, { replace: true });
-  const tools = <Segmented label={T.window} value={window} options={T.windows} onChange={pick} />;
+  const pick = (next: PerfWindowLabel): void => go({ ...view, range: { kind: 'last', window: next } });
+  // A span has no window pressed; choosing one returns to a rolling window.
+  const tools = <Segmented<PerfWindowLabel | 'span'> label={T.window} value={window ?? 'span'} options={T.windows} onChange={(next) => { if (next !== 'span') pick(next); }} />;
+  if (view.unread !== null) return <><PageHead title={T.title} tools={tools} /><Fault message={T.linkUnread(view.unread.param, view.unread.value)} /></>;
 
-  if (turns.isPending && summary.isPending) return <PageHead title={T.title} lede={T.reading} />;
-  if (turns.isError && turns.data === undefined) return <><PageHead title={T.title} tools={tools} /><Fault message={failureText(turns.error)} onRetry={() => void turns.refetch()} /></>;
-  const slice = turns.data;
-  if (slice === undefined || isPendingRoute(slice)) return <><PageHead title={T.title} tools={tools} /><Empty title={T.none} why={T.noneWhy} /></>;
-
-  const since = Date.now() - WINDOW_MS[window];
-  const inWindow = slice.landed.filter((row) => row.ts >= since);
-  const local = localStepsOf(summary.data?.heads ?? []);
-  const all = newestFirst(inWindow.filter((row) => !servedLocally(row)).map((row) => lineOf(row, planLabel, colourOf, titleOf)));
-  const lines = filterLines(all, filter, query);
-  const running = runningOf(slice.inflight, planLabel, colourOf, (prefix) => titleOf(undefined, prefix));
+  const plans = summary.data === undefined ? null : planRows(summary.data.heads, colourOf);
+  const slice = turns.data === undefined || isPendingRoute(turns.data) ? undefined : turns.data;
+  const matched = turns.isPending ? undefined : (slice?.matched ?? null);
+  const lede = window !== null && summary.isError && plans === null ? undefined : pageLede(view, plans, matched);
+  const narrow = (selector: Selector, value: string): string => requestsHref({ ...view, [selector]: value });
+  const lines = slice === undefined ? [] : newestFirst(slice.landed.map((row) => lineOf(row, planLabel, colourOf, titleOf))).slice(0, LIST_CAP);
+  const running = slice === undefined ? [] : runningOf(slice.inflight, planLabel, colourOf, (prefix) => titleOf(undefined, prefix));
   const quiet = running.filter((turn) => turn.longQuiet);
-  const held = plans.reduce((n, row) => n + row.turns, 0);
   const longestQuiet = quiet[0];
+  const local = localStepsOf(summary.data?.heads ?? []);
 
   return (
     <>
-      <PageHead title={T.title} lede={turnsLede(plans, window)} tools={tools} />
-      <section className="section" aria-labelledby="turns-running">
-        <h2 id="turns-running">{T.runningTitle}</h2>
-        <p className="why">{running.length === 0 ? T.runningNone : `${T.runningWhy}${longestQuiet === undefined || longestQuiet.quiet === null ? '' : ` ${T.runningQuiet(quiet.length, longestQuiet.quiet)}`}`}</p>
-        {running.length === 0 ? null : <ul className="running-list">{running.map((turn) => <RunningCard key={turn.key} turn={turn} act={<StopRunning turn={turn} />} />)}</ul>}
-      </section>
-      <section className="section" aria-labelledby="turns-plans">
-        <h2 id="turns-plans">{T.plansTitle}</h2>
-        <p className="why">{plans.length === 0 ? T.plansNone : T.plansWhy}</p>
-        {plans.length === 0 ? null : (
-          <ul className="plans">
-            <li className="plan cols" aria-hidden="true"><span>{T.colPlan}</span><span>{T.colTurns}</span><span>{T.colFailed}</span><span>{T.colFirstWord}</span><span /></li>
-            {plans.map((row) => <PlanLine key={row.key} row={row} max={barMax(plans)} />)}
-          </ul>
-        )}
-      </section>
+      <PageHead title={T.title} {...(lede === undefined ? {} : { lede })} tools={tools} />
+      {window === null ? null : (
+        <section className="section" aria-labelledby="turns-running">
+          <h2 id="turns-running">{T.runningTitle}</h2>
+          <p className="why">{turns.isPending ? T.reading : running.length === 0 ? T.runningNone : `${T.runningWhy}${longestQuiet === undefined || longestQuiet.quiet === null ? '' : ` ${T.runningQuiet(quiet.length, longestQuiet.quiet)}`}`}</p>
+          {running.length === 0 ? null : <ul className="running-list">{running.map((turn) => <RunningCard key={turn.key} turn={turn} act={<StopRunning turn={turn} />} />)}</ul>}
+        </section>
+      )}
+      {window === null ? null : (
+        <section className="section" aria-labelledby="turns-plans">
+          <h2 id="turns-plans">{T.plansTitle}</h2>
+          {summary.isError && plans === null ? <Fault message={failureText(summary.error)} onRetry={() => void summary.refetch()} /> : <p className="why">{plans === null ? T.reading : plans.length === 0 ? T.plansNone : T.plansWhy}</p>}
+          {plans === null || plans.length === 0 ? null : (
+            <ul className="plans">
+              <li className="plan cols" aria-hidden="true"><span>{T.colPlan}</span><span>{T.colTurns}</span><span>{T.colFailed}</span><span>{T.colFirstWord}</span><span /></li>
+              {plans.map((row) => <PlanLine key={row.key} row={row} max={barMax(plans)} failedHref={requestsHref({ ...view, status: 'failed', head: row.key })} />)}
+            </ul>
+          )}
+        </section>
+      )}
       <section className="section" aria-labelledby="turns-finished">
         <h2 id="turns-finished">{T.finishedTitle}</h2>
-        <p className="why">{T.finishedWhy}</p>
+        <p className="why">{narrowed(view) && typeof matched === 'number' ? T.matching(matched) : T.finishedWhy}</p>
         <div className="filters">
-          <Segmented label={T.filterLabel} value={filter} options={T.filters} onChange={setFilter} />
-          <SearchField value={query} onChange={setQuery} label={T.find} hint={T.find} />
+          <Segmented label={T.filterLabel} value={view.status} options={T.filters} onChange={(next) => go({ ...view, status: next })} />
+          <Narrowing view={view} labelOf={planLabel} />
         </div>
-        {lines.length === 0 ? <Empty title={T.none} why={T.noneWhy} /> : <ul className="list">{lines.map((line) => <TurnRowView key={line.key} line={line} />)}</ul>}
-        {local > 0 && filter === 'all' && query === '' ? <p className="plan-foot">{T.localLeftOut(local)}</p> : null}
-        {held > all.length && filter === 'all' && query === '' ? <p className="plan-foot">{T.shownOf(all.length, held)}</p> : null}
+        {turns.isPending ? <p className="why" role="status">{T.reading}</p>
+          : turns.isError && slice === undefined ? <Fault message={failureText(turns.error)} onRetry={() => void turns.refetch()} />
+            : lines.length === 0 ? <Empty title={T.none} why={T.noneWhy} />
+              : <ul className="list">{lines.map((line) => <TurnRowView key={line.key} line={line} narrow={narrow} />)}</ul>}
+        {typeof matched === 'number' && matched > lines.length && lines.length > 0 ? <p className="plan-foot">{T.shownOf(lines.length, matched)}</p> : null}
+        {window !== null && local > 0 && !narrowed(view) ? <p className="plan-foot">{T.localLeftOut(local)}</p> : null}
       </section>
-      {slice.unread.length === 0 && slice.truncated.length === 0 ? null : (
+      {slice === undefined || slice.unread.length === 0 ? null : (
         <section className="unread" aria-label={T.unreadTitle}>
           <h3>{T.unreadTitle}</h3>
           <ul>
             {slice.unread.map((row) => <li key={`u-${row.head}`}>{T.unread(planLabel(row.head), row.reason)}</li>)}
-            {slice.truncated.map((row) => <li key={`t-${row.head}`}>{T.clamped(planLabel(row.head))}</li>)}
           </ul>
         </section>
       )}

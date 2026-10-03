@@ -252,8 +252,9 @@ test('Turns keeps a long model, large token counts and complete refusal outcome 
   await expect(row).toContainText('2.00M in');
   await expect(row).toContainText('123k out');
   await expect(row.getByText('Rate limited', { exact: true })).toBeVisible();
-  expect(await clipped(row.locator('.sub span, .state, .tok'))).toEqual([]);
-  await row.getByRole('link').click();
+  expect(await clipped(row.locator('.sub span, .sub a, .state, .tok'))).toEqual([]);
+  // The row's title opens the request; its command, model and account narrow the list.
+  await row.getByRole('heading').getByRole('link').click();
   await expect(page.getByRole('main')).toContainText(model);
   expect(await clipped(page.getByText(model, { exact: true }).first())).toEqual([]);
   expect(faults.pageErrors).toEqual([]);

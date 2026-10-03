@@ -16,7 +16,8 @@ private const val FAILED = "failed"
 internal enum class Unattributed(val wire: String) { MODEL("model"), ACCOUNT("account") }
 
 /** What one request asked of the window's rows. A null field asks nothing; [local] false leaves out the steps splice
- *  answered itself, which are not model requests. */
+ *  answered itself, which are not model requests; [compact] true asks for the compactions and false for every request
+ *  that was not one, a row that never carried the field included. */
 internal data class TurnsFilter(
     val until: Long? = null,
     val outcome: String? = null,
@@ -25,6 +26,7 @@ internal data class TurnsFilter(
     val session: String? = null,
     val unattributed: Unattributed? = null,
     val local: Boolean = true,
+    val compact: Boolean? = null,
 ) {
     fun matches(row: PerfRow): Boolean = listOf(
         until == null || row.ts < until,
@@ -34,6 +36,7 @@ internal data class TurnsFilter(
         session == null || row.session == session,
         attributionMatches(row),
         local || row.fields[PerfKeys.LOCAL_STEP] != 1L,
+        compact == null || (row.compact == true) == compact,
     ).all { it }
 
     private fun outcomeMatches(tag: String): Boolean = when (outcome) {
@@ -65,17 +68,14 @@ internal class TurnsFilterReader {
         val unattributedText = params["unattributed"]
         val unattributed = Unattributed.entries.firstOrNull { it.wire == unattributedText }
         val localText = params["local"]
-        val local = when (localText) {
-            null, "1", "true" -> true
-            "0", "false" -> false
-            else -> null
-        }
+        val compactText = params["compact"]
         val problem = listOfNotNull(
             "until must be a non-negative epoch-ms instant, got '$untilText'"
                 .takeIf { untilText != null && until == null },
             "unattributed must be model or account, got '$unattributedText'"
                 .takeIf { unattributedText != null && unattributed == null },
-            "local must be 0 or 1, got '$localText'".takeIf { local == null },
+            "local must be 0 or 1, got '$localText'".takeIf { localText != null && switch(localText) == null },
+            "compact must be 0 or 1, got '$compactText'".takeIf { compactText != null && switch(compactText) == null },
         ).firstOrNull()
         val filter = TurnsFilter(
             until = until,
@@ -84,9 +84,17 @@ internal class TurnsFilterReader {
             account = given(params["account"]),
             session = given(params["session"]),
             unattributed = unattributed,
-            local = local ?: true,
+            local = switch(localText) ?: true,
+            compact = switch(compactText),
         )
         return if (problem == null) TurnsFilterRead.Read(filter) else TurnsFilterRead.Refused(problem)
+    }
+
+    /** A 0-or-1 switch as the boolean it names, or null when it is absent or spelled any other way. */
+    private fun switch(text: String?): Boolean? = when (text) {
+        "1", "true" -> true
+        "0", "false" -> false
+        else -> null
     }
 
     /** A parameter given empty asks nothing, the same as one left out. */

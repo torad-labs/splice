@@ -41,7 +41,15 @@ describe('turns', () => {
 
   test('the turns read names head and n, and since only for a window; the head is encoded', () => {
     expect(perfTurnsPath('claude', 200)).toBe('/api/perf/turns?head=claude&n=200');
-    expect(perfTurnsPath('a b&c', 2000, 1_700_000_000_000)).toBe('/api/perf/turns?head=a+b%26c&n=2000&since=1700000000000');
+    expect(perfTurnsPath('a b&c', 2000, { since: 1_700_000_000_000 })).toBe('/api/perf/turns?head=a+b%26c&n=2000&since=1700000000000');
+  });
+
+  test('until and each filter ride the read only when asked, encoded; local steps are left out only on request', () => {
+    const filter = { outcome: 'error:rate-limited', model: 'gpt 6', account: 'me@x.io', session: 's1', unattributed: 'model', compact: true, local: false } as const;
+    expect(perfTurnsPath('h', 200, { since: 1, until: 2, filter })).toBe(
+      '/api/perf/turns?head=h&n=200&since=1&until=2&outcome=error%3Arate-limited&model=gpt+6&account=me%40x.io&session=s1&unattributed=model&compact=1&local=0',
+    );
+    expect(perfTurnsPath('h', 200, { filter: { compact: false, local: true } })).toBe('/api/perf/turns?head=h&n=200&compact=0');
   });
 
   test('a head read of trace, wire and capture encodes the head', () => {

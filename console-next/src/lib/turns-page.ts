@@ -1,10 +1,11 @@
-// The arithmetic and words of the Turns pages: one plan row per summary head, one line per finished turn, and a
-// turn's four stages. Pure over the daemon's payloads; the pages only draw what this returns.
+// The arithmetic and words of the Requests pages: one plan row per summary head, one line per finished request, and a
+// request's four stages. Pure over the daemon's payloads; the pages only draw what this returns.
 import { ABSENT, fmtDurationS, fmtShare, fmtUsd } from './format';
 import { waterfall } from './perf';
 import type { ModelColour } from './model';
 import { spanText } from './sessions';
 import { OUTCOME_WORD, STAGE_PHRASE, T } from './words-turns';
+import type { RequestsRange, RequestsView } from './requests-view';
 import type { TopologyState } from '../types/topology';
 import type { LiveTurn } from '../types/turns';
 import type { InflightTurn, PerfSummaryHead, PerfWindowLabel, TurnRow } from '../types/perf';
@@ -80,13 +81,31 @@ const WORDS = ['One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', '
 
 export function turnsLede(rows: readonly PlanRow[], window: PerfWindowLabel): string {
   const turns = rows.reduce((n, row) => n + row.turns, 0);
-  if (turns === 0) return `No model has answered a turn in ${T.windowSpoken[window]}.`;
+  if (turns === 0) return `No model has answered a request in ${T.windowSpoken[window]}.`;
   const failed = rows.reduce((n, row) => n + row.failed, 0);
-  const count = `${turns.toLocaleString('en-US')} ${turns === 1 ? 'turn' : 'turns'} in ${T.windowSpoken[window]}`;
-  const fails = failed === 0 ? 'None failed' : `${failed <= WORDS.length ? WORDS[failed - 1] : failed} failed`;
+  const count = `${turns.toLocaleString('en-US')} ${turns === 1 ? 'request' : 'requests'} in ${T.windowSpoken[window]}`;
+  const fails = failed === 0 ? 'None failed' : `${failed <= WORDS.length ? WORDS[failed - 1] : failed.toLocaleString('en-US')} failed`;
   const firsts = rows.flatMap((row) => (row.firstP50 === null ? [] : [row.firstP50])).sort((a, b) => a - b);
   const middle = firsts[Math.floor(firsts.length / 2)];
   return middle === undefined ? `${count}. ${fails}.` : `${count}. ${fails}, and the typical first word came back in ${secondsText(middle)}.`;
+}
+
+const SPAN_DAY: Intl.DateTimeFormatOptions = { weekday: 'long', month: 'long', day: 'numeric' };
+const SPAN_INSTANT: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' };
+
+/** A fixed span as the lede says it, in the viewer's zone. */
+function spanSaid(range: Extract<RequestsRange, { kind: 'span' }>): string {
+  if (range.day !== null) return T.onDay(new Date(range.since).toLocaleDateString([], SPAN_DAY));
+  const from = new Date(range.since).toLocaleString([], SPAN_INSTANT);
+  return range.until === null ? T.sinceTime(from) : T.between(from, new Date(range.until).toLocaleString([], SPAN_INSTANT));
+}
+
+/** What the page says first. A window is the summary's sentence and a span is the daemon's count of it; either says it is
+ *  reading while its read is in flight, never that the window is empty before the answer came back. `plans` is null and
+ *  `matched` undefined while their reads are in flight. */
+export function pageLede(view: RequestsView, plans: readonly PlanRow[] | null, matched: number | null | undefined): string {
+  if (view.range.kind === 'last') return plans === null ? T.reading : turnsLede(plans, view.range.window);
+  return matched === undefined ? T.reading : T.spanLede(matched, spanSaid(view.range));
 }
 
 // ── the finished turns ──────────────────────────────────────────────────────────────────────────
@@ -99,9 +118,13 @@ export interface TurnLine {
   ts: number;
   title: string;
   model: string | null;
+  /** The account the request went out on, when the head draws from a pool. */
+  account: string | null;
+  /** The first 8 of the session id, the daemon's session filter. */
+  session: string | null;
   outcome: OutcomeRead;
-  /** A side note beside the model: `Compacted`, or an account switch. */
-  tag: string | null;
+  /** What else the row says happened, each only when it did: a compaction, a cache hit, a retry, a switch of account. */
+  tags: string[];
   compact: boolean;
   tookMs: number | null;
   inTokens: number | null;
@@ -124,25 +147,22 @@ export function lineOf(row: TurnRow, planLabel: (head: string) => string, colour
     ts: row.ts,
     title: titleOf(row.session_id, row.session) ?? planLabel(row.head),
     model: row.model?.trim() || null,
+    account: row.account ?? null,
+    session: row.session ?? null,
     outcome,
-    tag: row.compact === true ? 'Compacted' : null,
+    tags: [
+      row.compact === true ? T.compacted : null,
+      (row.cached_tokens ?? 0) > 0 ? T.cacheHit : null,
+      (row.retries ?? 0) > 0 ? T.retried : null,
+      // The daemon writes cache_cold true exactly when this request switched accounts (AccountSelection.cacheCold).
+      row.cache_cold === true ? T.switchedAccount : null,
+    ].flatMap((tag) => (tag === null ? [] : [tag])),
     compact: row.compact === true,
     tookMs: row.total ?? null,
     inTokens: row.in_tokens ?? null,
     outTokens: row.out_tokens ?? null,
     cost: typeof row.cost_usd === 'number' ? fmtUsd(row.cost_usd) : ABSENT,
   };
-}
-
-export type TurnFilter = 'all' | 'failed' | 'compacted';
-
-export function filterLines(lines: readonly TurnLine[], filter: TurnFilter, query: string): TurnLine[] {
-  const needle = query.trim().toLowerCase();
-  return lines.filter((line) => {
-    if (filter === 'failed' && !line.outcome.failed) return false;
-    if (filter === 'compacted' && !line.compact) return false;
-    return needle === '' || [line.title, line.plan, line.model, line.head].some((text) => text?.toLowerCase().includes(needle) === true);
-  });
 }
 
 /** Newest first, the order the page lists them in. */

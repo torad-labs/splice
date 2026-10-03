@@ -21,6 +21,7 @@ import type {
   KeptTurn,
   PendingRoute,
   PerfSummaryPayload,
+  PerfTurnsFilter,
   PerfTurnsWire,
   PerfWindowLabel,
   TraceTurnWire,
@@ -57,9 +58,26 @@ const seg = encodeURIComponent;
 
 export const perfSummaryPath = (label: PerfWindowLabel): string => `/api/perf/summary?window=${seg(label)}`;
 
-export function perfTurnsPath(head: string, n: number, since?: number): string {
+/** The window one turns read asks of a head: from `since` (the daemon's last 24 hours when absent), to `until`
+ *  exclusive (now when absent), narrowed by `filter`. */
+export interface TurnsWindow {
+  since?: number | undefined;
+  until?: number | undefined;
+  filter?: PerfTurnsFilter | undefined;
+}
+
+const FILTER_TEXT = ['outcome', 'model', 'account', 'session', 'unattributed'] as const;
+
+export function perfTurnsPath(head: string, n: number, { since, until, filter = {} }: TurnsWindow = {}): string {
   const query = new URLSearchParams({ head, n: String(n) });
   if (since !== undefined) query.set('since', String(since));
+  if (until !== undefined) query.set('until', String(until));
+  for (const key of FILTER_TEXT) {
+    const value = filter[key];
+    if (value !== undefined) query.set(key, value);
+  }
+  if (filter.compact !== undefined) query.set('compact', filter.compact ? '1' : '0');
+  if (filter.local === false) query.set('local', '0');
   return `/api/perf/turns?${query.toString()}`;
 }
 
@@ -94,6 +112,8 @@ export interface MergedTurns {
   landed: TurnRow[];
   unread: UnreadHead[];
   truncated: TruncatedHead[];
+  matched: number | null;
+  matchedBy: Record<string, number>;
 }
 
 /**
@@ -107,24 +127,29 @@ export function mergeTurns(answers: readonly PerfTurnsWire[]): MergedTurns {
   const landed: TurnRow[] = [];
   const unread: UnreadHead[] = [];
   const truncated: TruncatedHead[] = [];
+  const matchedBy: Record<string, number> = {};
+  let counted = true;
   for (const answer of answers) {
     for (const block of answer.heads) {
       if (block.error !== undefined) unread.push({ head: block.key, reason: block.error });
       if (block.read_error !== undefined) unread.push({ head: block.key, reason: block.read_error });
+      if (typeof block.count === 'number') matchedBy[block.key] = block.count;
+      else if (block.error === undefined) counted = false;
       const rows = block.rows ?? [];
       if (block.truncated === true) truncated.push({ head: block.key, count: block.count ?? null, returned: rows.length });
       for (const row of rows) landed.push(rowFromWire(block.key, row));
     }
   }
   landed.sort((left, right) => left.ts - right.ts);
-  return { landed, unread, truncated };
+  const matched = counted ? Object.values(matchedBy).reduce((sum, count) => sum + count, 0) : null;
+  return { landed, unread, truncated, matched, matchedBy };
 }
 
 type HeadRead = { ok: true; wire: PerfTurnsWire } | { ok: false; head: string; err: unknown };
 
-async function readHeadTurns(head: string, n: number, since: number | undefined): Promise<HeadRead> {
+async function readHeadTurns(head: string, n: number, window: TurnsWindow): Promise<HeadRead> {
   try {
-    return { ok: true, wire: await request<PerfTurnsWire>(perfTurnsPath(head, n, since)) };
+    return { ok: true, wire: await request<PerfTurnsWire>(perfTurnsPath(head, n, window)) };
   } catch (err) {
     return { ok: false, head, err };
   }
@@ -133,24 +158,27 @@ async function readHeadTurns(head: string, n: number, since: number | undefined)
 export type TurnsSlice = TurnsState | PendingRoute;
 
 /**
- * The landed rows plus the in-flight set. A read without `since` is a tail, the fleet's newest `n`; a read with
- * `since` is a window (a timeline, the Teams day) and keeps every row each head served.
+ * The landed rows plus the in-flight set. A read with no window start is a tail, the fleet's newest `n`; a read from
+ * `since`, or over the `last` ms before the moment it runs, is a window (a timeline, the Teams day, the Requests list)
+ * and keeps every row each head served. Every head is asked the same window and filters.
  *
  * Either cap can leave the list short of what was asked, so `completeFrom` says where the list starts holding every
  * turn: the later of each clamped head's oldest row and the oldest row the fleet cut kept, and never before the window
- * the daemon read. Before it, an hour with no rows is unread, not idle.
+ * the daemon read. Before it, an hour with no rows is unread, not idle. `matched` is the daemon's count of what the
+ * window and filters hold, however few rows came back.
  */
-export async function fetchTurns(head?: string, n: number = DEFAULT_TAIL, since?: number): Promise<TurnsSlice> {
+export async function fetchTurns({ head, n = DEFAULT_TAIL, since, until, last, filter }: TurnsAsk = {}, now: () => number = Date.now): Promise<TurnsSlice> {
   try {
     const heads = await request<HeadsPayload>('/api/heads');
     const asked = head !== undefined && head !== '' ? [head] : heads.heads.map((status) => status.key);
-    const reads = await Promise.all(asked.map((key) => readHeadTurns(key, n, since)));
+    const from = since ?? (last === undefined ? undefined : now() - last);
+    const reads = await Promise.all(asked.map((key) => readHeadTurns(key, n, { since: from, until, filter })));
     const failed = reads.flatMap((read) => (read.ok ? [] : [read]));
     const first = failed[0];
     if (first !== undefined && failed.length === reads.length) throw first.err;
     const merged = mergeTurns(reads.flatMap((read) => (read.ok ? [read.wire] : [])));
     const unread = [...merged.unread, ...failed.map((read) => ({ head: read.head, reason: failureText(read.err) }))];
-    const landed = since === undefined ? merged.landed.slice(-n) : merged.landed;
+    const landed = from === undefined ? merged.landed.slice(-n) : merged.landed;
     const cuts = [
       ...reads.flatMap((read) => (read.ok ? [read.wire.since] : [])),
       ...merged.truncated.flatMap(({ head: clamped }) => merged.landed.find((row) => row.head === clamped)?.ts ?? []),
@@ -161,6 +189,8 @@ export async function fetchTurns(head?: string, n: number = DEFAULT_TAIL, since?
       landed,
       unread,
       truncated: merged.truncated,
+      matched: merged.matched,
+      matchedBy: merged.matchedBy,
       ...(cuts.length === 0 ? {} : { completeFrom: Math.max(...cuts) }),
     };
   } catch (err) {
@@ -175,27 +205,41 @@ export interface TurnsAsk {
   head?: string | undefined;
   /** The newest `n` rows per head; default 200. */
   n?: number | undefined;
-  /** Epoch ms: a window read from here on (kept whole per head) instead of a tail. */
+  /** Epoch ms: a window read from here on (kept whole per head) instead of a tail. Wins over `last`. */
   since?: number | undefined;
+  /** A rolling window: the `last` ms before each read runs, so a page left open keeps reading the same span. */
+  last?: number | undefined;
+  /** Epoch ms, exclusive: the window ends here instead of now. */
+  until?: number | undefined;
+  /** What the daemon narrows each head's window by, before its clamp. */
+  filter?: PerfTurnsFilter | undefined;
+  /** Re-read on every `turn.end` event as well as on the poll. A tail always is; a window is when its asker says so,
+   *  because a window wider than a day re-read on every turn is too heavy. */
+  live?: boolean | undefined;
 }
 
-/** The landed turns and the in-flight set. A tail is re-read on every `turn.end` event; a window only on its own
- *  poll (`every`, default 5 s; false for none). */
-export function usePerfTurns({ head, n = DEFAULT_TAIL, since }: TurnsAsk = {}, every: number | false = TURNS_POLL_MS) {
+/** The landed turns and the in-flight set, re-read on the poll (`every`, default 5 s; false for none) and, for a tail or
+ *  a `live` window, on every `turn.end` event. `enabled` false reads nothing. */
+export function usePerfTurns(ask: TurnsAsk = {}, every: number | false = TURNS_POLL_MS, enabled = true) {
+  const { head, n = DEFAULT_TAIL, since, last, until, filter, live } = ask;
+  const tail = since === undefined && last === undefined;
+  const shape = [head ?? '', n, since ?? null, last ?? null, until ?? null, filter ?? {}];
   return useQuery({
-    queryKey: since === undefined ? [...keys.perf, 'tail', head ?? '', n] : [...windowKey, head ?? '', n, since],
-    queryFn: () => fetchTurns(head, n, since),
+    queryKey: tail || live === true ? [...keys.perf, tail ? 'tail' : 'window', ...shape] : [...windowKey, ...shape],
+    queryFn: () => fetchTurns(ask),
     refetchInterval: every,
+    enabled,
   });
 }
 
 /** GET /api/perf/summary: one windowed summary per head, on its own 15 s cadence (an aggregate over a window the
  *  events do not name). */
-export const usePerfSummary = (label: PerfWindowLabel = '24h') =>
+export const usePerfSummary = (label: PerfWindowLabel = '24h', enabled = true) =>
   useQuery({
     queryKey: [...summaryKey, label],
     queryFn: () => request<PerfSummaryPayload>(perfSummaryPath(label)),
     refetchInterval: SUMMARY_POLL_MS,
+    enabled,
   });
 
 // ── compaction ───────────────────────────────────────────────────────────────────────────────────

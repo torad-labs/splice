@@ -1,14 +1,17 @@
 // The Turns pages' arithmetic: outcomes, plan rows, the quiet-turn explanation, a turn's four stages, and what was kept.
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router';
-import { RunningCard, TurnRowView } from '../src/pages/turns/TurnsPage';
+import { RunningCard, TurnRowView, TurnsPage } from '../src/pages/turns/TurnsPage';
 import { describe, expect, test } from 'vitest';
 import {
-  askAndAnswer, failedCount, filterLines, lineOf, outcomeOf, planRows, localStepsOf, liveTurnFor, runningOf, servedLocally, stagesOf, turnLede, turnsLede, wireFor, WINDOW_MS,
+  askAndAnswer, failedCount, lineOf, outcomeOf, pageLede, planRows, localStepsOf, liveTurnFor, runningOf, servedLocally, stagesOf, turnLede, turnsLede, wireFor, WINDOW_MS,
 } from '../src/lib/turns-page';
 import type { RunningLine } from '../src/lib/turns-page';
 import { colourFromRegistry } from '../src/lib/model';
+import { viewOf } from '../src/lib/requests-view';
+import { T } from '../src/lib/words-turns';
 import type { PerfSummaryHead, TurnRow } from '../src/types/perf';
 
 const none = () => 'none' as const;
@@ -76,9 +79,20 @@ describe('plan rows', () => {
     expect(full).toBeDefined();
     expect(planRows([bare], none)[0]).toMatchObject({ firstP50: null, firstP95: null });
   });
-  test('the lede counts turns, failures and the typical first word', () => {
-    expect(turnsLede(planRows([summary()], none), '1h')).toBe('10 turns in the last hour. One failed, and the typical first word came back in 1.4 s.');
-    expect(turnsLede([], '24h')).toBe('No model has answered a turn in the last 24 hours.');
+  test('the lede counts requests, failures and the typical first word', () => {
+    expect(turnsLede(planRows([summary()], none), '1h')).toBe('10 requests in the last hour. One failed, and the typical first word came back in 1.4 s.');
+    expect(turnsLede([], '24h')).toBe('No model has answered a request in the last 24 hours.');
+  });
+  test('every count reads with thousands separators', () => {
+    const busy = summary({ count: 2362, outcomes: { ok: 1882, 'error:rate-limited': 480 } });
+    expect(turnsLede(planRows([busy], none), '7d')).toBe('2,362 requests in the last 7 days. 480 failed, and the typical first word came back in 1.4 s.');
+    expect(T.shownOf(200, 2362)).toBe('Showing the newest 200 of 2,362. Narrow the window or filter to see the rest.');
+    expect(T.matching(2362)).toBe('2,362 requests match.');
+  });
+  test('while a read is in flight the lede says so, never that the window is empty', () => {
+    expect(pageLede(viewOf(new URLSearchParams('window=7d')), null, undefined)).toBe('Reading the requests.');
+    expect(pageLede(viewOf(new URLSearchParams('since=1000&until=2000')), null, undefined)).toBe('Reading the requests.');
+    expect(pageLede(viewOf(new URLSearchParams('since=1000&until=2000')), null, 0)).toMatch(/^No requests from /);
   });
 });
 
@@ -113,7 +127,7 @@ describe('running turns', () => {
   test('a turn quiet for two minutes says so as a sentence a person understands, with Stop beside it', () => {
     const line = runningOf([live(2 * 60_000)], (h) => h, none)[0] as RunningLine;
     const html = renderToStaticMarkup(createElement(RunningCard, { turn: line, act: createElement('button', null, 'Stop the turn') }));
-    expect(html).toContain('No word from the model for 2 min; splice is keeping the turn open.');
+    expect(html).toContain('No word from the model for 2 min; splice is keeping the request open.');
     expect(html).toContain('Stop the turn');
     expect(html).not.toMatch(/limit/i);
   });
@@ -123,7 +137,7 @@ describe('running turns', () => {
     expect(html).toContain('Working');
     expect(html).not.toContain('Stuck');
     expect(html).not.toContain('win attn');
-    expect(html).toContain('No word from the model for 7 min; splice is keeping the turn open.');
+    expect(html).toContain('No word from the model for 7 min; splice is keeping the request open.');
     expect(html).toContain('Stop the turn');
   });
   test('a turn that has just spoken names no silence', () => {
@@ -158,38 +172,63 @@ describe('a turn', () => {
     expect(line.cost).toBe('–');
     expect(line.title).toBe('claude');
   });
+  const narrow = (selector: string, value: string) => `/requests?${new URLSearchParams({ [selector]: value }).toString()}`;
+  const html = (over: Partial<TurnRow>, plan = 'claude-splice') =>
+    renderToStaticMarkup(createElement(MemoryRouter, null, createElement(TurnRowView, { line: lineOf(row(over), () => plan, none, () => null), narrow })));
   test('the rendered cost column distinguishes unpriced turns from a measured API-rate estimate', () => {
-    const render = (cost_usd: number | null) => {
-      const line = lineOf(row({ cost_usd }), (h) => h, none, () => null);
-      return renderToStaticMarkup(createElement(MemoryRouter, null, createElement(TurnRowView, { line })));
-    };
-    expect(render(null)).toContain('<span class="cost">Not priced</span>');
-    expect(render(null)).not.toContain('<span class="cost">–</span>');
-    expect(render(1.25)).toContain('<span class="cost">$1.25</span>');
-    expect(render(1.25)).not.toContain('Not priced');
+    expect(html({ cost_usd: null })).toContain('<span class="cost">Not priced</span>');
+    expect(html({ cost_usd: null })).not.toContain('<span class="cost">–</span>');
+    expect(html({ cost_usd: 1.25 })).toContain('<span class="cost">$1.25</span>');
+    expect(html({ cost_usd: 1.25 })).not.toContain('Not priced');
   });
   test.each([null, '', '   '])('an absent model %j leaves only the command, with no separator or placeholder', (model) => {
-    const line = lineOf(row({ model }), () => 'claude-splice', none, () => null);
-    const html = renderToStaticMarkup(createElement(MemoryRouter, null, createElement(TurnRowView, { line })));
-    expect(html).toContain('<span>claude-splice</span>');
-    expect(html).not.toContain('claude-splice ·');
-    expect(filterLines([line], 'all', 'no-such-model')).toEqual([]);
-    expect(filterLines([line], 'all', 'splice')).toEqual([line]);
+    expect(html({ model })).toContain('<a href="/requests?head=claude" data-discover="true">claude-splice</a>');
+    expect(html({ model })).not.toContain('claude-splice</a> · ');
   });
-  test('a measured model remains after the command and its separator', () => {
-    const line = lineOf(row(), () => 'claude-splice', none, () => null);
-    const html = renderToStaticMarkup(createElement(MemoryRouter, null, createElement(TurnRowView, { line })));
-    expect(html).toContain('claude-splice · opus-5.5');
+  test('the command, the model and the account each open the requests narrowed to them', () => {
+    const shown = html({ account: 'work@x.io' });
+    const link = (href: string, text: string) => `<a href="${href}" data-discover="true">${text}</a>`;
+    expect(shown).toContain(`${link('/requests?head=claude', 'claude-splice')} · ${link('/requests?model=opus-5.5', 'opus-5.5')} · ${link('/requests?account=work%40x.io', 'work@x.io')}`);
   });
-  test('the filters keep failures and compactions, and a query reads title, plan and model', () => {
-    const lines = [
-      lineOf(row({ ts: 1 }), (h) => h, none, () => 'Tidy the changelog'),
-      lineOf(row({ ts: 2, outcome: 'error:plan-limit' }), (h) => h, none, () => 'Explain the auth flow'),
-      lineOf(row({ ts: 3, compact: true }), (h) => h, none, () => 'Write the tests'),
-    ];
-    expect(filterLines(lines, 'failed', '').map((l) => l.ts)).toEqual([2]);
-    expect(filterLines(lines, 'compacted', '').map((l) => l.ts)).toEqual([3]);
-    expect(filterLines(lines, 'all', 'auth').map((l) => l.ts)).toEqual([2]);
+  test('a row with a session links to that session\'s requests', () => {
+    expect(html({ session: '1a2b3c4d' })).toContain('<a class="same" href="/requests?session=1a2b3c4d" data-discover="true">Same session</a>');
+    expect(html({})).not.toContain('Same session');
+  });
+  test('the chips say a compaction, a cache hit, a retry and a switch of account, each only when the row carries it', () => {
+    const tags = (over: Partial<TurnRow>) => lineOf(row(over), (h) => h, none, () => null).tags;
+    expect(tags({})).toEqual([]);
+    expect(tags({ compact: true, cached_tokens: 120, retries: 2, account: 'backup', cache_cold: true })).toEqual(['Compacted', 'Cache hit', 'Retried', 'Switched account']);
+    expect(tags({ cached_tokens: 0, retries: 0, account: 'work', cache_cold: false })).toEqual([]);
+    expect(html({ retries: 1 })).toContain('<span class="tag">Retried</span>');
+  });
+});
+
+describe('while the reads are in flight', () => {
+  /** The page as it first draws, with only the reads `seed` answered: nothing else has come back yet. */
+  const page = (address: string, seed: (client: QueryClient) => void = () => undefined) => {
+    const client = new QueryClient();
+    seed(client);
+    return renderToStaticMarkup(createElement(QueryClientProvider, { client }, createElement(MemoryRouter, { initialEntries: [address] }, createElement(TurnsPage))));
+  };
+  const answered = (client: QueryClient) => client.setQueryData(['perf-summary', '7d'], { heads: [summary({ window: '7d', count: 2362, outcomes: { ok: 1882, 'error:rate-limited': 480 } })] });
+
+  test('nothing answered yet is a page reading, with no empty window', () => {
+    const shown = page('/requests?window=7d');
+    expect(shown).toContain('Reading the requests.');
+    expect(shown).not.toContain('No model has answered');
+    expect(shown).not.toContain('No finished request matches.');
+  });
+  test('a summary that came back before the rows leaves the list reading, and its Failed count links to the failures', () => {
+    const shown = page('/requests?window=7d', answered);
+    expect(shown).toContain('2,362 requests in the last 7 days. 480 failed');
+    expect(shown).toContain('Reading the requests.');
+    expect(shown).not.toContain('No finished request matches.');
+    expect(shown).toContain('<a class="n bad" aria-label="480 failed requests on Claude" href="/requests?window=7d&amp;status=failed&amp;head=claude"');
+  });
+  test('a link the page cannot read says which part, and shows no list', () => {
+    const shown = page('/requests?status=broken');
+    expect(shown).toContain('This link&#x27;s status, &quot;broken&quot;, is not one this page can read.');
+    expect(shown).not.toContain('Reading the requests.');
   });
 });
 

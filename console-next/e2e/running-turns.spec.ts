@@ -76,7 +76,7 @@ for (const status of ['busy', 'shell']) {
       await expect(page.getByRole('button', { name: 'Stop the turn', exact: true })).toBeVisible();
       await page.getByRole('navigation', { name: 'Pages', exact: true }).getByRole('link', { name: 'Requests', exact: true }).click();
       const running = page.getByRole('listitem', { name: STACK.sender.name + ', ' + STACK.oauthHead, exact: true });
-      await expect(running).toContainText('No word from the model for 7 min; splice is keeping the turn open.');
+      await expect(running).toContainText('No word from the model for 7 min; splice is keeping the request open.');
       await expect(running).toContainText('Working');
       await expect(running).not.toContainText('Stuck');
       await expect(running).not.toHaveClass(/attn/);

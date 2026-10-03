@@ -11,6 +11,7 @@ import io.ktor.server.routing.put
 import splice.accounts.edit.AccountEditRoutes
 import splice.accounts.keys.KeyRoutes
 import splice.accounts.keys.KeyStoreSource
+import splice.accounts.order.AccountOrderRoute
 import splice.accounts.pool.AccountsRoute
 import splice.accounts.pool.SwitchRoute
 import splice.accounts.signin.ConsoleAccountsSource
@@ -38,6 +39,7 @@ internal class AccountsMount(
     private val switchRoute = SwitchRoute(accountResolver)
     private val accountEditRoutes = AccountEditRoutes(accountResolver, ConsoleAccountsSource { ports.accounts })
     private val accountsRoute = AccountsRoute(accountHeads)
+    private val accountOrderRoute = AccountOrderRoute(accountResolver)
 
     // Read at CALL time, like [loginRoutes]' port: ConsoleWiring assigns [ConsolePorts.keys] after construction.
     private val keyRoutes = KeyRoutes(accountHeads, KeyStoreSource { ports.keys }, log)
@@ -56,6 +58,8 @@ internal class AccountsMount(
         }
         route.post("/api/auth/{head}/login") { guard.guarded(call) { loginRoutes.startLogin(call) } }
         route.get("/api/auth/{head}/login/{id}") { guard.guarded(call) { loginRoutes.pollLogin(call) } }
+        route.get("/api/auth/{head}/order") { guard.guarded(call) { accountOrderRoute.get(call) } }
+        route.put("/api/auth/{head}/order") { guard.guarded(call) { accountOrderRoute.set(call) } }
         route.post("/api/auth/{head}/switch") { guard.guarded(call) { switchRoute.switchAccount(call) } }
         route.delete("/api/auth/{head}/switch") { guard.guarded(call) { switchRoute.unpinAccount(call) } }
         route.delete("/api/auth/{head}/accounts/{label}") {

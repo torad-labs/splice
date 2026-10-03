@@ -6,8 +6,11 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotSame
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.accounts.order.AccountOrderStore
+import splice.accounts.order.HeadAccountOrderSource
 import splice.accounts.pool.AccountPoolJson
 import splice.app.provider.Wired
 import splice.app.provider.WiredAccount
@@ -86,6 +89,25 @@ class AccountPoolWiringTest {
         val json = buildJsonObject { AccountPoolJson().write(this, view) }
         val projected = json["account_pool"]?.jsonObject?.get("accounts")?.jsonArray?.single()?.jsonObject
         assertEquals("433000", projected?.get("blocked_until_epoch_seconds")?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `persisted order reaches the same selector now and after head reconstruction`(@TempDir tmp: Path) {
+        val wired = wired(tmp)
+        val pools = HeadAccountPools()
+        val store = AccountOrderStore(tmp.resolve("order.json"))
+        val first = requireNotNull(pools.build(wired, trackers(tmp.resolve("first"), primaryUsed = 0.0)))
+        val source = pools.source(first, "one", store) as HeadAccountOrderSource
+        assertTrue(source.setOrder(listOf("backup", "primary")))
+        assertEquals("backup", chosen(first).label)
+        val second = requireNotNull(pools.build(wired, trackers(tmp.resolve("second"), primaryUsed = 0.0)))
+        val restoredStore = AccountOrderStore(tmp.resolve("order.json"))
+        val restored = pools.source(second, "one", restoredStore) as HeadAccountOrderSource
+        assertEquals(listOf("backup", "primary"), restored.order())
+        assertEquals("backup", chosen(second).label)
+        val other = requireNotNull(pools.build(wired, trackers(tmp.resolve("other"), primaryUsed = 0.0)))
+        pools.source(other, "two", store)
+        assertEquals("primary", chosen(other).label)
     }
 
     private fun trackers(dir: Path, primaryUsed: Double): Map<String, QuotaTracker> {

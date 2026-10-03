@@ -62,6 +62,19 @@ public class AccountPool(
     // policy as before (NEVER-BELOW-STATUS-QUO): pinning never wedges a head that would otherwise
     // still be serving turns on its own.
     private val pinnedLabel = AtomicReference<String?>(null)
+    private val orderedLabels = AtomicReference<List<String>>(emptyList())
+
+    /** Operator policy, retained across runtime resets. Empty keeps the existing weekly fallback. */
+    public var order: List<String>
+        get() = orderedLabels.get()
+        set(labels) {
+            require(labels.distinct().size == labels.size) { "account order contains duplicate labels" }
+            require(labels.all(byLabel::containsKey)) { "account order names an unknown account" }
+            orderedLabels.set(java.util.List.copyOf(labels))
+        }
+
+    /** The exact candidate policy, including an explicit runtime pin and fallback accounts. */
+    public fun effectiveOrder(): List<String> = candidates(null).map(PoolAccount::label)
 
     init {
         require(accounts.isNotEmpty()) { "account pool must not be empty" }
@@ -80,7 +93,13 @@ public class AccountPool(
         // contention window the disk's latency. Each account caches the read behind a short TTL, so
         // the in-monitor selection below reads the cache, never the credential file.
         accounts.forEach { it.refreshCredentialEvidence() }
-        if (sessionId == null) return selectStateless(at)
+        if (sessionId == null) {
+            return synchronized(statelessLock) {
+                val chosen = selected(statelessPrevious, at, sticky = false)
+                chosen.second?.let { statelessPrevious = it }
+                chosen.first
+            }
+        }
         return synchronized(sessions) {
             val chosen = selected(sessions[sessionId], at, sticky = true)
             chosen.second?.let { session ->
@@ -89,12 +108,6 @@ public class AccountPool(
             }
             chosen.first
         }
-    }
-
-    private fun selectStateless(at: Long): Selection = synchronized(statelessLock) {
-        val chosen = selected(statelessPrevious, at, sticky = false)
-        chosen.second?.let { statelessPrevious = it }
-        chosen.first
     }
 
     private fun selected(
@@ -190,8 +203,8 @@ public class AccountPool(
         return candidates(previousLabel).firstOrNull { AccountAvailability.available(it, at) }?.label
     }
 
-    /** The one selection order [choose] and [nextTargetLabel] both walk: the pin (if any), then
-     *  primary, then the caller's previous account, then every account by lowest seven-day used —
+    /** The one selection order [choose] and [nextTargetLabel] both walk: the pin (if any), persisted
+     *  operator order, primary, the caller's previous account, then lowest seven-day used —
      *  [distinctBy] below collapses whichever of those coincide (previous === primary is the
      *  common case) so no account is probed twice in one call. Behaviour-identical to the pre-pin
      *  order when nothing is pinned: that used to special-case "previous === primary" to avoid a
@@ -202,7 +215,9 @@ public class AccountPool(
         val bySevenDay = accounts.sortedWith(
             compareBy<PoolAccount>(AccountAvailability::sevenDayUsed).thenBy { it.label },
         )
-        return (listOfNotNull(pin, primary, previous) + bySevenDay).distinctBy { it.label }
+        val ordered = orderedLabels.get().mapNotNull(byLabel::get)
+        return (listOfNotNull(pin) + ordered + listOfNotNull(primary, previous) + bySevenDay)
+            .distinctBy { it.label }
     }
 
     private fun choose(previousLabel: String?, at: Long): ChosenAccount? =
@@ -221,6 +236,8 @@ public class AccountPool(
         val quota = previous.quota.snapshot()
         return when {
             chosen.label == pinnedLabel.get() -> "operator pinned this account"
+            chosen.label in orderedLabels.get() && AccountAvailability.available(previous, at) ->
+                "operator account order"
             chosen.primary -> "primary account reset"
             previous.cooldown.unavailableForMs() > 0L -> "rate limit exceeds turn wait budget"
             AccountAvailability.exhausted(quota?.fiveHour, at) -> "5-hour quota exhausted"

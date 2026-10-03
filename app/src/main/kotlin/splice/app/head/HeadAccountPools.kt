@@ -1,6 +1,8 @@
 // NEW: v0.4.0 FEATURES.md §11 — head-local OAuth account pool assembly and control projection.
 package splice.app.head
 
+import splice.accounts.order.AccountOrderStore
+import splice.accounts.order.HeadAccountOrderSource
 import splice.accounts.pool.HeadAccountAuthSource
 import splice.accounts.pool.HeadAccountPinSource
 import splice.accounts.pool.HeadAccountPoolSource
@@ -55,7 +57,13 @@ internal class HeadAccountPools {
     // conversion. SwitchRoute discovers the pin capability with a checked cast
     // (`head.pool as? HeadAccountPinSource`), the same idiom StatuslineRoute already
     // uses for HeadPerfSkipSource.
-    fun source(pool: AccountPool?): HeadAccountPoolSource? = pool?.let(::PoolSource)
+    fun source(pool: AccountPool?): HeadAccountPoolSource? = pool?.let { PoolSource(it) }
+
+    fun source(pool: AccountPool?, head: String, orders: AccountOrderStore): HeadAccountPoolSource? = pool?.let {
+        val labels = it.effectiveOrder().toSet()
+        it.order = orders.order(head).filter(labels::contains)
+        PoolSource(it, head, orders)
+    }
 
     fun authSource(wired: Wired): HeadAccountAuthSource? = wired.accounts.takeIf { pooled(wired) }
         ?.let { accounts ->
@@ -103,7 +111,11 @@ internal class HeadAccountPools {
 
     /** An INNER class (not a top-level one — the wall bans those in main sources) so it can reach
      *  the outer [controlView] without widening it past `private`. */
-    private inner class PoolSource(private val pool: AccountPool) : HeadAccountPoolSource, HeadAccountPinSource {
+    private inner class PoolSource(
+        private val pool: AccountPool,
+        private val head: String? = null,
+        private val orders: AccountOrderStore? = null,
+    ) : HeadAccountPoolSource, HeadAccountPinSource, HeadAccountOrderSource {
         override fun view(sessionId: String?): HeadAccountPoolView = controlView(pool.view(sessionId)).copy(
             pinnedLabel = pool.pinned(),
             nextTargetLabel = pool.nextTargetLabel(),
@@ -112,5 +124,18 @@ internal class HeadAccountPools {
         override fun pin(label: String): Boolean = pool.pin(label)
 
         override fun unpin() = pool.unpin()
+
+        override fun order(): List<String> = pool.order
+
+        override fun effectiveOrder(): List<String> = pool.effectiveOrder()
+
+        @Synchronized
+        override fun setOrder(labels: List<String>): Boolean {
+            val known = pool.effectiveOrder().toSet()
+            if (labels.distinct().size != labels.size || labels.any { it !in known }) return false
+            if (head != null) orders?.set(head, labels)
+            pool.order = labels
+            return true
+        }
     }
 }

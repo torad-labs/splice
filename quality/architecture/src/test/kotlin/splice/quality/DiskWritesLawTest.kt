@@ -256,6 +256,7 @@ internal object DiskWrites {
 /** V4-287: each writing file's write calls and how many of each, measured at 3de98a1f8 (2026-09-26, 61
  *  writing files) and edited by hand when a write is added or removed; the ratchet prints the entry. */
 private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
+    "features/accounts/src/main/kotlin/splice/accounts/order/AccountOrderStore.kt" to mapOf("writeAtomic0600(" to 2),
     // The live add check redirects into an owner-only temporary file, removed after each attempt.
     "app/src/main/kotlin/splice/app/AddWiring.kt" to mapOf("Files.createTempFile(" to 1),
     "app/src/main/kotlin/splice/app/DaemonBoundary.kt" to mapOf(

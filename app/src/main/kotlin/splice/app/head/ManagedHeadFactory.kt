@@ -5,6 +5,8 @@
 package splice.app.head
 
 import kotlinx.coroutines.CoroutineScope
+import splice.accounts.order.ACCOUNT_ORDER_FILE
+import splice.accounts.order.AccountOrderStore
 import splice.app.control.ManagedHead
 import splice.app.provider.ProviderAssembly
 import splice.app.provider.ProviderBuild
@@ -66,6 +68,7 @@ internal class ManagedHeadFactory(
 ) {
     private val quotaProbes by lazy { QuotaProbes(AuthHttpClientFactory().create()) }
     private val accountPools = HeadAccountPools()
+    private val accountOrders = AccountOrderStore(statePaths.stateDir.resolve(ACCOUNT_ORDER_FILE))
     private val providerHolds = ProviderHoldFiles(statePaths, log)
     private val traceStores = HeadTraceStores(statePaths)
     private val keptFiles = HeadKeptFiles(statePaths, log)
@@ -124,7 +127,7 @@ internal class ManagedHeadFactory(
             keyPresence = keyPresence,
             catalog = ctx.catalog,
             clientWindows = stores.clientWindows,
-            accountPool = accountPools.source(stores.accountPool),
+            accountPool = accountPools.source(stores.accountPool, key, accountOrders),
             accountAuth = accountPools.authSource(wired),
         )
     }

@@ -98,7 +98,7 @@ internal class AdmissionGate(
         }
         if (leased == null) {
             beforeRefusal?.ended()
-            responses.respondAtCapacity(call, "gateway busy; retry")
+            responses.respondHeapRefusal(call, materialization.requestBytes(bytes), materialization.limitBytes)
         }
         leased
     } catch (tooLarge: RequestBodyTooLarge) {

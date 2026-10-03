@@ -71,11 +71,24 @@ internal class AdmissionResponses {
         retryAfterFormat.format(AccountResetText.normalizedInstant(resetEpochSeconds))
 
     suspend fun respondTooLarge(call: ApplicationCall, limit: Int) {
+        respondTooLarge(call, "request body exceeds $limit bytes")
+    }
+
+    suspend fun respondTooLarge(call: ApplicationCall, message: String) {
         call.respondText(
-            errorBodyJson(INVALID_REQUEST_ERROR, "request body exceeds $limit bytes"),
+            errorBodyJson(INVALID_REQUEST_ERROR, message),
             ContentType.Application.Json,
             HttpStatusCode(HttpStatus.CONTENT_TOO_LARGE, "Content Too Large"),
         )
+    }
+
+    /** Only temporary pressure is retryable; an unfit body names the effective reservation ceiling. */
+    suspend fun respondHeapRefusal(call: ApplicationCall, weight: Long, limit: Long) {
+        if (weight > limit) {
+            respondTooLarge(call, "request body requires $weight bytes; materialization heap limit is $limit bytes")
+        } else {
+            respondAtCapacity(call, "gateway busy; retry")
+        }
     }
 
     suspend fun respondReadTimeout(call: ApplicationCall, message: String = "request body read timed out") {

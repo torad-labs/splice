@@ -173,8 +173,8 @@ class StatementGatewayTest {
         private val firstBody = body("""[{"role":"user","content":"go"}]""")
         private val firstWeight = (firstBody.toByteArray().size * 13L + 1L) / 2L
 
-        // Both result trees remain owned by the source slot; measured batch weights total 16,713 bytes.
-        private val heapBudget = firstWeight + if (batch == null) 6_500L else 20_000L
+        // The probe fits only after the held source releases; both result trees also fit this ceiling.
+        private val heapBudget = splice.core.memory.HeapWeights.request(14_000L)
         private val retainedWeights = mutableListOf(firstWeight)
         private val heap = RequestMaterializationGate(heapBudgetBytes = heapBudget)
         private var waiting: Deferred<InflightGate.Admission>? = null

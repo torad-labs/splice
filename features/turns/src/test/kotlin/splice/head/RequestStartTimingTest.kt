@@ -106,7 +106,8 @@ class RequestStartTimingTest {
 
     @Test
     fun `heap lease queue time is numeric and excluded from preparation`(@TempDir root: Path) = runBlocking<Unit> {
-        TimingRig(root, heapBytes = 13).use { rig ->
+        val budget = splice.core.memory.HeapWeights.request(timingBody("blocked").toByteArray().size.toLong())
+        TimingRig(root, heapBytes = budget).use { rig ->
             rig.start()
             val first = async(Dispatchers.IO) { timingPost(rig.port, "blocked") }
             try {
@@ -279,8 +280,11 @@ private suspend fun awaitTiming(condition: () -> Boolean) = withTimeout(TIMING_T
     while (!condition()) delay(5)
 }
 
+private fun timingBody(label: String, stream: Boolean = true): String =
+    """{"model":"synthetic-synthetic","stream":$stream,"max_tokens":64,"system":"$label","messages":[{"role":"user","content":"synthetic timing"}]}"""
+
 private fun timingPost(port: Int, label: String, stream: Boolean = true): String {
-    val body = """{"model":"synthetic-synthetic","stream":$stream,"max_tokens":64,"system":"$label","messages":[{"role":"user","content":"synthetic timing"}]}"""
+    val body = timingBody(label, stream)
     return Socket("127.0.0.1", port).use { socket ->
         socket.soTimeout = TIMING_TIMEOUT_MS.toInt()
         val request = "POST /v1/messages HTTP/1.1\r\nHost: 127.0.0.1:$port\r\n" +

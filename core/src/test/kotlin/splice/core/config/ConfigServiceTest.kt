@@ -383,6 +383,27 @@ class ConfigServiceTest {
     }
 
     @Test
+    fun `positive materialization overrides fit the configured body cap while zero stays automatic`() {
+        for (cap in listOf(4L, Knob.MAX_REQUEST_BYTES.default as Long, Long.MAX_VALUE)) {
+            val required = splice.core.memory.HeapWeights.request(cap)
+            for (configured in listOf(0L, 1L, required, Long.MAX_VALUE)) {
+                val cfg = service(
+                    env = mapOf(
+                        "SPLICE_MAX_REQUEST_BYTES" to cap.toString(),
+                        "SPLICE_MATERIALIZATION_HEAP_BYTES" to configured.toString(),
+                    ),
+                ).getConfig().asMap()
+                assertEquals(
+                    if (configured == 0L) 0L else maxOf(configured, required),
+                    cfg[Knob.MATERIALIZATION_HEAP_BYTES.key],
+                    "body cap=$cap configured heap=$configured",
+                )
+            }
+        }
+        assertEquals(0L, service().getConfig().asMap()[Knob.MATERIALIZATION_HEAP_BYTES.key])
+    }
+
+    @Test
     fun `test idle floor drops to 250ms under CODEX_PROXY_TEST`() {
         val svc = service(env = mapOf("CODEX_PROXY_TEST" to "1", "CLAUDEX_STREAM_IDLE_MS" to "300"))
         assertEquals(300, svc.getConfig().streamIdleMs)

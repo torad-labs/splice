@@ -94,6 +94,59 @@ private fun headDeps(tmp: Path, mirrorReasoning: Boolean = false) = HeadDeps(
     seams = HeadDeps.HeadSeams(),
 )
 
+class MaterializationRefusalTest {
+    @Test
+    fun `bodies that cannot fit return a permanent limit error in both admission modes`(
+        @TempDir tmp: Path,
+    ) = testApplication {
+        val heap = RequestMaterializationGate(heapBudgetBytes = 13)
+        val deps = headDeps(tmp).copy(
+            policy = HeadDeps.HeadPolicy(maxRequestBytes = 4),
+            seams = HeadDeps.HeadSeams(requestMaterializationGate = heap),
+        )
+        val admission = AdmissionGate(testProvider, deps, AdmissionWindow(), AdmissionResponses())
+        var entered = false
+        var released = 0
+        application {
+            routing {
+                post("/probe") {
+                    admission.materializeOrRespond(
+                        call,
+                        fastFail = call.request.headers["x-synthetic-fast"] == "true",
+                        beforeRefusal = TurnEnd { released++ },
+                    ) {
+                        entered = true
+                        "must not materialize"
+                    }
+                }
+            }
+        }
+        for (fast in listOf(false, true)) {
+            for (unknown in listOf(false, true)) {
+                val response = client.post("/probe") {
+                    header("x-synthetic-fast", fast.toString())
+                    if (unknown) {
+                        setBody(object : OutgoingContent.ReadChannelContent() {
+                            override fun readFrom(): ByteReadChannel = ByteReadChannel("hey")
+                        })
+                    } else {
+                        setBody("hey")
+                    }
+                }
+                val body = response.bodyAsText()
+                assertEquals(HttpStatusCode.PayloadTooLarge, response.status, body)
+                assertTrue(body.contains("invalid_request_error"), body)
+                assertTrue(body.contains("materialization heap limit is 13 bytes"), body)
+                assertTrue(body.contains("requires ${if (unknown) 26 else 20} bytes"), body)
+                assertFalse(body.contains("retry"), body)
+                assertEquals(13L, heap.heap.available.value)
+            }
+        }
+        assertFalse(entered, "a permanent refusal must not decode an uncharged body")
+        assertEquals(4, released, "the borrowed candidate is returned before every refusal")
+    }
+}
+
 class AdmissionGateTest {
     @Test
     fun `head dependencies keep the reasoning mirror locked off`(@TempDir tmp: Path) {
@@ -372,7 +425,11 @@ class AdmissionGateTest {
     fun `a ready budget refusal returns its heap without waiting for the live source`(
         @TempDir tmp: Path,
     ) = testApplication {
-        val heap = RequestMaterializationGate(heapBudgetBytes = 7)
+        val body = """{"model":"claude-codex--gpt-5.6-sol","max_tokens":64,
+            "messages":[{"role":"user","content":"synthetic continuation"}]}"""
+        val heap = RequestMaterializationGate(
+            heapBudgetBytes = splice.core.memory.HeapWeights.request(body.toByteArray().size.toLong()),
+        )
         val budget = object : HeadBudget {
             override fun admit(): BudgetBlock = BudgetBlock("synthetic budget refusal", "synthetic limit")
             override fun spent(atMs: Long, model: String, counters: Map<String, Long>) = Unit
@@ -396,10 +453,7 @@ class AdmissionGateTest {
             val response = client.post("/probe") {
                 header(HttpHeaders.Authorization, "Bearer test-inference-token")
                 header(SESSION_HEADER, "synthetic-session")
-                setBody(
-                    """{"model":"claude-codex--gpt-5.6-sol","max_tokens":64,
-                        "messages":[{"role":"user","content":"synthetic continuation"}]}""",
-                )
+                setBody(body)
             }
             assertEquals(HttpStatusCode.Forbidden, response.status, response.bodyAsText())
             assertEquals(listOf(true to true), releasedAtReply, "a local quota refusal must not retain a source loan")

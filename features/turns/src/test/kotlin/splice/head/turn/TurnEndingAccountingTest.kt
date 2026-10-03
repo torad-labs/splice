@@ -11,7 +11,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.json.buildJsonObject
+import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
@@ -40,6 +42,7 @@ import splice.head.perf.PerfStats
 import splice.head.pipeline.TurnPipeline
 import splice.head.round.RunnerSignals
 import splice.head.usage.OutputClamp
+import splice.head.usage.USAGE_FLUSH_DELAY_MS
 import splice.head.usage.UsageStore
 import splice.head.wire.ClientChannel
 import splice.head.wire.ImmediateSseWriter
@@ -55,6 +58,8 @@ import splice.upstream.transport.UpstreamFailed
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.seconds
 
@@ -129,10 +134,50 @@ private class CancellationDuringSealTerminal(private val emission: CancellationE
 class TurnEndingAccountingTest {
 
     private lateinit var tmp: Path
+    private val usageStores = mutableListOf<UsageStore>()
+
+    private fun flushUsage() {
+        usageStores.forEach(UsageStore::flushNow)
+    }
+
+    @AfterAll
+    fun tearDown() {
+        flushUsage()
+        assertTrue(AsyncFileIo.drain(), "accepted perf writes must finish before temporary paths are deleted")
+    }
 
     @BeforeAll
     fun setUp(@TempDir tempDir: Path) {
         tmp = tempDir
+    }
+
+    @Test
+    fun `fixture flush prevents a delayed usage write from recreating deleted paths`() {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val settled = CountDownLatch(1)
+        assertTrue(
+            AsyncFileIo.submit {
+                entered.countDown()
+                release.await(5, TimeUnit.SECONDS)
+            },
+        )
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            val directory = Files.createDirectory(tmp.resolve("delayed-usage"))
+            val usage = directory.resolve("usage.json")
+            val store = UsageStore(usage, directory.resolve("ratelimit.json")).also(usageStores::add)
+            store.appendOutputTokens(1)
+            flushUsage()
+            Files.deleteIfExists(usage)
+            Files.delete(directory)
+            assertTrue(AsyncFileIo.submit(USAGE_FLUSH_DELAY_MS) { settled.countDown() })
+            release.countDown()
+            assertTrue(settled.await(5, TimeUnit.SECONDS))
+            assertFalse(Files.exists(directory), "the scheduled flush must not resurrect the fixture after deletion")
+        } finally {
+            release.countDown()
+        }
     }
 
     private fun provider(): Provider = TestResponsesProvider(
@@ -241,7 +286,7 @@ class TurnEndingAccountingTest {
     @Test
     fun `a Success whose terminal write fails still stamps its known usage - DR-129`() {
         val rig = Rig("dr129-success")
-        val store = UsageStore(tmp.resolve("usage-dr129.json"), tmp.resolve("rl-dr129.json"))
+        val store = UsageStore(tmp.resolve("usage-dr129.json"), tmp.resolve("rl-dr129.json")).also(usageStores::add)
         val finish = TurnFinish(
             clock = ElapsedClock { 5L },
             log = rig.log,
@@ -280,7 +325,7 @@ class TurnEndingAccountingTest {
     @Test
     fun `a ClientAbandoned turn stamps its salvaged usage - DR-125`() {
         val rig = Rig("dr125-abandoned")
-        val store = UsageStore(tmp.resolve("usage-dr125.json"), tmp.resolve("rl-dr125.json"))
+        val store = UsageStore(tmp.resolve("usage-dr125.json"), tmp.resolve("rl-dr125.json")).also(usageStores::add)
         val finish = TurnFinish(
             clock = ElapsedClock { 5L },
             log = rig.log,
@@ -360,6 +405,7 @@ class TurnEndingAccountingTest {
             val (name, sealRequested, clientGone) = case
             val rig = Rig("usage-cancel-$name")
             val store = UsageStore(tmp.resolve("usage-cancel-$name.json"), tmp.resolve("rl-cancel-$name.json"))
+                .also(usageStores::add)
             val stamp = TurnUsageStamp(store, rig.log, rig.telemetry)
             val seal = CancellationSeal(provider(), rig.log, rig.telemetry, rig.health, stamp)
             val drive = rig.drive(emitter, clientGone)
@@ -385,6 +431,7 @@ class TurnEndingAccountingTest {
     fun `cancellation during terminal emission preserves the original cancellation and stamps usage`() = runBlocking {
         val rig = Rig("usage-cancel-during-seal")
         val store = UsageStore(tmp.resolve("usage-cancel-during-seal.json"), tmp.resolve("rl-cancel-during-seal.json"))
+            .also(usageStores::add)
         val stamp = TurnUsageStamp(store, rig.log, rig.telemetry)
         val seal = CancellationSeal(provider(), rig.log, rig.telemetry, rig.health, stamp)
         val original = CancellationException("original turn cancellation")

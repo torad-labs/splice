@@ -12,6 +12,7 @@ package splice.head.wire
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import splice.core.util.Cancellables
 
 internal class FrameRecording {
 
@@ -21,11 +22,14 @@ internal class FrameRecording {
     private val frames = ArrayList<String>()
     private val progress = MutableStateFlow(Progress(0, false))
 
+    // Allocated before recording starts: a failed completion must still wake attached followers.
+    private val torn = Progress(0, true)
+
     val isComplete: Boolean get() = progress.value.complete
 
     /** The drive's verdict: true when its terminal ended cleanly (meaningless before complete). */
     val isWhole: Boolean get() = progress.value.whole
-    val size: Int get() = progress.value.frames
+    val size: Int get() = synchronized(lock) { frames.size }
 
     /** Every frame recorded so far, in order (V4-216: what a finished recording is stored as). */
     fun frames(): List<String> = synchronized(lock) { frames.toList() }
@@ -41,7 +45,11 @@ internal class FrameRecording {
     /** No more frames will come. Followers drain what is recorded and return [whole], the drive's
      *  verdict on its own terminal. */
     fun complete(whole: Boolean) {
-        progress.update { it.copy(complete = true, whole = whole) }
+        var completed = false
+        Cancellables.withCleanup({ if (!completed) progress.value = torn }) {
+            progress.update { it.copy(complete = true, whole = whole) }
+            completed = true
+        }
     }
 
     /** Deliver every frame recorded so far and every one still to come; returns once complete,
@@ -50,12 +58,13 @@ internal class FrameRecording {
         var seen = 0
         while (true) {
             val now = progress.value
-            if (now.frames > seen) {
-                val batch = synchronized(lock) { frames.subList(seen, now.frames).toList() }
+            val count = size
+            if (count > seen) {
+                val batch = synchronized(lock) { frames.subList(seen, count).toList() }
                 batch.forEach { write(it) }
-                seen = now.frames
+                seen = count
             }
-            if (now.complete && now.frames == seen) return now.whole
+            if (now.complete && size == seen) return now.whole
             progress.first { it.frames > seen || it.complete }
         }
     }

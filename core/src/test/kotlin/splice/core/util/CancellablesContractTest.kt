@@ -9,7 +9,9 @@
 // ClientChannelFlushQuietlyTest pins the quiet-flush behavior; these arms stay the contract floor.
 package splice.core.util
 
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertSame
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.io.IOException
 import java.io.UncheckedIOException
@@ -58,6 +60,42 @@ class CancellablesContractTest {
     fun `cleanup captures an IO failure like the request-path combinator`() {
         val boom = IOException("broken pipe at flush")
         assertSame(boom, Cancellables.runCatchingCleanup { throw boom }.exceptionOrNull())
+    }
+
+    @Test
+    fun `mandatory cleanup preserves cancellation identity and retains a later error`() {
+        val cancel = CancellationException("synthetic cancellation")
+        val later = OutOfMemoryError("synthetic cleanup")
+        val actual = runCatching {
+            Cancellables.withCleanup({ throw later }) { throw cancel }
+        }.exceptionOrNull()
+        assertSame(cancel, actual)
+        assertEquals(listOf(later), cancel.suppressed.toList())
+    }
+
+    @Test
+    fun `mandatory cleanup does not self suppress a reused fatal error`() {
+        val shared = OutOfMemoryError("synthetic shared failure")
+        var cleaned = false
+        val actual = runCatching {
+            Cancellables.withCleanup({
+                cleaned = true
+                throw shared
+            }) { throw shared }
+        }.exceptionOrNull()
+        assertSame(shared, actual)
+        assertTrue(shared.suppressed.isEmpty())
+        assertTrue(cleaned)
+    }
+
+    @Test
+    fun `mandatory cleanup runs on a non local return`() {
+        var cleaned = false
+        fun leave(): String {
+            Cancellables.withCleanup({ cleaned = true }) { return "synthetic return" }
+        }
+        assertEquals("synthetic return", leave())
+        assertTrue(cleaned)
     }
 
     // V4-284: Files.list reads lazily and throws UncheckedIOException when an entry cannot be read

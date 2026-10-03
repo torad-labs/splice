@@ -84,6 +84,29 @@ public object Cancellables {
     }
 
     /**
+     * Always run [cleanup], then rethrow the original failure, including cancellation and Errors.
+     * A later failure is suppressed only when it is a different instance: HotSpot may reuse one OOM.
+     * This is teardown, not best effort. The finally also covers a non-local return from [block].
+     */
+    public inline fun <R> withCleanup(cleanup: () -> Unit, block: () -> R): R {
+        var failure: Throwable? = null
+        try {
+            val attempt = runCatching(block)
+            failure = attempt.exceptionOrNull()
+            return attempt.getOrThrow()
+        } finally {
+            val settled = runCatching(cleanup)
+            val later = settled.exceptionOrNull()
+            val original = failure
+            if (original == null) {
+                settled.getOrThrow()
+            } else if (later != null && later !== original) {
+                original.addSuppressed(later)
+            }
+        }
+    }
+
+    /**
      * The ONLY sanctioned way to drop a [Result] on the floor. Neither argument is read at runtime:
      * the Result is the thing being dropped (hence the parameter name — nothing here inspects it),
      * and [why] exists so the call site states the justification and the discard is

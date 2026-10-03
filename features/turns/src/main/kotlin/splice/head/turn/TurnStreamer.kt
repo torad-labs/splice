@@ -25,9 +25,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
@@ -39,6 +37,7 @@ import splice.core.perf.PerfKeys
 import splice.head.ClientWindowWitness
 import splice.head.HeadDeps
 import splice.head.compaction.CompactionReplay
+import splice.head.turn.detached.DetachedCompaction
 import splice.head.turn.stream.PendingSse
 import splice.head.wire.FrameRecording
 import splice.head.wire.SseEmitterFactory
@@ -186,8 +185,6 @@ internal class TurnStreamer(
      *  up mid-lull, no write having failed) detaches the channel and returns; the drive runs on.
      *  The slot goes with the drive (TurnInputs.slotHandedOff): released when the upstream turn
      *  ends, whichever way, not when this call does. */
-    // CoroutineStart.ATOMIC is a delicate API, used for the reason the comment below gives.
-    @OptIn(DelicateCoroutinesApi::class)
     private suspend fun driveDetachable(
         drive: TurnDrive,
         inputs: TurnInputs,
@@ -195,27 +192,8 @@ internal class TurnStreamer(
         recording: FrameRecording,
         pending: PendingSse,
     ) {
-        val slotEnd = AutoCloseable { inputs.slot.release() }
-        replay.begin(key, recording)
-        inputs.markHandedOff()
-        // ATOMIC: the body starts even if the scope was cancelled, so the finally below always runs;
-        // the drive's first suspension then throws the cancellation and the seal writes the honest
-        // error frame to the still-attached client.
-        val job = detachedScope.launch(detachedContext, start = CoroutineStart.ATOMIC) {
-            var completed = false
-            var kept = false
-            // Nested use keeps the first throwable and suppresses later cleanup failures in order.
-            // The replay and permit still settle after a fatal recording or flush failure.
-            slotEnd.use {
-                AutoCloseable {
-                    kept = keepRecording(drive, completed)
-                    replay.finish(key, recording, keep = kept)
-                }.use {
-                    driveRecorded(drive, recording) { completed = true }
-                }
-            }
-            if (drive.channel.detached.get()) deps.log(finishLine(drive, recording, kept))
-        }
+        val job = DetachedCompaction(provider.key, deps.log, sealedDrive, replay, detachedScope, detachedContext)
+            .launch(drive, inputs, key, recording)
         try {
             job.join()
         } catch (e: CancellationException) {
@@ -232,44 +210,10 @@ internal class TurnStreamer(
         }
     }
 
-    private fun keepRecording(drive: TurnDrive, completed: Boolean): Boolean =
-        completed && drive.channel.detached.get() && drive.emitter.endedCleanly
-
-    private fun interface RecordingCompleted {
-        operator fun invoke()
-    }
-
-    /** Record the terminal's verdict, then flush even when completion fails; neither replaces the drive failure. */
-    private suspend fun driveRecorded(
-        drive: TurnDrive,
-        recording: FrameRecording,
-        completed: RecordingCompleted,
-    ) {
-        AutoCloseable { drive.channel.flushQuietly() }.use {
-            AutoCloseable {
-                recording.complete(drive.emitter.endedCleanly)
-                completed()
-            }.use {
-                sealedDrive.driveSealingCancellation(drive)
-            }
-        }
-    }
-
     /** Head stop: a detached compaction has no head to record for — end the ones still driving
      *  (each finally releases its slot and drops its recording). The scope itself survives, because
      *  HeadServer restarts on this same streamer and a restart must be able to detach again. */
     fun stopDetached() {
         detachedScope.coroutineContext.cancelChildren()
-    }
-
-    private fun finishLine(drive: TurnDrive, recording: FrameRecording, kept: Boolean): String {
-        val who = drive.sessionTag()?.let { "session $it" } ?: "no session"
-        return if (kept) {
-            "[${provider.key}] detached compaction finished ($who): " +
-                "${recording.size} frames held for a byte-identical retry\n"
-        } else {
-            "[${provider.key}] detached compaction ended without a terminal frame ($who): " +
-                "nothing held; a retry runs upstream\n"
-        }
     }
 }

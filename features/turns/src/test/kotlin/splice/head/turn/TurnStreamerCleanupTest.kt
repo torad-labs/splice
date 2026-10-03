@@ -1,8 +1,13 @@
 // NEW: detached-drive finalization survives a synthetic recording OOM without retaining a dead replay.
 package splice.head.turn
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
@@ -68,7 +73,8 @@ class TurnStreamerCleanupTest {
             rig.run(recording)
             assertSame(failure, withTimeout(5_000) { rig.failure.await() })
             assertTrue(rig.drive.emitter.endedCleanly, "the replay would otherwise have been kept")
-            assertFalse(recording.isComplete, "completion actually failed before settling the recording")
+            assertTrue(recording.isComplete, "a failed completion settles the recording as torn")
+            assertFalse(recording.isWhole)
             assertTrue(rig.handedOff.get())
             assertEquals(0, rig.gate.snapshot().inflight, "recording failure must not leak the handed-off slot")
             assertNull(rig.replay.lookup(rig.key), "finish must drop the failed recording with keep=false")
@@ -139,14 +145,112 @@ class TurnStreamerCleanupTest {
             }
         }
 
+    @Test
+    @Timeout(20)
+    fun `a launch failure after handoff returns ownership and tears the recording`(@TempDir tmp: Path) =
+        runBlocking {
+            rig(tmp).use { rig ->
+                val recording = FrameRecording()
+                val first = OutOfMemoryError("synthetic launch failure")
+                rig.failLaunch(first)
+                val actual = try {
+                    rig.run(recording)
+                    null
+                } catch (failure: OutOfMemoryError) {
+                    failure
+                }
+                assertSame(first, actual)
+                assertTrue(rig.handedOff.get())
+                assertEquals(0, rig.gate.snapshot().inflight, "launch must return handed-off ownership")
+                assertNull(rig.replay.lookup(rig.key))
+                assertTrue(recording.isComplete)
+                assertFalse(recording.isWhole)
+            }
+        }
+
+    @Test
+    @Timeout(20)
+    fun `an attached follower drains frames and ends torn when completion fails`(@TempDir tmp: Path) =
+        runBlocking {
+            rig(tmp).use { rig ->
+                val recording = FrameRecording()
+                val first = OutOfMemoryError("synthetic follower completion failure")
+                failCompletion(recording, first)
+                val frames = ArrayList<String>()
+                val follower = async(start = CoroutineStart.UNDISPATCHED) { recording.follow { frames.add(it) } }
+                try {
+                    rig.run(recording)
+                    assertSame(first, withTimeout(5_000) { rig.failure.await() })
+                    assertFalse(withTimeout(1_000) { follower.await() }, "an attached retry ends torn")
+                    assertEquals(recording.frames(), frames, "every recorded frame still reaches the follower")
+                } finally {
+                    follower.cancel()
+                }
+            }
+        }
+
+    @Test
+    @Timeout(20)
+    fun `head stop remains cancellation and logs its fatal cleanup and finish`(@TempDir tmp: Path) =
+        runBlocking {
+            rig(tmp, awaitStop = true).use { rig ->
+                val recording = FrameRecording()
+                val fatal = OutOfMemoryError("synthetic cancelled cleanup failure")
+                failCompletion(recording, fatal)
+                val running = async { rig.run(recording) }
+                rig.stop()
+                running.await()
+                val ending = withTimeout(5_000) { rig.ending.await() }
+                assertTrue(ending is CancellationException, "cleanup must not replace head-stop cancellation")
+                // Job cancellation reports its initiating cause, not the recovered body exception.
+                // The fatal-cleanup diagnostic below observes the body's actual suppressed error.
+                assertFalse(rig.failure.isCompleted, "cancellation never invokes the crash handler")
+                assertTrue(rig.logs.any { it.contains("detached compaction ended without a terminal frame") })
+                assertTrue(
+                    rig.logs.any { it.contains("fatal cleanup") },
+                    "suppressed fatal cleanup must be observable",
+                )
+                assertFalse(
+                    rig.logs.any { it.contains("synthetic cancelled cleanup failure") },
+                    "no failure text is logged",
+                )
+                assertEquals(0, rig.gate.snapshot().inflight)
+                assertNull(rig.replay.lookup(rig.key))
+            }
+        }
+
+    @Test
+    @Timeout(20)
+    fun `one reused OOM remains primary through every cleanup stage`(@TempDir tmp: Path) =
+        runBlocking {
+            val shared = SharedOom()
+            rig(tmp, shared).use { rig ->
+                val recording = FrameRecording()
+                failCompletion(recording, shared)
+                rig.failRelease(shared)
+                rig.run(recording)
+                val actual = withTimeout(5_000) { rig.failure.await() }
+                assertSame(shared, generateSequence(actual) { it.cause }.last())
+                assertTrue(actual.suppressed.isEmpty(), "a shared throwable must never suppress itself")
+                assertEquals(0, rig.gate.snapshot().inflight)
+                assertNull(rig.replay.lookup(rig.key))
+            }
+        }
+
+    /** Extra instance state prevents coroutine recovery from cloning the JVM-style shared error. */
+    private class SharedOom : OutOfMemoryError("synthetic reused OOM") {
+        val identity = Any()
+    }
+
     private suspend fun rig(
         tmp: Path,
         driveFailure: Throwable? = null,
         recordings: CompactionRecordings? = null,
+        awaitStop: Boolean = false,
     ): Rig {
         val gate = InflightGate({ 1 })
         val slot = (gate.acquire() as InflightGate.Admission.Acquired).slot
-        return Rig(tmp, gate, slot, driveFailure, recordings)
+        return Rig(tmp, gate, slot, driveFailure, recordings, awaitStop)
     }
 
     /** Replace only the recording's completion CAS, without consuming or exhausting real heap. */
@@ -173,8 +277,13 @@ class TurnStreamerCleanupTest {
         slot: InflightGate.Slot,
         driveFailure: Throwable?,
         recordings: CompactionRecordings?,
+        awaitStop: Boolean,
     ) : AutoCloseable {
         val failure = CompletableDeferred<Throwable>()
+        val ending = CompletableDeferred<Throwable?>()
+        val logs = java.util.concurrent.CopyOnWriteArrayList<String>()
+        private val entered = CompletableDeferred<Unit>()
+        private val stopped = CompletableDeferred<Unit>()
         val handedOff = AtomicBoolean(false)
         val key = "synthetic-cleanup-retry"
         val replay = CompactionReplay(recordings, clock = ElapsedClock { 0L })
@@ -204,7 +313,7 @@ class TurnStreamerCleanupTest {
             configEffort = "high",
             configSummary = null,
         )
-        private val deps = headDeps(tmp = tmp, upstream = upstream, gate = gate, log = {})
+        private val deps = headDeps(tmp = tmp, upstream = upstream, gate = gate, log = { logs.add(it) })
         private val factory = TurnDriveFactory(provider, deps, HeadHealthCounters())
         private val perf = TurnPerf(clock)
         private val inputs = TurnInputs(
@@ -224,6 +333,10 @@ class TurnStreamerCleanupTest {
                 ),
                 roundInterceptor = RoundInterceptor { _, sink, _ ->
                     driveFailure?.let { throw it }
+                    if (awaitStop) {
+                        entered.complete(Unit)
+                        stopped.await()
+                    }
                     val index = sink.openText()
                     sink.textDelta(index, "synthetic complete answer")
                     sink.closeBlock(index)
@@ -270,6 +383,23 @@ class TurnStreamerCleanupTest {
             // Observe the actual detached job's rethrown error instead of replacing its drive.
             TurnStreamer::class.java.getDeclaredField("detachedContext").apply { isAccessible = true }
                 .set(streamer, CoroutineExceptionHandler { _, error -> failure.complete(error) })
+        }
+
+        fun failLaunch(failure: Throwable) {
+            TurnStreamer::class.java.getDeclaredField("detachedScope").apply { isAccessible = true }
+                .set(
+                    streamer,
+                    object : CoroutineScope {
+                        override val coroutineContext: kotlin.coroutines.CoroutineContext get() = throw failure
+                    },
+                )
+        }
+
+        suspend fun stop() {
+            entered.await()
+            val job = checkNotNull(scope.coroutineContext[Job]).children.single()
+            job.invokeOnCompletion { ending.complete(it) }
+            streamer.stopDetached()
         }
 
         fun failRelease(failure: Throwable) {

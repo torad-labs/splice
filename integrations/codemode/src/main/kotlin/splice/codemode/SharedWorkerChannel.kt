@@ -158,22 +158,22 @@ internal class SharedWorkerChannel(
     }
 
     override fun close() {
-        if (closed.compareAndSet(false, true)) {
-            fail(CodeModeWorkerLostException())
-            try {
-                transport.close()
-            } finally {
-                scope.cancel()
-            }
-        }
+        fail(CodeModeWorkerLostException())
     }
 
     private fun fail(error: IOException) {
+        // Publish generation loss before waking callers that can immediately request another host.
+        if (!closed.compareAndSet(false, true)) return
         ready.completeExceptionally(error)
         pending.values.forEach { it.answer.completeExceptionally(error) }
         pending.clear()
         cells.values.forEach { it.complete(Unit) }
         cells.clear()
+        try {
+            transport.close()
+        } finally {
+            scope.cancel()
+        }
     }
 }
 

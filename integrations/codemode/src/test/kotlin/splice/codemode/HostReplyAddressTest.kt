@@ -1,9 +1,13 @@
 // NEW: corrupt reply addresses fail the waiting caller instead of silently abandoning it.
 package splice.codemode
 
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -28,6 +32,24 @@ class HostReplyAddressTest {
         assertAddressFailure(wrongRequest = false)
     }
 
+    @Test
+    fun `a failed boot closes its host before an undispatched caller can request a replacement`() = runBlocking {
+        SharedWorkerChannel(WrongAddressProcess(wrongRequest = true, ready = false), this).use { host ->
+            val observed = async(Dispatchers.Unconfined, start = CoroutineStart.UNDISPATCHED) {
+                try {
+                    host.awaitReady()
+                    false
+                } catch (_: IOException) {
+                    host.isClosed
+                }
+            }
+            assertTrue(
+                withTimeout(2_000) { observed.await() },
+                "a failed generation must be closed before a waiting caller resumes",
+            )
+        }
+    }
+
     private fun assertAddressFailure(wrongRequest: Boolean) {
         assertThrows(IOException::class.java) {
             runBlocking {
@@ -38,7 +60,7 @@ class HostReplyAddressTest {
         }
     }
 
-    private class WrongAddressProcess(private val wrongRequest: Boolean) : Process() {
+    private class WrongAddressProcess(private val wrongRequest: Boolean, ready: Boolean = true) : Process() {
         private val replies = PipedInputStream()
         private val writer = DataOutputStream(PipedOutputStream(replies))
         private val exited = CompletableFuture<Process>()
@@ -60,7 +82,7 @@ class HostReplyAddressTest {
         }
 
         init {
-            CodeModeWire.write(writer, CodeModeWire.readyFrame())
+            CodeModeWire.write(writer, if (ready) CodeModeWire.readyFrame() else CodeModeWire.completedFrame("", null))
         }
 
         override fun getInputStream(): InputStream = replies

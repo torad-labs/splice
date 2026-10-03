@@ -5,6 +5,7 @@ import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.config.ConfigService
+import splice.core.storage.DayFileRemoval
 import splice.core.storage.DayFiles
 import splice.core.storage.DayInventory
 import splice.core.util.Cancellables
@@ -21,10 +22,11 @@ import java.nio.file.Path
 private const val TRACE_KEEP_UNWIRED = "the daemon wired no trace directory; kept trace cannot be read or deleted"
 
 /** One configured head's private day files, whether its capture switch currently runs or not. */
-public class TraceDeleteRoutes(
+public class TraceDeleteRoutes @JvmOverloads constructor(
     private val heads: TurnsHeadLookup,
     private val dir: TraceDirPort,
     private val config: ConfigService,
+    private val removal: DayFileRemoval? = null,
 ) {
     /** Count each real record and byte before the operator decides to delete. */
     public fun kept(head: String): JsonReply = answer(head, delete = false)
@@ -53,7 +55,7 @@ public class TraceDeleteRoutes(
     }
 
     private fun read(key: String, traceDir: Path, delete: Boolean): String {
-        val files = DayFiles(traceDir, key, ownerOnly = true)
+        val files = removal?.let { DayFiles(traceDir, key, true, it) } ?: DayFiles(traceDir, key, ownerOnly = true)
         val retention = config.getConfig(key).traceRetentionDays
         val inventory = if (delete) files.deleteKept(retention) else files.inventory(retention)
         return inventoryJson(key, inventory, files.deleted())

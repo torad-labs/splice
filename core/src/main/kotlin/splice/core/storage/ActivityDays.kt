@@ -268,10 +268,20 @@ private class DayDeleteWait {
     }
 }
 
+/** The filesystem deletion boundary; failure injection still runs inventory, locks and the real purge. */
+public fun interface DayFileRemoval {
+    public fun remove(file: Path): Boolean
+}
+
 /** V4-273: one store's day files whatever their age, with no window: every line on disk (the
  *  `splice trace` reader) and the purge of all of them. The window, and every sweep, belong to the
  *  store that writes the files ([ActivityDays]). */
-public class DayFiles(private val dir: Path, private val prefix: String, private val ownerOnly: Boolean = false) {
+public class DayFiles @JvmOverloads constructor(
+    private val dir: Path,
+    private val prefix: String,
+    private val ownerOnly: Boolean = false,
+    private val removal: DayFileRemoval = DayFileRemoval(Files::deleteIfExists),
+) {
     private val marker = DayDeleteMarker(dir, prefix, ownerOnly)
     private val metadata = DayFileInventory(prefix)
     private val backward = BackwardLines()
@@ -393,7 +403,7 @@ public class DayFiles(private val dir: Path, private val prefix: String, private
     private fun deleteDay(file: Path): Map<Path, Throwable> =
         DAY_SIBLINGS.map { suffix -> file.resolveSibling("${file.fileName}$suffix") }
             .mapNotNull { sibling ->
-                Cancellables.runCatchingCancellable { Files.deleteIfExists(sibling) }
+                Cancellables.runCatchingCancellable { removal.remove(sibling) }
                     .exceptionOrNull()?.let { sibling to it }
             }
             .toMap()

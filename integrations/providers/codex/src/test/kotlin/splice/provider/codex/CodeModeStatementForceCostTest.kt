@@ -4,6 +4,7 @@ package splice.provider.codex
 import com.sun.management.ThreadMXBean
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -16,6 +17,8 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestReporter
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import splice.core.index.WireBlockIndex
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
@@ -40,6 +43,8 @@ import java.nio.file.StandardOpenOption.CREATE
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration.Companion.hours
 
+private const val STREAMED_STATEMENT = "text(await tools.Read({}));\n"
+
 @Timeout(30)
 class CodeModeStatementForceCostTest {
     @TempDir
@@ -50,8 +55,12 @@ class CodeModeStatementForceCostTest {
 
     private data class ForceSpan(val start: Long, val end: Long, val directory: Boolean)
 
-    @Test
-    fun `one streamed statement batch forces only before client-visible state`(reporter: TestReporter) =
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    fun `one streamed statement batch forces only before client-visible state`(
+        suspendBetweenChunks: Boolean,
+        reporter: TestReporter,
+    ) =
         runBlocking<Unit> {
             val forces = mutableListOf<ForceSpan>()
             val config = CodeModeBridgeConfig({ StatementRuntime() }, location)
@@ -65,7 +74,7 @@ class CodeModeStatementForceCostTest {
                     }
                 },
             )
-            val post = StatementPost()
+            val post = StatementPost(suspendBetweenChunks)
             val results = mutableListOf<CodeModeResult>()
             val timings = mutableListOf<Long>()
             val allocations = mutableListOf<Long>()
@@ -244,6 +253,8 @@ class CodeModeStatementForceCostTest {
             descriptions: Map<String, String>,
         ): CodeModeCell = object : CodeModeCell {
             private var sequence = 0
+            private val pending = StringBuilder()
+            private var completed = false
 
             override suspend fun advance(results: List<CodeModeResult>): CodeModeStep {
                 if (sequence == 0) {
@@ -251,21 +262,28 @@ class CodeModeStatementForceCostTest {
                 } else {
                     assertEquals("runtime-${sequence - 1}", results.single().id)
                 }
-                return when (val part = source.read()) {
-                    is CodeModeSourcePart.Delta -> {
-                        assertTrue(part.text.contains("tools.Read"))
-                        CodeModeStep.Calls(
+                while (true) {
+                    val boundary = pending.indexOf("\n")
+                    if (boundary >= 0) {
+                        // A source read is an arbitrary prefix, not a complete producer statement.
+                        assertEquals(STREAMED_STATEMENT, pending.substring(0, boundary + 1))
+                        pending.delete(0, boundary + 1)
+                        return CodeModeStep.Calls(
                             listOf(CodeModeCall("runtime-${sequence++}", "Read", buildJsonObject {})),
                         )
                     }
-                    is CodeModeSourcePart.Complete -> if (part.text.contains("tools.Read")) {
-                        CodeModeStep.Calls(
-                            listOf(CodeModeCall("runtime-${sequence++}", "Read", buildJsonObject {})),
-                        )
-                    } else {
-                        CodeModeStep.Completed("synthetic completion")
+                    if (completed) {
+                        assertEquals("text('measured');", pending.toString())
+                        return CodeModeStep.Completed("synthetic completion")
                     }
-                    is CodeModeSourcePart.Failed -> error(part.error)
+                    when (val part = source.read()) {
+                        is CodeModeSourcePart.Delta -> pending.append(part.text)
+                        is CodeModeSourcePart.Complete -> {
+                            pending.append(part.text)
+                            completed = true
+                        }
+                        is CodeModeSourcePart.Failed -> error(part.error)
+                    }
                 }
             }
 
@@ -275,13 +293,12 @@ class CodeModeStatementForceCostTest {
         override fun close() = Unit
     }
 
-    private class StatementPost : RedirectableRoundPost {
+    private class StatementPost(private val suspendBetweenChunks: Boolean) : RedirectableRoundPost {
         val gates = List(20) { CompletableDeferred<Unit>() }
         val eventTimes = LongArray(gates.size)
         var deltas = 0
         private var posts = 0
-        private val statement = "text(await tools.Read({}));\n"
-        private val source = statement.repeat(gates.size) + "text('measured');"
+        private val source = STREAMED_STATEMENT.repeat(gates.size) + "text('measured');"
 
         override suspend fun invoke(bodyJson: String): TurnOutcome = error("streaming sink is required")
 
@@ -302,9 +319,10 @@ class CodeModeStatementForceCostTest {
             gates.forEachIndexed { index, gate ->
                 gate.await()
                 eventTimes[index] = System.nanoTime()
-                statement.chunked(3).forEach { fragment ->
+                STREAMED_STATEMENT.chunked(3).forEach { fragment ->
                     deltas++
                     sink.customToolSource(CustomToolSource.Delta(call.callId, fragment))
+                    if (suspendBetweenChunks) yield()
                 }
             }
             val completed = call.copy(input = source, raw = JsonObject(call.raw + ("input" to JsonPrimitive(source))))

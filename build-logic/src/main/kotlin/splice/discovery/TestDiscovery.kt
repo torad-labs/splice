@@ -138,6 +138,9 @@ val DISPOSITIONS: Map<String, Disposition> = mapOf(
         Disposition("1 @ParameterizedTest expands to 2 cases; no plain @Test", 2),
     // Transport cleanup plus first-event/client-opening timing each expand into two observed cases.
     "WsRoundDriverTest" to Disposition("2 @ParameterizedTest methods expand to 4 cases (13 @Test + 4 = 17)", 17),
+    // 13d44f0b2: reasoning, text, ping, empty, metadata and rate-limit progress each renew the elapsed cap
+    // on WS and on SSE, one case per transport and event (@ValueSource of 12 scenario strings).
+    "WatchdogProgressRoundTest" to Disposition("1 @ParameterizedTest expands to 12 cases; no plain @Test", 12),
     // The paced row is read with both an active caller and an already-cancelled caller, and V4-457's
     // failed collect flush runs failed and cancelled.
     "TurnPerfRowTest" to Disposition("2 @ParameterizedTest methods expand to 4 cases (4 @Test + 4 = 8)", 8),

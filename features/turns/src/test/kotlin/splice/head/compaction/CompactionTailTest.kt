@@ -3,6 +3,7 @@ package splice.head.compaction
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.compaction.CompactionConfig
@@ -11,6 +12,7 @@ import splice.core.compaction.CompactionModelConfig
 import splice.core.compaction.CompactionProjectConfig
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.util.AsyncFileIo
 import splice.head.compact.CompactStats
 import splice.head.pipeline.StreamCompact
 import java.nio.file.Path
@@ -97,6 +99,9 @@ class CompactionTailTest {
         )
 
         StreamCompact(stats).record(meta, "model_text", elapsedMs = 7, chars = 16)
+        // A polled read answers from committed state and never waits on the write lane (5414a1d5b), so the
+        // test settles the write itself; without it the read raced the lane (CI run 37110135628).
+        assertTrue(AsyncFileIo.drain())
         val row = stats.read().tail.single()
 
         assertEquals("retain decisions", row.getValue("instructions").jsonPrimitive.content)

@@ -47,6 +47,7 @@ internal class UpstreamWireTiming : Interceptor {
         private val length = body.contentLength()
         private val observed = object : ForwardingSource(body.source()) {
             override fun read(sink: Buffer, byteCount: Long): Long {
+                timing.readStarted()
                 val count = super.read(sink, byteCount)
                 if (count > 0) timing.firstByte()
                 return count

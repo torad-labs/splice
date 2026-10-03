@@ -8,6 +8,8 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.util.ElapsedClock
+import splice.core.util.WallClock
 
 class TurnPerfTest {
 
@@ -233,6 +235,55 @@ class TurnPerfTest {
         assertEquals(3_000L, perf.snapshot().counters[PerfKeys.UP_GAP_MAX_MS])
         assertEquals(UpstreamGapEnd.INPUT_JSON_DELTA, perf.snapshot().upstreamGapEnd)
         assertEquals(73L, perf.snapshot().counters[PerfKeys.OUT_HOLD_MAX_MS])
+    }
+
+    @Test
+    fun `epoch maxima keep zero ties and immutable intervals through a wall clock jump`() {
+        var wall = 1_000_000L
+        val perf = TurnPerf(ElapsedClock { 5_000 }, WallClock { wall })
+        perf.recordArrival(4_000)
+        perf.intervals.record(PerfKeys.OUT_HOLD_MAX_MS, 10, 10)
+        assertEquals(0L, perf.snapshot().counters[PerfKeys.OUT_HOLD_MAX_MS])
+        assertEquals(1_000_010L, perf.snapshot().counters[PerfKeys.OUT_HOLD_MAX_START_EPOCH_MS])
+        perf.intervals.record(PerfKeys.UP_GAP_MAX_MS, 20, 70, UpstreamGapEnd.TEXT_DELTA)
+        val first = perf.snapshot()
+        wall = 9_000_000
+        perf.intervals.record(PerfKeys.UP_GAP_MAX_MS, 100, 150, UpstreamGapEnd.PING)
+        assertEquals(first, perf.snapshot(), "ties cannot move or relabel the interval")
+        perf.intervals.record(PerfKeys.UP_GAP_MAX_MS, 200, 300, UpstreamGapEnd.THINKING_DELTA)
+        assertEquals(1_000_200L, perf.snapshot().counters[PerfKeys.UP_GAP_MAX_START_EPOCH_MS])
+        assertEquals(1_000_020L, first.counters[PerfKeys.UP_GAP_MAX_START_EPOCH_MS])
+        perf.maxCount(PerfKeys.UP_GAP_MAX_MS, 200)
+        assertTrue(PerfKeys.UP_GAP_MAX_START_EPOCH_MS !in perf.snapshot().counters, "untimed replacement has no epoch")
+    }
+
+    @Test
+    fun `retired read callbacks cannot change the turn maximum and retries never join read gaps`() {
+        val clock = FakeClock()
+        val perf = TurnPerf(ElapsedClock { clock.now }, WallClock { 1_000_000 })
+        val first = UpstreamAttemptTiming(perf)
+        first.readStarted()
+        clock.tick(10)
+        first.firstByte()
+        first.readStarted()
+        clock.tick(20)
+        first.firstByte()
+        val before = perf.snapshot().counters[PerfKeys.UP_WIRE_GAP_MAX_START_EPOCH_MS]
+        val current = WsAttemptTiming(perf)
+        clock.tick(5_000)
+        first.readStarted()
+        first.firstByte()
+        assertEquals(20L, perf.snapshot().counters[PerfKeys.UP_WIRE_GAP_MAX_MS])
+        assertEquals(before, perf.snapshot().counters[PerfKeys.UP_WIRE_GAP_MAX_START_EPOCH_MS])
+        current.requested(clock.now - 10_000)
+        clock.tick(10)
+        current.firstFragment()
+        assertEquals(
+            5_010L,
+            perf.snapshot().counters[PerfKeys.UP_READ_WAIT_MAX_MS],
+            "pooled demand is clipped to attempt start",
+        )
+        assertEquals(20L, perf.snapshot().counters[PerfKeys.UP_WIRE_GAP_MAX_MS], "the new attempt has one fragment")
     }
 
     @Test

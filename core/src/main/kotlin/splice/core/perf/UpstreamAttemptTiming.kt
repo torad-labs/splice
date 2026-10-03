@@ -9,6 +9,8 @@ public class UpstreamAttemptTiming(private val perf: TurnPerf) {
     private var firstByteAt: Long? = null
     private var headersStartedAt: Long? = null
     private var headersDeliveredAt: Long? = null
+    private var readCallAt: Long? = null
+    private var readReturnedAt: Long? = null
     private val attempt = perf.beginUpstreamAttempt()
 
     /** Called only after the SSE request's final body bytes have flushed successfully. */
@@ -50,10 +52,26 @@ public class UpstreamAttemptTiming(private val perf: TurnPerf) {
         )
     }
 
-    /** Called at the first positive upstream read, before decoding or downstream delivery. */
+    /** Entering Source.read, before any blocking read work. A previous positive return bounds local idle. */
+    public fun readStarted() {
+        val at = perf.elapsedMs()
+        synchronized(lock) {
+            readReturnedAt?.let { perf.intervals.record(PerfKeys.UP_READ_IDLE_MAX_MS, it, at, attempt = attempt) }
+            readCallAt = at
+        }
+    }
+
+    /** Every positive read completion, before event decoding. The first also closes the write/read pair. */
     public fun firstByte() {
         val at = perf.arrivalElapsedMs()
         synchronized(lock) {
+            val returnedAt = perf.elapsedMs()
+            readCallAt?.let { perf.intervals.record(PerfKeys.UP_READ_WAIT_MAX_MS, it, returnedAt, attempt = attempt) }
+            readReturnedAt?.let {
+                perf.intervals.record(PerfKeys.UP_WIRE_GAP_MAX_MS, it, returnedAt, attempt = attempt)
+            }
+            readReturnedAt = returnedAt
+            readCallAt = null
             if (firstByteAt == null) {
                 firstByteAt = at
                 publish()

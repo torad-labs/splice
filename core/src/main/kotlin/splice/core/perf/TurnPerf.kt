@@ -8,6 +8,7 @@
 package splice.core.perf
 
 import splice.core.util.ElapsedClock
+import splice.core.util.WallClock
 
 /**
  * A span of turn work whose DURATION is the measurement — the thing [TurnPerf.timed] brackets.
@@ -28,22 +29,36 @@ public fun interface TimedWork<T> {
 // PerfKeys lives in PerfKeys.kt; PerfSnapshot + TurnPerfTiming live in
 // PerfSnapshot.kt (concentration, 2026-08-19).
 
-/** Every reading here is consumed as a DIFFERENCE (`clock() - startedAt`, `clock() - t0`) and none
- *  is ever persisted or put on the wire, so this is an [ElapsedClock] seam, not a [WallClock] one.
+/** [ElapsedClock] owns durations; [WallClock] anchors their epoch starts once per turn.
+ *  Later wall-clock changes cannot move a retained interval or alter its duration.
  *  Production always passes the head's monotonic clock explicitly — `TurnPerf(clock)` at
  *  HeadServer.handleMessages, off `HeadDeps.clock` = `MonoClock::nowMs` — so the wall-clock DEFAULT
  *  below is reached only by tests that construct a bare `TurnPerf()`. It is left as it was rather
  *  than quietly retuned to `MonoClock::nowMs`: that would be a behaviour change on a frozen tree,
  *  and it belongs to whoever measures it, not to a typing wave. */
-public class TurnPerf(private val clock: ElapsedClock = ElapsedClock(System::currentTimeMillis)) {
+public class TurnPerf(private val clock: ElapsedClock, wallClock: WallClock) {
+    // ast-grep-ignore: kt-no-secondary-constructor -- Preserve the existing () and (ElapsedClock) JVM constructors and single trailing-lambda clock calls while adding an independently injectable epoch anchor; all initialization stays in the primary constructor.
+    @JvmOverloads
+    public constructor(clock: ElapsedClock = ElapsedClock(System::currentTimeMillis)) :
+        this(clock, WallClock(System::currentTimeMillis))
 
     private val startedAt: Long = clock()
+    private val startedAtEpochMs: Long = wallClock()
     private val lock = Any()
     private val marks = LinkedHashMap<String, Long>()
     private val counters = LinkedHashMap<String, Long>()
     private var arrivalOffsetMs = 0L
     private var upstreamAttempt = 0L
     private var upstreamGapEnd: UpstreamGapEnd? = null
+
+    /** Paired duration and epoch observations publish into the same atomic snapshot. */
+    public val intervals: PerfIntervals = PerfIntervals(
+        lock,
+        counters,
+        startedAtEpochMs,
+        { it == upstreamAttempt },
+        ::maxCount,
+    )
 
     /** Anchor arrival-relative durations; legacy stage marks keep their original origin. */
     public fun recordArrival(at: Long) {
@@ -61,6 +76,9 @@ public class TurnPerf(private val clock: ElapsedClock = ElapsedClock(System::cur
     }
 
     public fun elapsedMs(): Long = clock() - startedAt
+
+    /** Origin for converting an existing reading from the same monotonic clock to elapsed milliseconds. */
+    public val clockOriginMs: Long get() = startedAt
 
     /** Arrival-relative clock for transport milestones; legacy stage marks retain their origin. */
     public fun arrivalElapsedMs(): Long {
@@ -128,6 +146,7 @@ public class TurnPerf(private val clock: ElapsedClock = ElapsedClock(System::cur
             val previous = counters[counter]
             if (previous == null || value > previous) {
                 counters[counter] = value
+                intervals.unmeasured(counter)
                 if (counter == PerfKeys.UP_GAP_MAX_MS) upstreamGapEnd = end
             }
         }

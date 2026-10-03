@@ -1,4 +1,5 @@
 source	sha256	disposition	destination	reason
+core/src/main/kotlin/splice/core/perf/PerfIntervals.kt	e7d3fcd65b761b496bdfc962032e4dfff856911020c1fdd83d42d3325db555b2	created		V4-456: paired maxima and epoch starts publish atomically and reject retired transport callbacks
 integrations/dialects/openai-responses/src/test/kotlin/splice/dialect/responses/request/ResponsesPreparationGoldenTest.kt	5027543f6a304e65a52a66422b06dab296a8ac906017731fbc3c27217ed77532	created		Law 8: exact cache identity and request bytes pin preparation before any cost change
 features/turns/src/main/kotlin/splice/head/transport/UpstreamProgress.kt	e4c5b0bbda36c5420fd340128e5a781399da5e1c27b6e0f86be52c9b232e5701	created		FOLLOWUP 243: both transports renew the turn deadline on model, tool and opaque reasoning progress, never transport-only traffic
 features/turns/src/main/kotlin/splice/head/transport/UpstreamChatEventKinds.kt	27bc415223e8cc2d6aa3dc54ba818ed0264ee0d09efbf88d3bafd1c37490e22f	created		V4-456: chat choice content and lifecycle classification is separate from Responses and Anthropic event envelopes

@@ -50,7 +50,7 @@ internal class UpstreamEventTiming(private val perf: TurnPerf, private val poste
     private fun recordGap(previousMs: Long?, nowMs: Long, kind: UpstreamGapEnd) {
         if (previousMs == null) return
         val gapMs = nowMs - previousMs
-        perf.maxCount(PerfKeys.UP_GAP_MAX_MS, gapMs, kind)
+        perf.intervals.record(PerfKeys.UP_GAP_MAX_MS, previousMs, nowMs, kind)
         perf.maxCount(PerfKeys.UP_GAPS_2S, 0)
         if (gapMs >= LONG_UPSTREAM_GAP_MS) perf.add(PerfKeys.UP_GAPS_2S, 1)
     }

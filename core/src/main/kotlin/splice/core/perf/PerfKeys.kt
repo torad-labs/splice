@@ -96,6 +96,22 @@ public object PerfKeys {
     /** Longest pacer residence and gap between successful client frame writes. */
     public const val OUT_HOLD_MAX_MS: String = "out_hold_max_ms"
     public const val OUT_GAP_MAX_MS: String = "out_gap_max_ms"
+
+    /** Epoch starts belong to the same winning intervals as their corresponding maxima. */
+    public const val UP_GAP_MAX_START_EPOCH_MS: String = "up_gap_max_start_epoch_ms"
+    public const val OUT_HOLD_MAX_START_EPOCH_MS: String = "out_hold_max_start_epoch_ms"
+
+    /** Consecutive positive SSE read completions or WS text callback entries, not packet arrival. */
+    public const val UP_WIRE_GAP_MAX_MS: String = "up_wire_gap_max_ms"
+    public const val UP_WIRE_GAP_MAX_START_EPOCH_MS: String = "up_wire_gap_max_start_epoch_ms"
+
+    /** SSE time inside a positive Source.read; WS demand-to-text callback time. */
+    public const val UP_READ_WAIT_MAX_MS: String = "up_read_wait_max_ms"
+    public const val UP_READ_WAIT_MAX_START_EPOCH_MS: String = "up_read_wait_max_start_epoch_ms"
+
+    /** SSE positive-read return to next call; WS text callback entry to the following demand. */
+    public const val UP_READ_IDLE_MAX_MS: String = "up_read_idle_max_ms"
+    public const val UP_READ_IDLE_MAX_START_EPOCH_MS: String = "up_read_idle_max_start_epoch_ms"
     public const val FRAMES_OUT: String = "frames_out"
 
     /** Frames that carried CONTENT — everything except the structural turn-opening pair

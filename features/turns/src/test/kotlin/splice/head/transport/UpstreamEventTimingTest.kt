@@ -18,7 +18,10 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
+import splice.core.perf.UpstreamAttemptTiming
 import splice.core.perf.UpstreamGapEnd
+import splice.core.util.ElapsedClock
+import splice.core.util.WallClock
 import java.net.SocketException
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -76,6 +79,30 @@ class UpstreamEventTimingTest {
         assertEquals(1_000L, perf.snapshot().counters[PerfKeys.UP_GAP_MAX_MS])
         assertEquals(30_000L, perf.snapshot().counters[PerfKeys.UP_CONTENT_GAP_MAX_MS])
         assertEquals(deliveryMs, perf.snapshot().counters[PerfKeys.UP_BLOCKED_MAX_MS])
+    }
+
+    @Test
+    fun `prompt reads and a decode stall retain distinct gaps and epoch starts`() = runTest {
+        var now = 5_000L
+        val perf = TurnPerf(ElapsedClock { now }, WallClock { 1_000_000 })
+        val timing = UpstreamAttemptTiming(perf)
+        val events = flow {
+            repeat(2) {
+                timing.readStarted()
+                now += 10
+                timing.firstByte()
+            }
+            now += 5_000
+            emit(text)
+        }
+        UpstreamEventTiming(perf, 0).observe(events).toList()
+        val counters = perf.snapshot().counters
+        assertEquals(5_020L, counters[PerfKeys.UP_GAP_MAX_MS])
+        assertEquals(1_000_000L, counters[PerfKeys.UP_GAP_MAX_START_EPOCH_MS])
+        assertEquals(10L, counters[PerfKeys.UP_WIRE_GAP_MAX_MS])
+        assertEquals(1_000_010L, counters[PerfKeys.UP_WIRE_GAP_MAX_START_EPOCH_MS])
+        assertEquals(10L, counters[PerfKeys.UP_READ_WAIT_MAX_MS])
+        assertEquals(0L, counters[PerfKeys.UP_READ_IDLE_MAX_MS])
     }
 
     @Test

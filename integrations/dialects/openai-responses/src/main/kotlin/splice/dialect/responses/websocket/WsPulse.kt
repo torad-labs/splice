@@ -29,9 +29,18 @@ internal class WsPulse(
     private val lastPingAt = AtomicLong(NEVER)
     private val roundStartedAt = AtomicLong(NEVER)
     private val timing = AtomicReference<WsAttemptTiming?>(null)
+    private val demandAt = AtomicLong(NEVER)
 
     internal fun bindTiming(attempt: WsAttemptTiming?) {
         timing.set(attempt)
+        demandAt.get().takeUnless { it == NEVER }?.let { attempt?.requested(it) }
+    }
+
+    /** Observe the existing request(1), without adding demand or changing the listener's order. */
+    internal fun requested() {
+        val at = clock()
+        demandAt.set(at)
+        timing.get()?.requested(at)
     }
 
     internal fun sendAccepted() {

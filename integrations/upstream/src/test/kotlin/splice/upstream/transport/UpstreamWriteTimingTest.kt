@@ -25,6 +25,8 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
+import splice.core.util.ElapsedClock
+import splice.core.util.WallClock
 import java.net.InetSocketAddress
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
@@ -71,6 +73,41 @@ class UpstreamWriteTimingTest {
             assertEquals(30L, perf.snapshot().counters[PerfKeys.UPSTREAM_WRITE_TO_FIRST_BYTE_MS])
             assertEquals(1L, perf.snapshot().counters[PerfKeys.RETRIES])
             assertFalse(headerNames.any { names -> names.any { it.equals(UPSTREAM_TIMING_HEADER, ignoreCase = true) } })
+        } finally {
+            client.close()
+            server.stop(0)
+        }
+    }
+
+    @Test
+    fun `prompt positive Source reads stay separate from a caller decode stall`() {
+        val now = AtomicLong(100)
+        val perf = TurnPerf(ElapsedClock { now.get() }, WallClock { 1_000_000 })
+        val server = delayedHeadersServer(CompletableDeferred(), CountDownLatch(0))
+        val client = UpstreamTransport().defaultClient(10_000)
+        val config = client.engine.config
+        check(config is OkHttpConfig)
+        config.addNetworkInterceptor(SplitReadResponse(now))
+        try {
+            val context = PostContext(
+                "http://127.0.0.1:${server.address.port}/",
+                TimingAuth(),
+                { emptyMap() },
+                perf = perf,
+            )
+            val answer = runBlocking {
+                UpstreamClient(10_000, maxRetries = 1, client = client).posted(context, "{}") {
+                    val body = it.bodyTextLimited(100)
+                    now.addAndGet(5_000)
+                    body
+                }
+            }
+            assertEquals("done", answer)
+            val counters = perf.snapshot().counters
+            assertEquals(10L, counters["up_wire_gap_max_ms"])
+            assertEquals(1_000_010L, counters["up_wire_gap_max_start_epoch_ms"])
+            assertEquals(10L, counters["up_read_wait_max_ms"])
+            assertEquals(0L, counters["up_read_idle_max_ms"])
         } finally {
             client.close()
             server.stop(0)
@@ -133,6 +170,27 @@ private fun delayedHeadersServer(seen: CompletableDeferred<Unit>, release: Count
         }
         start()
     }
+
+private class SplitReadResponse(private val now: AtomicLong) : okhttp3.Interceptor {
+    override fun intercept(chain: okhttp3.Interceptor.Chain): okhttp3.Response {
+        val response = chain.proceed(chain.request())
+        return response.newBuilder().body(SingleByteReads(response.body, now)).build()
+    }
+}
+
+private class SingleByteReads(private val body: ResponseBody, now: AtomicLong) : ResponseBody() {
+    private val input = object : ForwardingSource(body.source()) {
+        override fun read(sink: Buffer, byteCount: Long): Long {
+            val count = super.read(sink, minOf(byteCount, 1))
+            if (count > 0) now.addAndGet(10)
+            return count
+        }
+    }.buffer()
+
+    override fun contentType(): MediaType? = body.contentType()
+    override fun contentLength(): Long = body.contentLength()
+    override fun source(): BufferedSource = input
+}
 
 private class KtorReceiptHop(private val now: AtomicLong) : okhttp3.Interceptor {
     override fun intercept(chain: okhttp3.Interceptor.Chain): okhttp3.Response {

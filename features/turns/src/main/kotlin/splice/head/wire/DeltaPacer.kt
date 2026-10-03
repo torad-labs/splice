@@ -101,7 +101,8 @@ internal class DeltaPacer(
     }
 
     private fun released(frame: Held, nowMs: Long): Held = frame.also {
-        it.perf.maxCount(PerfKeys.OUT_HOLD_MAX_MS, nowMs - it.atMs)
+        val origin = it.perf.clockOriginMs
+        it.perf.intervals.record(PerfKeys.OUT_HOLD_MAX_MS, it.atMs - origin, nowMs - origin)
     }
 
     /** After a release: true while frames still wait. Once the queue is empty on a finishing turn the

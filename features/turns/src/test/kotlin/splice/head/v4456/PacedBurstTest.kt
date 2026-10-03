@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.util.ElapsedClock
+import splice.core.util.WallClock
 import splice.head.wire.ClientChannel
 import splice.head.wire.DeltaPacer
 import splice.head.wire.ImmediateSseWriter
@@ -85,6 +86,22 @@ class PacedBurstTest {
         time.nowMs += 16
         write(delta(0))
         assertEquals(73L, perf.snapshot().counters[PerfKeys.OUT_GAP_MAX_MS])
+    }
+
+    @Test
+    fun `the longest hold keeps its epoch start through normal and emergency release`() {
+        val measured = TurnPerf(ElapsedClock { 5_000 }, WallClock { 1_000_000 })
+        val pacer = DeltaPacer().also { it.active = true }
+        assertTrue(!pacer.hold(delta(0), measured, true, 5_000))
+        assertTrue(pacer.hold(delta(1), measured, true, 5_001))
+        assertTrue(pacer.hold(structural("content_block_stop"), measured, false, 5_002))
+        pacer.due(5_042)
+        assertEquals(41L, measured.snapshot().counters[PerfKeys.OUT_HOLD_MAX_MS])
+        assertEquals(1_000_001L, measured.snapshot().counters["out_hold_max_start_epoch_ms"])
+        assertTrue(pacer.hold(delta(2), measured, true, 5_043))
+        pacer.takeAll(5_116)
+        assertEquals(73L, measured.snapshot().counters[PerfKeys.OUT_HOLD_MAX_MS])
+        assertEquals(1_000_043L, measured.snapshot().counters["out_hold_max_start_epoch_ms"])
     }
 
     @Test

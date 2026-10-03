@@ -36,6 +36,10 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.perf.TurnPerf
+import splice.core.perf.WsAttemptTiming
+import splice.core.util.ElapsedClock
+import splice.core.util.WallClock
 import splice.upstream.transport.BufferCapacity
 import java.io.IOException
 import java.net.URI
@@ -696,6 +700,34 @@ class WsUpstreamTest {
  *  (detekt LargeClass, threshold 400, DOES analyse test sources here). */
 @OptIn(ExperimentalCoroutinesApi::class)
 class WsUpstreamInboxListenerTest {
+    @Test
+    fun `listener demand wait and delayed rearm retain distinct epoch intervals`() {
+        var now = 5_000L
+        val perf = TurnPerf(ElapsedClock { now }, WallClock { 1_000_000 })
+        val pulse = WsPulse("synthetic", OpenSockets { 0 }, ElapsedClock { now })
+        pulse.bindTiming(WsAttemptTiming(perf))
+        val inbox = Channel<JsonObject>(Channel.UNLIMITED)
+        val socket = FakeSocket(Fixture())
+        val listener = InboxListener(inbox, {}, terminalSeen = {
+            now += 5_000
+            false
+        }, pulse = pulse, onAnomaly = {})
+        listener.onOpen(socket)
+        now += 10
+        listener.onText(socket, DELTA, true)
+        now += 10
+        listener.onText(socket, DELTA, true)
+        val counters = perf.snapshot().counters
+        assertEquals(10L, counters["up_read_wait_max_ms"])
+        assertEquals(1_000_000L, counters["up_read_wait_max_start_epoch_ms"])
+        assertEquals(5_000L, counters["up_read_idle_max_ms"])
+        assertEquals(1_000_010L, counters["up_read_idle_max_start_epoch_ms"])
+        assertEquals(5_010L, counters["up_wire_gap_max_ms"])
+        assertEquals(3, socket.requests, "observing demand must not add or remove requests")
+        assertEquals(DELTA, inbox.tryReceive().getOrNull()?.toString())
+        assertEquals(DELTA, inbox.tryReceive().getOrNull()?.toString())
+    }
+
     @Test
     fun `sequential fragmented events do not bleed into each other`() {
         val inbox = Channel<JsonObject>(Channel.UNLIMITED)

@@ -24,6 +24,8 @@ import splice.core.perf.UpstreamAttemptTiming
 import splice.core.perf.UpstreamGapEnd
 import splice.core.perf.WsAttemptTiming
 import splice.core.util.AsyncFileIo
+import splice.core.util.ElapsedClock
+import splice.core.util.WallClock
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
@@ -229,6 +231,29 @@ class PerfStatsTest {
         assertEquals("\"thinking_delta\"", rows[0][PerfKeys.UP_GAP_END].toString())
         assertNull(rows[1][PerfKeys.UP_GAP_END])
         assertNull(numeric[1][PerfKeys.UP_GAP_MAX_MS])
+    }
+
+    @Test
+    fun `interval starts persist beside the winning maxima and stay absent when unobserved`(@TempDir tmp: Path) {
+        val stats = PerfStats(tmp.resolve("perf.jsonl"), clock = { 2_000_000 })
+        val perf = TurnPerf(ElapsedClock { 5_000 }, WallClock { 1_000_000 })
+        for ((key, startKey) in listOf(
+            PerfKeys.UP_GAP_MAX_MS to PerfKeys.UP_GAP_MAX_START_EPOCH_MS,
+            PerfKeys.OUT_HOLD_MAX_MS to PerfKeys.OUT_HOLD_MAX_START_EPOCH_MS,
+            PerfKeys.UP_WIRE_GAP_MAX_MS to PerfKeys.UP_WIRE_GAP_MAX_START_EPOCH_MS,
+            PerfKeys.UP_READ_WAIT_MAX_MS to PerfKeys.UP_READ_WAIT_MAX_START_EPOCH_MS,
+            PerfKeys.UP_READ_IDLE_MAX_MS to PerfKeys.UP_READ_IDLE_MAX_START_EPOCH_MS,
+        )) {
+            perf.intervals.record(key, 10, 30)
+            stats.record(PerfRowMeta("synthetic", "ok", compact = false), perf.snapshot())
+            stats.record(PerfRowMeta("synthetic", "ok", compact = false), TurnPerf { 0L }.snapshot())
+            assertTrue(AsyncFileIo.drain())
+            val rows = stats.tailNumeric(2)
+            assertEquals(20L, rows[0][key])
+            assertEquals(1_000_010L, rows[0][startKey])
+            assertNull(rows[1][key])
+            assertNull(rows[1][startKey])
+        }
     }
 
     @Test

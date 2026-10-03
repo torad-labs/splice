@@ -36,14 +36,19 @@ internal class InboxListener(
     private var assembly = StringBuilder()
     private var poisoned = false
 
-    override fun onOpen(webSocket: WebSocket) {
+    private fun requestNext(webSocket: WebSocket) {
+        pulse.requested()
         webSocket.request(1)
+    }
+
+    override fun onOpen(webSocket: WebSocket) {
+        requestNext(webSocket)
     }
 
     override fun onText(webSocket: WebSocket, data: CharSequence, last: Boolean): CompletionStage<*>? {
         pulse.frame()
         if (!poisoned) acceptText(data, last)
-        if (!poisoned) webSocket.request(1)
+        if (!poisoned) requestNext(webSocket)
         return null
     }
 
@@ -94,14 +99,14 @@ internal class InboxListener(
     // records the time — and re-arms demand, because overriding onPing REPLACES the default that did.
     override fun onPing(webSocket: WebSocket, message: java.nio.ByteBuffer): CompletionStage<*>? {
         pulse.ping()
-        webSocket.request(1)
+        requestNext(webSocket)
         return null
     }
 
     override fun onBinary(webSocket: WebSocket, data: java.nio.ByteBuffer, last: Boolean): CompletionStage<*>? {
         log("[ws] unexpected binary frame; anomaly\n")
         onAnomaly() // the protocol is text-JSON; a binary frame means we misunderstand the stream
-        webSocket.request(1)
+        requestNext(webSocket)
         return null
     }
 

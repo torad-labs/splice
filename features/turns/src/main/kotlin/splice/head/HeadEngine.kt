@@ -31,10 +31,13 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.sse.SSE
 import io.netty.channel.socket.SocketChannelConfig
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.withContext
 import splice.core.util.LogSink
 import splice.head.admission.HeadAdmission
 import splice.head.wire.WIRE_TAP_OFF
 import splice.upstream.Provider
+import splice.upstream.codemode.ProcessDispatchers
 import java.util.concurrent.atomic.AtomicBoolean
 
 // Grace/timeout for Netty engine.stop after HeadServer's drain window.
@@ -80,7 +83,11 @@ internal class HeadEngine(
      *  OS-assigned one when [listenPort] is 0 — and the configured [listenPort] otherwise. */
     val port: Int get() = boundPort ?: listenPort
 
-    suspend fun start() {
+    /** Tests can pin call affinity; each listener's elastic I/O view covers its entire running limit. */
+    suspend fun start(
+        callThreads: Int? = null,
+        callDispatcher: CoroutineDispatcher = ProcessDispatchers().io().limitedParallelism(RUNNING_LIMIT),
+    ) {
         // G26: local (not a class field) so a control-plane restart (POST /api/heads/:head/restart)
         // re-arms verification instead of going permanently silent after the first restart.
         val nodelayLogged = AtomicBoolean(false)
@@ -101,10 +108,14 @@ internal class HeadEngine(
                             }
                         }
                         get("/wire") { wire(call) }
-                        post("/v1/messages") { admission.handleMessages(call) }
+                        post("/v1/messages") {
+                            withContext(callDispatcher) { admission.handleMessages(call) }
+                        }
                         // NAMED CHANGE: count_tokens gets a cheap dedicated handler, not the Node
                         // behavior (a real quota-burning turn). Local estimate keeps pre-flight cheap.
-                        post("/v1/messages/count_tokens") { countTokens.handleCountTokens(call) }
+                        post("/v1/messages/count_tokens") {
+                            withContext(callDispatcher) { countTokens.handleCountTokens(call) }
+                        }
                     }
                 }
             },
@@ -119,6 +130,7 @@ internal class HeadEngine(
             // like the gateway "can barely hold a few". HeadServerLoadTest pins the ceiling at
             // >= 1000 concurrently-held streams.
             runningLimit = RUNNING_LIMIT
+            callThreads?.let { callGroupSize = it }
             // Default 10s killed stream TAILS during 1000-way completion bursts (load test:
             // 52/1000 truncated) — a write that waits on a busy client/kernel buffer is not a
             // dead stream. The watchdog owns real staleness; keep this as a last-resort cap.

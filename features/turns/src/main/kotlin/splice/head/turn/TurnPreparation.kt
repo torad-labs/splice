@@ -87,7 +87,8 @@ internal sealed class Preparation {
 }
 
 internal class TurnPreparation(
-    private val provider: Provider,
+    /** The same dialect owns preparation and credential admission. */
+    internal val provider: Provider,
     private val deps: HeadDeps,
     private val bodyReader: RequestBodyReader,
     private val bodyParse: AnthropicBodyParse,

@@ -9,11 +9,9 @@ package splice.head.admission
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.header
 import splice.core.perf.OutcomeTag
-import splice.core.usage.PlanLimit
 import splice.core.util.WallClock
 import splice.head.ClientAuth
 import splice.head.HeadDeps
-import splice.head.turn.OutcomeSentences
 import splice.head.turn.Preparation
 import splice.head.turn.SESSION_TAG_CHARS
 import splice.head.turn.TurnDriver
@@ -38,6 +36,8 @@ internal class HeadAdmission(
      *  construction site changes, injectable so the refusal is testable without sleeping. */
     private val wallClock: WallClock = WallClock(System::currentTimeMillis),
 ) {
+    private val credentialHolds = CredentialHoldAdmission(preparation.provider, deps, responses, driver, wallClock)
+
     fun arrivalTime(): Long = telemetry.arrivalTime()
 
     suspend fun handleMessages(call: ApplicationCall, arrivalAt: Long = arrivalTime()) {
@@ -135,45 +135,10 @@ internal class HeadAdmission(
         prepared: Preparation.Ready,
         admitted: AdmittedTurn,
         trace: TurnTrace?,
+        account: splice.upstream.credentials.AccountSelection?,
     ): Boolean {
-        val armedMs = deps.upstream.rateLimitedForMs
-        if (armedMs <= 0L) return refuseIfOversized(call, prepared, admitted, trace)
-        val now = wallClock()
-        // V4-233: a held PLAN window is the upstream's own statement that the plan is spent until an
-        // instant, so that instant is the deadline, and a persistent client sleeps once, until it.
-        val plan = deps.upstream.planHold
-        val retryEpochSeconds = plan?.resetEpochSeconds ?: clientRetryEpochSeconds(now, armedMs)
-        val windowResetEpochSeconds =
-            deps.upstream.providerResetForMs.takeIf { it > 0L }?.let { (now + it) / MILLIS_PER_SECOND }
-        // V4-51's seam: the refusal states `rejected` and carries the plain
-        // anthropic-ratelimit-unified-reset, which is the member Claude Code reads off a 429 to
-        // decide when to come back. Without this the same response would assert `allowed` while
-        // refusing the turn — splice contradicting itself in two headers of the same reply.
-        // V4-84 (4): the SELECTED account's tracker, not the primary's, even though this arm runs
-        // BEFORE selection — a session sticky to account B is still routed to B on its next turn.
-        // TurnQuota.forSession is the one resolver for exactly this precedence (V4-99).
-        deps.turnQuota.forSession(prepared.built.meta.sessionId, null)?.clientHeadersRejected(retryEpochSeconds)
-            ?.forEach { (name, value) -> call.response.header(name, value) }
-        // V4-55: recorded BEFORE responding, mirroring the pooled sibling below. A refusal that
-        // leaves no perf row and no journal line is a turn that, from splice's own telemetry, never
-        // happened — which is how three reports of this exact failure went unfalsifiable in a day.
-        // V4-419: a turn refused while a plan window is named spent ends plan-limit and says the reset, in the same
-        // words the turn that met the 429 spoke; a burst hold keeps rate-limited and its table sentence.
-        plan?.let { trace?.failureSentence(OutcomeSentences.planLimit(it)) }
-        driver.recordLocalRefusal(
-            prepared.built.meta,
-            admitted.perf,
-            admitted.t0,
-            LocalRefusal(
-                (if (plan == null) OutcomeTag.RATE_LIMITED else OutcomeTag.PLAN_LIMIT).wire,
-                "provider_reset=${AccountResetText.format(windowResetEpochSeconds)} gateway_hold=${armedMs}ms",
-                trace,
-            ),
-        )
-        val message = rateLimitedMessage(armedMs, windowResetEpochSeconds, plan)
-        admitted.close()
-        responses.respondRateLimited(call, message, retryEpochSeconds)
-        return true
+        return credentialHolds.refuse(call, prepared, admitted, trace, account) ||
+            refuseIfOversized(call, prepared, admitted, trace)
     }
 
     /** A 400 before SSE, so the installed client's conditional size-error path can compact.
@@ -230,22 +195,6 @@ internal class HeadAdmission(
         admitted.close()
         responses.respondBudgetBlocked(call, block.message)
         return true
-    }
-
-    /** A sentence, in the order a person needs it: what happened, that splice already tried, when
-     *  to retry — and the provider's window as information, never as the instruction. Naming both
-     *  horizons matters because they are different facts: a message carrying only the 120s hold
-     *  read as "back in two minutes" against an 88-minute window, and one carrying only the window
-     *  told the operator to wait 88 minutes for a limit his own re-send cleared in seconds. */
-    private fun rateLimitedMessage(armedMs: Long, windowResetEpochSeconds: Long?, plan: PlanLimit?): String {
-        if (plan != null) return plan.refusal()
-        val waitS = (armedMs + MILLIS_PER_SECOND - 1) / MILLIS_PER_SECOND
-        val base = "Rate limit exceeded. This gateway already retried upstream and is still being " +
-            "limited, so it is holding new turns for ${waitS}s. Retry after that."
-        if (windowResetEpochSeconds == null) return base
-        return "$base The upstream reports its quota window resets at " +
-            "${AccountResetText.forPerson(windowResetEpochSeconds)}; " +
-            "if this keeps happening, that is the real deadline."
     }
 
     /** V4-61'S LAW IN ONE PLACE, because it was written once and forgotten on the sibling branch
@@ -329,7 +278,6 @@ internal class HeadAdmission(
         // retrying for no visible reason. Null for every head whose trace is off.
         val trace = prepared.takeInbound()?.let { deps.stores.trace?.begin(prepared.built.meta, it) }
         if (refuseIfOverBudget(call, prepared, admitted, trace)) return
-        if (refuseIfRateLimited(call, prepared, admitted, trace)) return
         val account = when (val selection = deps.quotaBundle.accountPool?.select(prepared.built.meta.sessionId)) {
             null -> null
             is Selection.Chosen -> selection.account
@@ -339,6 +287,7 @@ internal class HeadAdmission(
             }
         }
         try {
+            if (refuseIfRateLimited(call, prepared, admitted, trace, account)) return
             admitted.retainRequest()
             val inputs = TurnInputs(
                 prepared.built,
@@ -359,4 +308,5 @@ internal class HeadAdmission(
     }
 }
 
-private const val MILLIS_PER_SECOND = 1000L
+// Seconds on the HTTP retry wire use the same conversion in both credential and exhausted-pool refusals.
+internal const val MILLIS_PER_SECOND = 1000L

@@ -35,6 +35,8 @@
 package splice.upstream.transport
 
 import io.ktor.client.HttpClient
+import splice.core.auth.CredentialKey
+import splice.core.auth.Credentials
 import splice.core.usage.PlanLimit
 import splice.core.util.ERR_SNIPPET
 import splice.core.util.ElapsedClock
@@ -44,6 +46,7 @@ import splice.upstream.UpstreamHandler
 import splice.upstream.Waiter
 import splice.upstream.codemode.ProcessElapsedNow
 import splice.upstream.codemode.ProcessWaiter
+import splice.upstream.retry.CredentialCooldowns
 import splice.upstream.retry.MAX_STREAM_REISSUES
 import splice.upstream.retry.ProviderHoldStore
 import splice.upstream.retry.RateLimitCooldown
@@ -98,7 +101,14 @@ public class UpstreamClient(
     // never a second one.
     private val transportFailures = TransportFailures()
     private val request = UpstreamRequest(client, zstdRequestBody)
-    private val cooldown = RateLimitCooldown(clock, store = holdStore)
+
+    // Legacy files have no proved credential owner. Keep them untouched, never attribute their hold to a caller.
+    private val cooldown = RateLimitCooldown(clock)
+    private val credentialCooldowns = CredentialCooldowns(clock, holdStore)
+
+    /** Resolves the actual credential's hold, never the aggregate head pressure reported by status. */
+    public fun credentialCooldown(headers: Map<String, String>, declaredCarrier: String? = null): RateLimitCooldown? =
+        credentialCooldowns.forHeaders(headers, declaredCarrier)
     private val retryRules = RetryRules(maxRetries)
     private val reissueRules = ReissueRules()
 
@@ -106,25 +116,29 @@ public class UpstreamClient(
      *  horizon alongside driver.resetHealth(), instead of the cooldown outliving the restart. */
     public fun clearRateLimitCooldown() {
         cooldown.clear()
+        credentialCooldowns.clear()
     }
 
     /** NF-01: remaining armed cooldown (0 when idle) — surfaced so doctor/status views can name
      *  WHY a head is failing fast (NF-10/JW-11 read this). */
-    public val rateLimitedForMs: Long get() = cooldown.remainingMs()
+    public val rateLimitedForMs: Long get() = maxOf(cooldown.remainingMs(), credentialCooldowns.remainingMs)
 
     /** V4-50: how long the PROVIDER says it stays limited (0 when unknown) — the operator's real
      *  deadline, which is a different number from [rateLimitedForMs]. That one is splice's own
      *  follower-protection horizon, clamped to MAX_RATE_LIMIT_COOLDOWN_MS; this one is the reset the
      *  429 body actually named, and it is the only one worth telling a client to come back at. */
-    public val providerResetForMs: Long get() = cooldown.providerUnavailableForMs()
+    public val providerResetForMs: Long
+        get() = maxOf(cooldown.providerUnavailableForMs(), credentialCooldowns.providerResetForMs)
 
     /** V4-233: how long the upstream's named PLAN window stays spent (0 when none is held). */
-    public val planHoldForMs: Long get() = cooldown.planHold.forMs()
+    public val planHoldForMs: Long get() = maxOf(cooldown.planHold.forMs(), credentialCooldowns.planHoldForMs)
 
     /** V4-233: the held plan window exactly as the upstream named it, or null. The admission plane
      *  hands its reset to the client instead of the cooldown's lift, because it is the upstream's own
      *  statement and not a burst's stamp. */
-    public val planHold: PlanLimit? get() = cooldown.planHold.live()
+    public val planHold: PlanLimit?
+        get() = listOfNotNull(cooldown.planHold.live(), credentialCooldowns.planHold)
+            .maxByOrNull(PlanLimit::resetEpochSeconds)
 
     /**
      * Prepare an upstream POST and run [block] with the streaming response. Handles retries
@@ -154,7 +168,7 @@ public class UpstreamClient(
                 LoopStep.TurnWaitExhausted -> return UpstreamPost.TurnWaitExhausted
             }
         }
-        return retryRules.giveUp(state.lastErr, activeCooldown(ctx), state.attempt, ctx.onRetry)
+        return retryRules.giveUp(state.lastErr, activeCooldown(ctx, state), state.attempt, ctx.onRetry)
     }
 
     /** Mutable loop state threaded through [runAttempt] — extracted (with it) so `post()` stays
@@ -163,6 +177,7 @@ public class UpstreamClient(
         var attempt: Int = 0
         var refreshedOnce: Boolean = false
         var lastErr: RetryOutcome.Failed? = null
+        var cooldown: RateLimitCooldown? = null
 
         // V4-174: every SEND, whichever budget paid for it (a backoff attempt, the refresh's free
         // retry, a G5 reissue, the RC-4 amended resend) — the ordinal the wire observer sees.
@@ -194,6 +209,24 @@ public class UpstreamClient(
          *  failure and a classified HTTP failure are both endings the trace must show. */
         fun report(ctx: PostContext, recorder: AttemptRecorder?, failure: Throwable?) {
             if (recorder != null) ctx.wire?.attempted(recorder.finish(failure))
+        }
+
+        /** Captures one attempt's auth once, so its hold identity and wire headers cannot diverge. */
+        suspend fun credentials(
+            ctx: PostContext,
+            cooldowns: CredentialCooldowns,
+            fallback: RateLimitCooldown,
+        ): AttemptCredentials {
+            val credentials = ctx.requireAuth()
+            // Preserve the request-preparation origin: header resolution belongs to POST wait, not prior round work.
+            val postedAtMs = ctx.perf?.elapsedMs()
+            val headers = ctx.extraHeaders(credentials)
+            val selected = ctx.rateLimitCooldown ?: cooldowns.forHeaders(
+                CredentialKey.headers(credentials, headers),
+                (credentials as? Credentials.ApiKey)?.header,
+            ) ?: fallback
+            cooldown = selected
+            return AttemptCredentials(credentials, headers, postedAtMs, selected)
         }
 
         fun amendStep(ctx: PostContext, outcome: RetryOutcome.Failed, bodyJson: String): LoopStep.Amend? {
@@ -232,17 +265,19 @@ public class UpstreamClient(
                 "upstream retry deadline exceeded (${totalTimeoutMs}ms budget) before attempt " +
                     "${state.attempt + 1}/$maxRetries",
             )
-            retryRules.giveUp(state.lastErr, activeCooldown(ctx), state.attempt, ctx.onRetry)
+            retryRules.giveUp(state.lastErr, activeCooldown(ctx, state), state.attempt, ctx.onRetry)
         }
         if (turnWaitExhausted(ctx)) {
             ctx.onRetry(
                 "upstream turn wait budget exhausted before attempt ${state.attempt + 1}/$maxRetries",
             )
-            if (state.lastErr != null) retryRules.giveUp(state.lastErr, activeCooldown(ctx), state.attempt, ctx.onRetry)
+            if (state.lastErr != null) {
+                retryRules.giveUp(state.lastErr, activeCooldown(ctx, state), state.attempt, ctx.onRetry)
+            }
             return LoopStep.TurnWaitExhausted
         }
-        activeCooldown(ctx).failFastIfArmed(ctx.onRetry)
-        val creds = ctx.requireAuth()
+        val auth = state.credentials(ctx, credentialCooldowns, cooldown)
+        activeCooldown(ctx, state).failFastIfArmed(ctx.onRetry)
         ctx.markAttempt()
         val recorder = state.recorderFor(ctx, body, clock)
         var streamHandedOff = false
@@ -255,7 +290,7 @@ public class UpstreamClient(
         // with attempts=1 and end a turn a retry would have completed.
         val attempted = try {
             transportFailures.catchCancellable {
-                request.execute(ctx, body.bytes, creds, onStreamStart = { streamHandedOff = true }, block, recorder)
+                request.execute(ctx, body.bytes, auth, onStreamStart = { streamHandedOff = true }, block, recorder)
             }
         } catch (e: StreamTornBeforeClient) {
             // thrown by the turn driver through the translator (G5 reachability); a transport
@@ -277,9 +312,6 @@ public class UpstreamClient(
         // unchanged: only the Done arm skips `lastErr`, exactly as the early return did.
         return when (outcome) {
             is RetryOutcome.Done -> {
-                // V4-233, V4-412: an answered turn is the upstream saying it serves again, so both
-                // its statements end: the plan window it named spent and the reset it reported.
-                activeCooldown(ctx).answered()
                 LoopStep.Done(outcome.value)
             }
             is RetryOutcome.Failed -> {
@@ -360,11 +392,11 @@ public class UpstreamClient(
                 "upstream retry deadline exceeded (${totalTimeoutMs}ms budget) before backoff, " +
                     "attempt ${state.attempt + 1}/$maxRetries",
             )
-            retryRules.giveUp(state.lastErr, activeCooldown(ctx), state.attempt, ctx.onRetry)
+            retryRules.giveUp(state.lastErr, activeCooldown(ctx, state), state.attempt, ctx.onRetry)
         }
         val plannedDelayMs = maxOf(plan.minDelayMs, retryBackoffCeilingMs(state.attempt))
         if (!backoffFits(ctx, t0, plannedDelayMs)) {
-            retryRules.giveUp(state.lastErr, activeCooldown(ctx), state.attempt, ctx.onRetry)
+            retryRules.giveUp(state.lastErr, activeCooldown(ctx, state), state.attempt, ctx.onRetry)
         }
         ctx.timedBackoff { backoff(state.attempt, plan.minDelayMs) }
         state.attempt += 1
@@ -431,7 +463,7 @@ public class UpstreamClient(
             state.attempt,
             state.refreshedOnce,
             RateLimitTurn(
-                cooldown = activeCooldown(ctx),
+                cooldown = activeCooldown(ctx, state),
                 pooledAccount = ctx.rateLimitCooldown != null,
             ),
         )
@@ -439,11 +471,17 @@ public class UpstreamClient(
         return when (plan.decision) {
             RetryDecision.RETRY -> LoopStep.Continue // refresh succeeded — no attempt spent
             RetryDecision.BACKOFF -> applyBackoff(ctx, plan, state, t0)
-            RetryDecision.GIVE_UP -> retryRules.giveUp(state.lastErr, activeCooldown(ctx), state.attempt, ctx.onRetry)
+            RetryDecision.GIVE_UP -> retryRules.giveUp(
+                state.lastErr,
+                activeCooldown(ctx, state),
+                state.attempt,
+                ctx.onRetry,
+            )
         }
     }
 
-    private fun activeCooldown(ctx: PostContext): RateLimitCooldown = ctx.rateLimitCooldown ?: cooldown
+    private fun activeCooldown(ctx: PostContext, state: RetryState): RateLimitCooldown =
+        state.cooldown ?: ctx.rateLimitCooldown ?: cooldown
 }
 
 /**

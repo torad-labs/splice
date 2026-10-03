@@ -66,20 +66,28 @@ internal class RetryRules(private val maxRetries: Int) {
      *  named, the upstream's text passes through unchanged: waiting cannot fix a spend limit. */
     fun giveUp(last: RetryOutcome.Failed?, cooldown: RateLimitCooldown, layers: Int, onRetry: RetryNotice): Nothing {
         if (last?.status == HttpStatus.TOO_MANY_REQUESTS) {
-            val limit = last.planLimit
-            val planned = limit?.let { cooldown.planHold.hold(it, onRetry) }
-            cooldown.arm(planned ?: last.retryAfterMs ?: DEFAULT_RATE_LIMIT_COOLDOWN_MS)
-            if (limit != null && planned != null) {
-                // V4-419: the window rides the exception, so the turn's ending records a plan-limit outcome
-                // and speaks the reset, instead of the generic upstream failure this was recorded as.
-                throw UpstreamFailed(cooldown.planHold.clientBody(limit), last.status, layers, planLimit = limit)
-            }
-        } else {
-            protectFollowers(last, cooldown)
+            throw rateLimitFailure(last, cooldown, layers, onRetry)
         }
+        protectFollowers(last, cooldown)
         // V4-117: [layers] is the loop's own attempt count at the moment it gave up — passed IN
         // rather than counted here, because this file decides and never counts (see the header).
         throw UpstreamFailed(last?.text.orEmpty(), last?.status, layers)
+    }
+
+    /** Native passthrough replies retain their wire; translated providers retain the plan presentation. */
+    private fun rateLimitFailure(
+        last: RetryOutcome.Failed,
+        cooldown: RateLimitCooldown,
+        layers: Int,
+        onRetry: RetryNotice,
+    ): UpstreamFailed {
+        val reply = last.rateLimitReply
+        cooldown.rateLimitReply = reply
+        val planned = last.planLimit?.let { cooldown.planHold.hold(it, onRetry) }
+        cooldown.arm(planned ?: last.retryAfterMs ?: DEFAULT_RATE_LIMIT_COOLDOWN_MS)
+        val limit = last.planLimit.takeIf { reply != null || planned != null }
+        val body = reply?.body ?: limit?.let(cooldown.planHold::clientBody) ?: last.text
+        return UpstreamFailed(body, last.status, layers, planLimit = limit).also { it.rateLimitReply = reply }
     }
 
     /** A long non-429 pushback protects followers only after this observer finishes its retry budget.
@@ -152,6 +160,7 @@ internal class RetryRules(private val maxRetries: Int) {
      * what a retry IS, never holes in V4-62.
      */
     private fun fixedVerdict(failed: RetryOutcome.Failed, nextRefreshed: Boolean): String? = when {
+        failed.rateLimitReply != null -> "is a native refusal owned by the client's retry and fallback"
         nextRefreshed && failureRules.isAuthRefreshableFailure(failed.status, failed.text) ->
             "rejected the credential again after a refresh (no retry: the bytes would be identical)"
         overflowed(failed) -> "is a context overflow (no retry: the same bytes overflow again)"

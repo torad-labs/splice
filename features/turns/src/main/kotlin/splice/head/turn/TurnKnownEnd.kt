@@ -70,9 +70,10 @@ internal class TurnKnownEnd(
             // perf row in finally, so a dead-client write still counts the exact failure, its cause,
             // and the retry loop's attempt count. The pre-commit 400 must not leave a 200 trace.
             accountFailure(e, failure.type)
-            // V4-81: the emitter still chooses the wire type and preserves the classifier's
-            // permanence. A 429 remains an in-band retryable failure; only a classified context
-            // overflow before any client content can take the new HTTP 400 status.
+            e.rateLimitReply?.let { drive.rateLimitRelay?.relay(it) }
+            // V4-81: translated failures retain the emitter's wire type and permanence.
+            // Native 429s choose HTTP refusal above while status remains uncommitted; classified
+            // context overflow before client content can still choose HTTP 400.
             try {
                 drive.emitter.emitError(failure.type, message, permanent = !failure.transient)
             } finally {

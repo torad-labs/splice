@@ -60,7 +60,10 @@ internal class SseRoundPost(
                 authRefreshObserver = AuthRefreshObserver { selection?.markCredentialRefreshSucceeded() },
                 // V4-174: the trace hears every send of this round from inside the retry loop.
                 wire = drive.trace,
-            ),
+            ).also { context ->
+                context.relayRateLimitReplies = provider.relayRateLimitReplies
+                drive.upstreamAccepted?.let { context.upstreamAccepted = it }
+            },
             inputs.bodyJson,
         ) { resp ->
             provider.observeResponseHeaders(drive.meta, resp)

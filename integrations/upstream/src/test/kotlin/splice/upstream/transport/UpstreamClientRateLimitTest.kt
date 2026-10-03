@@ -8,18 +8,110 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import splice.core.auth.Credentials
+import splice.core.auth.RefreshableAuthProvider
 import splice.core.util.ElapsedClock
+import splice.upstream.StreamStart
 import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.retry.RetryAfter
 import java.util.concurrent.atomic.AtomicInteger
 
 class UpstreamClientRateLimitTest {
+
+    @Test
+    fun `an older accepted stream cannot erase a later native refusal when its body finishes`() = runTest {
+        val accepted = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        var requests = 0
+        val native = """{"type":"error","error":{"type":"rate_limit_error","message":"synthetic refusal"}}"""
+        val engine = MockEngine {
+            if (requests++ == 0) {
+                respond("synthetic success", HttpStatusCode.OK, headersOf())
+            } else {
+                respond(native, HttpStatusCode.TooManyRequests, headersOf("x-should-retry", "true"))
+            }
+        }
+        val client = UpstreamClient(
+            totalTimeoutMs = 30_000L,
+            maxRetries = 4,
+            client = HttpClient(engine),
+            clock = ElapsedClock { 0L },
+        )
+        fun context() = PostContext(
+            url = "https://api.example.test/v1",
+            auth = fakeAuth,
+            extraHeaders = { emptyMap() },
+        ).also { it.relayRateLimitReplies = true }
+        val older = async {
+            client.posted(context(), "{}") {
+                accepted.complete(Unit)
+                release.await()
+                "ok"
+            }
+        }
+        accepted.await()
+        assertThrows<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
+        release.complete(Unit)
+        assertEquals("ok", older.await())
+        val follower = assertThrows<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
+        assertEquals(native, follower.body, "completion is not a newer provider acceptance")
+        assertEquals(listOf("true"), follower.rateLimitReply?.headers?.get("x-should-retry"))
+        assertEquals(2, requests, "the follower uses the credential's latest native refusal")
+    }
+
+    @Test
+    fun `custom carriers isolate the exact header snapshot sent on the wire`() = runTest {
+        val sent = mutableListOf<String>()
+        val accepted = mutableListOf<String>()
+        var snapshots = 0
+        val engine = MockEngine { request ->
+            val key = requireNotNull(request.headers["X-Synthetic-Key"])
+            sent += key
+            if (key == "synthetic-refused") {
+                respond("synthetic refusal", HttpStatusCode.TooManyRequests, headersOf())
+            } else {
+                respond("synthetic success", HttpStatusCode.OK, headersOf())
+            }
+        }
+        val client = UpstreamClient(
+            totalTimeoutMs = 30_000L,
+            maxRetries = 1,
+            client = HttpClient(engine),
+            clock = ElapsedClock { 0L },
+        )
+        fun context(key: String) = PostContext(
+            url = "https://api.example.test/v1",
+            auth = object : RefreshableAuthProvider by fakeAuth {
+                override suspend fun credentials(): Credentials = Credentials.ApiKey(key, "X-Synthetic-Key", "")
+            },
+            extraHeaders = {
+                snapshots++
+                emptyMap()
+            },
+        ).also { context -> context.upstreamAccepted = StreamStart { accepted += key } }
+        assertThrows<UpstreamFailed> { client.posted(context("synthetic-refused"), "{}") { "unreachable" } }
+        assertEquals("ok", client.posted(context("synthetic-healthy"), "{}") { "ok" })
+        assertEquals("ok", client.posted(context("synthetic-new"), "{}") { "ok" })
+        val follower = assertThrows<UpstreamFailed> {
+            client.posted(context("synthetic-refused"), "{}") { "unreachable" }
+        }
+        assertTrue(follower.localHold)
+        assertEquals(listOf("synthetic-refused", "synthetic-healthy", "synthetic-new"), sent)
+        assertEquals(
+            listOf("synthetic-healthy", "synthetic-new"),
+            accepted,
+            "refusals never permit early stream progress",
+        )
+        assertEquals(4, snapshots, "each attempt resolves headers once, including the local identity check")
+    }
 
     @Test
     fun `a long non-429 pushback does not block the observer's own retry`() = runTest {

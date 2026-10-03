@@ -40,6 +40,7 @@ import splice.core.util.LocalTimeText
 import splice.core.util.WallClock
 import splice.core.wire.ErrorEnvelope
 import splice.core.wire.HttpStatus
+import splice.core.wire.RateLimitReply
 import splice.upstream.RetryNotice
 import splice.upstream.transport.UpstreamFailed
 import java.time.Instant
@@ -75,6 +76,11 @@ public class RateLimitCooldown public constructor(
     private val providerUnavailableUntilMs = AtomicLong(0L)
 
     private val holds = ProviderHolds(store)
+
+    /** A native refusal belongs to this cooldown's credential, never to another caller on the head. */
+    public var rateLimitReply: RateLimitReply?
+        get() = holds.rateLimitReply
+        set(value) { holds.rateLimitReply = value }
 
     /** V4-233: the plan window the upstream named as spent, held until the reset it named. Its own
      *  class, so this one keeps its function budget; an answered turn ends it ([answered]). */
@@ -118,6 +124,7 @@ public class RateLimitCooldown public constructor(
         providerUnavailableUntilMs.set(0L)
         holds.providerReset(null)
         planHold.clear()
+        rateLimitReply = null
     }
 
     /** Marks the account unavailable to future turns, bounded by NF-01's recovery ceiling. */
@@ -217,6 +224,10 @@ public class RateLimitCooldown public constructor(
             return
         }
         onRetry("rate-limit cooldown active (${remainingMs}ms remaining): failing fast, no upstream attempt")
+        rateLimitReply?.let { reply ->
+            throw UpstreamFailed(reply.body, reply.status, planLimit = planHold.live(), localHold = true)
+                .also { it.rateLimitReply = reply }
+        }
         val waitS = (remainingMs + MS_PER_S - 1) / MS_PER_S
         val gatewayClause = "this gateway is holding retries for ${waitS}s"
         val providerResetMs = providerUnavailableForMs()

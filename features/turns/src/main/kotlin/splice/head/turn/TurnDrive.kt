@@ -9,6 +9,7 @@ import splice.core.perf.TurnPerf
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.wire.RateLimitReply
 import splice.head.pipeline.TurnPipeline
 import splice.head.round.RoundUsage
 import splice.head.round.RunnerSignals
@@ -121,6 +122,13 @@ internal data class TurnDrive(
     private val claims = TurnClaims()
     val collectPerf = CollectPerf()
     var sourceRoundStarted: SourceRoundStarted? = null
+
+    /** Chooses an HTTP refusal only while the responder still owns an uncommitted status. */
+    fun interface RateLimitRelay {
+        fun relay(reply: RateLimitReply): Boolean
+    }
+    var rateLimitRelay: RateLimitRelay? = null
+    var upstreamAccepted: splice.upstream.StreamStart? = null
 
     /** The model the upstream is asked for: the meta's, read rather than copied. */
     val upstreamModel: String get() = meta.upstreamModel

@@ -19,6 +19,7 @@ import splice.core.perf.TimedWork
 import splice.core.perf.TurnPerf
 import splice.core.perf.TurnPerfTiming
 import splice.core.usage.PlanLimit
+import splice.core.wire.RateLimitReply
 import splice.upstream.BodyAmendment
 import splice.upstream.ClientFrameEmitted
 import splice.upstream.CredentialHeaders
@@ -55,6 +56,12 @@ public data class PostContext(
      *  the default and every head that did not opt in — records nothing and allocates nothing. */
     val wire: WireObserver? = null,
 ) {
+    /** True only for the passthrough dialect, whose client understands the provider's native 429. */
+    public var relayRateLimitReplies: Boolean = false
+
+    /** Delivered only after the provider accepts the HTTP request, before consuming its stream. */
+    public var upstreamAccepted: splice.upstream.StreamStart = splice.upstream.StreamStart {}
+
     internal fun markRetry() {
         perf?.add(PerfKeys.RETRIES, 1)
     }
@@ -81,6 +88,14 @@ public data class PostContext(
         timedAuth { auth.credentials() } ?: throw UpstreamAuthMissing()
 }
 
+/** Credentials and their resolved headers are captured together once, before selecting their hold. */
+internal data class AttemptCredentials(
+    val credentials: Credentials,
+    val headers: Map<String, String>,
+    val postedAtMs: Long?,
+    val cooldown: RateLimitCooldown,
+)
+
 /** One attempt's result. [Failed] is produced INSIDE `attemptRequest`'s execute block — the
  *  response body channel dies at that block's close, so status, body text and Retry-After are all
  *  read there — and then lives on in the loop's `lastErr` as the failure the turn gives up with. */
@@ -93,5 +108,6 @@ internal sealed class RetryOutcome<out T> {
         /** V4-233: a 429 whose unified headers name a spent plan window, read here because the
          *  headers die with the response like the body does. Null for every other failure. */
         val planLimit: PlanLimit? = null,
+        val rateLimitReply: RateLimitReply? = null,
     ) : RetryOutcome<Nothing>()
 }

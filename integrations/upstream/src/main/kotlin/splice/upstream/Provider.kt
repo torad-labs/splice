@@ -68,6 +68,9 @@ public interface Provider : ProviderIdentity {
     public val showReasoning: ReasoningDisplay
     public val replayReasoning: Boolean
 
+    /** The Anthropic-compatible client owns retry and fallback for a native rate-limit response. */
+    public val relayRateLimitReplies: Boolean get() = false
+
     public fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn
 
     /** Append resolved custom text at this dialect's tail seam. The unchanged default preserves

@@ -13,12 +13,14 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
+import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.usage.PlanLimit
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.upstream.retry.FileProviderHoldStore
+import splice.upstream.retry.ProviderHold
 import splice.upstream.transport.PostContext
 import splice.upstream.transport.UpstreamClient
 import splice.upstream.transport.UpstreamFailed
@@ -58,6 +60,19 @@ class ProviderHoldClientRestartTest {
     )
 
     @Test
+    fun `a legacy unscoped file never claims ownership of a newly proved credential`(@TempDir dir: Path) = runTest {
+        val reset = System.currentTimeMillis() / MS + SIX_DAYS_S
+        val path = dir.resolve("hold.json")
+        FileProviderHoldStore(path, LogSink {}).save(ProviderHold(reset, PlanLimit("seven_day", reset)))
+        val engine = MockEngine { respond("ok", HttpStatusCode.OK, headersOf()) }
+        val current = client(dir, engine)
+        assertEquals(null, current.planHold)
+        assertEquals(0L, current.providerResetForMs)
+        assertEquals("ok", current.posted(ctx(mutableListOf()), "{}") { "ok" })
+        assertTrue(Files.exists(path), "unknown ownership is not a license to delete the old statement")
+    }
+
+    @Test
     fun `a restarted head still reads out of quota, probes upstream once, and an answer clears the file`(
         @TempDir dir: Path,
     ) = runTest {
@@ -88,6 +103,7 @@ class ProviderHoldClientRestartTest {
         assertTrue(notices.any { it.startsWith("plan hold: probing upstream") }, notices.toString())
         assertEquals(0L, restarted.providerResetForMs)
         assertEquals(0L, restarted.planHoldForMs)
-        assertFalse(Files.exists(dir.resolve("hold.json")), "the answered turn removed the stored statement")
+        val key = requireNotNull(CredentialKey.fromHeaders(mapOf("x-api-key" to "k")))
+        assertFalse(Files.exists(dir.resolve("hold-$key.json")), "the answered credential removed its stored statement")
     }
 }

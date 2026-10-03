@@ -26,6 +26,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import splice.core.model.ClientWindows
 import splice.core.util.JsonWire
+import splice.core.wire.RateLimitReply
 import splice.head.ClientWindowWitness
 import splice.head.admission.TurnQuota
 import splice.head.turn.delivery.CollectedReply
@@ -68,10 +69,18 @@ internal class CollectTurn(
         )
         // V4-174: no frames cross this channel, so the trace reads the collected answer instead —
         // at the turn record, once the terminal has closed and the body exists.
+        var nativeReply: RateLimitReply? = null
         inputs.trace?.collectedAnswer {
-            ClientAnswer(terminal.httpStatus(), terminal.responseBody().let(JsonWire::string))
+            ClientAnswer(
+                nativeReply?.status ?: terminal.httpStatus(),
+                nativeReply?.body ?: terminal.responseBody().let(JsonWire::string),
+            )
         }
         val drive = driveFactory.assembleDrive(inputs, terminal, channel)
+        drive.rateLimitRelay = TurnDrive.RateLimitRelay { reply ->
+            nativeReply = reply
+            true
+        }
         drive.collectPerf.defer()
         // collect never commits a 200 before its terminal respondText — a cancelled collect is a
         // native connection abort client-side, and sealing there only wrote an error body nobody
@@ -94,17 +103,7 @@ internal class CollectTurn(
             }
             try {
                 sealedDrive.driveSealingCancellation(drive, pingClient = false, seal = false)
-                // Same unified rate-limit headers as the streaming path (TurnStreamer).
-                turnQuota.forSession(inputs.built.meta.sessionId, inputs.account)
-                    ?.clientHeaders()
-                    ?.forEach { (name, value) -> call.response.header(name, value) }
-                call.respond(
-                    CollectedReply(
-                        terminal.responseBody().let(JsonWire::string),
-                        HttpStatusCode.fromValue(terminal.httpStatus()),
-                        drive.perf,
-                    ),
-                )
+                respond(call, inputs, drive, terminal, nativeReply)
             } finally {
                 watch?.cancel()
                 withContext(NonCancellable) { drive.collectPerf.publish(drive) }
@@ -112,6 +111,29 @@ internal class CollectTurn(
         }
         // The collect path never detaches a compaction, so it never hands the slot off (V4-99 item 3).
         return false
+    }
+
+    private suspend fun respond(
+        call: ApplicationCall,
+        inputs: TurnInputs,
+        drive: TurnDrive,
+        terminal: CollectingTerminal,
+        nativeReply: RateLimitReply?,
+    ) {
+        val headers = nativeReply?.headers
+        if (headers == null) {
+            turnQuota.forSession(inputs.built.meta.sessionId, inputs.account)
+                ?.clientHeaders()?.forEach { (name, value) -> call.response.header(name, value) }
+        } else {
+            headers.forEach { (name, values) -> values.forEach { call.response.header(name, it) } }
+        }
+        call.respond(
+            CollectedReply(
+                nativeReply?.body ?: terminal.responseBody().let(JsonWire::string),
+                HttpStatusCode.fromValue(nativeReply?.status ?: terminal.httpStatus()),
+                drive.perf,
+            ),
+        )
     }
 }
 

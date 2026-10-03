@@ -14,6 +14,7 @@ import org.junit.jupiter.params.provider.ValueSource
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.util.ElapsedClock
+import splice.core.wire.RateLimitReply
 import splice.head.wire.FrameRecording
 import java.io.IOException
 import java.io.StringWriter
@@ -83,6 +84,49 @@ class PendingSseTest {
         }
         assertTrue(failure != null, "the downstream flush failure must be exercised")
         assertTrue(PerfKeys.ARRIVAL_TO_FIRST_CLIENT_BYTE_MS !in perf.snapshot().counters)
+    }
+
+    @Test
+    fun `native refusal outranks staged progress and never records a compaction answer`() = runTest {
+        val recording = FrameRecording()
+        val pending = PendingSse(
+            TurnPerf { 0L },
+            ElapsedClock { 0L },
+            null,
+            recording,
+            120_000L,
+            commitProgress = false,
+        )
+        pending.model("event: message_start\ndata: {}\n\n")
+        pending.progress(progressLine())
+        val reply = RateLimitReply("synthetic refusal", mapOf("retry-after" to listOf("86400")))
+        assertTrue(pending.refuse(reply))
+        pending.model("event: error\ndata: {}\n\n")
+        pending.finish()
+        assertEquals(PendingSse.Decision.Refused(reply), pending.decide())
+        assertTrue(pending.detachForRecording())
+        assertTrue(recording.frames().isEmpty(), "an HTTP refusal is not a replayable SSE answer")
+        assertEquals(0L, pending.channel.socketFrames.get())
+    }
+
+    @Test
+    fun `accepted native HTTP restores liveness progress while an unanswered request cannot commit`() = runTest {
+        val pending = PendingSse(TurnPerf { 0L }, ElapsedClock { 0L }, null, null, commitProgress = false)
+        pending.progress(progressLine())
+        pending.accepted()
+        val writing = async { pending.progress(progressLine()) }
+        assertEquals(PendingSse.Decision.Stream, withTimeout(1_000) { pending.decide() })
+        pending.attach(StringWriter())
+        writing.await()
+    }
+
+    @Test
+    fun `native refusal cannot replace an already committed stream`() = runTest {
+        val pending = gate()
+        pending.finish()
+        pending.attach(StringWriter())
+        assertFalse(pending.refuse(RateLimitReply("synthetic refusal", emptyMap())))
+        assertEquals(PendingSse.Decision.Stream, pending.decide())
     }
 
     @Test

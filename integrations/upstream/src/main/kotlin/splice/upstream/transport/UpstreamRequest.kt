@@ -25,10 +25,12 @@ import io.ktor.http.ContentType
 import io.ktor.http.content.ByteArrayContent
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
 import splice.core.perf.UpstreamAttemptTiming
 import splice.core.util.WallClock
 import splice.core.wire.HttpStatus
+import splice.core.wire.RateLimitReply
 import splice.upstream.CredentialHeaders
 import splice.upstream.StreamStart
 import splice.upstream.UpstreamHandler
@@ -66,11 +68,7 @@ internal class HeaderRules {
      *  holds no credential and the caller's own auth rides in the per-turn extra headers, so
      *  emitting anything here would either overwrite it or sit beside it as a second, empty
      *  Authorization (campaign claude-head, CH-5). */
-    internal fun authHeaders(creds: Credentials): Map<String, String> = when (creds) {
-        is Credentials.Bearer -> mapOf("Authorization" to "Bearer ${creds.token}")
-        is Credentials.ApiKey -> mapOf(creds.header to "${creds.prefix}${creds.key}")
-        Credentials.ClientForwarded -> emptyMap()
-    }
+    internal fun authHeaders(creds: Credentials): Map<String, String> = CredentialKey.headers(creds, emptyMap())
 
     /** Ktor's header builder APPENDS and HTTP header names are case-INSENSITIVE, while a Kotlin
      *  map merge is case-SENSITIVE — so a configured `anthropic-version` plus a forwarded
@@ -144,23 +142,35 @@ internal class UpstreamRequest(
     suspend fun <T> execute(
         ctx: PostContext,
         bodyBytes: ByteArray,
-        creds: Credentials,
+        auth: AttemptCredentials,
         onStreamStart: StreamStart,
         block: UpstreamHandler<T>,
         recorder: AttemptRecorder? = null,
     ): RetryOutcome<T> {
-        val postedAtMs = ctx.perf?.elapsedMs()
+        val postedAtMs = auth.postedAtMs
         val timing = ctx.perf?.let(::UpstreamAttemptTiming)
         val bridge = client.attributes.getOrNull(upstreamTimingBridgeKey)
         val token = timing?.let { bridge?.register(it) }
+        val accepted = StreamStart {
+            // Acceptance is newer than the body completion of any already-open stream.
+            auth.cooldown.answered()
+            onStreamStart()
+        }
         try {
-            val statement = prepare(ctx.url, creds, ctx.extraHeaders, bodyBytes, recorder, token)
+            val statement = prepare(
+                ctx.url,
+                auth.credentials,
+                CredentialHeaders { auth.headers },
+                bodyBytes,
+                recorder,
+                token,
+            )
             val handler = UpstreamHandler<T> { response ->
                 block(response.also { it.postedAtMs = postedAtMs })
             }
             return statement.execute { response ->
                 timing?.headersDelivered()
-                executeResponse(response, ctx, onStreamStart, handler, recorder)
+                executeResponse(response, ctx, accepted, handler, recorder)
             }
         } finally {
             token?.let { bridge?.release(it) }
@@ -180,6 +190,7 @@ internal class UpstreamRequest(
         recorder?.response(resp.status.value, resp.headers.entries().associate { (k, v) -> k to v.joinToString() })
         return if (resp.status.isSuccess()) {
             onStreamStart()
+            ctx.upstreamAccepted()
             RetryOutcome.Done(block(UpstreamResponse(resp)))
         } else {
             val realStatus = resp.status.value
@@ -194,6 +205,18 @@ internal class UpstreamRequest(
                     val nowSeconds = wallClock() / MS_PER_S
                     ctx.auth.planLimit({ name -> resp.headers[name] }, nowSeconds)
                         ?: ctx.auth.planLimitFromBody(text, nowSeconds)
+                } else {
+                    null
+                },
+                rateLimitReply = if (ctx.relayRateLimitReplies && realStatus == HttpStatus.TOO_MANY_REQUESTS) {
+                    RateLimitReply(
+                        text,
+                        resp.headers.entries().filter { (name, _) ->
+                            name.equals("retry-after", ignoreCase = true) ||
+                                name.equals("x-should-retry", ignoreCase = true) ||
+                                name.startsWith("anthropic-ratelimit-unified-", ignoreCase = true)
+                        }.associate { (name, values) -> name to values.toList() },
+                    )
                 } else {
                     null
                 },

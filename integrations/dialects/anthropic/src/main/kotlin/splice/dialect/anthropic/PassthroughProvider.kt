@@ -49,6 +49,7 @@ public class PassthroughProvider(
 
     override val showReasoning: ReasoningDisplay = ReasoningDisplay.OFF
     override val replayReasoning: Boolean = false
+    override val relayRateLimitReplies: Boolean = true
 
     // V4-32: one instance per head. The builder shortens into it, every stream translator this
     // provider makes restores out of it, so a name rewritten on the way out is recoverable on

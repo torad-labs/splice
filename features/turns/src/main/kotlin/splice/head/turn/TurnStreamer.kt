@@ -84,11 +84,10 @@ internal class TurnStreamer(
         val recording = if (replayKey != null) FrameRecording() else null
         // The head's quota windows ride every response as the headers Claude Code reads into its
         // rate_limits (the 5h/7d bars): the client sees the head's real plan usage, proxy or not.
-        applyQuotaHeaders(call, inputs)
         return coroutineScope {
             // Headers remain uncommitted until a model frame, a non-size error, or the hold expires.
             // Structural message_start/ping are staged, not counted as sent.
-            val pending = PendingSse(perf, deps.seams.clock, inputs.trace, recording)
+            val pending = pending(inputs, recording)
             val channel = pending.channel
             val emitter = emitters.create(
                 write = pending::model,
@@ -102,6 +101,8 @@ internal class TurnStreamer(
                 ),
             )
             val drive = driveFactory.assembleDrive(inputs, emitter, channel)
+            drive.rateLimitRelay = TurnDrive.RateLimitRelay(pending::refuse)
+            drive.upstreamAccepted = splice.upstream.StreamStart(pending::accepted)
             // Ktor's SseResponse body previously ran blocking Writer calls on its IO bridge.
             // The drive now starts before respond, so use the process IO adapter instead of Netty.
             val running = async(driveDispatcher) {
@@ -119,7 +120,7 @@ internal class TurnStreamer(
                 channel.connectionClosed(turnJob)
             }
             try {
-                respondPending(call, pending, running)
+                respondPending(call, pending, running, inputs)
                 running.await()
             } catch (cancelled: CancellationException) {
                 if (recording == null) {
@@ -134,6 +135,15 @@ internal class TurnStreamer(
         }
     }
 
+    private fun pending(inputs: TurnInputs, recording: FrameRecording?): PendingSse = PendingSse(
+        inputs.perf,
+        deps.seams.clock,
+        inputs.trace,
+        recording,
+        holdMs = if (provider.relayRateLimitReplies) provider.watchdog.totalCap.inWholeMilliseconds else 120_000L,
+        commitProgress = !provider.relayRateLimitReplies,
+    )
+
     private fun applyQuotaHeaders(call: ApplicationCall, inputs: TurnInputs) {
         val quota = deps.turnQuota.forSession(inputs.built.meta.sessionId, inputs.account)
         quota?.clientHeaders()?.forEach { (name, value) -> call.response.header(name, value) }
@@ -143,18 +153,31 @@ internal class TurnStreamer(
         call: ApplicationCall,
         pending: PendingSse,
         running: Deferred<Boolean>,
+        inputs: TurnInputs,
     ) {
         when (val choice = pending.decide()) {
-            PendingSse.Decision.Stream -> call.respond(
-                SseResponse { out ->
-                    pending.attach(out)
-                    try {
-                        running.await()
-                    } finally {
-                        pending.channel.flushQuietly()
-                    }
-                },
-            )
+            PendingSse.Decision.Stream -> {
+                applyQuotaHeaders(call, inputs)
+                call.respond(
+                    SseResponse { out ->
+                        pending.attach(out)
+                        try {
+                            running.await()
+                        } finally {
+                            pending.channel.flushQuietly()
+                        }
+                    },
+                )
+            }
+            is PendingSse.Decision.Refused -> {
+                running.await()
+                choice.reply.headers.forEach { (name, values) -> values.forEach { call.response.header(name, it) } }
+                call.respondText(
+                    choice.reply.body,
+                    ContentType.Application.Json,
+                    HttpStatusCode.fromValue(choice.reply.status),
+                )
+            }
             is PendingSse.Decision.Overflow -> {
                 running.await()
                 call.response.header("x-should-retry", "false")

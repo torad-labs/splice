@@ -6,6 +6,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeoutOrNull
 import splice.core.perf.TurnPerf
 import splice.core.util.ElapsedClock
+import splice.core.wire.RateLimitReply
 import splice.head.wire.ClientAnswer
 import splice.head.wire.FrameRecording
 import splice.head.wire.TurnTrace
@@ -20,11 +21,15 @@ internal class PendingSse(
     private val trace: TurnTrace?,
     recording: FrameRecording?,
     private val holdMs: Long = 120_000L,
+    commitProgress: Boolean = true,
 ) {
     internal sealed class Decision {
         data object Stream : Decision()
         data class Overflow(val body: String) : Decision()
+        data class Refused(val reply: RateLimitReply) : Decision()
     }
+
+    @Volatile private var progressAccepted = commitProgress
 
     private val choice = CompletableDeferred<Decision>()
     private val output = PendingSseWriter(perf, clock, trace, recording, choice)
@@ -39,19 +44,31 @@ internal class PendingSse(
         } else if (choice.complete(Decision.Overflow(overflow))) {
             trace?.collectedAnswer { ClientAnswer(HttpStatusCode.BadRequest.value, overflow) }
         }
-        if (choice.await() is Decision.Overflow) return
+        if (choice.await() !is Decision.Stream) return
         output.writeModel(frame)
     }
 
     suspend fun progress(frame: String) {
         // The first status-line thinking delta is client-visible output. Open SSE now so a
         // silent model still speaks at the heartbeat; structural pings and comments stay held.
-        if (frame.startsWith("event: content_block_delta\n") && frame.contains("\"type\":\"thinking_delta\"")) {
-            choice.complete(Decision.Stream)
-        }
+        val visible = frame.startsWith("event: content_block_delta\n") &&
+            frame.contains("\"type\":\"thinking_delta\"")
+        if (progressAccepted && visible) choice.complete(Decision.Stream)
         if (output.stageProgress(frame)) return
-        if (choice.await() is Decision.Overflow) return
+        if (choice.await() !is Decision.Stream) return
         output.writeProgress(frame)
+    }
+
+    /** A successful upstream HTTP response permits liveness progress without hiding a native refusal. */
+    fun accepted() {
+        progressAccepted = true
+    }
+
+    /** The provider's status remains ours until a client-visible stream has actually been chosen. */
+    fun refuse(reply: RateLimitReply): Boolean {
+        val selected = choice.complete(Decision.Refused(reply))
+        if (selected) trace?.collectedAnswer { ClientAnswer(reply.status, reply.body) }
+        return selected
     }
 
     suspend fun decide(): Decision {

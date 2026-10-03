@@ -14,6 +14,7 @@
 package splice.upstream.transport
 
 import splice.core.usage.PlanLimit
+import splice.core.wire.RateLimitReply
 
 // V4-114 disposition: no caller recovers. Every catch site ends the turn in an error terminal —
 // TurnFailures.kt:26 (the per-turn boundary, same chain as IOException), TurnKnownEnd.kt:31
@@ -70,4 +71,7 @@ public class UpstreamFailed(
     public val planLimit: PlanLimit? = null,
     /** A synthetic cooldown refusal, not a response sent by the provider. */
     public val localHold: Boolean = false,
-) : RuntimeException("upstream failed after retries (status=$status)")
+) : RuntimeException("upstream failed after retries (status=$status)") {
+    public var rateLimitReply: RateLimitReply? = null
+        internal set
+}

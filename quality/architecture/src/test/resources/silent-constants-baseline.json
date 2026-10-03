@@ -2,7 +2,7 @@
   "_note": "AUTHORED BY HAND against SilentConstantsLawTest, MEASURED never estimated. Every entry is a numeric `const val` in main sources with no adjacent reason comment (see that file's WHAT COUNTS AS A REASON). The gate fails on GROWTH and on a STALE entry held above the measurement, so lowering an entry is how a fix is recorded. This file is a debt inventory with a one-way valve; it is meant to shrink to nothing.",
   "recorded": "2026-09-17",
   "denominator": 566,
-  "total": 377,
+  "total": 376,
   "files": {
     "integrations/claude-code/src/main/kotlin/splice/client/login/HookScriptFiles.kt": 1,
     "integrations/claude-code/src/main/kotlin/splice/client/login/LoginHookScripts.kt": 2,
@@ -121,7 +121,7 @@
     "features/turns/src/main/kotlin/splice/head/ActivityLabel.kt": 1,
     "features/turns/src/main/kotlin/splice/head/compaction/CompactionReplay.kt": 1,
     "features/turns/src/main/kotlin/splice/head/turn/DriveSignals.kt": 1,
-    "features/turns/src/main/kotlin/splice/head/admission/HeadAdmission.kt": 1,
+    "features/turns/src/main/kotlin/splice/head/admission/HeadAdmission.kt": 0,
     "features/turns/src/main/kotlin/splice/head/HeadEngine.kt": 1,
     "features/turns/src/main/kotlin/splice/head/HeadServer.kt": 1,
     "features/turns/src/main/kotlin/splice/head/RequestBodyReader.kt": 1,

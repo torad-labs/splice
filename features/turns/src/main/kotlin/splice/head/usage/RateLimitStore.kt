@@ -5,7 +5,6 @@ package splice.head.usage
 
 import splice.core.usage.QuotaHeaderRead
 import splice.core.usage.RateLimitState
-import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
 import splice.core.util.CoalescedFlush
 import splice.core.util.DaemonLog
@@ -113,8 +112,7 @@ internal class RateLimitStore(
         if (pending != null) {
             pending.parsed
         } else {
-            // Settle the coalesced lane first so a read never lags a just-arrived header by the 1s window.
-            AsyncFileIo.drain()
+            // A flusher may already own the pending payload. Return the last atomic commit without waiting.
             file.read()?.let { headers.rateLimitStateFrom(it) }
         }
     }.getOrNull()

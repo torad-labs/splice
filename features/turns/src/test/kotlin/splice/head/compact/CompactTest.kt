@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.parse.AnthropicParse
+import splice.core.util.AsyncFileIo
 import java.nio.file.Path
 
 private fun body(json: String) = AnthropicParse.parseAnthropicBody(json).typed
@@ -180,6 +181,7 @@ class CompactTest {
         stats.record(mapOf("outcome" to "model_text", "chars" to 120, "ms" to 900L))
         stats.record(mapOf("outcome" to "model_text", "chars" to 80))
         stats.record(mapOf("outcome" to "empty_model", "error" to "api_error"))
+        assertTrue(AsyncFileIo.drain())
         val summary = stats.read(tailN = 2)
         assertEquals(3, summary.total)
         assertEquals(mapOf("model_text" to 2, "empty_model" to 1), summary.byOutcome)
@@ -203,6 +205,7 @@ class CompactTest {
         stats.record(mapOf("outcome" to "stream_error"))
         t = now
 
+        assertTrue(AsyncFileIo.drain())
         val span = stats.read().span
         assertEquals(now - 10 * day, span?.firstTs)
         assertEquals(now - day, span?.lastTs)

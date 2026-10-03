@@ -108,7 +108,7 @@ public class CompactStats(
     // heap load just to render the HUD; total/byOutcome then reflect the tailed window, not the
     // full history (acceptable for a drift instrument — the file itself is still append-only).
     public fun read(tailN: Int = STATS_DEFAULT_TAIL): CompactStatsSummary {
-        AsyncFileIo.drain()
+        // Poll the last committed tail; pending telemetry must never hold a control read on the write lane.
         // DR-60 (class law): only PROVEN absence — NoSuch with no NOFOLLOW entry — is the quiet
         // zero-stats empty; an inaccessible file degrades the same but leaves a trace (the old
         // exists() pre-gate blanked the drift instrument silently through a denied parent).

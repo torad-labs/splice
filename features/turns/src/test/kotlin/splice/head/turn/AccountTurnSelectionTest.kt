@@ -25,6 +25,7 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
+import splice.core.util.AsyncFileIo
 import splice.core.util.LocalTimeText
 import splice.core.util.WallClock
 import splice.head.HeadDeps
@@ -465,7 +466,7 @@ private class AccountTurnRig(root: Path, private val credentialPresent: Boolean 
     fun providerErrors(): Long = head.healthSnapshot().providerErrors
 
     fun perfText(): String {
-        perfStats.tailNumeric()
+        assertTrue(AsyncFileIo.drain())
         return Files.readString(perfFile)
     }
 

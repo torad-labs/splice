@@ -8,7 +8,9 @@ import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -32,6 +34,7 @@ import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 private const val PROBE_HEADER = "x-splice-liveness-probe"
@@ -80,6 +83,9 @@ class HeadServerLivenessProbeTest {
                         setBody(REAL_BODY)
                     }.bodyAsText()
                     assertTrue(calls.get() > 0)
+                    withTimeout(5.seconds) {
+                        while (deps.stores.perfStats.tailNumeric().isEmpty()) delay(10.milliseconds)
+                    }
                     assertEquals(1, deps.stores.perfStats.tailNumeric().size)
                     assertEquals(2, workEvents.get())
                 }

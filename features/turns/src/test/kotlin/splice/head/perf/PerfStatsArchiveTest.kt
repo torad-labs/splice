@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.perf.TurnPerf
+import splice.core.util.AsyncFileIo
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
@@ -33,7 +34,7 @@ class PerfStatsArchiveTest {
         row(stats) // rotates row 1 out; no .1 existed yet, so nothing is archived
         now += 1_000
         row(stats) // rotates row 2 out; the .1 it replaces (row 1) is archived first
-        stats.tailNumeric(1) // drains the async file-IO lane before this test reads the filesystem
+        assertTrue(AsyncFileIo.drain()) // settle writes explicitly before this test reads the filesystem
 
         assertTrue(Files.isDirectory(archiveDir), "the archive dir is created on the first archived rotation")
         val archived = Files.list(archiveDir).use { it.toList() }
@@ -53,7 +54,7 @@ class PerfStatsArchiveTest {
         row(stats) // rotates, no .1 yet
         now += DAY_MS
         row(stats) // rotates, archives the first generation
-        stats.tailNumeric(1)
+        assertTrue(AsyncFileIo.drain())
         val firstArchived = Files.list(archiveDir).use { it.toList() }.single()
 
         // Age that archived file past the 5-day window relative to where the clock is about to go,
@@ -61,7 +62,7 @@ class PerfStatsArchiveTest {
         Files.setLastModifiedTime(firstArchived, FileTime.fromMillis(now - 10 * DAY_MS))
         now += DAY_MS
         row(stats) // rotates, archives the second generation, and sweeps
-        stats.tailNumeric(1)
+        assertTrue(AsyncFileIo.drain())
 
         val remaining = Files.list(archiveDir).use { it.toList() }
         assertEquals(1, remaining.size, "the stale generation was evicted; the fresh one was kept")

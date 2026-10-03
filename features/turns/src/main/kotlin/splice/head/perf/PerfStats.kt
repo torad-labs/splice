@@ -220,16 +220,19 @@ public class PerfStats(
             )
         }
         val accepted = AsyncFileIo.submitFor(file) {
-            Files.createDirectories(file.parent)
-            JsonlSink.appendLine(
-                file,
-                row,
-                maxBytes = maxBytes,
-                archive = archive,
-                force = JsonlSink.PAGE_CACHE_FORCE,
-            )
-            // The next successful row ends a prior explicit deletion, on the same file lane.
-            Files.deleteIfExists(file.parent.resolve(TURN_STATS_DELETED_MARKER))
+            Cancellables.runCatchingCancellable {
+                Files.createDirectories(file.parent)
+                JsonlSink.appendLine(
+                    file,
+                    row,
+                    maxBytes = maxBytes,
+                    archive = archive,
+                    force = JsonlSink.PAGE_CACHE_FORCE,
+                )
+                // The next successful row ends a prior explicit deletion, on the same file lane.
+                Files.deleteIfExists(file.parent.resolve(TURN_STATS_DELETED_MARKER))
+                Unit
+            }.onFailure { appendDrops.writeFailed() }.getOrThrow()
         }
         appendDrops.accepted(accepted)
         return ts
@@ -266,7 +269,7 @@ public class PerfStats(
     /** Whether the perf history holds rows [tailRows] cannot reach: the file is past the byte bound,
      *  or a rolled generation keeps older ones. Without it the tail's start would be reported for a
      *  file read whole, and every fresh session, which always begins before its first row is written,
-     *  would read as cut. Taken after the read, whose drain has settled pending appends. A size
+     *  would read as cut. Taken after the committed-tail read, without settling pending appends. A size
      *  `File.length` cannot stat is 0, so an unknown size claims no cut; an unreadable file is
      *  already said by [tailRows]. */
     private fun historyBeyondTail(): Boolean =
@@ -288,7 +291,7 @@ public class PerfStats(
 
     // read is best-effort by design: a missing/corrupt file yields empty; a bad line is skipped.
     private fun tailRows(): List<JsonObject> {
-        appendDrops.readSettled(AsyncFileIo.awaitFile(file))
+        // Polled readers use only committed rows; the writer reports failures without a read barrier.
         // DR-60 (class law): only PROVEN absence — NoSuch with no NOFOLLOW entry — is the quiet
         // empty; an inaccessible perf log degrades the same but leaves a trace instead of a
         // silently-blank instrument.
@@ -367,9 +370,9 @@ public class PerfStats(
             }
         }
 
-        fun readSettled(yes: Boolean) {
-            if (!yes && warned.compareAndSet(false, true)) {
-                report("[perf] pending turn row did not settle before a local perf read; totals may read low\n")
+        fun writeFailed() {
+            if (warned.compareAndSet(false, true)) {
+                report("[perf] file lane failed to write a turn row; perf totals may read low\n")
             }
         }
 

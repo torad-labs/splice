@@ -118,6 +118,7 @@ class PerfStatsTest {
         }
         stats.record(PerfRowMeta("synthetic", "ok", compact = false), perf.snapshot())
         stats.record(PerfRowMeta("synthetic", "ok", compact = false), TurnPerf { 0L }.snapshot())
+        assertTrue(AsyncFileIo.drain())
         val numeric = stats.tailNumeric(10)
         assertEquals(2_500L, numeric[0][PerfKeys.UP_GAP_MAX_MS])
         assertEquals(1L, numeric[0][PerfKeys.UP_GAPS_2S])
@@ -138,6 +139,7 @@ class PerfStatsTest {
         perf.setCount(PerfKeys.OUT_TOKENS, 850)
         perf.add(PerfKeys.FRAMES_OUT, 12)
         stats.record(PerfRowMeta(model = "gpt-5.6-sol", outcome = "ok", compact = false), perf.snapshot())
+        assertTrue(AsyncFileIo.drain())
 
         val rows = stats.tailNumeric(10)
         assertEquals(1, rows.size)
@@ -155,7 +157,8 @@ class PerfStatsTest {
         val tagged = PerfRowMeta("m", "client_abort", compact = false, session = "a6b15bd7")
         stats.record(tagged, TurnPerf { 0L }.snapshot())
         stats.record(PerfRowMeta("m", "ok", compact = false), TurnPerf { 0L }.snapshot())
-        val rows = stats.tailNumeric(10) // drains the writer
+        assertTrue(AsyncFileIo.drain())
+        val rows = stats.tailNumeric(10)
         assertEquals(2, rows.size)
         val lines = Files.readAllLines(file)
         assertTrue(lines[0].contains("\"session\":\"a6b15bd7\""), lines[0])
@@ -171,7 +174,7 @@ class PerfStatsTest {
         val meta = PerfRowMeta("m", "ok", compact = false, account = "backup", cacheCold = true)
 
         stats.record(meta, TurnPerf { 0L }.snapshot())
-        stats.tailNumeric(10)
+        assertTrue(AsyncFileIo.drain())
 
         val row = Files.readString(file)
         assertTrue(row.contains("\"account\":\"backup\""), row)
@@ -187,7 +190,7 @@ class PerfStatsTest {
             perf.setCount(PerfKeys.OUT_TOKENS, i.toLong())
             stats.record(PerfRowMeta("m", "ok", compact = false), perf.snapshot())
         }
-        stats.tailNumeric(10) // drains the asynchronous writer before injecting a corrupt row
+        assertTrue(AsyncFileIo.drain()) // settle the writer explicitly before injecting a corrupt row
         Files.writeString(file, Files.readString(file) + "not-json\n")
         val rows = stats.tailNumeric(2)
         assertEquals(2, rows.size)
@@ -339,6 +342,7 @@ class PerfStatsTest {
 
         repeat(400) { stats.record(PerfRowMeta(opus, "ok", compact = false, session = "a6b15bd7"), turn()) }
         stats.record(PerfRowMeta(opus, "ok", compact = false), turn())
+        assertTrue(AsyncFileIo.drain())
 
         val session = "a6b15bd7-1c2d-4e5f-8a9b-0c1d2e3f4a5b"
         assertTrue(stats.sessionTail(session).turns.size < 400, "the tail holds only part of the session")

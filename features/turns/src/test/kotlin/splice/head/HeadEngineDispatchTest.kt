@@ -3,7 +3,11 @@ package splice.head
 
 import com.sun.net.httpserver.HttpServer
 import io.netty.util.concurrent.FastThreadLocalThread
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -47,6 +51,7 @@ private const val CLIENT_TIMEOUT_MS = 15_000
 private const val UPSTREAM_INTERVAL_MS = 10L
 private const val UPSTREAM_DELTAS = 350
 private const val WARM_DELTAS = 5
+private const val BLOCKED_PREPARATIONS = 65
 
 class HeadEngineDispatchTest {
     @TempDir
@@ -95,9 +100,11 @@ class HeadEngineDispatchTest {
     }
 
     @Test
-    fun `eight blocked preparations leave a ninth session free to start`(reporter: TestReporter) = runBlocking {
+    fun `sixty five blocked preparations leave shared IO and another session free`(
+        reporter: TestReporter,
+    ) = runBlocking {
         DispatchUpstream().use { upstream ->
-            val blocker = DispatchBlocker(collectWait = false, sessions = 8)
+            val blocker = DispatchBlocker(collectWait = false, sessions = BLOCKED_PREPARATIONS)
             val deps = headDeps(tmp, log = {})
             val provider = DispatchProvider(dispatchProvider(upstream.baseUrl), blocker)
             val engine = dispatchEngine(provider, deps)
@@ -111,22 +118,35 @@ class HeadEngineDispatchTest {
         }
     }
 
-    private fun observeConcurrent(port: Int, blocker: DispatchBlocker, reporter: TestReporter) {
+    private suspend fun observeConcurrent(
+        port: Int,
+        blocker: DispatchBlocker,
+        reporter: TestReporter,
+    ) = coroutineScope {
         // Warm the real round, including lazy transport/class initialization, before measuring queueing.
         assertTrue(postAndRead(port, "warm", stream = false).contains("\"content\""))
-        val started = System.nanoTime()
-        val replies = List(8) { postAsync(port, "block-$it", stream = true) }
-        val together = blocker.entered.await(1_000, TimeUnit.MILLISECONDS)
-        reporter.publishEntry("concurrent_preparations_entered", (8 - blocker.entered.count).toString())
-        assertTrue(together, "all eight preparations must enter before any two-second block ends")
-        val startMs = firstEventMs(port)
-        assertTrue(blocker.finished.await(3_000, TimeUnit.MILLISECONDS), "all eight preparations must finish together")
-        val totalMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
-        reporter.publishEntry("eight_preparations_elapsed_ms", totalMs.toString())
-        reporter.publishEntry("ninth_turn_start_ms", startMs.toString())
-        assertTrue(totalMs < BLOCK_MS + 1_000, "eight_preparations_elapsed_ms=$totalMs")
-        assertTrue(startMs < GAP_LIMIT_MS, "ninth_turn_start_ms=$startMs; limit=$GAP_LIMIT_MS")
-        assertTrue(!blocker.onNetty, "preparations must not occupy Netty call threads")
+        val replies = List(BLOCKED_PREPARATIONS) { postAsync(port, "block-$it", stream = true) }
+        try {
+            val together = blocker.entered.await(1_000, TimeUnit.MILLISECONDS)
+            reporter.publishEntry(
+                "concurrent_preparations_entered",
+                (BLOCKED_PREPARATIONS - blocker.entered.count).toString(),
+            )
+            val submitted = System.nanoTime()
+            val fileLane = async(Dispatchers.IO) { TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - submitted) }
+            val probeMs = withTimeout(1_000) { fileLane.await() }
+            reporter.publishEntry("shared_io_probe_ms", probeMs.toString())
+            assertTrue(together, "all sixty five preparations must enter while the release barrier is closed")
+            assertTrue(probeMs < GAP_LIMIT_MS, "shared_io_probe_ms=$probeMs; limit=$GAP_LIMIT_MS")
+            assertTrue(blocker.finished.count == BLOCKED_PREPARATIONS.toLong(), "no blocked preparation may finish")
+            val startMs = firstEventMs(port)
+            reporter.publishEntry("next_turn_start_ms", startMs.toString())
+            assertTrue(startMs < GAP_LIMIT_MS, "next_turn_start_ms=$startMs; limit=$GAP_LIMIT_MS")
+            assertTrue(!blocker.onNetty, "preparations must not occupy Netty call threads")
+        } finally {
+            blocker.release.countDown()
+        }
+        assertTrue(blocker.finished.await(3_000, TimeUnit.MILLISECONDS), "all preparations must leave the barrier")
         replies.forEach { reply ->
             assertTrue(reply.get(CLIENT_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS).contains("message_stop"))
         }
@@ -176,6 +196,7 @@ class HeadEngineDispatchTest {
 private class DispatchBlocker(val collectWait: Boolean, private val sessions: Int = 1) {
     val entered = CountDownLatch(sessions)
     val finished = CountDownLatch(sessions)
+    val release = CountDownLatch(1)
     private val elapsed = AtomicLong()
     private val netty = AtomicBoolean()
     val elapsedMs: Long get() = elapsed.get()
@@ -185,7 +206,9 @@ private class DispatchBlocker(val collectWait: Boolean, private val sessions: In
         val started = System.nanoTime()
         if (Thread.currentThread() is FastThreadLocalThread) netty.set(true)
         entered.countDown()
-        if (collectWait || sessions > 1) {
+        if (sessions > 1) {
+            assertTrue(release.await(CLIENT_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS), "the barrier must be released")
+        } else if (collectWait) {
             CountDownLatch(1).await(BLOCK_MS, TimeUnit.MILLISECONDS)
         } else {
             val until = started + TimeUnit.MILLISECONDS.toNanos(BLOCK_MS)

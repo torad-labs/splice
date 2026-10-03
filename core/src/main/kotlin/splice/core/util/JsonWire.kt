@@ -34,7 +34,7 @@ private const val UTF8_BMP_WIDTH = 3
 private const val UTF8_SUPPLEMENTARY_WIDTH = 4
 
 // Fixed scratch, independent of prompt length; enough for ordinary stream writes without whole-string copies.
-private const val WIRE_BUFFER_BYTES = 8_192
+internal const val WIRE_BUFFER_BYTES = 8_192
 
 // The pinned library owns escaping. Borrow its exact ASCII escape spellings, never a second escape algorithm.
 private val WIRE_ESCAPES = Array(UTF8_ASCII_CEILING) { code ->

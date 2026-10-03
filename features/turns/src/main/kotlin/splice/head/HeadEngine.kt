@@ -83,7 +83,7 @@ internal class HeadEngine(
      *  OS-assigned one when [listenPort] is 0 — and the configured [listenPort] otherwise. */
     val port: Int get() = boundPort ?: listenPort
 
-    /** Tests can pin call affinity; each listener's elastic I/O view covers its entire running limit. */
+    /** Tests can pin call affinity; each listener gets an elastic I/O view independent of the shared I/O quota. */
     suspend fun start(
         callThreads: Int? = null,
         callDispatcher: CoroutineDispatcher = ProcessDispatchers().io().limitedParallelism(RUNNING_LIMIT),

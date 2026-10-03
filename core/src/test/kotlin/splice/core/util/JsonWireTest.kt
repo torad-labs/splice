@@ -2,8 +2,10 @@
 package splice.core.util
 
 import com.sun.management.ThreadMXBean
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonUnquotedLiteral
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -97,11 +99,14 @@ class JsonWireTest {
     @Test
     fun `stream escaping and UTF8 spans remain exact at scratch buffer boundaries`() {
         val controls = (0..127).map(Int::toChar).joinToString("")
-        val texts = listOf(
-            controls,
-            "x".repeat(8_190) + "🧪é\\\"\\n" + "y".repeat(8_190),
-            "x".repeat(8_191) + "\\uD800\\\"\\uDC00",
-        )
+        val texts = listOf(controls) + listOf(-2, -1, 0).flatMap { offset ->
+            // The opening quote takes one byte; sweep both sides of the actual scratch boundary.
+            val prefix = "x".repeat(WIRE_BUFFER_BYTES - 1 + offset)
+            listOf(
+                prefix + "🧪é\u0001\n\"\\" + "y".repeat(WIRE_BUFFER_BYTES),
+                prefix + "\uD800\u0001\"\uDC00",
+            )
+        }
         for (text in texts) {
             val tree = JsonPrimitive(text)
             val output = ByteArrayOutputStream()
@@ -131,6 +136,18 @@ class JsonWireTest {
             }
         }
         assertSame(failure, assertThrows(IOException::class.java) { JsonWire.write(JsonPrimitive("x"), broken) })
+    }
+
+    @OptIn(ExperimentalSerializationApi::class)
+    @Test
+    fun `unquoted non ASCII literals use UTF8 rather than one byte per character`() {
+        val literal = JsonUnquotedLiteral("é")
+        val expected = byteArrayOf(0xC3.toByte(), 0xA9.toByte())
+        val output = ByteArrayOutputStream()
+        JsonWire.write(literal, output)
+        assertArrayEquals(expected, output.toByteArray())
+        assertArrayEquals(expected, JsonWire.string(literal).toByteArray(Charsets.UTF_8))
+        assertEquals(expected.size.toLong(), JsonWire.byteSize(literal))
     }
 
     @Test

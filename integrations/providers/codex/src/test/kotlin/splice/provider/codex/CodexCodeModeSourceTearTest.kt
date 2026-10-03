@@ -18,6 +18,7 @@ import org.junit.jupiter.params.provider.ValueSource
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
+import splice.core.util.JsonScalars
 import splice.upstream.RedirectableRoundPost
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
@@ -117,16 +118,28 @@ class CodexCodeModeSourceTearTest : CodeModeStatementStreamSupport() {
         val manager = bridge(runtime)
         val sink = StepSink()
         val post = GatedPost(sink)
+        val failureReached = CompletableDeferred<Unit>()
+        val releaseFailure = CompletableDeferred<Unit>()
+        val sourcePost = failingSource(post, sourceFailure) {
+            failureReached.complete(Unit)
+            releaseFailure.await()
+        }
         val request = async {
             manager.interceptor(turn(), disableParallel = false)
-                .intercept(BASE_REQUEST, sink, failingSource(post, sourceFailure))
+                .intercept(BASE_REQUEST, sink, sourcePost)
         }
         try {
             withTimeout(5_000) { runtime.starting.await() }
             post.tearAfterFirst = true
             post.gates[1].complete(Unit)
+            withTimeout(5_000) { failureReached.await() }
+            val admission = stateFiles.records().single()
+            assertEquals("LOST", JsonScalars.str(admission["phase"]))
+            assertNull(JsonScalars.str(admission["error"]), "the no-rerun admission is not a source failure")
+            releaseFailure.complete(Unit)
+            // Admission is already durably LOST. Only the failure's error proves attachment must reject.
             withTimeout(5_000) {
-                while (!stateFiles.records().single().toString().contains("LOST")) kotlinx.coroutines.yield()
+                while (JsonScalars.str(stateFiles.records().single()["error"]) == null) kotlinx.coroutines.yield()
             }
             runtime.release.complete(Unit)
             val outcome = withTimeout(5_000) { request.await() } as TurnOutcome.Failure
@@ -137,8 +150,10 @@ class CodexCodeModeSourceTearTest : CodeModeStatementStreamSupport() {
             assertFalse(outcome.deterministic)
             assertNull(outcome.partial)
             assertFalse(sink.callback.isCompleted)
+            assertEquals(0, runtime.advances, "failed source attachment must not advance the returned cell")
             assertEquals(1, post.posts)
         } finally {
+            releaseFailure.complete(Unit)
             runtime.release.complete(Unit)
             manager.onHeadStop()
         }
@@ -147,6 +162,7 @@ class CodexCodeModeSourceTearTest : CodeModeStatementStreamSupport() {
     private class StartingRuntime : CodeModeRuntime {
         val starting = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
+        var advances = 0
         override suspend fun start(
             source: String,
             tools: Set<String>,
@@ -161,19 +177,26 @@ class CodexCodeModeSourceTearTest : CodeModeStatementStreamSupport() {
             starting.complete(Unit)
             release.await()
             return object : CodeModeCell {
-                override suspend fun advance(results: List<CodeModeResult>): CodeModeStep =
+                override suspend fun advance(results: List<CodeModeResult>): CodeModeStep {
+                    advances++
                     error("torn startup cannot advance")
+                }
                 override fun close() = Unit
             }
         }
         override fun close() = Unit
     }
 
-    private fun failingSource(post: GatedPost, failure: String): RedirectableRoundPost =
+    private fun failingSource(
+        post: GatedPost,
+        failure: String,
+        beforeFailure: suspend () -> Unit = {},
+    ): RedirectableRoundPost =
         object : RedirectableRoundPost by post {
             override suspend fun into(bodyJson: String, sink: WireSink): TurnOutcome = try {
                 post.into(bodyJson, sink)
             } catch (error: IOException) {
+                beforeFailure()
                 if (failure == "io") throw error
                 if (failure == "local") error("synthetic private protocol bytes")
                 TurnOutcome.Failure(

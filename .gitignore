@@ -79,3 +79,5 @@ credentials.json
 # per-machine agent tooling installs: skills and hook mirrors for the other seats
 /.agents/
 /.codex/
+# verifier harnesses, receipts and measurements: never committed (operator rule), so a seat's files here are never unlanded work
+/captures/

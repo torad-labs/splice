@@ -9,7 +9,8 @@
 // directly and reports each row whole.
 //
 // THE PAYLOAD SAYS WHAT IT IS NOT SHOWING. Three numbers ride beside the rows and none of them is
-// decoration: `count` is the window's own size, `returned` is the slice actually sent, and
+// decoration: `count` is the rows of the window the filters match (V4-444, [TurnsFilter]; with no
+// filter, the window's own size), `returned` is the slice actually sent, and
 // `truncated` is whether the newest-n clamp cut anything. A payload carrying only the rows cannot
 // distinguish "the head was idle" from "the newest n were all that fit", and the console would draw
 // the second as the first. The reader's own `read_error` and `skipped_lines` ride through for the
@@ -58,7 +59,7 @@ private const val MAX_TURNS = 2_000
 /** The window one request asks for, after validation. A named pair and not a `Pair<Long, Int>`: the
  *  two are read straight into a cutoff and a clamp, and a positional swap of same-shaped values is the
  *  defect the row's own named-argument rule exists for. */
-private data class AskedWindow(val since: Long, val n: Int)
+private data class AskedWindow(val since: Long, val n: Int, val filter: TurnsFilter)
 
 public class PerfRoutes(
     private val heads: UsageHeadLookup,
@@ -66,6 +67,7 @@ public class PerfRoutes(
      *  console that has been polling for hours must not keep asking about the hour it started in. */
     private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
+    private val readFilter = TurnsFilterReader()
 
     public suspend fun turns(call: ApplicationCall) {
         val name = call.request.queryParameters["head"].orEmpty()
@@ -130,27 +132,41 @@ public class PerfRoutes(
         }
 
         val nText = call.request.queryParameters["n"]
-        val requested = if (nText == null) DEFAULT_TURNS else nText.toIntOrNull()
-        if (requested == null) {
-            refuse(call, "n must be a whole number of rows, got '$nText'", HttpStatusCode.BadRequest)
-            return null
-        }
-        // Clamped rather than refused, and the EFFECTIVE n is what the payload reports: this is the
-        // family's own tail bound (/api/perf and /api/logs clamp identically), and a clamp the payload
-        // states is not the silent substitution an unparseable `since` would have been.
-        return AskedWindow(since, requested.coerceIn(1, MAX_TURNS))
+        val read = readFilter(call.request.queryParameters)
+        val filter = (read as? TurnsFilterRead.Read)?.filter
+        val asked = rowsAsked(nText)?.let { n -> filter?.let { AskedWindow(since, n, it) } }
+        if (asked == null) refuse(call, refusal(nText, read), HttpStatusCode.BadRequest)
+        return asked
     }
+
+    /** The rows `?n=` asks for, or null when it is not a whole number. Clamped rather than refused, and the
+     *  EFFECTIVE n is what the payload reports: this is the family's own tail bound (/api/perf and /api/logs
+     *  clamp identically), and a clamp the payload states is not the silent substitution an unparseable
+     *  `since` would have been. */
+    private fun rowsAsked(nText: String?): Int? =
+        if (nText == null) DEFAULT_TURNS else nText.toIntOrNull()?.coerceIn(1, MAX_TURNS)
+
+    /** Why a request whose `n` or filters could not be read is refused, naming the parameter. */
+    private fun refusal(nText: String?, read: TurnsFilterRead): String =
+        if (rowsAsked(nText) == null) {
+            "n must be a whole number of rows, got '$nText'"
+        } else {
+            (read as? TurnsFilterRead.Refused)?.message.orEmpty()
+        }
 
     private fun turnsFor(head: UsageHead, source: PerfRowsSource, asked: AskedWindow): JsonObject {
         val read = source.window(asked.since)
-        val rows = read.rows.takeLast(asked.n)
+        // The filters narrow the WINDOW, then the clamp takes the newest of what matched: a filter run
+        // after the clamp finds nothing older than the slice (V4-444).
+        val matching = read.rows.filter(asked.filter::matches)
+        val rows = matching.takeLast(asked.n)
         val price = head.catalog?.let(::TurnPrice)
         return buildJsonObject {
             put("key", head.key)
             put("label", head.label)
-            put("count", read.rows.size)
+            put("count", matching.size)
             put("returned", rows.size)
-            put("truncated", read.rows.size > rows.size)
+            put("truncated", matching.size > rows.size)
             // The retention evidence, straight from the reader: the oldest timestamp a VALID row holds
             // at all. Null means the source cannot say — never zero, which would read as 1970.
             put("oldest_held_ts", read.oldestHeldTs)

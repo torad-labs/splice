@@ -166,7 +166,7 @@ public class SessionsRoutes(
         put("pid", s.pid)
         put("session_id", s.sessionId)
         put("name", if (viewEnabled()) s.name else null)
-        put("last", SessionActivity.last(s.sessionId, treesFor(s.head), transcripts, viewEnabled))
+        put("last", SessionActivity.last(s.sessionId, s.cwd, treesFor(s.head), transcripts, viewEnabled))
         put("kind", s.kind)
         put("version", s.version)
         put("cwd", s.cwd)

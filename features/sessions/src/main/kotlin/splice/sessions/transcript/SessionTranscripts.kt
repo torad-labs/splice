@@ -86,8 +86,9 @@ public interface SessionTranscripts {
     /** The newest redacted main-thread message that is not a tool result or a system note, read from a bounded
      *  tail and cached by file stamp: what the session last said, was told, or called. Indices are local to that
      *  tail, not page cursors. Null when no complete message is available; older port implementations provide no
-     *  activity. */
-    public fun last(sessionId: String, roots: List<Path>): TranscriptMessage? = null
+     *  activity. [cwd] is the session's working directory when the caller knows it, which is where Claude Code files
+     *  the transcript: an implementation may look there first and judge a miss against it (V4-444). */
+    public fun last(sessionId: String, roots: List<Path>, cwd: String? = null): TranscriptMessage? = null
 
     public fun page(
         sessionId: String,

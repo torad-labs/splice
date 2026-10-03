@@ -164,7 +164,7 @@ class SessionsActivityTest {
     private class LastSource(private val message: TranscriptMessage?) : SessionTranscripts {
         var calls = 0
         var roots = emptyList<Path>()
-        override fun last(sessionId: String, roots: List<Path>): TranscriptMessage? {
+        override fun last(sessionId: String, roots: List<Path>, cwd: String?): TranscriptMessage? {
             calls += 1
             this.roots = roots
             return message

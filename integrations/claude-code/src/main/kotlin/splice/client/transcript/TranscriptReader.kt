@@ -107,6 +107,8 @@ public class TranscriptReader(
         Channels.newInputStream(Files.newByteChannel(file, StandardOpenOption.READ).position(offset))
     },
 ) : SessionTranscripts {
+    private val locator = TranscriptLocator()
+
     private val sent = SentTextLedger(opener, SentTextCollector(::collect))
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -115,8 +117,8 @@ public class TranscriptReader(
     private val tail = TranscriptTail(opener, TranscriptTailAssembly(TranscriptLineParser(::parse), redaction))
     private val back = TranscriptBackPage(opener, TranscriptLineParser(::parse), redaction)
 
-    override fun last(sessionId: String, roots: List<Path>): TranscriptMessage? {
-        val file = if (validSessionId.matches(sessionId)) locate(roots, sessionId) else null
+    override fun last(sessionId: String, roots: List<Path>, cwd: String?): TranscriptMessage? {
+        val file = if (validSessionId.matches(sessionId)) locate(roots, sessionId, cwd) else null
         if (file == null) return null
         // ast-grep-ignore: kt-no-silent-result-collapse -- a removed or unreadable transcript has no available activity; the registry row still exists independently
         return Cancellables.runCatchingCancellable { tail.read(file) }.getOrNull()
@@ -187,26 +189,8 @@ public class TranscriptReader(
             }
     }
 
-    /** The first candidate in root order. Each projects dir is walked once, however many root names
-     *  reach it: the symlinked heads' dirs resolve to the vanilla one and are dropped as repeats. */
-    private fun locate(roots: List<Path>, sessionId: String): Path? {
-        val walked = HashSet<Path>()
-        return roots.asSequence()
-            .map { it.resolve(Keys.PROJECTS) }
-            .filter { walked.add(realPath(it)) }
-            .flatMap { projectDirs(it).asSequence() }
-            .map { it.resolve("$sessionId.jsonl") }
-            .firstOrNull { Files.isRegularFile(it) }
-    }
-
-    private fun projectDirs(projects: Path): List<Path> =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- an absent or unreadable projects tree holds no transcript, which is what Missing reports with every path it searched
-        Cancellables.runCatchingCancellable { Files.newDirectoryStream(projects).use { it.filter(Files::isDirectory) } }
-            .getOrDefault(emptyList())
-
-    private fun realPath(dir: Path): Path =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- a projects dir that does not exist has no real path; its absolute name keys it, and walking it finds nothing
-        Cancellables.runCatchingCancellable { dir.toRealPath() }.getOrDefault(dir.toAbsolutePath().normalize())
+    private fun locate(roots: List<Path>, sessionId: String, cwd: String? = null): Path? =
+        locator.locate(roots, sessionId, cwd)
 
     /** Lines from [start] until the page is full, the byte budget is spent or the file ends; a line the
      *  assembly declines (it starts the next page's first message) is left unread for that page. */

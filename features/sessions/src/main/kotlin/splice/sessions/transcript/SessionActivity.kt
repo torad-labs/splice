@@ -15,12 +15,13 @@ internal object SessionActivity {
 
     fun last(
         sessionId: String?,
+        cwd: String?,
         roots: List<Path>,
         source: SessionTranscripts,
         viewEnabled: SessionTranscriptViewEnabled,
     ): JsonElement {
         if (!viewEnabled()) return JsonNull
-        return json(sessionId?.let { source.last(it, roots) })
+        return json(sessionId?.let { source.last(it, roots, cwd) })
     }
 
     /** A call is shown as what it was for, read from its whole input before any clip, so a long command in front of its

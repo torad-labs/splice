@@ -186,7 +186,7 @@ test('reentering a team after its empty read shows a newly landed real turn befo
   }
   const faults = await open(page, 'teams/' + team.id);
   await expect(page.getByText('The seats sent each other nothing.', { exact: true })).toBeVisible({ timeout: FIRST_READ_MS });
-  await page.getByRole('main').getByRole('link', { name: 'Sessions', exact: true }).click();
+  await page.getByRole('main').getByRole('link', { name: 'Teams', exact: true }).click();
   await sendHandOff(Number(env('CONSOLE_E2E_OAUTH_PORT')), env('CONSOLE_E2E_KEY'), env('CONSOLE_E2E_PEER_ADDRESS'), 'toolu_synthetic_entry_' + randomUUID());
   const { today, tomorrow } = days();
   const activity = await read<{ entries: { session: string }[] }>(page, '/api/teams/' + team.id + '/activity?from=' + today + '&to=' + tomorrow);

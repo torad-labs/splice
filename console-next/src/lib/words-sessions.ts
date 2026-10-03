@@ -17,6 +17,7 @@ export const SW = {
   idle: 'Waiting for your next message',
   idleFor: (span: string): string => `Idle for ${span}, waiting for your next message`,
   gone: 'The session ended',
+  statusUnknown: 'Status not reported',
   you: 'You',
   inRepoOn: (repo: string, day: string): string => `${repo} · ${day}`,
   aSessionIn: (repo: string): string => `a session in ${repo}`,

@@ -8,6 +8,7 @@ import { SessionPage } from '../pages/session/SessionPage';
 import { SessionsPage } from '../pages/sessions/SessionsPage';
 import { ProjectPage } from '../pages/projects/ProjectPage';
 import { TeamPage } from '../pages/teams/TeamPage';
+import { TeamsPage } from '../pages/teams/TeamsPage';
 import { UsagePage } from '../pages/usage/UsagePage';
 import { TurnPage } from '../pages/turns/TurnPage';
 import { TurnsPage } from '../pages/turns/TurnsPage';
@@ -49,6 +50,7 @@ export const router = createHashRouter([
       { path: 'settings/:section?', element: <SettingsPage /> },
       { path: 'sessions', element: <SessionsPage /> },
       { path: 'sessions/:id', element: <SessionPage /> },
+      { path: 'teams', element: <TeamsPage /> },
       { path: 'teams/:id', element: <TeamPage /> },
       { path: 'projects/:id', element: <ProjectPage /> },
       { path: 'usage', element: <UsagePage /> },
@@ -58,7 +60,7 @@ export const router = createHashRouter([
       { path: 'requests/:head/:ts', element: <TurnPage /> },
       { path: 'turns/:head/:ts', element: <RequestBookmark /> },
       { path: 'fleet/:head', element: <Navigate to="/accounts" replace /> },
-      ...NAV.filter(([path]) => path !== 'accounts' && path !== 'sessions' && path !== 'settings' && path !== 'usage' && path !== 'requests' && path !== 'models')
+      ...NAV.filter(([path]) => path !== 'accounts' && path !== 'sessions' && path !== 'teams' && path !== 'settings' && path !== 'usage' && path !== 'requests' && path !== 'models')
         .map(([path, label]) => ({ path, element: <Pending place={label} /> })),
       ...Object.entries(RETIRED).map(([path, to]) => ({ path, element: <Navigate to={to} replace /> })),
       { path: '*', element: <Navigate to={HOME} replace /> },

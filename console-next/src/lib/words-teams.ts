@@ -2,7 +2,7 @@
 import { countWord } from './format';
 
 export const M = {
-  back: 'Sessions',
+  back: 'Teams',
   reading: 'Reading the team.',
   gone: 'No such team.',
   goneWhy: 'It may have been renamed, or this splice does not know it.',

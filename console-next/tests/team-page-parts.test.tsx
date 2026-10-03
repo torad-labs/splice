@@ -60,7 +60,7 @@ describe('the team page', () => {
     expect(html).toContain('Nobody is in this seat');
     expect(html).toContain('Open seat');
     expect(html).toContain('per-key limits');
-    expect(html).toContain('href="/sessions?group=team"');
+    expect(html).toContain('href="/teams"');
   });
   test('a seat with lifetime tallies says its turns, cost and checks', () => {
     const html = render((client) =>

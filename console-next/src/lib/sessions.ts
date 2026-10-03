@@ -168,6 +168,18 @@ const STATE_TONE: Readonly<Record<SessionState, SessionTone>> = {
 };
 export const stateTone = (state: SessionState): SessionTone => STATE_TONE[state];
 
+/** One primary status for registry-backed session surfaces; stale still means the process is alive. */
+export function sessionStatus(row: SessionRow): { state: SessionState; word: string; tone: SessionTone; old: boolean } {
+  const state = stateOf(row);
+  const known = row.availability === 'gone' || ['busy', 'shell', 'waiting', 'idle'].includes(row.status ?? '');
+  return {
+    state,
+    word: known ? stateWord(state) : SW.statusUnknown,
+    tone: known ? stateTone(state) : 'wait',
+    old: row.availability === 'stale',
+  };
+}
+
 /** A span as a person says it: minutes under an hour, hours under two days, then days. */
 export function spanText(ms: number): string {
   const minutes = Math.floor(ms / 60_000);

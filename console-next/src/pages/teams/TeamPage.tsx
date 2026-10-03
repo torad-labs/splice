@@ -47,7 +47,7 @@ export function TeamPage() {
   const activity = useTeamActivity(team === null ? null : team.id, day, back === 0);
   const economics = useTeamEconomics(team === null ? null : team.id);
   const rows = sessions.data?.sessions ?? [];
-  const crumb = <div className="crumb"><Link to="/sessions?group=team">{M.back}</Link></div>;
+  const crumb = <div className="crumb"><Link to="/teams">{M.back}</Link></div>;
 
   if (teams.isPending) return <>{crumb}<PageHead title={M.back} lede={M.reading} /></>;
   if (teams.isError) return <>{crumb}<Fault message={failureText(teams.error)} onRetry={() => void teams.refetch()} /></>;
@@ -68,7 +68,7 @@ export function TeamPage() {
 
   return (
     <>
-      <div className="crumb"><Link to="/sessions?group=team">{M.back}</Link><span>/</span><span>{team.name}</span></div>
+      <div className="crumb"><Link to="/teams">{M.back}</Link><span>/</span><span>{team.name}</span></div>
       <PageHead
         title={team.name}
         lede={teamLede(team, working)}

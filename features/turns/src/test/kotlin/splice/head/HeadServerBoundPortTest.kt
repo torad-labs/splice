@@ -10,7 +10,9 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -18,10 +20,13 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.memory.HeapBudget
+import splice.core.memory.HeapWeights
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
+import splice.head.admission.RequestMaterializationGate
 import splice.upstream.ProviderTuning
 import java.net.Socket
 import java.nio.file.Path
@@ -36,7 +41,10 @@ private class BoundPortAuth : RefreshableAuthProvider {
 class HeadServerBoundPortTest {
 
     /** No turn runs here, so the upstream is never dialled: [UNUSED_UPSTREAM] only fills the field. */
-    private fun head(tmp: Path) = HeadServer(
+    private fun head(
+        tmp: Path,
+        materialization: RequestMaterializationGate = RequestMaterializationGate(),
+    ) = HeadServer(
         provider = TestResponsesProvider(
             tuning = ProviderTuning(
                 key = "codex",
@@ -57,7 +65,7 @@ class HeadServerBoundPortTest {
             configSummary = "detailed",
         ),
         listenPort = 0,
-        deps = headDeps(tmp = tmp),
+        deps = headDeps(tmp = tmp, seams = HeadDeps.HeadSeams(requestMaterializationGate = materialization)),
     )
 
     /** Red if the head reports the configured 0 instead of what its connector bound, if /health or the
@@ -81,6 +89,52 @@ class HeadServerBoundPortTest {
             client.close()
         }
         assertEquals(0, head.port, "a stopped head reports the port it was configured with")
+    }
+
+    @Test
+    fun `in process restarts return shared heap charges from open and unread connections`(
+        @TempDir tmp: Path,
+    ) = runBlocking {
+        val heap = HeapBudget(Long.MAX_VALUE, budgetBytes = 128 * 1024)
+        val head = head(tmp, RequestMaterializationGate(heap = heap))
+        val requests = listOf(
+            "",
+            "POST /v1/messages HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n",
+            "POST /v1/messages HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer test-inference-token\r\n" +
+                "Content-Length: 1024\r\nContent-Type: application/json\r\n\r\n",
+        )
+        head.start()
+        try {
+            repeat(8) { cycle ->
+                requests.forEachIndexed { shape, request ->
+                    Socket("127.0.0.1", head.port).use { socket ->
+                        socket.soTimeout = 5000
+                        socket.getOutputStream().write(request.toByteArray())
+                        withTimeout(5000) {
+                            heap.available.first { it <= heap.limitBytes - HeapWeights.CONNECTION_BYTES }
+                        }
+                        if (shape == 2) {
+                            withTimeout(5000) {
+                                heap.available.first {
+                                    it <= heap.limitBytes - HeapWeights.CONNECTION_BYTES - HeapWeights.ingress(1024)
+                                }
+                            }
+                        }
+                        if (shape == 1) {
+                            val response = socket.getInputStream().readBytes().decodeToString()
+                            assertTrue(response.startsWith("HTTP/1.1 413"), response)
+                            socket.close()
+                        }
+                        head.restart()
+                        withTimeout(5000) { heap.available.first { it == heap.limitBytes } }
+                        assertEquals(heap.limitBytes, heap.available.value, "restart $cycle shape $shape")
+                        assertTrue(head.port > 0, "the same head starts a fresh listener")
+                    }
+                }
+            }
+        } finally {
+            head.stop()
+        }
     }
 }
 

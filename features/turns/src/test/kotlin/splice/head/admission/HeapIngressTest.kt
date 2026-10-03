@@ -12,6 +12,7 @@ import io.ktor.server.response.respondTextWriter
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
+import io.netty.channel.Channel
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -30,7 +31,11 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 
 class HeapIngressTest {
-    private fun testServer(ingress: HeapIngress, routes: Application.() -> Unit) =
+    private fun testServer(
+        ingress: HeapIngress,
+        channel: CompletableFuture<Channel>? = null,
+        routes: Application.() -> Unit,
+    ) =
         embeddedServer(
             Netty,
             serverConfig {
@@ -44,7 +49,10 @@ class HeapIngressTest {
                 host = "127.0.0.1"
                 port = 0
             }
-            channelPipelineConfig = { pipeline -> ingress.install(pipeline) }
+            channelPipelineConfig = { pipeline ->
+                ingress.install(pipeline)
+                val _ = channel?.complete(pipeline.channel())
+            }
         }
 
     private fun heldServer(
@@ -68,6 +76,31 @@ class HeapIngressTest {
 
     private fun readReply(socket: Socket): CompletableFuture<String> = CompletableFuture.supplyAsync {
         socket.getInputStream().readBytes().toString(Charsets.UTF_8)
+    }
+
+    @Test
+    fun `listener stop closes an open connection even when transport registration has ended`() = runBlocking {
+        val heap = HeapBudget(Long.MAX_VALUE, budgetBytes = 128 * 1024)
+        val channel = CompletableFuture<Channel>()
+        val server = testServer(HeapIngress(heap, 32 * 1024, AdmissionErrorBody), channel) {
+            routing { post("/") { error("the idle socket must not enter routing") } }
+        }
+        server.start(false)
+        try {
+            val port = server.engine.resolvedConnectors().single().port
+            Socket("127.0.0.1", port).use {
+                val accepted = channel.get(5, TimeUnit.SECONDS)
+                assertEquals(heap.limitBytes - splice.core.memory.HeapWeights.CONNECTION_BYTES, heap.available.value)
+                // A retired I/O registration must not erase the listener's physical-socket ownership.
+                accepted.deregister().syncUninterruptibly()
+                assertTrue(accepted.isOpen)
+                server.stop(0, 1000)
+                assertFalse(accepted.isOpen, "stop must close its accepted socket, not only the event loop")
+                assertEquals(heap.limitBytes, heap.available.value)
+            }
+        } finally {
+            server.stop(0, 1000)
+        }
     }
 
     @Test

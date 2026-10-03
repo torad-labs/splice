@@ -10,17 +10,22 @@ import io.netty.channel.socket.SocketChannelConfig
 import io.netty.util.ReferenceCountUtil
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 // why: RFC 9112 section 9.6 describes staged close; bound the final acknowledgement/drain interval to one second.
 private const val SHUTDOWN_GRACE_MS = 1000L
 
 /** After the final response flush, half-close output and discard raw input through the charged connection. */
-internal class IngressShutdown(private val ownership: IngressOwnership) : ChannelDuplexHandler() {
+internal class IngressShutdown(
+    private val ownership: IngressOwnership,
+    private val stopping: AtomicBoolean,
+) : ChannelDuplexHandler() {
     private var deadline: ScheduledFuture<*>? = null
 
     override fun close(ctx: ChannelHandlerContext, promise: ChannelPromise) {
         val socket = ctx.channel() as? DuplexChannel
-        if (socket == null || !ownership.stageClose) {
+        val stage = ownership.stageClose && !stopping.get()
+        if (socket == null || !stage) {
             ctx.close(promise)
             return
         }

@@ -50,6 +50,7 @@ internal class IngressOwnership(private val connectionLease: HeapLease?) {
     fun disconnect() {
         synchronized(lock) {
             disconnected = true
+            halted.set(true)
             responses.forEach {
                 it.responded()
                 if (!it.bound) it.finished()

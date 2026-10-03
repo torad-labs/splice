@@ -6,15 +6,19 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.ApplicationCallPipeline
+import io.ktor.server.application.ApplicationStopPreparing
 import io.ktor.server.application.call
 import io.ktor.server.response.respondText
 import io.ktor.util.AttributeKey
 import io.netty.channel.ChannelPipeline
+import io.netty.channel.group.DefaultChannelGroup
+import io.netty.util.concurrent.GlobalEventExecutor
 import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapLease
 import splice.core.memory.HeapWeights
 import splice.core.wire.HttpStatus
+import java.util.concurrent.atomic.AtomicBoolean
 
 private val connectionKey = io.netty.util.AttributeKey.valueOf<IngressOwnership>("splice.heap.ingress")
 private val leaseKey = AttributeKey<HeapLease>("splice.heap.request")
@@ -35,18 +39,30 @@ public class HeapIngress(
     private val requestLimit: Long = heap.limitBytes,
 ) {
     private val requests = NettyIngressRequest()
+    private val stopping = AtomicBoolean()
+    private var connections = DefaultChannelGroup(GlobalEventExecutor.INSTANCE, true)
 
     public fun install(pipeline: ChannelPipeline) {
         val ownership = IngressOwnership(heap.reserve(HeapWeights.CONNECTION_BYTES))
         pipeline.channel().attr(connectionKey).set(ownership)
         // A read requested by the decoder also crosses this guard.
         pipeline.addBefore("codec", "splice-heap-read", IngressReadGuard(ownership))
-        pipeline.addBefore("codec", "splice-heap-close", IngressShutdown(ownership))
+        pipeline.addBefore("codec", "splice-heap-close", IngressShutdown(ownership, stopping))
         pipeline.addAfter("codec", "splice-heap-body", IngressHandler(heap, maxBodyBytes, requestLimit, ownership))
+        // Physical close settles ownership even when a retired registration emits no channelInactive.
+        pipeline.channel().closeFuture().addListener { ownership.disconnect() }
+        val _ = connections.add(pipeline.channel())
     }
 
     /** Bind the original request identity before routing wraps it. No injected header crosses the wire. */
     public fun install(application: Application) {
+        stopping.set(false)
+        connections = DefaultChannelGroup(GlobalEventExecutor.INSTANCE, true)
+        // Stop accepted sockets while their event loops still run. Shutdown cancels scheduled drain tasks.
+        application.monitor.subscribe(ApplicationStopPreparing) {
+            stopping.set(true)
+            connections.close().syncUninterruptibly()
+        }
         application.intercept(ApplicationCallPipeline.Monitoring) {
             val request = requests.request(call)
             val ownership = requests.channel(call)?.attr(connectionKey)?.get()

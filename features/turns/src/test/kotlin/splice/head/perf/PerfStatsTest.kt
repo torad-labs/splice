@@ -44,6 +44,8 @@ class PerfStatsTest {
         assertEquals(JsonNull, row["upstream_write_to_first_byte_ms"])
         assertEquals(JsonNull, row["arrival_to_ws_send_accepted_ms"])
         assertEquals(JsonNull, row["ws_send_accepted_to_first_fragment_ms"])
+        assertEquals(JsonNull, row[PerfKeys.ARRIVAL_TO_UPSTREAM_HEADERS_START_MS])
+        assertEquals(JsonNull, row[PerfKeys.UPSTREAM_HEADERS_START_TO_KTOR_HEADERS_MS])
         assertEquals(0L, row["retries"]?.jsonPrimitive?.longOrNull)
     }
 
@@ -53,6 +55,8 @@ class PerfStatsTest {
         val perf = TurnPerf { now }
         UpstreamAttemptTiming(perf).also {
             it.written()
+            it.headersStarted()
+            it.headersDelivered()
             it.firstByte()
         }
         val ws = WsAttemptTiming(perf)
@@ -66,9 +70,35 @@ class PerfStatsTest {
         val row = Json.parseToJsonElement(Files.readAllLines(file).single()).jsonObject
         assertEquals(JsonNull, row[PerfKeys.ARRIVAL_TO_UPSTREAM_WRITE_MS])
         assertEquals(JsonNull, row[PerfKeys.UPSTREAM_WRITE_TO_FIRST_BYTE_MS])
+        assertEquals(JsonNull, row[PerfKeys.ARRIVAL_TO_UPSTREAM_HEADERS_START_MS])
+        assertEquals(JsonNull, row[PerfKeys.UPSTREAM_HEADERS_START_TO_KTOR_HEADERS_MS])
         assertEquals(30L, row[PerfKeys.ARRIVAL_TO_WS_SEND_ACCEPTED_MS]?.jsonPrimitive?.longOrNull)
         assertEquals(10L, row[PerfKeys.WS_SEND_ACCEPTED_TO_FIRST_FRAGMENT_MS]?.jsonPrimitive?.longOrNull)
         assertEquals(0L, row[PerfKeys.RETRIES]?.jsonPrimitive?.longOrNull)
+    }
+
+    @Test
+    fun `a row persists header receipt and Ktor handoff on the arrival clock`(@TempDir tmp: Path) {
+        var now = 100L
+        val perf = TurnPerf { now }
+        perf.recordArrival(70)
+        val timing = UpstreamAttemptTiming(perf)
+        now = 140
+        timing.written()
+        now = 150
+        timing.headersStarted()
+        now = 165
+        timing.headersDelivered()
+        now = 180
+        timing.firstByte()
+        val file = tmp.resolve("perf.jsonl")
+        PerfStats(file, clock = { 123L }).record(PerfRowMeta("synthetic", "ok", compact = false), perf.snapshot())
+        assertTrue(AsyncFileIo.drain())
+        val row = Json.parseToJsonElement(Files.readAllLines(file).single()).jsonObject
+        assertEquals(80L, row[PerfKeys.ARRIVAL_TO_UPSTREAM_HEADERS_START_MS]?.jsonPrimitive?.longOrNull)
+        assertEquals(15L, row[PerfKeys.UPSTREAM_HEADERS_START_TO_KTOR_HEADERS_MS]?.jsonPrimitive?.longOrNull)
+        assertEquals(70L, row[PerfKeys.ARRIVAL_TO_UPSTREAM_WRITE_MS]?.jsonPrimitive?.longOrNull)
+        assertEquals(40L, row[PerfKeys.UPSTREAM_WRITE_TO_FIRST_BYTE_MS]?.jsonPrimitive?.longOrNull)
     }
 
     @Test

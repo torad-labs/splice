@@ -2,6 +2,8 @@
 package splice.upstream.transport
 
 import io.ktor.util.AttributeKey
+import okhttp3.Call
+import okhttp3.EventListener
 import okhttp3.Interceptor
 import okhttp3.Response
 import splice.core.perf.UpstreamAttemptTiming
@@ -11,7 +13,7 @@ import java.util.concurrent.ConcurrentHashMap
 /** Per-client handoff. Ktor exposes no request-tag transfer, so an internal header carries a nonce
  *  only as far as this application interceptor. It becomes a typed tag and is removed before any
  *  network interceptor or socket write. The caller releases registrations on every exit. */
-internal class UpstreamTimingBridge : Interceptor {
+internal class UpstreamTimingBridge : Interceptor, EventListener.Factory {
     private val pending = ConcurrentHashMap<String, UpstreamAttemptTiming>()
 
     fun register(timing: UpstreamAttemptTiming): String {
@@ -22,6 +24,18 @@ internal class UpstreamTimingBridge : Interceptor {
 
     fun release(token: String) {
         pending.remove(token)
+    }
+
+    override fun create(call: Call): EventListener {
+        val token = call.request().header(UPSTREAM_TIMING_HEADER)
+        val timing = token?.let(pending::get) ?: return EventListener.NONE
+        return HeaderEvents(timing)
+    }
+
+    private class HeaderEvents(private val timing: UpstreamAttemptTiming) : EventListener() {
+        override fun responseHeadersStart(call: Call) {
+            timing.headersStarted()
+        }
     }
 
     override fun intercept(chain: Interceptor.Chain): Response {

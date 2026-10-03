@@ -134,6 +134,7 @@ public class UpstreamTransport {
                     dispatcher(dispatcher)
                     connectionPool(pool)
                     // V4-307: first, so a thread refused anywhere below is placed before or after the send.
+                    eventListenerFactory(timing)
                     addInterceptor(timing)
                     addInterceptor(RequestSendState())
                     addInterceptor(bound.untimedWrite)

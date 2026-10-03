@@ -70,10 +70,10 @@ public class TurnPerf(private val clock: ElapsedClock = ElapsedClock(System::cur
 
     /** Claim the next wire attempt and atomically discard its predecessor's measurements. */
     public fun beginUpstreamAttempt(): Long = synchronized(lock) {
-        counters.remove(PerfKeys.ARRIVAL_TO_UPSTREAM_WRITE_MS)
-        counters.remove(PerfKeys.UPSTREAM_WRITE_TO_FIRST_BYTE_MS)
-        counters.remove(PerfKeys.ARRIVAL_TO_WS_SEND_ACCEPTED_MS)
-        counters.remove(PerfKeys.WS_SEND_ACCEPTED_TO_FIRST_FRAGMENT_MS)
+        for (milestones in UpstreamMilestones.entries) {
+            counters.remove(milestones.arrival)
+            counters.remove(milestones.wait)
+        }
         ++upstreamAttempt
     }
 

@@ -19,6 +19,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.request.headers
 import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.HttpStatement
 import io.ktor.http.ContentType
 import io.ktor.http.content.ByteArrayContent
@@ -157,24 +158,27 @@ internal class UpstreamRequest(
             val handler = UpstreamHandler<T> { response ->
                 block(response.also { it.postedAtMs = postedAtMs })
             }
-            return executeResponse(statement, ctx, onStreamStart, handler, recorder)
+            return statement.execute { response ->
+                timing?.headersDelivered()
+                executeResponse(response, ctx, onStreamStart, handler, recorder)
+            }
         } finally {
             token?.let { bridge?.release(it) }
         }
     }
 
     private suspend fun <T> executeResponse(
-        statement: HttpStatement,
+        resp: HttpResponse,
         ctx: PostContext,
         onStreamStart: StreamStart,
         block: UpstreamHandler<T>,
         recorder: AttemptRecorder?,
-    ): RetryOutcome<T> = statement.execute { resp ->
+    ): RetryOutcome<T> {
         ctx.markHeaders()
         // V4-220 item 6b: every answer reaches the provider, so a forwarded credential's verdict is known.
         ctx.auth.upstreamAnswered(resp.status.value, resp.status.isSuccess())
         recorder?.response(resp.status.value, resp.headers.entries().associate { (k, v) -> k to v.joinToString() })
-        if (resp.status.isSuccess()) {
+        return if (resp.status.isSuccess()) {
             onStreamStart()
             RetryOutcome.Done(block(UpstreamResponse(resp)))
         } else {

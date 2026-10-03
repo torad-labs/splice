@@ -3,7 +3,11 @@ package splice.upstream.transport
 
 import com.sun.net.httpserver.HttpServer
 import io.ktor.client.engine.okhttp.OkHttpConfig
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import okhttp3.MediaType
 import okhttp3.RequestBody
 import okhttp3.ResponseBody
@@ -14,6 +18,7 @@ import okio.ForwardingSource
 import okio.buffer
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
@@ -22,6 +27,8 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import java.net.InetSocketAddress
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
@@ -68,6 +75,70 @@ class UpstreamWriteTimingTest {
             client.close()
             server.stop(0)
         }
+    }
+
+    @Test
+    fun `delayed socket headers and the Ktor receipt hop have distinct arrival clocks`() {
+        val now = AtomicLong(100)
+        val perf = TurnPerf { now.get() }
+        perf.recordArrival(70)
+        val seen = CompletableDeferred<Unit>()
+        val release = CountDownLatch(1)
+        val server = delayedHeadersServer(seen, release)
+        val client = UpstreamTransport().defaultClient(10_000)
+        val config = client.engine.config
+        check(config is OkHttpConfig)
+        config.addInterceptor(KtorReceiptHop(now))
+        try {
+            val upstream = UpstreamClient(10_000, maxRetries = 1, client = client)
+            val context = PostContext(
+                "http://127.0.0.1:${server.address.port}/",
+                TimingAuth(),
+                { emptyMap() },
+                perf = perf,
+            )
+            val answer = runBlocking {
+                val pending = async { upstream.posted(context, "{}") { it.bodyTextLimited(100) } }
+                withTimeout(5_000) {
+                    seen.await()
+                    while (perf.snapshot().counters[PerfKeys.ARRIVAL_TO_UPSTREAM_WRITE_MS] == null) yield()
+                }
+                assertNull(perf.snapshot().counters["arrival_to_upstream_headers_start_ms"])
+                now.set(1170)
+                release.countDown()
+                pending.await()
+            }
+            assertEquals("done", answer)
+            val counters = perf.snapshot().counters
+            assertEquals(30L, counters[PerfKeys.ARRIVAL_TO_UPSTREAM_WRITE_MS])
+            assertEquals(1100L, counters["arrival_to_upstream_headers_start_ms"])
+            assertEquals(300L, counters["upstream_headers_start_to_ktor_headers_ms"])
+            assertEquals(1370L, counters[PerfKeys.UPSTREAM_WRITE_TO_FIRST_BYTE_MS])
+        } finally {
+            release.countDown()
+            client.close()
+            server.stop(0)
+        }
+    }
+}
+
+private fun delayedHeadersServer(seen: CompletableDeferred<Unit>, release: CountDownLatch): HttpServer =
+    HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
+        createContext("/") { exchange ->
+            exchange.requestBody.use { it.readBytes() }
+            seen.complete(Unit)
+            check(release.await(5, TimeUnit.SECONDS))
+            exchange.sendResponseHeaders(200, 4)
+            exchange.responseBody.use { it.write("done".toByteArray()) }
+        }
+        start()
+    }
+
+private class KtorReceiptHop(private val now: AtomicLong) : okhttp3.Interceptor {
+    override fun intercept(chain: okhttp3.Interceptor.Chain): okhttp3.Response {
+        val response = chain.proceed(chain.request())
+        now.addAndGet(300)
+        return response
     }
 }
 

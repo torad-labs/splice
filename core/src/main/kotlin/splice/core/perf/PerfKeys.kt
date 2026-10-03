@@ -55,6 +55,12 @@ public object PerfKeys {
 
     /** JDK send acceptance to the first decoded text fragment, before JSON event assembly. */
     public const val WS_SEND_ACCEPTED_TO_FIRST_FRAGMENT_MS: String = "ws_send_accepted_to_first_fragment_ms"
+
+    /** OkHttp responseHeadersStart receipt on the arrival clock, before Ktor's response handoff. */
+    public const val ARRIVAL_TO_UPSTREAM_HEADERS_START_MS: String = "arrival_to_upstream_headers_start_ms"
+
+    /** Header receipt on OkHttp's call thread to Ktor's response handler, both on the arrival clock. */
+    public const val UPSTREAM_HEADERS_START_TO_KTOR_HEADERS_MS: String = "upstream_headers_start_to_ktor_headers_ms"
     public const val AUTH_MS: String = "auth_ms"
     public const val BACKOFF_MS: String = "backoff_ms"
     public const val REFRESH_MS: String = "refresh_ms"

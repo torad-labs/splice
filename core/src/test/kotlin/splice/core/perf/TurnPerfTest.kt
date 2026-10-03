@@ -102,6 +102,57 @@ class TurnPerfTest {
     }
 
     @Test
+    fun `header receipt keeps arrival origin zero and latest-attempt ownership`() {
+        val clock = FakeClock()
+        val perf = TurnPerf { clock.now }
+        perf.recordArrival(clock.now - 30)
+        val first = UpstreamAttemptTiming(perf)
+        clock.tick(10)
+        first.written()
+        clock.tick(50)
+        first.headersStarted()
+        clock.tick(4)
+        first.headersDelivered()
+        clock.tick(20)
+        first.firstByte()
+        assertEquals(90L, perf.snapshot().counters[PerfKeys.ARRIVAL_TO_UPSTREAM_HEADERS_START_MS])
+        assertEquals(4L, perf.snapshot().counters[PerfKeys.UPSTREAM_HEADERS_START_TO_KTOR_HEADERS_MS])
+        assertEquals(74L, perf.snapshot().counters[PerfKeys.UPSTREAM_WRITE_TO_FIRST_BYTE_MS])
+        val last = UpstreamAttemptTiming(perf)
+        first.headersStarted()
+        first.headersDelivered()
+        assertTrue(PerfKeys.ARRIVAL_TO_UPSTREAM_HEADERS_START_MS !in perf.snapshot().counters)
+        assertTrue(PerfKeys.UPSTREAM_HEADERS_START_TO_KTOR_HEADERS_MS !in perf.snapshot().counters)
+        last.written()
+        last.headersStarted()
+        last.headersDelivered()
+        assertEquals(114L, perf.snapshot().counters[PerfKeys.ARRIVAL_TO_UPSTREAM_HEADERS_START_MS])
+        assertEquals(0L, perf.snapshot().counters[PerfKeys.UPSTREAM_HEADERS_START_TO_KTOR_HEADERS_MS])
+        val ws = WsAttemptTiming(perf)
+        last.headersDelivered()
+        ws.sendAccepted()
+        ws.firstFragment()
+        assertTrue(PerfKeys.ARRIVAL_TO_UPSTREAM_HEADERS_START_MS !in perf.snapshot().counters)
+        assertTrue(PerfKeys.UPSTREAM_HEADERS_START_TO_KTOR_HEADERS_MS !in perf.snapshot().counters)
+    }
+
+    @Test
+    fun `the last OkHttp header event measures the final Ktor handoff`() {
+        val clock = FakeClock()
+        val perf = TurnPerf { clock.now }
+        val timing = UpstreamAttemptTiming(perf)
+        timing.written()
+        clock.tick(10)
+        timing.headersStarted()
+        clock.tick(30)
+        timing.headersStarted()
+        clock.tick(2)
+        timing.headersDelivered()
+        assertEquals(40L, perf.snapshot().counters[PerfKeys.ARRIVAL_TO_UPSTREAM_HEADERS_START_MS])
+        assertEquals(2L, perf.snapshot().counters[PerfKeys.UPSTREAM_HEADERS_START_TO_KTOR_HEADERS_MS])
+    }
+
+    @Test
     fun `marks record elapsed at completion and re-mark overwrites`() {
         val clock = FakeClock()
         val perf = TurnPerf { clock.now }

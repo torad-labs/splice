@@ -16,5 +16,5 @@ export const FL = {
   onePlan: 'One command',
   manyPlans: 'commands',
   drag: 'Drag a card to put it where you want it; Sessions follows.',
-  standing: { ready: 'ready', near: 'near its limit', quota: 'out of quota', 'signed-out': 'needs a sign-in or a key', off: 'switched off', other: 'in need of a look' },
+  standing: { ready: 'ready', quota: 'out of quota', 'signed-out': 'needs a sign-in or a key', off: 'switched off', other: 'in need of a look' },
 } as const;

@@ -229,7 +229,7 @@ describe('plan windows count as limits', () => {
 
   test('the rule bar names a plan window when warn reports none, and ties go to the sooner reset', () => {
     const nearest = nearestWindow(usage, null, NOW_MS);
-    expect(nearest).toEqual({ head: 'splice', account: null, window: '5h', pct: 65, reset: 'in 1h 0m' });
+    expect(nearest).toEqual({ head: 'splice', account: null, window: '5h', pct: 65, reset: 'in 1h 0m', resetsAt: nowS + 3600 });
   });
 
   test('a window whose reset passed is not a candidate: its 99% is from before the reset', () => {
@@ -245,7 +245,7 @@ describe('plan windows count as limits', () => {
       output_tokens_5h: 0, entries: 0, ratelimit: null,
       warn: { level: 'warn', pct: 85, source: 'quota_7d', reset: '2026-09-25T10:00:00Z' },
       quota: { seven_day: { used_pct: 85, resets_at: nowS + 86400 } } } }] };
-    expect(nearestWindow(folded, null, NOW_MS)).toEqual({ head: 'claudex', account: null, window: '7d', pct: 85, reset: 'in 24h 0m' });
+    expect(nearestWindow(folded, null, NOW_MS)).toEqual({ head: 'claudex', account: null, window: '7d', pct: 85, reset: 'in 24h 0m', resetsAt: nowS + 86400 });
     expect(headWindow(folded, 'claudex', NOW_MS)).toEqual({ pct: 85, level: 'warn', reset: 'in 24h 0m' });
   });
 

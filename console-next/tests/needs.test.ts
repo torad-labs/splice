@@ -262,7 +262,7 @@ describe('a full reading is information until a pool offers a switch', () => {
     const inputs = quiet({ accounts: read({ accounts: [full] }) });
     const list = needsOf(inputs, NOW);
     expect(list.needs.some((need) => need.kind === K.quota)).toBe(false);
-    expect(list.needs.find((need) => need.kind === K.plan)).toMatchObject({ finding: '5h at 100%, resets in 1h 0m', fix: null });
+    expect(list.needs.find((need) => need.kind === K.plan)).toMatchObject({ subject: 'claudex', finding: `5 hours at 100%, resets ${localInstantText(NOW / 1000 + 3600)}`, fix: null });
     expect(calmOf(list, [], [head()]).serving).toEqual(['claudex']);
     expect(ledeOf(list)).toBe('Nothing needs you. Everything is running.');
   });
@@ -270,12 +270,28 @@ describe('a full reading is information until a pool offers a switch', () => {
     const near = { ...full, selected: true, windows: [{ seconds: 18_000, used_percent: 90, reset_epoch_seconds: NOW / 1000 + 3600 }] };
     const spare = account({ label: 'spare' });
     const plans = (other: AccountRow) => needsIn({ accounts: read({ accounts: [near, other] }) }).find((need) => need.kind === K.plan);
+    expect(plans(spare)?.subject).toBe('claudex · work');
     expect(plans(spare)?.fix).toEqual({ kind: 'open', href: '#/fleet/claudex', label: 'Switch account' });
     expect(plans({ ...spare, credential_present: false })?.fix).toBeNull();
     expect(plans({ ...spare, available: false })?.fix).toBeNull();
     expect(plans({ ...spare, auth_excluded_until_epoch_millis: NOW + 60_000 })?.fix).toBeNull();
     expect(plans({ ...spare, refusal: 'credential refused' })?.fix).toBeNull();
   });
+});
+
+test('a single command near its week limit stays serving and names its clock reset', () => {
+  const reset = NOW / 1000 + 26 * 3600;
+  const near = account({ label: null, heads: ['claude-splice'], windows: [{ seconds: 604_800, used_percent: 85, reset_epoch_seconds: reset }] });
+  const command = head({ key: 'claude-splice', label: 'claude-splice' });
+  const list = needsOf(quiet({ heads: read([command]), accounts: read({ accounts: [near] }) }), NOW);
+  expect(list.needs.find((need) => need.kind === K.plan)).toMatchObject({ subject: 'claude-splice', finding: `week at 85%, resets ${localInstantText(reset)}`, fix: null });
+  expect(calmOf(list, [], [command]).serving).toEqual(['claude-splice']);
+});
+
+test('a model-scoped weekly limit keeps the model beside the human window name', () => {
+  const near = account({ windows: [{ model: 'synthetic-model', seconds: 604_800, used_percent: 85, reset_epoch_seconds: null }] });
+  const plan = needsIn({ accounts: read({ accounts: [near] }) }).find((need) => need.kind === K.plan);
+  expect(plan).toMatchObject({ subject: 'claudex', finding: 'synthetic-model week at 85%' });
 });
 
 describe('the daemon, the plans and the accounts', () => {
@@ -297,7 +313,7 @@ describe('the daemon, the plans and the accounts', () => {
     const full = account({ windows: [{ seconds: 18_000, used_percent: 99, reset_epoch_seconds: null }] });
     const out = needsIn({ accounts: read({ accounts: [full] }) });
     expect(out.find((need) => need.source === 'plans')).toMatchObject({
-      severity: 'danger', kind: K.plan, subject: 'work', finding: '5h at 99%', at: '#/usage', fix: null,
+      severity: 'danger', kind: K.plan, subject: 'claudex', finding: '5 hours at 99%', at: '#/usage', fix: null,
     });
   });
 
@@ -313,7 +329,7 @@ describe('the daemon, the plans and the accounts', () => {
     const near = account({ label: 'near', heads: ['e2e-codex'], windows: [{ seconds: 18_000, used_percent: 99, reset_epoch_seconds: NOW / 1000 + 3600 }] });
     const spare = account({ label: 'spare', heads: ['e2e-codex-solo'], windows: [{ seconds: 18_000, used_percent: 20, reset_epoch_seconds: NOW / 1000 + 3600 }] });
     const plans = needsIn({ accounts: read({ accounts: [near, spare] }) }).find((need) => need.source === 'plans');
-    expect(plans).toMatchObject({ finding: '5h at 99%, resets in 1h 0m', fix: null });
+    expect(plans).toMatchObject({ subject: 'e2e-codex', finding: `5 hours at 99%, resets ${localInstantText(NOW / 1000 + 3600)}`, fix: null });
   });
 
   test('a pooled login gone and an excluded account are their own items; a single login gone is its head\'s', () => {

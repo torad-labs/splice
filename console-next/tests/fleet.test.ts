@@ -82,12 +82,14 @@ describe('a fleet card', () => {
   });
   test('a head near its warn share says so, without needing a person', () => {
     const card = fleetCard(head(), inputs({ usage: usage(90) }));
-    expect(card).toMatchObject({ state: 'Near its limit', tone: 'work', attention: false });
+    expect(card).toMatchObject({ state: 'Ready', standing: 'ready', tone: 'work', attention: false });
+    expect(card.line).toMatchObject({ kind: 'gauge', note: `near its limit · 90%, resets ${localInstantText(NOW / 1000 + 3600)}` });
+    expect(fleetLede([card])).toContain('one ready');
   });
   test.each([100, 105])('a %s percent reading without a held refusal stays ready in the command colour', (pct) => {
     const card = fleetCard(head(), inputs({ usage: usage(pct) }));
     expect(card).toMatchObject({ state: 'Ready', standing: 'ready', tone: 'work', colour: 'grok', attention: false, fix: null });
-    expect(card.line).toMatchObject({ kind: 'gauge', pct, full: false, note: `${pct}% · resets ${localInstantText(NOW / 1000 + 3600)}` });
+    expect(card.line).toMatchObject({ kind: 'gauge', pct, full: false, note: `near its limit · ${pct}%, resets ${localInstantText(NOW / 1000 + 3600)}` });
     expect(fleetLede([card])).toContain('one ready');
     expect(fleetLede([card])).not.toContain('out of quota');
   });
@@ -149,8 +151,8 @@ describe('a fleet card', () => {
 describe('the fleet sentence', () => {
   const stand = (...standings: FleetStanding[]): FleetCard[] => standings.map((standing) => ({ standing }) as FleetCard);
   test('counts each standing in order and ends with how to arrange the cards', () => {
-    expect(fleetLede(stand('ready', 'quota', 'ready', 'off', 'near', 'signed-out'))).toBe(
-      'Six commands: two ready, one near its limit, one out of quota, one needs a sign-in or a key, one switched off. Drag a card to put it where you want it; Sessions follows.',
+    expect(fleetLede(stand('ready', 'quota', 'ready', 'off', 'ready', 'signed-out'))).toBe(
+      'Six commands: three ready, one out of quota, one needs a sign-in or a key, one switched off. Drag a card to put it where you want it; Sessions follows.',
     );
   });
   test('one command is singular and a standing nobody has is left out', () => {

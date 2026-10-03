@@ -30,7 +30,7 @@ const outFor3Days: UsageWarn = {
 describe('a head whose own warn is provider_reset', () => {
   test('reads no window and a reset through the one formatter, never 5h and never an instant', () => {
     const nearest = nearestWindow(usageOf({ warn: outFor3Days }), null, NOW_MS);
-    expect(nearest).toEqual({ head: 'grok', account: null, window: null, pct: 100, reset: 'in 3d 0h' });
+    expect(nearest).toEqual({ head: 'grok', account: null, window: null, pct: 100, reset: 'in 3d 0h', resetsAt: NOW_S + 3 * 86_400 });
   });
 
   test('the per-head strip reads the same reset', () => {
@@ -46,18 +46,18 @@ describe('a head whose own warn is provider_reset', () => {
   test('a reset that is one of the head\'s plan windows names that window', () => {
     const weekly = { seven_day: { used_pct: 100, resets_at: NOW_S + 3 * 86_400 } };
     const nearest = nearestWindow(usageOf({ warn: outFor3Days, quota: weekly }), null, NOW_MS);
-    expect(nearest).toEqual({ head: 'grok', account: null, window: '7d', pct: 100, reset: 'in 3d 0h' });
+    expect(nearest).toEqual({ head: 'grok', account: null, window: '7d', pct: 100, reset: 'in 3d 0h', resetsAt: NOW_S + 3 * 86_400 });
   });
 });
 
 describe('the header sources keep the window they always named', () => {
   test('tokens5h is the 5h token window', () => {
     const warn: UsageWarn = { level: 'warn', pct: 90, source: 'tokens5h', reset: null };
-    expect(nearestWindow(usageOf({ warn }), null, NOW_MS)).toEqual({ head: 'grok', account: null, window: '5h', pct: 90, reset: null });
+    expect(nearestWindow(usageOf({ warn }), null, NOW_MS)).toEqual({ head: 'grok', account: null, window: '5h', pct: 90, reset: null, resetsAt: null });
   });
 
   test('a rate-limit header reset is a duration the daemon wrote, not an instant: it passes through', () => {
     const warn: UsageWarn = { level: 'warn', pct: 85, source: 'ratelimit', reset: '6m0s' };
-    expect(nearestWindow(usageOf({ warn }), null, NOW_MS)).toEqual({ head: 'grok', account: null, window: '5h', pct: 85, reset: '6m0s' });
+    expect(nearestWindow(usageOf({ warn }), null, NOW_MS)).toEqual({ head: 'grok', account: null, window: '5h', pct: 85, reset: '6m0s', resetsAt: null });
   });
 });

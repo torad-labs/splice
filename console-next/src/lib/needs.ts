@@ -23,6 +23,7 @@ import { UNKNOWN_HEAD } from '../types/sessions';
 import type { TeamRow } from '../types/teams';
 import { exclusionText, isExcluded, isServable, poolOf, refusalText } from './accounts';
 import { checkFinding, collapseChecks, fixMasked, logsHrefOf, wantsAttention } from './doctor';
+import { WINDOW_NAME } from './fleet';
 import { ABSENT } from './format';
 import { headAttention, localInstantText, quotaRefusedUntil } from './heads';
 import { nearestLimit } from './nearest-limit';
@@ -172,8 +173,12 @@ function planNeeds(
   const nearest = nearestLimit({ accounts, usage, auth }, now);
   if (nearest === null || nearest.level === 'ok') return [];
   if (nearest.head !== null && refused.has(nearest.head)) return [];
-  const reset = nearest.reset === null ? '' : `, ${U.resets} ${nearest.reset}`;
+  const resetAt = nearest.resetsAt === null ? nearest.reset : localInstantText(nearest.resetsAt);
+  const reset = resetAt === null ? '' : `, ${U.resets} ${resetAt}`;
   const pool = nearest.head === null ? [] : poolOf(accounts, nearest.head);
+  const command = nearest.head ?? nearest.account ?? S.nearest;
+  const subject = pool.length > 1 && nearest.account !== null ? `${command} · ${nearest.account}` : command;
+  const window = nearest.window === null ? '' : `${nearest.window.replace(/(^| )(5h|7d)$/, (_match, before: string, length: keyof typeof WINDOW_NAME) => before + WINDOW_NAME[length].toLowerCase())} `;
   const canSwitch = pool.some((account) => account.label !== nearest.account && account.selected !== true && isServable(account) && !isExcluded(account, now));
   return [{
     key: 'plans',
@@ -181,8 +186,8 @@ function planNeeds(
     source: 'plans',
     kind: K.plan,
     head: nearest.head,
-    subject: nearest.account ?? S.nearest,
-    finding: `${nearest.window === null ? '' : `${nearest.window} `}${U.at} ${nearest.pct}%${reset}`,
+    subject,
+    finding: `${window}${U.at} ${nearest.pct}%${reset}`,
     fix: canSwitch && nearest.head !== null ? open(hrefOf('accounts', nearest.head), S.switchAccount) : null,
     // The nearest limit is the fleet's, read across every account: its page, not one row.
     at: hrefOf('plans'),

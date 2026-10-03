@@ -107,6 +107,7 @@ test('a full reading stays Ready in command colour, reads as usage, and still se
     await route.fulfill({ response, json: body });
   });
   const reset = Math.floor(Date.now() / 1000) + 3600;
+  let pct = 100;
   await page.route((url) => url.pathname === '/api/heads', async (route) => {
     const response = await route.fetch();
     const body = await response.json() as HeadsPayload;
@@ -120,7 +121,7 @@ test('a full reading stays Ready in command colour, reads as usage, and still se
     const body = await response.json() as UsagePayload;
     const marked = body.heads.find((head) => head.key === STACK.oauthHead);
     if (marked === undefined || marked.usage === null) throw new Error('isolated stack has no OAuth usage');
-    marked.usage.quota = { five_hour: { used_pct: 100, resets_at: reset, observed_at: Math.floor(Date.now() / 1000) } };
+    marked.usage.quota = { five_hour: { used_pct: pct, resets_at: reset, observed_at: Math.floor(Date.now() / 1000) } };
     await route.fulfill({ response, json: body });
   });
   // No switch target: usage remains the source for the head with no account row.
@@ -138,7 +139,15 @@ test('a full reading stays Ready in command colour, reads as usage, and still se
   const local = await page.evaluate((seconds) => new Intl.DateTimeFormat('en-US', {
     month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
   }).format(new Date(seconds * 1000)), reset);
-  await expect(card.locator('.gl small')).toHaveText('100% · resets ' + local);
+  await expect(card.locator('.gl small')).toHaveText('near its limit · 100%, resets ' + local);
+  pct = 85;
+  await page.reload();
+  await expect(card.getByText('Ready', { exact: true })).toBeVisible();
+  await expect(card.locator('.gl small')).toHaveText('near its limit · 85%, resets ' + local);
+  await expect(page.locator('main .lede')).not.toContainText('near its limit');
+  pct = 100;
+  await page.reload();
+  await expect(card.locator('.gl small')).toHaveText('near its limit · 100%, resets ' + local);
   expect((await card.locator('.gl').innerText()).match(/100%/g)).toHaveLength(1);
   for (const theme of ['Day', 'Night']) {
     await page.getByRole('button', { name: theme, exact: true }).click();

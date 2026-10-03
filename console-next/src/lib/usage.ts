@@ -111,6 +111,8 @@ export interface NearestWindow {
   window: string | null;
   pct: number;
   reset: string | null;
+  /** The same winning window's reset instant, for clock-time displays. */
+  resetsAt: number | null;
 }
 
 /**
@@ -139,6 +141,7 @@ export function nearestWindow(
         window: warnWindowName(head, usage.window_hours, nowMs),
         pct: head.warn.pct,
         reset: warnResetText(head.warn.reset, nowMs),
+        resetsAt: instantSeconds(head.warn.reset),
         order: 0,
       });
     }
@@ -150,6 +153,7 @@ export function nearestWindow(
         window: plan.window,
         pct: plan.pct,
         reset: resetsInText(plan.resetsAt, nowMs),
+        resetsAt: plan.resetsAt,
         order: plan.window === '5h' ? 0 : 1,
       });
     }
@@ -159,7 +163,7 @@ export function nearestWindow(
     null,
   );
   if (best === null) return null;
-  return { head: best.head, account: best.account, window: best.window, pct: best.pct, reset: best.reset };
+  return { head: best.head, account: best.account, window: best.window, pct: best.pct, reset: best.reset, resetsAt: best.resetsAt };
 }
 
 /** Whether a head reports any window: rate-limit headers, a token limit, or a plan window. */

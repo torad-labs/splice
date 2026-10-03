@@ -89,7 +89,11 @@ test('a near-limit notice leads through the spare plan to exact cross-plan resum
   });
   await open(page, 'needs-you');
   const notice = page.getByRole('listitem').filter({ hasText: '99%' });
-  await expect(notice).toContainText('synthetic-near');
+  await expect(notice).toContainText(STACK.oauthHead);
+  await expect(notice).not.toContainText('synthetic-near');
+  await expect(notice).toContainText('5 hours at 99%, resets ');
+  const serving = page.locator('.calm > div').filter({ has: page.getByRole('heading', { name: 'Commands serving', exact: true }) });
+  await expect(serving).toContainText(STACK.oauthHead);
   await expect(notice).not.toHaveClass(/attn/);
   await expect(notice.getByRole('link', { name: 'Switch account', exact: true })).toHaveCount(0);
   const usage = notice.getByRole('link', { name: 'Show the details', exact: true });

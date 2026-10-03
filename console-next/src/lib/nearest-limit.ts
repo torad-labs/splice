@@ -36,6 +36,8 @@ export interface NearestLimit {
   pct: number;
   /** When the window resets (`in 2h 3m`); null where the provider sent none. */
   reset: string | null;
+  /** The winning window's epoch seconds, never a parsed display duration. */
+  resetsAt: number | null;
   /** The daemon's own lines: critical at its critical share, warn past the configured warn share, or
    *  past the account entity's own warn line while /api/usage has not answered. */
   level: 'ok' | 'warn' | 'critical';
@@ -71,6 +73,7 @@ function fromAccounts(accounts: readonly AccountRow[], nowMs: number): Candidate
       window: windowName(window),
       pct: window.used_percent,
       reset: resetsInText(window.reset_epoch_seconds, nowMs),
+      resetsAt: window.reset_epoch_seconds,
     });
   }
   return out;
@@ -102,8 +105,8 @@ export function nearestLimit(sources: LimitSources, nowMs: number): NearestLimit
     null,
   );
   if (best === null) return null;
-  const { head, account, window, pct, reset } = best;
-  return { head, account, window, pct, reset, level: planLevel(pct, sources.usage?.warn_pct ?? COCK_AT_PERCENT) };
+  const { head, account, window, pct, reset, resetsAt } = best;
+  return { head, account, window, pct, reset, resetsAt, level: planLevel(pct, sources.usage?.warn_pct ?? COCK_AT_PERCENT) };
 }
 
 /** The limit's tone, one mapping for every surface that draws it. */

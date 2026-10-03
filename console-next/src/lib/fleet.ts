@@ -14,7 +14,7 @@ import { countWord, noun, timeAgo } from './format';
 import { FL } from './words-fleet';
 
 /** Where a plan stands, in the few ways the page's one sentence counts them. */
-export type FleetStanding = 'ready' | 'near' | 'quota' | 'signed-out' | 'off' | 'other';
+export type FleetStanding = 'ready' | 'quota' | 'signed-out' | 'off' | 'other';
 
 export type FleetTone = 'work' | 'wait' | 'stuck' | 'idle' | 'quota';
 
@@ -59,7 +59,7 @@ export interface FleetInputs {
   now: number;
 }
 
-const WINDOW_NAME = { '5h': '5 hours', '7d': 'Week' } as const;
+export const WINDOW_NAME = { '5h': '5 hours', '7d': 'Week' } as const;
 
 const OAUTH_KINDS = new Set(['chatgpt-oauth', 'grok-oauth', 'kimi-oauth', 'muse-oauth']);
 
@@ -181,13 +181,13 @@ export function fleetCard(head: HeadStatus, inputs: FleetInputs): FleetCard {
       return note('wait', 'other', 'Restart needed', FL.restartNeeded, 'restart', true);
     case 'ok': {
       const level = gauge === null || usage === null ? 'ok' : planLevel(gauge.pct, usage.warn_pct);
-      if (level !== 'ok' && gauge !== null && gauge.pct < 100) return note('work', 'near', 'Near its limit', '', null, false);
-      return { ...base, tone: 'work', standing: 'ready', state: 'Ready', attention: false, line: gauge, fix: null };
+      const line = level !== 'ok' && gauge !== null ? { ...gauge, note: `near its limit · ${gauge.note.replace(' · resets ', ', resets ')}` } : gauge;
+      return { ...base, tone: 'work', standing: 'ready', state: 'Ready', attention: false, line, fix: null };
     }
   }
 }
 
-const STANDING_ORDER: readonly FleetStanding[] = ['ready', 'near', 'quota', 'signed-out', 'off', 'other'];
+const STANDING_ORDER: readonly FleetStanding[] = ['ready', 'quota', 'signed-out', 'off', 'other'];
 
 /** The page's one sentence: how many plans, and how many stand each way, then how to arrange them. */
 export function fleetLede(cards: readonly FleetCard[]): string {

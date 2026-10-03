@@ -141,7 +141,10 @@ internal class CodeModeLiveRound(
 
     private fun failed(error: Exception): TurnOutcome.Failure = synchronized(lifecycle) {
         upstreamEnded = true
-        if (headStopped) throw CancellationException("code-mode head stopped", error)
+        if (headStopped) {
+            source.fail(SOURCE_FAILED)
+            throw CancellationException("code-mode head stopped", error)
+        }
         val detail = SOURCE_FAILED
         sourceInterrupted = record != null && error is IOException && error !is CodeModePersistenceException
         source.fail(detail)

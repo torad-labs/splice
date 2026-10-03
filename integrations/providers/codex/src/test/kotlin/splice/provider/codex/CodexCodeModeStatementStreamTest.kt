@@ -1,5 +1,6 @@
 package splice.provider.codex
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -26,7 +27,8 @@ class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
         val runtime = IncrementalRuntime()
         val manager = bridge(runtime)
         val sinks = List(3) { StepSink() }
-        val post = GatedPost(sinks.first())
+        val itemCompletion = CompletableDeferred<Unit>()
+        val post = GatedPost(sinks.first()).apply { itemCompletionGate = itemCompletion }
         val callbacks = mutableListOf<SeenTool>()
         try {
             for (step in sinks.indices) {
@@ -41,6 +43,7 @@ class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
                 val outcome = withTimeout(1_500) { request.await() } as TurnOutcome.Success
                 assertTrue(outcome.hasToolUse)
                 assertEquals(0L, outcome.usage.outputTokens)
+                assertFalse(post.itemDone.isCompleted, "streaming callbacks must precede item completion")
                 assertFalse(post.complete.isCompleted, "tool callback must precede response.completed")
                 assertEquals(1, post.posts, "results must not POST merely to receive another statement")
                 assertTrue(stateFiles.records().single().toString().contains(callback.id), "callback must be durable")
@@ -54,6 +57,7 @@ class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
                     disableParallel = false,
                 ).intercept(history(callbacks), StepSink(), post)
             }
+            itemCompletion.complete(Unit)
             post.complete.complete(Unit)
             val outcome = withTimeout(1_500) { final.await() } as TurnOutcome.Success
             assertEquals(2, post.posts, "only script completion permits a continuation POST")

@@ -79,6 +79,7 @@ abstract class CodeModeStatementStreamSupport : CodeModeBridgeTestSupport() {
         val complete = CompletableDeferred<Unit>()
         val stopped = CompletableDeferred<Unit>()
         val itemDone = CompletableDeferred<Unit>()
+        var itemCompletionGate: CompletableDeferred<Unit>? = null
         var terminalProblem: String? = null
         var wholeOnly = false
         var repeatOuter = false
@@ -130,6 +131,7 @@ abstract class CodeModeStatementStreamSupport : CodeModeBridgeTestSupport() {
             val id = if (terminalProblem == "changed-id") "different-call" else "outer-call"
             val name = if (terminalProblem == "changed-name") "different-exec" else CODE_MODE_TOOL_NAME
             val completed = GatewayCustomCall(id, name, source, raw)
+            itemCompletionGate?.await()
             sink.customToolSource(CustomToolSource.Completed(completed))
             itemDone.complete(Unit)
             complete.await()

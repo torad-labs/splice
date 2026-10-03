@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import java.io.OutputStream
+import java.util.StringJoiner
 
 // why: ASCII code points fit in one UTF-8 byte; the first non-ASCII value is 2^7.
 internal const val UTF8_ASCII_CEILING = 0x80
@@ -57,11 +58,9 @@ public object JsonWire {
     }
 
     public fun string(element: JsonElement): String {
-        val count = WireCharCount()
-        WireTree(count).tree(element)
-        val wire = StringWire(count.chars)
+        val wire = StringWire()
         WireTree(wire).tree(element)
-        return wire.value.toString()
+        return wire.finish()
     }
 
     /** Writes with fixed scratch and leaves the caller's stream open. */
@@ -157,29 +156,39 @@ public object JsonWire {
         }
     }
 
-    /** Measure UTF-16 output without scratch so materialization reserves its final size exactly. */
-    private class WireCharCount : WireText {
-        var chars = 0
-            private set
+    /** Borrow large spans; the JDK join allocates the final string with its exact size and character width. */
+    private class StringWire : WireText {
+        private val parts = StringJoiner("")
+
+        // Match the streaming scratch bound while batching punctuation and small scalar spans.
+        private val chunk = StringBuilder(WIRE_BUFFER_BYTES)
 
         override fun raw(text: String, start: Int, end: Int) {
-            chars += end - start
+            val length = end - start
+            if (length >= WIRE_BUFFER_BYTES) {
+                flush()
+                parts.add(text.substring(start, end))
+            } else {
+                if (chunk.length + length > WIRE_BUFFER_BYTES) flush()
+                chunk.append(text, start, end)
+            }
         }
 
         override fun ascii(character: Char) {
-            chars++
-        }
-    }
-
-    private class StringWire(size: Int) : WireText {
-        val value = StringBuilder(size)
-
-        override fun raw(text: String, start: Int, end: Int) {
-            value.append(text, start, end)
+            if (chunk.length == WIRE_BUFFER_BYTES) flush()
+            chunk.append(character)
         }
 
-        override fun ascii(character: Char) {
-            value.append(character)
+        fun finish(): String {
+            flush()
+            return parts.toString()
+        }
+
+        private fun flush() {
+            if (chunk.isNotEmpty()) {
+                parts.add(chunk.toString())
+                chunk.setLength(0)
+            }
         }
     }
 

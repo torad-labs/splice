@@ -4,6 +4,7 @@ package splice.core.util
 import com.sun.management.ThreadMXBean
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonUnquotedLiteral
 import org.junit.jupiter.api.Assertions.assertArrayEquals
@@ -151,6 +152,25 @@ class JsonWireTest {
             assertArrayEquals(expected, output.toByteArray())
             assertEquals(expected.size.toLong(), JsonWire.byteSize(tree))
         }
+    }
+
+    @Test
+    fun `joined materialization preserves long borrowed spans and adjacent chunk boundaries`() {
+        val texts = listOf(
+            "x".repeat(WIRE_BUFFER_BYTES - 1),
+            "x".repeat(WIRE_BUFFER_BYTES),
+            "x".repeat(WIRE_BUFFER_BYTES + 1),
+            "🧪" + "x".repeat(WIRE_BUFFER_BYTES),
+            "x".repeat(WIRE_BUFFER_BYTES) + "🧪",
+            "\uD800" + "x".repeat(WIRE_BUFFER_BYTES) + "\uDC00",
+            ("é🧪" + "x".repeat(WIRE_BUFFER_BYTES) + "\n\u0000\"\\").repeat(3),
+        )
+        val tree = JsonArray(texts.map(::JsonPrimitive))
+        val expected = tree.toString()
+        assertEquals(expected, JsonWire.string(tree))
+        val output = ByteArrayOutputStream()
+        JsonWire.write(tree, output)
+        assertArrayEquals(expected.toByteArray(Charsets.UTF_8), output.toByteArray())
     }
 
     @Test

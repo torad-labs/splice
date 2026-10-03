@@ -57,6 +57,9 @@ class ResponsesPreparationBudgetTest {
         assertTrue(legacy.first >= 250_000, "legacy_seed_allocated_bytes=${legacy.first}")
         assertTrue(key.first < 250_000, "key_allocated_bytes=${key.first}")
         assertTrue(build.first < 500_000, "build_allocated_bytes=${build.first}")
+        // A single UTF-16 result plus bounded metadata fits below this; the measured 9 MB staging path does not.
+        val wireBudget = text.length * 3L + 250_000L
+        assertTrue(wire.first < wireBudget, "build_and_wire_allocated_bytes=${wire.first}, budget=$wireBudget")
     }
 
     @Test

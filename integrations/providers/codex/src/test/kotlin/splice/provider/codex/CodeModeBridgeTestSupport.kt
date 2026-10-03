@@ -15,6 +15,7 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.dialect.responses.request.ResponsesToolResultMedia
 import splice.upstream.BuiltTurn
@@ -78,6 +79,7 @@ abstract class CodeModeBridgeTestSupport {
             ttl = ttl,
             maxRounds = maxRounds,
             clock = clock,
+            cellClock = ElapsedClock(clock::millis),
             log = LogSink { logLines += it },
             sessionAlive = CodeModeSessionAlive { id -> if (id in deadSessions) false else null },
         ),
@@ -89,6 +91,12 @@ abstract class CodeModeBridgeTestSupport {
         val registry = field.get(manager) as CodexCodeModeRegistry
         val key = stateFiles.records().first().getValue("key").jsonPrimitive.content
         registry.recordsFor(key)
+    }
+
+    /** Exercise the capacity backstop rather than killing a request's own retained cell on lookup. */
+    protected fun reapIdleCell(manager: CodexCodeModeBridge) {
+        val field = CodexCodeModeBridge::class.java.getDeclaredField("registry").apply { isAccessible = true }
+        (field.get(manager) as CodexCodeModeRegistry).evictIdleCell()
     }
 
     /** The dialect's tool_result image renderer with codex's own quirks — the one production uses. */

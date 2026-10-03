@@ -18,11 +18,12 @@ internal class CodeModeTurnStart(
     private val history: CodeModeExpiredHistory,
     private val store: CodexCodeModeStore,
     private val clock: Clock,
-    private val closeSession: CodeModeSessionEnd,
+    private val cells: CodeModeCellRetention,
 ) {
-    fun begin(key: String) = access.withKey(key) {
-        val changed = retention.beginTurn(records, history, key, clock.millis())
-        if (changed && records.none { it.key == key }) closeSession(key)
+    fun begin(key: String, digest: String? = null, continued: Set<String> = emptySet()) = access.withKey(key) {
+        val reaped = digest?.let { cells.supersede(key, it, continued) } == true
+        val changed = retention.beginTurn(records, history, key, clock.millis()) or reaped
+        if (changed) cells.closeEmpty(key)
         store.save(records, history.entries, retryOnly = !changed, dirtyKeys = setOf(key))
     }
 }

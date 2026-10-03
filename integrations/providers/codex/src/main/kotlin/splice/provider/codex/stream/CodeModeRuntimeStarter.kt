@@ -28,7 +28,7 @@ internal class CodeModeRuntimeStarter(
             try {
                 return open(record, context, stream)
             } catch (error: CodeModeCapacityException) {
-                if (reclaimed || registry.evictIdleCell() == null) {
+                if (reclaimed || registry.evictIdleCell(record.key) == null) {
                     registry.retainedCells.logRefusal()
                     throw error
                 }

@@ -104,8 +104,10 @@ internal data class CodeModeRecord(
     var sourceState: CodeModeSourceState? = null
     var sourceEnd: CodeModeSourceLease? = null
 
-    /** Null while the cell is executing; set only when its caller releases the runtime step. Never persisted. */
+    /** Monotonic parked time, nested borrowers, and last positive liveness sample. Never persisted. */
     var cellIdleSince: Long? = null
+    var cellBorrowers: Int = 0
+    var cellLastAliveAt: Long? = null
 
     @Volatile var retainedBytes: Long? = null
 

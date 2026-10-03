@@ -108,6 +108,7 @@ internal class CodexCodeModeTurn(
         val completedHistory = wire.canonicalize(bodyJson, completed, context.turn.toolMedia)
         completedHistory.error?.let { return failure(it) }
         val canonicalBody = checkNotNull(completedHistory.bodyJson)
+        reconcile(context, canonicalBody)
         val owner = placedOwner(context, canonicalBody, conflicts)
         val terminal = completed.lastOrNull { it.sourceState?.usage != null && it.sourceState?.consumed == false }
         return when {
@@ -118,6 +119,17 @@ internal class CodexCodeModeTurn(
                 driver.post(context, null, canonicalBody)
             else -> driver.post(context, initialOuter, canonicalBody)
         }
+    }
+
+    /** Missing callbacks prove supersession only on a history that still extends the parked baseline.
+     * Divergent or shorter side requests do not decide whether the original client can return. */
+    private fun reconcile(context: CodeModeRunContext, bodyJson: String) {
+        val callbacks = wire.callbackIds(bodyJson) + context.turn.toolResults.map(CodeModeResult::id)
+        val continued = registry.recordsFor(context.key).filter { it.phase == CodeModePhase.ACTIVE }
+            .filter { record ->
+                record.clientIds().any { it in callbacks } || wire.restoreBaseline(bodyJson, record).error != null
+            }.mapTo(mutableSetOf()) { it.id }
+        registry.turnStart.begin(context.key, context.digest, continued)
     }
 
     /** The active or lost owner whose baseline still places in this history, with that history

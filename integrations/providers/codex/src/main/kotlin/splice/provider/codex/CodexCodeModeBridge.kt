@@ -5,6 +5,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.GatewayCustomCall
+import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.provider.codex.state.CodeModeSessionEnd
 import splice.provider.codex.stream.CodeModeRoundInterceptor
@@ -13,6 +14,7 @@ import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeRuntime
 import java.nio.file.Path
 import java.time.Clock
+import java.util.concurrent.TimeUnit
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
@@ -80,8 +82,10 @@ public data class CodeModeBridgeConfig(
     val clock: Clock = Clock.systemUTC(),
     /** Head-scoped sink for history-degradation lines; uninstalled it is a no-op. */
     val log: LogSink = LogSink { },
-    /** Positive liveness protects parked cells. Unknown sessions have a thirty-minute cell idle lease. */
+    /** Alive cells survive timer sweeps; capacity may reclaim any parked cell past its thirty-minute lease. */
     val sessionAlive: CodeModeSessionAlive = CodeModeSessionAlive { null },
+    /** Monotonic lease time; persisted timestamps continue to use [clock]. */
+    val cellClock: ElapsedClock = ElapsedClock { TimeUnit.NANOSECONDS.toMillis(System.nanoTime()) },
 )
 
 /** V4-340: where a head keeps its code-mode records: one owner-only file per conversation in [dir]. [legacyFile]

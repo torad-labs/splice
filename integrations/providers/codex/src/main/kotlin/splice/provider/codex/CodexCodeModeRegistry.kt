@@ -74,7 +74,7 @@ internal class CodexCodeModeRegistry(
     )
 
     /** V4-337: where each code-mode turn starts, before its history is built. */
-    val turnStart = CodeModeTurnStart(access, retention, records, history, store, config.clock, closeSession)
+    val turnStart = CodeModeTurnStart(access, retention, records, history, store, config.clock, retainedCells)
 
     init {
         monitor.withLock {
@@ -148,7 +148,7 @@ internal class CodexCodeModeRegistry(
             val held = mutableMapOf<String, CodeModeKeyLocks.Entry>()
             try {
                 monitor.withLock {
-                    if (sweeper.sweep(record.key)) {
+                    if (sweeper.sweep(record.key, record.key)) {
                         store.save(records, history.entries, dirtyKeys = setOf(record.key))
                     }
                     val plan = plan() ?: return@withLock false
@@ -161,6 +161,7 @@ internal class CodexCodeModeRegistry(
                         held[key] = entry
                     }
                     val admittedGeneration = startup.generation
+                    plan.retireCells(record.key)
                     // Commit evictions first. A failure there must not leave an unexecuted admission on disk.
                     plan.changedKeys.filter { it != record.key }.forEach { key ->
                         store.save(plan.candidate, plan.nextHistory.entries, dirtyKeys = setOf(key))
@@ -184,26 +185,42 @@ internal class CodexCodeModeRegistry(
         }
 
         private fun plan(): AdmissionPlan? {
+            val previous = records.filter {
+                it.key != record.key && record.sessionId != null && it.sessionId == record.sessionId
+            }
+            val unfinished = previous.filterNot(CodeModeRecord::terminal)
+            val starting = unfinished.any { it.id in admissions }
+            if (starting || unfinished.any(retainedCells::running)) return null
             val candidate = records.toMutableList()
             val nextHistory = CodeModeExpiredHistory(history.entries.toMutableList(), config.retention.records)
             if (!retention.makeRoom(candidate, nextHistory, record, config.clock.millis())) return null
             candidate += record
-            return AdmissionPlan(candidate, nextHistory)
+            return AdmissionPlan(candidate, nextHistory, previous)
         }
     }
 
     private inner class AdmissionPlan(
         val candidate: List<CodeModeRecord>,
         val nextHistory: CodeModeExpiredHistory,
+        private val previous: List<CodeModeRecord>,
     ) {
+        private val parked = previous.filter { it.phase == CodeModePhase.ACTIVE }
         private val evicted = (records.map(CodeModeRecord::id) - candidate.map(CodeModeRecord::id).toSet()).toSet()
         private val removedMarkers = (history.entries - nextHistory.entries.toSet()).toSet()
         private val addedMarkers = nextHistory.entries.filter { it !in history.entries }
         val changedKeys = setOf(candidate.last().key) + records.filter { it.id in evicted }.map(CodeModeRecord::key) +
-            removedMarkers.map(CodeModeExpiredSnapshot::key)
+            removedMarkers.map(CodeModeExpiredSnapshot::key) + previous.map(CodeModeRecord::key)
+
+        fun retireCells(key: String) {
+            parked.forEach {
+                retainedCells.park(it, "code-mode parked program replaced by a newer program in its session")
+            }
+            (previous.map(CodeModeRecord::key).toSet() - key - parked.map(CodeModeRecord::key).toSet())
+                .forEach(closeSession::invoke)
+        }
 
         fun onlyAdds(key: String): Boolean =
-            records.none { it.key == key && it.id in evicted } &&
+            parked.none { it.key == key } && records.none { it.key == key && it.id in evicted } &&
                 removedMarkers.none { it.key == key } && addedMarkers.none { it.key == key }
 
         fun publishEvictions(key: String) {
@@ -294,8 +311,8 @@ internal class CodexCodeModeRegistry(
     }
 
     /** Global idle order is snapshotted, then each candidate is rechecked and saved under its own key. */
-    fun evictIdleCell(): CodeModeRecord? {
-        val keys = monitor.withLock { retainedCells.candidateKeys() }
+    fun evictIdleCell(protectedKey: String? = null): CodeModeRecord? {
+        val keys = monitor.withLock { retainedCells.candidateKeys().filter { it != protectedKey } }
         keys.forEach { key ->
             val victim = access.withKey(key) {
                 retainedCells.evict(key)?.also {
@@ -321,7 +338,7 @@ internal class CodexCodeModeRegistry(
     private inner class PeriodicSweep {
         inline fun <T> withKey(key: String, block: () -> T): T = access.withKey(key) {
             // Requests only clean their own key. The timer owns cross-key housekeeping and its I/O.
-            val changed = sweeper.sweep(key)
+            val changed = sweeper.sweep(key, key)
             store.save(records, history.entries, retryOnly = !changed, dirtyKeys = setOf(key))
             block()
         }

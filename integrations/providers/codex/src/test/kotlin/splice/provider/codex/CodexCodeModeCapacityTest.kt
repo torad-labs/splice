@@ -86,7 +86,7 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
     }
 
     @Test
-    fun `a dead session is reaped on its next history lookup`() = runTest {
+    fun `a dead session is reaped at capacity without changing its retained history`() = runTest {
         val clock = MutableClock(1_000)
         val runtime = BoundedRuntime(capacity = 4)
         val manager = bridge(runtime, clock = clock)
@@ -96,7 +96,7 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
         clock.now += 31.minutes.inWholeMilliseconds
         deadSessions += "session-a"
 
-        sweepOwnHistory(manager)
+        reapIdleCell(manager)
 
         assertTrue(parked.closed)
         assertEquals("LOST", phaseOf("outer-a"))
@@ -114,7 +114,7 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
         val readId = sink.tools.single().id
         clock.now += 31.minutes.inWholeMilliseconds
         deadSessions += "session-a"
-        sweepOwnHistory(manager)
+        reapIdleCell(manager)
         assertEquals("LOST", phaseOf("outer-a"))
 
         var posted = ""
@@ -187,7 +187,7 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
         val ids = sink.tools.map { it.id }
         clock.now += 31.minutes.inWholeMilliseconds
         deadSessions += "session-a"
-        sweepOwnHistory(manager)
+        reapIdleCell(manager)
         assertEquals("LOST", phaseOf("outer-a"))
 
         val results = ids.mapIndexed { index, id -> CodeModeResult(id, "xy"[index].toString().repeat(resultChars)) }
@@ -306,6 +306,7 @@ class CodeModeUnknownCapacityTest : CodeModeBridgeTestSupport() {
                 { runtime },
                 stateLocation(),
                 clock = clock,
+                cellClock = splice.core.util.ElapsedClock(clock::millis),
                 log = LogSink { logLines += it },
                 sessionAlive = CodeModeSessionAlive { if (it == "alive") true else null },
             ),
@@ -313,14 +314,14 @@ class CodeModeUnknownCapacityTest : CodeModeBridgeTestSupport() {
         try {
             manager.interceptor(turn(sessionId = "alive"), outer("outer-alive"), false)
                 .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome("outer-alive") }
-            clock.now += 30.minutes.inWholeMilliseconds
+            clock.now += 29.minutes.inWholeMilliseconds
             manager.interceptor(turn(sessionId = "unknown"), outer("outer-unknown"), false)
                 .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome("outer-unknown") }
             val refusal = incoming(manager)
             assertTrue(refusal is TurnOutcome.Success && !refusal.hasToolUse)
             assertTrue(runtime.cells.none { it.closed })
             assertTrue(
-                logLines.any { "dead=0 unknown=1 alive=1" in it && "oldestIdleMs=1800000" in it },
+                logLines.any { "dead=0 unknown=1 alive=1" in it && "oldestIdleMs=1740000" in it },
                 logLines.toString(),
             )
         } finally {

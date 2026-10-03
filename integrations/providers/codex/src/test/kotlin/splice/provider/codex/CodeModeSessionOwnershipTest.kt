@@ -55,8 +55,7 @@ class CodeModeSessionOwnershipTest : CodeModeBridgeTestSupport() {
         manager.interceptor(turn(sessionId = "session-b"), outer("outer-b"), disableParallel = false)
             .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome("outer-b") }
         deadSessions += "session-a"
-        manager.interceptor(turn(sessionId = "session-a"), null, disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { completedOutcome() }
+        reapIdleCell(manager)
         assertEquals(listOf(runtime.starts.first()), runtime.ended)
         assertTrue(runtime.cells.first().closed)
         assertEquals(false, runtime.cells.last().closed)

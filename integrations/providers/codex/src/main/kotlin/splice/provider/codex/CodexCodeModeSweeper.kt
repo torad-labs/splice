@@ -105,7 +105,8 @@ internal class CodexCodeModeSweeper(
     private val retainedCells: CodeModeCellRetention,
 ) {
     /** Expires records and reaps dead or over-age unknown parked cells; true when anything changed. */
-    fun sweep(key: String? = null): Boolean = expireRecords(key) or retainedCells.sweep(key) or expireMarkers(key)
+    fun sweep(key: String? = null, protectedKey: String? = null): Boolean =
+        expireRecords(key) or retainedCells.sweep(key, protectedKey) or expireMarkers(key)
 
     /** Without an explicit count bound, old expiry evidence is bounded by the same configured lifetime. */
     private fun expireMarkers(key: String?): Boolean {
@@ -117,7 +118,10 @@ internal class CodexCodeModeSweeper(
         val cutoff = config.clock.millis() - config.ttl.inWholeMilliseconds
         val lastUse = records.groupBy(CodeModeRecord::key)
             .mapValues { (_, kept) -> kept.maxOf(CodeModeRecord::updatedAt) }
-        val stale = records.filter { (key == null || it.key == key) && lastUse.getValue(it.key) < cutoff }
+        val protected = records.filter(retainedCells::running).map(CodeModeRecord::key).toSet()
+        val stale = records.filter {
+            (key == null || it.key == key) && it.key !in protected && lastUse.getValue(it.key) < cutoff
+        }
         if (stale.isEmpty()) return false
         stale.forEach { record ->
             admissions.remove(record.id)

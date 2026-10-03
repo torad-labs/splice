@@ -49,12 +49,13 @@ class CodexCodeModeRetentionTest : CodeModeBridgeTestSupport() {
     @Test
     fun `closing a record's idle cell and stopping its head do not restart its 24 hours`() = runTest {
         val clock = WallTime(START)
-        val (parked, parkedState) = recording(clock, "parked")
+        val (parked, parkedState) = recording(clock, "parked", sweepInterval = 50.milliseconds)
         startScript(parked)
         clock.now = START + 31.minutes.inWholeMilliseconds
         deadSessions += "session-a"
-        touch(parked)
-        assertTrue(logLines.any { "session ended" in it }, "the dead session's cell was closed: $logLines")
+        awaitUntil("the timer closes the dead session's cell without a request-path reap") {
+            parkedState.records().single()["error"]?.jsonPrimitive?.content?.contains("session ended") == true
+        }
         clock.now = START + 24.hours.inWholeMilliseconds + 1
         touch(parked)
         assertFalse(SOURCE in parkedState.text(), "closing the idle cell restarted the record's 24 hours")
@@ -152,6 +153,7 @@ class CodexCodeModeRetentionTest : CodeModeBridgeTestSupport() {
             { runtime },
             CodeModeStateLocation(state.dir, tempDir.resolve("$name.json")),
             clock = clock,
+            cellClock = splice.core.util.ElapsedClock(clock::millis),
             log = LogSink { logLines += it },
             sessionAlive = CodeModeSessionAlive { id -> if (id in deadSessions) false else null },
         )

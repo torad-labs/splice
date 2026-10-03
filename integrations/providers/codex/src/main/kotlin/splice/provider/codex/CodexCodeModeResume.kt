@@ -26,6 +26,25 @@ internal class CodexCodeModeResume(
         context: CodeModeRunContext,
         bodyJson: String,
     ): TurnOutcome {
+        val borrowed = registry.retainedCells.acquire(record)
+        try {
+            val source = driver.streams.find(record)
+            val reclaimed = borrowed == null && record.phase == CodeModePhase.LOST
+            return if (reclaimed && source?.sourceInterrupted != true) {
+                lost(record, context, bodyJson)
+            } else {
+                retained(record, context, bodyJson)
+            }
+        } finally {
+            if (borrowed != null) registry.retainedCells.release(record)
+        }
+    }
+
+    private suspend fun retained(
+        record: CodeModeRecord,
+        context: CodeModeRunContext,
+        bodyJson: String,
+    ): TurnOutcome {
         val source = driver.streams.find(record)
         record.error?.let { return if (source?.sourceInterrupted == true) source.outcome() else failure(it) }
         val attached = context.copy(sink = driver.streams.attach(record, context.sink))
@@ -54,7 +73,11 @@ internal class CodexCodeModeResume(
         supplied.error?.let { return failure(it) }
         registry.acceptResults(record, context.digest, supplied.results, context.turn.toolMedia)
         val interrupted = machine.interrupt(record, detail)
-        return if (interrupted is TurnOutcome.Failure) interrupted else continueUpstream(record, context, bodyJson)
+        return if (interrupted is TurnOutcome.Failure) {
+            interrupted
+        } else {
+            driver.finishGenerated(record, context, bodyJson)
+        }
     }
 
     private suspend fun fresh(
@@ -86,7 +109,7 @@ internal class CodexCodeModeResume(
         return if (record.phase != CodeModePhase.COMPLETED) {
             advanced
         } else {
-            continueUpstream(record, context, bodyJson)
+            driver.finishGenerated(record, context, bodyJson)
         }
     }
 
@@ -126,15 +149,11 @@ internal class CodexCodeModeResume(
         val rejected = machine.poison(record, message)
         if (!hasExtraContent) return rejected
         val interrupted = machine.interrupt(record, "additional client content arrived; $message")
-        return if (interrupted is TurnOutcome.Failure) interrupted else continueUpstream(record, context, bodyJson)
-    }
-
-    private suspend fun continueUpstream(
-        record: CodeModeRecord,
-        context: CodeModeRunContext,
-        bodyJson: String,
-    ): TurnOutcome {
-        return driver.finishGenerated(record, context, bodyJson)
+        return if (interrupted is TurnOutcome.Failure) {
+            interrupted
+        } else {
+            driver.finishGenerated(record, context, bodyJson)
+        }
     }
 
     private suspend fun exposeNext(

@@ -1,8 +1,11 @@
 package splice.provider.codex
 
+import com.sun.management.ThreadMXBean
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -13,6 +16,7 @@ import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
+import java.lang.management.ManagementFactory
 
 class CodexCodeModeHistoryTest : CodeModeBridgeTestSupport() {
     @Test
@@ -211,4 +215,45 @@ class CodexCodeModeHistoryTest : CodeModeBridgeTestSupport() {
           {"type":"function_call_output","call_id":"$readId","output":"A"}
         ]}
         """.trimIndent()
+}
+
+/** Byte parity and allocation ceilings are separate from worker and persistence behavior. */
+class CodeModeHistoryAllocationTest {
+    @Test
+    fun `unchanged canonical history has no prompt sized serialization allocation`() {
+        val input = """{"input":[{"role":"user","content":"${"x".repeat(1_000_000)}"}],"temperature":1e2}"""
+        val history = CodexCodeModeHistory(Json)
+        val allocated = allocated { history.canonicalize(input, emptyList()) }
+        assertTrue(allocated < 4_000_000, "unchanged million-byte history allocated $allocated bytes")
+        assertEquals(input, history.canonicalize(input, emptyList()).bodyJson)
+    }
+
+    @Test
+    fun `borrowed wire items retain member order numeric lexemes and string escaping`() {
+        val root = Json.parseToJsonElement(
+            """{"input":[{"role":"user","content":"café 🧪\\n\\t\\\"\\\\","literal":1e2,"negative":-0}],"ratio":1.00}""",
+        ).jsonObject
+        val codec = CodexCodeModeHistoryCodec(Json)
+        val input = root.getValue("input").jsonArray
+        val conversation = codec.conversation(codec.projection.project(input))
+        val rebuilt = checkNotNull(codec.rebuilt(root, conversation, conversation.body).bodyJson)
+        assertEquals(root.toString(), rebuilt)
+        val malformed = JsonObject(
+            mapOf("input" to kotlinx.serialization.json.JsonArray(listOf(JsonPrimitive("\uD800")))),
+        )
+        val projected = codec.conversation(codec.projection.project(malformed.getValue("input").jsonArray))
+        val output = codec.rebuilt(malformed, projected, projected.body).bodyJson
+        assertEquals(malformed.toString(), output)
+    }
+
+    private fun allocated(action: () -> Unit): Long {
+        val bean = ManagementFactory.getThreadMXBean() as ThreadMXBean
+        assertTrue(bean.isThreadAllocatedMemorySupported)
+        bean.isThreadAllocatedMemoryEnabled = true
+        repeat(8) { action() }
+        val thread = Thread.currentThread().threadId()
+        val start = bean.getThreadAllocatedBytes(thread)
+        repeat(8) { action() }
+        return (bean.getThreadAllocatedBytes(thread) - start) / 8
+    }
 }

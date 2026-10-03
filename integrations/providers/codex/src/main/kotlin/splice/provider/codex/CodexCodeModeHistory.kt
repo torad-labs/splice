@@ -67,7 +67,8 @@ internal class CodexCodeModeHistory(json: Json) {
             eligible.filter { it.metadataVersion == CODE_MODE_METADATA_VERSION },
             replayMedia,
         )
-        return codec.rebuilt(root.first, conversation, anchored.input).copy(omitted = omitted + anchored.omitted)
+        return codec.rebuilt(root.first, conversation, anchored.input, bodyJson)
+            .copy(omitted = omitted + anchored.omitted)
     }
 
     fun restoreBaseline(bodyJson: String, record: CodeModeRecord): CodeModeRewrite {
@@ -76,19 +77,24 @@ internal class CodexCodeModeHistory(json: Json) {
         val conversation = codec.conversation(codec.projection.project(root.second))
         val restored = restoreProjected(conversation.body, record)
         return restored.error?.let { CodeModeRewrite(null, it) }
-            ?: codec.rebuilt(root.first, conversation, checkNotNull(restored.input))
+            ?: codec.rebuilt(root.first, conversation, checkNotNull(restored.input), bodyJson)
     }
 
     private fun restoreProjected(input: ResponsesCodeModeInput, record: CodeModeRecord): ProjectedRewrite {
         metadata.problem(record)?.let { return ProjectedRewrite(null, it) }
-        if (!codec.validPrefix(input.logicalItems, record)) {
+        val index = if (record.metadataVersion == CODE_MODE_METADATA_VERSION) {
+            CodeModeHistoryIndex(input.logicalItems, codec)
+        } else {
+            null
+        }
+        if (!codec.validPrefix(input.logicalItems, record, index)) {
             return ProjectedRewrite(null, "code-mode logical history does not match its persisted baseline")
         }
         return if (record.metadataVersion == CODE_MODE_METADATA_VERSION) {
             val native = CodeModeNativeReplay(
                 codec,
                 input,
-                CodeModeHistoryIndex(input.logicalItems, codec),
+                checkNotNull(index),
                 listOf(record),
             )
             native.problem(record)?.let { ProjectedRewrite(null, it) } ?: ProjectedRewrite(native.restore(record))

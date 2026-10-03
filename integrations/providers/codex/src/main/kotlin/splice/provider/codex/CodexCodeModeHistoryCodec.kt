@@ -9,6 +9,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.perf.InputDigest
 import splice.core.util.JsonScalars
+import splice.core.util.JsonWire
 import splice.dialect.responses.request.ResponsesCodeModeInput
 import splice.dialect.responses.request.ResponsesCodeModeProjection
 import splice.dialect.responses.request.ResponsesContextMessage
@@ -33,8 +34,8 @@ internal class CodexCodeModeHistoryCodec(private val json: Json) {
         return CodeModeInputBoundary(
             fullCount = rawBody.size,
             logicalCount = body.logicalItems.size,
-            logicalDigest = digest(JsonArray(body.logicalItems).toString()),
-            fullDigest = digest(JsonArray(rawBody).toString()),
+            logicalDigest = digest(JsonArray(body.logicalItems)),
+            fullDigest = digest(JsonArray(rawBody)),
             nativeSegments = body.nativeSegments.map {
                 CodeModeNativeSegment(it.logicalOffset, it.items)
             },
@@ -56,19 +57,23 @@ internal class CodexCodeModeHistoryCodec(private val json: Json) {
         return CodeModeConversation(preamble, ResponsesCodeModeInput(input.logicalItems.drop(offset), replay))
     }
 
-    fun validPrefix(items: List<JsonElement>, record: CodeModeRecord): Boolean {
+    fun validPrefix(
+        items: List<JsonElement>,
+        record: CodeModeRecord,
+        index: CodeModeHistoryIndex? = null,
+    ): Boolean {
         if (record.metadataVersion == CODE_MODE_METADATA_VERSION && record.replayAnchors != null) {
-            return CodeModeHistoryIndex(items, this).boundary(record) != null
+            return (index ?: CodeModeHistoryIndex(items, this)).boundary(record) != null
         }
         if (items.size < record.baselineLogicalCount) return false
-        return digest(JsonArray(items.take(record.baselineLogicalCount)).toString()) == record.baselineLogicalDigest
+        return digest(JsonArray(items.take(record.baselineLogicalCount))) == record.baselineLogicalDigest
     }
 
     fun validFullPrefix(input: JsonArray, record: CodeModeRecord): Boolean {
         if (record.metadataVersion == CODE_MODE_METADATA_VERSION) return false
         val rawBody = input.dropWhile(::isPreamble)
         if (rawBody.size < record.baselineInputCount) return false
-        return digest(JsonArray(rawBody.take(record.baselineInputCount)).toString()) == record.baselineInputDigest
+        return digest(JsonArray(rawBody.take(record.baselineInputCount))) == record.baselineInputDigest
     }
 
     /**
@@ -83,13 +88,25 @@ internal class CodexCodeModeHistoryCodec(private val json: Json) {
         return end <= items.size && items.subList(at, end).map(::phaseless) == continuity.map(::phaseless)
     }
 
-    fun rebuilt(root: JsonObject, conversation: CodeModeConversation, body: ResponsesCodeModeInput): CodeModeRewrite {
+    fun rebuilt(
+        root: JsonObject,
+        conversation: CodeModeConversation,
+        body: ResponsesCodeModeInput,
+        originalBody: String? = null,
+    ): CodeModeRewrite {
         val offset = conversation.preamble.size
         val joined = ResponsesCodeModeInput(
             conversation.preamble + body.logicalItems,
             body.replayItems.map { it.copy(logicalOffset = it.logicalOffset + offset) },
         )
-        return CodeModeRewrite(JsonObject(root + (FIELD_INPUT to projection.rebuild(joined))).toString())
+        val rebuilt = projection.rebuild(joined)
+        val original = root[FIELD_INPUT] as? JsonArray
+        // Only the same borrowed items in the same order earn the original transport spelling.
+        val unchanged = originalBody != null && original != null && rebuilt.size == original.size &&
+            rebuilt.indices.all { rebuilt[it] === original[it] }
+        return CodeModeRewrite(
+            if (unchanged) originalBody else JsonWire.string(JsonObject(root + (FIELD_INPUT to rebuilt))),
+        )
     }
 
     fun root(bodyJson: String): Pair<JsonObject, JsonArray>? {
@@ -119,7 +136,7 @@ internal class CodexCodeModeHistoryCodec(private val json: Json) {
     private fun phaseless(element: JsonElement): JsonElement =
         (element as? JsonObject)?.let { JsonObject(it - FIELD_PHASE) } ?: element
 
-    private fun digest(value: String): String = InputDigest.hex(value)
+    private fun digest(value: JsonElement): String = InputDigest.hex(value)
 }
 
 /** The lite preamble a request arrived with, and the conversation body every record is measured on. */

@@ -1,0 +1,1 @@
+{"statements":20,"producerDeltas":200,"clientVisibleIssuances":20,"actualForceCalls":24,"fileForces":23,"directoryForces":1,"forcesPerStatement":1.2,"forcesPerClientVisibleIssuance":1.2,"upstreamEventToClientWriteP50Ms":8.552398,"upstreamEventToClientWriteMaxMs":50.48826,"allocatedBytesPerTurn":6704590.4}

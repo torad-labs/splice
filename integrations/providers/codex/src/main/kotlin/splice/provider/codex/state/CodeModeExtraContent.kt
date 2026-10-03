@@ -20,9 +20,9 @@ internal class CodeModeExtraContent(
     private val messageTypes = setOf("", "message")
 
     fun of(bodyJson: String, record: CodeModeRecord, candidateMedia: Map<String, List<JsonElement>>): CodeModeExtra {
-        val projected = onBaseline(bodyJson, record) ?: return CodeModeExtra.STEERING
+        val (projected, boundary) = onBaseline(bodyJson, record) ?: return CodeModeExtra.STEERING
         val owned = (record.results.keys + record.pending.map(CodeModePending::clientId)).toSet()
-        val logicalExtra = unownedItems(projected.logicalItems, record, owned, candidateMedia)
+        val logicalExtra = unownedItems(projected.logicalItems, record, owned, candidateMedia, boundary)
         return when {
             unexpectedReplay(projected, record, owned) || logicalExtra.any { !isSystemMessage(it) } ->
                 CodeModeExtra.STEERING
@@ -31,12 +31,12 @@ internal class CodeModeExtraContent(
         }
     }
 
-    private fun onBaseline(bodyJson: String, record: CodeModeRecord): ResponsesCodeModeInput? {
+    private fun onBaseline(bodyJson: String, record: CodeModeRecord): Pair<ResponsesCodeModeInput, Int>? {
         val input = codec.root(bodyJson)?.second ?: return null
         val projected = codec.conversation(codec.projection.project(input)).body
-        val validBaseline = codec.validFullPrefix(input, record) ||
-            codec.validPrefix(projected.logicalItems, record)
-        return projected.takeIf { validBaseline }
+        val boundary = codec.baselineBoundary(projected.logicalItems, record)
+        val validBaseline = codec.validFullPrefix(input, record) || boundary != null
+        return if (validBaseline) projected to (boundary ?: record.baselineLogicalCount) else null
     }
 
     private fun unownedItems(
@@ -44,9 +44,9 @@ internal class CodeModeExtraContent(
         record: CodeModeRecord,
         owned: Set<String>,
         candidateMedia: Map<String, List<JsonElement>>,
+        tailStart: Int,
     ): List<JsonElement> {
         val ownedFollowUps = ownership.followUps(items, record, candidateMedia)
-        val tailStart = codec.baselineBoundary(items, record) ?: record.baselineLogicalCount
         val afterContinuity = if (codec.continuityAt(items, tailStart, record.continuity)) {
             tailStart + record.continuity.size
         } else {

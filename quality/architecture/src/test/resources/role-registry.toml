@@ -44,6 +44,12 @@
 # names, and a reason that says what each role IS. A reason a reviewer cannot check is worse than
 # none, because it looks like work.
 
+[[groups]]
+signature = "(Path)->Boolean"
+dated = "2026-10-02"
+names = ["DayFileRemoval", "PluginFileMatch"]
+reason = """DayFileRemoval performs filesystem deletion and reports whether a file existed; its IOException refuses a purge. PluginFileMatch only classifies a path for plugin discovery and never deletes it. A predicate cannot implement the destructive operation, so these contracts remain distinct."""
+
 # ── 15 names, () -> Unit ──────────────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "()->Unit"

@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonArrayBuilder
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.util.JsonWire
 import splice.core.wire.TextBlock
 import splice.core.wire.ToolDefinition
 import splice.core.wire.ToolResultBlock
@@ -58,7 +59,7 @@ internal class ResponsesInputTools(
                 put("type", "function_call")
                 put("call_id", block.id)
                 put("name", names.shorten(block.name))
-                put("arguments", block.input.toString())
+                put("arguments", JsonWire.string(block.input))
             },
         )
     }

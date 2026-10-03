@@ -21,6 +21,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.core.util.JsonScalars
+import splice.core.util.JsonWire
 import splice.core.wire.HttpStatus
 import splice.dialect.responses.request.ResponsesRequest
 import splice.dialect.responses.request.responsesRequestJson
@@ -57,7 +58,7 @@ internal class ToolSurfaceRecovery {
             ToolSearchMode.CLIENT -> dropClientSearch(base)
             ToolSearchMode.HOSTED -> dropHostedSearch(base)
         } ?: return null
-        return responsesRequestJson.encodeToJsonElement(ResponsesRequest.serializer(), next).toString()
+        return responsesRequestJson.encodeToJsonElement(ResponsesRequest.serializer(), next).let(JsonWire::string)
     }
 
     private fun dropClientSearch(base: ResponsesRequest): ResponsesRequest? {

@@ -6,6 +6,7 @@ import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.util.JsonWire
 import splice.core.util.SafeFailureText
 import splice.provider.codex.state.CodeModeWorkerRecovery
 import splice.provider.codex.stream.CodeModeLiveRound
@@ -102,7 +103,7 @@ internal class CodexCodeModeMachine(
     suspend fun replay(calls: List<CodeModePending>, sink: WireSink): TurnOutcome {
         calls.forEach { call ->
             val index = sink.openTool(call.clientId, call.name)
-            sink.inputJsonDelta(index, call.arguments.toString())
+            sink.inputJsonDelta(index, JsonWire.string(call.arguments))
             sink.closeBlock(index)
         }
         return TurnOutcome.Success(hasToolUse = true, incomplete = false, usage = Usage(localStep = true))

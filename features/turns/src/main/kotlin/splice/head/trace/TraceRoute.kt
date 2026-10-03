@@ -25,6 +25,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.storage.DayFiles
 import splice.core.util.Cancellables
+import splice.core.util.JsonWire
 import splice.core.util.SafeFailureText
 import splice.head.TurnsHead
 import splice.head.TurnsHeadLookup
@@ -104,5 +105,5 @@ public class TraceRoute(
     }
 
     private fun refuse(status: HttpStatusCode, message: String) =
-        JsonReply(status, buildJsonObject { put("error", message) }.toString())
+        JsonReply(status, buildJsonObject { put("error", message) }.let(JsonWire::string))
 }

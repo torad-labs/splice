@@ -11,6 +11,7 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.jsonObject
 import splice.core.util.JsonScalars
+import splice.core.util.JsonWire
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.request.ResponsesRequest
 import splice.dialect.responses.request.responsesRequestJson
@@ -62,7 +63,7 @@ internal class ReasoningCachePolicy {
         val kept = buildJsonArray { base.input.forEach { walk.visit(this, it) } }
         if (walk.dropped == 0) return null
         val next = base.copy(input = kept)
-        return responsesRequestJson.encodeToJsonElement(ResponsesRequest.serializer(), next).toString()
+        return responsesRequestJson.encodeToJsonElement(ResponsesRequest.serializer(), next).let(JsonWire::string)
     }
 }
 

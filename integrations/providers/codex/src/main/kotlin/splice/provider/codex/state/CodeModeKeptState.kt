@@ -10,6 +10,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.modules.SerializersModule
+import splice.core.util.JsonWire
 import splice.provider.codex.CodeModeExpiredSnapshot
 import splice.provider.codex.CodeModePersistedState
 import splice.provider.codex.CodeModeRecord
@@ -74,13 +75,13 @@ internal class CodeModeKeptState(state: CodeModePersistedState) {
             }
             snapshot.encodedFieldBytes = sizes
             snapshot.retainedBytes = 2L + (values.size - 1).coerceAtLeast(0) + values.keys.sumOf { name ->
-                CodeModeStateText(JsonPrimitive(name).toString()).bytes + 1L + checkNotNull(sizes[name])
+                JsonWire.byteSize(JsonPrimitive(name)) + 1L + checkNotNull(sizes[name])
             }
         }
 
         fun patch(): String = buildString {
             append("{\"id\":")
-            append(encoded["id"] ?: JsonPrimitive(snapshot.id).toString())
+            append(encoded["id"] ?: JsonWire.string(JsonPrimitive(snapshot.id)))
             append(",\"fields\":")
             append(fields(encoded.keys))
             append('}')

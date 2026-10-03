@@ -24,6 +24,50 @@
 #
 # A row that excuses nothing is stale and fails too.
 
+# V4-457: prompt-bearing JSON allocation wall. Scope comes from runtime ownership, not receiver names.
+[[exclusion]]
+rule = "kt-no-json-tree-to-string"
+sourceSets = ["test", "testFixtures"]
+date = "2026-10-02"
+reason = "Production prompt serializers only. Tests retain legacy toString as an independent byte/allocation oracle."
+
+[[exclusion]]
+rule = "kt-no-json-tree-to-string"
+modules = [
+  "integrations-claude-code", "integrations-mcp", "integrations-http", "integrations-topology",
+  "integrations-codemode", "integrations-oauth", "integrations-terminal", "integrations-daemon-client",
+  "features-sessions", "features-models", "features-heads", "features-accounts", "features-usage",
+  "features-lifecycle", "features-diagnostics", "features-launch", "features-configuration", "features-events",
+  "app", "quality-compiler-plugin",
+]
+sourceSets = ["main"]
+date = "2026-10-02"
+reason = "Not head turn preparation, provider/dialect request construction, or core prompt consumers. Control routes, worker RPC envelopes and client configuration are separate serialization contracts."
+
+[[exclusion]]
+rule = "kt-no-json-tree-to-string"
+sourceSets = ["main"]
+files = [
+  "core/src/main/kotlin/splice/core/model/ClientWindows.kt",
+  "core/src/main/kotlin/splice/core/usage/QuotaJson.kt",
+  "features/turns/src/main/kotlin/splice/head/CountTokens.kt",
+  "features/turns/src/main/kotlin/splice/head/HeadDiagnostics.kt",
+  "features/turns/src/main/kotlin/splice/head/compact/CompactPayloads.kt",
+  "features/turns/src/main/kotlin/splice/head/compaction/CompactionInstructionsRoute.kt",
+  "features/turns/src/main/kotlin/splice/head/perf/SessionTotals.kt",
+  "features/turns/src/main/kotlin/splice/head/perf/TurnKeptRoutes.kt",
+  "features/turns/src/main/kotlin/splice/head/turn/LiveTurnsRoutes.kt",
+  "features/turns/src/main/kotlin/splice/head/usage/EconomicsStore.kt",
+  "features/turns/src/main/kotlin/splice/head/usage/RateLimitHeaders.kt",
+  "features/turns/src/main/kotlin/splice/head/usage/UsageRingFile.kt",
+  "features/turns/src/main/kotlin/splice/head/wire/CaptureRoutes.kt",
+  "features/turns/src/main/kotlin/splice/head/wire/WireRoutes.kt",
+  "integrations/upstream/src/main/kotlin/splice/upstream/local/LocalRuntimeProbe.kt",
+  "integrations/upstream/src/main/kotlin/splice/upstream/retry/ProviderHoldStore.kt",
+]
+date = "2026-10-02"
+reason = "Named non-prompt serializers: model/quota metadata, one-integer token estimates, diagnostics/model roster, compact/turn retention counters, live-turn status, hourly economics, bounded usage ring, capture configuration/error replies, local diagnostic probe templates and quota hold state. No request history, prompt body or selected trace body is serialized at these sites."
+
 # ─── source-set scope ────────────────────────────────────────────────────────────────────────────
 
 [[exclusion]]

@@ -5,6 +5,8 @@ package splice.head.turn
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import splice.core.perf.PerfKeys
+import splice.core.util.JsonWire
 import splice.core.util.LogSink
 import splice.head.round.RoundInterception
 import splice.head.round.RoundStrategy
@@ -43,11 +45,11 @@ internal class TurnRoundRun(
             // interceptor substituted, passes through one of these two lambdas as the string the
             // driver POSTs. Recorded here, an audit sees exactly the bytes, not the turn's first draft.
             postRoundToSink = { bodyJson, sink ->
-                wireTap?.record(drive.meta, bodyJson)
+                recordPost(drive, bodyJson)
                 sourceRound.post(drive, bodyJson, sink, self, turnJob)
             },
             postRound = { bodyJson ->
-                wireTap?.record(drive.meta, bodyJson)
+                recordPost(drive, bodyJson)
                 sseRoundDriver.postRound(drive, bodyJson, drive.emitter, self, turnJob)
             },
             finish = { outcome -> turnFinish.finishTurn(drive, outcome) },
@@ -57,5 +59,10 @@ internal class TurnRoundRun(
                 rawRoundObserved = drive::recordRawRound,
             ),
         ).run(drive.requestBody, fold, reanchor, drive.perf)
+    }
+
+    private fun recordPost(drive: TurnDrive, bodyJson: String) {
+        drive.perf.setCount(PerfKeys.UPSTREAM_REQ_BYTES, JsonWire.byteSize(bodyJson))
+        wireTap?.record(drive.meta, bodyJson)
     }
 }

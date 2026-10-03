@@ -13,6 +13,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.core.util.Cancellables
+import splice.core.util.JsonWire
 import splice.http.JsonReply
 import splice.sessions.transcript.MessageConversation
 import splice.sessions.transcript.SessionTranscriptViewEnabled
@@ -75,7 +76,7 @@ public class TranscriptRequestRoute(
                 }
             }
             put("earlier", lookup.earlier)
-        }.toString()
+        }.let(JsonWire::string)
         return JsonReply(HttpStatusCode.OK, body)
     }
 
@@ -84,9 +85,9 @@ public class TranscriptRequestRoute(
         buildJsonObject {
             put("state", name)
             put("reason", reason)
-        }.toString(),
+        }.let(JsonWire::string),
     )
 
     private fun refuse(status: HttpStatusCode, reason: String): JsonReply =
-        JsonReply(status, buildJsonObject { put("error", reason) }.toString())
+        JsonReply(status, buildJsonObject { put("error", reason) }.let(JsonWire::string))
 }

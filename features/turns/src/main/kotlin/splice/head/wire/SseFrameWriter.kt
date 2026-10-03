@@ -7,6 +7,7 @@ package splice.head.wire
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.index.WireBlockIndex
+import splice.core.util.JsonWire
 
 // Reused frame buffer: sized to hold a typical delta frame without a regrow; it keeps
 // whatever capacity the largest frame needed, so steady-state hot-delta writes never realloc.
@@ -36,7 +37,7 @@ internal class SseFrameWriter(private val write: FrameWrite) {
 
     internal suspend fun frame(event: String, data: JsonObject) {
         frameBuf.setLength(0)
-        frameBuf.append("event: ").append(event).append("\ndata: ").append(data).append("\n\n")
+        frameBuf.append("event: ").append(event).append("\ndata: ").append(JsonWire.string(data)).append("\n\n")
         write(frameBuf.toString())
     }
 

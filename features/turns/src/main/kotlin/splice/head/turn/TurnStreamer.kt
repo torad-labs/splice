@@ -77,7 +77,7 @@ internal class TurnStreamer(
     suspend fun stream(call: ApplicationCall, inputs: TurnInputs): Boolean {
         val built = inputs.built
         val perf = inputs.perf
-        val replayKey = if (built.meta.compact) replay.key(built.meta, built.requestBody.toString()) else null
+        val replayKey = if (built.meta.compact) replay.key(built.meta, built.requestBody) else null
         // A compaction always records: the detached scope outlives a head restart, so there is
         // always a scope to detach onto (the launch below is ATOMIC, so its finally settles the slot
         // and the recording even if the scope is cancelled in between).

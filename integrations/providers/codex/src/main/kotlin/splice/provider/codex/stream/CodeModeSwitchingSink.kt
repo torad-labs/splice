@@ -6,6 +6,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonObject
 import splice.core.index.WireBlockIndex
+import splice.core.util.JsonWire
 import splice.upstream.sse.CustomToolSource
 import splice.upstream.sse.IndependentRoundSink
 import splice.upstream.sse.WireSink
@@ -58,8 +59,7 @@ internal class CodeModeSwitchingSink(
         name: String = "",
         raw: JsonObject? = null,
     ): WireBlockIndex = mutex.withLock {
-        val bytes = id.encodeToByteArray().size.toLong() + name.encodeToByteArray().size +
-            (raw?.toString()?.encodeToByteArray()?.size ?: 0)
+        val bytes = JsonWire.byteSize(id) + JsonWire.byteSize(name) + (raw?.let(JsonWire::byteSize) ?: 0L)
         require(bytes <= splice.upstream.codemode.CodeModeLimits.MAX_FRAME_BYTES) {
             "stream block exceeds byte budget"
         }
@@ -108,7 +108,7 @@ internal class CodeModeSwitchingSink(
     }
 
     override suspend fun rawDelta(index: WireBlockIndex, delta: JsonObject) {
-        write(delta.toString().encodeToByteArray().size) { sink ->
+        write(Math.toIntExact(JsonWire.byteSize(delta))) { sink ->
             blocks.destination(sink, index)?.let { sink.rawDelta(it, delta) }
         }
     }

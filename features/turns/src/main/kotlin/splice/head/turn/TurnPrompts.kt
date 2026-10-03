@@ -9,6 +9,7 @@ import splice.core.prompt.EffectiveSystemPrompt
 import splice.core.prompt.SYSTEM_PROMPT_APPLIED
 import splice.core.prompt.SYSTEM_PROMPT_LAYERS
 import splice.core.prompt.SystemPromptMode
+import splice.core.util.JsonWire
 import splice.head.HeadDeps
 import splice.sessions.prompt.SLOT_PROMPT_CHANGED
 import splice.upstream.BuiltTurn
@@ -85,14 +86,14 @@ internal class TurnPrompts(private val provider: Provider, private val deps: Hea
         layer.mode != SystemPromptMode.APPEND || body.contains(serialised(layer.text))
 
     /** [text] as it appears inside a serialised JSON string: escaped, without its quotes. */
-    private fun serialised(text: String): String = JsonPrimitive(text).toString().removeSurrounding("\"")
+    private fun serialised(text: String): String = JsonPrimitive(text).let(JsonWire::string).removeSurrounding("\"")
 
     /** A strip layer can delete text an earlier APPEND layer placed, so an append whose text is no
      *  longer in the finished body did not reach the wire whatever the fold measured at the time.
      *  Only runs when a strip layer is present — no strip, nothing can have removed anything. */
     private fun survivedFinalBody(layers: List<EffectiveSystemPrompt>, placed: BooleanArray, turn: BuiltTurn) {
         if (layers.none { it.mode == SystemPromptMode.STRIP }) return
-        val body = turn.requestBody.toString()
+        val body = turn.requestBody.let(JsonWire::string)
         layers.forEachIndexed { index, layer ->
             if (placed[index]) placed[index] = survived(layer, body)
         }

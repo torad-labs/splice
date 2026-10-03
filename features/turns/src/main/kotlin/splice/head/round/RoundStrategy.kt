@@ -11,6 +11,7 @@ import splice.core.perf.TurnPerf
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
+import splice.core.util.JsonWire
 import splice.core.util.LogSink
 import splice.upstream.FoldController
 import splice.upstream.InterceptedRoundPost
@@ -82,7 +83,7 @@ internal class RoundStrategy(
             // which made the most expensive turn class the one that recorded nothing. There are no
             // absorbed rounds on this path, so the accumulator is empty by construction and a
             // Success or a clean abandonment passes through untouched.
-            finish(rounds.withFailureSalvage(interceptedPost(requestBody.toString()), RoundUsage()))
+            finish(rounds.withFailureSalvage(interceptedPost(JsonWire.string(requestBody)), RoundUsage()))
         } else {
             ReanchorRunner(
                 key = key,

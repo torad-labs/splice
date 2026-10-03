@@ -20,7 +20,9 @@ import kotlinx.serialization.json.put
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.JsonScalars
+import splice.core.util.JsonWire
 import splice.core.util.LogSink
+import java.io.ByteArrayOutputStream
 import java.util.Base64
 
 public const val REASONING_ENVELOPE_TAG: String = "splice-reasoning"
@@ -60,7 +62,10 @@ public object ReasoningReplay {
                 },
             )
         }
-        return Base64.getEncoder().encodeToString(envelope.toString().toByteArray(Charsets.UTF_8))
+        return ByteArrayOutputStream().use { encoded ->
+            Base64.getEncoder().wrap(encoded).use { output -> JsonWire.write(envelope, output) }
+            encoded.toString(Charsets.US_ASCII)
+        }
     }
 
     /** redacted_thinking `data` -> Responses `reasoning` input item, or null for foreign data. */

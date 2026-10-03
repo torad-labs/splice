@@ -2,6 +2,7 @@
 package splice.provider.codex
 
 import splice.core.turn.GatewayCustomCall
+import splice.core.util.JsonWire
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeLimits
 import splice.upstream.codemode.CodeModeProtocol
@@ -29,7 +30,7 @@ internal class CodexCodeModeValidation(private val config: CodeModeBridgeConfig)
     fun calls(record: CodeModeRecord, tools: Set<String>, calls: List<CodeModeCall>): String? {
         val duplicateIds = calls.groupingBy(CodeModeCall::id).eachCount().filterValues { it > 1 }.keys
         val unknown = calls.firstOrNull { it.name !in tools }
-        val oversized = calls.firstOrNull { !fitsOutput(it.arguments.toString()) }
+        val oversized = calls.firstOrNull { !fitsOutput(JsonWire.string(it.arguments)) }
         return when {
             calls.isEmpty() -> "code-mode runtime yielded an empty call batch"
             config.maxCalls?.let { record.totalCalls.toLong() + calls.size > it } == true ->

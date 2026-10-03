@@ -1,14 +1,22 @@
 // NEW (2026-09-05): the store of detached compactions' answers — what a byte-identical retry finds.
 package splice.head.compaction
 
+import com.sun.management.ThreadMXBean
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertSame
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.util.ElapsedClock
 import splice.head.wire.FrameRecording
+import java.lang.management.ManagementFactory
 
 class CompactionReplayTest {
 
@@ -33,6 +41,31 @@ class CompactionReplayTest {
         val pre = replay.bodyHash("""{"client":1}""")
         assertEquals(replay.key("s", "tail A", pre), replay.key("s", "tail B", pre))
         assertNotEquals(replay.key("s", "tail A", pre), replay.key("s", "tail A"))
+    }
+
+    @Test
+    fun `a cached identity does not serialize a large request again`() {
+        val request = buildJsonObject { put("payload", JsonPrimitive("x".repeat(1_400_000))) }
+        val bean = ManagementFactory.getThreadMXBean() as? ThreadMXBean ?: error("JVM allocation counter is required")
+        assertTrue(bean.isThreadAllocatedMemorySupported)
+        bean.isThreadAllocatedMemoryEnabled = true
+        repeat(5) { replay.key("synthetic", request, "cached-synthetic") }
+        val thread = Thread.currentThread().threadId()
+        val before = bean.getThreadAllocatedBytes(thread)
+        val key = replay.key("synthetic", request, "cached-synthetic")
+        val allocated = bean.getThreadAllocatedBytes(thread) - before
+        assertEquals("synthetic:cached-synthetic", key)
+        assertTrue(allocated < 64 * 1024, "cached_request_identity_allocated_bytes=$allocated")
+    }
+
+    @Test
+    fun `a borrowed tree identity matches the exact legacy bytes`() {
+        val bytes = """{"quote\\\"":[1,2,1E2,true,false,{},[]],"text":"café 🧪"}"""
+        val tree = Json.parseToJsonElement(bytes).jsonObject
+        assertEquals(replay.bodyHash(bytes), replay.bodyHash(tree))
+        assertEquals(replay.key("synthetic", bytes), replay.key("synthetic", tree))
+        assertNull(replay.key(null, tree))
+        assertNull(replay.key(" ", tree))
     }
 
     @Test

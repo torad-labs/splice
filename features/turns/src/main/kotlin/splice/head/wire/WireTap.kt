@@ -16,6 +16,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.core.turn.TurnMeta
+import splice.core.util.JsonWire
 import splice.core.util.WallClock
 
 /** One upstream request as it left splice: [body] is the exact string the round POSTed. */
@@ -70,5 +71,5 @@ public class WireTap(public val keep: Int, private val now: WallClock = WallCloc
                 )
             }
         }
-    }.toString()
+    }.let(JsonWire::string)
 }

@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import splice.core.util.JsonWire
 
 private const val MAX_COMPACT_SCHEMA_BYTES = 5_000
 private const val MAX_COMPACT_SCHEMA_DEPTH = 3
@@ -42,10 +43,10 @@ internal class SchemaCompact(
 
     /** codex measures the budget on the TYPED-SUBSET serialization (compact_normalized_schema_len);
      *  a subset failure reads as length 0 there — "fits" — stopping further passes. */
-    private fun normalizedLength(v: JsonObject): Int = try {
-        subset.subsetObject(v, root = false).toString().toByteArray(Charsets.UTF_8).size
+    private fun normalizedLength(v: JsonObject): Long = try {
+        JsonWire.byteSize(subset.subsetObject(v, root = false))
     } catch (_: SubsetUnrepresentable) {
-        0
+        0L
     }
 
     private fun stripDescriptions(v: JsonElement): JsonElement = when (v) {

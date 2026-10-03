@@ -1,10 +1,8 @@
-// NEW: (HD-24) the OpenAI-chat wire mapper lifted out of ChatRequestBuilder.kt — the file's real
-// centre of gravity: everything here, and only what is here, knows OpenAI-chat wire field NAMES
-// and the adjacency invariants (tool messages immediately after assistant.tool_calls; trailing
-// tool_result images on a follow-up user message after the whole tool block; HD-20's putFunction
-// argument order). imagePart/omissionMarkers share `quirks.supportsVision` — one field, one gate,
-// so the v25 omission markers can't drift. toolsArray rides along as the third consumer of the
-// same TYPE/FUNCTION/NAME wire vocabulary, avoiding a duplicated constant set.
+// NEW: (HD-24) OpenAI-chat message and media mapping, lifted out of ChatRequestBuilder.kt.
+// Adjacency stays here: tool messages immediately follow assistant.tool_calls; tool_result
+// images follow the whole tool block. ChatToolInput owns tool definitions and encoded arguments,
+// using the shared wire vocabulary below. imagePart/omissionMarkers share quirks.supportsVision
+// so the v25 omission markers cannot drift.
 //
 // DR-155 adds a SECOND drop gate beside supportsVision: the vendor minimum-edge floor. It is
 // deliberately applied BEFORE imagePart rather than inside it, so imagePart's null keeps meaning
@@ -15,7 +13,6 @@ package splice.dialect.chat
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonArrayBuilder
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonArray
@@ -32,6 +29,7 @@ import splice.core.wire.ToolUseBlock
 internal class ChatWireMapper(private val quirks: ChatQuirks) {
 
     private val floor = ImageFloor(quirks.minImageEdgePx)
+    private val toolInput = ChatToolInput()
 
     fun messagesArray(system: String?, body: AnthropicRequest): JsonArray = buildJsonArray {
         // No system prompt, no system message — on every turn, compaction included.
@@ -87,24 +85,7 @@ internal class ChatWireMapper(private val quirks: ChatQuirks) {
         sink: JsonArrayBuilder,
         toolUses: List<ToolUseBlock>,
         texts: String,
-    ) {
-        sink.addJsonObject {
-            put(ROLE, "assistant")
-            if (texts.isNotEmpty()) put(CONTENT, texts) else put(CONTENT, null as String?)
-            put(
-                "tool_calls",
-                buildJsonArray {
-                    toolUses.forEach { tu ->
-                        addJsonObject {
-                            put("id", tu.id)
-                            put(TYPE, FUNCTION)
-                            putFunction(this, tu.name, tu.input.toString())
-                        }
-                    }
-                },
-            )
-        }
-    }
+    ) = toolInput.appendCalls(sink, toolUses, texts)
 
     fun appendUserContent(
         sink: JsonArrayBuilder,
@@ -214,35 +195,7 @@ internal class ChatWireMapper(private val quirks: ChatQuirks) {
         return floor.violatedMinimum(source)
     }
 
-    // ARGUMENT ORDER (HD-20): the former `JsonObjectBuilder` receiver became the first parameter and
-    // [name]/[args] kept their order, so the sole call site reads `putFunction(this, tu.name,
-    // tu.input.toString())` — the tool NAME still lands on "name" and the serialized input on
-    // "arguments". Both are String, so a swap would compile and only show up as a corrupted tool call.
-    fun putFunction(sink: JsonObjectBuilder, name: String, args: String) {
-        sink.put(
-            FUNCTION,
-            buildJsonObject {
-                put(NAME, name)
-                put("arguments", args)
-            },
-        )
-    }
-
-    fun toolsArray(body: AnthropicRequest) = buildJsonArray {
-        body.tools.forEach { t ->
-            addJsonObject {
-                put(TYPE, FUNCTION)
-                put(
-                    FUNCTION,
-                    buildJsonObject {
-                        put(NAME, t.name)
-                        put("description", t.description ?: "")
-                        put("parameters", t.inputSchema ?: buildJsonObject { put(TYPE, "object") })
-                    },
-                )
-            }
-        }
-    }
+    fun toolsArray(body: AnthropicRequest) = toolInput.definitions(body)
 
     fun imagePart(source: MediaSource?): JsonObject? {
         // Bound to a local BEFORE the branch so `isNullOrEmpty`'s contract narrows the type the
@@ -275,11 +228,11 @@ internal class ChatWireMapper(private val quirks: ChatQuirks) {
 // Chat wire field names — repeated across the message/tool/image mappings.
 private const val ROLE = "role"
 internal const val CONTENT = "content" // V4-170: shared with ChatSystemPrompt, the one declaration on this wire
-private const val TYPE = "type"
-private const val NAME = "name"
+internal const val TYPE = "type"
+internal const val NAME = "name"
 private const val TEXT = "text"
 private const val URL = "url"
-private const val FUNCTION = "function"
+internal const val FUNCTION = "function"
 private const val IMAGE_URL = "image_url"
 private const val DATA_URL_PREFIX = "data:"
 private const val BASE64_SEPARATOR = ";base64,"

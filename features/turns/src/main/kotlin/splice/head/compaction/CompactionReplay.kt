@@ -14,10 +14,14 @@
 // the retry finds it after a daemon restart; without a store (null) the replay is memory-only.
 package splice.head.compaction
 
+import kotlinx.serialization.json.JsonObject
 import splice.core.turn.TurnMeta
 import splice.core.util.ElapsedClock
+import splice.core.util.JsonWire
 import splice.core.util.MonoClock
 import splice.head.wire.FrameRecording
+import java.io.OutputStream
+import java.security.DigestOutputStream
 import java.security.MessageDigest
 
 internal class CompactionReplay(
@@ -43,8 +47,24 @@ internal class CompactionReplay(
         return "$session:${bodyHash ?: sha256Hex(upstreamBody)}"
     }
 
+    /** A cached pre-tail identity needs neither a wire string nor a second tree traversal. */
+    fun key(meta: TurnMeta, upstreamBody: JsonObject): String? =
+        key(meta.sessionId, upstreamBody, meta.compactionRequestHash)
+
+    fun key(sessionId: String?, upstreamBody: JsonObject, bodyHash: String? = null): String? {
+        val session = sessionId?.takeIf { it.isNotBlank() } ?: return null
+        return "$session:${bodyHash ?: this.bodyHash(upstreamBody)}"
+    }
+
     /** The hash [key] uses for a body: exposed so the preparation can record it before tailing. */
     fun bodyHash(body: String): String = sha256Hex(body)
+
+    /** Hashes the borrowed wire tree without creating a body string or UTF-8 array. */
+    fun bodyHash(body: JsonObject): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        DigestOutputStream(OutputStream.nullOutputStream(), digest).use { JsonWire.write(body, it) }
+        return java.util.HexFormat.of().formatHex(digest.digest())
+    }
 
     /** A compaction's recording, from its first frame: a retry may attach while it is in flight. */
     fun begin(key: String, recording: FrameRecording) {

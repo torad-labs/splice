@@ -16,6 +16,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import splice.core.util.JsonWire
 import splice.core.wire.AnthropicMessage
 import splice.core.wire.CLIENT_JSON_DEPTH_CAP
 import splice.core.wire.TextBlock
@@ -92,7 +93,7 @@ internal object LoopGuard {
         }
 
     // Key-order-independent encoding so {a:1,b:2} and {b:2,a:1} share a failure streak.
-    private fun canonical(input: JsonObject): String = sortKeys(input).toString()
+    private fun canonical(input: JsonObject): String = sortKeys(input).let(JsonWire::string)
 
     // Subtrees at CLIENT_JSON_DEPTH_CAP collapse to a marker, not a pass-through: canonical()'s toString
     // would still recurse the original deep subtree. Inputs identical down to the cap share a

@@ -20,6 +20,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.util.ElapsedClock
 import splice.core.util.JsonScalars
+import splice.core.util.JsonWire
 import splice.core.util.MonoClock
 
 // WsFrame + WsFrameAndEpoch live in WsFrames.kt (concentration, 2026-08-19).
@@ -213,14 +214,14 @@ internal class ResponsesWsSession(
         // RETURN, so past them the compiler itself knows `responseId` and `input` are non-null.
         if (responseId == null || input == null) return
         if (!fresh) return
-        val logicalInput = input.map { it.toString() }
+        val logicalInput = input.map(JsonWire::string)
         val props = propsOf(request)
-        val bytes = logicalInput.sumOf { it.encodeToByteArray().size.toLong() } +
-            props.encodeToByteArray().size.toLong() +
-            evidence.assistantTexts.sumOf { it.encodeToByteArray().size.toLong() } +
-            evidence.calls.values.sumOf { it.toString().encodeToByteArray().size.toLong() } +
+        val bytes = logicalInput.sumOf(JsonWire::byteSize) +
+            JsonWire.byteSize(props) +
+            evidence.assistantTexts.sumOf(JsonWire::byteSize) +
+            evidence.calls.values.sumOf(JsonWire::byteSize) +
             evidence.reasoning.entries.sumOf { (id, cipher) ->
-                id.encodeToByteArray().size.toLong() + cipher.encodeToByteArray().size.toLong()
+                JsonWire.byteSize(id) + JsonWire.byteSize(cipher)
             }
         chains[key] = Chain(logicalInput, responseId, props, generation, bytes, now, pendingCalls).also {
             it.evidence = evidence
@@ -282,10 +283,10 @@ internal class ResponsesWsSession(
         if (input != null) put(FIELD_INPUT, input)
         if (clientMetadata != null) put("client_metadata", clientMetadata)
         if (previousResponseId != null) put("previous_response_id", previousResponseId)
-    }.toString()
+    }.let(JsonWire::string)
 
     private fun propsOf(request: JsonObject): String =
-        JsonObject(request.filterKeys { it != FIELD_INPUT }).toString()
+        JsonObject(request.filterKeys { it != FIELD_INPUT }).let(JsonWire::string)
 
     /**
      * The suffix beyond [previous] that must be sent, or null to bail.
@@ -329,7 +330,7 @@ internal class ResponsesWsSession(
 
     private fun extendsPrefix(previous: List<String>, current: List<JsonObject>): Boolean =
         current.size >= previous.size &&
-            previous.indices.all { previous[it] == current[it].toString() }
+            previous.indices.all { previous[it] == JsonWire.string(current[it]) }
 }
 
 /** Suffix shapes are separate from the session's retained connection state. Unknown ones bail. */

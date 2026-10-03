@@ -244,7 +244,7 @@ internal class TurnPreparation(
     }
 
     private fun replayFor(built: BuiltTurn): Preparation.Replay? {
-        val key = replay.key(built.meta, built.requestBody.toString()) ?: return null
+        val key = replay.key(built.meta, built.requestBody) ?: return null
         val recording = replay.lookup(key) ?: return null
         val state = if (recording.isComplete) "finished" else "still running"
         deps.log(

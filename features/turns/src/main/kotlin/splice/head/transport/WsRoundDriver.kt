@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
+import splice.core.util.JsonWire
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.head.turn.TurnDrive
@@ -96,7 +97,7 @@ internal class WsRoundDriver(
             // onCompletion and poisons its busy lease instead of stranding the connection forever.
             val startingEvents = accepted.events.onEach { event ->
                 drive.emitter.ensureStarted()
-                drive.trace?.responseText(event.toString() + "\n")
+                drive.trace?.responseText(JsonWire.string(event) + "\n")
             }
             drive.watchdog.resetRound()
             // DR-7 round 2: the idle watchdog reaps THIS ROUND here too, the same way

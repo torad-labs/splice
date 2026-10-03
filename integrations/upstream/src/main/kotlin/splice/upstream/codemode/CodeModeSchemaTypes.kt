@@ -5,6 +5,7 @@ package splice.upstream.codemode
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import splice.core.util.JsonWire
 
 /** JSON Schema to the TypeScript type codex renders; a rendering past [MAX_RENDERED_SCHEMA_BYTES]
  *  becomes `unknown`, exactly as codex bounds it. */
@@ -154,7 +155,7 @@ internal class SchemaTypeRenderer(private val root: JsonElement) {
             budget.exhaust()
             UNKNOWN
         } else {
-            value.toString()
+            value.let(JsonWire::string)
         }
 }
 

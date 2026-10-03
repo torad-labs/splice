@@ -13,6 +13,7 @@ import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import splice.core.turn.ErrorType
 import splice.core.turn.Usage
+import splice.core.util.JsonWire
 import splice.head.HeadDeps
 import splice.head.compaction.CompactionReplay
 import splice.head.turn.Preparation
@@ -58,7 +59,7 @@ internal class LocalResponses(
             val terminal = CollectingTerminal(local.model, usage)
             emitText(terminal, local.text)
             call.respondText(
-                terminal.responseBody().toString(),
+                terminal.responseBody().let(JsonWire::string),
                 ContentType.Application.Json,
                 HttpStatusCode.fromValue(terminal.httpStatus()),
             )

@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.util.JsonScalars
+import splice.core.util.JsonWire
 import java.util.HexFormat
 
 /** The renderer's pure helpers: JSON scalars, JSON pointers, literal bounds, property names. */
@@ -27,7 +28,7 @@ internal object SchemaText {
         string((value as? JsonObject)?.get("description"))?.isNotEmpty() == true
 
     fun propertyName(name: String): String =
-        if (CodeModeManual.identifier(name) == name) name else JsonPrimitive(name).toString()
+        if (CodeModeManual.identifier(name) == name) name else JsonPrimitive(name).let(JsonWire::string)
 
     /** `#` plus a percent-decoded JSON pointer, or null for anything that is not a local fragment. */
     fun localJsonPointer(reference: String): String? {

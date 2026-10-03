@@ -23,6 +23,9 @@ package splice.dialect.chat
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonScalars
+import splice.core.util.JsonWire
+import java.io.OutputStream
+import java.security.DigestOutputStream
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -46,7 +49,9 @@ public class SlotAffinity(private val slotCount: SlotCount) {
         val opening = messages.indexOfFirst { JsonScalars.str(it as? JsonObject, "role") != "system" }
         val digest = MessageDigest.getInstance("SHA-256")
         digest.update(sessionId.orEmpty().toByteArray())
-        messages.take(opening + 1).forEach { digest.update(it.toString().toByteArray()) }
+        DigestOutputStream(OutputStream.nullOutputStream(), digest).use { output ->
+            messages.take(opening + 1).forEach { JsonWire.write(it, output) }
+        }
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
 

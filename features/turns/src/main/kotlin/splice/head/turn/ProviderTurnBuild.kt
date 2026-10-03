@@ -54,7 +54,11 @@ internal class ProviderTurnBuild(
         // was: the meta then says so instead of claiming instructions the wire never carried.
         val applied = effective?.tailText == null || tailed.requestBody != base.requestBody
         // V4-166: without the routing fields (id_slot), so a retry routed to another slot still matches.
-        val hash = if (compact) replay.bodyHash(JsonObject(base.requestBody - base.routingFields).toString()) else null
+        val hash = if (compact) {
+            replay.bodyHash(JsonObject(base.requestBody - base.routingFields))
+        } else {
+            null
+        }
         val withTail = effective?.let { eff ->
             tailed.copy(
                 meta = tailed.meta.copy(

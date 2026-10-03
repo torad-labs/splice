@@ -4,6 +4,7 @@ package splice.provider.codex
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import splice.core.util.JsonWire
 import splice.upstream.codemode.CodeModeLimits
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -56,7 +57,7 @@ internal object CodeModeInterruption {
                 )
             }
         }
-    }.toString()
+    }.let(JsonWire::string)
 
     private fun bounded(output: String, cap: Int?): String = when {
         cap == null || output.length <= cap -> output

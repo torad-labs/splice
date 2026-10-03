@@ -34,10 +34,7 @@ internal class TurnDriveFactory(
         val built = inputs.built
         val perf = inputs.perf
         val meta = built.meta
-        // Serialized here ONLY to stamp the size instrument — the wire bytes are the round loop's own
-        // requestBody.toString() (RoundStrategy), not this local (DR-168).
-        val bodyJson = built.requestBody.toString()
-        perf.setCount(PerfKeys.UPSTREAM_REQ_BYTES, bodyJson.length.toLong())
+        // The actual serialized round supplies wire size at TurnRoundRun's post boundary.
         // Tool-surface partition sizes — the expected-delta instrument (#959): setCount (not add)
         // so a request that stamped tools_deferred=0 is VISIBLE, never silently absent.
         meta.toolsEager?.let { perf.setCount(PerfKeys.TOOLS_EAGER, it.toLong()) }

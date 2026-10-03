@@ -1,0 +1,109 @@
+# V4-457: lexical JSON provenance, never receiver-name exceptions.
+id: kt-no-json-tree-to-string
+language: kotlin
+severity: error
+message: "Encode JSON with JsonWire.string/write or count it with JsonWire.byteSize, not tree.toString()."
+files:
+  - core/src/main/**/*.kt
+  - features/turns/src/main/**/*.kt
+  - integrations/upstream/src/main/**/*.kt
+  - integrations/dialects/*/src/main/**/*.kt
+  - integrations/providers/*/src/main/**/*.kt
+# These serializers contain only control metadata or bounded numeric snapshots, never prompt trees.
+# Every omission is mirrored in the dated coverage dispositions.
+ignores:
+  - core/src/main/kotlin/splice/core/model/ClientWindows.kt
+  - core/src/main/kotlin/splice/core/usage/QuotaJson.kt
+  - features/turns/src/main/kotlin/splice/head/CountTokens.kt
+  - features/turns/src/main/kotlin/splice/head/HeadDiagnostics.kt
+  - features/turns/src/main/kotlin/splice/head/compact/CompactPayloads.kt
+  - features/turns/src/main/kotlin/splice/head/compaction/CompactionInstructionsRoute.kt
+  - features/turns/src/main/kotlin/splice/head/perf/SessionTotals.kt
+  - features/turns/src/main/kotlin/splice/head/perf/TurnKeptRoutes.kt
+  - features/turns/src/main/kotlin/splice/head/turn/LiveTurnsRoutes.kt
+  - features/turns/src/main/kotlin/splice/head/usage/EconomicsStore.kt
+  - features/turns/src/main/kotlin/splice/head/usage/RateLimitHeaders.kt
+  - features/turns/src/main/kotlin/splice/head/usage/UsageRingFile.kt
+  - features/turns/src/main/kotlin/splice/head/wire/CaptureRoutes.kt
+  - features/turns/src/main/kotlin/splice/head/wire/WireRoutes.kt
+  - integrations/upstream/src/main/kotlin/splice/upstream/local/LocalRuntimeProbe.kt
+  - integrations/upstream/src/main/kotlin/splice/upstream/retry/ProviderHoldStore.kt
+utils:
+  json-declaration:
+    all:
+      - any:
+          - kind: parameter
+          - kind: variable_declaration
+      - has:
+          pattern: $TREE
+          kind: simple_identifier
+      - has:
+          kind: type_identifier
+          regex: '^Json(Element|Object|Array|Primitive)$'
+          stopBy: end
+  json-source-declaration:
+    all:
+      - any:
+          - kind: parameter
+          - kind: variable_declaration
+      - has:
+          pattern: $SOURCE
+          kind: simple_identifier
+      - has:
+          kind: type_identifier
+          regex: '^Json(Element|Object|Array|Primitive)$'
+          stopBy: end
+  json-provenance:
+    any:
+      - inside:
+          any:
+            - kind: function_declaration
+            - kind: class_declaration
+          stopBy: end
+          has:
+            matches: json-declaration
+            stopBy: end
+      - inside:
+          kind: function_declaration
+          stopBy: end
+          all:
+            - has:
+                any:
+                  - pattern: val $TREE = $SOURCE
+                  - pattern: var $TREE = $SOURCE
+                stopBy: end
+            - has:
+                matches: json-source-declaration
+                stopBy: end
+      - inside:
+          kind: function_declaration
+          stopBy: end
+          has:
+            stopBy: end
+            any:
+              - pattern: val $TREE = JsonObject($$$ARGS)
+              - pattern: val $TREE = JsonArray($$$ARGS)
+              - pattern: val $TREE = JsonPrimitive($$$ARGS)
+              - pattern: val $TREE = Json.parseToJsonElement($$$ARGS)
+              - pattern: val $TREE = buildJsonObject { $$$BODY }
+              - pattern: val $TREE = buildJsonArray { $$$BODY }
+rule:
+  any:
+    - all:
+        - any:
+            - pattern: $TREE[$KEY]?.toString()
+            - pattern: $TREE[$KEY].toString()
+            - pattern: $TREE?.toString()
+            - pattern: $TREE.toString()
+        - matches: json-provenance
+    - all:
+        - pattern: $BUFFER.append($TREE)
+        - matches: json-provenance
+    - pattern: JsonObject($$$ARGS).toString()
+    - pattern: JsonArray($$$ARGS).toString()
+    - pattern: JsonPrimitive($$$ARGS).toString()
+    - pattern: Json.parseToJsonElement($$$ARGS).toString()
+    - pattern: $TREE.jsonObject.toString()
+    - pattern: $TREE.jsonArray.toString()
+    - pattern: buildJsonObject { $$$BODY }.toString()
+    - pattern: buildJsonArray { $$$BODY }.toString()

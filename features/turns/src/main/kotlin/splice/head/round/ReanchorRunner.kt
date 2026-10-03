@@ -16,6 +16,7 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.perf.TurnPerfTiming
 import splice.core.turn.TurnOutcome
+import splice.core.util.JsonWire
 import splice.upstream.ReanchorController
 import splice.upstream.RetryBackoff
 import splice.upstream.RetryNotice
@@ -50,7 +51,7 @@ internal class ReanchorRunner(
         val salvaged = mutableListOf<TurnOutcome.PartialRound>()
         val absorbedFailures = mutableListOf<TurnOutcome.Failure>()
         while (true) {
-            val outcome = postRound(body.toString())
+            val outcome = postRound(JsonWire.string(body))
             val cont = continuation.continuationForFailure(reanchor, outcome, body, attempt)
             if (cont == null) {
                 // A search round is inserted HERE — after the failure-continuation is computed and

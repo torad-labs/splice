@@ -26,6 +26,7 @@ import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.system.exitProcess
 import kotlin.time.Duration.Companion.seconds
 
@@ -54,16 +55,29 @@ object HeadHeapProbe {
     }
 
     private fun run(requests: Int, bytes: Int, tmp: Path): Boolean {
-        val upstream = drainingUpstream()
+        val started = System.nanoTime()
+        val upstream = drainingUpstream(started)
         val head = head(upstream.address.port, tmp)
         try {
             runBlocking { head.start() }
             awaitListening(head.port)
             val client = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build()
-            val answers = List(requests) { send(client, head.port, bytes) }
+            val answers = List(requests) { index ->
+                send(client, head.port, bytes).whenComplete { response, failure ->
+                    val elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
+                    println(
+                        "answer $index: elapsed_ms=$elapsed status=${response?.statusCode()} " +
+                            "failure=${failure?.javaClass?.name}",
+                    )
+                }
+            }
             CompletableFuture.allOf(*answers.toTypedArray()).get(ANSWER_SECONDS, TimeUnit.SECONDS)
             val done = answers.map { it.get() }
-            done.forEachIndexed { i, r -> println("request $i: ${r.statusCode()} ${r.body().take(BODY_ECHO)}") }
+            done.forEachIndexed { i, response ->
+                val body = response.body()
+                val shown = if (body.contains("message_stop")) body.take(BODY_ECHO) else body
+                println("request $i: ${response.statusCode()} $shown")
+            }
             return done.all { it.statusCode() == 200 && it.body().contains("message_stop") }
         } finally {
             runBlocking { head.stop() }
@@ -112,12 +126,25 @@ object HeadHeapProbe {
     }
 
     /** A ChatGPT stand-in that reads the request in 64 KiB pieces and keeps none of it. */
-    private fun drainingUpstream(): HttpServer {
+    private fun drainingUpstream(started: Long): HttpServer {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        val arrivals = AtomicInteger()
         server.executor = Executors.newCachedThreadPool()
         server.createContext("/") { exchange ->
+            val index = arrivals.getAndIncrement()
+            val arrived = System.nanoTime()
+            println("upstream $index: arrived_ms=${TimeUnit.NANOSECONDS.toMillis(arrived - started)}")
             val piece = ByteArray(DRAIN_BYTES)
-            exchange.requestBody.use { while (it.read(piece) >= 0) Unit }
+            var received = 0L
+            exchange.requestBody.use { input ->
+                var count = input.read(piece)
+                while (count >= 0) {
+                    received += count
+                    count = input.read(piece)
+                }
+            }
+            val elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - arrived)
+            println("upstream $index: drained_bytes=$received drain_ms=$elapsed")
             exchange.responseHeaders.add("Content-Type", "text/event-stream")
             exchange.sendResponseHeaders(200, 0)
             exchange.responseBody.use { out ->

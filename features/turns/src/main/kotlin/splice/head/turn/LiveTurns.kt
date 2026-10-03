@@ -26,9 +26,12 @@ import kotlinx.coroutines.Job
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.TurnMeta
 import splice.core.util.ElapsedClock
+import splice.core.util.JsonWire
 import splice.core.util.MonoClock
 import splice.head.wire.TurnIdMint
 import splice.upstream.retry.InflightGate
+import java.io.OutputStream
+import java.security.DigestOutputStream
 import java.security.MessageDigest
 import java.util.HexFormat
 import java.util.UUID
@@ -199,7 +202,9 @@ public class LiveTurns(
 internal object MessagesHash {
     fun of(request: JsonObject): String? {
         val messages = request["messages"] ?: return null
-        return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(messages.toString().toByteArray()))
+        val digest = MessageDigest.getInstance("SHA-256")
+        DigestOutputStream(OutputStream.nullOutputStream(), digest).use { JsonWire.write(messages, it) }
+        return HexFormat.of().formatHex(digest.digest())
     }
 }
 

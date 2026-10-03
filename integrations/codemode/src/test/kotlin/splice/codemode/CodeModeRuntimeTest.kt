@@ -32,6 +32,8 @@ import java.io.FilterOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.io.PipedInputStream
+import java.io.PipedOutputStream
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.LockSupport
@@ -745,7 +747,12 @@ class CodeModeStopRaceTest {
     private class IdleProcess : Process() {
         private val exited = CompletableFuture<Process>()
 
-        override fun getInputStream(): InputStream = InputStream.nullInputStream()
+        // An idle worker's stdout blocks until it exits. An empty stream would hit EOF at once, and the
+        // host's reader would close the host before a test touches it.
+        private val stdout = PipedInputStream()
+        private val stdoutWriter = PipedOutputStream(stdout)
+
+        override fun getInputStream(): InputStream = stdout
         override fun getOutputStream(): OutputStream = OutputStream.nullOutputStream()
         override fun getErrorStream(): InputStream = InputStream.nullInputStream()
         override fun onExit(): CompletableFuture<Process> = exited
@@ -757,6 +764,7 @@ class CodeModeStopRaceTest {
         override fun exitValue(): Int = if (exited.isDone) 0 else throw IllegalThreadStateException()
         override fun isAlive(): Boolean = !exited.isDone
         override fun destroy() {
+            stdoutWriter.close()
             exited.complete(this)
         }
         override fun destroyForcibly(): Process {

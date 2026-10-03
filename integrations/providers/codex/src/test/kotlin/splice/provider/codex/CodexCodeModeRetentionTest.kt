@@ -15,6 +15,9 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.util.LogSink
 import splice.upstream.codemode.CodeModeStep
+import java.lang.ref.Reference
+import java.lang.ref.WeakReference
+import java.nio.file.Files
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneId
@@ -32,6 +35,37 @@ private const val START = 1_000L
 private const val SOURCE = "kept-script-v4287"
 
 class CodexCodeModeRetentionTest : CodeModeBridgeTestSupport() {
+
+    @Test
+    fun `expired startup payloads are released while their registry remains alive`() {
+        val clock = WallTime(START)
+        val legacy = tempDir.resolve("expired-startup.json")
+        Files.writeString(
+            legacy,
+            """{"records":[{"id":"r1","key":"conversation-1","outer":{"startup_payload":"owned"},"outerCallId":"o1","source":"1","phase":"COMPLETED","pending":[],"results":{},"output":"out","error":null,"totalCalls":0,"rounds":0,"updatedAt":1000,"lastDigest":"d"}],"expired":[]}""",
+        )
+        val registry = CodexCodeModeRegistry(
+            CodeModeBridgeConfig(
+                { error("startup expiry never starts a worker") },
+                CodeModeStateLocation(tempDir.resolve("expired-startup"), legacy),
+                clock = clock,
+                ttl = 1_000.milliseconds,
+            ),
+            Json { encodeDefaults = true },
+            50.milliseconds,
+        )
+        val payload = WeakReference(registry.recordsFor("conversation-1").single().outer)
+        clock.now = START + 1_001
+        awaitUntil("the restored conversation expires without a new turn") {
+            registry.recordsFor("conversation-1").isEmpty()
+        }
+        clock.now = START + 2_002
+        awaitUntil("the expired startup snapshot no longer pins its payload") {
+            System.gc()
+            payload.get() == null
+        }
+        Reference.reachabilityFence(registry)
+    }
 
     @Test
     fun `an idle head's record leaves the disk within the sweep interval of its 24 hours`() = runTest {

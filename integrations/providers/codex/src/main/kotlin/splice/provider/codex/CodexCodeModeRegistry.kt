@@ -52,10 +52,16 @@ internal class CodexCodeModeRegistry(
     } else {
         CodexCodeModeStore(config.state, json, config.log, writer = writer, registryLock = monitor, keyLocks = keyLocks)
     }
-    private val loaded = store.load()
-    private val records = loaded.records.map(CodeModeRecordSnapshot::restore).toMutableList()
-        .also(CodeModeNativeChain::link)
-    private val history = CodeModeExpiredHistory(loaded.expired.toMutableList(), config.retention.records)
+    private val records: MutableList<CodeModeRecord>
+    private val history: CodeModeExpiredHistory
+
+    init {
+        // The boot snapshots must not pin payloads after the live record expires or is purged.
+        val loaded = store.load()
+        records = loaded.records.map(CodeModeRecordSnapshot::restore).toMutableList()
+            .also(CodeModeNativeChain::link)
+        history = CodeModeExpiredHistory(loaded.expired.toMutableList(), config.retention.records)
+    }
     private val retention = CodeModeRecordRetention(config.retention, json, config.log, config.sessionAlive)
     private val cells = mutableMapOf<String, CodeModeCell>()
     private val cellCleanup = CodeModeCellCleanup(config.log)

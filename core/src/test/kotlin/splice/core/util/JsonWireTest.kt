@@ -151,6 +151,28 @@ class JsonWireTest {
     }
 
     @Test
+    fun `request nesting counts mixed containers but never quoted delimiters or escaped quotes`() {
+        val leaf = """{"[]\\\"":"[]\\\"","number":1E2}"""
+        for (depth in listOf(1, JsonWire.MAX_REQUEST_DEPTH - 1, JsonWire.MAX_REQUEST_DEPTH)) {
+            val golden = buildString {
+                repeat(depth - 1) { index -> append(if (index % 2 == 0) "[" else """{"key":""") }
+                append(leaf)
+                for (index in depth - 2 downTo 0) append(if (index % 2 == 0) "]" else "}")
+            }
+            JsonWire.requireRequestNesting(golden)
+            val tree = Json.parseToJsonElement(golden)
+            assertEquals(golden, JsonWire.string(tree))
+            val output = ByteArrayOutputStream()
+            JsonWire.write(tree, output)
+            assertArrayEquals(golden.toByteArray(Charsets.UTF_8), output.toByteArray())
+        }
+        val over = "[".repeat(JsonWire.MAX_REQUEST_DEPTH + 1) + "0" + "]".repeat(JsonWire.MAX_REQUEST_DEPTH + 1)
+        assertThrows(IllegalArgumentException::class.java) { JsonWire.requireRequestNesting(over) }
+        val quoted = JsonWire.string(JsonPrimitive("[{\"\\".repeat(1_000)))
+        JsonWire.requireRequestNesting(quoted)
+    }
+
+    @Test
     fun `wire byte counts match the UTF8 encoder without allocating the wire byte array`() {
         for (text in listOf("", "ASCII", "café", "🧪", "\uD800", "\uDC00", "\uD800x\uDC00")) {
             assertEquals(text.toByteArray(Charsets.UTF_8).size.toLong(), JsonWire.byteSize(text), text)

@@ -8,7 +8,9 @@ import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -38,6 +40,7 @@ import splice.upstream.ProviderTuning
 import splice.upstream.RoundInterceptor
 import java.lang.management.ManagementFactory
 import java.nio.file.Path
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 class HeadSerializationTest {
@@ -64,7 +67,7 @@ class HeadSerializationTest {
         val head = HeadServer(provider, 0, deps)
         head.start()
         try {
-            for (stream in listOf(false, true)) {
+            for ((index, stream) in listOf(false, true).withIndex()) {
                 val request = buildJsonObject {
                     put("model", "synthetic-synthetic")
                     put("stream", stream)
@@ -83,7 +86,10 @@ class HeadSerializationTest {
                 }
                 val reply = sendSerialization(client, head.port, request)
                 assertTrue(if (stream) reply.contains("message_stop") else reply.contains("\"content\""), reply)
-                assertTrue(AsyncFileIo.drain())
+                // Terminal delivery precedes perf publication; a drain cannot settle a not-yet-submitted row.
+                withTimeout(5.seconds) {
+                    while (deps.stores.perfStats.tailNumeric(10).size <= index) delay(10.milliseconds)
+                }
                 val wire = upstream.upstreamBodies.last().second
                 assertTrue(wire.contains("café 🧪"), "the interceptor must replace the posted body")
                 val bytes = wire.toByteArray(Charsets.UTF_8).size.toLong()
@@ -139,6 +145,58 @@ class HeadSerializationTest {
         }
     }
 
+    @Test
+    fun `both admission routes refuse deeply nested JSON without calling upstream`() = runBlocking {
+        val upstream = MockChatGptUpstream()
+        val head = HeadServer(serializationProvider(upstream.baseUrl), 0, headDeps(tmp))
+        HttpClient(CIO).use { client ->
+            head.start()
+            try {
+                val body = nestedRequest(1_000_000)
+                for (route in listOf("messages", "messages/count_tokens")) {
+                    val response = client.post("http://127.0.0.1:${head.port}/v1/$route") {
+                        header("Authorization", "Bearer test-inference-token")
+                        header("Content-Type", "application/json")
+                        setBody(body)
+                    }
+                    assertEquals(400, response.status.value, response.bodyAsText().take(200))
+                    assertTrue(response.bodyAsText().contains("invalid request body"))
+                }
+                assertTrue(upstream.upstreamBodies.isEmpty(), "rejected bodies must never reach upstream")
+            } finally {
+                head.stop()
+                upstream.stop()
+            }
+        }
+    }
+
+    @Test
+    fun `a request just below the nesting bound reaches upstream byte identical`() = runBlocking {
+        val upstream = MockChatGptUpstream()
+        val base = serializationProvider(upstream.baseUrl)
+        val provider = object : Provider by base {
+            override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn =
+                base.buildTurn(body, compact, sessionId).copy(requestBody = body.raw, routingFields = emptySet())
+        }
+        val head = HeadServer(provider, 0, headDeps(tmp))
+        HttpClient(CIO).use { client ->
+            head.start()
+            try {
+                val body = nestedRequest(JsonWire.MAX_REQUEST_DEPTH - 1)
+                val response = client.post("http://127.0.0.1:${head.port}/v1/messages") {
+                    header("Authorization", "Bearer test-inference-token")
+                    header("Content-Type", "application/json")
+                    setBody(body)
+                }
+                assertEquals(200, response.status.value, response.bodyAsText())
+                assertEquals(body, upstream.upstreamBodies.single().second)
+            } finally {
+                head.stop()
+                upstream.stop()
+            }
+        }
+    }
+
     private fun threadCosts(bean: ThreadMXBean): Map<Long, Long> =
         bean.allThreadIds.associateWith { thread -> bean.getThreadCpuTime(thread).coerceAtLeast(0) }
 }
@@ -179,6 +237,10 @@ private class SubstitutingSerializationProvider(
             )
         }
 }
+
+private fun nestedRequest(depth: Int): String =
+    """{"model":"synthetic-synthetic","stream":false,"max_tokens":64,"messages":[{"role":"user","content":"hello"}],"extra":""" +
+        "[".repeat(depth - 1) + "0" + "]".repeat(depth - 1) + "}"
 
 private fun serializationRequest(): JsonObject = buildJsonObject {
     put("model", "synthetic-synthetic")

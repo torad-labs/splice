@@ -45,6 +45,31 @@ private val WIRE_ESCAPES = Array(UTF8_ASCII_CEILING) { code ->
 
 /** Streams borrowed tree nodes while retaining the legacy wire's numeric lexemes and string escaping. */
 public object JsonWire {
+    // Committed request shapes reach 24 container levels in the Anthropic goldens/request-mfjs-schema.json
+    // and 9 in Responses contract/responses-codex-profile.json. 128 leaves >5x schema headroom while
+    // bounding every recursive downstream walk. These are fixture measurements, not live-client maxima.
+    public const val MAX_REQUEST_DEPTH: Int = 128
+
+    /** Refuses excessive container nesting before parsing; strings and their escapes are not structure. */
+    public fun requireRequestNesting(text: String) {
+        var depth = 0
+        var quoted = false
+        var escaped = false
+        for (character in text) {
+            when {
+                escaped -> escaped = false
+                quoted && character == '\\' -> escaped = true
+                character == '"' -> quoted = !quoted
+                quoted -> Unit
+                character in "{[" -> {
+                    depth++
+                    require(depth <= MAX_REQUEST_DEPTH) { "request JSON nesting exceeds $MAX_REQUEST_DEPTH levels" }
+                }
+                character in "}]" -> depth--
+            }
+        }
+    }
+
     public fun string(element: JsonElement): String = Json.encodeToString(WireElementSerializer, element)
 
     /** Writes with fixed scratch and leaves the caller's stream open. */

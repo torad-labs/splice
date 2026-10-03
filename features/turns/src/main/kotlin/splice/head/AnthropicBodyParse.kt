@@ -9,6 +9,7 @@ package splice.head
 import splice.core.parse.AnthropicParse
 import splice.core.parse.AnthropicTurnBody
 import splice.core.util.Cancellables
+import splice.core.util.JsonWire
 
 internal class AnthropicBodyParse {
     /** Null when the body is not a parseable Anthropic request — a client 400 for both handlers,
@@ -18,5 +19,8 @@ internal class AnthropicBodyParse {
     /** The failure travels with the rejection, so a client 400 is never silent in the daemon log
      *  (2026-09-05: a byte-identical retry was 400'd with no line saying why). */
     fun parse(text: String): Result<AnthropicTurnBody> =
-        Cancellables.runCatchingCancellable { AnthropicParse.parseAnthropicBody(text) }
+        Cancellables.runCatchingCancellable {
+            JsonWire.requireRequestNesting(text)
+            AnthropicParse.parseAnthropicBody(text)
+        }
 }

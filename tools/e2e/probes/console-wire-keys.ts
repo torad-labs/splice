@@ -126,7 +126,7 @@ const PATH_OF_CALL: Record<string, string> = {
   "api/teams.ts|teamChatPath(id ?? '', day)": "/api/teams/${team}/chat?from=${day.from}&to=${day.to}",
   "api/teams.ts|teamActivityPath(id ?? '', day)": "/api/teams/${team}/activity?from=${day.from}&to=${day.to}",
   "api/teams.ts|teamEconomicsPath(id ?? '')": "/api/teams/${team}/economics",
-  "api/turns.ts|perfTurnsPath(head, n, since)": "/api/perf/turns?head=${head}&n=20",
+  "api/turns.ts|perfTurnsPath(head, n, window)": "/api/perf/turns?head=${head}&n=20",
   "api/turns.ts|perfSummaryPath(label)": "/api/perf/summary?window=24h",
   "api/turns.ts|instructionsPath(head)": "/api/compaction/instructions?head=${head}",
   "api/turns.ts|wirePath(head)": "/api/heads/${head}/wire",

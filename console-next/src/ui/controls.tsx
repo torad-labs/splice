@@ -56,16 +56,16 @@ export interface Choice<T extends string> {
 }
 
 /** One of a few named choices, in a menu: the current one is checked, and each says what it does. */
-export function Select<T extends string>({ value, options, onChange, label }: { value: T; options: readonly Choice<T>[]; onChange: (next: T) => void; label: string }) {
+export function Select<T extends string>({ value, options, onChange, label, menuClassName = '', menuState }: { value: T; options: readonly Choice<T>[]; onChange: (next: T) => void; label: string; menuClassName?: string; menuState?: { open: boolean; onOpenChange: (open: boolean) => void } }) {
   const current = options.find((option) => option.id === value);
   return (
-    <Menu.Root modal={false}>
+    <Menu.Root modal={false} {...menuState}>
       <Menu.Trigger className="select" aria-label={label}>
         {current?.label ?? value}
         <Chevron />
       </Menu.Trigger>
       <Menu.Portal>
-        <Menu.Content className="menu select-menu" align="end" sideOffset={8} collisionPadding={8}>
+        <Menu.Content className={`menu select-menu ${menuClassName}`} align="end" sideOffset={8} collisionPadding={8}>
           <Menu.RadioGroup value={value} onValueChange={(next) => onChange(next as T)}>
             {options.map((option) => (
               <Menu.RadioItem key={option.id} value={option.id} className="menu-item">

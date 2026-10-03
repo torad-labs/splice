@@ -168,7 +168,7 @@ test('a full reading stays Ready in command colour, reads as usage, and still se
     await card.screenshot({ path: testInfo.outputPath('full-reading-' + theme.toLowerCase() + '.png') });
   }
   await page.getByRole('link', { name: 'Usage', exact: true }).click();
-  await expect(page.locator('main .lede')).toContainText(STACK.oauthHead + ' is at 100% of its limit.');
+  await expect(page.locator('main .lede')).toContainText(STACK.oauthHead + ' is at 100% of its 5-hour limit.');
   const plan = page.locator('li.uplan').filter({ hasText: STACK.oauthHead }).first();
   await expect(plan.locator('.track')).not.toHaveClass(/full/);
   // The removed global observations feed has no nav badge; serving and quota facts stay on Models and Usage.

@@ -3,13 +3,12 @@
 import { burn, costOf, hitRate, hourly, sum, within } from './economics';
 import type { Totals } from './economics';
 import { ABSENT, fmtShare, fmtTokens, fmtUsd } from './format';
-import { headWindow, rateLimitAge } from './usage';
-import type { HeadWindow } from './usage';
+import { nearestWindow, rateLimitAge } from './usage';
 import { U, spanWords } from './words-usage';
 import type { ModelColour } from './model';
 import type { HeadEconomics } from '../types/economics';
 import type { HeadStatus, UsagePayload } from '../types/core';
-import { quotaRefusedUntil } from './heads';
+import { localZonedInstantText, quotaRefusedUntil } from './heads';
 
 /** The windows the daemon's own retention can answer: a day always, a week and a month once it keeps them. */
 export function windowChoices(retentionHours: number): readonly (readonly [string, string])[] {
@@ -37,11 +36,14 @@ export interface PlanUsage {
   /** Only a refusal the head still holds, never the percentage of a reading. */
   full: boolean;
   reset: string | null;
+  limitWindow: string | null;
   /** The age of any retained rate-limit headers, not a claim about a current limit. */
   reading: string | null;
   pace: string | null;
-  turns: number;
-  inTokens: number;
+  /** Null while request counts are pending or unavailable. */
+  turns: number | null;
+  inTokens: number | null;
+  partial?: boolean;
   cache: number | null;
   /** Dollars of the priced turns, null when none was priced. */
   cost: number | null;
@@ -52,18 +54,19 @@ export interface PlanUsage {
 
 export function planUsage(head: HeadEconomics, label: string, colour: ModelColour, usage: UsagePayload | null, hours: number, now: number, status?: HeadStatus): PlanUsage {
   const totals = sum(within(head.buckets, hours, now));
-  const window: HeadWindow = headWindow(usage, head.key, now);
+  const window = nearestWindow(usage === null ? null : { ...usage, heads: usage.heads.filter(row => row.key === head.key) }, null, now);
   const day = sum(within(head.buckets, 24, now));
   const age = rateLimitAge(usage?.heads.find((row) => row.key === head.key)?.usage ?? null, now);
   return {
     key: head.key,
     label,
     colour,
-    pct: window.pct,
+    pct: window?.pct ?? null,
     full: status !== undefined && quotaRefusedUntil(status, now) !== null,
-    reset: window.reset,
+    reset: window?.resetsAt == null ? null : localZonedInstantText(window.resetsAt),
+    limitWindow: window?.window ?? null,
     reading: age === null ? null : U.rateLimitReading(age),
-    pace: window.pct === null ? null : paceText(burn(head, now).hoursToExhaustion),
+    pace: window === null ? null : paceText(burn(head, now).hoursToExhaustion),
     turns: totals.turns,
     inTokens: totals.inTokens,
     cache: hitRate(totals),
@@ -75,31 +78,31 @@ export function planUsage(head: HeadEconomics, label: string, colour: ModelColou
 
 /** Fullest window first, plans that report none after, then by tokens read. */
 export function orderPlans(plans: readonly PlanUsage[]): PlanUsage[] {
-  return [...plans].sort((a, b) => (b.pct ?? -1) - (a.pct ?? -1) || b.inTokens - a.inTokens || a.label.localeCompare(b.label));
+  return [...plans].sort((a, b) => (b.pct ?? -1) - (a.pct ?? -1) || (b.inTokens ?? -1) - (a.inTokens ?? -1) || a.label.localeCompare(b.label));
 }
 
 /** Plans that ran a turn in the window, and the ones that did not: an idle plan is one sentence, never a row of zeros. */
 export function splitIdle(plans: readonly PlanUsage[]): { active: PlanUsage[]; idle: PlanUsage[] } {
-  return { active: plans.filter((plan) => plan.turns > 0 || plan.pct !== null || plan.full || plan.reading !== null), idle: plans.filter((plan) => plan.turns === 0 && plan.pct === null && !plan.full && plan.reading === null) };
+  return { active: plans.filter((plan) => plan.turns === null || plan.turns > 0 || plan.pct !== null || plan.full || plan.reading !== null), idle: plans.filter((plan) => plan.turns === 0) };
 }
 
 export function totalsOf(heads: readonly HeadEconomics[], hours: number, now: number): Totals {
   return sum(heads.flatMap((head) => within(head.buckets, hours, now)));
 }
 
-export const tokensText = (n: number): string => fmtTokens(n);
+export const tokensText = (n: number | null): string => n === null ? ABSENT : fmtTokens(n);
 
 /** The sentence under the title: what it cost, and the plan closest to its limit when one is near. */
-export function usageLede(totals: Totals, plans: readonly PlanUsage[], hours: number): string {
-  const cost = costOf(totals);
-  const spent = totals.turns === 0
-    ? `No turns in ${spanWords(hours)}.`
-    : cost === null ? `${totals.turns.toLocaleString('en-US')} turns in ${spanWords(hours)}, none priced.` : `About ${fmtUsd(cost)} of API cost in ${spanWords(hours)}.`;
+export function usageLede(totals: Totals, plans: readonly PlanUsage[], hours: number, count: number | null = totals.turns, cost: number | null = totals.turns === 0 ? null : costOf(totals)): string {
+  const spent = count === null
+    ? U.reading
+    : count === 0 ? `No requests in ${spanWords(hours)}.`
+    : cost === null ? `${count.toLocaleString('en-US')} requests in ${spanWords(hours)}. API cost is not reported.` : `About ${fmtUsd(cost)} of recorded API cost in ${spanWords(hours)}.`;
   const refused = plans.find((plan) => plan.full);
   if (refused !== undefined) return `${spent} ${refused.label} is out of quota.`;
   const nearest = plans.find((plan) => plan.pct !== null);
   if (nearest === undefined || nearest.pct === null || nearest.pct < 80) return spent;
-  return `${spent} ${nearest.label} is at ${Math.round(nearest.pct)}% of its limit.`;
+  return `${spent} ${nearest.label} is at ${U.ofLimit(Math.round(nearest.pct), nearest.limitWindow)}.`;
 }
 
 export const cacheLine = (ratio: number | null): string => (ratio === null ? U.noCache : U.cached(fmtShare(ratio)));

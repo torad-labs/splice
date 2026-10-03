@@ -194,6 +194,13 @@ export function localInstantText(epochSeconds: number, zone?: string): string {
   }).format(new Date(epochSeconds * 1000));
 }
 
+/** Reset instants share one clock style on Accounts, Models and Usage, with the viewer's own zone. */
+export function localZonedInstantText(epochSeconds: number): string {
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+  }).format(new Date(epochSeconds * 1000));
+}
+
 /** What a running head's silent local runtime says, the sentence `splice status` prints for it too
  *  or null when the daemon reported none. One spelling, so Fleet and Needs you cannot drift. */
 export function runtimeSilentText(head: HeadStatus): string | null {

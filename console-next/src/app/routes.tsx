@@ -3,6 +3,7 @@ import { Navigate, createHashRouter, useParams } from 'react-router';
 import { Shell } from './Shell';
 import { Pending } from './Pending';
 import { NAV } from './copy';
+import { AccountsPage } from '../pages/accounts/AccountsPage';
 import { SessionPage } from '../pages/session/SessionPage';
 import { SessionsPage } from '../pages/sessions/SessionsPage';
 import { ProjectPage } from '../pages/projects/ProjectPage';
@@ -44,6 +45,7 @@ export const router = createHashRouter([
     element: <Shell />,
     children: [
       { index: true, element: <Navigate to={HOME} replace /> },
+      { path: 'accounts', element: <AccountsPage /> },
       { path: 'settings/:section?', element: <SettingsPage /> },
       { path: 'sessions', element: <SessionsPage /> },
       { path: 'sessions/:id', element: <SessionPage /> },
@@ -56,7 +58,7 @@ export const router = createHashRouter([
       { path: 'requests/:head/:ts', element: <TurnPage /> },
       { path: 'turns/:head/:ts', element: <RequestBookmark /> },
       { path: 'fleet/:head', element: <Navigate to="/accounts" replace /> },
-      ...NAV.filter(([path]) => path !== 'sessions' && path !== 'settings' && path !== 'usage' && path !== 'requests' && path !== 'models')
+      ...NAV.filter(([path]) => path !== 'accounts' && path !== 'sessions' && path !== 'settings' && path !== 'usage' && path !== 'requests' && path !== 'models')
         .map(([path, label]) => ({ path, element: <Pending place={label} /> })),
       ...Object.entries(RETIRED).map(([path, to]) => ({ path, element: <Navigate to={to} replace /> })),
       { path: '*', element: <Navigate to={HOME} replace /> },

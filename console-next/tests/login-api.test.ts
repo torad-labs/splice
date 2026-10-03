@@ -37,6 +37,32 @@ describe('an account edit', () => {
   });
 });
 
+describe('separate Claude login places', () => {
+  test('each login and refresh targets only its own folder, while polling stays on the managed head', async () => {
+    const { auth } = await fresh();
+    const fetchMock = vi.fn(async () => reply(200, { ...started, head: 'claude-splice' }));
+    vi.stubGlobal('fetch', fetchMock);
+    await auth.startLogin('claude-splice', 'native', 'claude');
+    await auth.startLogin('claude-splice', 'proxied', 'claude-splice');
+    await auth.refreshClaudeLogin('claude');
+    await auth.refreshClaudeLogin('claude-splice');
+    await auth.fetchLoginStatus('claude-splice', 'L1');
+    expect((fetchMock.mock.calls as unknown as [string, RequestInit][]).map(([path, init]) => `${init?.method ?? 'GET'} ${path}`)).toEqual([
+      'POST /api/claude-logins/claude/login',
+      'POST /api/claude-logins/claude-splice/login',
+      'POST /api/claude-logins/claude/refresh',
+      'POST /api/claude-logins/claude-splice/refresh',
+      'GET /api/auth/claude-splice/login/L1',
+    ]);
+  });
+
+  test('a refused place refresh stays a refusal rather than looking signed in', async () => {
+    const { auth } = await fresh();
+    vi.stubGlobal('fetch', vi.fn(async () => reply(409, { error: 'no credential in this place' })));
+    await expect(auth.refreshClaudeLogin('claude')).rejects.toThrow('no credential in this place');
+  });
+});
+
 describe('the paths', () => {
   test('a head, id, kind, label or key name with a slash or a space cannot leave its segment', async () => {
     const { auth } = await fresh();

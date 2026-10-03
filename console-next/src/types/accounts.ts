@@ -11,6 +11,18 @@
 // and model/wire.ts is the one place the two shapes meet (the page crashed on `windows` for as long
 // as the console typed the wire it wished for instead of the one it got,.
 
+export type ClaudeLoginPlaceId = 'claude' | 'claude-splice';
+
+/** Additive management facts. Optional only for a daemon that predates account-place management. */
+export interface AccountManagement {
+  provider?: string;
+  login_place?: { id: ClaudeLoginPlaceId; command: string } | null;
+  account?: { uuid: string; email: string | null } | null;
+  held?: boolean | null;
+  held_until_epoch_seconds?: number | null;
+  failover_positions?: Record<string, number | null>;
+}
+
 /** One window of an account, at the length the PROVIDER reported. */
 export interface AccountWindow {
   /** The reported length in seconds: 18000 (5h) for ChatGPT's primary window, 604800 (7d) for its
@@ -51,10 +63,9 @@ export interface AccountSwitch {
  * when they share that file (OAuthAccountFiles.kt:178-186). Built from the wire by
  * [accountsFromWire]; the page never reads the wire shape.
  */
-export interface AccountRow {
-  /** The OAuth kind that pools it: chatgpt-oauth, grok-oauth, kimi-oauth or muse-oauth. The Claude
-   *  head is `client`, builds no pool at all (HeadAccountPools.kt:27,54) and reaches this page
-   *  from the auth view instead — the payload must not invent a row for it. */
+export interface AccountRow extends AccountManagement {
+  /** The credential kind. Claude folders are identified by login_place when the daemon reports
+   *  them; a daemon predating that route leaves those folders unreported, never signed out. */
   kind: string;
   /** The pool's label for the account; null for a single-login head, which has no pool and so no
    *  label (AccountsRoute.foldSingleLogin). */
@@ -110,13 +121,15 @@ export interface AccountsPayload {
  * `windows` the page labels by length. This is the type tools/e2e/probes/console-wire-keys.ts
  * checks against a live daemon, so it may declare nothing the daemon does not send.
  */
-export interface AccountWire {
+export interface AccountWire extends AccountManagement {
   credential_path: string | null;
   kind: string;
   label: string | null;
   primary: boolean;
   single_login: boolean;
   plan: string | null;
+  five_hour_limit_percent?: number | null;
+  seven_day_limit_percent?: number | null;
   five_hour_used_percent: number | null;
   five_hour_reset_epoch_seconds: number | null;
   five_hour_window_seconds: number | null;

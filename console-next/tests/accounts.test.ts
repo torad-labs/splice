@@ -304,6 +304,19 @@ function windowUsedTextOf(row: AccountRow): string {
 }
 
 describe('the accounts wire becomes the page model', () => {
+  test('the two Claude folders retain distinct identities even when they hold the same account UUID', () => {
+    const rows = accountsFromWire({ accounts: [
+      wireRow({ provider: 'anthropic', kind: 'client', label: 'claude', login_place: { id: 'claude', command: 'claude' }, account: { uuid: 'synthetic-same', email: 'synthetic@example.invalid' }, held: null, held_until_epoch_seconds: null, failover_positions: { 'claude-splice': 1 }, heads: ['claude-splice'] }),
+      wireRow({ provider: 'anthropic', kind: 'client', label: 'claude-splice', login_place: { id: 'claude-splice', command: 'claude-splice' }, account: { uuid: 'synthetic-same', email: 'synthetic@example.invalid' }, held: true, held_until_epoch_seconds: 1_800_003_600, failover_positions: { 'claude-splice': 0 }, heads: ['claude-splice'] }),
+    ] }).accounts;
+    expect(rows).toHaveLength(2);
+    expect(rows.map(row => row.login_place?.id)).toEqual(['claude', 'claude-splice']);
+    expect(rows.map(row => row.account?.uuid)).toEqual(['synthetic-same', 'synthetic-same']);
+    expect(rows.map(row => row.held)).toEqual([null, true]);
+    expect(rows[1]?.held_until_epoch_seconds).toBe(1_800_003_600);
+    expect(rows[0]?.failover_positions?.['claude-splice']).toBe(1);
+    expect(rows[1]?.failover_positions?.['claude-splice']).toBe(0);
+  });
   test('each reported slot becomes a window at the length the provider reported', () => {
     const [row] = accountsFromWire({ accounts: [wireRow({ seven_day_window_seconds: DAY_30 })] }).accounts;
     expect(row?.windows).toEqual([

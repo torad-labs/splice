@@ -1,4 +1,14 @@
 source	sha256	disposition	destination	reason
+console-next/src/api/account-order.ts	0fa95ad2e1af0f0bbc3e6c3080b8a17d1045a9b32dc15bd78976424ab1f6696b	created		V4-444: typed per-head order reads and writes preserve backend refusal and effective candidates
+console-next/src/pages/accounts/AccountBudget.tsx	5fe1393773948a3d77bb02277b6e7a3ca262774643988f5ad37af7e2865a7c61	created		V4-444: head-scoped spending and cap edits preserve unknown measurements and sibling budgets
+console-next/src/pages/accounts/AccountCard.tsx	ccac66db5630ee076a80a407317104699fec862f729090a7f87fb07f160ebf26	created		V4-444: each credential place owns its login refresh quota and next-account state
+console-next/src/pages/accounts/AccountLimits.tsx	784817a53df3c320b015bb3e7496283683cf088b459993c0ccd8c59c6e6a0ebc	created		V4-444: real quota windows preserve length model resets stale readings and unknown values
+console-next/src/pages/accounts/AccountsPage.tsx	e02e5daf81cfbc539a5e9d1ea61226420b8b2f8b9ce831e49ff623c50da0f285	created		V4-444: provider groups keep both Claude folders separate and render additional OAuth rows
+console-next/src/pages/accounts/FailoverOrder.tsx	bbdad7af9337b003640433a1f4d25b8ebbe2844f0b4cf78795b49e61933f896e	created		V4-444: persisted account priority supports pointer keyboard and earlier-later controls
+console-next/src/pages/accounts/accounts.css	4220eabcf857cb7f57e37fbe15b7e7145d975a76130c0fc1be684c54c92b6b2c	created		V4-444: Accounts reuses console materials with wide and narrow layouts without shell drift
+console-next/src/pages/accounts/copy.ts	cbdeab6bf69a415091dd89dc88d7269a4c6cec92c5ba15d184398ccc74c61b76	created		V4-444: account actions explain credential places unknown usage and head-scoped budgets
+console-next/tests/account-limits.test.tsx	21a42e29e030017255e17cc35d0c4322c11f49d6693351b99c6fa969b2485d71	created		V4-444: synthetic quota controls reject fabricated zero stale freshness and wrong period labels
+console-next/tests/account-order-api.test.ts	7b4da9a976547b1f2db71132f2fd2a36271bd7abacd27717f8e55cc40d3fe502	created		V4-444: synthetic order contracts reject duplicate saves and distinguish unavailable sources
 features/accounts/src/main/kotlin/splice/accounts/order/AccountOrderRoute.kt	0f695ac16c9a4a26b15562b9be8db4a6cf3509fe52e89490eb2de42a582e39ff	created		Accounts: read and update the exact live per-head candidate order with strict label validation
 features/accounts/src/main/kotlin/splice/accounts/order/AccountOrderStore.kt	3f6ffc7413ff33e0f92f16580d9b1f6da0ef46e9e3ea6d81312309a08a996efb	created		Accounts: atomic owner-only per-head order persistence preserves siblings and dated prior documents
 features/accounts/src/main/kotlin/splice/accounts/order/HeadAccountOrderSource.kt	3c842371078caac3de8d059e26696b6b2837ec0753bc4f9a0676a3cea12de2a0	created		Accounts: order mutations are a separate capability without widening the existing pool read SAM

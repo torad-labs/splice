@@ -13,6 +13,7 @@ import { awaitRefetch } from './refetch';
 import { PENDING_AUTH_WRITES } from '../types/login';
 import type { PendingRoute } from '../types/budget';
 import type { AuthActionResult } from '../types/core';
+import type { AccountWire, ClaudeLoginPlaceId } from '../types/accounts';
 import type {
   AccountMutationPayload,
   AuthActionOutcome,
@@ -73,8 +74,13 @@ async function settle<T>(path: string, init: RequestInit, wrap: (result: T) => A
 /** POST /api/auth/{head}/login: start a device or browser login for a new account on this head. The label
  *  is the operator's name for it and becomes the credential file's name. The answer is the login's
  *  STARTING view: its id to poll, and no code or link yet. */
-export const startLogin = (head: string, label: string): Promise<AuthActionState> =>
-  settle<LoginStatusPayload>(loginPath(head), { method: 'POST', body: JSON.stringify({ label }) }, (result) => ({ action: 'login', result }));
+export const startLogin = (head: string, label: string, place?: ClaudeLoginPlaceId): Promise<AuthActionState> =>
+  settle<LoginStatusPayload>(place === undefined ? loginPath(head) : `/api/claude-logins/${seg(place)}/login`,
+    { method: 'POST', body: JSON.stringify({ label }) }, (result) => ({ action: 'login', result }));
+
+/** Refresh only the named Claude folder; the response is that place's row, not a head-wide switch. */
+export const refreshClaudeLogin = (place: ClaudeLoginPlaceId): Promise<AccountWire> =>
+  request<AccountWire>(`/api/claude-logins/${seg(place)}/refresh`, { method: 'POST' });
 
 /** GET /api/auth/{head}/login/{id}: one login now. Its code or link once the flow announces them, then
  *  signed in (the credential is on disk), then live after restart, or failed with the daemon's reason. */
@@ -144,7 +150,7 @@ function useAuthWrite<Vars, Out>(run: (vars: Vars) => Promise<Out>, stale: reado
 const accountsChanged = [keys.accounts, keys.auth, keys.heads, keys.usage] as const;
 
 /** Start a login. Resolves `{ action: 'login', result }` (poll `result.id`) or `{ pending }`. */
-export const useStartLogin = () => useMutation({ mutationFn: ({ head, label }: { head: string; label: string }) => startLogin(head, label) });
+export const useStartLogin = () => useMutation({ mutationFn: ({ head, label, place }: { head: string; label: string; place?: ClaudeLoginPlaceId }) => startLogin(head, label, place) });
 
 /**
  * Poll one login every LOGIN_POLL_MS while `enabled` (pass `polling(state)`). Data is the login's view or

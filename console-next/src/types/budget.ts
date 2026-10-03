@@ -22,6 +22,9 @@ export interface Budget {
    *  zero would be blocked on its first turn, and "no budget" is the state every head starts in. */
   daily_usd: number | null;
   action: BudgetAction;
+  /** The daemon's measured spending in this head's budget window, never per-account attribution. */
+  used_usd?: number | null;
+  remaining_usd?: number | null;
 }
 
 export interface BudgetsPayload {

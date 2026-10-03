@@ -5,15 +5,17 @@ import { failureText } from '../../api/client';
 import { isPendingRoute, useLoginStatus, useStartLogin } from '../../api/auth';
 import { LOGIN_PENDING_EMPTY, canStart, initialLoginState, next, polling, stepMessage } from '../../lib/login';
 import { H, S } from '../../lib/words-login';
+import type { ClaudeLoginPlaceId } from '../../types/accounts';
 import { Button, Close } from '../../ui';
 import { LoginTicket } from './LoginTicket';
 import { useSignInTab } from './useSignInTab';
 
 /** The sign-in flow in a dialog: name the account, start the login, finish it in the browser with the code or link the
  *  daemon hands out, then wait for the head to restart with the account. A renewal begins at its existing label. */
-export function SignIn({ head, label = '', purpose, children }: { head: string; label?: string; purpose: 'add' | 'renew'; children: ReactNode }) {
+export function SignIn({ head, label = '', place, purpose, children }: { head: string; label?: string; place?: ClaudeLoginPlaceId; purpose: 'add' | 'renew'; children: ReactNode }) {
+  const initialLabel = label || place || '';
   const [open, setOpen] = useState(false);
-  const [state, dispatch] = useReducer(next, initialLoginState(label));
+  const [state, dispatch] = useReducer(next, initialLoginState(initialLabel));
   const [loginId, setLoginId] = useState<string | null>(null);
   const start = useStartLogin();
   const status = useLoginStatus(head, loginId, polling(state));
@@ -31,7 +33,7 @@ export function SignIn({ head, label = '', purpose, children }: { head: string; 
     openSignInTab();
     dispatch({ kind: 'start' });
     try {
-      const answer = await start.mutateAsync({ head, label: state.label.trim() });
+      const answer = await start.mutateAsync({ head, label: state.label.trim(), ...(place === undefined ? {} : { place }) });
       if ('pending' in answer) dispatch({ kind: 'pending', row: answer.pending });
       else if (answer.action === 'login') {
         setLoginId(answer.result.id);
@@ -52,7 +54,7 @@ export function SignIn({ head, label = '', purpose, children }: { head: string; 
       onOpenChange={(next_) => {
         setOpen(next_);
         if (!next_ && !running) {
-          dispatch({ kind: 'reset', label });
+          dispatch({ kind: 'reset', label: initialLabel });
           setLoginId(null);
         }
       }}

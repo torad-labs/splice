@@ -92,9 +92,9 @@ internal class AdmissionGate(
         val bytes = declared ?: cap.toLong()
         val materialization = deps.seams.requestMaterializationGate
         val leased = if (fastFail) {
-            materialization.tryWithLease(bytes, block)
+            materialization.tryWithLease(bytes, block = block)
         } else {
-            materialization.withLease(bytes, owner, block)
+            materialization.withLease(bytes, owner, block = block)
         }
         if (leased == null) {
             beforeRefusal?.ended()

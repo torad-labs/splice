@@ -50,11 +50,17 @@ export const U = {
   doctor: 'Doctor:',
 } as const;
 
-/** What a head's runtime checks found, in the page's words: the daemon's counters say `2 provider / 0 local error(s)`. */
+/** A head's runtime findings. Error counts describe errors, not failed turns. */
 export const DF = {
   shimStale: 'splice’s launcher does not match this version. Reinstall it.',
-  events: (head: string, provider: number, local: number): string =>
-    `${head}: ${provider} provider / ${local} local diagnostic error events since the restart. Rate-limit turn counts are unavailable.`,
+  events: (head: string, provider: number, local: number): string => {
+    const count = provider === 0 ? local : provider;
+    const errors = count === 1 ? 'error' : 'errors';
+    const where = provider === 0 ? `${local} ${errors} inside splice`
+      : local === 0 ? `${provider} ${errors} at the provider`
+        : `${provider} ${errors} at the provider and ${local} inside splice`;
+    return `${head}: ${where} since the restart`;
+  },
   recent: (head: string, failed: number, total: number, ago: string, outcome: string): string =>
     `${head}: ${failed} of its last ${total} ${total === 1 ? 'turn' : 'turns'} failed; the latest, ${ago}, was ${outcome}`,
 } as const;

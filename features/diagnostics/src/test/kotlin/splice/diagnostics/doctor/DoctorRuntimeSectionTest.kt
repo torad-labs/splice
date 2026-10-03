@@ -4,6 +4,9 @@
 // longer print "Everything checks out."
 package splice.diagnostics.doctor
 
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -29,9 +32,11 @@ class DoctorRuntimeSectionTest {
             head,
             splice.core.config.StatePaths(baseOverride = tmp),
         ).single { it.name == "head synthetic errors" }
-        assertTrue(row.detail.contains("10 turns hit the provider's rate limit"), row.detail)
-        assertTrue(row.detail.contains("splice held back 6 of them"), row.detail)
-        assertTrue(!row.detail.contains("inside splice"), row.detail)
+        assertEquals(
+            "synthetic: 10 turns hit the provider's rate limit after the restart; " +
+                "splice held back 6 of them while it cooled down.",
+            row.detail,
+        )
     }
 
     @Test
@@ -65,7 +70,7 @@ class DoctorRuntimeSectionTest {
     }
 
     @Test
-    fun `measured zero rate turns are not presented as unavailable aggregate attribution`(@TempDir tmp: Path) {
+    fun `measured zero rate turns leave a plain error sentence`(@TempDir tmp: Path) {
         val head = splice.daemonclient.DaemonProbe.parseHeadsRuntime(
             """{"heads":[{"key":"synthetic","health":{"localOriginErrors":3,"providerErrors":2,
                 "provider_rate_limit_turns":0,"cooldown_held_turns":0}}]}""",
@@ -74,9 +79,78 @@ class DoctorRuntimeSectionTest {
             head,
             splice.core.config.StatePaths(baseOverride = tmp),
         ).single { it.name == "head synthetic errors" }
-        assertTrue(row.detail.contains("diagnostic error events"), row.detail)
-        assertTrue(row.detail.contains("No turns ended on a rate limit or cooldown hold"), row.detail)
-        assertTrue(!row.detail.contains("unavailable"), row.detail)
+        assertEquals("synthetic: 2 errors at the provider and 3 inside splice since the restart", row.detail)
+    }
+
+    @Test
+    fun `error sentences omit zero origins and use singular error without claiming failed turns`(@TempDir tmp: Path) {
+        val cases = listOf(
+            Triple(0L, 2L, "2 errors inside splice"),
+            Triple(0L, 1L, "1 error inside splice"),
+            Triple(1L, 0L, "1 error at the provider"),
+            Triple(13L, 20L, "13 errors at the provider and 20 inside splice"),
+        )
+        for ((provider, local, words) in cases) {
+            val row = DoctorRuntime().headRuntimeRows(
+                splice.daemonclient.DaemonProbe.HeadRuntime(
+                    key = "synthetic",
+                    localOriginErrors = local,
+                    providerErrors = provider,
+                ),
+                splice.core.config.StatePaths(baseOverride = tmp),
+            ).first()
+            assertEquals("synthetic: $words since the restart", row.detail)
+            assertNull(row.details)
+        }
+    }
+
+    @Test
+    fun `one rate-limited turn does not add a sentence about zero cooldown holds`(@TempDir tmp: Path) {
+        val row = DoctorRuntime().headRuntimeRows(
+            splice.daemonclient.DaemonProbe.HeadRuntime(
+                key = "synthetic",
+                localOriginErrors = 0,
+                providerErrors = 9,
+                rateLimit = splice.core.head.RateLimitHealth(1, 0),
+            ),
+            splice.core.config.StatePaths(baseOverride = tmp),
+            "Anthropic",
+        ).first()
+        assertEquals("synthetic: 1 turn hit Anthropic's rate limit after the restart.", row.detail)
+        assertEquals("Provider errors: 9. Errors inside splice: 0.", row.details)
+    }
+
+    @Test
+    fun `rate headline and raw error counts are separate in the report`(@TempDir tmp: Path) {
+        val paths = splice.core.config.StatePaths(baseOverride = tmp)
+        val row = DoctorRuntime().headRuntimeRows(
+            splice.daemonclient.DaemonProbe.HeadRuntime(
+                key = "synthetic",
+                localOriginErrors = 91,
+                providerErrors = 57,
+                rateLimit = splice.core.head.RateLimitHealth(4, 6),
+            ),
+            paths,
+        ).first()
+        val writer = splice.diagnostics.doctor.report.DoctorJsonReport(
+            envReader = { null },
+            claudeVersion = { "synthetic" },
+            statePaths = paths,
+        )
+        val report = writer.build(
+            splice.diagnostics.doctor.report.DoctorRun(null, listOf("runtime" to listOf(row))),
+            false,
+        )
+        val check = report.getValue("checks").jsonArray.single().jsonObject
+        assertEquals("Provider errors: 57. Errors inside splice: 91.", check["details"]?.jsonPrimitive?.content)
+        assertEquals(row.detail, check.getValue("detail").jsonPrimitive.content)
+        val sensitive = row.copy(details = "Bearer SYNTHETIC-SECRET-DOCTOR-DETAILS")
+        val scrubbed = writer.build(
+            splice.diagnostics.doctor.report.DoctorRun(null, listOf("runtime" to listOf(sensitive))),
+            false,
+        ).getValue("checks").jsonArray.single().jsonObject.getValue("details").jsonPrimitive.content
+        assertTrue(scrubbed.contains("<redacted>"), scrubbed)
+        assertTrue(!scrubbed.contains("SYNTHETIC-SECRET"), scrubbed)
     }
 
     private fun runDoctor(env: Map<String, String?>): Pair<Boolean, String> {
@@ -179,9 +253,11 @@ class DoctorRuntimeSectionTest {
             ex.sendResponseHeaders(200, b.size.toLong())
             ex.responseBody.use { it.write(b) }
         }
+        val headsBody = java.util.concurrent.atomic.AtomicReference(
+            """{"heads":[{"key":"codex","health":{"localOriginErrors":1,"providerErrors":7}}]}""",
+        )
         server.createContext("/api/heads") { ex ->
-            val headsJson = """{"heads":[{"key":"codex","health":{"localOriginErrors":1,"providerErrors":7}}]}"""
-            val b = headsJson.toByteArray()
+            val b = headsBody.get().toByteArray()
             ex.sendResponseHeaders(200, b.size.toLong())
             ex.responseBody.use { it.write(b) }
         }
@@ -199,11 +275,22 @@ class DoctorRuntimeSectionTest {
             )
             Files.writeString(perf, perfLines.joinToString("\n") + "\n")
             val (_, out) = runDoctor(env)
-            assertTrue(out.contains("7 provider / 1 local error(s) since last restart"), out)
+            assertTrue(out.contains("codex: 7 errors at the provider and 1 inside splice since the restart"), out)
             assertTrue(out.contains("splice logs --head codex --tail 50"), out)
             assertTrue(out.contains("1 of last 4 turn(s) failed"), out)
             assertTrue(out.contains("error:conn-reset"), out)
             assertTrue(!out.contains("Everything checks out"), out)
+            headsBody.set(
+                """{"heads":[{"key":"codex","health":{"localOriginErrors":91,"providerErrors":57,
+                    "provider_rate_limit_turns":4,"cooldown_held_turns":6}}]}""",
+            )
+            val (_, rateOut) = runDoctor(env)
+            val lines = rateOut.lineSequence().map { it.trim() }.toList()
+            val headline = lines.indexOfFirst { it.startsWith("codex: 10 turns hit the provider's rate limit") }
+            assertTrue(headline >= 0, rateOut)
+            assertTrue(lines[headline].endsWith("splice held back 6 of them while it cooled down."), rateOut)
+            assertEquals("Show the details", lines[headline + 1])
+            assertEquals("Provider errors: 57. Errors inside splice: 91.", lines[headline + 2])
         } finally {
             server.stop(0)
         }

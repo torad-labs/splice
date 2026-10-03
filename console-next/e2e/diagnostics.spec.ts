@@ -177,6 +177,7 @@ test('rate-limit observations use actual counts and the declared vendor without 
     const body = await response.json() as DoctorPayload;
     body.checks = [{ id: 'runtime/head misleading errors', status: 'warn',
       detail: "misleading: 10 turns hit Anthropic's rate limit after the restart; splice held back 6 of them while it cooled down.",
+      details: 'Provider errors: 57. Errors inside splice: 91.',
       fix: 'splice logs --head misleading --tail 50', fix_kind: 'command' }];
     await route.fulfill({ response, json: body });
   });
@@ -184,7 +185,10 @@ test('rate-limit observations use actual counts and the declared vendor without 
   const health = page.getByRole('region', { name: 'Health', exact: true });
   await expect(health).toContainText("10 turns hit Anthropic's rate limit");
   await expect(health).toContainText('splice held back 6 of them');
-  await expect(health).not.toContainText('inside splice');
+  const raw = health.getByText('Provider errors: 57. Errors inside splice: 91.', { exact: true });
+  await expect(raw).toBeHidden();
+  await health.getByText('Show the details', { exact: true }).click();
+  await expect(raw).toBeVisible();
   await page.getByRole('navigation', { name: 'Pages', exact: true }).getByRole('link', { name: 'Needs you', exact: true }).click();
   const observations = page.getByRole('region', { name: 'Worth a look', exact: true });
   await expect(observations).toContainText("10 turns hit Anthropic's rate limit");

@@ -15,6 +15,8 @@ export interface DoctorCheck {
   status: DoctorStatus;
   /** The check's sentence: what it found. Its remedy, when it has one, is [fix]. */
   detail: string;
+  /** Supporting counts, disclosed separately from the headline when the daemon supplies them. */
+  details?: string | null;
   /**
    * The command or step that clears the check (DoctorReportShape.checks), null when it offers none.
    * V4-253: it rode inside [detail] behind an em-dash separator until then, so the JSON users paste

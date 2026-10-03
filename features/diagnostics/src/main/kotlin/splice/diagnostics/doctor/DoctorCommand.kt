@@ -176,6 +176,10 @@ public class DoctorCommand(
         output.line("")
         output.line("  $glyph " + palette.paint(palette.strong, check.name))
         output.line("      " + palette.paint(palette.quiet, check.detail))
+        check.details?.let {
+            output.line("      " + palette.paint(palette.quiet, "Show the details"))
+            output.line("        " + palette.paint(palette.quiet, it))
+        }
         check.fix?.let {
             output.line("      " + palette.paint(palette.quiet, "fix") + "   " + palette.paint(palette.signal, it))
         }

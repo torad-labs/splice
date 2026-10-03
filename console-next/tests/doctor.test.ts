@@ -114,9 +114,9 @@ describe('the doctor report is gated on redaction', () => {
 describe('the report accessors', () => {
   test('legacy error events never manufacture failed turns or cooldown totals', () => {
     const finding = checkFinding(check('runtime/head synthetic errors', 'warn', '3 provider / 7 local error(s) since last restart'));
-    expect(finding).toBe('synthetic: 3 provider / 7 local diagnostic error events since the restart. Rate-limit turn counts are unavailable.');
+    expect(finding).toBe('synthetic: 3 errors at the provider and 7 inside splice since the restart');
     expect(finding).not.toContain('turns failed');
-    expect(finding).not.toContain('inside splice');
+    expect(finding).not.toContain('unavailable');
   });
 
   // entities-sessions.test.ts, "doctor"
@@ -164,9 +164,10 @@ describe('every failing check carries its fix', () => {
 
   test('a head\'s error and turn counts are said in words, not in the daemon\'s counters', () => {
     const said = (id: string, detail: string) => checkFinding(check(id, 'warn', detail));
-    expect(said('runtime/head claudex errors', '0 provider / 2 local error(s) since last restart')).toBe('claudex: 0 provider / 2 local diagnostic error events since the restart. Rate-limit turn counts are unavailable.');
-    expect(said('runtime/head claudex errors', '1 provider / 0 local error(s) since last restart')).toBe('claudex: 1 provider / 0 local diagnostic error events since the restart. Rate-limit turn counts are unavailable.');
-    expect(said('runtime/head claudex errors', '3 provider / 1 local error(s) since last restart')).toBe('claudex: 3 provider / 1 local diagnostic error events since the restart. Rate-limit turn counts are unavailable.');
+    expect(said('runtime/head claudex errors', '0 provider / 2 local error(s) since last restart')).toBe('claudex: 2 errors inside splice since the restart');
+    expect(said('runtime/head claudex errors', '1 provider / 0 local error(s) since last restart')).toBe('claudex: 1 error at the provider since the restart');
+    expect(said('runtime/head claudex errors', '3 provider / 1 local error(s) since last restart')).toBe('claudex: 3 errors at the provider and 1 inside splice since the restart');
+    expect(said('runtime/head claudex errors', '0 provider / 1 local error(s) since last restart')).toBe('claudex: 1 error inside splice since the restart');
     expect(said('runtime/head claudex turns', '2 of last 5 turn(s) failed; last failure: 4m ago (error:upstream-failed)')).toBe('claudex: 2 of its last 5 turns failed; the latest, 4m ago, was Provider failed');
     expect(said('runtime/head claudex turns', '1 of last 1 turn(s) failed; last failure: 9s ago (?)')).toBe('claudex: 1 of its last 1 turn failed; the latest, 9s ago, was Unknown');
     expect(said('runtime/head claudex turns', 'perf file could not be read: denied')).toBe('perf file could not be read: denied');

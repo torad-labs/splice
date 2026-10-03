@@ -79,6 +79,7 @@ export const T = {
   needsYou: 'Needs you',
   worth: 'Worth a look',
   showAllFindings: (count: number): string => `Show all ${count} findings`,
+  showDetails: 'Show the details',
   recheck: 'Check again',
   rechecking: 'Checking…',
   // Advanced

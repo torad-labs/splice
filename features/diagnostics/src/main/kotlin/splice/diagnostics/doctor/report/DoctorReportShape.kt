@@ -74,7 +74,8 @@ internal class DoctorReportShape(private val redaction: DoctorRedaction, private
         put("unreadable_entries", usage.unreadable)
     }
 
-    /** Exactly {id, status, detail, fix, fix_kind, fix_id, pending_restart} (schema 1): `fix` is the check's
+    /** {id, status, detail, fix, fix_kind, fix_id, pending_restart}, plus optional supporting `details`
+     *  (schema 1): `fix` is the check's
      *  remedy, null when it has none, `fix_kind` is `command` (one line safe to paste) or `advice` (null
      *  with no fix), and `fix_id` names the daemon-run fix, null on every row whose remedy is the
      *  operator's own. V4-253: the fix rode inside the detail behind
@@ -91,6 +92,7 @@ internal class DoctorReportShape(private val redaction: DoctorRedaction, private
                             put("id", safe("$section/${c.name}"))
                             put("status", c.status.name.lowercase())
                             put("detail", safe(c.detail))
+                            c.details?.let { put("details", safe(it)) }
                             put("fix", c.fix?.let(::safe))
                             put("fix_id", c.fixId?.wire)
                             put("fix_kind", c.fixKind?.wire)

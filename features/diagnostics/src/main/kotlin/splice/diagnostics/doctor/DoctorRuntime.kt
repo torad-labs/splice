@@ -58,14 +58,16 @@ internal class DoctorRuntime {
                 CheckStatus.WARN,
                 if (limited) {
                     rateLimitSentence(h, providerName)
-                } else if (rates != null) {
-                    "${h.key}: ${h.providerErrors} provider / ${h.localOriginErrors} local diagnostic error events " +
-                        "since the restart. No turns ended on a rate limit or cooldown hold."
                 } else {
-                    "${h.providerErrors} provider / ${h.localOriginErrors} local error(s) since last restart"
+                    errorSentence(h)
                 },
                 "splice logs --head ${h.key} --tail 50",
                 fixKind = FixKind.COMMAND,
+                details = if (limited) {
+                    "Provider errors: ${h.providerErrors}. Errors inside splice: ${h.localOriginErrors}."
+                } else {
+                    null
+                },
             )
         } else {
             DoctorCheck("head ${h.key} errors", CheckStatus.OK, "none since last restart")
@@ -73,13 +75,27 @@ internal class DoctorRuntime {
         return listOf(counters, DoctorProbeWrite().perfTailRow(h.key, statePaths.perfStatsFile(h.key)))
     }
 
+    private fun errorSentence(h: DaemonProbe.HeadRuntime): String {
+        val count = if (h.providerErrors == 0L) h.localOriginErrors else h.providerErrors
+        val errors = if (count == 1L) "error" else "errors"
+        val where = when {
+            h.providerErrors == 0L -> "${h.localOriginErrors} $errors inside splice"
+            h.localOriginErrors == 0L -> "${h.providerErrors} $errors at the provider"
+            else -> "${h.providerErrors} $errors at the provider and ${h.localOriginErrors} inside splice"
+        }
+        return "${h.key}: $where since the restart"
+    }
+
     private fun rateLimitSentence(h: DaemonProbe.HeadRuntime, provider: String): String {
         val rates = checkNotNull(h.rateLimit)
         val total = rates.providerTurns + rates.heldTurns
         val turns = if (total == 1L) "turn" else "turns"
-        return "${h.key}: $total $turns hit $provider's rate limit after the restart; " +
-            "splice held back ${rates.heldTurns} of them while it cooled down. " +
-            "Diagnostic error events: ${h.providerErrors} provider / ${h.localOriginErrors} local."
+        val held = if (rates.heldTurns > 0) {
+            "; splice held back ${rates.heldTurns} of them while it cooled down."
+        } else {
+            "."
+        }
+        return "${h.key}: $total $turns hit $provider's rate limit after the restart$held"
     }
 
     private fun providerName(head: String, topology: Topology?): String {

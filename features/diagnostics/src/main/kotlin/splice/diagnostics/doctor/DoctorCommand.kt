@@ -19,9 +19,12 @@ import splice.core.util.TopologySlotsFailure
 import splice.core.util.TopologyTypeFailure
 import splice.daemonclient.DaemonSettings
 import splice.diagnostics.doctor.report.DOCTOR_USAGE
+import splice.diagnostics.doctor.report.DoctorFindingRenderer
 import splice.diagnostics.doctor.report.DoctorJsonReport
 import splice.diagnostics.doctor.report.DoctorReportOptions
 import splice.diagnostics.doctor.report.DoctorRun
+import splice.diagnostics.doctor.report.NOTE_GLYPH
+import splice.diagnostics.doctor.report.PASS_GLYPH
 import splice.topology.TopologyLoader
 import splice.topology.TopologyStatePaths
 import java.nio.file.Files
@@ -40,6 +43,7 @@ public class DoctorCommand(
 ) {
 
     private val probes = DoctorProbes(jar)
+    private val findingRenderer = DoctorFindingRenderer(output)
 
     // Install integrity is a separate section with separate inputs; it reads back into [probes] for
     // the one thing the two share, the malformed-PATH-entry parser.
@@ -160,28 +164,7 @@ public class DoctorCommand(
             output.line("  " + palette.paint(palette.quiet, "$NOTE_GLYPH  ${check.name}  ${check.detail}"))
         }
         for (check in actionable) {
-            renderProblem(check, palette)
-        }
-    }
-
-    /** One problem, given room: what is wrong, then why it matters, then the command to run. */
-    private fun renderProblem(check: DoctorCheck, palette: CliPalette) {
-        val glyph = when (check.status) {
-            CheckStatus.FAIL -> palette.paint(palette.dead, FAIL_GLYPH)
-            CheckStatus.WARN -> palette.paint(palette.strain, WARN_GLYPH)
-            // An INFO reaching here has a fix but is not a fault — a fresh machine with no topology
-            // is not sick. It gets the room without the alarm.
-            else -> palette.paint(palette.quiet, NOTE_GLYPH)
-        }
-        output.line("")
-        output.line("  $glyph " + palette.paint(palette.strong, check.name))
-        output.line("      " + palette.paint(palette.quiet, check.detail))
-        check.details?.let {
-            output.line("      " + palette.paint(palette.quiet, "Show the details"))
-            output.line("        " + palette.paint(palette.quiet, it))
-        }
-        check.fix?.let {
-            output.line("      " + palette.paint(palette.quiet, "fix") + "   " + palette.paint(palette.signal, it))
+            findingRenderer.render(check, palette)
         }
     }
 
@@ -310,13 +293,5 @@ public class DoctorCommand(
             }
         }
 }
-
-// The glyphs. Colour is the SECOND carrier here, never the only one: at ColorDepth.NONE these
-// four shapes are the entire difference between a pass, a note, a warning and a failure, and they
-// stay distinguishable in a pipe, a CI log and a screen reader's line.
-private const val PASS_GLYPH = "\u2713"
-private const val NOTE_GLYPH = "\u2013"
-private const val WARN_GLYPH = "!"
-private const val FAIL_GLYPH = "\u2717"
 
 private const val ACCOUNTS_CHECK = "accounts"

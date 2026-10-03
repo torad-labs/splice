@@ -285,15 +285,24 @@ class DoctorRuntimeSectionTest {
                     "provider_rate_limit_turns":4,"cooldown_held_turns":6}}]}""",
             )
             val (_, rateOut) = runDoctor(env)
-            val lines = rateOut.lineSequence().map { it.trim() }.toList()
-            val headline = lines.indexOfFirst { it.startsWith("codex: 10 turns hit the provider's rate limit") }
-            assertTrue(headline >= 0, rateOut)
-            assertTrue(lines[headline].endsWith("splice held back 6 of them while it cooled down."), rateOut)
-            assertEquals("Show the details", lines[headline + 1])
-            assertEquals("Provider errors: 57. Errors inside splice: 91.", lines[headline + 2])
+            assertRateFindingOutput(rateOut)
         } finally {
             server.stop(0)
         }
+    }
+
+    private fun assertRateFindingOutput(output: String) {
+        val finding = output.substringAfter("\n  ! head codex errors\n").substringBefore("\n\n")
+        assertEquals(
+            listOf(
+                "      codex: 10 turns hit the provider's rate limit after the restart; " +
+                    "splice held back 6 of them while it cooled down.",
+                "      Show the details",
+                "        Provider errors: 57. Errors inside splice: 91.",
+                "      fix   splice logs --head codex --tail 50",
+            ).joinToString("\n"),
+            finding,
+        )
     }
 
     // DR-174: the runtime section held its own private mgmt-key reader that collapsed absence and

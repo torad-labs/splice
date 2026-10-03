@@ -28,6 +28,7 @@ import splice.head.compact.CompactStats
 import splice.head.compaction.FileCompactionRecordings
 import splice.head.perf.PerfStats
 import splice.head.perf.SessionTotals
+import splice.head.usage.CredentialQuotaFiles
 import splice.head.usage.EconomicsStore
 import splice.head.usage.QuotaTracker
 import splice.head.usage.UsageStore
@@ -99,6 +100,7 @@ internal class ManagedHeadFactory(
         // no bypass. Caller auth rides upstream only on heads that do get it; every other head keeps
         // enforcing the management key.
         val forwardClientAuth = wired.auth is ClientAuthProvider
+        if (forwardClientAuth) primaryQuota.credentialListener = CredentialQuotaFiles(statePaths.quotaFile(key), log)
         val server = headServerFactory.headServerFor(ctx, wired.provider, stores, forwardClientAuth, recordings(key))
         // DR-81: key presence is NOT baked into the spec — it is a per-launch read of the SAME
         // wired credential, so `splice key set`/unset changes the very next launch. Non-api-key

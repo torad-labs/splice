@@ -18,19 +18,29 @@ import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
 import splice.upstream.retry.QuotaHeaderFamily
+import splice.upstream.transport.CredentialQuotaReceiver
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicReference
+
+/** Receives a timestamped quota reading for one proved credential. The key stays inside the process and state. */
+public fun interface CredentialQuotaListener {
+    public fun observed(key: String, snapshot: QuotaSnapshot)
+}
 
 public class QuotaTracker(
     private val file: Path,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
     private val log: LogSink = LogSink(DaemonLog::write),
     private val extraFamily: QuotaHeaderFamily? = null,
-) {
+) : CredentialQuotaReceiver {
     private val codec = QuotaJson()
     private val headers = QuotaHeaders(clock)
     private val latest = AtomicReference<QuotaSnapshot?>(readFile())
+
+    /** Bound by native-login composition. The head snapshot remains the aggregate view. */
+    @Volatile
+    public var credentialListener: CredentialQuotaListener? = null
 
     public fun snapshot(): QuotaSnapshot? = latest.get()
 
@@ -49,7 +59,13 @@ public class QuotaTracker(
     /** Upstream response headers of the round that just completed. A no-op for the common case
      *  of an upstream that sends neither family. */
     public fun observe(read: QuotaHeaderRead) {
-        (headers.fromUpstream(read) ?: extraFamily?.snapshot(read, clock))?.let(::record)
+        observe(null, read)
+    }
+
+    override fun observe(key: String?, headers: QuotaHeaderRead) {
+        val snapshot = this.headers.fromUpstream(headers) ?: extraFamily?.snapshot(headers, clock) ?: return
+        record(snapshot)
+        if (key != null) credentialListener?.observed(key, snapshot)
     }
 
     /** What every client response carries so Claude Code's rate_limits show this head's windows: the

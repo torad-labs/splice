@@ -28,12 +28,28 @@ import java.nio.file.Path
 // The verb's pieces (V4-276, split for concentration): its types in ClaudeLoginTypes.kt, the head's
 // files and splice's store in ClaudeLoginFiles.kt, what it tells the operator in ClaudeLoginSentences.kt.
 private const val LOGINS_DIR = "claude-logins"
-private val LABEL_SHAPE = Regex("[A-Za-z0-9][A-Za-z0-9_-]{0,63}")
+internal const val CLAUDE_LOGIN_LABEL_PATTERN = "[A-Za-z0-9][A-Za-z0-9_-]{0,63}"
+private val LABEL_SHAPE = Regex(CLAUDE_LOGIN_LABEL_PATTERN)
 
 public class ClaudeLogins(
     storeDir: Path = StatePaths().stateDir.resolve(LOGINS_DIR),
 ) {
     private val store = LoginStore(storeDir)
+    private val native = ClaudeNativeLogins(store)
+
+    /** Preserve outgoing live bytes before the native CLI begins a fresh browser login. */
+    public fun prepareNative(
+        target: ClaudeLoginTarget,
+        label: String?,
+        sessions: HeadSessions,
+    ): ClaudeNativeLoginPreparation = native.prepare(target, label, sessions)
+
+    /** File only the newly live account after native completion, without restoring any stored copy. */
+    public fun completeNative(
+        target: ClaudeLoginTarget,
+        prepared: ClaudeNativeLoginPreparation.Ready,
+        sessions: HeadSessions,
+    ): ClaudeLoginResult = native.complete(target, prepared, sessions)
 
     /** Every stored label, sorted, legacy copies included. An absent store dir reads as none. */
     public fun labels(): List<String> = store.labels()
@@ -79,7 +95,7 @@ public class ClaudeLogins(
     private fun move(head: ClaudeHead, label: String, live: Live, discard: Boolean): ClaudeLoginResult {
         val records = store.records()
         val held = live as? Live.Held
-        val owner = held?.let { ownerOf(records, it) }
+        val owner = records.entries.firstOrNull { it.value.account.uuid == held?.account?.uuid }?.key
         val replaced = demoteReplaced(owner)
         val target = targetOf(records, label, replaced)
         val result = when {
@@ -102,10 +118,6 @@ public class ClaudeLogins(
         val record = records[label] ?: return null
         return if (label == replaced) record.copy(stale = true) else record
     }
-
-    /** The label already recording the live login's account: one label per account. */
-    private fun ownerOf(records: Map<String, Record>, held: Live.Held): String? =
-        records.entries.firstOrNull { it.value.account.uuid == held.account.uuid }?.key
 
     /** The live login is this label's account's newest: save it over the copy (clearing a stale mark). */
     private fun refresh(head: ClaudeHead, label: String, held: Live.Held): ClaudeLoginResult {

@@ -22,6 +22,7 @@ import splice.core.model.TurnPrice
 import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.usage.perf.PerfRowsSource
+import java.util.concurrent.ConcurrentHashMap
 
 /** Where one head's perf rows are read back from: the files its PerfStats writes and archives. */
 public fun interface HeadPerfHistory {
@@ -41,9 +42,21 @@ public class BudgetEnforcement(
     clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
     private val context = LedgerContext(budgets, alert, log, clock, bootMs = clock())
+    private val ledgers = ConcurrentHashMap<String, BudgetLedger>()
 
     /** [head]'s ledger, pricing its turns against [catalog]'s rate cards. One per head: the key is
      *  bound here, so a head can never spend against another's budget. */
     public fun forHead(head: String, catalog: ModelCatalog?): HeadBudget =
-        BudgetLedger(head, TurnPrice(catalog), history.rowsFor(head), context)
+        ledgers.computeIfAbsent(head) { BudgetLedger(head, TurnPrice(catalog), history.rowsFor(head), context) }
+
+    /** Unknown when no live head ledger exists; otherwise the same daily tally admission weighs. */
+    internal fun spending(head: String): BudgetSpend? = ledgers[head]?.snapshot()
 }
+
+/** Exact head-wide priced spend is unknown if history is unreadable or any turn has no rate card. */
+internal data class BudgetSpend(
+    val usedUsd: Double?,
+    val remainingUsd: Double?,
+    val unpricedTurns: Long,
+    val complete: Boolean,
+)

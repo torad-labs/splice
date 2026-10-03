@@ -27,7 +27,7 @@ public class LoginRoutes(
         val accounts = accounts() ?: return AccountReplies.respondUnwired(call, AccountReplies.ACCOUNTS_PORT)
         val label = AccountReplies.stringField(jsonBody.parse(call), AccountReplies.LABEL_FIELD)
         when (val started = accounts.startLogin(head.key, label, head.restart)) {
-            is LoginStart.Started -> AccountReplies.respond(call, loginStatusJson(started.status))
+            is LoginStart.Started -> AccountReplies.respond(call, LoginStatusJson.json(started.status))
             LoginStart.UnknownHead -> AccountReplies.respondError(call, "unknown head", HttpStatusCode.NotFound)
             is LoginStart.UnsupportedAuthKind -> AccountReplies.respondError(
                 call,
@@ -47,10 +47,13 @@ public class LoginRoutes(
             AccountReplies.respondError(call, "unknown login id", HttpStatusCode.NotFound)
             return
         }
-        AccountReplies.respond(call, loginStatusJson(status))
+        AccountReplies.respond(call, LoginStatusJson.json(status))
     }
+}
 
-    private fun loginStatusJson(status: LoginStatus): String = buildJsonObject {
+/** Identical OAuth and native CLI progress payloads, never subprocess output or credential bytes. */
+internal object LoginStatusJson {
+    fun json(status: LoginStatus): String = buildJsonObject {
         put("id", status.id)
         put("head", status.head)
         put("state", status.state.wire)

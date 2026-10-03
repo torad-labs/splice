@@ -12,6 +12,9 @@ internal class DayTally(val day: Long) {
     var unpriced: Long = 0L
         private set
 
+    /** False when any pre-boot history could not be read, so the displayed amount cannot claim completeness. */
+    var historyReadable: Boolean = true
+
     /** True once the spend recorded before this daemon's boot has been folded in. */
     var seeded: Boolean = false
         private set
@@ -32,6 +35,7 @@ internal class DayTally(val day: Long) {
         if (seeded) return
         usd += before.usd
         unpriced += before.unpriced
+        historyReadable = historyReadable && before.historyReadable
         seeded = true
     }
 

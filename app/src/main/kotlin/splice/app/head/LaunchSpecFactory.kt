@@ -12,11 +12,11 @@ import splice.client.login.LoginOutcomeFile
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.config.TurnKey
+import splice.core.config.UserHome
 import splice.core.topology.Topology
 import splice.launch.HeadTrees
 import splice.launch.LaunchSpec
 import splice.launch.ModelTiers
-import splice.topology.TopologyLoader
 import java.nio.file.Path
 import java.nio.file.Paths
 
@@ -135,6 +135,10 @@ internal class LaunchSpecFactory(
  *  ONE member is what stops a second spelling appearing when a second caller needs it. V4-276: an
  *  object, because `splice login <claude-head> --label` is that second caller and has no factory. */
 internal object HeadConfigDirs {
-    fun of(headKey: String, declared: String?): Path =
-        Paths.get(TopologyLoader.expandHome(declared ?: "~/.claude-$headKey"))
+    fun of(headKey: String, declared: String?): Path = of(headKey, declared, UserHome.dir())
+
+    fun of(headKey: String, declared: String?, home: Path): Path {
+        val selected = declared ?: "~/.claude-$headKey"
+        return Paths.get(if (selected.startsWith("~/")) home.toString() + selected.substring(1) else selected)
+    }
 }

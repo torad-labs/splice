@@ -7,6 +7,8 @@ package splice.app
 
 import kotlinx.coroutines.cancel
 import splice.app.auth.SignInPlanner
+import splice.app.auth.claude.ClaudeLoginOwner
+import splice.app.auth.claude.ClaudeLoginWiring
 import splice.app.cli.AdminSupport
 import splice.app.control.ControlServer
 import splice.app.control.DashboardPage
@@ -81,6 +83,7 @@ internal class ControlPlane(
 ) {
     private val boundary = DaemonBoundary()
     private val environment = ProcessEnvironment()
+    private var claudeLoginOwner: ClaudeLoginOwner? = null
 
     /** 2026-09-22: every head's DISCOVERED models — Daemon.start() resolves them before any head is
      *  assembled, and each head's catalog reads its own through [buildInputs]. */
@@ -137,7 +140,12 @@ internal class ControlPlane(
     private fun launchService(home: Path, sharing: McpSharing, controlPort: Int): LaunchService {
         val materializer = materializer(home, sharing, controlPort)
         val rewriter = TranscriptModelRewrite(originals = TranscriptOriginals(statePaths))
-        return LaunchService(materializer, resumeAcrossHeads = ResumeAcrossHeads(rewriter), wrap = WrappedHead(home))
+        val wrap = WrappedHead(home)
+        val owner = ClaudeLoginWiring.create(statePaths, topology.path, probeScope, wrap, log)
+        claudeLoginOwner = owner
+        return LaunchService(materializer, resumeAcrossHeads = ResumeAcrossHeads(rewriter), wrap = wrap).also {
+            it.loginGuard = owner
+        }
     }
 
     internal fun cancelProbes() {
@@ -232,6 +240,8 @@ internal class ControlPlane(
      *  playground probe, and V4-239's [ConsoleWiring.wireVerbReads] for the models, trace and wire reads. */
     private fun wireConsolePorts(srv: ControlServer) {
         srv.ports.compaction = compactionInstructions
+        srv.ports.claudeLogins = claudeLoginOwner
+        srv.ports.budgetSpending = console.budgets
         ConsoleWiring.wire(srv, topology, modelRosters, statePaths.configBackupsDir, log)
         srv.ports.events = console.bus
         srv.ports.activity = console.stores

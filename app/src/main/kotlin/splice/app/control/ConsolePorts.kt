@@ -3,6 +3,7 @@
 // the control plane this serves; the discipline these nine share is stated below.
 package splice.app.control
 
+import splice.accounts.claude.ClaudeLoginPlaces
 import splice.accounts.signin.ConsoleAccounts
 import splice.configuration.add.AddConsole
 import splice.core.compaction.CompactionInstructions
@@ -23,6 +24,7 @@ import splice.models.roster.DeclaredHeads
 import splice.sessions.activity.ActivityStores
 import splice.sessions.teams.TeamStore
 import splice.usage.alerts.AlertStore
+import splice.usage.budgets.BudgetEnforcement
 import splice.usage.budgets.BudgetStore
 import java.nio.file.Path
 
@@ -135,10 +137,16 @@ public class ConsolePorts {
      *  answers those four routes with a named 503, never a payload that reads as "no accounts". */
     public var accounts: ConsoleAccounts? = null
 
+    /** Native command-local logins, assigned before management and launch requests are served. */
+    public var claudeLogins: ClaudeLoginPlaces? = null
+
     /** V4-133 (FEATURES.md §5/§6): the daemon's ONE budget store, assigned by ControlPlane after
      *  construction like [teams]. Null answers GET/PUT /api/budgets with a named 503 — an
      *  unwired store must never read as "nothing budgeted". */
     public var budgets: BudgetStore? = null
+
+    /** The same per-head ledgers turn admission and accounting use, never per-account spend. */
+    public var budgetSpending: BudgetEnforcement? = null
 
     /** V4-133: the daemon's ONE alert-settings store, assigned like [budgets]. Null answers
      *  GET/PUT /api/alerts and POST /api/alerts/test with a named 503. */

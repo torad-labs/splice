@@ -73,6 +73,26 @@ class QuotaTrackerTest {
         assertEquals("1788011111", out["anthropic-ratelimit-unified-5h-reset"])
     }
 
+    @Test
+    fun `credential observations carry the same timestamped windows while the head aggregate stays unchanged`() {
+        val tracker = tracker()
+        val observed = mutableListOf<Pair<String, QuotaSnapshot>>()
+        tracker.credentialListener = CredentialQuotaListener { key, snapshot -> observed += key to snapshot }
+        val headers = mapOf(
+            "anthropic-ratelimit-unified-5h-utilization" to "0.25",
+            "anthropic-ratelimit-unified-7d-utilization" to "0.85",
+        )
+        tracker.observe("proved-login", QuotaHeaderRead { headers[it] })
+        assertEquals(listOf("proved-login"), observed.map { it.first })
+        assertEquals(now, observed.single().second.updatedAt)
+        assertEquals(tracker.snapshot(), observed.single().second)
+        assertEquals(25.0, tracker.snapshot()?.fiveHour?.usedPercent)
+        assertEquals(85.0, tracker.snapshot()?.sevenDay?.usedPercent)
+        tracker.observe(null, QuotaHeaderRead { headers[it] })
+        tracker.observe("other-login", QuotaHeaderRead { null })
+        assertEquals(1, observed.size, "no carrier or no windows supplies no login observation")
+    }
+
     /** x-codex percent / window-minutes / reset-at, slotted by window length. */
     private class XCodexFamily : QuotaHeaderFamily {
         override fun snapshot(header: QuotaHeaderRead, clock: WallClock): QuotaSnapshot? {

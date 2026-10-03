@@ -22,7 +22,9 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import splice.core.config.ConfigService
 import splice.core.config.Knob
 import splice.core.util.Cancellables
@@ -49,36 +51,57 @@ private data class BudgetWire(
 @Serializable
 private data class BudgetsWireBody(val budgets: List<BudgetWire> = emptyList())
 
-/** [unreadable] is why [budgets] is empty when budgets.json does not parse (V4-296), else null. */
-@Serializable
-private data class BudgetsPayload(val budgets: List<Budget>, val unreadable: String? = null)
-
 public class BudgetRoutes(private val source: BudgetSource, private val config: ConfigService) {
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
     }
 
-    public fun read(): JsonReply = withStore { store ->
+    public fun read(): JsonReply = read(null)
+
+    /** The daemon passes its enforcement owner; an unwired or unpriced ledger never appears as zero spend. */
+    public fun read(enforcement: BudgetEnforcement?): JsonReply = withStore { store ->
         val read = store.read()
-        JsonReply(HttpStatusCode.OK, payloadJson(read.budgets, read.unreadable))
+        JsonReply(HttpStatusCode.OK, payloadJson(read.budgets, read.unreadable, enforcement))
     }
 
-    public fun write(body: String): JsonReply = withStore { store ->
+    public fun write(body: String): JsonReply = write(body, null)
+
+    /** Writes caps only. Spend remains a read of the same head-wide enforcement ledger. */
+    public fun write(body: String, enforcement: BudgetEnforcement?): JsonReply = withStore { store ->
         // ast-grep-ignore: kt-no-silent-result-collapse -- a body that is not JSON and a body of the wrong shape get the same answer, one 400 naming the shape expected, so the failure has nothing more to say
         val parsed = Cancellables.runCatchingCancellable { json.decodeFromString(BudgetsWireBody.serializer(), body) }
             .getOrNull() ?: return@withStore refuse(HttpStatusCode.BadRequest, "the body must be {\"budgets\": [...]}")
         val budgets = parsed.budgets.map { row -> Budget(row.head, row.dailyUsd, row.action ?: defaultAction()) }
         Cancellables.runCatchingCancellable { store.replace(budgets) }.fold(
-            onSuccess = { JsonReply(HttpStatusCode.OK, payloadJson(it)) },
+            onSuccess = { JsonReply(HttpStatusCode.OK, payloadJson(it, enforcement = enforcement)) },
             onFailure = { failure ->
                 refuse(HttpStatusCode.BadRequest, failure.message ?: "the budget write failed with no reason given")
             },
         )
     }
 
-    private fun payloadJson(budgets: List<Budget>, unreadable: String? = null): String =
-        json.encodeToString(BudgetsPayload.serializer(), BudgetsPayload(budgets, unreadable))
+    private fun payloadJson(
+        budgets: List<Budget>,
+        unreadable: String? = null,
+        enforcement: BudgetEnforcement? = null,
+    ): String = buildJsonObject {
+        put("unreadable", unreadable)
+        putJsonArray("budgets") {
+            budgets.forEach { budget ->
+                val fields = json.encodeToJsonElement(Budget.serializer(), budget).jsonObject
+                val spend = enforcement?.spending(budget.head)
+                val row = buildJsonObject {
+                    fields.forEach { (key, value) -> put(key, value) }
+                    put("used_usd", spend?.usedUsd)
+                    put("remaining_usd", spend?.remainingUsd)
+                    put("unpriced_turns", spend?.unpricedTurns)
+                    put("spend_complete", spend?.complete)
+                }
+                add(row)
+            }
+        }
+    }.toString()
 
     /** [Knob.BUDGET_DEFAULT_ACTION]'s live value — see the file header for why this reads live. */
     private fun defaultAction(): String =

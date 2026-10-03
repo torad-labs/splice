@@ -79,8 +79,10 @@ internal class UsageMount(
         route.get("/api/economics") {
             guard.guarded(call) { ControlReplies.respond(call, economicsPayloads.economicsJson()) }
         }
-        route.get("/api/budgets") { guard.guarded(call) { budgetRoutes.read().send(call) } }
-        route.put("/api/budgets") { guard.guarded(call) { budgetRoutes.write(call.receiveText()).send(call) } }
+        route.get("/api/budgets") { guard.guarded(call) { budgetRoutes.read(ports.budgetSpending).send(call) } }
+        route.put("/api/budgets") {
+            guard.guarded(call) { budgetRoutes.write(call.receiveText(), ports.budgetSpending).send(call) }
+        }
         route.get("/api/alerts") { guard.guarded(call) { alertRoutes.read().send(call) } }
         route.put("/api/alerts") { guard.guarded(call) { alertRoutes.write(call.receiveText()).send(call) } }
         route.post("/api/alerts/test") { guard.guarded(call) { alertRoutes.test().send(call) } }

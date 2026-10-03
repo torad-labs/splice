@@ -39,10 +39,12 @@ internal object HeadLogin {
     /** Claude Code's own credential file in the head's config dir: the live login. */
     fun credentials(configDir: Path): Path = configDir.resolve(CREDENTIALS_FILE)
 
-    fun read(configDir: Path): Live {
+    fun read(configDir: Path): Live = read(configDir, configDir.resolve(Keys.CLAUDE_JSON))
+
+    fun read(configDir: Path, accountFile: Path): Live {
         val credentials = credentials(configDir)
         if (!Files.exists(credentials, NOFOLLOW_LINKS)) return Live.Absent
-        val account = account(config(configDir)[OAUTH_ACCOUNT] as? JsonObject)
+        val account = account(reads.strict(accountFile)[OAUTH_ACCOUNT] as? JsonObject)
             ?: return Live.Unreadable("its ${Keys.CLAUDE_JSON} names no oauthAccount.$ACCOUNT_UUID")
         return Live.Held(Files.readString(credentials), account)
     }

@@ -72,7 +72,7 @@ internal class SseRoundPost(
             usageStore.persistRateLimit { name -> resp.header(name) }
             // Quota windows the same way: Anthropic's unified family on a passthrough head, the
             // x-codex family on a Codex round. Most upstreams carry neither; then nothing moves.
-            activeQuota?.observe { name -> resp.header(name) }
+            activeQuota?.let(resp::observeQuota)
             consume.consume(inputs, resp)
         }
         // V4-114: the exhausted turn-wait budget is a VALUE on post()'s return type now, so this

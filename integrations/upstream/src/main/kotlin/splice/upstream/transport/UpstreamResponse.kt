@@ -5,6 +5,8 @@ package splice.upstream.transport
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.utils.io.ByteReadChannel
+import splice.core.auth.CredentialKey
+import splice.core.usage.QuotaHeaderRead
 import splice.upstream.failure.SseSpuriousWakeupException
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -24,6 +26,12 @@ public class UpstreamResponse(
 
     public fun header(name: String): String? = resp.headers[name]
 
+    /** Observe this response with its actual request identity; no auth provider is called again. */
+    public fun observeQuota(into: CredentialQuotaReceiver) {
+        val headers = resp.call.request.headers.entries().associate { (name, values) -> name to values.last() }
+        into.observe(CredentialKey.fromHeaders(headers), QuotaHeaderRead(::header))
+    }
+
     public suspend fun bodyChannel(): ByteReadChannel = resp.bodyAsChannel()
 
     /** The bounded error-body read, through the injectable [bodyChannelSource] so THIS method — not
@@ -32,6 +40,11 @@ public class UpstreamResponse(
      *  upstream status the caller holds with an unclassified IOException (DR-21). */
     internal suspend fun bodyTextLimited(maxBytes: Int): String =
         LimitedBodyReader().read(bodyChannelSource.open(), maxBytes)
+}
+
+/** Receives response headers with the request's private credential join key, never a wire-visible field. */
+public fun interface CredentialQuotaReceiver {
+    public fun observe(key: String?, headers: QuotaHeaderRead)
 }
 
 /** How [UpstreamResponse.bodyTextLimited] acquires the body channel — the real streaming response in

@@ -71,10 +71,22 @@ public class LaunchRoutes(
             return
         }
         val request = receiveLaunchRequest(call)
-        // V4-162: the windows are read per LAUNCH too — splice.toml's context_window is live and the
-        // spec is boot-frozen, so a launch after an edit is planted with the edited window.
+        reply(call, key, resolved, request)
+    }
+
+    private suspend fun reply(call: ApplicationCall, key: String, resolved: Resolved, request: LaunchRequest) {
+        val service = requireNotNull(launchService)
+        val target = resolved.head
+        val spec = requireNotNull(target.spec)
+        val destination = resolved.wrapped?.configDir ?: spec.trees.own
+        val refusal = service.loginGuard?.refusal(destination)
+        if (refusal != null) {
+            call.respondText(LaunchReplies.errorJson(refusal), ContentType.Application.Json, HttpStatusCode.Conflict)
+            return
+        }
+        // Read both live windows and the native destination hold after body reception has finished.
         val launched = target.catalog?.let(spec::withWindows) ?: spec
-        val recipe = recipeFor(target, launched, request, resolved.wrapped, launchService)
+        val recipe = recipeFor(target, launched, request, resolved.wrapped, service)
         audit.launched(key, recipe.argv)
         recipe.warning?.let(audit::warned)
         call.respondText(launchResponse.launchRecipeJson(recipe), ContentType.Application.Json)

@@ -8,6 +8,8 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
+import splice.accounts.claude.ClaudeLoginPlacesSource
+import splice.accounts.claude.ClaudeLoginRoutes
 import splice.accounts.edit.AccountEditRoutes
 import splice.accounts.keys.KeyRoutes
 import splice.accounts.keys.KeyStoreSource
@@ -26,7 +28,7 @@ import splice.core.util.LogSink
 internal class AccountsMount(
     heads: Map<String, ManagedHead>,
     resolver: HeadResolver,
-    ports: ConsolePorts,
+    private val ports: ConsolePorts,
     private val guard: ControlGuard,
     log: LogSink,
 ) {
@@ -39,6 +41,7 @@ internal class AccountsMount(
     private val switchRoute = SwitchRoute(accountResolver)
     private val accountEditRoutes = AccountEditRoutes(accountResolver, ConsoleAccountsSource { ports.accounts })
     private val accountsRoute = AccountsRoute(accountHeads)
+    private val claudeRoutes = ClaudeLoginRoutes(ClaudeLoginPlacesSource { ports.claudeLogins })
     private val accountOrderRoute = AccountOrderRoute(accountResolver)
 
     // Read at CALL time, like [loginRoutes]' port: ConsoleWiring assigns [ConsolePorts.keys] after construction.
@@ -54,10 +57,24 @@ internal class AccountsMount(
     fun register(route: Route) {
         route.get("/api/auth") { guard.guarded(call) { ControlReplies.respond(call, authStatusRoutes.authJson()) } }
         route.get("/api/accounts") {
-            guard.guarded(call) { ControlReplies.respond(call, accountsRoute.accountsJson()) }
+            guard.guarded(call) {
+                val providers = ports.declaredHeads?.invoke()?.mapValues { it.value.provider }.orEmpty()
+                val native = ports.claudeLogins?.places().orEmpty()
+                ControlReplies.respond(call, accountsRoute.accountsJson(providers, native))
+            }
         }
         route.post("/api/auth/{head}/login") { guard.guarded(call) { loginRoutes.startLogin(call) } }
-        route.get("/api/auth/{head}/login/{id}") { guard.guarded(call) { loginRoutes.pollLogin(call) } }
+        route.get("/api/auth/{head}/login/{id}") {
+            guard.guarded(call) { if (!claudeRoutes.poll(call)) loginRoutes.pollLogin(call) }
+        }
+        route.post("/api/claude-logins/{place}/login") { guard.guarded(call) { claudeRoutes.login(call) } }
+        route.post("/api/claude-logins/{place}/refresh") {
+            guard.guarded(call) {
+                val providers = ports.declaredHeads?.invoke()?.mapValues { it.value.provider }.orEmpty()
+                claudeRoutes.refresh(call, providers)
+            }
+        }
+        route.post("/api/auth/{head}/login/{id}/code") { guard.guarded(call) { claudeRoutes.submit(call) } }
         route.get("/api/auth/{head}/order") { guard.guarded(call) { accountOrderRoute.get(call) } }
         route.put("/api/auth/{head}/order") { guard.guarded(call) { accountOrderRoute.set(call) } }
         route.post("/api/auth/{head}/switch") { guard.guarded(call) { switchRoute.switchAccount(call) } }

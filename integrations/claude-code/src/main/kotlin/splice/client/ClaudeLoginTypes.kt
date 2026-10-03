@@ -24,6 +24,21 @@ public sealed class HeadSessions {
 /** The head [ClaudeLogins.login] acts on: its topology key, for the sentences, and its config dir. */
 public data class ClaudeHead(val key: String, val configDir: Path)
 
+/** Native default Claude keeps its account file outside its credential directory. */
+public data class ClaudeLoginTarget(val head: ClaudeHead, val accountFile: Path)
+
+/** Prepared before a native process can replace live bytes. No stored credential is restored here. */
+public sealed class ClaudeNativeLoginPreparation {
+    public class Ready internal constructor(
+        internal val target: ClaudeLoginTarget,
+        internal val store: LoginStore,
+        internal val label: String?,
+        internal val expectedAccountUuid: String?,
+        internal val generatedSaveBackLabel: String? = null,
+    ) : ClaudeNativeLoginPreparation()
+    public data class Refused(val reason: String) : ClaudeNativeLoginPreparation()
+}
+
 /** An account as Claude Code names it in oauthAccount; the uuid decides, the email is for display. */
 internal data class Account(val uuid: String, val email: String?) {
     val shown: String get() = email ?: "an account with no recorded email"

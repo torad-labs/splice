@@ -14,6 +14,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.accounts.AccountHead
+import splice.accounts.claude.ClaudeLoginPlaceView
+import splice.accounts.claude.ClaudeLoginRows
 import splice.core.auth.AuthDescription
 import splice.core.auth.REFUSAL_FIELD
 import splice.core.topology.AuthKindRegistry
@@ -22,14 +24,26 @@ import java.util.concurrent.TimeUnit
 import splice.core.usage.QuotaWindowView as PlanWindow
 
 public class AccountsRoute(private val heads: Map<String, AccountHead>) {
+    private val extras = AccountRowExtras(heads)
+
     /** [nowSeconds] decides which windows are current (V4-407), by the rule /api/usage applies (V4-396). */
     public suspend fun accountsJson(
+        nowSeconds: Long = TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis()),
+    ): String = accountsJson(emptyMap(), emptyList(), nowSeconds)
+
+    /** Provider names come from the declared topology; native windows come only from command-local observations. */
+    public suspend fun accountsJson(
+        providers: Map<String, String>,
+        native: List<ClaudeLoginPlaceView>,
         nowSeconds: Long = TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis()),
     ): String {
         val joined = LinkedHashMap<String, JoinedAccount>()
         heads.values.forEach { head -> fold(head, joined) }
         return buildJsonObject {
-            putJsonArray("accounts") { joined.values.forEach { row -> addJsonObject { write(this, row, nowSeconds) } } }
+            putJsonArray("accounts") {
+                joined.values.forEach { row -> addJsonObject { write(this, row, nowSeconds, providers) } }
+                native.forEach { view -> add(ClaudeLoginRows.json(view, providers.getValue(view.head), nowSeconds)) }
+            }
         }.toString()
     }
 
@@ -159,7 +173,15 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
         }
     }
 
-    private fun write(into: JsonObjectBuilder, row: JoinedAccount, nowSeconds: Long) {
+    private fun write(
+        into: JsonObjectBuilder,
+        row: JoinedAccount,
+        nowSeconds: Long,
+        providers: Map<String, String>,
+    ) {
+        extras.write(into, row.heads, row.label, providers)
+        into.put("five_hour_limit_percent", row.fiveHour.usedPercent?.let { 100 })
+        into.put("seven_day_limit_percent", row.sevenDay.usedPercent?.let { 100 })
         into.put("credential_path", row.credentialPath)
         into.put("kind", row.kind)
         into.put("label", row.label)

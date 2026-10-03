@@ -58,6 +58,19 @@ internal class BudgetLedger(
         if (limit.action == BudgetActions.WARN && reached(atMs, limit.usd)) warnOnce(atMs, limit.usd)
     }
 
+    /** Read the exact enforcement ledger, never a second history total or a per-account attribution. */
+    fun snapshot(): BudgetSpend {
+        val now = context.clock()
+        seededTally(now)
+        return synchronized(lock) {
+            val tally = tallyAt(now) ?: return@synchronized BudgetSpend(null, null, 0, false)
+            val complete = tally.historyReadable && tally.unpriced == 0L
+            val used = tally.usd.takeIf { complete }
+            val remaining = used?.let { spend -> limit()?.usd?.let { (it - spend).coerceAtLeast(0.0) } }
+            BudgetSpend(used, remaining, tally.unpriced, complete)
+        }
+    }
+
     /** This head's budget, read live from the store the route writes, or null when it has none. */
     private fun limit(): Limit? {
         val row = context.budgets.budgets().firstOrNull { it.head == head } ?: return null
@@ -105,9 +118,15 @@ internal class BudgetLedger(
         val dayStart = LocalDate.ofEpochDay(day).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
         if (context.bootMs <= dayStart) return before
         val window = Cancellables.runCatchingCancellable { rows.window(dayStart) }
-            .onFailure { unread(it.toString()) }
+            .onFailure {
+                before.historyReadable = false
+                unread(it.toString())
+            }
             .getOrNull() ?: return before
-        window.readError?.let(::unread)
+        window.readError?.let {
+            before.historyReadable = false
+            unread(it)
+        }
         window.rows.filter { it.ts in dayStart until context.bootMs }
             .forEach { before.add(price.usd(it.model, it.fields)) }
         return before

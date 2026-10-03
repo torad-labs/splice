@@ -53,6 +53,9 @@ public class LaunchService(
      *  cached — wrap/unwrap can flip between two requests. */
     private val wrapState: WrapStateRead = wrap,
 ) {
+    /** Assigned by the daemon's native login owner before routes serve requests. */
+    public var loginGuard: LaunchLoginGuard? = null
+
     /** V4-183: a bare -c resolves to this head's own newest session in the launch cwd. */
     private val headBoundedContinue = HeadBoundedContinue()
 

@@ -323,6 +323,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "features/turns/src/main/kotlin/splice/head/trace/body/TraceBodyPack.kt" to mapOf("FileChannel.open(" to 1),
     "features/turns/src/main/kotlin/splice/head/usage/EconomicsStore.kt" to mapOf("writeAtomic0600(" to 1),
     "features/turns/src/main/kotlin/splice/head/usage/QuotaTracker.kt" to mapOf("writeAtomic0600(" to 1),
+    "features/turns/src/main/kotlin/splice/head/usage/CredentialQuotaFiles.kt" to mapOf("writeAtomic0600(" to 1),
     "features/turns/src/main/kotlin/splice/head/usage/RateLimitFile.kt" to mapOf("writeAtomic0600(" to 1),
     "features/turns/src/main/kotlin/splice/head/usage/UsageRingFile.kt" to mapOf("writeAtomic0600(" to 1),
     "features/usage/src/main/kotlin/splice/usage/alerts/AlertStore.kt" to mapOf("writeAtomic0600(" to 2),

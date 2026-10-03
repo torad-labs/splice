@@ -7,6 +7,7 @@
 package splice.head.round
 
 import kotlinx.serialization.json.JsonObject
+import splice.core.perf.TurnPerf
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
@@ -46,6 +47,15 @@ internal class RoundStrategy(
     private val rounds = RoundSplice()
 
     suspend fun run(requestBody: JsonObject, fold: FoldController?, reanchor: ReanchorController?) {
+        run(requestBody, fold, reanchor, null)
+    }
+
+    suspend fun run(
+        requestBody: JsonObject,
+        fold: FoldController?,
+        reanchor: ReanchorController?,
+        perf: TurnPerf?,
+    ) {
         val notice = RetryNotice { log(it) }
         val interceptedPost = PostRound { body ->
             intercept(body, emitter, observedPost(InterceptedRoundPost(postRound::invoke)))
@@ -63,7 +73,7 @@ internal class RoundStrategy(
                 reanchor = reanchor,
                 signals = signals,
                 toolSearch = toolSearch,
-            ).run(requestBody, fold)
+            ).run(requestBody, fold, perf)
         } else if (reanchor == null && toolSearch == null) {
             // DR-130: the runners salvage a failed round's own burn through withFailureSalvage
             // (DR-124); this path handed the raw outcome to finishTurn, which stamps ONLY
@@ -81,7 +91,7 @@ internal class RoundStrategy(
                 finish = finish,
                 signals = signals,
                 toolSearch = toolSearch,
-            ).run(requestBody, reanchor)
+            ).run(requestBody, reanchor, perf)
         }
     }
 

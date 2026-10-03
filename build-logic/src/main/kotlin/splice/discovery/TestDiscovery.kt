@@ -120,7 +120,12 @@ val DISPOSITIONS: Map<String, Disposition> = mapOf(
     "CodexCodeModeSourceTerminalTest" to
         Disposition("1 @ParameterizedTest expands to 5 cases (6 @Test + 5 = 11)", 11),
     "CodexCodeModeReanchorTest" to Disposition("2 @ParameterizedTest methods expand to 5 cases (1 @Test + 5 = 6)", 6),
-    "WsRoundDriverTest" to Disposition("1 @ParameterizedTest expands to 2 cases (13 @Test + 2 = 15)", 15),
+    // Transport cleanup plus first-event/client-opening timing each expand into two observed cases.
+    "WsRoundDriverTest" to Disposition("2 @ParameterizedTest methods expand to 4 cases (13 @Test + 4 = 17)", 17),
+    // The paced row is read with both an active caller and an already-cancelled caller.
+    "TurnPerfRowTest" to Disposition("1 @ParameterizedTest expands to 2 cases (2 @Test + 2 = 4)", 4),
+    // Completed/torn/cancelled tails and zero/slow ping delivery expand the two timing methods.
+    "UpstreamEventTimingTest" to Disposition("2 @ParameterizedTest methods expand to 5 cases (5 @Test + 5 = 10)", 10),
     "CodeModePreAdvanceTearTest" to Disposition("1 @ParameterizedTest expands to 2 cases (2 @Test + 2 = 4)", 4),
     "CodexCodeModeSourceTearTest" to
         Disposition("2 @ParameterizedTest methods expand to 12 cases (9 source tears + 3 startup tears)", 12),

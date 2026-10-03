@@ -12,6 +12,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
@@ -22,6 +23,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
+import org.junit.jupiter.api.Assertions.assertAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
@@ -47,7 +49,10 @@ import splice.head.admission.admittedSlot
 import splice.head.compact.CompactStats
 import splice.head.perf.PerfStats
 import splice.head.pipeline.TurnPipeline
+import splice.head.round.PostRound
+import splice.head.round.ReanchorRunner
 import splice.head.round.RunnerSignals
+import splice.head.transport.UpstreamEventTiming
 import splice.head.usage.OutputClamp
 import splice.head.usage.UsageStore
 import splice.head.wire.ClientChannel
@@ -56,12 +61,16 @@ import splice.head.wire.ImmediateSseWriter
 import splice.head.wire.TurnTerminal
 import splice.head.wire.UsagePayloadBuilder
 import splice.upstream.ClientFrameEmitted
+import splice.upstream.ReanchorController
+import splice.upstream.RetryBackoff
 import splice.upstream.Ticker
+import splice.upstream.Waiter
 import splice.upstream.retry.InflightGate
 import splice.upstream.retry.LiveLimit
 import splice.upstream.retry.TurnWatchdog
 import splice.upstream.retry.WatchdogFired
 import java.io.IOException
+import java.net.SocketException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
@@ -179,6 +188,75 @@ class TurnPerfRowTest {
             )
         } finally {
             pacing.cancel()
+            drive.slot.release()
+        }
+    }
+
+    private fun tornThenResumedPost(drive: TurnDrive, clock: ElapsedClock, waiter: Waiter): PostRound {
+        val event = Json.parseToJsonElement(
+            """{"type":"content_block_delta","delta":{"type":"text_delta","text":"synthetic"}}""",
+        ).jsonObject
+        var posted = 0
+        return PostRound {
+            val first = posted++ == 0
+            val startedAtMs = drive.perf.elapsedMs()
+            val events = flow {
+                if (!first) waiter.wait(2_000)
+                emit(event)
+                if (first) {
+                    waiter.wait(40_000)
+                    throw SocketException("synthetic reset")
+                }
+            }
+            try {
+                UpstreamEventTiming(drive.perf, startedAtMs).observe(events).collect {
+                    drive.channel.writeMutex.withLock {
+                        drive.channel.timedClientWrite(
+                            "event: content_block_delta\ndata: $event\n\n",
+                            drive.perf,
+                            clock,
+                        )
+                    }
+                }
+                TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage())
+            } catch (_: SocketException) {
+                TurnOutcome.Failure(
+                    "synthetic reset",
+                    cause = FailureCause.UPSTREAM_STALLED,
+                    partial = TurnOutcome.PartialRound(bodyText = "synthetic", emittedText = true),
+                    phase = FailurePhase.MID_OUTPUT,
+                )
+            }
+        }
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test
+    fun `persisted row separates a torn read tail reanchor backoff and the next POST wait`() = runTest {
+        val clock = ElapsedClock { testScheduler.currentTime }
+        val rig = Rig(tmp, "torn-tail-reanchor", clock)
+        val emitter = CollectingTerminal("synthetic", UsagePayloadBuilder { buildJsonObject { } })
+        val drive = rig.drive(emitter).copy(perf = TurnPerf(clock))
+        val runner = ReanchorRunner(
+            key = "synthetic",
+            log = {},
+            postRound = tornThenResumedPost(drive, clock, Waiter { ms -> delay(ms) }),
+            finish = { rig.telemetry.recordPerf(drive, "ok") },
+            signals = RunnerSignals(),
+            backoff = RetryBackoff { _, _ -> delay(3_000) },
+        )
+        try {
+            runner.run(buildJsonObject {}, ReanchorController { buildJsonObject {} }, drive.perf)
+            assertTrue(AsyncFileIo.drain())
+            val row = Json.parseToJsonElement(Files.readAllLines(rig.perfFile).single()).jsonObject
+            assertAll(
+                { assertEquals(40_000L, row[PerfKeys.UP_GAP_MAX_MS]?.jsonPrimitive?.long) },
+                { assertEquals("torn", row[PerfKeys.UP_GAP_END]?.jsonPrimitive?.content) },
+                { assertEquals(3_000L, row[PerfKeys.BACKOFF_MS]?.jsonPrimitive?.long) },
+                { assertEquals(40_000L, row[PerfKeys.UP_CONTENT_GAP_MAX_MS]?.jsonPrimitive?.long) },
+                { assertEquals(45_000L, row[PerfKeys.OUT_GAP_MAX_MS]?.jsonPrimitive?.long) },
+            )
+        } finally {
             drive.slot.release()
         }
     }

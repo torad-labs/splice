@@ -56,6 +56,6 @@ internal class TurnRoundRun(
                 interceptor = drive.roundInterceptor,
                 rawRoundObserved = drive::recordRawRound,
             ),
-        ).run(drive.requestBody, fold, reanchor)
+        ).run(drive.requestBody, fold, reanchor, drive.perf)
     }
 }

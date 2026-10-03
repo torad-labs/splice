@@ -12,6 +12,9 @@
 package splice.head.round
 
 import kotlinx.serialization.json.JsonObject
+import splice.core.perf.PerfKeys
+import splice.core.perf.TurnPerf
+import splice.core.perf.TurnPerfTiming
 import splice.core.turn.TurnOutcome
 import splice.upstream.ReanchorController
 import splice.upstream.RetryBackoff
@@ -36,6 +39,10 @@ internal class ReanchorRunner(
     // ReanchorController at all): driveOneTurn routes here whenever EITHER exists, so the seam is
     // total rather than resting on an undocumented cross-object invariant.
     suspend fun run(initialBody: JsonObject, reanchor: ReanchorController?) {
+        run(initialBody, reanchor, null)
+    }
+
+    suspend fun run(initialBody: JsonObject, reanchor: ReanchorController?, perf: TurnPerf?) {
         var body = initialBody
         var attempt = 0
         var searchIndex = 0
@@ -93,7 +100,7 @@ internal class ReanchorRunner(
             // purpose: a number that could disagree with the loop's own count is worse than no
             // number, and the ending message (gaveUp) quotes this one.
             signals.onReanchor()
-            backoff(attempt, 0)
+            TurnPerfTiming.timedOr(perf, PerfKeys.BACKOFF_MS) { backoff(attempt, 0) }
             body = cont.body
             attempt++
         }

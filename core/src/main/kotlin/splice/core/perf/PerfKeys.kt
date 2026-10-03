@@ -7,9 +7,16 @@ public enum class UpstreamGapEnd {
     THINKING_DELTA,
     TEXT_DELTA,
     INPUT_JSON_DELTA,
+    TOOL_INPUT_DELTA,
     CONTENT_BLOCK_START,
+    CONTENT_BLOCK_STOP,
+    MESSAGE_START,
+    MESSAGE_STOP,
     PING,
     MESSAGE_DELTA,
+    COMPLETED,
+    TORN,
+    CANCELLED,
     UNKNOWN,
     ;
 
@@ -57,6 +64,9 @@ public object PerfKeys {
     public const val UP_GAPS_2S: String = "up_gaps_2s"
     public const val UP_BLOCKED_MAX_MS: String = "up_blocked_max_ms"
     public const val UP_GAP_END: String = "up_gap_end"
+
+    /** Longest upstream wait for content, including ping-only stretches and terminal tails, excluding delivery. */
+    public const val UP_CONTENT_GAP_MAX_MS: String = "up_content_gap_max_ms"
 
     /** Longest pacer residence and gap between successful client frame writes. */
     public const val OUT_HOLD_MAX_MS: String = "out_hold_max_ms"

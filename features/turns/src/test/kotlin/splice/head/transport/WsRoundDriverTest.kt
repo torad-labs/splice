@@ -426,7 +426,8 @@ class WsRoundDriverTest {
             assertEquals(maxOf(3_000L, attemptWaitMs), perf.snapshot().counters[PerfKeys.UP_GAP_MAX_MS])
             assertEquals(if (attemptWaitMs >= 2_000) 2L else 1L, perf.snapshot().counters[PerfKeys.UP_GAPS_2S])
             assertEquals(2_500L, perf.snapshot().counters[PerfKeys.UP_BLOCKED_MAX_MS])
-            assertEquals("unknown", perf.snapshot().upstreamGapEnd?.wire)
+            val expectedEnd = if (attemptWaitMs >= 3_000) "message_start" else "text_delta"
+            assertEquals(expectedEnd, perf.snapshot().upstreamGapEnd?.wire)
         } finally {
             inputs.turnJob.cancel()
             inputs.drive.slot.release()

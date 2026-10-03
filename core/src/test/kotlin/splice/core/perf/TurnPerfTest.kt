@@ -69,6 +69,7 @@ class TurnPerfTest {
         val unmeasured = perf.snapshot()
         for (key in listOf(
             PerfKeys.UP_GAP_MAX_MS,
+            PerfKeys.UP_CONTENT_GAP_MAX_MS,
             PerfKeys.UP_GAPS_2S,
             PerfKeys.UP_BLOCKED_MAX_MS,
             PerfKeys.OUT_HOLD_MAX_MS,

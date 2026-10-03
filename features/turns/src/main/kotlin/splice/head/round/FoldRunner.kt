@@ -9,6 +9,9 @@
 package splice.head.round
 
 import kotlinx.serialization.json.JsonObject
+import splice.core.perf.PerfKeys
+import splice.core.perf.TurnPerf
+import splice.core.perf.TurnPerfTiming
 import splice.core.turn.TurnOutcome
 import splice.head.wire.BufferingWireSink
 import splice.upstream.FoldController
@@ -36,6 +39,10 @@ internal class FoldRunner(
     private val foldRounds = FoldRounds(key, log, reanchor, signals, toolSearch, finish, rounds)
 
     suspend fun run(initialBody: JsonObject, fold: FoldController) {
+        run(initialBody, fold, null)
+    }
+
+    suspend fun run(initialBody: JsonObject, fold: FoldController, perf: TurnPerf?) {
         var body = initialBody
         var acc = RoundUsage()
         var roundIndex = 0
@@ -95,7 +102,7 @@ internal class FoldRunner(
             }
             buffer.discard()
             log("[$key] fold re-anchor ${reanchorAttempt + 1}: ${failure.type.wireName} mid-round; retrying\n")
-            backoff(reanchorAttempt, 0)
+            TurnPerfTiming.timedOr(perf, PerfKeys.BACKOFF_MS) { backoff(reanchorAttempt, 0) }
             body = retry
             reanchorAttempt++
         }

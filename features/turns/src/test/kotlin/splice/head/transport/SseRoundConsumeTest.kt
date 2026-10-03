@@ -305,7 +305,7 @@ class SseRoundConsumeTest {
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     @Test
-    fun `unclassified Responses and chat events are unknown rather than Anthropic other`() = runTest {
+    fun `Responses and chat text events report their real delta kind`() = runTest {
         for (event in listOf(
             """{"type":"response.output_text.delta","delta":"synthetic"}""",
             """{"choices":[{"delta":{"content":"synthetic"}}]}""",
@@ -329,7 +329,7 @@ class SseRoundConsumeTest {
                 body.close()
                 reader.await()
                 assertEquals(2_501L, perf.snapshot().counters[PerfKeys.UP_GAP_MAX_MS])
-                assertEquals("unknown", perf.snapshot().upstreamGapEnd?.wire)
+                assertEquals("text_delta", perf.snapshot().upstreamGapEnd?.wire)
             } finally {
                 body.cancel(null)
                 reader.cancel()

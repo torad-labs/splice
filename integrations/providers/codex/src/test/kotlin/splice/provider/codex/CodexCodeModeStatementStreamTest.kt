@@ -4,6 +4,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -16,9 +17,18 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import splice.core.turn.SpliceNotice
 import splice.core.turn.TurnOutcome
+import splice.core.util.LogSink
+import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
+import splice.upstream.codemode.CodeModeRuntime
+import splice.upstream.codemode.CodeModeSource
+import splice.upstream.codemode.CodeModeStep
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
     @Test
@@ -255,11 +265,15 @@ class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
     /** Oct 2: a ConcurrentModificationException out of the record's save killed the reader, which none of its
      *  catches names. The source had no terminal, so the next step's cell read it forever and the session
      *  hung with nothing logged. Any throwable that ends the reader now fails the source and is named. */
-    @Test
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
     @Timeout(20)
-    fun `a reader that dies on an unnamed throwable fails its source instead of hanging the script`() = runBlocking {
+    fun `a reader that dies on an unnamed throwable fails its source instead of hanging the script`(
+        afterLoss: Boolean,
+    ) = runBlocking {
         val runtime = IncrementalRuntime()
-        val manager = bridge(runtime)
+        val death = ReaderDeathOrder(runtime)
+        val manager = death.manager
         val firstSink = StepSink()
         val post = GatedPost(firstSink)
         try {
@@ -267,18 +281,85 @@ class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
             val first = firstSink.callback.await()
             post.dieAfterFirst = true
             post.gates[1].complete(Unit)
-            withTimeout(1_500) { post.stopped.await() }
+            death.beforeResume(afterLoss)
             val next = StepSink()
-            withTimeout(5_000) {
+            val resumed = async {
                 manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
                     .intercept(history(listOf(first)), next, post)
             }
+            death.afterResume(afterLoss)
+            val outcome = withTimeout(5_000) { resumed.await() }
+            if (afterLoss) {
+                assertTrue(outcome is TurnOutcome.Success, "outcome=$outcome")
+                assertEquals(2, post.posts)
+                assertTrue(post.continuation.contains("source was not rerun"))
+            } else {
+                val failure = outcome as TurnOutcome.Failure
+                assertTrue(failure.message.contains("source was not rerun"), failure.message)
+                assertEquals(1, post.posts)
+                assertEquals("", post.continuation)
+                assertEquals("result-0", runtime.delivered.last().single().output)
+                assertTrue(stateFiles.records().single().toString().contains("source was not rerun"))
+            }
             assertFalse(next.callback.isCompleted)
             assertEquals(1, runtime.starts)
-            assertTrue(post.continuation.contains("source was not rerun"))
             assertTrue(logLines.any { "ConcurrentModificationException" in it }, logLines.toString())
         } finally {
+            death.release.countDown()
             manager.onHeadStop()
+        }
+    }
+
+    /** Stops death cleanup before source.fail, then places result advance on either side of persisted loss. */
+    private inner class ReaderDeathOrder(runtime: IncrementalRuntime) {
+        val release = CountDownLatch(1)
+        private val dying = CompletableDeferred<Unit>()
+        private val advancing = CompletableDeferred<Unit>()
+        private val watched = object : CodeModeRuntime by runtime {
+            override suspend fun startStreamingSession(
+                sessionKey: String,
+                source: CodeModeSource,
+                tools: Set<String>,
+                descriptions: Map<String, String>,
+            ): CodeModeCell {
+                val cell = runtime.startStreamingSession(sessionKey, source, tools, descriptions)
+                return object : CodeModeCell by cell {
+                    override suspend fun advance(results: List<CodeModeResult>): CodeModeStep {
+                        if (results.isNotEmpty()) advancing.complete(Unit)
+                        return cell.advance(results)
+                    }
+                }
+            }
+        }
+        val manager = CodexCodeModeBridge(
+            CodeModeBridgeConfig(
+                { watched },
+                stateLocation(),
+                log = LogSink { line ->
+                    logLines += line
+                    if ("upstream source reader died" in line) {
+                        dying.complete(Unit)
+                        check(release.await(5, TimeUnit.SECONDS))
+                    }
+                },
+            ),
+        )
+
+        suspend fun beforeResume(afterLoss: Boolean) {
+            withTimeout(1_500) { dying.await() }
+            if (!afterLoss) return
+            release.countDown()
+            withTimeout(1_500) {
+                while (stateFiles.records().single()["phase"]?.jsonPrimitive?.content != CodeModePhase.LOST.name) {
+                    yield()
+                }
+            }
+        }
+
+        suspend fun afterResume(afterLoss: Boolean) {
+            if (afterLoss) return
+            withTimeout(1_500) { advancing.await() }
+            release.countDown()
         }
     }
 

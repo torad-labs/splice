@@ -110,6 +110,9 @@ data class Disposition(val reason: String, val expectedCount: Int)
 // CodexCodeModeInfrastructureTest do extend CodeModeBridgeTestSupport, but that base declares no
 // tests, and their declared count matches their own annotations exactly.)
 val DISPOSITIONS: Map<String, Disposition> = mapOf(
+    // Unnamed reader death resumes before source failure or after its persisted LOST record.
+    "CodexCodeModeStatementStreamTest" to
+        Disposition("1 @ParameterizedTest expands to 2 forced orderings (9 @Test + 2 = 11)", 11),
     // Legacy capacity hints run at one and two while shared-host scripts remain independent.
     "CodeModeCapacityTest" to Disposition("1 @ParameterizedTest expands to 2 cases (3 @Test + 2 = 5)", 5),
     "ResponsesWsRunnerTest" to

@@ -33,6 +33,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.LockSupport
 import kotlin.time.Duration.Companion.seconds
 
 private const val TIMING_WAIT_MS = 300L
@@ -210,12 +211,29 @@ private fun timingPost(port: Int, label: String, stream: Boolean = true): String
     }
 }
 
+/** Polls with a deadline, never a sleep for a duration (kt-tests-no-wall-clock). A collected reply publishes
+ *  its row in collect's finally, after the client write returns (CollectPerf.publish), so the client can
+ *  read the closed response before the row reaches the file lane: one drain and one read raced it (CI run
+ *  37103873666, NoSuchFileException on perf.jsonl). */
 private fun timingRow(root: Path): JsonObject {
-    assertTrue(AsyncFileIo.drain())
-    return Files.readAllLines(root.resolve("perf.jsonl"))
-        .map { Json.parseToJsonElement(it).jsonObject }
-        .single { it["session_id"]?.jsonPrimitive?.content == "timed" }
+    val file = root.resolve("perf.jsonl")
+    val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(ROW_WAIT_SECONDS)
+    while (true) {
+        assertTrue(AsyncFileIo.drain())
+        val lines = if (Files.exists(file)) Files.readAllLines(file) else emptyList()
+        val timed = lines.map { Json.parseToJsonElement(it).jsonObject }
+            .filter { it["session_id"]?.jsonPrimitive?.content == "timed" }
+        if (timed.isNotEmpty()) return timed.single()
+        check(System.nanoTime() < deadline) { "no perf row for the timed session within $ROW_WAIT_SECONDS s" }
+        LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(ROW_POLL_MS))
+    }
 }
+
+// why: the row lands within milliseconds of the reply; 10 s only bounds a CI runner under load.
+private const val ROW_WAIT_SECONDS = 10L
+
+// why: a short poll keeps the wait close to the row's real arrival without spinning.
+private const val ROW_POLL_MS = 5L
 
 private fun duration(row: JsonObject, key: String): Long {
     val value = row[key]?.jsonPrimitive

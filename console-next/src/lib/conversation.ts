@@ -134,14 +134,6 @@ export function toolTarget(tool: string, input: unknown): string | null {
   }
 }
 
-/** A shell command in full, for the body of a row that names what it did in words: null when the row has no such
- *  words (its own text already is the command) or the call is not a command. */
-export function toolCommand(tool: string, input: unknown): string | null {
-  if (tool !== 'Bash' || typeof input !== 'object' || input === null) return null;
-  const { command, description } = input as Record<string, unknown>;
-  return text(description) !== null ? text(command) : null;
-}
-
 /** What a tool call did, from the input as the daemon kept it in a turn's conversation: a JSON object as text. A cut-off object
  *  still gives its description, else the opening of its command. Null when the text names neither. */
 export function callTarget(tool: string, inputText: string): string | null {
@@ -163,22 +155,6 @@ export function toolLabel(tool: string): string {
   const half = server.length / 2;
   const once = Number.isInteger(half) && server.slice(0, half).join(' ') === server.slice(half).join(' ');
   return `${(once ? server.slice(0, half) : server).join(' ')} · ${spaced(parts[2] ?? '')}`;
-}
-
-/** The lines an Edit removed and added, for a diff. Null for a call that is not an edit or whose input is not
- *  the edit shape; the caller shows the input as it came. */
-export function editDiff(tool: string, input: unknown): { removed: string[]; added: string[] } | null {
-  if (tool !== 'Edit' || typeof input !== 'object' || input === null) return null;
-  const { old_string: before, new_string: after } = input as Record<string, unknown>;
-  if (typeof before !== 'string' || typeof after !== 'string') return null;
-  const lines = (value: string): string[] => (value === '' ? [] : value.replace(/\n$/, '').split('\n'));
-  return { removed: lines(before), added: lines(after) };
-}
-
-/** A written file's content, or null when the call is not a write. */
-export function writtenContent(tool: string, input: unknown): string | null {
-  if (tool !== 'Write' || typeof input !== 'object' || input === null) return null;
-  return text((input as Record<string, unknown>).content);
 }
 
 /** The figures a finished result gives in a line: its size. A result that has not come is null, never 0. */

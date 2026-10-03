@@ -34,7 +34,7 @@ describe('a tool block', () => {
   test('a Bash call reads as its description, with the command in the opened body', () => {
     const html = renderToStaticMarkup(<ToolBlock item={tool({ input: { command: 'git log --oneline -5', description: 'Show the last five commits' } })} />);
     expect(html).toContain('<span class="arg">Show the last five commits</span>');
-    expect(html).toContain('<pre class="code">git log --oneline -5</pre>');
+    expect(seen(block(html, 'hljs language-bash'))).toBe('git log --oneline -5');
   });
   test('an MCP tool reads as its server and its tool', () => {
     const html = renderToStaticMarkup(<ToolBlock item={tool({ tool: 'mcp__ast-grep__find_code_by_rule', input: {}, inputText: '{}' })} />);
@@ -51,16 +51,100 @@ describe('a tool block', () => {
     const html = renderToStaticMarkup(
       <ToolBlock item={tool({ tool: 'Edit', input: { file_path: 'a.ts', old_string: 'one', new_string: 'two\nthree' }, output: 'ok' })} />,
     );
-    expect(html).toContain('ln del');
-    expect(html).toContain('- one');
-    expect(html).toContain('+ two');
-    expect(html).toContain('+ three');
+    expect(html).toContain('<span class="ln del">one</span>');
+    expect(html).toContain('<span class="ln add">two</span>');
+    expect(html).toContain('<span class="ln add">three</span>');
     expect(html).toContain('+2 −1');
   });
   test('a result past the cap is cut and says so', () => {
     const html = renderToStaticMarkup(<ToolBlock item={tool({ output: 'Q'.repeat(OUTPUT_CAP + 500) })} />);
     expect(html).toContain('Only the start of this output is shown.');
     expect(html.match(/Q/g)?.length).toBe(OUTPUT_CAP);
+  });
+});
+
+/** What a reader sees in a piece of markup: the text with every tag gone and every entity read back. */
+const seen = (html: string): string =>
+  html.replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+const block = (html: string, cls: string): string => new RegExp(`<code class="${cls}">([\\s\\S]*?)</code>`).exec(html)?.[1] ?? '';
+
+describe('a tool call reads the way Claude Code shows it', () => {
+  test('a multi-line command is shell code with every line kept, and its description is a line of text above it', () => {
+    const command = 'cd console-next &&\n  npx vitest run \\\n    --reporter "dot"';
+    const html = renderToStaticMarkup(<ToolBlock item={tool({ input: { command, description: 'Run the console tests' } })} />);
+    expect(html).toContain('<p class="say">Run the console tests</p>');
+    expect(html).toContain('hljs-');
+    expect(seen(block(html, 'hljs language-bash'))).toBe(command);
+  });
+  test('a multi-line command with no description still shows the whole command, not only its first line', () => {
+    const command = 'set -e\nnpm ci\nnpm test';
+    const html = renderToStaticMarkup(<ToolBlock item={tool({ input: { command } })} />);
+    expect(seen(block(html, 'hljs language-bash'))).toBe(command);
+  });
+  test('an edit is a real diff: the lines it kept are context, and only the changed line is removed and added', () => {
+    const html = renderToStaticMarkup(
+      <ToolBlock
+        item={tool({
+          tool: 'Edit',
+          input: { file_path: '/repo/src/x.ts', old_string: 'const a = 1;\nconst b = 2;\nconst c = 3;', new_string: 'const a = 1;\nconst b = 20;\nconst c = 3;' },
+          output: 'The file /repo/src/x.ts has been updated successfully.',
+        })}
+      />,
+    );
+    expect(html).toContain('<p class="where">/repo/src/x.ts</p>');
+    expect(html.match(/class="ln del"/g)?.length).toBe(1);
+    expect(html.match(/class="ln add"/g)?.length).toBe(1);
+    expect(html.match(/class="ln same"/g)?.length).toBe(2);
+    expect(seen(html)).toContain('const b = 20;');
+    expect(html).toContain('+1 −1');
+  });
+  test('a write is its path and its content as code in the file\'s language', () => {
+    const html = renderToStaticMarkup(<ToolBlock item={tool({ tool: 'Write', input: { file_path: '/repo/a.py', content: 'def f():\n    return 1\n' }, output: 'File created successfully at: /repo/a.py' })} />);
+    expect(html).toContain('<p class="where">/repo/a.py</p>');
+    expect(seen(block(html, 'hljs language-python'))).toBe('def f():\n    return 1');
+  });
+  test('a read is its path, the lines it asked for, and the file as numbered code', () => {
+    const html = renderToStaticMarkup(
+      <ToolBlock item={tool({ tool: 'Read', input: { file_path: '/repo/A.kt', offset: 10, limit: 2 }, output: '10\tfun a() {}\n11\tval b = 1' })} />,
+    );
+    expect(html).toContain('<p class="where">/repo/A.kt</p>');
+    expect(html).toContain('Lines 10 to 11');
+    expect(html).toContain('<pre class="gutter">10\n11</pre>');
+    expect(seen(block(html, 'hljs language-kotlin'))).toBe('fun a() {}\nval b = 1');
+    expect(seen(html)).not.toContain('10\tfun');
+  });
+  test('a search is its pattern and where it looked as labelled values, and what it found as code', () => {
+    const html = renderToStaticMarkup(
+      <ToolBlock item={tool({ tool: 'Grep', input: { pattern: 'ToolBlock', path: 'console-next/src', output_mode: 'files_with_matches' }, output: 'src/a.tsx\nsrc/b.tsx' })} />,
+    );
+    expect(html).toContain('<dt>pattern</dt><dd>ToolBlock</dd>');
+    expect(html).toContain('<dt>path</dt><dd>console-next/src</dd>');
+    expect(html).toContain('<dt>output mode</dt><dd>files_with_matches</dd>');
+    expect(html).toContain('<pre class="out">src/a.tsx\nsrc/b.tsx</pre>');
+  });
+  test('any other tool\'s input is labelled values with its lines and quotes as written, never JSON or escapes', () => {
+    const input = { to: 'marlin', message: 'First line.\nSecond line says "done".', meta: { tries: 2, ok: true } };
+    const html = renderToStaticMarkup(<ToolBlock item={tool({ tool: 'SendMessage', input, inputText: JSON.stringify(input), output: '{"success":true,"message":"sent \\"it\\"\\nnow"}' })} />);
+    expect(html).toContain('<dt>to</dt><dd>marlin</dd>');
+    expect(seen(html)).toContain('First line.\nSecond line says "done".');
+    expect(html).toContain('<dt>tries</dt><dd>2</dd>');
+    expect(seen(html)).toContain('sent "it"\nnow');
+    expect(seen(html)).not.toMatch(/\\n|\\"|\{"/);
+  });
+  test('an input the daemon cut short still reads as its fields, with real newlines and quotes, and says it was cut', () => {
+    const html = renderToStaticMarkup(
+      <ToolBlock item={tool({ input: '{"command":"echo \\"hi\\"\\nls -la","descr', inputText: '{"command":"echo \\"hi\\"\\nls -la","descr', output: 'hi' })} />,
+    );
+    expect(seen(block(html, 'hljs language-bash'))).toBe('echo "hi"\nls -la');
+    expect(html).toContain('Only the start of this input was kept.');
+    expect(seen(html)).not.toMatch(/\\n|\\"/);
+  });
+  test('a long result opens at its first lines and offers the rest', () => {
+    const output = Array.from({ length: 200 }, (_, i) => `line ${i + 1}`).join('\n');
+    const html = renderToStaticMarkup(<ToolBlock item={tool({ output })} />);
+    expect(html).toContain('class="fold shut"');
+    expect(html).toContain('Show all 200 lines');
+    expect(renderToStaticMarkup(<ToolBlock item={tool({ output: 'a\nb' })} />)).not.toContain('fold shut');
   });
 });
 

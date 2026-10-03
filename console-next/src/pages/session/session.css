@@ -48,13 +48,43 @@ a.crumb { display: inline-flex; align-items: center; gap: var(--space-4); margin
 .tool .res .sp { display: inline-block; width: 0.75rem; height: 0.75rem; border-radius: 50%; border: 2.5px solid currentColor; border-right-color: transparent; animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .tool .res .sp { animation: none; } .tool .chev { transition: none; } }
-.tool pre { margin: 0; padding: var(--space-5) var(--space-6) var(--space-6); border-top: 1px solid var(--glass-line); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 26.25rem; overflow-y: auto; }
+.tool pre { margin: 0; padding: var(--space-5) var(--space-6) var(--space-6); border-top: 1px solid var(--glass-line); white-space: pre-wrap; overflow-wrap: anywhere; }
 .tool pre.code { white-space: pre; overflow-x: auto; }
+.tool pre.code.cmd { white-space: pre-wrap; overflow-wrap: anywhere; }
 .tool .cut { padding: 0 var(--space-6) var(--space-6); color: var(--glass-dim); font-family: var(--meta); }
 .tool .where { margin: 0; padding: var(--space-4) var(--space-6); border-top: 1px solid var(--glass-line); color: var(--glass-dim); overflow-wrap: anywhere; }
 .ln { display: block; padding: 0 var(--space-6); margin: 0 calc(-1 * var(--space-6)); }
 .ln.add { background: var(--diff-add); }
 .ln.del { background: var(--diff-del); }
+/* A call's opened body, the way Claude Code shows it: what the call says it does in words, then its input as code, a diff or
+   labelled values, then the result. The diff's marker is drawn here, so copied text is the code alone. */
+.ln::before { display: inline-block; width: 1.5ch; content: ' '; color: var(--glass-dim); }
+.ln.add::before { content: '+'; }
+.ln.del::before { content: '-'; }
+.tool .say, .tool .range { margin: 0; padding: var(--space-4) var(--space-6); border-top: 1px solid var(--glass-line); font: 500 0.96rem/1.5 var(--meta); color: var(--glass-ink); }
+.tool .where + .say, .tool .where + .range { border-top: 0; padding-top: 0; }
+.tool .range { color: var(--glass-dim); }
+.tool .kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--space-2) var(--space-6); margin: 0; padding: var(--space-5) var(--space-6) var(--space-6); border-top: 1px solid var(--glass-line); }
+.tool .kv dt { color: var(--glass-dim); }
+.tool .kv dd { margin: 0; color: var(--glass-ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+.tool .kv .kv { padding: 0; border-top: 0; }
+.tool .numbered { display: grid; grid-template-columns: max-content minmax(0, 1fr); border-top: 1px solid var(--glass-line); }
+.tool .numbered pre { border-top: 0; }
+.tool .numbered .gutter { padding-right: var(--space-5); text-align: right; color: var(--glass-dim); user-select: none; }
+.tool .numbered .code { padding-left: 0; }
+.tool .fold.shut .fold-body { max-height: 17rem; overflow: hidden; mask-image: linear-gradient(to bottom, #000 70%, transparent); }
+.tool .more { display: block; width: 100%; padding: var(--space-4) var(--space-6); border: 0; border-top: 1px solid var(--glass-line); background: transparent; color: var(--glass-ink); font: 600 0.875rem var(--meta); text-align: left; cursor: pointer; }
+.tool .more:hover { background: var(--glass-track); }
+.tool .more:focus-visible { outline: 2px solid var(--glass-ink); outline-offset: -2px; }
+/* Highlighted code on the glass: warm tokens that read on its dark ground in both themes. */
+.tool .hljs-comment, .tool .hljs-quote { color: var(--glass-dim); font-style: italic; }
+.tool .hljs-keyword, .tool .hljs-selector-tag, .tool .hljs-built_in { color: #eaa978; }
+.tool .hljs-string, .tool .hljs-regexp, .tool .hljs-addition { color: #b3d69a; }
+.tool .hljs-number, .tool .hljs-literal, .tool .hljs-symbol { color: var(--glass-wait); }
+.tool .hljs-title, .tool .hljs-type, .tool .hljs-section, .tool .hljs-name { color: #9cc4e4; }
+.tool .hljs-variable, .tool .hljs-attr, .tool .hljs-attribute, .tool .hljs-property, .tool .hljs-template-variable { color: #e3c9a6; }
+.tool .hljs-meta, .tool .hljs-subst, .tool .hljs-params { color: var(--glass-ink); }
+.tool .hljs-deletion { color: #f0a0a0; }
 .note { font: 500 0.96rem var(--meta); color: var(--mute); }
 .note summary { cursor: pointer; }
 .note pre { margin: var(--space-4) 0 0; padding: var(--space-5) var(--space-6); border-radius: 0.5rem; background: color-mix(in srgb, var(--ink) 6%, transparent); font: 400 0.8125rem/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--body); }

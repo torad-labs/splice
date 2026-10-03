@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { callTarget, editDiff, foldTranscript, interleave, outputSize, toolCommand, toolLabel, toolPath, toolTarget, withoutEchoed } from '../src/lib/conversation';
+import { callTarget, foldTranscript, interleave, outputSize, toolLabel, toolPath, toolTarget, withoutEchoed } from '../src/lib/conversation';
 import type { SessionEdge, TranscriptMessage } from '../src/types/sessions';
 
 const say = (index: number, role: TranscriptMessage['role'], text: string, ts?: number): TranscriptMessage => ({ index, role, text, ...(ts === undefined ? {} : { ts }) });
@@ -69,12 +69,6 @@ describe('what a call did', () => {
     expect(toolTarget('Bash', 'raw')).toBeNull();
     expect(toolTarget('Bash', { command: '   ' })).toBeNull();
   });
-  test('an edit is a diff of its lines; anything else is not', () => {
-    expect(editDiff('Edit', { old_string: 'a\nb', new_string: 'c' })).toEqual({ removed: ['a', 'b'], added: ['c'] });
-    expect(editDiff('Edit', { old_string: '', new_string: 'new\n' })).toEqual({ removed: [], added: ['new'] });
-    expect(editDiff('Edit', { file_path: 'x' })).toBeNull();
-    expect(editDiff('Read', { old_string: 'a', new_string: 'b' })).toBeNull();
-  });
   test('a result\'s size, and none before it comes', () => {
     expect(outputSize('a\nb\nc')).toEqual({ lines: 3, chars: 5 });
     expect(outputSize('')).toEqual({ lines: 0, chars: 0 });
@@ -96,12 +90,8 @@ describe('hand-offs among the messages', () => {
 });
 
 describe('a tool row says what the tool did', () => {
-  test('a command with a description shows the description; the command moves to the body', () => {
-    const input = { command: 'echo "=== repo root ===" && pwd', description: 'Show where the repo is' };
-    expect(toolTarget('Bash', input)).toBe('Show where the repo is');
-    expect(toolCommand('Bash', input)).toBe('echo "=== repo root ===" && pwd');
-    expect(toolCommand('Bash', { command: 'ls' })).toBeNull();
-    expect(toolCommand('Read', input)).toBeNull();
+  test('a command with a description shows the description', () => {
+    expect(toolTarget('Bash', { command: 'echo "=== repo root ===" && pwd', description: 'Show where the repo is' })).toBe('Show where the repo is');
   });
   test('an MCP tool id reads as its server and tool', () => {
     expect(toolLabel('mcp__ast-grep__find_code_by_rule')).toBe('ast-grep · find code by rule');

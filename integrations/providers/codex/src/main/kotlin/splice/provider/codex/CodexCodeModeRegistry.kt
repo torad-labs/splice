@@ -14,6 +14,8 @@ package splice.provider.codex
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import splice.core.util.Cancellables
+import splice.core.util.SafeFailureText
 import splice.provider.codex.state.CodeModeCellRetention
 import splice.provider.codex.state.CodeModeExpiredHistory
 import splice.provider.codex.state.CodeModeKeyLocks
@@ -185,12 +187,14 @@ internal class CodexCodeModeRegistry(
         }
 
         private fun plan(): AdmissionPlan? {
+            // A session id is shared by subagents. Only equal conversation identities prove supersession.
+            // Busy keys cannot be retired, even if a completed sibling record also names their engine.
+            val busyKeys = records.filter { it.id in admissions || retainedCells.running(it) }
+                .mapTo(mutableSetOf(), CodeModeRecord::key)
             val previous = records.filter {
-                it.key != record.key && record.sessionId != null && it.sessionId == record.sessionId
+                it.key != record.key && it.key !in busyKeys &&
+                    record.conversationId != null && it.conversationId == record.conversationId
             }
-            val unfinished = previous.filterNot(CodeModeRecord::terminal)
-            val starting = unfinished.any { it.id in admissions }
-            if (starting || unfinished.any(retainedCells::running)) return null
             val candidate = records.toMutableList()
             val nextHistory = CodeModeExpiredHistory(history.entries.toMutableList(), config.retention.records)
             if (!retention.makeRoom(candidate, nextHistory, record, config.clock.millis())) return null
@@ -278,7 +282,9 @@ internal class CodexCodeModeRegistry(
     fun lose(record: CodeModeRecord, message: String, cancellation: CancellationException? = null) =
         access.withKey(record.key) {
             admissions.remove(record.id)
-            cells.remove(record.id)?.close()
+            Cancellables.runCatchingBestEffort { cells.remove(record.id)?.close() }.onFailure {
+                config.log("[code-mode] rejected cell close failed (${SafeFailureText.render(it)})")
+            }
             record.phase = CodeModePhase.LOST
             record.error = message
             record.updatedAt = config.clock.millis()

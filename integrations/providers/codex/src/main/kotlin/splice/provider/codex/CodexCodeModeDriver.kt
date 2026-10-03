@@ -2,6 +2,8 @@
 package splice.provider.codex
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.GatewayCustomCall
@@ -58,19 +60,36 @@ internal class CodexCodeModeDriver(
         try {
             val record = round.ready.await()
             admitted = record
-            val outcome = if (record == null) {
-                drive(context, initialOuter, body, round.outcome())
-            } else {
-                streams.keep(record, round)
-                val (_, advanced) = startRuntime(record, context, round)
-                if (record.phase == CodeModePhase.COMPLETED) finishGenerated(record, context, body) else advanced
-            }
-            return outcome
+            val outcome = readyOutcome(context, initialOuter, body, round, record)
+            return round.localFailure ?: outcome
         } finally {
-            round.switching.detach()
-            val parked = admitted?.phase == CodeModePhase.ACTIVE || admitted?.phase == CodeModePhase.STARTING
-            if (!parked) round.cancel()
-            admitted?.takeIf { it.phase == CodeModePhase.LOST }?.let(streams::discard)
+            withContext(NonCancellable) {
+                val parked = admitted?.phase == CodeModePhase.ACTIVE || admitted?.phase == CodeModePhase.STARTING
+                if (!parked) round.cancel()
+                try {
+                    round.switching.detach()
+                } finally {
+                    admitted?.takeIf { it.phase == CodeModePhase.LOST }?.let(streams::discard)
+                }
+            }
+        }
+    }
+
+    private suspend fun readyOutcome(
+        context: CodeModeRunContext,
+        initialOuter: GatewayCustomCall?,
+        body: String,
+        round: CodeModeLiveRound,
+        record: CodeModeRecord?,
+    ): TurnOutcome {
+        round.localFailure?.let { return it }
+        if (record == null) return drive(context, initialOuter, body, round.outcome())
+        streams.keep(record, round)
+        val (_, advanced) = startRuntime(record, context, round)
+        return round.localFailure ?: if (record.phase == CodeModePhase.COMPLETED) {
+            finishGenerated(record, context, body)
+        } else {
+            advanced
         }
     }
 
@@ -200,7 +219,9 @@ internal class CodexCodeModeDriver(
     }
 
     private suspend fun attachmentFailure(record: CodeModeRecord, stream: CodeModeLiveRound?): TurnOutcome =
-        if (stream?.sourceInterrupted == true) {
+        if (stream?.localFailure != null) {
+            checkNotNull(stream.localFailure)
+        } else if (stream?.sourceInterrupted == true) {
             stream.outcome()
         } else {
             TurnOutcome.Failure(record.error.orEmpty(), cause = FailureCause.INTERNAL, phase = FailurePhase.MID_OUTPUT)

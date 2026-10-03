@@ -18,6 +18,7 @@ import splice.provider.codex.state.CodeModeCellRetention
 import splice.provider.codex.state.CodeModeKeyLocks
 import splice.provider.codex.state.CodeModeRegistryAccess
 import splice.provider.codex.state.CodeModeSessionEnd
+import splice.provider.codex.state.CodeModeTurnIdentity
 import splice.upstream.InterceptedRoundPost
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
@@ -125,15 +126,24 @@ class CodeModeCellLeaseTest {
     }
 
     @Test
-    fun `a new model key cannot displace an executing engine in the same session`() {
+    fun `a new model key admits independently without displacing an executing engine`() {
         val fixture = LeaseFixture(dir)
-        val record = fixture.park("first-key", 0)
+        val conversation = CodeModeTurnIdentity().digest("first-key${0.toChar()}synthetic-conversation")
+        val record = fixture.park("first-key", 0).also { it.conversationId = conversation }
         assertTrue(fixture.registry.retainedCells.acquire(record) != null)
-        val next = CodeModeRecords.of("next-key", 1).also { it.sessionId = "first-key" }
-        assertFalse(fixture.registry.add(next))
+        val next = CodeModeRecords.of("next-key", 1).also {
+            it.sessionId = "first-key"
+            it.conversationId = record.conversationId
+            it.phase = CodeModePhase.STARTING
+        }
+        assertTrue(fixture.registry.add(next))
         assertEquals(CodeModePhase.ACTIVE, record.phase)
         fixture.registry.retainedCells.release(record)
-        assertTrue(fixture.registry.add(next))
+        val later = CodeModeRecords.of("later-key", 2).also {
+            it.sessionId = record.sessionId
+            it.conversationId = record.conversationId
+        }
+        assertTrue(fixture.registry.add(later))
         assertEquals(CodeModePhase.LOST, record.phase)
         fixture.registry.onHeadStop()
     }

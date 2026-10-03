@@ -66,6 +66,7 @@ internal object CodeModeStateJournal {
     private val codec = Json { encodeDefaults = true }
     fun same(left: CodeModeRecordSnapshot?, right: CodeModeRecordSnapshot?): Boolean =
         left == right && left?.issued == right?.issued && left?.sessionId == right?.sessionId &&
+            left?.conversationId == right?.conversationId &&
             left?.nativeBaseId == right?.nativeBaseId && left?.replayAnchors == right?.replayAnchors &&
             left?.sourceState == right?.sourceState
 

@@ -1,7 +1,9 @@
 package splice.provider.codex
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -11,9 +13,14 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
+import splice.core.turn.FailureCause
 import splice.core.turn.TurnOutcome
 import splice.core.util.JsonScalars
 import splice.upstream.RedirectableRoundPost
+import splice.upstream.codemode.CodeModeCell
+import splice.upstream.codemode.CodeModeRuntime
+import splice.upstream.codemode.CodeModeSource
+import splice.upstream.sse.CustomToolSource
 import splice.upstream.sse.WireSink
 
 class CodexCodeModeSourceTerminalTest : CodeModeStatementStreamSupport() {
@@ -132,6 +139,162 @@ class CodexCodeModeSourceTerminalTest : CodeModeStatementStreamSupport() {
             assertBilling(outcome.usage)
             assertEquals(1, runtime.starts)
             assertEquals(2, post.posts)
+        } finally {
+            manager.onHeadStop()
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["reader-wait", "blocked-write"])
+    @Timeout(20)
+    fun `client cancellation before ready attachment stops the independent reader and releases admission`(
+        mode: String,
+    ) =
+        runBlocking {
+            val runtime = ScriptedRuntime(ArrayDeque())
+            val manager = bridge(runtime)
+            val stopped = CompletableDeferred<Unit>()
+            lateinit var client: Job
+            val clientSink = object : WireSink by StepSink() {
+                override suspend fun textDelta(index: splice.core.index.WireBlockIndex, text: String) {
+                    client.cancel()
+                    awaitCancellation()
+                }
+            }
+            val post = object : RedirectableRoundPost {
+                override suspend fun invoke(bodyJson: String): TurnOutcome = error("redirect required")
+                override suspend fun into(bodyJson: String, sink: WireSink): TurnOutcome {
+                    try {
+                        sink.customToolSource(CustomToolSource.Started(outer(source = "")))
+                        if (mode == "blocked-write") sink.textDelta(sink.openText(), "synthetic blocked write")
+                        client.cancel()
+                        awaitCancellation()
+                    } finally {
+                        stopped.complete(Unit)
+                    }
+                }
+            }
+            try {
+                client = async(start = kotlinx.coroutines.CoroutineStart.LAZY) {
+                    manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, clientSink, post)
+                }
+                client.start()
+                withTimeout(5_000) { client.join() }
+                withTimeout(5_000) { stopped.await() }
+                val registry = registryOf(manager)
+                withTimeout(5_000) {
+                    while (registry.startup.entries.isNotEmpty()) kotlinx.coroutines.yield()
+                    val lostPhase = CodeModePhase.LOST.name
+                    while (JsonScalars.str(stateFiles.records().singleOrNull()?.get("phase")) != lostPhase) {
+                        kotlinx.coroutines.yield()
+                    }
+                }
+                assertEquals(0, runtime.starts, "no source dispatched before client cancellation")
+                val saved = stateFiles.records().single()
+                assertEquals(CodeModePhase.LOST.name, JsonScalars.str(saved["phase"]))
+                assertFalse(JsonScalars.str(saved["error"]).isNullOrBlank())
+            } finally {
+                manager.onHeadStop()
+            }
+        }
+
+    private fun registryOf(manager: CodexCodeModeBridge): CodexCodeModeRegistry =
+        CodexCodeModeBridge::class.java.getDeclaredField("registry").apply {
+            isAccessible = true
+        }.get(manager) as CodexCodeModeRegistry
+
+    @ParameterizedTest
+    @ValueSource(strings = ["blank-id", "oversized-start", "changed-id"])
+    @Timeout(20)
+    fun `local source rejection never escapes through the transport or strands an admission`(problem: String) =
+        runBlocking {
+            val runtime = ScriptedRuntime(ArrayDeque())
+            val manager = bridge(runtime)
+            var escaped = 0
+            val post = object : RedirectableRoundPost {
+                override suspend fun invoke(bodyJson: String): TurnOutcome = error("redirect required")
+
+                override suspend fun into(bodyJson: String, sink: WireSink): TurnOutcome {
+                    try {
+                        val started = when (problem) {
+                            "blank-id" -> outer(callId = "", source = "")
+                            "oversized-start" -> outer(source = "x".repeat(65_537))
+                            else -> outer(source = "")
+                        }
+                        sink.customToolSource(CustomToolSource.Started(started))
+                        sink.customToolSource(CustomToolSource.Completed(outer(callId = "changed-id")))
+                    } catch (_: IllegalStateException) {
+                        escaped++
+                    } catch (_: IllegalArgumentException) {
+                        escaped++
+                    }
+                    return outerOutcome()
+                }
+            }
+            try {
+                val outcome = manager.interceptor(turn(), disableParallel = false)
+                    .intercept(BASE_REQUEST, RecordingSink(), post)
+                assertEquals(0, escaped, "splice-local source validation must not become transport failure")
+                assertTrue(outcome is TurnOutcome.Failure, outcome.toString())
+                assertEquals(FailureCause.CODE_MODE_PROTOCOL, (outcome as TurnOutcome.Failure).cause)
+                assertFalse(outcome.message.contains("upstream source failed"))
+                assertTrue(
+                    registryOf(manager).startup.entries.isEmpty(),
+                    "rejection before ready must release admission",
+                )
+            } finally {
+                manager.onHeadStop()
+            }
+        }
+
+    @Test
+    @Timeout(20)
+    fun `local rejection loses its attached record even when cell cleanup throws`() = runBlocking {
+        val delegate = IncrementalRuntime()
+        var closes = 0
+        val runtime = object : CodeModeRuntime by delegate {
+            override suspend fun startStreamingSession(
+                sessionKey: String,
+                source: CodeModeSource,
+                tools: Set<String>,
+                descriptions: Map<String, String>,
+            ): CodeModeCell {
+                val cell = delegate.startStreaming(source, tools, descriptions)
+                return object : CodeModeCell by cell {
+                    override fun close() {
+                        closes++
+                        error("synthetic close failure")
+                    }
+                }
+            }
+        }
+        val manager = bridge(runtime)
+        val sink = StepSink()
+        val post = GatedPost(sink).also { it.terminalProblem = "changed-id" }
+        var escaped = 0
+        val sourcePost = object : RedirectableRoundPost by post {
+            override suspend fun into(bodyJson: String, sink: WireSink): TurnOutcome = try {
+                post.into(bodyJson, sink)
+            } catch (_: IllegalStateException) {
+                escaped++
+                completedOutcome()
+            }
+        }
+        try {
+            manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, sourcePost)
+            sink.callback.await()
+            post.gates.drop(1).forEach { it.complete(Unit) }
+            post.complete.complete(Unit)
+            withTimeout(5_000) {
+                while (JsonScalars.str(stateFiles.records().single()["phase"]) != CodeModePhase.LOST.name) {
+                    kotlinx.coroutines.yield()
+                }
+            }
+            assertEquals(0, escaped)
+            assertEquals(1, closes)
+            assertEquals(1, delegate.starts)
+            assertTrue(registryOf(manager).startup.entries.isEmpty())
+            assertTrue(logLines.any { it.contains("rejected cell close failed") })
         } finally {
             manager.onHeadStop()
         }

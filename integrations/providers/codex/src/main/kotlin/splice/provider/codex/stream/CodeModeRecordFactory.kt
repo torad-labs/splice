@@ -10,6 +10,7 @@ import splice.provider.codex.CodeModePhase
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRunContext
 import splice.provider.codex.state.CodeModeNativeChain
+import splice.provider.codex.state.CodeModeTurnIdentity
 import java.util.UUID
 
 internal class CodeModeRecordFactory(private val config: CodeModeBridgeConfig) {
@@ -40,6 +41,7 @@ internal class CodeModeRecordFactory(private val config: CodeModeBridgeConfig) {
         ).also {
             it.replayAnchors = boundary.replayAnchors
             it.sessionId = context.turn.sessionId
+            it.conversationId = CodeModeTurnIdentity().conversationId(context.turn)
             it.nativeBaseId = native.parent?.id
             it.nativeParent = native.parent
         }

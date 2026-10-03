@@ -54,6 +54,9 @@ internal class CodeModeLiveRound(
     @Volatile var sourceInterrupted = false
         private set
 
+    @Volatile var localFailure: TurnOutcome.Failure? = null
+        private set
+
     fun start(scope: CoroutineScope, post: RedirectableRoundPost, body: String, end: TurnEnd) {
         check(finished == null)
         finished = scope.async(start = CoroutineStart.UNDISPATCHED) {
@@ -114,8 +117,10 @@ internal class CodeModeLiveRound(
 
     private fun finish(outcome: TurnOutcome) = synchronized(lifecycle) {
         if (headStopped) throw CancellationException("code-mode head stopped")
+        localFailure?.let { return@synchronized it }
         sourceInterrupted = record != null && (outcome as? TurnOutcome.Failure)?.cause in SOURCE_TEAR_CAUSES
-        capture.finish(outcome)
+        Cancellables.runCatchingBestEffort { capture.finish(outcome) }
+            .getOrElse { return@synchronized reject(it) }
         if (sourceInterrupted && outcome is TurnOutcome.Failure) {
             outcome.copy(
                 cause = FailureCause.UPSTREAM_CONN_RESET,
@@ -145,6 +150,7 @@ internal class CodeModeLiveRound(
             source.fail(SOURCE_FAILED)
             throw CancellationException("code-mode head stopped", error)
         }
+        localFailure?.let { return@synchronized it }
         val detail = SOURCE_FAILED
         sourceInterrupted = record != null && error is IOException && error !is CodeModePersistenceException
         source.fail(detail)
@@ -189,9 +195,44 @@ internal class CodeModeLiveRound(
         cancel()
     }
 
+    /** Observer faults belong to splice. They never unwind through a transport's generic stream catch. */
     private fun observe(event: CustomToolSource) = synchronized(lifecycle) {
         if (headStopped) throw CancellationException("code-mode head stopped")
-        capture.observe(event)
+        if (localFailure != null) return@synchronized
+        Cancellables.runCatchingBestEffort { capture.observe(event) }.onFailure(::reject)
+    }
+
+    private fun reject(error: Throwable): TurnOutcome.Failure {
+        val failure = if (error is CodeModePersistenceException) {
+            error.outcome()
+        } else {
+            TurnOutcome.Failure(
+                "splice code-mode source rejected (${SafeFailureText.render(error)}); source was not rerun",
+                cause = FailureCause.CODE_MODE_PROTOCOL,
+                phase = FailurePhase.MID_OUTPUT,
+                deterministic = true,
+            )
+        }
+        localFailure = failure
+        sourceInterrupted = false
+        source.fail(failure.message)
+        try {
+            Cancellables.runCatchingBestEffort {
+                record?.takeUnless(CodeModeRecord::terminal)?.let { registry.lose(it, failure.message) }
+            }.onFailure { cleanup ->
+                localFailure = if (cleanup is CodeModePersistenceException) {
+                    cleanup.outcome()
+                } else {
+                    failure.copy(
+                        message = "${failure.message}; splice code-mode rejection cleanup failed " +
+                            "(${SafeFailureText.render(cleanup)})",
+                    )
+                }
+            }
+        } finally {
+            ready.complete(null)
+        }
+        return checkNotNull(localFailure)
     }
 }
 

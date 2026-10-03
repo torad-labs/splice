@@ -23,6 +23,7 @@ internal class CodeModeRecordRestorer {
         return record(saved, if (stale || lost) CodeModePhase.LOST else saved.phase, error).also {
             it.issued.addAll(saved.issued)
             it.sessionId = saved.sessionId
+            it.conversationId = saved.conversationId
             it.nativeBaseId = saved.nativeBaseId
             it.replayAnchors = saved.replayAnchors
             it.retainedBytes = saved.retainedBytes

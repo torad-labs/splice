@@ -57,6 +57,9 @@ internal data class CodeModeRecordSnapshot(
     /** Kept outside the already-wide constructor; the store compares it explicitly on save. */
     var issued: List<CodeModeIssuedStep> = emptyList()
     var sessionId: String? = null
+
+    /** Optional hashed session/conversation identity; older snapshots remain independent keys. */
+    var conversationId: String? = null
     var nativeBaseId: String? = null
     var replayAnchors: CodeModeReplayAnchors? = null
     var sourceState: CodeModeSourceState? = null
@@ -98,6 +101,9 @@ internal data class CodeModeRecord(
     /** In-memory snapshot order; a failed save cannot undo a later reserved snapshot. */
     var saveGeneration: Long = 0
     var sessionId: String? = null
+
+    /** Optional hashed session/conversation identity; older snapshots remain independent keys. */
+    var conversationId: String? = null
     var nativeBaseId: String? = null
     var replayAnchors: CodeModeReplayAnchors? = null
     var nativeParent: CodeModeRecord? = null
@@ -149,6 +155,7 @@ internal data class CodeModeRecord(
     ).also {
         it.issued = issued.toList()
         it.sessionId = sessionId
+        it.conversationId = conversationId
         it.nativeBaseId = nativeBaseId
         it.replayAnchors = replayAnchors
         it.sourceState = sourceState

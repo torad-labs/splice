@@ -46,6 +46,11 @@ internal class CodeModeTurnIdentity {
         "${turn.sessionId}${0.toChar()}${turn.conversationKey}${0.toChar()}${turn.model}",
     )
 
+    /** Model changes can supersede parked programs, but never sibling conversations or a busy engine. */
+    fun conversationId(turn: CodexCodeModeBridge.Turn): String = digest(
+        "${turn.sessionId}${0.toChar()}${turn.conversationKey}",
+    )
+
     fun digest(value: String): String = MessageDigest.getInstance("SHA-256")
         .digest(value.toByteArray())
         .joinToString("") { "%02x".format(it) }

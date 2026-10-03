@@ -1,12 +1,19 @@
 package splice.provider.codex
 
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
+import splice.provider.codex.state.CodeModeSessionEnd
 import splice.upstream.codemode.CodeModeStep
+import kotlin.time.Duration.Companion.hours
 
 class CodeModeSupersededCellTest : CodeModeBridgeTestSupport() {
     @Test
@@ -47,6 +54,79 @@ class CodeModeSupersededCellTest : CodeModeBridgeTestSupport() {
             assertEquals(1, runtime.cell.advances)
         } finally {
             manager.onHeadStop()
+        }
+    }
+
+    @Test
+    fun `pre-conversation-field state loads as an independent key and never closes its parked instance`() {
+        val location = stateLocation()
+        val saved = CodeModeRecords.of("synthetic-legacy", 0, 1_000).also {
+            it.phase = CodeModePhase.STARTING
+            it.sessionId = "synthetic-shared-session"
+        }.snapshot()
+        val json = Json { encodeDefaults = true }
+        CodexCodeModeStore(location, json, {}).save(listOf(saved.restore()), emptyList())
+        stateFiles.rewriteRecords { JsonObject(it - "conversationId") }
+        val closed = mutableListOf<String>()
+        val config = CodeModeBridgeConfig({ error("not needed") }, location, clock = MutableClock(1_000))
+        val registry = CodexCodeModeRegistry(config, json, 1.hours, closeSession = CodeModeSessionEnd(closed::add))
+        val loaded = registry.recordsFor(saved.key).single()
+        assertNull(loaded.conversationId)
+        val cell = ScriptedCell(ArrayDeque())
+        assertTrue(registry.add(loaded))
+        assertTrue(registry.attach(loaded, cell))
+        registry.retainedCells.acquire(loaded)
+        registry.retainedCells.release(loaded)
+        val incoming = CodeModeRecords.of("synthetic-current", 0, 1_000).also {
+            it.sessionId = "synthetic-shared-session"
+            it.conversationId = "synthetic-current-conversation"
+        }
+        try {
+            assertTrue(registry.add(incoming))
+            assertFalse(cell.closed, "absence of a conversation field is not evidence of supersession")
+            assertEquals(CodeModePhase.ACTIVE, loaded.phase)
+            assertTrue(closed.isEmpty(), "legacy independent engine must not be retired or closed")
+        } finally {
+            registry.onHeadStop()
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    fun `a completed sibling cannot retire an engine key still starting or borrowed`(borrowed: Boolean) {
+        val config = CodeModeBridgeConfig({ error("not needed") }, stateLocation(), clock = MutableClock(1_000))
+        val closed = mutableListOf<String>()
+        val registry = CodexCodeModeRegistry(
+            config,
+            Json { encodeDefaults = true },
+            1.hours,
+            closeSession = CodeModeSessionEnd(closed::add),
+        )
+        val completed = CodeModeRecords.of("synthetic-first-model", 0, 1_000).also {
+            it.conversationId = "synthetic-conversation"
+        }
+        assertTrue(registry.add(completed))
+        registry.complete(completed, "done")
+        val busy = CodeModeRecords.of(completed.key, 1, 1_000).also {
+            it.phase = CodeModePhase.STARTING
+            it.conversationId = completed.conversationId
+        }
+        assertTrue(registry.add(busy))
+        val cell = ScriptedCell(ArrayDeque())
+        if (borrowed) {
+            assertTrue(registry.attach(busy, cell))
+            registry.retainedCells.acquire(busy)
+        }
+        val incoming = CodeModeRecords.of("synthetic-other-model", 0, 1_000).also {
+            it.conversationId = completed.conversationId
+        }
+        try {
+            assertTrue(registry.add(incoming))
+            assertTrue(closed.isEmpty(), "completed records never justify closing another record's busy engine")
+            assertFalse(cell.closed)
+        } finally {
+            if (borrowed) registry.retainedCells.release(busy)
+            registry.onHeadStop()
         }
     }
 

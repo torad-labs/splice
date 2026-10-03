@@ -21,6 +21,8 @@ import org.junit.jupiter.api.TestReporter
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import splice.provider.codex.CodeModeExpiredSnapshot
 import splice.provider.codex.CodeModeNativeSegment
 import splice.provider.codex.CodeModePersistedState
@@ -38,6 +40,7 @@ import java.lang.management.ManagementFactory
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
+import java.nio.file.attribute.FileTime
 
 private const val BLOATED_BYTES = 9L * 1024 * 1024
 private const val MAX_COMPACTED_BYTES = 64L * 1024
@@ -56,6 +59,49 @@ internal object JournalReadProbe {
     fun main(args: Array<String>) {
         println(CodeModeStateJournal.read(Path.of(args[0]), Json).records.size)
     }
+}
+
+class CodeModeConversationIdentityTest {
+    private val codec = Json { encodeDefaults = true }
+
+    @TempDir
+    lateinit var dir: Path
+
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    fun `conversation identity alone is durable through both store save paths`(changedCell: Boolean) {
+        val record = CodeModeRecords.of("synthetic", 1)
+        val store = store().also { it.load() }
+        store.save(listOf(record), emptyList())
+        val before = record.snapshot()
+        record.conversationId = "synthetic-conversation"
+        assertFalse(CodeModeStateJournal.same(before, record.snapshot()))
+        if (changedCell) {
+            store.save(listOf(record), emptyList(), dirtyKeys = setOf(record.key), changedRecord = record)
+        } else {
+            store.save(listOf(record), emptyList())
+        }
+        val restored = store().load().records.single()
+        assertEquals(record.conversationId, restored.conversationId)
+        assertEquals(record.conversationId, restored.restore().conversationId)
+    }
+
+    @Test
+    fun `newer legacy sibling with changed conversation identity wins over journal extension preference`() {
+        val record = CodeModeRecords.of("synthetic", 1)
+        store().also { it.load() }.save(listOf(record), emptyList())
+        val journal = Files.list(location().dir).use { it.toList().single() }
+        val legacy = journal.resolveSibling(journal.fileName.toString().removeSuffix("l"))
+        val newer = record.snapshot().also { it.conversationId = "synthetic-new-conversation" }
+        Files.writeString(legacy, codec.encodeToString(CodeModePersistedState(records = listOf(newer))))
+        Files.setLastModifiedTime(journal, FileTime.fromMillis(1_000))
+        Files.setLastModifiedTime(legacy, FileTime.fromMillis(2_000))
+        assertEquals(newer.conversationId, store().load().records.single().conversationId)
+    }
+
+    private fun location() = CodeModeStateLocation(dir.resolve("state"), dir.resolve("legacy.json"))
+
+    private fun store() = CodexCodeModeStore(location(), codec, {})
 }
 
 class CodeModeJournalRecoveryTest {
@@ -277,7 +323,7 @@ class CodeModeJournalRecoveryTest {
               "baselineLogicalDigest":"changed logical","nativeSegments":[{"logicalOffset":77,"items":["native"]}],
               "continuity":["logical"],"continuityReplay":[{"logicalOffset":78,"items":["replay"]}],
               "issued":[{"requestDigest":"issued digest","calls":[]}],"sessionId":"synthetic session",
-              "nativeBaseId":"synthetic parent","replayAnchors":{"baseline":{"itemDigest":"anchor","occurrence":79},
+              "conversationId":"synthetic conversation","nativeBaseId":"synthetic parent","replayAnchors":{"baseline":{"itemDigest":"anchor","occurrence":79},
               "native":{}},"sourceState":{"complete":true,"consumed":true}
             }
             """.trimIndent(),
@@ -328,6 +374,7 @@ class CodeModeJournalRecoveryTest {
         val changed = prior.records.single().copy(source = "patch source").also {
             it.issued = original.issued
             it.sessionId = original.sessionId
+            it.conversationId = original.conversationId
             it.nativeBaseId = original.nativeBaseId
             it.replayAnchors = original.replayAnchors
             it.sourceState = original.sourceState

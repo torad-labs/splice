@@ -289,18 +289,14 @@ class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
             }
             death.afterResume(afterLoss)
             val outcome = withTimeout(5_000) { resumed.await() }
-            if (afterLoss) {
-                assertTrue(outcome is TurnOutcome.Success, "outcome=$outcome")
-                assertEquals(2, post.posts)
-                assertTrue(post.continuation.contains("source was not rerun"))
-            } else {
-                val failure = outcome as TurnOutcome.Failure
-                assertTrue(failure.message.contains("source was not rerun"), failure.message)
-                assertEquals(1, post.posts)
-                assertEquals("", post.continuation)
-                assertEquals("result-0", runtime.delivered.last().single().output)
-                assertTrue(stateFiles.records().single().toString().contains("source was not rerun"))
-            }
+            assertTrue(outcome is TurnOutcome.Success, "outcome=$outcome")
+            assertEquals(2, post.posts)
+            assertTrue(post.continuation.contains("source was not rerun"))
+            val persisted = stateFiles.records().single()
+            assertTrue(persisted.toString().contains("source was not rerun"))
+            assertEquals(CodeModePhase.COMPLETED.name, persisted["phase"]?.jsonPrimitive?.content)
+            assertEquals(if (afterLoss) 1 else 2, runtime.delivered.size)
+            if (!afterLoss) assertEquals("result-0", runtime.delivered.last().single().output)
             assertFalse(next.callback.isCompleted)
             assertEquals(1, runtime.starts)
             assertTrue(logLines.any { "ConcurrentModificationException" in it }, logLines.toString())

@@ -2,6 +2,7 @@
 package splice.provider.codex.stream
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -40,6 +41,10 @@ internal class CodeModeLiveRound(
     val switching = CodeModeSwitchingSink(sink, CodeModeSourceObserver(::observe))
     private val record: CodeModeRecord? get() = capture.record
     private var finished: Deferred<TurnOutcome>? = null
+    private val settled = CompletableDeferred<Unit>()
+
+    @Volatile var unexpectedDeath: Boolean = false
+        private set
 
     private val lifecycle = Any()
     private var headStopped = false
@@ -88,7 +93,7 @@ internal class CodeModeLiveRound(
             try {
                 died(cause)
             } finally {
-                end.ended()
+                Cancellables.withCleanup({ settled.complete(Unit) }) { end.ended() }
             }
         }
     }
@@ -99,6 +104,7 @@ internal class CodeModeLiveRound(
     private fun died(cause: Throwable?) {
         val unnamed = cause?.takeUnless { it is CancellationException || it is CodeModePersistenceException } ?: return
         upstreamEnded = true
+        unexpectedDeath = true
         config.log("[code-mode] upstream source reader died (${unnamed::class.simpleName}): $SOURCE_FAILED")
         source.fail(SOURCE_FAILED)
         synchronized(lifecycle) {
@@ -177,6 +183,8 @@ internal class CodeModeLiveRound(
     suspend fun outcome(): TurnOutcome {
         val reader = checkNotNull(finished)
         val awaited = Cancellables.runCatchingBestEffort { reader.await() }
+        // Deferred completion precedes died()'s registry write. Never continue before that cleanup settles.
+        settled.await()
         val failure = awaited.exceptionOrNull() ?: return awaited.getOrThrow()
         if (failure is CodeModePersistenceException) throw failure
         return TurnOutcome.Failure(SOURCE_FAILED, cause = FailureCause.INTERNAL, phase = FailurePhase.MID_OUTPUT)

@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonElement
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
+import splice.provider.codex.stream.CodeModeLiveRound
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.sse.WireSink
 
@@ -46,7 +47,13 @@ internal class CodexCodeModeResume(
         bodyJson: String,
     ): TurnOutcome {
         val source = driver.streams.find(record)
-        record.error?.let { return if (source?.sourceInterrupted == true) source.outcome() else failure(it) }
+        record.error?.let {
+            return when {
+                source?.sourceInterrupted == true -> source.outcome()
+                CodeModeReaderTermination.ended(source) -> lost(record, context, bodyJson)
+                else -> failure(it)
+            }
+        }
         val attached = context.copy(sink = driver.streams.attach(record, context.sink))
         attached.completed += context.completed
         return try {
@@ -105,12 +112,11 @@ internal class CodexCodeModeResume(
         extra: CodeModeExtra,
         supplied: Map<String, CodeModeResult>,
     ): TurnOutcome {
+        val source = driver.streams.find(record)
         val advanced = advance(record, context, extra, supplied)
-        return if (record.phase != CodeModePhase.COMPLETED) {
-            advanced
-        } else {
-            driver.finishGenerated(record, context, bodyJson)
-        }
+        if (record.phase == CodeModePhase.COMPLETED) return driver.finishGenerated(record, context, bodyJson)
+        if (record.phase != CodeModePhase.LOST || advanced !is TurnOutcome.Failure) return advanced
+        return if (CodeModeReaderTermination.ended(source)) lost(record, context, bodyJson) else advanced
     }
 
     private suspend fun advance(
@@ -218,6 +224,15 @@ internal class CodexCodeModeResume(
             cause = FailureCause.CODE_MODE_PROTOCOL,
             phase = FailurePhase.MID_OUTPUT,
         )
+}
+
+/** Only an unnamed reader death converges through LOST; named source and runtime faults keep their attribution. */
+private object CodeModeReaderTermination {
+    suspend fun ended(source: CodeModeLiveRound?): Boolean {
+        if (source?.unexpectedDeath != true) return false
+        source.outcome()
+        return true
+    }
 }
 
 /**

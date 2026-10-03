@@ -7,12 +7,15 @@
 package splice.provider.grok
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -36,6 +39,19 @@ import kotlin.io.path.readText
 private const val HANG_BACKSTOP_S = 60L
 
 class GrokAuthProviderTest {
+
+    // The prefetch tier refreshes in the background, and that refresh opens `.grok/auth.json.lock`
+    // inside the @TempDir. A test that reaches the tier passes this scope, and the hook below joins
+    // it before JUnit deletes the dir; otherwise the lock file can appear mid-cleanup and fail the
+    // test (CodexAuthTest carries the same settle).
+    private val prefetchJob = SupervisorJob()
+    private val prefetchScope = CoroutineScope(prefetchJob)
+
+    @AfterEach
+    @Timeout(HANG_BACKSTOP_S)
+    fun settlePrefetchBeforeTempDirCleanup(): Unit = runBlocking {
+        prefetchJob.children.toList().forEach { it.join() }
+    }
 
     private fun authFile(
         dir: Path,
@@ -184,6 +200,7 @@ class GrokAuthProviderTest {
             authCacheMs = 30_000L,
             clock = { now },
             refreshCall = { RefreshAttempt.Denied("test-denied") },
+            prefetchScope = prefetchScope,
         )
         assertEquals("grok-access", bearerToken(auth.credentials()))
     }
@@ -258,6 +275,7 @@ class GrokAuthProviderTest {
                 val tokens = gate.await()
                 if (tokens == null) RefreshAttempt.Denied("test-denied") else RefreshAttempt.Granted(tokens)
             },
+            prefetchScope = prefetchScope,
         )
         // returns WITHOUT the gate ever completing — direct proof the background refresh isn't awaited.
         assertEquals("grok-access", bearerToken(auth.credentials()))

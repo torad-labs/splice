@@ -59,6 +59,7 @@ import splice.upstream.memory.JvmHeap
 import splice.upstream.retry.InflightGate
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.seconds
@@ -66,9 +67,15 @@ import kotlin.time.Duration.Companion.seconds
 // why: the release probe also leaves room for an active socket and a retiring refused socket.
 private const val RELEASE_PROBE_BYTES = 24_000
 
+// why: outlive CIO 3.5.2's hidden 15-second engine deadline while staying inside native startup's bound.
+private const val SLOW_STARTUP_MS = 16_000L
+
+// why: the test owns the whole scenario; the HTTP engine must outlive its shorter phase bounds.
+private const val GATEWAY_TEST_SECONDS = 60L
+
 class StatementGatewayTest {
     @Test
-    @Timeout(60)
+    @Timeout(GATEWAY_TEST_SECONDS)
     fun `a real result request waits with a signed notice for the same raw round's next statement`(
         @TempDir tmp: Path,
     ) = runBlocking {
@@ -84,7 +91,7 @@ class StatementGatewayTest {
     }
 
     @Test
-    @Timeout(60)
+    @Timeout(GATEWAY_TEST_SECONDS)
     fun `real native Promise all batches resume on the held source before completion`(
         @TempDir tmp: Path,
     ) = runBlocking {
@@ -92,7 +99,15 @@ class StatementGatewayTest {
     }
 
     @Test
-    @Timeout(60)
+    @Timeout(GATEWAY_TEST_SECONDS)
+    fun `native startup beyond the CIO default completes inside its explicit fixture bound`(
+        @TempDir tmp: Path,
+    ) = runBlocking {
+        nativeBatch(tmp, this, "all", startupDelayMs = SLOW_STARTUP_MS)
+    }
+
+    @Test
+    @Timeout(GATEWAY_TEST_SECONDS)
     fun `real native Promise allSettled batches resume on the held source before completion`(
         @TempDir tmp: Path,
     ) = runBlocking {
@@ -100,7 +115,7 @@ class StatementGatewayTest {
     }
 
     @Test
-    @Timeout(60)
+    @Timeout(GATEWAY_TEST_SECONDS)
     fun `removing producer batch admission holds both native batches until upstream completion`(
         @TempDir tmp: Path,
     ) = runBlocking {
@@ -145,11 +160,16 @@ class StatementGatewayTest {
         }
     }
 
-    private suspend fun nativeBatch(tmp: Path, scope: CoroutineScope, batch: String) {
-        val gateway = Gateway(tmp, scope, batch)
+    private suspend fun nativeBatch(
+        tmp: Path,
+        scope: CoroutineScope,
+        batch: String,
+        startupDelayMs: Long = 0L,
+    ) {
+        val gateway = Gateway(tmp, scope, batch, startupDelayMs = startupDelayMs)
         try {
             val first = gateway.firstStep()
-            gateway.rejectUnrelated()
+            rejectUnderCpuLoad(gateway)
             val next = gateway.nextStatement(first)
             assertEquals(4, (first + next).map { it.getValue("id") }.distinct().size)
             gateway.completeBatch(next)
@@ -163,9 +183,10 @@ class StatementGatewayTest {
         private val scope: CoroutineScope,
         private val batch: String? = null,
         excludeBatchAdmission: Boolean = false,
+        startupDelayMs: Long = 0L,
     ) {
         private val upstream = StatementGatewayUpstream(batch)
-        private val runtime = StatementGatewayRuntime(excludeBatchAdmission)
+        private val runtime = StatementGatewayRuntime(excludeBatchAdmission, startupDelayMs)
         private val history = mutableListOf(Json.parseToJsonElement("""{"role":"user","content":"go"}""").jsonObject)
         private val bridge = CodexCodeModeBridge(
             CodeModeBridgeConfig(
@@ -196,7 +217,10 @@ class StatementGatewayTest {
             ),
         )
         private val head = HeadServer(provider(upstream.url, bridge), 0, deps)
-        private val client = HttpClient(CIO)
+        private val client = HttpClient(CIO) {
+            // The scenario owns its shorter native-startup and held-statement phase deadlines.
+            engine { requestTimeout = TimeUnit.SECONDS.toMillis(GATEWAY_TEST_SECONDS) }
+        }
         private val url: String get() = "http://127.0.0.1:${head.port}/v1/messages"
 
         suspend fun firstStep(): List<JsonObject> {

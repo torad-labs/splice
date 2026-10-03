@@ -4,6 +4,7 @@ import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.serialization.json.JsonPrimitive
 import splice.codemode.JvmCodeModeRuntime
 import splice.upstream.codemode.CodeModeCall
@@ -117,7 +118,10 @@ internal class StatementGatewayUpstream(private val batch: String? = null) {
 }
 
 /** Observes the real native cell without implementing parsing, admission, execution or tool publication. */
-internal class StatementGatewayRuntime(private val excludeBatchAdmission: Boolean = false) : CodeModeRuntime {
+internal class StatementGatewayRuntime(
+    private val excludeBatchAdmission: Boolean = false,
+    private val startupDelayMs: Long = 0L,
+) : CodeModeRuntime {
     val delivered = Channel<List<CodeModeResult>>(Channel.UNLIMITED)
     val started = CompletableDeferred<Unit>()
     val completed = CompletableDeferred<CodeModeStep.Completed>()
@@ -136,6 +140,7 @@ internal class StatementGatewayRuntime(private val excludeBatchAdmission: Boolea
         descriptions: Map<String, String>,
     ): CodeModeCell {
         starts.incrementAndGet()
+        delay(startupDelayMs)
         val cell = runtime.startStreaming(admit(source), tools, descriptions)
         started.complete(Unit)
         return object : CodeModeCell {

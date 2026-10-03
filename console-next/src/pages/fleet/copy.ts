@@ -2,6 +2,8 @@
 export const F = {
   title: 'Models',
   add: 'Add a command',
+  commands: 'Commands',
+  commandsWhy: 'What serves the models above: its login or key, its limits, and the order you drag them in.',
   reading: 'Reading model commands…',
   empty: 'No commands yet.',
   emptyWhy: 'Sign in with a subscription, paste an API key, or point at your own GPU.',

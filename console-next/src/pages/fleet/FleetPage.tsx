@@ -7,7 +7,8 @@ import { useAccounts, useAuth, useHealth, useHeads, useSessions, useStatus, useU
 import { poolOf } from '../../lib/accounts';
 import { fleetCard, fleetLede } from '../../lib/fleet';
 import { moveKey, setOrder, sortByOrder, useOrder } from '../../lib/order';
-import { Empty, Fault, PageHead, Plus } from '../../ui';
+import { Empty, Fault, GroupHead, PageHead, Plus } from '../../ui';
+import { ModelTable } from '../models/ModelTable';
 import { AddPlan } from './AddPlan';
 import { F } from './copy';
 import { FleetCardView } from './FleetCard';
@@ -70,28 +71,32 @@ export function FleetPage() {
           </AddPlan>
         }
       />
-      {cards.length === 0 ? <Empty title={F.empty} why={F.emptyWhy} /> : null}
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-        <SortableContext items={keys} strategy={rectSortingStrategy}>
-          <ul className="grid fit">
-            {cards.map(({ head, facts }) => (
-              <FleetCardView
-                key={head.key}
-                facts={facts}
-                fix={facts.fix === null ? null : <FleetFix fix={facts.fix} head={head} pool={poolOf(rows, head.key)} now={now} keyCommand={facts.keyCommand ?? null} />}
-              />
-            ))}
-            <li>
-              <AddPlan>
-                <button type="button" className="add-card">
-                  <b>{F.bringAnother}</b>
-                  <span>{F.bringWhy}</span>
-                </button>
-              </AddPlan>
-            </li>
-          </ul>
-        </SortableContext>
-      </DndContext>
+      <ModelTable />
+      <section className="commands" aria-label={F.commands}>
+        <GroupHead title={F.commands} count={cards.length} why={F.commandsWhy} />
+        {cards.length === 0 ? <Empty title={F.empty} why={F.emptyWhy} /> : null}
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+          <SortableContext items={keys} strategy={rectSortingStrategy}>
+            <ul className="grid fit">
+              {cards.map(({ head, facts }) => (
+                <FleetCardView
+                  key={head.key}
+                  facts={facts}
+                  fix={facts.fix === null ? null : <FleetFix fix={facts.fix} head={head} pool={poolOf(rows, head.key)} now={now} keyCommand={facts.keyCommand ?? null} />}
+                />
+              ))}
+              <li>
+                <AddPlan>
+                  <button type="button" className="add-card">
+                    <b>{F.bringAnother}</b>
+                    <span>{F.bringWhy}</span>
+                  </button>
+                </AddPlan>
+              </li>
+            </ul>
+          </SortableContext>
+        </DndContext>
+      </section>
     </>
   );
 }

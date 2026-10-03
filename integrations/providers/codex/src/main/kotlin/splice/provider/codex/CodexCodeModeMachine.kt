@@ -213,7 +213,7 @@ internal class CodexCodeModeMachine(
                 exposed = !request.disableParallel || index == 0,
             )
         }
-        registry.changes.save(request.record) { record ->
+        registry.changes.edit(request.record) { record ->
             checkIssuable(record, cell)
             record.totalCalls += calls.size
             record.pending += pending

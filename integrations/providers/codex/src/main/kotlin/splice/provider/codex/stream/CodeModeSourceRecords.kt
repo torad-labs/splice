@@ -1,4 +1,4 @@
-// NEW: source persistence is serialized with callback and result transitions on the conversation key.
+// NEW: source staging and billing commits share the callback and result transition conversation key.
 package splice.provider.codex.stream
 
 import splice.core.turn.GatewayCustomCall
@@ -16,29 +16,19 @@ internal class CodeModeSourceRecords(
     private val history: CodeModeExpiredHistory,
     private val store: CodexCodeModeStore,
 ) {
-    /** Bytes are persisted before a source view can return them to an executable cell. */
+    /** The durable no-rerun admission precedes execution; prefixes join the next client-visible batch. */
     fun append(record: CodeModeRecord, text: String) = access.withKey(record.key) {
         check(record in records && record.error == null) { "code-mode source no longer owns its record" }
-        // Completion may already have committed a longer prefix while this cursor was waking.
+        // Completion may already have staged a longer prefix while this cursor was waking.
         if (record.source.startsWith(text)) return@withKey
         check(text.startsWith(record.source)) { "dispatched source changed" }
-        val previous = record.source
         record.source = text
-        val generation = record.saveGeneration + 1
-        try {
-            store.save(records, history.entries, dirtyKeys = setOf(record.key), changedRecord = record)
-        } catch (error: CodeModePersistenceException) {
-            if (record.saveGeneration == generation) record.source = previous
-            throw error
-        }
     }
 
     /** Item completion alone is not response completion. Only the terminal round finalizes these values. */
     fun finish(record: CodeModeRecord, call: GatewayCustomCall, continuity: CodeModeContinuity, usage: Usage) =
         access.withKey(record.key) {
             check(record in records && record.error == null) { "code-mode source no longer owns its record" }
-            val previous = record.snapshot()
-            val generation = record.saveGeneration + 1
             record.outer = call.raw
             record.source = call.input
             record.continuity = continuity.logicalItems
@@ -54,18 +44,6 @@ internal class CodeModeSourceRecords(
                     usage.recordedOutputTokens,
                 ),
             )
-            try {
-                store.save(records, history.entries, dirtyKeys = setOf(record.key), changedRecord = record)
-            } catch (error: CodeModePersistenceException) {
-                if (record.saveGeneration == generation) {
-                    record.outer = previous.outer
-                    record.source = previous.source
-                    record.continuity = previous.continuity
-                    record.continuityReplay = previous.continuityReplay
-                    record.sourceState = previous.sourceState
-                }
-                throw error
-            }
         }
 
     /** A result request takes terminal billing once, and the claim survives a later restart. */

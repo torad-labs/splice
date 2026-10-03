@@ -1,4 +1,4 @@
-// NEW: source observations are durable before execution; only the response terminal certifies EOF.
+// NEW: source joins the next durable client boundary; only the response terminal certifies EOF.
 package splice.provider.codex.stream
 
 import kotlinx.coroutines.CompletableDeferred

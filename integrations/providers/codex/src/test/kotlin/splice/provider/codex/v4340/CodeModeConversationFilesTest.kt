@@ -266,10 +266,12 @@ internal class CodeModeConversationFilesTest : CodeModeFilesTestSupport() {
         try {
             val older = threads.submit {
                 registry.acceptResults(alpha, "older-digest", mapOf("call" to CodeModeResult("call", "older")))
+                registry.changes.save(alpha) {}
             }
             assertTrue(writer.olderWriting.await(5, TimeUnit.SECONDS))
             val newer = threads.submit {
                 registry.acceptResults(alpha, "newer-digest", mapOf("call" to CodeModeResult("call", "newer")))
+                registry.changes.save(alpha) {}
             }
             // The next acceptance is ordered behind the failed transition.
             writer.failOlder.countDown()
@@ -591,7 +593,7 @@ internal class CodeModeSweepFailureTest : CodeModeFilesTestSupport() {
     }
 
     @Test
-    fun `a later cell append never revives a rolled back failed acceptance`() {
+    fun `a later cell append never revives a rolled back failed batch`() {
         val failOnce = AtomicBoolean(false)
         val writer = CodeModeStateWrite { path, text ->
             if (failOnce.compareAndSet(true, false)) throw IOException("acceptance write failed")
@@ -600,9 +602,18 @@ internal class CodeModeSweepFailureTest : CodeModeFilesTestSupport() {
         val registry = registry(writer = writer)
         val earlier = registry.script("alpha", 1)
         registry.acceptResults(earlier, "prior", mapOf("one" to CodeModeResult("one", "first")))
+        registry.changes.save(earlier) {}
+        val prior = earlier.accepted.copy()
         failOnce.set(true)
+        registry.acceptResults(earlier, "failed", mapOf("two" to CodeModeResult("two", "discarded")))
         assertThrows<CodeModePersistenceException> {
-            registry.acceptResults(earlier, "failed", mapOf("two" to CodeModeResult("two", "discarded")))
+            registry.changes.save(
+                earlier,
+                undo = {
+                    it.lastDigest = "prior"
+                    it.accepted.restore(prior)
+                },
+            ) {}
         }
         registry.script("alpha", 2, "later")
         val restored = registry().recordsFor("alpha").first()

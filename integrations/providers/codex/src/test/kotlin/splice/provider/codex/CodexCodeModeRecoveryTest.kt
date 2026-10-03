@@ -28,11 +28,13 @@ class CodexCodeModeRecoveryTest : CodeModeBridgeTestSupport() {
         manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, first) { outerOutcome() }
         val id = first.tools.single().id
         stateFiles.block()
+        val failedSink = RecordingSink()
         val failed = manager.interceptor(turn(id, "A"), disableParallel = false)
-            .intercept(requestWithResult(id, "A"), RecordingSink()) { error("must not post") }
+            .intercept(requestWithResult(id, "A"), failedSink) { error("must not post") }
         assertTrue(failed is TurnOutcome.Failure)
         assertTrue((failed as TurnOutcome.Failure).message.contains("could not be saved"))
-        assertEquals(1, runtime.cell.advances)
+        assertTrue(failedSink.tools.isEmpty(), "a failed batch cannot expose new client calls")
+        assertEquals(2, runtime.cell.advances, "the completed step is captured before its batch commit")
         stateFiles.unblock()
         val retrySink = RecordingSink()
         val retried = manager.interceptor(turn(id, "A"), disableParallel = false)

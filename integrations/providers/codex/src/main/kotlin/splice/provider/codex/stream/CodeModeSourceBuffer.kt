@@ -11,7 +11,7 @@ import splice.upstream.codemode.CodeModeSourcePart
 
 private data class SourceSnapshot(val text: String, val terminal: CodeModeSourcePart? = null)
 
-/** Makes an accumulated executable prefix durable before any cursor hands it to a worker. */
+/** Joins an accumulated prefix to the conversation batch before a cursor hands it to the worker. */
 internal fun interface CodeModeSourceCommit {
     fun commit(text: String)
 }

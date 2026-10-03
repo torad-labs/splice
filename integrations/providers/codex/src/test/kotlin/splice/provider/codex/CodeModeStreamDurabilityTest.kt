@@ -30,8 +30,6 @@ import splice.upstream.sse.CustomToolSource
 import java.io.IOException
 import java.lang.ref.Reference
 import java.lang.ref.WeakReference
-import java.nio.file.Files
-import java.nio.file.Path
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.time.Duration.Companion.hours
 
@@ -160,27 +158,31 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
         fun finish(text: String) {
             capture.finish(TurnOutcome.Success(false, false, Usage(), customCalls = listOf(call.copy(input = text))))
         }
+
+        fun clientBoundary() {
+            registry.changes.save(record) {}
+        }
     }
 
     @Test
-    fun `two hundred fully buffered producer deltas force admission one read and completion`() = runBlocking {
+    fun `two hundred buffered producer deltas remain staged until a client boundary`() = runBlocking {
         val state = SourceRound()
         state.begin()
         repeat(200) { state.append("x") }
         val reader = state.capture.source.view()
         assertEquals(CodeModeSourcePart.Delta("x".repeat(200)), reader.read())
-        assertEquals("x".repeat(200), stateFiles.records().single().getValue("source").jsonPrimitive.content)
+        assertEquals("", stateFiles.records().single().getValue("source").jsonPrimitive.content)
         state.finish("x".repeat(200))
         assertEquals(CodeModeSourcePart.Complete(), reader.read())
         assertEquals(CodeModeSourcePart.Complete("x".repeat(200)), state.capture.source.view().read())
-        val receipt = Path.of("build/reports/source-force-cost.json")
-        Files.createDirectories(receipt.parent)
-        Files.writeString(receipt, "{\"deltas\":200,\"forcedWrites\":${state.forcedWrites}}\n")
-        assertEquals(3, state.forcedWrites, "forced writes for 200 producer deltas")
+        assertEquals(1, state.forcedWrites, "only the no-rerun admission is durable before visibility")
+        state.clientBoundary()
+        assertEquals("x".repeat(200), stateFiles.records().single().getValue("source").jsonPrimitive.content)
+        assertEquals(2, state.forcedWrites, "one admission and one complete conversation batch")
     }
 
     @Test
-    fun `source forces follow statement reads rather than a blanket producer delta reduction`() = runBlocking {
+    fun `source read granularity does not change the client-boundary batch count`() = runBlocking {
         val statement = listOf("await ", "tools.", "Read(", "{}", ");", "\n")
         val batched = SourceRound("statement-schedule")
         batched.begin()
@@ -188,10 +190,11 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
         repeat(20) {
             statement.forEach { fragment -> batched.append(fragment) }
             assertEquals(CodeModeSourcePart.Delta(statement.joinToString("")), reader.read())
+            batched.clientBoundary()
         }
         batched.finish(statement.joinToString("").repeat(20))
         assertEquals(CodeModeSourcePart.Complete(), reader.read())
-        assertEquals(22, batched.forcedWrites, "admission, twenty durable statement reads and completion")
+        assertEquals(21, batched.forcedWrites, "admission and twenty client-visible batches")
 
         val location = stateLocation()
         val eagerLocation = CodeModeStateLocation(
@@ -201,26 +204,28 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
         val eager = SourceRound("eager-schedule", eagerLocation)
         eager.begin()
         val eagerReader = eager.capture.source.view()
-        repeat(200) {
+        repeat(200) { index ->
             eager.append("x")
             assertEquals(CodeModeSourcePart.Delta("x"), eagerReader.read())
+            if ((index + 1) % 10 == 0) eager.clientBoundary()
         }
         eager.finish("x".repeat(200))
         assertEquals(CodeModeSourcePart.Complete(), eagerReader.read())
-        assertEquals(202, eager.forcedWrites, "one read per delta retains one force per delta")
+        assertEquals(21, eager.forcedWrites, "extra source reads never add durability boundaries")
     }
 
     @Test
-    fun `a refused consumption write cannot hand undurable source bytes to a cell`() = runBlocking {
+    fun `a refused client boundary keeps staged source out of durable client state`() = runBlocking {
         val state = SourceRound()
         state.begin()
         state.refuseWrites = true
         state.append("await tools.Read({});")
         val reader = state.capture.source.view()
-        assertThrows(CodeModePersistenceException::class.java) { runBlocking { reader.read() } }
+        assertEquals(CodeModeSourcePart.Delta("await tools.Read({});"), reader.read())
+        assertThrows(CodeModePersistenceException::class.java) { state.clientBoundary() }
         assertEquals("", stateFiles.records().single().getValue("source").jsonPrimitive.content)
         state.refuseWrites = false
-        assertEquals(CodeModeSourcePart.Delta("await tools.Read({});"), reader.read())
+        state.clientBoundary()
         assertEquals("await tools.Read({});", stateFiles.records().single().getValue("source").jsonPrimitive.content)
     }
 
@@ -255,21 +260,17 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
     }
 
     @Test
-    fun `a failed terminal save restores every in-memory field and never marks the source complete`() {
+    fun `terminal source remains unclaimed when its durable billing boundary fails`() {
         val state = SourceState()
-        val before = state.record.snapshot()
         stateFiles.block()
-        assertThrows(CodeModePersistenceException::class.java) {
-            state.source.finish(state.record, state.terminal, state.continuity, Usage(outputTokens = 7))
-        }
+        state.source.finish(state.record, state.terminal, state.continuity, Usage(outputTokens = 7))
+        assertTrue(state.record.sourceState?.complete == true)
+        assertThrows(CodeModePersistenceException::class.java) { state.source.consume(state.record) }
+        assertFalse(state.record.sourceState?.consumed == true)
         stateFiles.unblock()
-        assertEquals(before.outer, state.record.outer)
-        assertEquals(before.source, state.record.source)
-        assertEquals(before.continuity, state.record.continuity)
-        assertEquals(before.continuityReplay, state.record.continuityReplay)
-        assertEquals(before.sourceState, state.record.sourceState)
-        assertFalse(state.record.sourceState?.complete == true)
         assertFalse(stateFiles.records().single()["sourceState"].toString().contains("\"complete\":true"))
+        assertEquals(7L, state.source.consume(state.record)?.outputTokens)
+        assertTrue(stateFiles.records().single()["sourceState"].toString().contains("\"consumed\":true"))
     }
 
     @Test

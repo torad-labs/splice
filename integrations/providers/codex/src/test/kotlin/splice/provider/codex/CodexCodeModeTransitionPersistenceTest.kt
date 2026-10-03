@@ -213,7 +213,7 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
      *  ConcurrentModificationException killed the reader with the script's source unended. A driver's change
      *  now waits for the key the reader's save holds. */
     @Test
-    fun `a driver change to a live record waits while the source reader saves it`() {
+    fun `a driver change waits while a staged source client boundary saves its record`() {
         val saving = CountDownLatch(1)
         val release = CountDownLatch(1)
         val hold = AtomicBoolean(false)
@@ -239,7 +239,7 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
         val pool = Executors.newFixedThreadPool(2)
         try {
             hold.set(true)
-            val reader = pool.submit { registry.source.append(record, record.source + "; await tools.Read({});") }
+            val reader = pool.submit { commitSourceBoundary(registry, record) }
             assertTrue(saving.await(WAIT_SECONDS, TimeUnit.SECONDS), "the reader's save never reached the disk")
             val driverThread = CompletableFuture<Thread>()
             val driver = pool.submit {
@@ -262,7 +262,7 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
     }
 
     @Test
-    fun `new pending calls wait for a source save after the worker advances`() {
+    fun `new pending calls wait for a source client boundary after the worker advances`() {
         val advancing = CountDownLatch(1)
         val advance = CountDownLatch(1)
         val advanced = CountDownLatch(1)
@@ -300,7 +300,7 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
             }
             assertTrue(advancing.await(WAIT_SECONDS, TimeUnit.SECONDS), "the worker never reached its advance")
             hold.set(true)
-            val reader = pool.submit { registry.source.append(record, record.source + "; await tools.Read({});") }
+            val reader = pool.submit { commitSourceBoundary(registry, record) }
             assertTrue(saving.await(WAIT_SECONDS, TimeUnit.SECONDS), "the source reader never held its save")
             advance.countDown()
             assertTrue(advanced.await(WAIT_SECONDS, TimeUnit.SECONDS), "the worker never left its advance latch")
@@ -317,6 +317,11 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
             release.countDown()
             pool.shutdownNow()
         }
+    }
+
+    private fun commitSourceBoundary(registry: CodexCodeModeRegistry, record: CodeModeRecord) {
+        registry.source.append(record, record.source + "; await tools.Read({});")
+        registry.changes.save(record) {}
     }
 
     private fun awaitPendingKey(thread: Thread) {

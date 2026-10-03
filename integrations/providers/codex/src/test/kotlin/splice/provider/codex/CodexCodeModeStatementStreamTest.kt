@@ -196,7 +196,7 @@ class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
 
     @Test
     @Timeout(20)
-    fun `failed result save cannot deliver a result to the live worker`() = runBlocking {
+    fun `failed result batch exposes no callback and retries the captured live worker step once`() = runBlocking {
         val runtime = IncrementalRuntime()
         val manager = bridge(runtime)
         val sink = StepSink()
@@ -205,12 +205,14 @@ class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
             manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, post)
             val first = sink.callback.await()
             stateFiles.block()
-            val failed = manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
-                .intercept(history(listOf(first)), StepSink(), post)
-            assertTrue(failed is TurnOutcome.Failure)
-            assertTrue(runtime.delivered.flatten().isEmpty())
-            stateFiles.unblock()
             post.gates[1].complete(Unit)
+            val failedSink = StepSink()
+            val failed = manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
+                .intercept(history(listOf(first)), failedSink, post)
+            assertTrue(failed is TurnOutcome.Failure)
+            assertFalse(failedSink.callback.isCompleted, "no callback can escape a failed batch commit")
+            assertEquals(listOf("result-0"), runtime.delivered.flatten().map(CodeModeResult::output))
+            stateFiles.unblock()
             val resumed = manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
                 .intercept(history(listOf(first)), StepSink(), post)
             assertTrue(resumed is TurnOutcome.Success, resumed.toString())

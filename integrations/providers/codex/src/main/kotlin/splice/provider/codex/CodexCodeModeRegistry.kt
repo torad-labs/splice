@@ -236,7 +236,6 @@ internal class CodexCodeModeRegistry(
         } else {
             cells[record.id] = cell
             record.phase = CodeModePhase.ACTIVE
-            store.save(records, history.entries, dirtyKeys = setOf(record.key), changedRecord = record)
             true
         }
     }
@@ -346,23 +345,9 @@ internal class CodexCodeModeRegistry(
         supplied: Map<String, CodeModeResult>,
         media: Map<String, List<JsonElement>> = emptyMap(),
     ) = access.withKey(record.key) {
-        val priorDigest = record.lastDigest
-        val priorTime = record.updatedAt
-        val prior = record.accepted.copy()
+        // The prior issuance is already durable. New results and the worker's next step commit together.
         record.lastDigest = digest
         record.updatedAt = config.clock.millis()
         record.accepted.accept(supplied, media)
-        val snapshotGeneration = record.saveGeneration + 1
-        try {
-            store.save(records, history.entries, dirtyKeys = setOf(record.key), changedRecord = record)
-        } catch (error: CodeModePersistenceException) {
-            // A later snapshot may already contain a newer acceptance or completed cell.
-            if (record.saveGeneration == snapshotGeneration) {
-                record.lastDigest = priorDigest
-                record.updatedAt = priorTime
-                record.accepted.restore(prior)
-            }
-            throw error
-        }
     }
 }

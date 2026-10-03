@@ -12,10 +12,10 @@ internal fun interface CodeModeRecordChange {
 
 /**
  * Every change the script's driver makes to a live record, made under the record's conversation key. The
- * source reader snapshots a record under that key each time it saves a streamed script delta
- * (CodeModeSourceRecords). The driver added its tool calls outside it, so the snapshot's iteration met the
- * add, and the ConcurrentModificationException killed the reader with the script's source unended: on
- * Oct 2, under load, a session's script waited forever.
+ * source reader stages prefixes under that key (CodeModeSourceRecords), and a client-visible boundary
+ * snapshots the whole batch while holding it. The driver once added tool calls outside that key, so a
+ * snapshot's iteration met the add and ConcurrentModificationException killed the source reader. Source,
+ * result and driver mutations now share the key; only the visible boundary performs the durable save.
  */
 internal class CodeModeRecordChanges(
     private val access: CodeModeRegistryAccess,

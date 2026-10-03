@@ -10,6 +10,9 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertInstanceOf
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
@@ -29,20 +32,27 @@ class UpstreamEventTimingTest {
     @ValueSource(strings = ["completed", "torn", "cancelled"])
     fun `terminal silence is measured with the actual ending kind`(ending: String) = runTest {
         val perf = TurnPerf { testScheduler.currentTime }
+        val cancellation = CancellationException("synthetic cancellation")
         val events = flow {
             emit(text)
             delay(40_000)
             when (ending) {
                 "torn" -> throw SocketException("synthetic reset")
-                "cancelled" -> throw CancellationException("synthetic cancellation")
+                "cancelled" -> throw cancellation
             }
         }
+        var failure: Throwable? = null
         try {
             UpstreamEventTiming(perf, 0).observe(events).toList()
-        } catch (_: CancellationException) {
-            assertEquals("cancelled", ending)
-        } catch (_: SocketException) {
-            assertEquals("torn", ending)
+        } catch (cancelled: CancellationException) {
+            failure = cancelled
+        } catch (torn: SocketException) {
+            failure = torn
+        }
+        when (ending) {
+            "cancelled" -> assertSame(cancellation, failure)
+            "torn" -> assertInstanceOf(SocketException::class.java, failure)
+            else -> assertNull(failure)
         }
         assertEquals(40_000L, perf.snapshot().counters[PerfKeys.UP_GAP_MAX_MS])
         assertEquals(1L, perf.snapshot().counters[PerfKeys.UP_GAPS_2S])
@@ -91,8 +101,29 @@ class UpstreamEventTimingTest {
     }
 
     @Test
+    fun `role openings with null or empty content report message start`() = runTest {
+        for (raw in listOf(
+            """{"choices":[{"delta":{"role":"assistant","content":null}}]}""",
+            """{"choices":[{"delta":{"role":"assistant","content":""}}]}""",
+            """{"choices":[{"delta":{"role":"assistant"}}]}""",
+        )) {
+            val perf = TurnPerf { testScheduler.currentTime }
+            val events = flow {
+                delay(9_000)
+                emit(Json.parseToJsonElement(raw).jsonObject)
+            }
+            UpstreamEventTiming(perf, 0).observe(events).toList()
+            assertEquals(UpstreamGapEnd.MESSAGE_START, perf.snapshot().upstreamGapEnd, raw)
+        }
+    }
+
+    @Test
     fun `empty chat fields never hide content in another field or choice`() = runTest {
         for ((raw, kind) in listOf(
+            """{"choices":[{"delta":{},"message":{"content":"synthetic"},"finish_reason":"stop"}]}""" to
+                UpstreamGapEnd.TEXT_DELTA,
+            """{"choices":[{"delta":{},"message":{"reasoning_content":"synthetic"},"finish_reason":"stop"}]}""" to
+                UpstreamGapEnd.THINKING_DELTA,
             """{"choices":[{"delta":{"reasoning_content":null,"content":"synthetic"}}]}""" to UpstreamGapEnd.TEXT_DELTA,
             """{"choices":[{"delta":{"reasoning_content":"","content":"synthetic"}}]}""" to UpstreamGapEnd.TEXT_DELTA,
             """{"choices":[{"delta":{"tool_calls":[{"function":{"arguments":""}}],"content":"synthetic"}}]}""" to
@@ -117,6 +148,7 @@ class UpstreamEventTimingTest {
     @Test
     fun `done-only Responses payloads end content silence`() = runTest {
         for (raw in listOf(
+            """{"type":"response.done","response":{"output":[{"type":"message","content":[{"text":"synthetic"}]}]}}""",
             """{"type":"response.function_call_arguments.done","output_index":0,"arguments":"{}"}""",
             """{"type":"response.output_item.done","item":{"type":"reasoning","summary":[{"text":"synthetic"}]}}""",
             """{"type":"response.completed","response":{"output":[{"type":"message","content":[{"text":"synthetic"}]}]}}""",
@@ -156,6 +188,8 @@ class UpstreamEventTimingTest {
     @Test
     fun `served Responses and chat events carry semantic kinds`() = runTest {
         for ((raw, expected) in listOf(
+            """{"type":"response.done","response":{"output":[{"type":"message","content":[{"text":"synthetic"}]}]}}""" to
+                UpstreamGapEnd.COMPLETED,
             """{"type":"response.reasoning_summary_text.delta","delta":"synthetic"}""" to UpstreamGapEnd.THINKING_DELTA,
             """{"type":"response.reasoning_text.delta","delta":"synthetic"}""" to UpstreamGapEnd.THINKING_DELTA,
             """{"type":"response.output_text.delta","delta":"synthetic"}""" to UpstreamGapEnd.TEXT_DELTA,

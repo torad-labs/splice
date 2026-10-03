@@ -20,6 +20,7 @@ import splice.app.daemon.BootedTopology
 import splice.app.daemon.DaemonMaterializer
 import splice.app.daemon.TopologyStaleness
 import splice.app.launch.HookProcessExec
+import splice.app.probe.PlaygroundProviders
 import splice.app.probe.UpstreamPlaygroundProbe
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ModelRosters
@@ -104,11 +105,12 @@ internal class ControlPlane(
     internal val budgets = ConsoleWiring.budgetStore(statePaths)
     internal val alerts = ConsoleWiring.alertStore(statePaths)
 
-    /** V4-133: POST /api/playground's ONE upstream probe. Built from [topology]'s booted path (not
-     *  the Topology object itself — see UpstreamPlaygroundProbe's header for why it re-parses fresh
-     *  per call) so a null path (a daemon booted without a config file) degrades the same way
-     *  [ConsoleWiring.wire]'s topology writer does. */
-    internal val playground = UpstreamPlaygroundProbe(topology.path)
+    /** V4-444: each assembled head's provider, registered by ManagedHeadFactory, so the Playground sends
+     *  through the head's own request builder rather than a hand-built copy of it. */
+    internal val playgroundProviders = PlaygroundProviders()
+
+    /** V4-133: POST /api/playground's ONE upstream probe, sending through [playgroundProviders]. */
+    internal val playground = UpstreamPlaygroundProbe(playgroundProviders)
 
     /** V4-134: the daemon's ONE console event bus and the publisher every head reports through. Held
      *  here, like [probeScope], because both sides of it hang off this class: Daemon hands [console]

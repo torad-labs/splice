@@ -8,6 +8,7 @@ import kotlinx.coroutines.CoroutineScope
 import splice.accounts.order.ACCOUNT_ORDER_FILE
 import splice.accounts.order.AccountOrderStore
 import splice.app.control.ManagedHead
+import splice.app.probe.PlaygroundProviders
 import splice.app.provider.ProviderAssembly
 import splice.app.provider.ProviderBuild
 import splice.app.provider.Wired
@@ -66,6 +67,8 @@ internal class ManagedHeadFactory(
         QuotaPoller(probeScope, head, probe, QuotaSnapshotSink(tracker::record), log, intervalMs = intervalMs).start()
     },
     private val onPrimaryQuota: OnPrimaryQuota = OnPrimaryQuota { _ -> },
+    /** V4-444: where each assembled head's provider is registered for the Playground's one call. */
+    private val playgroundProviders: PlaygroundProviders = PlaygroundProviders(),
 ) {
     private val quotaProbes by lazy { QuotaProbes(AuthHttpClientFactory().create()) }
     private val accountPools = HeadAccountPools()
@@ -84,7 +87,7 @@ internal class ManagedHeadFactory(
             trace = cfg.trace,
             traceWritten = ctx.head.overrides[Knob.TRACE.key],
         )
-        val wired = providerAssembly.buildProvider(ctx)
+        val wired = wired(ctx)
         val accountQuotas = accountQuotas(key, wired)
         val primaryQuota = wired.accounts.singleOrNull { it.primary }
             ?.let { accountQuotas.getValue(it.label) }
@@ -133,6 +136,10 @@ internal class ManagedHeadFactory(
             accountAuth = accountPools.authSource(wired),
         )
     }
+
+    /** The head's provider and auth, its provider registered for the Playground's one call (V4-444). */
+    private fun wired(ctx: ProviderBuild): Wired =
+        providerAssembly.buildProvider(ctx).also { playgroundProviders.register(ctx.key, it.provider) }
 
     /** Every file-backed store one head owns, built from its state paths. Its own method because
      *  the head WRITES these and the control-plane adapters READ them, and both must hold the SAME

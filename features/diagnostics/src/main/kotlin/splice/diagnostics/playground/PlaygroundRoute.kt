@@ -16,12 +16,12 @@
 // request/response pair lives in the HTTP response body and nowhere else, matching the doctor
 // page's own PlaygroundState comment ("no store, no storage, no history").
 //
-// DELIBERATELY MINIMAL, NOT A SECOND TRANSLATION PIPELINE. A real turn carries tool schemas, the
-// system prompt layers, compaction and cache-control markers — reproducing that here would
-// duplicate :daemon-head's dialect modules, incorrectly, outside their own tests. The playground sends
-// exactly what "one prompt through one head" says: the head's pinned model, or the model the body
-// names (V4-444: the console's Playground compares models, two on one head as readily as two
-// heads), and the prompt text, nothing else. See PlaygroundProbe.kt (:app) for the per-dialect request shape.
+// ONE PROMPT, THROUGH THE TURN'S OWN BUILDER, NOT A SECOND TRANSLATION PIPELINE. The playground sends what
+// "one prompt through one head" says: the one-message turn Claude Code would send with the prompt, on the
+// head's pinned model or the model the body names (V4-444: the console's Playground compares models, two on
+// one head as readily as two heads). The head's own provider builds the upstream request from that turn, the
+// way it builds every real one, so the body, URL and headers are a turn's (V4-444: a hand-built copy per
+// dialect drifted, and ChatGPT refused every send). See UpstreamPlaygroundProbe.kt (:app).
 package splice.diagnostics.playground
 
 import io.ktor.http.HttpStatusCode
@@ -53,11 +53,9 @@ public data class PlaygroundResult(val request: JsonElement, val response: JsonE
  *  a network failure). */
 public data class PlaygroundFailure(val message: String) : PlaygroundOutcome()
 
-/** The daemon's one upstream probe, implemented in :app where the real upstream client, topology
- *  and credentials already live. [PlaygroundHead] is enough for it to resolve the rest itself: the
- *  head's key names it in the topology this call re-reads fresh (playground runs are rare and
- *  interactive; a per-call read is simpler than threading a cached Topology through ControlPlane
- *  for one route). */
+/** The daemon's one upstream probe, implemented in :app where the heads' providers and credentials
+ *  already live. [PlaygroundHead] is enough for it to resolve the rest itself: the head's key names
+ *  the provider the daemon assembled that head with, and the probe builds and sends through it. */
 public fun interface PlaygroundProbe {
     /** [model] is the model to run, or null for the head's pinned model. */
     public suspend fun run(head: PlaygroundHead, prompt: String, model: String?): PlaygroundOutcome

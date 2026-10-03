@@ -5,17 +5,18 @@
 // that name in splice.control.api, and a same-named concrete class one package over is exactly the
 // self-referential-import confusion a route implemented beside its own port would invite.
 //
-// ONE SHOT, NO PIPELINE — see PlaygroundRoute.kt's header for the full reason (never recorded means
-// the whole turn pipeline, not only the console). This bypasses :daemon-head's TurnDriver and every
-// dialect module and builds the smallest legal request per dialect directly: no tools, no system
-// prompt, no streaming, no retry loop, no perf/trace/economics write. The credential and topology
-// are read exactly as the daemon's own turn path resolves them (PlaygroundHead.auth, which is the
-// head's own ManagedHead.auth, and a fresh parse of the booted config file) so a playground failure
-// means what it says about that head's real config, never an artifact of a second, drifted resolution path.
+// THE TURN'S OWN REQUEST (V4-444): the body is what the head's own provider builds (Provider.buildTurn)
+// from the one-message turn Claude Code would send with this prompt, posted to the provider's own URL
+// under the provider's and the turn's headers, composed by the transport's own UpstreamHeaders. Until
+// marlin's check of 0e22c018b this file hand-built each dialect's body, a second copy of the request
+// shape that had drifted from the turn path: ChatGPT refused every send with 400 "Input must be a list".
+// One builder means the Playground succeeds and fails exactly where a turn would.
 //
-// A FRESH TOPOLOGY READ, NOT THE BOOTED OBJECT: playground runs are rare and interactive, so a
-// per-call re-parse is simpler than threading a cached Topology through ControlPlane for one route
-// — and it reads whatever an operator last saved, matching /api/topology's own read-fresh contract.
+// ONE SHOT, NO PIPELINE — see PlaygroundRoute.kt's header for the full reason (never recorded means the
+// whole turn pipeline, not only the console). This bypasses :daemon-head's TurnDriver: no retry loop, no
+// account rotation, no perf, trace or economics write. The builder writes nothing for a turn with no tools
+// (code mode engages only on one that has them). The credential is the head's own (PlaygroundHead.auth,
+// which is ManagedHead.auth, the same instance the head's provider was built with).
 package splice.app.probe
 
 import io.ktor.client.HttpClient
@@ -29,15 +30,14 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.add
+import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
-import splice.core.topology.Dialect
-import splice.core.topology.ProviderConfig
-import splice.core.topology.Topology
+import splice.core.parse.AnthropicParse
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import splice.diagnostics.playground.PlaygroundFailure
@@ -45,16 +45,16 @@ import splice.diagnostics.playground.PlaygroundHead
 import splice.diagnostics.playground.PlaygroundOutcome
 import splice.diagnostics.playground.PlaygroundProbe
 import splice.diagnostics.playground.PlaygroundResult
-import splice.topology.TopologyLoader
+import splice.upstream.BuiltTurn
+import splice.upstream.Provider
 import splice.upstream.transport.HeaderRedaction
-import java.nio.file.Files
-import java.nio.file.Path
+import splice.upstream.transport.UpstreamHeaders
 
 // why: matches UpstreamTransport's own connect budget — a playground probe is not a special client.
 private const val CONNECT_TIMEOUT_MS = 10_000L
 
-// why: one interactive turn, not a streamed conversation, so a full minute is generous rather than
-// tight — long enough for a slow vendor to answer without holding the route open indefinitely.
+// why: one interactive turn, not a conversation, so a full minute is generous rather than tight — long
+// enough for a slow vendor to finish its stream without holding the route open indefinitely.
 private const val REQUEST_TIMEOUT_MS = 60_000L
 
 // why: a playground reply is a debugging echo of ONE turn, not a served conversation — capped well
@@ -64,8 +64,29 @@ private const val MAX_RESPONSE_CHARS = 200_000
 // why: a minimal probe still needs an answer longer than a one-line ack to be useful to read.
 private const val PLAYGROUND_MAX_TOKENS = 1024
 
+/** The one-message turn Claude Code sends with a prompt: what the head's provider builds the upstream request from. */
+internal object PlaygroundTurn {
+    /** The turn with [prompt] on [model], as the JSON text Claude Code posts. */
+    fun of(model: String, prompt: String): String = buildJsonObject {
+        put("model", model)
+        put("max_tokens", PLAYGROUND_MAX_TOKENS)
+        put("stream", true)
+        putJsonArray("messages") {
+            addJsonObject {
+                put("role", "user")
+                putJsonArray("content") {
+                    addJsonObject {
+                        put("type", "text")
+                        put("text", prompt)
+                    }
+                }
+            }
+        }
+    }.toString()
+}
+
 internal class UpstreamPlaygroundProbe(
-    private val configPath: Path?,
+    private val providers: PlaygroundProviders,
     private val client: HttpClient = HttpClient(Java) {
         install(HttpTimeout) {
             connectTimeoutMillis = CONNECT_TIMEOUT_MS
@@ -78,34 +99,11 @@ internal class UpstreamPlaygroundProbe(
 
     // Each step below is its own function (ReturnCount: max 3 per function) rather than one long
     // chain of guards — the same split CaptureRoutes.write/PlaygroundRoute.run use for the same wall.
-    override suspend fun run(head: PlaygroundHead, prompt: String, model: String?): PlaygroundOutcome {
-        val path = configPath
-            ?: return PlaygroundFailure("no topology file; this daemon has no configured provider")
-        val topology = readTopology(path).getOrElse { return PlaygroundFailure(SafeFailureText.render(it)) }
-        return resolveProvider(topology, head, prompt, model)
-    }
-
     /** [model] null runs the head's pinned model. A named one is sent as written, and an id its provider
      *  does not serve comes back as the provider's own answer, shown like any other. */
-    private suspend fun resolveProvider(
-        topology: Topology,
-        head: PlaygroundHead,
-        prompt: String,
-        model: String?,
-    ): PlaygroundOutcome {
-        val headConfig = topology.heads[head.key]
-            ?: return PlaygroundFailure("head '${head.key}' is not in the current topology")
-        val provider = topology.providers[headConfig.provider]
-            ?: return PlaygroundFailure("provider '${headConfig.provider}' is not declared")
-        return resolveCredentials(provider, model ?: headConfig.pinnedModel, head, prompt)
-    }
-
-    private suspend fun resolveCredentials(
-        provider: ProviderConfig,
-        model: String,
-        head: PlaygroundHead,
-        prompt: String,
-    ): PlaygroundOutcome {
+    override suspend fun run(head: PlaygroundHead, prompt: String, model: String?): PlaygroundOutcome {
+        val provider = providers[head.key]
+            ?: return PlaygroundFailure("head '${head.key}' has no running provider to send through")
         val creds = Cancellables.runCatchingCancellable { head.auth.credentials() }
             .getOrElse { return PlaygroundFailure("reading credentials failed: ${SafeFailureText.render(it)}") }
         return when {
@@ -114,33 +112,38 @@ internal class UpstreamPlaygroundProbe(
                 val why = "head '${head.key}' forwards the caller's own auth; playground has none to send"
                 PlaygroundFailure(why)
             }
-            else -> call(provider, model, creds, prompt)
+            else -> build(provider, creds, model ?: provider.pinnedModel, prompt)
         }
     }
 
-    private suspend fun call(
-        provider: ProviderConfig,
-        model: String,
+    private suspend fun build(
+        provider: Provider,
         creds: Credentials,
+        model: String,
         prompt: String,
     ): PlaygroundOutcome {
-        val url = upstreamUrl(provider)
-        val bodyElement = requestBody(provider.dialect, model, prompt)
-        val auth = authHeaders(creds)
-        val allHeaders = provider.staticHeaders + auth
+        val turn = Cancellables.runCatchingCancellable {
+            provider.buildTurn(AnthropicParse.parseAnthropicBody(PlaygroundTurn.of(model, prompt)), false, null)
+        }.getOrElse { return PlaygroundFailure("building the request failed: ${SafeFailureText.render(it)}") }
+        return send(provider, creds, turn)
+    }
+
+    private suspend fun send(provider: Provider, creds: Credentials, turn: BuiltTurn): PlaygroundOutcome {
+        val url = provider.upstreamUrl
+        val headers = UpstreamHeaders.compose(creds, provider.extraHeaders(creds) + turn.extraHeaders)
         val sent = Cancellables.runCatchingCancellable {
             client.post(url) {
-                headers { allHeaders.forEach { (name, value) -> append(name, value) } }
+                headers { headers.forEach { (name, value) -> append(name, value) } }
                 contentType(ContentType.Application.Json)
-                setBody(bodyElement.toString())
+                setBody(turn.requestBody.toString())
             }
         }.getOrElse { return PlaygroundFailure("upstream call to $url failed: ${SafeFailureText.render(it)}") }
         val bodyText = sent.bodyAsText().take(MAX_RESPONSE_CHARS)
         val requestJson = buildJsonObject {
             put("url", url)
             put("method", "POST")
-            putJsonObject("headers") { redactedHeaders(allHeaders, auth).forEach { (k, v) -> put(k, v) } }
-            put("body", bodyElement)
+            putJsonObject("headers") { redacted(headers, creds).forEach { (k, v) -> put(k, v) } }
+            put("body", turn.requestBody)
         }
         val responseJson = buildJsonObject {
             put("status", sent.status.value)
@@ -149,45 +152,14 @@ internal class UpstreamPlaygroundProbe(
         return PlaygroundResult(requestJson, responseJson)
     }
 
-    private fun readTopology(path: Path): Result<Topology> = Cancellables.runCatchingCancellable {
-        TopologyLoader.parse(Files.readString(path))
-    }
-
-    private fun upstreamUrl(provider: ProviderConfig): String = when (provider.dialect) {
-        Dialect.ANTHROPIC_PASSTHROUGH -> "${provider.baseUrl}/v1/messages"
-        Dialect.OPENAI_RESPONSES -> "${provider.baseUrl}/responses"
-        Dialect.OPENAI_CHAT -> "${provider.baseUrl}/chat/completions"
-    }
-
-    private fun requestBody(dialect: Dialect, model: String, prompt: String): JsonElement = when (dialect) {
-        Dialect.ANTHROPIC_PASSTHROUGH -> buildJsonObject {
-            put("model", model)
-            put("max_tokens", PLAYGROUND_MAX_TOKENS)
-            putJsonArray("messages") { add(userMessage(prompt)) }
-        }
-        Dialect.OPENAI_RESPONSES -> buildJsonObject {
-            put("model", model)
-            put("input", prompt)
-        }
-        Dialect.OPENAI_CHAT -> buildJsonObject {
-            put("model", model)
-            putJsonArray("messages") { add(userMessage(prompt)) }
+    /** Every header that may carry a credential, by the trace's own rule, and the credential's own header by
+     *  name whatever it is called, read as redacted. */
+    private fun redacted(headers: Map<String, String>, creds: Credentials): Map<String, String> {
+        val own = CredentialKey.headers(creds, emptyMap()).keys.map(String::lowercase).toSet()
+        return HeaderRedaction.redact(headers).mapValues { (name, value) ->
+            if (name.lowercase() in own) HeaderRedaction.REDACTED else value
         }
     }
-
-    private fun userMessage(prompt: String): JsonElement = buildJsonObject {
-        put("role", "user")
-        put("content", prompt)
-    }
-
-    private fun authHeaders(creds: Credentials): Map<String, String> = when (creds) {
-        is Credentials.Bearer -> mapOf("Authorization" to "Bearer ${creds.token}")
-        is Credentials.ApiKey -> mapOf(creds.header to "${creds.prefix}${creds.key}")
-        Credentials.ClientForwarded -> emptyMap()
-    }
-
-    private fun redactedHeaders(all: Map<String, String>, auth: Map<String, String>): Map<String, String> =
-        all.mapValues { (name, value) -> if (name in auth) HeaderRedaction.REDACTED else value }
 
     private fun parseOrRaw(text: String): JsonElement =
         Cancellables.runCatchingCancellable { json.parseToJsonElement(text) }.getOrElse {

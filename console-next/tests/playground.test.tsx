@@ -8,8 +8,8 @@ import { MemoryRouter } from 'react-router';
 import { describe, expect, test } from 'vitest';
 import { keys } from '../src/api/queries';
 import { modelsKey } from '../src/api/models';
-import { MAX_LANES, answerOf, canTry, defaultLanes, laneKeys, laneParam, lanesOf, lanesSearch, nextLane } from '../src/lib/playground';
-import { PlaygroundPage } from '../src/pages/playground/PlaygroundPage';
+import { MAX_LANES, answerOf, canTry, defaultLanes, laneKeys, laneParam, lanesOf, lanesSearch, nextLane, refuserOf } from '../src/lib/playground';
+import { PlaygroundPage, Reply } from '../src/pages/playground/PlaygroundPage';
 import { Health } from '../src/pages/settings/Sections';
 import type { HeadStatus } from '../src/types/core';
 import type { CatalogModel, HeadCatalog } from '../src/types/models';
@@ -98,12 +98,52 @@ describe('an answer, read in each dialect', () => {
     expect(answerOf(200, stream([{ type: 'response.failed', response: { error: { message: 'model not found' } } }])).error).toBe('model not found');
   });
 
+  test('a refusal\'s detail is its sentence, as ChatGPT words one, and a list of details is read message by message', () => {
+    expect(answerOf(400, { detail: 'Input must be a list' }).error).toBe('Input must be a list');
+    expect(answerOf(422, { detail: [{ loc: ['body', 'input'], msg: 'field required' }, { msg: 'value is not a list' }] }).error).toBe('field required. value is not a list');
+  });
+
   test('a provider\'s error sentence is read only from a reply whose status failed, and a raw body is its own text', () => {
     expect(answerOf(429, { error: { message: 'rate limited' } }).error).toBe('rate limited');
     expect(answerOf(400, { error: 'bad model' }).error).toBe('bad model');
     expect(answerOf(200, { error: { message: 'not a failure' } }).error).toBeNull();
     expect(answerOf(502, { raw: 'upstream went away' })).toEqual({ text: 'upstream went away', input: null, output: null, error: null });
     expect(answerOf(200, 'not an object')).toEqual({ text: null, input: null, output: null, error: null });
+  });
+});
+
+describe('who refused', () => {
+  test('a known host is named as people name it, and any other host is named by itself', () => {
+    expect(refuserOf('https://chatgpt.com/backend-api/codex/responses')).toBe('ChatGPT');
+    expect(refuserOf('https://openrouter.ai/api/v1/chat/completions')).toBe('OpenRouter');
+    expect(refuserOf('https://api.x.ai/v1/responses')).toBe('xAI');
+    expect(refuserOf('https://api.anthropic.com/v1/messages')).toBe('Anthropic');
+    expect(refuserOf('http://127.0.0.1:8080/v1/chat/completions')).toBe('127.0.0.1:8080');
+    expect(refuserOf('not a url')).toBe('not a url');
+  });
+
+  const exchange = (status: number, body: unknown, url = 'https://chatgpt.com/backend-api/codex/responses') => ({
+    request: { url, method: 'POST', headers: {}, body: {} },
+    response: { status, body },
+  });
+
+  test('a refusal says who refused and what it said, and never that the reply carries no text', () => {
+    const html = renderToStaticMarkup(<Reply exchange={exchange(400, { detail: 'Input must be a list' })} took={420} />);
+    expect(html).toContain('ChatGPT refused the request: Input must be a list');
+    expect(html).toContain('Status 400 after 0.4 s');
+    expect(html).not.toContain('Answered with');
+    expect(html).not.toContain('carries no text');
+  });
+
+  test('a refusal with no sentence in it still says who refused, and its status', () => {
+    const html = renderToStaticMarkup(<Reply exchange={exchange(503, { raw: '' }, 'https://openrouter.ai/api/v1/chat/completions')} took={null} />);
+    expect(html).toContain('OpenRouter refused the request with status 503.');
+  });
+
+  test('an answer says it answered, and an error its stream reported says who stopped', () => {
+    expect(renderToStaticMarkup(<Reply exchange={exchange(200, { output: [{ type: 'message', content: [{ type: 'output_text', text: 'hi' }] }] })} took={1500} />)).toContain('Answered with 200 in 1.5 s');
+    const stopped = { raw: `data: ${JSON.stringify({ type: 'error', error: { message: 'Overloaded' } })}\n\n` };
+    expect(renderToStaticMarkup(<Reply exchange={exchange(200, stopped, 'https://api.anthropic.com/v1/messages')} took={900} />)).toContain('Anthropic stopped with an error: Overloaded');
   });
 });
 

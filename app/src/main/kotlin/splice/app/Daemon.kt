@@ -176,6 +176,7 @@ public class Daemon(
         launchSpecFactory,
         controlPlane.probeScope,
         log,
+        playgroundProviders = controlPlane.playgroundProviders,
     )
 
     // set once in start(); the daemon is not usable before it

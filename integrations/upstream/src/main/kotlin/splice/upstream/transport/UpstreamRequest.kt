@@ -93,13 +93,22 @@ internal class HeaderRules {
  *  milliseconds. A streaming proxy wants each event as it is made; the bytes saved are not worth one held event. */
 private val IDENTITY_RESPONSE = mapOf("Accept-Encoding" to "identity")
 
+/** Every header one upstream POST carries: the credential's auth header, then the provider's and the turn's own, merged
+ *  case-insensitively, and the identity answer encoding last. One composition for every sender: a turn's attempt and the
+ *  Playground's one call (V4-444), so the Playground cannot send a header set a turn would not. */
+public object UpstreamHeaders {
+    private val rules = HeaderRules()
+
+    public fun compose(creds: Credentials, extra: Map<String, String>): Map<String, String> =
+        rules.dedupeCaseInsensitive(rules.authHeaders(creds) + extra + IDENTITY_RESPONSE)
+}
+
 internal class UpstreamRequest(
     private val client: HttpClient,
     private val zstdRequestBody: Boolean,
     /** V4-233: judges whether a plan-limit reset is still ahead; injectable so a test can pin it. */
     private val wallClock: WallClock = WallClock(System::currentTimeMillis),
 ) {
-    private val headerRules = HeaderRules()
     private val retryAfter = RetryAfter()
     private val failureRules = FailureRules()
 
@@ -116,7 +125,7 @@ internal class UpstreamRequest(
         recorder: AttemptRecorder? = null,
         timingToken: String? = null,
     ): HttpStatement {
-        val allHeaders = headerRules.dedupeCaseInsensitive(applyAuth(creds, extraHeaders(creds)) + IDENTITY_RESPONSE)
+        val allHeaders = UpstreamHeaders.compose(creds, extraHeaders(creds))
         // V4-174: the recorder sees the SAME map the wire gets, after the dedupe — redacted on the
         // way in (AttemptRecorder.request), so the credential never leaves this assembly.
         recorder?.request(allHeaders)
@@ -133,9 +142,6 @@ internal class UpstreamRequest(
             setBody(ByteArrayContent(bodyBytes, ContentType.Application.Json))
         }
     }
-
-    private fun applyAuth(creds: Credentials, extra: Map<String, String>): Map<String, String> =
-        headerRules.authHeaders(creds) + extra
 
     /** The READ-BEFORE-CLOSE half of one attempt. Status, error body and Retry-After are all
      *  extracted INSIDE the execute block because the response body channel dies at its close. */

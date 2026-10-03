@@ -9,7 +9,7 @@ import { useHeads, useStatus } from '../../api/queries';
 import { fmtInt } from '../../lib/format';
 import { colourFromRegistry } from '../../lib/model';
 import type { ModelColour } from '../../lib/model';
-import { answerOf, canTry, defaultLanes, laneKeys, lanesOf, lanesSearch, nextLane } from '../../lib/playground';
+import { answerOf, canTry, defaultLanes, laneKeys, lanesOf, lanesSearch, nextLane, refuserOf } from '../../lib/playground';
 import type { Lane } from '../../lib/playground';
 import type { HeadStatus } from '../../types/core';
 import type { HeadCatalog } from '../../types/models';
@@ -57,20 +57,27 @@ function ModelField({ lane, catalog, listId, onChange }: { lane: Lane; catalog: 
   );
 }
 
-/** What one lane's model answered: its text, how long and how many tokens it took, and the exchange itself on request. */
-function Reply({ exchange, took }: { exchange: PlaygroundWire; took: number | null }) {
+/** What one lane's model answered: its text, how long and how many tokens it took, and the exchange itself on request. A refusal says
+ *  who refused and what they said, and an error a stream reported says who stopped; the provider is named by the host it went to. */
+export function Reply({ exchange, took }: { exchange: PlaygroundWire; took: number | null }) {
   const { status, body } = exchange.response;
   const answer = answerOf(status, body);
+  const refused = status >= 400;
+  const who = refuserOf(exchange.request.url);
+  const seconds = took === null ? null : (took / 1000).toFixed(1);
   const said = [
-    took === null ? null : G.answered(status, (took / 1000).toFixed(1)),
+    seconds === null ? null : refused ? G.status(status, seconds) : G.answered(status, seconds),
     answer.input === null || answer.output === null ? null : G.tokens(fmtInt(answer.input), fmtInt(answer.output)),
   ].filter((part): part is string => part !== null);
+  const alert = refused
+    ? (answer.error === null ? G.refusedBare(who, status) : G.refused(who, answer.error))
+    : (answer.error === null ? null : G.stopped(who, answer.error));
   return (
     <>
       <p className="pg-said" role="status">{said.map((part) => <span key={part}>{part}</span>)}</p>
-      {answer.error !== null ? <p className="hint alert" role="alert">{answer.error}</p> : null}
-      {answer.error === null && answer.text !== null ? <div className="pg-text"><Markdown>{answer.text}</Markdown></div> : null}
-      {answer.error === null && answer.text === null ? <p className="hint">{G.noText}</p> : null}
+      {alert === null ? null : <p className="hint alert" role="alert">{alert}</p>}
+      {alert === null && answer.text !== null ? <div className="pg-text"><Markdown>{answer.text}</Markdown></div> : null}
+      {alert === null && answer.text === null ? <p className="hint">{G.noText}</p> : null}
       <details className="pg-exchange">
         <summary>{G.exchange}</summary>
         <section aria-label={G.sent}><h4>{G.sent}</h4><pre>{JSON.stringify(exchange.request, null, 2)}</pre></section>

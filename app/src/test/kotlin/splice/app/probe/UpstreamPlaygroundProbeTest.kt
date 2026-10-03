@@ -1,9 +1,9 @@
-// NEW: V4-133 — UpstreamPlaygroundProbe against a REAL TopologyLoader.parse (unlike :daemon-control, :app
-// carries the real ktoml parser), so a head/provider lookup that only works against a hand-built
-// Topology object would still be a lie about production. Covers the three dialects' URL and body
-// shape, the auth header being redacted in the echoed request, and every failure named by
-// UpstreamPlaygroundProbe.kt: no topology file, an unknown head, an undeclared provider,
-// client-forwarded auth, no credential, and the upstream call itself failing.
+// NEW: V4-133 — UpstreamPlaygroundProbe against providers built by the daemon's own ProviderAssembly from a REAL
+// TopologyLoader.parse, so a lookup or a request that only works against hand-built objects would still be a lie about
+// production. What the probe sends is held to the turn path by PlaygroundTurnParityTest (V4-444); this covers what it
+// hands back: the credential redacted in the echoed request, the provider's answer as it came, the model the caller
+// names, and every failure named by UpstreamPlaygroundProbe.kt: no running provider, client-forwarded auth, no
+// credential, a credential read that throws, and the upstream call itself failing.
 package splice.app.probe
 
 import io.ktor.client.HttpClient
@@ -14,7 +14,6 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -28,175 +27,78 @@ import splice.diagnostics.playground.PlaygroundFailure
 import splice.diagnostics.playground.PlaygroundHead
 import splice.diagnostics.playground.PlaygroundResult
 import splice.upstream.transport.HeaderRedaction
-import java.nio.file.Files
 import java.nio.file.Path
-
-private const val TOML = """
-[providers.anthro]
-dialect = "anthropic-passthrough"
-base_url = "https://api.example.com"
-auth = { kind = "api-key", env = "P_KEY" }
-extra_headers = { "anthropic-version" = "2023-06-01" }
-
-[providers.chat]
-dialect = "openai-chat"
-base_url = "https://chat.example.com/v1"
-auth = { kind = "api-key", env = "C_KEY" }
-
-[providers.resp]
-dialect = "openai-responses"
-base_url = "https://resp.example.com/v1"
-auth = { kind = "api-key", env = "R_KEY" }
-
-[heads.claude]
-provider = "anthro"
-port = 9001
-discovery_prefix = "claude/"
-pinned_model = "m1"
-
-[heads.chatty]
-provider = "chat"
-port = 9002
-discovery_prefix = "chatty/"
-pinned_model = "m2"
-
-[heads.respy]
-provider = "resp"
-port = 9003
-discovery_prefix = "respy/"
-pinned_model = "m3"
-
-[heads.orphan]
-provider = "ghost"
-port = 9004
-discovery_prefix = "orphan/"
-pinned_model = "m4"
-"""
-
-private val defaultCreds: Credentials = Credentials.ApiKey("secret-key", "x-api-key", "")
 
 class UpstreamPlaygroundProbeTest {
 
-    private fun head(key: String, creds: Credentials? = defaultCreds): PlaygroundHead = PlaygroundHead(
-        key = key,
-        auth = object : AuthProvider {
-            override suspend fun credentials(): Credentials? = creds
-            override suspend fun describe() = AuthDescription(creds != null, "test", emptyMap())
-        },
-    )
-
-    private fun configFile(tmp: Path): Path = tmp.resolve("splice.toml").also { Files.writeString(it, TOML) }
-
     @Test
-    fun `anthropic-passthrough posts v1 messages, redacts the auth header, and merges static headers`(
-        @TempDir tmp: Path,
-    ) = runTest {
-        var captured: io.ktor.client.request.HttpRequestData? = null
-        val engine = MockEngine { request ->
-            captured = request
-            respond(content = """{"content":[{"text":"hi back"}]}""", status = HttpStatusCode.OK)
+    fun `the credential never echoes back, and the provider's answer comes back as it came`(@TempDir root: Path) =
+        runTest {
+            val engine = MockEngine {
+                respond(
+                    content = """{"error":{"message":"Input must be a list"}}""",
+                    status = HttpStatusCode.BadRequest,
+                )
+            }
+            val outcome = UpstreamPlaygroundProbe(registered(root), HttpClient(engine))
+                .run(playgroundHead("anthropicy"), "hello", null)
+
+            val result = outcome as PlaygroundResult
+            val echoed = result.request.jsonObject["headers"]!!.jsonObject
+            assertEquals(HeaderRedaction.REDACTED, echoed["x-api-key"]!!.jsonPrimitive.content)
+            val version = echoed["anthropic-version"]!!.jsonPrimitive.content
+            assertEquals("2023-06-01", version, "a plain header reads as sent")
+            assertEquals(400, result.response.jsonObject["status"]!!.jsonPrimitive.content.toInt())
+            val error = result.response.jsonObject["body"]!!.jsonObject["error"]!!.jsonObject
+            assertEquals("Input must be a list", error["message"]!!.jsonPrimitive.content)
         }
-        val probe = UpstreamPlaygroundProbe(configFile(tmp), HttpClient(engine))
-        val outcome = probe.run(head("claude"), "hello", null)
 
-        val sent = requireNotNull(captured)
-        assertEquals("https://api.example.com/v1/messages", sent.url.toString())
-        assertEquals("2023-06-01", sent.headers["anthropic-version"])
-        assertEquals("secret-key", sent.headers["x-api-key"], "the real upstream call carries the real credential")
-        val body = Json.parseToJsonElement((sent.body as TextContent).text).jsonObject
-        assertEquals("m1", body["model"]!!.jsonPrimitive.content)
-        val message = (body["messages"] as JsonArray).single().jsonObject
-        assertEquals("hello", message["content"]!!.jsonPrimitive.content)
-
-        assertTrue(outcome is PlaygroundResult, "expected a result: $outcome")
-        val result = outcome as PlaygroundResult
-        val echoedHeaders = result.request.jsonObject["headers"]!!.jsonObject
-        assertEquals(
-            HeaderRedaction.REDACTED,
-            echoedHeaders["x-api-key"]!!.jsonPrimitive.content,
-            "the credential never echoes back",
-        )
-        val responseText = (result.response.jsonObject["body"]!!.jsonObject["content"] as JsonArray).single().jsonObject
-        assertEquals("hi back", responseText["text"]!!.jsonPrimitive.content)
-        assertEquals(200, result.response.jsonObject["status"]!!.jsonPrimitive.content.toInt())
-    }
-
+    /** V4-444: the Playground compares models, two on one command as readily as two commands, so a run names its
+     *  model and the head's pinned model is only the default. */
     @Test
-    fun `openai-chat posts chat completions with a messages array`(@TempDir tmp: Path) = runTest {
-        var captured: io.ktor.client.request.HttpRequestData? = null
-        val engine = MockEngine { request ->
-            captured = request
-            respond(content = "{}", status = HttpStatusCode.OK)
-        }
-        val probe = UpstreamPlaygroundProbe(configFile(tmp), HttpClient(engine))
-        probe.run(head("chatty"), "hello", null)
-        val sent = requireNotNull(captured)
-        assertEquals("https://chat.example.com/v1/chat/completions", sent.url.toString())
-        val body = Json.parseToJsonElement((sent.body as TextContent).text).jsonObject
-        assertEquals("m2", body["model"]!!.jsonPrimitive.content)
-        assertTrue(body.containsKey("messages"), body.toString())
-    }
-
-    /** V4-444: the Playground compares models, two on one command as readily as two commands, so a run
-     *  names its model and the head's pinned model is only the default. */
-    @Test
-    fun `a model the caller names is sent in place of the head's pinned one`(@TempDir tmp: Path) = runTest {
+    fun `a model the caller names is sent in place of the head's pinned one`(@TempDir root: Path) = runTest {
         val sent = mutableListOf<String>()
         val engine = MockEngine { request ->
             val body = Json.parseToJsonElement((request.body as TextContent).text).jsonObject
             sent += body["model"]!!.jsonPrimitive.content
             respond(content = "{}", status = HttpStatusCode.OK)
         }
-        val probe = UpstreamPlaygroundProbe(configFile(tmp), HttpClient(engine))
-        probe.run(head("chatty"), "hello", "m9")
-        probe.run(head("chatty"), "hello", null)
-        assertEquals(listOf("m9", "m2"), sent, "the named model, then the pinned one when none is named")
+        val probe = UpstreamPlaygroundProbe(registered(root), HttpClient(engine))
+        probe.run(playgroundHead("chatty"), "hello", "chat-model-9")
+        probe.run(playgroundHead("chatty"), "hello", null)
+        assertEquals(listOf("chat-model-9", "chat-model"), sent, "the named model, then the pinned one")
     }
 
     @Test
-    fun `openai-responses posts input as a plain string`(@TempDir tmp: Path) = runTest {
-        var captured: io.ktor.client.request.HttpRequestData? = null
-        val engine = MockEngine { request ->
-            captured = request
-            respond(content = "{}", status = HttpStatusCode.OK)
-        }
-        val probe = UpstreamPlaygroundProbe(configFile(tmp), HttpClient(engine))
-        probe.run(head("respy"), "hello", null)
-        val sent = requireNotNull(captured)
-        assertEquals("https://resp.example.com/v1/responses", sent.url.toString())
-        val body = Json.parseToJsonElement((sent.body as TextContent).text).jsonObject
-        assertEquals("m3", body["model"]!!.jsonPrimitive.content)
-        assertEquals("hello", body["input"]!!.jsonPrimitive.content)
-    }
+    fun `every named failure answers a PlaygroundFailure, never a thrown exception`(@TempDir root: Path) = runTest {
+        val client = HttpClient(MockEngine { respondError(HttpStatusCode.OK) })
+        val probe = UpstreamPlaygroundProbe(registered(root), client)
 
-    @Test
-    fun `every named failure answers a PlaygroundFailure, never a thrown exception`(@TempDir tmp: Path) = runTest {
-        val engine = MockEngine { respondError(HttpStatusCode.InternalServerError) }
-        val client = HttpClient(engine)
-        val file = configFile(tmp)
+        val unknown = probe.run(playgroundHead("chatty").copy(key = "no-such-head"), "hi", null)
+        assertTrue((unknown as PlaygroundFailure).message.contains("has no running provider"), unknown.message)
 
-        val noFile = UpstreamPlaygroundProbe(null, client).run(head("claude"), "hi", null)
-        assertTrue((noFile as PlaygroundFailure).message.contains("no topology file"), noFile.message)
-
-        val unknownHead = UpstreamPlaygroundProbe(file, client).run(head("no-such-head"), "hi", null)
-        assertTrue((unknownHead as PlaygroundFailure).message.contains("is not in the current topology"))
-
-        val undeclaredProvider = UpstreamPlaygroundProbe(file, client).run(head("orphan"), "hi", null)
-        assertTrue((undeclaredProvider as PlaygroundFailure).message.contains("is not declared"))
-
-        val forwarded = UpstreamPlaygroundProbe(file, client)
-            .run(head("claude", Credentials.ClientForwarded), "hi", null)
+        val forwarded = probe.run(playgroundHead("anthropicy", Credentials.ClientForwarded), "hi", null)
         assertTrue((forwarded as PlaygroundFailure).message.contains("forwards the caller's own auth"))
 
-        val noCred = UpstreamPlaygroundProbe(file, client).run(head("claude", null), "hi", null)
+        val noCred = probe.run(playgroundHead("anthropicy", null), "hi", null)
         assertTrue((noCred as PlaygroundFailure).message.contains("has no credential configured"))
+
+        val unreadable = PlaygroundHead(
+            "chatty",
+            object : AuthProvider {
+                override suspend fun credentials(): Credentials = throw java.io.IOException("keyring locked")
+                override suspend fun describe() = AuthDescription(false, "synthetic", emptyMap())
+            },
+        )
+        val threw = probe.run(unreadable, "hi", null)
+        assertTrue((threw as PlaygroundFailure).message.contains("reading credentials failed"), threw.message)
     }
 
     @Test
-    fun `an upstream failure is a named PlaygroundFailure, not a crash`(@TempDir tmp: Path) = runTest {
+    fun `an upstream failure is a named PlaygroundFailure, not a crash`(@TempDir root: Path) = runTest {
         val engine = MockEngine { throw java.io.IOException("connection refused") }
-        val probe = UpstreamPlaygroundProbe(configFile(tmp), HttpClient(engine))
-        val outcome = probe.run(head("claude"), "hi", null)
+        val probe = UpstreamPlaygroundProbe(registered(root), HttpClient(engine))
+        val outcome = probe.run(playgroundHead("chatty"), "hi", null)
         assertTrue((outcome as PlaygroundFailure).message.contains("upstream call"), outcome.message)
     }
 }

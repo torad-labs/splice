@@ -131,8 +131,9 @@ test('a first plan follows a late sign-in URL while hidden, saves once and tries
   await expect(lane).toContainText('Answered with 200');
   await expect(lane).toContainText('9 tokens in, 2 out');
   await main.getByRole('button', { name: 'Send', exact: true }).click();
-  await expect(lane.getByRole('alert')).toHaveText('Synthetic limit reached');
-  await expect(lane).toContainText('Answered with 429');
+  await expect(lane.getByRole('alert')).toHaveText('api.fixture.invalid refused the request: Synthetic limit reached');
+  await expect(lane).toContainText('Status 429 after');
+  await expect(lane).not.toContainText('Answered with 429');
   await expect(lane).not.toContainText('Synthetic hello');
   expect(tries).toBe(2);
   expect(saves).toBe(1);

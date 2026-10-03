@@ -90,9 +90,15 @@ function textOf(body: Json): string | null {
   return pieces.length === 0 ? null : pieces.join('\n\n');
 }
 
+/** FastAPI-style refusals, ChatGPT's among them, put the sentence in `detail`: a string, or a list of `{msg}` per field. */
+function detailOf(detail: unknown): string | null {
+  const said = list(detail).flatMap((item) => text(record(item)?.msg)?.replace(/\.$/, '') ?? []);
+  return text(detail) ?? (said.length === 0 ? null : said.join('. '));
+}
+
 function errorOf(body: Json): string | null {
   const error = body.error;
-  return text(record(error)?.message) ?? text(error) ?? text(body.message);
+  return text(record(error)?.message) ?? text(error) ?? text(body.message) ?? detailOf(body.detail);
 }
 
 /** A streamed reply reaches the page as `{raw: "event: …\ndata: {…}\n\n…"}`, since the daemon hands back whatever the provider sent.
@@ -149,4 +155,21 @@ export function answerOf(status: number, reply: unknown): Answer {
     output: count(usage.output_tokens) ?? count(usage.completion_tokens),
     error: status >= 400 ? errorOf(body) : null,
   };
+}
+
+/** Who answered a request, named as people name them, by the host it went to; any other host is named by itself. */
+const PROVIDERS: readonly (readonly [string, string])[] = [
+  ['chatgpt.com', 'ChatGPT'], ['openai.com', 'OpenAI'], ['anthropic.com', 'Anthropic'], ['x.ai', 'xAI'], ['openrouter.ai', 'OpenRouter'],
+  ['kimi.com', 'Kimi'], ['meta.ai', 'Meta'], ['deepseek.com', 'DeepSeek'], ['fireworks.ai', 'Fireworks'],
+];
+
+export function refuserOf(url: string): string {
+  let host: string;
+  try {
+    host = new URL(url).host;
+  } catch {
+    return url;
+  }
+  const hostname = host.replace(/:\d+$/, '');
+  return PROVIDERS.find(([domain]) => hostname === domain || hostname.endsWith(`.${domain}`))?.[1] ?? host;
 }

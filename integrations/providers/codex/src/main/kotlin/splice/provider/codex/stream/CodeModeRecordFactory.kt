@@ -13,6 +13,10 @@ import splice.provider.codex.state.CodeModeNativeChain
 import splice.provider.codex.state.CodeModeTurnIdentity
 import java.util.UUID
 
+internal fun interface CodeModeStreamAdmission {
+    fun admit(call: GatewayCustomCall): CodeModeRecord
+}
+
 internal class CodeModeRecordFactory(private val config: CodeModeBridgeConfig) {
     fun create(
         context: CodeModeRunContext,

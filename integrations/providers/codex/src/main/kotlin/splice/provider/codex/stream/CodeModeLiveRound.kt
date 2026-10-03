@@ -11,7 +11,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
-import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
@@ -27,10 +26,6 @@ import splice.upstream.TurnEnd
 import splice.upstream.sse.CustomToolSource
 import splice.upstream.sse.WireSink
 import java.io.IOException
-
-internal fun interface CodeModeStreamAdmission {
-    fun admit(call: GatewayCustomCall): CodeModeRecord
-}
 
 internal class CodeModeLiveRound(
     private val config: CodeModeBridgeConfig,
@@ -203,32 +198,13 @@ internal class CodeModeLiveRound(
     }
 
     private fun reject(error: Throwable): TurnOutcome.Failure {
-        val failure = if (error is CodeModePersistenceException) {
-            error.outcome()
-        } else {
-            TurnOutcome.Failure(
-                "splice code-mode source rejected (${SafeFailureText.render(error)}); source was not rerun",
-                cause = FailureCause.CODE_MODE_PROTOCOL,
-                phase = FailurePhase.MID_OUTPUT,
-                deterministic = true,
-            )
-        }
+        val failure = CodeModeRejection.outcome(error)
         localFailure = failure
         sourceInterrupted = false
+        // SAFE-RENDER-EXEMPT[2026-10-03]: failure is the domain outcome from CodeModeRejection.outcome, whose throwable input uses SafeFailureText.render or CodeModePersistenceException.outcome's safe literals.
         source.fail(failure.message)
         try {
-            Cancellables.runCatchingBestEffort {
-                record?.takeUnless(CodeModeRecord::terminal)?.let { registry.lose(it, failure.message) }
-            }.onFailure { cleanup ->
-                localFailure = if (cleanup is CodeModePersistenceException) {
-                    cleanup.outcome()
-                } else {
-                    failure.copy(
-                        message = "${failure.message}; splice code-mode rejection cleanup failed " +
-                            "(${SafeFailureText.render(cleanup)})",
-                    )
-                }
-            }
+            localFailure = CodeModeRejection.lose(record, failure, registry)
         } finally {
             ready.complete(null)
         }

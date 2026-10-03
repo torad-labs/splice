@@ -16,6 +16,7 @@ import org.junit.jupiter.params.provider.ValueSource
 import splice.core.turn.FailureCause
 import splice.core.turn.TurnOutcome
 import splice.core.util.JsonScalars
+import splice.provider.codex.stream.CodeModeRejection
 import splice.upstream.RedirectableRoundPost
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeRuntime
@@ -24,6 +25,20 @@ import splice.upstream.sse.CustomToolSource
 import splice.upstream.sse.WireSink
 
 class CodexCodeModeSourceTerminalTest : CodeModeStatementStreamSupport() {
+    @ParameterizedTest
+    @ValueSource(strings = ["protocol", "persistence"])
+    fun `local rejection outcomes never carry private throwable text`(kind: String) {
+        val error = if (kind == "persistence") {
+            CodeModePersistenceException(java.io.IOException("synthetic private checkpoint bytes"), diskFull = false)
+        } else {
+            IllegalStateException("synthetic private checkpoint bytes")
+        }
+        val outcome = CodeModeRejection.outcome(error)
+        assertFalse(outcome.message.contains("synthetic private checkpoint bytes"))
+        assertTrue(outcome.message.contains("source was not rerun"))
+        assertEquals(FailureCause.CODE_MODE_PROTOCOL, outcome.cause)
+    }
+
     @ParameterizedTest
     @ValueSource(strings = ["changed-prefix", "changed-id", "changed-name", "changed-item", "incomplete"])
     @Timeout(20)

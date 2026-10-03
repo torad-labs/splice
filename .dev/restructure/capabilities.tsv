@@ -1,4 +1,6 @@
 source	sha256	disposition	destination	reason
+integrations/providers/codex/src/main/kotlin/splice/provider/codex/state/CodeModeCellCleanup.kt	ab3413a7854187276e70efcd1ef67aba20b6ef13de5aaf0a9fd20c7747f88222	created		V4-457: rejected-cell cleanup preserves lost-record persistence while containing safely rendered close failures
+integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeRejection.kt	7b7cdb054f74441f85ea75f88dc164b74fa333ece0287c6d1d840e4a6851c360	created		V4-457: local source rejection owns safe outcome construction and best-effort lost-record cleanup
 core/src/main/kotlin/splice/core/perf/WsAttemptTiming.kt	ad7e19a3455025ad92335f2c829325a9796ee9656fa5e73489009a34a9788d7b	created		V4-456: latest-attempt JDK send acceptance and first decoded text fragment retain unobserved socket milestones as absent
 core/src/main/kotlin/splice/core/perf/UpstreamMilestones.kt	250970cf595dd4f0bf566b5b4a0fb3583ad964d138161a60cd4e39ced77997c0	created		V4-456: exhaustive observed transport pairs prevent WS acceptance from publishing SSE socket-write timings
 core/src/main/kotlin/splice/core/memory/HeapBudget.kt	c55af2913641d7cdbb682982e123262b865983b93fa86a7f9d576d38ca965348	created		V4-457: explicit heap-limit ledger rejects oversized and concurrent reservations

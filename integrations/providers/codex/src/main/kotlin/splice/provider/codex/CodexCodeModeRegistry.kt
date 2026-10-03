@@ -14,8 +14,7 @@ package splice.provider.codex
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
-import splice.core.util.Cancellables
-import splice.core.util.SafeFailureText
+import splice.provider.codex.state.CodeModeCellCleanup
 import splice.provider.codex.state.CodeModeCellRetention
 import splice.provider.codex.state.CodeModeExpiredHistory
 import splice.provider.codex.state.CodeModeKeyLocks
@@ -59,6 +58,7 @@ internal class CodexCodeModeRegistry(
     private val history = CodeModeExpiredHistory(loaded.expired.toMutableList(), config.retention.records)
     private val retention = CodeModeRecordRetention(config.retention, json, config.log, config.sessionAlive)
     private val cells = mutableMapOf<String, CodeModeCell>()
+    private val cellCleanup = CodeModeCellCleanup(config.log)
     val startup = CodeModeStartupAdmissions(access, records, history, store, config.clock)
     val source = CodeModeSourceRecords(access, records, history, store)
     val changes = CodeModeRecordChanges(access, records, history, store)
@@ -282,9 +282,7 @@ internal class CodexCodeModeRegistry(
     fun lose(record: CodeModeRecord, message: String, cancellation: CancellationException? = null) =
         access.withKey(record.key) {
             admissions.remove(record.id)
-            Cancellables.runCatchingBestEffort { cells.remove(record.id)?.close() }.onFailure {
-                config.log("[code-mode] rejected cell close failed (${SafeFailureText.render(it)})")
-            }
+            cellCleanup.rejected(cells.remove(record.id))
             record.phase = CodeModePhase.LOST
             record.error = message
             record.updatedAt = config.clock.millis()

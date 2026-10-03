@@ -27,7 +27,7 @@ test('a key-auth head with a stored key reads as local when the daemon names its
     body.keys.push({ name: 'E2E_LOCAL_KEY', stored: true, heads: [{ head: STACK.keyHead, source: 'store' }] });
     await route.fulfill({ response, json: body });
   });
-  await open(page, 'fleet');
+  await open(page, 'models');
   const card = page.locator('li.card').filter({ has: page.getByRole('link', { name: STACK.keyHead, exact: true }) });
   await expect(card.locator('.quiet-meta').first()).toContainText('this computer');
   await expect(card.locator('.quiet-meta').first()).not.toContainText('api key');
@@ -56,7 +56,7 @@ for (const authKind of ['bearer', 'local']) {
       head.family = 'openrouter';
       await route.fulfill({ response, json: body });
     });
-    const faults = await open(page, 'fleet');
+    const faults = await open(page, 'models');
     const card = page.locator('li.card').filter({ has: page.getByRole('link', { name: STACK.keyHead, exact: true }) });
     await expect(card.locator('.quiet-meta').first()).toContainText('api key');
     await expect(card.locator('.quiet-meta').first()).not.toContainText('this computer');
@@ -84,7 +84,7 @@ test('a silent runtime is off on its card and detail while unmarked plans remain
     marked.runtimeNotAnswering = ':8099';
     await route.fulfill({ response, json: body });
   });
-  await open(page, 'fleet');
+  await open(page, 'models');
   const card = page.locator('li.card').filter({ has: page.getByRole('link', { name: STACK.oauthHead, exact: true }) });
   await expect(card.getByText('Runtime off', { exact: true })).toBeVisible();
   await expect(card).toContainText('The runtime is not answering on :8099.');
@@ -131,7 +131,7 @@ test('a full reading stays Ready in command colour, reads as usage, and still se
     body.accounts = body.accounts.filter((account) => !account.heads.includes(STACK.oauthHead));
     await route.fulfill({ response, json: body });
   });
-  const faults = await open(page, 'fleet');
+  const faults = await open(page, 'models');
   const card = page.locator('li.card').filter({ has: page.getByRole('link', { name: STACK.oauthHead, exact: true }) });
   await expect(card.getByText('Ready', { exact: true })).toBeVisible();
   await expect(card.locator('.track')).not.toHaveClass(/full/);
@@ -171,20 +171,7 @@ test('a full reading stays Ready in command colour, reads as usage, and still se
   await expect(page.locator('main .lede')).toContainText(STACK.oauthHead + ' is at 100% of its limit.');
   const plan = page.locator('li.uplan').filter({ hasText: STACK.oauthHead }).first();
   await expect(plan.locator('.track')).not.toHaveClass(/full/);
-  await page.getByRole('link', { name: /^Needs you/ }).click();
-  const observation = page.getByRole('listitem', { name: /^Command near its limit:/ });
-  await expect(observation).toContainText('at 100%');
-  await expect(observation).not.toHaveClass(/attn/);
-  await expect(observation.locator('.state')).toHaveClass(/work/);
-  const acts = await page.locator('li.need.attn').count();
-  const badge = page.getByRole('link', { name: /^Needs you/ }).locator('.count');
-  if (acts === 0) await expect(badge).toHaveCount(0);
-  else await expect(badge).toHaveText(String(acts));
-  await expect(observation.getByRole('link', { name: 'Switch account', exact: true })).toHaveCount(0);
-  await expect(observation.getByRole('button')).toHaveCount(0);
-  await expect(page.getByRole('listitem', { name: /^Out of quota:/ })).toHaveCount(0);
-  const serving = page.locator('.calm > div').filter({ has: page.getByRole('heading', { name: 'Commands serving', exact: true }) });
-  await expect(serving).toContainText(STACK.oauthHead);
+  // The removed global observations feed has no nav badge; serving and quota facts stay on Models and Usage.
   await assertHealthy(page, faults);
   await page.unrouteAll({ behavior: 'wait' });
 });
@@ -201,7 +188,7 @@ test('quota refusal moves one card out of ready and keeps its local reset identi
     if (marking) marked.quotaResetAtEpochSeconds = reset;
     await route.fulfill({ response, json: body });
   });
-  await open(page, 'fleet');
+  await open(page, 'models');
   await expect(page.locator('li.card').getByText('Ready', { exact: true }).first()).toBeVisible();
   marking = true;
   await page.reload();
@@ -247,8 +234,6 @@ test('quota refusal moves one card out of ready and keeps its local reset identi
     return { colour, image: getComputedStyle(node).backgroundImage };
   });
   expect(usageRefusal.image).toContain(usageRefusal.colour);
-  await page.getByRole('link', { name: /^Needs you/ }).click();
-  await expect(page.getByRole('listitem', { name: /^Out of quota:/ })).toContainText(STACK.oauthHead);
   await page.unrouteAll({ behavior: 'wait' });
 });
 
@@ -263,13 +248,14 @@ test('refused credentials keep the daemon sentence and allow neither switching n
     linked.refusal = refusal;
     await route.fulfill({ response, json: body });
   });
-  await open(page, 'needs-you');
-  const need = page.getByRole('listitem').filter({ hasText: refusal });
+  await open(page, 'accounts');
+  const need = page.locator('li.account-card').filter({ hasText: refusal });
   await expect(need).toBeVisible();
   await expect(need).toContainText(STACK.poolLabel);
-  await expect(need.getByRole('button', { name: 'Sign in again', exact: true })).toHaveCount(0);
+  await expect(need.getByText('Credential refused', { exact: true })).toBeVisible();
+  await expect(need.getByRole('button', { name: 'Sign in again', exact: true })).toBeDisabled();
   await expect(need).not.toContainText('Its login is gone');
-  await page.goto(env('CONSOLE_E2E_BASE') + '/#/fleet/' + STACK.oauthHead);
+  await page.goto(env('CONSOLE_E2E_BASE') + '/#/models/' + STACK.oauthHead);
   const account = page.locator('li.account').filter({ has: page.getByText(STACK.poolLabel, { exact: true }) });
   await expect(account.getByText('refused', { exact: true })).toBeVisible();
   await expect(account).toContainText(refusal);
@@ -286,7 +272,7 @@ test('refused credentials keep the daemon sentence and allow neither switching n
 });
 
 test('the real account pool keeps provider windows, its exact next target and serving actions separate from a single login', async ({ page }) => {
-  const faults = await open(page, 'fleet/' + STACK.oauthHead);
+  const faults = await open(page, 'models/' + STACK.oauthHead);
   const wire = await read<AccountsWire>(page, '/api/accounts');
   const pool = wire.accounts.filter((account) => account.heads.includes(STACK.oauthHead));
   expect(pool).toHaveLength(2);
@@ -304,17 +290,17 @@ test('the real account pool keeps provider windows, its exact next target and se
       await expect(row).toContainText(account.seven_day_window_seconds / 86400 + 'd ' + account.seven_day_used_percent + '%');
     }
     await expect(row.getByText('Next', { exact: true })).toHaveCount(account.next_target === true ? 1 : 0);
-    if (account.next_target === true && account.primary) await expect(row).toContainText('Next because it is the primary account.');
+    if (account.next_target === true && account.primary) await expect(row).not.toContainText('Next because it is the primary account.');
     if (account.label === STACK.poolLabel) {
       await expect(row.getByRole('button', { name: 'Switch to this one', exact: true })).toBeVisible();
       await expect(row.getByRole('button', { name: 'Rename', exact: true })).toBeVisible();
       await expect(row.getByRole('button', { name: 'Remove', exact: true })).toBeVisible();
     }
   }
-  await expect(page.getByRole('main')).toContainText('The next account is taken in this order: pinned, then primary, then last used, then most weekly room.');
+  await expect(page.getByRole('main')).toContainText('The next account is taken in this order: pinned, then saved order, then primary, then last used, then most weekly room.');
   await expect(page.getByRole('button', { name: 'Refresh sign-in', exact: true })).toBeVisible();
   await expect(accounts.filter({ hasText: STACK.soloHead })).toHaveCount(0);
-  await page.goto(env('CONSOLE_E2E_BASE') + '/#/fleet/' + STACK.keyHead);
+  await page.goto(env('CONSOLE_E2E_BASE') + '/#/models/' + STACK.keyHead);
   await expect(page.locator('li.account')).toHaveCount(0);
   await expect(page.getByRole('main')).toContainText('This command has no account pool: it uses one login or a key.');
   expect(faults.pageErrors).toEqual([]);
@@ -332,7 +318,7 @@ test('an excluded account prints its whole provider reason and cannot be switche
     account.auth_exclusion_reason = reason;
     await route.fulfill({ response, json: body });
   });
-  const faults = await open(page, 'fleet/' + STACK.oauthHead);
+  const faults = await open(page, 'models/' + STACK.oauthHead);
   const excluded = page.locator('li.account').filter({ has: page.getByText(STACK.poolLabel, { exact: true }) });
   await expect(excluded.getByText('excluded', { exact: true })).toBeVisible();
   await expect(excluded).toContainText(reason);

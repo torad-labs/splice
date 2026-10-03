@@ -16,7 +16,7 @@ test('Add models preserves offered upstream ids and prints the persisted restart
     expect(route.request().postDataJSON()).toEqual({ head: STACK.keyHead, models: ids });
     return route.fulfill({ json: { head: STACK.keyHead, path: offers.path, added: ids, restart: { status: 'draining' } } });
   });
-  const faults = await open(page, 'fleet/' + STACK.keyHead);
+  const faults = await open(page, 'models/' + STACK.keyHead);
   await page.getByRole('button', { name: 'Models', exact: true }).click();
   await page.getByRole('button', { name: 'Add models', exact: true }).click();
   const dialog = page.getByRole('dialog');
@@ -49,7 +49,7 @@ test('the real catalogue offers only models outside the declared roster and writ
     writes.push(route.request().postDataJSON());
     return route.fulfill({ json: { head: STACK.keyHead, path: offers.path, added: [picked], restart: { status: 'draining' } } });
   });
-  const faults = await open(page, 'fleet/' + STACK.keyHead + '?tab=models');
+  const faults = await open(page, 'models/' + STACK.keyHead + '?tab=models');
   await page.getByRole('button', { name: 'Add models', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('listitem')).toHaveCount(offer?.models.length ?? 0);
@@ -71,7 +71,7 @@ test('each plan keeps its actual pinned identity and displays its separately dec
     expect(declared).toBeDefined();
     const pinned = declared?.models.find((model) => model.pinned);
     expect(pinned?.id).toBe(declared?.pinned_model);
-    const faults = await open(page, 'fleet/' + head + '?tab=models');
+    const faults = await open(page, 'models/' + head + '?tab=models');
     const every = page.getByRole('region', { name: 'Every model', exact: true });
     const row = every.getByRole('listitem').filter({ has: page.locator('code').getByText(pinned?.id ?? '', { exact: true }) });
     await expect(row).toContainText(pinned?.label ?? '');

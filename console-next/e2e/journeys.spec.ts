@@ -1,8 +1,6 @@
 // NEW: V4-444 — replacement-console journeys over real daemon payloads, never mocked API rows.
 import { expect, test } from '@playwright/test';
 import { STACK } from './stack';
-import type { DoctorPayload } from '../src/types/doctor';
-import { checkTitle } from '../src/lib/words-needs';
 import type { SessionsPayload } from '../src/types/sessions';
 import { FINISHED } from './setup';
 import { assertHealthy, env, open, read, watch } from './support';
@@ -12,18 +10,18 @@ test('the key-unlock address leaves no key in the address or history entry', asy
   const key = env('CONSOLE_E2E_KEY');
   await page.goto('about:blank#synthetic-before-unlock');
   await page.goto(env('CONSOLE_E2E_BASE') + '/#k=' + encodeURIComponent(key));
-  await expect(page.getByRole('heading', { name: 'Needs you', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Accounts', exact: true })).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Pages', exact: true })).toBeVisible();
-  expect(new URL(page.url()).hash).toBe('#/needs-you');
+  expect(new URL(page.url()).hash).toBe('#/accounts');
   expect(page.url()).not.toContain(key);
   expect(await page.evaluate(() => location.href)).not.toContain(key);
   expect(await page.evaluate(() => localStorage.getItem('myx-mgmt-key'))).toBe(key);
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Needs you', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Accounts', exact: true })).toBeVisible();
   await page.goBack();
   expect(page.url()).toBe('about:blank#synthetic-before-unlock');
   await page.goForward();
-  await expect(page.getByRole('heading', { name: 'Needs you', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Accounts', exact: true })).toBeVisible();
   expect(page.url()).not.toContain(key);
   await assertHealthy(page, faults);
 });
@@ -55,27 +53,13 @@ test('a session opens at its newest message, scrolled to the bottom', async ({ p
   await assertHealthy(page, faults);
 });
 
-test('Needs you includes the waiting session but not working or finished sessions and only warning or failed doctor checks', async ({ page }) => {
-  const faults = await open(page, 'needs-you');
-  const doctor = await read<DoctorPayload>(page, '/api/doctor');
-  const main = page.getByRole('main');
-  await expect(main.getByRole('listitem', { name: 'Waiting on you: ' + STACK.peer.name, exact: true })).toBeVisible();
-  await expect(main.getByRole('listitem', { name: new RegExp(': ' + STACK.sender.name + '$') })).toHaveCount(0);
-  await expect(main.getByRole('listitem', { name: new RegExp(': ' + FINISHED.name + '$') })).toHaveCount(0);
-  // Actual check ids/statuses are the denominator, not a fixture shaped to the view.
-  await expect(main.getByRole('listitem', { name: /^Doctor: / }).first()).toBeVisible();
-  const labels = await main.getByRole('listitem', { name: /^Doctor: / }).evaluateAll((items) =>
-    items.map((item) => (item.getAttribute('aria-label') ?? '').replace(/^Doctor: /, '').replace(/ \(\d+\)$/, '')));
-  for (const label of labels) {
-    const members = doctor.checks.filter((check) => checkTitle(check.id) === label || checkTitle(check.id.split(':')[0] ?? check.id) === label);
-    expect(members.length, 'visible doctor item must come from a real check: ' + label).toBeGreaterThan(0);
-    expect(members.every((check) => check.status === 'warn' || check.status === 'fail'), label + ' must need a person').toBe(true);
-  }
-  for (const check of doctor.checks.filter((check) => check.status === 'ok' || check.status === 'info')) {
-    if (!doctor.checks.some((other) => checkTitle(other.id) === checkTitle(check.id) && (other.status === 'warn' || other.status === 'fail'))) {
-      await expect(main.getByRole('listitem', { name: 'Doctor: ' + checkTitle(check.id), exact: true })).toHaveCount(0);
-    }
-  }
+// The retired global feed is split between Sessions and the whole Health report in diagnostics.spec.ts.
+test('Sessions includes waiting sessions but not working or finished sessions in Needs you', async ({ page }) => {
+  const faults = await open(page, 'sessions');
+  const waiting = page.getByRole('region', { name: 'Needs you', exact: true });
+  await expect(waiting.getByRole('link', { name: STACK.peer.name, exact: true })).toBeVisible();
+  await expect(waiting.getByRole('link', { name: STACK.sender.name, exact: true })).toHaveCount(0);
+  await expect(waiting.getByRole('link', { name: FINISHED.name, exact: true })).toHaveCount(0);
   await assertHealthy(page, faults);
 });
 
@@ -98,11 +82,11 @@ test('Settings keys are hidden until the row or Advanced switch is asked for', a
 });
 
 test('Fleet opens a plan on its own page', async ({ page }) => {
-  const faults = await open(page, 'fleet');
+  const faults = await open(page, 'models');
   const plan = page.getByRole('main').getByRole('link', { name: STACK.oauthHead, exact: true });
   await expect(plan).toBeVisible();
   await plan.click();
-  await expect(page).toHaveURL(new RegExp('#/fleet/' + STACK.oauthHead + '$'));
+  await expect(page).toHaveURL(new RegExp('#/models/' + STACK.oauthHead + '$'));
   await expect(page.getByRole('heading', { name: STACK.oauthHead, level: 1, exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Plan windows', exact: true })).toBeVisible();
   await assertHealthy(page, faults);
@@ -110,7 +94,7 @@ test('Fleet opens a plan on its own page', async ({ page }) => {
 
 for (const method of ['keyboard', 'pointer'] as const) {
   test(method + ' dragging plan order survives reload', async ({ page }) => {
-    const faults = await open(page, 'fleet');
+    const faults = await open(page, 'models');
     const main = page.getByRole('main');
     const cards = main.locator('li.card');
     await expect(cards).toHaveCount(3);

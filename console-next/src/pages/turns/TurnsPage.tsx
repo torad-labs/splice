@@ -22,7 +22,7 @@ import './turns.css';
 const windowOf = (raw: string | null): PerfWindowLabel => PERF_WINDOWS.find((label) => label === raw) ?? '1h';
 
 export function turnPath(line: Pick<TurnLine, 'head' | 'ts'>): string {
-  return `/turns/${encodeURIComponent(line.head)}/${line.ts}`;
+  return `/requests/${encodeURIComponent(line.head)}/${line.ts}`;
 }
 
 /** Stops the turn a running card stands for. A card whose turn the daemon no longer lists has nothing to stop, so it offers nothing. */

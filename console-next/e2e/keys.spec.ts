@@ -17,7 +17,7 @@ for (const authKind of ['api-key', 'bearer']) {
     });
     const name = 'CONSOLE_E2E_NO_SUCH_KEY';
     const secret = 'sk-synthetic-' + randomUUID();
-    await open(page, 'fleet/' + STACK.keyHead);
+    await open(page, 'models/' + STACK.keyHead);
     const source = page.locator('dl.key-source dd');
     try {
       await expect(source).toHaveText('Nowhere');

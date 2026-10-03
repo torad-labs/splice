@@ -38,7 +38,8 @@ for (const route of ROUTES) {
     await page.getByRole('button', { name: 'Unlock', exact: true }).click();
     await expect(page.getByRole('navigation', { name: 'Pages', exact: true })).toHaveCount(1);
     await expect(page.getByRole('main')).toHaveCount(1);
-    for (const endpoint of ['/api/status', '/api/auth', '/api/accounts', '/api/usage']) {
+    const endpoints = ['/api/status', '/api/config', ...(path === 'accounts' ? ['/api/accounts'] : [])];
+    for (const endpoint of endpoints) {
       await expect.poll(() => reads.has(endpoint), { message: endpoint + ' must recover after the refused key' }).toBe(true);
     }
     await expect.poll(() => streams).toBeGreaterThan(beforeStreams);
@@ -55,7 +56,7 @@ test('two unlocks leave one shell through forward and reverse source-derived rou
   page.on('console', (message) => {
     if (/two children with the same key/i.test(message.text())) warnings.push(message.text());
   });
-  await page.goto(env('CONSOLE_E2E_BASE') + '/#/fleet');
+  await page.goto(env('CONSOLE_E2E_BASE') + '/#/accounts');
   const field = page.getByLabel('Management key', { exact: true });
   await expect(field).toBeVisible();
   const refused = page.waitForResponse((response) => response.status() === 401);

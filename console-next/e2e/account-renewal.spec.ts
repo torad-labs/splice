@@ -11,7 +11,7 @@ const status = (id: string, state: LoginStatusPayload['state'], over: Partial<Lo
   failure_reason: null, label: null, usage_set_aside: null, ...over,
 });
 
-test('Needs you renews a missing pooled login under its retained label and prints a whole refused retry', async ({ page }) => {
+test('Accounts renews a missing pooled login under its retained label and prints a whole refused retry', async ({ page }) => {
   await page.route('**/api/accounts', async (route) => {
     const response = await route.fetch();
     const body = await response.json() as AccountsWire;
@@ -31,8 +31,8 @@ test('Needs you renews a missing pooled login under its retained label and print
       label: STACK.poolLabel, usage_set_aside: '/synthetic/quota.json.orphaned',
     }),
   }));
-  const faults = await open(page, 'needs-you');
-  const item = page.getByRole('listitem').filter({ hasText: 'Its login is gone' });
+  const faults = await open(page, 'accounts');
+  const item = page.locator('li.account-card').filter({ has: page.getByRole('heading', { name: STACK.poolLabel, exact: true }) });
   await expect(item).toContainText(STACK.poolLabel);
   await item.getByRole('button', { name: 'Sign in again', exact: true }).click();
   const dialog = page.getByRole('dialog');

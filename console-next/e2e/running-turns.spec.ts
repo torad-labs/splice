@@ -21,7 +21,7 @@ test('same-label same-age live siblings do not collapse and one removal leaves i
     head.gate.inflight = count;
     await route.fulfill({ response, json: body });
   });
-  const faults = await open(page, 'turns');
+  const faults = await open(page, 'requests');
   const twins = page.getByRole('listitem', { name: 'synthetic-twin, ' + STACK.oauthHead, exact: true });
   await expect(twins).toHaveCount(2);
   await expect(twins.first()).toContainText('Streaming its answer');
@@ -68,14 +68,13 @@ for (const status of ['busy', 'shell']) {
       await expect(page.getByRole('region', { name: 'Working', exact: true }).getByRole('link', { name: STACK.sender.name, exact: true })).toBeVisible();
       await expect(page.getByRole('region', { name: 'Needs you', exact: true }).getByRole('link', { name: STACK.peer.name, exact: true })).toBeVisible();
       await expect(page.getByRole('main')).not.toContainText('Stuck');
-      await page.getByRole('navigation', { name: 'Pages', exact: true }).getByRole('link', { name: 'Needs you', exact: true }).click();
-      await expect(page.getByRole('listitem', { name: 'Waiting on you: ' + STACK.peer.name, exact: true })).toBeVisible();
-      await expect(page.getByRole('listitem', { name: new RegExp(': ' + STACK.sender.name + '$') })).toHaveCount(0);
-      await page.getByRole('navigation', { name: 'Pages', exact: true }).getByRole('link', { name: 'Sessions', exact: true }).click();
+      const waiting = page.getByRole('region', { name: 'Needs you', exact: true });
+      await expect(waiting.getByRole('link', { name: STACK.peer.name, exact: true })).toBeVisible();
+      await expect(waiting.getByRole('link', { name: STACK.sender.name, exact: true })).toHaveCount(0);
       await page.getByRole('link', { name: STACK.sender.name, exact: true }).click();
       await expect(page.locator('header.top')).toContainText('Working');
       await expect(page.getByRole('button', { name: 'Stop the turn', exact: true })).toBeVisible();
-      await page.getByRole('navigation', { name: 'Pages', exact: true }).getByRole('link', { name: 'Turns', exact: true }).click();
+      await page.getByRole('navigation', { name: 'Pages', exact: true }).getByRole('link', { name: 'Requests', exact: true }).click();
       const running = page.getByRole('listitem', { name: STACK.sender.name + ', ' + STACK.oauthHead, exact: true });
       await expect(running).toContainText('No word from the model for 7 min; splice is keeping the turn open.');
       await expect(running).toContainText('Working');
@@ -139,7 +138,7 @@ for (const [authKind, family, colour] of [['api-key', 'local', 'local'], ['beare
           : { team_id: team.id, heads_read: [], unattributed_turns: 0, oldest_turn_epoch_millis: null, roles: [], slots: [] };
       return route.fulfill({ json: body });
     });
-    const faults = await open(page, 'fleet');
+    const faults = await open(page, 'models');
     const nav = page.getByRole('navigation', { name: 'Pages', exact: true });
     const fleet = page.locator('li.card').filter({ has: page.getByRole('link', { name: headKey, exact: true }) });
     await expect(fleet).toHaveClass(hue);
@@ -150,7 +149,7 @@ for (const [authKind, family, colour] of [['api-key', 'local', 'local'], ['beare
     await expect(session).toHaveClass(hue);
     await session.getByRole('link', { name: STACK.sender.name, exact: true }).click();
     await expect(page.getByRole('region', { name: 'Conversation', exact: true })).toHaveClass(hue);
-    await nav.getByRole('link', { name: 'Turns', exact: true }).click();
+    await nav.getByRole('link', { name: 'Requests', exact: true }).click();
     await expect(page.getByRole('listitem', { name: STACK.sender.name + ', ' + headKey, exact: true })).toHaveClass(hue);
     await page.locator('.turn').filter({ hasText: headKey }).getByRole('link', { name: STACK.sender.name, exact: true }).click();
     await expect(page.getByRole('region', { name: 'Where the time went', exact: true }).locator('..')).toHaveClass(hue);

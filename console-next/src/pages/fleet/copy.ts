@@ -1,8 +1,8 @@
 // What Fleet says. Copy lives in modules like this one, never inline in a component.
 export const F = {
-  title: 'Fleet',
+  title: 'Models',
   add: 'Add a command',
-  reading: 'Reading the fleet…',
+  reading: 'Reading model commands…',
   empty: 'No commands yet.',
   emptyWhy: 'Sign in with a subscription, paste an API key, or point at your own GPU.',
   bringAnother: 'Bring another command',
@@ -21,7 +21,7 @@ export const F = {
 } as const;
 
 export const D = {
-  back: 'Fleet',
+  back: 'Models',
   windows: 'Windows',
   windowsTab: 'Plan windows',
   noWindows: 'This command reports no window.',

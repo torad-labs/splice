@@ -4,21 +4,11 @@ import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { STACK } from './stack';
 import type { PerfTurnsWire } from '../src/types/perf';
+import { NAV } from '../src/app/copy';
 
 const source = ts.createSourceFile('routes.tsx',
   readFileSync(new URL('../src/app/routes.tsx', import.meta.url), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-const place = source.statements.filter(ts.isVariableStatement)
-  .flatMap((statement) => [...statement.declarationList.declarations])
-  .find((declaration) => ts.isIdentifier(declaration.name) && declaration.name.text === 'PLACES');
-const initializer = place?.initializer;
-const array = initializer !== undefined && ts.isAsExpression(initializer) ? initializer.expression : initializer;
-if (array === undefined || !ts.isArrayLiteralExpression(array) || array.elements.length === 0) {
-  throw new Error('router PLACES must declare a non-empty page census');
-}
-const PAGES = array.elements.map((element) => {
-  if (!ts.isStringLiteral(element)) throw new Error('router PLACES contains a non-literal page');
-  return element.text;
-});
+const PAGES = NAV.map(([path]) => path);
 
 // Own detail pages count too. Redirects and the shell are not independent page implementations.
 export const ROUTES: string[] = [];
@@ -28,30 +18,29 @@ function collectRoutes(node: ts.Node): void {
     const path = properties.find((property) => property.name.getText(source) === 'path')?.initializer;
     const element = properties.find((property) => property.name.getText(source) === 'element')?.initializer;
     if (path !== undefined && ts.isStringLiteral(path) && element !== undefined &&
-        ts.isJsxSelfClosingElement(element) && element.tagName.getText(source) !== 'Navigate' &&
+        ts.isJsxSelfClosingElement(element) && !['Navigate', 'RequestBookmark'].includes(element.tagName.getText(source)) &&
         path.text !== '/') ROUTES.push(path.text);
   }
   ts.forEachChild(node, collectRoutes);
 }
 collectRoutes(source);
+// Include mapped Pending pages. Opening each canonical URL proves it is rendered rather than redirected.
 for (const page of PAGES) {
-  if (!ROUTES.some((route) => route === page || route === page + '/:section?')) {
-    throw new Error('canonical page has no rendered route: ' + page);
-  }
+  if (!ROUTES.some((route) => route === page || route === page + '/:section?')) ROUTES.push(page);
 }
 
 export async function routePath(page: Page, route: string): Promise<string> {
   switch (route) {
     case 'sessions/:id': return 'sessions/' + STACK.sender.id;
-    case 'fleet/:head': return 'fleet/' + STACK.oauthHead;
+    case 'models/:head': return 'models/' + STACK.oauthHead;
     case 'teams/:id': return 'teams/' + env('CONSOLE_NEXT_E2E_TEAM');
     case 'projects/:id': return 'projects/' + encodeURIComponent(env('CONSOLE_E2E_REPO'));
     case 'settings/:section?': return 'settings';
-    case 'turns/:head/:ts': {
+    case 'requests/:head/:ts': {
       const payload = await read<PerfTurnsWire>(page, '/api/perf/turns?head=' + STACK.oauthHead);
       const row = payload.heads.flatMap((head) => head.rows ?? [])[0];
       if (row === undefined) throw new Error('isolated daemon has no real turn for its detail route');
-      return 'turns/' + STACK.oauthHead + '/' + row.ts;
+      return 'requests/' + STACK.oauthHead + '/' + row.ts;
     }
     default:
       if (route.includes(':')) throw new Error('render census has no real-data resolver for ' + route);

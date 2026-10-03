@@ -56,11 +56,11 @@ export function hrefOf(source: Source | 'turns', id?: string): string | null {
   switch (source) {
     case 'heads':
     case 'accounts':
-      return id === undefined ? '#/fleet' : `#/fleet/${encodeURIComponent(id)}`;
+      return id === undefined ? '#/models' : `#/models/${encodeURIComponent(id)}`;
     case 'plans':
       return '#/usage';
     case 'turns':
-      return '#/turns';
+      return '#/requests';
     case 'sessions':
       return id === undefined ? '#/sessions' : `#/sessions/${encodeURIComponent(id)}`;
     case 'teams':

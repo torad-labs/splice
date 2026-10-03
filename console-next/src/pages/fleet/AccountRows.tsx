@@ -39,7 +39,8 @@ export function AccountRowView({ account, now, pooled, pool }: { account: Accoun
   ] as (string | null)[];
   const shown = marks.filter((mark): mark is string => mark !== null);
   const refusal = refusalText(account);
-  const rule = nextRuleOf(account, pool);
+  // The next flag proves who wins, not whether saved order or a fallback selected them.
+  const rule = account.pinned === true ? nextRuleOf(account, pool) : null;
   const canSwitch = pooled && label !== null && account.selected !== true && !isExcluded(account, now) && isServable(account) && head !== '';
 
   return (

@@ -87,7 +87,7 @@ test('a first plan follows a late sign-in URL while hidden, saves once and tries
         : { status: 429, body: { error: { message: 'Synthetic limit reached' } } },
     } });
   });
-  await open(page, 'fleet');
+  await open(page, 'models');
   await page.getByRole('button', { name: 'Add a command', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: /ChatGPT Sign in with your ChatGPT plan/ }).click();
@@ -136,7 +136,7 @@ test('a first plan follows a late sign-in URL while hidden, saves once and tries
 
 test('an isolated key backend prints every refused verification check and discards without saving or restarting', async ({ page }) => {
   const original = readFileSync(env('CONSOLE_E2E_CONFIG'), 'utf8');
-  const faults = await open(page, 'fleet');
+  const faults = await open(page, 'models');
   let saves = 0;
   page.on('request', (request) => {
     if (/^\/api\/add\/[^/]+\/save$/.test(new URL(request.url()).pathname)) saves += 1;

@@ -68,7 +68,7 @@ test('a turn on the same command in another repository is attributed only to tha
 });
 
 test('Settings lists each actual effective compaction rule with its length and applicable plans', async ({ page }) => {
-  const faults = await open(page, 'settings/storage');
+  const faults = await open(page, 'settings/conversation');
   const block = page.getByRole('region', { name: 'Compaction', exact: true });
   const rule = (source: string) => block.getByRole('listitem').filter({ hasText: source });
   const repoName = basename(env('CONSOLE_E2E_REPO'));

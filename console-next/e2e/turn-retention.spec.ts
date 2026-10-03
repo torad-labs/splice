@@ -32,7 +32,7 @@ async function newest(page: Page, head: string): Promise<number> {
 }
 
 async function openTurn(page: Page, head: string, at: number): Promise<void> {
-  const href = '#/turns/' + head + '/' + at;
+  const href = '#/requests/' + head + '/' + at;
   // A turn's link is named for its session, not necessarily for its plan.
   const link = page.locator('a[href="' + href + '"]');
   await expect(link).toBeVisible({ timeout: 15_000 });
@@ -41,7 +41,7 @@ async function openTurn(page: Page, head: string, at: number): Promise<void> {
 }
 
 test('a recorded turn opens its own page with the exact received request and answer', async ({ page }) => {
-  const faults = await open(page, 'turns');
+  const faults = await open(page, 'requests');
   await driveOneTurn(Number(env('CONSOLE_E2E_SOLO_PORT')), env('CONSOLE_E2E_KEY'), undefined, STACK.soloModel);
   await openTurn(page, STACK.soloHead, await newest(page, STACK.soloHead));
   await page.getByRole('link', { name: 'Request and answer', exact: true }).click();
@@ -54,7 +54,7 @@ test('a recorded turn opens its own page with the exact received request and ans
 });
 
 test('a delayed conversation read stays visibly pending until its real messages arrive', async ({ page }) => {
-  const faults = await open(page, 'turns');
+  const faults = await open(page, 'requests');
   const responseId = await driveOneTurn(Number(env('CONSOLE_E2E_SOLO_PORT')), env('CONSOLE_E2E_KEY'), STACK.sender.id, STACK.soloModel);
   saveTranscript(env('CONSOLE_E2E_TRANSCRIPT_ROOT'), STACK.sender.id, responseId, TURN_PROMPT, 'console e2e answer');
   const at = await newest(page, STACK.soloHead);
@@ -115,10 +115,10 @@ test('a late trace for the previous turn cannot replace the current whole failur
     settled.push(id);
   });
   try {
-    await open(page, 'turns');
+    await open(page, 'requests');
     await openTurn(page, STACK.soloHead, at);
     await expect.poll(() => reads).toContain('synthetic-failure-0');
-    await page.getByRole('link', { name: 'Turns', exact: true }).last().click();
+    await page.getByRole('link', { name: 'Requests', exact: true }).last().click();
     await openTurn(page, STACK.soloHead, at - 1);
     const sentence = 'The connection for synthetic-failure-1 closed mid-request; retry with the same session.';
     await expect(page.locator('main .failure-sentence')).toHaveText(sentence);
@@ -137,7 +137,7 @@ test('a late trace for the previous turn cannot replace the current whole failur
 });
 
 test('turn transcript privacy clears an already open second profile and persists across reload', async ({ page }) => {
-  const faults = await open(page, 'turns');
+  const faults = await open(page, 'requests');
   const responseId = await driveOneTurn(Number(env('CONSOLE_E2E_OAUTH_PORT')), env('CONSOLE_E2E_KEY'), STACK.sender.id);
   saveTranscript(env('CONSOLE_E2E_TRANSCRIPT_ROOT'), STACK.sender.id, responseId, TURN_PROMPT, 'console e2e answer');
   const at = await newest(page, STACK.oauthHead);
@@ -149,7 +149,7 @@ test('turn transcript privacy clears an already open second profile and persists
   const context = await browser.newContext();
   try {
     const other = await context.newPage();
-    const otherFaults = await open(other, 'turns/' + STACK.oauthHead + '/' + at);
+    const otherFaults = await open(other, 'requests/' + STACK.oauthHead + '/' + at);
     await expect(other.getByRole('main')).toContainText(TURN_PROMPT);
     await page.getByRole('navigation', { name: 'Pages', exact: true }).getByRole('link', { name: 'Settings', exact: true }).click();
     await page.getByRole('link', { name: 'Storage', exact: true }).click();
@@ -182,7 +182,7 @@ test('turn transcript privacy clears an already open second profile and persists
 });
 
 test('capture writes reread running state, keep new bodies absent until restart and reverse topology staleness', async ({ page }) => {
-  const faults = await open(page, 'turns');
+  const faults = await open(page, 'requests');
   const config = env('CONSOLE_E2E_CONFIG');
   const original = readFileSync(config, 'utf8');
   const path = '/api/heads/' + STACK.oauthHead + '/capture';
@@ -210,7 +210,7 @@ test('capture writes reread running state, keep new bodies absent until restart 
     await expect(page.getByRole('main')).not.toContainText('Recording bodies');
     expect(readFileSync(config, 'utf8')).toMatch(new RegExp('\\[heads\\.' + STACK.oauthHead + '\\.overrides\\][^[]*trace = "true"'));
     await expect.poll(stale).toBe(true);
-    await page.getByRole('link', { name: 'Turns', exact: true }).last().click();
+    await page.getByRole('link', { name: 'Requests', exact: true }).last().click();
     await driveOneTurn(Number(env('CONSOLE_E2E_OAUTH_PORT')), env('CONSOLE_E2E_KEY'));
     await openTurn(page, STACK.oauthHead, await newest(page, STACK.oauthHead));
     await page.getByRole('link', { name: 'Request and answer', exact: true }).click();

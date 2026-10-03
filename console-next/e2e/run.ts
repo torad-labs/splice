@@ -7,7 +7,7 @@ if (green.error !== undefined) throw green.error;
 if (green.status !== 0) process.exit(green.status ?? 1);
 
 const mutant = spawnSync('bunx', [
-  ...args, '--project', 'renders', '--grep', 'needs-you renders against', '--reporter', 'json',
+  ...args, '--project', 'renders', '--grep', 'accounts renders against', '--reporter', 'json',
   '--output', 'build/e2e-mutant',
 ], {
   env: { ...process.env, CONSOLE_NEXT_E2E_MUTANT: 'throw' },

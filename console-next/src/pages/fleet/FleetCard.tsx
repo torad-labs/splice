@@ -38,7 +38,7 @@ export function FleetCardView({ facts, fix, sortable = true }: { facts: Facts; f
     >
       <div className="bar">
         <h3>
-          <Link className="card-link" to={`/fleet/${encodeURIComponent(facts.key)}`}>
+          <Link className="card-link" to={`/models/${encodeURIComponent(facts.key)}`}>
             {facts.title}
           </Link>
         </h3>

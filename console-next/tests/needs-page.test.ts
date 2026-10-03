@@ -82,7 +82,7 @@ describe('the calm figures', () => {
     expect(calm.serving).toEqual(['a']);
   });
   test('a near-limit command still serves even when a pool offers a switch', () => {
-    const reading = need({ kind: K.plan, head: 'a', fix: { kind: 'open', href: '#/fleet/a', label: 'Switch account' } });
+    const reading = need({ kind: K.plan, head: 'a', fix: { kind: 'open', href: '#/models/a', label: 'Switch account' } });
     expect(calmOf(list([reading]), [], [head('a')]).serving).toEqual(['a']);
   });
   test('a plan whose local runtime is not answering is not serving, whatever its own health says', () => {
@@ -103,9 +103,9 @@ describe('the calm figures', () => {
 
 describe('addresses', () => {
   test('every address the derivation makes is a router path once its hash is dropped', () => {
-    expect(routeOf('#/fleet/claudex')).toBe('/fleet/claudex');
+    expect(routeOf('#/models/claudex')).toBe('/models/claudex');
     expect(routeOf('/sessions')).toBe('/sessions');
-    expect(routeOf(hrefOf('heads', 'a b'))).toBe('/fleet/a%20b');
+    expect(routeOf(hrefOf('heads', 'a b'))).toBe('/models/a%20b');
     expect(routeOf(hrefOf('sessions', 's1'))).toBe('/sessions/s1');
     expect(routeOf(hrefOf('doctor'))).toBe('/settings/health');
   });

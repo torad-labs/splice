@@ -44,7 +44,7 @@ export function FleetHeadPage() {
   const keyStore = useKeyStore();
   const now = Date.now();
   const back = (
-    <Link className="crumb" to="/fleet">
+    <Link className="crumb" to="/models">
       <Back />
       {D.back}
     </Link>

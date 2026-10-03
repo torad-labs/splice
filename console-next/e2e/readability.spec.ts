@@ -11,7 +11,7 @@ import { STACK } from './stack';
 
 test('wide Finished rows keep each name beside its measurements', async ({ page }) => {
   await page.setViewportSize({ width: 3840, height: 2060 });
-  const faults = await open(page, 'turns');
+  const faults = await open(page, 'requests');
   const rows = page.locator('li.turn');
   await expect(rows.first()).toBeVisible({ timeout: FIRST_READ_MS });
   const distance = await rows.first().evaluate((row) => {
@@ -69,8 +69,8 @@ for (const width of [1440, 3840]) {
       }
       await route.fulfill({ response, json: body });
     });
-    await open(page, 'needs-you');
-    const faults = await open(page, await routePath(page, 'turns/:head/:ts'));
+    await open(page, 'accounts');
+    const faults = await open(page, await routePath(page, 'requests/:head/:ts'));
     const link = page.getByRole('link', { name: 'Open the session', exact: true });
     await expect(link).toBeVisible({ timeout: FIRST_READ_MS });
     const placement = await page.getByRole('main').evaluate((root) => {
@@ -89,7 +89,7 @@ for (const width of [1440, 3840]) {
   });
 }
 
-for (const board of ['fleet', 'sessions']) {
+for (const board of ['models', 'sessions']) {
   test(board + ' cards reorder by their bodies without rendering grips', async ({ page }) => {
     if (board === 'sessions') {
       await page.route('**/api/sessions', async (route) => {
@@ -179,14 +179,14 @@ async function clipped(locator: Locator): Promise<string[]> {
 }
 
 // Every page, not three: the operator's frame is 3840 wide and a page that draws in a third of it fails him as much as one that overflows.
-const LISTS = ['sessions', 'usage', 'turns'];
-const PAGES = ['needs-you', 'sessions', 'sessions/:id', 'teams/:id', 'fleet', 'fleet/:head', 'turns', 'turns/:head/:ts', 'usage', 'projects/:id', 'settings'];
+const LISTS = ['sessions', 'usage', 'requests'];
+const PAGES = ['accounts', 'sessions', 'sessions/:id', 'teams/:id', 'models', 'models/:head', 'requests', 'requests/:head/:ts', 'usage', 'projects/:id', 'settings'];
 
 for (const frame of FRAMES) {
   for (const route of frame.width === 3840 ? PAGES : LISTS) {
     test(route + ' at ' + frame.width + ' keeps the retained drawn-width and reading floors', async ({ page }) => {
       await page.setViewportSize({ width: frame.width, height: frame.height });
-      await open(page, 'needs-you');
+      await open(page, 'accounts');
       const faults = await open(page, await routePath(page, route));
       await expect(page.getByRole('main').getByRole('heading').first()).toBeVisible({ timeout: FIRST_READ_MS });
       // The page polls, so the network is never idle: it is ready when its text stops changing.
@@ -221,7 +221,7 @@ test('Fleet keeps a long command and its complete state visible at desktop width
     head.label = command;
     await route.fulfill({ response, json: body });
   });
-  const faults = await open(page, 'fleet');
+  const faults = await open(page, 'models');
   const title = page.getByRole('link', { name: command, exact: true });
   await expect(title).toBeVisible();
   const card = page.locator('li.card').filter({ has: title });
@@ -246,7 +246,7 @@ test('Turns keeps a long model, large token counts and complete refusal outcome 
     }
     await route.fulfill({ response, json: body });
   });
-  const faults = await open(page, 'turns');
+  const faults = await open(page, 'requests');
   const row = page.locator('li.turn').filter({ hasText: model }).first();
   await expect(row).toBeVisible({ timeout: FIRST_READ_MS });
   await expect(row).toContainText('2.00M in');

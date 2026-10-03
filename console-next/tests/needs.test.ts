@@ -197,7 +197,7 @@ describe('each head, by the cause Fleet prints', () => {
 
   test('a head with every slot busy and a full queue says so and opens Turns', () => {
     const full = head({ gate: gate({ inflight: 4, queued: 4 }) });
-    expect(needs([full])[0]).toMatchObject({ kind: K.queue, finding: H.queueFull, fix: { kind: 'open', href: '#/turns' } });
+    expect(needs([full])[0]).toMatchObject({ kind: K.queue, finding: H.queueFull, fix: { kind: 'open', href: '#/requests' } });
   });
 
   test('sign-ins not read yet never read as signed out', () => {
@@ -225,14 +225,14 @@ describe('a head the provider refuses is one out-of-quota item, with the instant
     expect(items({ heads: read([refused()]) })).toEqual([{
       key: 'heads:claudex', severity: 'warn', source: 'heads', kind: 'Out of quota', head: 'claudex', subject: 'claudex',
       finding: `Out of quota until ${localInstantText(UNTIL)}`,
-      fix: { kind: 'open', href: '#/fleet/claudex', label: 'See the command' },
-      at: '#/fleet/claudex',
+      fix: { kind: 'open', href: '#/models/claudex', label: 'See the command' },
+      at: '#/models/claudex',
     }]);
   });
 
   test('an OAuth head that rides a pool of several logins offers Switch account; a single login or a key head does not', () => {
     const pool = [account({ label: 'a' }), account({ label: 'b' })];
-    expect(items({ heads: read([refused()]), accounts: read({ accounts: pool }) })[0]?.fix).toMatchObject({ label: 'Switch account', href: '#/fleet/claudex' });
+    expect(items({ heads: read([refused()]), accounts: read({ accounts: pool }) })[0]?.fix).toMatchObject({ label: 'Switch account', href: '#/models/claudex' });
     expect(items({ heads: read([refused()]), accounts: read({ accounts: [account({ label: 'a' })] }) })[0]?.fix).toMatchObject({ label: 'See the command' });
     const key = refused({ key: 'or', label: 'or', authKind: 'api-key' });
     const keyPool = pool.map((row) => ({ ...row, heads: ['or'] }));
@@ -271,7 +271,7 @@ describe('a full reading is information until a pool offers a switch', () => {
     const spare = account({ label: 'spare' });
     const plans = (other: AccountRow) => needsIn({ accounts: read({ accounts: [near, other] }) }).find((need) => need.kind === K.plan);
     expect(plans(spare)?.subject).toBe('claudex · work');
-    expect(plans(spare)?.fix).toEqual({ kind: 'open', href: '#/fleet/claudex', label: 'Switch account' });
+    expect(plans(spare)?.fix).toEqual({ kind: 'open', href: '#/models/claudex', label: 'Switch account' });
     expect(plans({ ...spare, credential_present: false })?.fix).toBeNull();
     expect(plans({ ...spare, available: false })?.fix).toBeNull();
     expect(plans({ ...spare, auth_excluded_until_epoch_millis: NOW + 60_000 })?.fix).toBeNull();
@@ -343,8 +343,8 @@ describe('the daemon, the plans and the accounts', () => {
     expect(out[0]?.fix).toEqual({ kind: 'login', head: 'claudex', label: 'spare' });
     expect(out[0]?.finding).toContain('this label');
     expect(out[0]?.finding).not.toContain('new label');
-    expect(out[0]).toMatchObject({ kind: K.account, head: 'claudex', at: '#/fleet/claudex' });
-    expect(out[1]?.fix).toEqual({ kind: 'open', href: '#/fleet', label: S.openFleet });
+    expect(out[0]).toMatchObject({ kind: K.account, head: 'claudex', at: '#/models/claudex' });
+    expect(out[1]?.fix).toEqual({ kind: 'open', href: '#/models', label: S.openFleet });
   });
 
   test('a single login whose credential is gone has no account item and no window is invented for it', () => {
@@ -383,7 +383,7 @@ describe('a refused credential says why and offers no renewal (V4-410)', () => {
   test('a refused account says why and opens Fleet, and a gone one still offers the renewal', () => {
     const items = accountNeeds([orphan(), refusedRow()]);
     expect(items.find((need) => need.subject === 'lost')).toMatchObject({ finding: H.accountSignedOut, fix: { kind: 'login', head: 'claudex', label: 'lost' } });
-    expect(items.find((need) => need.subject === 'linked')).toMatchObject({ finding: SENTENCE, fix: { kind: 'open', href: '#/fleet' } });
+    expect(items.find((need) => need.subject === 'linked')).toMatchObject({ finding: SENTENCE, fix: { kind: 'open', href: '#/models' } });
   });
 
   test('the refusal outranks the missing credential and any exclusion it carries too', () => {
@@ -602,7 +602,7 @@ describe('the doctor', () => {
     const command = 'splice logs --head codex --tail 50';
     const logs: DoctorCheck[] = [{ id: 'daemon/logs', status: 'warn', detail: 'look at the head log', fix: command }];
     expect(needsIn({ doctor: read(doctor(logs)) })[0]?.fix).toBeNull();
-    expect(doctorFixOf(command, null, 'command')).toEqual({ kind: 'open', href: '#/fleet/codex?tab=log&tail=50', label: S.openLog, fallback: command });
+    expect(doctorFixOf(command, null, 'command')).toEqual({ kind: 'open', href: '#/models/codex?tab=log&tail=50', label: S.openLog, fallback: command });
     expect(doctorFixOf(' splice restart ', null, 'command')).toEqual({ kind: 'restart-daemon' });
   });
 
@@ -693,12 +693,12 @@ describe('the list ranks worst first', () => {
 
 describe('each item opens itself on its page, at the console-next routes', () => {
   test('hrefOf: a head on Fleet, a session\'s own page, and the pages the rest live on; the daemon has none', () => {
-    expect(hrefOf('heads', 'claudex')).toBe('#/fleet/claudex');
-    expect(hrefOf('heads')).toBe('#/fleet');
-    expect(hrefOf('accounts', 'a b')).toBe('#/fleet/a%20b');
-    expect(hrefOf('accounts')).toBe('#/fleet');
+    expect(hrefOf('heads', 'claudex')).toBe('#/models/claudex');
+    expect(hrefOf('heads')).toBe('#/models');
+    expect(hrefOf('accounts', 'a b')).toBe('#/models/a%20b');
+    expect(hrefOf('accounts')).toBe('#/models');
     expect(hrefOf('plans')).toBe('#/usage');
-    expect(hrefOf('turns')).toBe('#/turns');
+    expect(hrefOf('turns')).toBe('#/requests');
     expect(hrefOf('sessions')).toBe('#/sessions');
     expect(hrefOf('sessions', 'pid:42')).toBe('#/sessions/pid%3A42');
     expect(hrefOf('teams')).toBe('#/sessions?group=team');
@@ -718,10 +718,10 @@ describe('each item opens itself on its page, at the console-next routes', () =>
       topology: read(true),
     });
     const at = (source: string) => out.filter((need) => need.source === source).map((need) => need.at);
-    expect(at('heads')).toEqual(['#/fleet/down']);
+    expect(at('heads')).toEqual(['#/models/down']);
     expect(at('daemon')).toEqual([null]);
     expect(at('plans')).toEqual(['#/usage']);
-    expect(at('accounts')).toEqual(['#/fleet/claudex']);
+    expect(at('accounts')).toEqual(['#/models/claudex']);
     expect(at('sessions')).toEqual(['#/sessions/sess-1']);
     expect(at('teams')).toEqual(['#/sessions?group=team']);
     expect(at('doctor')).toEqual(['#/settings/health']);

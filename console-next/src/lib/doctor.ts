@@ -73,7 +73,7 @@ export function logsTargetOf(fix: string | null): { head: string; tail: number |
 
 export function logsHrefOf(fix: string | null): string | null {
   const target = logsTargetOf(fix);
-  return target === null ? null : `#/fleet/${encodeURIComponent(target.head)}?tab=log${target.tail === null ? '' : `&tail=${target.tail}`}`;
+  return target === null ? null : `#/models/${encodeURIComponent(target.head)}?tab=log${target.tail === null ? '' : `&tail=${target.tail}`}`;
 }
 
 const FINDING_INSTANT = /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\b/g;

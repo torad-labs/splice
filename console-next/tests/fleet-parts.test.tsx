@@ -30,7 +30,7 @@ const render = (facts: FleetCard, fix: string | null = null) =>
 describe('a fleet card', () => {
   test('a ready card is a title that opens its page, a state, one window and one quiet line', () => {
     const html = render(card());
-    expect(html).toContain('href="/fleet/claude-grok"');
+    expect(html).toContain('href="/models/claude-grok"');
     expect(html).toContain('Ready');
     expect(html).toContain('5 hours');
     expect(html).toContain('41%');
@@ -87,11 +87,12 @@ describe('an account row', () => {
     expect(html).toContain('Remove');
     expect(html).not.toContain('Its login file is gone');
   });
-  test('the account the daemon marks next says which rule chose it, and no other row does', () => {
+  test('the next marker does not invent a fallback cause while saved priority is unreported', () => {
     const primary = acct({ label: 'primary', primary: true, next_target: true });
     const other = acct({ label: 'spare' });
     const pool = [primary, other];
-    expect(row(primary, pool)).toContain('Next because it is the primary account.');
+    expect(row(primary, pool)).toContain('<span class="tag">Next</span>');
+    expect(row(primary, pool)).not.toContain('Next because it is the primary account.');
     expect(row(acct({ label: 'pin', pinned: true, next_target: true }), pool)).toContain('Next because it is the pinned account.');
     expect(row(other, pool)).not.toContain('Next because');
   });

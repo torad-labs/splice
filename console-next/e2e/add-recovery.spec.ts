@@ -18,7 +18,7 @@ test('taken names and commands reveal editable fields and keep the draft across 
     return route.fulfill({ json: opened });
   });
   await page.route('**/api/add/' + opened.id, (route) => route.fulfill({ json: opened }));
-  const faults = await open(page, 'fleet');
+  const faults = await open(page, 'models');
   await page.getByRole('button', { name: 'Add a command', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: /^claude\s/i }).click();
@@ -54,7 +54,7 @@ test('a failed no-ask opening offers retry and back instead of staying on Openin
       : route.fulfill({ json: opened });
   });
   await page.route('**/api/add/' + opened.id, (route) => route.fulfill({ json: opened }));
-  const faults = await open(page, 'fleet');
+  const faults = await open(page, 'models');
   await page.getByRole('button', { name: 'Add a command', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: /^claude\s/i }).click();
@@ -69,7 +69,7 @@ test('a failed no-ask opening offers retry and back instead of staying on Openin
 });
 
 test('the additional catalogue choices use human labels without replacing the six initial choices', async ({ page }) => {
-  const faults = await open(page, 'fleet');
+  const faults = await open(page, 'models');
   await page.getByRole('button', { name: 'Add a command', exact: true }).click();
   const dialog = page.getByRole('dialog');
   for (const label of ['DeepSeek', 'Claude', 'API key']) {

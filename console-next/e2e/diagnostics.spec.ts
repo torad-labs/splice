@@ -27,53 +27,12 @@ test('Settings reads the isolated whole doctor report and offers the API-key rem
   expect(faults.failedReads).toEqual([]);
 });
 
-test('Needs you counts one required act and groups doctor observations under Worth a look', async ({ page }) => {
-  await page.route('**/api/heads', (route) => route.fulfill({ json: { heads: [] } }));
-  await page.route('**/api/accounts', (route) => route.fulfill({ json: { accounts: [] } }));
-  await page.route('**/api/sessions', (route) => route.fulfill({ json: { note: '', sessions: [] } }));
-  await page.route('**/api/teams', (route) => route.fulfill({ json: { teams: [] } }));
-  await page.route('**/api/usage*', (route) => route.fulfill({ json: { window_hours: 24, warn_pct: 80, warn_tokens_5h: 0, heads: [] } }));
-  await page.route('**/api/doctor', async (route) => {
-    const response = await route.fetch();
-    const body = await response.json() as DoctorPayload;
-    body.checks = [
-      { id: 'prerequisites/claude-version', status: 'warn', detail: 'Synthetic client is newer than the tested version.', fix: 'check the release notes' },
-      { id: 'runtime/head first errors', status: 'warn', detail: '3 provider / 2 local error(s) since last restart', fix: 'splice logs --head first --tail 50', fix_kind: 'command' },
-      { id: 'runtime/head second errors', status: 'warn', detail: '1 provider / 0 local error(s) since last restart', fix: 'splice logs --head second --tail 50', fix_kind: 'command' },
-      { id: 'configuration/local:runner', status: 'warn', detail: 'Synthetic runtime is not answering.', fix: 'inspect the runtime' },
-      { id: 'installation/PATH', status: 'fail', detail: 'Synthetic launcher directory is missing from the user shell path.', fix: 'add it to the shell path', fix_kind: 'advice' },
-    ];
-    await route.fulfill({ response, json: body });
-  });
-  await open(page, 'needs-you');
-  await expect(page.locator('main .lede')).toHaveText('One thing a person has to do. Everything else is running.');
-  const observations = page.getByRole('region', { name: 'Worth a look', exact: true });
-  await expect(observations.getByRole('listitem')).toHaveCount(4);
-  await expect(observations).toContainText('Synthetic client is newer than the tested version.');
-  await expect(observations).toContainText('Synthetic runtime is not answering.');
-  await expect(observations).not.toContainText('Synthetic launcher directory');
-  const badge = page.getByRole('navigation', { name: 'Pages', exact: true }).getByRole('link', { name: /^Needs you/ }).locator('.count');
-  await expect(badge).toHaveText('1');
-});
-
-test('Needs you opens the intended plan and the full Health report from its doctor item', async ({ page }) => {
-  const faults = await open(page, 'needs-you');
-  const wrapper = page.getByRole('listitem', { name: /^Doctor: Launcher/ });
-  await expect(wrapper).toContainText('splice install --all');
-  await wrapper.getByRole('link', { name: 'Show the details', exact: true }).click();
-  await expect(page.getByRole('region', { name: 'Health', exact: true })).toBeVisible();
-  await expect(page.locator('.row').filter({ has: page.getByRole('heading', { name: /^Launcher/ }) })).toBeVisible();
-  await page.goBack();
-  const key = page.getByRole('listitem').filter({ hasText: 'CONSOLE_E2E_NO_SUCH_KEY' }).first();
-  await key.getByRole('link', { name: 'Show the details', exact: true }).click();
-  await expect(page).toHaveURL(new RegExp('#/fleet/' + STACK.keyHead + '$'));
-  await expect(page.getByRole('heading', { name: STACK.keyHead, level: 1, exact: true })).toBeVisible();
-  expect(faults.pageErrors).toEqual([]);
-});
+// V4-444 retires the removed global Needs you feed's count, badge and cross-navigation.
+// The whole Health report and its actual remedies remain covered above and below.
 
 test('the Log tab renders the isolated daemon tail and its actual source path', async ({ page }) => {
   const answer = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/logs/' + STACK.oauthHead);
-  const faults = await open(page, 'fleet/' + STACK.oauthHead + '?tab=log');
+  const faults = await open(page, 'models/' + STACK.oauthHead + '?tab=log');
   const response = await answer;
   expect(response.ok()).toBe(true);
   const tail = await response.json() as LogsPayload;
@@ -135,7 +94,7 @@ test('the real wrapper fix refuses inside the isolated home and returns the doct
   expect(faults.pageErrors).toEqual([]);
 });
 
-test('masked remedies remain noncopyable in Health and Needs you, while own-page links update their target', async ({ page }) => {
+test('masked remedies remain noncopyable in Health while model-page links update their target', async ({ page }) => {
   await page.route('**/api/doctor', async (route) => {
     const response = await route.fetch();
     const body = await response.json() as DoctorPayload;
@@ -146,16 +105,12 @@ test('masked remedies remain noncopyable in Health and Needs you, while own-page
   const row = page.locator('.row').filter({ hasText: 'Synthetic masked remedy needs a terminal' });
   await expect(row).toContainText('Run splice doctor in a terminal to see it.');
   await expect(row.getByRole('button', { name: 'Copy the command', exact: true })).toHaveCount(0);
-  await page.getByRole('navigation', { name: 'Pages', exact: true }).getByRole('link', { name: 'Needs you', exact: true }).click();
-  const item = page.getByRole('listitem', { name: 'Doctor: Masked', exact: true });
-  await expect(item.getByRole('link', { name: 'Show the details', exact: true })).toBeVisible();
-  await expect(item.getByRole('button', { name: 'Copy the command', exact: true })).toHaveCount(0);
-  await page.evaluate((head) => { location.hash = '#/fleet/' + head; }, STACK.keyHead);
+  await page.evaluate((head) => { location.hash = '#/models/' + head; }, STACK.keyHead);
   await expect(page.getByRole('heading', { name: STACK.keyHead, level: 1, exact: true })).toBeVisible();
-  await page.evaluate((head) => { location.hash = '#/fleet/' + head; }, STACK.oauthHead);
+  await page.evaluate((head) => { location.hash = '#/models/' + head; }, STACK.oauthHead);
   await expect(page.getByRole('heading', { name: STACK.oauthHead, level: 1, exact: true })).toBeVisible();
-  await page.getByRole('main').getByRole('link', { name: 'Fleet', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Fleet', level: 1, exact: true })).toBeVisible();
+  await page.getByRole('main').getByRole('link', { name: 'Models', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Models', level: 1, exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: STACK.oauthHead, level: 1, exact: true })).toHaveCount(0);
   expect(faults.pageErrors).toEqual([]);
   await page.unrouteAll({ behavior: 'wait' });
@@ -189,10 +144,6 @@ test('rate-limit observations use actual counts and the declared vendor without 
   await expect(raw).toBeHidden();
   await health.getByText('Show the details', { exact: true }).click();
   await expect(raw).toBeVisible();
-  await page.getByRole('navigation', { name: 'Pages', exact: true }).getByRole('link', { name: 'Needs you', exact: true }).click();
-  const observations = page.getByRole('region', { name: 'Worth a look', exact: true });
-  await expect(observations).toContainText("10 turns hit Anthropic's rate limit");
-  await expect(observations.getByRole('link', { name: 'Show the details', exact: true })).toBeVisible();
 });
 
 test('a local connection refusal names its port while a genuine reset remains Connection lost', async ({ page }) => {

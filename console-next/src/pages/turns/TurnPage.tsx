@@ -21,7 +21,7 @@ export function TurnPage() {
   const heads = useHeads();
   const status = useStatus();
   const sessions = useSessions();
-  const crumb = <div className="crumb"><Link to="/turns">{P.back}</Link></div>;
+  const crumb = <div className="crumb"><Link to="/requests">{P.back}</Link></div>;
 
   if (turns.isError && turns.data === undefined) return <>{crumb}<Fault message={failureText(turns.error)} onRetry={() => void turns.refetch()} /></>;
   if (turns.isPending) return <>{crumb}<PageHead title={T.title} lede={T.reading} /></>;
@@ -41,7 +41,7 @@ export function TurnPage() {
 
   return (
     <div className={`hue ${colour}`}>
-      <div className="crumb"><Link to="/turns">{P.back}</Link><span>/</span><span>{when}</span></div>
+      <div className="crumb"><Link to="/requests">{P.back}</Link><span>/</span><span>{when}</span></div>
       <header className="page-head hero">
         <div>
           <h1>{title}</h1>

@@ -10,11 +10,11 @@ export const STAGE_PHRASE = {
 } as const;
 
 export const T = {
-  title: 'Turns',
+  title: 'Requests',
   window: 'Window',
   windows: [['1h', '1 hour'], ['24h', '24 hours'], ['7d', '7 days']] as readonly (readonly [PerfWindowLabel, string])[],
   windowSpoken: { '1h': 'the last hour', '24h': 'the last 24 hours', '7d': 'the last 7 days' } as Record<PerfWindowLabel, string>,
-  reading: 'Reading the turns.',
+  reading: 'Reading the requests.',
   runningTitle: 'Running now',
   working: 'Working',
   runningWhy: 'A turn stays here until its answer lands.',
@@ -59,7 +59,7 @@ export const T = {
 
 /** One turn's own page. */
 export const P = {
-  back: 'Turns',
+  back: 'Requests',
   gone: 'This turn is no longer held.',
   goneWhy: 'The daemon keeps a window of turns; this one has aged out of it.',
   stagesTitle: 'Where the time went',

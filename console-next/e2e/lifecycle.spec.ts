@@ -25,7 +25,7 @@ test('an unsupervised restart returns the replacement console and applies the ch
   test.setTimeout(120_000);
   const config = env('CONSOLE_E2E_CONFIG');
   const original = readFileSync(config, 'utf8');
-  await open(page, 'needs-you');
+  await open(page, 'settings/health');
   const before = await read<HeadsPayload>(page, '/api/heads');
   const originalHealth = await health();
   expect(originalHealth?.ok, 'the isolated daemon must be healthy before restarting').toBe(true);
@@ -37,7 +37,7 @@ test('an unsupervised restart returns the replacement console and applies the ch
     writeFileSync(config, changed);
     await expect.poll(async () => (await health())?.topologyStale, { timeout: 20_000 }).toBe(true);
     await page.reload();
-    const restart = page.getByRole('button', { name: 'Restart splice', exact: true });
+    const restart = page.getByRole('region', { name: 'Health', exact: true }).getByRole('button', { name: 'Restart splice', exact: true });
     await expect(restart).toBeVisible();
     let posts = 0;
     page.on('request', (request) => {
@@ -60,7 +60,7 @@ test('an unsupervised restart returns the replacement console and applies the ch
     }, { timeout: 60_000 }).toBe(true);
     await page.reload();
     await expect(page.getByRole('navigation', { name: 'Pages', exact: true })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Needs you', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Restart splice', exact: true })).toHaveCount(0);
     const authorized = await page.request.get(env('CONSOLE_E2E_BASE') + '/api/status', {
       headers: { Authorization: 'Bearer ' + env('CONSOLE_E2E_KEY') },

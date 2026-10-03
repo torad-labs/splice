@@ -174,7 +174,7 @@ describe('not reported by provider', () => {
 
 describe('the selector order is printed, not implied', () => {
   test('the sentence is the daemon rule word for word', () => {
-    expect(SELECTOR_ORDER_TEXT).toBe('pinned, then primary, then last used, then most weekly room');
+    expect(SELECTOR_ORDER_TEXT).toBe('pinned, then saved order, then primary, then last used, then most weekly room');
   });
 });
 
@@ -349,7 +349,7 @@ describe('the reading time', () => {
 
 describe('the selector order', () => {
   test('is printed as the sentence the daemon implements, the pin first', () => {
-    expect(SELECTOR_ORDER_TEXT).toBe('pinned, then primary, then last used, then most weekly room');
+    expect(SELECTOR_ORDER_TEXT).toBe('pinned, then saved order, then primary, then last used, then most weekly room');
   });
 
   /** Every row's rule in one pool, in order: null for each strip the daemon did not flag. */

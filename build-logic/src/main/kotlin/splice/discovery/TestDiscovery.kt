@@ -117,8 +117,10 @@ val DISPOSITIONS: Map<String, Disposition> = mapOf(
     // Source-slot adoption and retained WS cancellation each expand into two XML-observed cases.
     "IndependentSourceRoundTest" to Disposition("2 @ParameterizedTest methods expand to 4 cases (3 @Test + 4 = 7)", 7),
     // V4-447: reject changed source prefix, call ID, tool name, item ID and incomplete completion.
+    // V4-457 (5ee8596ba, 27873c2b1): both local rejection kinds, both pre-attachment cancellation
+    // points and three local source rejections join the five corruption cases.
     "CodexCodeModeSourceTerminalTest" to
-        Disposition("1 @ParameterizedTest expands to 5 cases (6 @Test + 5 = 11)", 11),
+        Disposition("4 @ParameterizedTest methods expand to 12 cases (8 @Test + 12 = 20)", 20),
     "CodexCodeModeReanchorTest" to Disposition("2 @ParameterizedTest methods expand to 5 cases (1 @Test + 5 = 6)", 6),
     // b5bfa0a11: an item-complete suffix waits for response certification over six endings, and the
     // incomplete ending repeats 50 times as a race cohort; each annotation declares one method.
@@ -166,6 +168,20 @@ val DISPOSITIONS: Map<String, Disposition> = mapOf(
     // V4-254 (4e7601053): yes to the live check keeps the saved head for every subscription and
     // client-auth profile, one case per profile (@ValueSource codex, grok, kimi, muse, claude).
     "AddLiveCommandTest" to Disposition("1 @ParameterizedTest expands to 5 cases (1 @Test + 5 = 6)", 6),
+    // 13d44f0b2: a progress timeout records one sentence for a buffered and a streamed turn
+    // (@ValueSource stream false, true).
+    "OutcomeSentenceTest" to Disposition("1 @ParameterizedTest expands to 2 cases (6 @Test + 2 = 8)", 8),
+    // 9422e4392: one statement batch forces before client-visible state whether or not the post
+    // suspends between chunks (@ValueSource suspendBetweenChunks false, true).
+    "CodeModeStatementForceCostTest" to
+        Disposition("1 @ParameterizedTest expands to 2 cases (1 @Test + 2 = 3)", 3),
+    // V4-457 (5ee8596ba): a completed sibling cannot retire a key still starting or one borrowed
+    // (@ValueSource borrowed false, true).
+    "CodeModeSupersededCellTest" to Disposition("1 @ParameterizedTest expands to 2 cases (4 @Test + 2 = 6)", 6),
+    // V4-457 (5ee8596ba): conversation identity survives both store save paths, with and without a
+    // changed cell (@ValueSource changedCell false, true).
+    "CodeModeConversationIdentityTest" to
+        Disposition("1 @ParameterizedTest expands to 2 cases (1 @Test + 2 = 3)", 3),
 )
 
 // Modules whose test task is disabled BY CONFIGURATION, so no XML can exist. The reason is the

@@ -15,6 +15,7 @@ import splice.head.turn.SealedDrive
 import splice.head.turn.TurnDrive
 import splice.head.turn.TurnInputs
 import splice.head.wire.FrameRecording
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.CoroutineContext
 
 // why: inspect bounded coroutine-recovery cause wrappers without following a cyclic Throwable chain forever.
@@ -34,11 +35,16 @@ internal class DetachedCompaction(
         var completed = false
         var kept = false
         var launched = false
-        return Cancellables.withCleanup({ if (!launched) abandonLaunch(inputs, key, recording) }) {
+        val claimed = AtomicBoolean(false)
+        return Cancellables.withCleanup({
+            if (!launched && claimed.compareAndSet(false, true)) abandonLaunch(inputs, key, recording)
+        }) {
             replay.begin(key, recording)
             inputs.markHandedOff()
             // ATOMIC enters the cleanup scopes even when head stop races the launch.
             val job = scope.launch(context, start = CoroutineStart.ATOMIC) {
+                // Dispatch may enqueue then throw while starting a worker. Only the winning owner can drive.
+                if (!claimed.compareAndSet(false, true)) return@launch
                 try {
                     Cancellables.withCleanup({
                         if (drive.channel.detached.get()) log(finishLine(drive, recording, kept))

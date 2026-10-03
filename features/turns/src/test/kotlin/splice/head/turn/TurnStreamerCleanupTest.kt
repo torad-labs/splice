@@ -3,6 +3,7 @@ package splice.head.turn
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -57,6 +58,7 @@ import splice.upstream.transport.UpstreamClient
 import java.lang.reflect.InvocationTargetException
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.intrinsics.COROUTINE_SUSPENDED
 import kotlin.coroutines.intrinsics.suspendCoroutineUninterceptedOrReturn
@@ -237,6 +239,31 @@ class TurnStreamerCleanupTest {
             }
         }
 
+    @Test
+    @Timeout(20)
+    fun `a dispatcher that queues then throws cannot drive after launch ownership was returned`(@TempDir tmp: Path) =
+        runBlocking {
+            rig(tmp).use { rig ->
+                val recording = FrameRecording()
+                val first = SharedOom()
+                val queued = rig.queueThenFail(first)
+                val actual = runCatching { rig.run(recording) }.exceptionOrNull()
+                assertSame(first, generateSequence(actual) { it.cause }.last())
+                assertEquals(0, rig.gate.snapshot().inflight)
+                assertEquals(1, rig.releases.get())
+                queued.run()
+                assertEquals(0, recording.size, "a losing queued body must not emit any frame: ${rig.logs}")
+                assertEquals(0, rig.drives.get(), "a queued body that lost ownership must never drive upstream")
+                val settled = rig.gate.snapshot()
+                assertEquals(1L, settled.acquired)
+                assertEquals(1L, settled.released, "the real gate returns exactly its one acquired permit")
+                assertEquals(1, rig.releases.get(), "the actual counted slot returns exactly once")
+                assertNull(rig.replay.lookup(rig.key))
+                assertTrue(recording.isComplete)
+                assertFalse(recording.isWhole)
+            }
+        }
+
     /** Extra instance state prevents coroutine recovery from cloning the JVM-style shared error. */
     private class SharedOom : OutOfMemoryError("synthetic reused OOM") {
         val identity = Any()
@@ -285,6 +312,12 @@ class TurnStreamerCleanupTest {
         private val entered = CompletableDeferred<Unit>()
         private val stopped = CompletableDeferred<Unit>()
         val handedOff = AtomicBoolean(false)
+        val drives = AtomicInteger()
+        val releases = AtomicInteger()
+
+        init {
+            slot.onRelease(TurnEnd { releases.incrementAndGet() })
+        }
         val key = "synthetic-cleanup-retry"
         val replay = CompactionReplay(recordings, clock = ElapsedClock { 0L })
         private val scope = LifecycleScope(ProcessDispatchers().background())
@@ -332,6 +365,7 @@ class TurnStreamerCleanupTest {
                     sessionId = "synthetic-session",
                 ),
                 roundInterceptor = RoundInterceptor { _, sink, _ ->
+                    drives.incrementAndGet()
                     driveFailure?.let { throw it }
                     if (awaitStop) {
                         entered.complete(Unit)
@@ -393,6 +427,28 @@ class TurnStreamerCleanupTest {
                         override val coroutineContext: kotlin.coroutines.CoroutineContext get() = throw failure
                     },
                 )
+        }
+
+        fun queueThenFail(failure: Throwable): Runnable {
+            var queued: Runnable? = null
+            val dispatcher = object : CoroutineDispatcher() {
+                override fun dispatch(context: kotlin.coroutines.CoroutineContext, block: Runnable) {
+                    if (queued == null) {
+                        queued = block
+                        throw failure
+                    }
+                    // Only the first worker-start signal fails; later work can run on an existing worker.
+                    block.run()
+                }
+            }
+            TurnStreamer::class.java.getDeclaredField("detachedScope").apply { isAccessible = true }
+                .set(
+                    streamer,
+                    object : CoroutineScope {
+                        override val coroutineContext = scope.coroutineContext + dispatcher
+                    },
+                )
+            return Runnable { checkNotNull(queued).run() }
         }
 
         suspend fun stop() {

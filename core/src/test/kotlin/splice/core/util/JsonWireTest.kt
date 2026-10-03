@@ -43,6 +43,16 @@ class JsonWireTest {
     }
 
     @Test
+    fun `wire byte contracts retain array order exponent case empty containers and escaped keys`() {
+        val golden = """{"quote\\\"\\n":[1,2,1E2,true,false,{},[]],"empty":{}}"""
+        val tree = Json.parseToJsonElement(golden)
+        assertEquals(golden, JsonWire.string(tree))
+        val output = ByteArrayOutputStream()
+        JsonWire.write(tree, output)
+        assertArrayEquals(golden.toByteArray(Charsets.UTF_8), output.toByteArray())
+    }
+
+    @Test
     fun `wire byte counts match the UTF8 encoder without allocating the wire byte array`() {
         for (text in listOf("", "ASCII", "café", "🧪", "\uD800", "\uDC00", "\uD800x\uDC00")) {
             assertEquals(text.toByteArray(Charsets.UTF_8).size.toLong(), JsonWire.byteSize(text), text)

@@ -45,7 +45,7 @@ public class TurnPerf(private val clock: ElapsedClock = ElapsedClock(System::cur
     private var upstreamAttempt = 0L
     private var upstreamGapEnd: UpstreamGapEnd? = null
 
-    /** Anchor only the new client-byte duration; legacy stage marks keep their original origin. */
+    /** Anchor arrival-relative durations; legacy stage marks keep their original origin. */
     public fun recordArrival(at: Long) {
         synchronized(lock) { arrivalOffsetMs = startedAt - at }
     }
@@ -72,17 +72,25 @@ public class TurnPerf(private val clock: ElapsedClock = ElapsedClock(System::cur
     public fun beginUpstreamAttempt(): Long = synchronized(lock) {
         counters.remove(PerfKeys.ARRIVAL_TO_UPSTREAM_WRITE_MS)
         counters.remove(PerfKeys.UPSTREAM_WRITE_TO_FIRST_BYTE_MS)
+        counters.remove(PerfKeys.ARRIVAL_TO_WS_SEND_ACCEPTED_MS)
+        counters.remove(PerfKeys.WS_SEND_ACCEPTED_TO_FIRST_FRAGMENT_MS)
         ++upstreamAttempt
     }
 
-    /** A late callback from a retired attempt cannot overwrite the current attempt's milestones. */
-    public fun recordUpstreamTiming(attempt: Long, writtenAt: Long?, firstByteAt: Long?) {
+    /** Publish only the current attempt's observed pair. Legacy SSE parameter names and JVM overload remain. */
+    @JvmOverloads
+    public fun recordUpstreamTiming(
+        attempt: Long,
+        writtenAt: Long?,
+        firstByteAt: Long?,
+        milestones: UpstreamMilestones = UpstreamMilestones.SSE_WRITE,
+    ) {
         synchronized(lock) {
             if (attempt != upstreamAttempt || writtenAt == null) return
-            counters[PerfKeys.ARRIVAL_TO_UPSTREAM_WRITE_MS] = writtenAt
-            counters.remove(PerfKeys.UPSTREAM_WRITE_TO_FIRST_BYTE_MS)
+            counters[milestones.arrival] = writtenAt
+            counters.remove(milestones.wait)
             if (firstByteAt != null && firstByteAt >= writtenAt) {
-                counters[PerfKeys.UPSTREAM_WRITE_TO_FIRST_BYTE_MS] = firstByteAt - writtenAt
+                counters[milestones.wait] = firstByteAt - writtenAt
             }
         }
     }

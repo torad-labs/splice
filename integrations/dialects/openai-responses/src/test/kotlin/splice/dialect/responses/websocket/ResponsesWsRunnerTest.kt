@@ -9,8 +9,11 @@
 //    empty string re-opens the cross-conversation collision the two-part key exists to close.
 package splice.dialect.responses.websocket
 
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -23,6 +26,8 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import splice.core.auth.Credentials
+import splice.core.perf.PerfKeys
+import splice.core.perf.TurnPerf
 import splice.core.turn.ReasoningDisplayParser
 import splice.core.turn.TurnMeta
 import splice.dialect.responses.request.responsesRequestJson
@@ -32,6 +37,7 @@ import java.io.IOException
 import java.net.URI
 import java.net.http.WebSocket
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.atomic.AtomicLong
 
 private const val BODY = """{"model":"gpt-5.6-sol","input":[{"role":"user","content":"hi"}]}"""
 
@@ -52,6 +58,8 @@ private fun meta(session: String? = "sess-1", conversation: String? = "splice-ab
 /** A scripted socket: every send replies with the frames the script returns for that round. */
 private class Rig(private val script: (Int) -> List<String>) {
     var rounds = 0
+    var socket: WebSocket? = null
+    var sendFuture: (WebSocket) -> CompletableFuture<WebSocket> = { CompletableFuture.completedFuture(it) }
     val sent = mutableListOf<String>()
 
     /** The headers of every handshake, in connection order (2026-09-05: the WS-only request id). */
@@ -85,7 +93,7 @@ private class Rig(private val script: (Int) -> List<String>) {
                 sent += data.toString()
                 val frames = script(rounds++)
                 frames.forEach { l.onText(this, it, true) }
-                return CompletableFuture.completedFuture(this)
+                return sendFuture(this)
             }
             override fun sendBinary(
                 d: java.nio.ByteBuffer,
@@ -102,6 +110,7 @@ private class Rig(private val script: (Int) -> List<String>) {
                 aborted += index
             }
         }
+        this.socket = socket
         l.onOpen(socket)
         return socket
     }
@@ -168,6 +177,63 @@ private object FakeSocketForPing : WebSocket {
     override fun isOutputClosed() = false
     override fun isInputClosed() = false
     override fun abort() = Unit
+}
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class ResponsesWsTimingTest {
+    @Test
+    fun `send completion and the first decoded fragment bracket only their named clocks`() = runTest {
+        val now = AtomicLong(100)
+        val perf = TurnPerf { now.get() }
+        perf.recordArrival(70)
+        val rig = Rig { emptyList() }
+        val future = CompletableFuture<WebSocket>()
+        rig.sendFuture = { future }
+        val pending = async { rig.runner.attempt(BODY, meta(), emptyMap(), Credentials.Bearer("tok", "acct"), perf) }
+        runCurrent()
+        assertNull(perf.snapshot().counters["arrival_to_ws_send_accepted_ms"])
+        val socket = requireNotNull(rig.socket)
+        now.set(140)
+        future.complete(socket)
+        runCurrent()
+        assertEquals(70L, perf.snapshot().counters["arrival_to_ws_send_accepted_ms"])
+        now.set(160)
+        rig.listener?.onText(socket, """{"type":"response.""", false)
+        assertEquals(20L, perf.snapshot().counters["ws_send_accepted_to_first_fragment_ms"])
+        now.set(300)
+        rig.listener?.onText(socket, """created"}""", true)
+        rig.listener?.onText(socket, completed("timed"), true)
+        val round = requireNotNull(pending.await())
+        assertEquals(2, round.events.toList().size)
+        assertEquals(20L, perf.snapshot().counters["ws_send_accepted_to_first_fragment_ms"])
+        assertNoSocketTimes(perf)
+    }
+
+    @Test
+    fun `a decoded fragment before send acceptance never invents a post-accept wait`() = runTest {
+        val now = AtomicLong(100)
+        val perf = TurnPerf { now.get() }
+        val rig = Rig {
+            now.set(110)
+            listOf(completed("early"))
+        }
+        val future = CompletableFuture<WebSocket>()
+        rig.sendFuture = { future }
+        val pending = async { rig.runner.attempt(BODY, meta(), emptyMap(), Credentials.Bearer("tok", "acct"), perf) }
+        runCurrent()
+        now.set(140)
+        future.complete(requireNotNull(rig.socket))
+        val round = requireNotNull(pending.await())
+        assertEquals(1, round.events.toList().size)
+        assertEquals(40L, perf.snapshot().counters["arrival_to_ws_send_accepted_ms"])
+        assertNull(perf.snapshot().counters["ws_send_accepted_to_first_fragment_ms"])
+        assertNoSocketTimes(perf)
+    }
+
+    private fun assertNoSocketTimes(perf: TurnPerf) {
+        assertNull(perf.snapshot().counters[PerfKeys.ARRIVAL_TO_UPSTREAM_WRITE_MS])
+        assertNull(perf.snapshot().counters[PerfKeys.UPSTREAM_WRITE_TO_FIRST_BYTE_MS])
+    }
 }
 
 class ResponsesWsRunnerProtocolTest {

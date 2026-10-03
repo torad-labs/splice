@@ -396,13 +396,16 @@ class WsRoundDriverTest {
             }
         }
         val scripted = ScriptedRunner(emptyList())
+        var observedPerf: TurnPerf? = null
         val runner = object : WsRoundRunner by scripted {
             override suspend fun attempt(
                 bodyJson: String,
                 meta: TurnMeta,
                 turnHeaders: Map<String, String>,
                 creds: Credentials,
+                perf: TurnPerf?,
             ): WsRound {
+                observedPerf = perf
                 delay(attemptWaitMs)
                 return WsRound(
                     flow {
@@ -423,6 +426,7 @@ class WsRoundDriverTest {
                 classifyZeroEvent = ZeroEventClassifier { _, outcome, _, _ -> outcome },
             ).run(inputs)
             assertTrue(result is TurnOutcome.Success)
+            assertSame(perf, observedPerf, "the head must forward this turn's recorder")
             assertEquals(maxOf(3_000L, attemptWaitMs), perf.snapshot().counters[PerfKeys.UP_GAP_MAX_MS])
             assertEquals(if (attemptWaitMs >= 2_000) 2L else 1L, perf.snapshot().counters[PerfKeys.UP_GAPS_2S])
             assertEquals(2_500L, perf.snapshot().counters[PerfKeys.UP_BLOCKED_MAX_MS])

@@ -49,6 +49,12 @@ public object PerfKeys {
 
     /** Final SSE request-body flush to the first positive upstream body read. */
     public const val UPSTREAM_WRITE_TO_FIRST_BYTE_MS: String = "upstream_write_to_first_byte_ms"
+
+    /** Arrival to JDK send-future acceptance, not socket or TLS drain. */
+    public const val ARRIVAL_TO_WS_SEND_ACCEPTED_MS: String = "arrival_to_ws_send_accepted_ms"
+
+    /** JDK send acceptance to the first decoded text fragment, before JSON event assembly. */
+    public const val WS_SEND_ACCEPTED_TO_FIRST_FRAGMENT_MS: String = "ws_send_accepted_to_first_fragment_ms"
     public const val AUTH_MS: String = "auth_ms"
     public const val BACKOFF_MS: String = "backoff_ms"
     public const val REFRESH_MS: String = "refresh_ms"

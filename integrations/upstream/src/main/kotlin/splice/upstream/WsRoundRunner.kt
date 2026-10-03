@@ -8,6 +8,7 @@ package splice.upstream
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.JsonObject
 import splice.core.auth.Credentials
+import splice.core.perf.TurnPerf
 import splice.core.turn.TurnMeta
 
 /**
@@ -32,6 +33,18 @@ public interface WsRoundRunner {
         turnHeaders: Map<String, String>,
         creds: Credentials,
     ): WsRound?
+
+    /** The optional timing seam preserves existing runners; unobserved transport milestones stay absent. */
+    public suspend fun attempt(
+        bodyJson: String,
+        meta: TurnMeta,
+        turnHeaders: Map<String, String>,
+        creds: Credentials,
+        perf: TurnPerf?,
+    ): WsRound? {
+        perf?.beginUpstreamAttempt()
+        return attempt(bodyJson, meta, turnHeaders, creds)
+    }
 
     /** True when [event] ends the round in FAILURE. The head uses this to bail to SSE while the
      *  client has still seen nothing, so an upstream error keeps SSE's retry/refresh/cooldown

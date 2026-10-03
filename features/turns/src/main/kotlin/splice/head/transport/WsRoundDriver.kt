@@ -50,7 +50,7 @@ internal class WsRoundDriver(
     private suspend fun timedRound(runner: WsRoundRunner, drive: TurnDrive, bodyJson: String): WsRound? {
         val credentials = (drive.account?.account?.auth ?: provider.auth).credentials() ?: return null
         val postedAtMs = drive.perf.elapsedMs()
-        val accepted = runner.attempt(bodyJson, drive.meta, drive.turnHeaders, credentials) ?: return null
+        val accepted = runner.attempt(bodyJson, drive.meta, drive.turnHeaders, credentials, drive.perf) ?: return null
         return accepted.copy(events = UpstreamEventTiming(drive.perf, postedAtMs).observe(accepted.events))
     }
 

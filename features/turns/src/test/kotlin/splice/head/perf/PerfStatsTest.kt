@@ -22,6 +22,7 @@ import splice.core.perf.PerfSnapshot
 import splice.core.perf.TurnPerf
 import splice.core.perf.UpstreamAttemptTiming
 import splice.core.perf.UpstreamGapEnd
+import splice.core.perf.WsAttemptTiming
 import splice.core.util.AsyncFileIo
 import java.nio.file.Files
 import java.nio.file.Path
@@ -41,7 +42,33 @@ class PerfStatsTest {
         val row = Json.parseToJsonElement(Files.readAllLines(file).single()).jsonObject
         assertEquals(JsonNull, row["arrival_to_upstream_write_ms"])
         assertEquals(JsonNull, row["upstream_write_to_first_byte_ms"])
+        assertEquals(JsonNull, row["arrival_to_ws_send_accepted_ms"])
+        assertEquals(JsonNull, row["ws_send_accepted_to_first_fragment_ms"])
         assertEquals(0L, row["retries"]?.jsonPrimitive?.longOrNull)
+    }
+
+    @Test
+    fun `a websocket row reports acceptance and fragments with socket write times null`(@TempDir tmp: Path) {
+        var now = 100L
+        val perf = TurnPerf { now }
+        UpstreamAttemptTiming(perf).also {
+            it.written()
+            it.firstByte()
+        }
+        val ws = WsAttemptTiming(perf)
+        now = 130L
+        ws.sendAccepted()
+        now = 140L
+        ws.firstFragment()
+        val file = tmp.resolve("perf.jsonl")
+        PerfStats(file, clock = { 123L }).record(PerfRowMeta("synthetic", "ok", compact = false), perf.snapshot())
+        assertTrue(AsyncFileIo.drain())
+        val row = Json.parseToJsonElement(Files.readAllLines(file).single()).jsonObject
+        assertEquals(JsonNull, row[PerfKeys.ARRIVAL_TO_UPSTREAM_WRITE_MS])
+        assertEquals(JsonNull, row[PerfKeys.UPSTREAM_WRITE_TO_FIRST_BYTE_MS])
+        assertEquals(30L, row[PerfKeys.ARRIVAL_TO_WS_SEND_ACCEPTED_MS]?.jsonPrimitive?.longOrNull)
+        assertEquals(10L, row[PerfKeys.WS_SEND_ACCEPTED_TO_FIRST_FRAGMENT_MS]?.jsonPrimitive?.longOrNull)
+        assertEquals(0L, row[PerfKeys.RETRIES]?.jsonPrimitive?.longOrNull)
     }
 
     @Test

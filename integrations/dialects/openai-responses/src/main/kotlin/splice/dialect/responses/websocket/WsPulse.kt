@@ -12,9 +12,11 @@
 // actor at all — see InboxListener.endOfStream for why 1006 licenses no attribution.
 package splice.dialect.responses.websocket
 
+import splice.core.perf.WsAttemptTiming
 import splice.core.util.ElapsedClock
 import splice.core.util.MonoClock
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 /** Timestamps a socket's listener and pool stamp as they see the wire; [describe] reads them. */
 internal class WsPulse(
@@ -26,6 +28,15 @@ internal class WsPulse(
     private val lastFrameAt = AtomicLong(openedAt)
     private val lastPingAt = AtomicLong(NEVER)
     private val roundStartedAt = AtomicLong(NEVER)
+    private val timing = AtomicReference<WsAttemptTiming?>(null)
+
+    internal fun bindTiming(attempt: WsAttemptTiming?) {
+        timing.set(attempt)
+    }
+
+    internal fun sendAccepted() {
+        timing.get()?.sendAccepted()
+    }
 
     // V4-242: the event types the round in flight has received, for the close line. Distinct, in the
     // order they first arrived and capped, because a long round is thousands of deltas of a few types.
@@ -34,6 +45,7 @@ internal class WsPulse(
 
     /** A text frame arrived (any event, terminal or not). */
     internal fun frame() {
+        timing.get()?.firstFragment()
         lastFrameAt.set(clock())
     }
 
@@ -55,11 +67,13 @@ internal class WsPulse(
     }
 
     internal fun roundStarted() {
+        timing.set(null)
         roundEvents.clear()
         roundStartedAt.set(clock())
     }
 
     internal fun roundEnded() {
+        timing.set(null)
         roundStartedAt.set(NEVER)
         roundEvents.clear()
     }

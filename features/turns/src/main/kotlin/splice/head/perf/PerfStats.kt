@@ -33,6 +33,7 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSessionTail
 import splice.core.perf.PerfSessionTurn
 import splice.core.perf.PerfSnapshot
+import splice.core.perf.UpstreamMilestones
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
@@ -209,8 +210,7 @@ public class PerfStats(
                     put("account", account)
                     put("cache_cold", meta.cacheCold)
                 }
-                put(PerfKeys.ARRIVAL_TO_UPSTREAM_WRITE_MS, snap.counters[PerfKeys.ARRIVAL_TO_UPSTREAM_WRITE_MS])
-                put(PerfKeys.UPSTREAM_WRITE_TO_FIRST_BYTE_MS, snap.counters[PerfKeys.UPSTREAM_WRITE_TO_FIRST_BYTE_MS])
+                TransportTimings.putTransportTimings(this, snap)
                 put(PerfKeys.RETRIES, snap.counters.getOrDefault(PerfKeys.RETRIES, 0L))
                 (snap.marks.asSequence() + snap.counters.asSequence()).forEach { (k, v) -> put(k, v) }
                 snap.upstreamGapEnd?.let { put(PerfKeys.UP_GAP_END, it.wire) }
@@ -239,6 +239,16 @@ public class PerfStats(
         }
         appendDrops.accepted(accepted)
         return ts
+    }
+
+    /** Every row declares both transport pairs; unobserved boundaries are explicit JSON null. */
+    private object TransportTimings {
+        fun putTransportTimings(row: JsonObjectBuilder, snap: PerfSnapshot) {
+            for (milestones in UpstreamMilestones.entries) {
+                row.put(milestones.arrival, snap.counters[milestones.arrival])
+                row.put(milestones.wait, snap.counters[milestones.wait])
+            }
+        }
     }
 
     /** Numeric fields of the last [tailN] rows, newest last — the aggregation input. */

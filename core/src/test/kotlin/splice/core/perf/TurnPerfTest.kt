@@ -59,6 +59,49 @@ class TurnPerfTest {
     }
 
     @Test
+    fun `websocket acceptance retains zero and a protocol change retires its callbacks`() {
+        val clock = FakeClock()
+        val perf = TurnPerf { clock.now }
+        perf.recordArrival(clock.now - 40)
+        val first = WsAttemptTiming(perf)
+        first.sendAccepted()
+        first.firstFragment()
+        assertEquals(40L, perf.snapshot().counters[PerfKeys.ARRIVAL_TO_WS_SEND_ACCEPTED_MS])
+        assertEquals(0L, perf.snapshot().counters[PerfKeys.WS_SEND_ACCEPTED_TO_FIRST_FRAGMENT_MS])
+        val sse = UpstreamAttemptTiming(perf)
+        first.sendAccepted()
+        assertTrue(PerfKeys.ARRIVAL_TO_WS_SEND_ACCEPTED_MS !in perf.snapshot().counters)
+        assertTrue(PerfKeys.WS_SEND_ACCEPTED_TO_FIRST_FRAGMENT_MS !in perf.snapshot().counters)
+        clock.tick(10)
+        sse.written()
+        sse.firstByte()
+        val last = WsAttemptTiming(perf)
+        sse.written()
+        sse.firstByte()
+        last.sendAccepted()
+        clock.tick(20)
+        last.firstFragment()
+        first.sendAccepted()
+        assertEquals(50L, perf.snapshot().counters[PerfKeys.ARRIVAL_TO_WS_SEND_ACCEPTED_MS])
+        assertEquals(20L, perf.snapshot().counters[PerfKeys.WS_SEND_ACCEPTED_TO_FIRST_FRAGMENT_MS])
+        assertTrue(PerfKeys.ARRIVAL_TO_UPSTREAM_WRITE_MS !in perf.snapshot().counters)
+        assertTrue(PerfKeys.UPSTREAM_WRITE_TO_FIRST_BYTE_MS !in perf.snapshot().counters)
+    }
+
+    @Test
+    fun `an early websocket fragment in the same clock tick cannot become a measured zero wait`() {
+        val clock = FakeClock()
+        val perf = TurnPerf { clock.now }
+        val attempt = WsAttemptTiming(perf)
+        attempt.firstFragment()
+        attempt.sendAccepted()
+        clock.tick(30)
+        attempt.firstFragment()
+        assertEquals(0L, perf.snapshot().counters[PerfKeys.ARRIVAL_TO_WS_SEND_ACCEPTED_MS])
+        assertTrue(PerfKeys.WS_SEND_ACCEPTED_TO_FIRST_FRAGMENT_MS !in perf.snapshot().counters)
+    }
+
+    @Test
     fun `marks record elapsed at completion and re-mark overwrites`() {
         val clock = FakeClock()
         val perf = TurnPerf { clock.now }

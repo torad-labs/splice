@@ -25,7 +25,7 @@ internal class WsRoundOpener(
      *  is private, and only WsUpstream constructs this. */
     private val sendTimeoutMs: Long,
 ) {
-    /** Send the round's one frame and AWAIT delivery, BOUNDED.
+    /** Send the round's one frame and AWAIT JDK acceptance, BOUNDED.
      *
      *  Both throwing modes are real and neither was caught before the adversarial review of WS-1:
      *  sendText returns a CompletableFuture (javap: `CompletableFuture<WebSocket> sendText(...)`),
@@ -35,9 +35,9 @@ internal class WsRoundOpener(
      *  IllegalStateException — catching ISE there would swallow cancellation repo-wide.
      *  Hence the explicit catch with the cancellation rethrow, and the await.
      *
-     *  DR-182 adds the third mode, which is a STALL rather than a throw. The future completes when
-     *  the write reaches the transport, so a peer that stops reading — zero window, a black-holed
-     *  connection — leaves it pending with nothing thrown, forever. That mattered more than it
+     *  DR-182 adds the third mode, which is a STALL rather than a throw. JDK send acceptance is
+     *  not a socket/TLS drain observation. A peer that stops reading can leave the send future
+     *  pending with nothing thrown, forever. That mattered more than it
      *  looks: [awaitFirstEvent]'s budget is applied AFTER this returns, so a stalled send never
      *  started the 15s clock, and WsRoundDriver's comment on this exact window ("owned by the
      *  transport's own first-event timeout, which ends it with a null and rides SSE") was true of
@@ -58,7 +58,11 @@ internal class WsRoundOpener(
         // faults (a socket we already broke, a delivery the peer refused, a peer that took the
         // frame and stopped reading) and only the log distinguishes them after the fact.
         val failure: Pair<String, Throwable?>? = try {
-            val delivered = withTimeoutOrNull(budgetMs) { conn.socket.sendText(frame, true).await() }
+            val delivered = withTimeoutOrNull(budgetMs) {
+                conn.socket.sendText(frame, true).whenComplete { _, error ->
+                    if (error == null) conn.pulse.sendAccepted()
+                }.await()
+            }
             if (delivered == null) "stalled" to null else null
         } catch (e: CancellationException) {
             throw e // a cancelled turn must stop, never look like a send failure

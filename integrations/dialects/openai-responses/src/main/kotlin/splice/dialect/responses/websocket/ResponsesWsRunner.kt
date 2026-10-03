@@ -27,6 +27,8 @@ package splice.dialect.responses.websocket
 import kotlinx.coroutines.flow.onEach
 import kotlinx.serialization.json.JsonObject
 import splice.core.auth.Credentials
+import splice.core.perf.TurnPerf
+import splice.core.perf.WsAttemptTiming
 import splice.core.turn.TurnMeta
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
@@ -57,7 +59,16 @@ internal class ResponsesWsRunner(
         meta: TurnMeta,
         turnHeaders: Map<String, String>,
         creds: Credentials,
+    ): WsRound? = attempt(bodyJson, meta, turnHeaders, creds, null)
+
+    override suspend fun attempt(
+        bodyJson: String,
+        meta: TurnMeta,
+        turnHeaders: Map<String, String>,
+        creds: Credentials,
+        perf: TurnPerf?,
     ): WsRound? {
+        val timing = perf?.let(::WsAttemptTiming)
         // No parseable body, or no isolation identity => ride SSE. The second is not a weaker key
         // but NO key: without it, conversations sharing a first message would share a chain.
         val request = identity.parseRequest(bodyJson)
@@ -82,6 +93,7 @@ internal class ResponsesWsRunner(
             wssUrl = wssUrl,
             isTerminal = { JsonScalars.str(it[FIELD_TYPE]) in ResponsesRoundEnd.ALL },
         ) { conn ->
+            conn.pulse.bindTiming(timing)
             // Armed HERE because this is the only place the transport hands the connection out and
             // the head never sees one (module law).
             val lease = conn.lease.get()

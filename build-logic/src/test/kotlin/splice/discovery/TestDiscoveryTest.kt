@@ -140,6 +140,70 @@ class TestDiscoveryTest {
     private fun classes(source: String): List<TestClass> = classesIn(source, MODULE, PATH)
     private fun row(xml: String): Map<String, XmlRow> = mapOf(xmlRowFrom(xml, "fixture.xml"))
 
+    @Test
+    fun `fully qualified parameterized methods cannot disappear from discovery`() {
+        assertExpandedAnnotationDeclared("@org.junit.jupiter.params.ParameterizedTest")
+    }
+
+    @Test
+    fun `repeated methods cannot disappear from discovery`() {
+        assertExpandedAnnotationDeclared("@RepeatedTest(3)")
+    }
+
+    @Test
+    fun `fully qualified repeated methods cannot disappear from discovery`() {
+        assertExpandedAnnotationDeclared("@org.junit.jupiter.api.RepeatedTest(3)")
+    }
+
+    private fun assertExpandedAnnotationDeclared(annotation: String) {
+        val source = """
+            class AnnotationOnlyTest {
+                $annotation
+                fun `synthetic test`() {}
+            }
+        """.trimIndent()
+        val declared = classes(source)
+        assertEquals(listOf("synthetic test"), declared.flatMap { it.methods }, annotation)
+        val absent = audit(declared, mapOf(MODULE to row(XML_OK)))
+        assertTrue(absent.any { "AnnotationOnlyTest" in it && "NO XML row" in it }, absent.toString())
+        val short = audit(declared, mapOf(MODULE to mapOf("AnnotationOnlyTest" to XmlRow(0, emptySet()))))
+        assertTrue(short.any { "NOT DISCOVERED" in it && "synthetic test" in it }, short.toString())
+        val expanded = mapOf(MODULE to mapOf("AnnotationOnlyTest" to XmlRow(3, setOf("synthetic test"))))
+        val unreasoned = audit(declared, expanded, dispositions = emptyMap())
+        assertTrue(unreasoned.any { "HIGHER COUNT" in it }, unreasoned.toString())
+        val reasoned = audit(
+            declared, expanded,
+            dispositions = mapOf("AnnotationOnlyTest" to Disposition("synthetic annotation expands to three cases", 3)),
+        )
+        assertTrue(reasoned.isEmpty(), reasoned.toString())
+    }
+
+    @Test
+    fun `fully qualified factories retain their dynamic method marker`() {
+        val source = SOURCE_FACTORY.replace("@TestFactory", "@org.junit.jupiter.api.TestFactory")
+            .replace("@Test\n", "@org.junit.jupiter.api.Test\n")
+        val parsed = classes(source).single()
+        assertEquals(listOf("a plain test", "one child per mutation"), parsed.methods)
+        assertEquals(setOf("one child per mutation"), parsed.dynamicMethods)
+        assertTrue(audit(listOf(parsed), mapOf(MODULE to row(XML_FACTORY_HIGHER))).isEmpty())
+    }
+
+    @Test
+    fun `annotation names and unrelated qualified annotations cannot invent tests`() {
+        for (annotation in listOf(
+            "@TestExtra", "@ParameterizedTestExtra", "@RepeatedTestExtra",
+            "@org.junit.jupiter.params.ParameterizedTestExtra", "@other.framework.RepeatedTest",
+        )) {
+            val source = """
+                class AnnotationOnlyTest {
+                    $annotation
+                    fun helper() {}
+                }
+            """.trimIndent()
+            assertTrue(classes(source).isEmpty(), annotation)
+        }
+    }
+
     // ── one test per --selftest arm of the original checker ──
 
     @Test

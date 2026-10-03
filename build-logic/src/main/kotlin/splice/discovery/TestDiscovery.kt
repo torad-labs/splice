@@ -43,7 +43,7 @@
 //
 // SHAPES. XML count LOWER than the denominator fails BY NAME, naming the missing methods. THREE
 // shapes may legitimately report a HIGHER count. Two need a written reason in DISPOSITIONS below —
-// never a bare allowlist entry: a @ParameterizedTest expands one method into N cases, and a class
+// never a bare allowlist entry: parameterized or repeated methods expand into N cases, and a class
 // may INHERIT test methods from a base class. The third is @TestFactory (decided here, restructure
 // PR 6, against ReleaseReadinessLawTest: one factory method, 47 DynamicTest children — 2 @Test + 47
 // = 49), and it does NOT go in DISPOSITIONS: unlike @ParameterizedTest, its expansion factor is not
@@ -121,7 +121,7 @@ val DISPOSITIONS: Map<String, Disposition> = mapOf(
         Disposition("1 @ParameterizedTest expands to 5 cases (6 @Test + 5 = 11)", 11),
     "CodexCodeModeReanchorTest" to Disposition("2 @ParameterizedTest methods expand to 5 cases (1 @Test + 5 = 6)", 6),
     // b5bfa0a11: an item-complete suffix waits for response certification over six endings, and the
-    // incomplete ending repeats 50 times as a race cohort; @RepeatedTest is not counted as declared.
+    // incomplete ending repeats 50 times as a race cohort; each annotation declares one method.
     "CodeModeSourceCertificationTest" to
         Disposition("1 @RepeatedTest(50) plus 1 @ParameterizedTest of 6 cases (50 + 6 = 56)", 56),
     // A sealed item rejects more bytes with and without a prefix, and a cursor never returns a pre-seal
@@ -137,7 +137,7 @@ val DISPOSITIONS: Map<String, Disposition> = mapOf(
     // failed collect flush runs failed and cancelled.
     "TurnPerfRowTest" to Disposition("2 @ParameterizedTest methods expand to 4 cases (4 @Test + 4 = 8)", 8),
     // cd33d0fd1: final rate accounting excludes plan holds and absorbed diagnostic events, over the four
-    // held/absorbed pairs. The annotation is spelled fully qualified, which the scanner does not count.
+    // held/absorbed pairs. Its fully qualified annotation contributes one declared method.
     "TurnConnEndTest" to
         Disposition("1 fully qualified @ParameterizedTest expands to 4 @CsvSource cases (7 @Test + 4 = 11)", 11),
     // V4-457: a failed or a cancelled attached flush records no first client byte.
@@ -183,16 +183,18 @@ object SourceScan {
 
     private val CLASS_DECL_PATTERN: Pattern = Pattern.compile("""\bclass\s+(\w+)""")
 
-    // THE THIRD SHAPE (file header, SHAPES): TestFactory joins Test/ParameterizedTest as a countable
-    // declaration — group(1) is the annotation NAME, so memberItems can tell a factory method from a
-    // plain one without a second pass.
+    // Short and fully qualified Jupiter annotations each declare one method, including repetitions.
+    // group(1) stays the annotation NAME and group(2) the function name; only TestFactory is dynamic.
     private val MEMBER_ITEM_PATTERN: Pattern =
-        Pattern.compile("""@(Test|ParameterizedTest|TestFactory)\b|\bfun\s+(`[^`]+`|\w+)\s*\(""")
+        Pattern.compile(
+            """@(?:org\.junit\.jupiter\.(?:api|params)\.)?(Test|ParameterizedTest|RepeatedTest|TestFactory)\b""" +
+                """|\bfun\s+(`[^`]+`|\w+)\s*\(""",
+        )
 
     // The same shape read from the ORIGINAL text, where a backtick name is still spelled out.
     private val UNMASKED_FUN_PATTERN: Pattern = Pattern.compile("""\bfun\s+(`[^`\n]+`|\w+)\s*\(""")
 
-    // The one annotation of the three whose expansion factor is no number anyone could write down.
+    // The only counted annotation whose expansion factor is no number anyone could write down.
     private const val FACTORY_ANNOTATION = "TestFactory"
 
     // Where a declaration ENDS without a body: a blank line, or a line at COLUMN 0 that starts another
@@ -363,7 +365,7 @@ object SourceScan {
 
     /** The names of the test methods declared at MEMBER depth of a class body.
      *
-     *  A method counts when a @Test/@ParameterizedTest annotation precedes it at member depth: the
+     *  A method counts when a supported Jupiter annotation precedes it at member depth: the
      *  fun that follows a pending annotation is the annotated one, so helper functions and local
      *  functions are not mistaken for tests. Nested classes are skipped wholesale — their members
      *  belong to them, and the XML reports them under their own qualified name.

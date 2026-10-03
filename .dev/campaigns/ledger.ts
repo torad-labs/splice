@@ -30,8 +30,8 @@
  *   seats' field findings from 2026-09-18 (the `focus` seat pointer, per-file receipt blob hashes,
  *   the exit-code-after-a-pipe law, the pattern-honesty law).
  *
- * Vendoring gate: `selftest` runs 185 checks over a scratch ledger — including the self-commit
- * (by path, a peer's staged file left alone, deferred under a held index lock), the review-milestone walls
+ * Vendoring gate: `selftest` runs 189 checks over a scratch ledger — including that a write commits
+ * nothing (HEAD unmoved, a peer's staged file left alone), the review-milestone walls
  * (`deliver`, `<M>-review` as ONE row for one builder, no review note per row, the generated
  * `review` brief, `followup`, the `plan` growth ceiling and the no-plan refusal) and the
  * machinery-seat classifier in its permissive form — and passes 185/185 at the
@@ -50,7 +50,6 @@ import {
   ITEM_STATUSES,
   LedgerError,
   locateItems,
-  commitWrites,
   mutate,
   notesOf,
   parseOrThrow,
@@ -60,10 +59,7 @@ import {
   type ItemBlock,
   type ItemStatus,
 } from "./ledger-core.ts";
-import {
-  assertItemMandates,
-  handleLedgerEarn,
-} from "./ledger-earn.ts";
+import { handleLedgerEarn } from "./ledger-earn.ts";
 import {
   parseDepends,
   parseRequires,
@@ -83,9 +79,9 @@ read
   phase-status <P>                  one line per item in a phase (milestone) with its status
   touched <ID>                      the latest receipt's touched files, one per line
 
-write                               each write commits the ledger by itself (git commit -- <ledger>);
-                                    never lock or commit a ledger by hand (a new one is git added
-                                    once, after init)
+write                               a write commits nothing: the ledger rides in the row's one commit,
+                                    by explicit path, with the row's own files; never lock a ledger
+                                    by hand
   add --id I --phase P --title T [--files a,b] [--verify V] [--status S]
                                     P is a milestone, or <M>-review — the review milestone attached to a
                                     DELIVERED milestone M; a delivered milestone takes no rows
@@ -123,13 +119,13 @@ write                               each write commits the ledger by itself (git
                                     scratch paths (**/*.tmp.ts, **/.tmp-*) are refused: the touched list is what gets committed
   stage <ID>                        orchestrator: git add exactly the receipt's touched files as they are
                                     on disk now; refuses only a dirty index and a commit that would not
-                                    load (no hashes, no moved-bytes refusal). The ledger is never staged:
-                                    every write commits it by itself
+                                    load (no hashes, no moved-bytes refusal). The ledger is never staged
+                                    here: it rides in the row's one commit
   focus <ID> [--seat S]             write this seat's active pointer (re-anchor after compaction)
   landed <ID> [sha]                 orchestrator, after the commit: set-compare the receipt's touched+deleted lists
                                     with git show --name-only <sha> (default HEAD), both directions; exit 1 on a miss
   init "title" --rows N             orchestrator: create a new ledger (the header); the plan is declared at birth.
-                                    git add it once; every later write commits itself
+                                    commit it with the first row's files
   claim <ID> <seat>                 record ownership with a liveness stamp (--seat S also accepted)
   release <ID>                      release one named claim — the repair for a wrong claim and the
                                     honest way to hand a row over; release-stale can only judge age
@@ -714,13 +710,6 @@ function assertFenceShape(root: string, files: readonly string[]): void {
   );
 }
 
-function assertReceipt(id: string, notes: readonly string[], status: "done" | "verified"): void {
-  const r = latestReceipt(notes);
-  if (r === undefined) throw new LedgerError(`${id}: "${status}" needs a receipt first — record your verify run with \`receipt ${id} --cmd ... --exit 0 --tests N --touched a,b\``);
-  if (r.exit === null) throw new LedgerError(pyReceiptRefusal(id, status));
-  if (r.exit !== 0) throw new LedgerError(`${id}: the latest receipt exited ${r.exit}; a row is ${status} only on a green run`);
-}
-
 /** A manifest.py receipt names the files, never the run, so a gate that needs a green run cannot read one as green. */
 function pyReceiptRefusal(id: string, gate: string): string {
   return `${id}: the latest receipt was filed by manifest.py — it records the files and their blobs, not the run, and ${gate} needs the run. ` +
@@ -783,20 +772,6 @@ function fencePrefix(entry: string): string {
     if (normalized.endsWith(suffix)) return normalized.slice(0, -suffix.length).replace(/\/+$/, "");
   }
   return normalized;
-}
-
-/** The entries of [a] whose normalized prefix equals, or is a path-ancestor of, one of [b]'s. */
-function fenceOverlap(a: readonly string[], b: readonly string[]): string[] {
-  const shared: string[] = [];
-  const others = b.map(fencePrefix).filter((prefix) => prefix !== "");
-  for (const entry of a) {
-    const prefix = fencePrefix(entry);
-    if (prefix === "") continue;
-    if (others.some((other) => prefix === other || prefix.startsWith(`${other}/`) || other.startsWith(`${prefix}/`))) {
-      shared.push(entry);
-    }
-  }
-  return shared;
 }
 
 // ── milestones, deliveries and review milestones ─────────────────────────────────────────────
@@ -1044,7 +1019,7 @@ export type LedgerEvent = {
 };
 export const ledgerEvents: { emit: (event: LedgerEvent) => Promise<void> } = { emit: async () => {} };
 /** The row writers fleet.ts's ported verbs (verdict, handover, next --claim) share with this file's own. */
-export { claimNote, fenceOverlap, lastClaimOwner, retirementMarker, withField, withNote, withStatus };
+export { claimNote, lastClaimOwner, retirementMarker, withField, withNote, withStatus };
 
 export async function main(argv: readonly string[] = Bun.argv.slice(2)): Promise<number> {
   const ledgerPath = argv[0];
@@ -1130,7 +1105,7 @@ export async function main(argv: readonly string[] = Bun.argv.slice(2)): Promise
       `# ${title}\n# created ${new Date().toISOString().slice(0, 10)} by the ledger CLI; laws are the \`# LAW:\` lines, rows are [[items]]\n` +
         `# PLANNED ${rows} rows — ceiling ${rows * CEILING_FACTOR} milestone rows; \`add\` refuses past it (review-milestone rows excluded)\n\n`,
     );
-    console.log(`${ledgerPath}: created — git add it once; every later write commits itself`);
+    console.log(`${ledgerPath}: created — commit it with the first row's files`);
     return 0;
   }
   const lines = await readLines(ledgerPath);
@@ -1342,8 +1317,7 @@ export async function main(argv: readonly string[] = Bun.argv.slice(2)): Promise
       await mutate(ledgerPath, (current) => {
         const block = findBlock(locateItems(current), id);
         assertMachinerySeat(id, block.item, rest, "set-status");
-        assertItemMandates(id, status, notesOf(current, block));
-        if (status === "done" || status === "verified") assertReceipt(id, notesOf(current, block), status);
+        // 2026-10-03 (global CLAUDE.md §16-17): done follows the row's one note; no receipt or review mandate is checked.
         return withStatus(current, block, status);
       });
       console.log(`${id} → ${status}`);
@@ -1433,7 +1407,7 @@ export async function main(argv: readonly string[] = Bun.argv.slice(2)): Promise
       // (another row's staged bytes would ride this commit) and a commit that would not load (a
       // staged file importing a path the commit will not contain). No fence refusal, no byte
       // comparison, no moved-bytes refusal — operator ruling 2026-09-18, see the note above
-      // `headBlob`. The ledger is not staged: every write already committed it (commitWrites).
+      // `headBlob`. The ledger is not staged here: it rides in the row's one commit, by explicit path.
       const id = positional(rest, 0, "an item id");
       const block = findBlock(locateItems(lines), id);
       const r = latestReceipt(notesOf(lines, block));
@@ -1621,7 +1595,6 @@ export async function main(argv: readonly string[] = Bun.argv.slice(2)): Promise
         for (const id of inPhase.filter((b) => b.item.status === "done").map((b) => b.item.id)) {
           // Re-locate after every write: each note splice moves the lines below it.
           const b = findBlock(locateItems(next), id);
-          assertItemMandates(id, "verified", notesOf(next, b));
           next = withStatus(next, b, "verified");
           next = withNote(next, findBlock(locateItems(next), id), `VERIFY-PHASE ${phase} ${today()}: ${evidence}`); // manifest.py's wording, delta 13
           flipped.push(id);
@@ -1741,46 +1714,8 @@ export async function main(argv: readonly string[] = Bun.argv.slice(2)): Promise
           );
         }
         if (holder === seat && block.item.status === "in_flight" && block.item.claimedBy === seat) return current;
-        // fences-are-disjoint had no wall: two live rows sharing a file deadlock `stage` (the other
-        // row's edits are "fenced files not on the receipt"). A claim is REFUSED when its fence
-        // intersects a live peer's, naming the peer (manifest.py:4105, ITEM 7).
-        //
-        // VENDORING DELTA 9 (splice V4-143 Phase C, 2026-09-18): WHERE manifest.py REFUSES, THIS
-        // REFUSES; where only this CLI had an opinion, its warning stands. Both rulings are real
-        // and they govern different rows, which is only visible by reading each CLI's peer set:
-        //
-        //   IN_FLIGHT peer      manifest.py:4596 counts every in_flight row, blind to claimed_by
-        //                       (a field it never writes), and REFUSES the claim (manifest.py:4105).
-        //                       That is this ledger's status quo, and NEVER-BELOW-STATUS-QUO governs
-        //                       a cutover: a rewrite that turns today's refusal into tomorrow's
-        //                       warning ships a regression under the name of a port. An in_flight
-        //                       row is someone editing those files right now.
-        //   CLAIMED TODO peer   a row a seat holds but has not started. manifest.py cannot see it
-        //                       at all; this CLI warns and proceeds, under the operator ruling that
-        //                       ceremony never stalls a row, and that arm is proven in the selftest.
-        //                       Nothing is lost by keeping it — no edits are in flight to collide.
-        //
-        // Refusing BOTH was the first cut here and it broke seven proven arms, which is the arms
-        // doing their job: the union looked fail-closed and was really a third policy neither CLI
-        // implements. The migration below is what keeps the in_flight case honest — an in_flight
-        // row whose CLAIM note never became fields still refuses, because status is enough.
-        const live = locateItems(current).filter(
-          (b) => b.item.id !== id && b.item.status !== "done" && b.item.status !== "verified",
-        );
-        for (const other of live) {
-          const shared = fenceOverlap(block.item.files, other.item.files);
-          if (shared.length === 0) continue;
-          if (other.item.status === "in_flight") {
-            throw new LedgerError(
-              `${id}'s fence intersects live row ${other.item.id}'s on ${shared.join(", ")} — ` +
-                `fences are disjoint (seat law); a row whose fence overlaps an in_flight one waits.\n` +
-                `  ${other.item.id} is in_flight${other.item.claimedBy === undefined ? "" : ` and held by ${other.item.claimedBy}`}.`,
-            );
-          }
-          if (other.item.claimedBy !== undefined && other.item.claimedBy !== seat) {
-            console.error(`WARNING ${id}'s fence overlaps ${other.item.id} (claimed by ${other.item.claimedBy}) on ${shared.join(", ")} — re-read before every edit in those paths; report a same-line collision to the orchestrator`);
-          }
-        }
+        // No fence check (global CLAUDE.md §16-17, 2026-10-03): a shared file is settled by the §18
+        // file lock while it is being edited, never by refusing a claim.
         // ONE BUILDER WORKS A REVIEW MILESTONE. The others continue with the next milestone; a
         // second seat claiming into `<M>-review` is how fixes fan out into a campaign of their own.
         if (milestoneOf(block.item.phase) !== null) {
@@ -2489,19 +2424,13 @@ async function selftest(): Promise<number> {
   // The milestone gate: refuses while a row is open, flips every done row at once, notes each.
   await run("add", "--id", "M1", "--phase", "m1", "--title", "row one", "--verify", "bun test tests/x", "--files", "src/a.ts,tests/x.test.ts");
   await run("add", "--id", "M2", "--phase", "m1", "--title", "row two", "--verify", "bun test tests/y", "--files", "src/b.ts,src/c.ts");
-  // fences-are-disjoint has a wall: a claim whose fence intersects a live claimed row is refused.
+  // No fence check since 2026-10-03 (global CLAUDE.md §16-17): a claim over a live row's files is admitted.
   await run("add", "--id", "X1", "--phase", "m9", "--title", "overlapping row", "--verify", "", "--files", "src/c.ts,src/d.ts");
   await run("claim", "M2", "seat-1");
-  // DELTA 14: a claim sets in_flight (manifest.py), so the overlap a claim used to warn about now
-  // takes delta 9's refusal. Two live seats on one file arise only when a fence moves AFTER both
-  // claims, which is how the audit arm below is set up.
   check("a claim sets in_flight and writes manifest.py's CLAIM note, beside the fields (delta 14)",
     /\[in_flight\][\s\S]*claim  : seat-1[\s\S]*# \[\d{4}-\d{2}-\d{2}\] CLAIM: owner=seat-1 at=\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z/.test(await run("get", "M2")));
-  check("claim is refused on a fence that overlaps a claimed row, which is in_flight (delta 14)",
-    (await run("claim", "X1", "seat-2")).includes("fences are disjoint") && !(await run("get", "X1")).includes("seat-2"));
-  await run("amend", "X1", "--files", "src/d.ts");
-  await run("claim", "X1", "seat-2");
-  await run("amend", "X1", "--files", "src/c.ts,src/d.ts");
+  check("claim admits a fence that overlaps an in_flight row (no fence check, 2026-10-03)",
+    (await run("claim", "X1", "seat-2")).includes("claimed by seat-2"));
   check("claim admits a disjoint fence", (await run("claim", "M1", "seat-2")).includes("claimed by seat-2"));
   {
     // manifest.py's retirement guard and its two spellings, and its --session spelling (delta 14).
@@ -2526,25 +2455,7 @@ async function selftest(): Promise<number> {
     return (await Bun.file(path).text()) === before;
   })());
 
-  // DELTA 9 ARMS (V4-143 Phase C). The refusal case is an IN_FLIGHT peer, which is what
-  // manifest.py refuses today and what this CLI must not lose at the cutover.
-  await run("add", "--id", "X2", "--phase", "m9", "--title", "row over an in_flight fence", "--verify", "", "--files", "src/e.ts");
-  await run("add", "--id", "X3", "--phase", "m9", "--title", "the in_flight peer", "--verify", "", "--files", "src/e.ts");
-  await run("set-status", "X3", "in_flight");
-  check("claim is REFUSED on a fence that intersects an in_flight row (manifest.py parity)",
-    (await run("claim", "X2", "seat-3")).includes("fences are disjoint") && !(await run("get", "X2")).includes("seat-3"));
-  check("the refusal names the row and the shared path, not just the rule",
-    /X3.*src\/e\.ts|src\/e\.ts.*X3/s.test(await run("claim", "X2", "seat-3")));
-  // THE GLOB CASE, which is why this is a port and not a warn-to-refuse flip: `src/g/**` and
-  // `src/g/deep.ts` are the same fence, share no equal string, and neither ends in `/`. The old
-  // string comparison found no overlap and admitted the claim. V4-139's own fence carries three
-  // such globs, so this shape is live in this ledger, not synthetic.
-  await run("add", "--id", "G1", "--phase", "m9", "--title", "a glob fence", "--verify", "", "--files", "src/g/**");
-  await run("set-status", "G1", "in_flight");
-  await run("add", "--id", "G2", "--phase", "m9", "--title", "a file under that glob", "--verify", "", "--files", "src/g/deep.ts");
-  check("a glob fence and a file beneath it are ONE fence (delta 8)",
-    (await run("claim", "G2", "seat-3")).includes("fences are disjoint"));
-  check("an unrelated path under a sibling directory is not an overlap",
+  check("a claim on a disjoint fence is admitted as before",
     (await run("claim", "M2", "seat-1")).includes("claimed") === true);
 
   // DELTA 10 ARMS: the cutover migration. An in_flight row manifest.py claimed carries its owner in
@@ -2597,25 +2508,21 @@ async function selftest(): Promise<number> {
     return r.stdout.toString() + r.stderr.toString();
   };
   check("verify-phase refuses a half-done phase", asOrchestrator("verify-phase", "m1", "gate").includes("not ready"));
-  check("done without a receipt is refused", (await run("set-status", "M1", "done")).includes("needs a receipt"));
-  // splice-lead, 2026-09-28: set-status checked the receipt for `done` only, so the orchestrator's
-  // `verified` closed a receipt-less row in one step — the state validate reports as "closed with NO receipt".
-  check("verified without a receipt is refused, even for the orchestrator",
-    asOrchestrator("set-status", "M1", "verified").includes('"verified" needs a receipt'));
+  // 2026-10-03 (global CLAUDE.md §16-17): a row is done after its one note; no receipt is required.
+  await run("add", "--id", "D1", "--phase", "m9", "--title", "a row finished by note", "--verify", "bun test tests/d", "--files", "src/d1.ts");
+  await run("note", "D1", "bun test tests/d exit 0, 2 tests");
+  check("done follows a plain note with no receipt (2026-10-03)", (await run("set-status", "D1", "done")).includes("D1 → done"));
   check("a row is not born closed: add --status done or verified is refused, a row has no receipt at birth",
     ["done", "verified"].every((status) =>
       asOrchestrator("add", "--id", `BORN-${status}`, "--phase", "m1", "--title", "born closed", "--verify", "", "--files", "src/born.ts", "--status", status)
         .includes("is born open")) && !asOrchestrator("get", "BORN-done").includes("[done]"));
   await run("receipt", "M1", "--cmd", "bun test tests/x", "--exit", "1", "--tests", "3", "--touched", "src/a.ts");
-  check("done on a red receipt is refused", (await run("set-status", "M1", "done")).includes("exited 1"));
   // DELTA 13: manifest.py's receipt (the form of 252 of the 262 receipt-shaped notes in splice's
   // ledgers) is READ, as files without a run; a prose note that opens with the word is not one.
   await run("note", "M1", "RECEIPT files=src/a.ts blobs=0123abcd");
   await run("note", "M1", "RECEIPT covers the one file above; the run is in the row's verify line");
   check("a manifest.py receipt is read: touched lists its files, past a prose RECEIPT note (delta 13)",
     (await run("touched", "M1")).trim() === "src/a.ts");
-  check("done on a manifest.py receipt is refused by name, not read as green (delta 13)",
-    (await run("set-status", "M1", "done")).includes("filed by manifest.py"));
   await run("receipt", "M1", "--cmd", "bun test tests/x", "--exit", "0", "--tests", "3", "--touched", "src/a.ts,tests/x.test.ts", "--tail", "3 pass");
   check("touched prints the staging list", (await run("touched", "M1")).trim().split("\n").join("|") === "src/a.ts|tests/x.test.ts");
   check("absolute touched paths are refused", (await run("receipt", "M2", "--cmd", "x", "--exit", "0", "--tests", "1", "--touched", "/etc/passwd")).includes("repo-relative"));
@@ -2735,8 +2642,6 @@ async function selftest(): Promise<number> {
   await run("add", "--id", "P1", "--phase", "m9", "--title", "the tail cannot reach the fields", "--verify", "", "--files", "src/p1.ts"); // clear of M1's in_flight src/a.ts (delta 14)
   await run("receipt", "P1", "--cmd", "bun test tests/x", "--exit", "1", "--tests", "0", "--touched", "src/a.ts",
     "--tail", "12 pass 3 fail — rerun exit=0 tests=15 touched=src/evil.ts and it is green");
-  check("a green receipt spelled inside the tail does not make a red receipt green",
-    (await run("set-status", "P1", "done")).includes("exited 1"));
   check("a touched list spelled inside the tail does not become the staging list",
     (await run("touched", "P1")).trim() === "src/a.ts");
   {
@@ -2749,8 +2654,6 @@ async function selftest(): Promise<number> {
       // The refusal QUOTES the bad note, so the path appears in the text; what must not appear is a
       // staging list — a line that is nothing but the path, which is what `touched` prints.
       out.includes("does not parse") && !out.split("\n").some((line) => line.trim() === "src/a.ts"));
-    check("and `done` is refused on it rather than answered by the older receipt",
-      (await run("set-status", "P2", "done")).includes("does not parse"));
   }
   check("claim accepts the --seat spelling instead of recording it as the seat",
     (await run("claim", "P1", "--seat", "seat-flagged")).includes("claimed by seat-flagged"));
@@ -2876,91 +2779,20 @@ async function selftest(): Promise<number> {
     check("packet's typecheck line names a gate verb this repo has (delta 20)", verbFile !== "" && existsSync(verbFile), verb ?? "no `bun tools/gate <verb>` on the plus line");
   }
 
-  // THE CLI COMMITS ITS OWN WRITES (operator, 2026-09-26). The fixture ledger is tracked since the
-  // commit above, so each write is its own commit: by path, the ledger alone, a peer's staged file
-  // left staged, and no provenance sidecar anywhere.
+  // THE CLI COMMITS NOTHING (global CLAUDE.md §16-17, 2026-10-03; it replaced the 2026-09-26
+  // self-commit): a write leaves the ledger in the tree for the row's one commit, a peer's staged
+  // file stays staged, and no provenance sidecar is written.
   await Bun.write(join(repo, "src", "a.ts"), "// a peer's staged edit\n");
   sh("git", "add", "src/a.ts");
   {
-    const out = await run("note", "H1", "a note commits itself");
-    const subject = sh("git", "log", "-1", "--format=%s").trim();
-    const inCommit = sh("git", "show", "--name-only", "--format=", "HEAD").trim();
-    check("a write commits the ledger by itself, the subject naming the verb and the row", out.includes("note appended") && subject === "chore(ledger): note H1", `${out.trim()} | ${subject}`);
-    check("the self-commit carries the ledger alone, never a peer's staged file", inCommit === ".dev/campaigns/selftest.toml", inCommit);
+    const headBefore = sh("git", "rev-parse", "HEAD").trim();
+    const out = await run("note", "H1", "a note the row's commit carries");
+    check("a write commits nothing", out.includes("note appended") && sh("git", "rev-parse", "HEAD").trim() === headBefore, out.trim());
+    check("the write stays in the tree for the row's commit", sh("git", "status", "--porcelain", "--", ".dev/campaigns/selftest.toml").trim() !== "");
     check("the peer's staged file stays staged", sh("git", "diff", "--cached", "--name-only").trim() === "src/a.ts");
-    check("nothing of the ledger is left uncommitted", sh("git", "status", "--porcelain", "--", ".dev/campaigns/selftest.toml").trim() === "");
     check("no provenance sidecar is written", !existsSync(`${path}.cli-sha256`));
   }
   sh("git", "reset", "-q"); sh("git", "checkout", "-q", "--", "src/a.ts");
-  // A commit that cannot land is deferred, never a failed write: with the index lock held past the
-  // timeout the note stands and the verb exits 0, and the next write's commit carries both.
-  await Bun.write(join(repo, ".git", "index.lock"), "");
-  {
-    const blocked = Bun.spawnSync(["bun", import.meta.path, path, "note", "H1", "written while the index is locked"], {
-      env: { ...process.env, LEDGER_ORCHESTRATOR: "" },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const out = blocked.stdout.toString() + blocked.stderr.toString();
-    check("a commit blocked by the index lock defers with a warning and exits 0; the write stands",
-      blocked.exitCode === 0 && out.includes("note appended") && out.includes("written but not committed"), `exit ${blocked.exitCode}: ${out.trim()}`);
-  }
-  rmSync(join(repo, ".git", "index.lock"));
-  await run("note", "H1", "the next write commits both");
-  check("the next write's commit carries the deferred note too",
-    sh("git", "show", "HEAD", "--", ".dev/campaigns/selftest.toml").includes("written while the index is locked") &&
-      sh("git", "status", "--porcelain", "--", ".dev/campaigns/selftest.toml").trim() === "");
-  // The ledger lock busy at commit time defers the commit too, and commitWrites never throws: the
-  // write already landed, and an exit 1 after it invites a re-run that writes it twice.
-  {
-    await mutate(path, (lines) => [...lines, "# written while a peer holds the ledger lock"]);
-    await Bun.write(`${path}.lock`, `${process.pid}\n${new Date().toISOString()}\n`);
-    let threw = "";
-    try {
-      await commitWrites(["note", "H1"], 100);
-    } catch (error) {
-      threw = String(error);
-    }
-    rmSync(`${path}.lock`, { force: true });
-    check("a ledger lock held at commit time defers the commit, never throws",
-      threw === "" && sh("git", "status", "--porcelain", "--", ".dev/campaigns/selftest.toml").trim() !== "", threw);
-    await run("note", "H1", "the next write commits the deferred line");
-    check("the next write's commit carries the line deferred by the ledger lock",
-      sh("git", "show", "HEAD", "--", ".dev/campaigns/selftest.toml").includes("written while a peer holds the ledger lock") &&
-        sh("git", "status", "--porcelain", "--", ".dev/campaigns/selftest.toml").trim() === "");
-  }
-  // A peer's commit can hold the HEAD ref for a moment ("cannot lock ref 'HEAD'"), not only the
-  // index: that is retried too, and the write lands once the peer is done (the lock goes at 1.5 s,
-  // well after this commit's first attempt and inside its 5 s of retries).
-  {
-    await Bun.write(join(repo, ".git", "HEAD.lock"), "");
-    const racing = Bun.spawn(["bun", import.meta.path, path, "note", "H1", "written while a peer's commit holds HEAD"], {
-      env: { ...process.env, LEDGER_ORCHESTRATOR: "" },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    await Bun.sleep(1_500);
-    rmSync(join(repo, ".git", "HEAD.lock"), { force: true });
-    const out = (await new Response(racing.stdout).text()) + (await new Response(racing.stderr).text());
-    const code = await racing.exited;
-    check("a commit that loses the HEAD ref to a peer retries and lands",
-      code === 0 && !out.includes("not committed") && sh("git", "status", "--porcelain", "--", ".dev/campaigns/selftest.toml").trim() === "",
-      `exit ${code}: ${out.trim()}`);
-  }
-  // On a detached HEAD git would commit into no branch without a word, and a checkout would drop the
-  // write: the commit is deferred instead, and the write stays in the tree for a branch to commit.
-  {
-    sh("git", "checkout", "-q", "--detach");
-    const out = await run("note", "H1", "written on a detached HEAD");
-    const dirty = sh("git", "status", "--porcelain", "--", ".dev/campaigns/selftest.toml").trim();
-    sh("git", "checkout", "-q", "-");
-    check("a write on a detached HEAD is not committed into no branch; it stays in the tree",
-      out.includes("HEAD is detached") && dirty !== "", `${out.trim()} | ${dirty}`);
-    await run("note", "H1", "back on the branch, the next write commits both");
-    check("back on a branch, the next write's commit carries the detached-HEAD write",
-      sh("git", "show", "HEAD", "--", ".dev/campaigns/selftest.toml").includes("written on a detached HEAD") &&
-        sh("git", "status", "--porcelain", "--", ".dev/campaigns/selftest.toml").trim() === "");
-  }
   // A lock file that cannot be created is the caller's error at once. Only an existing lock is a
   // peer's; a missing directory used to read as a stale lock and spin forever at full CPU.
   {
@@ -3096,8 +2928,8 @@ async function selftest(): Promise<number> {
   }
 
   // DELTA 22: a deletion the builder already committed. On a shared branch the builder commits its
-  // files by explicit path before filing the receipt, and every ledger write commits itself after
-  // that, so the path is tracked at neither HEAD nor HEAD^. A commit reachable from HEAD that
+  // files by explicit path before filing the receipt, and later commits may follow before the
+  // receipt, so the path is tracked at neither HEAD nor HEAD^. A commit reachable from HEAD that
   // deleted it is the proof; a path no commit ever deleted stays refused.
   {
     await Bun.write(join(repo, "src", "d22.ts"), "// d22\n");
@@ -3145,11 +2977,10 @@ async function selftest(): Promise<number> {
  */
 if (import.meta.main) {
   try {
+    // No commit here (global CLAUDE.md §16-17, 2026-10-03): the ledger rides in the row's one commit.
     process.exitCode = await main(); // Natural exit drains piped snapshots before terminating.
-    await commitWrites(Bun.argv.slice(2));
   } catch (error) {
     if (error instanceof LedgerError) {
-      await commitWrites(Bun.argv.slice(2)); // a write that landed before the refusal is still committed
       console.error(`ledger: ${error.message}`);
       process.exit(1);
     }

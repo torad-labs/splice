@@ -204,8 +204,9 @@ function releaseLock(held: HeldLock): void {
  * NO PROVENANCE PROOF (operator, 2026-09-26: "eliminate this hash ceremony from the ledger"). The
  * `.cli-sha256` sidecar bound each ledger to the bytes this CLI last wrote, so every write became a
  * PAIR a seat had to lock, stage and commit together, and a pair that drifted wedged every mutation
- * until the orchestrator ran `reattest`. Git already records every write: the CLI commits its own
- * (commitWrites), and the raw-edit guard (08_manifest_single_channel) keeps hands off the file.
+ * until the orchestrator ran `reattest`. Git records every write: the ledger rides in its row's one
+ * commit (global CLAUDE.md §16-17, 2026-10-03), and the raw-edit guard (08_manifest_single_channel)
+ * keeps hands off the file.
  */
 export async function readLines(ledgerPath: string): Promise<string[]> {
   const lockPath = await acquireLock(ledgerPath);
@@ -337,8 +338,16 @@ export function today(): string {
  * prefixes, bounded so a sibling like `<root>-other` or `<home>X` is left alone.
  */
 export function withoutMachinePaths(text: string, ledgerPath: string): string {
-  const top = Bun.spawnSync(["git", "-C", dirname(ledgerPath), "rev-parse", "--show-toplevel"], { stdout: "pipe", stderr: "pipe" });
-  const root = top.exitCode === 0 ? top.stdout.toString().trim() : "";
+  // The repository root is the nearest ancestor holding `.git` (a directory, or a file in a worktree):
+  // a filesystem walk, because the ledger tool runs no git (global CLAUDE.md §16-17).
+  let root = "";
+  for (let dir = dirname(resolve(ledgerPath)); ; dir = dirname(dir)) {
+    if (existsSync(join(dir, ".git"))) {
+      root = dir;
+      break;
+    }
+    if (dirname(dir) === dir) break;
+  }
   let out = text;
   for (const [prefix, under, bare] of [[root, "", "."], [homedir(), "~/", "~"]] as const) {
     if (prefix.length < 2) continue;
@@ -349,9 +358,6 @@ export function withoutMachinePaths(text: string, ledgerPath: string): string {
   }
   return out;
 }
-
-/** Every ledger this process wrote, committed once by the entry point (commitWrites). */
-const writtenLedgers = new Set<string>();
 
 /**
  * The only write path. Takes the lock, applies a pure line transform, validates the result by
@@ -395,7 +401,6 @@ export async function mutate(
         await Bun.write(tempPath, next);
         renameSync(tempPath, ledgerPath);
       }
-      writtenLedgers.add(resolve(ledgerPath));
     } catch (error) {
       // A failed rename must not leave debris that a later glob mistakes for a ledger.
       try {
@@ -424,101 +429,6 @@ function writeInPlace(fd: number, text: string): void {
   while (written < bytes.length) written += writeSync(fd, bytes, written, bytes.length - written, written);
   ftruncateSync(fd, bytes.length);
   fsyncSync(fd);
-}
-
-const COMMIT_RETRY_MS = 200;
-/** How long a held index lock is waited out before the write is deferred. The ledger lock is held
- *  only for each attempt, never across the wait, so peers' writes go on meanwhile. */
-const COMMIT_TIMEOUT_MS = 5_000;
-
-/**
- * THE CLI COMMITS ITS OWN WRITES (operator, 2026-09-26: "I hate how this ledger has so many steps").
- * A seat wrapped every write in a seat lock on the ledger and one on its proof, `git add` of the
- * pair, a commit, and two lock releases whose `rmdir "$L/$T"` trips Claude Code's dangerous-removal
- * check, which no permission rule and no bypass mode can pre-approve. The entry point calls this
- * once, after the command, so a write is ONE command and nobody locks, stages or commits a ledger:
- *   - each ledger this process wrote and git tracks is committed BY PATH (`git commit -- <ledger>`),
- *     so a peer's staged files never ride along (the shared-index law);
- *   - under the ledger's own write lock, so the commit carries exactly the bytes on disk and a peer's
- *     write lands in the next commit instead of racing this one;
- *   - a ledger git does not track (a scratch copy, a fresh `init`, a fixture) is left alone, said out
- *     loud when it sits beside this CLI, and one with nothing left to commit (a peer's commit already
- *     carried the write) is skipped;
- *   - a commit that cannot land (the index lock or the HEAD ref held past the timeout, a merge in
- *     progress, a detached HEAD, the ledger lock not free in time) is reported and deferred, never
- *     retried by re-running the verb,
- *     which would write twice: the next write commits the whole file. So this never throws: the
- *     write already landed, and an exit 1 after it would invite exactly that re-run.
- */
-export async function commitWrites(argv: readonly string[], lockTimeoutMs = LOCK_TIMEOUT_MS): Promise<void> {
-  const subject = commitSubject(argv);
-  for (const ledgerPath of writtenLedgers) {
-    const git = (...args: string[]) =>
-      Bun.spawnSync(["git", "-C", dirname(ledgerPath), ...args], { stdout: "pipe", stderr: "pipe" });
-    const tracked = git("ls-files", "--error-unmatch", "--", ledgerPath);
-    if (tracked.exitCode !== 0) {
-      // A scratch copy (the gate's /tmp ledgers, the selftests' fixtures) is untracked by design. A
-      // campaign ledger beside this CLI that git does not track, or cannot read, is a write nobody
-      // will ever commit, so it is said out loud.
-      if (resolve(dirname(ledgerPath)) === import.meta.dir) {
-        const why = tracked.exitCode === 1
-          ? "git does not track it: git add it once and the next write commits it"
-          : `git cannot read it: ${tracked.stderr.toString().trim().split("\n")[0]}`;
-        console.error(`WARNING: ${ledgerPath} is written but not committed (${why})`);
-      }
-      continue;
-    }
-    const deferred = await commitOne(ledgerPath, subject, git, lockTimeoutMs);
-    if (deferred !== null) {
-      console.error(`WARNING: ${ledgerPath} is written but not committed (${deferred}); the next ledger write commits it`);
-    }
-  }
-  writtenLedgers.clear();
-}
-
-/** One ledger's commit, or why it is deferred. Each attempt takes the ledger lock, checks there is
- *  still something to commit, tries once and releases; a held index lock is waited out OUTSIDE the
- *  ledger lock, so a peer's write never queues behind this commit's retries. */
-async function commitOne(
-  ledgerPath: string,
-  subject: string,
-  git: (...args: string[]) => { exitCode: number | null; stderr: Buffer },
-  lockTimeoutMs: number,
-): Promise<string | null> {
-  const deadline = Date.now() + COMMIT_TIMEOUT_MS;
-  for (;;) {
-    let held: HeldLock;
-    try {
-      held = await acquireLock(ledgerPath, lockTimeoutMs);
-    } catch (error) {
-      return error instanceof Error ? error.message : String(error);
-    }
-    let why: string;
-    try {
-      if (git("diff", "--quiet", "HEAD", "--", ledgerPath).exitCode === 0) return null;
-      // git commits on a detached HEAD without a word, into a commit no branch holds, and a later
-      // checkout drops the write from the ledger: left uncommitted, it at least stays in the tree.
-      if (git("symbolic-ref", "-q", "HEAD").exitCode !== 0) return "HEAD is detached, so the commit would land on no branch";
-      const commit = git("commit", "--quiet", "-m", subject, "--", ledgerPath);
-      if (commit.exitCode === 0) return null;
-      why = commit.stderr.toString().trim();
-    } finally {
-      releaseLock(held);
-    }
-    // A peer's commit holds the index lock, or moves HEAD between this commit's read of it and its
-    // update ("cannot lock ref 'HEAD'"); both pass in moments, so both are retried.
-    if (!/index\.lock|cannot lock ref/.test(why) || Date.now() > deadline) return why.split("\n")[0] ?? why;
-    await Bun.sleep(COMMIT_RETRY_MS);
-  }
-}
-
-/** `chore(ledger): <verb> <target>`, from the CLI's own argv (`<ledger> <verb> [args]`): the row a
- *  verb names, `--id` for `add`, or a text verb's first words. */
-function commitSubject(argv: readonly string[]): string {
-  const [, verb = "write", ...rest] = argv;
-  const idAt = rest.indexOf("--id");
-  const target = idAt >= 0 ? rest[idAt + 1] : rest.find((arg) => !arg.startsWith("--"));
-  return `chore(ledger): ${verb}${target === undefined ? "" : ` ${target}`}`.replace(/\s+/g, " ").trim().slice(0, 100);
 }
 
 /** Escape a value for a TOML basic string. */

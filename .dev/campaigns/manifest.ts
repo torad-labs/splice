@@ -26,7 +26,7 @@
 import { readdirSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { FLEET_USAGE, fleetSelftest, journalLedgerEvent, runFleetVerb } from "./fleet.ts";
-import { commitWrites, LedgerError, readLines } from "./ledger-core.ts";
+import { LedgerError, readLines } from "./ledger-core.ts";
 import { lawSheet, ledgerEvents, main } from "./ledger.ts";
 
 const HERE = dirname(import.meta.path);
@@ -93,13 +93,12 @@ async function usage(): Promise<number> {
   return code;
 }
 
-// Every ledger this run wrote is committed here, once, fleet verbs included (ledger-core.ts commitWrites).
+// A write is never committed here (global CLAUDE.md §16-17, 2026-10-03): the ledger file rides in the
+// row's one commit, by explicit path, with the row's own files.
 try {
   process.exitCode = await entry();
-  await commitWrites(Bun.argv.slice(2));
 } catch (error) {
   if (error instanceof LedgerError) {
-    await commitWrites(Bun.argv.slice(2)); // a write that landed before the refusal is still committed
     console.error(`ledger: ${error.message}`);
     process.exit(1);
   }

@@ -26,7 +26,7 @@ import { createConnection } from "node:net";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { findBlock, type Item, type ItemBlock, LedgerError, locateItems, mutate, notesOf, parseOrThrow } from "./ledger-core.ts";
-import { claimNote, fenceOverlap, lastClaimOwner, type LedgerEvent, main, retirementMarker, withField, withNote } from "./ledger.ts";
+import { claimNote, lastClaimOwner, type LedgerEvent, main, retirementMarker, withField, withNote } from "./ledger.ts";
 
 const HERE = import.meta.dir;
 
@@ -255,8 +255,7 @@ function policyLineage(sessionId: string): Record<string, string> | null {
       }
     }
   }
-  const head = Bun.spawnSync(["git", "rev-parse", "HEAD"], { stdout: "pipe", stderr: "pipe", timeout: 3_000 });
-  if (head.exitCode === 0 && head.stdout.toString().trim() !== "") lineage.baseSha = head.stdout.toString().trim();
+  // No baseSha: the ledger tool runs no git (global CLAUDE.md §16-17, 2026-10-03).
   return Object.keys(lineage).length > 0 ? lineage : null;
 }
 
@@ -595,7 +594,6 @@ function shlexSplit(text: string): string[] {
 
 /** manifest.py's `_packet_eligible`: the row-level reasons a packet must not be handed out. */
 function packetIneligible(item: Item): string | null {
-  if (item.files.length === 0 || item.files.some((f) => f.trim() === "")) return "item missing files";
   if (item.verify.trim() === "") return "item missing verify";
   if (item.verify.trim().startsWith("TBD")) return "item verify starts with TBD";
   let tokens: string[];
@@ -615,9 +613,9 @@ function campaignNext(text: string, ledgerPath: string): string[] {
 /**
  * THE PULL: what manifest.py's next-packet was for (orchestrator ruling 2026-09-18). Candidates are
  * the todo rows campaign.next lists, in its order, then every other todo row in ledger order —
- * curation is a preference, not a gate. A row is offered only if it is not retired, passes packet
- * eligibility, and shares no fence with an in_flight row, so the claim is never handed a row it
- * refuses; a claim that still refuses (another seat's review milestone) moves on to the next.
+ * curation is a preference, not a gate. A row is offered only if it is not retired and passes packet
+ * eligibility (no fence check since 2026-10-03, global CLAUDE.md §16-17); a claim that still refuses
+ * (another seat's review milestone) moves on to the next.
  * No review-debt gate: review runs once, at deliver. Nothing eligible exits 1 with every reason.
  */
 async function nextClaim(ledgerPath: string, seat: string): Promise<number> {
@@ -627,7 +625,6 @@ async function nextClaim(ledgerPath: string, seat: string): Promise<number> {
   const byId = new Map(blocks.map((b) => [b.item.id, b]));
   const queued = campaignNext(text, ledgerPath);
   const order = [...queued.filter((id) => byId.get(id)?.item.status === "todo"), ...blocks.filter((b) => b.item.status === "todo" && !queued.includes(b.item.id)).map((b) => b.item.id)];
-  const inFlight = blocks.filter((b) => b.item.status === "in_flight");
   const reasons: string[] = [];
   for (const id of order) {
     const block = byId.get(id)!;
@@ -636,8 +633,6 @@ async function nextClaim(ledgerPath: string, seat: string): Promise<number> {
     const ineligible = packetIneligible(block.item);
     if (ineligible !== null) { reasons.push(`${id}: ${ineligible}`); continue; }
     if (block.item.claimedBy !== undefined && block.item.claimedBy !== seat) { reasons.push(`${id}: claimed by ${block.item.claimedBy}`); continue; }
-    const blocker = inFlight.find((peer) => fenceOverlap(block.item.files, peer.item.files).length > 0);
-    if (blocker !== undefined) { reasons.push(`${id}: fence overlaps with in_flight ${blocker.item.id}`); continue; }
     try {
       await main([ledgerPath, "claim", id, "--seat", seat]);
     } catch (error) {
@@ -819,25 +814,26 @@ export async function fleetSelftest(): Promise<number> {
   console.log("fleet selftest");
   try {
     sh("git", "init", "-q");
-    // The fixture's own identity: the CLI commits every write it makes, and a CI runner has no global one.
+    // The fixture's own identity: the fixture commits its own files, and a CI runner has no global one.
     sh("git", "config", "user.name", "t"); sh("git", "config", "user.email", "t@t");
     sh("git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "base");
     const head = sh("git", "rev-parse", "HEAD").stdout.toString().trim();
     check("the layout carries no manifest.py (the post-deletion layout)", !existsSync(join(dir, "manifest.py")));
     check("init creates the ledger", run("init", "fleet selftest", "--rows", "20").code === 0);
     const add = (id: string, title: string, files: string, verify = "true") => run("add", "--id", id, "--phase", "f1", "--title", title, "--verify", verify, "--files", files);
-    // The ledger sits beside the CLI and git does not track it yet (it lands with the fixture), so a
-    // write says it is not committed and how to fix that, instead of skipping the commit in silence.
+    // The ledger sits beside the CLI and git does not track it yet (it lands with the fixture). The CLI
+    // runs no git (global CLAUDE.md §16-17, 2026-10-03), so the write succeeds and HEAD does not move.
     {
       const probe = run("add-note", "the ledger is untracked until the fixture lands");
-      check("a write to an untracked ledger beside the CLI says it is not committed",
-        probe.out.includes("git does not track it: git add it once"), probe.out);
+      const after = sh("git", "rev-parse", "HEAD").stdout.toString().trim();
+      check("a write to an untracked ledger succeeds and commits nothing",
+        probe.code === 0 && after === head, `${probe.out} | ${after}`);
     }
     for (const [id, title, files, verify] of [
       ["F0", "the in_flight peer", "src/shared.ts", "true"],
       ["F1", "retired row", "src/f1.ts", "true"],
       ["F2", "no verify yet", "src/f2.ts", "TBD later"],
-      ["F3", "shares a fence with F0", "src/shared.ts", "true"],
+      ["F3", "shares a file with F0, which blocks nothing", "src/shared.ts", "true"],
       ["F4", "rm the old fixtures", "src/old/*", "true"],
       ["F5", "eligible, in ledger order", "src/f5.ts", "true"],
       ["F6", "eligible and queued", "src/f6.ts", "true"],
@@ -850,8 +846,8 @@ export async function fleetSelftest(): Promise<number> {
       new RegExp(`^\\{"seq": 0, "ts": "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z", "episodeLabel": "F0", "kind": "manifest_verb", "verb": "note", "itemId": "F0", "seat": "unknown"\\}$`).test(first), first);
     run("claim", "F0", "--session", "seat-a");
     const claimLine = records().at(-1) ?? {};
-    check("claim journals the seat and a policyLineage carrying HEAD",
-      claimLine.verb === "claim" && claimLine.seat === "seat-a" && (claimLine.policyLineage as Record<string, unknown> | undefined)?.baseSha === head, JSON.stringify(claimLine));
+    check("claim journals the seat and a policyLineage without HEAD (the tool runs no git)",
+      claimLine.verb === "claim" && claimLine.seat === "seat-a" && (claimLine.policyLineage as Record<string, unknown> | undefined)?.baseSha === undefined, JSON.stringify(claimLine));
     check("seq is minted from the journal's tail", records().map((r) => r.seq).join(",") === "0,1");
     run("set-status", "F0", "blocked");
     run("set-status", "F0", "in_flight");
@@ -869,7 +865,7 @@ export async function fleetSelftest(): Promise<number> {
     Bun.spawnSync(["bun", join(dir, "manifest.ts"), ledger, "claim", "F6", "--session", "seat-l", "--lease", "mem=12G,cpu=8,wall=20m,tier=B"], { cwd: root, env: { ...env, TORAD_SEAT_MODEL: "model-x" }, stdout: "pipe", stderr: "pipe" });
     const [leaseClaim, leaseLine] = rawLines().slice(-2);
     check("TORAD_SEAT_MODEL names the model in the claim's lineage, in manifest.py's key order",
-      (leaseClaim ?? "").includes(`"policyLineage": {"modelId": "model-x", "modelIdBasis": "env", "baseSha": "${head}"}`), leaseClaim);
+      (leaseClaim ?? "").includes(`"policyLineage": {"modelId": "model-x", "modelIdBasis": "env"}`), leaseClaim);
     check("a lease is journalled after its claim, as declared",
       (leaseLine ?? "").includes(`"kind": "lease-declared", "itemId": "F6", "seat": "seat-l", "declared": {"mem": "12G", "cpu": "8", "wall": "20m", "tier": "B"}`), leaseLine);
     run("release", "F6");
@@ -918,11 +914,15 @@ export async function fleetSelftest(): Promise<number> {
     check("next --claim takes the queued todo row first, claims it and prints its packet",
       pulled.code === 0 && pulled.out.includes("F6 claimed by seat-c") && run("get", "F6").out.includes("[in_flight]") && pulled.out.includes("F6"), pulled.out);
     const second = run("next-packet", "--session", "seat-d");
+    // A file shared with an in_flight row is settled by the §18 file lock, never by the queue, so F3 is eligible.
     check("then the first eligible todo row in ledger order, past every ineligible one (next-packet spelling)",
-      second.code === 0 && second.out.includes("F5 claimed by seat-d"), second.out);
-    const empty = run("next", "--claim", "seat-e");
+      second.code === 0 && second.out.includes("F3 claimed by seat-d"), second.out);
+    const third = run("next", "--claim", "seat-e");
+    check("then the next one in ledger order", third.code === 0 && third.out.includes("F5 claimed by seat-e"), third.out);
+    const empty = run("next", "--claim", "seat-f");
     check("nothing eligible exits 1 with one reason per candidate",
-      empty.code === 1 && ["F1: retired", "F2: item verify starts with TBD", "F3: fence overlaps with in_flight F0", "F4: destructive item with un-enumerated fence"].every((r) => empty.out.includes(r)), empty.out);
+      empty.code === 1 && ["F1: retired", "F2: item verify starts with TBD", "F4: destructive item with un-enumerated fence"].every((r) => empty.out.includes(r))
+        && !empty.out.includes("F3:"), empty.out);
 
     // read-only instruments
     const kpi = run("gym-kpi").out;
@@ -957,18 +957,16 @@ export async function fleetSelftest(): Promise<number> {
     sh("git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "fixture lands");
     check("fence-uncommitted is clean once the row's files are committed", run("fence-uncommitted", "FU1").out.trim() === '{"dirty": [], "warned": [], "available": true}');
     // Through the production entry (manifest.ts, which every seat and hook runs): a write on a tracked
-    // ledger commits itself, by path, under its verb's subject.
+    // ledger commits nothing; the ledger rides in the row's one commit with the row's own files.
     {
-      const noted = run("note", "FU1", "a note through manifest.ts commits itself");
+      const noted = run("note", "FU1", "a note through manifest.ts stays in the tree");
       const subject = sh("git", "log", "-1", "--format=%s").stdout.toString().trim();
       const dirty = sh("git", "status", "--porcelain", "--", ledger).stdout.toString().trim();
-      check("a write through manifest.ts commits the tracked ledger under its verb's subject",
-        noted.code === 0 && subject === "chore(ledger): note FU1" && dirty === "", `${noted.out.trim()} | ${subject} | ${dirty}`);
+      check("a write through manifest.ts leaves the tracked ledger dirty and commits nothing",
+        noted.code === 0 && subject === "fixture lands" && dirty !== "", `${noted.out.trim()} | ${subject} | ${dirty}`);
     }
     await Bun.write(join(root, "src", "fu", "new.ts"), "// never committed\n");
-    // The CLI commits its own writes, so a dirty ledger is a write whose commit was deferred; a raw
-    // line stands in for one, where a note would commit itself.
-    await Bun.write(ledger, `${readFileSync(ledger, "utf8")}# a write whose commit was deferred\n`);
+    // The note above left the ledger dirty: a write waiting for its row's commit, which is only warned.
     const fu = run("fence-uncommitted", "FU1");
     check("fence-uncommitted: a new file inside the fence is dirty (exit 1), the ledger itself only warned",
       fu.code === 1 && fu.out.trim() === '{"dirty": ["src/fu/new.ts"], "warned": [".dev/campaigns/fleet-selftest.toml"], "available": true}', fu.out);

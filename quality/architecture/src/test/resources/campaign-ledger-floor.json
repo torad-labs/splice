@@ -20,7 +20,7 @@
     "rows": 189
   },
   "head-decoupling.toml": {
-    "lines": 1003,
+    "lines": 992,
     "rows": 37
   },
   "kotlin-gateway.toml": {
@@ -32,7 +32,7 @@
     "rows": 13
   },
   "proxy-hardening.toml": {
-    "lines": 1099,
+    "lines": 1040,
     "rows": 88
   },
   "proxy-hardening/walls/law_registry.toml": {

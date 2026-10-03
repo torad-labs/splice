@@ -163,24 +163,3 @@ export async function handleLedgerEarn(
   return false;
 }
 
-/** When setting done/verified, enforce require:* diary mandates if present. */
-export function assertItemMandates(
-  id: string,
-  status: string,
-  noteLines: readonly string[],
-): void {
-  if (status !== "done" && status !== "verified") return;
-  const req = parseRequires(noteLines);
-  const want =
-    status === "done" ? req.ready : [...new Set([...req.ready, ...req.verified])];
-  if (want.length === 0) return; // no mandates declared — legacy items ok
-  const miss = missingSlugs(
-    want,
-    parseChecks(noteLines),
-    parseReceipts(noteLines),
-    parseReviews(noteLines),
-  );
-  if (miss.length > 0) {
-    throw new LedgerError(teachRemedy(id, status === "done" ? "ready" : "verified", miss));
-  }
-}

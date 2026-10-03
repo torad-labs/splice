@@ -224,6 +224,16 @@ behaviour a seat or a caller depends on. Unlike 1, 2, 3 and 5 they are permanent
     stand-in census: a receipt naming the unclaimed file is refused, and one naming only claimed files is
     recorded. Red first: 202/203. Mutant refusing on any unclaimed line rather than the receipt's own:
     red on the second arm (201/203, with delta 20's out-of-repo arm).
+24. **The four-step finish: the CLI runs no git and enforces no ceremony (global CLAUDE.md §16-17,
+    2026-10-03).** A row is claimed, built, tested, then closed with one note, `set-status done` and ONE
+    commit of its files plus the ledger by explicit path. Removed, because each forced a step that rule
+    drops: delta 18's self-commit (`commitWrites`, from `ledger.ts`, `manifest.ts` and `review.ts`), the
+    receipt `done` required, the per-row mandates `verify-phase` checked, the claim's fence refusal and
+    `next --claim`'s fence and empty-files skips (a shared file is settled by the §18 file lock), the
+    claim lineage's HEAD, and `git rev-parse` in the machine-path scrubber (a walk up to `.git`). The
+    receipt, stage, landed, audit, fence, verdict and review verbs stay, off the finish path, for the
+    post-0.4.0 cut. Selftests 189/189 ledger, 40/40 fleet, review ok; the replaced arms assert the new
+    behaviour (a write leaves HEAD alone and the ledger dirty; F3 is claimed beside F0).
 
 **`fleet.ts` (splice-only, not vendored).** What `manifest.py` did that the canonical CLI does not:
 the fleet journal (`$TORAD_FLEET_ROOT/journal/events.jsonl`, byte-compatible with py's writer: the

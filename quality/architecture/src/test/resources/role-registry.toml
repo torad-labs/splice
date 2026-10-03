@@ -535,3 +535,10 @@ signature = "(String)->Boolean?"
 dated = "2026-09-30"
 names = ["CodeModeSessionAlive", "SessionLive"]
 reason = """CodeModeSessionAlive protects a parked code-mode worker from reclamation until its client process is positively dead; null preserves the worker for an unregistered headless client or an unavailable registry. SessionLive decides whether a resume recipe can attach to an already running interactive session, where absence permits a new launch. Both read process liveness but have separate module boundaries and consumers with opposite actions on unknown evidence. The provider cannot depend on the launch feature; the app supplies each boundary its own registry adapter."""
+
+# ── 2 names, (Long) -> Boolean ────────────────────────────────────────────────────────────────────
+[[groups]]
+signature = "(Long)->Boolean"
+dated = "2026-10-03"
+names = ["CurrentUpstreamAttempt", "PidAlive"]
+reason = """CurrentUpstreamAttempt takes a turn's upstream ATTEMPT number and answers whether that attempt is still the live one, so a read or hold interval reported by a retired attempt's late callback is dropped instead of overwriting the current attempt's perf maxima. PidAlive takes an operating-system PROCESS id and answers whether that process still runs, for the session registry's liveness. An attempt counter and a pid are both Long: a swap would ask the kernel about attempt 2, or keep a dead attempt's intervals because some process with that number happens to exist, and both compile in silence."""

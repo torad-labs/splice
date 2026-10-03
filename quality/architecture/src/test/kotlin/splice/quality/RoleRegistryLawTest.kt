@@ -717,7 +717,8 @@ class RoleRegistryLawTest {
         val text = RoleRegistry.declarations().orEmpty()
         val config = shipped()
         assertEquals(emptyList<String>(), config.problems, "the shipped dispositions must parse")
-        assertEquals(33, config.entries.size, "one entry per shared signature")
+        // 34 since Oct 3 CT: V4-456's CurrentUpstreamAttempt shares `(Long)->Boolean` with PidAlive, a new entry of two names.
+        assertEquals(34, config.entries.size, "one entry per shared signature")
         assertEquals(
             text.split("\n").count { it == "[[groups]]" },
             config.entries.size,
@@ -748,7 +749,8 @@ class RoleRegistryLawTest {
         // 129 since Oct 2 CT: FieldText defers record encoding and CodeModeSourceCommit gates executable bytes.
         // 130 since Oct 2 CT: RecordingCompleted acknowledges successful frame-recording completion, never handoff.
         // 132 since Oct 2 CT: DayFileRemoval deletes paths while PluginFileMatch only classifies them.
-        assertEquals(132, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
+        // 134 since Oct 3 CT: V4-456's CurrentUpstreamAttempt and PidAlive, the attempt-number and pid probes.
+        assertEquals(134, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
         assertTrue(config.entries.values.all { !it.text("reason").isNullOrBlank() }) { "every entry is reasoned" }
         assertTrue(config.entries.values.all { !it.text("dated").isNullOrBlank() }) { "every entry is dated" }
 

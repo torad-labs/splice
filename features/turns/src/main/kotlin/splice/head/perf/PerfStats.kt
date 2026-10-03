@@ -209,6 +209,9 @@ public class PerfStats(
                     put("account", account)
                     put("cache_cold", meta.cacheCold)
                 }
+                put(PerfKeys.ARRIVAL_TO_UPSTREAM_WRITE_MS, snap.counters[PerfKeys.ARRIVAL_TO_UPSTREAM_WRITE_MS])
+                put(PerfKeys.UPSTREAM_WRITE_TO_FIRST_BYTE_MS, snap.counters[PerfKeys.UPSTREAM_WRITE_TO_FIRST_BYTE_MS])
+                put(PerfKeys.RETRIES, snap.counters.getOrDefault(PerfKeys.RETRIES, 0L))
                 (snap.marks.asSequence() + snap.counters.asSequence()).forEach { (k, v) -> put(k, v) }
                 snap.upstreamGapEnd?.let { put(PerfKeys.UP_GAP_END, it.wire) }
             },

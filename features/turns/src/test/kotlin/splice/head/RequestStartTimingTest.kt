@@ -1,5 +1,6 @@
 package splice.head
 
+import io.ktor.client.engine.okhttp.OkHttpConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -10,6 +11,9 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
+import okhttp3.MediaType
+import okhttp3.RequestBody
+import okio.BufferedSink
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -23,16 +27,21 @@ import splice.core.parse.AnthropicTurnBody
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
+import splice.core.util.ElapsedClock
+import splice.core.util.MonoClock
 import splice.head.admission.RequestMaterializationGate
 import splice.upstream.BuiltTurn
 import splice.upstream.Provider
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
+import splice.upstream.transport.UpstreamClient
+import splice.upstream.transport.UpstreamTransport
 import java.net.Socket
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.LockSupport
 import kotlin.time.Duration.Companion.seconds
 
@@ -44,6 +53,33 @@ private const val PREP_KEY = "prep_ms"
 private const val CLIENT_BYTE_KEY = "arrival_to_first_client_byte_ms"
 
 class RequestStartTimingTest {
+    @Test
+    fun `a delayed upstream request write reaches its persisted arrival to write duration`(
+        @TempDir root: Path,
+    ) = runBlocking<Unit> {
+        DelayedUpstreamWrite().use { write ->
+            TimingRig(root, write = write).use { rig ->
+                rig.start()
+                val response = async(Dispatchers.IO) { timingPost(rig.port, "timed") }
+                try {
+                    assertTrue(write.entered.await(TIMING_TIMEOUT_MS, TimeUnit.MILLISECONDS))
+                    delay(TIMING_WAIT_MS)
+                    write.advance(TIMING_WAIT_MS)
+                    write.release.countDown()
+                    assertTrue(response.await().contains("message_stop"))
+                    val row = timingRow(root)
+                    val written = duration(row, "arrival_to_upstream_write_ms")
+                    assertTrue(written >= TIMING_WAIT_MS, row.toString())
+                    assertTrue(duration(row, PREP_KEY) < written, row.toString())
+                    assertTrue(duration(row, "upstream_write_to_first_byte_ms") >= 0, row.toString())
+                    assertEquals(0L, duration(row, "retries"))
+                } finally {
+                    write.release.countDown()
+                }
+            }
+        }
+    }
+
     @Test
     fun `queued inflight time is numeric and separate from preparation`(@TempDir root: Path) = runBlocking<Unit> {
         TimingRig(root, maxInflight = 1).use { rig ->
@@ -129,6 +165,7 @@ private class TimingRig(
     maxInflight: Int = 0,
     heapBytes: Long = 0,
     prepDelay: Boolean = false,
+    write: DelayedUpstreamWrite? = null,
 ) : AutoCloseable {
     private val upstream = MockChatGptUpstream()
     val provider = TimingProvider(timingProvider(upstream.baseUrl), prepDelay)
@@ -137,7 +174,16 @@ private class TimingRig(
     private val head = HeadServer(
         provider,
         0,
-        headDeps(root, gate = gate, log = {}, seams = HeadDeps.HeadSeams(requestMaterializationGate = heap)),
+        headDeps(
+            root,
+            upstream = write?.upstream ?: UpstreamClient(totalTimeoutMs = 30_000L, maxRetries = 2),
+            gate = gate,
+            log = {},
+            seams = HeadDeps.HeadSeams(
+                requestMaterializationGate = heap,
+                clock = write?.clock ?: ElapsedClock(MonoClock::nowMs),
+            ),
+        ),
     )
     val port: Int get() = head.port
 
@@ -148,6 +194,41 @@ private class TimingRig(
         runBlocking { head.stop() }
         upstream.stop()
         assertTrue(AsyncFileIo.drain(), "real perf rows must finish before fixture deletion")
+    }
+}
+
+/** Holds the actual OkHttp body writer, not preparation or the mock server's response. */
+private class DelayedUpstreamWrite : AutoCloseable {
+    private val now = AtomicLong(100)
+    val clock = ElapsedClock { now.get() }
+    fun advance(ms: Long) { now.addAndGet(ms) }
+    val entered = CountDownLatch(1)
+    val release = CountDownLatch(1)
+    private val client = UpstreamTransport().defaultClient(TIMING_TIMEOUT_MS)
+    val upstream = UpstreamClient(totalTimeoutMs = TIMING_TIMEOUT_MS, maxRetries = 1, client = client)
+
+    init {
+        val config = client.engine.config
+        check(config is OkHttpConfig)
+        config.addNetworkInterceptor { chain ->
+            val request = chain.request()
+            val body = checkNotNull(request.body)
+            val held = object : RequestBody() {
+                override fun contentType(): MediaType? = body.contentType()
+                override fun contentLength(): Long = body.contentLength()
+                override fun writeTo(sink: BufferedSink) {
+                    entered.countDown()
+                    check(release.await(TIMING_TIMEOUT_MS, TimeUnit.MILLISECONDS))
+                    body.writeTo(sink)
+                }
+            }
+            chain.proceed(request.newBuilder().method(request.method, held).build())
+        }
+    }
+
+    override fun close() {
+        release.countDown()
+        client.close()
     }
 }
 

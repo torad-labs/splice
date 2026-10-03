@@ -43,6 +43,12 @@ public object PerfKeys {
     public const val LEASE_WAIT_MS: String = "lease_wait_ms"
     public const val PREP_MS: String = "prep_ms"
     public const val ARRIVAL_TO_FIRST_CLIENT_BYTE_MS: String = "arrival_to_first_client_byte_ms"
+
+    /** Arrival to the final successfully flushed request byte of the latest upstream attempt. */
+    public const val ARRIVAL_TO_UPSTREAM_WRITE_MS: String = "arrival_to_upstream_write_ms"
+
+    /** Final SSE request-body flush to the first positive upstream body read. */
+    public const val UPSTREAM_WRITE_TO_FIRST_BYTE_MS: String = "upstream_write_to_first_byte_ms"
     public const val AUTH_MS: String = "auth_ms"
     public const val BACKOFF_MS: String = "backoff_ms"
     public const val REFRESH_MS: String = "refresh_ms"

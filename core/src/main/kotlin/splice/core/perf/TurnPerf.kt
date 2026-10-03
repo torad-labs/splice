@@ -42,6 +42,7 @@ public class TurnPerf(private val clock: ElapsedClock = ElapsedClock(System::cur
     private val marks = LinkedHashMap<String, Long>()
     private val counters = LinkedHashMap<String, Long>()
     private var arrivalOffsetMs = 0L
+    private var upstreamAttempt = 0L
     private var upstreamGapEnd: UpstreamGapEnd? = null
 
     /** Anchor only the new client-byte duration; legacy stage marks keep their original origin. */
@@ -60,6 +61,31 @@ public class TurnPerf(private val clock: ElapsedClock = ElapsedClock(System::cur
     }
 
     public fun elapsedMs(): Long = clock() - startedAt
+
+    /** Arrival-relative clock for transport milestones; legacy stage marks retain their origin. */
+    public fun arrivalElapsedMs(): Long {
+        val at = elapsedMs()
+        return synchronized(lock) { at + arrivalOffsetMs }
+    }
+
+    /** Claim the next wire attempt and atomically discard its predecessor's measurements. */
+    public fun beginUpstreamAttempt(): Long = synchronized(lock) {
+        counters.remove(PerfKeys.ARRIVAL_TO_UPSTREAM_WRITE_MS)
+        counters.remove(PerfKeys.UPSTREAM_WRITE_TO_FIRST_BYTE_MS)
+        ++upstreamAttempt
+    }
+
+    /** A late callback from a retired attempt cannot overwrite the current attempt's milestones. */
+    public fun recordUpstreamTiming(attempt: Long, writtenAt: Long?, firstByteAt: Long?) {
+        synchronized(lock) {
+            if (attempt != upstreamAttempt || writtenAt == null) return
+            counters[PerfKeys.ARRIVAL_TO_UPSTREAM_WRITE_MS] = writtenAt
+            counters.remove(PerfKeys.UPSTREAM_WRITE_TO_FIRST_BYTE_MS)
+            if (firstByteAt != null && firstByteAt >= writtenAt) {
+                counters[PerfKeys.UPSTREAM_WRITE_TO_FIRST_BYTE_MS] = firstByteAt - writtenAt
+            }
+        }
+    }
 
     /** Record [stage] completion at now. Re-marking overwrites (retry loops: last attempt wins). */
     public fun mark(stage: String): Long {

@@ -4,7 +4,10 @@
 package splice.head.perf
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -17,6 +20,7 @@ import splice.core.model.TurnPrice
 import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSnapshot
 import splice.core.perf.TurnPerf
+import splice.core.perf.UpstreamAttemptTiming
 import splice.core.perf.UpstreamGapEnd
 import splice.core.util.AsyncFileIo
 import java.nio.file.Files
@@ -27,6 +31,44 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class PerfStatsTest {
+
+    @Test
+    fun `every row keeps absent upstream write measurements null beside its retry count`(@TempDir tmp: Path) {
+        val file = tmp.resolve("perf.jsonl")
+        val stats = PerfStats(file, clock = { 123L })
+        stats.record(PerfRowMeta("synthetic", "error:admission-full", compact = false), TurnPerf { 0L }.snapshot())
+        assertTrue(AsyncFileIo.drain())
+        val row = Json.parseToJsonElement(Files.readAllLines(file).single()).jsonObject
+        assertEquals(JsonNull, row["arrival_to_upstream_write_ms"])
+        assertEquals(JsonNull, row["upstream_write_to_first_byte_ms"])
+        assertEquals(0L, row["retries"]?.jsonPrimitive?.longOrNull)
+    }
+
+    @Test
+    fun `a retried row persists only the latest attempt with its retry count`(@TempDir tmp: Path) {
+        var now = 100L
+        val perf = TurnPerf { now }
+        perf.recordArrival(70)
+        val first = UpstreamAttemptTiming(perf)
+        now = 140L
+        first.written()
+        now = 160L
+        first.firstByte()
+        perf.add(PerfKeys.RETRIES, 1)
+        val last = UpstreamAttemptTiming(perf)
+        now = 730L
+        last.written()
+        now = 760L
+        last.firstByte()
+        first.written()
+        val file = tmp.resolve("perf.jsonl")
+        PerfStats(file, clock = { 123L }).record(PerfRowMeta("synthetic", "ok", compact = false), perf.snapshot())
+        assertTrue(AsyncFileIo.drain())
+        val row = Json.parseToJsonElement(Files.readAllLines(file).single()).jsonObject
+        assertEquals(660L, row[PerfKeys.ARRIVAL_TO_UPSTREAM_WRITE_MS]?.jsonPrimitive?.longOrNull)
+        assertEquals(30L, row[PerfKeys.UPSTREAM_WRITE_TO_FIRST_BYTE_MS]?.jsonPrimitive?.longOrNull)
+        assertEquals(1L, row[PerfKeys.RETRIES]?.jsonPrimitive?.longOrNull)
+    }
 
     @Test
     fun `preflight anchors only a proven input prefix and marks weaker estimates`(@TempDir tmp: Path) {

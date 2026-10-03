@@ -21,6 +21,7 @@ dependencies {
         exclude(group = "io.ktor", module = "ktor-client-apache5")
     }
     testImplementation(libs.ktor.client.cio)
+    testImplementation(libs.ktor.client.okhttp) // V4-456: delayed real upstream writes through the production engine
     testImplementation(project(":integrations-dialects-openai-responses"))
     testImplementation(project(":integrations-dialects-anthropic"))
     testImplementation(project(":integrations-providers-codex"))

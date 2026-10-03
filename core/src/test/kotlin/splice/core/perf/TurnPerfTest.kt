@@ -18,6 +18,47 @@ class TurnPerfTest {
     }
 
     @Test
+    fun `upstream milestones retain measured zero and never reuse an earlier attempt`() {
+        val clock = FakeClock()
+        val perf = TurnPerf { clock.now }
+        perf.recordArrival(clock.now - 40)
+        val first = UpstreamAttemptTiming(perf)
+        clock.tick(100)
+        first.written()
+        first.firstByte()
+        assertEquals(140L, perf.snapshot().counters[PerfKeys.ARRIVAL_TO_UPSTREAM_WRITE_MS])
+        assertEquals(0L, perf.snapshot().counters[PerfKeys.UPSTREAM_WRITE_TO_FIRST_BYTE_MS])
+        val second = UpstreamAttemptTiming(perf)
+        assertTrue(PerfKeys.ARRIVAL_TO_UPSTREAM_WRITE_MS !in perf.snapshot().counters)
+        assertTrue(PerfKeys.UPSTREAM_WRITE_TO_FIRST_BYTE_MS !in perf.snapshot().counters)
+        first.written()
+        first.firstByte()
+        assertTrue(PerfKeys.ARRIVAL_TO_UPSTREAM_WRITE_MS !in perf.snapshot().counters, "stale attempt callback")
+        assertTrue(PerfKeys.UPSTREAM_WRITE_TO_FIRST_BYTE_MS !in perf.snapshot().counters, "stale attempt callback")
+        clock.tick(200)
+        second.written()
+        clock.tick(30)
+        second.firstByte()
+        clock.tick(50)
+        second.firstByte()
+        assertEquals(340L, perf.snapshot().counters[PerfKeys.ARRIVAL_TO_UPSTREAM_WRITE_MS])
+        assertEquals(30L, perf.snapshot().counters[PerfKeys.UPSTREAM_WRITE_TO_FIRST_BYTE_MS])
+    }
+
+    @Test
+    fun `a response before request completion does not invent a post-write upstream wait`() {
+        val clock = FakeClock()
+        val perf = TurnPerf { clock.now }
+        val attempt = UpstreamAttemptTiming(perf)
+        clock.tick(10)
+        attempt.firstByte()
+        assertTrue(PerfKeys.ARRIVAL_TO_UPSTREAM_WRITE_MS !in perf.snapshot().counters)
+        clock.tick(10)
+        attempt.written()
+        assertTrue(PerfKeys.UPSTREAM_WRITE_TO_FIRST_BYTE_MS !in perf.snapshot().counters)
+    }
+
+    @Test
     fun `marks record elapsed at completion and re-mark overwrites`() {
         val clock = FakeClock()
         val perf = TurnPerf { clock.now }

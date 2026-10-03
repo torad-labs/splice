@@ -96,6 +96,7 @@ public class UpstreamTransport {
         val factory = sockets.factory
             ?: KeepaliveSocketFactory(ledger = ledger, sendBufferBytes = sockets.sendBufferBytes)
         val bound = RequestWriteBound(requestWriteTimeoutMs, pool, ledger, queues)
+        val timing = UpstreamTimingBridge()
         return HttpClient(OkHttp) {
             install(HttpTimeout) {
                 connectTimeoutMillis = CONNECT_TIMEOUT_MS
@@ -134,12 +135,14 @@ public class UpstreamTransport {
                     dispatcher(dispatcher)
                     connectionPool(pool)
                     // V4-307: first, so a thread refused anywhere below is placed before or after the send.
+                    addInterceptor(timing)
                     addInterceptor(RequestSendState())
                     addInterceptor(bound.untimedWrite)
                     addNetworkInterceptor(bound)
+                    addNetworkInterceptor(UpstreamWireTiming())
                 }
             }
-        }
+        }.also { it.attributes.put(upstreamTimingBridgeKey, timing) }
     }
 
     /** V4-289: what the once-per-process line says about the request-write bound on this system. V4-292: a

@@ -25,6 +25,7 @@ import io.ktor.http.content.ByteArrayContent
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import splice.core.auth.Credentials
+import splice.core.perf.UpstreamAttemptTiming
 import splice.core.util.WallClock
 import splice.core.wire.HttpStatus
 import splice.upstream.CredentialHeaders
@@ -114,6 +115,7 @@ internal class UpstreamRequest(
         extraHeaders: CredentialHeaders,
         bodyBytes: ByteArray,
         recorder: AttemptRecorder? = null,
+        timingToken: String? = null,
     ): HttpStatement {
         val allHeaders = headerRules.dedupeCaseInsensitive(applyAuth(creds, extraHeaders(creds)) + IDENTITY_RESPONSE)
         // V4-174: the recorder sees the SAME map the wire gets, after the dedupe — redacted on the
@@ -124,6 +126,10 @@ internal class UpstreamRequest(
             headers {
                 allHeaders.forEach { (k, v) -> append(k, v) }
                 if (zstdRequestBody) append("Content-Encoding", "zstd")
+                if (timingToken != null) {
+                    remove(UPSTREAM_TIMING_HEADER)
+                    append(UPSTREAM_TIMING_HEADER, timingToken)
+                }
             }
             setBody(ByteArrayContent(bodyBytes, ContentType.Application.Json))
         }
@@ -143,33 +149,51 @@ internal class UpstreamRequest(
         recorder: AttemptRecorder? = null,
     ): RetryOutcome<T> {
         val postedAtMs = ctx.perf?.elapsedMs()
-        val statement = prepare(ctx.url, creds, ctx.extraHeaders, bodyBytes, recorder)
-        return statement.execute { resp ->
-            ctx.markHeaders()
-            // V4-220 item 6b: every answer reaches the provider, so a forwarded credential's verdict is known.
-            ctx.auth.upstreamAnswered(resp.status.value, resp.status.isSuccess())
-            recorder?.response(resp.status.value, resp.headers.entries().associate { (k, v) -> k to v.joinToString() })
-            if (resp.status.isSuccess()) {
-                onStreamStart()
-                RetryOutcome.Done(block(UpstreamResponse(resp).also { it.postedAtMs = postedAtMs }))
-            } else {
-                val realStatus = resp.status.value
-                val text = UpstreamResponse(resp).bodyTextLimited(MAX_ERROR_BODY_BYTES)
-                recorder?.errorText(text)
-                val status = quotaExhaustedStatus(realStatus, text, ctx)
-                RetryOutcome.Failed(
-                    status,
-                    text,
-                    retryAfter.retryAfterMs(resp.headers["Retry-After"]),
-                    planLimit = if (status == HttpStatus.TOO_MANY_REQUESTS) {
-                        val nowSeconds = wallClock() / MS_PER_S
-                        ctx.auth.planLimit({ name -> resp.headers[name] }, nowSeconds)
-                            ?: ctx.auth.planLimitFromBody(text, nowSeconds)
-                    } else {
-                        null
-                    },
-                )
+        val timing = ctx.perf?.let(::UpstreamAttemptTiming)
+        val bridge = client.attributes.getOrNull(upstreamTimingBridgeKey)
+        val token = timing?.let { bridge?.register(it) }
+        try {
+            val statement = prepare(ctx.url, creds, ctx.extraHeaders, bodyBytes, recorder, token)
+            val handler = UpstreamHandler<T> { response ->
+                block(response.also { it.postedAtMs = postedAtMs })
             }
+            return executeResponse(statement, ctx, onStreamStart, handler, recorder)
+        } finally {
+            token?.let { bridge?.release(it) }
+        }
+    }
+
+    private suspend fun <T> executeResponse(
+        statement: HttpStatement,
+        ctx: PostContext,
+        onStreamStart: StreamStart,
+        block: UpstreamHandler<T>,
+        recorder: AttemptRecorder?,
+    ): RetryOutcome<T> = statement.execute { resp ->
+        ctx.markHeaders()
+        // V4-220 item 6b: every answer reaches the provider, so a forwarded credential's verdict is known.
+        ctx.auth.upstreamAnswered(resp.status.value, resp.status.isSuccess())
+        recorder?.response(resp.status.value, resp.headers.entries().associate { (k, v) -> k to v.joinToString() })
+        if (resp.status.isSuccess()) {
+            onStreamStart()
+            RetryOutcome.Done(block(UpstreamResponse(resp)))
+        } else {
+            val realStatus = resp.status.value
+            val text = UpstreamResponse(resp).bodyTextLimited(MAX_ERROR_BODY_BYTES)
+            recorder?.errorText(text)
+            val status = quotaExhaustedStatus(realStatus, text, ctx)
+            RetryOutcome.Failed(
+                status,
+                text,
+                retryAfter.retryAfterMs(resp.headers["Retry-After"]),
+                planLimit = if (status == HttpStatus.TOO_MANY_REQUESTS) {
+                    val nowSeconds = wallClock() / MS_PER_S
+                    ctx.auth.planLimit({ name -> resp.headers[name] }, nowSeconds)
+                        ?: ctx.auth.planLimitFromBody(text, nowSeconds)
+                } else {
+                    null
+                },
+            )
         }
     }
 

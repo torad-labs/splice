@@ -9,6 +9,8 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.util.ElapsedClock
@@ -33,6 +35,55 @@ class PendingSseTest {
     private fun progressLine(): String = "event: content_block_delta\ndata: " +
         """{"delta":{"type":"thinking_delta","thinking":"[splice] holding this turn open"}}""" +
         "\n\n"
+
+    @Test
+    fun `only the first attached successful flush records arrival to client byte`() = runTest {
+        var now = 100L
+        val clock = ElapsedClock { now }
+        val perf = TurnPerf(clock)
+        perf.recordArrival(10L)
+        now = 105L
+        perf.markOnce(PerfKeys.FIRST_BYTE)
+        val pending = PendingSse(perf, clock, null, null, 120_000L)
+        pending.model("event: message_start\ndata: {}\n\n")
+        assertTrue(PerfKeys.ARRIVAL_TO_FIRST_CLIENT_BYTE_MS !in perf.snapshot().counters)
+        pending.finish()
+        now = 150L
+        pending.attach(StringWriter())
+        assertEquals(140L, perf.snapshot().counters[PerfKeys.ARRIVAL_TO_FIRST_CLIENT_BYTE_MS])
+        now = 200L
+        pending.model("event: content_block_start\ndata: {}\n\n")
+        assertEquals(140L, perf.snapshot().counters[PerfKeys.ARRIVAL_TO_FIRST_CLIENT_BYTE_MS])
+        assertEquals(5L, perf.snapshot().marks[PerfKeys.FIRST_BYTE], "the legacy origin stays unchanged")
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    fun `failed or cancelled attached flush has no first client byte`(cancelled: Boolean) = runTest {
+        val perf = TurnPerf { 0L }
+        val pending = PendingSse(perf, ElapsedClock { 0L }, null, null, 120_000L)
+        pending.model("event: message_start\ndata: {}\n\n")
+        pending.finish()
+        val broken = object : Writer() {
+            override fun write(buffer: CharArray, offset: Int, length: Int) = Unit
+            override fun flush(): Unit = if (cancelled) {
+                throw CancellationException("synthetic cancelled flush")
+            } else {
+                throw IOException("synthetic failed flush")
+            }
+            override fun close() = Unit
+        }
+        val failure = try {
+            pending.attach(broken)
+            null
+        } catch (cancelled: CancellationException) {
+            cancelled
+        } catch (failed: IOException) {
+            failed
+        }
+        assertTrue(failure != null, "the downstream flush failure must be exercised")
+        assertTrue(PerfKeys.ARRIVAL_TO_FIRST_CLIENT_BYTE_MS !in perf.snapshot().counters)
+    }
 
     @Test
     fun `upstream size error before commitment discards the undelivered opening`() = runTest {

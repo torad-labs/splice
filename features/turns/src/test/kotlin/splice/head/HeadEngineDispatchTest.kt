@@ -3,12 +3,16 @@ package splice.head
 
 import com.sun.net.httpserver.HttpServer
 import io.netty.util.concurrent.FastThreadLocalThread
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestReporter
@@ -18,6 +22,7 @@ import splice.core.auth.ForeignHostLog
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicTurnBody
+import splice.core.perf.PerfKeys
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
@@ -35,6 +40,7 @@ import splice.upstream.ProviderTuning
 import splice.upstream.RoundInterceptor
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
@@ -42,6 +48,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.coroutines.CoroutineContext
 import kotlin.time.Duration.Companion.seconds
 
 // Real time is the observable: virtual time cannot measure another connection's socket-delivery gap.
@@ -112,6 +119,35 @@ class HeadEngineDispatchTest {
             try {
                 observeConcurrent(engine.port, blocker, reporter)
             } finally {
+                engine.stop()
+                assertTrue(AsyncFileIo.drain())
+            }
+        }
+    }
+
+    @Test
+    fun `request arrival includes the dispatcher hop without moving legacy first byte`() = runBlocking {
+        DispatchUpstream().use { upstream ->
+            val dispatcher = HeldCallDispatcher(Dispatchers.IO)
+            val engine = dispatchEngine(dispatchProvider(upstream.baseUrl), headDeps(tmp, log = {}))
+            engine.start(callThreads = 1, callDispatcher = dispatcher)
+            try {
+                val reply = async(Dispatchers.IO) { postAndRead(engine.port, "hop", stream = true) }
+                assertTrue(dispatcher.entered.await(CLIENT_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS))
+                CountDownLatch(1).await(BLOCK_MS, TimeUnit.MILLISECONDS)
+                dispatcher.release.countDown()
+                assertTrue(reply.await().contains("message_stop"))
+                assertTrue(AsyncFileIo.drain())
+                val row = Files.readAllLines(tmp.resolve("perf.jsonl"))
+                    .map { Json.parseToJsonElement(it).jsonObject }
+                    .single { it["session_id"]?.jsonPrimitive?.content == "synthetic-hop" }
+                val arrival = row.getValue(PerfKeys.ARRIVAL_TO_FIRST_CLIENT_BYTE_MS).jsonPrimitive
+                assertTrue(!arrival.isString, "request timing must remain numeric")
+                val legacy = row.getValue(PerfKeys.FIRST_BYTE).jsonPrimitive.long
+                assertTrue(dispatcher.heldMs >= BLOCK_MS, "the real dispatcher must actually hold the request")
+                assertTrue(arrival.long >= legacy + BLOCK_MS, row.toString())
+            } finally {
+                dispatcher.release.countDown()
                 engine.stop()
                 assertTrue(AsyncFileIo.drain())
             }
@@ -189,6 +225,27 @@ class HeadEngineDispatchTest {
                 engine.stop()
                 assertTrue(AsyncFileIo.drain(), "queued writes must settle before temporary files are deleted")
             }
+        }
+    }
+}
+
+/** Only the first dispatch is held; the route must stamp arrival before this runnable starts. */
+private class HeldCallDispatcher(private val delegate: CoroutineDispatcher) : CoroutineDispatcher() {
+    val entered = CountDownLatch(1)
+    val release = CountDownLatch(1)
+    private val first = AtomicBoolean(true)
+    private val elapsed = AtomicLong()
+    val heldMs: Long get() = elapsed.get()
+
+    override fun dispatch(context: CoroutineContext, block: Runnable) {
+        delegate.dispatch(context) {
+            if (first.compareAndSet(true, false)) {
+                val started = System.nanoTime()
+                entered.countDown()
+                assertTrue(release.await(CLIENT_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS))
+                elapsed.set(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started))
+            }
+            block.run()
         }
     }
 }

@@ -7,8 +7,12 @@
 // The watchdog arms fire real pollers first, then prove TurnFinish carries each sentinel into the line.
 package splice.head.turn
 
+import io.ktor.http.HttpStatusCode
+import io.ktor.utils.io.ByteChannel
+import io.ktor.utils.io.ByteWriteChannel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -18,6 +22,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
@@ -53,6 +58,7 @@ import splice.head.round.PostRound
 import splice.head.round.ReanchorRunner
 import splice.head.round.RunnerSignals
 import splice.head.transport.UpstreamEventTiming
+import splice.head.turn.delivery.CollectedReply
 import splice.head.usage.OutputClamp
 import splice.head.usage.UsageStore
 import splice.head.wire.ClientChannel
@@ -190,6 +196,99 @@ class TurnPerfRowTest {
             pacing.cancel()
             drive.slot.release()
         }
+    }
+
+    @Test
+    fun `collected publication waits for a flushed reply and preserves its ending exactly once`() = runTest {
+        var now = 10L
+        val clock = ElapsedClock { now }
+        val rig = Rig(tmp, "collected-row", clock)
+        val terminal = CollectingTerminal("synthetic", UsagePayloadBuilder { buildJsonObject { } })
+        val drive = rig.drive(terminal).copy(perf = TurnPerf(clock))
+        try {
+            drive.collectPerf.defer()
+            rig.telemetry.recordPerf(drive, "overloaded", true, "synthetic-cause", 3)
+            assertTrue(!Files.exists(rig.perfFile), "collect must not save an early immutable snapshot")
+            now = 60L
+            val sink = ByteChannel()
+            CollectedReply("synthetic reply", HttpStatusCode.OK, drive.perf).writeTo(sink)
+            drive.collectPerf.publish(drive)
+            drive.collectPerf.publish(drive)
+            rig.telemetry.recordPerf(drive, "wrong duplicate")
+            assertTrue(AsyncFileIo.drain())
+            val row = Json.parseToJsonElement(Files.readAllLines(rig.perfFile).single()).jsonObject
+            assertEquals(50L, row.getValue(PerfKeys.ARRIVAL_TO_FIRST_CLIENT_BYTE_MS).jsonPrimitive.long)
+            assertEquals("overloaded", row.getValue("outcome").jsonPrimitive.content)
+            assertEquals("synthetic-cause", row.getValue("cause").jsonPrimitive.content)
+            assertEquals(3L, row.getValue("layers").jsonPrimitive.long)
+        } finally {
+            drive.slot.release()
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    fun `failed or cancelled collect flush keeps one ending without fabricating a client byte`(
+        cancelled: Boolean,
+    ) = runTest {
+        val rig = Rig(tmp, "collect-flush-$cancelled")
+        val terminal = CollectingTerminal("synthetic", UsagePayloadBuilder { buildJsonObject { } })
+        val drive = rig.drive(terminal)
+        val sink = object : ByteWriteChannel by ByteChannel() {
+            override suspend fun flush(): Unit = if (cancelled) {
+                throw CancellationException("synthetic cancelled flush")
+            } else {
+                throw IOException("synthetic failed flush")
+            }
+        }
+        try {
+            drive.collectPerf.defer()
+            rig.telemetry.recordPerf(drive, "upstream-error", cause = "synthetic-cause", layers = 2)
+            val failure = try {
+                CollectedReply("synthetic reply", HttpStatusCode.BadGateway, drive.perf).writeTo(sink)
+                null
+            } catch (cancelled: CancellationException) {
+                cancelled
+            } catch (failed: IOException) {
+                failed
+            } finally {
+                withContext(NonCancellable) { drive.collectPerf.publish(drive) }
+            }
+            assertTrue(failure != null, "the injected downstream flush must actually fail")
+            drive.collectPerf.publish(drive)
+            assertTrue(AsyncFileIo.drain())
+            val row = Json.parseToJsonElement(Files.readAllLines(rig.perfFile).single()).jsonObject
+            assertTrue(PerfKeys.ARRIVAL_TO_FIRST_CLIENT_BYTE_MS !in row, "an unsuccessful flush has no client byte")
+            assertEquals("upstream-error", row.getValue("outcome").jsonPrimitive.content)
+            assertEquals("synthetic-cause", row.getValue("cause").jsonPrimitive.content)
+            assertEquals(2L, row.getValue("layers").jsonPrimitive.long)
+        } finally {
+            drive.slot.release()
+        }
+    }
+
+    @Test
+    fun `a later collect flush failure keeps the first successful client byte`() = runTest {
+        var now = 10L
+        val perf = TurnPerf { now }
+        val channel = ByteChannel(autoFlush = true)
+        var flushes = 0
+        val sink = object : ByteWriteChannel by channel {
+            override suspend fun flush() {
+                flushes++
+                if (flushes > 1) throw IOException("synthetic late flush failure")
+                now = 60L
+                channel.flush()
+            }
+        }
+        val failure = try {
+            CollectedReply("synthetic reply", HttpStatusCode.OK, perf).writeTo(sink)
+            null
+        } catch (failed: IOException) {
+            failed
+        }
+        assertTrue(failure != null && flushes == 2, "the second flush must fail after the first succeeds")
+        assertEquals(50L, perf.snapshot().counters[PerfKeys.ARRIVAL_TO_FIRST_CLIENT_BYTE_MS])
     }
 
     private fun tornThenResumedPost(drive: TurnDrive, clock: ElapsedClock, waiter: Waiter): PostRound {

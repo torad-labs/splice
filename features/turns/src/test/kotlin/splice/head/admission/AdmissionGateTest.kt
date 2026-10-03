@@ -37,6 +37,7 @@ import splice.core.budget.HeadBudget
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicTurnBody
+import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
@@ -501,35 +502,87 @@ class AdmissionGateTest {
         }
         return AdmittedTurn(candidate, 0L, TurnPerf()) to source
     }
+}
 
-    private fun ready(): Preparation.Ready = Preparation.Ready(
-        built = BuiltTurn(
-            JsonObject(emptyMap()),
-            TurnMeta(false, ReasoningDisplay.OFF, false, "synthetic-model", "synthetic-model", 100, "high", null, null),
-        ),
-        stream = false,
-        inbound = null,
-        messagesHash = null,
-        hasPriorExchange = false,
-    )
+private fun ready(): Preparation.Ready = Preparation.Ready(
+    built = BuiltTurn(
+        JsonObject(emptyMap()),
+        TurnMeta(false, ReasoningDisplay.OFF, false, "synthetic-model", "synthetic-model", 100, "high", null, null),
+    ),
+    stream = false,
+    inbound = null,
+    messagesHash = null,
+    hasPriorExchange = false,
+)
 
-    private val testProvider: TestResponsesProvider = TestResponsesProvider(
-        tuning = ProviderTuning(
-            key = "codex",
-            label = "claudex",
-            catalog = ModelCatalog(
-                discoveryPrefix = "claude-codex--",
-                models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
-                defaultContextWindow = 272_000,
-            ),
-            pinnedModel = "gpt-5.6-sol",
-            auth = AdmissionTestAuth(),
-            baseUrl = "http://127.0.0.1",
-            watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
+private val testProvider: TestResponsesProvider = TestResponsesProvider(
+    tuning = ProviderTuning(
+        key = "codex",
+        label = "claudex",
+        catalog = ModelCatalog(
+            discoveryPrefix = "claude-codex--",
+            models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
+            defaultContextWindow = 272_000,
         ),
-        showReasoning = ReasoningDisplay.TEXT,
-        replayReasoning = false,
-        configEffort = "high",
-        configSummary = "detailed",
-    )
+        pinnedModel = "gpt-5.6-sol",
+        auth = AdmissionTestAuth(),
+        baseUrl = "http://127.0.0.1",
+        watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
+    ),
+    showReasoning = ReasoningDisplay.TEXT,
+    replayReasoning = false,
+    configEffort = "high",
+    configSummary = "detailed",
+)
+
+class AdmissionTimingTest {
+    @Test
+    fun `fresh admission queue adds to the initial wait without charging preparation`(
+        @TempDir tmp: Path,
+    ) = testApplication {
+        var now = 10L
+        val deps = headDeps(tmp)
+        val window = AdmissionWindow().apply { open() }
+        val admission = AdmissionGate(testProvider, deps, window, AdmissionResponses())
+        val telemetry = AdmissionTelemetry(deps.gate) { now }
+        val perf = telemetry.begin(0L)
+        application {
+            routing {
+                post("/probe") {
+                    val initial = (deps.gate.acquire() as InflightGate.Admission.Acquired).slot
+                    val source = initial.retainSource("synthetic-session")
+                    initial.release()
+                    val candidate = checkNotNull(deps.gate.resumeSource("synthetic-session"))
+                    telemetry.markAdmitted(perf, 3L)
+                    val admitted = AdmittedTurn(candidate, 3L, perf)
+                    try {
+                        val prepared = telemetry.prepare(perf, now) {
+                            now = 100L
+                            ready()
+                        }
+                        coroutineScope {
+                            val settling = async(start = CoroutineStart.UNDISPATCHED) {
+                                admitted.settle(call, prepared, admission)
+                            }
+                            assertEquals(1, deps.gate.snapshot().queued, "a fresh permit must really queue")
+                            now = 400L
+                            source.release()
+                            assertTrue(settling.await())
+                        }
+                        call.respondText("synthetic admitted reply")
+                    } finally {
+                        admitted.close()
+                        source.release()
+                    }
+                }
+            }
+        }
+        assertEquals(HttpStatusCode.OK, client.post("/probe").status)
+        assertEquals(307L, perf.snapshot().counters[PerfKeys.ADMIT_WAIT_MS])
+        assertEquals(90L, perf.snapshot().counters[PerfKeys.PREP_MS])
+        assertEquals(0L, perf.snapshot().marks[PerfKeys.GATE], "the legacy gate origin stays fixed")
+        perf.firstClientByte()
+        assertEquals(400L, perf.snapshot().counters[PerfKeys.ARRIVAL_TO_FIRST_CLIENT_BYTE_MS])
+        assertEquals(0, deps.gate.snapshot().inflight)
+    }
 }

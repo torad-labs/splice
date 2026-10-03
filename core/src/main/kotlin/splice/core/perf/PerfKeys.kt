@@ -39,6 +39,10 @@ public object PerfKeys {
     public const val TOTAL: String = "total"
 
     // counters (durations are summed ms; sizes are bytes; the rest are counts)
+    public const val ADMIT_WAIT_MS: String = "admit_wait_ms"
+    public const val LEASE_WAIT_MS: String = "lease_wait_ms"
+    public const val PREP_MS: String = "prep_ms"
+    public const val ARRIVAL_TO_FIRST_CLIENT_BYTE_MS: String = "arrival_to_first_client_byte_ms"
     public const val AUTH_MS: String = "auth_ms"
     public const val BACKOFF_MS: String = "backoff_ms"
     public const val REFRESH_MS: String = "refresh_ms"

@@ -29,6 +29,7 @@ internal class PendingSseWriter(
     private val lock = Any()
     private val staged = ArrayList<Frame>()
     private val attached = CompletableDeferred<Unit>()
+    private var pendingBytes = false
 
     @Volatile private var writer: Writer? = null
 
@@ -39,8 +40,17 @@ internal class PendingSseWriter(
                     writer.also { if (it == null) staged += Frame(text, Kind.RAW) }
                 }
                 out?.write(text)
+                if (out != null && text.isNotEmpty()) pendingBytes = true
             },
-            flushRaw = { writer?.flush() },
+            flushRaw = {
+                writer?.let { out ->
+                    out.flush()
+                    if (pendingBytes) {
+                        perf.firstClientByte()
+                        pendingBytes = false
+                    }
+                }
+            },
         ),
         writeMutex = Mutex(),
         clientGone = AtomicBoolean(false),

@@ -41,7 +41,23 @@ public class TurnPerf(private val clock: ElapsedClock = ElapsedClock(System::cur
     private val lock = Any()
     private val marks = LinkedHashMap<String, Long>()
     private val counters = LinkedHashMap<String, Long>()
+    private var arrivalOffsetMs = 0L
     private var upstreamGapEnd: UpstreamGapEnd? = null
+
+    /** Anchor only the new client-byte duration; legacy stage marks keep their original origin. */
+    public fun recordArrival(at: Long) {
+        synchronized(lock) { arrivalOffsetMs = startedAt - at }
+    }
+
+    /** Called only after actual nonempty client bytes have been written and flushed successfully. */
+    public fun firstClientByte() {
+        val at = elapsedMs()
+        synchronized(lock) {
+            if (PerfKeys.ARRIVAL_TO_FIRST_CLIENT_BYTE_MS !in counters) {
+                counters[PerfKeys.ARRIVAL_TO_FIRST_CLIENT_BYTE_MS] = at + arrivalOffsetMs
+            }
+        }
+    }
 
     public fun elapsedMs(): Long = clock() - startedAt
 

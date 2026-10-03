@@ -70,11 +70,13 @@ internal class TurnTelemetry(
         try {
             drive.channel.finishPacing(clock = clock)
         } finally {
-            recordSnapshot(drive, outcomeTag, rateLimited, cause, layers)
+            if (!drive.collectPerf.hold(this@TurnTelemetry, outcomeTag, rateLimited, cause, layers)) {
+                recordSnapshot(drive, outcomeTag, rateLimited, cause, layers)
+            }
         }
     }
 
-    private fun recordSnapshot(
+    internal fun recordSnapshot(
         drive: TurnDrive,
         outcomeTag: String,
         rateLimited: Boolean,

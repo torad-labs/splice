@@ -12,6 +12,7 @@ import splice.core.turn.Usage
 import splice.head.pipeline.TurnPipeline
 import splice.head.round.RoundUsage
 import splice.head.round.RunnerSignals
+import splice.head.turn.delivery.CollectPerf
 import splice.head.usage.QuotaTracker
 import splice.head.wire.ClientChannel
 import splice.head.wire.TurnTerminal
@@ -118,6 +119,7 @@ internal data class TurnDrive(
     }
 
     private val claims = TurnClaims()
+    val collectPerf = CollectPerf()
     var sourceRoundStarted: SourceRoundStarted? = null
 
     /** The model the upstream is asked for: the meta's, read rather than copied. */

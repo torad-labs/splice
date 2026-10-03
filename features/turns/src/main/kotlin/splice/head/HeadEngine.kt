@@ -109,7 +109,8 @@ internal class HeadEngine(
                         }
                         get("/wire") { wire(call) }
                         post("/v1/messages") {
-                            withContext(callDispatcher) { admission.handleMessages(call) }
+                            val arrivalAt = admission.arrivalTime()
+                            withContext(callDispatcher) { admission.handleMessages(call, arrivalAt) }
                         }
                         // NAMED CHANGE: count_tokens gets a cheap dedicated handler, not the Node
                         // behavior (a real quota-burning turn). Local estimate keeps pre-flight cheap.

@@ -11,6 +11,9 @@ package splice.head
 
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -23,12 +26,15 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.perf.PerfKeys
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
+import splice.core.util.AsyncFileIo
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
 import java.net.Socket
+import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 
@@ -105,6 +111,7 @@ class HeadServerCollectDisconnectTest {
         val request = "POST /v1/messages HTTP/1.1\r\n" +
             "Host: 127.0.0.1:$port\r\n" +
             "Authorization: Bearer test-inference-token\r\n" +
+            "x-claude-code-session-id: synthetic-collect-$stream\r\n" +
             "Content-Type: application/json\r\n" +
             "Content-Length: ${body.toByteArray().size}\r\n" +
             "Connection: close\r\n\r\n" + body
@@ -190,5 +197,10 @@ class HeadServerCollectDisconnectTest {
             abandonMidTurnAndPoll(stream = false, observeMs = 20_000),
             "the collect path must free its slot on a client hang-up: ${gate.snapshot()}",
         )
+        assertTrue(AsyncFileIo.drain())
+        val row = Files.readAllLines(tmp.resolve("perf.jsonl"))
+            .map { Json.parseToJsonElement(it).jsonObject }
+            .single { it["session_id"]?.jsonPrimitive?.content == "synthetic-collect-false" }
+        assertTrue(PerfKeys.ARRIVAL_TO_FIRST_CLIENT_BYTE_MS !in row, "an abandoned collect sent no reply")
     }
 }

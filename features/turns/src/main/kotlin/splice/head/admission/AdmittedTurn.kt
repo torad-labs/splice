@@ -4,6 +4,7 @@ package splice.head.admission
 import io.ktor.server.application.ApplicationCall
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.head.turn.Preparation
 import splice.upstream.TurnEnd
@@ -37,7 +38,9 @@ internal class AdmittedTurn(
         slot.release()
         var replaced = false
         return try {
-            val fresh = admission.acquireFreshSlotOrRespond(call, TurnEnd(::releaseMaterialized)) ?: return false
+            val fresh = perf.timed(PerfKeys.ADMIT_WAIT_MS) {
+                admission.acquireFreshSlotOrRespond(call, TurnEnd(::releaseMaterialized))
+            } ?: return false
             slot = fresh
             replaced = true
             true

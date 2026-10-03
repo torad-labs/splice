@@ -6,6 +6,7 @@
 package splice.head.admission
 
 import splice.core.perf.PerfKeys
+import splice.core.perf.TimedWork
 import splice.core.perf.TurnPerf
 import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
@@ -15,9 +16,22 @@ internal class AdmissionTelemetry(
     private val gate: InflightGate,
     private val clock: ElapsedClock,
 ) {
-    fun begin(): TurnPerf = TurnPerf(clock)
+    fun arrivalTime(): Long = clock()
 
-    fun markAdmitted(perf: TurnPerf) {
+    fun begin(arrivalAt: Long = clock()): TurnPerf = TurnPerf(clock).also { it.recordArrival(arrivalAt) }
+
+    suspend fun <T> prepare(perf: TurnPerf, leaseStart: Long, work: TimedWork<T>): T {
+        val started = clock()
+        perf.setCount(PerfKeys.LEASE_WAIT_MS, started - leaseStart)
+        try {
+            return work()
+        } finally {
+            perf.setCount(PerfKeys.PREP_MS, clock() - started)
+        }
+    }
+
+    fun markAdmitted(perf: TurnPerf, waitingSince: Long = clock()) {
+        perf.setCount(PerfKeys.ADMIT_WAIT_MS, clock() - waitingSince)
         perf.mark(PerfKeys.GATE)
         perf.setCount(PerfKeys.INFLIGHT, gate.snapshot().inflight.toLong())
         perf.setCount(PerfKeys.ASYNC_IO_DROPS, AsyncFileIo.droppedCount().toLong())

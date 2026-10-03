@@ -7,26 +7,28 @@
 // named on that method.
 package splice.head.turn
 
-import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.netty.NettyApplicationCall
 import io.ktor.server.response.header
-import io.ktor.server.response.respondText
+import io.ktor.server.response.respond
 import io.ktor.server.routing.RoutingCall
 import io.ktor.server.routing.RoutingPipelineCall
 import io.netty.channel.ChannelFuture
 import io.netty.util.concurrent.GenericFutureListener
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.withContext
 import splice.core.model.ClientWindows
 import splice.core.util.JsonWire
 import splice.head.ClientWindowWitness
 import splice.head.admission.TurnQuota
+import splice.head.turn.delivery.CollectedReply
 import splice.head.wire.ClientAnswer
 import splice.head.wire.ClientChannel
 import splice.head.wire.CollectingTerminal
@@ -70,6 +72,7 @@ internal class CollectTurn(
             ClientAnswer(terminal.httpStatus(), terminal.responseBody().let(JsonWire::string))
         }
         val drive = driveFactory.assembleDrive(inputs, terminal, channel)
+        drive.collectPerf.defer()
         // collect never commits a 200 before its terminal respondText — a cancelled collect is a
         // native connection abort client-side, and sealing there only wrote an error body nobody
         // reads while polluting localOriginErrors (review 2026-07-22 round 3).
@@ -95,13 +98,16 @@ internal class CollectTurn(
                 turnQuota.forSession(inputs.built.meta.sessionId, inputs.account)
                     ?.clientHeaders()
                     ?.forEach { (name, value) -> call.response.header(name, value) }
-                call.respondText(
-                    terminal.responseBody().let(JsonWire::string),
-                    ContentType.Application.Json,
-                    HttpStatusCode.fromValue(terminal.httpStatus()),
+                call.respond(
+                    CollectedReply(
+                        terminal.responseBody().let(JsonWire::string),
+                        HttpStatusCode.fromValue(terminal.httpStatus()),
+                        drive.perf,
+                    ),
                 )
             } finally {
                 watch?.cancel()
+                withContext(NonCancellable) { drive.collectPerf.publish(drive) }
             }
         }
         // The collect path never detaches a compaction, so it never hands the slot off (V4-99 item 3).

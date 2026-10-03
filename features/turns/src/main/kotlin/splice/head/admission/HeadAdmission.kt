@@ -38,12 +38,14 @@ internal class HeadAdmission(
      *  construction site changes, injectable so the refusal is testable without sleeping. */
     private val wallClock: WallClock = WallClock(System::currentTimeMillis),
 ) {
-    suspend fun handleMessages(call: ApplicationCall) {
+    fun arrivalTime(): Long = telemetry.arrivalTime()
+
+    suspend fun handleMessages(call: ApplicationCall, arrivalAt: Long = arrivalTime()) {
         if (!clientAuth.authorizeUpstream(call) || !admission.acceptingOrRespond(call)) return
-        val perf = telemetry.begin()
+        val perf = telemetry.begin(arrivalAt)
         val t0 = deps.seams.clock()
         val slot = admission.acquireSlotOrRespond(call) ?: return
-        telemetry.markAdmitted(perf)
+        telemetry.markAdmitted(perf, t0)
         // A detached compaction takes the slot with it (TurnStreamer.driveDetachable): the drive
         // releases it when the upstream turn ends, not this call when its client has gone. The flag
         // is this call's from the start, never a return value: the drive's cancelled-call path
@@ -55,12 +57,13 @@ internal class HeadAdmission(
             // Prepared request trees survive decode and may belong to a detached compaction.
             // Their heap lease follows the same slot that already owns that drive's lifetime.
             val owner = MaterializationOwner { admitted.materializedEnd = it }
+            val leaseStart = telemetry.arrivalTime()
             val prepared = admission.materializeOrRespond(
                 call,
                 owner = owner,
                 beforeRefusal = TurnEnd(admitted::release),
             ) {
-                preparation.prepareTurn(call, perf)
+                telemetry.prepare(perf, leaseStart) { preparation.prepareTurn(call, perf) }
             } ?: return
             if (admitted.settle(call, prepared, admission)) serve(call, prepared, admitted)
         } finally {
@@ -80,7 +83,7 @@ internal class HeadAdmission(
             }
             is Preparation.Ready -> {
                 val meta = prepared.built.meta
-                admitted.slot.describe(meta.upstreamModel, meta.compact, tag(meta.sessionId))
+                admitted.slot.describe(meta.upstreamModel, meta.compact, meta.sessionId?.take(SESSION_TAG_CHARS))
                 // V4-165: the turn ends when its admission slot is released — here on a refusal or
                 // an attached drive, inside TurnStreamer for a detached one. One registration
                 // covers every exit, because the slot already has to be released on each of them.
@@ -92,9 +95,6 @@ internal class HeadAdmission(
             }
         }
     }
-
-    /** The session's short tag on a live row: the width the perf line prints (SESSION_TAG_CHARS). */
-    private fun tag(sessionId: String?): String? = sessionId?.take(SESSION_TAG_CHARS)
 
     /** V4-50: A RATE-LIMITED TURN IS REFUSED HERE, BEFORE A RESPONSE IS COMMITTED — which is the
      *  whole point, and why this could never be fixed by rewording anything.

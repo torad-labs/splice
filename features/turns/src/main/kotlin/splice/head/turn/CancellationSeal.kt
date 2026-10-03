@@ -65,7 +65,11 @@ internal class CancellationSeal(
         // Flat when (not nested if) so the still-connected try/catch stays shallow:
         // catch → if(seal) → if(clientGone) → try would trip NestedBlockDepth's depth-4 ceiling.
         when {
-            !seal || drive.emitter.hasEnded -> Unit
+            !seal -> telemetry.recordPerf(
+                drive,
+                if (drive.channel.clientGone.get()) OutcomeTag.CLIENT_ABORT.wire else endingOf(drive, cause).outcome,
+            )
+            drive.emitter.hasEnded -> Unit
             drive.channel.clientGone.get() -> {
                 drive.emitter.abandon()
                 telemetry.recordPerf(drive, OutcomeTag.CLIENT_ABORT.wire)

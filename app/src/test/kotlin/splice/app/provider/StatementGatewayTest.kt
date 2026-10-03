@@ -39,6 +39,7 @@ import splice.codemode.DEFAULT_WORKER_START_TIMEOUT_MS
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.memory.HeapBudget
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
@@ -54,6 +55,7 @@ import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexProvider
 import splice.upstream.ProviderTuning
 import splice.upstream.Ticker
+import splice.upstream.memory.JvmHeap
 import splice.upstream.retry.InflightGate
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
@@ -176,7 +178,7 @@ class StatementGatewayTest {
         // The probe fits only after the held source releases; both result trees also fit this ceiling.
         private val heapBudget = splice.core.memory.HeapWeights.request(14_000L)
         private val retainedWeights = mutableListOf(firstWeight)
-        private val heap = RequestMaterializationGate(heapBudgetBytes = heapBudget)
+        private val heap = RequestMaterializationGate(heap = HeapBudget(JvmHeap.limitBytes, heapBudget))
         private var waiting: Deferred<InflightGate.Admission>? = null
         private val deps = headDeps(
             tmp,

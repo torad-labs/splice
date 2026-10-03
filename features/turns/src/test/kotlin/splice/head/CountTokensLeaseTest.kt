@@ -16,6 +16,7 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.ForeignHostLog
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.memory.HeapBudget
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
@@ -25,6 +26,7 @@ import splice.head.admission.AdmissionResponses
 import splice.head.admission.AdmissionWindow
 import splice.head.admission.RequestMaterializationGate
 import splice.upstream.ProviderTuning
+import splice.upstream.memory.JvmHeap
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 
@@ -46,7 +48,9 @@ class CountTokensLeaseTest {
             tmp,
             policy = HeadDeps.HeadPolicy(maxRequestBytes = BODY_BYTES),
             seams = HeadDeps.HeadSeams(
-                requestMaterializationGate = RequestMaterializationGate(heapBudgetBytes = BODY_BYTES * 13L / 2L),
+                requestMaterializationGate = RequestMaterializationGate(
+                    heap = HeapBudget(JvmHeap.limitBytes, BODY_BYTES * 13L / 2L),
+                ),
             ),
         )
         val handler = handler(deps)

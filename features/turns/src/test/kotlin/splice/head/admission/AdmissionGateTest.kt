@@ -34,6 +34,7 @@ import splice.core.auth.ForeignHostLog
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.budget.BudgetBlock
 import splice.core.budget.HeadBudget
+import splice.core.memory.HeapBudget
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicTurnBody
@@ -66,6 +67,7 @@ import splice.upstream.ProviderTuning
 import splice.upstream.RoundInterceptor
 import splice.upstream.TurnEnd
 import splice.upstream.failure.SseSpuriousWakeupException
+import splice.upstream.memory.JvmHeap
 import splice.upstream.retry.InflightGate
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.UpstreamClient
@@ -99,7 +101,7 @@ class MaterializationRefusalTest {
     fun `bodies that cannot fit return a permanent limit error in both admission modes`(
         @TempDir tmp: Path,
     ) = testApplication {
-        val heap = RequestMaterializationGate(heapBudgetBytes = 13)
+        val heap = RequestMaterializationGate(heap = HeapBudget(JvmHeap.limitBytes, 13))
         val deps = headDeps(tmp).copy(
             policy = HeadDeps.HeadPolicy(maxRequestBytes = 4),
             seams = HeadDeps.HeadSeams(requestMaterializationGate = heap),
@@ -190,7 +192,7 @@ class AdmissionGateTest {
     fun `declared bodies reserve their size unknown bodies reserve the cap and oversized bodies keep 413`(
         @TempDir tmp: Path,
     ) = testApplication {
-        val materialization = RequestMaterializationGate(heapBudgetBytes = 26)
+        val materialization = RequestMaterializationGate(heap = HeapBudget(JvmHeap.limitBytes, 26))
         val deps = headDeps(tmp).copy(
             policy = HeadDeps.HeadPolicy(maxRequestBytes = 4),
             seams = HeadDeps.HeadSeams(requestMaterializationGate = materialization),
@@ -240,7 +242,7 @@ class AdmissionGateTest {
     fun `local preparation releases its request before any response is published`(
         @TempDir tmp: Path,
     ) = testApplication {
-        val heap = RequestMaterializationGate(heapBudgetBytes = 7)
+        val heap = RequestMaterializationGate(heap = HeapBudget(JvmHeap.limitBytes, 7))
         val deps = headDeps(tmp)
         val admission = AdmissionGate(testProvider, deps, AdmissionWindow(), AdmissionResponses())
         val preparations = listOf(
@@ -286,7 +288,7 @@ class AdmissionGateTest {
     fun `fresh admission refusal releases the request before capacity or stopping replies`(
         @TempDir tmp: Path,
     ) = testApplication {
-        val heap = RequestMaterializationGate(heapBudgetBytes = 7)
+        val heap = RequestMaterializationGate(heap = HeapBudget(JvmHeap.limitBytes, 7))
         val gate = InflightGate({ 1 }, maxQueued = { 1 })
         val deps = headDeps(tmp).copy(gate = gate)
         val window = AdmissionWindow()
@@ -377,7 +379,7 @@ class AdmissionGateTest {
     fun `body limit and read failures release the borrowed candidate before publishing`(
         @TempDir tmp: Path,
     ) = testApplication {
-        val heap = RequestMaterializationGate(heapBudgetBytes = 7)
+        val heap = RequestMaterializationGate(heap = HeapBudget(JvmHeap.limitBytes, 7))
         val deps = headDeps(tmp).copy(
             policy = HeadDeps.HeadPolicy(maxRequestBytes = 4),
             seams = HeadDeps.HeadSeams(requestMaterializationGate = heap),
@@ -427,9 +429,8 @@ class AdmissionGateTest {
     ) = testApplication {
         val body = """{"model":"claude-codex--gpt-5.6-sol","max_tokens":64,
             "messages":[{"role":"user","content":"synthetic continuation"}]}"""
-        val heap = RequestMaterializationGate(
-            heapBudgetBytes = splice.core.memory.HeapWeights.request(body.toByteArray().size.toLong()),
-        )
+        val required = splice.core.memory.HeapWeights.request(body.toByteArray().size.toLong())
+        val heap = RequestMaterializationGate(heap = HeapBudget(JvmHeap.limitBytes, required))
         val budget = object : HeadBudget {
             override fun admit(): BudgetBlock = BudgetBlock("synthetic budget refusal", "synthetic limit")
             override fun spent(atMs: Long, model: String, counters: Map<String, Long>) = Unit

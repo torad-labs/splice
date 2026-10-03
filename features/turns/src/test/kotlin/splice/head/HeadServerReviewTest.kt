@@ -37,6 +37,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.memory.HeapBudget
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
@@ -49,6 +50,7 @@ import splice.upstream.ProviderTuning
 import splice.upstream.Ticker
 import splice.upstream.Waiter
 import splice.upstream.codemode.ProcessWaiter
+import splice.upstream.memory.JvmHeap
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
 import java.nio.file.Path
@@ -354,7 +356,7 @@ class HeadServerReviewTest {
 
     @Test
     fun `count_tokens 529s with the busy shape when the materialization gate is saturated`() = runBlocking {
-        val matGate = RequestMaterializationGate(heapBudgetBytes = 208 * 1024 * 1024L)
+        val matGate = RequestMaterializationGate(heap = HeapBudget(JvmHeap.limitBytes, 208 * 1024 * 1024L))
         val head = buildHead(InflightGate(maxInflight = { 4 }), matGate, tmp.resolve("rl-g.json"))
         head.start()
         val port = head.port

@@ -10,9 +10,12 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
+import splice.core.memory.HeapBudget
 import splice.upstream.TurnEnd
+import splice.upstream.memory.JvmHeap
 
 private const val MIB = 1024 * 1024L
 private const val DAEMON_HEAP = 2048 * MIB
@@ -20,14 +23,20 @@ private const val DAEMON_HEAP = 2048 * MIB
 @OptIn(ExperimentalCoroutinesApi::class)
 class RequestMaterializationGateTest {
     @Test
+    fun `default gates spend the same daemon ledger rather than a fresh ceiling`() {
+        assertSame(splice.upstream.memory.JvmHeap.budget, RequestMaterializationGate().heap)
+        assertSame(RequestMaterializationGate().heap, RequestMaterializationGate().heap)
+    }
+
+    @Test
     fun `a small heap admits a tiny preflight body`() = runTest(UnconfinedTestDispatcher()) {
-        val gate = RequestMaterializationGate(heapLimitBytes = 256 * MIB)
+        val gate = RequestMaterializationGate(heap = HeapBudget(256 * MIB))
         assertEquals("preflight", gate.withLease(1024) { "preflight" })
     }
 
     @Test
     fun `a small heap reserves half for resident memory`() = runTest(UnconfinedTestDispatcher()) {
-        val gate = RequestMaterializationGate(heapLimitBytes = 256 * MIB)
+        val gate = RequestMaterializationGate(heap = HeapBudget(256 * MIB))
         val release = CompletableDeferred<Unit>()
         var entered = 0
         val requests = List(10) {
@@ -49,7 +58,7 @@ class RequestMaterializationGateTest {
 
     @Test
     fun `an above-budget body is refused even when idle`() = runTest(UnconfinedTestDispatcher()) {
-        val gate = RequestMaterializationGate(heapBudgetBytes = 13)
+        val gate = RequestMaterializationGate(heap = HeapBudget(JvmHeap.limitBytes, 13))
         assertNull(gate.withLease(3) { "must not allocate beyond the budget" })
         assertNull(gate.tryWithLease(Long.MAX_VALUE) { "overflow must not enter" })
         assertEquals("fits", gate.tryWithLease(2) { "fits" })
@@ -58,7 +67,7 @@ class RequestMaterializationGateTest {
     @Test
     fun `a full-budget body waits for an empty gate and then runs alone`() =
         runTest(UnconfinedTestDispatcher()) {
-            val gate = RequestMaterializationGate(heapBudgetBytes = 13)
+            val gate = RequestMaterializationGate(heap = HeapBudget(JvmHeap.limitBytes, 13))
             val releaseSmall = CompletableDeferred<Unit>()
             val releaseLarge = CompletableDeferred<Unit>()
             val small = async { gate.withLease(1) { releaseSmall.await() } }
@@ -88,7 +97,7 @@ class RequestMaterializationGateTest {
 
     @Test
     fun `fifty everyday bodies can materialize together`() = runTest(UnconfinedTestDispatcher()) {
-        val gate = RequestMaterializationGate(heapLimitBytes = DAEMON_HEAP)
+        val gate = RequestMaterializationGate(heap = HeapBudget(DAEMON_HEAP))
         val release = CompletableDeferred<Unit>()
         var entered = 0
         val requests = List(50) {
@@ -109,7 +118,7 @@ class RequestMaterializationGateTest {
 
     @Test
     fun `sixteen full bodies stay bounded by spare heap not request count`() = runTest(UnconfinedTestDispatcher()) {
-        val gate = RequestMaterializationGate(heapLimitBytes = DAEMON_HEAP)
+        val gate = RequestMaterializationGate(heap = HeapBudget(DAEMON_HEAP))
         val release = CompletableDeferred<Unit>()
         var entered = 0
         val requests = List(16) {
@@ -132,7 +141,7 @@ class RequestMaterializationGateTest {
 
     @Test
     fun `mixed bodies consume their own weight and fast failure never enters`() = runTest(UnconfinedTestDispatcher()) {
-        val gate = RequestMaterializationGate(heapBudgetBytes = 208 * MIB)
+        val gate = RequestMaterializationGate(heap = HeapBudget(JvmHeap.limitBytes, 208 * MIB))
         val release = CompletableDeferred<Unit>()
         val small = async { gate.withLease(2 * MIB) { release.await() } }
         var ran = false
@@ -146,7 +155,7 @@ class RequestMaterializationGateTest {
 
     @Test
     fun `second lease waits until the first releases enough bytes`() = runTest(UnconfinedTestDispatcher()) {
-        val gate = RequestMaterializationGate(heapBudgetBytes = 13)
+        val gate = RequestMaterializationGate(heap = HeapBudget(JvmHeap.limitBytes, 13))
         val release = CompletableDeferred<Unit>()
         val order = mutableListOf<String>()
         val first = async {
@@ -169,7 +178,7 @@ class RequestMaterializationGateTest {
 
     @Test
     fun `cancelling a waiting request does not consume heap bytes`() = runTest(UnconfinedTestDispatcher()) {
-        val gate = RequestMaterializationGate(heapBudgetBytes = 13)
+        val gate = RequestMaterializationGate(heap = HeapBudget(JvmHeap.limitBytes, 13))
         val release = CompletableDeferred<Unit>()
         val first = async { gate.withLease(2) { release.await() } }
         val waiting = async { gate.withLease(2) { error("cancelled waiter ran") } }
@@ -181,7 +190,7 @@ class RequestMaterializationGateTest {
 
     @Test
     fun `cancellation inside a lease refunds its complete weight`() = runTest(UnconfinedTestDispatcher()) {
-        val gate = RequestMaterializationGate(heapBudgetBytes = 13)
+        val gate = RequestMaterializationGate(heap = HeapBudget(JvmHeap.limitBytes, 13))
         val first = async { gate.withLease(2) { CompletableDeferred<Unit>().await() } }
         first.cancelAndJoin()
         assertEquals("free", gate.tryWithLease(2) { "free" })
@@ -189,7 +198,7 @@ class RequestMaterializationGateTest {
 
     @Test
     fun `failed materialization refunds its complete weight`() = runTest(UnconfinedTestDispatcher()) {
-        val gate = RequestMaterializationGate(heapBudgetBytes = 13)
+        val gate = RequestMaterializationGate(heap = HeapBudget(JvmHeap.limitBytes, 13))
         assertThrows(IllegalStateException::class.java) {
             kotlinx.coroutines.runBlocking { gate.withLease(2) { error("decode failed") } }
         }
@@ -199,7 +208,7 @@ class RequestMaterializationGateTest {
     @Test
     fun `odd byte weights round upward and oversized fast-fail leases never wait`() =
         runTest(UnconfinedTestDispatcher()) {
-            val gate = RequestMaterializationGate(heapBudgetBytes = 13)
+            val gate = RequestMaterializationGate(heap = HeapBudget(JvmHeap.limitBytes, 13))
             val release = CompletableDeferred<Unit>()
             val first = async { gate.withLease(1) { release.await() } }
             try {
@@ -215,7 +224,7 @@ class RequestMaterializationGateTest {
     @Test
     fun `retained request trees hold admission through turn end and release only once`() =
         runTest(UnconfinedTestDispatcher()) {
-            val gate = RequestMaterializationGate(heapBudgetBytes = 13)
+            val gate = RequestMaterializationGate(heap = HeapBudget(JvmHeap.limitBytes, 13))
             var end: TurnEnd? = null
             val owner = MaterializationOwner { end = it }
             assertEquals("prepared", gate.withLease(2, owner) { "prepared" })
@@ -235,7 +244,7 @@ class RequestMaterializationGateTest {
     @Test
     fun `failed decoding refunds even a loan already registered with its owner`() =
         runTest(UnconfinedTestDispatcher()) {
-            val gate = RequestMaterializationGate(heapBudgetBytes = 13)
+            val gate = RequestMaterializationGate(heap = HeapBudget(JvmHeap.limitBytes, 13))
             var end: TurnEnd? = null
             val owner = MaterializationOwner { end = it }
             assertThrows(IllegalStateException::class.java) {
@@ -257,7 +266,7 @@ class RequestMaterializationGateTest {
 
     @Test
     fun `failed owner registration refunds its lease`() = runTest(UnconfinedTestDispatcher()) {
-        val gate = RequestMaterializationGate(heapBudgetBytes = 13)
+        val gate = RequestMaterializationGate(heap = HeapBudget(JvmHeap.limitBytes, 13))
         val owner = MaterializationOwner { error("owner registration failed") }
         assertThrows(IllegalStateException::class.java) {
             kotlinx.coroutines.runBlocking { gate.withLease(2, owner) { "must not enter" } }
@@ -267,7 +276,10 @@ class RequestMaterializationGateTest {
 
     @Test
     fun `a configured budget cannot exceed spare JVM heap`() = runTest(UnconfinedTestDispatcher()) {
-        val gate = RequestMaterializationGate(heapBudgetBytes = Long.MAX_VALUE, heapLimitBytes = DAEMON_HEAP)
+        val gate = RequestMaterializationGate(
+            heapBudgetBytes = Long.MAX_VALUE,
+            heap = HeapBudget(DAEMON_HEAP, Long.MAX_VALUE),
+        )
         val release = CompletableDeferred<Unit>()
         val full = async { gate.withLease(256 * MIB) { release.await() } }
         try {

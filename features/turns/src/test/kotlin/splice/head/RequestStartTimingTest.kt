@@ -21,6 +21,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.memory.HeapBudget
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicTurnBody
@@ -33,6 +34,7 @@ import splice.head.admission.RequestMaterializationGate
 import splice.upstream.BuiltTurn
 import splice.upstream.Provider
 import splice.upstream.ProviderTuning
+import splice.upstream.memory.JvmHeap
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
 import splice.upstream.transport.UpstreamTransport
@@ -171,7 +173,7 @@ private class TimingRig(
     private val upstream = MockChatGptUpstream()
     val provider = TimingProvider(timingProvider(upstream.baseUrl), prepDelay)
     val gate = InflightGate(maxInflight = { maxInflight }, maxQueued = { 4 })
-    val heap = RequestMaterializationGate(heapBudgetBytes = heapBytes)
+    val heap = RequestMaterializationGate(heap = HeapBudget(JvmHeap.limitBytes, heapBytes))
     private val head = HeadServer(
         provider,
         0,

@@ -258,14 +258,19 @@ internal class ConsoleEventPublisher(
      *  by the console's live-turn routes, here for the reason [wires] is. */
     internal val liveTurns: LiveTurnsByHead = LiveTurnsByHead()
 
-    /** Session id -> the head its latest turn ran on and when it started, in least-recently-used order. */
+    /** Session id -> the head its latest turn ran on and when that turn last started or ended, in
+     *  least-recently-used order. */
     private val sessionsSeen = LinkedHashMap<String, Seen>()
 
-    /** V4-444: when each remembered session's latest turn started here, read by the daemon's session
-     *  registry. Claude Code rewrites a registration only when its status changes, so a turn served is
-     *  how a session busy for hours is heard from. A copy, so the registry never reads under the lock. */
+    /** V4-444: when this daemon last heard from each session, read by the daemon's session registry.
+     *  Claude Code rewrites a registration only when its status changes, so a turn served is how a
+     *  session busy for hours is heard from: now while a turn of it is live on any head, however long
+     *  ago that turn started, else when its latest turn started or ended. A copy, so the registry never
+     *  reads under the lock. */
     internal val sessionsHeard: SessionsHeard = SessionsHeard {
-        synchronized(sessionsSeen) { sessionsSeen.mapValues { it.value.at } }
+        val now = clock()
+        val seen = synchronized(sessionsSeen) { sessionsSeen.mapValues { it.value.at } }
+        seen + liveTurns.sessions().associateWith { now }
     }
 
     private data class Seen(val head: String, val at: Long)
@@ -294,8 +299,9 @@ internal class ConsoleEventPublisher(
             }
         }
 
-        override fun turnEnded(perfRowId: String, outcome: String) {
+        override fun turnEnded(perfRowId: String, outcome: String, session: String?) {
             bus.publish { seq -> ConsoleEvent.TurnEnd(seq, head, perfRowId, outcome) }
+            if (session != null) ended(session)
         }
 
         override fun accountSwitched(from: String?, to: String) {
@@ -329,9 +335,21 @@ internal class ConsoleEventPublisher(
         /** Records [session]'s turn on this head, now, and says whether the head is news. */
         private fun moved(session: String): Boolean = synchronized(sessionsSeen) {
             val previous = sessionsSeen.remove(session)
-            sessionsSeen[session] = Seen(head, clock())
-            if (sessionsSeen.size > REMEMBERED_SESSIONS) sessionsSeen.remove(sessionsSeen.keys.first())
+            seen(session, Seen(head, clock()))
             previous?.head != head
+        }
+
+        /** Records that [session]'s turn ended now. The head it is remembered on stays: only a turn's
+         *  start says which head a session moved to. */
+        private fun ended(session: String): Unit = synchronized(sessionsSeen) {
+            val previous = sessionsSeen.remove(session)
+            seen(session, Seen(previous?.head ?: head, clock()))
+        }
+
+        /** Remembers [session] as the most recent, forgetting the least recent past the bound. */
+        private fun seen(session: String, at: Seen) {
+            sessionsSeen[session] = at
+            if (sessionsSeen.size > REMEMBERED_SESSIONS) sessionsSeen.remove(sessionsSeen.keys.first())
         }
     }
 }

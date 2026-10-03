@@ -218,4 +218,8 @@ public class LiveTurnsByHead {
     }
 
     public fun of(head: String): LiveTurns? = heads[head]
+
+    /** The session of every turn live on any head now, for the console to hear those sessions from. */
+    public fun sessions(): Set<String> =
+        heads.values.flatMapTo(HashSet()) { turns -> turns.list().mapNotNull(LiveTurn::session) }
 }

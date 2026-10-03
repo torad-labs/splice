@@ -4,7 +4,7 @@
 // rename or omit keys; a malformed file is skipped, never fatal. Availability is derived, never
 // trusted from the file: a registration whose pid is gone is GONE whatever its status says, and
 // one not heard from within the stale window is STALE (alive, but not heard from): heard is the later
-// of the file's updatedAt and the last turn this daemon served for its session (SessionsHeard). The
+// of the file's updatedAt and when this daemon last heard from its session (SessionsHeard). The
 // pid is read in the DOMAIN the file names (PidIdentity): another namespace's pid, or a pid whose
 // start time moved since the registration, is GONE.
 package splice.sessions.registry
@@ -76,9 +76,10 @@ public fun interface PidStartedAt {
     public operator fun invoke(pid: Long): Long?
 }
 
-/** When this daemon last served a turn for each session id (epoch ms). Claude Code rewrites a
- *  registration only when its status changes, so a session busy for hours keeps an old updatedAt
- *  while its turns run; a turn served here is the session being heard from too (V4-444). */
+/** When this daemon last heard from each session id (epoch ms): now while a turn of it is live,
+ *  else when its latest turn started or ended. Claude Code rewrites a registration only when its
+ *  status changes, so a session busy for hours keeps an old updatedAt while its turns run; a turn
+ *  served here is the session being heard from too (V4-444). */
 public fun interface SessionsHeard {
     public operator fun invoke(): Map<String, Long>
 }

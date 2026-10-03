@@ -120,7 +120,7 @@ internal class TurnTelemetry(
         }
         // V4-134: the turn's end goes to the console only once its row exists, carrying that row's
         // key, so the stream never names a row /api/perf/turns has not been handed.
-        events.turnEnded(rowTs.toString(), outcomeTag)
+        events.turnEnded(rowTs.toString(), outcomeTag, drive.meta.sessionId)
         log(snap.perfLine(headKey, outcomeTag, drive.meta.compact, drive.upstreamModel, session))
         recordEconomics(snap, drive.upstreamModel, rateLimited)
         recordSpend(rowTs, drive.upstreamModel, snap.counters)
@@ -213,7 +213,7 @@ internal class TurnTelemetry(
         )
         val rowTs = perfStats.record(rowMeta, snap)
         // V4-134: a local refusal is a turn that ended too — it has a perf row, so it has a turn.end.
-        events.turnEnded(rowTs.toString(), tag)
+        events.turnEnded(rowTs.toString(), tag, meta.sessionId)
         // The tag is printed VERBATIM, the same spelling the perf row on the next line carries
         // (kt-outcome-tag-single-source, V4-99). It used to be `substringAfter("error:")`, which
         // meant this line and the perf row spelled one field two ways — and that the rendering

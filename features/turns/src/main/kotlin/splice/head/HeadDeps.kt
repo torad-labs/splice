@@ -215,8 +215,10 @@ public interface HeadEvents {
     public fun turnStarted(session: String?)
 
     /** A turn's perf row was written. [perfRowId] is that row's `ts`, the key /api/perf/turns
-     *  reports it under (PerfRoutes); [outcome] is the row's outcome tag, verbatim. */
-    public fun turnEnded(perfRowId: String, outcome: String)
+     *  reports it under (PerfRoutes); [outcome] is the row's outcome tag, verbatim; [session] is the
+     *  session [turnStarted] named for the same turn, so a console hears from a session when its turn
+     *  ends as well as when it starts. */
+    public fun turnEnded(perfRowId: String, outcome: String, session: String?)
 
     /** The account pool moved this turn to another account. [from] is null when the pool had no
      *  previous choice for the session. */
@@ -244,7 +246,7 @@ public object NoHeadEvents : HeadEvents {
 
     override fun turnStarted(session: String?): Unit = Unit
 
-    override fun turnEnded(perfRowId: String, outcome: String): Unit = Unit
+    override fun turnEnded(perfRowId: String, outcome: String, session: String?): Unit = Unit
 
     override fun accountSwitched(from: String?, to: String): Unit = Unit
 

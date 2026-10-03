@@ -225,4 +225,24 @@ class LiveTurnsTest {
         assertTrue(byHead.of("codex") === turns)
         assertNull(byHead.of("grok"))
     }
+
+    /** V4-444: the console hears from a session while its turn is live, however long ago it started, so the registry names
+     *  the session of every live turn on every head, and forgets it when the slot is released. */
+    @Test
+    fun `the registry names the session of every turn live on any head, and drops it on release`() {
+        val grok = LiveTurns(clock = ElapsedClock { now }, ids = TurnIdMint { "grok-${++minted}" })
+        val byHead = LiveTurnsByHead().apply {
+            put("codex", turns)
+            put("grok", grok)
+        }
+        val codexTurn = slot().also { turns.admitted(it, meta("sess-a"), null) }
+        val grokTurn = slot().also { grok.admitted(it, meta("sess-b"), null) }
+        val anonymous = slot().also { turns.admitted(it, meta(null), null) }
+        assertEquals(setOf("sess-a", "sess-b"), byHead.sessions(), "a turn with no session names none")
+        codexTurn.release()
+        assertEquals(setOf("sess-b"), byHead.sessions())
+        grokTurn.release()
+        anonymous.release()
+        assertEquals(emptySet<String>(), byHead.sessions())
+    }
 }

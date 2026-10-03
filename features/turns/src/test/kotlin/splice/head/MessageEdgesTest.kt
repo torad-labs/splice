@@ -18,7 +18,7 @@ private class Edges : HeadEvents {
 
     override fun turnStarted(session: String?): Unit = Unit
 
-    override fun turnEnded(perfRowId: String, outcome: String): Unit = Unit
+    override fun turnEnded(perfRowId: String, outcome: String, session: String?): Unit = Unit
 
     override fun accountSwitched(from: String?, to: String): Unit = Unit
 

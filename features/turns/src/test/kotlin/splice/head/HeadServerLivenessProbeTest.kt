@@ -55,7 +55,7 @@ class HeadServerLivenessProbeTest {
             override fun turnStarted(session: String?) {
                 workEvents.incrementAndGet()
             }
-            override fun turnEnded(perfRowId: String, outcome: String) {
+            override fun turnEnded(perfRowId: String, outcome: String, session: String?) {
                 workEvents.incrementAndGet()
             }
         }

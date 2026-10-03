@@ -98,7 +98,7 @@ class ConsoleEventProducersTest {
             head.lifecycle(HeadLifecycle.STARTED)
             head.turnStarted("session-1") // turn.start, and session.change: a session seen for the first time
             head.accountSwitched("primary", "backup")
-            head.turnEnded("1789612775000", "ok")
+            head.turnEnded("1789612775000", "ok", "session-1")
             head.messageSent("session-1", "uds:/run/peer.sock", "toolu_1")
         }
         val declared = ConsoleEvent::class.sealedSubclasses.associate { family ->

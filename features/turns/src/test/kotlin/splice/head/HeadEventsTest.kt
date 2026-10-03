@@ -78,8 +78,8 @@ private class RecordingEvents : HeadEvents {
         calls.add("start $session")
     }
 
-    override fun turnEnded(perfRowId: String, outcome: String) {
-        calls.add("end $perfRowId $outcome")
+    override fun turnEnded(perfRowId: String, outcome: String, session: String?) {
+        calls.add("end $perfRowId $outcome $session")
     }
 
     override fun accountSwitched(from: String?, to: String) {
@@ -129,9 +129,9 @@ class HeadEventsTest(@param:TempDir private val root: Path) {
                 rig.turn()
                 val row = rig.perfRows(1).single()
                 assertEquals(
-                    listOf("start $SESSION", "end ${row.first} ${row.second}"),
+                    listOf("start $SESSION", "end ${row.first} ${row.second} $SESSION"),
                     rig.events.turnCalls(),
-                    "turn.start must carry the client's session and turn.end the row the head wrote",
+                    "turn.start must carry the client's session, and turn.end the row the head wrote and the same session",
                 )
             } finally {
                 rig.close()
@@ -150,10 +150,10 @@ class HeadEventsTest(@param:TempDir private val root: Path) {
             assertEquals(
                 listOf(
                     "start $SESSION",
-                    "end ${rows[0].first} ${rows[0].second}",
+                    "end ${rows[0].first} ${rows[0].second} $SESSION",
                     "start $SESSION",
                     "switch primary backup",
-                    "end ${rows[1].first} ${rows[1].second}",
+                    "end ${rows[1].first} ${rows[1].second} $SESSION",
                 ),
                 rig.events.turnCalls(),
             )
@@ -172,7 +172,7 @@ class HeadEventsTest(@param:TempDir private val root: Path) {
             rig.turn()
             val row = rig.perfRows(1).single()
             assertTrue(row.second.startsWith("error:"), "the rig must reach a LOCAL refusal row, got ${row.second}")
-            assertEquals(listOf("start $SESSION", "end ${row.first} ${row.second}"), rig.events.turnCalls())
+            assertEquals(listOf("start $SESSION", "end ${row.first} ${row.second} $SESSION"), rig.events.turnCalls())
         } finally {
             rig.close()
         }
@@ -196,13 +196,13 @@ class HeadEventsTest(@param:TempDir private val root: Path) {
                         // V4-265: the session's own turn is its sample; the retry is inside the interval.
                         "label $SESSION Messaging a peer session",
                         "start $SESSION",
-                        "end ${rows[0].first} ${rows[0].second}",
+                        "end ${rows[0].first} ${rows[0].second} $SESSION",
                         "start $SESSION",
-                        "end ${rows[1].first} ${rows[1].second}",
+                        "end ${rows[1].first} ${rows[1].second} $SESSION",
                         "label $SESSION Messaging a peer session",
                         "upstream $SESSION",
                         "start $SESSION",
-                        "end ${rows[2].first} ${rows[2].second}",
+                        "end ${rows[2].first} ${rows[2].second} $SESSION",
                     ),
                     rig.events.turnCalls(),
                     "each call reported once; the exact query answered locally with no turn; the near miss served AND " +

@@ -18,19 +18,21 @@ internal const val TRACE_PACK_START_BYTES: Int = Long.SIZE_BYTES * 3
 private const val TRACE_PACK_MAGIC = 0x53504c4943454231L
 
 internal object TracePackBytes {
-    /** A torn, unpublished incarnation header is replaced before any entry can be referenced. */
+    /** A corrupt incarnation cannot be indexed; restart it without ever weakening reader validation. */
     fun initialize(channel: FileChannel): UUID {
-        if (channel.size() < TRACE_PACK_START_BYTES) {
-            val generation = UUID.randomUUID()
-            val header = ByteBuffer.allocate(TRACE_PACK_START_BYTES)
-                .putLong(TRACE_PACK_MAGIC)
-                .putLong(generation.mostSignificantBits)
-                .putLong(generation.leastSignificantBits)
-            channel.truncate(0)
-            channel.position(0)
-            write(channel, header.array())
+        if (channel.size() >= TRACE_PACK_START_BYTES) {
+            val header = ByteBuffer.wrap(read(channel, 0, TRACE_PACK_START_BYTES))
+            if (header.long == TRACE_PACK_MAGIC) return UUID(header.long, header.long)
         }
-        return generation(channel)
+        val generation = UUID.randomUUID()
+        val header = ByteBuffer.allocate(TRACE_PACK_START_BYTES)
+            .putLong(TRACE_PACK_MAGIC)
+            .putLong(generation.mostSignificantBits)
+            .putLong(generation.leastSignificantBits)
+        channel.truncate(0)
+        channel.position(0)
+        write(channel, header.array())
+        return generation
     }
 
     fun generation(channel: FileChannel): UUID {

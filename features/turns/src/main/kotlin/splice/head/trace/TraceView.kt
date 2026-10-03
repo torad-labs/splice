@@ -14,6 +14,7 @@ import splice.core.terminal.RESET
 import splice.core.terminal.TerminalOutput
 import splice.core.terminal.YELLOW
 import splice.core.util.JsonScalars
+import splice.core.util.JsonWire
 import java.nio.file.Path
 import java.time.Instant
 
@@ -38,6 +39,9 @@ internal class TraceView(private val output: TerminalOutput) {
         if (read.skippedLines > 0) {
             output.line("  $YELLOW${read.skippedLines} line(s) skipped (not a trace record)$RESET")
         }
+        if (read.unavailableRecords > 0) {
+            output.line("  $YELLOW${read.unavailableRecords} selected record(s) with unavailable trace bodies$RESET")
+        }
         return true
     }
 
@@ -49,7 +53,7 @@ internal class TraceView(private val output: TerminalOutput) {
                     put("head", head)
                     put("state", TRACE_DELETED_STATE)
                     put("reason", TRACE_DELETED_REASON)
-                }.toString(),
+                }.let(JsonWire::string),
             )
         } else {
             output.line("splice trace: $head $TRACE_DELETED_REASON")
@@ -84,8 +88,8 @@ internal class TraceView(private val output: TerminalOutput) {
     /** The records as written, one JSON object per line, in order. */
     fun printJson(turns: List<TracedTurn>): Boolean {
         turns.forEach { turn ->
-            turn.attempts.forEach { output.line(it.toString()) }
-            turn.turn?.let { output.line(it.toString()) }
+            turn.attempts.forEach { output.line(it.let(JsonWire::string)) }
+            turn.turn?.let { output.line(it.let(JsonWire::string)) }
         }
         return true
     }
@@ -138,7 +142,12 @@ internal class TraceView(private val output: TerminalOutput) {
     }
 
     private fun printBody(record: JsonObject?, key: String) {
-        output.line(JsonScalars.strOrEmpty(record?.get(key)))
+        val body = record?.get(key)
+        if (body is JsonObject && JsonScalars.str(body, "unavailable") == "true") {
+            output.line("$YELLOW[trace body unavailable]$RESET")
+        } else {
+            output.line(JsonScalars.strOrEmpty(body))
+        }
         if (record != null && JsonScalars.str(record, "truncated") == "true") {
             output.line("$YELLOW[truncated at traceMaxBodyChars]$RESET")
         }

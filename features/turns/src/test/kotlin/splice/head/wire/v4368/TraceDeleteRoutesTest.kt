@@ -15,6 +15,7 @@ import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.perf.PerfSnapshot
 import splice.core.storage.ActivityDays
+import splice.core.storage.DayFiles
 import splice.core.terminal.TerminalOutput
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
@@ -38,6 +39,7 @@ import splice.head.wire.TurnIdMint
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
+import java.util.concurrent.TimeUnit
 
 private const val DAY_ONE = 1_789_725_600_000L // 2026-09-18T10:00Z
 
@@ -155,6 +157,32 @@ class TraceDeleteRoutesTest {
     }
 
     @Test
+    fun `a truly unwritable trace directory reports a purge conflict and keeps its bytes`(@TempDir root: Path) {
+        val dir = Files.createDirectory(root.resolve("trace"))
+        val day = Files.writeString(dir.resolve("alpha-2026-09-18.jsonl"), "{}\n")
+        val pack = Files.writeString(dir.resolve("alpha-2026-09-18.jsonl.bodies"), "synthetic pack")
+        val child = ProcessBuilder(
+            "bwrap", "--bind", "/", "/", "--ro-bind", dir.toString(), dir.toString(),
+            System.getProperty("java.home") + "/bin/java", "-XX:ActiveProcessorCount=2",
+            "-cp", System.getProperty("java.class.path"),
+            "splice.head.wire.v4368.ReadOnlyTracePurgeProbe", root.toString(),
+        ).redirectErrorStream(true).start()
+        try {
+            assertTrue(child.waitFor(20, TimeUnit.SECONDS), "the real purge returned")
+            val output = child.inputStream.readAllBytes().decodeToString()
+            assertEquals(0, child.exitValue(), output)
+            assertTrue(output.contains("status=409"), output)
+            assertTrue(output.contains("cannot read or delete alpha's trace"), output)
+            assertTrue(output.contains("alpha.days.lock"), output)
+            assertEquals("{}\n", Files.readString(day))
+            assertEquals("synthetic pack", Files.readString(pack))
+            assertFalse(DayFiles(dir, "alpha").deleted(), "a refused purge is never marked deleted")
+        } finally {
+            if (child.isAlive) child.destroyForcibly()
+        }
+    }
+
+    @Test
     fun `unknown and unwired heads cannot delete any trace`(@TempDir root: Path) {
         val dir = Files.createDirectory(root.resolve("trace"))
         val unknown = route(root, dir).delete("typo")
@@ -166,5 +194,27 @@ class TraceDeleteRoutesTest {
         assertEquals(HttpStatusCode.OK, deleted.status)
         assertEquals("deleted", field(deleted.body, "state"))
         assertEquals("0", field(deleted.body, "records"))
+    }
+}
+
+/** A real read-only mount prevents chmod from turning a denied write into a successful purge. */
+object ReadOnlyTracePurgeProbe {
+    @JvmStatic
+    fun main(args: Array<String>) {
+        val root = Path.of(args[0])
+        val dir = root.resolve("trace")
+        assertFalse(Files.isWritable(dir), "the positive control is a genuinely unwritable directory")
+        val noCompaction = object : HeadCompactSource {
+            override fun summary(tailN: Int) = CompactView(0, emptyMap(), emptyList())
+        }
+        val heads = TurnsHeadLookup { listOf(TurnsHead("alpha", noCompaction)) }
+        val route = TraceDeleteRoutes(
+            heads,
+            TraceDirPort { dir },
+            ConfigService(StatePaths(baseOverride = root.resolve("state")), envReader = EnvReader { null }),
+        )
+        val result = route.delete("alpha")
+        println("status=" + result.status.value)
+        println(result.body)
     }
 }

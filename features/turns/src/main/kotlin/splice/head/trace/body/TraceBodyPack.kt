@@ -8,6 +8,7 @@ import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import kotlinx.serialization.json.put
+import splice.core.storage.DAY_BODY_MAX_BYTES
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import java.io.IOException
@@ -35,10 +36,14 @@ private const val TRACE_PACK_LOCK_WAIT_MS = 1_000L
 private const val TRACE_PACK_LOCK_POLL_MS = 10L
 private val HEX = HexFormat.of()
 
+/** Capacity is a stored omission marker, not an I/O failure or a successful partial literal. */
+internal class TracePackFull : IOException("daily trace body budget exhausted")
+
 /** Only the active day's index is retained by a TraceBodies writer; readers hold no global body cache. */
 internal class TracePackIndex {
     var generation: UUID? = null
     var end: Long = TRACE_PACK_START_BYTES.toLong()
+    var tail: JsonObject? = null
     val chunks = HashMap<String, JsonObject>()
 
     // Weak keys reuse queued equal literals without keeping completed request bodies alive.
@@ -46,7 +51,11 @@ internal class TracePackIndex {
 }
 
 /** Append-only content-addressed binary entries. The OS page cache, not per-entry force, owns durability. */
-internal class TraceBodyPack(private val file: Path, private val index: TracePackIndex) : AutoCloseable {
+internal class TraceBodyPack(
+    private val file: Path,
+    private val index: TracePackIndex,
+    private val maxBytes: Long = DAY_BODY_MAX_BYTES,
+) : AutoCloseable {
     private val channel = FileChannel.open(
         file,
         StandardOpenOption.CREATE,
@@ -81,12 +90,14 @@ internal class TraceBodyPack(private val file: Path, private val index: TracePac
         val hash = HEX.formatHex(digest)
         index.chunks[hash]?.takeIf(::current)?.let { return it }
         val offset = index.end + HEADER_BYTES
+        if (offset > maxBytes - bytes.size) throw TracePackFull()
         val header = ByteBuffer.allocate(HEADER_BYTES).putInt(bytes.size).put(digest).array()
         channel.position(index.end)
         TracePackBytes.write(channel, header)
         TracePackBytes.write(channel, bytes)
         val part = reference(hash, offset, bytes.size)
         index.end = offset + bytes.size
+        index.tail = part
         index.chunks[hash] = part
         return part
     }
@@ -111,10 +122,13 @@ internal class TraceBodyPack(private val file: Path, private val index: TracePac
 
     private fun refresh() {
         val generation = TracePackBytes.initialize(channel)
-        if (generation != index.generation || index.end > channel.size()) {
+        val tailLost = index.tail?.let { !current(it) } == true
+        val changed = generation != index.generation || index.end > channel.size()
+        if (changed || tailLost) {
             index.chunks.clear()
             index.literals.clear()
             index.end = TRACE_PACK_START_BYTES.toLong()
+            index.tail = null
             index.generation = generation
         }
         while (index.end < channel.size()) {
@@ -131,9 +145,8 @@ internal class TraceBodyPack(private val file: Path, private val index: TracePac
         }
         val header = ByteBuffer.wrap(TracePackBytes.read(channel, index.end, HEADER_BYTES))
         val length = header.int
-        if (length !in 1..CHUNK_MAX) throw IOException("corrupt trace body chunk header: $file")
         val next = index.end + HEADER_BYTES + length
-        if (next > size) {
+        if (length !in 1..CHUNK_MAX || next > size) {
             channel.truncate(index.end)
             return false
         }
@@ -143,6 +156,7 @@ internal class TraceBodyPack(private val file: Path, private val index: TracePac
         val part = reference(hash, index.end + HEADER_BYTES, length)
         index.chunks.putIfAbsent(hash, part)
         index.end = next
+        index.tail = part
         return true
     }
 

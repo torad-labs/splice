@@ -14,6 +14,7 @@ import splice.core.storage.DayLine
 import splice.core.storage.LineVisit
 import splice.core.util.JsonScalars
 import splice.head.trace.body.TraceBodies
+import splice.head.trace.body.TraceBodyReaders
 
 // why: how far before a turn's first attempt its turn record can lie when the attempt was written late. A
 // record is stamped when it is built and the file lane writes in order, so the gap is the lane's queue:
@@ -21,7 +22,7 @@ import splice.head.trace.body.TraceBodies
 private const val LATE_WRITE_SLACK_MS = 60_000L
 
 /** One read from the newest line back: the turns taken so far, newest first, each held until it is whole. */
-internal class TraceTail(private val ask: TraceAsk, private val json: Json) : LineVisit {
+internal class TraceTail(private val ask: TraceAsk, private val json: Json) : LineVisit, AutoCloseable {
     private val taken = LinkedHashMap<String, HeldTurn>()
     private val unopened = HashSet<String>()
 
@@ -31,6 +32,9 @@ internal class TraceTail(private val ask: TraceAsk, private val json: Json) : Li
     private val unended = HashMap<String, Long>()
     private val stamps = TraceStamps(json)
     private val bodies = TraceBodies()
+    private val readers = TraceBodyReaders()
+
+    override fun close() = readers.close()
 
     override fun line(line: DayLine): Boolean {
         val stamp = stamps.of(line)
@@ -50,7 +54,7 @@ internal class TraceTail(private val ask: TraceAsk, private val json: Json) : Li
     private fun take(id: String, stamp: TraceStamp, line: DayLine) {
         val held = taken[id] ?: admit(id, stamp) ?: return
         val record = json.parseToJsonElement(line.text()).jsonObject
-        held.add(bodies.hydrate(record, line.file), stamp.isTurnRecord)
+        held.add(bodies.selected(record, line.file, readers), stamp.isTurnRecord)
         if (stamp.isTurnRecord) unended -= id
         if (stamp.opens) {
             unopened -= id

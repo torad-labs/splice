@@ -46,6 +46,8 @@ class HeadKeptFilesTest {
     @Test
     fun `a removed head's trace day that could not be deleted is logged as still there, never as deleted`() {
         val day = seed(paths.traceDir.resolve("gone-2026-09-18.jsonl"))
+        // The lock exists before chmod, so this control reaches deletion, not lock creation.
+        Files.createFile(paths.traceDir.resolve("gone.days.lock"))
 
         withMode(paths.traceDir, "r-x------") { kept().ofRemovedHeads(emptySet()) }
 

@@ -82,7 +82,12 @@ internal data class TraceAsk(val last: Int, val session: String? = null, val tur
 
 /** The turns asked for, oldest first, and the store they came from: [onDisk] turns on disk and
  *  [skippedLines] lines no turn placed, over every line of every day. */
-internal data class TraceRead(val turns: List<TracedTurn>, val onDisk: Int, val skippedLines: Int)
+internal data class TraceRead(val turns: List<TracedTurn>, val onDisk: Int, val skippedLines: Int) {
+    /** Only selected records were hydrated; the census makes no claim about other bodies. */
+    val unavailableRecords: Int get() = turns.sumOf { turn ->
+        (turn.attempts + listOfNotNull(turn.turn)).count { JsonScalars.str(it, "body_unavailable") == "true" }
+    }
+}
 
 internal class TraceRows(private val json: Json = Json { ignoreUnknownKeys = true }) {
     /** Each store's count, by its trace dir and head, kept for as long as this reader lives. */
@@ -104,8 +109,9 @@ internal class TraceRows(private val json: Json = Json { ignoreUnknownKeys = tru
     /** The turns [ask] names, oldest first, read from the newest line only until each is whole. */
     @Throws(IOException::class)
     internal fun turns(traceDir: Path, head: String, ask: TraceAsk): List<TracedTurn> {
-        val tail = TraceTail(ask, json)
-        days(traceDir, head).newestFirst(tail)
-        return tail.turns()
+        return TraceTail(ask, json).use { tail ->
+            days(traceDir, head).newestFirst(tail)
+            tail.turns()
+        }
     }
 }

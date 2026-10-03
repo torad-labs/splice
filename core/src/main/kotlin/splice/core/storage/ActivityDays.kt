@@ -76,6 +76,9 @@ public const val DAY_BODY_SUFFIX: String = ".bodies"
 // above states the contract: JsonlSink rolls ONE generation away when a day file passes this.
 private const val DAY_MAX_BYTES = 512L shl 20
 
+/** A trace body's daily budget derives from the live JSONL and its one retained rolled generation. */
+public const val DAY_BODY_MAX_BYTES: Long = DAY_MAX_BYTES * 2
+
 /** A day file's own name, then JsonlSink's lock and its one rolled generation beside it. */
 /** JsonlSink's rotated generation of a day file: that day's OLDER rows, once it passed DAY_MAX_BYTES. */
 private const val ROLLED_SUFFIX = ".1"

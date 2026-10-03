@@ -6,8 +6,6 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -24,7 +22,6 @@ import splice.head.wire.ClientInbound
 import splice.head.wire.TraceStore
 import splice.head.wire.TurnIdMint
 import splice.upstream.sse.WireAttempt
-import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -92,31 +89,32 @@ class TraceChunkStorageTest {
     }
 
     @Test
-    fun `a missing body pack is a named failure rather than an empty successful trace`(@TempDir dir: Path) {
+    fun `a missing body pack keeps metadata and explicit unavailable references`(@TempDir dir: Path) {
         write(store(dir), "synthetic request", "synthetic answer")
         assertTrue(AsyncFileIo.drain())
         assertTrue(Files.exists(dir.resolve("$DAY.bodies")))
         Files.delete(dir.resolve("$DAY.bodies"))
-        val failure = assertThrows(IOException::class.java) {
-            TraceRows().turns(dir, HEAD, TraceAsk(last = 1))
-        }
-        assertTrue(failure.message.orEmpty().contains("trace body chunk"))
+        val read = TraceRows().read(dir, HEAD, TraceAsk(last = 1))
+        assertEquals(2, read.unavailableRecords)
+        val body = read.turns.single().turn?.obj("client")?.obj("body")
+        assertEquals("true", body?.text("unavailable"))
+        assertEquals("m", read.turns.single().model)
     }
 
     @Test
-    fun `a corrupt chunk is a named failure and never substituted with empty text`(@TempDir dir: Path) {
+    fun `a corrupt chunk keeps metadata and never substitutes empty successful text`(@TempDir dir: Path) {
         write(store(dir), "synthetic request", "synthetic answer")
         assertTrue(AsyncFileIo.drain())
         val pack = dir.resolve("$DAY.bodies")
         assertTrue(Files.exists(pack))
         val bytes = Files.readAllBytes(pack)
-        bytes[bytes.lastIndex] = (bytes.last().toInt() xor 1).toByte()
+        bytes[bytes.lastIndex - 1] = 'S'.code.toByte()
         Files.write(pack, bytes)
-        val failure = assertThrows(IOException::class.java) {
-            TraceRows().turns(dir, HEAD, TraceAsk(last = 1))
-        }
-        assertTrue(failure.message.orEmpty().contains("trace body chunk"))
-        assertFalse(failure.message.orEmpty().contains("synthetic answer"))
+        val read = TraceRows().read(dir, HEAD, TraceAsk(last = 1))
+        assertEquals(2, read.unavailableRecords)
+        val body = read.turns.single().turn?.obj("answer")?.obj("body")
+        assertEquals("true", body?.text("unavailable"))
+        assertEquals("m", read.turns.single().model)
     }
 
     private fun store(dir: Path, max: Int = 1 shl 20): TraceStore {

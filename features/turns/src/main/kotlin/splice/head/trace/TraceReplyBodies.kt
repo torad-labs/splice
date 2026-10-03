@@ -26,6 +26,7 @@ internal class TraceReplyBodies {
             put("files", "$traceDir/$key-YYYY-MM-DD.jsonl")
             put("on_disk", read.onDisk)
             put("skipped_lines", read.skippedLines)
+            put("unavailable_records", read.unavailableRecords)
             putJsonArray("turns") { read.turns.forEach { add(summary(it)) } }
         }.toString()
 

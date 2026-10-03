@@ -4,9 +4,14 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.IOException
@@ -58,6 +63,53 @@ class TracePackIntegrityTest {
         val client = buildJsonObject { put("body", reference) }
         val forged = buildJsonObject { put("client", client) }
         assertThrows(IOException::class.java) { bodies.hydrate(forged, day) }
+    }
+
+    @Test
+    fun `parseable interior payload corruption is rejected by its digest rather than JSON parsing`(@TempDir dir: Path) {
+        val day = dir.resolve("synthetic-2026-09-18.jsonl")
+        val bodies = TraceBodies()
+        val bytesOfRecord = bodies.encode(record("synthetic answer"), day)
+        val encoded = Json.parseToJsonElement(bytesOfRecord.decodeToString()).jsonObject
+        val part = encoded.getValue("client").jsonObject.getValue("body").jsonObject
+            .getValue("parts").jsonArray.single().jsonObject
+        val offset = part.getValue("offset").jsonPrimitive.long.toInt()
+        val pack = dir.resolve("${day.fileName}.bodies")
+        val bytes = Files.readAllBytes(pack)
+        bytes[offset + 1] = 'S'.code.toByte()
+        Files.write(pack, bytes)
+        assertEquals(
+            "Synthetic answer",
+            Json.parseToJsonElement(bytes.copyOfRange(offset, bytes.size).decodeToString()).jsonPrimitive.content,
+        )
+        val failure = assertThrows(IOException::class.java) { bodies.hydrate(encoded, day) }
+        assertTrue(failure.message.orEmpty().startsWith("corrupt trace body chunk at byte"))
+        assertTrue(!failure.message.orEmpty().contains("answer"))
+    }
+
+    @Test
+    fun `strict hydration names missing packs while retaining inline compatibility`(@TempDir dir: Path) {
+        val day = dir.resolve("synthetic-2026-09-18.jsonl")
+        val bodies = TraceBodies()
+        val encoded = Json.parseToJsonElement(bodies.encode(record("synthetic body"), day).decodeToString()).jsonObject
+        Files.delete(dir.resolve("${day.fileName}.bodies"))
+        val failure = assertThrows(IOException::class.java) { bodies.hydrate(encoded, day) }
+        assertTrue(failure.message.orEmpty().contains("pack missing or unreadable"))
+        assertEquals(record("synthetic legacy"), bodies.hydrate(record("synthetic legacy"), day))
+    }
+
+    @Test
+    fun `header preserving truncate regrow resets a stale writer tail before appending`(@TempDir dir: Path) {
+        val day = dir.resolve("synthetic-2026-09-18.jsonl")
+        val pack = dir.resolve("${day.fileName}.bodies")
+        val first = TraceBodies()
+        first.encode(record("alpha"), day)
+        FileChannel.open(pack, StandardOpenOption.WRITE).use { it.truncate(TRACE_PACK_START_BYTES.toLong()) }
+        val fresh = TraceBodies()
+        val grown = Json.parseToJsonElement(fresh.encode(record("alphabet"), day).decodeToString()).jsonObject
+        val later = Json.parseToJsonElement(first.encode(record("gamma"), day).decodeToString()).jsonObject
+        assertEquals(record("alphabet"), first.hydrate(grown, day))
+        assertEquals(record("gamma"), fresh.hydrate(later, day))
     }
 
     private fun record(text: String): JsonObject = buildJsonObject {

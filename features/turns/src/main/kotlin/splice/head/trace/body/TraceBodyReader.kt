@@ -18,6 +18,27 @@ import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 
+/** One header index per pack per selected read; neither channels nor failure results outlive that read. */
+internal class TraceBodyReaders : AutoCloseable {
+    private val readers = LinkedHashMap<Path, Result<TraceBodyReader>>()
+
+    fun of(file: Path): TraceBodyReader =
+        readers.getOrPut(file) { Cancellables.runCatchingCancellable { TraceBodyReader(file) } }.getOrThrow()
+
+    override fun close() {
+        var failure: IOException? = null
+        readers.values.forEach { result ->
+            try {
+                result.getOrNull()?.close()
+            } catch (caught: IOException) {
+                if (failure == null) failure = caught else failure.addSuppressed(caught)
+            }
+        }
+        readers.clear()
+        failure?.let { throw it }
+    }
+}
+
 /** Reads only selected body references; missing and corrupt content is never read as empty. */
 internal class TraceBodyReader(private val file: Path) : AutoCloseable {
     private val channel = Cancellables.runCatchingCancellable {

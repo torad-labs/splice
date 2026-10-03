@@ -14,6 +14,7 @@ import splice.head.trace.TRACE_DELETED_REASON
 import splice.head.trace.TRACE_DELETED_STATE
 import splice.head.trace.TraceDirPort
 import splice.http.JsonReply
+import java.io.IOException
 import java.nio.file.Path
 
 private const val TRACE_KEEP_UNWIRED = "the daemon wired no trace directory; kept trace cannot be read or deleted"
@@ -39,7 +40,11 @@ public class TraceDeleteRoutes(
                 onSuccess = { JsonReply(HttpStatusCode.OK, it) },
                 onFailure = { failure ->
                     refuse(
-                        HttpStatusCode.InternalServerError,
+                        if (delete && failure is IOException) {
+                            HttpStatusCode.Conflict
+                        } else {
+                            HttpStatusCode.InternalServerError
+                        },
                         "cannot read or delete $key's trace under $traceDir: ${SafeFailureText.render(failure)}",
                     )
                 },

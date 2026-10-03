@@ -6,7 +6,7 @@ import { noun } from '../../lib/format';
 import { inputLines, inputView, outputLines, outputView } from '../../lib/tool-view';
 import type { DiffLine, Field, InputView, OutputView } from '../../lib/tool-view';
 import { Check, Chevron } from '../../ui';
-import { highlight } from '../../ui/highlight';
+import { highlight, languageName } from '../../ui/highlight';
 import { P } from './copy';
 
 type Tool = Extract<Item, { kind: 'tool' }>;
@@ -19,8 +19,9 @@ const FOLD_CHARS = 2_000;
 
 /** Code in its language, highlighted; plain text when the language is not one the highlighter knows. */
 function Code({ text, language }: { text: string; language: string | null }) {
-  const html = highlight(text, language);
-  return html === null || language === null ? <code className="plain">{text}</code> : <code className={`hljs language-${language}`} dangerouslySetInnerHTML={{ __html: html }} />;
+  const name = languageName(language);
+  const html = highlight(text, name);
+  return html === null || name === null ? <code className="plain">{text}</code> : <code className={`hljs language-${name}`} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
 /** One line of a diff, highlighted on its own; the marker is drawn by the stylesheet, so copied text is the code alone. */

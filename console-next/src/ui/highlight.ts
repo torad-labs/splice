@@ -24,12 +24,20 @@ for (const [name, language] of Object.entries(LANGUAGES)) hljs.registerLanguage(
 const ALIASES: Readonly<Record<string, string>> = {
   sh: 'bash', shell: 'bash', zsh: 'bash', js: 'javascript', jsx: 'javascript', ts: 'typescript', tsx: 'typescript',
   py: 'python', rs: 'rust', kt: 'kotlin', html: 'xml', toml: 'ini', yml: 'yaml', md: 'markdown', patch: 'diff',
+  mts: 'typescript', cts: 'typescript', mjs: 'javascript', cjs: 'javascript', kts: 'kotlin', svg: 'xml',
 };
+
+/** The grammar a language or a file extension names (`tsx` is typescript), or null when it is not one of ours. This map is the
+ *  only one: a file's extension goes in as it is written and comes out a grammar here. */
+export function languageName(language: string | null): string | null {
+  if (language === null) return null;
+  const name = ALIASES[language.toLowerCase()] ?? language.toLowerCase();
+  return hljs.getLanguage(name) === undefined ? null : name;
+}
 
 /** Highlighted HTML for [code] in [language] (highlight.js escapes the text itself), or null when the
  *  language is not one of ours: an unknown language reads as plain text, never as a guess. */
 export function highlight(code: string, language: string | null): string | null {
-  if (language === null) return null;
-  const name = ALIASES[language.toLowerCase()] ?? language.toLowerCase();
-  return hljs.getLanguage(name) === undefined ? null : hljs.highlight(code, { language: name, ignoreIllegals: true }).value;
+  const name = languageName(language);
+  return name === null ? null : hljs.highlight(code, { language: name, ignoreIllegals: true }).value;
 }

@@ -99,9 +99,15 @@ describe('a tool call reads the way Claude Code shows it', () => {
     expect(html).toContain('+1 −1');
   });
   test('a write is its path and its content as code in the file\'s language', () => {
-    const html = renderToStaticMarkup(<ToolBlock item={tool({ tool: 'Write', input: { file_path: '/repo/a.py', content: 'def f():\n    return 1\n' }, output: 'File created successfully at: /repo/a.py' })} />);
-    expect(html).toContain('<p class="where">/repo/a.py</p>');
-    expect(seen(block(html, 'hljs language-python'))).toBe('def f():\n    return 1');
+    const html = renderToStaticMarkup(<ToolBlock item={tool({ tool: 'Write', input: { file_path: '/repo/a.go', content: 'func f() int {\n\treturn 1\n}\n' }, output: 'File created successfully at: /repo/a.go' })} />);
+    expect(html).toContain('<p class="where">/repo/a.go</p>');
+    expect(seen(block(html, 'hljs language-go'))).toBe('func f() int {\n\treturn 1\n}');
+  });
+  test('the highlighter resolves an extension to its grammar, and one it does not know is plain text', () => {
+    const write = (path: string, content: string) => renderToStaticMarkup(<ToolBlock item={tool({ tool: 'Write', input: { file_path: path, content }, output: 'ok' })} />);
+    expect(write('/repo/App.TSX', 'const a = 1;')).toContain('class="hljs language-typescript"');
+    expect(write('/repo/build.gradle.kts', 'val a = 1')).toContain('class="hljs language-kotlin"');
+    expect(write('/repo/notes.txt', 'just words')).toContain('<code class="plain">just words</code>');
   });
   test('a read is its path, the lines it asked for, and the file as numbered code', () => {
     const html = renderToStaticMarkup(

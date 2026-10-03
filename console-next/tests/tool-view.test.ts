@@ -39,15 +39,15 @@ describe('an input the daemon cut short', () => {
 
 describe('a result', () => {
   test('a read keeps its line numbers apart from the code', () => {
-    expect(outputView('Read', '  7\tval a = 1\n  8\tval b = 2', { file_path: '/r/A.kt' })).toEqual({ kind: 'numbered', numbers: [7, 8], code: 'val a = 1\nval b = 2', language: 'kotlin', rest: '' });
+    expect(outputView('Read', '  7\tval a = 1\n  8\tval b = 2', { file_path: '/r/A.kt' })).toEqual({ kind: 'numbered', numbers: [7, 8], code: 'val a = 1\nval b = 2', language: 'kt', rest: '' });
   });
   test('a shell result that is JSON stays the program\'s text, and another tool\'s JSON is labelled values', () => {
     expect(outputView('Bash', '{"a":1}', {})).toEqual({ kind: 'text', text: '{"a":1}' });
     expect(outputView('TaskStop', '{"message":"stopped"}', {})).toEqual({ kind: 'fields', fields: [{ key: 'message', value: { kind: 'text', text: 'stopped' } }] });
   });
-  test('a file\'s language comes from its extension, and an unknown one is plain', () => {
-    expect(languageOf('/r/src/App.tsx')).toBe('typescript');
-    expect(languageOf('/r/build.gradle.kts')).toBe('kotlin');
+  test('a file\'s language is its extension as written, lower-cased, and a file with none has none', () => {
+    expect(languageOf('/r/src/App.tsx')).toBe('tsx');
+    expect(languageOf('/r/build.gradle.kts')).toBe('kts');
     expect(languageOf('/r/Makefile')).toBeNull();
     expect(languageOf('/r/.env')).toBeNull();
   });

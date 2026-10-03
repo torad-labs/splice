@@ -30,18 +30,13 @@ export type OutputView =
 /** Tools whose result is a program's or a file's own text, shown as it is even when it happens to be JSON. */
 const TEXT_RESULTS = new Set(['Bash', 'BashOutput', 'Read', 'Grep', 'Glob']);
 
-/** A file's language by its extension, as highlight.js names it. A file not listed reads as plain text. */
-const LANGUAGE_BY_EXTENSION: Readonly<Record<string, string>> = {
-  ts: 'typescript', tsx: 'typescript', mts: 'typescript', cts: 'typescript', js: 'javascript', jsx: 'javascript', mjs: 'javascript',
-  cjs: 'javascript', kt: 'kotlin', kts: 'kotlin', java: 'java', py: 'python', rs: 'rust', go: 'go', json: 'json', md: 'markdown',
-  sh: 'bash', bash: 'bash', zsh: 'bash', css: 'css', html: 'xml', xml: 'xml', svg: 'xml', toml: 'ini', ini: 'ini', yml: 'yaml',
-  yaml: 'yaml', sql: 'sql', diff: 'diff', patch: 'diff',
-};
-
+/** A file's language as its extension names it (`tsx`, `kt`), lower-cased, or null for a file with none. The highlighter resolves
+ *  the name to a grammar (ui/highlight's languageName), so the extensions are mapped once, in the file that imports the grammars,
+ *  and one it does not know reads as plain text. */
 export function languageOf(path: string): string | null {
   const name = path.split('/').pop() ?? path;
   const dot = name.lastIndexOf('.');
-  return dot <= 0 ? null : (LANGUAGE_BY_EXTENSION[name.slice(dot + 1).toLowerCase()] ?? null);
+  return dot <= 0 ? null : name.slice(dot + 1).toLowerCase();
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);

@@ -1,6 +1,5 @@
-/* The reset, the shell, the page head, and the objects every page draws: variant D, the calm version, is the law
-   (docs/design/comps/DIRECTION.md "D, the design law"). One edge per object, twice the room, less per card, mono
-   only for code and terminal text, one accent per card. */
+/* The reset, the shell, the page head, and the objects every page draws. One edge per object, twice the room, less
+   per card, mono only for code and terminal text, one accent per card. */
 *, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; }
 /* THE OPERATOR'S FRAME (ruling 4, 2026-09-25): his panels are 3840 wide at scale 1. The root unit holds 16px through 1920,

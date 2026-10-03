@@ -1,6 +1,6 @@
 // What Settings shows and writes, as data and pure rules: the sections, the closed choices of the curated knobs, the day
 // counts a retention select offers, the colon list of git folders, what a save answered, and the topology edits the Tools
-// switches make. The knob table behind every control is DIRECTION.md "Settings: what backs every control".
+// switches make.
 import type { ConfigValue, PatchResult } from '../types/core';
 import type { DoctorCheck } from '../types/doctor';
 import type { McpServer } from '../types/mcp';

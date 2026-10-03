@@ -52,7 +52,6 @@ private const val WORKFLOWS = ".github/workflows"
 private const val INSTALL = "install.sh"
 private const val README = "README.md"
 private const val CHANGELOG = "CHANGELOG.md"
-private const val PRODUCT_BRIEF = "docs/design/PRODUCT.md"
 private const val CONSOLE_SRC = "console-next/src/"
 private const val MAIN_SOURCE = "/src/main/"
 private const val EXAMPLE_TOML = "app/src/main/resources/splice.example.toml"
@@ -113,7 +112,7 @@ private val DISCLAIMERS = listOf(
     "so no environment-isolation claim is made",
     "what a pattern removes is the operator's to own",
 )
-private val DISCLAIMER_FILES = listOf(README, CHANGELOG, EXAMPLE_TOML, PRODUCT_BRIEF, INSTALL)
+private val DISCLAIMER_FILES = listOf(README, CHANGELOG, EXAMPLE_TOML, INSTALL)
 private val CONSOLE_TEXT = listOf(".ts", ".tsx")
 
 /** "[rel]:[line] carries '[phrase]'" for the first line holding one of [DISCLAIMERS], ignoring case. */
@@ -429,7 +428,6 @@ private class Tree(val root: File) {
         file("${BUILD_LOGIC_TESTS}splice/discovery/TestDiscoveryTest.kt", "class TestDiscoveryTest\n")
         file(README, "Each head runs the splice-launch shim.\n")
         file(CHANGELOG, "# Changelog\n")
-        file(PRODUCT_BRIEF, "# Product\n")
         file(CONSOLE_STRINGS, "export const title = 'splice';\n")
         // On the green side on purpose: a test that proves the line is gone names it, and stays legal.
         file(SETUP_TEST, "val gone = \"Unofficial; use at your own risk.\"\n")

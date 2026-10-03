@@ -1,4 +1,4 @@
-/* The site's and the film's world: model colours, and two walls (day, night) with one geometry. Ported from docs/design/comps/comp.css. */
+/* The site's and the film's world: model colours, and two walls (day, night) with one geometry. */
 :root {
   --claude: #ee8f58; --gpt: #00c5be; --grok: #6eadfe; --kimi: #e3b341; --muse: #b896f3; --local: #7bc47f; --router: #f3b27a; --deepseek: #8fb8d8;
   --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23g)'/%3E%3C/svg%3E");

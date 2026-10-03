@@ -9,10 +9,10 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
-import { KNOB_SOURCE } from '../src/coverage/denominator';
 import { KNOB_META, plural, readableBytes, readableMs, unitText } from '../src/lib/knobs';
 import { GROUP_LABELS, KNOB_HELP, KNOB_LABELS } from '../src/lib/words-knobs';
 
+const KNOB_SOURCE = 'core/src/main/kotlin/splice/core/config/Knob.kt';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const knobSource = readFileSync(path.join(repoRoot, KNOB_SOURCE), 'utf8');
 

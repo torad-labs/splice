@@ -1,5 +1,5 @@
-// THE CONTRAST WALL: the ink and ground pairs the console prints text, controls, focus and data on clear WCAG AA in BOTH themes
-// (docs/design/PRODUCT.md "WCAG AA for text, controls, focus and data inks"). The numbers come from the sheet that ships: tokens.css
+// THE CONTRAST WALL: the ink and ground pairs the console prints text, controls, focus and data on clear WCAG AA in BOTH themes.
+// The numbers come from the sheet that ships: tokens.css
 // is parsed at test time, never re-typed here, so a second copy cannot agree with itself while the sheet drifts.
 //
 // The denominator of the text colours is the CSS itself: every `color: var(--x)` under src/ must have a disposition below, or the test

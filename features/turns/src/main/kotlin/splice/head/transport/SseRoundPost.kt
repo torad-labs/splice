@@ -37,11 +37,23 @@ internal class SseRoundPost(
     }
 
     suspend fun post(inputs: WsRoundInputs): TurnOutcome {
+        while (true) {
+            when (val posted = postAccount(inputs)) {
+                is UpstreamPost.Delivered -> return posted.value
+                is UpstreamPost.Refused -> {
+                    if (inputs.drive.accountHandoff?.move(inputs.drive) != true) throw posted.failure
+                }
+                UpstreamPost.TurnWaitExhausted -> return waitExhausted(inputs)
+            }
+        }
+    }
+
+    private suspend fun postAccount(inputs: WsRoundInputs): UpstreamPost<TurnOutcome> {
         val drive = inputs.drive
         val selection = drive.account
         val account = selection?.account
         val activeQuota = turnQuota.forSession(drive.meta.sessionId, drive.account)
-        val posted = upstream.post(
+        return upstream.post(
             PostContext(
                 url = provider.upstreamUrl,
                 auth = account?.auth ?: provider.auth,
@@ -49,7 +61,7 @@ internal class SseRoundPost(
                     // The account's headers ride ON TOP of the provider's, never instead of them.
                     provider.extraHeaders(creds) +
                         account?.extraHeaders?.invoke(creds).orEmpty() +
-                        drive.turnHeaders + httpRoutingHeaders(inputs)
+                        CallerCredential.over(drive.turnHeaders, creds) + httpRoutingHeaders(inputs)
                 },
                 onRetry = onRetry,
                 perf = drive.perf,
@@ -62,7 +74,10 @@ internal class SseRoundPost(
                 wire = drive.trace,
             ).also { context ->
                 context.relayRateLimitReplies = provider.relayRateLimitReplies
-                drive.upstreamAccepted?.let { context.upstreamAccepted = it }
+                context.upstreamAccepted = splice.upstream.StreamStart {
+                    drive.accountHandoff?.commit()
+                    drive.upstreamAccepted?.invoke()
+                }
             },
             inputs.bodyJson,
         ) { resp ->
@@ -75,24 +90,18 @@ internal class SseRoundPost(
             activeQuota?.let(resp::observeQuota)
             consume.consume(inputs, resp)
         }
-        // V4-114: the exhausted turn-wait budget is a VALUE on post()'s return type now, so this
-        // branch is compiler-checked — a new UpstreamPost case cannot slip past it the way a new
-        // thrown refusal slipped past every `catch (e: UpstreamTurnWaitExhausted)` in the tree.
-        return when (posted) {
-            is UpstreamPost.Delivered -> posted.value
-            // No response arrived. Let the existing translator own the total-cap terminal, including
-            // its no-continuation policy. The cap is the proven elapsed lower bound, not a poll sample;
-            // this local signal does not alter the watchdog's recorded observations or its pollers.
-            UpstreamPost.TurnWaitExhausted -> {
-                val totalCap = WatchdogFired.TotalCap(provider.watchdog.totalCap.inWholeMilliseconds)
-                val signals = TurnSignals(
-                    watchdogFired = { totalCap },
-                    clientGone = { inputs.clientGone() },
-                )
-                val outcome = provider.streamTranslator(drive.meta, signals).driveTurn(emptyFlow(), inputs.sink)
-                drive.perf.mark(PerfKeys.STREAM_END)
-                outcome
-            }
-        }
+    }
+
+    /** No response arrived. The existing translator owns the total-cap terminal and its no-continuation policy. */
+    private suspend fun waitExhausted(inputs: WsRoundInputs): TurnOutcome {
+        val drive = inputs.drive
+        val totalCap = WatchdogFired.TotalCap(provider.watchdog.totalCap.inWholeMilliseconds)
+        val signals = TurnSignals(
+            watchdogFired = { totalCap },
+            clientGone = { inputs.clientGone() },
+        )
+        val outcome = provider.streamTranslator(drive.meta, signals).driveTurn(emptyFlow(), inputs.sink)
+        drive.perf.mark(PerfKeys.STREAM_END)
+        return outcome
     }
 }

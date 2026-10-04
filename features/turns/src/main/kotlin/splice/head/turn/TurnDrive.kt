@@ -13,6 +13,7 @@ import splice.core.wire.RateLimitReply
 import splice.head.pipeline.TurnPipeline
 import splice.head.round.RoundUsage
 import splice.head.round.RunnerSignals
+import splice.head.transport.TurnAccountHandoff
 import splice.head.turn.delivery.CollectPerf
 import splice.head.usage.QuotaTracker
 import splice.head.wire.ClientChannel
@@ -49,8 +50,8 @@ internal data class TurnDrive(
     val perf: TurnPerf,
     /** Per-turn upstream headers from BuiltTurn (e.g. grok conv-id affinity). */
     val turnHeaders: Map<String, String>,
-    /** Immutable OAuth account chosen before this turn started. */
-    val account: AccountSelection? = null,
+    /** Current login. Only a pre-accept native refusal can replace it within this turn. */
+    var account: AccountSelection? = null,
     /** Runner liveness gates + the health hook for absorbed round failures (built once in
      *  TurnDriveFactory.assembleDrive; one construction site, the policies never drift). */
     val signals: RunnerSignals,
@@ -62,7 +63,7 @@ internal data class TurnDrive(
     /** Optional gateway-local wrapper around each posted round. */
     val roundInterceptor: RoundInterceptor? = null,
     val remainingTurnWait: RemainingTurnWait = RemainingTurnWait { Long.MAX_VALUE },
-    val quota: QuotaTracker? = null,
+    var quota: QuotaTracker? = null,
 ) {
     /** The three per-turn CLAIMS, in the component that claims them (kt-no-atomic-in-data-class).
      *
@@ -129,6 +130,8 @@ internal data class TurnDrive(
     }
     var rateLimitRelay: RateLimitRelay? = null
     var upstreamAccepted: splice.upstream.StreamStart? = null
+    var accountHandoff: TurnAccountHandoff? = null
+    var fallbackAccountLabel: String = "primary"
 
     /** The model the upstream is asked for: the meta's, read rather than copied. */
     val upstreamModel: String get() = meta.upstreamModel

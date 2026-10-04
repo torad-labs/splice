@@ -2,16 +2,18 @@
 # tools/e2e/docker/plan-limit.sh — an Anthropic plan-limit 429, through splice, to the REAL Claude
 # Code at the pinned version. Run INSIDE the container by `run.sh --scenario plan-limit`.
 #
-# Native refusals reach Claude Code as HTTP 429 with unchanged body and rate-limit headers, with
-# one upstream attempt and no proxy retries. Every launched client runs in persistent retry mode
-# (CLAUDE_CODE_RETRY_WATCHDOG=1), sleeps until the reset and resumes.
+# Single-login native refusals reach Claude Code as HTTP 429 with unchanged body and rate-limit
+# headers, with one upstream attempt and no proxy retries. That client runs in persistent retry
+# mode (CLAUDE_CODE_RETRY_WATCHDOG=1), sleeps until the reset and resumes. A pooled refusal moves
+# the same request to a free login before any client response.
 # The upstream is mock_anthropic.ts: a five-hour plan-limit 429
 # with the unified headers Claude Code reads, until its reset, then 200.
 #
-# Two heads on two mocks, so the evidence and the turn never share a clock:
+# Three heads on three mocks, so the evidence, the waiting turn and the pool do not share a clock:
 #   planprobe  streamed and buffered native refusals, with exact wire and attempt checks
 #              against the mock's recorded replies (plan_limit.ts probe);
-#   planlimit  the real Claude Code in print mode, through the wrapper `install --all` linked.
+#   planlimit  the real Claude Code in print mode, through the wrapper `install --all` linked;
+#   planpool   the same real client completes on login two while login one is limited two hours out.
 # Every upstream is a mock inside the container and the container has no network.
 set -uo pipefail
 
@@ -23,6 +25,8 @@ trap finish EXIT
 PLAN_TS="$(dirname "${BASH_SOURCE[0]}")/plan_limit.ts"
 PLAN_HEAD_PORT=3107
 PROBE_HEAD_PORT=3108
+POOL_HEAD_PORT=3109
+POOL_MOCK_PORT=""
 # Long enough that the turn meets the limit more than once (splice's retries, its hold, the client's
 # own wait); short enough for CI. The probe's upstream never resets inside the run.
 # The turn's upstream resets this long after the turn's first request: 90 s keeps CI short, and
@@ -48,17 +52,22 @@ start_plan_mocks() {
     MOCK_ANTHROPIC_RESET_S=$PROBE_RESET_S MOCK_ANTHROPIC_LOG="$OUT/upstream-probe.jsonl" \
     nohup bun "$REPO/tools/e2e/docker/mock_anthropic.ts" 0 > "$OUT/mock_anthropic_probe.out" 2> "$OUT/mock_anthropic_probe.err" &
   echo $! > "$OUT/mock_anthropic_probe.pid"
+  MOCK_ANTHROPIC_POOLED=1 MOCK_ANTHROPIC_RESET_S=7200 MOCK_ANTHROPIC_LOG="$OUT/upstream-pool.jsonl" \
+    nohup bun "$REPO/tools/e2e/docker/mock_anthropic.ts" 0 > "$OUT/mock_anthropic_pool.out" 2> "$OUT/mock_anthropic_pool.err" &
+  echo $! > "$OUT/mock_anthropic_pool.pid"
   for _ in $(seq 1 50); do
-    [ -s "$OUT/mock_anthropic_turn.out" ] && [ -s "$OUT/mock_anthropic_probe.out" ] && break
+    [ -s "$OUT/mock_anthropic_turn.out" ] && [ -s "$OUT/mock_anthropic_probe.out" ] && [ -s "$OUT/mock_anthropic_pool.out" ] && break
     sleep 0.2
   done
   [ -s "$OUT/mock_anthropic_turn.out" ] || { echo "turn mock did not start: $(cat "$OUT/mock_anthropic_turn.err")"; return 1; }
   [ -s "$OUT/mock_anthropic_probe.out" ] || { echo "probe mock did not start: $(cat "$OUT/mock_anthropic_probe.err")"; return 1; }
-  cat "$OUT/mock_anthropic_turn.out" "$OUT/mock_anthropic_probe.out"
+  [ -s "$OUT/mock_anthropic_pool.out" ] || { echo "pool mock did not start"; return 1; }
+  cat "$OUT/mock_anthropic_turn.out" "$OUT/mock_anthropic_probe.out" "$OUT/mock_anthropic_pool.out"
 }
 step "plan-limited Anthropic mocks up" start_plan_mocks
 TURN_MOCK_PORT="$(mock_field mock_anthropic_turn.out port 2>/dev/null)"
 PROBE_MOCK_PORT="$(mock_field mock_anthropic_probe.out port 2>/dev/null)"
+POOL_MOCK_PORT="$(mock_field mock_anthropic_pool.out port 2>/dev/null)"
 
 # ── 2. topology: two claude-splice-shaped heads (anthropic-passthrough, the client's own login) ───
 write_plan_topology() {
@@ -87,6 +96,24 @@ extra_headers = { anthropic-version = "2023-06-01" }
 id = "claude-sonnet-5"
 label = "Claude Sonnet 5 (mock)"
 context_window = 200000
+
+[providers.anthropool]
+dialect = "anthropic-passthrough"
+base_url = "http://127.0.0.1:$POOL_MOCK_PORT"
+auth = { kind = "client" }
+extra_headers = { anthropic-version = "2023-06-01" }
+[[providers.anthropool.models]]
+id = "claude-sonnet-5"
+label = "Claude Sonnet 5 (mock)"
+context_window = 200000
+
+[heads.planpool]
+provider = "anthropool"
+port = $POOL_HEAD_PORT
+discovery_prefix = "claude-planpool--"
+pinned_model = "claude-sonnet-5"
+[heads.planpool.claude]
+command = "claude-planpool"
 
 [heads.planlimit]
 provider = "anthro"
@@ -119,6 +146,20 @@ install_plan() {
 }
 step "install.sh from artifacts: claude-planlimit linked" install_plan
 
+# Full synthetic Claude sign-in, private from its first byte. The caller is the first login;
+# one splice-owned folder adds exactly one other login. Future expiry prevents refresh traffic.
+pool_login() {
+  local folder
+  folder="$(resolve_state_dir)/claude-accounts/planpool/two"
+  ( umask 077
+    mkdir -p "$folder" || exit 1
+    chmod 0700 "$folder" || exit 1
+    printf '%s\n' '{"claudeAiOauth":{"accessToken":"synthetic-two","refreshToken":"synthetic-refresh","expiresAt":4102444800000,"scopes":["user:inference","user:profile"]}}' > "$folder/.credentials.json"
+    printf '%s\n' '{"oauthAccount":{"accountUuid":"00000000-0000-0000-0000-000000000002","emailAddress":"synthetic@example.invalid"}}' > "$folder/.claude.json"
+  )
+}
+step "two synthetic sign-ins: caller and one private account folder" pool_login
+
 plan_cold_start() {
   splice restart </dev/null || return 1
   wait_health 60 || return 1
@@ -141,6 +182,23 @@ plan_recipe() {
   grep -q '"CLAUDE_CODE_RETRY_WATCHDOG":"1"' "$PLAN_RECIPE" || { echo "persistent retry is not planted"; return 1; }
 }
 step "launch recipe: persistent retry planted" plan_recipe
+
+# The same real-client request must move to the folder login before it hears any native refusal.
+# Bound a red at 25 s; the first login resets two hours out, so sleeping is never mistaken for success.
+pool_turn() {
+  local rc started ended
+  started=$(date +%s%3N)
+  ANTHROPIC_AUTH_TOKEN=synthetic-one ANTHROPIC_API_KEY="" DISABLE_AUTOUPDATER=1 DISABLE_TELEMETRY=1 \
+    DISABLE_ERROR_REPORTING=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
+    timeout 25 claude-planpool -p "Say hello." --output-format stream-json --verbose </dev/null \
+    > "$OUT/pool-client.jsonl" 2> "$OUT/pool-client.err"
+  rc=$?
+  ended=$(date +%s%3N)
+  mkdir -p "$OUT/pool-transcripts"
+  find -L "$HOME/.claude-planpool/projects" -name '*.jsonl' -exec cp {} "$OUT/pool-transcripts/" \; 2>/dev/null
+  bun "$PLAN_TS" pooled "$OUT/upstream-pool.jsonl" "$OUT/pool-client.jsonl" "$OUT/pool-transcripts" "$started" "$ended" "$rc"
+}
+step "real Claude Code: same request completes on the next login without hearing 429" pool_turn
 
 # ── 4. native HTTP 429: unchanged wire, one attempt, local follower, bounded re-probe ───────────
 step "native 429: verbatim headers and body, one attempt without proxy retries" \

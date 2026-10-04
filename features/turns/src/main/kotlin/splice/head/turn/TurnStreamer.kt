@@ -120,7 +120,7 @@ internal class TurnStreamer(
                 channel.connectionClosed(turnJob)
             }
             try {
-                respondPending(call, pending, running, inputs)
+                respondPending(call, pending, running, drive)
                 running.await()
             } catch (cancelled: CancellationException) {
                 if (recording == null) {
@@ -144,20 +144,20 @@ internal class TurnStreamer(
         commitProgress = !provider.relayRateLimitReplies,
     )
 
-    private fun applyQuotaHeaders(call: ApplicationCall, inputs: TurnInputs) {
-        val quota = deps.turnQuota.forSession(inputs.built.meta.sessionId, inputs.account)
-        quota?.clientHeaders()?.forEach { (name, value) -> call.response.header(name, value) }
+    private fun applyQuotaHeaders(call: ApplicationCall, drive: TurnDrive) {
+        drive.accountHandoff?.commit()
+        drive.quota?.clientHeaders()?.forEach { (name, value) -> call.response.header(name, value) }
     }
 
     private suspend fun respondPending(
         call: ApplicationCall,
         pending: PendingSse,
         running: Deferred<Boolean>,
-        inputs: TurnInputs,
+        drive: TurnDrive,
     ) {
         when (val choice = pending.decide()) {
             PendingSse.Decision.Stream -> {
-                applyQuotaHeaders(call, inputs)
+                applyQuotaHeaders(call, drive)
                 call.respond(
                     SseResponse { out ->
                         pending.attach(out)

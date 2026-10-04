@@ -13,7 +13,8 @@
  *
  *  Contract as lib.ts: evidence on stdout and exit 0, or the reason and exit 1.
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 
 class CheckFailed extends Error {}
 
@@ -109,6 +110,31 @@ const verbs: Record<string, (argv: readonly string[]) => Promise<void> | void> =
     check(attempts.length === 2, `the buffered re-probe made ${attempts.length - 1} attempts, expected one`);
     nativeReply(third, attempts[1], "THIRD");
     console.log("native 429 contract: one observer attempt, zero follower attempts, one bounded re-probe");
+  },
+
+  pooled(argv) {
+    const [log, client, transcripts, started, ended, exit] = argv;
+    check(log && client && transcripts && started && ended && exit, "usage: pooled <log> <client> <transcripts> <start-ms> <end-ms> <exit>");
+    const rows = readFileSync(log, "utf8").trim().split("\n").filter(Boolean)
+      .map(line => JSON.parse(line) as Record<string, unknown>).filter(row => row["path"] === "/v1/messages");
+    check(rows.length === 2, `pooled request made ${rows.length} attempts, expected one per login`);
+    const [first, second] = rows;
+    check(first?.["login"] === "one" && first["status"] === 429, "the first login did not meet its native plan limit");
+    check(second?.["login"] === "two" && second["status"] === 200, "the same request did not reach the free second login");
+    check(Number(first["reset_at_s"]) * 1000 > Number(ended) + 7_100_000, "the first login was not limited two hours out");
+    check(typeof first["request_sha256"] === "string" && first["request_sha256"] === second["request_sha256"],
+      "handoff changed the prepared request bytes");
+    check(exit === "0" && Number(ended) - Number(started) < 25_000, "the real client slept or failed rather than completing");
+    const output = readFileSync(client, "utf8");
+    check(output.includes("completed on the next login"), "the real client did not receive the second login's answer");
+    const files = readdirSync(transcripts).filter(path => path.endsWith(".jsonl"));
+    check(files.length > 0, "the real client transcript is absent");
+    for (const text of [output, ...files.map(path => readFileSync(join(transcripts, path), "utf8"))]) {
+      check(!text.includes('"api_error"') && !text.includes('"retryInMs"') && !text.includes('"rate_limit_error"')
+        && !text.includes('"api_retry"') && !text.includes('"retry_delay_ms"'),
+        "a rate-limit refusal or retry wait reached the client");
+    }
+    console.log("pooled request: one then two, identical bytes, completed in seconds, no client rate-limit error PASS");
   },
 
   upstream(argv) {

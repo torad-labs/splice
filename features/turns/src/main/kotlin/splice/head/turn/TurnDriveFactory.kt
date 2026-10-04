@@ -7,9 +7,11 @@
 // TurnDriver owns across every turn (cumulative counting), not a per-turn dependency.
 package splice.head.turn
 
+import splice.core.auth.ClientAuthProvider
 import splice.core.perf.PerfKeys
 import splice.head.HeadDeps
 import splice.head.HeadHealthCounters
+import splice.head.transport.TurnAccountHandoff
 import splice.head.wire.ClientChannel
 import splice.head.wire.TurnTerminal
 import splice.upstream.Provider
@@ -66,6 +68,8 @@ internal class TurnDriveFactory(
             remainingTurnWait = remainingTurnWait,
             quota = inputs.quota,
         ).also { drive ->
+            drive.fallbackAccountLabel = if (provider.auth is ClientAuthProvider) "claude-code" else "primary"
+            drive.accountHandoff = deps.quotaBundle.accountPool?.let { TurnAccountHandoff(it, deps.turnQuota) }
             drive.sourceRoundStarted = TurnDrive.SourceRoundStarted { job -> deps.liveTurns.driving(inputs.slot, job) }
         }
     }

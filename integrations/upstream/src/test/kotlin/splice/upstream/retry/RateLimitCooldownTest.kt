@@ -19,6 +19,7 @@ import splice.core.perf.TurnPerf
 import splice.core.util.ElapsedClock
 import splice.core.util.LocalTimeText
 import splice.core.util.WallClock
+import splice.core.wire.RateLimitReply
 import splice.upstream.RetryNotice
 import splice.upstream.Waiter
 import splice.upstream.transport.PostContext
@@ -660,6 +661,50 @@ class RateLimitCooldownBudgetTest {
 }
 
 class RateLimitCooldownOuterTurnTest {
+    @Test
+    fun `a native hold armed during the cooldown check remains a pooled refusal value`() = runTest {
+        lateinit var cooldown: RateLimitCooldown
+        var armOnRead = true
+        val reply = RateLimitReply("synthetic concurrent native refusal", emptyMap())
+        cooldown = RateLimitCooldown(
+            ElapsedClock {
+                if (armOnRead) {
+                    armOnRead = false
+                    cooldown.rateLimitReply = reply
+                    cooldown.arm(30_000L)
+                }
+                0L
+            },
+        )
+        val calls = AtomicInteger()
+        val http = HttpClient(
+            MockEngine {
+                calls.incrementAndGet()
+                respond("must not be sent", HttpStatusCode.OK, headersOf())
+            },
+        )
+        val client = UpstreamClient(
+            totalTimeoutMs = 60_000L,
+            maxRetries = 3,
+            client = http,
+            clock = ElapsedClock { 0L },
+        )
+        val context = PostContext(
+            url = "https://api.example.test/v1",
+            auth = auth,
+            extraHeaders = { emptyMap() },
+            rateLimitCooldown = cooldown,
+        ).also { it.relayRateLimitReplies = true }
+        try {
+            val refusal = client.post(context, "{}") { "unreachable" } as UpstreamPost.Refused
+            assertEquals(reply, refusal.failure.rateLimitReply)
+            assertTrue(refusal.failure.localHold)
+            assertEquals(0, calls.get(), "the raced native hold must reach the handoff caller without an upstream send")
+        } finally {
+            http.close()
+        }
+    }
+
     private val auth = object : RefreshableAuthProvider {
         override suspend fun credentials(): Credentials = Credentials.Bearer("test")
         override suspend fun refresh(): Credentials? = null

@@ -33,7 +33,7 @@ public sealed class Selection {
     }
 }
 
-/** A head-local OAuth account pool. A returned [AccountSelection] is immutable for the whole turn. */
+/** A head-local OAuth account pool. Each selection owns one immutable login choice and its probe lease. */
 public class AccountPool(
     accounts: List<PoolAccount>,
     private val now: WallClock,
@@ -82,10 +82,10 @@ public class AccountPool(
         require(accounts.count(PoolAccount::primary) == 1) { "account pool must have exactly one primary" }
     }
 
-    /** Chooses once at the turn boundary. Null sessions re-evaluate policy without becoming sticky.
-     *  Returns [Selection.Chosen] with the turn's immutable choice, or [Selection.Exhausted] when no
-     *  account can start a turn — an ordinary, expected refusal, so it is a value, not a throw. */
-    public fun select(sessionId: String?): Selection {
+    /** Chooses before acceptance. Null sessions re-evaluate policy without becoming sticky.
+     *  Nonempty [excluded] skips refused logins and permits only a free login, never a held fallback.
+     *  Returns [Selection.Chosen] with an immutable choice, or [Selection.Exhausted] as a refusal value. */
+    public fun select(sessionId: String?, excluded: Set<String> = emptySet()): Selection {
         require(sessionId == null || sessionId.isNotBlank()) { "session id must not be blank" }
         val at = now()
         // Credential evidence is read (and hashed) OUTSIDE the sticky-session monitor: the lock only
@@ -95,13 +95,13 @@ public class AccountPool(
         accounts.forEach { it.refreshCredentialEvidence() }
         if (sessionId == null) {
             return synchronized(statelessLock) {
-                val chosen = selected(statelessPrevious, at, sticky = false)
+                val chosen = selected(statelessPrevious, at, sticky = false, excluded)
                 chosen.second?.let { statelessPrevious = it }
                 chosen.first
             }
         }
         return synchronized(sessions) {
-            val chosen = selected(sessions[sessionId], at, sticky = true)
+            val chosen = selected(sessions[sessionId], at, sticky = true, excluded)
             chosen.second?.let { session ->
                 sessions[sessionId] = session
                 if (sessions.size > MAX_TRACKED_SESSIONS) sessions.remove(sessions.keys.first())
@@ -114,8 +114,9 @@ public class AccountPool(
         previous: SessionAccount?,
         at: Long,
         sticky: Boolean,
+        excluded: Set<String>,
     ): Pair<Selection, SessionAccount?> {
-        val chosen = choose(if (sticky) previous?.label else null, at)
+        val chosen = choose(if (sticky) previous?.label else null, at, excluded)
             ?: return Selection.Exhausted(AccountAvailability.earliestReset(accounts, at)) to null
         // A new session starts relative to primary even when its credential is missing: choosing
         // a backup is cache-cold on that first turn and updates the head-wide last-switch notice.
@@ -219,10 +220,11 @@ public class AccountPool(
     /** The first free login in [candidates] order. When every selectable login is held on its plan, the one whose
      *  reset is nearest: its turn is answered with that login's own refusal while its horizon is armed, and is the
      *  probe that notices a top-up once it lifts (V4-47), exactly as a head with one login behaves. */
-    private fun choose(previousLabel: String?, at: Long): ChosenAccount? {
-        val order = candidates(previousLabel)
+    private fun choose(previousLabel: String?, at: Long, excluded: Set<String>): ChosenAccount? {
+        val order = candidates(previousLabel).filter { it.label !in excluded }
         val free = order.filter { AccountAvailability.available(it, at) }
-        return free.ifEmpty { AccountAvailability.nearestHeld(order, at) }.firstNotNullOfOrNull { acquire(it, at) }
+        val eligible = if (excluded.isEmpty()) free.ifEmpty { AccountAvailability.nearestHeld(order, at) } else free
+        return eligible.firstNotNullOfOrNull { acquire(it, at) }
     }
 
     private fun acquire(account: PoolAccount, at: Long): ChosenAccount? =
@@ -288,12 +290,16 @@ private object AccountAvailability {
      *  provider (operator ruling, Oct 3): a held login stays held until the reset it named, so the next turn of the
      *  same command goes to the next login, and a restart restores the hold with the rest of the provider's word. */
     fun available(account: PoolAccount, at: Long): Boolean =
-        selectable(account, at) && account.cooldown.planHold.live() == null
+        selectable(account, at) && account.cooldown.planHold.live() == null &&
+            (account.cooldown.rateLimitReply == null || account.cooldown.remainingMs() <= 0L)
 
     /** The logins held on their plan that could otherwise serve, nearest reset first; ties keep [order]. */
     fun nearestHeld(order: List<PoolAccount>, at: Long): List<PoolAccount> =
-        order.filter { it.cooldown.planHold.live() != null && selectable(it, at) }
-            .sortedBy { it.cooldown.providerUnavailableForMs() }
+        order.filter { account ->
+            val held = account.cooldown.planHold.live() != null ||
+                (account.cooldown.rateLimitReply != null && account.cooldown.remainingMs() > 0L)
+            held && account.credentialStatus(at).selectable && account.cooldown.unavailableForMs() <= 0L
+        }.sortedBy { maxOf(it.cooldown.providerUnavailableForMs(), it.cooldown.remainingMs()) }
 
     private fun selectable(account: PoolAccount, at: Long): Boolean {
         val runtimeUnavailable = account.cooldown.unavailableForMs() > 0L
@@ -308,6 +314,8 @@ private object AccountAvailability {
         val plan = account.cooldown.planHold.live()
         return when {
             plan != null -> AccountSwitchReason.planLimit(plan.windowWords)
+            account.cooldown.rateLimitReply != null && account.cooldown.remainingMs() > 0L ->
+                AccountSwitchReason.PROVIDER_LIMIT
             account.cooldown.unavailableForMs() > 0L -> AccountSwitchReason.WAIT_BUDGET
             exhausted(quota?.fiveHour, at) -> AccountSwitchReason.FIVE_HOUR_QUOTA
             exhausted(quota?.sevenDay, at) -> AccountSwitchReason.SEVEN_DAY_QUOTA

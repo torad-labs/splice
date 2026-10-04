@@ -1,9 +1,9 @@
 // NEW: failover within one provider, driven through a real head (operator ruling, Oct 3, 3:44 PM CT: "when one hits its
 // limit the same command moves to the next in the order Accounts sets"). A passthrough head with three synthetic logins
 // in a pool, over a local upstream that refuses a login with a native 429 naming its spent plan window. The turn that
-// meets the 429 hands the client that native reply; the same session's next turn reaches the next login in the order,
-// with no restart and nothing done by the client. With every login held, the client gets the native refusal of the
-// login whose reset is nearest, replayed at admission with no upstream request: splice adds no retry of its own.
+// meets the 429 moves the same request to the next free login before the client hears any refusal. Later turns stay
+// on the serving login. With every login held, admission replays the nearest-reset login's native refusal locally.
+// No login is retried within a request, and splice adds no retry words.
 package splice.head.admission
 
 import com.sun.net.httpserver.HttpServer
@@ -17,6 +17,9 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -29,13 +32,17 @@ import splice.core.model.ModelEntry
 import splice.core.turn.WatchdogBudget
 import splice.core.usage.PlanLimit
 import splice.core.usage.QuotaHeaderRead
+import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.dialect.anthropic.PassthroughProvider
 import splice.dialect.anthropic.PassthroughQuirks
+import splice.head.HeadDeps
 import splice.head.HeadServer
 import splice.head.headDeps
+import splice.head.headStores
+import splice.head.perf.PerfStats
 import splice.head.quotaFor
 import splice.upstream.ProviderTuning
 import splice.upstream.credentials.AccountPool
@@ -46,6 +53,7 @@ import splice.upstream.retry.InflightGate
 import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.transport.UpstreamClient
 import java.net.InetSocketAddress
+import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.time.Duration.Companion.seconds
@@ -58,22 +66,58 @@ class PoolFailoverTurnTest {
     lateinit var directory: Path
 
     @Test
-    fun `the login that hits its limit hands the client its refusal, and the same command's next turn uses the next`() =
-        runBlocking {
-            val rig = FailoverRig(directory, limited = mapOf("one" to 2 * HOUR_S))
-            rig.start()
-            try {
-                val first = rig.turn()
-                assertEquals(HttpStatusCode.TooManyRequests, first.first)
-                assertEquals(refusal("one"), first.second, "the native reply, untouched")
-                val second = rig.turn()
-                assertEquals(HttpStatusCode.OK, second.first)
-                assertEquals(HttpStatusCode.OK, rig.turn().first)
-                assertEquals(listOf("one", "two", "two"), rig.requests)
-            } finally {
-                rig.close()
-            }
+    fun `the same streamed request moves from the plan-limited login to the next free login`() = runBlocking {
+        val rig = FailoverRig(directory, limited = mapOf("one" to 2 * HOUR_S))
+        rig.start()
+        try {
+            val first = rig.turn()
+            assertEquals(HttpStatusCode.OK, first.first, "no native refusal reaches the client while a login is free")
+            assertEquals(listOf("one", "two"), rig.requests, "one attempt on each login within the same request")
+            assertEquals(rig.bodies[0], rig.bodies[1], "handoff sends the exact prepared request bytes")
+            assertEquals("5-hour plan limit reached", rig.switchReason())
+            assertEquals(HttpStatusCode.OK, rig.turn().first)
+            assertEquals(listOf("one", "two", "two"), rig.requests)
+        } finally {
+            rig.close()
         }
+    }
+
+    @Test
+    fun `the same buffered request moves to the next free login without a rate limit answer`() = runBlocking {
+        val rig = FailoverRig(directory, limited = mapOf("one" to 2 * HOUR_S))
+        rig.start()
+        try {
+            assertEquals(HttpStatusCode.OK, rig.turn(stream = false).first)
+            assertEquals(listOf("one", "two"), rig.requests)
+        } finally {
+            rig.close()
+        }
+    }
+
+    @Test
+    fun `a forwarded single login records its stable label and never retries its native refusal`() = runBlocking {
+        val rig = FailoverRig(directory, limited = mapOf("one" to 2 * HOUR_S), pooled = false)
+        rig.start()
+        try {
+            assertEquals(HttpStatusCode.TooManyRequests, rig.turn().first)
+            assertEquals(listOf("one"), rig.requests)
+            assertEquals("claude-code", rig.lastAccount())
+        } finally {
+            rig.close()
+        }
+    }
+
+    @Test
+    fun `the usage row names the login that served the same request`() = runBlocking {
+        val rig = FailoverRig(directory, limited = mapOf("one" to 2 * HOUR_S))
+        rig.start()
+        try {
+            rig.turn()
+            assertEquals("two", rig.lastAccount(), "usage is attributed to the serving login, not the refused one")
+        } finally {
+            rig.close()
+        }
+    }
 
     @Test
     fun `with every login held the client gets the native refusal of the login whose reset is nearest`() =
@@ -82,7 +126,7 @@ class PoolFailoverTurnTest {
             val rig = FailoverRig(directory, limited = resets)
             rig.start()
             try {
-                repeat(3) { assertEquals(HttpStatusCode.TooManyRequests, rig.turn().first) }
+                assertEquals(HttpStatusCode.TooManyRequests, rig.turn().first)
                 assertEquals(listOf("one", "two", "three"), rig.requests, "each login meets its own limit once")
 
                 val held = rig.turn()
@@ -111,13 +155,14 @@ private class SyntheticLogin(private val token: String) : RefreshableAuthProvide
 }
 
 /** [limited] names each login the upstream refuses and how far out its five-hour reset is. */
-private class FailoverRig(directory: Path, private val limited: Map<String, Long>) {
+private class FailoverRig(directory: Path, private val limited: Map<String, Long>, pooled: Boolean = true) {
     val requests = CopyOnWriteArrayList<String>()
+    val bodies = CopyOnWriteArrayList<String>()
     private val labels = listOf("one", "two", "three")
     private val logins = labels.associateWith(::SyntheticLogin)
     private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
         createContext("/v1/messages") { request ->
-            request.requestBody.use { it.readBytes() }
+            bodies += request.requestBody.use { it.readBytes().decodeToString() }
             val login = request.requestHeaders.getFirst("Authorization").orEmpty().removePrefix("Bearer ")
             requests += login
             val resetIn = limited[login]
@@ -157,6 +202,7 @@ private class FailoverRig(directory: Path, private val limited: Map<String, Long
         WallClock { System.currentTimeMillis() },
     ).also { it.order = labels }
     private val providerClient = HttpClient(CIO)
+    private val perfFile = directory.resolve("perf.jsonl")
     private val head = HeadServer(
         PassthroughProvider(
             ProviderTuning(
@@ -168,7 +214,7 @@ private class FailoverRig(directory: Path, private val limited: Map<String, Long
                     defaultContextWindow = 200_000,
                 ),
                 pinnedModel = "model",
-                auth = logins.getValue("one"),
+                auth = if (pooled) logins.getValue("one") else ClientAuthProvider("synthetic"),
                 baseUrl = "http://127.0.0.1:${server.address.port}",
                 watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
             ),
@@ -179,22 +225,31 @@ private class FailoverRig(directory: Path, private val limited: Map<String, Long
             tmp = directory,
             upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 4, client = providerClient),
             gate = InflightGate(maxInflight = { 4 }, maxQueued = { 4 }),
-            quota = quotaFor(null, pool),
-        ),
+            quota = quotaFor(null, if (pooled) pool else null),
+            policy = HeadDeps.HeadPolicy(forwardClientAuth = true),
+        ).copy(stores = headStores(directory).copy(perfStats = PerfStats(perfFile))),
     )
-    private val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
+    private val client = HttpClient(CIO) { defaultRequest { bearerAuth("one") } }
 
     suspend fun start() = head.start()
 
-    suspend fun turn(): Pair<HttpStatusCode, String> {
+    suspend fun turn(stream: Boolean = true): Pair<HttpStatusCode, String> {
         val response = client.post("http://127.0.0.1:${head.port}/v1/messages") {
             header("Content-Type", "application/json")
             header("x-claude-code-session-id", SESSION)
             setBody(
-                """{"model":"synthetic--model","stream":true,"max_tokens":16,"messages":[{"role":"user","content":"go"}]}""",
+                """{"model":"synthetic--model","stream":$stream,"max_tokens":16,"messages":[{"role":"user","content":"go"}]}""",
             )
         }
         return response.status to response.bodyAsText()
+    }
+
+    fun switchReason(): String? = pool.view(SESSION).lastSwitch?.reason
+
+    fun lastAccount(): String? {
+        check(AsyncFileIo.drain())
+        val row = Files.readAllLines(perfFile).last()
+        return Json.parseToJsonElement(row).jsonObject["account"]?.jsonPrimitive?.content
     }
 
     suspend fun close() {

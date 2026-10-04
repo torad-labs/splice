@@ -122,7 +122,7 @@ internal class CollectTurn(
     ) {
         val headers = nativeReply?.headers
         if (headers == null) {
-            turnQuota.forSession(inputs.built.meta.sessionId, inputs.account)
+            turnQuota.forSession(inputs.built.meta.sessionId, drive.account)
                 ?.clientHeaders()?.forEach { (name, value) -> call.response.header(name, value) }
         } else {
             headers.forEach { (name, values) -> values.forEach { call.response.header(name, it) } }

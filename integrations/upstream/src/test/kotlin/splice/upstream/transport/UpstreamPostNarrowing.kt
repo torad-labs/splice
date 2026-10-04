@@ -13,5 +13,6 @@ internal suspend fun <T> UpstreamClient.posted(
     block: UpstreamHandler<T>,
 ): T = when (val posted = post(ctx, bodyJson, block)) {
     is UpstreamPost.Delivered -> posted.value
+    is UpstreamPost.Refused -> throw posted.failure
     UpstreamPost.TurnWaitExhausted -> error("the turn-wait budget refused a post this test expected to go out")
 }

@@ -155,29 +155,25 @@ public class UpstreamClient(
     ): UpstreamPost<T> {
         // Encode ONCE; retries resend the same bytes (no per-attempt string re-encode). Never gzip.
         var body = request.body(bodyJson)
-        val state = RetryState()
+        val state = RetryState(ctx.rateLimitCooldown ?: cooldown)
         val t0 = clock()
         while (state.attempt < maxRetries) {
             when (val step = runAttempt(ctx, body, state, t0, block)) {
-                is LoopStep.Done -> return UpstreamPost.Delivered(step.value)
+                is LoopStep.Done -> return step.result
                 is LoopStep.Amend -> body = request.body(step.bodyJson)
                 LoopStep.Continue -> Unit
-                // V4-114: the one refusal this loop DECIDES rather than suffers, so it rides the
-                // return type instead of a thrown UpstreamTurnWaitExhausted the caller had to know
-                // to catch by name. giveUp below still throws: that is the upstream's failure.
                 LoopStep.TurnWaitExhausted -> return UpstreamPost.TurnWaitExhausted
             }
         }
-        return retryRules.giveUp(state.lastErr, activeCooldown(ctx, state), state.attempt, ctx.onRetry)
+        return retryRules.giveUp(state.lastErr, state.cooldown, state.attempt, ctx.onRetry)
     }
 
     /** Mutable loop state threaded through [runAttempt] — extracted (with it) so `post()` stays
      *  under detekt's LongMethod/CyclomaticComplexMethod ceilings (G4d follow-up to bb8553f). */
-    private class RetryState {
+    private class RetryState(var cooldown: RateLimitCooldown) {
         var attempt: Int = 0
         var refreshedOnce: Boolean = false
         var lastErr: RetryOutcome.Failed? = null
-        var cooldown: RateLimitCooldown? = null
 
         // V4-174: every SEND, whichever budget paid for it (a backoff attempt, the refresh's free
         // retry, a G5 reissue, the RC-4 amended resend) — the ordinal the wire observer sees.
@@ -239,7 +235,7 @@ public class UpstreamClient(
     }
 
     private sealed class LoopStep<out T> {
-        data class Done<T>(val value: T) : LoopStep<T>()
+        data class Done<T>(val result: UpstreamPost<T>) : LoopStep<T>()
         data class Amend(val bodyJson: String) : LoopStep<Nothing>()
         data object Continue : LoopStep<Nothing>()
 
@@ -265,19 +261,19 @@ public class UpstreamClient(
                 "upstream retry deadline exceeded (${totalTimeoutMs}ms budget) before attempt " +
                     "${state.attempt + 1}/$maxRetries",
             )
-            retryRules.giveUp(state.lastErr, activeCooldown(ctx, state), state.attempt, ctx.onRetry)
+            retryRules.giveUp(state.lastErr, state.cooldown, state.attempt, ctx.onRetry)
         }
         if (turnWaitExhausted(ctx)) {
             ctx.onRetry(
                 "upstream turn wait budget exhausted before attempt ${state.attempt + 1}/$maxRetries",
             )
             if (state.lastErr != null) {
-                retryRules.giveUp(state.lastErr, activeCooldown(ctx, state), state.attempt, ctx.onRetry)
+                retryRules.giveUp(state.lastErr, state.cooldown, state.attempt, ctx.onRetry)
             }
             return LoopStep.TurnWaitExhausted
         }
         val auth = state.credentials(ctx, credentialCooldowns, cooldown)
-        activeCooldown(ctx, state).failFastIfArmed(ctx.onRetry)
+        retryRules.nativeHold(ctx, state.cooldown)?.let { return LoopStep.Done(UpstreamPost.Refused(it)) }
         ctx.markAttempt()
         val recorder = state.recorderFor(ctx, body, clock)
         var streamHandedOff = false
@@ -302,38 +298,36 @@ public class UpstreamClient(
         }
         val transportError = attempted.exceptionOrNull()
         state.report(ctx, recorder, transportError)
-        if (transportError != null) {
-            return onTransportError(transportError, ctx, streamHandedOff, state, t0)
-        }
-        val outcome = attempted.getOrThrow()
-        // RetryOutcome is SEALED, so this is an exhaustive match rather than a guard plus a
-        // check() — and folding the two arms into one `when` keeps the function inside detekt's
-        // ReturnCount budget of 3 (the transport guard above spends one of them). Behaviour is
-        // unchanged: only the Done arm skips `lastErr`, exactly as the early return did.
+        val outcome = attempted.getOrNull()
+        // Exhaustively dispatch the attempt's delivered value, HTTP failure, or transport error.
         return when (outcome) {
+            null -> onTransportError(checkNotNull(transportError), ctx, streamHandedOff, state, t0)
             is RetryOutcome.Done -> {
-                LoopStep.Done(outcome.value)
+                LoopStep.Done(UpstreamPost.Delivered(outcome.value))
             }
-            is RetryOutcome.Failed -> {
-                state.lastErr = outcome
-                // RC-4: a one-shot content amendment outranks the normal retry plan — a
-                // deterministic 400 (stale encrypted reasoning) would otherwise GIVE_UP; the
-                // amended body gets exactly one immediate resend, then normal classification owns
-                // whatever happens next.
-                state.amendStep(ctx, outcome, body.json) ?: planStep(ctx, outcome, state, t0)
-            }
+            is RetryOutcome.Failed -> failedStep(ctx, outcome, body, state, t0)
         }
     }
 
-    /** The transport-error half of one attempt (split so [runAttempt] stays under the complexity
-     *  ceiling — same reasoning as planRetry/statusPlan). G5: a stream torn BEFORE the client saw a
-     *  byte re-issues on its own small budget (does NOT consume `attempt`); otherwise the pre-G5
-     *  rule holds — retry on the backoff budget only before handoff, else rethrow.
-     *
-     *  V4-66: the RETHROW below is now decided by the two give-up gates alone, never by the
-     *  failure's class — see TransportFailures.rethrowUnlessRetryableTransport. An unclassified
-     *  throwable takes the POST_SEND branch, so it gets the possible-duplicate label and the
-     *  double-burn marker rather than an early exit. */
+    /** Native pooled refusal leaves as a value before any consume callback; ordinary failures keep their retry policy. */
+    private suspend fun failedStep(
+        ctx: PostContext,
+        failed: RetryOutcome.Failed,
+        body: RequestBody,
+        state: RetryState,
+        t0: Long,
+    ): LoopStep<Nothing> {
+        state.lastErr = failed
+        return if (ctx.nativePool && failed.rateLimitReply != null) {
+            val failure = retryRules.rateLimitFailure(failed, state.cooldown, state.sent, ctx.onRetry)
+            LoopStep.Done(UpstreamPost.Refused(failure))
+        } else {
+            state.amendStep(ctx, failed, body.json) ?: planStep(ctx, failed, state, t0)
+        }
+    }
+
+    /** The transport-error half of one attempt. A pre-client tear has its own reissue budget;
+     *  otherwise the two give-up gates retain the existing pre-handoff transport retry policy. */
     private suspend fun onTransportError(
         e: Throwable,
         ctx: PostContext,
@@ -392,11 +386,11 @@ public class UpstreamClient(
                 "upstream retry deadline exceeded (${totalTimeoutMs}ms budget) before backoff, " +
                     "attempt ${state.attempt + 1}/$maxRetries",
             )
-            retryRules.giveUp(state.lastErr, activeCooldown(ctx, state), state.attempt, ctx.onRetry)
+            retryRules.giveUp(state.lastErr, state.cooldown, state.attempt, ctx.onRetry)
         }
         val plannedDelayMs = maxOf(plan.minDelayMs, retryBackoffCeilingMs(state.attempt))
         if (!backoffFits(ctx, t0, plannedDelayMs)) {
-            retryRules.giveUp(state.lastErr, activeCooldown(ctx, state), state.attempt, ctx.onRetry)
+            retryRules.giveUp(state.lastErr, state.cooldown, state.attempt, ctx.onRetry)
         }
         ctx.timedBackoff { backoff(state.attempt, plan.minDelayMs) }
         state.attempt += 1
@@ -463,7 +457,7 @@ public class UpstreamClient(
             state.attempt,
             state.refreshedOnce,
             RateLimitTurn(
-                cooldown = activeCooldown(ctx, state),
+                cooldown = state.cooldown,
                 pooledAccount = ctx.rateLimitCooldown != null,
             ),
         )
@@ -473,15 +467,12 @@ public class UpstreamClient(
             RetryDecision.BACKOFF -> applyBackoff(ctx, plan, state, t0)
             RetryDecision.GIVE_UP -> retryRules.giveUp(
                 state.lastErr,
-                activeCooldown(ctx, state),
+                state.cooldown,
                 state.attempt,
                 ctx.onRetry,
             )
         }
     }
-
-    private fun activeCooldown(ctx: PostContext, state: RetryState): RateLimitCooldown =
-        state.cooldown ?: ctx.rateLimitCooldown ?: cooldown
 }
 
 /**
@@ -497,6 +488,9 @@ public class UpstreamClient(
  * (StreamTornBeforeClient) — see the dated dispositions in UpstreamErrors.kt.
  */
 public sealed class UpstreamPost<out T> {
+    /** Native pooled refusal before stream handoff. The caller may switch credentials, never resend this login. */
+    public data class Refused(public val failure: UpstreamFailed) : UpstreamPost<Nothing>()
+
     /** The upstream answered and [value] is what the caller's handler made of it. */
     public data class Delivered<T>(public val value: T) : UpstreamPost<T>()
 

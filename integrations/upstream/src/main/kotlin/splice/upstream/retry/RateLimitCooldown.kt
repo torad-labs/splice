@@ -215,18 +215,24 @@ public class RateLimitCooldown public constructor(
      *  it must be captured at ARM time, the only place both the 429 body and this cooldown are in
      *  scope — so this message claims nothing it cannot support. */
     public fun failFastIfArmed(onRetry: RetryNotice) {
-        val remainingMs = rateLimitedUntilMs.get() - clock()
+        heldFailure(onRetry)?.let { throw it }
+    }
+
+    /** One hold decision. Pooled native callers may route this value without catching an exception. */
+    public fun heldFailure(onRetry: RetryNotice): UpstreamFailed? {
+        val at = clock()
+        val remainingMs = rateLimitedUntilMs.get() - at
         if (remainingMs <= 0) {
             // V4-233: the clamp lifted while a plan window is still named spent, so this turn is the
             // re-probe V4-47 keeps, and the log says which one it is.
             planHold.live()?.let { plan ->
                 onRetry("plan hold: probing upstream ${planHold.forMs()}ms before the named ${plan.claim} reset")
             }
-            return
+            return null
         }
         onRetry("rate-limit cooldown active (${remainingMs}ms remaining): failing fast, no upstream attempt")
         rateLimitReply?.let { reply ->
-            throw UpstreamFailed(reply.body, reply.status, planLimit = planHold.live(), localHold = true)
+            return UpstreamFailed(reply.body, reply.status, planLimit = planHold.live(), localHold = true)
                 .also { it.rateLimitReply = reply }
         }
         val waitS = (remainingMs + MS_PER_S - 1) / MS_PER_S
@@ -267,7 +273,7 @@ public class RateLimitCooldown public constructor(
         // shape the classifier reads. It no longer can.
         val body = ErrorEnvelope.of("rate_limit_error", detail).toString()
         // V4-419: a follower held behind a named plan window carries it, as the turn that met the 429 does.
-        throw UpstreamFailed(body, HttpStatus.TOO_MANY_REQUESTS, planLimit = plan, localHold = true)
+        return UpstreamFailed(body, HttpStatus.TOO_MANY_REQUESTS, planLimit = plan, localHold = true)
     }
 
     /** Every 429 with retry budget left is WAITED OUT and retried here in splice — a short
@@ -353,7 +359,12 @@ public class RateLimitCooldown public constructor(
             "429 rate limit: Retry-After header $header, " +
                 "arming ${minOf(pushback, MAX_RATE_LIMIT_COOLDOWN_MS)}ms follower protection",
         )
-        noticeClamp(pushback, onRetry)
+        if (pushback > MAX_RATE_LIMIT_COOLDOWN_MS) {
+            onRetry(
+                "429 Retry-After ${pushback}ms exceeds the cooldown ceiling; " +
+                    "arming ${MAX_RATE_LIMIT_COOLDOWN_MS}ms follower protection",
+            )
+        }
         val providerWaitExceeded = pushbackMs != null && pushback > RETRY_AFTER_GIVE_UP_MS
         if (turn.pooledAccount && providerWaitExceeded) {
             markUnavailable(pushback)
@@ -361,14 +372,6 @@ public class RateLimitCooldown public constructor(
         }
         arm(pushback)
         return RetryPlan(RetryDecision.GIVE_UP, nextRefreshed)
-    }
-
-    private fun noticeClamp(pushbackMs: Long, onRetry: RetryNotice) {
-        if (pushbackMs <= MAX_RATE_LIMIT_COOLDOWN_MS) return
-        onRetry(
-            "429 Retry-After ${pushbackMs}ms exceeds the cooldown ceiling; " +
-                "arming ${MAX_RATE_LIMIT_COOLDOWN_MS}ms follower protection",
-        )
     }
 }
 

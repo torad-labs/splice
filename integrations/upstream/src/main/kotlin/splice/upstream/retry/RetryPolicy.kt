@@ -75,7 +75,7 @@ internal class RetryRules(private val maxRetries: Int) {
     }
 
     /** Native passthrough replies retain their wire; translated providers retain the plan presentation. */
-    private fun rateLimitFailure(
+    internal fun rateLimitFailure(
         last: RetryOutcome.Failed,
         cooldown: RateLimitCooldown,
         layers: Int,
@@ -89,6 +89,12 @@ internal class RetryRules(private val maxRetries: Int) {
         val body = reply?.body ?: limit?.let(cooldown.planHold::clientBody) ?: last.text
         return UpstreamFailed(body, last.status, layers, planLimit = limit).also { it.rateLimitReply = reply }
     }
+
+    /** A single hold observation routes native pooled refusals as values; terminal holds still throw. */
+    internal fun nativeHold(ctx: PostContext, cooldown: RateLimitCooldown): UpstreamFailed? =
+        cooldown.heldFailure(ctx.onRetry)?.let { failure ->
+            if (ctx.nativePool && failure.rateLimitReply != null) failure else throw failure
+        }
 
     /** A long non-429 pushback protects followers only after this observer finishes its retry budget.
      *  Arming before its backoff made the observer's next attempt fail locally with a synthetic 429. */

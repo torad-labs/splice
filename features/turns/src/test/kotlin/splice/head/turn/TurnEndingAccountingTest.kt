@@ -34,14 +34,19 @@ import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
+import splice.core.util.WallClock
+import splice.core.wire.RateLimitReply
 import splice.head.HeadHealthCounters
 import splice.head.TestResponsesProvider
+import splice.head.admission.TurnQuota
 import splice.head.admission.admittedSlot
 import splice.head.compact.CompactStats
 import splice.head.perf.PerfStats
 import splice.head.pipeline.TurnPipeline
 import splice.head.round.RunnerSignals
+import splice.head.transport.TurnAccountHandoff
 import splice.head.usage.OutputClamp
+import splice.head.usage.QuotaTracker
 import splice.head.usage.USAGE_FLUSH_DELAY_MS
 import splice.head.usage.UsageStore
 import splice.head.wire.ClientChannel
@@ -49,9 +54,14 @@ import splice.head.wire.ImmediateSseWriter
 import splice.head.wire.TurnTerminal
 import splice.upstream.Provider
 import splice.upstream.ProviderTuning
+import splice.upstream.credentials.AccountPool
+import splice.upstream.credentials.AccountQuotaSource
+import splice.upstream.credentials.PoolAccount
+import splice.upstream.credentials.Selection
 import splice.upstream.failure.SseFrameTooLargeException
 import splice.upstream.retry.InflightGate
 import splice.upstream.retry.LiveLimit
+import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.retry.TurnWatchdog
 import splice.upstream.transport.UpstreamAuthMissing
 import splice.upstream.transport.UpstreamFailed
@@ -177,6 +187,61 @@ class TurnEndingAccountingTest {
             assertFalse(Files.exists(directory), "the scheduled flush must not resurrect the fixture after deletion")
         } finally {
             release.countDown()
+        }
+    }
+
+    @Test
+    fun `accepted or committed work cannot move to another login`() = runBlocking {
+        val fixture = HandoffFixture("committed")
+        val drive = Rig("committed").drive(clientGone = false).also { it.account = fixture.initial }
+        try {
+            fixture.hold(0)
+            fixture.route.commit()
+            assertFalse(fixture.route.move(drive))
+            assertSame(fixture.initial, drive.account)
+        } finally {
+            drive.account?.releaseCredentialProbe()
+            drive.slot.release()
+        }
+    }
+
+    @Test
+    fun `handoff changes quota together and never revisits a refused login even after its hold lifts`() = runBlocking {
+        val fixture = HandoffFixture("visited")
+        val drive = Rig("visited").drive(clientGone = false).also { it.account = fixture.initial }
+        try {
+            fixture.hold(0)
+            assertTrue(fixture.route.move(drive))
+            assertEquals("two", drive.account?.account?.label)
+            assertSame(fixture.quotas.getValue("two"), drive.quota)
+            fixture.accounts[0].cooldown.answered()
+            fixture.hold(1)
+            assertFalse(fixture.route.move(drive), "the now-free first login was already refused in this request")
+        } finally {
+            drive.account?.releaseCredentialProbe()
+            drive.slot.release()
+        }
+    }
+
+    private inner class HandoffFixture(tag: String) {
+        val quotas = listOf("one", "two").associateWith { QuotaTracker(tmp.resolve("$tag-$it-quota.json")) }
+        val accounts = quotas.map { (label, quota) ->
+            PoolAccount(
+                label,
+                label == "one",
+                BranchlessFakeAuth(),
+                AccountQuotaSource(quota::snapshot),
+                RateLimitCooldown(ElapsedClock { 0L }),
+            )
+        }
+        private val pool = AccountPool(accounts, WallClock { 1_000_000L })
+        val initial = (pool.select(null) as Selection.Chosen).account
+        val route = TurnAccountHandoff(pool, TurnQuota(pool, quotas, null))
+
+        fun hold(index: Int) {
+            val cooldown = accounts[index].cooldown
+            cooldown.rateLimitReply = RateLimitReply("synthetic refusal", emptyMap())
+            cooldown.arm(30_000L)
         }
     }
 

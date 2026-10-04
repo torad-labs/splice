@@ -19,9 +19,7 @@ import splice.head.turn.TurnInputs
 import splice.head.turn.TurnPreparation
 import splice.head.wire.TurnTrace
 import splice.upstream.TurnEnd
-import splice.upstream.credentials.AccountResetText
 import splice.upstream.credentials.Selection
-import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
 
 internal class HeadAdmission(
     private val deps: HeadDeps,
@@ -37,6 +35,7 @@ internal class HeadAdmission(
     private val wallClock: WallClock = WallClock(System::currentTimeMillis),
 ) {
     private val credentialHolds = CredentialHoldAdmission(preparation.provider, deps, responses, driver, wallClock)
+    private val exhaustedAccounts = ExhaustedAccountAdmission(deps, responses, driver, wallClock)
 
     fun arrivalTime(): Long = telemetry.arrivalTime()
 
@@ -96,51 +95,6 @@ internal class HeadAdmission(
         }
     }
 
-    /** V4-50: A RATE-LIMITED TURN IS REFUSED HERE, BEFORE A RESPONSE IS COMMITTED — which is the
-     *  whole point, and why this could never be fixed by rewording anything.
-     *
-     *  The armed cooldown has always been discovered deep inside the drive
-     *  (UpstreamClient.post -> failFastIfArmed). By then TurnStreamer has called respondTextWriter,
-     *  the 200 and the SSE headers are on the wire, and the only refusal still expressible is an
-     *  `event: error` frame. Claude Code's retry-until-reset fires on an APIError with status 429
-     *  and reads the reset off THAT response's headers; a frame inside a 200 is not an APIError, so
-     *  none of it runs and the turn simply dies. Three separate operator reports in one day were all
-     *  this, and all three were mistaken for a wording problem.
-     *
-     *  So the check moves UP to admission, ahead of the drive, where a status line is still ours to
-     *  write — and answers through the SAME [AdmissionResponses.respondRateLimited] the pooled
-     *  AllAccountsExhausted path below has always used. This is an UNGATING, not a new terminal:
-     *  that shape is proven on the pooled path, and a single-account head could simply never reach
-     *  it. The same pooled/unpooled split disabled captureProviderReset (V4-47) and markUnavailable,
-     *  which is the actual defect class here — a head with one account took every penalty of the
-     *  cooldown and was denied every recovery path it had.
-     *
-     *  THE DEADLINE IS WHEN THIS GATEWAY NEXT LETS A REQUEST THROUGH — V4-61 reversed V4-50's
-     *  first choice, on evidence. V4-50 sent the provider's reset; muse stamps its 5h-WINDOW reset
-     *  on a burst 429 (the live episode said 88 minutes) while the operator's own re-send moments
-     *  later succeeded. A client told to sleep 88 minutes for a limit that clears in seconds is the
-     *  worse failure. So Retry-After and the plain unified-reset carry the cooldown lift, at most
-     *  120s: by the time a turn is refused here, splice has already retried upstream on the 15s
-     *  schedule and armed on exhaustion, and if the window really is spent the re-probe after the
-     *  lift meets another 429 and re-arms — a bounded poll, never a blind 88-minute sleep. The
-     *  provider's window still rides in the message and the telemetry as information, and in
-     *  -5h-reset via quota.
-     *
-     *  NEVER-BELOW-STATUS-QUO: nothing armed, nothing changes — the turn takes the identical path it
-     *  did before. A turn that is ALREADY streaming when the limit lands still ends in an error
-     *  frame, because its 200 is genuinely spent by then; that is today's behaviour and out of scope
-     *  here. */
-    private suspend fun refuseIfRateLimited(
-        call: ApplicationCall,
-        prepared: Preparation.Ready,
-        admitted: AdmittedTurn,
-        trace: TurnTrace?,
-        account: splice.upstream.credentials.AccountSelection?,
-    ): Boolean {
-        return credentialHolds.refuse(call, prepared, admitted, trace, account) ||
-            refuseIfOversized(call, prepared, admitted, trace)
-    }
-
     /** A 400 before SSE, so the installed client's conditional size-error path can compact.
      * This is an estimated-input bound with a measured append delta, plus empirical p99 output. */
     private suspend fun refuseIfOversized(
@@ -197,76 +151,6 @@ internal class HeadAdmission(
         return true
     }
 
-    /** V4-61'S LAW IN ONE PLACE, because it was written once and forgotten on the sibling branch
-     *  (V4-77): the client's deadline is a HOLD FROM NOW — when this gateway next lets a request
-     *  through — never a provider instant, and never past [MAX_RATE_LIMIT_COOLDOWN_MS]. Both refusals in
-     *  this file compute it here so neither can drift from the other again. The armed-cooldown
-     *  caller is already inside the clamp (RateLimitCooldown arms at most its own ceiling), so the
-     *  coerce is a wall for it and the actual bound for [refuseExhausted].
-     *
-     *  WHY A HOLD AND NOT THE REAL RESET: a non-persistent Claude Code ABORTS the turn on a
-     *  Retry-After past 60s and a persistent one sleeps through it, so a 3-day pooled reset on the
-     *  wire is the turn dying either way. The real reset is not lost — it rides in the refusal
-     *  message and in the perf row — and the client that comes back at the bound meets a re-probe
-     *  that either serves it or re-refuses with a fresh bounded deadline.
-     *
-     *  V4-233, the one exception: a PLAN window the upstream named spent (unified status rejected,
-     *  a window claim, a reset) is its own statement, not a burst's stamp, so [refuseIfRateLimited]
-     *  hands the client that reset instead, and every head's client runs persistent (V4-72). */
-    private fun clientRetryEpochSeconds(now: Long, holdMs: Long): Long =
-        (now + holdMs.coerceIn(0L, MAX_RATE_LIMIT_COOLDOWN_MS)) / MILLIS_PER_SECOND
-
-    /** V4-77: the POOLED twin of [refuseIfRateLimited] — every account is blocked, so no turn can
-     *  start, and the client is told so with the SAME bounded deadline a cooldown refusal gives.
-     *  Before this it was handed [AllAccountsExhausted.earliestResetEpochSeconds] raw, which is the
-     *  quota `resetsAt` / provider unavailability bounded only by seven days.
-     *
-     *  The provider's own reset is UNTOUCHED in the two places it belongs: the exception's message
-     *  (AccountResetText.exhausted names the instant) and the perf/journal row, which still records
-     *  the raw epoch. Only the wire deadline is bounded. An UNKNOWN reset still ships no
-     *  Retry-After at all — inventing one is a claim this refusal cannot support, and a pinned
-     *  behaviour.
-     *
-     *  V4-80: and it states `rejected` on V4-51's seam, the same one [refuseIfRateLimited] uses.
-     *  Before this the pooled refusal emitted NO quota headers, so a pooled head with a tracker
-     *  answered `anthropic-ratelimit-unified-status: allowed` on the very response refusing the
-     *  turn — the identical self-contradiction V4-51 fixed for the cooldown branch, surviving on
-     *  the branch V4-51 did not open. The reset member carries the CLIENT deadline (the bounded
-     *  [retryEpochSeconds]), never the provider window, so the plain unified-reset and Retry-After
-     *  name the same instant; a null deadline states the refusal and omits the member. */
-    private suspend fun refuseExhausted(
-        call: ApplicationCall,
-        prepared: Preparation.Ready,
-        admitted: AdmittedTurn,
-        exhausted: Selection.Exhausted,
-        trace: TurnTrace?,
-    ) {
-        driver.recordLocalRefusal(
-            prepared.built.meta,
-            admitted.perf,
-            admitted.t0,
-            LocalRefusal(
-                OutcomeTag.ALL_ACCOUNTS_EXHAUSTED.wire,
-                "earliest_reset=${AccountResetText.format(exhausted.earliestResetEpochSeconds)}",
-                trace,
-            ),
-        )
-        val now = wallClock()
-        // normalizedInstant is the same four-digit-year clamp AdmissionResponses formats through,
-        // borrowed here so an absurd upstream reset cannot overflow the subtraction before the
-        // hold is bounded.
-        val retryEpochSeconds = exhausted.earliestResetEpochSeconds?.let {
-            clientRetryEpochSeconds(now, AccountResetText.normalizedInstant(it).toEpochMilli() - now)
-        }
-        // V4-84 (4): the SELECTED account's tracker, not the primary's — on a pooled head whose
-        // session is sticky to another account this 429 used to ship the OTHER account's bars.
-        // TurnQuota.forSession is the one resolver for exactly this precedence (V4-99).
-        deps.turnQuota.forSession(prepared.built.meta.sessionId, null)?.clientHeadersRejected(retryEpochSeconds)
-            ?.forEach { (name, value) -> call.response.header(name, value) }
-        admitted.close()
-        responses.respondRateLimited(call, exhausted.message, retryEpochSeconds)
-    }
-
     private suspend fun serveReady(call: ApplicationCall, prepared: Preparation.Ready, admitted: AdmittedTurn) {
         // V4-134: turn.start fires HERE and nowhere earlier because this is the one path whose every
         // exit writes a perf row — the two local refusals below and the drive all go through
@@ -278,33 +162,47 @@ internal class HeadAdmission(
         // retrying for no visible reason. Null for every head whose trace is off.
         val trace = prepared.takeInbound()?.let { deps.stores.trace?.begin(prepared.built.meta, it) }
         if (refuseIfOverBudget(call, prepared, admitted, trace)) return
-        val account = when (val selection = deps.quotaBundle.accountPool?.select(prepared.built.meta.sessionId)) {
+        var account = when (val selection = deps.quotaBundle.accountPool?.select(prepared.built.meta.sessionId)) {
             null -> null
             is Selection.Chosen -> selection.account
             is Selection.Exhausted -> {
-                refuseExhausted(call, prepared, admitted, selection, trace)
+                exhaustedAccounts.refuse(call, prepared, admitted, selection, trace)
                 return
             }
         }
         try {
-            if (refuseIfRateLimited(call, prepared, admitted, trace, account)) return
-            admitted.retainRequest()
-            val inputs = TurnInputs(
-                prepared.built,
-                admitted.slot,
-                admitted.t0,
-                admitted.perf,
-                markHandedOff = { admitted.markHandedOff() },
-                trace = trace,
-                account = account,
-                quota = deps.turnQuota.forSession(prepared.built.meta.sessionId, account),
-            )
-            // stream:true → SSE (the interactive path); stream:false → one buffered JSON body
-            // (Claude Code's internal non-stream calls, served by collecting the same machinery).
-            if (prepared.stream) driver.stream(call, inputs) else driver.collect(call, inputs)
+            when (val hold = credentialHolds.admit(call, prepared, admitted, trace, account)) {
+                is CredentialHoldAdmission.Outcome.Allowed -> {
+                    account = hold.account
+                    driveReady(call, prepared, admitted, trace, account)
+                }
+                CredentialHoldAdmission.Outcome.Refused -> Unit
+            }
         } finally {
             if (!admitted.wasHandedOff()) account?.releaseCredentialProbe()
         }
+    }
+
+    private suspend fun driveReady(
+        call: ApplicationCall,
+        prepared: Preparation.Ready,
+        admitted: AdmittedTurn,
+        trace: TurnTrace?,
+        account: splice.upstream.credentials.AccountSelection?,
+    ) {
+        if (refuseIfOversized(call, prepared, admitted, trace)) return
+        admitted.retainRequest()
+        val inputs = TurnInputs(
+            prepared.built,
+            admitted.slot,
+            admitted.t0,
+            admitted.perf,
+            markHandedOff = { admitted.markHandedOff() },
+            trace = trace,
+            account = account,
+            quota = deps.turnQuota.forSession(prepared.built.meta.sessionId, account),
+        )
+        if (prepared.stream) driver.stream(call, inputs) else driver.collect(call, inputs)
     }
 }
 

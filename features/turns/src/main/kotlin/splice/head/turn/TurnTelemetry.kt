@@ -97,7 +97,7 @@ internal class TurnTelemetry(
                 outcomeTag,
                 drive.meta.compact,
                 session,
-                account?.account?.label,
+                account?.account?.label ?: drive.fallbackAccountLabel,
                 account?.cacheCold == true,
                 // V4-117: the cause and the loop's own attempt count ride the row beside the tag. The
                 // outcome TAG is not replaced — it is what the operator already greps — so this is an

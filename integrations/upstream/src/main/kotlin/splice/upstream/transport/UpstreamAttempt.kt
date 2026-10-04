@@ -59,6 +59,9 @@ public data class PostContext(
     /** True only for the passthrough dialect, whose client understands the provider's native 429. */
     public var relayRateLimitReplies: Boolean = false
 
+    /** A native pooled refusal is recoverable only by choosing another login, never by retrying this one. */
+    internal val nativePool: Boolean get() = relayRateLimitReplies && rateLimitCooldown != null
+
     /** Delivered only after the provider accepts the HTTP request, before consuming its stream. */
     public var upstreamAccepted: splice.upstream.StreamStart = splice.upstream.StreamStart {}
 

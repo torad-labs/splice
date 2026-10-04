@@ -17,6 +17,7 @@ import splice.head.wire.TurnTrace
 import splice.upstream.Provider
 import splice.upstream.credentials.AccountResetText
 import splice.upstream.credentials.AccountSelection
+import splice.upstream.credentials.Selection
 import splice.upstream.retry.RateLimitCooldown
 
 /** Admission owns the HTTP status until the turn drive starts. Native refusals retain their wire reply. */
@@ -27,19 +28,46 @@ internal class CredentialHoldAdmission(
     private val driver: TurnDriver,
     private val wallClock: WallClock,
 ) {
-    suspend fun refuse(
+    sealed class Outcome {
+        class Allowed(val account: AccountSelection?) : Outcome()
+        data object Refused : Outcome()
+    }
+
+    suspend fun admit(
         call: ApplicationCall,
         prepared: Preparation.Ready,
         admitted: AdmittedTurn,
         trace: TurnTrace?,
         account: AccountSelection?,
-    ): Boolean {
+    ): Outcome {
         // No hold means no early auth work. Credential failures still belong to the turn's honest ending boundary.
-        if (account == null && deps.upstream.rateLimitedForMs <= 0L) return false
-        val cooldown = account?.account?.cooldown ?: resolve(prepared)
-        if (cooldown == null || cooldown.remainingMs() <= 0L) return false
+        val cooldown = when {
+            account != null -> account.account.cooldown
+            deps.upstream.rateLimitedForMs > 0L -> resolve(prepared)
+            else -> null
+        }
+        if (cooldown == null || cooldown.remainingMs() <= 0L) return Outcome.Allowed(account)
+        val next = freeAccount(prepared, account, cooldown)
+        if (next != null) {
+            account?.releaseCredentialProbe()
+            return Outcome.Allowed(next)
+        }
         respond(call, prepared, admitted, trace, cooldown)
-        return true
+        return Outcome.Refused
+    }
+
+    private fun freeAccount(
+        prepared: Preparation.Ready,
+        account: AccountSelection?,
+        cooldown: RateLimitCooldown,
+    ): AccountSelection? {
+        if (account == null) return null
+        val pool = deps.quotaBundle.accountPool
+            ?.takeIf { provider.relayRateLimitReplies && cooldown.rateLimitReply != null } ?: return null
+        return when (val next = pool.select(prepared.built.meta.sessionId, setOf(account.account.label))) {
+            is Selection.Chosen -> next.account
+            is Selection.Exhausted -> null
+        }
     }
 
     private suspend fun resolve(prepared: Preparation.Ready): RateLimitCooldown? {

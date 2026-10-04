@@ -9,8 +9,13 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import splice.upstream.codemode.CodeModeResult
+import splice.upstream.codemode.CodeModeSource
+import splice.upstream.codemode.CodeModeSourcePart
 import splice.upstream.codemode.CodeModeStep
 import java.util.concurrent.ConcurrentLinkedQueue
+
+// why: a warm host starts a cell in well under a second; 15 s separates a slow start from one that never comes.
+private const val START_BOUND_MS = 15_000L
 
 @Timeout(90)
 class CodeModeSessionIsolationTest {
@@ -54,6 +59,56 @@ class CodeModeSessionIsolationTest {
             offender.close()
             sibling.close()
         }
+    }
+
+    /** A control for the Oct 4 900 s stalls, whose cause was the statement lexer's growth on a run of slashes: a
+     *  session whose older program is parked and whose newer one was closed still starts its next program. */
+    @Test
+    fun `a program starts in a session whose older program is parked and whose newer one was closed`() = runBlocking {
+        JvmCodeModeRuntime(workerClasspath = testClasspath).use { runtime ->
+            val older = runtime.startSession("session-a", "await tools.Write({}); return 'older';", setOf("Write"))
+            assertTrue(older.advance() is CodeModeStep.Calls)
+            val newer = runtime.startSession("session-a", "await tools.Write({}); return 'newer';", setOf("Write"))
+            assertTrue(newer.advance() is CodeModeStep.Calls)
+            newer.close()
+            val next = withTimeout(START_BOUND_MS) {
+                runtime.startSession("session-a", "return 'next';", setOf("Write"))
+            }
+            val step = withTimeout(START_BOUND_MS) { next.advance() }
+            assertEquals("next", (step as CodeModeStep.Completed).output)
+            next.close()
+            older.close()
+        }
+    }
+
+    @Test
+    fun `a streamed program starts in a session whose older program is parked and whose newer one was closed`() =
+        runBlocking {
+            JvmCodeModeRuntime(workerClasspath = testClasspath).use { runtime ->
+                val older = runtime.startStreamingSession("session-a", streamed("return 'older';"), setOf("Write"))
+                assertTrue(older.advance() is CodeModeStep.Calls)
+                val newer = runtime.startStreamingSession("session-a", streamed("return 'newer';"), setOf("Write"))
+                assertTrue(newer.advance() is CodeModeStep.Calls)
+                newer.close()
+                val next = withTimeout(START_BOUND_MS) {
+                    runtime.startStreamingSession("session-a", streamed("return 'next';", call = false), setOf("Write"))
+                }
+                val step = withTimeout(START_BOUND_MS) { next.advance() }
+                assertEquals("started\nnext", (step as CodeModeStep.Completed).output)
+                next.close()
+                older.close()
+            }
+        }
+
+    /** A source that streams one statement and then completes, as an upstream exec round does. */
+    private fun streamed(ending: String, call: Boolean = true): CodeModeSource {
+        val parts = ArrayDeque(
+            listOf(
+                CodeModeSourcePart.Delta(if (call) "await tools.Write({});\n" else "text('started');\n"),
+                CodeModeSourcePart.Complete(ending),
+            ),
+        )
+        return CodeModeSource { parts.removeFirst() }
     }
 
     @Test

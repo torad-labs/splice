@@ -182,7 +182,7 @@ function readableHistory(wire: unknown, head: string): wire is PerfTurnsWire {
 
 async function readHeadTurns(head: string, n: number, window: TurnsWindow, signal?: AbortSignal): Promise<HeadRead> {
   try {
-    const wire = await request<unknown>(perfTurnsPath(head, n, window), signal === undefined ? undefined : { signal });
+    const wire = await request<PerfTurnsWire>(perfTurnsPath(head, n, window), { method: 'GET', ...(signal === undefined ? {} : { signal }) });
     if (!readableHistory(wire, head)) {
       throw new Error(U.historyUnreadable);
     }
@@ -231,7 +231,7 @@ function settledTurns(heads: HeadsPayload, reads: readonly HeadRead[], window: T
  */
 export async function fetchTurns({ head, n = DEFAULT_TAIL, since, until, last, filter, timeZone }: TurnsAsk = {}, now: () => number = Date.now, publish?: (state: TurnsState) => void, signal?: AbortSignal): Promise<TurnsSlice> {
   try {
-    const heads = await request<HeadsPayload>('/api/heads', signal === undefined ? undefined : { signal });
+    const heads = await request<HeadsPayload>('/api/heads', { method: 'GET', ...(signal === undefined ? {} : { signal }) });
     const asked = head !== undefined && head !== '' ? [head] : heads.heads.map((status) => status.key);
     // A rolling window is pinned to ONE instant, read once: every head is asked the same since and the same exclusive until, and
     // the state says that window, so a link built from its count opens the very range that count was taken over.

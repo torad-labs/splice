@@ -14,8 +14,6 @@ import java.io.FilterOutputStream
 import java.io.OutputStream
 import java.net.Socket
 import java.net.SocketAddress
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.HexFormat
@@ -136,30 +134,44 @@ internal class SendQueueTable(private val unacked: Map<SocketKey, Long>) {
 internal class ProcNetTcp(
     private val log: LogSink,
     private val tables: List<Path> = LINUX_TABLES,
+    private val tableRead: ProcTableRead = ProcTableRead { Files.newInputStream(it) },
 ) : SendQueues {
-    private val whitespace = Regex("\\s+")
+    var allocatedRows: Int = 0
+        private set
+
+    /** Readers of the same kernel tables share a tick without a stale time-based cache. */
+    val source: List<Path> get() = tables
+
+    fun readTracked(keys: Set<SocketKey>): SendQueueTable? = sample(keys).also(::observe).table
 
     /** Whether each table read at its last try; a table not yet tried is absent. */
     private val reading = ConcurrentHashMap<Path, Boolean>()
 
-    override fun read(): SendQueueTable? {
-        val present = tables.filter(Files::isReadable)
-        if (present.isEmpty()) return null
+    override fun read(): SendQueueTable? = readTracked(emptySet())
+
+    /** One fresh read for the union of sockets watched by every client in this tick. */
+    fun sample(keys: Set<SocketKey>): ProcQueueRead {
+        val statuses = linkedMapOf<Path, Throwable?>()
         val unacked = HashMap<SocketKey, Long>()
-        val read = present.count { table ->
-            Cancellables.runCatchingCancellable { Files.readAllLines(table) }.fold(
-                onSuccess = { lines ->
-                    noted(table, failure = null)
-                    lines.drop(1).forEach { line -> row(line)?.let { (key, queued) -> unacked[key] = queued } }
-                    true
+        val parser = ProcSocketRows(keys)
+        var read = 0
+        tables.filter(Files::isReadable).forEach { table ->
+            Cancellables.runCatchingCancellable { tableRead.open(table).use(parser::read) }.fold(
+                onSuccess = { rows ->
+                    statuses[table] = null
+                    unacked.putAll(rows)
+                    read++
                 },
-                onFailure = { failure ->
-                    noted(table, failure)
-                    false
-                },
+                onFailure = { failure -> statuses[table] = failure },
             )
         }
-        return if (read == 0) null else SendQueueTable(unacked)
+        allocatedRows = parser.allocatedRows
+        return ProcQueueRead(if (read == 0) null else SendQueueTable(unacked), statuses)
+    }
+
+    /** Each client retains its stop/recovery logging even though their data read was shared. */
+    fun observe(sample: ProcQueueRead) {
+        sample.statuses.forEach { (table, failure) -> noted(table, failure) }
     }
 
     /** Logs [table] stopping, with [failure], when it read at its last try or was never tried, and its
@@ -175,45 +187,13 @@ internal class ProcNetTcp(
             log("[upstream] $table reads again; a request the upstream stops acknowledging is cut again (V4-292)\n")
         }
     }
-
-    /** `sl local_address rem_address st tx_queue:rx_queue ...`, addresses in hex words of host byte order. */
-    private fun row(line: String): Pair<SocketKey, Long>? {
-        val fields = line.trim().split(whitespace)
-        val ends = listOf(LOCAL_FIELD, REMOTE_FIELD).mapNotNull { fields.getOrNull(it)?.let(::end) }
-        val queued = fields.getOrNull(QUEUES_FIELD)?.substringBefore(':')?.toLongOrNull(HEX)
-        return if (ends.size == 2 && queued != null) SocketKey(ends[0], ends[1]) to queued else null
-    }
-
-    /** `<address hex>:<port hex>`, the address as 32-bit words the kernel printed in host byte order. */
-    private fun end(field: String): String? {
-        val hex = field.substringBefore(':')
-        val port = field.substringAfter(':', "").toIntOrNull(HEX)
-        val words = hex.chunked(WORD_HEX).mapNotNull { it.toLongOrNull(HEX) }
-        val whole = hex.isNotEmpty() && words.size * WORD_HEX == hex.length
-        if (port == null || !whole) return null
-        val bytes = ByteBuffer.allocate(words.size * Int.SIZE_BYTES).order(ByteOrder.nativeOrder())
-        words.forEach { bytes.putInt(it.toInt()) }
-        return SocketKeys.end(bytes.array(), port)
-    }
 }
 
 // why: Linux's send-queue tables, IPv4 and IPv6 (Documentation/networking/proc_net_tcp.rst).
 private val LINUX_TABLES = listOf(Path.of("/proc/net/tcp"), Path.of("/proc/net/tcp6"))
 
-// why: the columns of /proc/net/tcp{,6} (Documentation/networking/proc_net_tcp.rst), counted from 0.
-private const val LOCAL_FIELD = 1
-
-// why: the remote address column of the same table, counted from 0.
-private const val REMOTE_FIELD = 2
-
-// why: the `tx_queue:rx_queue` column of the same table, counted from 0.
-private const val QUEUES_FIELD = 4
-
-// why: the table prints each 32-bit address word as 8 hex digits.
-private const val WORD_HEX = 8
-
-// why: every number in the table is hexadecimal.
-private const val HEX = 16
+/** A tick's table and read outcomes, forwarded to each participant's own logger. */
+internal data class ProcQueueRead(val table: SendQueueTable?, val statuses: Map<Path, Throwable?>)
 
 // why: an IPv6 address is 16 bytes (RFC 8200), the size an IPv4-mapped one is recognised by.
 private const val IPV6_BYTES = 16

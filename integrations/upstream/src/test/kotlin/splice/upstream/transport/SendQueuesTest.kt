@@ -61,6 +61,43 @@ class SendQueuesTest {
         assertTrue("$table reads again" in logs.last(), logs.last())
     }
 
+    @Test
+    fun `a shared failure and recovery is observed once by each client logger`() {
+        val table = dir.resolve("shared")
+        Files.createDirectory(table)
+        val otherLogs = CopyOnWriteArrayList<String>()
+        val first = ProcNetTcp(log, listOf(table))
+        val second = ProcNetTcp(LogSink { otherLogs += it }, listOf(table))
+        repeat(2) {
+            val sample = first.sample(emptySet())
+            assertNull(sample.table)
+            first.observe(sample)
+            second.observe(sample)
+        }
+        assertEquals(1, logs.size)
+        assertEquals(1, otherLogs.size)
+        Files.delete(table)
+        Files.writeString(table, HEADER + ROW)
+        repeat(2) {
+            val sample = first.sample(emptySet())
+            assertNotNull(sample.table)
+            first.observe(sample)
+            second.observe(sample)
+        }
+        assertEquals(2, logs.size)
+        assertEquals(2, otherLogs.size)
+        assertTrue(otherLogs.last().contains("reads again"))
+    }
+
+    @Test
+    fun `one readable table survives failure of the other without empty success`() {
+        val readable = dir.resolve("tcp")
+        Files.writeString(readable, HEADER + ROW)
+        val queues = ProcNetTcp(log, listOf(readable, unreadable("tcp6")))
+        assertNotNull(queues.read())
+        assertEquals(1, logs.size)
+    }
+
     /** A table path that exists and reports readable, whose read fails: a directory. */
     private fun unreadable(name: String): Path = Files.createDirectory(dir.resolve(name))
 

@@ -94,9 +94,9 @@ internal class RequestWriteBound(
 }
 
 /**
- * The one ticker every client's watched requests share, so each client's table is read once a tick for
- * all of its requests (V4-292: each client reads through its own [ProcNetTcp], which logs to its log) and
- * only while one is watched. Its thread is a named virtual one; a tick that fails is the next tick's to
+ * The one ticker every client's watched requests share. Readers of the same kernel tables share one
+ * tick-local sample over all watched sockets, while each client observes its own read-health logs.
+ * Only watched requests cause reads. Its thread is a named virtual one; a failed tick is the next one's to
  * redo, never the end of the ticker.
  */
 internal class StallWatch(private val tickMs: Long) {
@@ -117,16 +117,25 @@ internal class StallWatch(private val tickMs: Long) {
         watched -= write
     }
 
-    private fun tick() {
+    internal fun tick() {
         if (watched.isEmpty()) return
         val now = System.nanoTime()
         val checked = Cancellables.runCatchingBestEffort {
-            watched.groupBy { it.queues }.forEach { (queues, writes) ->
-                val table = queues.read()
+            watched.groupBy { (it.queues as? ProcNetTcp)?.source ?: it.queues }.values.forEach { writes ->
+                val table = table(writes)
                 writes.forEach { it.check(table, now) }
             }
         }
         Cancellables.discard(checked, "a tick that failed is the next tick's to redo; the ticker outlives it")
+    }
+
+    private fun table(writes: List<WatchedWrite>): SendQueueTable? {
+        val clients = writes.map { it.queues }.distinct()
+        val first = clients.first()
+        if (first !is ProcNetTcp) return first.read()
+        val sample = first.sample(writes.mapNotNull { it.socketKey }.toSet())
+        clients.filterIsInstance<ProcNetTcp>().forEach { it.observe(sample) }
+        return sample.table
     }
 }
 
@@ -143,6 +152,9 @@ internal class WatchedWrite(
     // Read and written by the ticker thread only.
     private var taken = Long.MIN_VALUE
     private var progressAt = System.nanoTime()
+
+    /** The normalized identity shared with the tick's kernel-row matcher. */
+    val socketKey: SocketKey? get() = socket.key
 
     /** Whether the watch cut the call for a stall. */
     val cut: Boolean get() = state.get() == Watch.CUT
@@ -172,10 +184,8 @@ internal class WatchedWrite(
     private enum class Watch { WATCHING, STOPPED, CUT }
 }
 
-// why: how often the watch reads the kernel's table while a request is watched: a stall is cut within
-// this much of its bound, and four reads a second of a table this size cost nothing measurable.
+// why: the existing stall detection resolution; sharing changes allocation, never the bound's precision.
 private const val TICK_MS = 250L
 
-// FILE SCOPE ON PURPOSE, like UpstreamTransport's nodelayLogged: one ticker for the process, however many
-// heads build a client, so each client's table is read once a tick for all of its requests.
+// FILE SCOPE ON PURPOSE: one ticker and one kernel-table sample per tick, however many heads build clients.
 private val sharedWatch = StallWatch(TICK_MS)

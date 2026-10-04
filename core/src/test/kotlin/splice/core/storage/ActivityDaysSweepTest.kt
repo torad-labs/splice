@@ -85,11 +85,13 @@ class ActivityDaysSweepTest {
 
         // Opened a ms before midnight, each store's sweep runs a second later; by then it is the next day.
         now.set(MIDNIGHT + DAY_MS - SECOND_WAIT_MS)
-        awaitUntil("each store's first day went at the first midnight, with no write") {
-            days.none { (_, first, _) -> Files.exists(first) }
+        // The sweep deletes a day's file, then its lock (DAY_SIBLINGS), so the wait covers both.
+        awaitUntil("each store's first day and its lock went at the first midnight, with no write") {
+            days.none { (_, first, _) ->
+                Files.exists(first) || Files.exists(first.resolveSibling("${first.fileName}.lock"))
+            }
         }
-        for ((prefix, first, second) in days) {
-            assertFalse(Files.exists(first.resolveSibling("${first.fileName}.lock")), "$prefix: its lock went too")
+        for ((prefix, _, second) in days) {
             assertTrue(Files.exists(second), "$prefix: the next day is still in the window")
         }
 

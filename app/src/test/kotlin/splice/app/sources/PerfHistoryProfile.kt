@@ -23,9 +23,15 @@ internal class PerfHistoryProfile {
         private set
     internal var diskWriteBytes: Long = 0L
         private set
+    internal var diskWritesByPath: Map<Path?, Long> = emptyMap()
+        private set
 
     internal var allocatedBytes: Long = 0L
         private set
+
+    /** Includes atomic temporary writes beside the snapshot, not unrelated paths in the same JVM. */
+    internal fun writesUnder(directory: Path): Long =
+        diskWritesByPath.entries.sumOf { (path, bytes) -> if (path?.startsWith(directory) == true) bytes else 0L }
 
     internal fun source(source: PerfRowsFileSource, path: Path): List<PerfRow> =
         diskPhase("source", path) { source.window(SCALE_SINCE).rows }
@@ -35,7 +41,7 @@ internal class PerfHistoryProfile {
             recording.enable("jdk.ExecutionSample").withPeriod(Duration.ofMillis(1))
             recording.enable("jdk.ObjectAllocationSample")
             recording.enable("jdk.FileRead").withThreshold(Duration.ZERO)
-            recording.enable("jdk.FileWrite").withThreshold(Duration.ZERO)
+            recording.enable("jdk.FileWrite").withThreshold(Duration.ZERO).withStackTrace()
             recording.start()
             val rows = phase(name, action)
             recording.stop()
@@ -88,6 +94,7 @@ internal class PerfHistoryProfile {
         totals.print()
         diskBytes = totals.diskBytes
         diskWriteBytes = totals.diskWriteBytes
+        diskWritesByPath = totals.diskWritesByPath.toMap()
     }
 
     private class Samples(private val readPaths: Set<String>) {
@@ -96,8 +103,8 @@ internal class PerfHistoryProfile {
         private var diskNanos = 0L
         var diskBytes = 0L
             private set
-        var diskWriteBytes = 0L
-            private set
+        val diskWritesByPath = linkedMapOf<Path?, Long>()
+        val diskWriteBytes: Long get() = diskWritesByPath.values.sum()
 
         fun accept(event: RecordedEvent) {
             when (event.eventType.name) {
@@ -105,7 +112,7 @@ internal class PerfHistoryProfile {
                     diskNanos += event.duration.toNanos()
                     diskBytes += event.getLong("bytesRead").coerceAtLeast(0)
                 }
-                "jdk.FileWrite" -> diskWriteBytes += event.getLong("bytesWritten").coerceAtLeast(0)
+                "jdk.FileWrite" -> write(event)
                 "jdk.ExecutionSample" -> {
                     val phase = phase(event)
                     cpuSamples[phase] = (cpuSamples[phase] ?: 0) + 1
@@ -115,6 +122,15 @@ internal class PerfHistoryProfile {
                     sampledBytes[phase] = (sampledBytes[phase] ?: 0) + event.getLong("weight")
                 }
             }
+        }
+
+        private fun write(event: RecordedEvent) {
+            val bytes = event.getLong("bytesWritten").coerceAtLeast(0)
+            val path = event.getString("path")?.let(Path::of)
+            diskWritesByPath[path] = (diskWritesByPath[path] ?: 0L) + bytes
+            val stack = event.stackTrace?.frames.orEmpty().take(12)
+                .map { it.method.type.name + "." + it.method.name }
+            println("PERF_WRITE path=$path bytes=$bytes thread=${event.thread?.javaName} stack=$stack")
         }
 
         private fun phase(event: RecordedEvent): String {

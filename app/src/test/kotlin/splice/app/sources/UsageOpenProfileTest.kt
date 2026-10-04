@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.util.SecureFile
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -34,7 +35,7 @@ class UsageOpenProfileTest {
             }
             val openBytes = profiler.allocatedBytes
             val readBytes = profiler.diskBytes
-            val writtenBytes = profiler.diskWriteBytes
+            val writtenBytes = profiler.writesUnder(fixture.trackerFile.parent)
             val expectedRead = Files.size(fixture.rateFile) * 4
             val expectedWrite = Files.size(fixture.trackerFile)
             val observedAt = fixture.now / 1_000
@@ -48,7 +49,11 @@ class UsageOpenProfileTest {
             val reusedQuota = usage(reused.second).getValue("quota").jsonObject.getValue("five_hour").jsonObject
             assertEquals(observedAt.toString(), reusedQuota.getValue("observed_at").jsonPrimitive.content)
             assertEquals(3, fixture.probes, "the repeated open must share the successful probe floor")
-            assertEquals(0L, profiler.diskWriteBytes, "reuse must not rewrite or retimestamp the snapshot")
+            assertEquals(
+                0L,
+                profiler.writesUnder(fixture.trackerFile.parent),
+                "reuse must not rewrite or retimestamp the snapshot",
+            )
             assertEquals(readBytes, profiler.diskBytes)
             assertEquals(0, fixture.historyReads, "quota navigation must not load perf history")
             assertEquals(0L, fixture.perf.parsedLines)
@@ -64,6 +69,28 @@ class UsageOpenProfileTest {
             )
             rejectHistoryRead(fixture, profiler)
         }
+
+    @Test
+    fun `write attribution separates another path without losing an atomic snapshot rewrite`(@TempDir dir: Path) {
+        val snapshots = Files.createDirectory(dir.resolve("snapshots"))
+        val snapshot = snapshots.resolve("quota.json")
+        val other = dir.resolve("another-writer.json")
+        SecureFile.writeAtomic0600(snapshot, "synthetic retained reading")
+        val profiler = PerfHistoryProfile()
+        profiler.diskPhase("another_writer", dir.resolve("other-write.jfr")) {
+            Files.writeString(other, "x".repeat(560))
+        }
+        assertEquals(560L, profiler.diskWritesByPath[other])
+        assertEquals(0L, profiler.writesUnder(snapshots), "another writer is not a snapshot rewrite")
+        assertTrue(profiler.diskWriteBytes >= 560L, "the process-wide diagnostic still exposes the other writer")
+        profiler.diskPhase("snapshot_rewrite_control", dir.resolve("rewrite.jfr")) {
+            SecureFile.writeAtomic0600(snapshot, "synthetic rewritten reading")
+        }
+        assertEquals(Files.size(snapshot), profiler.writesUnder(snapshots), "the atomic temporary write is counted")
+        assertThrows(AssertionError::class.java) {
+            assertEquals(0L, profiler.writesUnder(snapshots), "a real rewrite must fail the reuse assertion")
+        }
+    }
 
     private fun rejectHistoryRead(fixture: UsageOpenFixture, profiler: PerfHistoryProfile) {
         profiler.phase("usage_history_read_control") { fixture.perf.window(SCALE_SINCE) }

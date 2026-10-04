@@ -42,10 +42,10 @@ class EconomicsEvidenceCacheTest {
         source.window(0)
         for (cutoff in listOf(1L, 2L)) {
             assertEquals(1, source.economicsEvidence(cutoff).work.skipped)
-            val failure = assertThrows(IllegalStateException::class.java) {
+            val failure = assertThrows(UnreconciledEconomics::class.java) {
                 ProbeEconomics(source).withoutProbes(listOf(EconomicsBucket(cutoff)))
             }
-            assertEquals("legacy probe economics evidence incomplete: unreadable rows", failure.message)
+            assertEquals(ProbeGap.UNREADABLE, failure.gap)
         }
     }
 

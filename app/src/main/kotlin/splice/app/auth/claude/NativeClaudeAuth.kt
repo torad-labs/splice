@@ -23,6 +23,15 @@ private const val AUTH_READ_CHARS = 2048
 // why: the pasted native authorization code is small; 4 KiB rejects unbounded management submissions.
 private const val AUTH_CODE_CHARS = 4096
 
+// why: the browser sign-in each Anthropic host serves, by host, so a path is only accepted on its own host. Claude Code
+// 2.1.289 prints https://claude.com/cai/oauth/authorize (a scratch run, Oct 3); earlier builds printed claude.ai's.
+private val AUTHORIZE_PATHS: Map<String, String> = mapOf(
+    "claude.com" to "/cai/oauth/authorize",
+    "claude.ai" to "/oauth/authorize",
+    "console.anthropic.com" to "/oauth/authorize",
+    "platform.claude.com" to "/oauth/authorize",
+)
+
 /** Announces only a validated native browser authorization URL, never arbitrary process output. */
 internal fun interface NativeAuthAnnouncement {
     fun browser(url: String)
@@ -122,8 +131,7 @@ internal class NativeClaudeAuthRun(
 
     private fun authorization(candidate: String): URI? = try {
         URI(candidate).takeIf { url ->
-            url.host in setOf("claude.ai", "console.anthropic.com", "platform.claude.com") &&
-                url.path == "/oauth/authorize" && url.userInfo == null && url.port == -1
+            AUTHORIZE_PATHS[url.host] == url.path && url.scheme == "https" && url.userInfo == null && url.port == -1
         }
     } catch (_: java.net.URISyntaxException) {
         null // Malformed child text is classified as not an authorization announcement.

@@ -79,6 +79,31 @@ class NativeClaudeAuthTest {
         assertEquals(listOf(good), announced.toList())
     }
 
+    /** Claude Code 2.1.289 announces its sign-in at claude.com under /cai (a scratch `claude auth login --claudeai`
+     *  printed "If the browser didn't open, visit: https://claude.com/cai/oauth/authorize?…"). The allowlist read only
+     *  claude.ai and /oauth/authorize, so Accounts never showed the link. Lookalikes stay out. */
+    @Test
+    fun `the claude dot com sign-in link that Claude Code 2_1_289 prints is announced, and lookalikes are not`() =
+        runBlocking {
+            val good = "https://claude.com/cai/oauth/authorize?code=true&client_id=fixture"
+            val text = "Opening browser to sign in…\nIf the browser didn't open, visit: $good\n" +
+                "https://evil.claude.com.invalid/cai/oauth/authorize?x=1 https://claude.com/cai/oauth/other?x=1\n" +
+                "Paste code here if prompted > "
+            val process = NativeLoginTestProcess(text)
+            process.finish(0)
+            val announced = CopyOnWriteArrayList<String>()
+            val auth = NativeClaudeAuth(
+                WrapStateRead { "unused-fixture" },
+                emptyMap(),
+                ProcessDispatchers().io(),
+                NativeAuthStart { process },
+            )
+            auth.begin(location(ClaudeLoginPlaceId.NATIVE)).use { child ->
+                assertTrue(child.await { announced += it })
+            }
+            assertEquals(listOf(good), announced.toList())
+        }
+
     @Test
     fun `open stdin accepts one fallback code and cancellation stops the child before returning`() = runBlocking {
         val process = NativeLoginTestProcess()

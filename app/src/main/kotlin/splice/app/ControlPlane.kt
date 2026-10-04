@@ -7,9 +7,9 @@ package splice.app
 
 import kotlinx.coroutines.cancel
 import splice.app.auth.SignInPlanner
-import splice.app.auth.claude.ClaudeAccountSignIn
-import splice.app.auth.claude.ClaudeAddAccountArm
-import splice.app.auth.claude.ClaudeAddAccountSource
+import splice.app.auth.claude.ClaudeAccountsArm
+import splice.app.auth.claude.ClaudeAccountsPort
+import splice.app.auth.claude.ClaudeAccountsSource
 import splice.app.auth.claude.ClaudeLoginOwner
 import splice.app.auth.claude.ClaudeLoginWiring
 import splice.app.cli.AdminSupport
@@ -89,9 +89,9 @@ internal class ControlPlane(
     private val environment = ProcessEnvironment()
     private var claudeLoginOwner: ClaudeLoginOwner? = null
 
-    // V4-410 follow-on: the sign-in that ADDS a subscription to a Claude head, read by the accounts port's
-    // `client` arm (ClaudeAddAccountArm). Null until a Claude head's login machinery is built.
-    private var claudeAddAccount: ClaudeAccountSignIn? = null
+    // V4-410 follow-on: the add and remove of a Claude head's subscriptions, read by the accounts port's
+    // `client` arm (ClaudeAccountsArm). Null until a Claude head's login machinery is built.
+    private var claudeAccounts: ClaudeAccountsPort? = null
 
     /** 2026-09-22: every head's DISCOVERED models — Daemon.start() resolves them before any head is
      *  assembled, and each head's catalog reads its own through [buildInputs]. */
@@ -153,7 +153,7 @@ internal class ControlPlane(
         val arm = ClaudeLoginWiring.create(statePaths, topology.path, probeScope, wrap, log)
         val owner = arm.owner
         claudeLoginOwner = owner
-        claudeAddAccount = arm.addAccount
+        claudeAccounts = arm.accounts
         return LaunchService(materializer, resumeAcrossHeads = ResumeAcrossHeads(rewriter), wrap = wrap).also {
             it.loginGuard = owner
         }
@@ -260,11 +260,11 @@ internal class ControlPlane(
         srv.ports.teams = teams
         ConsoleWiring.wireV4133(srv, budgets, alerts, playground)
         ConsoleWiring.wireVerbReads(srv, topology, statePaths, console)
-        // A Claude head's add-an-account goes through its own sign-in, which the generic accounts port refuses by
-        // kind. Wrapped AFTER ConsoleWiring.wire assigns that port, and reading the arm per call, so a daemon with
-        // no Claude head wraps a port that simply never answers "client".
+        // A Claude head's add and remove go through folders splice owns, which the generic accounts port refuses
+        // by kind. Wrapped AFTER ConsoleWiring.wire assigns that port, and reading the arm per call, so a daemon
+        // with no Claude head wraps a port that simply never answers "client".
         srv.ports.accounts = srv.ports.accounts?.let { generic ->
-            ClaudeAddAccountArm(generic, ClaudeAddAccountSource { claudeAddAccount })
+            ClaudeAccountsArm(generic, ClaudeAccountsSource { claudeAccounts })
         }
     }
 

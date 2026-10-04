@@ -253,6 +253,13 @@ class AuthAndAccountsRoutesTest {
         val refused = delete("/api/auth/$WIRED/accounts/primary")
         assertEquals(HttpStatusCode.BadRequest, refused.status)
         assertTrue(refused.bodyAsText().contains("primary account cannot be removed"))
+
+        // A head whose accounts are not in the OAuth account file is a bad request ABOUT that head, never a 404 on
+        // a head the console has drawn: the Claude arm answers exactly this refusal for its own kind.
+        accounts.onRemove = { _, _ -> AccountMutation.UnsupportedAuthKind("client") }
+        val byKind = delete("/api/auth/$WIRED/accounts/plus-a")
+        assertEquals(HttpStatusCode.BadRequest, byKind.status, byKind.bodyAsText())
+        assertTrue(byKind.bodyAsText().contains("auth kind 'client'"), byKind.bodyAsText())
     }
 
     @Test

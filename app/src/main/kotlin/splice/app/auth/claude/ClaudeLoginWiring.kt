@@ -14,10 +14,10 @@ import splice.topology.TopologyLoader
 import splice.upstream.codemode.ProcessDispatchers
 import java.nio.file.Path
 
-/** One daemon's Claude login machinery: the [owner] of each command's own login, and the [addAccount] sign-in that
- *  adds a subscription to a head. Both are built from the same native client and scope, so there is one place that
- *  knows how a Claude sign-in is started on this machine. */
-internal data class ClaudeLoginArm(val owner: ClaudeLoginOwner, val addAccount: ClaudeAccountSignIn)
+/** One daemon's Claude login machinery: the [owner] of each command's own login, and the [accounts] port the
+ *  `client` arm serves a head's added subscriptions through. Both are built from the same native client and scope,
+ *  so there is one place that knows how a Claude sign-in is started on this machine. */
+internal data class ClaudeLoginArm(val owner: ClaudeLoginOwner, val accounts: ClaudeAccountsPort)
 
 internal object ClaudeLoginWiring {
     fun create(
@@ -38,6 +38,8 @@ internal object ClaudeLoginWiring {
         )
         val dispatcher = ProcessDispatchers().io()
         val native = NativeClaudeAuth(wrap, mapOf("HOME" to home.toString()), dispatcher)
+        // One store for both verbs: the sign-in files an account into it, and the arm's remove deletes from it.
+        val folders = ClaudeAccountFolders(paths.stateDir)
         return ClaudeLoginArm(
             owner = ClaudeLoginOwner(
                 ClaudeLoginLocations(home, paths).read(topology),
@@ -46,7 +48,7 @@ internal object ClaudeLoginWiring {
                 native,
                 scope,
             ),
-            addAccount = ClaudeAccountSignIn(ClaudeAccountFolders(paths.stateDir), native, scope),
+            accounts = ClaudeAccountsPort(ClaudeAccountSignIn(folders, native, scope), folders),
         )
     }
 }

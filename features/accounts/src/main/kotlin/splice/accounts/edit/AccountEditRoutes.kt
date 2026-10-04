@@ -47,6 +47,12 @@ public class AccountEditRoutes(
         when (result) {
             AccountMutation.Ok -> AccountReplies.respond(call, buildJsonObject { put("ok", true) }.toString())
             AccountMutation.UnknownHead -> AccountReplies.respondError(call, "unknown head", HttpStatusCode.NotFound)
+            // The head is real, so this is a bad request about it rather than a missing head.
+            is AccountMutation.UnsupportedAuthKind -> AccountReplies.respondError(
+                call,
+                "this command's accounts cannot be edited here (auth kind '${result.kind}')",
+                HttpStatusCode.BadRequest,
+            )
             is AccountMutation.Refused -> AccountReplies.respondError(call, result.reason, HttpStatusCode.BadRequest)
         }
     }

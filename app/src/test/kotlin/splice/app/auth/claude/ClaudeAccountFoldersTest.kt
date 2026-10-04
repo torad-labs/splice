@@ -124,10 +124,29 @@ class ClaudeAccountFoldersTest {
     fun `a removed account is gone, and removing twice says so`() {
         signIn(HEAD, "work", "uuid-work", null)
 
-        assertTrue(folders().remove(HEAD, "work"))
+        assertEquals(ClaudeAccountRemoval.Removed, folders().remove(HEAD, "work"))
 
-        assertFalse(folders().remove(HEAD, "work"))
+        assertEquals(ClaudeAccountRemoval.NotFound, folders().remove(HEAD, "work"))
         assertEquals(emptyList<String>(), folders().accounts(HEAD).map { it.label })
+        assertNull(folders().token(HEAD, "work"), "its credential cannot be read again")
+    }
+
+    @Test
+    fun `a remove takes only the label it names, and never the caller's own sign-in`() {
+        signIn(HEAD, "work", "uuid-work", null)
+        signIn(HEAD, "personal", "uuid-personal", null)
+        signIn(OTHER_HEAD, "work", "uuid-work", null)
+
+        assertEquals(
+            ClaudeAccountRemoval.OwnSignIn,
+            folders().remove(HEAD, OWN_SIGN_IN_LABEL),
+            "that label is the person's real Claude Code login, which splice has never held",
+        )
+        assertEquals(ClaudeAccountRemoval.NotFound, folders().remove(HEAD, "../escape"))
+        assertEquals(ClaudeAccountRemoval.Removed, folders().remove(HEAD, "work"))
+
+        assertEquals(listOf("personal"), folders().accounts(HEAD).map { it.label }, "the sibling label is untouched")
+        assertEquals(listOf("work"), folders().accounts(OTHER_HEAD).map { it.label }, "and so is the other command's")
     }
 
     @Test

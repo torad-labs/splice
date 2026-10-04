@@ -148,14 +148,24 @@ private data class LoginAttempt(
     val label: String?,
 )
 
+/** Where this port reads the configured heads and providers. The daemon's own answer is the topology file, and a
+ *  test hands over a synthetic one: a port whose refusals depend on a head's auth kind cannot be checked at all
+ *  while the only source is a path outside the test. */
+internal fun interface ConsoleAccountsTopology {
+    fun read(): Topology
+}
+
 /** The :app implementation of [ConsoleAccounts] — see this file's header for why it lives here. */
 internal class ConsoleAccountsImpl(
     private val sessions: LoginSessions = LoginSessions(),
     private val files: OAuthAccountFiles = OAuthAccountFiles(),
+    private val topologies: ConsoleAccountsTopology = ConsoleAccountsTopology {
+        TopologyLoader.loadOrMaterialize(TopologyLoader.configPath())
+    },
 ) : ConsoleAccounts {
 
     override suspend fun startLogin(headKey: String, label: String?, restart: HeadRestart): LoginStart {
-        val topology = TopologyLoader.loadOrMaterialize(TopologyLoader.configPath())
+        val topology = topologies.read()
         val provider = provider(headKey, topology) ?: return LoginStart.UnknownHead
         if (!AuthKindRegistry.isOAuth(provider.auth.kind)) {
             return LoginStart.UnsupportedAuthKind(provider.auth.kind)
@@ -165,17 +175,27 @@ internal class ConsoleAccountsImpl(
 
     override fun pollLogin(id: String): LoginStatus? = sessions.poll(id)
 
-    override suspend fun removeAccount(headKey: String, label: String): AccountMutation {
-        val target = oauthTarget(headKey) ?: return AccountMutation.UnknownHead
-        return mutate {
+    override suspend fun removeAccount(headKey: String, label: String): AccountMutation =
+        onOAuthHead(headKey) { target ->
             val removed = files.remove(target.kind, target.primaryFile, label)
             if (!removed) throw OAuthAccountRefused("no OAuth account labeled '$label'")
         }
-    }
 
-    override suspend fun relabelAccount(headKey: String, label: String, newLabel: String): AccountMutation {
-        val target = oauthTarget(headKey) ?: return AccountMutation.UnknownHead
-        return mutate { files.relabel(target.kind, target.primaryFile, label, newLabel) }
+    override suspend fun relabelAccount(headKey: String, label: String, newLabel: String): AccountMutation =
+        onOAuthHead(headKey) { target -> files.relabel(target.kind, target.primaryFile, label, newLabel) }
+
+    /** Runs [block] on [headKey]'s OAuth account file, or names why it cannot. A head that is not configured is
+     *  [AccountMutation.UnknownHead]; a head that IS configured and keeps its accounts somewhere else answers with
+     *  its own auth kind, so the arm for that kind can serve it (a Claude head's added accounts are folders splice
+     *  owns). Both refusals came back as UnknownHead before, which read as 404 on a head the console had drawn.
+     *
+     *  inline (kt-no-lambda-seam exemption): the same exemption [mutate] carries, for the same reason — a named fun
+     *  interface for one two-call-site wrapper would be the only consumer of the type. */
+    private inline fun onOAuthHead(headKey: String, block: (OAuthTarget) -> Unit): AccountMutation {
+        val provider = provider(headKey, topologies.read()) ?: return AccountMutation.UnknownHead
+        val kind = AuthKindRegistry.from(provider.auth.kind) as? AuthKind.OAuth
+            ?: return AccountMutation.UnsupportedAuthKind(provider.auth.kind)
+        return mutate { block(OAuthTarget(kind, LoginCommand().oauthAuthPath(provider))) }
     }
 
     // inline (kt-no-lambda-seam exemption): a raw () -> Unit here would need a named fun interface
@@ -191,13 +211,6 @@ internal class ConsoleAccountsImpl(
     private fun provider(headKey: String, topology: Topology): ProviderConfig? {
         val providerKey = topology.heads[headKey]?.provider ?: return null
         return topology.providers[providerKey]
-    }
-
-    private fun oauthTarget(headKey: String): OAuthTarget? {
-        val topology = TopologyLoader.loadOrMaterialize(TopologyLoader.configPath())
-        val provider = provider(headKey, topology) ?: return null
-        val kind = AuthKindRegistry.from(provider.auth.kind) as? AuthKind.OAuth ?: return null
-        return OAuthTarget(kind, LoginCommand().oauthAuthPath(provider))
     }
 }
 

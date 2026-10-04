@@ -61,5 +61,13 @@ public sealed class LoginStart {
 public sealed class AccountMutation {
     public data object Ok : AccountMutation()
     public data object UnknownHead : AccountMutation()
+
+    /** The head exists and keeps its accounts somewhere the OAuth account file is not, so this port cannot edit
+     *  them. It carries the head's own `auth.kind` for the same reason [LoginStart.UnsupportedAuthKind] does: an
+     *  arm for that kind decorates this port and answers exactly this refusal, and a head that merely does not
+     *  exist stays [UnknownHead]. Without the distinction a DELETE on a configured Claude head read as 404
+     *  "unknown head" for a head the console had just drawn. */
+    public data class UnsupportedAuthKind(val kind: String) : AccountMutation()
+
     public data class Refused(val reason: String) : AccountMutation()
 }

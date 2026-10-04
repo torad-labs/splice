@@ -79,6 +79,24 @@ internal data class ClaudeAccount(
 /** A sign-in in flight: Claude Code writes [directory], then [ClaudeAccountFolders.land] decides. */
 internal data class ClaudePendingAccount(val head: String, val label: String, val directory: Path)
 
+/** What [ClaudeAccountFolders.remove] found when asked to take an account off a head. The facts only: the sentence
+ *  a person reads belongs to the surface that asked, because the console and the CLI word it differently. */
+internal sealed class ClaudeAccountRemoval {
+    /** The folder is gone, so that credential cannot be read again even before the head restarts. */
+    data object Removed : ClaudeAccountRemoval()
+
+    /** This head has no added account under that label, including a label no folder could ever carry. */
+    data object NotFound : ClaudeAccountRemoval()
+
+    /** The label names the caller's own Claude Code sign-in, which splice forwards and has never held, so there is
+     *  nothing here to delete. Removing it would mean deleting the person's real Claude Code login. */
+    data object OwnSignIn : ClaudeAccountRemoval()
+
+    /** The folder is still on disk. Its credential may already be gone, which [ClaudeAccountFolders.accounts]
+     *  reports as a label that needs signing in again. */
+    data object Failed : ClaudeAccountRemoval()
+}
+
 /** What [ClaudeAccountFolders.land] did with a finished sign-in. */
 internal sealed class ClaudeAccountLanding {
     /** The account is this head's now, under [label]. */
@@ -141,13 +159,16 @@ internal class ClaudeAccountFolders(
         discard(pending.directory)
     }
 
-    /** True when an account was filed under [label] on [head] and is now gone. */
-    fun remove(head: String, label: String): Boolean {
-        if (!paths.names(label) || !paths.names(head)) return false
-        val directory = paths.account(head, label)
-        if (!Files.isDirectory(directory)) return false
+    /** Takes [label] off [head]: only that label's own folder is deleted, and only when it is one this store owns.
+     *  The caller's own sign-in is refused BY NAME rather than treated as a missing account, because that one is the
+     *  person's real Claude Code login and splice has never held it. */
+    fun remove(head: String, label: String): ClaudeAccountRemoval {
+        if (label == OWN_SIGN_IN_LABEL) return ClaudeAccountRemoval.OwnSignIn
+        val owned = paths.names(label) && paths.names(head)
+        val directory = if (owned) paths.account(head, label) else null
+        if (directory == null || !Files.isDirectory(directory)) return ClaudeAccountRemoval.NotFound
         discard(directory)
-        return !Files.exists(directory)
+        return if (Files.exists(directory)) ClaudeAccountRemoval.Failed else ClaudeAccountRemoval.Removed
     }
 
     /** The proven half of [land]: this head's pool either already holds [identity] under another label, or the

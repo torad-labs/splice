@@ -212,7 +212,7 @@ private fun testDeps(tmp: java.nio.file.Path): HeadDeps = HeadDeps(
         trace = null,
         compactionRecordings = FileCompactionRecordings(tmp.resolve("compactions"), log = {}),
     ),
-    quotaBundle = HeadDeps.HeadQuota(null, null, emptyMap(), NoHeadBudget),
+    quotaBundle = HeadDeps.HeadQuota(null, null, emptyMap(), NoHeadBudget, HeadDeps.CredentialAccountNames { null }),
     seams = HeadDeps.HeadSeams(),
     policy = HeadDeps.HeadPolicy(),
 )

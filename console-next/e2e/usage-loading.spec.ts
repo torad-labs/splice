@@ -52,6 +52,47 @@ test('a seven-day settled command publishes while its sibling remains loading', 
   }
 });
 
+test('the request headline counts commands with requests, not every configured command', async ({ page }) => {
+  await page.route('**/api/economics', route => route.fulfill({ json: { retention_hours: 168, heads: [] } }));
+  await page.route(url => url.pathname === '/api/perf/turns', route => {
+    const query = new URL(route.request().url()).searchParams;
+    const key = query.get('head') ?? '';
+    return route.fulfill({ json: { since: Number(query.get('since')), n: 1,
+      heads: [{ key, label: key, count: key === STACK.oauthHead ? 2502 : 0, usage: key === STACK.oauthHead ? usage : empty, rows: [] }],
+    } });
+  });
+  await open(page, 'usage?window=168');
+  const total = page.getByRole('region', { name: 'Usage', exact: true });
+  const requests = total.getByRole('heading', { name: 'Requests', exact: true }).locator('..');
+  await expect(requests).toContainText('2,502');
+  await expect(requests).toContainText('Across 1 command with requests');
+  await expect(requests).not.toContainText('Across 3 commands');
+});
+
+test('Prices explains missing token counts independently of declared model prices', async ({ page }) => {
+  await page.route('**/api/economics', route => route.fulfill({ json: { retention_hours: 168, heads: [] } }));
+  const reported = { ...stats, missing_input_requests: 2, missing_output_requests: 1, unpriced_requests: 2 };
+  await page.route('**/api/models', route => route.fulfill({ json: { heads: [{ head: STACK.oauthHead, provider: 'synthetic', pinned_model: STACK.model,
+    models: [{ id: STACK.model, label: 'Synthetic model', description: '', slot: null, context_window: 1000, context_window_source: 'synthetic', pinned: true, resolved: true, rates: { input: 1, cache_read: 0.1, output: 2 } }],
+  }] } }));
+  await page.route(url => url.pathname === '/api/perf/turns', route => {
+    const query = new URL(route.request().url()).searchParams;
+    const key = query.get('head') ?? '';
+    return route.fulfill({ json: { since: Number(query.get('since')), n: 1,
+      heads: [{ key, label: key, count: key === STACK.oauthHead ? 2502 : 0,
+        usage: key === STACK.oauthHead ? { ...usage, totals: reported, models: [{ key: STACK.model, ...reported }] } : empty, rows: [] }],
+    } });
+  });
+  await open(page, 'usage?window=168');
+  const disclosure = page.locator('details').filter({ has: page.getByText('Prices for ' + STACK.oauthHead, { exact: true }) });
+  await disclosure.locator('summary').click();
+  await expect(disclosure).toContainText('2 requests have no input token count');
+  await expect(disclosure).toContainText('1 request has no output token count');
+  await expect(disclosure).toContainText('Declared prices do not supply missing token counts');
+  await expect(disclosure).not.toContainText('No price is declared');
+  await expect(disclosure).not.toContainText('INPUT_USD');
+});
+
 test('headline metrics keep loading after an early failure while a readable sibling is pending', async ({ page }) => {
   const heads = await read<HeadsPayload>(page, '/api/heads');
   heads.heads = heads.heads.filter(head => head.key === STACK.oauthHead || head.key === STACK.soloHead);

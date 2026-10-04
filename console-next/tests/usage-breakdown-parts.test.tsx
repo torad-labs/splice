@@ -54,6 +54,16 @@ test('missing catalog prices have a reason and an exact supported command-specif
   expect(html).not.toContain('$0');
 });
 
+test('declared prices do not hide missing input and output counters or suggest another price declaration', () => {
+  const catalog = { head: 'synthetic', provider: 'synthetic', pinned_model: 'model.1', models: [{ id: 'model.1', label: 'Model one', description: '', slot: null, context_window: 1000, context_window_source: 'synthetic', pinned: true, resolved: true, rates: { input: 1, cache_read: 0.1, output: 2 } }] };
+  const html = renderToStaticMarkup(<MemoryRouter><CommandPricing command="synthetic" label="Synthetic" catalog={catalog} usedModels={['model.1']} unpriced={2} missingInput={2} missingOutput={1} path={undefined} /></MemoryRouter>);
+  expect(html).toContain('2 requests have no input token count');
+  expect(html).toContain('1 request has no output token count');
+  expect(html).toContain('Declared prices do not supply missing token counts');
+  expect(html).not.toContain('No price is declared');
+  expect(html).not.toContain('INPUT_USD');
+});
+
 test('requests without counters never manufacture a dollar estimate', () => {
   const html = renderToStaticMarkup(<MemoryRouter><CommandPricing command="synthetic" label="Synthetic" catalog={{ head: 'synthetic', provider: 'synthetic', pinned_model: '', models: [] }} unpriced={3} path={undefined} /></MemoryRouter>);
   expect(html).toContain('no dollar estimate');

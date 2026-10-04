@@ -29,7 +29,7 @@ const added: AccountRow = {
   account: { uuid: 'second-subscription', email: 'other@example.invalid' },
 };
 
-function page(rows: readonly AccountRow[], registry: readonly { key: string; label: string }[] = [{ key: 'claude-splice', label: 'claude-splice' }]): string {
+function page(rows: readonly AccountRow[], registry: readonly { key: string; label: string; family?: string | null }[] = [{ key: 'claude-splice', label: 'claude-splice' }]): string {
   const client = new QueryClient();
   // The read key is the entity key plus its path (api/queries.ts read()), so a fixture seeded on the bare key
   // leaves the page in its reading state and every assertion below passes for the wrong reason.
@@ -64,6 +64,19 @@ describe('the Claude group', () => {
 
   test('counts a second subscription as the second account', () => {
     expect(page([claudeLogin('claude'), claudeLogin('claude-splice'), added])).toContain('>2<');
+  });
+});
+
+describe('the local runtime on Accounts', () => {
+  test('the daemon family selects local-runtime wording without inventing a provider sign-in', () => {
+    const rows = [{ ...added, kind: 'api-key' as const, heads: ['local-internal'] }];
+    const registry = [{ key: 'local-internal', label: 'claude-synthetic-local', family: 'local' }];
+    const local = page(rows, registry);
+    expect(local).toContain('This command uses a runtime on this computer. There is no provider sign-in to change.');
+    expect(local).not.toContain('not a browser login');
+    const remote = page(rows, [{ ...registry[0], key: 'local-internal', label: 'claude-synthetic-remote', family: 'openai' }]);
+    expect(remote).toContain('This command uses an API key, not a browser login.');
+    expect(remote).not.toContain('a runtime on this computer');
   });
 });
 

@@ -17,8 +17,8 @@ export function accountIdentity(row: AccountRow): string {
   return row.login_place?.id ?? row.credential_path ?? `${row.kind}:${row.label ?? row.heads.join(',')}`;
 }
 
-export function AccountCard({ account, place, colour, now, commandLabels }: {
-  account: AccountRow | null; place?: ClaudeLoginPlaceId; colour: ModelColour; now: number; commandLabels?: readonly string[];
+export function AccountCard({ account, place, colour, now, commandLabels, localRuntime = false }: {
+  account: AccountRow | null; place?: ClaudeLoginPlaceId; colour: ModelColour; now: number; commandLabels?: readonly string[]; localRuntime?: boolean;
 }) {
   const client = useQueryClient();
   const head = place === undefined ? account?.heads[0] ?? '' : 'claude-splice';
@@ -49,7 +49,7 @@ export function AccountCard({ account, place, colour, now, commandLabels }: {
       <div className="account-place">
         {place === undefined ? <p>{commands}{account?.plan ? ` · ${account.plan}` : ''}</p> : <><b>{place}</b><p>{place === 'claude' ? A.nativeWhy : A.spliceWhy}</p></>}
       </div>
-      {keyed ? <p className="hint">{A.keyWhy}</p> : <div className="glass one"><AccountLimits windows={account?.windows ?? []} now={now} {...(account === null ? {} : { kind: account.kind })} /></div>}
+      {localRuntime ? <p className="hint">{A.localWhy}</p> : keyed ? <p className="hint">{A.keyWhy}</p> : <div className="glass one"><AccountLimits windows={account?.windows ?? []} now={now} {...(account === null ? {} : { kind: account.kind })} /></div>}
       <div className="quiet-meta">
         {account?.next_target === true ? <span className="tag">{A.next}</span> : null}
         {account?.selected === true ? <span>{A.serving}</span> : null}

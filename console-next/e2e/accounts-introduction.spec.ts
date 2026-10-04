@@ -60,6 +60,23 @@ test('command labels name Accounts while a renamed label never changes the budge
   }
 });
 
+test('a daemon-declared local runtime has local guidance on Accounts, not a provider login alternative', async ({ page }) => {
+  await page.route(url => url.pathname === '/api/status', async route => {
+    const response = await route.fetch();
+    const body = await response.json() as { registry: { key: string; family: string | null }[] };
+    const command = body.registry.find(row => row.key === STACK.keyHead);
+    if (command === undefined) throw new Error('isolated fixture must report the configured key command');
+    command.family = 'local';
+    await route.fulfill({ response, json: body });
+  });
+  const faults = await open(page, 'accounts');
+  const card = page.locator('.account-card').filter({ has: page.getByRole('heading', { level: 3, name: STACK.keyHead, exact: true }) });
+  await expect(card).toContainText('This command uses a runtime on this computer. There is no provider sign-in to change.');
+  await expect(card).not.toContainText('not a browser login');
+  await expect(card.getByRole('button', { name: 'Sign in', exact: true })).toHaveCount(0);
+  await assertHealthy(page, faults);
+});
+
 for (const path of ['accounts', 'settings', 'settings/health']) {
   test(path + ' remains a loading state while its first daemon reads are pending', async ({ page }) => {
     let release = (): void => {};

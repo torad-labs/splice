@@ -20,6 +20,7 @@ export const A = {
   keyReady: 'API key configured',
   keyMissing: 'API key missing',
   keyWhy: 'This command uses an API key, not a browser login. Change the key in its provider configuration.',
+  localWhy: 'This command uses a runtime on this computer. There is no provider sign-in to change.',
   next: 'Next account',
   serving: 'Last selected',
   limitReached: 'Limit reached',

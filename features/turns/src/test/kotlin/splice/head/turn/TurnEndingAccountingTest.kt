@@ -140,6 +140,24 @@ private class CancellationDuringSealTerminal(private val emission: CancellationE
     override suspend fun addRedactedThinking(data: String) = Unit
 }
 
+/** A streamed turn whose client is still there: the seal's error frame reaches the wire. */
+private class ConnectedTerminal : TurnTerminal {
+    override val hasEnded: Boolean = false
+    override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) = Unit
+    override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean) = Unit
+    override fun abandon() = Unit
+    override suspend fun openText() = WireBlockIndex(0)
+    override suspend fun openThinking() = WireBlockIndex(0)
+    override suspend fun openTool(id: String, name: String) = WireBlockIndex(0)
+    override suspend fun textDelta(index: WireBlockIndex, text: String) = Unit
+    override suspend fun thinkingDelta(index: WireBlockIndex, thinking: String) = Unit
+    override suspend fun inputJsonDelta(index: WireBlockIndex, partialJson: String) = Unit
+    override suspend fun closeBlock(index: WireBlockIndex) = Unit
+    override suspend fun closeAll() = Unit
+    override suspend fun addTextBlock(text: String) = Unit
+    override suspend fun addRedactedThinking(data: String) = Unit
+}
+
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TurnEndingAccountingTest {
 
@@ -482,13 +500,63 @@ class TurnEndingAccountingTest {
                         usage = Usage(inputTokens = 50, outputTokens = 4, cachedTokens = 5),
                     ),
                 )
-                seal.sealAndStamp(drive, sealRequested, CancellationException("$name cancellation"))
+                seal.stampAndSeal(drive, sealRequested, CancellationException("$name cancellation"))
                 assertEquals(4, store.readState().outputTokens5h, "$name must retain returned raw usage")
             } finally {
                 drive.slot.release()
             }
         }
     }
+
+    /** Ledger 320: a streamed turn cancelled after a raw round returned wrote its perf row before the stamp set
+     *  that round's counters, so the row read zero while the usage store held the round's output. */
+    @Test
+    fun `a streamed cancellation writes the returned rounds' counters into its perf row`() = runBlocking {
+        val cases = listOf(
+            SealCase("connected", ConnectedTerminal(), false, CancellationException("cut"), "error:cancelled"),
+            SealCase("client-gone", ConnectedTerminal(), true, CancellationException("left"), "client_abort"),
+            SealCase("unwritable", DeadClientSuccessTerminal(), false, CancellationException("cut"), "client_abort"),
+            SealCase("restart", ConnectedTerminal(), false, HeadRestart(), "error:restarted"),
+        )
+        cases.forEach { case ->
+            val rig = Rig("row-cancel-${case.name}")
+            val store = UsageStore(tmp.resolve("row-${case.name}.json"), tmp.resolve("rl-row-${case.name}.json"))
+                .also(usageStores::add)
+            val stamp = TurnUsageStamp(store, rig.log, rig.telemetry)
+            val seal = CancellationSeal(provider(), rig.log, rig.telemetry, rig.health, stamp)
+            val drive = rig.drive(case.emitter, case.clientGone)
+            try {
+                drive.recordRawRound(
+                    TurnOutcome.Success(
+                        hasToolUse = false,
+                        incomplete = false,
+                        usage = Usage(inputTokens = 50, outputTokens = 4, cachedTokens = 5),
+                    ),
+                )
+                seal.stampAndSeal(drive, seal = true, original = case.cause)
+                AsyncFileIo.drain() // perf rows append asynchronously
+                val row = Files.readAllLines(rig.perfFile).single()
+                assertTrue(row.contains("\"outcome\":\"${case.outcome}\""), "${case.name}: $row")
+                assertEquals(50L, counter(row, "in_tokens"), "${case.name}: $row")
+                assertEquals(5L, counter(row, "cached_tokens"), "${case.name}: $row")
+                assertEquals(4L, counter(row, "out_tokens"), "${case.name}: $row")
+                assertEquals(4, store.readState().outputTokens5h, "${case.name} must still stamp the store once")
+            } finally {
+                drive.slot.release()
+            }
+        }
+    }
+
+    private data class SealCase(
+        val name: String,
+        val emitter: TurnTerminal,
+        val clientGone: Boolean,
+        val cause: CancellationException,
+        val outcome: String,
+    )
+
+    private fun counter(row: String, key: String): Long? =
+        Regex("\"$key\":(\\d+)").find(row)?.groupValues?.get(1)?.toLong()
 
     /** Blocker #5: terminal emission can itself cancel. The original cancellation remains the one
      *  the driver rethrows, while known completed raw rounds are synchronously stamped once. */
@@ -522,7 +590,7 @@ class TurnEndingAccountingTest {
                 try {
                     throw original
                 } catch (caught: CancellationException) {
-                    seal.sealAndStamp(drive, seal = true, original = caught)
+                    seal.stampAndSeal(drive, seal = true, original = caught)
                     throw caught
                 }
             } catch (caught: CancellationException) {

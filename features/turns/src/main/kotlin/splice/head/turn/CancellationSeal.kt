@@ -43,11 +43,12 @@ internal class CancellationSeal(
         if (cleanup !== original) original.addSuppressed(cleanup)
     }
 
-    /** Seal first, then persist only the raw rounds that returned before cancellation. Any cleanup
-     *  error is retained on [original], while the caller still rethrows that exact cancellation. */
-    suspend fun sealAndStamp(drive: TurnDrive, seal: Boolean, original: CancellationException) {
+    /** Stamp the raw rounds that returned before cancellation, then seal. The seal writes the perf row,
+     *  so a stamp after it left that row at zero while the usage store held the rounds' output. Any
+     *  cleanup error is retained on [original], while the caller still rethrows that exact cancellation. */
+    suspend fun stampAndSeal(drive: TurnDrive, seal: Boolean, original: CancellationException) {
         try {
-            seal(drive, seal, original)
+            usageStamp.stampKnownOnCancellation(drive)
         } catch (cleanup: CancellationException) {
             retainCleanup(original, cleanup)
         } catch (cleanup: IOException) {
@@ -56,7 +57,7 @@ internal class CancellationSeal(
             retainCleanup(original, cleanup)
         }
         try {
-            usageStamp.stampKnownOnCancellation(drive)
+            seal(drive, seal, original)
         } catch (cleanup: CancellationException) {
             retainCleanup(original, cleanup)
         } catch (cleanup: IOException) {

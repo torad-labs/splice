@@ -39,7 +39,7 @@ internal class SealedDrive(
                     ending.emitFailure(drive, e)
                 }
         } catch (e: CancellationException) {
-            cancellationSeal.sealAndStamp(drive, seal, e)
+            cancellationSeal.stampAndSeal(drive, seal, e)
             // A head-owned cut cancelled only the child turn. Collect may still send its buffered 529 reply.
             val collectRestart = !seal && cancellationSeal.isRestart(e)
             if (!collectRestart || drive.channel.clientGone.get()) throw e

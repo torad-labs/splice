@@ -45,6 +45,11 @@ internal fun interface PerfLineDecode {
 
 /** Older evicted input keeps its original on-demand parser; retained input supplies only compact facts. */
 internal interface PerfLineVisit {
+    /** A canonical pre-cutoff hint, or null when JSON decoding is needed to establish this row. */
+    fun beforeCutoff(line: String): Long? = null
+
+    /** The range still lies above known retention evidence and wholly below this window. */
+    fun canSkip(minimum: Long, maximum: Long): Boolean = false
     fun raw(line: String)
     fun kept(line: PerfCachedLine)
 }

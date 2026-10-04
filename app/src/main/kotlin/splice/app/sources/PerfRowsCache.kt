@@ -60,7 +60,7 @@ internal class PerfRowsCache(private val limitBytes: Long = PERF_CACHE_BYTES) {
         if (!before.regular) throw IOException("not a regular perf generation")
         FileChannel.open(path, READ).use { channel ->
             val opened = attributes(path)
-            if (identity(path, before) != identity(path, opened)) {
+            if (before.identity(path) != opened.identity(path)) {
                 throw IOException("rotated while opening perf generation")
             }
             readState(channel, generation(path, opened, priority), opened, visit, decode)
@@ -76,7 +76,7 @@ internal class PerfRowsCache(private val limitBytes: Long = PERF_CACHE_BYTES) {
     ) {
         val size = channel.size()
         // Filesystem stamps are hints, not proof: repairs can preserve both size and modification time.
-        val unchangedPrefix = samePrefix(channel, state, size)
+        val unchangedPrefix = state.unchanged(size, opened.modified, opened.changed) || samePrefix(channel, state, size)
         val refresh = !unchangedPrefix || state.changed(size, opened.modified) || state.size > state.complete
         if (!unchangedPrefix) {
             reset(state)
@@ -89,14 +89,14 @@ internal class PerfRowsCache(private val limitBytes: Long = PERF_CACHE_BYTES) {
         if (refresh) state.prefixDigest = prefix.fingerprint()
         state.size = size
         state.modified = opened.modified
+        state.changeTime = opened.changed
         trim()
     }
 
     private fun retained(channel: FileChannel, state: PerfCachedGeneration, visit: PerfLineVisit) {
-        val prefixEnd = state.lines.firstOrNull()?.start ?: state.complete
-        val prefix = PerfLineReader(channel, 0L, prefixEnd)
-        while (true) visit.raw(prefix.next() ?: break)
-        state.lines.forEach { visit.kept(it.line) }
+        val selection = PerfCachedSelection(channel, visit, state.ranges)
+        state.lines.forEach { selection.kept(it.start, it.end, it.line) }
+        selection.gap(state.complete)
     }
 
     /** A same-inode repair may grow, shrink or overwrite; only unchanged completed bytes authorize append reuse. */
@@ -109,19 +109,23 @@ internal class PerfRowsCache(private val limitBytes: Long = PERF_CACHE_BYTES) {
 
     private fun attributes(path: Path): PerfFileStamp {
         val values = Files.readAttributes(path, "basic:fileKey,isRegularFile,creationTime,lastModifiedTime")
+        // Kernel change time is not restored by setting mtime. Unsupported providers keep the byte proof.
+        val changed = if ("unix" in path.fileSystem.supportedFileAttributeViews()) {
+            Files.getAttribute(path, "unix:ctime") as? FileTime
+        } else {
+            null
+        }
         return PerfFileStamp(
             key = values["fileKey"],
             regular = values["isRegularFile"] == true,
             created = values["creationTime"] as? FileTime ?: throw IOException("missing creation time"),
             modified = values["lastModifiedTime"] as? FileTime ?: throw IOException("missing modification time"),
+            changed = changed,
         )
     }
 
-    private fun identity(path: Path, attributes: PerfFileStamp): Any =
-        attributes.key ?: (path.toAbsolutePath().normalize() to attributes.created)
-
     private fun generation(path: Path, attributes: PerfFileStamp, priority: Int): PerfCachedGeneration {
-        val key = identity(path, attributes)
+        val key = attributes.identity(path)
         generations[key]?.let {
             it.priority = priority
             it.path = path
@@ -152,10 +156,16 @@ internal class PerfRowsCache(private val limitBytes: Long = PERF_CACHE_BYTES) {
         while (true) {
             val start = reader.position
             val raw = reader.next() ?: break
-            val parsed = previousTail?.takeIf { start == it.start && raw == it.raw }?.line
-                ?: decode.decode(raw)
-            visit.kept(parsed)
-            remember(state, PerfCachedEntry(start, parsed, raw.takeUnless { reader.terminated }))
+            val hint = visit.beforeCutoff(raw)
+            if (hint == null) {
+                val parsed = previousTail?.takeIf { start == it.start && raw == it.raw }?.line
+                    ?: decode.decode(raw)
+                visit.kept(parsed)
+                remember(state, PerfCachedEntry(start, parsed, raw.takeUnless { reader.terminated }, reader.position))
+            } else {
+                visit.raw(raw)
+                if (reader.terminated) rememberRange(state, start, reader.position, hint, raw)
+            }
             if (reader.terminated) {
                 reader.hashTo(prefix)
                 state.complete = reader.position
@@ -164,12 +174,27 @@ internal class PerfRowsCache(private val limitBytes: Long = PERF_CACHE_BYTES) {
         }
     }
 
+    private fun rememberRange(state: PerfCachedGeneration, start: Long, end: Long, hint: Long, raw: String) {
+        if (generations.values.none { it === state }) return
+        val prior = state.ranges.lastOrNull()?.takeIf { it.end == start }
+        val range = prior ?: PerfSkippedRange(start, end, hint).also {
+            state.ranges.add(it)
+            state.rangeBytes += it.retainedBytes
+        }
+        val beforeBytes = range.retainedBytes
+        range.add(raw, hint, end)
+        state.rangeBytes += range.retainedBytes - beforeBytes
+        trim()
+    }
+
     private fun skipOptionalLf(channel: FileChannel, size: Long, state: PerfCachedGeneration) {
         if (!state.trailingCr || state.complete >= size) return
         val next = ByteBuffer.allocate(1)
         channel.read(next, state.complete)
         if (next[0] == '\n'.code.toByte()) {
             prefix.write('\n'.code)
+            state.lines.lastOrNull()?.takeIf { it.end == state.complete }?.let { it.end++ }
+            state.ranges.lastOrNull()?.takeIf { it.end == state.complete }?.let { it.end++ }
             state.complete++
         }
         state.trailingCr = false
@@ -195,6 +220,9 @@ internal class PerfRowsCache(private val limitBytes: Long = PERF_CACHE_BYTES) {
         state.lines.forEach { recordBytes -= it.retainedBytes }
         recordCount -= state.lines.size
         state.lines.clear()
+        state.ranges.clear()
+        state.rangeBytes = 0L
+        state.changeTime = null
         state.complete = 0L
         state.size = 0L
         state.trailingCr = false
@@ -215,23 +243,46 @@ internal class PerfRowsCache(private val limitBytes: Long = PERF_CACHE_BYTES) {
     }
 }
 
-private data class PerfFileStamp(val key: Any?, val regular: Boolean, val created: FileTime, val modified: FileTime)
+private data class PerfFileStamp(
+    val key: Any?,
+    val regular: Boolean,
+    val created: FileTime,
+    val modified: FileTime,
+    val changed: FileTime?,
+) {
+    fun identity(path: Path): Any = key ?: (path.toAbsolutePath().normalize() to created)
+}
 
 private class PerfCachedGeneration(var path: Path, var priority: Int) {
     // One charged node per entry; removing an entry releases its storage without retained capacity.
     val lines = LinkedList<PerfCachedEntry>()
+    val ranges = LinkedList<PerfSkippedRange>()
+    var rangeBytes = 0L
+    var changeTime: FileTime? = null
     var complete = 0L
     var size = 0L
     var modified: FileTime? = null
     var trailingCr = false
     var readLimit = 0L
     var prefixDigest: ByteArray? = null
-    val metadataBytes: Long get() = GENERATION_OVERHEAD_BYTES + path.toString().length * PATH_STORAGE_BYTES_PER_CHAR
+    val metadataBytes: Long
+        get() = GENERATION_OVERHEAD_BYTES + path.toString().length * PATH_STORAGE_BYTES_PER_CHAR +
+            rangeBytes
+
+    fun unchanged(nextSize: Long, nextModified: FileTime, changed: FileTime?): Boolean {
+        if (changed == null || nextSize != complete) return false
+        return !changed(nextSize, nextModified) && changeTime == changed
+    }
 
     fun changed(nextSize: Long, nextModified: FileTime): Boolean = nextSize != size || nextModified != modified
 }
 
-private data class PerfCachedEntry(val start: Long, val line: PerfCachedLine, val raw: String?) {
+private data class PerfCachedEntry(
+    val start: Long,
+    val line: PerfCachedLine,
+    val raw: String?,
+    var end: Long = start,
+) {
     val retainedBytes: Long
         get() = line.retainedBytes + (raw?.let { PERF_STRING_OVERHEAD_BYTES + it.length * PERF_CHAR_BYTES } ?: 0L)
 }

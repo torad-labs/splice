@@ -206,6 +206,12 @@ public class PerfRowsFileSource internal constructor(
          *  Parsed only then, and only the parse is a row's time — a hint never is. */
         private val latest = ArrayList<Skipped>(NEWEST_CANDIDATES + 1)
 
+        override fun beforeCutoff(line: String): Long? =
+            if (emptyModel.containsMatchIn(line)) null else provablyBefore(line)
+
+        override fun canSkip(minimum: Long, maximum: Long): Boolean =
+            oldest?.let { minimum >= it && maximum < sinceMs } ?: false
+
         /** A writer-shaped line provably inside the held span and before the cutoff is skipped unparsed;
          *  every other line is parsed and its top-level unquoted ts decides where it goes. */
         override fun raw(line: String) {
@@ -264,7 +270,7 @@ public class PerfRowsFileSource internal constructor(
 
         private fun skipBefore(line: PerfCachedLine): Boolean {
             val known = oldest
-            val hint = line.leadingTs
+            val hint = line.row?.ts ?: line.leadingTs
             if (known == null || hint == null) return false
             val before = hint < sinceMs && hint >= known
             if (!before || line.emptyModel) return false
@@ -296,9 +302,12 @@ public class PerfRowsFileSource internal constructor(
          *  retention evidence already parsed — it moves neither the oldest timestamp nor the window —
          *  or null when the line must be parsed. */
         private fun provablyBefore(line: String): Long? {
-            val hint = ownRow.find(line)?.groupValues?.get(1)?.toLongOrNull() ?: return null
-            val known = oldest ?: return null
-            return hint.takeIf { it < sinceMs && it >= known }
+            val header = ownRow.find(line) ?: return null
+            val canonical = line.endsWith("}") && !line.contains("\\u")
+            if (!canonical || line.indexOf("\"ts\"", header.range.last + 1) >= 0) return null
+            return oldest?.let { known ->
+                header.groupValues[1].toLongOrNull()?.takeIf { it < sinceMs && it >= known }
+            }
         }
 
         /** Keeps [sample] while it can still be the newest row: once the window holds a row, every

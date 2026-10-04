@@ -1,17 +1,20 @@
 // NEW: byte-positioned, replacing UTF-8 perf lines, including torn tails and every line ending.
 package splice.app.sources
 
-import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 import java.io.OutputStream
-import java.nio.channels.Channels
+import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 
+private const val PERF_LINE_BUFFER_BYTES = 65_536
+
 /** A byte-positioned UTF-8 line reader, including CR, LF, CRLF and the unterminated last line. */
-internal class PerfLineReader(channel: FileChannel, start: Long, private val limit: Long) {
-    private val input = BufferedInputStream(Channels.newInputStream(channel.position(start)))
+internal class PerfLineReader(private val channel: FileChannel, start: Long, private val limit: Long) {
+    private val buffer = ByteBuffer.allocate(PERF_LINE_BUFFER_BYTES)
+    private val input = buffer.array()
     private val bytes = ByteArrayOutputStream()
-    private var pending = -1
+    private var offset = 0
+    private var available = 0
     private var ending = PerfLineEnding.NONE
 
     var position: Long = start
@@ -28,37 +31,43 @@ internal class PerfLineReader(channel: FileChannel, start: Long, private val lim
         trailingCr = false
         ending = PerfLineEnding.NONE
         while (position < limit && !terminated) {
-            val value = take()
-            if (value == -1) return decoded()
-            consume(value)
+            if (!fill()) return decoded()
+            val start = offset
+            while (offset < available && !lineBreak(input[offset])) {
+                offset++
+            }
+            bytes.write(input, start, offset - start)
+            position += offset - start
+            if (offset < available) endLine(input[offset++])
         }
         return decoded()
     }
 
-    private fun consume(value: Int) {
-        when (value) {
-            '\n'.code -> {
-                terminated = true
-                ending = PerfLineEnding.LF
-            }
-            '\r'.code -> carriageReturn()
-            else -> bytes.write(value)
-        }
+    private fun lineBreak(value: Byte): Boolean = value == '\n'.code.toByte() || value == '\r'.code.toByte()
+
+    private fun fill(): Boolean {
+        if (offset < available) return true
+        buffer.clear()
+        buffer.limit(minOf(buffer.capacity().toLong(), limit - position).toInt())
+        available = channel.read(buffer, position)
+        offset = 0
+        return available > 0
+    }
+
+    private fun endLine(value: Byte) {
+        position++
+        terminated = true
+        ending = if (value == '\n'.code.toByte()) PerfLineEnding.LF else PerfLineEnding.CR
+        if (ending == PerfLineEnding.CR) carriageReturn()
     }
 
     private fun carriageReturn() {
-        terminated = true
-        ending = PerfLineEnding.CR
-        if (position < limit) {
-            val after = input.read()
-            if (after == '\n'.code) {
-                position++
-                ending = PerfLineEnding.CRLF
-            } else {
-                pending = after
-            }
-        } else {
+        if (position >= limit) {
             trailingCr = true
+        } else if (fill() && input[offset] == '\n'.code.toByte()) {
+            offset++
+            position++
+            ending = PerfLineEnding.CRLF
         }
     }
 
@@ -80,12 +89,6 @@ internal class PerfLineReader(channel: FileChannel, start: Long, private val lim
         if (!terminated && bytes.size() == 0) return null
         // Charset decoding replaces torn UTF-8, just as the previous InputStreamReader did.
         return bytes.toString(Charsets.UTF_8)
-    }
-
-    private fun take(): Int {
-        val value = if (pending >= 0) pending.also { pending = -1 } else input.read()
-        if (value >= 0) position++
-        return value
     }
 }
 

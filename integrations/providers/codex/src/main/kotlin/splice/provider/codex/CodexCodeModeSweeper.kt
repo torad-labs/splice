@@ -178,8 +178,25 @@ internal class CodeModeRecordRetention(
 
     /** At the start of conversation [key]'s turn: its finished records go together when it reached
      *  [CodeModeRetention.perConversation] records or alone holds more than [CodeModeRetention.bytes],
-     *  and none of its records is running (a running script's baseline sits on them). True when any went. */
+     *  and none of its records is running (a running script's baseline sits on them). Records that stay
+     *  are used by this turn ([used]). True when any went. */
     fun beginTurn(
+        records: MutableList<CodeModeRecord>,
+        expired: CodeModeExpiredHistory,
+        key: String,
+        now: Long,
+    ): Boolean = letGo(records, expired, key, now).also { used(records, key, now) }
+
+    /** A turn replays its conversation's records whether or not it runs a script, so their 24 hours run from
+     *  the turn: its newest finished record takes the turn's time. The turn writes nothing for it, because a
+     *  large conversation's full save can refuse the turn; the head's stop saves it with every conversation. */
+    private fun used(records: List<CodeModeRecord>, key: String, now: Long) {
+        records.filter { it.key == key && it.terminal() }.maxByOrNull(CodeModeRecord::updatedAt)?.let { newest ->
+            newest.updatedAt = maxOf(newest.updatedAt, now)
+        }
+    }
+
+    private fun letGo(
         records: MutableList<CodeModeRecord>,
         expired: CodeModeExpiredHistory,
         key: String,
@@ -224,7 +241,7 @@ internal class CodeModeRecordRetention(
         // serve after restart. New turns call beginTurn after the retry lookup; an OVER-bound
         // conversation is trimmed here as before, even with no new client turn.
         records.map(CodeModeRecord::key).distinct().forEach { key ->
-            if (overOwnBound(records, key)) beginTurn(records, expired, key, now)
+            if (overOwnBound(records, key)) letGo(records, expired, key, now)
         }
         val gone = Gone(records, expired, now)
         while (exceedsHeadCount(records.size)) {

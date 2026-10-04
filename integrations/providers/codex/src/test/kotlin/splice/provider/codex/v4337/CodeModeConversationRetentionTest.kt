@@ -20,6 +20,7 @@ import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRetention
 import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexCodeModeRegistry
+import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Clock
 import java.time.Instant
@@ -239,5 +240,38 @@ class CodeModeConversationRetentionTest {
 
         assertEquals(listOf("c0-s0", "c0-s1"), registry.kept(0), "the conversation used an hour ago lost a record")
         assertEquals(emptyList<String>(), registry.kept(1), "the conversation abandoned 24 hours ago was kept")
+    }
+
+    @Test
+    fun `a conversation that keeps taking turns without a script keeps its records past 24 hours`() {
+        val registry = registry()
+        registry.script(0, 0)
+        registry.script(1, 0)
+        // A turn that runs no script still replays conversation 0's script, so it is a use.
+        clock.now = START + 12.hours.inWholeMilliseconds
+        registry.turnStart.begin("conversation-0")
+
+        clock.now = START + 24.hours.inWholeMilliseconds + 3.minutes.inWholeMilliseconds
+
+        assertEquals(listOf("c0-s0"), registry.kept(0), "the conversation used 12 hours ago lost its script")
+        assertEquals(emptyList<String>(), registry.kept(1), "the conversation abandoned 24 hours ago was kept")
+        registry.onHeadStop()
+        assertEquals(listOf("c0-s0"), registry().kept(0), "a restart forgot the turn that used the conversation")
+    }
+
+    @Test
+    fun `the turn that uses a conversation writes nothing, so a large one is never refused for it`() {
+        val registry = registry()
+        registry.script(0, 0)
+        val written = journalBytes()
+        clock.now += 2.hours.inWholeMilliseconds
+
+        registry.turnStart.begin("conversation-0")
+
+        assertEquals(written, journalBytes(), "the turn saved the conversation it only used")
+    }
+
+    private fun journalBytes(): Long = Files.list(tempDir.resolve("code-mode")).use { files ->
+        files.filter { it.fileName.toString().endsWith(".jsonl") }.toList().sumOf(Files::size)
     }
 }

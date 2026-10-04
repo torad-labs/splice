@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
 import { keys } from '../src/api/queries';
+import { budgetsKey } from '../src/api/usage';
 import { AccountCard } from '../src/pages/accounts/AccountCard';
 import { AccountsPage } from '../src/pages/accounts/AccountsPage';
 import { FailoverOrder } from '../src/pages/accounts/FailoverOrder';
@@ -28,12 +29,16 @@ const added: AccountRow = {
   account: { uuid: 'second-subscription', email: 'other@example.invalid' },
 };
 
-function page(rows: readonly AccountRow[]): string {
+function page(rows: readonly AccountRow[], registry: readonly { key: string; label: string }[] = [{ key: 'claude-splice', label: 'claude-splice' }]): string {
   const client = new QueryClient();
   // The read key is the entity key plus its path (api/queries.ts read()), so a fixture seeded on the bare key
   // leaves the page in its reading state and every assertion below passes for the wrong reason.
   client.setQueryData([...keys.accounts, '/api/accounts'], { accounts: rows });
-  client.setQueryData([...keys.status, '/api/status'], { registry: [{ key: 'claude-splice' }] });
+  client.setQueryData([...keys.status, '/api/status'], { registry });
+  client.setQueryData(budgetsKey, { budgets: [] });
+  for (const head of new Set(rows.flatMap(row => row.heads))) {
+    client.setQueryData(['account-order', head], { head, order: [], effective_order: rows.filter(row => row.heads.includes(head)).map(row => row.label ?? row.login_place?.id ?? 'primary') });
+  }
   return renderToStaticMarkup(<QueryClientProvider client={client}><AccountsPage /></QueryClientProvider>);
 }
 
@@ -53,12 +58,38 @@ describe('the Claude group', () => {
   test('counts subscriptions, so one account signed into both places is not two', () => {
     const html = page([claudeLogin('claude'), claudeLogin('claude-splice')]);
 
-    expect(html).toContain('>1<');
-    expect(html).not.toContain('>2<');
+    expect(html).toContain('<span class="n">1</span>');
+    expect(html).not.toContain('<span class="n">2</span>');
   });
 
   test('counts a second subscription as the second account', () => {
     expect(page([claudeLogin('claude'), claudeLogin('claude-splice'), added])).toContain('>2<');
+  });
+});
+
+describe('command labels on Accounts', () => {
+  const registry = [{ key: 'internal-primary', label: 'claude-synthetic' }, { key: 'internal-secondary', label: 'claude-backup' }];
+  test('group headings name the commands rather than the provider or routing id', () => {
+    const rows = [{ ...added, kind: 'api-key' as const, provider: 'openrouter', heads: registry.map(row => row.key) }];
+    const html = page(rows, registry);
+    expect(html).toMatch(/<h2>claude-synthetic · claude-backup/);
+    expect(html).not.toMatch(/<h2>openrouter/);
+  });
+  test('an API key card names each wrapper command, never its internal routing key', () => {
+    const html = page([{ ...added, kind: 'api-key', heads: registry.map(row => row.key) }], registry);
+    expect(html).toContain('<h3>claude-synthetic · claude-backup</h3>');
+    expect(html).toContain('<p>claude-synthetic · claude-backup</p>');
+    expect(html).not.toContain('<h3>internal-primary');
+  });
+  test('login associations, failover headings and budget labels use the same visible command name', () => {
+    const rows = [{ ...added, heads: ['internal-primary'] }, { ...added, label: 'reserve', heads: ['internal-primary'] }];
+    const html = page(rows, registry);
+    expect(html).toContain('<p>claude-synthetic</p>');
+    expect(html).toContain('<h3>claude-synthetic · When an account reaches its limit</h3>');
+    expect(html).toContain('<b>claude-synthetic daily budget</b>');
+    expect(html).not.toContain('<p>internal-primary</p>');
+    expect(html).not.toContain('<h3>internal-primary');
+    expect(html).not.toContain('<b>internal-primary daily budget</b>');
   });
 });
 

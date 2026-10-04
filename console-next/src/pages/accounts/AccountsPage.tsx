@@ -25,6 +25,7 @@ export function AccountsPage() {
   const accounts = useAccounts();
   const status = useStatus();
   const colour = colourFromRegistry(status.data);
+  const commandLabel = (head: string): string => status.data?.registry.find(row => row.key === head)?.label ?? head;
   const now = Date.now();
   if (accounts.isPending) return <div className="accounts-page"><PageHead title={A.title} lede={A.reading} /></div>;
   if (accounts.isError) return <div className="accounts-page"><PageHead title={A.title} /><Fault message={failureText(accounts.error)} onRetry={() => void accounts.refetch()} /></div>;
@@ -41,15 +42,16 @@ export function AccountsPage() {
         const claude = provider === 'anthropic' || provider === 'claude';
         const heads = [...new Set([...(claude && status.data?.registry.some(row => row.key === 'claude-splice') ? ['claude-splice'] : []), ...rows.flatMap(row => row.heads)])];
         const addHead = heads[0];
+        const title = claude || heads.length === 0 ? (PROVIDERS[provider] ?? provider) : heads.map(commandLabel).join(' · ');
         return <section className="accounts-provider" key={provider}>
-          <GroupHead title={PROVIDERS[provider] ?? provider} {...(claude && CLAUDE_PLACES.some(place => !rows.some(row => row.login_place?.id === place)) ? {} : { count: subscriptions(rows) })}
+          <GroupHead title={title} {...(claude && CLAUDE_PLACES.some(place => !rows.some(row => row.login_place?.id === place)) ? {} : { count: subscriptions(rows) })}
             {...(addHead === undefined || rows.every(row => row.kind === 'api-key') ? {} : { action: <SignIn head={addHead} purpose="add"><Button small>{A.add}</Button></SignIn> })} />
           <ul className="accounts-grid">
-            {claude ? CLAUDE_PLACES.map(place => <AccountCard key={place} place={place} account={rows.find(row => row.login_place?.id === place) ?? null} colour={colour('claude-splice')} now={now} />) : null}
-            {rows.filter(row => !claude || row.login_place == null).map(row => <AccountCard key={accountIdentity(row)} account={row} colour={colour(row.heads[0] ?? '')} now={now} />)}
+            {claude ? CLAUDE_PLACES.map(place => <AccountCard key={place} place={place} account={rows.find(row => row.login_place?.id === place) ?? null} commandLabels={[commandLabel('claude-splice')]} colour={colour('claude-splice')} now={now} />) : null}
+            {rows.filter(row => !claude || row.login_place == null).map(row => <AccountCard key={accountIdentity(row)} account={row} commandLabels={row.heads.map(commandLabel)} colour={colour(row.heads[0] ?? '')} now={now} />)}
           </ul>
           {!claude && rows.length === 0 ? <Empty title={A.noAccounts} why={A.noAccountsWhy} /> : null}
-          {heads.map(head => <div key={head}><FailoverOrder head={head} accounts={rows.filter(row => row.heads.includes(head))} /><AccountBudget head={head} /></div>)}
+          {heads.map(head => <div key={head}><FailoverOrder head={head} label={commandLabel(head)} accounts={rows.filter(row => row.heads.includes(head))} /><AccountBudget head={head} label={commandLabel(head)} /></div>)}
         </section>;
       })}
       </div>

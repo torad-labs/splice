@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
-import { open, assertHealthy } from './support';
+import { open, assertHealthy, env } from './support';
+import { STACK } from './stack';
 
 test('native and separate sign-in dialogs say what Start login does without inventing a label', async ({ page }) => {
   await page.route(url => url.pathname === '/api/accounts', route => route.fulfill({ json: { accounts: [] } }));
@@ -20,6 +21,43 @@ test('native and separate sign-in dialogs say what Start login does without inve
   await expect(dialog).toContainText('The native Claude Code login is unchanged.');
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   await assertHealthy(page, faults);
+});
+
+test('command labels name Accounts while a renamed label never changes the budget API identity', async ({ page }) => {
+  let command = 'claude-synthetic-wrapper';
+  await page.route(url => url.pathname === '/api/status', async route => {
+    const response = await route.fetch();
+    const body = await response.json() as { registry: { key: string; label: string }[] };
+    const head = body.registry.find(row => row.key === STACK.keyHead);
+    if (head === undefined) throw new Error('the isolated fixture must report its API-key command');
+    head.label = command;
+    await route.fulfill({ response, json: body });
+  });
+  const faults = await open(page, 'accounts');
+  const group = () => page.locator('.accounts-provider').filter({ has: page.getByRole('heading', { level: 2, name: command, exact: true }) });
+  await expect(group().getByRole('heading', { level: 3, name: command, exact: true })).toBeVisible();
+  await expect(group().locator('.account-budget b')).toHaveText(command + ' daily budget');
+  await expect(group()).not.toContainText(STACK.keyHead);
+  command = 'claude-renamed-wrapper';
+  await page.reload();
+  await expect(group().getByRole('heading', { level: 3, name: command, exact: true })).toBeVisible();
+  await expect(group().locator('.account-budget b')).toHaveText(command + ' daily budget');
+  try {
+    await group().getByRole('button', { name: 'Set daily cap', exact: true }).click();
+    await group().getByRole('spinbutton', { name: command + ' daily budget', exact: true }).fill('3.00');
+    const writing = page.waitForRequest(request => request.method() === 'PUT' && new URL(request.url()).pathname === '/api/budgets');
+    await group().getByRole('button', { name: 'Save', exact: true }).click();
+    const body = (await writing).postDataJSON() as { budgets: { head: string; daily_usd: number | null }[] };
+    expect(body.budgets.some(row => row.head === STACK.keyHead && row.daily_usd === 3)).toBe(true);
+    expect(body.budgets.some(row => row.head === command)).toBe(false);
+    await expect(group().locator('.account-budget')).toContainText('$3');
+    await assertHealthy(page, faults);
+  } finally {
+    const restored = await page.request.put(env('CONSOLE_E2E_BASE') + '/api/budgets', {
+      headers: { Authorization: 'Bearer ' + env('CONSOLE_E2E_KEY') }, data: { budgets: [] },
+    });
+    expect(restored.ok()).toBe(true);
+  }
 });
 
 for (const path of ['accounts', 'settings', 'settings/health']) {

@@ -6,7 +6,7 @@ import { fmtUsd } from '../../lib/format';
 import { Button } from '../../ui';
 import { A } from './copy';
 
-export function AccountBudget({ head }: { head: string }) {
+export function AccountBudget({ head, label = head }: { head: string; label?: string }) {
   const read = useBudgets();
   const put = usePutBudgets();
   const [editing, setEditing] = useState(false);
@@ -29,14 +29,14 @@ export function AccountBudget({ head }: { head: string }) {
   };
   return (
     <div className="account-budget">
-      <b>{A.headBudget(head)}</b>
+      <b>{A.headBudget(label)}</b>
       <span>{cap === null ? A.noCapWhy : fmtUsd(cap)}</span>
       {cap === null ? null : budget?.used_usd == null ? <span className="hint">{A.spendUnknown}</span> : <>
         <span>{A.spent}: {fmtUsd(budget.used_usd)}</span>
         {budget.remaining_usd == null ? null : <span>{A.left}: {fmtUsd(budget.remaining_usd)}</span>}
       </>}
       {editing ? <form className="acts-row" onSubmit={event => { event.preventDefault(); write(); }}>
-        <label className="sr" htmlFor={`budget-${head}`}>{A.headBudget(head)}</label>
+        <label className="sr" htmlFor={`budget-${head}`}>{A.headBudget(label)}</label>
         <input id={`budget-${head}`} className="input" type="number" min="0.01" step="0.01" value={text} placeholder={A.noCap} onChange={event => setText(event.target.value)} autoFocus />
         <Button small type="submit" disabled={put.isPending || !valid}>{put.isPending ? A.saving : A.save}</Button>
         <Button small disabled={put.isPending} onClick={() => setEditing(false)}>{A.cancel}</Button>

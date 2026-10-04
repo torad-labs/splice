@@ -86,9 +86,13 @@ public sealed class AuthKind(
         "Muse (Meta)",
     )
 
-    /** The head holds NO credential: the caller's own auth headers are forwarded upstream, and its
-     *  native login stays enabled (campaign claude-head). No auth file, no refresh, no sign-in flow
-     *  splice can run — which is why it is not an OAuth kind and has no default auth file. */
+    /** The head holds NO credential of its own: the caller's own auth headers are forwarded upstream, and its
+     *  native login stays enabled (campaign claude-head). No auth file and no refresh for THAT login, which is why
+     *  it is not an OAuth kind and has no default auth file.
+     *
+     *  Since 2026-10-04 a head of this kind can still hold ADDED subscriptions, each a full Claude Code login in a
+     *  folder splice owns and refreshes (ClaudeAccountFolders, ClaudeAddAccountArm). So "no sign-in flow splice can
+     *  run" is true of the caller's own login only: an added account signs in through Claude Code's own flow. */
     public data object Client : AuthKind(
         "client",
         null,

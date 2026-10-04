@@ -1,4 +1,6 @@
 source	sha256	disposition	destination	reason
+app/src/main/kotlin/splice/app/auth/claude/ClaudeAddAccountArm.kt	1673b2ebe5f8d6067bed7b51b80fcec72c2eb253b0909c11a67b34c6b135d374	created		The client arm of add an account a decorator that sends only a Claude head refusal by kind to its own sign-in and leaves every other head answer untouched
+app/src/test/kotlin/splice/app/auth/claude/ClaudeAddAccountArmTest.kt	8c54910b1f3971ebe6aaecaa19e221082179761eabdbaa6e3080918abfefa820	created		A Claude head add reaches its own sign-in every other head keeps the generic port answer an unwired daemon keeps the refusal and each id is polled by the arm that minted it
 features/turns/src/main/kotlin/splice/head/wire/NativeFields.kt	26361d357a77f7f82a2e136d1f4910667a63811107b66ce9340bca978a72cb53	created		Scoped source fields and bounded opaque merges
 features/turns/src/main/kotlin/splice/head/wire/CollectedNativeFields.kt	2effe85e483eb03f97c25aeb9d86057a74a303584d52bd7cb47b753b00eb6f99	created		Collected block extension folds and aggregate capacity
 features/turns/src/test/kotlin/splice/head/wire/PassthroughOpenFieldsTest.kt	fbd5cd77208193556b3c10f9ec51f89729a582691e903be470ca377861d49466	created		Real-head stream and non-stream open-field preservation

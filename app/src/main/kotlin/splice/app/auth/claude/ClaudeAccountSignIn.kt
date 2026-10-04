@@ -16,6 +16,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
+import splice.accounts.signin.HeadRestart
 import splice.accounts.signin.LoginState
 import splice.accounts.signin.LoginStatus
 import splice.core.util.Cancellables
@@ -43,14 +44,16 @@ internal class ClaudeAccountSignIn(
     private val active = mutableMapOf<String, AtomicReference<LoginStatus>>()
     private val history = LinkedHashMap<String, AtomicReference<LoginStatus>>()
 
-    /** Starts a sign-in that ADDS an account to [head] under [label], or mints one when none is asked for. */
-    fun start(head: String, label: String?): LoginStatus {
+    /** Starts a sign-in that ADDS an account to [head] under [label], or mints one when none is asked for.
+     *  [restart] brings the head up on its new pool once the account has landed, the same way an OAuth account
+     *  joins: the pool is assembled at head start, so without it the new login would wait for the next one. */
+    fun start(head: String, label: String?, restart: HeadRestart? = null): LoginStatus {
         val cell = AtomicReference(LoginStatus(UUID.randomUUID().toString(), head, LoginState.STARTING))
         val pending = synchronized(lock) {
             remember(cell)
             prepare(head, label, cell)
         } ?: return cell.get()
-        val job = scope.launch { run(pending, cell) }
+        val job = scope.launch { run(pending, cell, restart) }
         job.invokeOnCompletion { release(pending, cell) }
         return cell.get()
     }
@@ -84,10 +87,14 @@ internal class ClaudeAccountSignIn(
         return "$MINTED_LABEL_PREFIX$next"
     }
 
-    private suspend fun run(pending: ClaudePendingAccount, cell: AtomicReference<LoginStatus>) {
+    private suspend fun run(
+        pending: ClaudePendingAccount,
+        cell: AtomicReference<LoginStatus>,
+        restart: HeadRestart?,
+    ) {
         try {
             val outcome = Cancellables.runCatchingCancellable {
-                withTimeout(ADD_ACCOUNT_TIMEOUT_MS) { authenticate(pending, cell) }
+                withTimeout(ADD_ACCOUNT_TIMEOUT_MS) { authenticate(pending, cell, restart) }
             }.onFailure { why -> failed(cell, "the sign-in stopped (${why::class.simpleName})") }
             Cancellables.discard(outcome, "the attempt status records a classified sign-in failure")
         } catch (_: TimeoutCancellationException) {
@@ -98,13 +105,17 @@ internal class ClaudeAccountSignIn(
         }
     }
 
-    private suspend fun authenticate(pending: ClaudePendingAccount, cell: AtomicReference<LoginStatus>) {
+    private suspend fun authenticate(
+        pending: ClaudePendingAccount,
+        cell: AtomicReference<LoginStatus>,
+        restart: HeadRestart?,
+    ) {
         val child = auth.begin(pending.directory)
         try {
             val completed = child.await { url ->
                 cell.updateAndGet { it.copy(state = LoginState.WAITING, browserUrl = url) }
             }
-            if (completed) land(pending, cell) else failed(cell, "the sign-in did not complete")
+            if (completed) land(pending, cell, restart) else failed(cell, "the sign-in did not complete")
         } finally {
             child.close()
         }
@@ -112,10 +123,18 @@ internal class ClaudeAccountSignIn(
 
     /** What the console reads after the browser: the account is this head's now, or it is refused BY NAME. The
      *  pending folder is gone either way, and no filed login was touched to find that out. */
-    private fun land(pending: ClaudePendingAccount, cell: AtomicReference<LoginStatus>) {
+    private suspend fun land(
+        pending: ClaudePendingAccount,
+        cell: AtomicReference<LoginStatus>,
+        restart: HeadRestart?,
+    ) {
         when (val landed = folders.land(pending)) {
-            is ClaudeAccountLanding.Added -> cell.updateAndGet {
-                it.copy(state = LoginState.SIGNED_IN, label = landed.label)
+            is ClaudeAccountLanding.Added -> {
+                cell.updateAndGet { it.copy(state = LoginState.SIGNED_IN, label = landed.label) }
+                // A head that will not come up is still a landed account: the credential is filed and the row
+                // reads signed in, live after the next start. Its failure is the restart's to report, not this
+                // sign-in's to undo.
+                restart?.let { Cancellables.discard(Cancellables.runCatchingBestEffort { it.restart() }, RESTARTED) }
             }
             is ClaudeAccountLanding.AlreadyAdded ->
                 failed(cell, "that account is already on this command as '${landed.label}'")
@@ -143,3 +162,7 @@ internal class ClaudeAccountSignIn(
 
     private fun key(head: String, label: String): String = "$head/$label"
 }
+
+// why: the landed account is filed whether or not the head comes up again, so a refused restart is reported by the
+// head's own surface rather than turned into a sign-in failure the person cannot act on.
+private const val RESTARTED = "the head restart after an added account is the head surface's to report"

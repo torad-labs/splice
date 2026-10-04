@@ -14,6 +14,11 @@ import splice.topology.TopologyLoader
 import splice.upstream.codemode.ProcessDispatchers
 import java.nio.file.Path
 
+/** One daemon's Claude login machinery: the [owner] of each command's own login, and the [addAccount] sign-in that
+ *  adds a subscription to a head. Both are built from the same native client and scope, so there is one place that
+ *  knows how a Claude sign-in is started on this machine. */
+internal data class ClaudeLoginArm(val owner: ClaudeLoginOwner, val addAccount: ClaudeAccountSignIn)
+
 internal object ClaudeLoginWiring {
     fun create(
         paths: StatePaths,
@@ -21,7 +26,7 @@ internal object ClaudeLoginWiring {
         scope: CoroutineScope,
         wrap: WrapStateRead,
         log: LogSink,
-    ): ClaudeLoginOwner {
+    ): ClaudeLoginArm {
         val home = paths.rootDir.parent ?: paths.rootDir
         val topology = topologyPath?.let(TopologyLoader::loadOrMaterialize) ?: Topology()
         val processes = ProcessEnvironment()
@@ -32,12 +37,16 @@ internal object ClaudeLoginWiring {
             },
         )
         val dispatcher = ProcessDispatchers().io()
-        return ClaudeLoginOwner(
-            ClaudeLoginLocations(home, paths).read(topology),
-            ClaudeLoginRead(paths, log, WallClock(System::currentTimeMillis)),
-            ClaudeLoginSessions(registry),
-            NativeClaudeAuth(wrap, mapOf("HOME" to home.toString()), dispatcher),
-            scope,
+        val native = NativeClaudeAuth(wrap, mapOf("HOME" to home.toString()), dispatcher)
+        return ClaudeLoginArm(
+            owner = ClaudeLoginOwner(
+                ClaudeLoginLocations(home, paths).read(topology),
+                ClaudeLoginRead(paths, log, WallClock(System::currentTimeMillis)),
+                ClaudeLoginSessions(registry),
+                native,
+                scope,
+            ),
+            addAccount = ClaudeAccountSignIn(ClaudeAccountFolders(paths.stateDir), native, scope),
         )
     }
 }

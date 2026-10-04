@@ -92,6 +92,34 @@ describe('grouping', () => {
     const groups = groupSessions([row(), row(), row({ cwd: '/x/other' }), row({ cwd: null })], 'repo');
     expect(groups.map((group) => [group.key, group.sessions.length])).toEqual([['tally', 2], ['other', 1], ['unattributed', 1]]);
   });
+  test('by team uses the common project root for unbound live, stale and ended rows without changing their identity', () => {
+    const root = '/synthetic/cohort';
+    const members = (['live', 'stale', 'gone'] as const).map((availability, index) => row({
+      session_id: `cohort-${index}`, availability, cwd: `${root}/seat-${index}`, repo: { root }, team: null,
+    }));
+    const groups = groupSessions(members, 'team');
+    expect(groups.map(group => [group.key, group.sessions.length])).toEqual([[`project:${root}`, members.length]]);
+    for (const [index, member] of members.entries()) expect(groups[0]?.sessions[index]).toBe(member);
+    expect(groups[0]?.team).toEqual({ kind: 'project', root });
+  });
+  test('saved membership wins over the project and cannot collide with a project or the unfiled sentinel', () => {
+    const saved = row({ session_id: 'saved', team: 'unattributed', repo: { root: 'unattributed' } });
+    const project = row({ session_id: 'project', team: '', repo: { root: 'unattributed' } });
+    const unfiled = row({ session_id: 'unfiled', cwd: null });
+    const groups = groupSessions([saved, project, unfiled], 'team');
+    expect(groups.map(group => group.key).sort()).toEqual(['project:unattributed', 'team:unattributed', 'unattributed']);
+    expect(groups.find(group => group.key === 'team:unattributed')?.team).toEqual({ kind: 'saved', id: 'unattributed' });
+    expect(groups.flatMap(group => group.sessions)).toHaveLength(3);
+  });
+  test('the shared project-root fallback uses cwd only when a common root is missing', () => {
+    const groups = groupSessions([row({ team: null }), row({ team: null, repo: { root: '' } }), row({ cwd: null, repo: { root: '' } })], 'team');
+    expect(groups.map(group => [group.key, group.sessions.length])).toEqual([['project:/home/ava/code/tally', 2], ['unattributed', 1]]);
+  });
+  test('equal project folder names under different roots stay separate', () => {
+    const groups = groupSessions([row({ repo: { root: '/synthetic/a/cohort' } }), row({ repo: { root: '/synthetic/b/cohort' } })], 'team');
+    expect(groups).toHaveLength(2);
+    expect(groups.flatMap(group => group.sessions)).toHaveLength(2);
+  });
 });
 
 describe('the other end of a hand-off', () => {

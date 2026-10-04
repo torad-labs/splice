@@ -3,6 +3,7 @@
 import type { SessionEdge, SessionRow } from '../types/sessions';
 import type { LiveTurn } from '../types/turns';
 import { UNKNOWN_HEAD } from '../types/sessions';
+import { projectRoot } from './project-teams';
 import { repoNameOf } from './repo';
 import { cardSays, onPermission, waitingQuestion } from './session-says';
 import { SW } from './words-sessions';
@@ -73,14 +74,27 @@ export function groupKeyOf(row: SessionRow, by: GroupBy): string {
       return row.head === '' ? UNKNOWN_HEAD : row.head;
     case 'repo':
       return repoName(row) ?? UNATTRIBUTED;
-    case 'team':
-      return row.team !== undefined && row.team !== null && row.team !== '' ? row.team : UNATTRIBUTED;
+    case 'team': {
+      const team = teamGroupOf(row);
+      return team === null ? UNATTRIBUTED : team.kind === 'saved' ? `team:${team.id}` : `project:${team.root}`;
+    }
   }
+}
+
+/** Saved membership takes precedence; unbound sessions share the same project identity as Teams. */
+type SessionTeam = { kind: 'saved'; id: string } | { kind: 'project'; root: string };
+
+function teamGroupOf(row: SessionRow): SessionTeam | null {
+  if (row.team !== undefined && row.team !== null && row.team !== '') return { kind: 'saved', id: row.team };
+  const root = projectRoot(row);
+  return root === null ? null : { kind: 'project', root };
 }
 
 export interface SessionGroup {
   key: string;
   sessions: SessionRow[];
+  /** Structured identity keeps internal namespace keys out of titles and links. */
+  team?: SessionTeam;
 }
 
 const STATE_ORDER = ['needs', 'working', 'idle', 'gone'];
@@ -91,7 +105,8 @@ export function groupSessions(rows: readonly SessionRow[], by: GroupBy): Session
   const groups = new Map<string, SessionGroup>();
   for (const row of rows) {
     const key = groupKeyOf(row, by);
-    const group = groups.get(key) ?? { key, sessions: [] };
+    const team = by === 'team' ? teamGroupOf(row) : null;
+    const group = groups.get(key) ?? { key, sessions: [], ...(team === null ? {} : { team }) };
     group.sessions.push(row);
     groups.set(key, group);
   }

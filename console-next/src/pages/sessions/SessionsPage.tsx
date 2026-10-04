@@ -9,6 +9,7 @@ import { useHeads, useSessions, useStatus, useTeams } from '../../api/queries';
 import { useBoardEdges, useSessionHistory, useTurnOf } from '../../api/sessions';
 import { colourFromRegistry } from '../../lib/model';
 import { moveKey, setOrder, sortByOrder, useOrder } from '../../lib/order';
+import { repoNameOf } from '../../lib/repo';
 import type { GroupBy } from '../../lib/sessions';
 import { UNATTRIBUTED, groupSessions, handoffOf, matchesQuery, sessionKey, sessionsLede, stateOf, timingOf } from '../../lib/sessions';
 import type { SessionRow } from '../../types/sessions';
@@ -115,9 +116,11 @@ export function SessionsPage() {
         {groups.map((group) => {
           const rows = sortByOrder(group.sessions, sessionKey, order);
           const text = by === 'state' ? STATE_HEAD[group.key] : undefined;
-          const team = by === 'team' ? teams.data?.teams.find((candidate) => candidate.id === group.key) : undefined;
-          const root = by === 'repo' ? group.sessions.find((row) => row.repo !== undefined)?.repo?.root : undefined;
-          const title = text?.title ?? team?.name ?? (group.key === UNATTRIBUTED ? P.unattributed : group.key === UNKNOWN_HEAD ? P.unknownHead : group.key);
+          const teamId = group.team?.kind === 'saved' ? group.team.id : undefined;
+          const team = teamId === undefined ? undefined : teams.data?.teams.find((candidate) => candidate.id === teamId);
+          const root = group.team?.kind === 'project' ? group.team.root : by === 'repo' ? group.sessions.find((row) => row.repo !== undefined)?.repo?.root : undefined;
+          const projectName = group.team?.kind === 'project' ? repoNameOf(group.team.root, group.sessions.find(row => row.repo?.remote !== undefined)?.repo?.remote) : undefined;
+          const title = text?.title ?? team?.name ?? projectName ?? (teamId !== undefined ? P.byTeam : group.key === UNATTRIBUTED ? P.unattributed : group.key === UNKNOWN_HEAD ? P.unknownHead : group.key);
           return (
             <section key={group.key} aria-label={title}>
               <GroupHead title={title} count={rows.length} {...(text === undefined ? {} : { why: text.why })} {...(team !== undefined ? { action: <Link to={`/teams/${encodeURIComponent(team.id)}`}>{M.openTeam}</Link> } : root !== undefined && projects.data?.projects.some((project) => project.root === root) === true ? { action: <Link to={`/projects/${encodeURIComponent(root)}`}>{PJ.openProject}</Link> } : {})} />

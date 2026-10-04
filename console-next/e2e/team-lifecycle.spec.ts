@@ -41,6 +41,14 @@ test('a team created through the console binds real sessions, joins handoff and 
   const team = await response.json() as TeamRow;
   expect(team.slots.map((slot) => slot.session)).toEqual([STACK.sender.id, STACK.peer.id]);
   expect(response.request().headers()['idempotency-key']).toBeTruthy();
+  await open(page, 'sessions?group=team');
+  const savedGroup = page.getByRole('region', { name: 'Synthetic handoff team', exact: true });
+  await expect(savedGroup.getByRole('listitem')).toHaveCount(2);
+  await expect(savedGroup).toContainText(sender?.name ?? '');
+  await expect(savedGroup).toContainText(peer?.name ?? '');
+  const savedLink = savedGroup.getByRole('link', { name: 'Open the team', exact: true });
+  await expect(savedLink).toHaveAttribute('href', '#/teams/' + team.id);
+  await savedLink.click();
   await expect(page.getByRole('heading', { name: 'Synthetic handoff team', exact: true })).toBeVisible();
   const lead = page.getByRole('listitem', { name: 'lead', exact: true });
   const builder = page.getByRole('listitem', { name: 'builder', exact: true });
@@ -72,6 +80,42 @@ test('a team created through the console binds real sessions, joins handoff and 
   await expect(lead).toContainText('Nobody is in this seat');
   await expect(lead).toContainText('Drive only the synthetic packet');
   await expect(builder).toContainText(peer?.name ?? '');
+  expect(faults.pageErrors).toEqual([]);
+  expect(faults.failedReads).toEqual([]);
+});
+
+test('Team grouping files unbound sessions by the shared project identity, retains ended rows and opens the project', async ({ page }) => {
+  const root = env('CONSOLE_E2E_REPO');
+  await page.route(url => url.pathname === '/api/sessions', async route => {
+    const response = await route.fetch();
+    const body = await response.json() as SessionsPayload;
+    const source = body.sessions.find(row => row.session_id === STACK.sender.id);
+    if (source === undefined) throw new Error('isolated fixture must contain the synthetic sender');
+    body.sessions = [
+      ...(['live', 'stale', 'gone'] as const).map((availability, index) => ({
+        ...source, session_id: `synthetic-project-${index}`, name: `Synthetic project seat ${index}`, availability,
+        team: null, cwd: `${root}/seat-${index}`, repo: { root, ...(index === 1 ? { remote: 'https://github.com/synthetic-labs/project-cohort.git' } : {}) },
+      })),
+      { ...source, session_id: 'synthetic-unfiled', name: 'Synthetic unfiled seat', team: null, cwd: null, repo: { root: '' } },
+    ];
+    await route.fulfill({ response, json: body });
+  });
+  const faults = await open(page, 'sessions?group=team');
+  const group = page.getByRole('region', { name: 'project-cohort', exact: true });
+  await expect(group.getByRole('listitem')).toHaveCount(3);
+  for (let index = 0; index < 3; index++) await expect(group).toContainText(`Synthetic project seat ${index}`);
+  await expect(page.getByRole('region', { name: 'Not filed', exact: true }).getByRole('listitem')).toHaveCount(1);
+  await expect(page.getByRole('main')).not.toContainText(`project:${root}`);
+  for (const width of [1536, 393]) {
+    await page.setViewportSize({ width, height: 980 });
+    await page.screenshot({ path: test.info().outputPath(`session-project-group-${width}.png`), fullPage: true });
+  }
+  const projectLink = group.getByRole('link', { name: 'Open the project', exact: true });
+  await expect(projectLink).toHaveAttribute('href', '#/projects/' + encodeURIComponent(root));
+  await projectLink.click();
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  await open(page, 'teams');
+  await expect(page.getByRole('heading', { name: 'project-cohort', exact: true })).toBeVisible();
   expect(faults.pageErrors).toEqual([]);
   expect(faults.failedReads).toEqual([]);
 });

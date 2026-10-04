@@ -311,7 +311,7 @@ private object AccountAvailability {
             account.cooldown.unavailableForMs() > 0L -> AccountSwitchReason.WAIT_BUDGET
             exhausted(quota?.fiveHour, at) -> AccountSwitchReason.FIVE_HOUR_QUOTA
             exhausted(quota?.sevenDay, at) -> AccountSwitchReason.SEVEN_DAY_QUOTA
-            else -> AccountSwitchReason.UNAVAILABLE
+            else -> AccountSwitchReason.ACCOUNT_UNAVAILABLE_REASON
         }
     }
 
@@ -363,7 +363,7 @@ public object AccountSwitchReason {
     internal const val WAIT_BUDGET = "rate limit exceeds turn wait budget"
     internal const val FIVE_HOUR_QUOTA = "5-hour quota exhausted"
     internal const val SEVEN_DAY_QUOTA = "7-day quota exhausted"
-    internal const val UNAVAILABLE = "account unavailable"
+    internal const val ACCOUNT_UNAVAILABLE_REASON = "account unavailable"
 
     private val reasons = setOf(
         PINNED,
@@ -374,7 +374,7 @@ public object AccountSwitchReason {
         WAIT_BUDGET,
         FIVE_HOUR_QUOTA,
         SEVEN_DAY_QUOTA,
-        UNAVAILABLE,
+        ACCOUNT_UNAVAILABLE_REASON,
         planLimit("5-hour"),
         planLimit("7-day"),
         "7d window exhausted",

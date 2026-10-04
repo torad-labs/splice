@@ -21,16 +21,19 @@ internal class PerfSkippedRange(
         private set
     private val latest = ArrayList<Candidate>()
     private val counters = ArrayDeque<Candidate>()
+    var decoded: Boolean = false
+        private set
 
     val retainedBytes: Long
-        get() = RANGE_OVERHEAD_BYTES + latest.sumOf { charge(it.raw) } + counters.sumOf { charge(it.raw) }
+        get() = RANGE_OVERHEAD_BYTES + latest.sumOf { it.retainedBytes } + counters.sumOf { it.retainedBytes }
 
     fun add(raw: String, hint: Long, nextEnd: Long) {
         minimum = minOf(minimum, hint)
         maximum = maxOf(maximum, hint)
         end = nextEnd
         val at = latest.indexOfFirst { it.hint > hint }.takeIf { it >= 0 } ?: latest.size
-        val candidate = Candidate(hint, nextEnd, raw)
+        decoded = false
+        val candidate = Candidate(hint, nextEnd, raw = raw)
         latest.add(at, candidate)
         if (latest.size > RANGE_ANCHORS) latest.removeAt(0)
         if (raw.contains("\"${PerfKeys.ASYNC_IO_DROPS}\"")) {
@@ -39,11 +42,41 @@ internal class PerfSkippedRange(
         }
     }
 
-    fun replay(visit: PerfLineVisit) {
-        (latest + counters).distinctBy { it.end }.sortedBy { it.end }.forEach { visit.raw(it.raw) }
+    /** Evicted validated rows retain only bounded evidence; their timestamps need no second parse. */
+    fun add(line: PerfCachedLine, nextEnd: Long) {
+        val hint = requireNotNull(line.row).ts
+        if (latest.isEmpty()) decoded = true
+        minimum = minOf(minimum, hint)
+        maximum = maxOf(maximum, hint)
+        end = nextEnd
+        val at = latest.indexOfFirst { it.hint > hint }.takeIf { it >= 0 } ?: latest.size
+        val candidate = Candidate(hint, nextEnd, line = line)
+        latest.add(at, candidate)
+        if (latest.size > RANGE_ANCHORS) latest.removeAt(0)
+        if (line.dropsCandidate) {
+            if (counters.size == RANGE_ANCHORS) counters.removeFirst()
+            counters.addLast(candidate)
+        }
     }
 
-    private fun charge(raw: String): Long = PERF_STRING_OVERHEAD_BYTES + raw.length * PERF_CHAR_BYTES
+    fun canSkip(visit: PerfLineVisit): Boolean {
+        if (decoded) visit.knownSpan(minimum, maximum)
+        return visit.canSkip(minimum, maximum)
+    }
 
-    private data class Candidate(val hint: Long, val end: Long, val raw: String)
+    fun replay(visit: PerfLineVisit) {
+        (latest + counters).distinctBy { it.end }.sortedBy { it.end }.forEach {
+            if (it.line != null) visit.kept(it.line) else visit.raw(requireNotNull(it.raw))
+        }
+    }
+
+    private data class Candidate(
+        val hint: Long,
+        val end: Long,
+        val raw: String? = null,
+        val line: PerfCachedLine? = null,
+    ) {
+        val retainedBytes: Long
+            get() = line?.retainedBytes ?: raw?.let { PERF_STRING_OVERHEAD_BYTES + it.length * PERF_CHAR_BYTES } ?: 0L
+    }
 }

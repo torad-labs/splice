@@ -29,7 +29,7 @@ internal class PerfCachedSelection(
             } else {
                 val next = minOf(current.end, end)
                 val wholeRange = position == current.start && next == current.end
-                if (wholeRange && visit.canSkip(current.minimum, current.maximum)) {
+                if (wholeRange && current.canSkip(visit)) {
                     current.replay(visit)
                     position = next
                 } else {

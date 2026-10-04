@@ -11,6 +11,8 @@ internal class PerfNumericBuilder(private val pool: PerfFieldNames) {
     var unsharedNameBytes = 0L
         private set
 
+    fun schema(): PerfNumericSchema = pool.schema(names)
+
     fun clear() {
         names.clear()
         unsharedNameBytes = 0L

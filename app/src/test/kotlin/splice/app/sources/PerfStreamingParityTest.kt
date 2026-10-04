@@ -39,7 +39,7 @@ class PerfStreamingParityTest {
         val paths = Readers(dir.resolve("synthetic-perf.jsonl"))
         val rows = listOf(
             """{"ts":1,"outcome":"ok","model":"quo\"te\\tab\t雪","session":"😀","account":"a","turn":"t"}""",
-            """{"ts":2,"unknown_number":9223372036854775807,"unknown_null":null,"unknown_flag":false}""",
+            """{"ts":2,"unknown_number":9223372036854775807,"minimum":-9223372036854775808,"zero":0,"unknown_null":null,"unknown_flag":false}""",
             """{"ts":3,"in_tokens":1.0,"out_tokens":2e3,"cached_tokens":"4","metric":-7,"compact":"false"}""",
             """{"ts":4,"model":true,"session":123,"account":null,"outcome":false,"cache_cold":"true"}""",
             """{"ts":5,"unknown_object":{"ts":99,"metric":100},"unknown_array":[1,{"metric":2}],"turn":[]}""",

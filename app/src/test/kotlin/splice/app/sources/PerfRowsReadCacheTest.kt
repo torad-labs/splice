@@ -96,7 +96,7 @@ class PerfRowsReadCacheTest {
         val before = source.parsedLines
         val recent = source.window(99)
         assertEquals(listOf(99L, 100L), recent.rows.map { it.ts })
-        assertEquals(1L, source.parsedLines - before, "only the evicted retention anchor is parsed")
+        assertEquals(0L, source.parsedLines - before, "validated eviction evidence needs no repeated anchor decode")
         assertEquals(1L, recent.oldestHeldTs)
         assertTrue(source.cachedBytes <= budget)
     }

@@ -1,73 +1,95 @@
-// NEW: compact primitive-array numeric perf facts, with a bounded field-name pool.
+// NEW: lossless packed primitive numeric perf facts, with bounded shared names and schemas.
 package splice.app.sources
 
-// Charges cover array headers, field references/values/indexes, and the shared map entry per key.
-private const val NUMERIC_ARRAY_OVERHEAD_BYTES = 160L
+// Covers the numeric map, schema reference and byte-array header with conservative alignment.
+private const val NUMERIC_ARRAY_OVERHEAD_BYTES = 64L
 
-// Each field retains an 8-byte reference, an 8-byte value and a 4-byte lookup index.
-private const val NUMERIC_FIELD_BYTES = 20L
+// Covers schema/name-key arrays, lookup indexes, map entry and aligned headers.
+private const val NUMERIC_SCHEMA_OVERHEAD_BYTES = 160L
+
+// why: 20 bytes cover each 8-byte name reference, 4-byte lookup index and aligned array capacity.
+private const val NUMERIC_SCHEMA_FIELD_BYTES = 20L
 
 // Covers String/backing headers, both name tables, collision nodes and capacity with 64-bit references.
 private const val FIELD_NAME_OVERHEAD_BYTES = 320L
 
-/** Numeric facts retain primitive arrays, not a JSON tree or one boxed Long and map node per field. */
+// A signed varint carries seven value bits per byte; the eighth bit announces another byte.
+private const val PACKED_VALUE_BITS = 7
+private const val PACKED_VALUE_MASK = (1 shl PACKED_VALUE_BITS) - 1
+private const val PACKED_CONTINUATION = 1 shl PACKED_VALUE_BITS
+
+/** All signed Long values and field presence remain exact; packing is private to the map contract. */
 internal class PerfNumericFields(builder: PerfNumericBuilder) : AbstractMap<String, Long>() {
-    private val names = builder.names.toTypedArray()
-    private val numbers = builder.values.copyOf(names.size)
-    private val order = IntArray(names.size) { it }
+    private val schema = builder.schema()
+    private val numbers = pack(builder)
     private val unsharedNameBytes = builder.unsharedNameBytes
 
-    init {
-        for (at in 1 until order.size) {
-            val value = order[at]
-            var slot = at
-            while (slot > 0 && names[order[slot - 1]] > names[value]) {
-                order[slot] = order[slot - 1]
-                slot--
-            }
-            order[slot] = value
-        }
-    }
+    override val size: Int get() = schema.names.size
+    override fun containsKey(key: String): Boolean = schema.index(key) >= 0
 
-    override val size: Int get() = numbers.size
-
-    /** Conservatively charged array headers, references, primitive values and unpooled field names. */
-    val retainedBytes: Long get() = NUMERIC_ARRAY_OVERHEAD_BYTES + size * NUMERIC_FIELD_BYTES + unsharedNameBytes
+    /** Shared schemas are charged in the source pool, never once per row or left uncharged. */
+    val retainedBytes: Long
+        get() = NUMERIC_ARRAY_OVERHEAD_BYTES + numbers.size + unsharedNameBytes +
+            if (schema.shared) 0L else schema.retainedBytes
 
     override fun get(key: String): Long? {
-        var low = 0
-        var high = order.lastIndex
-        while (low <= high) {
-            val middle = (low + high) ushr 1
-            val index = order[middle]
-            val comparison = names[index].compareTo(key)
-            when {
-                comparison < 0 -> low = middle + 1
-                comparison > 0 -> high = middle - 1
-                else -> return numbers[index]
-            }
+        val wanted = schema.index(key)
+        if (wanted < 0) return null
+        var position = 0
+        var value = 0L
+        repeat(wanted + 1) {
+            value = 0L
+            var shift = 0
+            do {
+                val next = numbers[position++].toInt() and UByte.MAX_VALUE.toInt()
+                value = value or ((next and PACKED_VALUE_MASK).toLong() shl shift)
+                shift += PACKED_VALUE_BITS
+            } while (next and PACKED_CONTINUATION != 0)
         }
-        return null
+        return (value ushr 1) xor -(value and 1L)
     }
 
     override val entries: Set<Map.Entry<String, Long>>
         get() = object : AbstractSet<Map.Entry<String, Long>>() {
-            override val size: Int get() = numbers.size
+            override val size: Int get() = schema.names.size
             override fun iterator(): Iterator<Map.Entry<String, Long>> = object : Iterator<Map.Entry<String, Long>> {
                 private var index = 0
-                override fun hasNext(): Boolean = index < numbers.size
+                override fun hasNext(): Boolean = index < schema.names.size
                 override fun next(): Map.Entry<String, Long> {
                     if (!hasNext()) throw NoSuchElementException()
-                    val at = index++
-                    return java.util.AbstractMap.SimpleImmutableEntry(names[at], numbers[at])
+                    val name = schema.names[index++]
+                    return java.util.AbstractMap.SimpleImmutableEntry(name, requireNotNull(get(name)))
                 }
             }
         }
+
+    private fun pack(builder: PerfNumericBuilder): ByteArray {
+        var size = 0
+        for (index in builder.names.indices) {
+            var value = (builder.values[index] shl 1) xor (builder.values[index] shr (Long.SIZE_BITS - 1))
+            do {
+                size++
+                value = value ushr PACKED_VALUE_BITS
+            } while (value != 0L)
+        }
+        val packed = ByteArray(size)
+        var position = 0
+        for (index in builder.names.indices) {
+            var value = (builder.values[index] shl 1) xor (builder.values[index] shr (Long.SIZE_BITS - 1))
+            do {
+                val next = value and PACKED_VALUE_MASK.toLong()
+                value = value ushr PACKED_VALUE_BITS
+                packed[position++] = (next or if (value == 0L) 0L else PACKED_CONTINUATION.toLong()).toByte()
+            } while (value != 0L)
+        }
+        return packed
+    }
 }
 
-/** Field names are shared only within this source, under a separate charged ceiling. */
+/** Field names and reusable ordered numeric schemas share one source-owned charged ceiling. */
 internal class PerfFieldNames(private val limitBytes: Long) {
     private val names = HashMap<String, String>()
+    private val schemas = HashMap<List<String>, PerfNumericSchema>()
     var retainedBytes: Long = 0L
         private set
 
@@ -81,5 +103,39 @@ internal class PerfFieldNames(private val limitBytes: Long) {
             retainedBytes += charge
         }
         return key
+    }
+
+    fun schema(fields: List<String>): PerfNumericSchema {
+        schemas[fields]?.let { return it }
+        val charge = NUMERIC_SCHEMA_OVERHEAD_BYTES + fields.size * NUMERIC_SCHEMA_FIELD_BYTES
+        val shared = fields.all(names::containsKey) && retainedBytes + charge <= limitBytes
+        val schema = PerfNumericSchema(fields.toList(), shared)
+        if (shared) {
+            schemas[schema.names] = schema
+            retainedBytes += charge
+        }
+        return schema
+    }
+}
+
+/** Immutable schema identity is an internal storage detail; callers still see an ordinary Map. */
+internal class PerfNumericSchema(val names: List<String>, val shared: Boolean) {
+    private val order = names.indices.sortedBy { names[it] }.toIntArray()
+    val retainedBytes: Long get() = NUMERIC_SCHEMA_OVERHEAD_BYTES + names.size * NUMERIC_SCHEMA_FIELD_BYTES
+
+    fun index(key: String): Int {
+        var low = 0
+        var high = order.lastIndex
+        while (low <= high) {
+            val middle = (low + high) ushr 1
+            val index = order[middle]
+            val comparison = names[index].compareTo(key)
+            when {
+                comparison < 0 -> low = middle + 1
+                comparison > 0 -> high = middle - 1
+                else -> return index
+            }
+        }
+        return -1
     }
 }

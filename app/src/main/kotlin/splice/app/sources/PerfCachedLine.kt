@@ -1,11 +1,8 @@
 // NEW: compact cached perf-row facts and the seams between decoding, retention and selection.
 package splice.app.sources
 
-import splice.core.util.JsonlAppendReceipt
-import splice.core.util.JsonlFileVersion
 import splice.usage.perf.PerfRow
 import java.io.IOException
-import java.nio.file.Path
 
 // Conservative retained-string charge: object/array headers and alignment, plus UTF-16 storage.
 internal const val PERF_STRING_OVERHEAD_BYTES = 64L
@@ -49,23 +46,12 @@ internal fun interface PerfLineDecode {
     fun decode(line: String): PerfCachedLine
 }
 
-/** A generation follows its file identity through live, rotated and archived path changes. */
-internal interface PerfGenerationPath {
-    val path: Path
-    val version: JsonlFileVersion?
-    val receipt: JsonlAppendReceipt?
-    val complete: Long
-    val prefixDigest: ByteArray?
-}
-
-internal data class PerfRowLocation(val generation: PerfGenerationPath, val start: Long, val end: Long)
-
 /** An aggregate snapshot cannot authorize reading different bytes for its displayed row. */
 internal class PerfProjectionChanged : IOException("perf generation changed while reading display rows")
 
 /** Transform retained facts, not the parser or its timestamp/probe/error authority. */
 internal fun interface PerfLineKeep {
-    fun keep(location: PerfRowLocation, line: PerfCachedLine, names: PerfFieldNames): PerfCachedLine
+    fun keep(line: PerfCachedLine, names: PerfFieldNames): PerfCachedLine
 }
 
 /** Older evicted input keeps its original on-demand parser; retained input supplies only compact facts. */
@@ -75,6 +61,9 @@ internal interface PerfLineVisit {
 
     /** The range still lies above known retention evidence and wholly below this window. */
     fun canSkip(minimum: Long, maximum: Long): Boolean = false
+
+    /** Validated evicted rows establish time evidence without treating raw header hints as truth. */
+    fun knownSpan(minimum: Long, maximum: Long) = Unit
     fun raw(line: String)
     fun kept(line: PerfCachedLine)
 }

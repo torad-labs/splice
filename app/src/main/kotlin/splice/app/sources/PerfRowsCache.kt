@@ -17,8 +17,8 @@ import java.util.LinkedList
 /** Per-source byte ceiling: the synthetic 27,537-row daily shape fits without retaining all archives. */
 internal const val PERF_CACHE_BYTES: Long = 64L * 1_024 * 1_024
 
-// Keeps more than twice the measured largest daily source while bounding tiny or invalid records.
-internal const val PERF_CACHE_ROWS: Int = 65_536
+// Even tiny or invalid entries cannot outnumber what the single byte ceiling can charge.
+internal const val PERF_CACHE_ROWS: Int = (PERF_CACHE_BYTES / PERF_RECORD_OVERHEAD_BYTES).toInt()
 
 // Unknown field names cannot retain more than 1 MiB of shared names per source.
 private const val FIELD_NAME_BYTES = 1_024L * 1_024
@@ -43,8 +43,8 @@ private const val PATH_STORAGE_BYTES_PER_CHAR = 8L
  *  last line. Returned windows and one input-line decode are transient/caller memory, as before. */
 internal class PerfRowsCache(
     private val limitBytes: Long = PERF_CACHE_BYTES,
-    private val keep: PerfLineKeep? = null,
-    private val limitRows: Int = PERF_CACHE_ROWS,
+    private val keep: PerfLineKeep = PerfTurnsRetention(),
+    private val limitRows: Int = (limitBytes / PERF_RECORD_OVERHEAD_BYTES).toInt(),
 ) {
     init {
         require(limitBytes >= CACHE_OVERHEAD_BYTES)
@@ -60,6 +60,10 @@ internal class PerfRowsCache(
     val retainedBytes: Long
         get() = CACHE_OVERHEAD_BYTES + recordBytes + names.retainedBytes + generations.values.sumOf { it.metadataBytes }
     val retainedRows: Int get() = recordCount
+
+    fun versions(): List<PerfReadVersion> = generations.values.map { state ->
+        PerfReadVersion(state.path, state.version, state.receipt, state.complete, state.prefixDigest)
+    }
 
     fun clear() {
         generations.values.forEach(::reset)
@@ -165,7 +169,7 @@ internal class PerfRowsCache(
             if (hint == null) {
                 val parsed = previousTail?.takeIf { start == it.start && raw == it.raw }?.line
                     ?: decode.decode(raw)
-                val retained = retain(state, start, reader.position, parsed)
+                val retained = keep.keep(parsed, names)
                 visit.kept(retained)
                 remember(state, PerfCachedEntry(start, retained, raw.takeUnless { reader.terminated }, reader.position))
             } else {
@@ -179,9 +183,6 @@ internal class PerfRowsCache(
             state.trailingCr = reader.trailingCr
         }
     }
-
-    private fun retain(state: PerfCachedGeneration, start: Long, end: Long, line: PerfCachedLine): PerfCachedLine =
-        keep?.keep(PerfRowLocation(state, start, end), line, names) ?: line
 
     private fun rememberRange(state: PerfCachedGeneration, start: Long, end: Long, hint: Long, raw: String) {
         if (generations.values.none { it === state }) return
@@ -245,12 +246,39 @@ internal class PerfRowsCache(
         while (retainedBytes > limitBytes || recordCount > limitRows) {
             val oldest = generations.values.filter { it.lines.isNotEmpty() }.minByOrNull { it.priority }
             if (oldest != null) {
-                recordBytes -= oldest.lines.removeFirst().retainedBytes
+                val evicted = oldest.lines.removeFirst()
+                recordBytes -= evicted.retainedBytes
                 recordCount--
+                oldest.evicted(evicted)
             } else {
                 val state = generations.minByOrNull { it.value.priority } ?: break
                 generations.remove(state.key)
             }
+        }
+    }
+}
+
+internal data class PerfReadVersion(
+    val path: Path,
+    val version: JsonlFileVersion?,
+    val receipt: JsonlAppendReceipt?,
+    val complete: Long,
+    val digest: ByteArray?,
+) {
+    fun coherent(): Boolean {
+        val before = version ?: return false
+        return try {
+            val after = JsonlAppendProof.version(path)
+            when {
+                after.changed != null && before == after -> true
+                JsonlAppendProof.current(path)?.continues(before, after, receipt) == true -> true
+                after.changed == null -> FileChannel.open(path, READ).use { channel ->
+                    PerfPrefixDigest().matches(channel, after.size, complete, digest)
+                }
+                else -> false
+            }
+        } catch (_: IOException) {
+            false
         }
     }
 }
@@ -264,24 +292,39 @@ private class PerfFileStamp(path: Path) {
     fun identity(path: Path): Any = version.key ?: (path.toAbsolutePath().normalize() to version.created)
 }
 
-private class PerfCachedGeneration(override var path: Path, var priority: Int) : PerfGenerationPath {
+private class PerfCachedGeneration(var path: Path, var priority: Int) {
     // One charged node per entry; removing an entry releases its storage without retained capacity.
     val lines = LinkedList<PerfCachedEntry>()
     val ranges = LinkedList<PerfSkippedRange>()
     var rangeBytes = 0L
     var changeTime: FileTime? = null
-    override var complete = 0L
+    var complete = 0L
     var size = 0L
     var modified: FileTime? = null
     var trailingCr = false
     var readLimit = 0L
-    override var prefixDigest: ByteArray? = null
+    var prefixDigest: ByteArray? = null
     var prefixState: PerfPrefixState? = null
-    override var version: JsonlFileVersion? = null
-    override var receipt: JsonlAppendReceipt? = null
+    var version: JsonlFileVersion? = null
+    var receipt: JsonlAppendReceipt? = null
     val metadataBytes: Long
         get() = GENERATION_OVERHEAD_BYTES + path.toString().length * PATH_STORAGE_BYTES_PER_CHAR +
             rangeBytes
+
+    fun evicted(entry: PerfCachedEntry) {
+        val row = entry.line.row ?: return
+        if (entry.line.probe || entry.raw != null) return
+        val previous = ranges.lastOrNull { it.end == entry.start }
+        val range = previous ?: PerfSkippedRange(entry.start, entry.end, row.ts).also {
+            val position = ranges.indexOfFirst { next -> next.start > it.start }
+                .takeIf { index -> index >= 0 } ?: ranges.size
+            ranges.add(position, it)
+            rangeBytes += it.retainedBytes
+        }
+        val before = range.retainedBytes
+        range.add(entry.line, entry.end)
+        rangeBytes += range.retainedBytes - before
+    }
 
     fun appendProof(opened: PerfFileStamp): PerfPrefixState? = prefixState?.takeIf {
         version?.let { before -> opened.receipt?.continues(before, opened.version, receipt) } == true

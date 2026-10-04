@@ -91,23 +91,10 @@ public class PerfRowsFileSource internal constructor(
     private val cache: PerfRowsCache = PerfRowsCache(),
 ) : PerfRowsSource, ProjectedPerfRowsSource {
     private val json = Json { ignoreUnknownKeys = true }
-    private val display = lazy { PerfTurnsRetention() }
-    private val projectionCache = lazy {
-        PerfRowsCache(
-            limitBytes = PERF_CACHE_BYTES - PERF_DISPLAY_BYTES,
-            keep = display.value,
-            limitRows = (PERF_CACHE_BYTES / PERF_RECORD_OVERHEAD_BYTES).toInt(),
-        )
-    }
-    private var projectionSince: Long? = null
+    private var cacheSince: Long? = null
 
-    /** Charged projection and display storage; the ordinary full-row cache keeps its own ceiling. */
-    internal val projectedBytes: Long
-        get() = if (projectionCache.isInitialized()) {
-            projectionCache.value.retainedBytes + display.value.retainedBytes
-        } else {
-            0L
-        }
+    /** Both views report the same single cache; no projection or display copy is retained. */
+    internal val projectedBytes: Long get() = cache.retainedBytes
 
     /** JSON decodes performed by this source, including rejected rows and baseline candidates. */
     internal var parsedLines: Long = 0L
@@ -134,13 +121,7 @@ public class PerfRowsFileSource internal constructor(
 
     @Synchronized
     override fun <T> projected(sinceMs: Long, read: PerfProjectionRead<T>): T {
-        val retained = projectionCache.value
-        if (projectionSince?.let { sinceMs < it } == true) {
-            // A wider first selection must populate previously skipped facts, not replay that gap forever.
-            retained.clear()
-            display.value.clear()
-        }
-        projectionSince = minOf(projectionSince ?: sinceMs, sinceMs)
+        val retained = cache
         return try {
             projectedRead(sinceMs, retained, read)
         } catch (_: PerfProjectionChanged) {
@@ -159,12 +140,17 @@ public class PerfRowsFileSource internal constructor(
 
     private fun <T> projectedRead(sinceMs: Long, retained: PerfRowsCache, read: PerfProjectionRead<T>): T {
         val scan = settledRead(sinceMs, PerfSelection.WORK, retained)
+        val versions = retained.versions()
         val projection = object : PerfRowsProjection {
             override val window: PerfRowsWindow = scan.window()
-            override fun complete(rows: List<PerfRow>): List<PerfRow> =
-                rows.map { display.value.complete(it, PerfLineDecode(scan::decode)) }
+            override fun complete(rows: List<PerfRow>): List<PerfRow> {
+                if (versions.any { !it.coherent() }) throw PerfProjectionChanged()
+                return rows
+            }
         }
-        return read(projection)
+        val result = read(projection)
+        if (versions.any { !it.coherent() }) throw PerfProjectionChanged()
+        return result
     }
 
     /** Both sides are read together, so lost or clock-shifted evidence cannot justify subtraction. */
@@ -175,6 +161,8 @@ public class PerfRowsFileSource internal constructor(
     }
 
     private fun settledRead(sinceMs: Long, selection: PerfSelection, rowsCache: PerfRowsCache = cache): Scan {
+        if (cacheSince?.let { sinceMs < it } == true) rowsCache.clear()
+        cacheSince = minOf(cacheSince ?: sinceMs, sinceMs)
         val settled = AsyncFileIo.awaitFile(file)
         var keys = fileKeys()
         var read = readAll(sinceMs, selection, rowsCache)
@@ -277,6 +265,14 @@ public class PerfRowsFileSource internal constructor(
 
         override fun canSkip(minimum: Long, maximum: Long): Boolean =
             oldest?.let { minimum >= it && maximum < sinceMs } ?: false
+
+        override fun knownSpan(minimum: Long, maximum: Long) {
+            oldest = minOf(oldest ?: minimum, minimum)
+            if (maximum < sinceMs) {
+                newest = maxOf(newest ?: maximum, maximum)
+                latestCandidate(Skipped(maximum, ts = maximum))
+            }
+        }
 
         /** A writer-shaped line provably inside the held span and before the cutoff is skipped unparsed;
          *  every other line is parsed and its top-level unquoted ts decides where it goes. */

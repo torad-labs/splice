@@ -31,6 +31,76 @@ import java.nio.file.Path
 
 class PerfTurnsProjectionTest {
     @Test
+    fun `an economics warmed week supplies complete projected rows without decoding again`(@TempDir dir: Path) {
+        val history = SyntheticPerfHistory(dir)
+        history.create()
+        val source = PerfRowsFileSource(history.file)
+        val expected = source.economicsEvidence(SCALE_SINCE).work
+        val decoded = source.parsedLines
+        val actual = source.projected(SCALE_SINCE) { projection ->
+            projection.window.copy(rows = projection.complete(projection.window.rows))
+        }
+        assertEquals(expected, actual, "both views preserve the entire PerfRow contract in file order")
+        assertEquals(decoded, source.parsedLines, "a warmed first projection never decodes an already read row")
+        assertTrue(source.cachedBytes <= PERF_CACHE_BYTES)
+        assertTrue(source.projectedBytes <= PERF_CACHE_BYTES)
+    }
+
+    @Test
+    fun `full history economics warming also supplies the first week projection without a second scan`(
+        @TempDir dir: Path,
+    ) {
+        val history = SyntheticPerfHistory(dir)
+        history.create()
+        val source = PerfRowsFileSource(history.file)
+        source.economicsEvidence(0)
+        val decoded = source.parsedLines
+        val paths = setOf(history.file, history.file.resolveSibling("${history.file.fileName}.1"))
+        val profile = PerfHistoryProfile()
+        profile.diskPhase("economics_warmed_projection", dir.resolve("shared.jfr"), paths) {
+            source.projected(SCALE_SINCE) { projection ->
+                assertEquals(SCALE_REQUESTS, projection.window.rows.size)
+                assertEquals(projection.window.rows, projection.complete(projection.window.rows))
+            }
+        }
+        assertEquals(decoded, source.parsedLines, "evicted older rows cannot force a repeated decode")
+        assertEquals(0L, profile.diskBytes, "both views share the already-scanned generations")
+        assertTrue(source.cachedBytes <= PERF_CACHE_BYTES)
+    }
+
+    @Test
+    fun `concurrent cold economics and projected opens share one lossless scan`(@TempDir dir: Path) {
+        val file = dir.resolve("synthetic.jsonl")
+        Files.writeString(file, (1L..1_000L).joinToString("") { row(it, fields = tokens + ("arbitrary" to -it)) })
+        val source = PerfRowsFileSource(file)
+        val start = java.util.concurrent.CountDownLatch(1)
+        val callers = java.util.concurrent.Executors.newFixedThreadPool(2)
+        try {
+            val economics = callers.submit(
+                java.util.concurrent.Callable {
+                    start.await()
+                    source.economicsEvidence(0).work
+                },
+            )
+            val projected = callers.submit(
+                java.util.concurrent.Callable {
+                    start.await()
+                    source.projected(0) { projection ->
+                        projection.window.copy(rows = projection.complete(projection.window.rows))
+                    }
+                },
+            )
+            start.countDown()
+            val expected = economics.get(30, java.util.concurrent.TimeUnit.SECONDS)
+            val actual = projected.get(30, java.util.concurrent.TimeUnit.SECONDS)
+            assertEquals(expected, actual)
+            assertEquals(1_000L, source.parsedLines, "the concurrent first opens decode each input row once")
+        } finally {
+            callers.shutdownNow()
+        }
+    }
+
+    @Test
     fun `a second prefix edit falls back to a complete coherent window`(@TempDir dir: Path) {
         val file = dir.resolve("synthetic.jsonl")
         val tail = (2L..10_000L).joinToString("") { row(it) }

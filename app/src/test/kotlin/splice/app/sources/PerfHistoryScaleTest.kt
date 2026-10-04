@@ -242,17 +242,15 @@ class PerfHistoryScaleTest {
         val coldParses = source.parsedLines
         val warmRows = profiler.source(source, dir.resolve("warm-source.jfr"))
         assertEquals(rows, warmRows, "warm selection must preserve every requested row and field")
-        assertTrue(source.parsedLines - coldParses <= SCALE_REQUESTS + 8L)
+        assertEquals(0L, source.parsedLines - coldParses, "the one retained row view supplies the whole week")
         val requestedBytes = Files.size(history.file)
-        assertTrue(profiler.diskBytes > 0, "the byte instrument must observe the forced window-prefix replay")
-        assertTrue(
-            profiler.diskBytes <= requestedBytes + 65_536L,
-            "unchanged reads may replay the requested window, never hash or frame the older generation",
-        )
+        assertEquals(0L, profiler.diskBytes, "unchanged full windows share the same settled cache")
         println("perf_warm_disk_bytes=${profiler.diskBytes} requested_file_bytes=$requestedBytes")
         assertTrue(
-            profiler.sourceBytes <= profiler.diskBytes * 6,
-            "warm allocation must stay within a small multiple of the requested bytes actually replayed",
+            profiler.sourceBytes <= requestedBytes * 6,
+            "warm allocation keeps the original absolute requested-window ceiling",
         )
+        profiler.source(PerfRowsFileSource(history.file), dir.resolve("cold-read-control.jfr"))
+        assertTrue(profiler.diskBytes > 0, "a separate cold source proves the byte instrument still observes reads")
     }
 }

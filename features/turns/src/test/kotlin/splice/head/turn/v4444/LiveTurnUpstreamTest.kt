@@ -52,6 +52,7 @@ import splice.head.wire.ImmediateSseWriter
 import splice.head.wire.UsagePayloadBuilder
 import splice.upstream.ClientFrameEmitted
 import splice.upstream.ProviderTuning
+import splice.upstream.RoundBody
 import splice.upstream.WsRound
 import splice.upstream.WsRoundRunner
 import splice.upstream.retry.InflightGate
@@ -132,7 +133,7 @@ class LiveTurnUpstreamTest {
 
         fun inputs(turn: TurnDrive, scope: CoroutineScope): WsRoundInputs = WsRoundInputs(
             turn,
-            "{}",
+            RoundBody.Text("{}"),
             turn.emitter,
             scope,
             Job(),

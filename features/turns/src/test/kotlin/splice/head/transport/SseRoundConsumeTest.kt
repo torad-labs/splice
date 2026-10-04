@@ -73,6 +73,7 @@ import splice.upstream.Provider
 import splice.upstream.ProviderTuning
 import splice.upstream.RetryBackoff
 import splice.upstream.RetryNotice
+import splice.upstream.RoundBody
 import splice.upstream.StreamTranslator
 import splice.upstream.TurnSignals
 import splice.upstream.retry.InflightGate
@@ -282,7 +283,7 @@ class SseRoundConsumeTest {
         )
         val inputs = WsRoundInputs(
             drive,
-            """{"instructions":"SCENARIO:hello"}""",
+            RoundBody.Text("""{"instructions":"SCENARIO:hello"}"""),
             RecordingSink2(),
             this,
             Job(),
@@ -384,7 +385,7 @@ class SseRoundConsumeTest {
         val drive = drive(perf = perf)
         val inputs = WsRoundInputs(
             drive,
-            """{"instructions":"SCENARIO:hello"}""",
+            RoundBody.Text("""{"instructions":"SCENARIO:hello"}"""),
             RecordingSink2(),
             this,
             Job(),
@@ -433,7 +434,7 @@ class SseRoundConsumeTest {
         val drive = drive()
         val inputs = WsRoundInputs(
             drive = drive,
-            bodyJson = "{}",
+            body = RoundBody.Text("{}"),
             sink = RecordingSink2(),
             scope = this,
             turnJob = Job(),
@@ -513,7 +514,7 @@ class SseRoundConsumeTest {
         val turnJob = Job()
         val inputs = WsRoundInputs(
             drive = drive,
-            bodyJson = "{}",
+            body = RoundBody.Text("{}"),
             sink = RecordingSink2(),
             scope = this,
             turnJob = turnJob,

@@ -124,8 +124,8 @@ class CodexCodeModeReanchorTest {
             log = {},
             emitter = emitter,
             signals = RunnerSignals(watchdogFired = { false }, clientGone = { false }),
-            postRoundToSink = { request, _ -> post(request) },
-            postRound = { post(it) },
+            postRoundToSink = { request, _ -> post(request.text) },
+            postRound = { post(it.text) },
             finish = { finish(it) },
             interception = RoundInterception(interceptor = bridge.interceptor(turn, disableParallel = false)),
         )

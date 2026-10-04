@@ -32,12 +32,14 @@ import splice.core.util.WallClock
 import splice.core.wire.HttpStatus
 import splice.core.wire.RateLimitReply
 import splice.upstream.CredentialHeaders
+import splice.upstream.RoundBody
 import splice.upstream.StreamStart
 import splice.upstream.UpstreamHandler
 import splice.upstream.failure.FailureRules
 import splice.upstream.retry.MS_PER_S
 import splice.upstream.retry.RetryAfter
 import splice.upstream.sse.AttemptRecorder
+import java.io.ByteArrayOutputStream
 
 /** [json] for the RC-4 amender; [bytes] for the wire, encoded once.
  *
@@ -52,9 +54,18 @@ import splice.upstream.sse.AttemptRecorder
  *  on a GZIPPED body and broke grok live on 2026-07-18. This is zstd, not gzip, and it is
  *  proven only for ChatGPT by its own first-party client — so it is opt-in per provider and
  *  the gzip ban stands untouched. */
-internal data class RequestBody(val json: String, val zstd: Boolean = false) {
+internal data class RequestBody(val body: RoundBody, val zstd: Boolean = false) {
+    /** Encoded ONCE and straight from [body]: a retry resends these bytes and never re-encodes, and a
+     *  round whose text nobody reads never builds one. The sink is sized from [RoundBody.byteSize] so the
+     *  encode is two bounded tree walks rather than a doubling buffer — on a 1.04 MB body the streamed
+     *  pair costs 16,536 bytes against 2,997,608 for serialise-then-encode (RequestParseAllocationTest). */
     val bytes: ByteArray =
-        json.toByteArray(Charsets.UTF_8).let { if (zstd) com.github.luben.zstd.Zstd.compress(it) else it }
+        ByteArrayOutputStream(body.byteSize().toInt()).also(body::writeTo).toByteArray()
+            .let { if (zstd) com.github.luben.zstd.Zstd.compress(it) else it }
+
+    /** The RC-4 amender's and the trace's view. Materialised on the first read, which on an ordinary
+     *  round never comes: UpstreamClient reads it only inside `ctx.wire?.let` and on a failure. */
+    val json: String get() = body.text
 
     /** The content-encoding the bytes ride under, for the trace; null when they are the JSON itself. */
     val encoding: String? get() = if (zstd) "zstd" else null
@@ -113,7 +124,7 @@ internal class UpstreamRequest(
     private val failureRules = FailureRules()
 
     /** Encode ONCE; retries resend the same bytes (no per-attempt string re-encode). Never gzip. */
-    fun body(bodyJson: String): RequestBody = RequestBody(bodyJson, zstdRequestBody)
+    fun body(body: RoundBody): RequestBody = RequestBody(body, zstdRequestBody)
 
     /** The prepared POST, up to but NOT including `execute` — [execute] owns the block because
      *  the response body channel only lives inside it. */

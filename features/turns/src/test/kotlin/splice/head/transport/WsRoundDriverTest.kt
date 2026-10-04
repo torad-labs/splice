@@ -88,6 +88,7 @@ import splice.upstream.ClientFrameEmitted
 import splice.upstream.NEVER_PINGED_MS
 import splice.upstream.Provider
 import splice.upstream.ProviderTuning
+import splice.upstream.RoundBody
 import splice.upstream.WsPathPulse
 import splice.upstream.WsRound
 import splice.upstream.WsRoundAbort
@@ -326,7 +327,7 @@ private class WsDriverFixture(private val tmp: Path, private val baseUrl: String
         )
         return WsRoundInputs(
             drive = drive,
-            bodyJson = "{}",
+            body = RoundBody.Text("{}"),
             sink = RecordingSink2(),
             scope = scope,
             turnJob = Job(),

@@ -6,7 +6,6 @@ package splice.head.turn
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import splice.core.perf.PerfKeys
-import splice.core.util.JsonWire
 import splice.core.util.LogSink
 import splice.head.round.RoundInterception
 import splice.head.round.RoundStrategy
@@ -14,6 +13,7 @@ import splice.head.transport.IndependentSourcePost
 import splice.head.transport.SseRoundDriver
 import splice.head.wire.WireTap
 import splice.upstream.Provider
+import splice.upstream.RoundBody
 
 internal class TurnRoundRun(
     private val provider: Provider,
@@ -44,13 +44,13 @@ internal class TurnRoundRun(
             // each fold round, each re-anchor, each tool-search continuation — and whatever an
             // interceptor substituted, passes through one of these two lambdas as the string the
             // driver POSTs. Recorded here, an audit sees exactly the bytes, not the turn's first draft.
-            postRoundToSink = { bodyJson, sink ->
-                recordPost(drive, bodyJson)
-                sourceRound.post(drive, bodyJson, sink, self, turnJob)
+            postRoundToSink = { body, sink ->
+                recordPost(drive, body)
+                sourceRound.post(drive, body, sink, self, turnJob)
             },
-            postRound = { bodyJson ->
-                recordPost(drive, bodyJson)
-                sseRoundDriver.postRound(drive, bodyJson, drive.emitter, self, turnJob)
+            postRound = { body ->
+                recordPost(drive, body)
+                sseRoundDriver.postRound(drive, body, drive.emitter, self, turnJob)
             },
             finish = { outcome -> turnFinish.finishTurn(drive, outcome) },
             toolSearch = drive.toolSearch,
@@ -61,8 +61,10 @@ internal class TurnRoundRun(
         ).run(drive.requestBody, fold, reanchor, drive.perf)
     }
 
-    private fun recordPost(drive: TurnDrive, bodyJson: String) {
-        drive.perf.setCount(PerfKeys.UPSTREAM_REQ_BYTES, JsonWire.byteSize(bodyJson))
-        wireTap?.record(drive.meta, bodyJson)
+    // The audit still sees exactly the bytes this round POSTs: byteSize counts them without encoding,
+    // and the wire tap reads the text only when a tap is actually open.
+    private fun recordPost(drive: TurnDrive, body: RoundBody) {
+        drive.perf.setCount(PerfKeys.UPSTREAM_REQ_BYTES, body.byteSize())
+        wireTap?.record(drive.meta, body.text)
     }
 }

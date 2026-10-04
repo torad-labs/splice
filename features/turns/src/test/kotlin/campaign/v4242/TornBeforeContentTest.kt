@@ -51,6 +51,7 @@ import splice.head.wire.ImmediateSseWriter
 import splice.head.wire.TurnTerminal
 import splice.upstream.ClientFrameEmitted
 import splice.upstream.ProviderTuning
+import splice.upstream.RoundBody
 import splice.upstream.WsRound
 import splice.upstream.WsRoundRunner
 import splice.upstream.retry.InflightGate
@@ -169,7 +170,7 @@ class TornBeforeContentTest(@param:TempDir private val tmp: Path) {
         )
         return WsRoundInputs(
             drive = turn,
-            bodyJson = "{}",
+            body = RoundBody.Text("{}"),
             sink = RecordingSink2(),
             scope = scope,
             turnJob = turnJob,

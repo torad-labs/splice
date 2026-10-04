@@ -11,12 +11,12 @@ import splice.core.perf.TurnPerf
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
-import splice.core.util.JsonWire
 import splice.core.util.LogSink
 import splice.upstream.FoldController
 import splice.upstream.InterceptedRoundPost
 import splice.upstream.ReanchorController
 import splice.upstream.RetryNotice
+import splice.upstream.RoundBody
 import splice.upstream.RoundInterceptor
 import splice.upstream.ToolSearchController
 import splice.upstream.sse.WireSink
@@ -58,11 +58,9 @@ internal class RoundStrategy(
         perf: TurnPerf?,
     ) {
         val notice = RetryNotice { log(it) }
-        val interceptedPost = PostRound { body ->
-            intercept(body, emitter, observedPost(InterceptedRoundPost(postRound::invoke)))
-        }
+        val interceptedPost = PostRound { body -> intercept(body, emitter, postRound) }
         val interceptedPostToSink = PostRoundToSink { body, sink ->
-            intercept(body, sink, observedPost(InterceptedRoundPost { posted -> postRoundToSink(posted, sink) }))
+            intercept(body, sink, PostRound { posted -> postRoundToSink(posted, sink) })
         }
         if (fold != null) {
             FoldRunner(
@@ -83,7 +81,7 @@ internal class RoundStrategy(
             // which made the most expensive turn class the one that recorded nothing. There are no
             // absorbed rounds on this path, so the accumulator is empty by construction and a
             // Success or a clean abandonment passes through untouched.
-            finish(rounds.withFailureSalvage(interceptedPost(JsonWire.string(requestBody)), RoundUsage()))
+            finish(rounds.withFailureSalvage(interceptedPost(RoundBody.Tree(requestBody)), RoundUsage()))
         } else {
             ReanchorRunner(
                 key = key,
@@ -102,13 +100,26 @@ internal class RoundStrategy(
         if (interception.interceptor != null) interception.rawRoundObserved else null,
     )
 
+    /** With no interceptor this is the ordinary path and it never reads [body]'s text: the round goes
+     *  straight to the transport, which wants bytes, and ObservedRoundPost's observation is wired only
+     *  when an interceptor exists, so there is nothing for a pass-through to observe. An interceptor
+     *  composes text, so it gets text — materialised here, once, for that round only. */
     private suspend fun intercept(
-        bodyJson: String,
+        body: RoundBody,
         sink: WireSink,
-        post: InterceptedRoundPost,
+        direct: PostRound,
     ): TurnOutcome {
-        if (interception.interceptor != null) return interception.interceptor.intercept(bodyJson, sink, post)
-        val outcome = post(bodyJson)
+        val interceptor = interception.interceptor ?: return refusingCustomCalls(direct(body))
+        return interceptor.intercept(
+            body.text,
+            sink,
+            observedPost(InterceptedRoundPost { posted -> direct(RoundBody.Text(posted)) }),
+        )
+    }
+
+    /** The direct path cannot execute a custom tool call, so a round that returns one ends the turn.
+     *  An interceptor owns its own custom calls and never reaches this. */
+    private fun refusingCustomCalls(outcome: TurnOutcome): TurnOutcome {
         if (outcome !is TurnOutcome.Success || outcome.customCalls.isEmpty()) return outcome
         val name = outcome.customCalls.first().name.ifEmpty { "<unnamed>" }
         return TurnOutcome.Failure(

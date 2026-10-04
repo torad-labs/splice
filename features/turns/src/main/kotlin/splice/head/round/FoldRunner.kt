@@ -13,12 +13,12 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.perf.TurnPerfTiming
 import splice.core.turn.TurnOutcome
-import splice.core.util.JsonWire
 import splice.head.wire.BufferingWireSink
 import splice.upstream.FoldController
 import splice.upstream.ReanchorController
 import splice.upstream.RetryBackoff
 import splice.upstream.RetryNotice
+import splice.upstream.RoundBody
 import splice.upstream.ToolSearchController
 import splice.upstream.codemode.ProcessWaiter
 import splice.upstream.sse.WireSink
@@ -53,7 +53,7 @@ internal class FoldRunner(
         val absorbedFailures = mutableListOf<TurnOutcome.Failure>()
         while (true) {
             val buffer = BufferingWireSink(emitter)
-            val outcome = postRound(JsonWire.string(body), buffer)
+            val outcome = postRound(RoundBody.Tree(body), buffer)
             val success = outcome as? TurnOutcome.Success
             if (success != null) acc = acc.plusRound(success.usage)
 

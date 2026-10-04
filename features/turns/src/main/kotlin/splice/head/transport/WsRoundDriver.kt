@@ -81,7 +81,7 @@ internal class WsRoundDriver(
             // Credentials come from the provider's auth surface, NOT from a WS-side refresh: L5
             // keeps the single-flight 401 refresh in UpstreamClient, so a missing/expired
             // credential here simply rides SSE and gets refreshed there.
-            val accepted = timedRound(runner, drive, inputs.bodyJson)
+            val accepted = timedRound(runner, drive, inputs.body.text)
             if (accepted == null) {
                 // SSE is about to serve this round, so the conversation advances outside any chain.
                 runner.roundBypassed(drive.meta)
@@ -187,7 +187,7 @@ internal class WsRoundDriver(
      *  nothing for a clean terminal. Headers redacted by name class like the SSE path's. */
     private fun closeTrace(drive: TurnDrive, inputs: WsRoundInputs, ending: String?, reported: Boolean) {
         val failure = ending ?: if (reported) null else "round unwound before it reported (cancelled or thrown)"
-        drive.trace?.wsAttempt(inputs.bodyJson, HeaderRedaction.redact(drive.turnHeaders), failure)
+        drive.trace?.wsAttempt(inputs.body.text, HeaderRedaction.redact(drive.turnHeaders), failure)
     }
 
     /** The round failed while the client had seen nothing, so it can still be RE-SERVED with the

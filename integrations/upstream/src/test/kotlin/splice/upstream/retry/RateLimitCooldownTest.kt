@@ -21,6 +21,7 @@ import splice.core.util.LocalTimeText
 import splice.core.util.WallClock
 import splice.core.wire.RateLimitReply
 import splice.upstream.RetryNotice
+import splice.upstream.RoundBody
 import splice.upstream.Waiter
 import splice.upstream.transport.PostContext
 import splice.upstream.transport.RecordingWaiter
@@ -480,7 +481,8 @@ class RateLimitCooldownBudgetTest {
         // does not compile against the old shape (post returned T and threw
         // UpstreamTurnWaitExhausted), and a Delivered here fails the assertEquals instead of
         // arriving as an exception any broad catch on the turn path would have taken for a bug.
-        assertEquals(UpstreamPost.TurnWaitExhausted, client.post(context, "{}") { "unreachable" })
+        val round = RoundBody.Text("{}")
+        assertEquals(UpstreamPost.TurnWaitExhausted, client.post(context, round) { "unreachable" })
 
         assertEquals(0, calls.get())
         // The operator-visible line is unchanged; the class that used to carry it is gone.
@@ -696,7 +698,7 @@ class RateLimitCooldownOuterTurnTest {
             rateLimitCooldown = cooldown,
         ).also { it.relayRateLimitReplies = true }
         try {
-            val refusal = client.post(context, "{}") { "unreachable" } as UpstreamPost.Refused
+            val refusal = client.post(context, RoundBody.Text("{}")) { "unreachable" } as UpstreamPost.Refused
             assertEquals(reply, refusal.failure.rateLimitReply)
             assertTrue(refusal.failure.localHold)
             assertEquals(0, calls.get(), "the raced native hold must reach the handoff caller without an upstream send")
@@ -773,7 +775,8 @@ class RateLimitCooldownOuterTurnTest {
 
             if (leftAfterFirstRound == 0L) {
                 // V4-114 PIN: same value, on the second round of a spent turn cap.
-                assertEquals(UpstreamPost.TurnWaitExhausted, client.post(context, "{}") { "unreachable" })
+                val round = RoundBody.Text("{}")
+                assertEquals(UpstreamPost.TurnWaitExhausted, client.post(context, round) { "unreachable" })
                 assertEquals(1, calls.get(), "round two must make zero calls after the turn cap is spent")
             } else {
                 val failure = assertThrows<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }

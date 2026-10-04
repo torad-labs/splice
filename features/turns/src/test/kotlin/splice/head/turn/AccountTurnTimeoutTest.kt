@@ -48,6 +48,7 @@ import splice.head.wire.UsagePayloadBuilder
 import splice.upstream.ClientFrameEmitted
 import splice.upstream.ProviderTuning
 import splice.upstream.RetryNotice
+import splice.upstream.RoundBody
 import splice.upstream.TurnSignals
 import splice.upstream.retry.InflightGate
 import splice.upstream.retry.LiveLimit
@@ -71,7 +72,7 @@ class AccountTurnTimeoutTest {
         try {
             val inputs = WsRoundInputs(
                 drive,
-                "{}",
+                RoundBody.Text("{}"),
                 rig.terminal,
                 this,
                 turnJob,

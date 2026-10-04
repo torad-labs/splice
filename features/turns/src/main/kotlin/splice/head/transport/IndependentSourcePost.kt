@@ -6,6 +6,7 @@ import kotlinx.coroutines.Job
 import splice.core.turn.TurnOutcome
 import splice.head.turn.TurnDrive
 import splice.head.turn.TurnUsageStamp
+import splice.upstream.RoundBody
 import splice.upstream.sse.IndependentRoundSink
 import splice.upstream.sse.WireSink
 
@@ -15,7 +16,7 @@ internal class IndependentSourcePost(
 ) {
     suspend fun post(
         drive: TurnDrive,
-        body: String,
+        body: RoundBody,
         sink: WireSink,
         clientScope: CoroutineScope,
         clientJob: Job,

@@ -28,6 +28,7 @@ package splice.head.round
 
 import splice.core.turn.TurnOutcome
 import splice.upstream.ClientGone
+import splice.upstream.RoundBody
 import splice.upstream.sse.WireSink
 
 /**
@@ -41,7 +42,7 @@ import splice.upstream.sse.WireSink
  * re-anchor runner's sinkless sibling, which splices rounds onto a LIVE emitter instead.
  */
 internal fun interface PostRoundToSink {
-    suspend operator fun invoke(bodyJson: String, sink: WireSink): TurnOutcome
+    suspend operator fun invoke(body: RoundBody, sink: WireSink): TurnOutcome
 }
 
 /**
@@ -52,7 +53,7 @@ internal fun interface PostRoundToSink {
  * message. Nothing to redirect, so nothing to pass.
  */
 internal fun interface PostRound {
-    suspend operator fun invoke(bodyJson: String): TurnOutcome
+    suspend operator fun invoke(body: RoundBody): TurnOutcome
 }
 
 /**

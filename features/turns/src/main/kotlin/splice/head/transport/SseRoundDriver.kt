@@ -13,6 +13,7 @@ import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.head.turn.TurnDrive
 import splice.upstream.ClientFrameEmitted
+import splice.upstream.RoundBody
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.StreamTornBeforeClient
 import splice.upstream.transport.TransportFailureReason
@@ -28,7 +29,7 @@ internal class SseRoundDriver(
      *  so the fold loop emits exactly ONE terminal across all rounds (L3). */
     suspend fun postRound(
         drive: TurnDrive,
-        bodyJson: String,
+        body: RoundBody,
         sink: WireSink,
         self: CoroutineScope,
         turnJob: Job,
@@ -58,7 +59,7 @@ internal class SseRoundDriver(
         // both land on the unchanged post() below, so SSE keeps sole ownership of retry, the
         // single-flight 401 refresh and the shared 429 cooldown (L5). With the quirk off,
         // provider.wsRunner is null and not one line of this executes.
-        val inputs = WsRoundInputs(drive, bodyJson, sink, self, turnJob, frameEmittedThisRound, eventsBase)
+        val inputs = WsRoundInputs(drive, body, sink, self, turnJob, frameEmittedThisRound, eventsBase)
         wsDriver.run(inputs)?.let { return it }
         return try {
             ssePost.post(inputs)

@@ -480,16 +480,6 @@ names = [
 ]
 reason = """Both are wizard steps taking a name and reporting success, and they differ in what they touch. HeadSignIn "signs ONE head in, answering whether it ended up authenticated" and is described in its own KDoc as the heaviest seam in the wizard: production opens a browser, binds a loopback port, and blocks until the vendor redirects back. ProfileAdd is "one `splice add profile --yes` call; production is AddCommand with a no-op restart", which ends in an atomic write to splice.toml. A swap either asks for a sign-in against a profile that does not exist yet, or appends a head for a key the operator only meant to authenticate."""
 
-# ── 2 names, suspend (String) -> TurnOutcome ──────────────────────────────────────────────────────
-[[groups]]
-signature = "suspend (String)->TurnOutcome"
-dated = "2026-09-17"
-names = [
-    "InterceptedRoundPost",
-    "PostRound",
-]
-reason = """InterceptedRoundPost is "one upstream dispatch; an interceptor may invoke it AGAIN for a bounded local continuation" — it is the inner call a RoundInterceptor is handed and may run more than once per turn. PostRound is the ReanchorRunner variant of the poster: one round out, its honest outcome back, and crucially NO SINK, because re-anchor rounds stream straight onto the live emitter whose seal and monotonic block indices make the spliced rounds one coherent Anthropic message. One is re-entrant by contract, the other is the sinkless leaf; sharing a type would let a re-anchor round be handed to an interceptor chain that may replay it, duplicating blocks inside a single message."""
-
 # ── 2 names, suspend (String) -> Unit ─────────────────────────────────────────────────────────────
 [[groups]]
 signature = "suspend (String)->Unit"

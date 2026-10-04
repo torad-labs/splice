@@ -20,6 +20,7 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.util.ElapsedClock
+import splice.upstream.RoundBody
 import splice.upstream.Waiter
 import java.io.IOException
 import java.net.ConnectException
@@ -340,7 +341,7 @@ class UpstreamClientBackoffTest {
         suspend fun post(): String = client.posted(context, "{}") { "ok" }
 
         /** The un-narrowed answer, for the one test whose subject IS the refusal (V4-114). */
-        suspend fun postRaw(): UpstreamPost<String> = client.post(context, "{}") { "ok" }
+        suspend fun postRaw(): UpstreamPost<String> = client.post(context, RoundBody.Text("{}")) { "ok" }
 
         suspend fun postWithTornStream(): String {
             var torn = true

@@ -42,6 +42,7 @@ import splice.core.util.ERR_SNIPPET
 import splice.core.util.ElapsedClock
 import splice.upstream.DnsBackoff
 import splice.upstream.RetryBackoff
+import splice.upstream.RoundBody
 import splice.upstream.UpstreamHandler
 import splice.upstream.Waiter
 import splice.upstream.codemode.ProcessElapsedNow
@@ -150,17 +151,17 @@ public class UpstreamClient(
      */
     public suspend fun <T> post(
         ctx: PostContext,
-        bodyJson: String,
+        round: RoundBody,
         block: UpstreamHandler<T>,
     ): UpstreamPost<T> {
         // Encode ONCE; retries resend the same bytes (no per-attempt string re-encode). Never gzip.
-        var body = request.body(bodyJson)
+        var body = request.body(round)
         val state = RetryState(ctx.rateLimitCooldown ?: cooldown)
         val t0 = clock()
         while (state.attempt < maxRetries) {
             when (val step = runAttempt(ctx, body, state, t0, block)) {
                 is LoopStep.Done -> return step.result
-                is LoopStep.Amend -> body = request.body(step.bodyJson)
+                is LoopStep.Amend -> body = request.body(RoundBody.Text(step.bodyJson))
                 LoopStep.Continue -> Unit
                 LoopStep.TurnWaitExhausted -> return UpstreamPost.TurnWaitExhausted
             }

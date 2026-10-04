@@ -91,6 +91,28 @@ class RoundSerializationTest {
         assertTrue(allocated < 12 * 1024 * 1024, "synthetic_turn_allocated_bytes=$allocated; budget=12582912")
     }
 
+    /** The transport needs UTF-8 bytes and nothing else: an interceptor, a trace and the failure amender are
+     *  each conditional, and on an ordinary round none of them is there. So an ordinary round must not pay for
+     *  a retained wire String. Measured with a post that reads nothing, which is what the direct path does. */
+    @Test
+    fun `an ordinary round whose body nobody reads does not pay for a wire string`(
+        reporter: TestReporter,
+    ) = runTest {
+        val request = largeRequest()
+        val rig = SerializationRig(tmp)
+        val bean = ManagementFactory.getThreadMXBean() as? ThreadMXBean ?: error("JVM allocation counter is required")
+        assertTrue(bean.isThreadAllocatedMemorySupported)
+        bean.isThreadAllocatedMemoryEnabled = true
+        repeat(10) { rig.unread(request) }
+        val thread = Thread.currentThread().threadId()
+        val before = bean.getThreadAllocatedBytes(thread)
+        rig.unread(request)
+        val allocated = bean.getThreadAllocatedBytes(thread) - before
+        assertTrue(thread == Thread.currentThread().threadId(), "the measured round must stay on this thread")
+        reporter.publishEntry("unread_round_allocated_bytes", allocated.toString())
+        assertTrue(allocated < 250_000, "unread_round_allocated_bytes=$allocated; budget=250000")
+    }
+
     private fun largeRequest(): JsonObject = buildJsonObject {
         put("model", "synthetic")
         val text = "x".repeat(22_000)
@@ -140,6 +162,26 @@ private class SerializationRig(tmp: Path) {
         ClientChannel(ImmediateSseWriter(writeRaw = {}, flushRaw = {}), Mutex(), AtomicBoolean(false)),
     )
 
+    /** One round whose post reads nothing of the body, which is the direct path with no interceptor,
+     *  no trace and no failure to amend. */
+    suspend fun unread(body: JsonObject) {
+        val drive = assemble(body)
+        try {
+            val success = TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage())
+            RoundStrategy(
+                key = provider.key,
+                log = {},
+                emitter = terminal,
+                signals = drive.signals,
+                postRoundToSink = { _, _ -> error("the direct round must not fold") },
+                postRound = { success },
+                finish = {},
+            ).run(drive.requestBody, null, null, drive.perf)
+        } finally {
+            drive.slot.release()
+        }
+    }
+
     suspend fun turn(body: JsonObject): String {
         val drive = assemble(body)
         var posted = ""
@@ -153,7 +195,7 @@ private class SerializationRig(tmp: Path) {
                 signals = drive.signals,
                 postRoundToSink = { _, _ -> error("the direct round must not fold") },
                 postRound = { wire ->
-                    posted = wire
+                    posted = wire.text
                     success
                 },
                 finish = {},

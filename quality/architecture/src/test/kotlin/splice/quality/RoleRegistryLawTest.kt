@@ -722,7 +722,10 @@ class RoleRegistryLawTest {
         // 36 since Oct 4 CT: BufferedSinkWrite and SourceFrameAction share `suspend (WireSink)->Unit`, a new entry of
         // two names: one retains tentative client output, the other delivers a validated event inside a scope that
         // always unwinds.
-        assertEquals(36, config.entries.size, "one entry per shared signature")
+        // 35 since Oct 4 CT: PostRound left `suspend (String)->TurnOutcome` when it began taking a RoundBody, so
+        // InterceptedRoundPost holds that signature alone and the entry became unreachable. The law's own words are
+        // the remedy: a list that keeps entries nobody can reach is how an allowlist stops being reviewed.
+        assertEquals(35, config.entries.size, "one entry per shared signature")
         assertEquals(
             text.split("\n").count { it == "[[groups]]" },
             config.entries.size,
@@ -759,7 +762,9 @@ class RoleRegistryLawTest {
         // Oct 3 CT: CodeModeQueryPreparation makes one key current before an ownership query.
         // 141 since Oct 4 CT: the two names of the new `suspend (WireSink)->Unit` entry.
         // 142 since Oct 4 CT: ClientUserAgent joined `()->String?`, the Claude Code identity the usage probe presents.
-        assertEquals(142, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
+        // 140 since Oct 4 CT: the removed `suspend (String)->TurnOutcome` entry took InterceptedRoundPost and
+        // PostRound with it when PostRound began taking a RoundBody.
+        assertEquals(140, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
         assertTrue(config.entries.values.all { !it.text("reason").isNullOrBlank() }) { "every entry is reasoned" }
         assertTrue(config.entries.values.all { !it.text("dated").isNullOrBlank() }) { "every entry is dated" }
 

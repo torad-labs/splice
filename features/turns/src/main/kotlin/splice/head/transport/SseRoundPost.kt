@@ -79,7 +79,7 @@ internal class SseRoundPost(
                     drive.upstreamAccepted?.invoke()
                 }
             },
-            inputs.bodyJson,
+            inputs.body,
         ) { resp ->
             provider.observeResponseHeaders(drive.meta, resp)
             // Persist upstream rate-limit headers for /api/usage + statusline soft-warn (Node

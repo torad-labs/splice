@@ -3,6 +3,7 @@ package splice.head.round
 
 import splice.core.turn.TurnOutcome
 import splice.upstream.RedirectableRoundPost
+import splice.upstream.RoundBody
 import splice.upstream.sse.WireSink
 
 internal class ObservedRoundPost(
@@ -17,7 +18,7 @@ internal class ObservedRoundPost(
     }
 
     override suspend fun into(bodyJson: String, sink: WireSink): TurnOutcome {
-        val outcome = dispatch(bodyJson, sink)
+        val outcome = dispatch(RoundBody.Text(bodyJson), sink)
         observation?.invoke(outcome)
         return outcome
     }

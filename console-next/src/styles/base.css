@@ -63,6 +63,20 @@ svg { display: block; flex: none; }
 .page-head .tools { margin-left: auto; display: flex; align-items: center; gap: var(--space-5); padding-bottom: var(--space-3); }
 .page-head .tools .btn { white-space: nowrap; flex: none; }
 
+/* On a narrow terminal companion, keep navigation above the work rather than taking its desktop column. */
+@media (max-width: 48rem) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .side, [data-theme='night'] .side { min-height: 0; padding: var(--space-7); border-right: 0; border-bottom: 4px solid var(--edge); }
+  .side .mark { padding: 0; }
+  .nav { flex-direction: row; flex-wrap: wrap; }
+  .nav a { padding: var(--space-4) var(--space-5); }
+  .nav a[aria-current='page']::before, .nav a.here::before { left: 0; }
+  .side .foot { margin-top: var(--space-5); display: flex; flex-wrap: wrap; align-items: center; }
+  .wall { padding: var(--space-9) var(--space-7) var(--space-13); }
+  .page-head, .group-head { flex-wrap: wrap; }
+  .page-head .tools { margin-left: 0; }
+}
+
 /* ---------- controls: familiar, in the film's paper; only the charged act is a filled button ---------- */
 .btn {
   display: inline-flex; align-items: center; gap: var(--space-4); min-height: 2.375rem; padding: var(--space-3) var(--space-3);

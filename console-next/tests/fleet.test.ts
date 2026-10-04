@@ -68,9 +68,9 @@ describe('a fleet card', () => {
   test('until the key store answers, an api-key head is called what the daemon calls it', () => {
     expect(fleetCard(head({ key: 'bonsai', label: 'bonsai', authKind: 'api-key' }), inputs({ keys: null, sessions: new Map() })).meta[0]).toBe('api key');
   });
-  test('a ready head shows its tightest window and one quiet line, and no act', () => {
+  test('a ready head keeps its quota facts and offers the command to start a session, not a daemon start', () => {
     const card = fleetCard(head(), inputs({ accounts: [account()] }));
-    expect(card).toMatchObject({ state: 'Ready', tone: 'work', attention: false, fix: null });
+    expect(card).toMatchObject({ state: 'Ready', tone: 'work', attention: false, fix: 'copy-launch' });
     expect(card.line).toMatchObject({ kind: 'gauge', name: '5 hours', pct: 41, full: false });
     expect(card.meta).toEqual(['grok', 'Ava’s Grok', '2 sessions']);
   });
@@ -88,7 +88,7 @@ describe('a fleet card', () => {
   });
   test.each([100, 105])('a %s percent reading without a held refusal stays ready in the command colour', (pct) => {
     const card = fleetCard(head(), inputs({ usage: usage(pct) }));
-    expect(card).toMatchObject({ state: 'Ready', standing: 'ready', tone: 'work', colour: 'grok', attention: false, fix: null });
+    expect(card).toMatchObject({ state: 'Ready', standing: 'ready', tone: 'work', colour: 'grok', attention: false, fix: 'copy-launch' });
     expect(card.line).toMatchObject({ kind: 'gauge', pct, full: false, note: `near its limit · ${pct}%, resets ${localZonedInstantText(NOW / 1000 + 3600)}` });
     expect(fleetLede([card])).toContain('one ready');
     expect(fleetLede([card])).not.toContain('out of quota');

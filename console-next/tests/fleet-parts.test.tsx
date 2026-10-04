@@ -9,6 +9,8 @@ import type { FleetCard } from '../src/lib/fleet';
 import type { AccountRow } from '../src/types/accounts';
 import { AccountRowView } from '../src/pages/fleet/AccountRows';
 import { FleetCardView } from '../src/pages/fleet/FleetCard';
+import { FleetFix } from '../src/pages/fleet/FleetFix';
+import type { HeadStatus } from '../src/types/core';
 import { WindowBars } from '../src/pages/fleet/WindowBars';
 import { localInstantText, localZonedInstantText } from '../src/lib/heads';
 
@@ -40,6 +42,23 @@ describe('a fleet card', () => {
     expect(html).toContain('Ava’s Grok');
     expect(html).toContain('win grok');
     expect(html).not.toContain('class="acts"');
+  });
+  test('session launch guidance uses the daemon wrapper label, never the internal key or a runtime command', () => {
+    const head: HeadStatus = {
+      key: 'grok-internal', label: 'claude-grok', name: 'grok-internal', port: 1, authKind: 'grok-oauth',
+      wantVersion: '1', running: true, healthy: true, version: '1', versionMatch: true, mode: null,
+      gate: null, maxInflight: null, health: {} as HeadStatus['health'], pids: [],
+    };
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <FleetFix fix="copy-launch" head={head} pool={[]} now={0} />
+      </QueryClientProvider>,
+    );
+    expect(html).toContain('Start a session in your terminal: <code>claude-grok</code>');
+    expect(html).toContain('Copy session command');
+    expect(html).not.toContain('grok-internal');
+    expect(html).not.toContain('rig up');
+    expect(html).not.toContain('>Start<');
   });
   test('a window that has refused turns is drawn full, and a card that needs a person drops its hue and shows its one act', () => {
     const html = render(card({ attention: true, tone: 'quota', state: 'Out of quota until Oct 5, 2:13 PM', line: { kind: 'gauge', name: 'Week', pct: 100, note: 'out until Oct 5, 2:13 PM', full: true }, fix: 'switch' }), 'Switch account');

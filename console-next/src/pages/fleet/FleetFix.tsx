@@ -5,6 +5,7 @@ import { useSwitchAccount } from '../../api/auth';
 import { useHeadAction } from '../../api/queries';
 import { isExcluded } from '../../lib/accounts';
 import { startCommandOf } from '../../lib/fleet';
+import { shellWord } from '../../lib/shell';
 import type { FleetFix as Fix } from '../../lib/fleet';
 import type { AccountRow } from '../../types/accounts';
 import type { HeadStatus } from '../../types/core';
@@ -17,9 +18,10 @@ export function FleetFix({ fix, head, pool, now, keyCommand = null }: { fix: Fix
   const action = useHeadAction();
   const pin = useSwitchAccount();
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState<unknown>(null);
   const timer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(timer.current), []);
-  const failed = [action.error, pin.error].find((err) => err !== null && err !== undefined);
+  const failed = [action.error, pin.error, copyError].find((err) => err !== null && err !== undefined);
   const note = failed === undefined ? null : <span className="hint alert" role="alert">{F.failed} {failureText(failed)}</span>;
 
   switch (fix) {
@@ -35,24 +37,32 @@ export function FleetFix({ fix, head, pool, now, keyCommand = null }: { fix: Fix
         </>
       );
     }
+    case 'copy-launch':
     case 'copy-start':
     case 'copy-key': {
-      const command = fix === 'copy-key' ? keyCommand : startCommandOf(head);
+      const command = fix === 'copy-key' ? keyCommand : fix === 'copy-launch' ? shellWord(head.label) : startCommandOf(head);
+      const label = fix === 'copy-key' ? F.copyKey : fix === 'copy-launch' ? F.copyLaunch : F.copyStart;
       return (
-        <Button
-          small
-          {...(fix === 'copy-key' ? { kind: 'go' as const } : {})}
-          onClick={() => {
-            if (command === null) return;
-            void navigator.clipboard.writeText(command).then(() => {
-              setCopied(true);
-              window.clearTimeout(timer.current);
-              timer.current = window.setTimeout(() => setCopied(false), 2_000);
-            });
-          }}
-        >
-          {copied ? F.copied : fix === 'copy-key' ? F.copyKey : F.copyStart}
-        </Button>
+        <>
+          {fix === 'copy-launch' ? <span className="hint">{F.launchInTerminal} <code>{command}</code></span> : null}
+          <Button
+            small
+            {...(fix === 'copy-key' ? { kind: 'go' as const } : {})}
+            onClick={() => {
+              if (command === null) return;
+              setCopied(false);
+              setCopyError(null);
+              void navigator.clipboard.writeText(command).then(() => {
+                setCopied(true);
+                window.clearTimeout(timer.current);
+                timer.current = window.setTimeout(() => setCopied(false), 2_000);
+              }).catch(setCopyError);
+            }}
+          >
+            {copied ? F.copied : label}
+          </Button>
+          {note}
+        </>
       );
     }
     case 'sign-in':

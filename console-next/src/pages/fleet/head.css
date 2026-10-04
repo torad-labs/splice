@@ -1,5 +1,10 @@
 /* A plan's own page: D. The header and the crumb are the session page's (session.css); this is what is specific. */
 .head-sheet .head-body { padding: var(--space-8) var(--space-11) var(--space-11); display: grid; gap: var(--space-9); }
+header.top .acts { flex-wrap: wrap; min-width: 0; }
+@media (max-width: 48rem) {
+  header.top { flex-wrap: wrap; }
+  header.top .acts { margin-left: 0; }
+}
 .window-bars { margin: 0; border-radius: 0.625rem; gap: var(--space-7); padding: var(--space-7) var(--space-8); }
 .sub-head { font: 520 1.375rem/1.1 var(--display); color: var(--ink); letter-spacing: -.01em; margin-top: var(--space-5); }
 .accounts { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-8); }

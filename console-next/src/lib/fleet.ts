@@ -19,7 +19,7 @@ export type FleetStanding = 'ready' | 'quota' | 'signed-out' | 'off' | 'other';
 export type FleetTone = 'work' | 'wait' | 'stuck' | 'idle' | 'quota';
 
 /** The one act a card offers. `copy-start` is a copy, never a button that starts: the runtime is rig's, not splice's. */
-export type FleetFix = 'switch' | 'sign-in' | 'start' | 'restart' | 'copy-start' | 'copy-key';
+export type FleetFix = 'switch' | 'sign-in' | 'start' | 'restart' | 'copy-start' | 'copy-key' | 'copy-launch';
 
 export type FleetLine =
   /** The tightest plan window, drawn as a bar. `full` is a window that has refused turns. */
@@ -183,7 +183,7 @@ export function fleetCard(head: HeadStatus, inputs: FleetInputs): FleetCard {
     case 'ok': {
       const level = gauge === null || usage === null ? 'ok' : planLevel(gauge.pct, usage.warn_pct);
       const line = level !== 'ok' && gauge !== null ? { ...gauge, note: `near its limit · ${gauge.note.replace(' · resets ', ', resets ')}` } : gauge;
-      return { ...base, tone: 'work', standing: 'ready', state: 'Ready', attention: false, line, fix: null };
+      return { ...base, tone: 'work', standing: 'ready', state: 'Ready', attention: false, line, fix: 'copy-launch' };
     }
   }
 }

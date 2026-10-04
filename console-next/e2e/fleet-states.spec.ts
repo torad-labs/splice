@@ -12,6 +12,49 @@ async function cardStates(page: Page): Promise<string> {
   return (await Promise.all(cards.map(async (card) => (await card.innerText()).replace(/\s+/g, ' ').trim().slice(0, 160)))).join('\n');
 }
 
+test('a ready command shows its real session launcher and copies it without starting or restarting the daemon', async ({ page }, testInfo) => {
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  const heads = await read<HeadsPayload>(page, '/api/heads');
+  const ready = heads.heads.find(head => head.key === STACK.soloHead);
+  if (ready === undefined) throw new Error('isolated stack has no solo command');
+  ready.label = 'claude-ready-example';
+  await page.route('**/api/heads', route => route.fulfill({ json: heads }));
+  let lifecyclePosts = 0;
+  page.on('request', request => {
+    if (request.method() === 'POST' && /\/api\/heads\/[^/]+\/(start|restart)$/.test(new URL(request.url()).pathname)) lifecyclePosts += 1;
+  });
+  const faults = await open(page, 'models');
+  const card = page.locator('li.card').filter({ has: page.getByRole('link', { name: ready.label, exact: true }) });
+  await expect(card.getByText('Ready', { exact: true })).toBeVisible();
+  await expect(card).toContainText('Start a session in your terminal:');
+  await expect(card.locator('code')).toHaveText(ready.label);
+  for (const width of [1536, 393]) {
+    await page.setViewportSize({ width, height: 1024 });
+    for (const theme of ['Day', 'Night']) {
+      await page.getByRole('button', { name: theme, exact: true }).click();
+      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      await expect(card.getByRole('button', { name: 'Copy session command', exact: true })).toBeVisible();
+      await card.screenshot({ path: testInfo.outputPath('ready-session-command-' + width + '-' + theme.toLowerCase() + '.png') });
+    }
+  }
+  await card.getByRole('button', { name: 'Copy session command', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(ready.label);
+  await expect(card.getByRole('button', { name: 'Copied', exact: true })).toBeVisible();
+  await card.getByRole('link', { name: ready.label, exact: true }).click();
+  await expect(page.locator('header.top')).toContainText('Start a session in your terminal:');
+  await page.getByRole('button', { name: 'Copy session command', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(ready.label);
+  await page.evaluate(() => {
+    navigator.clipboard.writeText = () => Promise.reject(new Error('Synthetic clipboard denied'));
+  });
+  await expect(page.getByRole('button', { name: 'Copy session command', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Copy session command', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Synthetic clipboard denied');
+  await expect(page.locator('header.top code')).toHaveText(ready.label);
+  expect(lifecyclePosts).toBe(0);
+  await assertHealthy(page, faults);
+});
+
 test('a key-auth head with a stored key reads as local when the daemon names its family', async ({ page }) => {
   await page.route((url) => url.pathname === '/api/status', async (route) => {
     const response = await route.fetch();

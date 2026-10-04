@@ -17,6 +17,8 @@ export const F = {
   restart: 'Restart',
   restarting: 'Restarting…',
   copyStart: 'Copy start command',
+  launchInTerminal: 'Start a session in your terminal:',
+  copyLaunch: 'Copy session command',
   copyKey: 'Copy the key command',
   copied: 'Copied',
   failed: 'That did not work:',

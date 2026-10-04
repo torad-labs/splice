@@ -42,20 +42,20 @@ internal class AdmissionGate(
     }
 
     suspend fun acquireSlotOrRespond(call: ApplicationCall): InflightGate.Slot? =
-        acquireOrRespond(call, gate.resumeSource(call.request.headers[SESSION_HEADER]), beforeRefusal = null)
+        acquireOrRespond(call, call.request.headers[SESSION_HEADER], beforeRefusal = null)
 
     suspend fun acquireFreshSlotOrRespond(call: ApplicationCall, beforeRefusal: TurnEnd): InflightGate.Slot? =
         acquireOrRespond(call, null, beforeRefusal)
 
     private suspend fun acquireOrRespond(
         call: ApplicationCall,
-        held: InflightGate.Slot?,
+        session: String?,
         beforeRefusal: TurnEnd?,
     ): InflightGate.Slot? {
         // V4-114: the gate ANSWERS with a value now, so this refusal is a compiler-checked `when`
         // branch rather than a `catch` on a name — the 529 on the wire is unchanged, and the
         // window-closed refusal ten lines below has always been spelled as a returned null.
-        val slot = held ?: when (val admission = gate.acquire()) {
+        val slot = when (val admission = gate.acquire(session)) {
             is InflightGate.Admission.Acquired -> admission.slot
             InflightGate.Admission.AtCapacity -> {
                 log("[${provider.key}] admission rejected: gateway at capacity (queued=${gate.snapshot().queued})\n")

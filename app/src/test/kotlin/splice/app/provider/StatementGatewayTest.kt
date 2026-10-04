@@ -12,11 +12,13 @@ import io.ktor.utils.io.readLine
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.yield
@@ -55,6 +57,7 @@ import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexProvider
 import splice.upstream.ProviderTuning
 import splice.upstream.Ticker
+import splice.upstream.codemode.CodeModeResult
 import splice.upstream.memory.JvmHeap
 import splice.upstream.retry.InflightGate
 import java.nio.file.Path
@@ -309,16 +312,17 @@ class StatementGatewayTest {
                 retainedWeights.sum() <= heapBudget,
                 "The fixture must admit its retained bodies: weights=$retainedWeights budget=$heapBudget",
             )
-            val finished = async { send(request).bodyAsText() }
-            assertEquals(
-                List(calls.size) { "edit-result" },
-                withTimeout(5_000) { runtime.delivered.receive() }.map { it.output },
-            )
+            val finished = async {
+                val response = send(request)
+                response.status.value to response.bodyAsText()
+            }
+            val delivered = awaitDelivery(finished)
+            assertEquals(List(calls.size) { "edit-result" }, delivered.map { it.output })
             assertFalse(finished.isCompleted, "the native cell cannot finish before source completion")
             assertEquals(1L, upstream.terminal.count)
             assertEquals(1, upstream.posts.get(), "both batches resume the original source POST")
             upstream.terminal.countDown()
-            val answer = withTimeout(5_000) { finished.await() }
+            val answer = withTimeout(5_000) { finished.await() }.second
             assertTrue(answer.contains("native batch complete"), answer)
             assertTrue(answer.contains("message_stop"), answer)
             assertTrue(answer.contains("end_turn"), answer)
@@ -336,6 +340,29 @@ class StatementGatewayTest {
             assertEquals("source-call", result.getValue("call_id").jsonPrimitive.content)
             assertTrue(result.getValue("output").jsonPrimitive.content.contains("native batch finished"))
             awaitReleased(10L)
+        }
+
+        private suspend fun awaitDelivery(finished: Deferred<Pair<Int, String>>): List<CodeModeResult> = try {
+            withTimeout(5_000) {
+                select<List<CodeModeResult>> {
+                    runtime.delivered.onReceive { it }
+                    finished.onAwait { (status, wire) ->
+                        error(
+                            "edit response ended before native delivery: status=$status " +
+                                "heap_free=${heap.heap.available.value} retained=${retainedWeights.sum()} " +
+                                "error_frame=${wire.contains("event: error")}",
+                        )
+                    }
+                }
+            }
+        } catch (timeout: TimeoutCancellationException) {
+            throw AssertionError(
+                "edit delivery stalled: response_done=${finished.isCompleted} " +
+                    "heap_free=${heap.heap.available.value} retained=${retainedWeights.sum()} " +
+                    "queued=${gate.snapshot().queued} inflight=${gate.snapshot().inflight} " +
+                    "calls=${runtime.calls.size} posts=${upstream.posts.get()}",
+                timeout,
+            )
         }
 
         suspend fun blockedBatch() = coroutineScope {

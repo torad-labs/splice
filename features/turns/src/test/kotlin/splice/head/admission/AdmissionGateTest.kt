@@ -149,6 +149,50 @@ class MaterializationRefusalTest {
     }
 }
 
+class SourceContinuationAdmissionTest {
+    @Test
+    fun `a result arriving before the prior continuation releases borrows after that release`(
+        @TempDir tmp: Path,
+    ) = testApplication {
+        val deps = headDeps(tmp)
+        val original = (deps.gate.acquire() as InflightGate.Admission.Acquired).slot
+        val source = original.retainSource("synthetic-session")
+        original.release()
+        val previous = checkNotNull(deps.gate.resumeSource("synthetic-session"))
+        val admission = AdmissionGate(testProvider, deps, AdmissionWindow().apply { open() }, AdmissionResponses())
+        application {
+            routing {
+                post("/probe") {
+                    val candidate = checkNotNull(admission.acquireSlotOrRespond(call))
+                    try {
+                        assertTrue(candidate.resumedSource, "the result must share its existing source permit")
+                        call.respondText("synthetic resumed reply")
+                    } finally {
+                        candidate.release()
+                    }
+                }
+            }
+        }
+        coroutineScope {
+            val result = async {
+                client.post("/probe") { header(SESSION_HEADER, "synthetic-session") }
+            }
+            try {
+                withTimeout(3.seconds) { while (deps.gate.snapshot().queued != 1) kotlinx.coroutines.yield() }
+                assertFalse(result.isCompleted)
+                previous.release()
+                assertEquals(HttpStatusCode.OK, withTimeout(3.seconds) { result.await() }.status)
+                assertEquals(1L, deps.gate.snapshot().acquired, "no fresh upstream permit was acquired")
+                assertEquals(1, deps.gate.snapshot().inflight, "the independent source still owns its permit")
+            } finally {
+                result.cancelAndJoin()
+                previous.release()
+                source.release()
+            }
+        }
+    }
+}
+
 class AdmissionGateTest {
     @Test
     fun `head dependencies keep the reasoning mirror locked off`(@TempDir tmp: Path) {

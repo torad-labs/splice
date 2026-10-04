@@ -81,7 +81,17 @@ public class InflightGate(
         var continuation: CancellableContinuation<Boolean>? = null,
         /** When it entered the queue, on the gate's clock: its wait is measured from here. */
         var queuedAt: Long = 0L,
-    )
+        val session: String? = null,
+        /** A ready source loan uses its existing counted permit, not an inflight increment. */
+        var borrowed: Slot? = null,
+    ) {
+        fun turn(admitted: Boolean, immediate: Boolean, now: Long): Turn = when {
+            !admitted -> Turn.Refused
+            borrowed != null -> Turn.Borrowed(checkNotNull(borrowed))
+            immediate -> Turn.Immediate
+            else -> Turn.Queued(now - queuedAt)
+        }
+    }
 
     public data class Snapshot(
         val inflight: Int,
@@ -124,7 +134,11 @@ public class InflightGate(
         public data object AtCapacity : Admission()
     }
 
-    public suspend fun acquire(): Admission {
+    public suspend fun acquire(): Admission = acquire(null)
+
+    /** Waits in the bounded queue if the previous source continuation is still releasing.
+     * Its release retries the source loan, so a result never waits on its own reader's permit. */
+    public suspend fun acquire(session: String?): Admission {
         // DR-147: DRAIN BEFORE SELF-ADMITTING. The fast path used to ask only "is there capacity?",
         // so after a live PATCH raised maxInflight nothing woke the waiters already parked — the
         // queue is drained solely by release(), and with every slot held by a long-lived SSE stream
@@ -133,23 +147,17 @@ public class InflightGate(
         // ended, and the file's own "FIFO admission" and "live-PATCHable" claims were both false.
         // Draining under the CURRENT limit and self-admitting only behind an empty queue makes the
         // raise take effect immediately and keeps admission in arrival order.
-        val (toResume, admitted) = synchronized(lock) {
+        val (toResume, borrowed, admitted) = synchronized(lock) {
             val drained = drainAdmissibleLocked()
-            val canSelfAdmit = hasCapacityLocked() && queue.isEmpty()
+            val held = resumeSource(session)
+            val canSelfAdmit = held == null && hasCapacityLocked() && queue.isEmpty()
             if (canSelfAdmit) inflight += 1
-            drained to canSelfAdmit
+            Triple(drained, held, canSelfAdmit)
         }
         resumeAll(toResume)
-        val waitedMs = if (admitted) {
-            null
-        } else {
-            when (val turn = awaitTurn()) {
-                Turn.Refused -> return Admission.AtCapacity
-                Turn.Immediate -> null
-                is Turn.Queued -> turn.waitedMs
-            }
-        }
-        return Admission.Acquired(deliver(waitedMs))
+        if (borrowed != null) return Admission.Acquired(borrowed)
+        val turn = if (admitted) Turn.Immediate else awaitTurn(session)
+        return turn.answer(this)
     }
 
     /** How [awaitTurn] ended: refused by the bounded queue, admitted on its recheck without
@@ -158,6 +166,14 @@ public class InflightGate(
         data object Refused : Turn()
         data object Immediate : Turn()
         data class Queued(val waitedMs: Long) : Turn()
+        data class Borrowed(val slot: Slot) : Turn()
+
+        fun answer(gate: InflightGate): Admission = when (this) {
+            Refused -> Admission.AtCapacity
+            Immediate -> Admission.Acquired(gate.deliver(null))
+            is Queued -> Admission.Acquired(gate.deliver(waitedMs))
+            is Borrowed -> Admission.Acquired(slot)
+        }
     }
 
     /** A delivered permit becomes a live slot: counted, its wait added when it queued, and listed
@@ -183,7 +199,7 @@ public class InflightGate(
     private fun resumeAll(waiters: List<Waiter>) {
         for (w in waiters) {
             val cont = w.continuation ?: continue
-            cont.resume(true) { _, _, _ -> returnUndelivered() }
+            cont.resume(true) { _, _, _ -> returnUndelivered(w.borrowed) }
         }
     }
 
@@ -195,14 +211,18 @@ public class InflightGate(
     private fun hasQueueCapacityLocked(): Boolean = maxQueued().let { it <= 0 || queue.size < it }
 
     /** Whether, and how, this waiter came to hold a permit ([Turn]). */
-    private suspend fun awaitTurn(): Turn {
-        val waiter = Waiter()
+    private suspend fun awaitTurn(session: String?): Turn {
+        val waiter = Waiter(session = session)
         var admittedNow = false
         var rejected = false
         val admitted = suspendCancellableCoroutine { cont ->
             synchronized(lock) {
-                // capacity may have appeared between the fast path and here
-                if (hasCapacityLocked() && queue.isEmpty()) {
+                // Source release or fresh capacity may have appeared since the fast path.
+                waiter.borrowed = resumeSource(session)
+                if (waiter.borrowed != null) {
+                    waiter.resumed = true
+                    admittedNow = true
+                } else if (hasCapacityLocked() && queue.isEmpty()) {
                     inflight += 1
                     waiter.resumed = true
                     admittedNow = true
@@ -222,7 +242,7 @@ public class InflightGate(
             if (admittedNow) {
                 // Same undelivered-handler as resumeAll(): a waiter cancelled between inflight++ and
                 // delivery must return the permit or the head permanently loses one capacity slot.
-                cont.resume(true) { _, _, _ -> returnUndelivered() }
+                cont.resume(true) { _, _, _ -> returnUndelivered(waiter.borrowed) }
                 return@suspendCancellableCoroutine
             }
             if (rejected) {
@@ -238,13 +258,7 @@ public class InflightGate(
                 synchronized(lock) { if (!waiter.resumed) queue.remove(waiter) }
             }
         }
-        return turnOf(admitted, admittedNow, waiter)
-    }
-
-    private fun turnOf(admitted: Boolean, immediate: Boolean, waiter: Waiter): Turn = when {
-        !admitted -> Turn.Refused
-        immediate -> Turn.Immediate
-        else -> Turn.Queued(clock() - waiter.queuedAt)
+        return waiter.turn(admitted, admittedNow, clock())
     }
 
     /** A delivered slot ends: it leaves the live list, is counted, and its permit goes back. */
@@ -256,8 +270,14 @@ public class InflightGate(
 
     /** A permit whose waiter was cancelled between admission and delivery goes back. It was never a
      *  slot, so nothing is counted and nothing leaves the live list. */
-    private fun returnUndelivered() {
-        returnPermit {}
+    private fun returnUndelivered(borrowed: Slot?) {
+        if (borrowed != null) borrowed.release() else returnPermit {}
+    }
+
+    /** Returning a client handle may free a source loan without freeing the reader's counted permit. */
+    private fun sourceAvailable() {
+        val toResume = synchronized(lock) { drainAdmissibleLocked() }
+        resumeAll(toResume)
     }
 
     private inline fun returnPermit(locked: () -> Unit) {
@@ -272,8 +292,13 @@ public class InflightGate(
     // ported drain loop: skip-resumed + capacity guard
     private fun drainAdmissibleLocked(): List<Waiter> {
         val admitted = mutableListOf<Waiter>()
-        while (queue.isNotEmpty() && hasCapacityLocked()) {
-            val next = queue.pollFirst() ?: break
+        val iterator = queue.iterator()
+        while (iterator.hasNext()) {
+            val next = iterator.next()
+            val borrowed = resumeSource(next.session)
+            if (borrowed == null && !hasCapacityLocked()) continue
+            iterator.remove()
+            next.borrowed = borrowed
             // DR-149: the `if (!next.resumed)` guard here was tautological — `resumed` is only ever
             // set on the admittedNow path, which never queues, or by a prior drain, which already
             // removed the waiter, so a QUEUED waiter always has it false. Worse, had it ever been
@@ -281,7 +306,7 @@ public class InflightGate(
             // that request would hang forever. The flag itself stays: the cancellation hook reads
             // it to decide whether a waiter still owns a queue slot.
             next.resumed = true
-            inflight += 1
+            if (borrowed == null) inflight += 1
             admitted.add(next)
         }
         return admitted
@@ -389,6 +414,8 @@ public class InflightGate(
             if (last) {
                 gate.release(root)
                 drainOnRelease()
+            } else {
+                gate.sourceAvailable()
             }
         }
 

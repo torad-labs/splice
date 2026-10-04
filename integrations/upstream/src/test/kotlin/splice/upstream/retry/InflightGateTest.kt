@@ -55,6 +55,104 @@ class InflightGateTest {
     }
 
     @Test
+    fun `a queued result borrows when its preceding continuation releases`() = runTest {
+        val gate = InflightGate({ 1 }, maxQueued = { 2 })
+        val original = gate.admittedSlot()
+        val source = original.retainSource("source")
+        original.release()
+        val previous = checkNotNull(gate.resumeSource("source"))
+        val ordinary = async { gate.acquire() }
+        val result = async { gate.acquire("source") }
+        yield()
+        assertEquals(2, gate.snapshot().queued)
+        previous.release()
+        yield()
+        assertFalse(ordinary.isCompleted, "a source loan cannot invent fresh capacity")
+        val borrowed = (result.await() as InflightGate.Admission.Acquired).slot
+        assertTrue(borrowed.resumedSource)
+        assertEquals(1L, gate.snapshot().acquired)
+        borrowed.release()
+        source.release()
+        (ordinary.await() as InflightGate.Admission.Acquired).slot.release()
+        assertEquals(0, gate.snapshot().inflight)
+    }
+
+    @Test
+    fun `a queued result borrows when its original client releases first`() = runTest {
+        val gate = InflightGate({ 1 })
+        val original = gate.admittedSlot()
+        val source = original.retainSource("source")
+        val result = async { gate.acquire("source") }
+        yield()
+        assertEquals(1, gate.snapshot().queued)
+        original.release()
+        val borrowed = (result.await() as InflightGate.Admission.Acquired).slot
+        assertTrue(borrowed.resumedSource)
+        source.release()
+        assertEquals(1, gate.snapshot().inflight, "the borrower owns the surviving permit")
+        borrowed.release()
+        assertEquals(0, gate.snapshot().inflight)
+    }
+
+    @Test
+    fun `busy source waiters share the bounded queue and cancellation frees their place`() = runTest {
+        val gate = InflightGate({ 1 }, maxQueued = { 1 })
+        val original = gate.admittedSlot()
+        val source = original.retainSource("source")
+        original.release()
+        val previous = checkNotNull(gate.resumeSource("source"))
+        val cancelled = async { gate.acquire("source") }
+        yield()
+        assertEquals(InflightGate.Admission.AtCapacity, gate.acquire("source"))
+        cancelled.cancelAndJoin()
+        assertEquals(0, gate.snapshot().queued)
+        val result = async { gate.acquire("source") }
+        yield()
+        previous.release()
+        (result.await() as InflightGate.Admission.Acquired).slot.release()
+        source.release()
+        assertEquals(1L, gate.snapshot().released)
+    }
+
+    @Test
+    fun `a cancelled promoted source loan returns only its own handle`() = runTest {
+        val gate = InflightGate({ 1 })
+        val original = gate.admittedSlot()
+        val source = original.retainSource("source")
+        original.release()
+        val previous = checkNotNull(gate.resumeSource("source"))
+        val cancelled = async { gate.acquire("source") }
+        yield()
+        previous.release()
+        cancelled.cancelAndJoin()
+        assertEquals(1, gate.snapshot().inflight, "cancellation cannot refund the independent reader")
+        assertEquals(0L, gate.snapshot().released)
+        val next = checkNotNull(gate.resumeSource("source"))
+        next.release()
+        source.release()
+        assertEquals(1L, gate.snapshot().released)
+    }
+
+    @Test
+    fun `source completion before the prior client releases admits a fresh turn`() = runTest {
+        val gate = InflightGate({ 1 })
+        val original = gate.admittedSlot()
+        val source = original.retainSource("source")
+        original.release()
+        val previous = checkNotNull(gate.resumeSource("source"))
+        val result = async { gate.acquire("source") }
+        yield()
+        source.release()
+        assertFalse(result.isCompleted)
+        previous.release()
+        val fresh = (result.await() as InflightGate.Admission.Acquired).slot
+        assertFalse(fresh.resumedSource, "a completed source cannot lend a stale handle")
+        assertEquals(2L, gate.snapshot().acquired)
+        fresh.release()
+        assertEquals(0, gate.snapshot().inflight)
+    }
+
+    @Test
     fun `held sources at the full limit lend one handle per session without another permit`() = runTest {
         val count = 3
         val gate = InflightGate({ count })

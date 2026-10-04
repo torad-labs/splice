@@ -2,7 +2,7 @@
 import { describe, expect, test } from 'vitest';
 import { KNOB_META } from '../src/lib/knobs';
 import {
-  CURATED_KNOBS, controlOf, daysOptions, effortChoice, excludedOf, folderOf, gitRootsOf, gitRootsValue, healthOf, otherKnobs, outcomeOf, sectionOf, toolState, withHeadOverride, withMcpHosting, withServerExcluded,
+  CURATED_KNOBS, controlOf, daysOptions, effortChoice, headEffort, excludedOf, folderOf, gitRootsOf, gitRootsValue, healthOf, otherKnobs, outcomeOf, sectionOf, toolState, withHeadOverride, withMcpHosting, withServerExcluded,
 } from '../src/lib/settings';
 import type { KnobDisposition } from '../src/types/config';
 import type { PatchResult } from '../src/types/core';
@@ -141,6 +141,14 @@ describe('every other setting', () => {
 });
 
 describe('a plan’s own value', () => {
+  test('a saved thinking override is not confused with another command or the global default', () => {
+    const topology = { defaults: { effort: 'high' }, heads: { a: { overrides: { effort: 'low', maxInflight: '3' } }, b: { overrides: { effort: 'medium' } } } };
+    expect(headEffort(topology, 'a')).toBe('low');
+    const inherited = withHeadOverride(topology, 'a', 'effort', null);
+    expect(headEffort(inherited, 'a')).toBeNull();
+    expect(headEffort(inherited, 'b')).toBe('medium');
+    expect(inherited['defaults']).toEqual({ effort: 'high' });
+  });
   test('it lands in that plan’s overrides as a string and leaves the other plans and tables alone', () => {
     const next = withHeadOverride({ daemon: { control_port: 1 }, heads: { b: { overrides: { x: '1' } } } }, 'a', 'maxQueued', 8);
     expect(next).toEqual({ daemon: { control_port: 1 }, heads: { a: { overrides: { maxQueued: '8' } }, b: { overrides: { x: '1' } } } });

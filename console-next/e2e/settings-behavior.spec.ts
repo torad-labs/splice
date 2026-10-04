@@ -71,12 +71,14 @@ test('plan instruction modes preview isolated writes and preserve an unrelated u
   await open(page, 'settings/conversation');
   const conversation = page.getByRole('region', { name: 'Conversation', exact: true });
   await pick(page, conversation, 'Command', STACK.oauthHead);
+  await page.getByRole('navigation', { name: 'Settings sections', exact: true }).getByRole('link', { name: 'Advanced', exact: true }).click();
   await page.getByRole('button', { name: 'Open the file', exact: true }).click();
   const group = page.locator('details.cf-group').filter({ has: page.locator('summary').filter({ hasText: /^Compaction/ }) });
   await group.locator('summary').click();
   const pending = group.getByRole('textbox', { name: 'instructions', exact: true }).first();
   await pending.fill('Pending only in the file editor.');
   await pending.press('Tab');
+  await page.getByRole('navigation', { name: 'Settings sections', exact: true }).getByRole('link', { name: 'Conversation', exact: true }).click();
   await conversation.getByRole('button', { name: 'Add instructions', exact: true }).click();
   const preview = conversation.getByRole('region', { name: 'What splice will use', exact: true });
   const save = conversation.getByRole('button', { name: 'Save', exact: true });
@@ -114,6 +116,7 @@ test('plan instruction modes preview isolated writes and preserve an unrelated u
   await expect.poll(() => writes.length).toBe(4);
   expect(savedHead()).not.toHaveProperty('system_prompt');
   expect(savedHead()).not.toHaveProperty('system_prompt_mode');
+  await page.getByRole('navigation', { name: 'Settings sections', exact: true }).getByRole('link', { name: 'Advanced', exact: true }).click();
   await expect(pending).toHaveValue('Pending only in the file editor.');
   expect(writes.every((value) => (value.compaction as { instructions: string }).instructions === 'Original synthetic compaction instructions.')).toBe(true);
 });

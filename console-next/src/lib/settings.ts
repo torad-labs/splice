@@ -88,6 +88,12 @@ const withDaemon = (topology: Topology, change: Topology): Topology => ({ ...top
 /** `daemon.mcp_hosting`: one process per tool server, shared by every session. */
 export const withMcpHosting = (topology: Topology, on: boolean): Topology => withDaemon(topology, { mcp_hosting: on });
 
+/** The command's saved thinking default, separate from the effective boot-time config. */
+export function headEffort(topology: Topology, head: string): string | null {
+  const value = tableOf(tableOf(tableOf(topology['heads'])[head])['overrides'])['effort'];
+  return typeof value === 'string' ? value : null;
+}
+
 /** Add or remove one server in `daemon.mcp_hosting_exclude`. An empty list is dropped, so an untouched file stays as it was. */
 export function withServerExcluded(topology: Topology, name: string, excluded: boolean): Topology {
   const rest = excludedOf(topology).filter((entry) => entry !== name);

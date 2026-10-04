@@ -1,4 +1,32 @@
-/* Settings in D: a sub-navigation and one sheet per section; every control is typed, none is a text box. */
+/* Focused sections keep drafts while the active sheet holds the controls. */
+.settings-page .split { max-width: 77.5rem; }
+.settings-page .sheets { display: block; column-width: auto; }
+.settings-sheet[hidden] { display: none; }
+.thinking-levels { margin-top: var(--space-5); display: grid; gap: var(--space-3); }
+.thinking-levels summary { cursor: pointer; }
+.thinking-levels p { margin: 0; }
+.thinking-choice { display: grid; gap: var(--space-5); }
+.thinking-choice fieldset { padding: 0; margin: 0; border: 0; min-width: 0; }
+@media (max-width: 600px) {
+  .settings-page .sub { grid-auto-flow: row; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: visible; }
+  .settings-page .sub a { padding: var(--space-4) var(--space-3); font-size: var(--text-1); }
+  .settings-page .sub a[aria-current='true']::before { left: 0; width: 0.1875rem; }
+  .thinking-choice .seg { flex-wrap: wrap; }
+}
+@media (max-width: 700px) {
+  .app:has(.settings-page) { grid-template-columns: minmax(0, 1fr); }
+  .app:has(.settings-page) .side { min-height: auto; border-right: 0; border-bottom: var(--input); padding: var(--space-7); }
+  .app:has(.settings-page) .nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .app:has(.settings-page) .side .foot { margin-top: var(--space-5); display: flex; flex-wrap: wrap; }
+  .app:has(.settings-page) .wall { padding: var(--space-9) var(--space-7); }
+  .settings-page .page-head { flex-direction: column; align-items: flex-start; }
+  .settings-page .ctl, .settings-page .cf-ctl { min-width: 0; max-width: 100%; }
+  .settings-page .pickers .seg { flex-wrap: wrap; max-width: 100%; }
+  .settings-page .secret { flex-wrap: wrap; max-width: 100%; }
+  .settings-page .cf-field { grid-template-columns: minmax(0, 1fr); }
+  .settings-page .cf-ctl { justify-content: flex-start; }
+  .settings-page .input.wide { min-width: 0; max-width: 100%; }
+}
 .split { display: grid; grid-template-columns: 12.5rem minmax(0, 1fr); gap: var(--space-16); align-items: start; max-width: 77.5rem; }
 .sub { position: sticky; top: var(--space-10); display: grid; gap: var(--space-1); }
 .sub a { position: relative; padding: var(--space-5) var(--space-5); font: 600 1rem var(--meta); color: var(--mute); text-decoration: none; }

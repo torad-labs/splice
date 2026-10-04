@@ -1,4 +1,7 @@
 source	sha256	disposition	destination	reason
+console-next/src/pages/settings/Thinking.tsx	bc5bd41531d141f53bb818c60091338d1caeaad31ebeefa81b117c8089e6cdd6	created		V4-444: Thinking defaults have explicit command scope and distinct saved and running values
+console-next/tests/settings-focus.test.tsx	fa4931c19bbfcd98cca09e2b15961a1cc477d626901f9154dd228e2e7493e6b7	created		V4-444: Focused sections and selected thinking defaults preserve truthful loading
+console-next/e2e/settings-thinking.spec.ts	365968514b5eb4cb9486cc1322d7419a3d42d96086fd6fde0a7960a8e2683a78	created		V4-444: Isolated writes prove command versus global scope, restart truth, preserved drafts and narrow composition
 console-next/tests/connection-parts.test.tsx	ee1ee1bac9edd5a45b2abd9da3a0c611c1a758b41b19ee46148a191bdf7c0de0	created		V4-444: Initial daemon reads remain checking instead of claiming success or failure
 console-next/e2e/accounts-introduction.spec.ts	545309680c08c2421852d33d3091a83e76acf142d884f7fc888f13de54b3da81	created		V4-444: Native and separate login destinations and pending Accounts and Settings states are explicit
 features/usage/src/main/kotlin/splice/usage/perf/TurnUsage.kt	c8c4b910dcf8a63d725706dea51007bfcd2f06c0fa21a041f47e31406e648e8f	created		V4-444: Full-window usage and session aggregates consume the existing filtered read before the display limit

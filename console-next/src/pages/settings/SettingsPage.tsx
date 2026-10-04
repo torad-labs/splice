@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { failureText } from '../../api/client';
 import { useConfig } from '../../api/queries';
@@ -9,15 +9,16 @@ import { T } from './copy';
 import { Advanced, Conversation, General, Health, Storage, Tools } from './Sections';
 import './settings.css';
 
-/** Settings in D: every control is typed (a switch, a choice, a stepper, a slider, a folder, a secret), keys are hidden until asked for,
- *  and every section is on the one page, so the sub-navigation scrolls rather than swaps. */
+/** One section at a time. Visited sections stay mounted so navigating never discards a draft. */
 export function SettingsPage() {
   const { section: param } = useParams();
   const current = sectionOf(param);
   const config = useConfig();
+  const [visited, setVisited] = useState<readonly Section[]>([current]);
   useEffect(() => {
-    if (param !== undefined) document.getElementById(`settings-${current}`)?.scrollIntoView({ block: 'start' });
-  }, [param, current, config.isSuccess]);
+    setVisited(before => before.includes(current) ? before : [...before, current]);
+  }, [current]);
+  const mounted = visited.includes(current) ? visited : [...visited, current];
 
   if (config.isPending) return <PageHead title={T.title} lede={T.reading} />;
   if (config.isError) {
@@ -38,7 +39,7 @@ export function SettingsPage() {
     advanced: <Advanced />,
   };
   return (
-    <>
+    <div className="settings-page">
       <PageHead title={T.title} lede={T.lede} />
       <div className="split">
         <nav className="sub" aria-label={T.sections}>
@@ -49,14 +50,14 @@ export function SettingsPage() {
           ))}
         </nav>
         <div className="sheets">
-          {SECTIONS.map((section) => (
-            <section key={section} className="settings-sheet" id={`settings-${section}`} aria-labelledby={`settings-${section}-h`}>
+          {mounted.map((section) => (
+            <section key={section} hidden={section !== current} className="settings-sheet" id={`settings-${section}`} aria-labelledby={`settings-${section}-h`}>
               <h2 id={`settings-${section}-h`}>{T.section[section]}</h2>
               <div className="win flat set">{body[section]}</div>
             </section>
           ))}
         </div>
       </div>
-    </>
+    </div>
   );
 }

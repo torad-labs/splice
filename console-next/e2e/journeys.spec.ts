@@ -73,7 +73,10 @@ test('Settings keys are hidden until the row or Advanced switch is asked for', a
   await expect(reveal.first().getByText('usageWarnPct', { exact: true })).toBeVisible();
   await reveal.first().click();
   await expect(reveal.first()).toHaveAttribute('aria-pressed', 'false');
+  const sections = page.getByRole('navigation', { name: 'Settings sections', exact: true });
+  await sections.getByRole('link', { name: 'Advanced', exact: true }).click();
   await page.getByRole('switch', { name: 'Show setting keys', exact: true }).click();
+  await sections.getByRole('link', { name: 'General', exact: true }).click();
   await expect(reveal.first().getByText('usageWarnPct', { exact: true })).toBeVisible();
   await expect(reveal.filter({ has: page.getByText('debug', { exact: true }) })).toBeVisible();
   await page.reload();

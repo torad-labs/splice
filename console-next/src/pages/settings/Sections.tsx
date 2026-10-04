@@ -12,7 +12,7 @@ import { doctorFixOf } from '../../lib/needs';
 import { serverRows } from '../../lib/mcp';
 import { Y } from '../../lib/words-playground';
 import {
-  ACTIVITY_DAYS, EFFORT_CHOICES, REASONING_CHOICES, TRACE_DAYS, daysOptions, effortChoice, excludedOf, folderOf, gitRootsOf, gitRootsValue, healthOf, numberOf, textOf,
+  ACTIVITY_DAYS, REASONING_CHOICES, TRACE_DAYS, daysOptions, excludedOf, folderOf, gitRootsOf, gitRootsValue, healthOf, numberOf, textOf,
   toolState, withMcpHosting, withServerExcluded,
 } from '../../lib/settings';
 import type { Saved } from './Row';
@@ -32,6 +32,7 @@ import { PlanInstructions } from './PlanInstructions';
 import { CheckMembers } from './CheckMembers';
 import { Row, SaveNote, useSetting } from './Row';
 import { Upgrade } from './Upgrade';
+import { Thinking } from './Thinking';
 
 const THEME: readonly (readonly [ThemeChoice, string])[] = [['day', T.day], ['night', T.night], ['system', T.system]];
 
@@ -73,26 +74,11 @@ export function General({ config }: { config: ConfigPayload }) {
 }
 
 export function Conversation({ config }: { config: ConfigPayload }) {
-  const effort = useSetting('effort');
   const inflight = useSetting('maxInflight');
   const reasoning = useSetting('showReasoning');
-  const current = config.effective['effort'];
-  const chosen = effortChoice(current);
   return (
     <>
-      <Row
-        title={T.effort}
-        why={T.effortWhy}
-        settingKey="effort"
-        control={
-          chosen === null ? (
-            <span className="folder">{T.effortElsewhere(textOf(current))}</span>
-          ) : (
-            <Segmented label={T.effort} value={chosen} options={EFFORT_CHOICES} onChange={(next) => effort.save(next === '' ? null : next)} />
-          )
-        }
-        note={<SaveNote keys={['effort']} saved={effort.saved} />}
-      />
+      <Thinking />
       <Row
         title={T.inflight}
         why={T.inflightWhy}

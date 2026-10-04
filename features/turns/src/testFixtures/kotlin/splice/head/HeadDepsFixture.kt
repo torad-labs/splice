@@ -60,7 +60,8 @@ public fun headStores(
 )
 
 /** No quota, no pool and no budget: the shape a head that neither observes nor emits quota runs as. */
-public fun noQuota(): HeadDeps.HeadQuota = HeadDeps.HeadQuota(null, null, emptyMap(), NoHeadBudget)
+public fun noQuota(): HeadDeps.HeadQuota =
+    HeadDeps.HeadQuota(null, null, emptyMap(), NoHeadBudget, HeadDeps.CredentialAccountNames { null })
 
 /** A quota bundle for a head that DOES have a pool, so a test can name the three together, or a
  *  [budget] (V4-133 review) for a head whose turns a test wants weighed against one. */
@@ -69,7 +70,7 @@ public fun quotaFor(
     pool: AccountPool?,
     quotas: Map<String, QuotaTracker> = emptyMap(),
     budget: HeadBudget = NoHeadBudget,
-): HeadDeps.HeadQuota = HeadDeps.HeadQuota(quota, pool, quotas, budget)
+): HeadDeps.HeadQuota = HeadDeps.HeadQuota(quota, pool, quotas, budget, HeadDeps.CredentialAccountNames { null })
 
 /**
  * Head deps for a test. Every parameter is defaulted so a site names only what it overrides.

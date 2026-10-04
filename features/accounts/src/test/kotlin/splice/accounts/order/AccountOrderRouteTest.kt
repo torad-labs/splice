@@ -18,6 +18,10 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import splice.accounts.AccountHead
 import splice.accounts.AccountHeadResolver
+import splice.accounts.claude.ClaudeAccountIdentity
+import splice.accounts.claude.ClaudeLoginPlaceId
+import splice.accounts.claude.ClaudeLoginPlaceView
+import splice.accounts.claude.ClaudeLoginStanding
 import splice.accounts.pool.HeadAccountPoolSource
 import splice.accounts.pool.HeadAccountPoolView
 import splice.accounts.signin.HeadRestart
@@ -65,6 +69,42 @@ class AccountOrderRouteTest {
         val route = AccountOrderRoute(AccountHeadResolver { _, _ -> head(null) })
         application { routing { get("/api/auth/{head}/order") { route.get(call) } } }
         assertEquals(HttpStatusCode.Conflict, client.get("/api/auth/head/order").status)
+    }
+
+    @Test
+    fun `one proven account in both native places has an honest read but no mutable order`() = testApplication {
+        var native = ClaudeLoginPlaceId.entries.map { place ->
+            ClaudeLoginPlaceView(
+                id = place,
+                head = "head",
+                credentialPath = "synthetic/${place.wire}",
+                credentialPresent = true,
+                account = ClaudeAccountIdentity("synthetic-account", "synthetic@example.invalid"),
+                quota = null,
+                standing = ClaudeLoginStanding(null, null),
+            )
+        }
+        val route = AccountOrderRoute(AccountHeadResolver { _, _ -> head(null) })
+        application {
+            routing {
+                get("/api/auth/{head}/order") { route.get(call, native) }
+                put("/api/auth/{head}/order") { route.set(call) }
+            }
+        }
+        val answer = client.get("/api/auth/head/order")
+        assertEquals(HttpStatusCode.OK, answer.status)
+        val payload = Json.parseToJsonElement(answer.bodyAsText()).jsonObject
+        assertEquals("true", payload.getValue("single_account").jsonPrimitive.content)
+        assertEquals(
+            emptyList<String>(),
+            payload.getValue("effective_order").jsonArray.map { it.jsonPrimitive.content },
+        )
+        val update = client.put("/api/auth/head/order") { setBody("""{"order":[]}""") }
+        assertEquals(HttpStatusCode.Conflict, update.status)
+        for (identity in listOf(null, ClaudeAccountIdentity("synthetic-other", "synthetic@example.invalid"))) {
+            native = listOf(native.first(), native.last().copy(account = identity))
+            assertEquals(HttpStatusCode.Conflict, client.get("/api/auth/head/order").status)
+        }
     }
 
     private fun head(pool: HeadAccountPoolSource?) = AccountHead(

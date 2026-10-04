@@ -307,15 +307,26 @@ export function readAgeText(account: AccountRow, nowMs: number): string | null {
   return `${read}; the ${reset.join(' and ')} ${reset.length === 1 ? 'window has' : 'windows have'} reset since, so ${reset.length === 1 ? 'its figure is' : 'their figures are'} unknown until the next reading`;
 }
 
-/**
- * Login accounts one head rides, out of GET /api/accounts. Key-presence rows are not pool candidates.
- *
- * Read off the row rather than joined on anything the console knows, because the daemon already did
- * the join: a login two heads share is ONE row carrying both keys (AccountsRoute.merge, joined on the
- * credential path), so it belongs to both pools and appears in both.
- */
+/** Subscriptions a head rides. Management keeps every login place; pool counts join only proven UUIDs.
+ *  Keep the selected credential as the representative so the head's exclusion signal is not lost. */
 export function poolOf(accounts: readonly AccountRow[], headKey: string): AccountRow[] {
-  return accounts.filter((account) => account.kind !== 'api-key' && account.heads.includes(headKey));
+  const pool: AccountRow[] = [];
+  const known = new Map<string, number>();
+  for (const account of accounts) {
+    if (account.kind === 'api-key' || !account.heads.includes(headKey)) continue;
+    const uuid = account.account?.uuid;
+    const prior = uuid == null || uuid === '' ? undefined : known.get(uuid);
+    if (prior === undefined) {
+      if (uuid != null && uuid !== '') known.set(uuid, pool.length);
+      pool.push(account);
+    } else {
+      const current = pool[prior];
+      const newlySelected = account.selected === true && current?.selected !== true;
+      const healthier = current?.selected !== true && current !== undefined && !isServable(current) && isServable(account);
+      if (newlySelected || healthier) pool[prior] = account;
+    }
+  }
+  return pool;
 }
 
 /**

@@ -36,6 +36,7 @@ import {
   windowUsedText,
 } from '../src/lib/accounts';
 import type { AccountRow, AccountWindow, AccountWire } from '../src/types/accounts';
+import { A } from '../src/pages/accounts/copy';
 
 const HOUR_5 = 18000;
 const DAY_7 = 604800;
@@ -79,7 +80,32 @@ function window7d(used: number | null): AccountWindow {
   return { seconds: DAY_7, used_percent: used, reset_epoch_seconds: null };
 }
 
+describe('the default order explanation', () => {
+  test('names the daemon reset policy rather than primary and oldest login order', () => {
+    expect(A.orderDefault).toContain('weekly reset comes soonest');
+    expect(A.orderDefault).toContain('five-hour reset breaks ties');
+    expect(A.orderDefault).toContain('Unknown quota comes last');
+    expect(A.orderDefault).toContain('session keeps its account');
+    expect(A.orderDefault).toContain('saved order overrides');
+    expect(A.orderDefault).not.toContain('oldest first');
+  });
+});
+
 describe('selectable account rows', () => {
+  test('a deleted or refused native credential does not hide a healthy credential of the same account', () => {
+    const native = account({ credential_present: false, account: { uuid: 'synthetic-account', email: null } });
+    const healthy = { ...native, label: 'healthy', credential_present: true };
+    expect(poolOf([native, healthy], 'claudex')).toEqual([healthy]);
+    expect(poolOf([{ ...native, credential_present: true, refusal: 'synthetic refusal' }, healthy], 'claudex')).toEqual([healthy]);
+  });
+  test('unknown identities remain distinct, and a duplicate UUID keeps the selected credential', () => {
+    const unknown = account({ account: null });
+    const another = account({ label: 'unknown-two', account: null });
+    expect(poolOf([unknown, another], 'claudex')).toEqual([unknown, another]);
+    const known = account({ account: { uuid: 'synthetic-account', email: 'one@example.invalid' } });
+    const selected = { ...known, label: 'selected-alias', selected: true, available: false };
+    expect(poolOf([known, selected], 'claudex')).toEqual([selected]);
+  });
   test('API-key credential rows remain visible to Accounts but are never pool candidates', () => {
     const oauth = account();
     const key = account({ kind: 'api-key', single_login: true, label: null });

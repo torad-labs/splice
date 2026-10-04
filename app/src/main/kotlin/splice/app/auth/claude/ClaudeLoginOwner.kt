@@ -6,6 +6,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
+import splice.accounts.claude.ClaudeAccountIdentity
 import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.claude.ClaudeLoginPlaceView
 import splice.accounts.claude.ClaudeLoginPlaces
@@ -52,6 +53,8 @@ internal class ClaudeLoginOwner(
     private val history = LinkedHashMap<String, AtomicReference<LoginStatus>>()
 
     override fun places(): List<ClaudeLoginPlaceView> = reads.places(locations)
+
+    internal fun accountForCredential(key: String): ClaudeAccountIdentity? = reads.accountForCredential(locations, key)
 
     // One place is still read against ALL of them: a login's window belongs to its account, and the account's
     // other logins are where that reading may have been filed.

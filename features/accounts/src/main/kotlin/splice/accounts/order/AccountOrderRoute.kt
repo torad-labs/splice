@@ -10,14 +10,34 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.accounts.AccountHeadResolver
 import splice.accounts.AccountReplies
+import splice.accounts.claude.ClaudeLoginPlaceView
 import splice.http.JsonBody
 
 public class AccountOrderRoute(private val resolver: AccountHeadResolver) {
     private val body = JsonBody()
 
-    public suspend fun get(call: ApplicationCall) {
-        val target = target(call) ?: return
-        respond(call, target)
+    public suspend fun get(call: ApplicationCall, native: List<ClaudeLoginPlaceView> = emptyList()) {
+        val head = resolver.resolveOrRespond(call, call.parameters["head"].orEmpty()) ?: return
+        val source = head.pool as? HeadAccountOrderSource
+        if (source != null) {
+            respond(call, Target(head.key, source))
+            return
+        }
+        val signedIn = native.filter { it.head == head.key && it.credentialPresent }
+        val identities = signedIn.map { it.account?.uuid?.takeIf(String::isNotBlank) }
+        if (identities.distinct().singleOrNull() != null) {
+            AccountReplies.respond(
+                call,
+                buildJsonObject {
+                    put("head", head.key)
+                    putJsonArray("order") { }
+                    putJsonArray("effective_order") { }
+                    put("single_account", true)
+                }.toString(),
+            )
+        } else {
+            unavailable(call, head.key)
+        }
     }
 
     public suspend fun set(call: ApplicationCall) {
@@ -38,15 +58,17 @@ public class AccountOrderRoute(private val resolver: AccountHeadResolver) {
         val head = resolver.resolveOrRespond(call, call.parameters["head"].orEmpty()) ?: return null
         val source = head.pool as? HeadAccountOrderSource
         if (source == null) {
-            AccountReplies.respondError(
-                call,
-                "head '${head.key}' has no selectable account source",
-                HttpStatusCode.Conflict,
-            )
+            unavailable(call, head.key)
             return null
         }
         return Target(head.key, source)
     }
+
+    private suspend fun unavailable(call: ApplicationCall, head: String) = AccountReplies.respondError(
+        call,
+        "head '$head' has no selectable account source",
+        HttpStatusCode.Conflict,
+    )
 
     private suspend fun labels(call: ApplicationCall): List<String>? {
         val parsed = body.parse(call) ?: return null

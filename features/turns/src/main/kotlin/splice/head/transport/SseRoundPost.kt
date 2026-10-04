@@ -59,9 +59,11 @@ internal class SseRoundPost(
                 auth = account?.auth ?: provider.auth,
                 extraHeaders = { creds ->
                     // The account's headers ride ON TOP of the provider's, never instead of them.
-                    provider.extraHeaders(creds) +
+                    val headers = provider.extraHeaders(creds) +
                         account?.extraHeaders?.invoke(creds).orEmpty() +
                         CallerCredential.over(drive.turnHeaders, creds) + httpRoutingHeaders(inputs)
+                    drive.observeAccount(creds, headers)
+                    headers
                 },
                 onRetry = onRetry,
                 perf = drive.perf,

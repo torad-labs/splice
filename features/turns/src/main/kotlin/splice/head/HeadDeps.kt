@@ -133,7 +133,14 @@ public data class HeadDeps(
          *  the trackers do in quota. No default, like every member of this bundle: a head built
          *  without one says so ([splice.core.budget.NoHeadBudget]) rather than forgetting. */
         val budget: HeadBudget,
+        val credentialAccountNames: CredentialAccountNames,
     )
+
+    /** A proved account name for the effective credential digest, never the credential or a head alias.
+     *  Null means no identity was proved. Implementations never throw or expose credential values. */
+    public fun interface CredentialAccountNames {
+        public fun forCredential(key: String): String?
+    }
 
     /** The substitutable runtime seams. A test drives these instead of sleeping or reading a clock,
      *  which is why they are one bundle: they are the things a deterministic test REPLACES. */

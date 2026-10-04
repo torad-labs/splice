@@ -3,6 +3,7 @@ package splice.head.admission
 
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.header
+import splice.core.auth.ClientAuthProvider
 import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
 import splice.core.perf.OutcomeTag
@@ -52,7 +53,7 @@ internal class CredentialHoldAdmission(
             account?.releaseCredentialProbe()
             return Outcome.Allowed(next)
         }
-        respond(call, prepared, admitted, trace, cooldown)
+        respond(call, prepared, admitted, trace, HeldCredential(cooldown, accountName(prepared, account)))
         return Outcome.Refused
     }
 
@@ -79,13 +80,24 @@ internal class CredentialHoldAdmission(
         return deps.upstream.credentialCooldown(headers, (credentials as? Credentials.ApiKey)?.header)
     }
 
+    private data class HeldCredential(val cooldown: RateLimitCooldown, val accountName: String?)
+
+    private fun accountName(prepared: Preparation.Ready, account: AccountSelection?): String? {
+        val chosen = account?.account
+        // Naming a held login must not acquire or proactively refresh its credential.
+        if ((chosen?.auth ?: provider.auth) !is ClientAuthProvider) return chosen?.label
+        val key = CredentialKey.fromHeaders(prepared.built.extraHeaders)
+        return key?.let(deps.quotaBundle.credentialAccountNames::forCredential) ?: chosen?.label
+    }
+
     private suspend fun respond(
         call: ApplicationCall,
         prepared: Preparation.Ready,
         admitted: AdmittedTurn,
         trace: TurnTrace?,
-        cooldown: RateLimitCooldown,
+        held: HeldCredential,
     ) {
+        val cooldown = held.cooldown
         val native = cooldown.rateLimitReply
         native?.let { reply -> trace?.collectedAnswer { ClientAnswer(reply.status, reply.body) } }
         val plan = cooldown.planHold.live()
@@ -101,6 +113,7 @@ internal class CredentialHoldAdmission(
                 (if (plan == null) OutcomeTag.RATE_LIMITED else OutcomeTag.PLAN_LIMIT).wire,
                 "provider_reset=${AccountResetText.format(reset)} gateway_hold=${armedMs}ms",
                 trace,
+                held.accountName,
             ),
         )
         admitted.close()

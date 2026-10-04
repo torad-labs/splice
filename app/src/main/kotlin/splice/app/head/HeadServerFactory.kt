@@ -47,6 +47,9 @@ internal class HeadServerFactory(
 ) {
     private val upstreamFactory = UpstreamFactory()
 
+    /** Assigned before any head is assembled; the callback reads the login owner at request time. */
+    internal var credentialAccountNames: HeadDeps.CredentialAccountNames = HeadDeps.CredentialAccountNames { null }
+
     // v0.4.0: what a launched session holds, derived from the management key (see [TurnKey]).
     private val turnKey = TurnKey(mgmtKey)
 
@@ -85,6 +88,7 @@ internal class HeadServerFactory(
                     // publisher's one enforcement over the daemon's budget store. Pinned by
                     // BudgetWiringPinTest: without it the console's budgets are stored and ignored.
                     budget = console?.budgets?.forHead(key, ctx.catalog) ?: NoHeadBudget,
+                    credentialAccountNames = credentialAccountNames,
                 ),
                 seams = seams(key),
                 policy = HeadDeps.HeadPolicy(

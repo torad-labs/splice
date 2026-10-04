@@ -75,7 +75,9 @@ internal class AccountsMount(
             }
         }
         route.post("/api/auth/{head}/login/{id}/code") { guard.guarded(call) { claudeRoutes.submit(call) } }
-        route.get("/api/auth/{head}/order") { guard.guarded(call) { accountOrderRoute.get(call) } }
+        route.get("/api/auth/{head}/order") {
+            guard.guarded(call) { accountOrderRoute.get(call, ports.claudeLogins?.places().orEmpty()) }
+        }
         route.put("/api/auth/{head}/order") { guard.guarded(call) { accountOrderRoute.set(call) } }
         route.post("/api/auth/{head}/switch") { guard.guarded(call) { switchRoute.switchAccount(call) } }
         route.delete("/api/auth/{head}/switch") { guard.guarded(call) { switchRoute.unpinAccount(call) } }

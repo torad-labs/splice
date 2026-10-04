@@ -13,6 +13,7 @@
 //     identity there is nothing to join by and a guess would put one person's window on another's card.
 package splice.app.auth.claude
 
+import splice.accounts.claude.ClaudeAccountIdentity
 import splice.accounts.claude.ClaudeLoginPlaceView
 import splice.accounts.claude.ClaudeLoginStanding
 import splice.app.head.ProviderHoldFiles
@@ -46,6 +47,14 @@ internal class ClaudeLoginRead(
             view(location, native, account?.let(newest::get), account?.let(held::get))
         }
     }
+
+    /** The account proved by the credential used for this request, not by its command or login place. */
+    fun accountForCredential(locations: List<ClaudeLoginLocation>, key: String): ClaudeAccountIdentity? =
+        locations.map(facts::read)
+            .filter { it.key == key && it.refusal == null }
+            .mapNotNull(ClaudeLoginFacts::account)
+            .distinctBy(ClaudeAccountIdentity::uuid)
+            .singleOrNull()
 
     /** What this place's live credential has observed, under the account spending it, or null for either absence. */
     private fun filed(location: ClaudeLoginLocation, native: ClaudeLoginFacts): Pair<String, QuotaSnapshot>? {

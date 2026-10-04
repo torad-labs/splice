@@ -26,6 +26,26 @@ class ConsoleWiringAccountsPinTest {
         )
     }
 
+    @Test
+    fun `the daemon wires current credential account names into every assembled head`() {
+        // These assignments happen after construction, so an omitted link would still compile.
+        assertTrue(
+            source("app/src/main/kotlin/splice/app/Daemon.kt")
+                .contains("it.credentialAccountNames = controlPlane.credentialAccountNames"),
+            "the daemon must hand its native account resolver to the head factory",
+        )
+        assertTrue(
+            source("app/src/main/kotlin/splice/app/head/HeadServerFactory.kt")
+                .contains("credentialAccountNames = credentialAccountNames,"),
+            "each head's account bundle must retain the daemon resolver",
+        )
+        assertTrue(
+            source("app/src/main/kotlin/splice/app/ControlPlane.kt")
+                .contains("claudeLoginOwner?.accountForCredential(key)"),
+            "the resolver must consult the wired owner at request time, not capture an unwired null",
+        )
+    }
+
     private fun consoleWiringSource(): String = source("app/src/main/kotlin/splice/app/ConsoleWiring.kt")
 
     /** Found by walking up from the working directory: under Gradle the cwd is the module dir and

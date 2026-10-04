@@ -8,6 +8,7 @@ export interface AccountOrder {
   head: string;
   order: string[];
   effective_order: string[];
+  single_account?: boolean;
 }
 export type AccountOrderState = AccountOrder | { unavailable: string };
 export const orderPath = (head: string) => `/api/auth/${encodeURIComponent(head)}/order`;

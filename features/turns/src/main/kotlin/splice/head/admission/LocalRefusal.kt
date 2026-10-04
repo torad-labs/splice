@@ -6,4 +6,9 @@ package splice.head.admission
 
 import splice.head.wire.TurnTrace
 
-internal data class LocalRefusal(val tag: String, val detail: String, val trace: TurnTrace?)
+internal data class LocalRefusal(
+    val tag: String,
+    val detail: String,
+    val trace: TurnTrace?,
+    val account: String? = null,
+)

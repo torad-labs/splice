@@ -29,6 +29,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.client.ClaudeLogins
 import splice.client.ClaudePolicy
 import splice.client.wrap.WrapStateStore
 import splice.client.wrap.WrappedHead
@@ -86,6 +87,7 @@ class ClaudeHeadRoutesTest {
         val routes = ClaudeHeadRoutes(
             heads = launchHeadsOf(claudeHead(configDir)),
             home = home,
+            claudeLogins = ClaudeLogins(home.resolve("synthetic-logins")),
             wrappedHead = WrappedHead(
                 home = home,
                 installPaths = InstallPaths(binOverride = bin, shareOverride = share),
@@ -129,6 +131,27 @@ class ClaudeHeadRoutesTest {
             Json.parseToJsonElement(client.post("http://127.0.0.1:$port$path").bodyAsText()).jsonObject
         } finally {
             client.close()
+        }
+    }
+
+    @Test
+    fun `the login constraint states quota reset ordering and keeps a free session on its account`(
+        @TempDir home: Path,
+    ) {
+        serveHermetic(home) { port, _ ->
+            HttpClient(CIO).use { client ->
+                val status = Json.parseToJsonElement(
+                    client.get("http://127.0.0.1:$port/api/claude-head").bodyAsText(),
+                ).jsonObject
+                val constraint = status.getValue("claude_logins").jsonObject
+                    .getValue("constraint").jsonPrimitive.content
+                assertTrue(constraint.contains("weekly reset comes soonest"))
+                assertTrue(constraint.contains("five-hour reset breaks ties"))
+                assertTrue(constraint.contains("Unknown quota comes last"))
+                assertTrue(constraint.contains("session keeps its account"))
+                assertTrue(constraint.contains("saved order overrides"))
+                assertFalse(constraint.contains("only while no session"))
+            }
         }
     }
 

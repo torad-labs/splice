@@ -98,11 +98,13 @@ public class ClaudeHeadRoutes(
             // FEATURES.md 4.5: "the constraint ... is printed on the strip" — carried here rather
             // than on /api/auth, which ClientAuthProvider (generic to every client-auth head, not
             // Claude-specific) is the wrong layer for a Claude-only sentence; see FINAL REPORT.
-            // V4-276: a switch happens only through `splice login <head> --label`, never at launch.
+            // The pool chooses a subscription per turn; login save-back still owns the native files.
             put(
                 "constraint",
-                "one login per Claude head at a time; `splice login <head> --label <name>` saves or switches " +
-                    "it, only while no session of that head is running",
+                "Splice uses the account with quota whose weekly reset comes soonest. " +
+                    "The five-hour reset breaks ties. Unknown quota comes last. " +
+                    "Each session keeps its account while it remains available. " +
+                    "Your saved order overrides this default.",
             )
         }
     }.toString()

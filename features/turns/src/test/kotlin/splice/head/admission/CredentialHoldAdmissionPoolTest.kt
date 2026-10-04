@@ -44,6 +44,7 @@ import splice.upstream.retry.InflightGate
 import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.transport.UpstreamClient
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration.Companion.seconds
 
 class CredentialHoldAdmissionPoolTest {
@@ -62,12 +63,28 @@ class CredentialHoldAdmissionPoolTest {
             }
         }
 
+    @Test
+    fun `naming a locally refused selected account never reacquires or refreshes its credential`(@TempDir dir: Path) =
+        testApplication {
+            val fixture = Fixture(dir)
+            fixture.holdAll()
+            application { routing { post("/admission") { fixture.respond(call) } } }
+            try {
+                val before = fixture.credentialReads.get()
+                assertEquals(HttpStatusCode.TooManyRequests, client.post("/admission").status)
+                assertEquals(before, fixture.credentialReads.get(), "metadata must not refresh a held account")
+            } finally {
+                fixture.close()
+            }
+        }
+
     private class Fixture(dir: Path) {
+        val credentialReads = AtomicInteger()
         private val logins = listOf("one", "two").map { label ->
             PoolAccount(
                 label,
                 label == "one",
-                SyntheticAdmissionAuth(label),
+                SyntheticAdmissionAuth(label, credentialReads),
                 AccountQuotaSource { null },
                 RateLimitCooldown(ElapsedClock { 0L }),
             )
@@ -143,11 +160,24 @@ class CredentialHoldAdmissionPoolTest {
             }
         }
 
+        fun holdAll() {
+            logins.forEach {
+                it.cooldown.rateLimitReply = logins.first().cooldown.rateLimitReply
+                it.cooldown.arm(7_200_000L)
+            }
+        }
+
         fun close() = providerClient.close()
     }
 
-    private class SyntheticAdmissionAuth(private val label: String) : RefreshableAuthProvider {
-        override suspend fun credentials(): Credentials = Credentials.Bearer(label)
+    private class SyntheticAdmissionAuth(
+        private val label: String,
+        private val reads: AtomicInteger,
+    ) : RefreshableAuthProvider {
+        override suspend fun credentials(): Credentials {
+            reads.incrementAndGet()
+            return Credentials.Bearer(label)
+        }
         override suspend fun refresh(): Credentials = credentials()
         override suspend fun describe(): AuthDescription = AuthDescription(true, "synthetic")
     }

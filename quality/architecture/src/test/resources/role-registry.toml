@@ -289,12 +289,16 @@ reason = """Three link operations at three levels, each a seam for a DIFFERENT s
 signature = "(String)->String?"
 dated = "2026-09-17"
 names = [
+    "CredentialAccountNames",
     "EnvReader",
     "QuotaHeaderRead",
     "SessionAddress",
     "SliceMemoryCap",
 ]
-reason = """EnvReader reads a PROCESS ENVIRONMENT VARIABLE by name; QuotaHeaderRead reads one \
+reason = """CredentialAccountNames resolves a PRIVATE EFFECTIVE-CREDENTIAL DIGEST to a proved account name. \
+Its miss means no account identity was proved, not a missing environment variable or response header. \
+Substituting another lookup would attribute a turn to an unrelated string and leak the join key. \
+EnvReader reads a PROCESS ENVIRONMENT VARIABLE by name; QuotaHeaderRead reads one \
 UPSTREAM RESPONSE HEADER by name. Same shape, and the two sources could not be further apart in \
 trust: the environment is this machine's, the headers are a remote's. EnvReader exists threaded \
 rather than global so a caller can pin a hermetic environment — the first CI run of \

@@ -59,6 +59,22 @@ class ClaudeLoginReadTest {
     }
 
     @Test
+    fun `account attribution uses only a currently matching credential and refuses conflicting identities`() {
+        val first = place(ClaudeLoginPlaceId.NATIVE, "first-synthetic", account = "first-account")
+        val second = place(ClaudeLoginPlaceId.SPLICE, "second-synthetic", account = "second-account")
+        val reader = ClaudeLoginRead(paths(), {}, WallClock { 100_000 })
+        val locations = listOf(first, second)
+        assertEquals("first-account", reader.accountForCredential(locations, key("first-synthetic"))?.uuid)
+        assertEquals("second-account", reader.accountForCredential(locations, key("second-synthetic"))?.uuid)
+        assertNull(reader.accountForCredential(locations, key("unproved-synthetic")))
+        Files.writeString(first.credentials, """{"claudeAiOauth":{"accessToken":"rotated-synthetic"}}""")
+        assertNull(reader.accountForCredential(locations, key("first-synthetic")), "a stale token proves no account")
+        assertEquals("first-account", reader.accountForCredential(locations, key("rotated-synthetic"))?.uuid)
+        Files.writeString(second.credentials, """{"claudeAiOauth":{"accessToken":"rotated-synthetic"}}""")
+        assertNull(reader.accountForCredential(locations, key("rotated-synthetic")), "conflicting UUIDs prove no name")
+    }
+
+    @Test
     fun `native commands have distinct standing and credential rotation never falls back to old or head-wide quota`() {
         val paths = paths()
         val first = place(ClaudeLoginPlaceId.NATIVE, "first-synthetic", account = "first-account")

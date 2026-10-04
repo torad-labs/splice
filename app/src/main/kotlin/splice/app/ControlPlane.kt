@@ -50,6 +50,7 @@ import splice.core.config.TurnKey
 import splice.core.config.UserHome
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
+import splice.head.HeadDeps
 import splice.launch.LaunchSpec
 import splice.launch.recipe.LaunchService
 import splice.lifecycle.restart.DetachedDaemonSuccessor
@@ -88,6 +89,13 @@ internal class ControlPlane(
     private val boundary = DaemonBoundary()
     private val environment = ProcessEnvironment()
     private var claudeLoginOwner: ClaudeLoginOwner? = null
+
+    /** Captures the owner only at send time, after launch composition has wired the live native places. */
+    internal val credentialAccountNames = HeadDeps.CredentialAccountNames { key ->
+        claudeLoginOwner?.accountForCredential(key)?.let { account ->
+            account.email?.takeIf(String::isNotBlank) ?: account.uuid
+        }
+    }
 
     // V4-410 follow-on: the add and remove of a Claude head's subscriptions, read by the accounts port's
     // `client` arm (ClaudeAccountsArm). Null until a Claude head's login machinery is built.

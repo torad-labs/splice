@@ -80,6 +80,22 @@ describe('a fleet card', () => {
     expect(meta).toEqual(['grok', 'Pro', '2 sessions']);
     expect(fleetCard(head(), inputs({ auth, accounts: [account({ label: null })] })).meta).toEqual(['grok', '2 sessions']);
   });
+  test('one proven Claude account in two login places is not a two-account pool', () => {
+    const native = account({
+      kind: 'client', heads: ['synthetic-head'], label: 'Primary alias',
+      login_place: { id: 'claude', command: 'synthetic-native' },
+      account: { uuid: 'synthetic-account', email: 'synthetic@example.invalid' },
+    });
+    const wrapped = { ...native, label: 'Wrapped alias', login_place: { id: 'claude-splice' as const, command: 'synthetic-wrapped' } };
+    const card = fleetCard(head({ key: 'synthetic-head', authKind: 'client' }), inputs({ accounts: [native, wrapped], usage: null, family: 'anthropic' }));
+    expect(card.meta).not.toContain('Pool · 2 accounts');
+    expect(card.meta).toContain('Primary alias');
+  });
+  test('matching display email without matching account identity still counts as two accounts', () => {
+    const first = account({ account: { uuid: 'synthetic-one', email: 'same@example.invalid' } });
+    const second = account({ label: 'Second', account: { uuid: 'synthetic-two', email: 'same@example.invalid' } });
+    expect(fleetCard(head(), inputs({ accounts: [first, second] })).meta).toContain('Pool · 2 accounts');
+  });
   test('a head near its warn share says so, without needing a person', () => {
     const card = fleetCard(head(), inputs({ usage: usage(90) }));
     expect(card).toMatchObject({ state: 'Ready', standing: 'ready', tone: 'work', attention: false });

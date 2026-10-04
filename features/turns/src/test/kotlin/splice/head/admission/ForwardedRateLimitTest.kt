@@ -11,6 +11,9 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.Headers
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -21,6 +24,7 @@ import splice.core.auth.CredentialKey
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.WatchdogBudget
+import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.dialect.anthropic.PassthroughProvider
@@ -28,6 +32,7 @@ import splice.dialect.anthropic.PassthroughQuirks
 import splice.head.HeadDeps
 import splice.head.HeadServer
 import splice.head.headDeps
+import splice.head.noQuota
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.FileProviderHoldStore
 import splice.upstream.retry.InflightGate
@@ -41,6 +46,48 @@ import kotlin.time.Duration.Companion.seconds
 class ForwardedRateLimitTest {
     @TempDir
     lateinit var directory: Path
+
+    @Test
+    fun `account rows name the effective caller login without guessing an unknown identity`() = runBlocking {
+        for (stream in listOf(false, true)) {
+            val known = mapOf(
+                key("synthetic-healthy") to "one@example.invalid",
+                key("synthetic-new-login") to "two@example.invalid",
+            )
+            val rig = LimitRig(
+                directory.resolve(stream.toString()),
+                names = HeadDeps.CredentialAccountNames(known::get),
+            )
+            rig.head.start()
+            try {
+                for (token in listOf("synthetic-healthy", "synthetic-new-login", "synthetic-unproved")) {
+                    assertEquals(HttpStatusCode.OK, rig.turn(token, stream).first)
+                }
+                assertEquals(listOf("one@example.invalid", "two@example.invalid", "claude-code"), rig.accounts())
+            } finally {
+                rig.close()
+            }
+        }
+    }
+
+    @Test
+    fun `the locally replayed refusal keeps the proved account without an upstream attempt`() = runBlocking {
+        val names = HeadDeps.CredentialAccountNames { digest ->
+            "held@example.invalid".takeIf { digest == key("synthetic-refused") }
+        }
+        val rig = LimitRig(directory, names = names)
+        rig.head.start()
+        try {
+            repeat(2) { assertEquals(HttpStatusCode.TooManyRequests, rig.turn("synthetic-refused").first) }
+            assertEquals(1, rig.requests.size)
+            assertEquals(listOf("held@example.invalid", "held@example.invalid"), rig.accounts())
+        } finally {
+            rig.close()
+        }
+    }
+
+    private fun key(token: String): String =
+        requireNotNull(CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer $token")))
 
     @Test
     fun `a refused credential never holds an existing or newly seen login`() = runBlocking {
@@ -176,6 +223,7 @@ private class LimitRig(
     private val directory: Path,
     private val limits: Boolean = true,
     clock: ElapsedClock = ElapsedClock { 0L },
+    names: HeadDeps.CredentialAccountNames = HeadDeps.CredentialAccountNames { null },
 ) {
     val requests = mutableListOf<String>()
     val refused = mutableListOf<String>()
@@ -251,6 +299,7 @@ private class LimitRig(
             gate = InflightGate(maxInflight = { 4 }, maxQueued = { 4 }),
             log = {},
             policy = HeadDeps.HeadPolicy(forwardClientAuth = true),
+            quota = noQuota().copy(credentialAccountNames = names),
         ),
     )
 
@@ -263,6 +312,13 @@ private class LimitRig(
             )
         }
         return Triple(response.status, response.bodyAsText(), response.headers)
+    }
+
+    fun accounts(): List<String?> {
+        assertTrue(AsyncFileIo.drain(), "synthetic account rows must be durable before reading")
+        return Files.readAllLines(directory.resolve("perf.jsonl")).map { line ->
+            Json.parseToJsonElement(line).jsonObject["account"]?.jsonPrimitive?.content
+        }
     }
 
     suspend fun close() {

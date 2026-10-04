@@ -765,7 +765,8 @@ class RoleRegistryLawTest {
         // 140 since Oct 4 CT: the removed `suspend (String)->TurnOutcome` entry took InterceptedRoundPost and
         // PostRound with it when PostRound began taking a RoundBody.
         // 141 since Oct 4 CT: TranscriptReadBudget joins `()->Boolean`, the remaining time of one transcript request.
-        assertEquals(141, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
+        // 142 since Oct 4 CT: CredentialAccountNames proves account identity from the effective credential digest.
+        assertEquals(142, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
         assertTrue(config.entries.values.all { !it.text("reason").isNullOrBlank() }) { "every entry is reasoned" }
         assertTrue(config.entries.values.all { !it.text("dated").isNullOrBlank() }) { "every entry is dated" }
 

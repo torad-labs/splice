@@ -6,6 +6,7 @@ import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 
+// why: 64 KiB frames about sixty synthetic 1 KiB rows per read while keeping one fixed scratch buffer.
 private const val PERF_LINE_BUFFER_BYTES = 65_536
 
 /** A byte-positioned UTF-8 line reader, including CR, LF, CRLF and the unterminated last line. */

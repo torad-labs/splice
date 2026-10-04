@@ -36,11 +36,15 @@ test('command labels name Accounts while a renamed label never changes the budge
   const faults = await open(page, 'accounts');
   const group = () => page.locator('.accounts-provider').filter({ has: page.getByRole('heading', { level: 2, name: command, exact: true }) });
   await expect(group().getByRole('heading', { level: 3, name: command, exact: true })).toBeVisible();
+  await expect(group()).toContainText('This command uses an API key. There is no account order to change.');
+  await expect(group()).not.toContainText('This command uses one login.');
   await expect(group().locator('.account-budget b')).toHaveText(command + ' daily budget');
   await expect(group()).not.toContainText(STACK.keyHead);
   command = 'claude-renamed-wrapper';
   await page.reload();
   await expect(group().getByRole('heading', { level: 3, name: command, exact: true })).toBeVisible();
+  await expect(group()).toContainText('This command uses an API key. There is no account order to change.');
+  await expect(group()).not.toContainText('This command uses one login.');
   await expect(group().locator('.account-budget b')).toHaveText(command + ' daily budget');
   try {
     await group().getByRole('button', { name: 'Set daily cap', exact: true }).click();
@@ -72,9 +76,35 @@ test('a daemon-declared local runtime has local guidance on Accounts, not a prov
   const faults = await open(page, 'accounts');
   const card = page.locator('.account-card').filter({ has: page.getByRole('heading', { level: 3, name: STACK.keyHead, exact: true }) });
   await expect(card).toContainText('This command uses a runtime on this computer. There is no provider sign-in to change.');
+  await expect(card.locator('.state')).toHaveText('Local runtime');
+  await expect(card).not.toContainText('API key configured');
+  await expect(card).not.toContainText('API key missing');
+  const group = page.locator('.accounts-provider').filter({ has: card });
+  await expect(group).toContainText('This command uses a runtime on this computer. There are no provider accounts to order.');
+  await expect(group).not.toContainText('This command uses one login.');
   await expect(card).not.toContainText('not a browser login');
   await expect(card.getByRole('button', { name: 'Sign in', exact: true })).toHaveCount(0);
   await assertHealthy(page, faults);
+});
+
+test('an Accounts read failure stays visible while command kinds are still being read', async ({ page }) => {
+  let release = (): void => {};
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  await page.route(url => url.pathname === '/api/status', async route => {
+    await pending;
+    await route.continue();
+  });
+  await page.route(url => url.pathname === '/api/accounts', route => route.fulfill({
+    status: 500, json: { error: 'Synthetic accounts read failed' },
+  }));
+  try {
+    const faults = await open(page, 'accounts');
+    await expect(page.getByRole('alert')).toContainText('Synthetic accounts read failed', { timeout: 20_000 });
+    await expect(page.getByRole('main')).not.toContainText('Reading provider accounts');
+    expect(faults.pageErrors).toEqual([]);
+  } finally {
+    release();
+  }
 });
 
 for (const path of ['accounts', 'settings', 'settings/health']) {

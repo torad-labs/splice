@@ -25,6 +25,18 @@ describe('account limit facts', () => {
     expect(html).not.toContain('Refresh login');
   });
 
+  test.each([true, false])('a local runtime has no key or login state even when credential presence is %s', present => {
+    const html = renderToStaticMarkup(<QueryClientProvider client={new QueryClient()}>
+      <AccountCard account={{ ...saved, kind: 'api-key', single_login: true, label: null, credential_present: present }} localRuntime colour="gpt" now={now} />
+    </QueryClientProvider>);
+    expect(html).toContain('Local runtime');
+    expect(html).not.toContain('API key configured');
+    expect(html).not.toContain('API key missing');
+    expect(html).not.toContain('Signed in');
+    expect(html).not.toContain('Sign in');
+    expect(html).not.toMatch(/class="[^"]*\battn\b/);
+  });
+
   test('an API-key command reports key presence without an impossible browser login or plan windows', () => {
     const html = renderToStaticMarkup(<QueryClientProvider client={new QueryClient()}>
       <AccountCard account={{ ...saved, kind: 'api-key', single_login: true, label: null, credential_present: true }} colour="gpt" now={now} />

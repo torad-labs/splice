@@ -24,12 +24,15 @@ function OrderedAccount({ id, name, index, length, disabled, move }: {
   );
 }
 
-export function FailoverOrder({ head, label = head, accounts }: { head: string; label?: string; accounts: readonly AccountRow[] }) {
-  const single = accounts.length > 0 && accounts.every(row => row.single_login && row.label === null && row.login_place == null);
+export function FailoverOrder({ head, label = head, accounts, localRuntime = false }: { head: string; label?: string; accounts: readonly AccountRow[]; localRuntime?: boolean }) {
+  const keyed = accounts.length > 0 && accounts.every(row => row.kind === 'api-key');
+  const single = localRuntime || keyed || (accounts.length > 0 && accounts.every(row => row.single_login && row.label === null && row.login_place == null));
   const read = useAccountOrder(head, !single);
   const save = useSaveAccountOrder(head);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
   const data = read.data;
+  if (localRuntime) return <p className="hint">{A.orderLocal}</p>;
+  if (keyed) return <p className="hint">{A.orderKey}</p>;
   if (single) return <p className="hint">{A.orderSingle}</p>;
   if (data === undefined) return read.isError ? <Fault message={failureText(read.error)} onRetry={() => void read.refetch()} /> : <p className="hint">{A.orderReading}</p>;
   if ('unavailable' in data) return <p className="hint">{A.orderUnavailable}</p>;

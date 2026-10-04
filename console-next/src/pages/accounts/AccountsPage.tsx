@@ -28,8 +28,9 @@ export function AccountsPage() {
   const commandLabel = (head: string): string => status.data?.registry.find(row => row.key === head)?.label ?? head;
   const localCommands = new Set(status.data?.registry.filter(row => row.family === 'local').map(row => row.key));
   const now = Date.now();
-  if (accounts.isPending) return <div className="accounts-page"><PageHead title={A.title} lede={A.reading} /></div>;
   if (accounts.isError) return <div className="accounts-page"><PageHead title={A.title} /><Fault message={failureText(accounts.error)} onRetry={() => void accounts.refetch()} /></div>;
+  if (status.isError && status.data === undefined) return <div className="accounts-page"><PageHead title={A.title} /><Fault message={failureText(status.error)} onRetry={() => void status.refetch()} /></div>;
+  if (accounts.isPending || status.isPending) return <div className="accounts-page"><PageHead title={A.title} lede={A.reading} /></div>;
   const providers = new Map<string, AccountRow[]>([['anthropic', []]]);
   for (const row of accounts.data.accounts) {
     const provider = providerOf(row);
@@ -52,7 +53,7 @@ export function AccountsPage() {
             {rows.filter(row => !claude || row.login_place == null).map(row => <AccountCard key={accountIdentity(row)} account={row} commandLabels={row.heads.map(commandLabel)} localRuntime={row.heads.length > 0 && row.heads.every(head => localCommands.has(head))} colour={colour(row.heads[0] ?? '')} now={now} />)}
           </ul>
           {!claude && rows.length === 0 ? <Empty title={A.noAccounts} why={A.noAccountsWhy} /> : null}
-          {heads.map(head => <div key={head}><FailoverOrder head={head} label={commandLabel(head)} accounts={rows.filter(row => row.heads.includes(head))} /><AccountBudget head={head} label={commandLabel(head)} /></div>)}
+          {heads.map(head => <div key={head}><FailoverOrder head={head} label={commandLabel(head)} accounts={rows.filter(row => row.heads.includes(head))} localRuntime={localCommands.has(head)} /><AccountBudget head={head} label={commandLabel(head)} /></div>)}
         </section>;
       })}
       </div>

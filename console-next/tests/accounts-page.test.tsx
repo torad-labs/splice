@@ -67,6 +67,29 @@ describe('the Claude group', () => {
   });
 });
 
+test('Accounts waits for command kinds rather than briefly claiming a local runtime has an API key', () => {
+  const client = new QueryClient();
+  client.setQueryData([...keys.accounts, '/api/accounts'], {
+    accounts: [{ ...added, kind: 'api-key', heads: ['synthetic-local'] }],
+  });
+  const html = renderToStaticMarkup(<QueryClientProvider client={client}><AccountsPage /></QueryClientProvider>);
+  expect(html).toContain('Reading provider accounts');
+  expect(html).not.toContain('API key configured');
+  expect(html).not.toContain('one login');
+});
+
+test('a failed Accounts read is not hidden by the still-pending command-kind read', () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retryOnMount: false } } });
+  const queryKey = [...keys.accounts, '/api/accounts'];
+  client.setQueryData(queryKey, { accounts: [] });
+  const query = client.getQueryCache().find({ queryKey });
+  if (query === undefined) throw new Error('seeded Accounts query must exist');
+  query.setState({ data: undefined, status: 'error', fetchStatus: 'idle', error: new Error('Synthetic accounts read failed') });
+  const html = renderToStaticMarkup(<QueryClientProvider client={client}><AccountsPage /></QueryClientProvider>);
+  expect(html).toContain('Synthetic accounts read failed');
+  expect(html).not.toContain('Reading provider accounts');
+});
+
 describe('the local runtime on Accounts', () => {
   test('the daemon family selects local-runtime wording without inventing a provider sign-in', () => {
     const rows = [{ ...added, kind: 'api-key' as const, heads: ['local-internal'] }];

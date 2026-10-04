@@ -5,6 +5,7 @@ import { budgetsKey } from '../src/api/usage';
 import { AccountBudget } from '../src/pages/accounts/AccountBudget';
 import { FailoverOrder } from '../src/pages/accounts/FailoverOrder';
 import type { BudgetsPayload } from '../src/types/budget';
+import type { AccountRow } from '../src/types/accounts';
 
 function budget(data: BudgetsPayload): string {
   const client = new QueryClient();
@@ -28,6 +29,24 @@ test('one proven account in two login places explains why its order cannot chang
   });
   const html = renderToStaticMarkup(<QueryClientProvider client={client}><FailoverOrder head="synthetic-command" accounts={[]} /></QueryClientProvider>);
   expect(html).toContain('This command uses one account. There is no account order to change.');
+  expect(html).not.toContain('drag-handle');
+});
+
+test.each([
+  [false, 'This command uses an API key. There is no account order to change.'],
+  [true, 'This command uses a runtime on this computer. There are no provider accounts to order.'],
+])('a key or local command does not claim a login or read a nonexistent order route: local=%s', (localRuntime, sentence) => {
+  const accounts: AccountRow[] = [{
+    kind: 'api-key', label: null, single_login: true, credential_path: null,
+    credential_present: true, windows: [], heads: ['synthetic-command'],
+    primary: false, selected: null, available: null, pinned: null, next_target: null,
+  }];
+  const html = renderToStaticMarkup(<QueryClientProvider client={new QueryClient()}>
+    <FailoverOrder head="synthetic-command" accounts={accounts} localRuntime={localRuntime} />
+  </QueryClientProvider>);
+  expect(html).toContain(sentence);
+  expect(html).not.toContain('login');
+  expect(html).not.toContain('Reading failover');
   expect(html).not.toContain('drag-handle');
 });
 

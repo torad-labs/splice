@@ -25,7 +25,7 @@ export function AccountCard({ account, place, colour, now, commandLabels, localR
   const present = account?.credential_present;
   const keyed = account?.kind === 'api-key';
   const commands = (commandLabels ?? account?.heads ?? []).join(' · ');
-  const name = keyed ? commands : account?.account?.email ?? account?.label ?? (place ?? A.primary);
+  const name = keyed || localRuntime ? commands : account?.account?.email ?? account?.label ?? (place ?? A.primary);
   const held = account?.held === true;
   const renewing = present === true || (place === undefined && account?.label != null);
   const refused = Boolean(account?.refusal);
@@ -42,10 +42,10 @@ export function AccountCard({ account, place, colour, now, commandLabels, localR
     },
     onSuccess: () => awaitRefetch(client, [keys.accounts, keys.auth, keys.heads, keys.usage]),
   });
-  const state = refused ? A.refused : excluded ? A.excluded : present === undefined ? A.unknownLogin : keyed ? present ? A.keyReady : A.keyMissing : !present ? A.notSignedIn : held ? A.limitReached : A.signedIn;
+  const state = localRuntime ? A.localState : refused ? A.refused : excluded ? A.excluded : present === undefined ? A.unknownLogin : keyed ? present ? A.keyReady : A.keyMissing : !present ? A.notSignedIn : held ? A.limitReached : A.signedIn;
   return (
-    <Window as="li" colour={colour} className="card account-card" attention={refused || excluded || held || present === false}>
-      <div className="bar"><h3>{name}</h3><State tone={refused || excluded ? 'stuck' : held ? 'quota' : present ? 'work' : present === false ? 'stuck' : 'wait'}>{state}</State></div>
+    <Window as="li" colour={colour} className="card account-card" attention={!localRuntime && (refused || excluded || held || present === false)}>
+      <div className="bar"><h3>{name}</h3><State tone={localRuntime ? 'idle' : refused || excluded ? 'stuck' : held ? 'quota' : present ? 'work' : present === false ? 'stuck' : 'wait'}>{state}</State></div>
       <div className="account-place">
         {place === undefined ? <p>{commands}{account?.plan ? ` · ${account.plan}` : ''}</p> : <><b>{place}</b><p>{place === 'claude' ? A.nativeWhy : A.spliceWhy}</p></>}
       </div>
@@ -57,8 +57,8 @@ export function AccountCard({ account, place, colour, now, commandLabels, localR
         {account?.held_until_epoch_seconds == null ? null : <span>{A.heldUntil} {A.instant(account.held_until_epoch_seconds)}</span>}
       </div>
       {account?.refusal || account?.auth_exclusion_reason ? <p className="quiet-line alert">{account.refusal ?? account.auth_exclusion_reason}</p> : null}
-      {present === undefined ? <p className="hint">{A.unknownLoginWhy}</p> : null}
-      {keyed ? null : <div className="account-acts">
+      {!localRuntime && present === undefined ? <p className="hint">{A.unknownLoginWhy}</p> : null}
+      {keyed || localRuntime ? null : <div className="account-acts">
         <SignIn head={head} {...(place === undefined ? {} : { place })} label={account?.label ?? ''} purpose={renewing ? 'renew' : 'add'}>
           <Button small disabled={refused} kind={present ? 'quiet' : 'go'}>{renewing ? A.renew : A.signIn}</Button>
         </SignIn>

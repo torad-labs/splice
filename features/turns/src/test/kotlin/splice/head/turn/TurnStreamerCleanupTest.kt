@@ -9,7 +9,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
@@ -36,6 +36,7 @@ import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
+import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
 import splice.head.HeadHealthCounters
 import splice.head.TestResponsesProvider
@@ -484,9 +485,17 @@ class TurnStreamerCleanupTest {
             }
         }
 
+        /** A finished drive writes its perf and compact rows under the temp dir through AsyncFileIo's
+         *  one process-wide lane, so behind a backlog they land after teardown, while JUnit deletes the
+         *  directory: run 37189271569 failed on DirectoryNotEmptyException for the root. The scope is
+         *  joined first, so nothing submits after the drain, and the drain settles what was submitted. */
         override fun close() {
-            scope.cancel()
-            inputs.slot.release()
+            try {
+                runBlocking { checkNotNull(scope.coroutineContext[Job]).cancelAndJoin() }
+            } finally {
+                inputs.slot.release()
+            }
+            check(AsyncFileIo.drain()) { "queued writes must settle before the temp directory is deleted" }
         }
     }
 }

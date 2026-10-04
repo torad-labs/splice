@@ -19,6 +19,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -27,10 +28,14 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.memory.HeapBudget
+import splice.core.memory.HeapCapacityException
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
+import splice.head.admission.RequestMaterializationGate
+import splice.head.wire.FrameRecording
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
@@ -53,6 +58,7 @@ class HeadServerCompactionReplayTest(@param:TempDir private val tmp: Path) {
     // A getter: the head binds port 0, and a stop/start rebinds a fresh one the tests must follow.
     private val port: Int get() = head.port
     private val gate = InflightGate({ 0 })
+    private val heap = HeapBudget(Long.MAX_VALUE, 64 * 1024 * 1024)
     private val lines = CopyOnWriteArrayList<String>()
     private lateinit var head: HeadServer
     private val client = HttpClient(CIO) {
@@ -96,6 +102,7 @@ class HeadServerCompactionReplayTest(@param:TempDir private val tmp: Path) {
                 upstream = UpstreamClient(totalTimeoutMs = 900_000, maxRetries = 2),
                 gate = gate,
                 log = { lines += it },
+                seams = HeadDeps.HeadSeams(requestMaterializationGate = RequestMaterializationGate(heap = heap)),
             ),
         )
 
@@ -163,6 +170,46 @@ class HeadServerCompactionReplayTest(@param:TempDir private val tmp: Path) {
         assertTrue(!sse.contains("event: error"), "no error frame after the restart: $sse")
         assertEquals(upstreamBefore + 1, mock.upstreamBodies.size, "the compaction went upstream")
         assertTrue(waitFor(5_000) { gate.snapshot().inflight == 0 }, "the slot must come back: ${gate.snapshot()}")
+    }
+
+    @Test
+    fun `a detached head recording charges the head ledger rather than the process default`() = runBlocking {
+        mock.resetHold()
+        val mark = lines.size
+        val before = mock.upstreamBodies.size
+        openCompaction().use { socket ->
+            try {
+                assertTrue(waitFor(15_000) { mock.upstreamBodies.size > before })
+                socket.close()
+                assertTrue(waitFor(20_000) { logged("compaction continues detached", mark) })
+                val recording = runningRecording()
+                val framesBefore = recording.size
+                val held = checkNotNull(heap.reserve(heap.available.value))
+                try {
+                    assertThrows(HeapCapacityException::class.java) { recording.append("head-ledger-control") }
+                    assertEquals(framesBefore, recording.size, "refusal preserves the recorded answer")
+                } finally {
+                    held.close()
+                }
+            } finally {
+                mock.releaseHold()
+            }
+        }
+        assertTrue(waitFor(20_000) { logged("held for a byte-identical retry", mark) })
+        assertTrue(waitFor(10_000) { gate.snapshot().inflight == 0 })
+        val sse = post(body)
+        assertTrue(sse.contains("held") && sse.contains("event: message_stop"))
+        assertEquals(before + 1, mock.upstreamBodies.size, "the ledger refusal never reruns the source")
+    }
+
+    private fun runningRecording(): FrameRecording {
+        val replay = HeadServer::class.java.getDeclaredField("compactionReplay")
+            .also { it.isAccessible = true }.get(head)
+        val entries = replay.javaClass.getDeclaredField("entries").also { it.isAccessible = true }
+            .get(replay) as Map<*, *>
+        val entry = checkNotNull(entries.values.single())
+        return entry.javaClass.getDeclaredField("recording").also { it.isAccessible = true }
+            .get(entry) as FrameRecording
     }
 
     private suspend fun post(json: String): String =

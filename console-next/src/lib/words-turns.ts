@@ -7,6 +7,7 @@ export const STAGE_PHRASE = {
   queue: 'waiting in line behind other requests',
   provider: 'the model thinking before its first word',
   stream: 'the answer arriving',
+  wait: 'time after the last recorded activity',
 } as const;
 
 export const T = {
@@ -60,6 +61,7 @@ export const T = {
   switchedAccount: 'Switched account',
   notPriced: 'Not priced',
   runtimeRefused: (port: number) => `Couldn't reach its runtime on :${port}`,
+  progressTimeout: (quiet: string) => `splice gave up after ${quiet} without progress from the provider. Retry the request.`,
   unreadTitle: 'Not read',
   unread: (head: string, why: string) => `${head}: ${why}`,
   runningFor: (age: string) => `running ${age}`,
@@ -82,7 +84,8 @@ export const P = {
     queue: ['Waiting in line', 'The command’s limit on requests at once'],
     provider: ['Model thinking', 'From sending to the first word back'],
     stream: ['Streaming', 'The answer arriving'],
-  } as Record<'prepare' | 'queue' | 'provider' | 'stream', readonly [string, string]>,
+    wait: ['Unrecorded time', 'From the last recorded activity until the request ended.'],
+  } as Record<'prepare' | 'queue' | 'provider' | 'stream' | 'wait', readonly [string, string]>,
   movedTitle: 'What it moved',
   readIn: 'Read in',
   readInWhy: (cached: string) => `${cached} of them came from the cache.`,
@@ -136,7 +139,7 @@ export const OUTCOME_WORD: Readonly<Record<string, string>> = {
   empty_model: 'Empty answer',
   empty_compact: 'Empty answer',
   empty_message: 'Empty answer',
-  'error:cancelled': 'Cancelled',
+  'error:cancelled': 'Ended by splice',
   'error:restarted': 'Restarted by splice',
   'error:unexpected': 'Unexpected failure',
   'error:rate-limited': 'Rate limited',

@@ -63,7 +63,7 @@ export function TurnPage() {
         {stages.length === 0 ? null : (
           <>
             <div className="water" role="img" aria-label={P.stagesTitle}>
-              {stages.map((stage) => <i key={stage.key} style={{ flex: Math.max(stage.ms, 1), ['--s' as string]: `${95 - STAGE_ORDER.indexOf(stage.key) * 15}%` }} />)}
+              {stages.map((stage) => <i key={stage.key} title={`${P.stages[stage.key][0]}: ${secondsText(stage.ms)}`} style={{ flex: Math.max(stage.ms, 1), ['--s' as string]: `${95 - STAGE_ORDER.indexOf(stage.key) * 15}%` }} />)}
             </div>
             <div className="legend">
               {stages.map((stage) => (

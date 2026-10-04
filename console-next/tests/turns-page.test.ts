@@ -1,4 +1,4 @@
-// The Turns pages' arithmetic: outcomes, plan rows, the quiet-turn explanation, a turn's four stages, and what was kept.
+// The Turns pages' arithmetic: outcomes, plan rows, quiet turns, recorded phases, unrecorded tails, and what was kept.
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -6,7 +6,7 @@ import { MemoryRouter } from 'react-router';
 import { RunningCard, TurnRowView, TurnsPage } from '../src/pages/turns/TurnsPage';
 import { describe, expect, test } from 'vitest';
 import {
-  askAndAnswer, failedCount, lineOf, outcomeOf, pageLede, planRows, localStepsOf, liveTurnFor, runningOf, servedLocally, stagesOf, turnLede, turnsLede, wireFor, WINDOW_MS,
+  askAndAnswer, failedCount, lineOf, outcomeOf, pageLede, planRows, localStepsOf, liveTurnFor, runningOf, servedLocally, spokenFailure, stagesOf, turnLede, turnsLede, wireFor, WINDOW_MS,
 } from '../src/lib/turns-page';
 import type { RunningLine } from '../src/lib/turns-page';
 import { colourFromRegistry } from '../src/lib/model';
@@ -54,7 +54,7 @@ describe('outcomes', () => {
   test('counts use the same stopped classification as request rows, without hiding unknown failures', () => {
     const outcomes = { ok: 8, '?': 2, client_abort: 3, 'error:cancelled': 4, 'error:stopped': 5, 'error:rate-limited': 6, 'error:new-ending': 7 };
     expect(failedCount(summary({ outcomes }))).toBe(17);
-    expect(outcomeOf('error:cancelled')).toMatchObject({ word: 'Cancelled', tone: 'stuck', failed: true });
+    expect(outcomeOf('error:cancelled')).toMatchObject({ word: 'Ended by splice', tone: 'stuck', failed: true });
     for (const tag of ['client_abort', 'error:stopped']) {
       expect(outcomeOf(tag)).toMatchObject({ tone: 'idle', failed: false });
       expect(failedCount(summary({ outcomes: { [tag]: 1 } }))).toBe(0);
@@ -187,6 +187,30 @@ describe('a turn', () => {
   test('the lede names the longest stage; a failure says how long it ran', () => {
     expect(turnLede(row(marks), stagesOf(row(marks)))).toContain('Most of it, 8.5 s, was the answer arriving.');
     expect(turnLede(row({ ...marks, outcome: 'error:upstream-failed' }), stagesOf(row(marks)))).toBe('Provider failed after 14.2 s.');
+  });
+  test('a watchdog ending includes the missing time without calling it streaming', () => {
+    const timedOut = row({ outcome: 'error:cancelled', total: 915_000, recv: 1, build: 20, headers: 1000, first_delta: 12_000 });
+    const stages = stagesOf(timedOut);
+    expect(stages.find(stage => stage.key === 'wait')?.ms).toBe(903_000);
+    expect(stages.reduce((sum, stage) => sum + stage.ms, 0)).toBe(915_000);
+    expect(stages.find(stage => stage.key === 'provider')?.ms).toBe(11_980);
+    expect(stages.some(stage => stage.key === 'stream')).toBe(false);
+    const delivered = stagesOf(row({ ...timedOut, first_frame: 500, stream_end: 13_000, total: 15_000 }));
+    expect(delivered.find(stage => stage.key === 'provider')?.ms).toBe(11_980);
+    expect(delivered.find(stage => stage.key === 'stream')?.ms).toBe(1000);
+    const local = stagesOf(row({ local_step: 1, first_frame: 1, first_delta: 5, stream_end: 10, total: 10 }));
+    expect(local.some(stage => stage.key === 'provider')).toBe(false);
+    expect(turnLede(timedOut, stages)).toBe('Ended by splice after 15m 15s.');
+    expect(stagesOf(row({ ...timedOut, total: 1000 })).some(stage => stage.key === 'wait')).toBe(false);
+  });
+  test('only the known timeout sentence becomes a plain explanation of provider silence', () => {
+    const reason = '[SPLICE-OVERLOADED] splice progress timeout expired after 900000ms without upstream progress; retry';
+    expect(spokenFailure(reason)).toBe('splice gave up after 15m 0s without progress from the provider. Retry the request.');
+    expect(spokenFailure('splice progress timeout expired after 0ms without upstream progress; retry'))
+      .toBe('splice progress timeout expired after 0ms without upstream progress; retry');
+    expect(spokenFailure('splice restarted while this request was running; retry the request'))
+      .toBe('splice restarted while this request was running; retry the request');
+    expect(spokenFailure('synthetic provider refused the request')).toBe('synthetic provider refused the request');
   });
   test('the finished line and detail both read the proven runtime port', () => {
     const refused = row({ outcome: 'error:conn-reset', refused_runtime_port: 8123, total: 20 });

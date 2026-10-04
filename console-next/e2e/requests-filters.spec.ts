@@ -76,7 +76,7 @@ test('stops stay out of failure counts and have a separate reloadable view with 
   await expect(page.locator('.turn')).toHaveCount(2);
   await show.getByRole('button', { name: 'Failed', exact: true }).click();
   await expect(page.locator('.turn')).toHaveCount(2);
-  await expect(page.locator('.turn .state')).toHaveText(['Cancelled', 'Rate limited']);
+  await expect(page.locator('.turn .state')).toHaveText(['Ended by splice', 'Rate limited']);
   await page.locator('.turn').filter({ hasText: 'Rate limited' }).locator('h3 a').click();
   await expect(page.locator('.failure-sentence')).toHaveText('Rate limit reached; retry after the named reset, with the same session.');
   await assertHealthy(page, faults);
@@ -103,6 +103,51 @@ test('a restart cut keeps its owner in Failed and never falls back to an operato
   await page.locator('.turn h3 a').click();
   await expect(page.locator('.failure-sentence')).toHaveText('This request ended: Restarted by splice. No detailed failure reason was kept.');
   await expect(page.getByRole('main')).not.toContainText('No detailed stop reason was kept.');
+  await assertHealthy(page, faults);
+});
+
+test('a progress timeout explains provider silence and draws the missing wait without changing the kept answer', async ({ page }) => {
+  const at = Date.now();
+  const reason = '[SPLICE-OVERLOADED] splice progress timeout expired after 900000ms without upstream progress; retry';
+  const answer = JSON.stringify({ type: 'error', error: { type: 'overloaded_error', message: reason } });
+  const row = {
+    ts: at, model: STACK.soloModel, outcome: 'error:cancelled', compact: false, total: 915_000,
+    recv: 1, build: 20, headers: 1000, first_delta: 12_000,
+    session: null, account: null, cache_cold: null, turn: 'synthetic-watchdog', session_id: null, response_message_id: null,
+  };
+  await page.route('**/api/perf/summary?*', route => route.fulfill({ json: { window: '1h', heads: [{
+    key: STACK.soloHead, label: STACK.soloHead, count: 1, empty: false, outcomes: { 'error:cancelled': 1 },
+  }] } }));
+  await page.route(url => url.pathname === '/api/perf/turns', route => {
+    const key = new URL(route.request().url()).searchParams.get('head') ?? '';
+    return route.fulfill({ json: { since: at - 1_000_000, n: 200, heads: [{
+      key, label: key, count: key === STACK.soloHead ? 1 : 0, rows: key === STACK.soloHead ? [row] : [],
+    }] } });
+  });
+  await page.route('**/api/heads/*/trace?turn=*', route => route.fulfill({ json: {
+    head: STACK.soloHead,
+    turn: { id: 'synthetic-watchdog', ts: at, session: null, model: STACK.soloModel, compact: false,
+      open: false, outcome: 'error:cancelled', failure_sentence: reason, rounds: 1, attempts: 1, total_ms: 915_000 },
+    records: [{ kind: 'turn', ts: at, answer: { status: 200, body: answer } }],
+  } }));
+  const faults = await open(page, 'requests?status=failed');
+  await expect(page.locator('.turn.failed')).toHaveCount(1);
+  await expect(page.locator('.turn .state')).toHaveText('Ended by splice');
+  await page.locator('.turn h3 a').click();
+  await expect(page.locator('.failure-sentence')).toHaveText('splice gave up after 15m 0s without progress from the provider. Retry the request.');
+  await expect(page.locator('.legend > div').filter({ hasText: 'Unrecorded time' }).locator('.v')).toHaveText('15m 3s');
+  await expect(page.locator('.legend > div').filter({ hasText: 'Model thinking' }).locator('.v')).toHaveText('12.0 s');
+  await expect(page.locator('.legend')).not.toContainText('Streaming');
+  const wait = page.locator('.water i[title="Unrecorded time: 15m 3s"]');
+  await expect(wait).toHaveCount(1);
+  const fraction = await wait.evaluate(element => element.getBoundingClientRect().width / (element.parentElement?.getBoundingClientRect().width ?? 1));
+  expect(fraction).toBeGreaterThan(0.95);
+  await page.setViewportSize({ width: 1536, height: 1000 });
+  await page.screenshot({ path: 'captures/console-walk-oct3/watchdog-wait-1536.png', fullPage: true });
+  await page.setViewportSize({ width: 393, height: 850 });
+  await page.screenshot({ path: 'captures/console-walk-oct3/watchdog-wait-393.png', fullPage: true });
+  await page.getByRole('link', { name: 'Request and answer', exact: true }).click();
+  await expect(page.locator('.attempts pre')).toHaveText(answer);
   await assertHealthy(page, faults);
 });
 

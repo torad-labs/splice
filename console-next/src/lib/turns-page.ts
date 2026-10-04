@@ -1,5 +1,5 @@
 // The arithmetic and words of the Requests pages: one plan row per summary head, one line per finished request, and a
-// request's four stages. Pure over the daemon's payloads; the pages only draw what this returns.
+// request's recorded phases and unrecorded tail. Pure over the daemon's payloads; the pages only draw what this returns.
 import { ABSENT, fmtDurationS, fmtShare, fmtUsd } from './format';
 import { waterfall } from './perf';
 import type { ModelColour } from './model';
@@ -242,8 +242,8 @@ export function liveTurnFor(line: Pick<RunningLine, 'label' | 'ageMs'>, turns: r
 
 // ── one turn's stages ───────────────────────────────────────────────────────────────────────────
 
-export type StageKey = 'prepare' | 'queue' | 'provider' | 'stream';
-export const STAGE_ORDER: readonly StageKey[] = ['prepare', 'queue', 'provider', 'stream'];
+export type StageKey = 'prepare' | 'queue' | 'provider' | 'stream' | 'wait';
+export const STAGE_ORDER: readonly StageKey[] = ['prepare', 'queue', 'provider', 'stream', 'wait'];
 export interface StageBar {
   key: StageKey;
   ms: number;
@@ -251,14 +251,17 @@ export interface StageBar {
 
 const STAGE_OF_GROUP = { ingest: 'prepare', queue: 'queue', upstream: 'provider', stream: 'stream', finish: 'stream' } as const;
 
-/** The turn's four stages, in the order a reader thinks of them, each the sum of its marks' segments. A stage
- *  whose marks the row never stamped is absent, not zero. */
+/** Recorded phases fold from their marks. A failed request's measured tail stays visible as unrecorded time,
+ *  never invented streaming or thinking. Its total still bounds the bar when no later phase was stamped. */
 export function stagesOf(row: TurnRow): StageBar[] {
   const sums = new Map<StageKey, number>();
   for (const stage of waterfall(row)) {
-    const key = STAGE_OF_GROUP[stage.group];
+    const beforeWord = !servedLocally(row) && (stage.key === 'first_frame' || stage.key === 'first_delta');
+    const key = beforeWord ? 'provider' : STAGE_OF_GROUP[stage.group];
     sums.set(key, (sums.get(key) ?? 0) + stage.ms);
   }
+  const remaining = (row.total ?? 0) - [...sums.values()].reduce((sum, ms) => sum + ms, 0);
+  if (outcomeOf(row.outcome).failed && remaining > 0) sums.set('wait', remaining);
   return STAGE_ORDER.flatMap((key) => {
     const ms = sums.get(key);
     return ms === undefined ? [] : [{ key, ms }];
@@ -284,6 +287,13 @@ export function turnLede(row: TurnRow, stages: readonly StageBar[]): string {
   if (outcome.failed) return took === null ? `${outcome.word}.` : `${outcome.word} after ${took}.`;
   if (took === null) return `${outcome.word}. It carries no timing.`;
   return longest === undefined || longest.ms < 1000 ? `Took ${took}.` : `Took ${took}. Most of it, ${secondsText(longest.ms)}, was ${STAGE_PHRASE[longest.key]}.`;
+}
+
+/** Translate only the daemon's known progress-timeout sentence; raw request and answer bodies stay untouched. */
+export function spokenFailure(sentence: string): string {
+  const timeout = /^(?:\[SPLICE-OVERLOADED\]\s*)?splice progress timeout expired after (\d+)ms without upstream progress; retry\s*$/.exec(sentence);
+  const quiet = Number(timeout?.[1]);
+  return Number.isFinite(quiet) && quiet > 0 ? T.progressTimeout(secondsText(quiet)) : sentence;
 }
 
 export const cacheText = (ratio: number | null): string => (ratio === null ? ABSENT : fmtShare(ratio));

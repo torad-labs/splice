@@ -5,6 +5,7 @@ package splice.dialect.responses.websocket
 
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * The bounded per-key connection registry: get-or-connect, win the busy flag, and the two ways a
@@ -62,7 +63,8 @@ internal class WsConnectionPool(
         if (age < maxSocketAgeMs || !conn.busy.compareAndSet(false, true)) return conn
         synchronized(lock) { if (connections[key] === conn) connections.remove(key) }
         conn.kill()
-        log("[ws] ${logKeys.logKey(key)} retired at ${age / MS_PER_MINUTE} minutes, before the 60-minute limit\n")
+        val minutes = age.milliseconds.inWholeMinutes
+        log("[ws] ${logKeys.logKey(key)} retired at $minutes minutes, before the 60-minute limit\n")
         return null
     }
 
@@ -133,5 +135,3 @@ internal class WsConnectionPool(
         synchronized(lock) { if (connections[key] === conn) connections.remove(key) }
     }
 }
-
-private const val MS_PER_MINUTE = 60_000L

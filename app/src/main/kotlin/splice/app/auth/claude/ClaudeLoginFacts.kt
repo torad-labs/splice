@@ -61,22 +61,30 @@ internal class ClaudeLoginFactsReader {
     }
 
     /** The account a CONFIG DIR records, or null when it holds none that splice can read. The folder form of
-     *  [read]'s identity half, for the per-account folders a Claude head's pool is built from. */
+     *  [read]'s identity half, for the per-account folders a Claude head's pool is built from. A folder whose record
+     *  is absent or unreadable is not dropped in silence: ClaudeAccountFolders.unreadable() lists its label, and
+     *  Accounts says so in words, which is why the failure is not logged here. */
     fun identity(configDir: Path): ClaudeAccountIdentity? =
+        // ast-grep-ignore: kt-no-silent-result-collapse -- unreadable() names such a folder; it is never dropped
         Cancellables.runCatchingCancellable { account(configDir.resolve(CLAUDE_JSON)) }.getOrNull()
 
     /** The access token a CONFIG DIR's credential file holds, or null when it holds none that splice can read.
      *  Read at send and probe time only; the value never enters a log, a view or another type. */
-    fun token(configDir: Path): String? = Cancellables.runCatchingCancellable {
-        Files.newInputStream(configDir.resolve(CREDENTIALS_JSON)).use {
-            json.decodeFromStream<NativeCredentialDocument>(it)
-        }.claudeAiOauth?.accessToken?.takeIf { it.isNotBlank() }
-    }.getOrNull()
+    fun token(configDir: Path): String? =
+        // ast-grep-ignore: kt-no-silent-result-collapse -- as identity(), and no fact about a token may reach a log
+        Cancellables.runCatchingCancellable {
+            Files.newInputStream(configDir.resolve(CREDENTIALS_JSON)).use {
+                json.decodeFromStream<NativeCredentialDocument>(it)
+            }.claudeAiOauth?.accessToken?.takeIf { it.isNotBlank() }
+        }.getOrNull()
 
-    /** When splice filed the folder [record] sits in, or null when there is no readable record. */
-    fun addedAt(record: Path): Long? = Cancellables.runCatchingCancellable {
-        Files.newInputStream(record).use { json.decodeFromStream<ClaudeAccountRecord>(it) }.addedAtEpochMillis
-    }.getOrNull()
+    /** When splice filed the folder [record] sits in, or null when there is no readable record: a folder from before
+     *  the record existed, which sorts first for exactly that reason. */
+    fun addedAt(record: Path): Long? =
+        // ast-grep-ignore: kt-no-silent-result-collapse -- no record means filed before the record; it sorts first
+        Cancellables.runCatchingCancellable {
+            Files.newInputStream(record).use { json.decodeFromStream<ClaudeAccountRecord>(it) }.addedAtEpochMillis
+        }.getOrNull()
 
     private fun account(file: Path): ClaudeAccountIdentity? {
         val record = Files.newInputStream(file).use { json.decodeFromStream<NativeAccountDocument>(it) }.oauthAccount

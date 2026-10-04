@@ -20,9 +20,14 @@ package splice.app.auth.claude
 import splice.accounts.claude.ClaudeAccountIdentity
 import splice.core.util.Cancellables
 import splice.core.util.SecureFile
+import splice.core.util.WallClock
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
+
+// why: splice's own record beside the two Claude Code files — when this account was added, which is the pool's
+// default order. Claude Code neither writes nor reads it, and a re-sign-in keeps the original time.
+private const val RECORD_FILE = ".splice-account.json"
 
 // why: the label names a directory, so it must carry no separator and no leading dot; the same shape the stored
 // Claude Code logins already use (CLAUDE_LOGIN_LABEL_PATTERN), so one rule reads every Claude login label.
@@ -35,9 +40,21 @@ private const val ACCOUNTS_DIR = "claude-accounts"
 // real folder is written only after the account is proven.
 private const val PENDING_DIR = "claude-accounts-pending"
 
-// why: splice's own record beside the two Claude Code files — when this account was added, which is the pool's
-// default order. Claude Code neither writes nor reads it, and a re-sign-in keeps the original time.
-private const val RECORD_FILE = ".splice-account.json"
+/** Where an added account's files live, and what a head or a label may be called. One place, because every read and
+ *  every write below goes through it: a name that does not pass [names] never reaches the filesystem. */
+internal class ClaudeAccountPaths(private val stateDir: Path) {
+    /** True when [name] can be a head or a label: letters, digits, `-` or `_`, no separator and no leading dot. */
+    fun names(name: String): Boolean = ACCOUNT_LABEL.matches(name)
+
+    /** [head]'s own accounts root. Every label it holds is a directory directly under this. */
+    fun accounts(head: String): Path = stateDir.resolve(ACCOUNTS_DIR).resolve(head)
+
+    /** [label]'s own folder on [head]. */
+    fun account(head: String, label: String): Path = accounts(head).resolve(label)
+
+    /** Where a sign-in for [label] on [head] runs before it is proven: a sibling root, never read as an account. */
+    fun pending(head: String, label: String): Path = stateDir.resolve(PENDING_DIR).resolve(head).resolve(label)
+}
 
 /** The pool label of the caller's own Claude Code sign-in, a Claude head's first login. Reserved so no added
  *  account can take it. */
@@ -70,10 +87,11 @@ internal sealed class ClaudeAccountLanding {
 }
 
 internal class ClaudeAccountFolders(
-    private val stateDir: Path,
-    private val now: () -> Long = System::currentTimeMillis,
+    stateDir: Path,
+    private val now: WallClock = WallClock(System::currentTimeMillis),
 ) {
     private val facts = ClaudeLoginFactsReader()
+    private val paths = ClaudeAccountPaths(stateDir)
 
     /** Every readable account of [head], oldest first: the order they were added, which is the pool's default. */
     fun accounts(head: String): List<ClaudeAccount> = read(head).mapNotNull { it.second }
@@ -84,15 +102,15 @@ internal class ClaudeAccountFolders(
 
     /** [label]'s current access token, read at send or probe time, or null when nothing is filed under it. */
     fun token(head: String, label: String): String? =
-        if (ACCOUNT_LABEL.matches(label) && ACCOUNT_LABEL.matches(head)) facts.token(directory(head, label)) else null
+        if (paths.names(label) && paths.names(head)) facts.token(paths.account(head, label)) else null
 
     /** Where Claude Code should write a sign-in for [label] on [head]. The caller creates it; this reads nothing of
      *  the existing folder, so a sign-in in flight cannot damage an account already added. */
     fun pending(head: String, label: String): ClaudePendingAccount {
-        require(ACCOUNT_LABEL.matches(label)) { "'$label' is not a valid account label (letters, digits, - or _)" }
+        require(paths.names(label)) { "'$label' is not a valid account label (letters, digits, - or _)" }
         require(label != OWN_SIGN_IN_LABEL) { "'$label' names your own Claude Code sign-in; choose another label" }
-        require(ACCOUNT_LABEL.matches(head)) { "'$head' is not a valid command name" }
-        return ClaudePendingAccount(head, label, root(PENDING_DIR, head).resolve(label))
+        require(paths.names(head)) { "'$head' is not a valid command name" }
+        return ClaudePendingAccount(head, label, paths.pending(head, label))
     }
 
     /** Files a finished sign-in as [ClaudePendingAccount.label], or refuses it. The pending folder is gone either
@@ -111,8 +129,8 @@ internal class ClaudeAccountFolders(
 
     /** True when an account was filed under [label] on [head] and is now gone. */
     fun remove(head: String, label: String): Boolean {
-        if (!ACCOUNT_LABEL.matches(label) || !ACCOUNT_LABEL.matches(head)) return false
-        val directory = directory(head, label)
+        if (!paths.names(label) || !paths.names(head)) return false
+        val directory = paths.account(head, label)
         if (!Files.isDirectory(directory)) return false
         discard(directory)
         return !Files.exists(directory)
@@ -121,17 +139,24 @@ internal class ClaudeAccountFolders(
     /** The proven half of [land]: this head's pool either already holds [identity] under another label, or the
      *  sign-in becomes [ClaudePendingAccount.label]'s own folder. A label signed in again keeps its original time. */
     private fun file(pending: ClaudePendingAccount, identity: ClaudeAccountIdentity): ClaudeAccountLanding {
-        val held = accounts(pending.head).firstOrNull { it.identity.uuid == identity.uuid }
+        val added = accounts(pending.head)
+        val held = added.firstOrNull { it.identity.uuid == identity.uuid }
         if (held != null && held.label != pending.label) return ClaudeAccountLanding.AlreadyAdded(held.label)
-        move(pending, addedAt = held?.addedAtEpochMillis ?: now())
+        move(pending, addedAt = held?.addedAtEpochMillis ?: filedAt(added))
         return ClaudeAccountLanding.Added(pending.label)
     }
+
+    /** When splice files a new account: the clock, carried past the newest account this command already holds so two
+     *  sign-ins in one millisecond keep the order they were made in. Without that, the add order of a fast pair fell
+     *  back to the labels' own order, which is not the order anybody added them in. */
+    private fun filedAt(added: List<ClaudeAccount>): Long =
+        maxOf(now(), (added.maxOfOrNull(ClaudeAccount::addedAtEpochMillis) ?: 0L) + 1L)
 
     /** Puts the pending sign-in's two files in [label]'s own folder, owner-only. The account record lands first and
      *  the credential last, so an interrupted move leaves a folder [read] reports unreadable rather than an account
      *  with another account's token. [addedAt] is the original time when this label is being signed in again. */
     private fun move(pending: ClaudePendingAccount, addedAt: Long) {
-        val directory = directory(pending.head, pending.label)
+        val directory = paths.account(pending.head, pending.label)
         Files.createDirectories(directory)
         SecureFile.writeAtomic0600(directory.resolve(RECORD_FILE), ClaudeAccountRecord(addedAt).wire())
         SecureFile.writeAtomic0600(
@@ -147,8 +172,8 @@ internal class ClaudeAccountFolders(
     /** Every label of [head] that has a folder, each with its account or null when the folder is not readable as
      *  one: a missing record, a missing credential, or either file splice cannot parse. */
     private fun read(head: String): List<Pair<String, ClaudeAccount?>> {
-        if (!ACCOUNT_LABEL.matches(head)) return emptyList()
-        val directory = root(ACCOUNTS_DIR, head)
+        if (!paths.names(head)) return emptyList()
+        val directory = paths.accounts(head)
         val labels = try {
             Files.list(directory).use { entries ->
                 entries.filter { Files.isDirectory(it) }.map { it.fileName.toString() }.toList()
@@ -156,7 +181,7 @@ internal class ClaudeAccountFolders(
         } catch (_: NoSuchFileException) {
             return emptyList() // No directory yet is no account added yet.
         }
-        return labels.filter(ACCOUNT_LABEL::matches).sorted().map { label -> label to account(label, directory) }
+        return labels.filter(paths::names).sorted().map { label -> label to account(label, directory) }
     }
 
     private fun account(label: String, under: Path): ClaudeAccount? {
@@ -169,10 +194,6 @@ internal class ClaudeAccountFolders(
     /** When splice filed this folder. A folder from before its record, or one whose record cannot be read, sorts
      *  first: it was added before anything that carries a time. */
     private fun addedAt(folder: Path): Long = facts.addedAt(folder.resolve(RECORD_FILE)) ?: 0L
-
-    private fun directory(head: String, label: String): Path = root(ACCOUNTS_DIR, head).resolve(label)
-
-    private fun root(name: String, head: String): Path = stateDir.resolve(name).resolve(head)
 
     private fun discard(directory: Path) {
         Cancellables.discard(

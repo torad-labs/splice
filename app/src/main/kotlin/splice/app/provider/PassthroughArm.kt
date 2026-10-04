@@ -11,6 +11,7 @@ import java.nio.file.Paths
 
 internal class PassthroughArm(
     private val passthroughAssembly: PassthroughAssembly,
+    private val claudeAccounts: ClaudeAccountWiring,
 ) {
     // CLIENT uses Anthropic's signature verification and eager custom-tool input streaming.
     // It has no Moonshot deformations, headers, or device identity. Unregistered API-key/custom
@@ -32,6 +33,9 @@ internal class PassthroughArm(
                     ),
                 ),
                 auth,
+                // Every account this command holds beyond the caller's own Claude Code sign-in (operator ruling,
+                // Oct 3, 11:44 PM CT). Empty on a command nobody has added one to, which keeps the pre-pool path.
+                claudeAccounts.accounts(key, auth),
             )
         }
         val auth = ApiKeyAuthProvider(

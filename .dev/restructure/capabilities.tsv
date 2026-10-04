@@ -1,4 +1,7 @@
 source	sha256	disposition	destination	reason
+app/src/main/kotlin/splice/app/auth/claude/ClaudeOAuthRefresh.kt	bc5201d0c94f0e0281d3b445f4fb6d4c4ba1187fc086b8236b27870e30fb06db	created		The one HTTP call that rotates an added Claude account refresh token Claude Code own token endpoint and client id so the folder auth holds no URL
+app/src/main/kotlin/splice/app/provider/ClaudeAccountWiring.kt	933dc7f2815f0c77e8ec8ae7ff421c4775ca1a0c829488b483f9e24642047687	created		Turns one Claude command accounts into pool entries the caller own sign-in first as the primary then each added folder with its own credential and quota file
+app/src/test/kotlin/splice/app/provider/ClaudeAccountPoolArmTest.kt	ef5f0d001d26c11f8dd1c14754db3d4ffd11f0a124d2a5f572e67d79122de42a	created		A Claude head with added accounts assembles as a pool whose first login forwards the caller credential and an unreadable folder is named never served
 console-next/src/pages/settings/Thinking.tsx	bc5bd41531d141f53bb818c60091338d1caeaad31ebeefa81b117c8089e6cdd6	created		V4-444: Thinking defaults have explicit command scope and distinct saved and running values
 console-next/tests/settings-focus.test.tsx	fa4931c19bbfcd98cca09e2b15961a1cc477d626901f9154dd228e2e7493e6b7	created		V4-444: Focused sections and selected thinking defaults preserve truthful loading
 console-next/e2e/settings-thinking.spec.ts	365968514b5eb4cb9486cc1322d7419a3d42d96086fd6fde0a7960a8e2683a78	created		V4-444: Isolated writes prove command versus global scope, restart truth, preserved drafts and narrow composition

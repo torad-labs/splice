@@ -19,15 +19,20 @@ import splice.core.topology.Dialect
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.turn.WatchdogBudget
+import splice.core.util.LogSink
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 
 class ClaudeToolStreamingTest {
+    /** A Claude command with no account added: what every install has until someone adds one. */
+    private fun accounts(tmp: Path): ClaudeAccountWiring =
+        ClaudeAccountWiring(StatePaths(baseOverride = tmp.resolve("state")), LogSink { })
+
     @Test
     fun `client auth enables eager custom tool inputs without overriding caller choices`(
         @TempDir tmp: Path,
     ) = runTest {
-        val arm = PassthroughArm(PassthroughAssembly())
+        val arm = PassthroughArm(PassthroughAssembly(), accounts(tmp))
         val request = AnthropicParse.parseAnthropicBody(
             """{"model":"m","stream":true,"messages":[{"role":"user","content":"hi"}],"tools":[
                 {"name":"plain","input_schema":{"type":"object"}},
@@ -51,7 +56,7 @@ class ClaudeToolStreamingTest {
 
     @Test
     fun `nonstreaming fallback retains upstream tool input validation`(@TempDir tmp: Path) = runTest {
-        val provider = PassthroughArm(PassthroughAssembly())
+        val provider = PassthroughArm(PassthroughAssembly(), accounts(tmp))
             .passthroughProvider(context(tmp, AuthKind.Client.wire), "claude-test").provider
         val request = AnthropicParse.parseAnthropicBody(
             """{"model":"m","stream":false,"messages":[{"role":"user","content":"hi"}],"tools":[

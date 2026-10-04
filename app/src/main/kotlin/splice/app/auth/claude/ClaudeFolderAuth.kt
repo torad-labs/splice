@@ -16,7 +16,6 @@ package splice.app.auth.claude
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
@@ -27,6 +26,8 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.usage.PlanLimit
 import splice.core.usage.QuotaHeaderRead
 import splice.core.util.Cancellables
+import splice.core.util.JsonScalars
+import splice.core.util.LogSink
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
 import splice.upstream.retry.SingleFlight
@@ -62,6 +63,7 @@ internal class ClaudeFolderAuth(
     private val folder: Path,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
     private val refresh: ClaudeTokenRefresh,
+    private val log: LogSink = LogSink { },
 ) : RefreshableAuthProvider {
     private val json = Json { ignoreUnknownKeys = true }
     private val single = SingleFlight<Credentials?>()
@@ -101,27 +103,34 @@ internal class ClaudeFolderAuth(
         val held = read() ?: return null
         if (clock() < held.expiresAtMs - CLAUDE_REFRESH_WINDOW_MS) return Credentials.Bearer(held.accessToken)
         // Null is the endpoint refusing, or the call itself failing: the folder stays exactly as it was.
-        return Cancellables.runCatchingCancellable { refresh.rotate(held.refreshToken) }.getOrNull()?.let { rotated ->
-            save(held.document, rotated)
-            Credentials.Bearer(rotated.accessToken)
-        }
+        return Cancellables.runCatchingCancellable { refresh.rotate(held.refreshToken) }
+            .onFailure { why -> log("[claude-account] ${name()} could not be refreshed (${why::class.simpleName})\n") }
+            .getOrNull()?.let { rotated ->
+                save(held.document, rotated)
+                Credentials.Bearer(rotated.accessToken)
+            }
     }
 
     /** The whole document plus the three fields splice reads, or null when the folder holds no readable credential. */
-    private fun read(): Held? = Cancellables.runCatchingCancellable {
+    private fun read(): Held? = readHeld()
+        .onFailure { why -> log("[claude-account] ${name()} has no readable credential (${why::class.simpleName})\n") }
+        .getOrNull()
+
+    /** [folder]'s credential as the three fields splice reads, plus the whole document so a save keeps every other
+     *  field Claude Code wrote. A failure is the caller's to report; null inside a success is "nothing filed". */
+    private fun readHeld(): Result<Held?> = Cancellables.runCatchingCancellable {
         val document = json.parseToJsonElement(Files.readString(folder.resolve(CREDENTIALS_JSON))).jsonObject
         val oauth = document[OAUTH_FIELD]?.jsonObject ?: return@runCatchingCancellable null
         val access = text(oauth, ACCESS_TOKEN) ?: return@runCatchingCancellable null
         val refreshToken = text(oauth, REFRESH_TOKEN) ?: return@runCatchingCancellable null
-        val expiresAt = (oauth[EXPIRES_AT] as? JsonPrimitive)?.content?.toLongOrNull()
-            ?: return@runCatchingCancellable null
+        val expiresAt = JsonScalars.long(oauth, EXPIRES_AT) ?: return@runCatchingCancellable null
         Held(access, refreshToken, expiresAt, document)
-    }.getOrNull()
+    }
 
     /** Writes the rotated pair back, keeping every other field Claude Code put in the document. Owner-only and
      *  atomic, so a reader never sees half a credential. */
     private fun save(document: JsonObject, rotated: ClaudeRefreshedTokens) {
-        val oauth = document[OAUTH_FIELD]?.jsonObject.orEmpty()
+        val oauth = document[OAUTH_FIELD]?.jsonObject ?: JsonObject(emptyMap())
         val next = buildJsonObject {
             document.forEach { (key, value) -> if (key != OAUTH_FIELD) put(key, value) }
             put(
@@ -138,7 +147,10 @@ internal class ClaudeFolderAuth(
     }
 
     private fun text(obj: JsonObject, key: String): String? =
-        (obj[key] as? JsonPrimitive)?.takeIf { it.isString }?.content?.takeIf { it.isNotBlank() }
+        JsonScalars.strIfString(obj[key]).takeIf { it.isNotBlank() }
+
+    /** The account's label, which is its folder's own name: enough to act on, and never a token. */
+    private fun name(): String = folder.fileName?.toString() ?: folder.toString()
 
     private data class Held(
         val accessToken: String,
@@ -149,5 +161,3 @@ internal class ClaudeFolderAuth(
 }
 
 private val ROTATED: Set<String> = setOf(ACCESS_TOKEN, REFRESH_TOKEN, EXPIRES_AT)
-
-private fun JsonObject?.orEmpty(): JsonObject = this ?: JsonObject(emptyMap())

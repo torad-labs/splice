@@ -1,15 +1,11 @@
 #!/usr/bin/env bun
 /** The structured half of plan-limit.sh: what the client is told, and what the upstream saw.
  *
- *  probe <port> <out>       three turns at a head whose upstream is at its plan limit, each recorded
- *                           whole (status, headers, body) in <out> and held to its contract:
- *                           FIRST, streamed: the relabelled in-band error Claude Code retries (a 200
- *                           stream whose first event is `error` / `overloaded_error`, rate-limit
- *                           words kept); SECOND, streamed at once: the head's own refusal, a 429
- *                           with a reset and a Retry-After; THIRD, buffered (stream:false) once
- *                           that hold has passed: the upstream's 429 kept as a 429, which is where
- *                           Claude Code 2.1.x applies its stop test. None may carry anything that
- *                           test reads as "stop waiting" (NO_WAIT_PHRASES, NO_WAIT_HEADERS).
+ *  probe <port> <out> <log> three turns compared with the mock's recorded native responses:
+ *                           FIRST, streamed: HTTP 429 with unchanged body and rate-limit headers,
+ *                           one upstream attempt; SECOND, streamed at once: that same native
+ *                           refusal, held locally with no upstream attempt; THIRD, buffered after
+ *                           the bounded hold: one new attempt, again relayed unchanged.
  *  upstream <log> [max]     the mock's request log as a timeline, and how many turns reached the
  *                           upstream while it was still at its limit. With [max], more than that
  *                           many fails.
@@ -27,17 +23,6 @@ const HEAD_HOLD_CEILING_MS = 120_000;
 function check(condition: unknown, message: string): asserts condition {
   if (!condition) throw new CheckFailed(message);
 }
-
-/** The phrases and header values that make Claude Code 2.1.x stop instead of retrying a 429 (its
- *  bundle: the credits / extra-usage test, then the overage and exceeded_limit test). */
-export const NO_WAIT_PHRASES = [
-  "extra usage is required",
-  "usage credits are required",
-  "credits_required",
-  "service_spend_limit_reached",
-  "exceeded_limit",
-];
-export const NO_WAIT_HEADERS = ["anthropic-ratelimit-unified-overage-disabled-reason"];
 
 interface Answer {
   status: number;
@@ -70,71 +55,60 @@ async function turn(port: string, stream = true): Promise<Answer> {
   return { status: res.status, headers, body, elapsed_ms: received - started, received_ms: received };
 }
 
-/** The first SSE event of a stream body: its event name and its parsed data. */
-function firstEvent(body: string): { event: string; data: Record<string, unknown> } {
-  const block = body.split("\n\n").find((b) => b.split("\n").some((l) => l.startsWith("data:")));
-  check(block !== undefined, "the stream carried no event at all");
-  const event = block.split("\n").find((l) => l.startsWith("event:"))?.slice(6).trim() ?? "";
-  const data = block.split("\n").filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim()).join("");
-  return { event, data: JSON.parse(data) as Record<string, unknown> };
+interface NativeReply {
+  path: string;
+  status: number;
+  headers: Record<string, string>;
+  body: string;
 }
 
-function noWaitSignals(answer: Answer): string[] {
-  const found: string[] = [];
-  const text = answer.body.toLowerCase();
-  for (const phrase of NO_WAIT_PHRASES) if (text.includes(phrase)) found.push(`body says "${phrase}"`);
-  for (const name of NO_WAIT_HEADERS) if (answer.headers[name] !== undefined) found.push(`header ${name}: ${answer.headers[name]}`);
-  return found;
+function upstreamTurns(log: string): NativeReply[] {
+  return readFileSync(log, "utf8").trim().split("\n").filter(Boolean)
+    .map((line) => JSON.parse(line) as NativeReply).filter((row) => row.path === "/v1/messages");
+}
+
+function nativeReply(answer: Answer, expected: NativeReply | undefined, label: string): void {
+  check(expected !== undefined, `${label}: the mock recorded no upstream reply`);
+  check(expected.status === 429 && answer.status === 429, `${label}: native HTTP 429 required, got ${answer.status}`);
+  check(answer.body === expected.body, `${label}: the native refusal body changed`);
+  const selected = (name: string) => name.startsWith("anthropic-ratelimit-") || name === "retry-after" || name === "x-should-retry";
+  const source = Object.entries(expected.headers).filter(([name]) => selected(name));
+  check(source.length > 0, `${label}: the mock recorded no rate-limit headers`);
+  for (const [name, value] of source) {
+    check(answer.headers[name] === value, `${label}: ${name} changed: expected '${value}', got '${answer.headers[name]}'`);
+  }
+  check(Object.keys(answer.headers).filter(selected).length === source.length, `${label}: splice invented rate-limit headers`);
+  console.log(`${label} ${answer.status} after ${answer.elapsed_ms} ms; native body and ${source.length} headers unchanged`);
+  for (const [name, value] of source) console.log(`  ${name}: ${value}`);
+  console.log(`  ${answer.body}`);
 }
 
 const verbs: Record<string, (argv: readonly string[]) => Promise<void> | void> = {
   async probe(argv) {
-    const [port, out] = argv;
-    check(port && out, "usage: probe <port> <out>");
+    const [port, out, log] = argv;
+    check(port && out && log, "usage: probe <port> <out> <upstream-log>");
     const first = await turn(port);
+    writeFileSync(out, JSON.stringify({ first }, null, 2));
+    let attempts = upstreamTurns(log);
+    check(attempts.length === 1, `the first native refusal made ${attempts.length} upstream attempts, expected one`);
+    nativeReply(first, attempts[0], "FIRST");
+
     const second = await turn(port);
-    // The third turn must reach the upstream, so it waits out the hold the second one was refused on.
-    // V4-233: a spent PLAN window's refusal names the plan's own reset, an hour out on this mock, but
-    // the head lifts its own refusal at NF-01's clamp and the next turn probes the upstream (V4-47),
-    // so the wait is whichever comes first.
+    writeFileSync(out, JSON.stringify({ first, second }, null, 2));
+    attempts = upstreamTurns(log);
+    check(attempts.length === 1, "the held follower reached upstream");
+    nativeReply(second, attempts[0], "SECOND");
+
+    // The native plan reset remains on the wire, but splice's local horizon still ends at its ceiling.
     const namedReset = Number(second.headers["anthropic-ratelimit-unified-reset"] ?? "0") * 1000;
     const holdUntil = Math.min(namedReset, second.received_ms + HEAD_HOLD_CEILING_MS);
     await Bun.sleep(Math.max(0, holdUntil - Date.now()) + 1_000);
     const third = await turn(port, false);
     writeFileSync(out, JSON.stringify({ first, second, third }, null, 2));
-
-    console.log(`FIRST  ${first.status} ${first.headers["content-type"] ?? ""} after ${first.elapsed_ms} ms`);
-    console.log(first.body.slice(0, 1200));
-    check(first.status === 200, `the first turn must be answered in-band (200 stream), got ${first.status}`);
-    const { event, data } = firstEvent(first.body);
-    const error = (data["error"] ?? {}) as Record<string, unknown>;
-    check(event === "error", `the first event must be the error, got '${event}'`);
-    check(error["type"] === "overloaded_error", `the in-band error must be overloaded_error, got '${String(error["type"])}'`);
-    const message = String(error["message"] ?? "");
-    check(/rate.?limit/i.test(message), `the relabelled error must keep the rate-limit words: '${message}'`);
-
-    console.log(`SECOND ${second.status} after ${second.elapsed_ms} ms`);
-    for (const [k, v] of Object.entries(second.headers)) if (/ratelimit|retry-after/i.test(k)) console.log(`  ${k}: ${v}`);
-    console.log(`  ${second.body.slice(0, 600)}`);
-    check(second.status === 429, `the retry must meet the head's own 429, got ${second.status}`);
-    check(second.headers["anthropic-ratelimit-unified-status"] === "rejected", "the refusal must say rejected");
-    const reset = Number(second.headers["anthropic-ratelimit-unified-reset"]);
-    // Judged at the refusal, not now: the third turn has already slept past this reset.
-    check(reset * 1000 > second.received_ms, `the refusal's reset must be after the refusal: ${reset}`);
-    check(second.headers["retry-after"] !== undefined, "the refusal must carry Retry-After");
-
-    console.log(`THIRD  ${third.status} ${third.headers["content-type"] ?? ""} after ${third.elapsed_ms} ms (buffered)`);
-    for (const [k, v] of Object.entries(third.headers)) if (/ratelimit|retry-after/i.test(k)) console.log(`  ${k}: ${v}`);
-    console.log(`  ${third.body.slice(0, 600)}`);
-    check(third.status === 429, `a buffered turn keeps the upstream's 429, got ${third.status}`);
-    check(third.headers["anthropic-ratelimit-unified-status"] !== "allowed", "a 429 must not say the quota is allowed");
-
-    const leaks = [
-      ...noWaitSignals(first).map((s) => `first: ${s}`),
-      ...noWaitSignals(second).map((s) => `second: ${s}`),
-      ...noWaitSignals(third).map((s) => `third: ${s}`),
-    ];
-    check(leaks.length === 0, `a no-wait signal reached the client: ${leaks.join("; ")}`);
+    attempts = upstreamTurns(log);
+    check(attempts.length === 2, `the buffered re-probe made ${attempts.length - 1} attempts, expected one`);
+    nativeReply(third, attempts[1], "THIRD");
+    console.log("native 429 contract: one observer attempt, zero follower attempts, one bounded re-probe");
   },
 
   upstream(argv) {

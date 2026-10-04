@@ -35,6 +35,12 @@ function planLimitHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
     "content-type": "application/json",
     "request-id": "req_011CMockPlanLimit",
+    "anthropic-ratelimit-requests-limit": "50",
+    "anthropic-ratelimit-requests-remaining": "0",
+    "anthropic-ratelimit-requests-reset": new Date(resetAtS * 1000).toISOString(),
+    "anthropic-ratelimit-tokens-limit": "1000",
+    "anthropic-ratelimit-tokens-remaining": "0",
+    "anthropic-ratelimit-tokens-reset": new Date(resetAtS * 1000).toISOString(),
     "anthropic-ratelimit-unified-status": "rejected",
     "anthropic-ratelimit-unified-reset": String(resetAtS),
     "anthropic-ratelimit-unified-representative-claim": "five_hour",
@@ -122,13 +128,14 @@ const server = Bun.serve({
       resetAtS = Math.ceil(now / 1000) + RESET_S;
     }
     const limited = now < resetAtS * 1000;
-    record({ path, stream: body.stream === true, status: limited ? 429 : 200, since_first_ms: now - firstAt, reset_at_s: resetAtS });
+    const entry = { path, stream: body.stream === true, status: limited ? 429 : 200, since_first_ms: now - firstAt, reset_at_s: resetAtS };
     if (limited) {
-      return new Response(
-        JSON.stringify({ type: "error", error: { type: "rate_limit_error", message: MESSAGE }, request_id: "req_011CMockPlanLimit" }),
-        { status: 429, headers: planLimitHeaders() },
-      );
+      const headers = planLimitHeaders();
+      const nativeBody = JSON.stringify({ type: "error", error: { type: "rate_limit_error", message: MESSAGE }, request_id: "req_011CMockPlanLimit" });
+      record({ ...entry, headers, body: nativeBody });
+      return new Response(nativeBody, { status: 429, headers });
     }
+    record(entry);
     return body.stream === true
       ? new Response(sse(model), { status: 200, headers: openHeaders("text/event-stream") })
       : new Response(JSON.stringify(message(model)), { status: 200, headers: openHeaders("application/json") });

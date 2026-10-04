@@ -18,17 +18,19 @@
 // armed horizon through a real restart.
 //
 // V4-47 (2026-09-16): the provider's own reset is CAPTURED here and NAMED to the operator, but the
-// fail-fast horizon is deliberately NOT extended to it. THAT DECISION IS LOAD-BEARING — do not
+// translated fail-fast horizon is deliberately NOT extended to it. THAT DECISION IS LOAD-BEARING — do not
 // "simplify" the re-probe away, and do not read the cycling as waste. Two reasons, hardest first.
 //  1. Restart is this file's ONLY escape hatch, so a fail-fast gate must live on state clear() can
 //     reach. Gate it on a horizon restart cannot clear and you rebuild the permanent poisoning
 //     NF-01 exists to prevent, with no operator escape short of killing the daemon. V4-412: the
-//     provider's reset and V4-233's plan hold GATE nothing, so they are persisted and survive that
+//     provider's reset and V4-233's plan hold alone gate nothing, so they are persisted and survive that
 //     call; only what gates (the horizon) lives on state clear() reaches.
 //  2. The bounded re-probe is what DETECTS THE OPERATOR TOPPING UP. Extending the horizon to the
 //     provider reset makes a head ignore a restored quota for hours — the head would refuse to try
 //     the very fix the message asks him to apply. One upstream request per two minutes, on a head
 //     that cannot serve him anyway, is a cheap price for noticing the moment it can.
+// Native credential-scoped replies restore a bounded horizon from their live reset instead. Startup
+// keeps that horizon; it still expires at the same two-minute ceiling, never at a distant plan reset.
 //
 // BLOCKED destination, recorded so it is not re-proposed: features/turns/.../usage/RateLimitStore.kt
 // is in :features-turns, and :upstream depends only on :core — that edge would invert.
@@ -96,6 +98,7 @@ public class RateLimitCooldown public constructor(
         }
         plan?.let(planHold::restore)
         holds.restored(stored, ProviderHold(resetAt, plan))
+        if (rateLimitReply != null) arm(providerUnavailableForMs())
     }
 
     /** The provider's reset as a wall instant in epoch seconds, or null when none is pending. */
@@ -103,13 +106,11 @@ public class RateLimitCooldown public constructor(
         get() = maxOf(0L, providerUnavailableUntilMs.get() - clock()).takeIf { it > 0L }
             ?.let { (wallClock() + it) / MS_PER_S }
 
-    /** NF-01: head restart is a real escape hatch — HeadServer.startLocked() clears the armed
-     *  horizon alongside driver.resetHealth(), instead of the cooldown outliving the restart.
-     *  V4-412: only the horizon. The provider's own statement (its reset, the plan window it named
-     *  spent) is not splice's to forget: it outlives the restart, and the first turn after it probes
-     *  upstream anyway, so nothing here can poison a head. */
+    /** Restart clears translated follower protection, retaining the provider's reporting facts.
+     *  A retained native refusal keeps its credential's bounded horizon, including one restored from
+     *  an unexpired reset. Startup cannot erase that refusal, and reads never extend the re-probe ceiling. */
     public fun clear() {
-        rateLimitedUntilMs.set(0L)
+        if (rateLimitReply == null) rateLimitedUntilMs.set(0L)
     }
 
     /** Account-pool restart escape hatch; separate so NF-01's legacy [clear] wall stays exact. Clears

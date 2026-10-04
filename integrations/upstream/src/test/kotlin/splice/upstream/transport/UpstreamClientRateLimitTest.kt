@@ -24,6 +24,56 @@ import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.retry.RetryAfter
 import java.util.concurrent.atomic.AtomicInteger
 
+class NativeRateLimitHeadersTest {
+
+    @Test
+    fun `native refusals relay the whole rate-limit header family verbatim without retrying`() = runTest {
+        val native = """{"type":"error","error":{"type":"rate_limit_error","message":"synthetic refusal"}}"""
+        val retained = linkedMapOf(
+            "Anthropic-Ratelimit-Requests-Limit" to listOf("50"),
+            "anthropic-ratelimit-requests-remaining" to listOf("0"),
+            "anthropic-ratelimit-requests-reset" to listOf("2030-01-01T00:00:00Z"),
+            "anthropic-ratelimit-tokens-limit" to listOf("1000"),
+            "anthropic-ratelimit-tokens-remaining" to listOf("0"),
+            "anthropic-ratelimit-tokens-reset" to listOf("2030-01-01T00:01:00Z"),
+            "anthropic-ratelimit-unified-status" to listOf("rejected"),
+            "anthropic-ratelimit-future-window" to listOf("first", "second"),
+            "Retry-After" to listOf("60"),
+            "X-Should-Retry" to listOf("true", "false"),
+        )
+        var attempts = 0
+        val engine = MockEngine {
+            attempts++
+            respond(
+                native,
+                HttpStatusCode.TooManyRequests,
+                headersOf(*(retained + ("set-cookie" to listOf("synthetic-private"))).toList().toTypedArray()),
+            )
+        }
+        val client = UpstreamClient(
+            totalTimeoutMs = 30_000L,
+            maxRetries = 4,
+            client = HttpClient(engine),
+            backoff = { _, _ -> error("native retry belongs to the client") },
+            clock = ElapsedClock { 0L },
+        )
+        fun context() = PostContext(
+            url = "https://api.example.test/v1",
+            auth = fakeAuth,
+            extraHeaders = { emptyMap() },
+        ).also { it.relayRateLimitReplies = true }
+        val observer = assertThrows<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
+        val follower = assertThrows<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
+        for (failure in listOf(observer, follower)) {
+            assertEquals(429, failure.status)
+            assertEquals(native, failure.body)
+            assertEquals(retained, failure.rateLimitReply?.headers)
+        }
+        assertTrue(follower.localHold)
+        assertEquals(1, attempts, "neither proxy retries nor the held follower reach upstream")
+    }
+}
+
 class UpstreamClientRateLimitTest {
 
     @Test

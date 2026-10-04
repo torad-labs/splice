@@ -220,7 +220,7 @@ internal class UpstreamRequest(
                         resp.headers.entries().filter { (name, _) ->
                             name.equals("retry-after", ignoreCase = true) ||
                                 name.equals("x-should-retry", ignoreCase = true) ||
-                                name.startsWith("anthropic-ratelimit-unified-", ignoreCase = true)
+                                name.startsWith("anthropic-ratelimit-", ignoreCase = true)
                         }.associate { (name, values) -> name to values.toList() },
                     )
                 } else {

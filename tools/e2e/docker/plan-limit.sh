@@ -2,15 +2,15 @@
 # tools/e2e/docker/plan-limit.sh — an Anthropic plan-limit 429, through splice, to the REAL Claude
 # Code at the pinned version. Run INSIDE the container by `run.sh --scenario plan-limit`.
 #
-# The claim under test is CHANGELOG 0.4.0 (V4-71, V4-72, V4-73): the first turn to meet a persistent
-# 429 reaches Claude Code as the one in-band error it retries (`overloaded_error`, rate-limit words
-# kept); every launched client runs in persistent retry mode (CLAUDE_CODE_RETRY_WATCHDOG=1); and it
-# sleeps until the reset and resumes. The upstream is mock_anthropic.ts: a five-hour plan-limit 429
+# Native refusals reach Claude Code as HTTP 429 with unchanged body and rate-limit headers, with
+# one upstream attempt and no proxy retries. Every launched client runs in persistent retry mode
+# (CLAUDE_CODE_RETRY_WATCHDOG=1), sleeps until the reset and resumes.
+# The upstream is mock_anthropic.ts: a five-hour plan-limit 429
 # with the unified headers Claude Code reads, until its reset, then 200.
 #
 # Two heads on two mocks, so the evidence and the turn never share a clock:
-#   planprobe  a raw streaming turn, recorded whole: the FIRST relabelled frame a client gets, then
-#              the refusal its immediate retry gets (plan_limit.ts probe);
+#   planprobe  streamed and buffered native refusals, with exact wire and attempt checks
+#              against the mock's recorded replies (plan_limit.ts probe);
 #   planlimit  the real Claude Code in print mode, through the wrapper `install --all` linked.
 # Every upstream is a mock inside the container and the container has no network.
 set -uo pipefail
@@ -142,9 +142,9 @@ plan_recipe() {
 }
 step "launch recipe: persistent retry planted" plan_recipe
 
-# ── 4. what the client is told: the relabelled frame, the refusal, the buffered 429 ──────────────
-step "what the client is told: the relabelled frame, the refusal, the buffered 429; no no-wait signal" \
-  bun "$PLAN_TS" probe "$PROBE_HEAD_PORT" "$OUT/first-frame.json"
+# ── 4. native HTTP 429: unchanged wire, one attempt, local follower, bounded re-probe ───────────
+step "native 429: verbatim headers and body, one attempt without proxy retries" \
+  bun "$PLAN_TS" probe "$PROBE_HEAD_PORT" "$OUT/first-frame.json" "$OUT/upstream-probe.jsonl"
 
 # ── 5. the real client sleeps through the limit and resumes after the reset ─────────────────────
 plan_turn() {

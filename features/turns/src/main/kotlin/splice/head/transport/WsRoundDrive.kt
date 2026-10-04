@@ -41,7 +41,10 @@ internal class WsRoundDrive(
             drive.slot.received()
             UpstreamProgress.observe(evt, drive.watchdog)
             if (runner.isFailureTerminal(evt) && !inputs.frameEmittedThisRound()) {
-                throw RoundNeedsSse(failureDetail(evt))
+                // A policy refusal is not re-served: over SSE the identical context met the identical
+                // refusal, so the round's translator ends the turn on it instead (WsFailureTerminal).
+                val failure = WsFailureTerminal(evt)
+                if (!failure.policyRefusal()) throw RoundNeedsSse(failureDetail(evt, failure))
             }
             drive.perf.markOnce(PerfKeys.FIRST_BYTE)
             drive.perf.add(PerfKeys.EVENTS_IN, 1)
@@ -84,22 +87,15 @@ internal class WsRoundDrive(
         return WsRoundResult.Streamed(outcome)
     }
 
-    /** The failure terminal's type and the error it carried, in every shape the dialect's reducer
-     *  reads (ResponsesEventReducer.onFailure): an object under `response.error` or `error`, the
-     *  flat event whose own `code`/`message` are the error, or a plain-string `error` (DR-109).
-     *  Folded onto one line and clipped so a verbose server message cannot flood the log. */
-    private fun failureDetail(evt: JsonObject): String {
-        val carried = (evt["response"] as? JsonObject)?.get("error") ?: evt["error"]
-        val error = carried as? JsonObject ?: evt
-        val code = JsonScalars.strOrEmpty(error["code"])
-            .ifEmpty { if (error === evt) "" else JsonScalars.strOrEmpty(error["type"]) }
-        val message = JsonScalars.strOrEmpty(error["message"]).ifEmpty { JsonScalars.strOrEmpty(carried) }
-        return listOf(JsonScalars.strOrEmpty(evt["type"]), code, message)
+    /** The failure terminal's type and the error it carried, read in every shape the dialect's reducer
+     *  reads ([WsFailureTerminal]). Folded onto one line and clipped so a verbose server message cannot
+     *  flood the log. */
+    private fun failureDetail(evt: JsonObject, failure: WsFailureTerminal): String =
+        listOf(JsonScalars.strOrEmpty(evt["type"]), failure.code, failure.message)
             .filter { it.isNotEmpty() }
             .joinToString(" ")
             .replace(oneLine, " ")
             .take(FAILURE_DETAIL_MAX_CHARS)
-    }
 
     /** V4-242: the re-serve over SSE of a round [torn] before the client saw anything of it, named by the
      *  tear's words (PreContentTear), one line and clipped like [failureDetail]; null when it is not one. */

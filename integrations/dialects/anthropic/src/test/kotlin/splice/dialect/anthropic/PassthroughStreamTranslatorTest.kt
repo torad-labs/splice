@@ -576,7 +576,7 @@ class PassthroughStopReasonHonestyTest {
     @Test
     fun `stop_reason refusal is an honest provider-reported failure, never a clean success`() = runTest {
         val f = turnEndingWith("refusal") as TurnOutcome.Failure
-        assertEquals(ErrorType.API_ERROR, f.type)
+        assertEquals(ErrorType.INVALID_REQUEST, f.type)
         assertTrue(f.providerReported, "the BACKEND sent stop_reason=refusal — G20 provenance is upstream")
         assertTrue(f.message.contains("refused"), f.message)
         assertTrue(f.message.contains("stop_reason=refusal"), f.message)

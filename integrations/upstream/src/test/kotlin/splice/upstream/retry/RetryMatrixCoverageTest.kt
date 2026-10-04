@@ -240,17 +240,20 @@ class RetryMatrixCoverageTest {
         // resolved value at every phase, so a pre-content rule that grew to cover a refusal, or a
         // base map edited past the line the substring matched, is visible here and was not there.
         //
-        // MODEL_REFUSED is api_error and PERMANENT: the permanence rides `permanent`, not the type,
-        // so the type is the ordinary api_error — which the pre-content rule then converts, and
-        // both halves are asserted because a table returning one of them everywhere would pass a
-        // one-sided test.
-        assertEquals(ErrorType.OVERLOADED, WireType.of(FailureCause.MODEL_REFUSED, FailurePhase.CONNECT))
-        assertEquals(ErrorType.OVERLOADED, WireType.of(FailureCause.MODEL_REFUSED, FailurePhase.FIRST_BYTE))
-        assertEquals(ErrorType.API_ERROR, WireType.of(FailureCause.MODEL_REFUSED, FailurePhase.MID_OUTPUT))
-        assertEquals(ErrorType.API_ERROR, WireType.of(FailureCause.MODEL_REFUSED, FailurePhase.TERMINAL))
-        // CONTENT_FILTERED is the same promise by the same route: a blocked generation is a refusal
-        // the backend phrased differently, and CX-07 names it beside MODEL_REFUSED.
-        assertEquals(ErrorType.API_ERROR, WireType.of(FailureCause.CONTENT_FILTERED, FailurePhase.MID_OUTPUT))
+        // MODEL_REFUSED and CONTENT_FILTERED are the client's bad-request class at EVERY phase. As
+        // api_error the pre-content rule made them overloaded_error, and the client re-sent even the
+        // plain api_error: a refusal re-sent is the identical refusal at full price. Every phase is
+        // asserted because a pre-content rule that grew to cover them would pass a one-phase test.
+        // CONTENT_FILTERED is a refusal the backend phrased differently; CX-07 names it beside it.
+        for (cause in listOf(FailureCause.MODEL_REFUSED, FailureCause.CONTENT_FILTERED)) {
+            for (phase in FailurePhase.entries) {
+                assertEquals(
+                    ErrorType.INVALID_REQUEST,
+                    WireType.of(cause, phase),
+                    "$cause is the vendor's verdict on the request, never retried, at $phase",
+                )
+            }
+        }
         // A 5xx is a capacity answer at EVERY phase — its base is already the retryable class, so
         // the pre-content rule never touches it and there is no phase at which it hardens.
         for (phase in FailurePhase.entries) {

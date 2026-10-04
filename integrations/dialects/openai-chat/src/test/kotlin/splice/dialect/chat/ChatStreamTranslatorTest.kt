@@ -307,7 +307,7 @@ class ChatStreamTranslatorTest {
             ev("""{"choices":[{"delta":{},"finish_reason":"content_filter"}]}"""),
         )
         val f = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.API_ERROR, f.type)
+        assertEquals(ErrorType.INVALID_REQUEST, f.type)
         assertTrue(f.message.contains("content filter"))
     }
 
@@ -552,7 +552,7 @@ class ChatRefusalHonestyTest {
             sink,
         )
         val f = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.API_ERROR, f.type)
+        assertEquals(ErrorType.INVALID_REQUEST, f.type)
         assertTrue(f.providerReported, "the BACKEND populated `refusal` — G20 provenance is upstream")
         assertTrue(f.message.contains("I can't help with that request."), f.message)
         // the refusal is the VERDICT, not content: nothing was written to the wire as text
@@ -568,7 +568,7 @@ class ChatRefusalHonestyTest {
             ev("""{"choices":[{"message":{"refusal":"Sorry, I cannot do that."},"finish_reason":"stop"}]}"""),
         )
         val f = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.API_ERROR, f.type)
+        assertEquals(ErrorType.INVALID_REQUEST, f.type)
         assertTrue(f.providerReported)
         assertTrue(f.message.contains("Sorry, I cannot do that."), f.message)
     }
@@ -691,7 +691,7 @@ class ChatRefusalHonestyTest {
             ev("""{"choices":[{"delta":{"refusal":"I refuse."},"finish_reason":"content_filter"}]}"""),
         )
         val f = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.API_ERROR, f.type)
+        assertEquals(ErrorType.INVALID_REQUEST, f.type)
         assertTrue(f.providerReported)
         assertTrue(f.message.contains("I refuse."), f.message)
     }
@@ -711,7 +711,7 @@ class ChatRefusalHonestyTest {
             sink,
         )
         val f = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.API_ERROR, f.type)
+        assertEquals(ErrorType.INVALID_REQUEST, f.type)
         assertTrue(f.providerReported)
         assertTrue(f.message.contains("but I stop here"), f.message)
         assertTrue(sink.calls.contains("text:Sure, here goes. "), sink.calls.toString())

@@ -41,11 +41,15 @@ public object WireType {
         // does not spin on, because identical bytes re-earn the identical answer.
         FailureCause.UPSTREAM_STATUS_4XX to ErrorType.INVALID_REQUEST,
         FailureCause.UPSTREAM_REPORTED to ErrorType.API_ERROR,
-        // Refusals and filtered generations are api_error and PERMANENT. A type cannot carry that,
-        // which is exactly why `permanent` is a separate field — and why V4-122 item 11 was a real
-        // defect rather than a cosmetic one: the argument had been lost while the comment survived.
-        FailureCause.MODEL_REFUSED to ErrorType.API_ERROR,
-        FailureCause.CONTENT_FILTERED to ErrorType.API_ERROR,
+        // A refusal and a filtered generation are the vendor's verdict on the REQUEST, the class
+        // the vendor itself returns as HTTP 400 when it refuses before the stream. As api_error
+        // they were a storm at every phase: at a pre-content phase the rule below made them
+        // overloaded_error, and at a later one, with nothing yet shown, the client re-sent the
+        // api_error itself, identical bytes for the identical verdict (three cyber_policy endings
+        // of one 1,234,161-byte request, 6:05 to 6:07 PM CT on 2026-10-04). `permanent` never
+        // reached the first choice, since this table and its rule run before the emitter reads it.
+        FailureCause.MODEL_REFUSED to ErrorType.INVALID_REQUEST,
+        FailureCause.CONTENT_FILTERED to ErrorType.INVALID_REQUEST,
         FailureCause.TOOL_TEAR to ErrorType.API_ERROR,
         FailureCause.DIALECT_UNSUPPORTED to ErrorType.INVALID_REQUEST,
         // INVALID_REQUEST, decided from the MATRIX rather than from the type the old sites happened

@@ -459,7 +459,7 @@ class ResponsesStreamTranslatorTest {
             RecordingSink(),
         )
         val failure = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.API_ERROR, failure.type)
+        assertEquals(ErrorType.INVALID_REQUEST, failure.type)
         assertTrue(failure.providerReported)
         assertTrue(failure.message.contains("content filter"))
     }
@@ -968,7 +968,7 @@ class ResponsesRefusalHonestyTest {
             RecordingSink(),
         )
         val f = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.API_ERROR, f.type)
+        assertEquals(ErrorType.INVALID_REQUEST, f.type)
         assertTrue(f.providerReported)
         assertTrue(f.message.contains("Refusing: policy."), f.message)
         assertTrue(!f.message.contains("stopped by content filter"), f.message)
@@ -1010,7 +1010,7 @@ class ResponsesRefusalHonestyTest {
             sink,
         )
         val failure = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.API_ERROR, failure.type)
+        assertEquals(ErrorType.INVALID_REQUEST, failure.type)
         assertTrue(failure.providerReported, "the BACKEND sent the refusal — G20 provenance is upstream")
         assertTrue(failure.message.contains("I won't do that."), failure.message)
         // A refusal is deterministic: no salvage may ride it, or the re-anchor loop re-POSTs it.
@@ -1032,7 +1032,7 @@ class ResponsesRefusalHonestyTest {
             RecordingSink(),
         )
         val failure = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.API_ERROR, failure.type)
+        assertEquals(ErrorType.INVALID_REQUEST, failure.type)
         assertTrue(failure.providerReported)
         assertTrue(failure.message.contains("Refusing: policy."), failure.message)
     }
@@ -1136,7 +1136,7 @@ class ResponsesRefusalHonestyTest {
             RecordingSink(),
         )
         val f = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.API_ERROR, f.type)
+        assertEquals(ErrorType.INVALID_REQUEST, f.type)
         assertTrue(f.providerReported, "the BACKEND finalized the refusal — G20 provenance is upstream")
         assertTrue(f.message.contains("I won't do that."), f.message)
         assertEquals(null, f.partial)
@@ -1178,7 +1178,7 @@ class ResponsesRefusalHonestyTest {
             RecordingSink(),
         )
         val f = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.API_ERROR, f.type)
+        assertEquals(ErrorType.INVALID_REQUEST, f.type)
         assertTrue(f.providerReported)
         assertTrue(f.message.contains("but I stop here"), f.message)
         assertEquals(null, f.partial)

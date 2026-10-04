@@ -495,7 +495,7 @@ class ResponsesReanchorPartialTest {
             NullSink(),
         )
         val failure = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.API_ERROR, failure.type)
+        assertEquals(ErrorType.INVALID_REQUEST, failure.type)
         assertNull(failure.partial)
         assertNull(controller.continuationForFailure(ReanchorRound(previousBody(), failure, attempt = 0)))
     }

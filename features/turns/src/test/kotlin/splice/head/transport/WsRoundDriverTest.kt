@@ -128,6 +128,11 @@ private class WsFakeAuth : RefreshableAuthProvider {
 private fun ev(json: String): JsonObject =
     kotlinx.serialization.json.Json.parseToJsonElement(json) as JsonObject
 
+/** A synthetic ChatGPT policy refusal in the shape the backend ends a round with. */
+private const val POLICY_REFUSAL =
+    """{"type":"response.failed","response":{"id":"r1","status":"failed",""" +
+        """"error":{"code":"cyber_policy","message":"This request was flagged. Try rephrasing."}}}"""
+
 /** A runner that replays a scripted round, so the driver's decision is the only variable.
  *  [throwAfter], when set, makes the round's flow throw once it has emitted that many events —
  *  standing in for an unexpected throw out of the translator/reducer on a real round. */
@@ -1252,5 +1257,77 @@ class WsRoundDriverTest {
 
         assertEquals(0, runner.endedOk, "a failure outcome is not a clean terminal")
         assertEquals(1, runner.endedNotOk, "so the chain must be cleared, not committed")
+    }
+}
+
+/** A POLICY REFUSAL before any client frame is the vendor's verdict on the REQUEST, so the round ends on it
+ *  as its own failure: re-served over SSE, the identical context met the identical refusal (live
+ *  2026-10-04, both re-sends that could be attributed: 2:18 to 2:21 and 6:05 PM CT). */
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class WsPolicyRefusalTest(@param:TempDir private val tmp: Path) {
+    private val mock = MockChatGptUpstream()
+    private val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
+
+    @AfterAll
+    fun close() {
+        client.close()
+        mock.stop()
+    }
+
+    private fun fixture(): WsDriverFixture = WsDriverFixture(tmp, mock.baseUrl)
+
+    private fun head(runner: ScriptedRunner): HeadServer = HeadServer(
+        provider = fixture().provider(runner),
+        listenPort = 0,
+        deps = headDeps(
+            tmp = tmp,
+            upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 2),
+            log = {},
+            seams = HeadDeps.HeadSeams(requestMaterializationGate = RequestMaterializationGate()),
+        ).copy(stores = headStores(tmp, suffix = "-refusal")),
+    )
+
+    private fun turn(port: Int): String = runBlocking {
+        client.post("http://127.0.0.1:$port/v1/messages") {
+            setBody(
+                """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":100,
+                    "messages":[{"role":"user","content":"hi"}]}""",
+            )
+        }.bodyAsText()
+    }
+
+    @Test
+    fun `a policy refusal before any client frame ends the round as its own failure, not a NeedsSse`() = runTest {
+        val runner = ScriptedRunner(emptyList())
+        val inputs = fixture().inputs(RecordingTerminal(), this)
+        val drive = WsRoundDrive(fixture().provider(runner), ZeroEventClassifier { _, outcome, _, _ -> outcome })
+
+        val result = drive.drive(inputs, runner, flowOf(ev(POLICY_REFUSAL)))
+
+        val outcome = (result as? WsRoundResult.Streamed)?.outcome as? TurnOutcome.Failure
+        assertEquals(FailureCause.CONTENT_FILTERED, outcome?.cause, "the refusal was not the round's ending: $result")
+        assertEquals(true, outcome?.permanent, "a refusal re-sent is the identical refusal")
+        assertEquals(1, runner.endedNotOk, "the refused round clears its chain")
+        inputs.drive.slot.release()
+    }
+
+    /** The same refusal end to end: one WebSocket attempt, no SSE request, and the client reads the
+     *  bad-request class with the vendor's own sentence, which it does not re-send. */
+    @Test
+    fun `a policy refusal before any client frame reaches the client as invalid_request_error, never re-sent`() {
+        val runner = ScriptedRunner(listOf(POLICY_REFUSAL))
+        val h = head(runner)
+        runBlocking { h.start() }
+        try {
+            val before = mock.upstreamBodies.size
+            val sse = turn(h.port)
+            assertEquals(0, runner.bypassed, "the refusal was re-served over SSE")
+            assertEquals(before, mock.upstreamBodies.size, "an SSE request re-sent the refused context")
+            assertEquals(1, runner.attempts, "the refused context was re-sent over the websocket")
+            assertTrue(sse.contains("\"type\":\"invalid_request_error\""), "not the bad-request class: $sse")
+            assertTrue(sse.contains("This request was flagged. Try rephrasing."), "the vendor's sentence: $sse")
+        } finally {
+            runBlocking { h.stop() }
+        }
     }
 }

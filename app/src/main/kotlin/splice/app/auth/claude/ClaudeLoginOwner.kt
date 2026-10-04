@@ -51,10 +51,12 @@ internal class ClaudeLoginOwner(
     private val active = mutableMapOf<ClaudeLoginPlaceId, NativeAttempt>()
     private val history = LinkedHashMap<String, AtomicReference<LoginStatus>>()
 
-    override fun places(): List<ClaudeLoginPlaceView> = locations.map(reads::read)
+    override fun places(): List<ClaudeLoginPlaceView> = reads.places(locations)
 
+    // One place is still read against ALL of them: a login's window belongs to its account, and the account's
+    // other logins are where that reading may have been filed.
     override suspend fun refresh(place: ClaudeLoginPlaceId): ClaudeLoginPlaceView =
-        reads.read(locations.single { it.id == place })
+        reads.places(locations).single { it.id == place }
 
     override fun poll(id: String): LoginStatus? = synchronized(lock) { history[id]?.get() }
 

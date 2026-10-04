@@ -21,6 +21,7 @@ import splice.core.wire.HttpStatus
 import splice.daemonclient.MgmtKeyFile
 import splice.daemonclient.MgmtKeyRead
 import splice.upstream.credentials.AccountLabelPolicy
+import splice.upstream.credentials.AccountSwitchReason
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -173,7 +174,7 @@ internal class AccountPoolProjection {
         val from = label(s, "from") ?: return null
         val to = label(s, "to") ?: return null
         val reason = (s["reason"] as? JsonPrimitive)?.takeIf { it.isString }?.content
-            ?.takeIf(AccountSwitchReasonText::isSafe)
+            ?.takeIf(AccountSwitchReason::isSafe)
         val at = JsonScalars.long(s, "at_epoch_millis") ?: 0L
         return reason?.let { HeadAccountSwitchView(from, to, it, at) }
     }
@@ -181,28 +182,4 @@ internal class AccountPoolProjection {
     /** A stale or foreign daemon is still a boundary: rejected labels never enter a printable view. */
     private fun label(obj: JsonObject, key: String): String? = (obj[key] as? JsonPrimitive)
         ?.takeIf { it.isString }?.content?.takeIf(AccountLabelPolicy::isSafe)
-}
-
-// NEW: v0.4.0 FEATURES.md §11 — AccountPool.switchReason's vocabulary at both CLI text boundaries.
-// The existing projection wording remains accepted; foreign prose and terminal controls do not.
-internal object AccountSwitchReasonText {
-    private val reasons = setOf(
-        "primary account reset",
-        "quota resets sooner",
-        "provider rate limit reached",
-        "operator pinned this account",
-        "operator account order",
-        "5-hour plan limit reached",
-        "7-day plan limit reached",
-        "rate limit exceeds turn wait budget",
-        "5-hour quota exhausted",
-        "7-day quota exhausted",
-        "account unavailable",
-        "7d window exhausted",
-    )
-
-    // Model-scoped weekly windows are provider vocabulary, but never terminal controls or arbitrary prose.
-    private val planWindow = Regex("7-day [A-Za-z0-9][A-Za-z0-9 -]{0,63} plan limit reached")
-
-    fun isSafe(reason: String): Boolean = reason in reasons || planWindow.matches(reason)
 }

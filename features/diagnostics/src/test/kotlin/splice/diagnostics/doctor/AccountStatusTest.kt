@@ -19,6 +19,7 @@ import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
 import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.AccountQuotaSource
+import splice.upstream.credentials.AccountSwitchReason
 import splice.upstream.credentials.PoolAccount
 import splice.upstream.credentials.Selection
 import splice.upstream.retry.RateLimitCooldown
@@ -413,7 +414,7 @@ class AccountSwitchVocabularyTest {
         }
         assertEquals(5, reasons.size, "all five current switchReason branches must be exercised")
         reasons.forEach { reason ->
-            assertTrue(AccountSwitchReasonText.isSafe(reason), "pool produced a reason the CLI drops: $reason")
+            assertTrue(AccountSwitchReason.isSafe(reason), "pool produced a reason the CLI drops: $reason")
         }
     }
 
@@ -451,7 +452,7 @@ class AccountSwitchVocabularyTest {
     private fun assertSafeChoice(pool: AccountPool) {
         val chosen = (pool.select("session") as Selection.Chosen).account
         val reason = requireNotNull(chosen.switch).reason
-        assertTrue(AccountSwitchReasonText.isSafe(reason), "pool produced a reason the CLI drops: $reason")
+        assertTrue(AccountSwitchReason.isSafe(reason), "pool produced a reason the CLI drops: $reason")
         chosen.releaseCredentialProbe()
     }
 

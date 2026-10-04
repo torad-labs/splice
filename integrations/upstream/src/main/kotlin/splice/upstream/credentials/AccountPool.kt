@@ -235,12 +235,12 @@ public class AccountPool(
     private fun switchReason(previousLabel: String, chosen: PoolAccount, at: Long): String {
         val previous = byLabel.getValue(previousLabel)
         return when {
-            chosen.label == pinnedLabel.get() -> "operator pinned this account"
+            chosen.label == pinnedLabel.get() -> AccountSwitchReason.PINNED
             chosen.label in orderedLabels.get() && AccountAvailability.available(previous, at) ->
-                "operator account order"
+                AccountSwitchReason.ORDERED
             !AccountAvailability.available(previous, at) -> AccountAvailability.limitReason(previous, at)
-            chosen.primary -> "primary account reset"
-            else -> "quota resets sooner"
+            chosen.primary -> AccountSwitchReason.PRIMARY_RESET
+            else -> AccountSwitchReason.RESET_SOONER
         }
     }
 
@@ -307,11 +307,11 @@ private object AccountAvailability {
         val quota = account.quota.snapshot()
         val plan = account.cooldown.planHold.live()
         return when {
-            plan != null -> "${plan.windowWords} plan limit reached"
-            account.cooldown.unavailableForMs() > 0L -> "rate limit exceeds turn wait budget"
-            exhausted(quota?.fiveHour, at) -> "5-hour quota exhausted"
-            exhausted(quota?.sevenDay, at) -> "7-day quota exhausted"
-            else -> "account unavailable"
+            plan != null -> AccountSwitchReason.planLimit(plan.windowWords)
+            account.cooldown.unavailableForMs() > 0L -> AccountSwitchReason.WAIT_BUDGET
+            exhausted(quota?.fiveHour, at) -> AccountSwitchReason.FIVE_HOUR_QUOTA
+            exhausted(quota?.sevenDay, at) -> AccountSwitchReason.SEVEN_DAY_QUOTA
+            else -> AccountSwitchReason.UNAVAILABLE
         }
     }
 
@@ -351,4 +351,38 @@ private object AccountAvailability {
         }
         return listOfNotNull(quotaReset, cooldownReset.takeIf { remaining > 0L }, authReset).maxOrNull()
     }
+}
+
+/** Pool-produced switch reasons, including named provider windows and legacy persisted wording. */
+public object AccountSwitchReason {
+    internal const val PINNED = "operator pinned this account"
+    internal const val ORDERED = "operator account order"
+    internal const val PRIMARY_RESET = "primary account reset"
+    internal const val RESET_SOONER = "quota resets sooner"
+    internal const val PROVIDER_LIMIT = "provider rate limit reached"
+    internal const val WAIT_BUDGET = "rate limit exceeds turn wait budget"
+    internal const val FIVE_HOUR_QUOTA = "5-hour quota exhausted"
+    internal const val SEVEN_DAY_QUOTA = "7-day quota exhausted"
+    internal const val UNAVAILABLE = "account unavailable"
+
+    private val reasons = setOf(
+        PINNED,
+        ORDERED,
+        PRIMARY_RESET,
+        RESET_SOONER,
+        PROVIDER_LIMIT,
+        WAIT_BUDGET,
+        FIVE_HOUR_QUOTA,
+        SEVEN_DAY_QUOTA,
+        UNAVAILABLE,
+        planLimit("5-hour"),
+        planLimit("7-day"),
+        "7d window exhausted",
+    )
+    private val planWindow = Regex("7-day [A-Za-z0-9][A-Za-z0-9 -]{0,63} plan limit reached")
+
+    internal fun planLimit(windowWords: String): String = "$windowWords plan limit reached"
+
+    /** Foreign prose and terminal controls never become printable switch reasons. */
+    public fun isSafe(reason: String): Boolean = reason in reasons || planWindow.matches(reason)
 }

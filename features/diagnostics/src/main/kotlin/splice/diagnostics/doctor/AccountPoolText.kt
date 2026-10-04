@@ -9,6 +9,7 @@ import splice.accounts.pool.HeadAccountView
 import splice.core.util.WallClock
 import splice.upstream.credentials.AccountLabelPolicy
 import splice.upstream.credentials.AccountResetText
+import splice.upstream.credentials.AccountSwitchReason
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
@@ -65,7 +66,7 @@ public class AccountPoolText(private val now: WallClock = WallClock { System.cur
             accounts = accounts,
             lastSwitch = view.lastSwitch?.takeIf {
                 AccountLabelPolicy.isSafe(it.from) && AccountLabelPolicy.isSafe(it.to) &&
-                    AccountSwitchReasonText.isSafe(it.reason)
+                    AccountSwitchReason.isSafe(it.reason)
             },
             selectionUnknown = view.selectionUnknown || missingSelection || droppedSelected,
         )

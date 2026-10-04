@@ -166,11 +166,26 @@ public class PerfRoutes(
         }
 
     private fun turnsFor(head: UsageHead, source: PerfRowsSource, asked: AskedWindow): JsonObject {
+        if (source is ProjectedPerfRowsSource) {
+            return source.projected(asked.since) { projection -> turnsJson(head, projection, asked) }
+        }
         val read = source.window(asked.since)
+        return turnsJson(
+            head,
+            object : PerfRowsProjection {
+                override val window: PerfRowsWindow = read
+                override fun complete(rows: List<PerfRow>): List<PerfRow> = rows
+            },
+            asked,
+        )
+    }
+
+    private fun turnsJson(head: UsageHead, projection: PerfRowsProjection, asked: AskedWindow): JsonObject {
+        val read = projection.window
         // The filters narrow the WINDOW, then the clamp takes the newest of what matched: a filter run
         // after the clamp finds nothing older than the slice (V4-444).
         val matching = read.rows.filter(asked.filter::matches)
-        val rows = matching.takeLast(asked.n)
+        val rows = projection.complete(matching.sortedBy { it.ts }.takeLast(asked.n))
         val price = head.catalog?.let(::TurnPrice)
         return buildJsonObject {
             put("key", head.key)

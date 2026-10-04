@@ -36,9 +36,12 @@ import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
+import splice.usage.perf.PerfProjectionRead
 import splice.usage.perf.PerfRow
+import splice.usage.perf.PerfRowsProjection
 import splice.usage.perf.PerfRowsSource
 import splice.usage.perf.PerfRowsWindow
+import splice.usage.perf.ProjectedPerfRowsSource
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
@@ -86,8 +89,25 @@ public class PerfRowsFileSource internal constructor(
     /** Where PerfStats archives retired generations; null reads the two live ones only. */
     private val archiveDir: Path? = null,
     private val cache: PerfRowsCache = PerfRowsCache(),
-) : PerfRowsSource {
+) : PerfRowsSource, ProjectedPerfRowsSource {
     private val json = Json { ignoreUnknownKeys = true }
+    private val display = lazy { PerfTurnsRetention() }
+    private val projectionCache = lazy {
+        PerfRowsCache(
+            limitBytes = PERF_CACHE_BYTES - PERF_DISPLAY_BYTES,
+            keep = display.value,
+            limitRows = (PERF_CACHE_BYTES / PERF_RECORD_OVERHEAD_BYTES).toInt(),
+        )
+    }
+    private var projectionSince: Long? = null
+
+    /** Charged projection and display storage; the ordinary full-row cache keeps its own ceiling. */
+    internal val projectedBytes: Long
+        get() = if (projectionCache.isInitialized()) {
+            projectionCache.value.retainedBytes + display.value.retainedBytes
+        } else {
+            0L
+        }
 
     /** JSON decodes performed by this source, including rejected rows and baseline candidates. */
     internal var parsedLines: Long = 0L
@@ -112,6 +132,41 @@ public class PerfRowsFileSource internal constructor(
     @Synchronized
     override fun window(sinceMs: Long): PerfRowsWindow = settledRead(sinceMs, PerfSelection.WORK).window()
 
+    @Synchronized
+    override fun <T> projected(sinceMs: Long, read: PerfProjectionRead<T>): T {
+        val retained = projectionCache.value
+        if (projectionSince?.let { sinceMs < it } == true) {
+            // A wider first selection must populate previously skipped facts, not replay that gap forever.
+            retained.clear()
+            display.value.clear()
+        }
+        projectionSince = minOf(projectionSince ?: sinceMs, sinceMs)
+        return try {
+            projectedRead(sinceMs, retained, read)
+        } catch (_: PerfProjectionChanged) {
+            // No response has escaped. Try once more, then use an already-complete coherent window.
+            try {
+                projectedRead(sinceMs, retained, read)
+            } catch (_: PerfProjectionChanged) {
+                val full = window(sinceMs)
+                read(object : PerfRowsProjection {
+                    override val window: PerfRowsWindow = full
+                    override fun complete(rows: List<PerfRow>): List<PerfRow> = rows
+                })
+            }
+        }
+    }
+
+    private fun <T> projectedRead(sinceMs: Long, retained: PerfRowsCache, read: PerfProjectionRead<T>): T {
+        val scan = settledRead(sinceMs, PerfSelection.WORK, retained)
+        val projection = object : PerfRowsProjection {
+            override val window: PerfRowsWindow = scan.window()
+            override fun complete(rows: List<PerfRow>): List<PerfRow> =
+                rows.map { display.value.complete(it, PerfLineDecode(scan::decode)) }
+        }
+        return read(projection)
+    }
+
     /** Both sides are read together, so lost or clock-shifted evidence cannot justify subtraction. */
     @Synchronized
     internal fun economicsEvidence(sinceMs: Long): EconomicsPerfEvidence {
@@ -119,14 +174,14 @@ public class PerfRowsFileSource internal constructor(
         return EconomicsPerfEvidence(scan.window(), scan.probes)
     }
 
-    private fun settledRead(sinceMs: Long, selection: PerfSelection): Scan {
+    private fun settledRead(sinceMs: Long, selection: PerfSelection, rowsCache: PerfRowsCache = cache): Scan {
         val settled = AsyncFileIo.awaitFile(file)
         var keys = fileKeys()
-        var read = readAll(sinceMs, selection)
+        var read = readAll(sinceMs, selection, rowsCache)
         var again = fileKeys()
         if (again != keys) {
             keys = again
-            read = readAll(sinceMs, selection)
+            read = readAll(sinceMs, selection, rowsCache)
             again = fileKeys()
         }
         val incomplete = if (settled) null else "${file.fileName}: pending perf write did not settle"
@@ -142,8 +197,8 @@ public class PerfRowsFileSource internal constructor(
         }.getOrNull()
     }
 
-    private fun readAll(sinceMs: Long, selection: PerfSelection): Scan {
-        val scan = Scan(sinceMs, selection)
+    private fun readAll(sinceMs: Long, selection: PerfSelection, rowsCache: PerfRowsCache): Scan {
+        val scan = Scan(sinceMs, selection, rowsCache)
         val archives = archived(scan)
         archives.forEachIndexed { priority, (generation, rotatedAt) ->
             if (archiveName.endsBefore(rotatedAt, sinceMs)) {
@@ -159,7 +214,14 @@ public class PerfRowsFileSource internal constructor(
     }
 
     private fun read(scan: Scan, generation: Path, priority: Int) {
-        Cancellables.runCatchingCancellable { cache.read(generation, priority, scan, PerfLineDecode(scan::decode)) }
+        Cancellables.runCatchingCancellable {
+            scan.rowsCache.read(
+                generation,
+                priority,
+                scan,
+                PerfLineDecode(scan::decode),
+            )
+        }
             .exceptionOrNull()
             ?.takeUnless { it is NoSuchFileException }
             ?.let { scan.errors += "${generation.fileName}: ${SafeFailureText.render(it)}" }
@@ -184,7 +246,11 @@ public class PerfRowsFileSource internal constructor(
         (obj["ts"] as? JsonPrimitive)?.takeUnless { it.isString }?.longOrNull
 
     /** The state one window read accumulates across generations, oldest generation first. */
-    private inner class Scan(private val sinceMs: Long, private val selection: PerfSelection) : PerfLineVisit {
+    private inner class Scan(
+        private val sinceMs: Long,
+        private val selection: PerfSelection,
+        val rowsCache: PerfRowsCache,
+    ) : PerfLineVisit {
         val rows = ArrayList<PerfRow>()
         val probes = ArrayList<PerfRow>()
         val errors = ArrayList<String>()
@@ -224,7 +290,7 @@ public class PerfRowsFileSource internal constructor(
             kept(decode(line))
         }
 
-        fun decode(line: String): PerfCachedLine = cache.decoder.decode(line).fold(
+        fun decode(line: String): PerfCachedLine = rowsCache.decoder.decode(line).fold(
             onSuccess = { decoded ->
                 parsedLines++
                 PerfCachedLine(
@@ -253,7 +319,7 @@ public class PerfRowsFileSource internal constructor(
                 probe = false,
             )
             if (obj == null || ts == null) return facts
-            val fields = cache.fields(obj)
+            val fields = rowsCache.fields(obj)
             return facts.copy(
                 row = row(ts, obj, fields),
                 numericBytes = fields.retainedBytes,
@@ -351,7 +417,7 @@ public class PerfRowsFileSource internal constructor(
             return Cancellables.runCatchingCancellable { json.parseToJsonElement(line) as? JsonObject }.getOrNull()
         }
 
-        private fun row(ts: Long, obj: JsonObject, fields: Map<String, Long> = cache.fields(obj)): PerfRow {
+        private fun row(ts: Long, obj: JsonObject, fields: Map<String, Long> = rowsCache.fields(obj)): PerfRow {
             val outcome = JsonScalars.str(obj, "outcome")?.takeUnless { REPLACEMENT_CHAR in it } ?: UNATTRIBUTED
             // V4-127: the writer's string-and-flag facts, read BY NAME off the same parsed object the
             // numeric bag came from. Read by name, never by position, because four of the five are

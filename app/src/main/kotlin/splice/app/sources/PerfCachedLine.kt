@@ -1,7 +1,11 @@
 // NEW: compact cached perf-row facts and the seams between decoding, retention and selection.
 package splice.app.sources
 
+import splice.core.util.JsonlAppendReceipt
+import splice.core.util.JsonlFileVersion
 import splice.usage.perf.PerfRow
+import java.io.IOException
+import java.nio.file.Path
 
 // Conservative retained-string charge: object/array headers and alignment, plus UTF-16 storage.
 internal const val PERF_STRING_OVERHEAD_BYTES = 64L
@@ -10,7 +14,7 @@ internal const val PERF_STRING_OVERHEAD_BYTES = 64L
 internal const val PERF_CHAR_BYTES = 2L
 
 // Covers the facts, row, entry, boxed scalars and linked queue node with 64-bit references.
-private const val PERF_RECORD_OVERHEAD_BYTES = 320L
+internal const val PERF_RECORD_OVERHEAD_BYTES = 320L
 
 /** Parsed facts plus the original skip hints; window selection never changes timestamp authority. */
 internal data class PerfCachedLine(
@@ -21,6 +25,8 @@ internal data class PerfCachedLine(
     val dropsCandidate: Boolean,
     val drops: Long?,
     val probe: Boolean,
+    /** Projected descriptions are charged once in the source's bounded sharing pool. */
+    val retainedTextBytes: Long? = null,
 ) {
     /** Upper-bound charge for object/queue overhead, primitive field storage and descriptive strings. */
     val retainedBytes: Long
@@ -35,12 +41,31 @@ internal data class PerfCachedLine(
                 value.account,
                 value.turn,
             ).sumOf { if (it == null) 0L else PERF_STRING_OVERHEAD_BYTES + it.length * PERF_CHAR_BYTES }
-            return PERF_RECORD_OVERHEAD_BYTES + numericBytes + text
+            return PERF_RECORD_OVERHEAD_BYTES + numericBytes + (retainedTextBytes ?: text)
         }
 }
 
 internal fun interface PerfLineDecode {
     fun decode(line: String): PerfCachedLine
+}
+
+/** A generation follows its file identity through live, rotated and archived path changes. */
+internal interface PerfGenerationPath {
+    val path: Path
+    val version: JsonlFileVersion?
+    val receipt: JsonlAppendReceipt?
+    val complete: Long
+    val prefixDigest: ByteArray?
+}
+
+internal data class PerfRowLocation(val generation: PerfGenerationPath, val start: Long, val end: Long)
+
+/** An aggregate snapshot cannot authorize reading different bytes for its displayed row. */
+internal class PerfProjectionChanged : IOException("perf generation changed while reading display rows")
+
+/** Transform retained facts, not the parser or its timestamp/probe/error authority. */
+internal fun interface PerfLineKeep {
+    fun keep(location: PerfRowLocation, line: PerfCachedLine, names: PerfFieldNames): PerfCachedLine
 }
 
 /** Older evicted input keeps its original on-demand parser; retained input supplies only compact facts. */

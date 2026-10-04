@@ -103,8 +103,8 @@ class PerfStreamingParityTest {
         private val source = PerfRowsFileSource(file)
         private val type = source.javaClass.declaredClasses.single { it.simpleName == "Scan" }
         private val constructor = type.declaredConstructors.single().apply { isAccessible = true }
-        private val selection = constructor.parameterTypes.last().enumConstants.first()
-        private val scan = constructor.newInstance(source, 0L, selection)
+        private val selection = constructor.parameterTypes.single { it.isEnum }.enumConstants.first()
+        private val scan = constructor.newInstance(source, 0L, selection, PerfRowsCache())
         private val legacy = type.getDeclaredMethod("decodeTree", String::class.java).apply { isAccessible = true }
         private val selected = type.getDeclaredMethod("decode", String::class.java).apply { isAccessible = true }
 

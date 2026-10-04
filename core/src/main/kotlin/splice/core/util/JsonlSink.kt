@@ -156,9 +156,16 @@ public object JsonlSink {
      * with the row that followed it and costs both.
      */
     private fun append(file: Path, encoded: ByteArray, policy: RotatePolicy) {
-        val currentSize = if (Files.exists(file)) Files.size(file) else 0L
+        val before = JsonlAppendProof.before(file)
+        val currentSize = before?.size ?: 0L
         val rotated = rotateIfOver(file, currentSize, encoded.size, policy)
         writeForced(file, healedBytes(file, encoded, currentSize, rotated), policy.force)
+        if (policy.force === OS_FORCE || policy.force === PAGE_CACHE_FORCE) {
+            JsonlAppendProof.appended(file, before, JsonlAppendProof.version(file))
+        } else {
+            // An injected force can mutate the file; it cannot attest an exclusively product-written append.
+            JsonlAppendProof.forget(file)
+        }
     }
 
     /** Rolls one generation when this row would take the file past [RotatePolicy.maxBytes], and

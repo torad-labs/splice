@@ -49,9 +49,12 @@ import splice.head.compact.HeadCompactSource
 import splice.head.usage.CredentialQuotaFiles
 import splice.models.roster.DeclaredHead
 import splice.models.roster.DeclaredHeads
+import splice.usage.perf.PerfProjectionRead
 import splice.usage.perf.PerfRow
+import splice.usage.perf.PerfRowsProjection
 import splice.usage.perf.PerfRowsSource
 import splice.usage.perf.PerfRowsWindow
+import splice.usage.perf.ProjectedPerfRowsSource
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.UsageView
 import java.nio.file.Files
@@ -61,6 +64,57 @@ private const val HEAD = "synthetic-native"
 private const val TIMEOUT_MS = 30_000L
 
 class NativeUsageTruthTest {
+    @Test
+    fun `native projected reads normalize attribution without full-window fallback or losing original references`() {
+        val full = listOf("claude-code", "proved@example.invalid", null).mapIndexed { index, account ->
+            PerfRow(
+                ts = index.toLong() + 10,
+                outcome = "ok",
+                fields = mapOf("synthetic_metric" to 77L),
+                account = account,
+            )
+        }
+        val facts = full.map { it.copy(fields = emptyMap()) }
+        val evidence = PerfRowsWindow(
+            facts,
+            oldestHeldTs = 1,
+            dropsBefore = 3,
+            readError = "synthetic read error",
+            skipped = 7,
+            newestHeldTs = 12,
+        )
+        var completed = 0
+        val source = object : PerfRowsSource, ProjectedPerfRowsSource {
+            override fun window(sinceMs: Long): PerfRowsWindow = error("a native projected read must not fall back")
+            override fun <T> projected(sinceMs: Long, read: PerfProjectionRead<T>): T {
+                val projection = object : PerfRowsProjection {
+                    override val window: PerfRowsWindow = evidence
+                    override fun complete(rows: List<PerfRow>): List<PerfRow> {
+                        completed++
+                        assertEquals(1, rows.size, "only the selected display row is materialized")
+                        assertSame(
+                            facts.first(),
+                            rows.single(),
+                            "normalization must restore the original projected reference",
+                        )
+                        return listOf(full.first())
+                    }
+                }
+                return read(projection)
+            }
+        }
+        val native = NativeAccountRows(source)
+        native.projected(0) { projection ->
+            val read = projection.window
+            val normalized = facts.map { if (it.account == "claude-code") it.copy(account = null) else it }
+            assertEquals(evidence.copy(rows = normalized), read)
+            val row = projection.complete(listOf(read.rows.first())).single()
+            assertNull(row.account)
+            assertEquals(77L, row.fields["synthetic_metric"])
+        }
+        assertEquals(1, completed)
+    }
+
     @TempDir
     lateinit var home: Path
 

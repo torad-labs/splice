@@ -43,7 +43,6 @@ export const B = {
   pricing: 'Prices and missing spending',
   pricingWhy: 'Dollar estimates need declared token prices. They are not subscription bills or the cost of running a local model.',
   pricesFor: (name: string) => `Prices for ${name}`,
-  noPrices: 'No per-token prices are declared for this command’s models. Spending is unknown, not free.',
   missingPrices: (names: string) => `No price is declared for: ${names}.`,
   recordedMissing: (n: number) => `${fmtInt(n)} ${n === 1 ? 'request has' : 'requests have'} no dollar estimate at the declared prices.`,
   subscription: (plan: string) => `This command runs on its ${plan} plan. Declared token prices estimate equivalent API cost, not your subscription bill.`,

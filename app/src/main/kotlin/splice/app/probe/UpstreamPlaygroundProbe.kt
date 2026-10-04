@@ -25,11 +25,13 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.java.Java
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.headers
-import io.ktor.client.request.post
+import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
+import io.ktor.http.isSuccess
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.addJsonObject
@@ -37,16 +39,23 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import splice.core.auth.AuthProvider
 import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
+import splice.core.auth.RefreshableAuthProvider
 import splice.core.parse.AnthropicParse
+import splice.core.usage.QuotaHeaderRead
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
+import splice.core.util.WallClock
 import splice.diagnostics.playground.PlaygroundFailure
 import splice.diagnostics.playground.PlaygroundHead
 import splice.diagnostics.playground.PlaygroundOutcome
 import splice.diagnostics.playground.PlaygroundProbe
 import splice.diagnostics.playground.PlaygroundResult
+import splice.head.usage.ProviderReply
+import splice.head.usage.ProviderReplyObserver
+import splice.head.usage.ProviderReplySender
 import splice.upstream.BuiltTurn
 import splice.upstream.Provider
 import splice.upstream.transport.HeaderRedaction
@@ -96,6 +105,7 @@ internal class UpstreamPlaygroundProbe(
             socketTimeoutMillis = REQUEST_TIMEOUT_MS
         }
     },
+    private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) : PlaygroundProbe {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -104,10 +114,12 @@ internal class UpstreamPlaygroundProbe(
     /** [model] null runs the head's pinned model. A named one is sent as written, and an id its provider
      *  does not serve comes back as the provider's own answer, shown like any other. */
     override suspend fun run(head: PlaygroundHead, prompt: String, model: String?): PlaygroundOutcome {
-        val provider = providers[head.key]
+        val target = providers.target(head.key)
             ?: return PlaygroundFailure("head '${head.key}' has no running provider to send through")
-        val login = providers.login(head.key)
-        val creds = Cancellables.runCatchingCancellable { (login?.auth ?: head.auth).credentials() }
+        val provider = target.provider
+        val login = target.login
+        val auth = login?.auth ?: target.auth ?: head.auth
+        val creds = Cancellables.runCatchingCancellable { auth.credentials() }
             .getOrElse { return PlaygroundFailure("reading credentials failed: ${SafeFailureText.render(it)}") }
         return when {
             creds == null -> PlaygroundFailure("head '${head.key}' has no credential configured")
@@ -115,12 +127,22 @@ internal class UpstreamPlaygroundProbe(
                 val why = "head '${head.key}' forwards the caller's own auth; playground has none to send"
                 PlaygroundFailure(why)
             }
-            else -> build(provider, Sender(creds, login), model ?: provider.pinnedModel, prompt)
+            else -> build(
+                provider,
+                Sender(creds, login, auth, target.observer),
+                model ?: provider.pinnedModel,
+                prompt,
+            )
         }
     }
 
-    /** Who the one call goes as: the credential read, and the pooled login it came from, if any. */
-    private data class Sender(val creds: Credentials, val login: PlaygroundLogin?)
+    /** Captured before sending, so a later pool choice or head replacement cannot own this reply. */
+    private data class Sender(
+        val creds: Credentials,
+        val login: PlaygroundLogin?,
+        val auth: AuthProvider,
+        val observer: ProviderReplyObserver?,
+    )
 
     private suspend fun build(
         provider: Provider,
@@ -140,14 +162,38 @@ internal class UpstreamPlaygroundProbe(
         // The login's headers ride ON TOP of the provider's, as on a real turn (SseRoundPost).
         val own = sender.login?.headers?.invoke(creds).orEmpty()
         val headers = UpstreamHeaders.compose(creds, provider.extraHeaders(creds) + own + turn.extraHeaders)
-        val sent = Cancellables.runCatchingCancellable {
-            client.post(url) {
+        return Cancellables.runCatchingCancellable {
+            client.preparePost(url) {
                 headers { headers.forEach { (name, value) -> append(name, value) } }
                 contentType(ContentType.Application.Json)
                 setBody(turn.requestBody.toString())
-            }
-        }.getOrElse { return PlaygroundFailure("upstream call to $url failed: ${SafeFailureText.render(it)}") }
+            }.execute { sent -> response(sender, turn, headers, url, sent) }
+        }.getOrElse { PlaygroundFailure("upstream call to $url failed: ${SafeFailureText.render(it)}") }
+    }
+
+    /** Header acceptance is published before reading the body, even if that stream later fails. */
+    private suspend fun response(
+        sender: Sender,
+        turn: BuiltTurn,
+        headers: Map<String, String>,
+        url: String,
+        sent: HttpResponse,
+    ): PlaygroundResult {
+        val creds = sender.creds
+        val at = clock()
+        val responseHeaders = QuotaHeaderRead { sent.headers[it] }
+        val replySender = ProviderReplySender(
+            sender.auth,
+            headers,
+            sender.login?.label,
+            (creds as? Credentials.ApiKey)?.header,
+        )
+        sender.observer?.observed(ProviderReply(sent.status.value, at, responseHeaders), replySender)
+        (sender.auth as? RefreshableAuthProvider)?.upstreamAnswered(sent.status.value, sent.status.isSuccess())
         val bodyText = sent.bodyAsText().take(MAX_RESPONSE_CHARS)
+        if (!sent.status.isSuccess()) {
+            sender.observer?.observed(ProviderReply(sent.status.value, at, responseHeaders, bodyText), replySender)
+        }
         val requestJson = buildJsonObject {
             sender.login?.let { put("account", it.label) }
             put("url", url)

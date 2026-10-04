@@ -161,6 +161,10 @@ public class AccountPool(
             return (reset * MS_PER_SECOND - at).coerceAtLeast(0L)
         }
 
+    /** Independent product sends observe the captured login's actual cooldown, never a sibling's. */
+    public val responseCooldowns: Map<String, splice.upstream.retry.RateLimitCooldown> =
+        byLabel.mapValues { it.value.cooldown }
+
     /** Clears only runtime stickiness/cooldowns; persisted quota and credential files stay untouched. */
     public fun reset() {
         synchronized(sessions) { sessions.clear() }

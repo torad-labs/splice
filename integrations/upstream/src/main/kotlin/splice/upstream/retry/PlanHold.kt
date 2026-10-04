@@ -31,7 +31,7 @@ public class PlanHold internal constructor(
 
     /** Records [limit] and returns the delay until its reset, or null when that reset has already
      *  passed. The later reset wins, as on every horizon in RateLimitCooldown. */
-    internal fun hold(limit: PlanLimit, onRetry: RetryNotice): Long? {
+    public fun hold(limit: PlanLimit, onRetry: RetryNotice): Long? {
         val delayMs = limit.resetEpochSeconds * MS_PER_S - wallClock()
         if (delayMs <= 0L) return null
         val candidate = Held(clock() + delayMs, limit)

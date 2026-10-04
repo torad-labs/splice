@@ -162,7 +162,7 @@ public class RateLimitCooldown public constructor(
      *  it is the fact the operator needs to read — the live muse body says "resets at 20:02:52Z"
      *  where the Retry-After header says only 5301000ms. The body is upstream-controlled text, so
      *  the result is bounded by MAX_PROVIDER_RESET_MS and the caller may always clear() it. */
-    private fun captureProviderReset(body: String?) {
+    public fun captureProviderReset(body: String?) {
         if (body == null) return
         val epochSeconds = RESET_EPOCH_RE.find(body)?.groupValues?.get(1)?.toLongOrNull()
         val iso = RESET_ISO_RE.find(body)?.groupValues?.get(1)

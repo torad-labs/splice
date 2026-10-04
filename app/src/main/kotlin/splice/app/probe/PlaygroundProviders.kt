@@ -8,8 +8,10 @@
 // pool's own read-only answer (AccountPool.nextTargetLabel), never the head's default credential.
 package splice.app.probe
 
+import splice.app.provider.Wired
 import splice.app.provider.WiredAccount
 import splice.core.auth.AuthProvider
+import splice.head.usage.ProviderReplyObserver
 import splice.upstream.CredentialHeaders
 import splice.upstream.Provider
 import splice.upstream.credentials.AccountPool
@@ -18,27 +20,52 @@ import java.util.concurrent.ConcurrentHashMap
 /** The login a real turn would use next on a pooled command: its [label], its credential and its own headers. */
 internal data class PlaygroundLogin(val label: String, val auth: AuthProvider, val headers: CredentialHeaders?)
 
+/** One head generation, captured before credentials suspend. Raw provider-only callers supply their own auth. */
+internal data class PlaygroundTarget(
+    val provider: Provider,
+    val auth: AuthProvider?,
+    val login: PlaygroundLogin?,
+    val observer: ProviderReplyObserver?,
+)
+
 internal class PlaygroundProviders {
-    private val byKey = ConcurrentHashMap<String, Provider>()
-    private val pools = ConcurrentHashMap<String, Pooled>()
+    private val byKey = ConcurrentHashMap<String, Binding>()
 
     private data class Pooled(val pool: AccountPool, val logins: Map<String, WiredAccount>)
+    private data class Binding(
+        val provider: Provider,
+        val auth: AuthProvider? = null,
+        val observer: ProviderReplyObserver? = null,
+        val pooled: Pooled? = null,
+    )
 
     fun register(key: String, provider: Provider) {
-        byKey[key] = provider
+        byKey[key] = Binding(provider)
     }
 
-    /** Registers [key]'s pool and the [accounts] it was built from; a command with no pool registers none. */
+    /** One publication owns the provider, actual auth, pool and reply receiver of an assembled head. */
+    fun bind(key: String, wired: Wired, pool: AccountPool?, observer: ProviderReplyObserver) {
+        byKey[key] = Binding(wired.provider, wired.auth, observer, pooled(pool, wired.accounts))
+    }
+
+    /** Standalone provider fixtures may attach their pool after registration. Production uses [bind]. */
     fun logins(key: String, pool: AccountPool?, accounts: List<WiredAccount>) {
-        if (pool == null) pools.remove(key) else pools[key] = Pooled(pool, accounts.associateBy(WiredAccount::label))
+        val current = byKey[key] ?: return
+        byKey[key] = current.copy(pooled = pooled(pool, accounts))
     }
 
-    operator fun get(key: String): Provider? = byKey[key]
+    operator fun get(key: String): Provider? = byKey[key]?.provider
 
-    /** The login [key]'s next turn would use, or null when the command has one login (or every login is out). */
-    fun login(key: String): PlaygroundLogin? {
-        val pooled = pools[key] ?: return null
-        val account = pooled.pool.nextTargetLabel()?.let(pooled.logins::get) ?: return null
+    fun target(key: String): PlaygroundTarget? {
+        val binding = byKey[key] ?: return null
+        return PlaygroundTarget(binding.provider, binding.auth, login(binding.pooled), binding.observer)
+    }
+
+    private fun pooled(pool: AccountPool?, accounts: List<WiredAccount>): Pooled? =
+        pool?.let { Pooled(it, accounts.associateBy(WiredAccount::label)) }
+
+    private fun login(pooled: Pooled?): PlaygroundLogin? {
+        val account = pooled?.pool?.nextTargetLabel()?.let(pooled.logins::get) ?: return null
         return PlaygroundLogin(account.label, account.auth, account.extraHeaders)
     }
 }

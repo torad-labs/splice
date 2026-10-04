@@ -18,6 +18,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.jsonObject
+import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.io.TempDir
@@ -173,11 +174,18 @@ class PlaygroundTurnParityTest {
 
         assertEquals(provider.upstreamUrl, request.url.toString(), "the URL a turn posts to")
         assertEquals(turn.requestBody, Json.parseToJsonElement(bodyOf(request)).jsonObject, "the body a turn builds")
+        assertArrayEquals(
+            turn.requestBody.toString().toByteArray(Charsets.UTF_8),
+            bodyOf(request).toByteArray(Charsets.UTF_8),
+            "the request bytes are the production builder's, including any prompt-cache key",
+        )
         val headers = request.headers.entries().associate { (name, values) -> name.lowercase() to values.single() }
         for ((name, value) in provider.extraHeaders(creds)) {
             assertEquals(value, headers[name.lowercase()], "the provider's own header $name")
         }
-        for (name in turn.extraHeaders.keys) assertTrue(name.lowercase() in headers, "the turn's own header $name")
+        for ((name, value) in turn.extraHeaders) {
+            assertEquals(value, headers[name.lowercase()], "the turn's own header $name")
+        }
     }
 
     /** The concrete refusal marlin hit: ChatGPT answers 400 "Input must be a list" to a plain-string input. */

@@ -92,7 +92,7 @@ internal class ManagedHeadFactory(
             trace = cfg.trace,
             traceWritten = ctx.head.overrides[Knob.TRACE.key],
         )
-        val wired = wired(ctx)
+        val wired = providerAssembly.buildProvider(ctx)
         val accountQuotas = accountQuotas(key, wired)
         val primaryQuota = wired.accounts.singleOrNull { it.primary }
             ?.let { accountQuotas.getValue(it.label) }
@@ -109,7 +109,7 @@ internal class ManagedHeadFactory(
         // enforcing the management key.
         val forwardClientAuth = wired.auth is ClientAuthProvider
         if (forwardClientAuth) primaryQuota.credentialListener = CredentialQuotaFiles(statePaths.quotaFile(key), log)
-        val server = headServerFactory.headServerFor(ctx, wired.provider, stores, forwardClientAuth, recordings(key))
+        val server = observedHead(ctx, wired, stores, forwardClientAuth)
         // DR-81: key presence is NOT baked into the spec — it is a per-launch read of the SAME
         // wired credential, so `splice key set`/unset changes the very next launch. Non-api-key
         // auth reads true: capture/advertiser stay disarmed, which is the safe side.
@@ -142,9 +142,14 @@ internal class ManagedHeadFactory(
         )
     }
 
-    /** The head's provider and auth, its provider registered for the Playground's one call (V4-444). */
-    private fun wired(ctx: ProviderBuild): Wired =
-        providerAssembly.buildProvider(ctx).also { playgroundProviders.register(ctx.key, it.provider) }
+    /** Assembly binds independent replies to this head before the head is exposed to the control plane. */
+    private fun observedHead(
+        ctx: ProviderBuild,
+        wired: Wired,
+        stores: HeadStores,
+        forwardClientAuth: Boolean,
+    ) = headServerFactory.headServerFor(ctx, wired.provider, stores, forwardClientAuth, recordings(ctx.key))
+        .also { playgroundProviders.bind(ctx.key, wired, stores.accountPool, it.providerReplies) }
 
     /** Every file-backed store one head owns, built from its state paths. Its own method because
      *  the head WRITES these and the control-plane adapters READ them, and both must hold the SAME
@@ -172,9 +177,7 @@ internal class ManagedHeadFactory(
         // V4-221: each turn priced at its own model's card, against the same catalog the budget uses.
         economics = EconomicsStore(statePaths.economicsFile(ctx.key), TurnPrice(ctx.catalog)),
         quota = primaryQuota,
-        // Registered for the Playground too, which sends as the login this pool would choose next.
-        accountPool = accountPools.build(wired, accountQuotas, providerHolds.forAccounts(ctx.key, wired))
-            .also { pool -> playgroundProviders.logins(ctx.key, pool, wired.accounts) },
+        accountPool = accountPools.build(wired, accountQuotas, providerHolds.forAccounts(ctx.key, wired)),
         accountQuotas = accountQuotas,
         clientWindows = ClientWindows(store = statePaths.clientWindowsFile(ctx.key), log = log),
         trace = traceStores.forHead(ctx.key, ctx.cfg),

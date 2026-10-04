@@ -45,7 +45,7 @@ import splice.usage.quota.QuotaSnapshotSink
 import splice.usage.quota.UsageFields
 
 internal fun interface StartQuotaPoller {
-    operator fun invoke(head: String, probe: QuotaProbe, tracker: QuotaTracker, intervalMs: Long)
+    operator fun invoke(head: String, probe: QuotaProbe, tracker: QuotaTracker, intervalMs: Long): QuotaPoller?
 }
 
 /** Observes the primary quota tracker at assembly so a test can see which tracker was wired.
@@ -65,7 +65,8 @@ internal class ManagedHeadFactory(
     private val probeScope: CoroutineScope,
     private val log: LogSink,
     private val startQuotaPoller: StartQuotaPoller = StartQuotaPoller { head, probe, tracker, intervalMs ->
-        QuotaPoller(probeScope, head, probe, QuotaSnapshotSink(tracker::record), log, intervalMs = intervalMs).start()
+        QuotaPoller(probeScope, head, probe, QuotaSnapshotSink(tracker::record), log, intervalMs = intervalMs)
+            .also { it.start() }
     },
     private val onPrimaryQuota: OnPrimaryQuota = OnPrimaryQuota { _ -> },
     /** The Claude Code User-Agent the quota probes present, which is the one this daemon's client was seen
@@ -98,7 +99,7 @@ internal class ManagedHeadFactory(
             ?: QuotaTracker(statePaths.quotaFile(key), extraFamily = CodexQuotaHeaderFamily())
         onPrimaryQuota(primaryQuota)
         val stores = headStores(ctx, wired, primaryQuota, accountQuotas)
-        startQuotaPollers(ctx, wired, stores, cfg.quotaPollOff)
+        val quotaPollers = startQuotaPollers(ctx, wired, stores, cfg.quotaPollOff)
         val logFile = statePaths.logsDir.resolve("daemon.log")
         // Derived from the CREDENTIAL, never from the declared string. The bypass is safe only
         // because splice holds nothing for this head, so it reads the artifact that IS that fact:
@@ -119,7 +120,7 @@ internal class ManagedHeadFactory(
         return ManagedHead(
             head = server,
             auth = wired.auth,
-            usage = UsageStoreSource(stores.usageStore, stores.quota),
+            usage = UsageStoreSource(stores.usageStore, stores.quota, quotaPollers),
             compact = CompactStatsSource(stores.compactStats),
             logs = LogFileSource(logFile, "[$key]"),
             warnPct = cfg.usageWarnPct,
@@ -199,8 +200,8 @@ internal class ManagedHeadFactory(
         wired: Wired,
         stores: HeadStores,
         off: Boolean,
-    ) {
-        if (off) return
+    ): List<QuotaPoller> {
+        if (off) return emptyList()
         // V4-110: the poll cadence is the quotaPollIntervalMs knob (floored in ConfigCoercion),
         // read per head from the merged+normalized map — always seeded, so `as Long` is safe.
         val intervalMs = ctx.cfg.asMap()[Knob.QUOTA_POLL_INTERVAL_MS.key] as Long
@@ -212,10 +213,11 @@ internal class ManagedHeadFactory(
             quotaProbes.forHead(authKind, baseUrl, auth, usageFields(auth), clientUserAgent)
         }
         if (wired.accounts.isEmpty()) {
-            probeFor(wired.auth)?.let { probe -> startQuotaPoller(ctx.key, probe, stores.quota, intervalMs) }
-            return
+            return listOfNotNull(
+                probeFor(wired.auth)?.let { probe -> startQuotaPoller(ctx.key, probe, stores.quota, intervalMs) },
+            )
         }
-        wired.accounts.forEach { account ->
+        return wired.accounts.mapNotNull { account ->
             probeFor(account.auth)?.let { probe ->
                 startQuotaPoller(ctx.key, probe, stores.accountQuotas.getValue(account.label), intervalMs)
             }

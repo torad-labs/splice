@@ -1,5 +1,6 @@
 import { localZonedInstantText } from '../../lib/heads';
 import type { PlanWindow } from '../../lib/usage';
+import { Q } from '../../lib/words-quota';
 import { D } from './copy';
 
 const NAME = { '5h': '5 hours', '7d': 'Week' } as const;
@@ -20,6 +21,7 @@ export function WindowBars({ windows, now }: { windows: readonly PlanWindow[]; n
               </>
             )}
           </div>
+          <small>{Q.observed(window.observedAt === null ? null : localZonedInstantText(window.observedAt))}</small>
           <div className={`track${window.pct >= 100 && !window.stale ? ' full' : ''}`} role="img" aria-label={`${NAME[window.window]} ${Math.round(window.pct)}% used`}>
             <i style={{ width: `${window.stale ? 0 : Math.min(100, window.pct)}%` }} />
           </div>

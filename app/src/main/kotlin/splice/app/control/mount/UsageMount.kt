@@ -59,6 +59,9 @@ internal class UsageMount(
 
     fun register(route: Route) {
         route.get("/api/usage") { guard.guarded(call) { ControlReplies.respond(call, usagePayloads.usageJson()) } }
+        route.post("/api/usage/probe") {
+            guard.guarded(call) { ControlReplies.respond(call, usagePayloads.probeNowJson()) }
+        }
         route.get("/api/perf") {
             guard.guarded(call) {
                 ControlReplies.respond(call, perfPayloads.perfJson(ControlReplies.tail(call, DEFAULT_PERF_TAIL)))

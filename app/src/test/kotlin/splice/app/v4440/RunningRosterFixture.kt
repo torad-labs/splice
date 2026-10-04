@@ -150,7 +150,7 @@ internal class RunningRosterFixture(tmp: Path, parent: CoroutineScope) {
         LaunchSpecFactory(topology, signIn, mgmt, inputs),
         scope,
         {},
-        startQuotaPoller = { _, _, _, _ -> },
+        startQuotaPoller = { _, _, _, _ -> null },
     )
 
     suspend fun refresh() {

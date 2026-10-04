@@ -2,6 +2,9 @@
 // the dashboard reads the same on-disk truth the head writes (a DOWN head still shows state).
 package splice.app.sources
 
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.perf.PerfSessionTail
 import splice.core.perf.PerfSessionTotal
@@ -26,13 +29,19 @@ import splice.usage.perf.HeadPerfSkipSource
 import splice.usage.perf.HeadPerfSource
 import splice.usage.perf.HeadSessionPerfSource
 import splice.usage.quota.HeadUsageSource
+import splice.usage.quota.QuotaPoller
 import splice.usage.quota.RateLimitView
 import splice.usage.quota.UsageView
 
 public class UsageStoreSource(
     private val store: UsageStore,
     private val quota: QuotaTracker? = null,
+    private val pollers: List<QuotaPoller> = emptyList(),
 ) : HeadUsageSource {
+    override suspend fun probeNow() {
+        coroutineScope { pollers.map { poller -> async { poller.probeNow() } }.awaitAll() }
+    }
+
     override fun snapshot(): UsageView {
         val state = store.readState()
         val ratelimit = store.readRateLimit()?.let {

@@ -58,6 +58,19 @@ describe('a plan', () => {
     expect(held.reset).toBe(new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(reset * 1000)));
   });
 
+  test('each quota window keeps its own observation rather than the page-open time', () => {
+    const reading: UsagePayload = { window_hours: 5, warn_pct: 80, warn_tokens_5h: 0, heads: [{ key: 'a', label: 'A', usage: {
+      output_tokens_5h: 0, entries: 0, ratelimit: null, warn: { pct: 0, level: 'ok', source: 'none', reset: null },
+      quota: {
+        five_hour: { used_pct: 25, resets_at: NOW / 1000 + 3600, observed_at: NOW / 1000 - 60 },
+        seven_day: { used_pct: 50, resets_at: NOW / 1000 + 86400, observed_at: NOW / 1000 - 120 },
+      },
+    } }] };
+    const held = planUsage(head('a', []), 'A', 'gpt', reading, 24, NOW);
+    expect(held.observations?.map(window => window.observedAt)).toEqual([NOW / 1000 - 60, NOW / 1000 - 120]);
+    expect(planUsage(head('b', []), 'B', 'gpt', reading, 24, NOW).observations).toEqual([]);
+  });
+
   test('a command without turns is not repeated in the no-turns sentence when its limit needs a row', () => {
     const held = plan({ key: 'grok', turns: 0, pct: 79 });
     const split = splitIdle([held, plan({ key: 'busy', turns: 1 })]);

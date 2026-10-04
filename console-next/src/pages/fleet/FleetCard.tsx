@@ -3,6 +3,8 @@ import { CSS } from '@dnd-kit/utilities';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router';
 import type { FleetCard as Facts, FleetLine } from '../../lib/fleet';
+import { localZonedInstantText } from '../../lib/heads';
+import { Q } from '../../lib/words-quota';
 import { State, Window } from '../../ui';
 
 /** One measured window: a command-colour bar, or a red hatch for a held refusal. */
@@ -14,6 +16,7 @@ function Gauge({ line }: { line: Extract<FleetLine, { kind: 'gauge' }> }) {
         {line.full ? <b>{line.pct}%</b> : null}
         {line.note === '' ? null : <small>{line.note}</small>}
       </div>
+      <small>{Q.observed(line.observedAt == null ? null : localZonedInstantText(line.observedAt))}</small>
       <div className={`track${line.full ? ' full' : ''}`} role="img" aria-label={`${line.name} ${line.pct}% used`}>
         <i style={{ width: `${Math.min(100, line.pct)}%` }} />
       </div>

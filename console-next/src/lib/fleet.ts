@@ -23,7 +23,7 @@ export type FleetFix = 'switch' | 'sign-in' | 'start' | 'restart' | 'copy-start'
 
 export type FleetLine =
   /** The tightest plan window, drawn as a bar. `full` is a window that has refused turns. */
-  | { kind: 'gauge'; name: string; pct: number; note: string; full: boolean }
+  | { kind: 'gauge'; name: string; pct: number; note: string; full: boolean; observedAt?: number | null }
   /** A head with no window to draw says its one sentence instead. */
   | { kind: 'note'; text: string };
 
@@ -111,6 +111,7 @@ function tightest(head: HeadStatus, usage: UsagePayload | null, now: number): Ex
     pct,
     note: `${pct}%${best.resetsAt === null ? '' : ` · resets ${localZonedInstantText(best.resetsAt)}`}`,
     full: false,
+    ...(best.observedAt === null ? {} : { observedAt: best.observedAt }),
   };
 }
 

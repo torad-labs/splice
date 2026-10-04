@@ -9,6 +9,9 @@ import splice.core.usage.QuotaView
 public fun interface HeadUsageSource {
     /** One coherent filesystem read per control/statusline request. */
     public fun snapshot(): UsageView
+
+    /** Refresh provider quota without serving a turn. Sources without a quota probe keep their file truth. */
+    public suspend fun probeNow() { }
 }
 
 /** The persisted `x-ratelimit-*` read. [observedAt] is the round that sent them, in epoch SECONDS

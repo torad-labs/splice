@@ -30,10 +30,15 @@ import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.turn.WatchdogBudget
 import splice.core.usage.QuotaHeaderRead
+import splice.core.usage.QuotaSnapshot
+import splice.core.usage.QuotaWindow
+import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.head.usage.QuotaTracker
 import splice.oauth.OAuthAccountFiles
+import splice.usage.quota.QuotaPoller
 import splice.usage.quota.QuotaProbe
+import splice.usage.quota.QuotaSnapshotSink
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 
@@ -102,7 +107,14 @@ class ManagedHeadFactoryQuotaPollTest {
     fun `quota poll off does not start a poller`(@TempDir tmp: Path) = runTest {
         val statePaths = StatePaths(baseOverride = tmp.resolve("off"))
         var starts = 0
-        val factory = factory(statePaths, backgroundScope, StartQuotaPoller { _, _, _, _ -> starts += 1 })
+        val factory = factory(
+            statePaths,
+            backgroundScope,
+            StartQuotaPoller { _, _, _, _ ->
+                starts += 1
+                null
+            },
+        )
 
         factory.assembleHead(build(statePaths, quotaPoll = "off"), controlPort = 3098)
 
@@ -113,7 +125,14 @@ class ManagedHeadFactoryQuotaPollTest {
     fun `quota poll auto starts one poller for a subscription head`(@TempDir tmp: Path) = runTest {
         val statePaths = StatePaths(baseOverride = tmp.resolve("auto"))
         var starts = 0
-        val factory = factory(statePaths, backgroundScope, StartQuotaPoller { _, _, _, _ -> starts += 1 })
+        val factory = factory(
+            statePaths,
+            backgroundScope,
+            StartQuotaPoller { _, _, _, _ ->
+                starts += 1
+                null
+            },
+        )
 
         factory.assembleHead(build(statePaths, quotaPoll = "auto"), controlPort = 3098)
 
@@ -127,7 +146,10 @@ class ManagedHeadFactoryQuotaPollTest {
         val factory = factory(
             statePaths,
             backgroundScope,
-            StartQuotaPoller { _, _, _, intervalMs -> captured += intervalMs },
+            StartQuotaPoller { _, _, _, intervalMs ->
+                captured += intervalMs
+                null
+            },
         )
 
         factory.assembleHead(build(statePaths, quotaPoll = "auto"), controlPort = 3098)
@@ -147,11 +169,59 @@ class ManagedHeadFactoryQuotaPollTest {
             buildJsonObject {},
         )
         var starts = 0
-        val factory = factory(statePaths, backgroundScope, StartQuotaPoller { _, _, _, _ -> starts += 1 })
+        val factory = factory(
+            statePaths,
+            backgroundScope,
+            StartQuotaPoller { _, _, _, _ ->
+                starts += 1
+                null
+            },
+        )
 
         factory.assembleHead(ctx, controlPort = 3098)
 
         assertEquals(2, starts)
+    }
+
+    @Test
+    fun `opening usage probes every account through its retained poller`(@TempDir tmp: Path) = runTest {
+        val paths = StatePaths(baseOverride = tmp.resolve("probe-now"))
+        val ctx = build(paths, quotaPoll = "auto")
+        OAuthAccountFiles().writeLabeled(
+            AuthKind.ChatgptOAuth,
+            Path.of(checkNotNull(ctx.providerCfg.auth.file)),
+            "backup",
+            buildJsonObject {},
+        )
+        var calls = 0
+        val trackers = mutableListOf<QuotaTracker>()
+        val managed = factory(
+            paths,
+            backgroundScope,
+            StartQuotaPoller { head, _, tracker, intervalMs ->
+                trackers += tracker
+                QuotaPoller(
+                    backgroundScope,
+                    head,
+                    QuotaProbe {
+                        calls++
+                        QuotaSnapshot(
+                            fiveHour = QuotaWindow(25.0, null, 18_000),
+                            updatedAt = 1_788_000_000_000L,
+                        )
+                    },
+                    QuotaSnapshotSink(tracker::record),
+                    { },
+                    intervalMs = intervalMs,
+                    elapsedClock = ElapsedClock { 0L },
+                )
+            },
+        ).assembleHead(ctx, controlPort = 3098)
+        managed.usage.probeNow()
+        assertEquals(2, calls, "both primary and added account must refresh without a model turn")
+        managed.usage.probeNow()
+        assertEquals(2, calls, "every returned poller keeps its own admission floor")
+        assertTrue(trackers.all { it.snapshot()?.updatedAt == 1_788_000_000_000L })
     }
 
     @Test
@@ -161,7 +231,10 @@ class ManagedHeadFactoryQuotaPollTest {
         val factory = factory(
             statePaths,
             backgroundScope,
-            StartQuotaPoller { _, _, tracker, _ -> captured += tracker },
+            StartQuotaPoller { _, _, tracker, _ ->
+                captured += tracker
+                null
+            },
         )
         factory.assembleHead(build(statePaths, quotaPoll = "auto"), controlPort = 3098)
         assertCodexRound(captured.single())
@@ -182,7 +255,10 @@ class ManagedHeadFactoryQuotaPollTest {
         val factory = factory(
             statePaths,
             backgroundScope,
-            StartQuotaPoller { _, _, tracker, _ -> captured += tracker },
+            StartQuotaPoller { _, _, tracker, _ ->
+                captured += tracker
+                null
+            },
         )
         factory.assembleHead(ctx, controlPort = 3098)
         assertEquals(2, captured.size)
@@ -208,7 +284,10 @@ class ManagedHeadFactoryQuotaPollTest {
         factory(
             statePaths,
             backgroundScope,
-            StartQuotaPoller { _, _, _, _ -> starts += 1 },
+            StartQuotaPoller { _, _, _, _ ->
+                starts += 1
+                null
+            },
             OnPrimaryQuota { captured += it },
         ).assembleHead(ctx, controlPort = 3100)
         assertEquals(0, starts)
@@ -224,7 +303,10 @@ class ManagedHeadFactoryQuotaPollTest {
         factory(
             chatgptPaths,
             backgroundScope,
-            StartQuotaPoller { _, probe, _, _ -> chatgptProbes += probe },
+            StartQuotaPoller { _, probe, _, _ ->
+                chatgptProbes += probe
+                null
+            },
         ).assembleHead(build(chatgptPaths, quotaPoll = "auto"), controlPort = 3098)
         // The probe classes are internal to features/usage (LAYOUT-01); the class NAME still pins that
         // the head's own auth kind reached the dispatch, which a bare non-null would not.
@@ -235,7 +317,10 @@ class ManagedHeadFactoryQuotaPollTest {
         factory(
             musePaths,
             backgroundScope,
-            StartQuotaPoller { _, probe, _, _ -> museProbes += probe },
+            StartQuotaPoller { _, probe, _, _ ->
+                museProbes += probe
+                null
+            },
         ).assembleHead(museBuild(musePaths), controlPort = 3106)
         assertEquals("MuseMintProbe", museProbes.single()::class.simpleName)
     }

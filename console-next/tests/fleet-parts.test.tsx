@@ -48,6 +48,13 @@ describe('a fleet card', () => {
     expect(html).toContain('Switch account');
     expect(html).toContain('Out of quota until Oct 5, 2:13 PM');
   });
+  test('the quota card shows the retained observation rather than the page-open time', () => {
+    const observed = 1_800_000_000;
+    const html = render(card({ line: {
+      kind: 'gauge', name: '5 hours', pct: 25, note: '', full: false, observedAt: observed,
+    } }));
+    expect(html).toContain('Observed ' + localZonedInstantText(observed));
+  });
   test('a healthy head with nothing to draw has no glass block at all', () => {
     const html = render(card({ line: null, none: 'Pays per token; no window' }));
     expect(html).not.toContain('glass');

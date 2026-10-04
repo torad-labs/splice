@@ -1,4 +1,5 @@
 import type { AccountWindow } from '../../types/accounts';
+import { Q } from '../../lib/words-quota';
 import { A } from './copy';
 
 export function limitName(window: AccountWindow | null, short: boolean, kind?: string): string {
@@ -26,6 +27,7 @@ function Limit({ window, short, now, kind }: { window: AccountWindow | null; sho
         <i style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
       </div>}
       <p className="hint">{reset === null ? `${A.resets}: ${A.unreported}` : `${elapsed ? A.reset : A.resets} ${A.instant(reset)}`}{old && !elapsed ? ` · ${A.readingOld}` : ''}</p>
+      {window === null ? null : <p className="hint">{Q.observed(window.observed_at_epoch_seconds == null ? null : A.instant(window.observed_at_epoch_seconds))}</p>}
     </div>
   );
 }

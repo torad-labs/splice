@@ -2,6 +2,9 @@
 // per-head usage/warn projection, split out as the sole importer of splice.core.usage in the file.
 package splice.usage.quota
 
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -41,6 +44,12 @@ public class UsagePayloads(
     private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
     private val accountJson = AccountPoolJson()
+
+    /** Probe every wired head, sharing each account's poller admission, then read the resulting file truth. */
+    public suspend fun probeNowJson(): String {
+        coroutineScope { heads.all().map { head -> async { head.usage.probeNow() } }.awaitAll() }
+        return usageJson()
+    }
 
     // PORT-OF server/src/control/api.mjs usage payload @ pre-public-port-baseline: top-level window/warn knobs +
     // per-head {key,label,usage:{output_tokens_5h,entries,ratelimit,warn}} (webui UsagePayload).

@@ -1,4 +1,8 @@
 source	sha256	disposition	destination	reason
+console-next/src/lib/words-quota.ts	ef8de5c194500883b48ac8ad85e7c3e9a3aba3c7fd28a3223925169fb2b85313	created		V4-444: Shared probe and observation words
+console-next/e2e/quota-open.spec.ts	f2b51af8758903a26c9b09706ad1fb9139443be008e52b0c7565ff06fd70f6af	created		V4-444: Page-open browser regression
+features/usage/src/test/kotlin/splice/usage/quota/QuotaProbeNowRouteTest.kt	ed00144f5748f9aed80fceb96e31adf6d833e095af259e2215a9d655bc71a956	created		V4-444: No-turn probe and floor route regression
+app/src/test/kotlin/splice/app/control/QuotaOpenControlTest.kt	0ac08ae04bee58a939d68f230fa7df1b65d3d5ff941d4a7d9e6ec0af2b4e4c3d	created		V4-444: Real guarded route and adapter regression
 app/src/main/kotlin/splice/app/auth/claude/ClaudeAddAccountArm.kt	1673b2ebe5f8d6067bed7b51b80fcec72c2eb253b0909c11a67b34c6b135d374	created		The client arm of add an account a decorator that sends only a Claude head refusal by kind to its own sign-in and leaves every other head answer untouched
 app/src/test/kotlin/splice/app/auth/claude/ClaudeAddAccountArmTest.kt	8c54910b1f3971ebe6aaecaa19e221082179761eabdbaa6e3080918abfefa820	created		A Claude head add reaches its own sign-in every other head keeps the generic port answer an unwired daemon keeps the refusal and each id is polled by the arm that minted it
 features/turns/src/main/kotlin/splice/head/wire/NativeFields.kt	26361d357a77f7f82a2e136d1f4910667a63811107b66ce9340bca978a72cb53	created		Scoped source fields and bounded opaque merges

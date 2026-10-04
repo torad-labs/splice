@@ -3,7 +3,8 @@
 import { burn, costOf, hitRate, hourly, sum, within } from './economics';
 import type { Totals } from './economics';
 import { ABSENT, fmtShare, fmtTokens, fmtUsd } from './format';
-import { nearestWindow, rateLimitAge } from './usage';
+import { nearestWindow, planWindows, rateLimitAge } from './usage';
+import type { PlanWindow } from './usage';
 import { U, spanWords } from './words-usage';
 import type { ModelColour } from './model';
 import type { HeadEconomics } from '../types/economics';
@@ -39,6 +40,8 @@ export interface PlanUsage {
   limitWindow: string | null;
   /** The age of any retained rate-limit headers, not a claim about a current limit. */
   reading: string | null;
+  /** Each quota window's retained observation, independently of page-open and probe times. */
+  observations?: readonly PlanWindow[];
   pace: string | null;
   /** Null while request counts are pending or unavailable. */
   turns: number | null;
@@ -69,6 +72,7 @@ export function planUsage(head: HeadEconomics, label: string, colour: ModelColou
     reset: window?.resetsAt == null ? null : localZonedInstantText(window.resetsAt),
     limitWindow: window?.window ?? null,
     reading: age === null ? null : U.rateLimitReading(age),
+    observations: planWindows(usage?.heads.find(row => row.key === head.key)?.usage ?? null, now),
     pace: window === null ? null : paceText(burn(head, now).hoursToExhaustion),
     turns: totals.turns,
     inTokens: totals.inTokens,

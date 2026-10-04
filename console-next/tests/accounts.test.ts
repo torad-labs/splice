@@ -331,8 +331,8 @@ describe('the accounts wire becomes the page model', () => {
   test('each reported slot becomes a window at the length the provider reported', () => {
     const [row] = accountsFromWire({ accounts: [wireRow({ seven_day_window_seconds: DAY_30 })] }).accounts;
     expect(row?.windows).toEqual([
-      { seconds: HOUR_5, used_percent: 42, reset_epoch_seconds: 1_800_003_600, current: true },
-      { seconds: DAY_30, used_percent: 7, reset_epoch_seconds: 1_800_086_400, current: true },
+      { seconds: HOUR_5, used_percent: 42, reset_epoch_seconds: 1_800_003_600, current: true, observed_at_epoch_seconds: null },
+      { seconds: DAY_30, used_percent: 7, reset_epoch_seconds: 1_800_086_400, current: true, observed_at_epoch_seconds: null },
     ]);
   });
 
@@ -366,8 +366,10 @@ describe('the reading time', () => {
   test('rides from the wire to the row, and a daemon that sends none leaves it null', () => {
     const [dated] = accountsFromWire({ accounts: [wireRow({ observed_at_epoch_seconds: 1_800_000_000 })] }).accounts;
     expect(dated?.observed_at_epoch_seconds).toBe(1_800_000_000);
+    expect(dated?.windows.every(window => window.observed_at_epoch_seconds === 1_800_000_000)).toBe(true);
     const [undated] = accountsFromWire({ accounts: [wireRow()] }).accounts;
     expect(undated?.observed_at_epoch_seconds).toBeNull();
+    expect(undated?.windows.every(window => window.observed_at_epoch_seconds === null)).toBe(true);
   });
 });
 

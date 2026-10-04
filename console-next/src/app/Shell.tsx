@@ -1,5 +1,7 @@
 import { NavLink, Outlet, useLocation } from 'react-router';
-import { useStatus } from '../api/queries';
+import { useQuotaOnOpen, useStatus } from '../api/queries';
+import { failureText } from '../api/client';
+import { Q } from '../lib/words-quota';
 import { setTheme, useTheme } from '../lib/theme';
 import { C, NAV } from './copy';
 import { StaleBanner, useStalePage } from './StalePage';
@@ -10,6 +12,7 @@ const INSIDE_SESSIONS = /^\/projects\//;
 export function Shell() {
   const { pathname } = useLocation();
   const status = useStatus();
+  const quota = useQuotaOnOpen(pathname);
   const theme = useTheme();
   const checking = status.isPending || (status.isFetching && status.data === undefined);
   const answering = status.isSuccess;
@@ -45,6 +48,7 @@ export function Shell() {
       <main className="wall">
         <div className="wrap">
           {stale ? <StaleBanner /> : null}
+          {quota.isFetching ? <p className="hint" role="status">{Q.checking}</p> : quota.isError ? <p className="hint" role="alert">{Q.failed(failureText(quota.error))}</p> : null}
           <Outlet />
         </div>
       </main>

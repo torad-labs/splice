@@ -14,12 +14,15 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpStatusCode
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -31,6 +34,7 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.auth.Credentials
 import splice.core.usage.QuotaSnapshot
+import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
 import splice.upstream.Ticker
 import java.util.concurrent.atomic.AtomicInteger
@@ -59,6 +63,7 @@ class QuotaPollerTest {
             log = logs::add,
             intervalMs = 1_000,
             clock = WallClock { 0L },
+            elapsedClock = ElapsedClock { testScheduler.currentTime },
         )
         poller.start()
         advanceTimeBy(4_500)
@@ -98,6 +103,7 @@ class QuotaPollerTest {
                 true
             },
             clock = WallClock { 0L },
+            elapsedClock = ElapsedClock { testScheduler.currentTime },
         )
         poller.start()
         advanceTimeBy(3_500)
@@ -130,6 +136,7 @@ class QuotaPollerTest {
             log = logs::add,
             intervalMs = 1_000,
             clock = WallClock { 0L },
+            elapsedClock = ElapsedClock { testScheduler.currentTime },
         )
         poller.start()
         advanceTimeBy(2_000)
@@ -158,6 +165,7 @@ class QuotaPollerTest {
             log = { },
             intervalMs = QUOTA_POLL_INTERVAL_MS,
             clock = WallClock { 0L },
+            elapsedClock = ElapsedClock { testScheduler.currentTime },
         )
         poller.start()
         // stop() in finally: a failed assertion that skipped it left the loop running, and runTest's
@@ -192,6 +200,7 @@ class QuotaPollerTest {
             log = { },
             intervalMs = QUOTA_POLL_INTERVAL_MS,
             clock = WallClock { 0L },
+            elapsedClock = ElapsedClock { testScheduler.currentTime },
         )
         poller.start()
         try {
@@ -216,14 +225,132 @@ class QuotaPollerTest {
         val logs = mutableListOf<String>()
         val recorded = mutableListOf<QuotaSnapshot>()
         val probe = CodexQuotaProbe(HttpClient(engine), "https://chatgpt.com/backend-api/codex", BearerAuth(), { 0L })
-        val poller = QuotaPoller(this, "codex", probe, QuotaSnapshotSink(recorded::add), logs::add, clock = { 0L })
+        var elapsed = 0L
+        val poller = QuotaPoller(
+            this,
+            "codex",
+            probe,
+            QuotaSnapshotSink(recorded::add),
+            logs::add,
+            clock = { 0L },
+            elapsedClock = ElapsedClock { elapsed },
+        )
 
-        repeat(4) { poller.pollOnce() }
+        repeat(4) {
+            poller.pollOnce()
+            elapsed += QUOTA_POLL_INTERVAL_MS
+        }
 
         assertEquals(1, recorded.size, "the bars keep the last snapshot: $recorded")
         val failed = logs.filter { "usage probe failed" in it }
         assertEquals(1, failed.size, "one line for three refused polls: $logs")
         assertTrue("HTTP 401" in failed.single(), failed.single())
+    }
+
+    @Test
+    fun `overlapping opens share a slow probe even after its floor passes`() = runTest {
+        val release = CompletableDeferred<Unit>()
+        var calls = 0
+        val observation = QuotaSnapshot(updatedAt = 1_788_000_000_000L)
+        val poller = QuotaPoller(
+            backgroundScope,
+            "synthetic",
+            QuotaProbe {
+                calls++
+                release.await()
+                observation
+            },
+            QuotaSnapshotSink { },
+            { },
+            elapsedClock = ElapsedClock { testScheduler.currentTime },
+        )
+        val first = async { poller.probeNow() }
+        runCurrent()
+        val second = async { poller.probeNow() }
+        runCurrent()
+        advanceTimeBy(61_000)
+        release.complete(Unit)
+        assertEquals(observation, first.await())
+        assertEquals(observation, second.await())
+        assertEquals(1, calls, "a waiting page shares the active attempt even if it ran past the floor")
+        assertEquals(observation, poller.probeNow(), "completion starts the reuse floor")
+        assertEquals(1, calls)
+    }
+
+    @Test
+    fun `a scheduled waiter shares an unreachable page-open attempt`() = runTest {
+        val release = CompletableDeferred<Unit>()
+        var calls = 0
+        val poller = QuotaPoller(
+            backgroundScope,
+            "synthetic",
+            QuotaProbe {
+                calls++
+                release.await()
+                throw java.net.ConnectException("synthetic unreachable")
+            },
+            QuotaSnapshotSink { },
+            { },
+            elapsedClock = ElapsedClock { testScheduler.currentTime },
+        )
+        val page = async { poller.probeNow() }
+        runCurrent()
+        val tick = async { poller.pollOnce() }
+        runCurrent()
+        release.complete(Unit)
+        assertNull(page.await())
+        assertEquals(false, tick.await())
+        assertEquals(1, calls, "a scheduled waiter shares the failed attempt, not just successful answers")
+        assertEquals(false, poller.pollOnce(), "a later boot retry may still run early")
+        assertEquals(2, calls)
+    }
+
+    @Test
+    fun `an on-open HTTP refusal preserves the observation until its cooldown ends`() = runTest {
+        var calls = 0
+        val observation = QuotaSnapshot(updatedAt = 1_788_000_000_000L)
+        val recorded = mutableListOf<QuotaSnapshot>()
+        val poller = QuotaPoller(
+            backgroundScope,
+            "synthetic",
+            QuotaProbe { if (++calls == 1) observation else throw QuotaEndpointRefused(429) },
+            QuotaSnapshotSink(recorded::add),
+            { },
+            elapsedClock = ElapsedClock { testScheduler.currentTime },
+        )
+        assertEquals(observation, poller.probeNow())
+        advanceTimeBy(60_000)
+        assertEquals(observation, poller.probeNow())
+        advanceTimeBy(60_000)
+        assertEquals(observation, poller.probeNow())
+        assertEquals(2, calls, "page-open cannot retry a refusal inside the full poll interval")
+        assertTrue(poller.pollOnce(), "the scheduled path shares the same refusal cooldown")
+        assertEquals(2, calls)
+        assertEquals(listOf(observation), recorded, "a refusal must never write or retimestamp a reading")
+        advanceTimeBy(QUOTA_POLL_INTERVAL_MS)
+        poller.probeNow()
+        assertEquals(3, calls, "the cooldown expires")
+    }
+
+    @Test
+    fun `a probe with no new observation keeps the last successful snapshot`() = runTest {
+        var calls = 0
+        val observation = QuotaSnapshot(updatedAt = 1_788_000_000_000L)
+        val recorded = mutableListOf<QuotaSnapshot>()
+        val poller = QuotaPoller(
+            backgroundScope,
+            "synthetic",
+            QuotaProbe { if (++calls == 1) observation else null },
+            QuotaSnapshotSink(recorded::add),
+            { },
+            elapsedClock = ElapsedClock { testScheduler.currentTime },
+        )
+        assertEquals(observation, poller.probeNow())
+        advanceTimeBy(60_000)
+        assertEquals(observation, poller.probeNow())
+        assertEquals(listOf(observation), recorded, "an absent provider observation cannot clear or redate a reading")
+        assertEquals(observation, poller.probeNow())
+        assertEquals(2, calls)
     }
 
     private class BearerAuth : AuthProvider {

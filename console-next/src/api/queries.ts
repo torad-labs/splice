@@ -43,6 +43,26 @@ export const read = <T>(key: readonly string[], path: string, extra: Partial<Use
 export const useStatus = () => useQuery(read<ControlStatusPayload>(keys.status, '/api/status', { refetchInterval: false, staleTime: 60_000 }));
 export const useHeads = () => useQuery(read<HeadsPayload>(keys.heads, '/api/heads'));
 export const useUsage = () => useQuery(read<UsagePayload>(keys.usage, '/api/usage'));
+/** Every opening of a quota surface asks for a provider read; the daemon owns coalescing and its floor. */
+export function useQuotaOnOpen(pathname: string) {
+  const client = useQueryClient();
+  return useQuery({
+    queryKey: ['quota-open', pathname],
+    enabled: /^\/(accounts|models|usage)(\/|$)/.test(pathname),
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: false,
+    retry: false,
+    queryFn: async () => {
+      const answer = await request<UsagePayload>('/api/usage/probe', { method: 'POST' });
+      await client.cancelQueries({ queryKey: keys.usage });
+      client.setQueryData([...keys.usage, '/api/usage'], answer);
+      await awaitRefetch(client, [keys.accounts, keys.heads]);
+      return answer;
+    },
+  });
+}
+
 export const useAuth = () => useQuery(read<AuthPayload>(keys.auth, '/api/auth'));
 /** The accounts, each with its windows labelled by the length the provider reported (accountsFromWire). */
 export const useAccounts = () => useQuery({ ...read<AccountsWire>(keys.accounts, '/api/accounts'), select: accountsFromWire });

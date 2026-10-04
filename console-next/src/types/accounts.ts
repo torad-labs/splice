@@ -42,6 +42,8 @@ export interface AccountWindow {
    *  reading with its age; the nearest limit skips it. Absent on a window that did not come from
    *  /api/accounts (a head's own report, a fixture): it carries no claim, so it counts. */
   current?: boolean;
+  /** The retained account observation, in epoch seconds; never the time the page opened. */
+  observed_at_epoch_seconds?: number | null;
   /** Claude only: the model this window is scoped to, from the statusline `rate_limits` payload
    *  (`seven_day_opus`, `seven_day_sonnet`, `model_scoped`). Absent on every probed kind, whose
    *  snapshot holds exactly two windows filed by length (Quota.kt:17-34). */

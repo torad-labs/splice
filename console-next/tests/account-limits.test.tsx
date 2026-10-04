@@ -68,6 +68,15 @@ describe('account limit facts', () => {
     expect(html).not.toContain('Signed in');
   });
 
+  test('each reported window keeps the provider observation time, not the page-open time', () => {
+    const observed = (now - 60_000) / 1000;
+    const html = renderToStaticMarkup(<AccountLimits windows={[{
+      seconds: 18_000, used_percent: 25, reset_epoch_seconds: reset, observed_at_epoch_seconds: observed,
+    }]} now={now} />);
+    const at = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(observed * 1000));
+    expect(html).toContain('Observed ' + at);
+  });
+
   test('unreported windows never become zero-percent accounts', () => {
     const html = renderToStaticMarkup(<AccountLimits windows={[]} now={now} />);
     expect(html).toContain('5 hours');

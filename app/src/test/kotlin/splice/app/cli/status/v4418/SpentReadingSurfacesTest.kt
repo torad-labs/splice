@@ -106,7 +106,7 @@ class SpentReadingSurfacesTest {
             ),
             probeScope = scope,
             log = log,
-            startQuotaPoller = StartQuotaPoller { _, _, _, _ -> },
+            startQuotaPoller = StartQuotaPoller { _, _, _, _ -> null },
             onPrimaryQuota = OnPrimaryQuota { primary(it) },
         )
         return factory.assembleHead(providerBuild(state), controlPort = 3098).also {

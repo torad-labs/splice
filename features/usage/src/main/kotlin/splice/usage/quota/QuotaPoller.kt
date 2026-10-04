@@ -13,10 +13,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import splice.core.usage.QuotaSnapshot
 import splice.core.util.Cancellables
+import splice.core.util.ElapsedClock
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
+import splice.core.util.MonoClock
 import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
 import splice.upstream.Ticker
@@ -38,6 +42,7 @@ public class QuotaPoller(
     private val intervalMs: Long = QUOTA_POLL_INTERVAL_MS,
     private val ticker: Ticker = ProcessTicker(),
     private val clock: WallClock = WallClock(System::currentTimeMillis),
+    private val elapsedClock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
 ) {
     private val failureLogged = AtomicBoolean(false)
     private val firstLogged = AtomicBoolean(false)
@@ -47,6 +52,27 @@ public class QuotaPoller(
 
     @Volatile private var stopped = false
     private val restartTimes = ArrayDeque<Long>()
+    private val admission = Mutex()
+
+    @Volatile private var completedAttempts = 0L
+
+    private var lastSnapshot: QuotaSnapshot? = null
+    private var lastProbeAtMs: Long? = null
+    private var lastAnswered = true
+    private val floorMs = minOf(intervalMs, QUOTA_PROBE_FLOOR_MS)
+    private var reuseMs = floorMs
+
+    /** Refresh without a turn. Concurrent opens share the active read, and reuse never changes observation time. */
+    public suspend fun probeNow(): QuotaSnapshot? {
+        val observedAttempt = completedAttempts
+        return admission.withLock {
+            if (observedAttempt == completedAttempts && !insideFloor()) attempt()
+            lastSnapshot
+        }
+    }
+
+    private fun insideFloor(): Boolean =
+        lastProbeAtMs?.let { elapsedClock() - it < reuseMs } == true
 
     public fun start(): Job {
         synchronized(lifecycle) {
@@ -122,8 +148,21 @@ public class QuotaPoller(
 
     /** True when the endpoint answered, an HTTP refusal included, so only an unreachable endpoint is retried
      *  early: a 429 asks for less traffic and a 401 does not heal in seconds. */
-    internal suspend fun pollOnce(): Boolean =
-        Cancellables.runCatchingBestEffort { probe.probe() }
+    internal suspend fun pollOnce(): Boolean {
+        val observedAttempt = completedAttempts
+        return admission.withLock {
+            // Unreachable endpoints retain boot retries. A tick waiting on an active attempt shares its
+            // result, including failures; answers and HTTP refusals also share the page-open floor.
+            when {
+                observedAttempt != completedAttempts -> lastAnswered
+                lastAnswered && insideFloor() -> lastAnswered
+                else -> attempt()
+            }
+        }
+    }
+
+    private suspend fun attempt(): Boolean {
+        val result = Cancellables.runCatchingBestEffort { probe.probe() }
             .onSuccess { snapshot -> snapshot?.let(::accept) }
             .onFailure { failure ->
                 if (failureLogged.compareAndSet(false, true)) {
@@ -136,10 +175,18 @@ public class QuotaPoller(
                     )
                 }
             }
-            .let { result -> result.isSuccess || result.exceptionOrNull() is QuotaEndpointRefused }
+        // The floor starts when the read completes, so waiters share even a slow provider answer.
+        lastProbeAtMs = elapsedClock()
+        val refused = result.exceptionOrNull() is QuotaEndpointRefused
+        lastAnswered = result.isSuccess || refused
+        reuseMs = if (refused) maxOf(intervalMs, floorMs) else floorMs
+        completedAttempts++
+        return lastAnswered
+    }
 
     private fun accept(snapshot: QuotaSnapshot) {
         sink.record(snapshot)
+        lastSnapshot = snapshot
         failureLogged.set(false)
         if (firstLogged.compareAndSet(false, true)) {
             val five = snapshot.fiveHour?.let { "5h ${it.usedPercent.toInt()}%" } ?: "5h n/a"
@@ -151,6 +198,9 @@ public class QuotaPoller(
 }
 
 internal const val QUOTA_POLL_INTERVAL_MS: Long = 5 * 60 * 1000L
+
+// why: navigation cannot issue more than one successful probe per minute; a configured shorter poll interval stays its floor.
+private const val QUOTA_PROBE_FLOOR_MS = 60_000L
 
 // why: a boot's network comes up within seconds of the daemon, so the first retry is 10 s.
 private const val QUOTA_RETRY_FIRST_MS = 10_000L

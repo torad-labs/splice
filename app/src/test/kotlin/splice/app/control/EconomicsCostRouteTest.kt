@@ -41,6 +41,7 @@ import splice.core.model.ModelRates
 import splice.core.model.TokenBuckets
 import splice.core.model.TokenCost
 import splice.core.model.TurnPrice
+import splice.core.turn.AbsorbedRounds
 import splice.core.util.WallClock
 import splice.diagnostics.logs.HeadLogSource
 import splice.head.compact.CompactView
@@ -59,6 +60,7 @@ private const val POLL_MS = 25L
 private const val HOUR_MS = 3_600_000L
 private const val FABLE = "claude-fable-5"
 private const val HAIKU = "claude-haiku-4-5"
+private val NONE = AbsorbedRounds()
 private val FABLE_RATES = ModelRates(input = 15.0, cacheRead = 1.5, output = 75.0, cacheWrite = 18.75)
 private val HAIKU_RATES = ModelRates(input = 1.0, cacheRead = 0.1, output = 5.0, cacheWrite = 1.25)
 
@@ -114,7 +116,8 @@ class EconomicsCostRouteTest {
         store.record(turn(HAIKU, inTokens = 100_000, cached = 60_000, cacheWrite = 10_000, out = 2_000))
         store.record(turn(FABLE, inTokens = 1_000, cached = 0, cacheWrite = 0, out = 100))
         store.record(turn("gpt-5.6-sol", inTokens = 1_000, cached = 0, cacheWrite = 0, out = 100))
-        store.record(TurnEconomics(FABLE, 0, 0, 0, 0, null, null, null, null, localStep = true))
+        val local = TurnEconomics(FABLE, 0, 0, 0, 0, null, null, null, null, localStep = true, absorbed = NONE)
+        store.record(local)
         return store
     }
 
@@ -162,7 +165,7 @@ class EconomicsCostRouteTest {
     }
 
     private fun turn(model: String, inTokens: Long, cached: Long, cacheWrite: Long, out: Long) =
-        TurnEconomics(model, inTokens, cached, cacheWrite, out, null, null, null, null)
+        TurnEconomics(model, inTokens, cached, cacheWrite, out, null, null, null, null, absorbed = NONE)
 
     private fun managedHead(name: String, store: EconomicsStore): ManagedHead = ManagedHead(
         head = object : Head {

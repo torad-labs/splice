@@ -156,11 +156,13 @@ public class TokenCost {
     public fun ratesFor(headRates: HeadRates?, modelId: String, providerEntry: ModelRates?): ModelRates? =
         headRates?.invoke(modelId) ?: providerEntry
 
-    /** USD for ONE request's [buckets] at [rates], at the card's long-context tier when that request's
-     *  input is over the tier's threshold. Pure arithmetic over numbers splice already measured: no
-     *  clock, no network, no vendor call. */
-    public fun of(buckets: TokenBuckets, rates: ModelRates): Double {
-        val card = rates.longContext?.takeIf { buckets.requestInput > it.overInputTokens }?.let { tier ->
+    /** USD for [requests] requests whose summed buckets are [buckets], at [rates]. Each is priced at the
+     *  long-context tier when their MEAN request input is over the tier's threshold, which is exact for
+     *  one request and for requests on one side of it. Pure arithmetic over numbers splice already
+     *  measured: no clock, no network, no vendor call. */
+    public fun of(buckets: TokenBuckets, rates: ModelRates, requests: Long = 1L): Double {
+        val count = requests.coerceAtLeast(1L)
+        val card = rates.longContext?.takeIf { buckets.requestInput > it.overInputTokens * count }?.let { tier ->
             ModelRates(
                 input = tier.input,
                 cacheRead = tier.cacheRead,

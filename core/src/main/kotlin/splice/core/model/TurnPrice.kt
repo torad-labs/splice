@@ -9,21 +9,12 @@
 // prices each turn with the SAME arithmetic the budget does; the two features share no edge but core.
 package splice.core.model
 
-import splice.core.perf.PerfKeys
-
 public class TurnPrice(private val catalog: ModelCatalog?, private val cost: TokenCost = TokenCost()) {
-    /** USD for one perf row's [counters] on [model], or null when the model has no rate card. */
+    /** USD for every request one perf row's [counters] billed on [model] ([TurnBill]), or null when the
+     *  model has no rate card. */
     public fun usd(model: String?, counters: Map<String, Long>): Double? {
         val rates = model?.let(::ratesFor) ?: return null
-        val cached = counters[PerfKeys.CACHED_TOKENS] ?: 0L
-        val written = counters[PerfKeys.CACHE_WRITE_TOKENS] ?: 0L
-        val buckets = TokenBuckets(
-            input = ((counters[PerfKeys.IN_TOKENS] ?: 0L) - cached - written).coerceAtLeast(0L),
-            cacheRead = cached,
-            cacheWrite = written,
-            output = counters[PerfKeys.OUT_TOKENS] ?: 0L,
-        )
-        return cost.of(buckets, rates)
+        return TurnBill.usd(counters, rates, cost)
     }
 
     private fun ratesFor(model: String): ModelRates? {

@@ -8,6 +8,7 @@ package splice.head.round
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import splice.core.turn.AbsorbedRounds
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
@@ -36,7 +37,13 @@ class RoundSpliceSalvageTest {
         // input/cached follow the cumulative law (terminal input wins; cached keeps last known),
         // output/reasoning accrue — the dying round's burn counts.
         assertEquals(
-            Usage(inputTokens = 120, outputTokens = 10, cachedTokens = 20, reasoningTokens = 3),
+            Usage(
+                inputTokens = 120,
+                outputTokens = 10,
+                cachedTokens = 20,
+                reasoningTokens = 3,
+                absorbed = AbsorbedRounds(rounds = 1, inputTokens = 100, cachedTokens = 20, outputTokens = 3),
+            ),
             out.salvagedUsage,
         )
     }
@@ -92,7 +99,13 @@ class RoundSpliceSalvageTest {
         )
         val out = rounds.withFailureSalvage(intercepted, acc) as TurnOutcome.ClientAbandoned
         assertEquals(
-            Usage(inputTokens = 80, outputTokens = 13, cachedTokens = 20, reasoningTokens = 3),
+            Usage(
+                inputTokens = 80,
+                outputTokens = 13,
+                cachedTokens = 20,
+                reasoningTokens = 3,
+                absorbed = AbsorbedRounds(rounds = 1, inputTokens = 50, outputTokens = 6),
+            ),
             out.salvagedUsage,
         )
     }

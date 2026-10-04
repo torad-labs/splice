@@ -36,8 +36,18 @@ public data class Usage(
      *  Code reads every assistant message's usage as the context total. Only the client payload reads
      *  it, and only while [inputTokens] is zero; splice's own accounting keeps the raw buckets above. */
     val clientContext: Usage? = null,
+    /** The rounds this usage billed before its final one, each a request of its own ([AbsorbedRounds]). */
+    val absorbed: AbsorbedRounds = AbsorbedRounds(),
 ) {
     public val unrecordedOutputTokens: Long get() = outputTokens - recordedOutputTokens
+
+    /** This usage's final round as an absorbed round, for the merge that supersedes it. A round that
+     *  measured no input of its own is none: its output stays in [outputTokens], billed with the final. */
+    public val finalRound: AbsorbedRounds get() = if (inputTokens > 0) {
+        AbsorbedRounds(1, inputTokens, cachedTokens, cacheWriteTokens, outputTokens - absorbed.outputTokens)
+    } else {
+        AbsorbedRounds()
+    }
 
     /** Sum two rounds' usage — reasoning-continuation folding accumulates across hidden rounds. */
     public operator fun plus(other: Usage): Usage = Usage(
@@ -50,6 +60,7 @@ public data class Usage(
         codeModeDiverged = codeModeDiverged || other.codeModeDiverged,
         recordedOutputTokens = recordedOutputTokens + other.recordedOutputTokens,
         clientContext = other.clientContext ?: clientContext,
+        absorbed = absorbed + other.absorbed,
     )
 }
 

@@ -294,6 +294,35 @@ class HeadEconomicsSeamTest {
         }
     }
 
+    /** The rounds a turn absorbed before its final one were each a request the vendor billed, and their
+     *  counters ride on the perf row beside the final round's. recordEconomics is the one place that
+     *  carries them into the rollup, so the hour meters every request's input, not only the last one's. */
+    @Test
+    fun `a turn's absorbed rounds reach the hourly rollup beside its final round`(@TempDir tmp: Path) = runTest {
+        val rig = TelemetryRig(tmp, "absorbed")
+        val drive = rig.drive()
+        try {
+            drive.perf.setCount(PerfKeys.IN_TOKENS, 60_000)
+            drive.perf.setCount(PerfKeys.CACHED_TOKENS, 50_000)
+            drive.perf.setCount(PerfKeys.OUT_TOKENS, 1_500)
+            drive.perf.setCount(PerfKeys.ABSORBED_ROUNDS, 2)
+            drive.perf.setCount(PerfKeys.ABSORBED_IN_TOKENS, 100_000)
+            drive.perf.setCount(PerfKeys.ABSORBED_CACHED_TOKENS, 90_000)
+            drive.perf.setCount(PerfKeys.ABSORBED_CACHE_WRITE_TOKENS, 4_000)
+            drive.perf.setCount(PerfKeys.ABSORBED_OUT_TOKENS, 700)
+
+            rig.telemetry.recordPerf(drive, "ok")
+
+            val bucket = rig.economics.read().single()
+            assertEquals(160_000, bucket.inTokens, "the final round's input and both absorbed rounds': $bucket")
+            assertEquals(140_000, bucket.cachedTokens, "the read bucket of every request")
+            assertEquals(4_000, bucket.cacheWriteTokens, "the write bucket an absorbed round paid")
+            assertEquals(1_500, bucket.outTokens, "output is already the turn's whole output")
+        } finally {
+            rig.close(drive)
+        }
+    }
+
     /** A turn that never reported usage leaves the counter ABSENT from the snapshot (pinned by
      *  TurnUsageStampTest), and the rollup must fold that as 0 rather than throwing or skipping the
      *  turn — the same reading the persisted old-shape row gets. A rollup that dropped such turns

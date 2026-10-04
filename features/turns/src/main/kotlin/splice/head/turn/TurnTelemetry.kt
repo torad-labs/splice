@@ -9,6 +9,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import splice.core.budget.HeadBudget
 import splice.core.budget.NoHeadBudget
+import splice.core.model.TurnBill
 import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSnapshot
 import splice.core.perf.TurnPerf
@@ -175,6 +176,7 @@ internal class TurnTelemetry(
                         toolsEager = snap.counters[PerfKeys.TOOLS_EAGER],
                         toolsDeferred = snap.counters[PerfKeys.TOOLS_DEFERRED],
                         rateLimited = rateLimited,
+                        absorbed = TurnBill.absorbed(snap.counters),
                     ),
                 )
             },

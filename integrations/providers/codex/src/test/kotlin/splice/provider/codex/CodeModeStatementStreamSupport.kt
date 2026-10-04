@@ -12,7 +12,10 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import splice.core.index.WireBlockIndex
+import splice.core.model.ModelRates
+import splice.core.model.TurnBill
 import splice.core.reasoning.ReasoningReplay
+import splice.core.turn.AbsorbedRounds
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.SpliceNotice
 import splice.core.turn.TurnOutcome
@@ -28,6 +31,9 @@ import splice.upstream.failure.CodeModeStartException
 import splice.upstream.sse.CustomToolSource
 import splice.upstream.sse.WireSink
 import java.io.IOException
+
+private val BILLING_RATES = ModelRates(input = 2.0, cacheRead = 0.2, output = 10.0, cacheWrite = 2.5)
+private const val BILLING_DELTA = 1e-12
 
 /** Gated protocol fixtures shared by the streaming lifetime and durability attacks. */
 abstract class CodeModeStatementStreamSupport : CodeModeBridgeTestSupport() {
@@ -47,11 +53,20 @@ abstract class CodeModeStatementStreamSupport : CodeModeBridgeTestSupport() {
         assertFalse(sourceState["complete"]?.jsonPrimitive?.content?.toBoolean() == true)
     }
 
+    /** The turn that finishes the script bills the source round, which finished after the client turn
+     *  that posted it, and the continuation, each once as a request of its own. */
     protected fun assertBilling(usage: Usage) {
         assertEquals(150L, usage.inputTokens)
         assertEquals(12L, usage.outputTokens)
         assertEquals(5L, usage.reasoningTokens)
         assertEquals(4L, usage.cacheWriteTokens)
+        assertEquals(AbsorbedRounds(rounds = 1, inputTokens = 100, outputTokens = 7), usage.absorbed)
+        val source = TurnBill.usd(TurnBill.counters(Usage(inputTokens = 100, outputTokens = 7)), BILLING_RATES)
+        val continuation = TurnBill.usd(
+            TurnBill.counters(Usage(inputTokens = 150, outputTokens = 5, cacheWriteTokens = 4)),
+            BILLING_RATES,
+        )
+        assertEquals(source + continuation, TurnBill.usd(TurnBill.counters(usage), BILLING_RATES), BILLING_DELTA)
     }
 
     protected fun history(calls: List<SeenTool>): String {

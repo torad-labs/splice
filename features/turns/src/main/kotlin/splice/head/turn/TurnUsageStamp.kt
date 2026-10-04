@@ -4,6 +4,7 @@ package splice.head.turn
 
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import splice.core.model.TurnBill
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
@@ -64,14 +65,11 @@ internal class TurnUsageStamp(
     }
 
     private fun setKnownCounters(drive: TurnDrive, usage: Usage) {
-        drive.perf.setCount(PerfKeys.IN_TOKENS, usage.inputTokens)
-        drive.perf.setCount(PerfKeys.OUT_TOKENS, usage.outputTokens)
-        drive.perf.setCount(PerfKeys.CACHED_TOKENS, usage.cachedTokens)
-        // V4-85: the cache-WRITE half of inputTokens, so SessionCost can price it at the declared
-        // cache_write rate instead of at the input rate. Set UNCONDITIONALLY, like the three above:
-        // a dialect whose wire reports no cache-creation bucket (ChatUsage) stamps a literal 0
+        // V4-85: the cache-WRITE half of inputTokens is set UNCONDITIONALLY, like input, output and the
+        // read: a dialect whose wire reports no cache-creation bucket (ChatUsage) stamps a literal 0
         // rather than an absent key, so a zero in the row means "this head wrote no cache" and an
-        // absent key means "this row predates the counter" — two different facts, both readable.
-        drive.perf.setCount(PerfKeys.CACHE_WRITE_TOKENS, usage.cacheWriteTokens)
+        // absent key means "this row predates the counter". The absorbed rounds' counters appear only
+        // when the turn absorbed one. TurnBill owns the mapping the pricers read back.
+        TurnBill.counters(usage).forEach { (key, value) -> drive.perf.setCount(key, value) }
     }
 }

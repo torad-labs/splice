@@ -10,6 +10,7 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.model.ModelRates
 import splice.core.model.TurnPrice
+import splice.core.turn.AbsorbedRounds
 import splice.core.util.WallClock
 import splice.head.usage.EconomicsStore
 import splice.head.usage.TurnEconomics
@@ -22,6 +23,8 @@ private const val SYNTHETIC_PROBE_ROW =
 
 private const val MODELED_WORK_ROW =
     """{"ts":3600123,"model":"synthetic","outcome":"ok","req_bytes":100,"upstream_req_bytes":50,"tools_eager":3,"tools_deferred":2,"in_tokens":5,"cached_tokens":2,"cache_write_tokens":1,"out_tokens":10}"""
+private const val ABSORBING_WORK_ROW =
+    """{"ts":3600123,"model":"synthetic","outcome":"ok","req_bytes":100,"upstream_req_bytes":50,"tools_eager":3,"tools_deferred":2,"in_tokens":5,"cached_tokens":2,"cache_write_tokens":1,"out_tokens":10,"absorbed_rounds":1,"absorbed_in_tokens":4,"absorbed_cached_tokens":1,"absorbed_cache_write_tokens":1,"absorbed_out_tokens":3}"""
 private const val LOCAL_WORK_ROW =
     """{"ts":3600123,"model":"synthetic","outcome":"ok","local_step":1,"req_bytes":20,"upstream_req_bytes":10,"tools_eager":1,"tools_deferred":0,"in_tokens":7,"cached_tokens":3,"cache_write_tokens":2,"out_tokens":14}"""
 
@@ -49,6 +52,25 @@ class ProbeEconomicsTest {
         // A healthy second poll must not re-scan history: the frozen deductions still apply.
         Files.delete(file)
         assertEquals(expected, source.buckets())
+    }
+
+    // The rollup meters a turn's absorbed rounds beside its final round, so the perf evidence must sum
+    // them the same way, or every hour with a hidden code-mode round fails to reconcile.
+    @Test
+    fun `a turn's absorbed rounds reconcile between perf evidence and the rollup`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        Files.writeString(file, listOf(SYNTHETIC_PROBE_ROW, ABSORBING_WORK_ROW).joinToString("\n") + "\n")
+        val script = AbsorbedRounds(rounds = 1, inputTokens = 4, cachedTokens = 1, cacheWriteTokens = 1)
+            .copy(outputTokens = 3)
+        val store = store(dir)
+        store.record(turn("", 0, 30, 15, 2L to 1L))
+        store.record(turn("synthetic", 5, 100, 50, 3L to 2L, script))
+        val control = store(dir.resolve("control"))
+        control.record(turn("synthetic", 5, 100, 50, 3L to 2L, script))
+
+        val buckets = EconomicsStoreSource(store, PerfRowsFileSource(file)).buckets()
+        assertEquals(EconomicsStoreSource(control).buckets(), buckets)
+        assertEquals(9L, buckets.single().inTokens, "the final round's 5 and the absorbed round's 4")
     }
 
     @Test
@@ -195,17 +217,24 @@ class ProbeEconomicsTest {
         log = { },
     )
 
-    private fun turn(model: String, input: Long, request: Long, upstream: Long, tools: Pair<Long, Long>) =
-        TurnEconomics(
-            model,
-            input,
-            input / 2,
-            input / 3,
-            input * 2,
-            request,
-            upstream,
-            tools.first,
-            tools.second,
-            rateLimited = input > 0,
-        )
+    private fun turn(
+        model: String,
+        input: Long,
+        request: Long,
+        upstream: Long,
+        tools: Pair<Long, Long>,
+        absorbed: AbsorbedRounds = AbsorbedRounds(),
+    ) = TurnEconomics(
+        model,
+        input,
+        input / 2,
+        input / 3,
+        input * 2,
+        request,
+        upstream,
+        tools.first,
+        tools.second,
+        rateLimited = input > 0,
+        absorbed = absorbed,
+    )
 }

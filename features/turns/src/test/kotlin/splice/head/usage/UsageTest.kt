@@ -15,6 +15,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.model.CodexCompactionReserves
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.turn.AbsorbedRounds
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.Usage
@@ -81,6 +82,22 @@ class UsageTest {
         assertEquals(1200, usage.cachedTokens, "last round's cached wins")
         assertEquals(80, usage.outputTokens, "output accrues per round")
         assertEquals(30, usage.reasoningTokens, "reasoning accrues per round")
+    }
+
+    // The law keeps the context honest; billing needs every round. Each round re-POSTed the whole
+    // conversation and the vendor billed it as a request of its own, so the superseded round rides on
+    // as an absorbed round instead of vanishing.
+    @Test
+    fun `a superseded round stays billed as a request of its own`() {
+        val first = Usage(inputTokens = 1000, outputTokens = 50, cachedTokens = 800, cacheWriteTokens = 100)
+        val second = Usage(inputTokens = 1500, outputTokens = 30, cachedTokens = 1200)
+        val third = Usage(outputTokens = 5)
+        val usage = RoundUsage().plusRound(first).plusRound(second).plusTerminal(third).toUsage()
+        val firstRound = AbsorbedRounds(rounds = 1, inputTokens = 1000, cachedTokens = 800, cacheWriteTokens = 100)
+            .copy(outputTokens = 50)
+        assertEquals(firstRound, usage.absorbed, "the first round is billed once; the terminal measured no input")
+        assertEquals(1500, usage.inputTokens, "the context is still the last round that measured input")
+        assertEquals(85, usage.outputTokens, "output accrues per round")
     }
 
     @Test

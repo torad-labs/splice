@@ -15,6 +15,7 @@ import splice.core.model.ModelRates
 import splice.core.model.TokenBuckets
 import splice.core.model.TokenCost
 import splice.core.model.TurnPrice
+import splice.core.turn.AbsorbedRounds
 import splice.core.util.AsyncFileIo
 import splice.core.util.WallClock
 import java.nio.file.Files
@@ -55,7 +56,21 @@ private fun turn(
     rateLimited: Boolean = false,
     model: String? = null,
     localStep: Boolean = false,
-) = TurnEconomics(model, inTokens, cached, cacheWrite, out, req, upstream, eager, deferred, rateLimited, localStep)
+    absorbed: AbsorbedRounds = AbsorbedRounds(),
+) = TurnEconomics(
+    model,
+    inTokens,
+    cached,
+    cacheWrite,
+    out,
+    req,
+    upstream,
+    eager,
+    deferred,
+    rateLimited,
+    localStep,
+    absorbed,
+)
 
 class EconomicsStoreTest {
 
@@ -70,6 +85,23 @@ class EconomicsStoreTest {
         val buckets = TokenBuckets(input = 30_000, cacheRead = 60_000, cacheWrite = 10_000, output = 2_000)
         assertEquals(TokenCost().of(buckets, HAIKU_RATES), b.costUsd!!, 1e-9, "haiku's card, not fable's")
         assertEquals(0, b.unpricedTurns)
+    }
+
+    // A turn whose code-mode script ran a hidden round billed two requests. The plan meters both, and
+    // each prices at its own size; the row's in_tokens is only the final one.
+    @Test
+    fun `a turn's absorbed rounds are metered and priced as requests of their own`(@TempDir tmp: Path) {
+        val store = EconomicsStore(tmp.resolve("e.json"), FABLE_HEAD, WallClock { 10 * HOUR })
+        val script = AbsorbedRounds(rounds = 1, inputTokens = 40_000, cachedTokens = 30_000, outputTokens = 500)
+        store.record(turn(inTokens = 60_000, cached = 50_000, out = 1_500, model = HAIKU, absorbed = script))
+
+        val b = store.read().single()
+        assertEquals(100_000, b.inTokens, "both requests' input is metered")
+        assertEquals(80_000, b.cachedTokens)
+        val cost = TokenCost()
+        val expected = cost.of(TokenBuckets(input = 10_000, cacheRead = 50_000, output = 1_000), HAIKU_RATES) +
+            cost.of(TokenBuckets(input = 10_000, cacheRead = 30_000, output = 500), HAIKU_RATES)
+        assertEquals(expected, b.costUsd!!, 1e-9)
     }
 
     @Test

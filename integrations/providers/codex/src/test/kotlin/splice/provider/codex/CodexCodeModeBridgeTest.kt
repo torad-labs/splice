@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.turn.AbsorbedRounds
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.upstream.codemode.CodeModeCell
@@ -93,7 +94,9 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
         assertTrue("outer-call" in rewritten)
         assertTrue("answer" in rewritten)
         assertEquals("final", outcome.bodyText)
-        assertEquals(Usage(20, 6, 5, 3), outcome.usage)
+        // The script round was a request of its own: its input is absorbed beside the final round's.
+        val script = AbsorbedRounds(rounds = 1, inputTokens = 10, cachedTokens = 3, outputTokens = 2)
+        assertEquals(Usage(20, 6, 5, 3, absorbed = script), outcome.usage)
     }
 
     @Test

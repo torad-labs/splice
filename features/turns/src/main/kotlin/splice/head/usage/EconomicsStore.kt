@@ -38,7 +38,6 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.put
 import splice.core.model.TurnPrice
 import splice.core.perf.ECONOMICS_RETENTION_MS
-import splice.core.perf.PerfKeys
 import splice.core.util.Cancellables
 import splice.core.util.CoalescedFlush
 import splice.core.util.DaemonLog
@@ -71,6 +70,8 @@ public data class EconomicsTurnCounts(val turns: Long = 0, val localSteps: Long 
 public data class EconomicsBucket(
     val hour: Long,
     val counts: EconomicsTurnCounts = EconomicsTurnCounts(),
+    /** Every request's input the hour billed, cache buckets included: each turn's final round and the
+     *  rounds it absorbed, the same three sums for [cachedTokens] and [cacheWriteTokens]. */
     val inTokens: Long = 0,
     val cachedTokens: Long = 0,
     /** V4-86: the cache-WRITE half of [inTokens], disjoint from [cachedTokens] (the read half).
@@ -97,29 +98,6 @@ public data class EconomicsBucket(
     val localSteps: Long get() = counts.localSteps
 }
 
-/** The per-turn facts the rollup consumes. Nullable where a head genuinely may not report the
- *  field: the chat dialect has no tool deferral at all, and `null` must stay distinguishable from
- *  a real zero — "this head cannot defer" and "this head deferred nothing" are different findings. */
-public data class TurnEconomics(
-    /** V4-221: the upstream model this turn ran, priced at its own card. NO default, for the reason
-     *  [cacheWriteTokens] has none: a call site that forgot it would price every turn at nothing. */
-    val model: String?,
-    val inTokens: Long,
-    val cachedTokens: Long,
-    /** V4-86: this turn's cache-write bucket, from PerfKeys.CACHE_WRITE_TOKENS. NO default on
-     *  purpose — a default would let a new call site drop the most expensive bucket on the turn
-     *  and still compile, which is exactly how the counter came to die at this seam. */
-    val cacheWriteTokens: Long,
-    val outTokens: Long,
-    val reqBytes: Long?,
-    val upstreamBytes: Long?,
-    val toolsEager: Long?,
-    val toolsDeferred: Long?,
-    val rateLimited: Boolean = false,
-    /** Set only when the code-mode machine answered locally without an upstream post. */
-    val localStep: Boolean = false,
-)
-
 public class EconomicsStore(
     private val file: Path,
     /** V4-221: the head's pricer. Required: a store without one would record every turn unpriced. */
@@ -133,15 +111,16 @@ public class EconomicsStore(
     public fun record(turn: TurnEconomics) {
         val hour = clock() / HOUR_MS * HOUR_MS
         val localStep = turn.localStep
-        val usd = price.usd(turn.model, counters(turn))
+        val usd = price.usd(turn.model, turn.counters())
+        val absorbed = turn.absorbed
         synchronized(lock) {
             loadUnderLock()
             val b = buckets[hour] ?: EconomicsBucket(hour)
             buckets[hour] = b.copy(
                 counts = b.counts.add(localStep),
-                inTokens = b.inTokens + turn.inTokens,
-                cachedTokens = b.cachedTokens + turn.cachedTokens,
-                cacheWriteTokens = b.cacheWriteTokens + turn.cacheWriteTokens,
+                inTokens = b.inTokens + turn.inTokens + absorbed.inputTokens,
+                cachedTokens = b.cachedTokens + turn.cachedTokens + absorbed.cachedTokens,
+                cacheWriteTokens = b.cacheWriteTokens + turn.cacheWriteTokens + absorbed.cacheWriteTokens,
                 outTokens = b.outTokens + turn.outTokens,
                 reqBytes = b.reqBytes + (turn.reqBytes ?: 0),
                 upstreamBytes = b.upstreamBytes + (turn.upstreamBytes ?: 0),
@@ -167,15 +146,6 @@ public class EconomicsStore(
     private fun priced(b: EconomicsBucket, usd: Double?, localStep: Boolean): EconomicsBucket = b.copy(
         costUsd = b.costUsd?.plus(usd ?: 0.0),
         unpricedTurns = b.unpricedTurns + if (usd == null && !localStep) 1 else 0,
-    )
-
-    /** The turn's tokens as the perf-row counters [TurnPrice] prices (in_tokens inclusive of both
-     *  cache buckets, as the perf row writes it). */
-    private fun counters(turn: TurnEconomics): Map<String, Long> = mapOf(
-        PerfKeys.IN_TOKENS to turn.inTokens,
-        PerfKeys.CACHED_TOKENS to turn.cachedTokens,
-        PerfKeys.CACHE_WRITE_TOKENS to turn.cacheWriteTokens,
-        PerfKeys.OUT_TOKENS to turn.outTokens,
     )
 
     /** Buckets inside the retention window, oldest first. */

@@ -1,6 +1,7 @@
 // NEW: aggregates billed upstream outcomes across hidden code-mode continuation rounds.
 package splice.provider.codex
 
+import splice.core.turn.AbsorbedRounds
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 
@@ -77,6 +78,7 @@ internal class CodeModeOutcomeAccumulator {
         localStep = prior.localStep || latest.localStep,
         codeModeDiverged = prior.codeModeDiverged || latest.codeModeDiverged,
         recordedOutputTokens = prior.recordedOutputTokens + latest.recordedOutputTokens,
+        absorbed = absorbed(prior, latest),
     )
 
     private fun mergeTerminalUsage(prior: Usage, latest: Usage): Usage = Usage(
@@ -88,5 +90,13 @@ internal class CodeModeOutcomeAccumulator {
         localStep = prior.localStep || latest.localStep,
         codeModeDiverged = prior.codeModeDiverged || latest.codeModeDiverged,
         recordedOutputTokens = prior.recordedOutputTokens + latest.recordedOutputTokens,
+        absorbed = absorbed(prior, latest),
     )
+
+    /** A round whose input replaces the prior's final round keeps that round billed as its own request:
+     *  a hidden continuation, or a source round that finished after the client turn that posted it. */
+    private fun absorbed(prior: Usage, latest: Usage): AbsorbedRounds {
+        val superseded = if (latest.inputTokens > 0) prior.finalRound else AbsorbedRounds()
+        return prior.absorbed + superseded + latest.absorbed
+    }
 }

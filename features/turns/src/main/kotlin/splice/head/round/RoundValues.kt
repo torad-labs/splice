@@ -6,6 +6,7 @@
 package splice.head.round
 
 import kotlinx.serialization.json.JsonObject
+import splice.core.turn.AbsorbedRounds
 import splice.core.turn.Usage
 
 /** One position in the round loop: the body to POST plus the two round counters. Serves BOTH
@@ -32,6 +33,9 @@ internal data class RoundUsage(
     /** A code-mode step's client context rides to the terminal; the client reads it only when the
      *  turn's final round measured no input ([splice.core.turn.Usage.clientContext]). */
     val clientContext: Usage? = null,
+    /** Each round this law superseded, billed as a request of its own ([AbsorbedRounds]): the
+     *  cumulative law keeps the context, and this keeps the bill. */
+    val absorbed: AbsorbedRounds = AbsorbedRounds(),
 ) {
     fun plusRound(u: Usage) = RoundUsage(
         lastInput = u.inputTokens,
@@ -43,6 +47,7 @@ internal data class RoundUsage(
         codeModeDiverged = codeModeDiverged || u.codeModeDiverged,
         recordedOutputSum = recordedOutputSum + u.recordedOutputTokens,
         clientContext = u.clientContext ?: clientContext,
+        absorbed = absorbed + toUsage().finalRound + u.absorbed,
     )
 
     /** DR-124: fold the TERMINAL failed round's harvested usage (Failure.partial.usage) under the
@@ -59,6 +64,7 @@ internal data class RoundUsage(
         codeModeDiverged = codeModeDiverged || u.codeModeDiverged,
         recordedOutputSum = recordedOutputSum + u.recordedOutputTokens,
         clientContext = u.clientContext ?: clientContext,
+        absorbed = absorbed + (if (u.inputTokens > 0) toUsage().finalRound else AbsorbedRounds()) + u.absorbed,
     )
 
     fun toUsage() = Usage(
@@ -71,5 +77,6 @@ internal data class RoundUsage(
         codeModeDiverged = codeModeDiverged,
         recordedOutputTokens = recordedOutputSum,
         clientContext = clientContext,
+        absorbed = absorbed,
     )
 }

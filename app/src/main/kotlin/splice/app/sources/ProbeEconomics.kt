@@ -1,6 +1,7 @@
 // NEW: V4-454 — remove proven legacy probe contributions from the hourly view, never from disk.
 package splice.app.sources
 
+import splice.core.model.TurnBill
 import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.head.usage.EconomicsBucket
@@ -77,11 +78,14 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
 
     private fun add(bucket: EconomicsBucket, row: PerfRow): EconomicsBucket {
         val local = count(row, PerfKeys.LOCAL_STEP) == 1L
+        // The economics store sums each turn's absorbed rounds beside its final round; so does this.
+        val absorbed = TurnBill.absorbed(row.fields)
         return bucket.copy(
             counts = bucket.counts.add(local),
-            inTokens = bucket.inTokens + count(row, PerfKeys.IN_TOKENS),
-            cachedTokens = bucket.cachedTokens + count(row, PerfKeys.CACHED_TOKENS),
-            cacheWriteTokens = bucket.cacheWriteTokens + count(row, PerfKeys.CACHE_WRITE_TOKENS),
+            inTokens = bucket.inTokens + count(row, PerfKeys.IN_TOKENS) + absorbed.inputTokens,
+            cachedTokens = bucket.cachedTokens + count(row, PerfKeys.CACHED_TOKENS) + absorbed.cachedTokens,
+            cacheWriteTokens = bucket.cacheWriteTokens + count(row, PerfKeys.CACHE_WRITE_TOKENS) +
+                absorbed.cacheWriteTokens,
             outTokens = bucket.outTokens + count(row, PerfKeys.OUT_TOKENS),
             reqBytes = bucket.reqBytes + count(row, PerfKeys.REQ_BYTES),
             upstreamBytes = bucket.upstreamBytes + count(row, PerfKeys.UPSTREAM_REQ_BYTES),

@@ -142,6 +142,18 @@ public object PerfKeys {
      *  dialects whose wire reports no such bucket), the same way [CACHED_TOKENS] is. */
     public const val CACHE_WRITE_TOKENS: String = "cache_write_tokens"
 
+    /** The rounds a turn billed before its final one ([splice.core.turn.AbsorbedRounds]). [IN_TOKENS] is
+     *  the final round's input, the context; each absorbed round was a request of its own, billed and
+     *  metered, so its buckets ride beside it. Written only when the turn absorbed a round, so an absent
+     *  key reads as none, which is what every row written before them means. */
+    public const val ABSORBED_ROUNDS: String = "absorbed_rounds"
+    public const val ABSORBED_IN_TOKENS: String = "absorbed_in_tokens"
+    public const val ABSORBED_CACHED_TOKENS: String = "absorbed_cached_tokens"
+    public const val ABSORBED_CACHE_WRITE_TOKENS: String = "absorbed_cache_write_tokens"
+
+    /** The part of [OUT_TOKENS] the absorbed rounds produced; [OUT_TOKENS] stays the turn's whole output. */
+    public const val ABSORBED_OUT_TOKENS: String = "absorbed_out_tokens"
+
     /** Concurrent turns in flight on this head at admission — the live-concurrency gauge. */
     public const val INFLIGHT: String = "inflight"
 

@@ -20,8 +20,8 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.model.ModelCatalog
-import splice.core.model.TokenBuckets
 import splice.core.model.TokenCost
+import splice.core.model.TurnBill
 import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.sessions.query.SessionHead
@@ -146,15 +146,8 @@ internal class PerfTally(private val cost: TokenCost = TokenCost()) {
     val costUsd: Double? get() = usd.takeUnless { turns > 0L && unpricedTurns == turns }
 
     fun add(row: SessionPerfRow, catalog: ModelCatalog?) {
-        val cached = row.fields[PerfKeys.CACHED_TOKENS] ?: 0L
-        val written = row.fields[PerfKeys.CACHE_WRITE_TOKENS] ?: 0L
-        // IN_TOKENS is inclusive of both cache buckets (SessionCost.bucketsFor says why), floored at 0.
-        val buckets = TokenBuckets(
-            input = ((row.fields[PerfKeys.IN_TOKENS] ?: 0L) - cached - written).coerceAtLeast(0L),
-            cacheRead = cached,
-            cacheWrite = written,
-            output = row.fields[PerfKeys.OUT_TOKENS] ?: 0L,
-        )
+        // Every request the row billed: its final round and the rounds it absorbed (TurnBill).
+        val buckets = TurnBill.total(row.fields)
         turns += 1
         input += buckets.input
         cacheRead += buckets.cacheRead
@@ -164,7 +157,7 @@ internal class PerfTally(private val cost: TokenCost = TokenCost()) {
         if (previousLastAt == null || row.ts >= previousLastAt) lastOutcome = row.outcome
         lastAt = maxOf(previousLastAt ?: row.ts, row.ts)
         val rates = rates(row.model, catalog)
-        if (rates == null) unpricedTurns += 1 else usd += cost.of(buckets, rates)
+        if (rates == null) unpricedTurns += 1 else usd += TurnBill.usd(row.fields, rates, cost)
     }
 
     fun json(label: TallyLabel): JsonObject = buildJsonObject {

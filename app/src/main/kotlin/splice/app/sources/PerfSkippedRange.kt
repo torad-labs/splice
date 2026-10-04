@@ -5,6 +5,7 @@ import splice.core.perf.PerfKeys
 
 // why: four raw candidates preserve the source reader's existing newest-row and counter evidence depth.
 private const val RANGE_ANCHORS = 4
+
 // why: 1 KiB conservatively covers the range object, candidate nodes and bounded list/queue capacities.
 private const val RANGE_OVERHEAD_BYTES = 1_024L
 

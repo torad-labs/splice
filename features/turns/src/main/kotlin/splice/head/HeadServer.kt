@@ -197,6 +197,7 @@ public class HeadServer(
         }
         engine.stop()
         provider.onHeadStop()
+        driver.flushHeldRows()
         deps.stores.usageStore.flushNow()
         deps.stores.economicsStore?.flushNow()
         deps.stores.perfStats.totals?.flushNow()

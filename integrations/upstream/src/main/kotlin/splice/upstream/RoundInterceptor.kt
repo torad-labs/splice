@@ -3,6 +3,7 @@ package splice.upstream
 
 import splice.core.perf.TurnPerf
 import splice.core.turn.TurnOutcome
+import splice.core.turn.Usage
 import splice.upstream.sse.WireSink
 
 /** One upstream dispatch; an interceptor may invoke it again for a bounded local continuation. */
@@ -17,6 +18,25 @@ public fun interface InterceptedRoundPost {
 /** A dispatch that can send an independently owned upstream round into its current client sink. */
 public interface RedirectableRoundPost : InterceptedRoundPost {
     public suspend fun into(bodyJson: String, sink: WireSink): TurnOutcome
+
+    /** The perf row of the turn this post serves, for a round that outlives it. Null where no turn row exists. */
+    public val postingRow: PostingTurnRow? get() = null
+}
+
+/**
+ * The perf row of a turn that returned while a round it posted was still streaming. The round's usage arrives
+ * only at its terminal, so the row waits for it and carries it. The client never waits: the tool call and the
+ * message's end have already left. [hold] is called before the turn returns; the release it gives is called
+ * exactly once, from wherever the round settles.
+ */
+public fun interface PostingTurnRow {
+    public fun hold(): RowRelease
+}
+
+/** Ends one [PostingTurnRow.hold]: [usage] is the turn's whole usage with the round in it, or null when the round
+ *  ended with nothing to bill (it was cut, it failed, or the head stopped), so the row keeps what the turn returned. */
+public fun interface RowRelease {
+    public fun release(usage: Usage?)
 }
 
 /**

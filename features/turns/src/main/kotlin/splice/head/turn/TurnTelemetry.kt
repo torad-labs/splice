@@ -22,6 +22,7 @@ import splice.core.util.LogSink
 import splice.head.HeadEvents
 import splice.head.NoHeadEvents
 import splice.head.admission.LocalRefusal
+import splice.head.perf.HeldRows
 import splice.head.perf.PerfRowMeta
 import splice.head.perf.PerfStats
 import splice.head.usage.EconomicsStore
@@ -58,6 +59,9 @@ internal class TurnTelemetry(
     private val cache = TurnCacheLine(headKey)
     private val line = TurnLine(headKey)
 
+    /** Rows waiting on a source round, so a head stop can write them ([flushHeld]). */
+    private val held = HeldRows()
+
     /** Drain the paced tail before the sole perf snapshot; publish even if cleanup throws cancellation.
      *  [rateLimited] marks the one turn the upstream refused with a 429 — see [recordEconomics]. */
     suspend fun recordPerf(
@@ -86,6 +90,27 @@ internal class TurnTelemetry(
     ) {
         drive.perf.mark(PerfKeys.TOTAL)
         drive.perf.setCount(PerfKeys.ATTEMPTS, drive.perfCounter(PerfKeys.ATTEMPTS))
+        val ending = RowEnding(outcomeTag, rateLimited, cause, layers, perfStats.clock())
+        held.write(drive.sourceRow) { usage -> writeRow(drive, ending, usage) }
+    }
+
+    /** Every row still waiting on a source round, written with what is known: a head stop calls this once its
+     *  provider has stopped those rounds, so no row outlives the stop. A hard kill loses them. */
+    fun flushHeld() = held.flush()
+
+    /** The turn's ending as it stood when its row was asked for; a held row is written with it later. */
+    private data class RowEnding(
+        val outcomeTag: String,
+        val rateLimited: Boolean,
+        val cause: String?,
+        val layers: Int,
+        val at: Long,
+    )
+
+    /** [usage] is the turn's whole usage once a source round it held settled; its counters replace the turn's. */
+    private fun writeRow(drive: TurnDrive, ending: RowEnding, usage: Usage?) {
+        val outcomeTag = ending.outcomeTag
+        usage?.let { TurnBill.counters(it).forEach { (key, value) -> drive.perf.setCount(key, value) } }
         val snap = drive.perf.snapshot()
         // V4-174: the turn record closes on the same snapshot the perf row carries — every ending
         // of a drive goes through here, so the trace never has a turn without its outcome.
@@ -103,8 +128,8 @@ internal class TurnTelemetry(
                 // V4-117: the cause and the loop's own attempt count ride the row beside the tag. The
                 // outcome TAG is not replaced — it is what the operator already greps — so this is an
                 // addition to the row, never a change to the string that identifies it.
-                cause = cause,
-                layers = layers,
+                cause = ending.cause,
+                layers = ending.layers,
                 // V4-345: the trace turn the row's request and answer were recorded under, so the
                 // console opens that request by its id.
                 turn = drive.trace?.turnId,
@@ -114,6 +139,7 @@ internal class TurnTelemetry(
             ),
             snap,
             drive.requestBody,
+            ending.at,
         )
         account?.switch?.let { switched ->
             log("[$headKey] account ${switched.from} -> ${switched.to}: ${switched.reason}\n")
@@ -123,7 +149,7 @@ internal class TurnTelemetry(
         // key, so the stream never names a row /api/perf/turns has not been handed.
         events.turnEnded(rowTs.toString(), outcomeTag, drive.meta.sessionId)
         log(snap.perfLine(headKey, outcomeTag, drive.meta.compact, drive.upstreamModel, session))
-        recordEconomics(snap, drive.upstreamModel, rateLimited)
+        recordEconomics(snap, drive.upstreamModel, ending.rateLimited)
         recordSpend(rowTs, drive.upstreamModel, snap.counters)
     }
 

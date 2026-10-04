@@ -3,6 +3,7 @@ package splice.head.round
 
 import splice.core.perf.TurnPerf
 import splice.core.turn.TurnOutcome
+import splice.upstream.PostingTurnRow
 import splice.upstream.RedirectableRoundPost
 import splice.upstream.RoundBody
 import splice.upstream.RoundBodyPost
@@ -15,6 +16,7 @@ internal class ObservedRoundPost(
     private val ordinary: PostRound,
     private val observation: RawRoundObserver?,
     override val perf: TurnPerf?,
+    override val postingRow: PostingTurnRow? = null,
 ) : RedirectableRoundPost, RoundBodyPost {
     override suspend fun invoke(bodyJson: String): TurnOutcome = post(RoundBody.Text(bodyJson))
 

@@ -19,6 +19,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
@@ -26,25 +27,35 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import splice.codemode.DEFAULT_WORKER_START_TIMEOUT_MS
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.model.ModelRates
+import splice.core.model.TurnBill
+import splice.core.model.TurnPrice
 import splice.core.perf.PerfKeys
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
+import splice.head.HeadDeps
+import splice.head.HeadEvents
 import splice.head.HeadServer
+import splice.head.NoHeadEvents
 import splice.head.headDeps
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexProvider
 import splice.upstream.ProviderTuning
+import splice.upstream.retry.InflightGate
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -59,9 +70,23 @@ private const val SOURCE_CACHED = 40L
 private const val ANSWER_INPUT = 11L
 private const val ANSWER_OUTPUT = 3L
 
+// why: the head's pinned model, priced at a synthetic card so a double count shows up as spend.
+private const val MODEL = "gpt-5.6-sol"
+private val PRICED = ModelCatalog(
+    discoveryPrefix = "claude-codex--",
+    models = listOf(ModelEntry(MODEL, contextWindow = 272_000, rates = ModelRates(1.0, 0.1, 4.0))),
+    defaultContextWindow = 272_000,
+)
+
+// why: dollars summed over three rows; a double-counted round moves the sum by whole cents, far past this.
+private const val SPEND_EPSILON = 1e-12
+
 // why: the first turn boots a real code-mode worker JVM, which the product allows its own bound to start.
 private const val BILLING_TEST_SECONDS = 60L
 private const val TURN_BOUND_MS: Long = DEFAULT_WORKER_START_TIMEOUT_MS + 5_000L
+
+// How often the slot test reads the admission gate while it waits for the source round's permit to return.
+private const val GATE_POLL_MS = 10L
 
 /**
  * Oct 4: a claudex turn whose script called a client tool recorded zero tokens, and the next turn of the same
@@ -115,6 +140,132 @@ class CodeModeRoundBillingTest {
             upstream.close()
         }
     }
+
+    /** Oct 4, 11:15 AM CT: a parked claudex turn wrote 0 in, 0 out, and a compaction 15 minutes later carried its
+     *  377k-token round as absorbed. Here the source round ends only after the turn that posted it has returned. */
+    @Test
+    @Timeout(BILLING_TEST_SECONDS)
+    fun `a round still streaming when its tool call left is billed on the turn that posted it, and only there`(
+        @TempDir tmp: Path,
+    ) = runBlocking {
+        val upstream = BillingUpstream(held = true)
+        val runtime = StatementGatewayRuntime()
+        val bridge = CodexCodeModeBridge(
+            CodeModeBridgeConfig(
+                runtimes = { runtime },
+                state = CodeModeStateLocation(tmp.resolve("records"), tmp.resolve("legacy.json")),
+            ),
+        )
+        val head = HeadServer(provider(upstream.url, bridge), 0, headDeps(tmp))
+        val client = HttpClient(CIO) {
+            engine { requestTimeout = TimeUnit.SECONDS.toMillis(BILLING_TEST_SECONDS) }
+        }
+        try {
+            head.start()
+            val url = "http://127.0.0.1:${head.port}/v1/messages"
+            val history = mutableListOf(message("user", JsonPrimitive("read the fixture twice")))
+            val parked = withTimeout(TURN_BOUND_MS) { send(client, url, history) }
+            assertTrue(parked.contains("\"name\":\"Read\""), parked)
+            assertTrue(parked.contains("message_stop"), parked)
+            upstream.endSource()
+
+            history += message("assistant", JsonArray(toolUses(parked)))
+            history += message("user", JsonArray(toolUses(parked).map(::result)))
+            val step = withTimeout(TURN_BOUND_MS) { send(client, url, history) }
+            assertTrue(step.contains("\"name\":\"Read\""), step)
+            assertTrue(step.contains("\"cache_read_input_tokens\":$SOURCE_CACHED"), "the round's context: $step")
+
+            history += message("assistant", JsonArray(toolUses(step)))
+            history += message("user", JsonArray(toolUses(step).map(::result)))
+            val answer = withTimeout(TURN_BOUND_MS) { send(client, url, history) }
+            assertTrue(answer.contains("fixture read"), answer)
+            assertEquals(2, upstream.posts.get(), "one source round and one continuation")
+
+            val (posting, local, finishing) = rows(tmp, 3).sortedBy { it.count("ts") }
+            assertEquals(SOURCE_INPUT, posting.count(PerfKeys.IN_TOKENS), "$posting")
+            assertEquals(SOURCE_OUTPUT, posting.count(PerfKeys.OUT_TOKENS), "$posting")
+            assertEquals(SOURCE_CACHED, posting.count(PerfKeys.CACHED_TOKENS), "$posting")
+            assertEquals(0L, local.count(PerfKeys.IN_TOKENS), "$local")
+            assertEquals(ANSWER_INPUT, finishing.count(PerfKeys.IN_TOKENS), "$finishing")
+            assertEquals(ANSWER_OUTPUT, finishing.count(PerfKeys.OUT_TOKENS), "$finishing")
+            assertBilledOnce(listOf(posting, local, finishing))
+        } finally {
+            head.stop()
+            runtime.close()
+            client.close()
+            upstream.close()
+        }
+    }
+
+    /** The source round keeps its admission slot past the parked turn's message_stop and gives it back when it ends,
+     *  as it did before rows were held (IndependentSourcePost). The held row is written after that, so a write that
+     *  blocks or throws holds nothing: the slot is already free while the write is still stuck. */
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    @Timeout(BILLING_TEST_SECONDS)
+    fun `the slot frees when the source round ends, even while the held row's write is stuck`(
+        throws: Boolean,
+        @TempDir tmp: Path,
+    ) = runBlocking {
+        val upstream = BillingUpstream(held = true)
+        val runtime = StatementGatewayRuntime()
+        val bridge = CodexCodeModeBridge(
+            CodeModeBridgeConfig(
+                runtimes = { runtime },
+                state = CodeModeStateLocation(tmp.resolve("records"), tmp.resolve("legacy.json")),
+            ),
+        )
+        val gate = InflightGate({ 1 })
+        val events = StuckRowEvents(throws)
+        val deps = headDeps(tmp, gate = gate, seams = HeadDeps.HeadSeams(events = events))
+        val head = HeadServer(provider(upstream.url, bridge), 0, deps)
+        val client = HttpClient(CIO) {
+            engine { requestTimeout = TimeUnit.SECONDS.toMillis(BILLING_TEST_SECONDS) }
+        }
+        try {
+            head.start()
+            val url = "http://127.0.0.1:${head.port}/v1/messages"
+            val first = listOf(message("user", JsonPrimitive("read the fixture twice")))
+            val parked = withTimeout(TURN_BOUND_MS) { send(client, url, first) }
+            assertTrue(parked.contains("message_stop"), parked)
+            assertEquals(1, gate.snapshot().inflight, "the source round keeps its admission past message_stop")
+
+            events.arm()
+            upstream.endSource()
+            assertTrue(events.entered.await(TURN_BOUND_MS, TimeUnit.MILLISECONDS), "the held row is written")
+            withTimeout(TURN_BOUND_MS) { while (gate.snapshot().inflight != 0) delay(GATE_POLL_MS) }
+            assertEquals(1L, events.stuck.count, "the slot came back while the row's write was still stuck")
+            events.release()
+            assertEquals(SOURCE_INPUT, rows(tmp, 1).single().count(PerfKeys.IN_TOKENS), "the round reached its row")
+        } finally {
+            events.release()
+            head.stop()
+            runtime.close()
+            client.close()
+            upstream.close()
+        }
+    }
+
+    /** No row carries a round's tokens a second time, as tokens or as absorbed rounds, nor prices it twice. */
+    private fun assertBilledOnce(rows: List<JsonObject>) {
+        rows.forEach { assertNull(it[PerfKeys.ABSORBED_ROUNDS], "a carried round is never absorbed: $it") }
+        val tokens = rows.sumOf { TurnBill.total(counters(it)).let { b -> b.input + b.cacheRead + b.cacheWrite } }
+        assertEquals(SOURCE_INPUT + ANSWER_INPUT, tokens, "every request's input once: $rows")
+        assertEquals(SOURCE_OUTPUT + ANSWER_OUTPUT, rows.sumOf { it.count(PerfKeys.OUT_TOKENS) ?: 0L }, "$rows")
+        val price = TurnPrice(PRICED)
+        val spent = rows.map { checkNotNull(price.usd(MODEL, counters(it))) { "$it" } }
+        val source = mapOf(
+            PerfKeys.IN_TOKENS to SOURCE_INPUT,
+            PerfKeys.CACHED_TOKENS to SOURCE_CACHED,
+            PerfKeys.OUT_TOKENS to SOURCE_OUTPUT,
+        )
+        val answered = mapOf(PerfKeys.IN_TOKENS to ANSWER_INPUT, PerfKeys.OUT_TOKENS to ANSWER_OUTPUT)
+        val expected = listOf(price.usd(MODEL, source), 0.0, price.usd(MODEL, answered)).map(::checkNotNull)
+        expected.zip(spent).forEach { (want, got) -> assertEquals(want, got, SPEND_EPSILON, "$spent") }
+    }
+
+    private fun counters(row: JsonObject): Map<String, Long> =
+        row.mapNotNull { (key, value) -> (value as? JsonPrimitive)?.longOrNull?.let { key to it } }.toMap()
 
     private suspend fun send(client: HttpClient, url: String, history: List<JsonObject>): String =
         client.post(url) {
@@ -200,9 +351,10 @@ private const val ROW_POLL_MS = 20L
 
 /** A loopback Responses backend. Its source round ends on its one statement, so the round's terminal, and its
  *  usage, arrive before the script's tool call can leave: the call is certified only at the end of the source. */
-private class BillingUpstream {
+private class BillingUpstream(private val held: Boolean = false) {
     val posts = AtomicInteger()
     private val source = "await tools.Read({});\n"
+    private val ended = CountDownLatch(1)
     private val pool = Executors.newCachedThreadPool()
     private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
     val url: String get() = "http://127.0.0.1:${server.address.port}"
@@ -221,7 +373,15 @@ private class BillingUpstream {
         exchange.responseBody.use { output -> if (attempt == 1) source(output) else answer(output) }
     }
 
+    /** Lets a held source round reach its terminal. */
+    fun endSource() = ended.countDown()
+
+    /** A held round streams its first statement and the token that ends it (the parser holds a final statement
+     *  until a following token rules out a continuation, as a model's next statement does), then waits for
+     *  [endSource]. The rest of its second statement arrives only with the terminal, so that call leaves after the
+     *  round's usage is in. */
     private fun source(output: java.io.OutputStream) {
+        val streamed = if (held) "${source}await " else source
         event(
             output,
             """{"type":"response.output_item.added","output_index":0,"item":{
@@ -229,15 +389,17 @@ private class BillingUpstream {
         )
         event(
             output,
-            """{"type":"response.custom_tool_call_input.delta","output_index":0,"delta":${JsonPrimitive(source)}}""",
+            """{"type":"response.custom_tool_call_input.delta","output_index":0,"delta":${JsonPrimitive(streamed)}}""",
         )
+        if (held) check(ended.await(BILLING_TEST_SECONDS, TimeUnit.SECONDS)) { "the test never ended the source" }
+        val input = if (held) source + source else source
         event(
             output,
             """{"type":"response.completed","response":{"id":"source-response","status":"completed",
                 "usage":{"input_tokens":$SOURCE_INPUT,"output_tokens":$SOURCE_OUTPUT,
                 "input_tokens_details":{"cached_tokens":$SOURCE_CACHED}},"output":[{
                 "type":"custom_tool_call","id":"source-item","call_id":"source-call","name":"exec",
-                "input":${JsonPrimitive(source)}}]}}""",
+                "input":${JsonPrimitive(input)}}]}}""",
         )
     }
 
@@ -267,7 +429,31 @@ private class BillingUpstream {
     }
 
     fun close() {
+        endSource()
         server.stop(0)
         pool.shutdownNow()
+    }
+}
+
+/** Head events whose first turnEnded after [arm] is stuck: it blocks until [release], or throws. Every other event,
+ *  and every turnEnded before [arm], passes through as nothing. */
+private class StuckRowEvents(private val throws: Boolean) : HeadEvents by NoHeadEvents {
+    val entered = CountDownLatch(1)
+    val stuck = CountDownLatch(1)
+
+    @Volatile private var armed = false
+
+    fun arm() {
+        armed = true
+    }
+
+    fun release() = stuck.countDown()
+
+    override fun turnEnded(perfRowId: String, outcome: String, session: String?) {
+        if (!armed) return
+        armed = false
+        entered.countDown()
+        check(!throws) { "synthetic failure writing the held row" }
+        stuck.await(BILLING_TEST_SECONDS, TimeUnit.SECONDS)
     }
 }

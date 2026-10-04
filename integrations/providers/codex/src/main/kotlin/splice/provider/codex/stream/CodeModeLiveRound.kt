@@ -10,6 +10,7 @@ import kotlinx.coroutines.async
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
+import splice.core.turn.Usage
 import splice.core.util.Cancellables
 import splice.provider.codex.CodeModeBody
 import splice.provider.codex.CodeModeBridgeConfig
@@ -19,6 +20,7 @@ import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexCodeModeRegistry
 import splice.provider.codex.CodexCodeModeWire
 import splice.provider.codex.state.CodeModeTurnIdentity
+import splice.upstream.PostingTurnRow
 import splice.upstream.TurnEnd
 import splice.upstream.sse.CustomToolSource
 import splice.upstream.sse.WireSink
@@ -39,7 +41,17 @@ internal class CodeModeLiveRound(
     private val record: CodeModeRecord? get() = capture.record
     private var finished: Deferred<TurnOutcome>? = null
     private val settled = CompletableDeferred<Unit>()
-    private val completion = CodeModeRoundCompletion(config.log, settled, CodeModeReaderDeath(::died))
+    private val completion = CodeModeRoundCompletion(
+        config.log,
+        settled,
+        CodeModeReaderDeath { cause ->
+            try {
+                died(cause)
+            } finally {
+                settle(readerEnd = true)
+            }
+        },
+    )
 
     @Volatile var unexpectedDeath: Boolean = false
         private set
@@ -55,14 +67,23 @@ internal class CodeModeLiveRound(
     @Volatile var localFailure: TurnOutcome.Failure? = null
         private set
 
+    /** The row of the client step that posted this round, owed its usage when the step returned first. Both
+     *  guarded by [lifecycle], with [readerEnded]. */
+    private var postingRow: PostingTurnRow? = null
+    private var owed: CodeModeOwedRound? = null
+    private var readerEnded = false
+
     fun start(scope: CoroutineScope, post: CodeModeRedirectablePost, body: CodeModeBody, end: TurnEnd) {
         check(finished == null)
+        synchronized(lifecycle) { postingRow = post.postingRow }
         finished = scope.async(start = CoroutineStart.UNDISPATCHED) {
             switching.ownedBy(this)
             try {
                 val outcome = post.into(body, switching)
                 upstreamEnded = true
-                finish(outcome)
+                val ended = finish(outcome)
+                settle(readerEnd = false)
+                ended
             } catch (error: CancellationException) {
                 cancelled(error)
                 throw error
@@ -195,6 +216,43 @@ internal class CodeModeLiveRound(
 
     fun cancel() {
         if (!upstreamEnded) finished?.cancel()
+    }
+
+    /** The posting step's claim on this round's usage: the usage when the round has finished, or else the round
+     *  is owed to the step's row, which [settle] releases once. Under [lifecycle], so the claim cannot fall
+     *  between the terminal storing the usage and [settle] looking for a row to give it to. */
+    fun claim(record: CodeModeRecord, step: TurnOutcome): Usage? = synchronized(lifecycle) {
+        registry.source.consume(record) ?: run {
+            if (step is TurnOutcome.Success && !readerEnded) {
+                postingRow?.let { row -> owed = CodeModeOwedRound(row.hold(), step) }
+            }
+            null
+        }
+    }
+
+    /** Releases the owed row, outside every lock: with the round's usage once its terminal stored it, or with
+     *  none once the reader ended without it (a cut, a failure, a head stop). A claim that cannot be saved
+     *  releases with none at the reader's end and leaves the round to the step that finishes its script. */
+    private fun settle(readerEnd: Boolean) {
+        val (due, usage) = synchronized(lifecycle) {
+            if (readerEnd) readerEnded = true
+            val due = owed ?: return
+            val current = record ?: return
+            val usage = try {
+                registry.source.consume(current)
+            } catch (error: CodeModePersistenceException) {
+                config.log(
+                    "[code-mode] source round billed later: its claim was not saved (${error::class.simpleName})",
+                )
+                null
+            }
+            if (usage == null && !readerEnd) return
+            owed = null
+            due to usage
+        }
+        Cancellables.runCatchingBestEffort { due.settle(usage) }.onFailure { failure ->
+            config.log("[code-mode] the posting turn's row was not released (${failure::class.simpleName})")
+        }
     }
 
     /** The synchronous registry stop owns persistence; a cancelled old reader cannot overwrite the next head. */

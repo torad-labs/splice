@@ -13,6 +13,7 @@ import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.wire.RateLimitReply
 import splice.head.HeadDeps
+import splice.head.perf.SourceRowHold
 import splice.head.pipeline.TurnPipeline
 import splice.head.round.RoundUsage
 import splice.head.round.RunnerSignals
@@ -125,6 +126,9 @@ internal data class TurnDrive(
 
     private val claims = TurnClaims()
     val collectPerf = CollectPerf()
+
+    /** This turn's row, held while a source round it posted still streams ([splice.upstream.PostingTurnRow]). */
+    val sourceRow = SourceRowHold()
     var sourceRoundStarted: SourceRoundStarted? = null
 
     /** Chooses an HTTP refusal only while the responder still owns an uncommitted status. */

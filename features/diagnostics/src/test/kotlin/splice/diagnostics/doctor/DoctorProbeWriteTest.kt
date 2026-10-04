@@ -39,6 +39,19 @@ class DoctorProbeWriteTest {
         assertTrue(!reset.detail.contains("runtime on"), reset.detail)
     }
 
+    /** A code-mode turn's row can wait for the source round it left streaming, then land after newer rows with the
+     *  time its turn ended. The newest turn is the newest by its own time, never the last line in the file. */
+    @Test
+    fun `a row appended late at its earlier time does not hide a newer failure`(@TempDir tmp: Path) {
+        val file = tmp.resolve("synthetic-perf.jsonl")
+        val ts = System.currentTimeMillis()
+        val failed = """{"ts":${ts + 1},"outcome":"error:conn-reset"}"""
+        val held = """{"ts":$ts,"outcome":"ok"}"""
+        Files.writeString(file, failed + "\n" + held + "\n")
+        val row = DoctorProbeWrite().perfTailRow("synthetic", file)
+        assertEquals(CheckStatus.WARN, row.status, row.detail)
+    }
+
     @Test
     fun `empty answers the model closed are clean turns, never a failing head`(@TempDir tmp: Path) {
         val file = tmp.resolve("synthetic-perf.jsonl")

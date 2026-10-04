@@ -73,10 +73,11 @@ internal class DoctorProbeWrite(
     /** Last-N turn outcomes from the per-head perf JSONL — "last failure: 4m ago (upstream_failed)"
      *  is the sentence doctor exists to say. Read as a bounded tail of BOTH generations (a failure
      *  that rotated into .1 minutes ago still counts); a generation that cannot be read is said,
-     *  never presented as no turns. Missing/empty files = INFO (a fresh head has no turns). */
+     *  never presented as no turns. Missing/empty files = INFO (a fresh head has no turns). The newest turns are the
+     *  newest by time: a turn's row can wait for a source round it left streaming and land after newer rows. */
     internal fun perfTailRow(headKey: String, perfFile: Path): DoctorCheck {
         val read = files.tails(perfFile, PROBE_TAIL_BYTES)
-        val rows = read.lines.mapNotNull(::perfRow).takeLast(PERF_TAIL_TURNS)
+        val rows = read.lines.mapNotNull(::perfRow).sortedBy { (_, ts) -> ts }.takeLast(PERF_TAIL_TURNS)
         val failures = rows.filter { (outcome, _) -> !OutcomeTags.isClean(outcome) }
         val name = "head $headKey turns"
         val unread = read.error?.let { " (a perf file could not be read: $it)" }.orEmpty()

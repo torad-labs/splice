@@ -138,7 +138,8 @@ private const val DAY_MS = 86_400_000L
 
 public class PerfStats(
     private val file: Path,
-    private val clock: WallClock = WallClock(System::currentTimeMillis),
+    /** Internal for the turn whose row waits on a streaming round: that row keeps the time its turn ended. */
+    internal val clock: WallClock = WallClock(System::currentTimeMillis),
     private val log: LogSink = LogSink(DaemonLog::write),
     /** V4-133: where rolled-out generations are archived before JsonlSink overwrites them. Null
      *  (every construction site before this row, and every one this row did not touch) is today's
@@ -192,9 +193,11 @@ public class PerfStats(
     // under it (PerfRoutes), so it is what the console's turn.end carries to join the stream to the
     // poll. Two rows of one head stamped in the same millisecond share it; that is the route's
     // existing key, and a new id here would be one the route could not look up.
-    public fun record(meta: PerfRowMeta, snap: PerfSnapshot, request: JsonObject? = null): Long {
+    public fun record(meta: PerfRowMeta, snap: PerfSnapshot, request: JsonObject? = null, at: Long = clock()): Long {
         measuredInputs.remember(meta, snap, request)
-        val ts = clock()
+        // A row held for a streaming round is appended late with the time its turn ended, so a row can follow
+        // newer ones in the file: a reader that wants the newest rows orders them by ts, not by position.
+        val ts = at
         val row = JsonWire.string(
             buildJsonObject {
                 put("ts", ts)

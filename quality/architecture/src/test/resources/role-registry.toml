@@ -45,6 +45,12 @@
 # none, because it looks like work.
 
 [[groups]]
+signature = "(Usage?)->Unit"
+dated = "2026-10-04"
+names = ["RowRelease", "RowWrite"]
+reason = """RowRelease ends ONE hold a source round has on its posting turn's perf row: the provider calls it once per round, it writes nothing, and only the last release lets the row go. RowWrite writes the row itself, once, with the usage every settled round left. A RowWrite passed as a release would write one row per round; a RowRelease passed as the write would never write the row."""
+
+[[groups]]
 signature = "suspend (WireSink)->Unit"
 dated = "2026-10-04"
 names = ["BufferedSinkWrite", "SourceFrameAction"]

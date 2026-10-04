@@ -24,6 +24,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.index.WireBlockIndex
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.ErrorType
 import splice.core.turn.ReasoningDisplay
@@ -558,6 +559,53 @@ class TurnEndingAccountingTest {
     private fun counter(row: String, key: String): Long? =
         Regex("\"$key\":(\\d+)").find(row)?.groupValues?.get(1)?.toLong()
 
+    /** Oct 4: a code-mode turn that parks while the round writing its script still streams wrote 0 in, 0 out, and a
+     *  later turn absorbed that round. Its row now waits for the round and keeps the time its turn ended. */
+    @Test
+    fun `a row held for a streaming round lands with that round's usage at the time its turn ended`() = runBlocking {
+        val rig = Rig("held-row")
+        var now = HELD_TURN_END
+        val telemetry = TurnTelemetry("codex", PerfStats(rig.perfFile, WallClock { now }), rig.log, ElapsedClock { 5L })
+        val drive = rig.drive()
+        val release = drive.sourceRow.hold()
+        telemetry.recordPerf(drive, "ok")
+        AsyncFileIo.drain()
+        assertFalse(Files.exists(rig.perfFile), "the row waits for the round")
+        now = HELD_TURN_END + HELD_ROUND_MS
+        release.release(Usage(inputTokens = 50, outputTokens = 4, cachedTokens = 5))
+        release.release(Usage(inputTokens = 999))
+        AsyncFileIo.drain()
+        val row = Files.readAllLines(rig.perfFile).single()
+        assertEquals(HELD_TURN_END, counter(row, "ts"), row)
+        assertEquals(listOf(50L, 5L, 4L), listOf(IN, CACHED, OUT).map { counter(row, it) }, row)
+        assertEquals(null, counter(row, PerfKeys.ABSORBED_ROUNDS), row)
+
+        val early = rig.drive()
+        early.sourceRow.hold().release(Usage(inputTokens = 7, outputTokens = 1))
+        telemetry.recordPerf(early, "ok")
+        AsyncFileIo.drain()
+        assertEquals(7L, counter(Files.readAllLines(rig.perfFile).last(), IN), "a round that settled first is carried")
+    }
+
+    @Test
+    fun `a head stop writes a held row with what is known, and the round settling afterwards changes nothing`() =
+        runBlocking {
+            val rig = Rig("held-stop")
+            val drive = rig.drive()
+            drive.perf.setCount(IN, 3L)
+            val release = drive.sourceRow.hold()
+            rig.telemetry.recordPerf(drive, "ok")
+            rig.telemetry.flushHeld()
+            release.release(Usage(inputTokens = 50, outputTokens = 4))
+            val cut = rig.drive()
+            cut.sourceRow.hold().also { rig.telemetry.recordPerf(cut, "ok") }.release(null)
+            AsyncFileIo.drain()
+            val rows = Files.readAllLines(rig.perfFile)
+            assertEquals(2, rows.size, "$rows")
+            assertEquals(3L, counter(rows.first(), IN), "the stop writes what the turn knew: ${rows.first()}")
+            assertEquals(null, counter(rows.last(), IN), "a cut round releases with nothing: ${rows.last()}")
+        }
+
     /** Blocker #5: terminal emission can itself cancel. The original cancellation remains the one
      *  the driver rethrows, while known completed raw rounds are synchronously stamped once. */
     @Test
@@ -607,3 +655,11 @@ class TurnEndingAccountingTest {
         }
     }
 }
+
+// why: the wall time a held row's turn ended, and how much later its source round settled; any two distinct values.
+private const val HELD_TURN_END = 1_791_000_000_000L
+private const val HELD_ROUND_MS = 40_000L
+
+private const val IN = PerfKeys.IN_TOKENS
+private const val CACHED = PerfKeys.CACHED_TOKENS
+private const val OUT = PerfKeys.OUT_TOKENS

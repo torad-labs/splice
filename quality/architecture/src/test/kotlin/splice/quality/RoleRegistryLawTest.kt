@@ -725,7 +725,9 @@ class RoleRegistryLawTest {
         // 35 since Oct 4 CT: PostRound left `suspend (String)->TurnOutcome` when it began taking a RoundBody, so
         // InterceptedRoundPost holds that signature alone and the entry became unreachable. The law's own words are
         // the remedy: a list that keeps entries nobody can reach is how an allowlist stops being reviewed.
-        assertEquals(35, config.entries.size, "one entry per shared signature")
+        // 36 since Oct 4 CT: RowRelease and RowWrite share `(Usage?)->Unit`, a new entry of two names: one ends one
+        // round's hold on a posting turn's perf row, the other writes that row once every hold has ended.
+        assertEquals(36, config.entries.size, "one entry per shared signature")
         assertEquals(
             text.split("\n").count { it == "[[groups]]" },
             config.entries.size,
@@ -766,7 +768,8 @@ class RoleRegistryLawTest {
         // PostRound with it when PostRound began taking a RoundBody.
         // 141 since Oct 4 CT: TranscriptReadBudget joins `()->Boolean`, the remaining time of one transcript request.
         // 142 since Oct 4 CT: CredentialAccountNames proves account identity from the effective credential digest.
-        assertEquals(142, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
+        // 144 since Oct 4 CT: the two names of the new `(Usage?)->Unit` entry, RowRelease and RowWrite.
+        assertEquals(144, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
         assertTrue(config.entries.values.all { !it.text("reason").isNullOrBlank() }) { "every entry is reasoned" }
         assertTrue(config.entries.values.all { !it.text("dated").isNullOrBlank() }) { "every entry is dated" }
 

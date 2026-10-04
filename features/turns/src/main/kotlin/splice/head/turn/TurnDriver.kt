@@ -190,4 +190,8 @@ internal class TurnDriver(
     /** Head stop: end the detached compactions this head still drives; the scope stays usable for
      *  the restart (TurnStreamer.stopDetached). */
     internal fun stopDetached() = streamer.stopDetached()
+
+    /** Head stop, once the provider has stopped its rounds: rows still waiting on a source round are written with
+     *  what is known (TurnTelemetry.flushHeld). */
+    internal fun flushHeldRows() = telemetry.flushHeld()
 }

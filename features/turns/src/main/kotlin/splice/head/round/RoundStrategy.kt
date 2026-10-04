@@ -14,6 +14,7 @@ import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
 import splice.upstream.FoldController
 import splice.upstream.InterceptedRoundPost
+import splice.upstream.PostingTurnRow
 import splice.upstream.ReanchorController
 import splice.upstream.RetryNotice
 import splice.upstream.RoundBody
@@ -31,6 +32,8 @@ internal fun interface RawRoundObserver {
 internal data class RoundInterception(
     val interceptor: RoundInterceptor? = null,
     val rawRoundObserved: RawRoundObserver? = null,
+    /** The turn's row, for a round the interceptor leaves streaming past the turn. */
+    val postingRow: PostingTurnRow? = null,
 )
 
 internal class RoundStrategy(
@@ -101,6 +104,7 @@ internal class RoundStrategy(
             ordinary,
             if (interception.interceptor != null) interception.rawRoundObserved else null,
             perf,
+            if (interception.interceptor != null) interception.postingRow else null,
         )
 
     /** Neither path renders [body]'s text. With no interceptor the round goes straight to the transport,

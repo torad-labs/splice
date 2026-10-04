@@ -10,6 +10,7 @@ import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexCodeModeTurn
 import splice.provider.codex.CodexCodeModeWire
 import splice.upstream.InterceptedRoundPost
+import splice.upstream.PostingTurnRow
 import splice.upstream.RedirectableRoundPost
 import splice.upstream.RoundBody
 import splice.upstream.RoundBodyInterceptor
@@ -63,6 +64,9 @@ internal class CodeModeRedirectablePost(
     private val target: RedirectableRoundPost,
     private val wire: CodexCodeModeWire,
 ) : CodeModeUpstreamPost(target, wire) {
+    /** The posting turn's row, for a round still streaming when that turn returns. */
+    val postingRow: PostingTurnRow? get() = target.postingRow
+
     suspend fun into(body: CodeModeBody, sink: WireSink): TurnOutcome {
         val posted = wire.upstream(body)
         return if (target is RoundBodyPost) target.postInto(posted, sink) else target.into(posted.text, sink)

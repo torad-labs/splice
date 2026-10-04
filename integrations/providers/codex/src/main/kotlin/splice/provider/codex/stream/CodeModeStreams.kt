@@ -17,6 +17,7 @@ import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexCodeModeRegistry
 import splice.provider.codex.CodexCodeModeWire
 import splice.upstream.LifecycleScope
+import splice.upstream.RowRelease
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.sse.WireSink
 import java.util.concurrent.ConcurrentHashMap
@@ -41,6 +42,20 @@ internal object CodeModeSourceEnds {
             pending.remove()
             leases.forEach(CodeModeSourceLease::ended)
         }
+    }
+}
+
+/** A posting step's row, owed the source round that was still streaming when the step returned. */
+internal class CodeModeOwedRound(private val release: RowRelease, private val step: TurnOutcome.Success) {
+    /** Releases the row with [round] merged into the step's usage the way [CodeModeStreams.billFinished] merges a
+     *  round that finished in time, or with none when the round left nothing to bill. */
+    fun settle(round: Usage?) {
+        val usage = round?.let {
+            val accumulated = CodeModeOutcomeAccumulator()
+            accumulated.absorb(TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = it))
+            (accumulated.finishLocal(step) as? TurnOutcome.Success)?.usage
+        }
+        release.release(usage)
     }
 }
 
@@ -110,13 +125,15 @@ internal class CodeModeStreams(
         }
     }
 
-    /** A source round that finished before the client step that posted it ended is billed on that step, since its
-     *  usage is in hand when the step's row is written. One still streaming then is billed by the step that finishes
-     *  its script ([takeOutcome]); [CodeModeSourceRecords.consume] hands a round's usage out once either way. A claim
-     *  that cannot be saved leaves the round to that later step rather than failing a step whose calls already left. */
+    /** A source round is billed on the client step that posted it. One that finished before the step ended is merged
+     *  into the step here. One still streaming then is owed to the step's row, which waits for the round's terminal
+     *  ([CodeModeLiveRound.claim]); the client never waits for it. [CodeModeSourceRecords.consume] hands a round's
+     *  usage out once, so the step that finishes the script ([takeOutcome]) finds nothing left to absorb. A claim that
+     *  cannot be saved leaves the round to that later step rather than failing a step whose calls already left. */
     fun billFinished(record: CodeModeRecord, step: TurnOutcome): TurnOutcome {
+        val round = rounds[record.id]
         val usage = try {
-            registry.source.consume(record)
+            if (round != null) round.claim(record, step) else registry.source.consume(record)
         } catch (error: CodeModePersistenceException) {
             config.log("[code-mode] source round billed later: its claim was not saved (${error::class.simpleName})")
             null

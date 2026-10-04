@@ -1,8 +1,8 @@
 // NEW: v0.4.0 (FEATURES.md §3): the perf JSONL with its outcome tags, both generations (`<file>.1`
-// is the rotated one, 64 MiB each ≈ 20 days here), read as ONE coherent window. Reads STREAM: a
-// generation is never held whole — the writer's own rows open with `{"ts":N,`, so a row that is
-// provably before the cutoff is skipped unparsed; every other line is parsed, and the parsed
-// top-level numeric ts is the only authority for a row's time. Bytes are decoded with replacement
+// is the rotated one, 64 MiB each ≈ 20 days here), read as ONE coherent window. Appended rows decode
+// once into a byte- and row-bounded compact cache; unchanged polls select those retained facts.
+// Older evicted prefixes still stream on demand, skipping writer-shaped pre-cutoff rows as before.
+// The parsed top-level numeric ts remains the only authority. Bytes decode with replacement
 // (a torn multi-byte char makes one row unparseable, not the generation unreadable) and a
 // replacement char inside an outcome makes that row unattributed rather than a new failure tag.
 // A malformed line is skipped, never fatal; an absent generation is quiet; any other failure of
@@ -39,9 +39,6 @@ import splice.core.util.SafeFailureText
 import splice.usage.perf.PerfRow
 import splice.usage.perf.PerfRowsSource
 import splice.usage.perf.PerfRowsWindow
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.nio.charset.CodingErrorAction
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
@@ -61,7 +58,7 @@ private const val NEWEST_CANDIDATES = 4
 private data class Baseline(val drops: Long? = null, val raw: String? = null)
 
 /** A pre-cutoff line skipped unparsed, ordered by its leading-ts [hint]; only its parse is a row. */
-private data class Skipped(val hint: Long, val raw: String)
+private data class Skipped(val hint: Long, val raw: String? = null, val ts: Long? = null)
 private enum class PerfSelection { WORK, ECONOMICS }
 
 /** One settled scan supplies the work and probe sides of historical economics reconciliation. */
@@ -84,17 +81,20 @@ private const val COMPACT_KEY = "compact"
 // V4-345: the trace turn a row's request was recorded under (PerfRowMeta.turn).
 private const val TURN_KEY = "turn"
 
-/** What one pass over a generation's lines does (a lambda at the call site, never a stored seam). */
-private fun interface LineScan {
-    fun over(lines: Sequence<String>)
-}
-
-public class PerfRowsFileSource(
+public class PerfRowsFileSource internal constructor(
     private val file: Path,
-    /** Where PerfStats archives this file's retired generations; null reads the two live ones only. */
+    /** Where PerfStats archives retired generations; null reads the two live ones only. */
     private val archiveDir: Path? = null,
+    private val cache: PerfRowsCache = PerfRowsCache(),
 ) : PerfRowsSource {
     private val json = Json { ignoreUnknownKeys = true }
+
+    /** JSON decodes performed by this source, including rejected rows and baseline candidates. */
+    internal var parsedLines: Long = 0L
+        private set
+
+    internal val cachedBytes: Long get() = cache.retainedBytes
+    internal val cachedLines: Int get() = cache.retainedRows
 
     private val archiveName = PerfArchiveName(file.fileName.toString())
 
@@ -109,9 +109,11 @@ public class PerfRowsFileSource(
 
     private val generations = listOf(file.resolveSibling("${file.fileName}.1"), file)
 
+    @Synchronized
     override fun window(sinceMs: Long): PerfRowsWindow = settledRead(sinceMs, PerfSelection.WORK).window()
 
     /** Both sides are read together, so lost or clock-shifted evidence cannot justify subtraction. */
+    @Synchronized
     internal fun economicsEvidence(sinceMs: Long): EconomicsPerfEvidence {
         val scan = settledRead(sinceMs, PerfSelection.ECONOMICS)
         return EconomicsPerfEvidence(scan.window(), scan.probes)
@@ -142,15 +144,22 @@ public class PerfRowsFileSource(
 
     private fun readAll(sinceMs: Long, selection: PerfSelection): Scan {
         val scan = Scan(sinceMs, selection)
-        archived(scan).forEach { (generation, rotatedAt) ->
-            if (archiveName.endsBefore(rotatedAt, sinceMs)) scan.heldBack(rotatedAt) else read(scan, generation)
+        val archives = archived(scan)
+        archives.forEachIndexed { priority, (generation, rotatedAt) ->
+            if (archiveName.endsBefore(rotatedAt, sinceMs)) {
+                scan.heldBack(rotatedAt)
+            } else {
+                read(scan, generation, priority)
+            }
         }
-        generations.forEach { read(scan, it) }
+        generations.forEachIndexed { priority, generation ->
+            read(scan, generation, archives.size + priority)
+        }
         return scan
     }
 
-    private fun read(scan: Scan, generation: Path) {
-        Cancellables.runCatchingCancellable { stream(generation) { lines -> lines.forEach(scan::line) } }
+    private fun read(scan: Scan, generation: Path, priority: Int) {
+        Cancellables.runCatchingCancellable { cache.read(generation, priority, scan, PerfLineDecode(scan::decode)) }
             .exceptionOrNull()
             ?.takeUnless { it is NoSuchFileException }
             ?.let { scan.errors += "${generation.fileName}: ${SafeFailureText.render(it)}" }
@@ -169,16 +178,13 @@ public class PerfRowsFileSource(
             .sortedBy { it.second }
     }
 
-    /** One streaming pass over the generation's lines through a replacing UTF-8 decoder. */
-    private fun stream(path: Path, read: LineScan) {
-        val decoder = Charsets.UTF_8.newDecoder()
-            .onMalformedInput(CodingErrorAction.REPLACE)
-            .onUnmappableCharacter(CodingErrorAction.REPLACE)
-        BufferedReader(InputStreamReader(Files.newInputStream(path), decoder)).use { r -> read.over(r.lineSequence()) }
-    }
+    private fun drops(obj: JsonObject): Long? = (obj[PerfKeys.ASYNC_IO_DROPS] as? JsonPrimitive)?.longOrNull
 
-    /** The state one window read accumulates across both generations, oldest generation first. */
-    private inner class Scan(private val sinceMs: Long, private val selection: PerfSelection) {
+    private fun timestamp(obj: JsonObject): Long? =
+        (obj["ts"] as? JsonPrimitive)?.takeUnless { it.isString }?.longOrNull
+
+    /** The state one window read accumulates across generations, oldest generation first. */
+    private inner class Scan(private val sinceMs: Long, private val selection: PerfSelection) : PerfLineVisit {
         val rows = ArrayList<PerfRow>()
         val probes = ArrayList<PerfRow>()
         val errors = ArrayList<String>()
@@ -202,7 +208,7 @@ public class PerfRowsFileSource(
 
         /** A writer-shaped line provably inside the held span and before the cutoff is skipped unparsed;
          *  every other line is parsed and its top-level unquoted ts decides where it goes. */
-        fun line(line: String) {
+        override fun raw(line: String) {
             val hint = provablyBefore(line)
             if (hint != null && !emptyModel.containsMatchIn(line)) {
                 if (dropsField.containsMatchIn(line)) candidate(Baseline(raw = line))
@@ -218,6 +224,55 @@ public class PerfRowsFileSource(
             parsed(ts, obj)
         }
 
+        fun decode(line: String): PerfCachedLine {
+            val obj = parse(line)
+            val ts = obj?.let(::timestamp)
+            val facts = PerfCachedLine(
+                row = null,
+                numericBytes = 0L,
+                leadingTs = ownRow.find(line)?.groupValues?.get(1)?.toLongOrNull(),
+                emptyModel = emptyModel.containsMatchIn(line),
+                dropsCandidate = dropsField.containsMatchIn(line),
+                drops = obj?.let(::drops),
+                probe = false,
+            )
+            if (obj == null || ts == null) return facts
+            val fields = cache.fields(obj)
+            return facts.copy(
+                row = row(ts, obj, fields),
+                numericBytes = fields.retainedBytes,
+                probe = LivenessProbe.legacyRow(obj),
+            )
+        }
+
+        override fun kept(line: PerfCachedLine) {
+            if (skipBefore(line)) return
+            val row = line.row
+            if (row == null) {
+                skipped++
+                return
+            }
+            oldest = minOf(oldest ?: row.ts, row.ts)
+            if (row.ts < sinceMs) line.drops?.let { candidate(Baseline(drops = it)) }
+            if (line.probe) {
+                probe(row)
+                return
+            }
+            newest = maxOf(newest ?: row.ts, row.ts)
+            if (row.ts >= sinceMs) rows += row
+        }
+
+        private fun skipBefore(line: PerfCachedLine): Boolean {
+            val known = oldest
+            val hint = line.leadingTs
+            if (known == null || hint == null) return false
+            val before = hint < sinceMs && hint >= known
+            if (!before || line.emptyModel) return false
+            if (line.dropsCandidate) candidate(Baseline(drops = line.drops))
+            latestCandidate(Skipped(hint, ts = line.row?.ts))
+            return true
+        }
+
         private fun parsed(ts: Long, obj: JsonObject) {
             oldest = minOf(oldest ?: ts, ts)
             if (ts < sinceMs) drops(obj)?.let { candidate(Baseline(drops = it)) }
@@ -227,6 +282,10 @@ public class PerfRowsFileSource(
             }
             newest = maxOf(newest ?: ts, ts)
             if (ts >= sinceMs) rows += row(ts, obj)
+        }
+
+        private fun probe(row: PerfRow) {
+            if (row.ts >= sinceMs && selection == PerfSelection.ECONOMICS) probes += row
         }
 
         private fun probe(ts: Long, obj: JsonObject) {
@@ -255,7 +314,7 @@ public class PerfRowsFileSource(
          *  skipped line that PARSES, whichever is later. */
         private fun newestHeld(): Long? {
             if (rows.isNotEmpty()) return newest
-            val unparsed = latest.asReversed().firstNotNullOfOrNull { parse(it.raw)?.let(::timestamp) }
+            val unparsed = latest.asReversed().firstNotNullOfOrNull { it.ts ?: it.raw?.let(::parse)?.let(::timestamp) }
             return listOfNotNull(newest, unparsed).maxOrNull()
         }
 
@@ -273,8 +332,6 @@ public class PerfRowsFileSource(
             oldest = minOf(oldest ?: rotatedAt, rotatedAt)
         }
 
-        private fun drops(obj: JsonObject): Long? = (obj[PerfKeys.ASYNC_IO_DROPS] as? JsonPrimitive)?.longOrNull
-
         fun window(): PerfRowsWindow = PerfRowsWindow(
             rows = rows,
             oldestHeldTs = oldest,
@@ -284,21 +341,13 @@ public class PerfRowsFileSource(
             newestHeldTs = newestHeld(),
         )
 
-        private fun parse(line: String): JsonObject? =
+        private fun parse(line: String): JsonObject? {
+            parsedLines++
             // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): one malformed row in a live-appended JSONL is normal; whole-file read failures are already routed into Scan.errors -> readError by readAll() above.
-            Cancellables.runCatchingCancellable { json.parseToJsonElement(line) as? JsonObject }.getOrNull()
+            return Cancellables.runCatchingCancellable { json.parseToJsonElement(line) as? JsonObject }.getOrNull()
+        }
 
-        private fun timestamp(obj: JsonObject): Long? =
-            (obj["ts"] as? JsonPrimitive)?.takeUnless { it.isString }?.longOrNull
-
-        private fun row(ts: Long, obj: JsonObject): PerfRow {
-            // The marks and counters, which the writer puts as numbers. A string is a fact, never a count,
-            // even one of digits alone: a session tag or a turn id (V4-345) of digits read as a number.
-            val fields = buildMap {
-                obj.forEach { (k, v) ->
-                    (v as? JsonPrimitive)?.takeUnless { it.isString }?.longOrNull?.let { n -> put(k, n) }
-                }
-            }
+        private fun row(ts: Long, obj: JsonObject, fields: Map<String, Long> = cache.fields(obj)): PerfRow {
             val outcome = JsonScalars.str(obj, "outcome")?.takeUnless { REPLACEMENT_CHAR in it } ?: UNATTRIBUTED
             // V4-127: the writer's string-and-flag facts, read BY NAME off the same parsed object the
             // numeric bag came from. Read by name, never by position, because four of the five are

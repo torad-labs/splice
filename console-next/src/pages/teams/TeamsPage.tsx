@@ -23,14 +23,13 @@ export function TeamsPage() {
   const registryFailure = sessions.isError ? failureText(sessions.error) : sessions.data?.error;
   const ready = sessions.isSuccess && registryFailure === undefined;
   const { groups, unresolved } = projectTeams(ready ? sessions.data.sessions : []);
-  const usage = usePerfTurns({ last: 86_400_000, n: 10_000, filter: { local: false } }, 30_000, ready);
+  const usage = usePerfTurns({ last: 86_400_000, n: 1, filter: { local: false } }, 30_000, ready);
   const models = useModels();
   const reading = {
     data: usage.data === undefined || isPendingRoute(usage.data) ? undefined : usage.data,
     models: models.data === undefined || isPendingRoute(models.data) ? undefined : models.data,
     pending: usage.isPending,
     error: usage.isError ? failureText(usage.error) : null,
-    since: usage.data === undefined || isPendingRoute(usage.data) ? 0 : usage.data.window?.since ?? 0,
     retry: () => void usage.refetch(),
   };
   return (

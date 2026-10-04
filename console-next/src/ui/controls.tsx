@@ -56,12 +56,12 @@ export interface Choice<T extends string> {
 }
 
 /** One of a few named choices, in a menu: the current one is checked, and each says what it does. */
-export function Select<T extends string>({ value, options, onChange, label, menuClassName = '', menuState }: { value: T; options: readonly Choice<T>[]; onChange: (next: T) => void; label: string; menuClassName?: string; menuState?: { open: boolean; onOpenChange: (open: boolean) => void } }) {
+export function Select<T extends string>({ value, options, onChange, label, menuClassName = '', menuState, placeholder }: { value: T; options: readonly Choice<T>[]; onChange: (next: T) => void; label: string; placeholder?: string; menuClassName?: string; menuState?: { open: boolean; onOpenChange: (open: boolean) => void } }) {
   const current = options.find((option) => option.id === value);
   return (
     <Menu.Root modal={false} {...menuState}>
       <Menu.Trigger className="select" aria-label={label}>
-        {current?.label ?? value}
+        {current?.label ?? placeholder ?? value}
         <Chevron />
       </Menu.Trigger>
       <Menu.Portal>

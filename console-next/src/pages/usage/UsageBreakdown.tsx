@@ -4,9 +4,9 @@ import { isPendingRoute } from '../../api/auth';
 import { failureText } from '../../api/client';
 import { usePerfTurns } from '../../api/turns';
 import { fmtTokens, fmtUsd } from '../../lib/format';
-import { usageBreakdown } from '../../lib/usage-breakdown';
+import { fullUsageBreakdown } from '../../lib/usage-breakdown';
 import type { UsageBreakdown as Breakdown, UsageDimension } from '../../lib/usage-breakdown';
-import type { TurnRow, TurnsState } from '../../types/perf';
+import type { TurnsState } from '../../types/perf';
 import { Button, Empty, Fault, Segmented } from '../../ui';
 import { B } from './copy';
 import './usage-breakdown.css';
@@ -14,7 +14,14 @@ import './usage-breakdown.css';
 const dimensions = [['model', B.model], ['account', B.account], ['day', B.day]] as const;
 
 export function requestsFor(item: Breakdown, by: UsageDimension, since: number, until: number): string {
-  const query = new URLSearchParams({ since: String(since), until: String(until) });
+  let from = since;
+  let to = until;
+  if (by === 'day' && item.key !== null) {
+    const [year = 0, month = 0, day = 0] = item.key.split('-').map(Number);
+    from = Math.max(since, new Date(year, month - 1, day).getTime());
+    to = Math.min(until, new Date(year, month - 1, day + 1).getTime());
+  }
+  const query = new URLSearchParams({ since: String(from), until: String(to) });
   if (by === 'account' && item.head !== null) query.set('head', item.head);
   if (item.key === null) query.set('unattributed', by);
   else query.set(by, item.key);
@@ -26,9 +33,8 @@ const titleOf = (item: Breakdown, by: UsageDimension): string =>
 const amount = (item: Breakdown): string => item.cost === null ? B.unknown : item.unpriced === 0 ? fmtUsd(item.cost) : B.atLeast(fmtUsd(item.cost));
 const tokens = (value: number | null, missing: number): string => value === null ? B.unknown : missing === 0 ? fmtTokens(value) : B.atLeast(fmtTokens(value));
 
-export function UsageValues({ rows, by, since, until, labelOf }: { rows: readonly TurnRow[]; by: UsageDimension; since: number; until: number; labelOf: (head: string) => string }) {
+export function UsageValues({ items, by, since, until, labelOf }: { items: readonly Breakdown[]; by: UsageDimension; since: number; until: number; labelOf: (head: string) => string }) {
   const [table, setTable] = useState(false);
-  const items = usageBreakdown(rows.filter(row => row.ts >= since && row.ts < until), by);
   const maximum = Math.max(...items.map(item => item.cost ?? 0), 0) || 1;
   if (items.length === 0) return <Empty title={B.none} />;
   const entries = items.map(item => {
@@ -65,26 +71,27 @@ export function UsageValues({ rows, by, since, until, labelOf }: { rows: readonl
   </>;
 }
 
-function Coverage({ data, since, labelOf }: { data: TurnsState; since: number; labelOf: (head: string) => string }) {
-  const partial = data.unread.length > 0 || data.truncated.length > 0 || (data.completeFrom !== undefined && data.completeFrom > since);
-  if (!partial) return null;
-  return <div className="usage-coverage" role="status"><b>{B.partial}</b>{data.unread.map(row => <p key={row.head}>{labelOf(row.head)}: {row.reason}</p>)}{data.truncated.map(row => <p key={row.head}>{B.truncated(labelOf(row.head), row.returned, row.count)}</p>)}{data.completeFrom === undefined || data.completeFrom <= since ? null : <p>{B.coverage}</p>}</div>;
+function Coverage({ data, labelOf }: { data: TurnsState; labelOf: (head: string) => string }) {
+  if (data.unread.length === 0) return null;
+  return <div className="usage-coverage" role="status"><b>{B.partial}</b>{data.unread.map(row => <p key={row.head}>{labelOf(row.head)}: {row.reason}</p>)}</div>;
 }
 
 export function UsageBreakdown({ labelOf, read }: {
   labelOf: (head: string) => string; read: ReturnType<typeof usePerfTurns>;
 }) {
   const [by, setBy] = useState<UsageDimension>('model');
-  const window = read.data === undefined || isPendingRoute(read.data) ? undefined : read.data.window;
+  const data = read.data === undefined || isPendingRoute(read.data) ? null : read.data;
+  const window = data?.window;
+  const items = data === null ? null : fullUsageBreakdown(data, by);
   return (
     <section className="section usage-breakdown" aria-labelledby="usage-breakdown">
       <div className="usage-breakdown-head"><div><h2 id="usage-breakdown">{B.title}</h2><p className="why">{B.why}</p></div><Segmented label={B.group} options={dimensions} value={by} onChange={setBy} /></div>
       {by === 'account' ? <p className="hint">{B.accountWhy}</p> : by === 'day' ? <p className="hint">{B.dayWhy}</p> : null}
       {read.isError ? <Fault message={failureText(read.error)} onRetry={() => void read.refetch()} />
         : read.isPending ? <p className="hint">{B.reading}</p>
-        : isPendingRoute(read.data) || window === undefined || window.until === null ? <p className="hint">{B.unavailable}</p> : <>
-          <Coverage data={read.data} since={window.since} labelOf={labelOf} />
-          <UsageValues rows={read.data.landed} by={by} since={window.since} until={window.until} labelOf={labelOf} />
+        : data === null || items === null || window === undefined || window.until === null ? <p className="hint">{B.unavailable}</p> : <>
+          <Coverage data={data} labelOf={labelOf} />
+          <UsageValues items={items} by={by} since={window.since} until={window.until} labelOf={labelOf} />
         </>}
     </section>
   );

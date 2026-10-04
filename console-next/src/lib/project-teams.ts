@@ -1,6 +1,7 @@
 // Project membership comes from the registry's resolved common root, never from a name or a saved team.
 import type { HandedEdge, SessionEdge, SessionRow } from '../types/sessions';
-import type { TurnRow } from '../types/perf';
+import type { TurnsState, TurnSessionUsage } from '../types/perf';
+import { mergeWindowStats } from './usage-breakdown';
 
 export interface ProjectTeam {
   root: string;
@@ -33,31 +34,30 @@ export function projectTeams(rows: readonly SessionRow[]): { groups: ProjectTeam
 }
 
 /** Only full session attribution can assign recorded request usage to a project. */
-export function projectUsage(sessions: readonly SessionRow[], records: readonly TurnRow[]) {
+export function projectUsage(sessions: readonly SessionRow[], data: TurnsState) {
+  if (data.usageBy === undefined || data.matched === null || Object.keys(data.usageBy).length === 0 || Object.keys(data.matchedBy).some(head => data.usageBy?.[head]?.sessions === undefined)) return null;
   const ids = new Set(sessions.map(row => row.session_id).filter(id => id !== null));
-  const rows = records.filter(row => row.local_step !== 1 && row.session_id !== undefined && ids.has(row.session_id));
+  const heads = new Set(sessions.map(row => row.head));
+  const rows: TurnSessionUsage[] = [];
   const models: Record<string, { head: string; model: string }> = {};
   const newest = new Map<string, number>();
-  let input: number | null = null;
-  let output: number | null = null;
-  let cost: number | null = null;
-  let unpriced = 0;
-  let missingInput = 0;
-  let missingOutput = 0;
-  for (const row of rows) {
-    if (row.in_tokens === undefined) missingInput++;
-    else input = (input ?? 0) + row.in_tokens;
-    if (row.out_tokens === undefined) missingOutput++;
-    else output = (output ?? 0) + row.out_tokens;
-    if (row.cost_usd == null) unpriced++;
-    else cost = (cost ?? 0) + row.cost_usd;
-    const id = row.session_id;
-    if (id !== undefined && row.compact !== true && row.model !== null && row.ts >= (newest.get(id) ?? -Infinity)) {
-      models[id] = { head: row.head, model: row.model };
-      newest.set(id, row.ts);
+  let unattributed = 0;
+  for (const [head, usage] of Object.entries(data.usageBy)) {
+    for (const row of usage.sessions ?? []) {
+      if (row.key === null) {
+        if (heads.has(head)) unattributed += row.requests;
+        continue;
+      }
+      if (!ids.has(row.key)) continue;
+      rows.push(row);
+      if (row.last_model !== null && row.last_model_ts_epoch_ms !== null && row.last_model_ts_epoch_ms >= (newest.get(row.key) ?? -Infinity)) {
+        models[row.key] = { head, model: row.last_model };
+        newest.set(row.key, row.last_model_ts_epoch_ms);
+      }
     }
   }
-  return { requests: rows.length, input, output, cost, unpriced, missingInput, missingOutput, models };
+  const totals = mergeWindowStats(rows);
+  return { requests: totals.requests, input: totals.input_tokens, output: totals.output_tokens, cost: totals.cost_usd, unpriced: totals.unpriced_requests, missingInput: totals.missing_input_requests, missingOutput: totals.missing_output_requests, models, unattributed };
 }
 
 /** Addresses and unresolved names are recipient selectors, not sender session ids. */

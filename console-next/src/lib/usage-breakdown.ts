@@ -1,5 +1,5 @@
-// Only facts recorded on a retained request can attribute its spend or tokens.
-import type { TurnRow } from '../types/perf';
+// Usage combines complete-window daemon aggregates, never the displayed request rows.
+import type { TurnsState, TurnUsageStats } from '../types/perf';
 
 export type UsageDimension = 'model' | 'account' | 'day';
 export interface UsageBreakdown {
@@ -15,46 +15,37 @@ export interface UsageBreakdown {
   missingOutput: number;
 }
 
-const viewerDay = new Intl.DateTimeFormat('en-CA', {
-  year: 'numeric', month: '2-digit', day: '2-digit',
-});
-
-export function usageBreakdown(rows: readonly TurnRow[], by: UsageDimension): UsageBreakdown[] {
-  const groups = new Map<string, UsageBreakdown>();
-  for (const row of rows) {
-    if (row.local_step === 1) continue;
-    const parts = by === 'day' ? Object.fromEntries(viewerDay.formatToParts(row.ts).map(part => [part.type, part.value])) : null;
-    const key = by === 'model' ? row.model : by === 'account' ? row.account ?? null : `${parts?.['year']}-${parts?.['month']}-${parts?.['day']}`;
-    const head = by === 'account' ? row.head : null;
-    const id = JSON.stringify([head, key]);
-    const group = groups.get(id) ?? {
-      id, key, head, turns: 0, cost: null, unpriced: 0, input: null, output: null, missingInput: 0, missingOutput: 0,
-    };
-    group.turns++;
-    if (row.cost_usd == null) group.unpriced++;
-    else group.cost = (group.cost ?? 0) + row.cost_usd;
-    if (row.in_tokens === undefined) group.missingInput++;
-    else group.input = (group.input ?? 0) + row.in_tokens;
-    if (row.out_tokens === undefined) group.missingOutput++;
-    else group.output = (group.output ?? 0) + row.out_tokens;
-    groups.set(id, group);
-  }
-  return [...groups.values()].sort((a, b) => by === 'day'
-    ? (b.key ?? '').localeCompare(a.key ?? '')
-    : (b.cost ?? -1) - (a.cost ?? -1) || b.turns - a.turns || Number(a.key === null) - Number(b.key === null) || (a.key ?? '').localeCompare(b.key ?? ''));
+/** Adds daemon aggregates across commands; absent token and price facts remain absent. */
+export function mergeWindowStats(stats: readonly TurnUsageStats[]): TurnUsageStats {
+  const sum = (key: 'input_tokens' | 'cached_tokens' | 'output_tokens' | 'cost_usd'): number | null => stats.reduce<number | null>((total, row) => row[key] === null ? total : (total ?? 0) + row[key], null);
+  const count = (key: 'requests' | 'unpriced_requests' | 'missing_input_requests' | 'missing_output_requests' | 'missing_cache_requests'): number => stats.reduce((total, row) => total + row[key], 0);
+  const input = sum('input_tokens');
+  const cached = sum('cached_tokens');
+  const missingCache = count('missing_cache_requests');
+  return { requests: count('requests'), input_tokens: input, cached_tokens: cached, output_tokens: sum('output_tokens'), cost_usd: sum('cost_usd'), cache_share: input !== null && input > 0 && cached !== null && missingCache === 0 ? cached / input : null, unpriced_requests: count('unpriced_requests'), missing_input_requests: count('missing_input_requests'), missing_output_requests: count('missing_output_requests'), missing_cache_requests: missingCache };
 }
 
-/** Sums only recorded facts; absent prices or tokens remain unknown. */
-export function usageTotals(rows: readonly TurnRow[]) {
-  const groups = usageBreakdown(rows, 'model');
-  const sum = (key: 'cost' | 'input' | 'output'): number | null => groups.reduce<number | null>((total, group) => group[key] === null ? total : (total ?? 0) + group[key], null);
-  return {
-    requests: groups.reduce((total, group) => total + group.turns, 0),
-    cost: sum('cost'), input: sum('input'), output: sum('output'),
-    unpriced: groups.reduce((total, group) => total + group.unpriced, 0),
-    missingInput: groups.reduce((total, group) => total + group.missingInput, 0),
-    missingOutput: groups.reduce((total, group) => total + group.missingOutput, 0),
-  };
+export function fullWindowUsage(data: TurnsState | null): TurnUsageStats | null {
+  if (data?.usageBy === undefined || data.matched === null || Object.keys(data.usageBy).length === 0 || Object.keys(data.matchedBy).some(head => data.usageBy?.[head] === undefined)) return null;
+  return mergeWindowStats(Object.values(data.usageBy).map(usage => usage.totals));
+}
+
+export function fullUsageBreakdown(data: TurnsState, by: UsageDimension): UsageBreakdown[] | null {
+  if (fullWindowUsage(data) === null) return null;
+  const groups = new Map<string, { key: string | null; head: string | null; stats: TurnUsageStats[] }>();
+  for (const [command, usage] of Object.entries(data.usageBy ?? {})) {
+    for (const row of usage[by === 'model' ? 'models' : by === 'account' ? 'accounts' : 'days']) {
+      const head = by === 'account' ? command : null;
+      const id = JSON.stringify([head, row.key]);
+      const group = groups.get(id) ?? { key: row.key, head, stats: [] };
+      group.stats.push(row);
+      groups.set(id, group);
+    }
+  }
+  return [...groups.entries()].map(([id, group]) => {
+    const stats = mergeWindowStats(group.stats);
+    return { id, key: group.key, head: group.head, turns: stats.requests, input: stats.input_tokens, output: stats.output_tokens, cost: stats.cost_usd, unpriced: stats.unpriced_requests, missingInput: stats.missing_input_requests, missingOutput: stats.missing_output_requests };
+  }).sort((a, b) => by === 'day' ? (b.key ?? '').localeCompare(a.key ?? '') : (b.cost ?? -1) - (a.cost ?? -1) || b.turns - a.turns || (a.key ?? '').localeCompare(b.key ?? ''));
 }
 
 export function budgetWarning(cap: number | null, spent: number | null): { kind: 'near' | 'reached'; remaining: number; share: number } | null {

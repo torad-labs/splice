@@ -32,7 +32,6 @@ export interface ProjectReading {
   models: ModelsPayload | undefined;
   pending: boolean;
   error: string | null;
-  since: number;
   retry: () => void;
 }
 
@@ -44,9 +43,8 @@ export function ProjectTeam({ group, reading }: { group: ProjectTeamRow; reading
   const [shown, setShown] = useState(5);
   const visible = messages.slice(0, shown);
   const data = reading?.data;
-  const usage = data === undefined ? null : projectUsage(group.sessions, data.landed);
-  const heads = new Set(group.sessions.map(row => row.head));
-  const partial = data !== undefined && (data.unread.some(row => heads.has(row.head)) || data.truncated.some(row => heads.has(row.head)) || (data.completeFrom !== undefined && data.completeFrom > (reading?.since ?? 0)) || data.landed.some(row => heads.has(row.head) && row.session_id === undefined && row.local_step !== 1));
+  const usage = data === undefined ? null : projectUsage(group.sessions, data);
+  const partial = data !== undefined && (data.unread.length > 0 || (usage?.unattributed ?? 0) > 0);
   const modelOf = (row: SessionRow): string | undefined => {
     const last = row.session_id === null ? undefined : usage?.models[row.session_id];
     if (last === undefined) return undefined;

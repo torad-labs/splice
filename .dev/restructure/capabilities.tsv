@@ -1,4 +1,6 @@
 source	sha256	disposition	destination	reason
+features/usage/src/main/kotlin/splice/usage/perf/TurnUsage.kt	c8c4b910dcf8a63d725706dea51007bfcd2f06c0fa21a041f47e31406e648e8f	created		V4-444: Full-window usage and session aggregates consume the existing filtered read before the display limit
+features/usage/src/test/kotlin/splice/usage/perf/PerfTurnUsageTest.kt	95b8f8d011b56b56820c0736648ef6d32a7bf636dae16f40ca3fe6a6183aa13c	created		V4-444: Route controls exceed the display limit and prove interval edges, refusals, viewer days and one source read
 console-next/src/lib/usage-breakdown.ts	cb4645c13a562c2f8bcba763a1cbe5a74e73cc8da578c2daf3673f1ab1edebdd	created		V4-444: Recorded request attribution and totals preserve missing prices and tokens
 console-next/src/pages/usage/UsageBreakdown.tsx	f01084cbfcb140a59d2b0ebc77ec224c50516fd8cc57224f6f7ffafa1753fcea	created		V4-444: Request-backed spend bars and semantic table carry exact captured drill-down bounds
 console-next/src/pages/usage/UsagePricing.tsx	4f630b3e0bdf0afb3130a3747567ffa32d80fa4c62480ec8e06bf24056f2b019	created		V4-444: Every unpriced command has declared-rate provenance and a supported per-command configuration path

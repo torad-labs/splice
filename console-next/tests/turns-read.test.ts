@@ -1,7 +1,8 @@
 // V4-444: the turns read carries the Requests filters to every head, and hands back the daemon's own count of the rows
 // they match. Usage and Requests read that one count; neither rebuilds it from the clamped rows.
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { fetchTurns } from '../src/api/turns';
+import { fetchTurns, mergeTurns, perfTurnsPath } from '../src/api/turns';
+import type { TurnUsageWire } from '../src/types/perf';
 
 const json = (body: unknown) => Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } }));
 
@@ -23,6 +24,27 @@ function daemon(urls: string[], countB: number | null = 3) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('the filtered read', () => {
+  test('unread records remain explicit even when the available aggregates are complete', () => {
+    const merged = mergeTurns([{ since: 100, n: 1, heads: [{ key: 'a', label: 'a', count: 2362, rows: [], skipped_lines: 2 }] }]);
+    expect(merged.unread).toEqual([{ head: 'a', reason: '2 request records could not be read.' }]);
+  });
+
+  test('the viewer zone reaches the daemon without changing the captured interval', () => {
+    const query = new URL(perfTurnsPath('a', 1, { since: 100, until: 200, timeZone: 'America/Los_Angeles', filter: { local: false } }), 'http://synthetic.invalid').searchParams;
+    expect(query.get('time_zone')).toBe('America/Los_Angeles');
+    expect(query.get('since')).toBe('100');
+    expect(query.get('until')).toBe('200');
+    expect(query.get('local')).toBe('0');
+  });
+
+  test('complete-window aggregates stay per command despite a tiny display slice', () => {
+    const usage: TurnUsageWire = { totals: { requests: 2362, input_tokens: 2300000, cached_tokens: 2000000, output_tokens: 100000, cost_usd: 12, cache_share: 20 / 23, unpriced_requests: 0, missing_input_requests: 0, missing_output_requests: 0, missing_cache_requests: 0 }, models: [], accounts: [], days: [] };
+    const merged = mergeTurns([{ since: 100, n: 1, heads: [{ key: 'a', label: 'a', count: 2362, rows: [], usage }] }]);
+    expect(merged.usageBy).toEqual({ a: usage });
+    expect(merged.landed).toEqual([]);
+    expect(mergeTurns([{ since: 100, n: 1, heads: [{ key: 'a', label: 'a', count: 2362, rows: [] }] }]).usageBy).toEqual({});
+  });
+
   test('every head is asked the same window and filters, a rolling window pinned to the moment of the read', async () => {
     const urls: string[] = [];
     daemon(urls);

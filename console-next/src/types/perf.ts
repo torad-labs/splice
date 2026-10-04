@@ -189,6 +189,34 @@ export type TurnRowWire = Omit<TurnRow, 'head' | 'session' | 'account' | 'cache_
   response_message_id: string | null;
 };
 
+/** Full filtered-window numbers, computed before any displayed-row clamp. */
+export interface TurnUsageStats {
+  requests: number;
+  input_tokens: number | null;
+  cached_tokens: number | null;
+  output_tokens: number | null;
+  cost_usd: number | null;
+  cache_share: number | null;
+  unpriced_requests: number;
+  missing_input_requests: number;
+  missing_output_requests: number;
+  missing_cache_requests: number;
+}
+
+export interface TurnUsageGroup extends TurnUsageStats { key: string | null }
+export interface TurnSessionUsage extends TurnUsageGroup {
+  last_model: string | null;
+  last_model_ts_epoch_ms: number | null;
+}
+
+export interface TurnUsageWire {
+  sessions?: TurnSessionUsage[];
+  totals: TurnUsageStats;
+  models: TurnUsageGroup[];
+  accounts: TurnUsageGroup[];
+  days: TurnUsageGroup[];
+}
+
 /** One head's block. A head the daemon cannot read is listed with `error` in place of its rows, so
  *  the window fields and `rows` are absent on that branch (PerfRoutes.turns). */
 export interface PerfTurnsHeadWire {
@@ -204,6 +232,8 @@ export interface PerfTurnsHeadWire {
   skipped_lines?: number;
   error?: string;
   rows?: TurnRowWire[];
+  /** Absent on an older daemon; never replaced with sums over its clamped rows. */
+  usage?: TurnUsageWire;
 }
 
 /** What GET /api/perf/turns narrows a head's window by, before its newest-n clamp (TurnsFilter.kt). `outcome` is a tag, or
@@ -423,6 +453,8 @@ export interface TurnsState {
   matched: number | null;
   /** The same count per head that said one. */
   matchedBy: Record<string, number>;
+  /** Full-window aggregates from each answering head, not its displayed-row slice. */
+  usageBy?: Record<string, TurnUsageWire>;
   /** The window every head was asked, epoch ms, until exclusive: a rolling read is pinned to the one instant it ran at, and
    *  null `until` is a span left open to the daemon's now. Absent on a tail read, which asks the daemon's default window. A link
    *  that carries `matched` carries this range, never a clock read again later. */

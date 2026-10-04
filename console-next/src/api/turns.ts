@@ -29,6 +29,7 @@ import type {
   TruncatedHead,
   TurnRow,
   TurnRowWire,
+  TurnUsageWire,
   TurnsState,
   UnreadHead,
   WireRead,
@@ -64,14 +65,16 @@ export interface TurnsWindow {
   since?: number | undefined;
   until?: number | undefined;
   filter?: PerfTurnsFilter | undefined;
+  timeZone?: string | undefined;
 }
 
 const FILTER_TEXT = ['outcome', 'model', 'account', 'session', 'unattributed'] as const;
 
-export function perfTurnsPath(head: string, n: number, { since, until, filter = {} }: TurnsWindow = {}): string {
+export function perfTurnsPath(head: string, n: number, { since, until, filter = {}, timeZone }: TurnsWindow = {}): string {
   const query = new URLSearchParams({ head, n: String(n) });
   if (since !== undefined) query.set('since', String(since));
   if (until !== undefined) query.set('until', String(until));
+  if (timeZone !== undefined) query.set('time_zone', timeZone);
   for (const key of FILTER_TEXT) {
     const value = filter[key];
     if (value !== undefined) query.set(key, value);
@@ -114,6 +117,7 @@ export interface MergedTurns {
   truncated: TruncatedHead[];
   matched: number | null;
   matchedBy: Record<string, number>;
+  usageBy: Record<string, TurnUsageWire>;
 }
 
 /**
@@ -128,13 +132,15 @@ export function mergeTurns(answers: readonly PerfTurnsWire[]): MergedTurns {
   const unread: UnreadHead[] = [];
   const truncated: TruncatedHead[] = [];
   const matchedBy: Record<string, number> = {};
+  const usageBy: Record<string, TurnUsageWire> = {};
   let counted = true;
   for (const answer of answers) {
     for (const block of answer.heads) {
-      if (block.error !== undefined) unread.push({ head: block.key, reason: block.error });
-      if (block.read_error !== undefined) unread.push({ head: block.key, reason: block.read_error });
+      const reasons = [block.error, block.read_error, (block.skipped_lines ?? 0) > 0 ? `${block.skipped_lines} request records could not be read.` : undefined].filter((reason): reason is string => reason !== undefined);
+      if (reasons.length > 0) unread.push({ head: block.key, reason: reasons.join(' ') });
       if (typeof block.count === 'number') matchedBy[block.key] = block.count;
       else if (block.error === undefined) counted = false;
+      if (block.usage !== undefined) usageBy[block.key] = block.usage;
       const rows = block.rows ?? [];
       if (block.truncated === true) truncated.push({ head: block.key, count: block.count ?? null, returned: rows.length });
       for (const row of rows) landed.push(rowFromWire(block.key, row));
@@ -142,7 +148,7 @@ export function mergeTurns(answers: readonly PerfTurnsWire[]): MergedTurns {
   }
   landed.sort((left, right) => left.ts - right.ts);
   const matched = counted ? Object.values(matchedBy).reduce((sum, count) => sum + count, 0) : null;
-  return { landed, unread, truncated, matched, matchedBy };
+  return { landed, unread, truncated, matched, matchedBy, usageBy };
 }
 
 type HeadRead = { ok: true; wire: PerfTurnsWire } | { ok: false; head: string; err: unknown };
@@ -167,7 +173,7 @@ export type TurnsSlice = TurnsState | PendingRoute;
  * the daemon read. Before it, an hour with no rows is unread, not idle. `matched` is the daemon's count of what the
  * window and filters hold, however few rows came back.
  */
-export async function fetchTurns({ head, n = DEFAULT_TAIL, since, until, last, filter }: TurnsAsk = {}, now: () => number = Date.now): Promise<TurnsSlice> {
+export async function fetchTurns({ head, n = DEFAULT_TAIL, since, until, last, filter, timeZone }: TurnsAsk = {}, now: () => number = Date.now): Promise<TurnsSlice> {
   try {
     const heads = await request<HeadsPayload>('/api/heads');
     const asked = head !== undefined && head !== '' ? [head] : heads.heads.map((status) => status.key);
@@ -177,7 +183,7 @@ export async function fetchTurns({ head, n = DEFAULT_TAIL, since, until, last, f
     const rolling = since === undefined && last !== undefined;
     const from = since ?? (rolling ? at - last : undefined);
     const to = until ?? (rolling ? at : undefined);
-    const reads = await Promise.all(asked.map((key) => readHeadTurns(key, n, { since: from, until: to, filter })));
+    const reads = await Promise.all(asked.map((key) => readHeadTurns(key, n, { since: from, until: to, filter, timeZone })));
     const failed = reads.flatMap((read) => (read.ok ? [] : [read]));
     const first = failed[0];
     if (first !== undefined && failed.length === reads.length) throw first.err;
@@ -196,6 +202,7 @@ export async function fetchTurns({ head, n = DEFAULT_TAIL, since, until, last, f
       truncated: merged.truncated,
       matched: merged.matched,
       matchedBy: merged.matchedBy,
+      usageBy: merged.usageBy,
       ...(from === undefined ? {} : { window: { since: from, until: to ?? null } }),
       ...(cuts.length === 0 ? {} : { completeFrom: Math.max(...cuts) }),
     };
@@ -222,14 +229,16 @@ export interface TurnsAsk {
   /** Re-read on every `turn.end` event as well as on the poll. A tail always is; a window is when its asker says so,
    *  because a window wider than a day re-read on every turn is too heavy. */
   live?: boolean | undefined;
+  /** Viewer zone for calendar-day aggregates. */
+  timeZone?: string | undefined;
 }
 
 /** The landed turns and the in-flight set, re-read on the poll (`every`, default 5 s; false for none) and, for a tail or
  *  a `live` window, on every `turn.end` event. `enabled` false reads nothing. */
 export function usePerfTurns(ask: TurnsAsk = {}, every: number | false = TURNS_POLL_MS, enabled = true) {
-  const { head, n = DEFAULT_TAIL, since, last, until, filter, live } = ask;
+  const { head, n = DEFAULT_TAIL, since, last, until, filter, live, timeZone } = ask;
   const tail = since === undefined && last === undefined;
-  const shape = [head ?? '', n, since ?? null, last ?? null, until ?? null, filter ?? {}];
+  const shape = [head ?? '', n, since ?? null, last ?? null, until ?? null, filter ?? {}, ...(timeZone === undefined ? [] : [timeZone])];
   return useQuery({
     queryKey: tail || live === true ? [...keys.perf, tail ? 'tail' : 'window', ...shape] : [...windowKey, ...shape],
     queryFn: () => fetchTurns(ask),

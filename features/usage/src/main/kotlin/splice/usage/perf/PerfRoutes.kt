@@ -37,6 +37,8 @@ import splice.core.perf.PerfKeys
 import splice.core.util.WallClock
 import splice.usage.UsageHead
 import splice.usage.UsageHeadLookup
+import java.time.DateTimeException
+import java.time.ZoneId
 
 /** The durable row key — the one field the writer puts in BOTH the header and the numeric bag. */
 private const val TS = "ts"
@@ -59,7 +61,7 @@ private const val MAX_TURNS = 2_000
 /** The window one request asks for, after validation. A named pair and not a `Pair<Long, Int>`: the
  *  two are read straight into a cutoff and a clamp, and a positional swap of same-shaped values is the
  *  defect the row's own named-argument rule exists for. */
-private data class AskedWindow(val since: Long, val n: Int, val filter: TurnsFilter)
+private data class AskedWindow(val since: Long, val n: Int, val filter: TurnsFilter, val zone: ZoneId)
 
 public class PerfRoutes(
     private val heads: UsageHeadLookup,
@@ -131,10 +133,19 @@ public class PerfRoutes(
             return null
         }
 
+        val zoneText = call.request.queryParameters["time_zone"] ?: "UTC"
+        val zone = try {
+            ZoneId.of(zoneText)
+        } catch (_: DateTimeException) {
+            refuse(call, "unknown time_zone: $zoneText", HttpStatusCode.BadRequest)
+            return null
+        }
         val nText = call.request.queryParameters["n"]
         val read = readFilter(call.request.queryParameters)
         val filter = (read as? TurnsFilterRead.Read)?.filter
-        val asked = rowsAsked(nText)?.let { n -> filter?.let { AskedWindow(since, n, it) } }
+        val asked = rowsAsked(nText)?.let { n ->
+            filter?.let { AskedWindow(since = since, n = n, filter = it, zone = zone) }
+        }
         if (asked == null) refuse(call, refusal(nText, read), HttpStatusCode.BadRequest)
         return asked
     }
@@ -172,6 +183,7 @@ public class PerfRoutes(
             put("oldest_held_ts", read.oldestHeldTs)
             read.readError?.let { put("read_error", it) }
             if (read.skipped > 0) put("skipped_lines", read.skipped)
+            put("usage", TurnUsage(matching, price, asked.zone).json())
             putJsonArray("rows") { rows.forEach { add(rowJson(it, price)) } }
         }
     }

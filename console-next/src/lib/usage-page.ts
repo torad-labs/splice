@@ -44,6 +44,9 @@ export interface PlanUsage {
   turns: number | null;
   inTokens: number | null;
   partial?: boolean;
+  costPartial?: boolean;
+  models?: readonly string[];
+  subscription?: string | undefined;
   cache: number | null;
   /** Dollars of the priced turns, null when none was priced. */
   cost: number | null;
@@ -83,7 +86,8 @@ export function orderPlans(plans: readonly PlanUsage[]): PlanUsage[] {
 
 /** Plans that ran a turn in the window, and the ones that did not: an idle plan is one sentence, never a row of zeros. */
 export function splitIdle(plans: readonly PlanUsage[]): { active: PlanUsage[]; idle: PlanUsage[] } {
-  return { active: plans.filter((plan) => plan.turns === null || plan.turns > 0 || plan.pct !== null || plan.full || plan.reading !== null), idle: plans.filter((plan) => plan.turns === 0) };
+  const active = plans.filter((plan) => plan.turns === null || plan.turns > 0 || plan.pct !== null || plan.full || plan.reading !== null);
+  return { active, idle: plans.filter((plan) => plan.turns === 0 && !active.includes(plan)) };
 }
 
 export function totalsOf(heads: readonly HeadEconomics[], hours: number, now: number): Totals {
@@ -93,11 +97,11 @@ export function totalsOf(heads: readonly HeadEconomics[], hours: number, now: nu
 export const tokensText = (n: number | null): string => n === null ? ABSENT : fmtTokens(n);
 
 /** The sentence under the title: what it cost, and the plan closest to its limit when one is near. */
-export function usageLede(totals: Totals, plans: readonly PlanUsage[], hours: number, count: number | null = totals.turns, cost: number | null = totals.turns === 0 ? null : costOf(totals)): string {
+export function usageLede(totals: Totals, plans: readonly PlanUsage[], hours: number, count: number | null = totals.turns, cost: number | null = totals.turns === 0 ? null : costOf(totals), incompleteCost = false): string {
   const spent = count === null
     ? U.reading
     : count === 0 ? `No requests in ${spanWords(hours)}.`
-    : cost === null ? `${count.toLocaleString('en-US')} requests in ${spanWords(hours)}. API cost is not reported.` : `About ${fmtUsd(cost)} of recorded API cost in ${spanWords(hours)}.`;
+    : cost === null ? `${count.toLocaleString('en-US')} requests in ${spanWords(hours)}. API cost is not reported.` : `${incompleteCost ? 'At least' : 'About'} ${fmtUsd(cost)} of recorded API cost in ${spanWords(hours)}.`;
   const refused = plans.find((plan) => plan.full);
   if (refused !== undefined) return `${spent} ${refused.label} is out of quota.`;
   const nearest = plans.find((plan) => plan.pct !== null);

@@ -91,8 +91,8 @@ describe('project metadata', () => {
     const row = seat('synthetic', { availability: 'stale' });
     const data: TurnsState = { inflight: [], unread: [], truncated: [], matched: 1, matchedBy: { 'test-head': 1 }, landed: [{
       head: 'test-head', session_id: 'synthetic', ts: 1, model: 'actual-model', compact: false, outcome: 'failed', cost_usd: 0.5, in_tokens: 100, out_tokens: 20,
-    }] };
-    const html = renderToStaticMarkup(<QueryClientProvider client={client}><MemoryRouter><ProjectTeam group={{ root: '/work/tally', sessions: [row] }} reading={{ data, models: undefined, pending: false, error: null, since: 0, retry: () => undefined }} /></MemoryRouter></QueryClientProvider>);
+    }], usageBy: { 'test-head': { totals: { requests: 1, input_tokens: 100, cached_tokens: 0, output_tokens: 20, cost_usd: 0.5, cache_share: 0, unpriced_requests: 0, missing_input_requests: 0, missing_output_requests: 0, missing_cache_requests: 0 }, models: [], accounts: [], days: [], sessions: [{ key: 'synthetic', requests: 1, input_tokens: 100, cached_tokens: 0, output_tokens: 20, cost_usd: 0.5, cache_share: 0, unpriced_requests: 0, missing_input_requests: 0, missing_output_requests: 0, missing_cache_requests: 0, last_model: 'actual-model', last_model_ts_epoch_ms: 1 }] } } };
+    const html = renderToStaticMarkup(<QueryClientProvider client={client}><MemoryRouter><ProjectTeam group={{ root: '/work/tally', sessions: [row] }} reading={{ data, models: undefined, pending: false, error: null, retry: () => undefined }} /></MemoryRouter></QueryClientProvider>);
     expect(html).toContain('1 working');
     expect(html).toContain('>Working<');
     expect(html).toContain('Last model: actual-model');

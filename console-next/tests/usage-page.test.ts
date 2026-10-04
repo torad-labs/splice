@@ -58,11 +58,11 @@ describe('a plan', () => {
     expect(held.reset).toBe(new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(reset * 1000)));
   });
 
-  test('a command without turns is included in the no-turns sentence even if its limit still needs a row', () => {
+  test('a command without turns is not repeated in the no-turns sentence when its limit needs a row', () => {
     const held = plan({ key: 'grok', turns: 0, pct: 79 });
     const split = splitIdle([held, plan({ key: 'busy', turns: 1 })]);
     expect(split.active).toContain(held);
-    expect(split.idle).toContain(held);
+    expect(split.idle).not.toContain(held);
   });
 
   test('a missing request count remains visible and is never called idle', () => {
@@ -90,7 +90,7 @@ describe('a plan', () => {
     const held = plan({ key: 'held', turns: 0, pct: null, full: true });
     const split = splitIdle([held, plan({ key: 'idle', turns: 0 })]);
     expect(split.active).toEqual([held]);
-    expect(split.idle.map((item) => item.key)).toEqual(['held', 'idle']);
+    expect(split.idle.map((item) => item.key)).toEqual(['idle']);
   });
   test('its sums cover the window, and the cost is null when no turn was priced', () => {
     const unpriced = planUsage(head('a', [bucket(1, { cost_usd: null })]), 'A', 'none', null, 24, NOW);
@@ -111,7 +111,7 @@ describe('a plan', () => {
   });
   test('an idle plan with no limit is one sentence, a plan at a limit stays a row', () => {
     const split = splitIdle([plan({ key: 'a', turns: 0 }), plan({ key: 'b', turns: 0, pct: 100 }), plan({ key: 'c', turns: 4 })]);
-    expect(split.idle.map((p) => p.key)).toEqual(['a', 'b']);
+    expect(split.idle.map((p) => p.key)).toEqual(['a']);
     expect(split.active.map((p) => p.key)).toEqual(['b', 'c']);
   });
 });
@@ -134,6 +134,9 @@ describe('the lede', () => {
     const emptyEconomics = totalsOf([], 24, NOW);
     expect(usageLede(emptyEconomics, [], 24, 7)).toContain('7 requests');
     expect(usageLede(emptyEconomics, [], 24, null)).not.toContain('No requests');
+  });
+  test('incomplete price coverage names the known amount as a lower bound', () => {
+    expect(usageLede(totalsOf([], 24, NOW), [], 24, 2502, 1.47559, true)).toContain('At least $1.48');
   });
   test('an empty window says so', () => {
     expect(usageLede(totalsOf([], 24, NOW), [], 168)).toBe('No requests in the last 7 days.');

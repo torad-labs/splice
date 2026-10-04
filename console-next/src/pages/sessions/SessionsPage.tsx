@@ -103,11 +103,11 @@ export function SessionsPage() {
         title={P.title}
         {...(sessionsLede(sessions.data.sessions) === '' ? {} : { lede: sessionsLede(sessions.data.sessions) })}
         tools={
-          <>
+          <div className="sessions-tools">
             <Segmented label={P.groupBy} value={by} options={GROUPS} onChange={setBy} />
             <SearchField value={query} onChange={setQuery} label={P.search} hint={P.search} />
             {by === 'team' ? <Button onClick={() => setComposing(true)}>{M.newTeam}</Button> : null}
-          </>
+          </div>
         }
       />
       {sessions.data.error === undefined ? null : <Fault message={sessions.data.error} />}

@@ -24,6 +24,40 @@ test('wide Finished rows keep each name beside its measurements', async ({ page 
   expect(faults.pageErrors).toEqual([]);
 });
 
+test('the Sessions toolbar fits at 393px in both themes and keeps grouping, search and New team usable', async ({ page }) => {
+  await page.setViewportSize({ width: 393, height: 980 });
+  const faults = await open(page, 'sessions');
+  const grouping = page.getByRole('group', { name: 'Group by', exact: true });
+  const search = page.getByRole('searchbox', { name: 'Find a session', exact: true });
+  await expect(grouping).toBeVisible({ timeout: FIRST_READ_MS });
+  for (const theme of ['Day', 'Night']) {
+    await page.getByRole('group', { name: 'Theme', exact: true }).getByRole('button', { name: theme, exact: true }).click();
+    for (const by of ['State', 'Repo', 'Command', 'Team']) {
+      await grouping.getByRole('button', { name: by, exact: true }).click();
+      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
+      const controls = [grouping, page.locator('.page-head .search')];
+      if (by === 'Team') controls.push(page.getByRole('button', { name: 'New team', exact: true }));
+      for (const control of controls) {
+        const bounds = await control.boundingBox();
+        if (bounds === null) throw new Error('a Sessions toolbar control is not rendered');
+        expect(bounds.x).toBeGreaterThanOrEqual(0);
+        expect(bounds.x + bounds.width).toBeLessThanOrEqual(394);
+      }
+    }
+    await page.keyboard.press('Control+k');
+    await expect(search).toBeFocused();
+    await search.fill(STACK.sender.name);
+    await expect(page.getByRole('link', { name: STACK.sender.name, exact: true })).toBeVisible();
+    await search.fill('');
+    await page.screenshot({ path: test.info().outputPath(`sessions-toolbar-393-${theme.toLowerCase()}.png`), fullPage: true });
+    await page.getByRole('button', { name: 'New team', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'New team', exact: true })).toBeVisible();
+    await page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click();
+  }
+  expect(faults.pageErrors).toEqual([]);
+  expect(faults.failedReads).toEqual([]);
+});
+
 test('system messages have a system speaker rather than the command or Assistant', async ({ page }) => {
   await page.route('**/api/sessions/' + STACK.sender.id + '/transcript?*', (route) => route.fulfill({ json: {
     session_id: STACK.sender.id, path: '/synthetic/transcript.jsonl', earlier: null, messages: [

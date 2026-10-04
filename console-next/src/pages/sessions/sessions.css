@@ -5,3 +5,11 @@
 .card .ask-options { display: flex; flex-wrap: wrap; gap: var(--space-3); margin: var(--space-3) 0 0; padding: 0; list-style: none; }
 .card .asks .tag { color: var(--glass-ink); background: color-mix(in srgb, var(--glass-ink) 12%, transparent); }
 .card .asks .choose { margin-top: var(--space-1); font: 600 0.875rem/1.125rem var(--meta); color: var(--glass-dim); }
+
+.sessions-tools { display: contents; }
+@media (max-width: 48rem) {
+  .page-head .tools:has(> .sessions-tools) { width: 100%; min-width: 0; }
+  .sessions-tools { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-5); width: 100%; min-width: 0; }
+  .sessions-tools .seg { flex-wrap: wrap; max-width: 100%; }
+  .sessions-tools .search { min-width: 0; flex: 1 1 14rem; }
+}

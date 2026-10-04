@@ -21,24 +21,19 @@
 // member's registry record. An address still reads by its address, regardless of the marker.
 package splice.sessions.activity
 
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import splice.core.memory.HeapBudget
 import splice.core.storage.ActivityDays
 import splice.core.storage.DayFiles
 import splice.core.storage.DayInventory
-import splice.core.util.Cancellables
-import splice.core.util.JsonScalars
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource
 
 /** The day-file prefix edges are written under. */
 internal const val EDGES_PREFIX: String = "edges"
-private const val TO_SESSION_KEY = "to_session"
 
 /** One observed SendMessage. [from] is the sending session id, [to] the address or name the call
  *  named, [at] epoch ms of the observation, [id] the tool_use id that makes the row unique, and
@@ -95,8 +90,11 @@ public class MessageEdgeStore(
     private val files: DayFiles,
     private val retentionDays: Int,
     public val storing: Boolean,
+    decode: MessageEdgeDecode = MessageEdgeCodec(),
+    heap: HeapBudget? = null,
+    maxCacheBytes: Long = EDGE_CACHE_BYTES,
 ) {
-    private val json = Json { ignoreUnknownKeys = true }
+    private val cache = MessageEdgeCache(days, files, decode, heap, maxCacheBytes)
 
     public fun inventory(): DayInventory = files.inventory(retentionDays)
     public fun deleteKept(): DayInventory = files.deleteKept(retentionDays)
@@ -120,32 +118,5 @@ public class MessageEdgeStore(
     }
 
     /** Every retained edge, oldest first, one per tool_use id (the earliest observation wins). */
-    public fun edges(): List<MessageEdge> {
-        val seen = HashSet<String>()
-        return days.lines().mapNotNull(::parse).filter { seen.add(it.id) }.toList()
-    }
-
-    private fun parse(line: String): MessageEdge? {
-        // ast-grep-ignore: kt-no-silent-result-collapse -- a torn or foreign line in a day file is not an edge; it is left out of the view
-        val row = Cancellables
-            .runCatchingCancellable { json.parseToJsonElement(line).jsonObject }
-            .getOrNull() ?: return null
-        return edgeOf(row)
-    }
-
-    private fun edgeOf(row: JsonObject): MessageEdge? {
-        val from = JsonScalars.str(row, "from")
-        val to = JsonScalars.str(row, "to")
-        val at = JsonScalars.long(row, "at")
-        val id = JsonScalars.str(row, "id")
-        if (from == null || to == null) return null
-        if (at == null || id == null) return null
-        val session = JsonScalars.str(row, TO_SESSION_KEY)
-        val recipient = when {
-            session != null -> RecipientResolution.Held(session)
-            TO_SESSION_KEY in row -> RecipientResolution.NoHolder
-            else -> RecipientResolution.Legacy
-        }
-        return MessageEdge(from, to, at, id, session, recipient)
-    }
+    public fun edges(): List<MessageEdge> = cache.edges()
 }

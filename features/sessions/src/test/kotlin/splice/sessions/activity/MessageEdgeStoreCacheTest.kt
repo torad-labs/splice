@@ -1,0 +1,175 @@
+// NEW: repeated edge reads parse each unchanged disk line once, with synthetic metadata only.
+package splice.sessions.activity
+
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import splice.core.memory.HeapBudget
+import splice.core.storage.ActivityDays
+import splice.core.storage.DayFiles
+import splice.core.util.AsyncFileIo
+import splice.core.util.WallClock
+import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.StandardOpenOption.APPEND
+
+private const val CACHE_DAY = 1_789_725_600_000L
+
+class MessageEdgeStoreCacheTest {
+    @TempDir
+    lateinit var dir: Path
+
+    @Test
+    fun `identical reads parse no retained line twice`() {
+        val codec = CountingCodec()
+        val store = store(codec)
+        store.record(MessageEdge("sender", "recipient", CACHE_DAY, "first"))
+        store.record(MessageEdge("sender", "recipient", CACHE_DAY + 1, "second"))
+        assertTrue(AsyncFileIo.drain())
+        val first = store.edges()
+        assertEquals(2, codec.parses)
+        assertEquals(first, store.edges())
+        assertEquals(2, codec.parses, "the second read must add zero parses")
+    }
+
+    @Test
+    fun `append and rotation preserve oldest occurrence and parse only new lines`() {
+        val codec = CountingCodec()
+        val store = store(codec)
+        val path = dir.resolve("edges-2026-09-18.jsonl")
+        assertTrue(AsyncFileIo.drain())
+        Files.writeString(path, row("a") + row("b") + row("a", "retry") + "foreign\n")
+        assertEquals(listOf("a", "b"), store.edges().map { it.id })
+        assertEquals("recipient", store.edges().first().to)
+        assertEquals(4, codec.parses)
+        Files.move(path, path.resolveSibling("${path.fileName}.1"))
+        Files.writeString(path, row("a", "restart") + row("c"))
+        assertEquals(listOf("a", "b", "c"), store.edges().map { it.id })
+        assertEquals("recipient", store.edges().first().to)
+        assertEquals(6, codec.parses, "the moved inode is not parsed again")
+        Files.writeString(path, row("d"), APPEND)
+        assertEquals(listOf("a", "b", "c", "d"), store.edges().map { it.id })
+        assertEquals(7, codec.parses)
+        val restarted = store(CountingCodec())
+        assertEquals(store.edges(), restarted.edges())
+    }
+
+    @Test
+    fun `unchanged torn tails are reused and newline settlement parses nothing again`() {
+        val codec = CountingCodec()
+        val store = store(codec)
+        val path = dir.resolve("edges-2026-09-18.jsonl")
+        assertTrue(AsyncFileIo.drain())
+        Files.writeString(path, row("a").trimEnd())
+        assertEquals(listOf("a"), store.edges().map { it.id })
+        assertEquals(store.edges(), store.edges())
+        assertEquals(1, codec.parses)
+        Files.writeString(path, "\n", APPEND)
+        assertEquals(listOf("a"), store.edges().map { it.id })
+        assertEquals(1, codec.parses)
+        Files.writeString(path, "{", APPEND)
+        assertEquals(listOf("a"), store.edges().map { it.id })
+        assertEquals(2, codec.parses)
+        Files.writeString(path, "\n" + row("b").trimEnd() + "\r", APPEND)
+        assertEquals(listOf("a", "b"), store.edges().map { it.id })
+        assertEquals(3, codec.parses, "settling a foreign tail must not parse it again")
+        Files.writeString(path, "\n", APPEND)
+        assertEquals(listOf("a", "b"), store.edges().map { it.id })
+        assertEquals(3, codec.parses, "a CRLF joining the tail changes no metadata")
+    }
+
+    @Test
+    fun `expiry before sweep and deletion remove cached edges`() {
+        var now = CACHE_DAY
+        val codec = CountingCodec()
+        val store = store(codec, clock = WallClock { now })
+        store.record(MessageEdge("sender", "recipient", now, "a"))
+        assertTrue(AsyncFileIo.drain())
+        assertEquals(1, store.edges().size)
+        now += 2 * 86_400_000L
+        assertEquals(emptyList<MessageEdge>(), store.edges())
+        assertEquals(1, codec.parses)
+        store.record(MessageEdge("sender", "recipient", now, "b"))
+        assertTrue(AsyncFileIo.drain())
+        assertEquals(listOf("b"), store.edges().map { it.id })
+        store.deleteKept()
+        assertEquals(emptyList<MessageEdge>(), store.edges())
+    }
+
+    @Test
+    fun `same-sized replacement and truncation never return cached rows`() {
+        val codec = CountingCodec()
+        val store = store(codec)
+        val path = dir.resolve("edges-2026-09-18.jsonl")
+        assertTrue(AsyncFileIo.drain())
+        Files.writeString(path, row("a") + row("b"))
+        assertEquals(listOf("a", "b"), store.edges().map { it.id })
+        val replacement = dir.resolve("replacement")
+        Files.writeString(replacement, row("c") + row("d"))
+        Files.move(replacement, path, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+        assertEquals(listOf("c", "d"), store.edges().map { it.id })
+        Files.writeString(path, row("e"))
+        assertEquals(listOf("e"), store.edges().map { it.id })
+        assertEquals(5, codec.parses)
+    }
+
+    @Test
+    fun `capacity is explicit and the production-style injected ledger is charged`() {
+        val heap = HeapBudget(1_000_000, 100_000)
+        val store = store(CountingCodec(), heap = heap)
+        store.record(MessageEdge("sender", "recipient", CACHE_DAY, "a"))
+        assertTrue(AsyncFileIo.drain())
+        val before = heap.available.value
+        assertEquals(1, store.edges().size)
+        assertTrue(heap.available.value < before)
+        val full = store(CountingCodec(), maxBytes = 700)
+        assertThrows(IOException::class.java) { full.edges() }
+    }
+
+    @Test
+    fun `concurrent polls share the same parsed disk lines`() {
+        val codec = CountingCodec()
+        val store = store(codec)
+        store.record(MessageEdge("sender", "recipient", CACHE_DAY, "a"))
+        assertTrue(AsyncFileIo.drain())
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(4)
+        try {
+            val reads = List(8) { java.util.concurrent.Callable { store.edges() } }
+            val answers = pool.invokeAll(reads).map { it.get() }
+            assertTrue(answers.all { it == answers.first() })
+            assertEquals(1, codec.parses)
+        } finally {
+            pool.shutdownNow()
+        }
+    }
+
+    private fun row(id: String, to: String = "recipient"): String =
+        """{"from":"sender","to":"$to","at":$CACHE_DAY,"id":"$id"}""" + "\n"
+
+    private fun store(
+        codec: CountingCodec,
+        clock: WallClock = WallClock { CACHE_DAY },
+        heap: HeapBudget? = null,
+        maxBytes: Long = EDGE_CACHE_BYTES,
+    ): MessageEdgeStore = MessageEdgeStore(
+        ActivityDays(dir, EDGES_PREFIX, 2, clock),
+        DayFiles(dir, EDGES_PREFIX),
+        2,
+        true,
+        codec,
+        heap,
+        maxBytes,
+    )
+
+    private class CountingCodec : MessageEdgeDecode {
+        private val codec = MessageEdgeCodec()
+        var parses = 0
+        override fun parse(line: String): MessageEdge? {
+            parses++
+            return codec.parse(line)
+        }
+    }
+}

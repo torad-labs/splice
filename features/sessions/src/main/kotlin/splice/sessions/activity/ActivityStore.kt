@@ -33,16 +33,9 @@ import splice.core.storage.DayFiles
 import splice.core.storage.DayInventory
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
-import splice.core.util.WallClock
-import java.nio.file.Path
-import java.time.Instant
-import java.time.ZoneOffset
 
 /** The day-file prefix activity rows are written under. */
 internal const val ACTIVITY_PREFIX: String = "activity"
-
-/** The UTC days one local day can span, today counted: the labels' whole window and the edges' floor. */
-private const val LOCAL_DAY_UTC_DAYS = 2
 
 /** The activityStoreHeads value that stores every head. */
 public const val ALL_HEADS: String = "*"
@@ -80,46 +73,6 @@ public enum class KeptState(public val wire: String) {
         ON -> null
         OFF -> "$store off"
         DELETED -> "$store deleted"
-    }
-}
-
-public class ActivityStores(
-    activityDir: Path,
-    retentionDays: Int,
-    storeHeads: String,
-    private val clock: WallClock = WallClock(System::currentTimeMillis),
-    messageEdges: Boolean = true,
-) {
-    private val edgeDays = retentionDays.coerceAtLeast(LOCAL_DAY_UTC_DAYS)
-    public val edges: MessageEdgeStore = MessageEdgeStore(
-        ActivityDays(activityDir, EDGES_PREFIX, edgeDays, clock),
-        DayFiles(activityDir, EDGES_PREFIX),
-        edgeDays,
-        messageEdges,
-    )
-    public val activity: ActivityStore = ActivityStore(
-        ActivityDays(activityDir, ACTIVITY_PREFIX, LOCAL_DAY_UTC_DAYS, clock),
-        ActivityHeads(storeHeads),
-        DayFiles(activityDir, ACTIVITY_PREFIX),
-    )
-
-    /** UTC start of the oldest day the two stores can still read, from their actual pruning windows. */
-    public fun oldestEdgeDay(): Long = oldestDay(edgeDays)
-    public fun oldestLabelDay(): Long = oldestDay(LOCAL_DAY_UTC_DAYS)
-
-    private fun oldestDay(days: Int): Long = Instant.ofEpochMilli(clock()).atZone(ZoneOffset.UTC)
-        .toLocalDate().minusDays(days.toLong() - 1).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
-
-    public fun edgeState(): KeptState = when {
-        edges.deleted() -> KeptState.DELETED
-        !edges.storing -> KeptState.OFF
-        else -> KeptState.ON
-    }
-
-    public fun labelState(): KeptState = when {
-        activity.deleted() -> KeptState.DELETED
-        !activity.storing() -> KeptState.OFF
-        else -> KeptState.ON
     }
 }
 

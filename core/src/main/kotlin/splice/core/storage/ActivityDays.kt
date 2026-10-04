@@ -189,6 +189,10 @@ public class ActivityDays(
     @Throws(IOException::class)
     public fun lines(): Sequence<String> = files.linesFrom(oldestKept(day(clock())))
 
+    /** Retained generations in the same oldest-first order as [lines], using this store's clock. */
+    @Throws(IOException::class)
+    public fun retainedFiles(): List<Path> = files.files(oldestKept(day(clock()))).asReversed()
+
     /** Deletes day files older than the retention window, relative to [today]. */
     private fun sweep(today: LocalDate) = Cancellables.discard(
         Cancellables.runCatchingCancellable { files.deleteBefore(oldestKept(today)) },
@@ -307,8 +311,8 @@ public class DayFiles @JvmOverloads constructor(
      *  count reads several at once, and only what each gained since it last read it). A rolled half is named
      *  whether or not it is there. A directory that cannot be listed throws why. */
     @Throws(IOException::class)
-    public fun files(): List<Path> =
-        days().asReversed()
+    public fun files(oldest: LocalDate = LocalDate.MIN): List<Path> =
+        days().filter { (date, _) -> !date.isBefore(oldest) }.asReversed()
             .flatMap { (_, file) -> listOf(file, file.resolveSibling("${file.fileName}$ROLLED_SUFFIX")) }
             .filter { metadata.regularSize(it) != null || !Files.exists(it, LinkOption.NOFOLLOW_LINKS) }
 

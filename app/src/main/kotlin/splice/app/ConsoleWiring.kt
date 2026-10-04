@@ -74,6 +74,7 @@ import splice.sessions.registry.SessionsHeard
 import splice.sessions.teams.TEAMS_FILE
 import splice.sessions.teams.TeamStore
 import splice.topology.TopologyLoader
+import splice.upstream.memory.JvmHeap
 import splice.usage.alerts.ALERTS_FILE
 import splice.usage.alerts.AlertDelivery
 import splice.usage.alerts.AlertStore
@@ -178,6 +179,7 @@ internal object ConsoleWiring {
             days.coerceAtLeast(1L).toInt(),
             heads,
             messageEdges = edges,
+            heap = JvmHeap.budget,
         )
     }
 

@@ -381,6 +381,7 @@ export interface ConversationMessageWire {
   text: string;
   ts?: number;
   tool?: string;
+  tool_use_id?: string;
   result?: boolean;
   /** True on the client-facing reply this perf row names, false on earlier context. */
   selected?: boolean;

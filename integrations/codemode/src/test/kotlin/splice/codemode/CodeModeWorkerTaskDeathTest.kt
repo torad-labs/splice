@@ -23,8 +23,16 @@ import java.util.concurrent.ConcurrentLinkedQueue
 private const val OVERFLOWING_DEPTH = 3_000
 
 // why: GraalJS parses a member chain in a loop, but the worker's compiler walks the tree it builds recursively:
-// 4,000 accesses compile, 8,000 overflow it, and 20,000 trip the guest parse's own heap guard first.
+// 4,000 accesses compile, 8,000 overflow it on most workers, and 20,000 trip the guest parse's own heap guard first.
+// A worker whose stack and JIT state let 8,000 compile overflows the engine at run time instead (CI run 37234377673).
 private const val OVERFLOWING_CHAIN = 8_000
+
+/** A member chain too long for the worker's stack ends with the program's own error from whichever side overflows:
+ *  splice's compiler (CodeModeStatementCompilerTest pins that side on a fixed stack) or the engine at run time. */
+private val PROGRAM_STACK_ERRORS = setOf(
+    "SyntaxError: program nesting too deep to parse",
+    "RangeError: Maximum call stack size exceeded",
+)
 
 // why: a warm worker answers in well under a second; the stall this replaces waited 900 s for the progress timeout.
 private const val ANSWER_BOUND_MS = 5_000L
@@ -53,14 +61,15 @@ class CodeModeWorkerTaskDeathTest {
     }
 
     @Test
-    fun `a program whose member chain overflows the worker's compiler ends with its own error`() = runBlocking {
-        runtime().use { runtime ->
-            val chain = "const a = {}; a.a = a; const v = " + "a.".repeat(OVERFLOWING_CHAIN) + "a;\n"
-            val step = withTimeout(ANSWER_BOUND_MS) { run(runtime, chain, "") }
-            val completed = step as CodeModeStep.Completed
-            assertEquals("SyntaxError: program nesting too deep to parse", completed.error, completed.toString())
+    fun `a program whose member chain overflows the worker's stack ends with its own error, never a lost worker`() =
+        runBlocking {
+            runtime().use { runtime ->
+                val chain = "const a = {}; a.a = a; const v = " + "a.".repeat(OVERFLOWING_CHAIN) + "a;\n"
+                val step = withTimeout(ANSWER_BOUND_MS) { run(runtime, chain, "") }
+                val completed = step as CodeModeStep.Completed
+                assertTrue(completed.error in PROGRAM_STACK_ERRORS, completed.toString())
+            }
         }
-    }
 
     @Test
     fun `the worker whose parse overflowed is retired, and the next program runs on a fresh one`() = runBlocking {

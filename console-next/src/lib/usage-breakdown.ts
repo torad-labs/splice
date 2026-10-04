@@ -30,6 +30,20 @@ export function fullWindowUsage(data: TurnsState | null): TurnUsageStats | null 
   return mergeWindowStats(Object.values(data.usageBy).map(usage => usage.totals));
 }
 
+/** Known command aggregates remain useful as lower bounds when fleet coverage is incomplete. */
+export function reportedWindowUsage(data: TurnsState | null): TurnUsageStats | null {
+  const stats = Object.values(data?.usageBy ?? {}).map(usage => usage.totals);
+  return stats.length === 0 ? null : mergeWindowStats(stats);
+}
+
+/** Known request counts remain useful when a sibling did not report its count. */
+export function reportedRequestCount(data: TurnsState | null): number | null {
+  if (data === null) return null;
+  if (data.matched !== null) return data.matched;
+  const heads = new Set([...Object.keys(data.matchedBy), ...Object.keys(data.usageBy ?? {})]);
+  return heads.size === 0 ? null : [...heads].reduce((sum, head) => sum + (data.matchedBy[head] ?? data.usageBy?.[head]?.totals.requests ?? 0), 0);
+}
+
 export function fullUsageBreakdown(data: TurnsState, by: UsageDimension): UsageBreakdown[] | null {
   if (fullWindowUsage(data) === null) return null;
   const groups = new Map<string, { key: string | null; head: string | null; stats: TurnUsageStats[] }>();

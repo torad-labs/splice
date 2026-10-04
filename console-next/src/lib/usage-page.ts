@@ -45,6 +45,8 @@ export interface PlanUsage {
   pace: string | null;
   /** Null while request counts are pending or unavailable. */
   turns: number | null;
+  requestState?: 'loading' | 'unavailable' | 'ready';
+  requestReason?: string;
   inTokens: number | null;
   partial?: boolean;
   costPartial?: boolean;
@@ -101,11 +103,11 @@ export function totalsOf(heads: readonly HeadEconomics[], hours: number, now: nu
 export const tokensText = (n: number | null): string => n === null ? ABSENT : fmtTokens(n);
 
 /** The sentence under the title: what it cost, and the plan closest to its limit when one is near. */
-export function usageLede(totals: Totals, plans: readonly PlanUsage[], hours: number, count: number | null = totals.turns, cost: number | null = totals.turns === 0 ? null : costOf(totals), incompleteCost = false): string {
+export function usageLede(totals: Totals, plans: readonly PlanUsage[], hours: number, count: number | null = totals.turns, cost: number | null = totals.turns === 0 ? null : costOf(totals), incompleteCost = false, incompleteCount = false): string {
   const spent = count === null
-    ? U.reading
-    : count === 0 ? `No requests in ${spanWords(hours)}.`
-    : cost === null ? `${count.toLocaleString('en-US')} requests in ${spanWords(hours)}. API cost is not reported.` : `${incompleteCost ? 'At least' : 'About'} ${fmtUsd(cost)} of recorded API cost in ${spanWords(hours)}.`;
+    ? U.countNotReported
+    : count === 0 && !incompleteCount ? `No requests in ${spanWords(hours)}.`
+    : cost === null ? `${incompleteCount ? 'At least ' : ''}${count.toLocaleString('en-US')} requests in ${spanWords(hours)}. API cost is not reported.` : `${incompleteCost ? 'At least' : 'About'} ${fmtUsd(cost)} of recorded API cost in ${spanWords(hours)}.`;
   const refused = plans.find((plan) => plan.full);
   if (refused !== undefined) return `${spent} ${refused.label} is out of quota.`;
   const nearest = plans.find((plan) => plan.pct !== null);

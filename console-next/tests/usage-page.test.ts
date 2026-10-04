@@ -148,6 +148,14 @@ describe('the lede', () => {
     expect(usageLede(emptyEconomics, [], 24, 7)).toContain('7 requests');
     expect(usageLede(emptyEconomics, [], 24, null)).not.toContain('No requests');
   });
+  test('a settled missing count is unavailable, not a claim that reading is still running', () => {
+    expect(usageLede(totalsOf([], 24, NOW), [], 24, null)).toBe('The request count was not reported.');
+    expect(usageLede(totalsOf([], 24, NOW), [], 24, null)).not.toContain('Reading');
+  });
+  test('a partial empty contribution never claims the entire window had no requests', () => {
+    expect(usageLede(totalsOf([], 24, NOW), [], 24, 0, null, true, true)).toContain('At least 0 requests');
+    expect(usageLede(totalsOf([], 24, NOW), [], 24, 0, null, true, true)).not.toContain('No requests');
+  });
   test('incomplete price coverage names the known amount as a lower bound', () => {
     expect(usageLede(totalsOf([], 24, NOW), [], 24, 2502, 1.47559, true)).toContain('At least $1.48');
   });

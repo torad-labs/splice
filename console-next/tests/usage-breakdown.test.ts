@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { fullWindowUsage, fullUsageBreakdown, mergeWindowStats, budgetWarning } from '../src/lib/usage-breakdown';
+import { fullWindowUsage, fullUsageBreakdown, mergeWindowStats, budgetWarning, reportedWindowUsage, reportedRequestCount } from '../src/lib/usage-breakdown';
 import type { TurnsState, TurnUsageStats, TurnUsageWire } from '../src/types/perf';
 
 const stats = (over: Partial<TurnUsageStats> = {}): TurnUsageStats => ({
@@ -26,6 +26,18 @@ describe('daemon-backed usage', () => {
     expect(fullWindowUsage({ ...data(), usageBy: {} })).toBeNull();
     expect(fullWindowUsage({ ...data(), matchedBy: { synthetic: 2502, older: 1 } })).toBeNull();
     expect(fullWindowUsage({ ...data(), matched: null })).toBeNull();
+  });
+  test('reported aggregates survive a sibling without counts or aggregates without claiming complete coverage', () => {
+    const missingCount = { ...data(), matched: null };
+    expect(reportedWindowUsage(missingCount)).toEqual(stats());
+    expect(reportedRequestCount(missingCount)).toBe(2502);
+    const missingAggregate = { ...data(), matchedBy: { synthetic: 2502, older: 1 }, matched: 2503 };
+    expect(reportedWindowUsage(missingAggregate)).toEqual(stats());
+    expect(reportedRequestCount(missingAggregate)).toBe(2503);
+    expect(fullWindowUsage(missingAggregate)).toBeNull();
+    expect(reportedWindowUsage({ ...data(), usageBy: {} })).toBeNull();
+    expect(reportedRequestCount({ ...data(), usageBy: {}, matchedBy: {}, matched: null })).toBeNull();
+    expect(reportedRequestCount({ ...data(), matchedBy: {}, matched: null })).toBe(2502);
   });
   test('a refusal without counters or prices remains a request, not zero usage', () => {
     const refused = stats({ requests: 1, input_tokens: null, output_tokens: null, cached_tokens: null, cost_usd: null, cache_share: null });

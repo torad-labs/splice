@@ -2,7 +2,7 @@
 // they match. Usage and Requests read that one count; neither rebuilds it from the clamped rows.
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { fetchTurns, mergeTurns, perfTurnsPath } from '../src/api/turns';
-import type { TurnUsageWire } from '../src/types/perf';
+import type { TurnsState, TurnUsageWire } from '../src/types/perf';
 
 const json = (body: unknown) => Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } }));
 
@@ -76,6 +76,88 @@ describe('the filtered read', () => {
     expect(read.matched).toBe(2365);
     expect(read.matchedBy).toEqual({ a: 2362, b: 3 });
     expect(read.landed).toHaveLength(1);
+  });
+
+  test('a completed head publishes before a pending sibling and every snapshot keeps one window', async () => {
+    let release!: (value: Response) => void;
+    const slow = new Promise<Response>(resolve => { release = resolve; });
+    vi.stubGlobal('localStorage', undefined);
+    vi.stubGlobal('fetch', (url: string) => {
+      if (url === '/api/heads') return json({ heads: [{ key: 'a', gate: null }, { key: 'b', gate: null }] });
+      const key = new URL(url, 'http://synthetic.invalid').searchParams.get('head');
+      return key === 'b' ? slow : json({ since: 100, n: 1, heads: [{ key: 'a', label: 'A', count: 2362, rows: [] }] });
+    });
+    const published: TurnsState[] = [];
+    const completed = fetchTurns({ last: 3_600_000 }, () => 10_000_000, state => { published.push(state); });
+    try {
+      await vi.waitFor(() => expect(published.some(state => state.matchedBy.a === 2362)).toBe(true));
+      const first = published.find(state => state.matchedBy.a === 2362);
+      expect(first?.pendingHeads).toEqual(['b']);
+      expect(first?.window).toEqual({ since: 6_400_000, until: 10_000_000 });
+      expect(first?.unread).toEqual([]);
+    } finally {
+      release(new Response(JSON.stringify({ since: 100, n: 1, heads: [{ key: 'b', label: 'B', count: 3, rows: [] }] })));
+      await completed;
+    }
+    expect(published.at(-1)?.matched).toBe(2365);
+    expect(published.at(-1)?.pendingHeads).toEqual([]);
+  });
+
+  test('cancelling a window aborts its reads and prevents late publication', async () => {
+    const controller = new AbortController();
+    let release!: (response: Response) => void;
+    const delayed = new Promise<Response>(resolve => { release = resolve; });
+    let started!: () => void;
+    const began = new Promise<void>(resolve => { started = resolve; });
+    const signals: (AbortSignal | null | undefined)[] = [];
+    vi.stubGlobal('localStorage', undefined);
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+      signals.push(init?.signal);
+      if (url === '/api/heads') return json({ heads: [{ key: 'a', gate: null }] });
+      started();
+      return delayed;
+    });
+    const published: TurnsState[] = [];
+    const cancelled = fetchTurns({ since: 100, until: 200 }, Date.now, state => { published.push(state); }, controller.signal);
+    const rejected = expect(cancelled).rejects.toMatchObject({ name: 'AbortError' });
+    await began;
+    controller.abort();
+    release(new Response(JSON.stringify({ since: 100, n: 1, heads: [{ key: 'a', label: 'A', count: 7, rows: [] }] })));
+    await rejected;
+    expect(signals).toEqual([controller.signal, controller.signal]);
+    expect(published).toEqual([]);
+  });
+
+  test('a malformed successful history names that head without discarding a readable sibling', async () => {
+    vi.stubGlobal('localStorage', undefined);
+    vi.stubGlobal('fetch', (url: string) => {
+      if (url === '/api/heads') return json({ heads: [{ key: 'a', gate: null }, { key: 'b', gate: null }] });
+      const key = new URL(url, 'http://synthetic.invalid').searchParams.get('head');
+      return key === 'b'
+        ? Promise.resolve(new Response('not JSON', { status: 200 }))
+        : json({ since: 100, n: 1, heads: [{ key: 'a', label: 'A', count: 2362, rows: [] }] });
+    });
+    const read = await fetchTurns({ since: 0 });
+    if ('pending' in read) throw new Error('not a pending route');
+    expect(read.matchedBy.a).toBe(2362);
+    expect(read.unread).toEqual([{ head: 'b', reason: 'The daemon returned an unreadable request history.' }]);
+  });
+
+  test.each([
+    { usage: null },
+    { usage: { totals: {}, models: null } },
+    { rows: [null] },
+  ])('a malformed nested history is isolated to its command: %j', async invalid => {
+    vi.stubGlobal('localStorage', undefined);
+    vi.stubGlobal('fetch', (url: string) => {
+      if (url === '/api/heads') return json({ heads: [{ key: 'a', gate: null }, { key: 'b', gate: null }] });
+      const key = new URL(url, 'http://synthetic.invalid').searchParams.get('head');
+      return json({ since: 100, n: 1, heads: [{ key, label: key, count: 7, rows: [], ...(key === 'b' ? invalid : {}) }] });
+    });
+    const read = await fetchTurns({ since: 0 });
+    if ('pending' in read) throw new Error('not a pending route');
+    expect(read.matchedBy).toEqual({ a: 7 });
+    expect(read.unread).toEqual([{ head: 'b', reason: 'The daemon returned an unreadable request history.' }]);
   });
 
   test('a head that did not say its count leaves the total unknown, never short', async () => {

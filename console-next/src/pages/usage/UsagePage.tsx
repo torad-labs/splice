@@ -2,10 +2,10 @@ import { useSearchParams } from 'react-router';
 import { failureText } from '../../api/client';
 import { useHeads, useStatus, useUsage } from '../../api/queries';
 import { useEconomics } from '../../api/usage';
-import { usePerfTurns } from '../../api/turns';
+import { useUsageTurns } from '../../api/turns';
 import { isPendingRoute } from '../../api/auth';
 import { ABSENT, fmtInt, fmtShare } from '../../lib/format';
-import { fullWindowUsage } from '../../lib/usage-breakdown';
+import { reportedWindowUsage, reportedRequestCount } from '../../lib/usage-breakdown';
 import { colourFromRegistry } from '../../lib/model';
 import { cacheLine, costLine, orderPlans, planUsage, splitIdle, tokensText, totalsOf, usageLede, windowChoices } from '../../lib/usage-page';
 import type { PlanUsage } from '../../lib/usage-page';
@@ -46,9 +46,9 @@ function PlanRow({ plan }: { plan: PlanUsage }) {
         <span>{plan.pct === null ? null : <b>{U.ofLimit(Math.round(plan.pct), plan.limitWindow)}</b>}{plan.pct === null || words.length === 0 ? '' : ' · '}{words.join(' · ')}</span>
         {plan.observations?.map(window => <small key={window.window}>{window.window === '5h' ? '5 hours' : 'Week'} · {Q.observed(window.observedAt === null ? null : localZonedInstantText(window.observedAt))}</small>)}
       </div>
-      <div className="tok">{plan.turns === null ? <span>{B.unknown}</span> : plan.turns === 0 ? <span>{U.idle}</span> : <><strong>{plan.partial && plan.inTokens !== null ? B.atLeast(tokensText(plan.inTokens)) : tokensText(plan.inTokens)}</strong>{U.readIn}</>}</div>
+      <div className="tok">{plan.requestState === 'loading' ? <span role="status">{U.readingRequests}</span> : plan.turns === null ? <span>{U.requestsUnavailable}</span> : plan.turns === 0 ? <span>{U.idle}</span> : <><strong>{plan.partial && plan.inTokens !== null ? B.atLeast(tokensText(plan.inTokens)) : tokensText(plan.inTokens)}</strong>{U.readIn}</>}{plan.requestReason === undefined ? null : <small>{plan.requestReason}</small>}</div>
       {plan.spark.length === 0 ? <span className="hint">{B.unknown}</span> : <Spark values={plan.spark} />}
-      <div className="cost">{plan.costPartial && plan.cost !== null ? B.atLeast(costLine(plan.cost)) : costLine(plan.cost)}<small>{cacheLine(plan.cache)}</small></div>
+      <div className="cost">{plan.requestState === 'loading' ? U.readingMetric : plan.costPartial && plan.cost !== null ? B.atLeast(costLine(plan.cost)) : costLine(plan.cost)}<small>{plan.requestState === 'loading' ? U.readingMetric : cacheLine(plan.cache)}</small></div>
     </li>
   );
 }
@@ -63,8 +63,9 @@ export function UsagePage() {
   const choices = windowChoices(economics.data?.retention_hours ?? 24);
   const asked = params.get('window') ?? '24';
   const hours = Number((choices.find(([id]) => id === asked) ?? choices[0])?.[0] ?? '24');
-  const requests = usePerfTurns({ last: hours * 3_600_000, n: 1, filter: { local: false }, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }, 5_000);
+  const requests = useUsageTurns(hours, Intl.DateTimeFormat().resolvedOptions().timeZone, economics.isSuccess);
   const recorded = requests.data === undefined || isPendingRoute(requests.data) ? null : requests.data;
+  const loading = recorded === null && !requests.isError && requests.data === undefined;
 
   if (economics.isPending) return <PageHead title={U.title} lede={U.reading} />;
   if (economics.isError) return <><PageHead title={U.title} /><Fault message={failureText(economics.error)} onRetry={() => void economics.refetch()} /></>;
@@ -73,36 +74,43 @@ export function UsagePage() {
   const headRows = heads.data?.heads ?? [];
   const colourOf = colourFromRegistry(status.data);
   const label = (key: string): string => headRows.find((head) => head.key === key)?.label ?? key;
-  const sourceHeads = [...new Set([...headRows.map(head => head.key), ...economics.data.heads.map(head => head.key)])];
+  const sourceHeads = [...new Set([...headRows.map(head => head.key), ...economics.data.heads.map(head => head.key), ...Object.keys(recorded?.matchedBy ?? {}), ...Object.keys(recorded?.usageBy ?? {}), ...recorded?.pendingHeads ?? [], ...recorded?.unread.map(row => row.head) ?? []])];
   const plans = orderPlans(sourceHeads.map(key => {
     const head = economics.data.heads.find(head => head.key === key) ?? { key, label: label(key), ceiling_tokens: null, buckets: [] };
     const plan = planUsage(head, label(key), colourOf(key), usage.data ?? null, hours, now, headRows.find(status => status.key === key));
     const values = recorded?.usageBy?.[key]?.totals;
-    const unread = recorded === null || recorded.unread.some(row => row.head === key);
-    return { ...plan, turns: unread ? null : values?.requests ?? null, inTokens: values?.input_tokens ?? null, cost: values?.cost_usd ?? null, cache: unread ? null : values?.cache_share ?? null, partial: unread || (values?.missing_input_requests ?? 0) > 0, costPartial: unread || (values?.unpriced_requests ?? 0) > 0, models: recorded?.usageBy?.[key]?.models.flatMap(model => model.key === null ? [] : [model.key]) ?? [], subscription: usage.data?.heads.find(row => row.key === key)?.usage?.quota?.plan, spark: head.buckets.length === 0 ? [] : plan.spark };
+    const reason = recorded?.unread.find(row => row.head === key)?.reason;
+    const pending = loading || recorded?.pendingHeads?.includes(key) === true;
+    const turns = values?.requests ?? recorded?.matchedBy[key] ?? null;
+    const requestState = pending ? 'loading' as const : turns === null ? 'unavailable' as const : 'ready' as const;
+    return { ...plan, requestState, ...(reason === undefined ? {} : { requestReason: reason }), turns, inTokens: values?.input_tokens ?? null, cost: values?.cost_usd ?? null, cache: values?.cache_share ?? null, partial: reason !== undefined || (values?.missing_input_requests ?? 0) > 0, costPartial: reason !== undefined || (values?.unpriced_requests ?? 0) > 0, models: recorded?.usageBy?.[key]?.models.flatMap(model => model.key === null ? [] : [model.key]) ?? [], subscription: usage.data?.heads.find(row => row.key === key)?.usage?.quota?.plan, spark: head.buckets.length === 0 ? [] : plan.spark };
   }));
   const { active, idle } = splitIdle(plans);
   const totals = totalsOf(economics.data.heads, hours, now);
-  const values = fullWindowUsage(recorded);
-  const partial = recorded !== null && recorded.unread.length > 0;
-  const measured = (value: number | null | undefined, missing: number): string => value == null ? B.unknown : partial || missing > 0 ? B.atLeast(tokensText(value)) : tokensText(value);
+  const values = reportedWindowUsage(recorded);
+  const count = reportedRequestCount(recorded);
+  const awaiting = loading || (recorded?.pendingHeads?.length ?? 0) > 0;
+  const partial = recorded !== null && (recorded.unread.length > 0 || (recorded.pendingHeads?.length ?? 0) > 0 || recorded.matched === null || Object.keys(recorded.matchedBy).some(key => recorded.usageBy?.[key] === undefined));
+  const measured = (value: number | null | undefined, missing: number): string => value == null ? awaiting ? U.readingMetric : B.unknown : partial || missing > 0 ? B.atLeast(tokensText(value)) : tokensText(value);
   const cost = values?.cost_usd ?? null;
+  const lede = count === null && awaiting ? U.reading : requests.isError ? U.requestsUnavailable : usageLede(totals, plans, hours, count, cost, partial || (values?.unpriced_requests ?? 0) > 0, partial);
+  const pendingNames = recorded?.pendingHeads?.map(label) ?? [];
 
   return (
     <div className="usage-page">
       <PageHead
         title={U.title}
-        lede={usageLede(totals, plans, hours, recorded === null || recorded.unread.length > 0 ? null : recorded.matched, cost, partial || (values?.unpriced_requests ?? 0) > 0)}
+        lede={pendingNames.length === 0 ? lede : `${lede} ${U.commandsReading(pendingNames.join(', '))}`}
         tools={choices.length < 2 ? undefined : <Segmented label={U.window} value={String(hours)} options={choices} onChange={(next) => setParams(next === '24' ? {} : { window: next }, { replace: true })} />}
       />
-      {plans.length === 0 ? <Empty title={U.plansNone} /> : (
+      {plans.length === 0 ? loading || heads.isPending ? <p className="hint" role="status">{U.readingRequests}</p> : heads.isError ? <Fault message={failureText(heads.error)} onRetry={() => void heads.refetch()} /> : <Empty title={U.plansNone} /> : (
         <>
           <section className="section" aria-label={U.title}>
             <div className="totals">
-              <div><div className="n">{recorded?.matched == null ? B.unknown : recorded.unread.length > 0 ? B.atLeast(fmtInt(recorded.matched)) : fmtInt(recorded.matched)}</div><h3>{U.totalsTurns}</h3><p>{U.totalsTurnsWhy(plans.length, spanWords(hours))}</p></div>
+              <div><div className="n">{count === null ? awaiting ? U.readingMetric : B.unknown : partial ? B.atLeast(fmtInt(count)) : fmtInt(count)}</div><h3>{U.totalsTurns}</h3><p>{U.totalsTurnsWhy(plans.length, spanWords(hours))}</p></div>
               <div><div className="n">{measured(values?.input_tokens, values?.missing_input_requests ?? 0)}</div><h3>{U.totalsIn}</h3><p>{values?.cache_share == null || partial ? U.totalsInPlain : U.totalsInWhy(fmtShare(values.cache_share))}</p></div>
               <div><div className="n">{measured(values?.output_tokens, values?.missing_output_requests ?? 0)}</div><h3>{U.totalsOut}</h3><p>{U.totalsOutWhy}</p></div>
-              <div><div className="n">{cost === null ? ABSENT : partial || (values?.unpriced_requests ?? 0) > 0 ? B.atLeast(costLine(cost)) : costLine(cost)}</div><h3>{U.totalsCost}</h3><p>{cost === null ? U.totalsCostNone : `${U.totalsCostWhy}${(values?.unpriced_requests ?? 0) > 0 ? ` ${U.totalsCostUnpriced(values?.unpriced_requests ?? 0)}` : ''}`}</p></div>
+              <div><div className="n">{cost === null ? awaiting ? U.readingMetric : ABSENT : partial || (values?.unpriced_requests ?? 0) > 0 ? B.atLeast(costLine(cost)) : costLine(cost)}</div><h3>{U.totalsCost}</h3><p>{cost === null ? awaiting ? U.readingRequests : U.totalsCostNone : `${U.totalsCostWhy}${(values?.unpriced_requests ?? 0) > 0 ? ` ${U.totalsCostUnpriced(values?.unpriced_requests ?? 0)}` : ''}`}</p></div>
             </div>
           </section>
           <section className="section" aria-labelledby="usage-plans">

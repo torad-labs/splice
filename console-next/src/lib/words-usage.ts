@@ -5,6 +5,12 @@ export const spanWords = (hours: number): string => (hours === 24 ? 'the last 24
 export const U = {
   title: 'Usage',
   reading: 'Reading the usage.',
+  readingMetric: 'Reading…',
+  readingRequests: 'Reading requests…',
+  requestsUnavailable: 'Request history unavailable',
+  countNotReported: 'The request count was not reported.',
+  historyUnreadable: 'The daemon returned an unreadable request history.',
+  commandsReading: (names: string) => `Still reading requests for ${names}.`,
   window: 'Window',
   totalsTurns: 'Requests',
   totalsTurnsWhy: (plans: number, span: string) => `Across ${plans} ${plans === 1 ? 'command' : 'commands'} in ${span}.`,

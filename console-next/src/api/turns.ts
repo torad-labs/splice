@@ -14,6 +14,7 @@ import { failureText, MgmtError, request } from './client';
 import { keys } from './queries';
 import { awaitRefetch } from './refetch';
 import { inflightFrom } from '../lib/perf';
+import { U } from '../lib/words-usage';
 import type { CompactPayload, InstructionRule, InstructionScopeWire, InstructionsState, InstructionsWire } from '../types/compaction';
 import type { HeadsPayload } from '../types/core';
 import type {
@@ -30,6 +31,7 @@ import type {
   TurnRow,
   TurnRowWire,
   TurnUsageWire,
+  TurnUsageStats,
   TurnsState,
   UnreadHead,
   WireRead,
@@ -153,15 +155,69 @@ export function mergeTurns(answers: readonly PerfTurnsWire[]): MergedTurns {
 
 type HeadRead = { ok: true; wire: PerfTurnsWire } | { ok: false; head: string; err: unknown };
 
-async function readHeadTurns(head: string, n: number, window: TurnsWindow): Promise<HeadRead> {
+const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
+const numeric = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+
+function usageStats(value: unknown): value is TurnUsageStats {
+  if (!record(value)) return false;
+  return ['requests', 'unpriced_requests', 'missing_input_requests', 'missing_output_requests', 'missing_cache_requests'].every(key => numeric(value[key])) &&
+    ['input_tokens', 'cached_tokens', 'output_tokens', 'cost_usd', 'cache_share'].every(key => value[key] === null || numeric(value[key]));
+}
+
+function usageWire(value: unknown): value is TurnUsageWire {
+  if (!record(value) || !usageStats(value.totals)) return false;
+  return ['models', 'accounts', 'days'].every(key => {
+    const rows = value[key];
+    return Array.isArray(rows) && rows.every(row => record(row) && (row.key === null || typeof row.key === 'string') && usageStats(row));
+  });
+}
+
+function readableHistory(wire: unknown, head: string): wire is PerfTurnsWire {
+  if (!record(wire) || !Array.isArray(wire.heads)) return false;
+  return wire.heads.every(block => record(block) && typeof block.key === 'string' &&
+    (block.count === undefined || numeric(block.count)) &&
+    (block.rows === undefined || Array.isArray(block.rows) && block.rows.every(row => record(row) && numeric(row.ts))) &&
+    (block.usage === undefined || usageWire(block.usage))) && wire.heads.some(block => block.key === head);
+}
+
+async function readHeadTurns(head: string, n: number, window: TurnsWindow, signal?: AbortSignal): Promise<HeadRead> {
   try {
-    return { ok: true, wire: await request<PerfTurnsWire>(perfTurnsPath(head, n, window)) };
+    const wire = await request<unknown>(perfTurnsPath(head, n, window), signal === undefined ? undefined : { signal });
+    if (!readableHistory(wire, head)) {
+      throw new Error(U.historyUnreadable);
+    }
+    return { ok: true, wire };
   } catch (err) {
     return { ok: false, head, err };
   }
 }
 
 export type TurnsSlice = TurnsState | PendingRoute;
+
+function settledTurns(heads: HeadsPayload, reads: readonly HeadRead[], window: TurnsWindow & { n: number }, pendingHeads: string[]): TurnsState {
+  const { n, since: from, until: to } = window;
+  const failed = reads.flatMap(read => read.ok ? [] : [read]);
+  const answers = reads.flatMap(read => read.ok ? [read.wire] : []);
+  const merged = mergeTurns(answers);
+  const landed = from === undefined ? merged.landed.slice(-n) : merged.landed;
+  const cuts = [
+    ...answers.map(answer => answer.since),
+    ...merged.truncated.flatMap(({ head }) => merged.landed.find(row => row.head === head)?.ts ?? []),
+    ...(landed.length < merged.landed.length ? landed[0]?.ts === undefined ? [] : [landed[0].ts] : []),
+  ];
+  return {
+    inflight: inflightFrom(heads.heads),
+    landed,
+    unread: [...merged.unread, ...failed.map(read => ({ head: read.head, reason: failureText(read.err) }))],
+    truncated: merged.truncated,
+    matched: answers.length === 0 && (reads.length > 0 || pendingHeads.length > 0) ? null : merged.matched,
+    matchedBy: merged.matchedBy,
+    usageBy: merged.usageBy,
+    pendingHeads,
+    ...(from === undefined ? {} : { window: { since: from, until: to ?? null } }),
+    ...(cuts.length === 0 ? {} : { completeFrom: Math.max(...cuts) }),
+  };
+}
 
 /**
  * The landed rows plus the in-flight set. A read with no window start is a tail, the fleet's newest `n`; a read from
@@ -173,9 +229,9 @@ export type TurnsSlice = TurnsState | PendingRoute;
  * the daemon read. Before it, an hour with no rows is unread, not idle. `matched` is the daemon's count of what the
  * window and filters hold, however few rows came back.
  */
-export async function fetchTurns({ head, n = DEFAULT_TAIL, since, until, last, filter, timeZone }: TurnsAsk = {}, now: () => number = Date.now): Promise<TurnsSlice> {
+export async function fetchTurns({ head, n = DEFAULT_TAIL, since, until, last, filter, timeZone }: TurnsAsk = {}, now: () => number = Date.now, publish?: (state: TurnsState) => void, signal?: AbortSignal): Promise<TurnsSlice> {
   try {
-    const heads = await request<HeadsPayload>('/api/heads');
+    const heads = await request<HeadsPayload>('/api/heads', signal === undefined ? undefined : { signal });
     const asked = head !== undefined && head !== '' ? [head] : heads.heads.map((status) => status.key);
     // A rolling window is pinned to ONE instant, read once: every head is asked the same since and the same exclusive until, and
     // the state says that window, so a link built from its count opens the very range that count was taken over.
@@ -183,29 +239,21 @@ export async function fetchTurns({ head, n = DEFAULT_TAIL, since, until, last, f
     const rolling = since === undefined && last !== undefined;
     const from = since ?? (rolling ? at - last : undefined);
     const to = until ?? (rolling ? at : undefined);
-    const reads = await Promise.all(asked.map((key) => readHeadTurns(key, n, { since: from, until: to, filter, timeZone })));
-    const failed = reads.flatMap((read) => (read.ok ? [] : [read]));
+    const window = { n, since: from, until: to, filter, timeZone };
+    const settled: HeadRead[] = [];
+    const pending = new Set(asked);
+    const reads = await Promise.all(asked.map(async key => {
+      const read = await readHeadTurns(key, n, window, signal);
+      settled.push(read);
+      pending.delete(key);
+      if (!signal?.aborted) publish?.(settledTurns(heads, settled, window, [...pending]));
+      return read;
+    }));
+    signal?.throwIfAborted();
+    const failed = reads.flatMap(read => read.ok ? [] : [read]);
     const first = failed[0];
     if (first !== undefined && failed.length === reads.length) throw first.err;
-    const merged = mergeTurns(reads.flatMap((read) => (read.ok ? [read.wire] : [])));
-    const unread = [...merged.unread, ...failed.map((read) => ({ head: read.head, reason: failureText(read.err) }))];
-    const landed = from === undefined ? merged.landed.slice(-n) : merged.landed;
-    const cuts = [
-      ...reads.flatMap((read) => (read.ok ? [read.wire.since] : [])),
-      ...merged.truncated.flatMap(({ head: clamped }) => merged.landed.find((row) => row.head === clamped)?.ts ?? []),
-      ...(landed.length < merged.landed.length ? (landed[0] === undefined ? [] : [landed[0].ts]) : []),
-    ];
-    return {
-      inflight: inflightFrom(heads.heads),
-      landed,
-      unread,
-      truncated: merged.truncated,
-      matched: merged.matched,
-      matchedBy: merged.matchedBy,
-      usageBy: merged.usageBy,
-      ...(from === undefined ? {} : { window: { since: from, until: to ?? null } }),
-      ...(cuts.length === 0 ? {} : { completeFrom: Math.max(...cuts) }),
-    };
+    return settledTurns(heads, reads, window, []);
   } catch (err) {
     const pending = pendingOf(err, PENDING_TURNS);
     if (pending !== null) return pending;
@@ -243,6 +291,23 @@ export function usePerfTurns(ask: TurnsAsk = {}, every: number | false = TURNS_P
     queryKey: tail || live === true ? [...keys.perf, tail ? 'tail' : 'window', ...shape] : [...windowKey, ...shape],
     queryFn: () => fetchTurns(ask),
     refetchInterval: every,
+    enabled,
+  });
+}
+
+/** Usage publishes each settled command while the same pinned fleet read remains in flight. */
+export function useUsageTurns(hours: number, timeZone: string, enabled: boolean) {
+  const client = useQueryClient();
+  const queryKey = ['usage-requests', hours, timeZone];
+  return useQuery({
+    queryKey,
+    queryFn: ({ signal }) => fetchTurns(
+      { last: hours * 3_600_000, n: 1, filter: { local: false }, timeZone },
+      Date.now,
+      state => { client.setQueryData(queryKey, state); },
+      signal,
+    ),
+    refetchInterval: TURNS_POLL_MS,
     enabled,
   });
 }

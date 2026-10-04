@@ -449,12 +449,14 @@ export interface TurnsState {
   truncated: TruncatedHead[];
   /** The rows the read's window and filters match, summed over every head that answered: the daemon's own `count`, taken
    *  before its newest-n clamp, so it is the whole window however few rows came back. Null when an answering head did not
-   *  say its count. A head in `unread` is not in it. */
+   *  say its count. A partial head may still supply known counts, with its gap named in `unread`. */
   matched: number | null;
   /** The same count per head that said one. */
   matchedBy: Record<string, number>;
   /** Full-window aggregates from each answering head, not its displayed-row slice. */
   usageBy?: Record<string, TurnUsageWire>;
+  /** Commands whose current history request has not settled, never a failed or partial reading. */
+  pendingHeads?: string[];
   /** The window every head was asked, epoch ms, until exclusive: a rolling read is pinned to the one instant it ran at, and
    *  null `until` is a span left open to the daemon's now. Absent on a tail read, which asks the daemon's default window. A link
    *  that carries `matched` carries this range, never a clock read again later. */

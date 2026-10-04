@@ -30,6 +30,11 @@ test('a missing price remains missing while the daemon last ordinary model is pr
   expect(value).toMatchObject({ cost: null, unpriced: 2502, models: { 'synthetic-full-session': { head: 'shared-command', model: 'ordinary-model' } } });
 });
 
+test('a project total names why its requests have no price', () => {
+  const value = projectUsage(sessions, reading([group({ unpriced_requests: 3, unpriced_uncounted_requests: 1, unpriced_plan_requests: 2, unpriced_undeclared_requests: 0 })]));
+  expect(value?.gaps).toEqual({ uncounted: 1, plan: 2, undeclared: 0, unknown: 0 });
+});
+
 test('an older daemon is unavailable, never an invented empty project total', () => {
   expect(projectUsage(sessions, { ...reading(), usageBy: {} })).toBeNull();
 });

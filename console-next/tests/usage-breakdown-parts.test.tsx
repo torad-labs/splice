@@ -12,7 +12,7 @@ const complete: TurnUsageWire = {
   accounts: [], days: [],
 };
 const row: TurnRow = { head: 'synthetic', ts: 100, model: 'model / a', account: 'work & spare', compact: false, outcome: 'ok', cost_usd: 0.25, in_tokens: 200, out_tokens: 50 };
-const item = { id: 'synthetic', head: 'synthetic', key: row.model, turns: 1, cost: 0.25, input: 200, output: 50, unpriced: 0, missingInput: 0, missingOutput: 0 };
+const item = { id: 'synthetic', head: 'synthetic', key: row.model, turns: 1, cost: 0.25, input: 200, output: 50, unpriced: 0, missingInput: 0, missingOutput: 0, gaps: { uncounted: 0, plan: 0, undeclared: 0, unknown: 0 } };
 const items = [item];
 const reading = (over: Partial<TurnsState> = {}) => ({
   isError: false, isPending: false,
@@ -99,6 +99,17 @@ test('unknown attribution is explicit instead of becoming an arbitrary named fil
 test('a lone sub-dollar amount still spans the full magnitude scale', () => {
   const html = renderToStaticMarkup(<MemoryRouter><UsageValues items={items} by="model" since={0} until={200} labelOf={key => key} /></MemoryRouter>);
   expect(html).toContain('width:100%');
+});
+
+// Marlin's pass 5: the spend cell read "no recorded price" for a priced model whose failed requests had no token
+// count, and for requests a plan covers. Each cause has its own sentence.
+test('the spend cell says why each request has no price', () => {
+  const gaps = { uncounted: 15, plan: 2, undeclared: 1, unknown: 0 };
+  const html = renderToStaticMarkup(<MemoryRouter><UsageValues items={[{ ...item, unpriced: 18, gaps }]} by="model" since={0} until={200} labelOf={key => key} /></MemoryRouter>);
+  expect(html).toContain('15 requests have no token count, so they cannot be priced.');
+  expect(html).toContain('2 requests are covered by a plan, so they have no price.');
+  expect(html).toContain('1 request has no recorded price.');
+  expect(html.match(/no recorded price/g)).toHaveLength(1);
 });
 
 test('daily budgets use their own measured window and warn before exhaustion', () => {

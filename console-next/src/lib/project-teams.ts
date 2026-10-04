@@ -1,7 +1,7 @@
 // Project membership comes from the registry's resolved common root, never from a name or a saved team.
 import type { HandedEdge, SessionEdge, SessionRow } from '../types/sessions';
 import type { TurnsState, TurnSessionUsage } from '../types/perf';
-import { mergeWindowStats } from './usage-breakdown';
+import { mergeWindowStats, priceGaps } from './usage-breakdown';
 
 export interface ProjectTeam {
   root: string;
@@ -57,7 +57,7 @@ export function projectUsage(sessions: readonly SessionRow[], data: TurnsState) 
     }
   }
   const totals = mergeWindowStats(rows);
-  return { requests: totals.requests, input: totals.input_tokens, output: totals.output_tokens, cost: totals.cost_usd, unpriced: totals.unpriced_requests, missingInput: totals.missing_input_requests, missingOutput: totals.missing_output_requests, models, unattributed };
+  return { requests: totals.requests, input: totals.input_tokens, output: totals.output_tokens, cost: totals.cost_usd, unpriced: totals.unpriced_requests, gaps: priceGaps(totals), missingInput: totals.missing_input_requests, missingOutput: totals.missing_output_requests, models, unattributed };
 }
 
 /** Addresses and unresolved names are recipient selectors, not sender session ids. */

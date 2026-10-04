@@ -16,7 +16,6 @@ export const B = {
   partial: 'This breakdown is incomplete.',
   unreportedModel: 'Model not reported',
   unreportedAccount: 'Account not reported',
-  unpriced: (n: number) => `${fmtInt(n)} ${n === 1 ? 'request has' : 'requests have'} no recorded price.`,
   inputMissing: (n: number) => `${fmtInt(n)} ${n === 1 ? 'request has' : 'requests have'} no input token count.`,
   outputMissing: (n: number) => `${fmtInt(n)} ${n === 1 ? 'request has' : 'requests have'} no output token count.`,
   accountWhy: 'Each request names the account it used. Requests without an account stay separate.',

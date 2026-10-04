@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { fullWindowUsage, fullUsageBreakdown, mergeWindowStats, budgetWarning, reportedWindowUsage, reportedRequestCount } from '../src/lib/usage-breakdown';
+import { fullWindowUsage, fullUsageBreakdown, mergeWindowStats, budgetWarning, reportedWindowUsage, reportedRequestCount, priceGaps, priceGapLines } from '../src/lib/usage-breakdown';
 import type { TurnsState, TurnUsageStats, TurnUsageWire } from '../src/types/perf';
 
 const stats = (over: Partial<TurnUsageStats> = {}): TurnUsageStats => ({
@@ -57,6 +57,33 @@ describe('daemon-backed usage', () => {
     const reading = data({ synthetic: usage({ models: [{ key: null, ...stats() }], days: [{ key: '2026-10-02', ...stats() }, { key: '2026-10-03', ...stats() }] }) });
     expect(fullUsageBreakdown(reading, 'model')).toMatchObject([{ key: null }]);
     expect(fullUsageBreakdown(reading, 'day')?.map(row => row.key)).toEqual(['2026-10-03', '2026-10-02']);
+  });
+});
+
+// Marlin's pass 5: one sentence, "no recorded price", stood for three causes. The daemon now names each.
+describe('why a request has no price', () => {
+  const causes = { unpriced_requests: 6, unpriced_uncounted_requests: 3, unpriced_plan_requests: 2, unpriced_undeclared_requests: 1 };
+  test('each cause keeps its own count, and an older daemon leaves its count unexplained', () => {
+    expect(priceGaps(stats(causes))).toEqual({ uncounted: 3, plan: 2, undeclared: 1, unknown: 0 });
+    expect(priceGaps(stats({ unpriced_requests: 4 }))).toEqual({ uncounted: 0, plan: 0, undeclared: 0, unknown: 4 });
+  });
+  test('merged commands add each cause, and a command without causes adds only to the unexplained count', () => {
+    const merged = mergeWindowStats([stats(causes), stats({ unpriced_requests: 4 })]);
+    expect(merged).toMatchObject({ unpriced_requests: 10, unpriced_uncounted_requests: 3, unpriced_plan_requests: 2, unpriced_undeclared_requests: 1 });
+    expect(priceGaps(merged)).toEqual({ uncounted: 3, plan: 2, undeclared: 1, unknown: 4 });
+    expect(mergeWindowStats([stats()])).toEqual(stats());
+  });
+  test('a breakdown row carries its causes', () => {
+    const reading = data({ synthetic: usage({ models: [{ key: 'deepseek-v4-pro', ...stats({ unpriced_requests: 15, unpriced_uncounted_requests: 15, unpriced_plan_requests: 0, unpriced_undeclared_requests: 0 }) }] }) });
+    expect(fullUsageBreakdown(reading, 'model')?.[0]?.gaps).toEqual({ uncounted: 15, plan: 0, undeclared: 0, unknown: 0 });
+  });
+  test('only a price that was never declared reads as no recorded price', () => {
+    expect(priceGapLines({ uncounted: 15, plan: 0, undeclared: 0, unknown: 0 })).toEqual(['15 requests have no token count, so they cannot be priced.']);
+    expect(priceGapLines({ uncounted: 0, plan: 1, undeclared: 0, unknown: 0 })).toEqual(['1 request is covered by a plan, so it has no price.']);
+    expect(priceGapLines({ uncounted: 0, plan: 0, undeclared: 2, unknown: 0 })).toEqual(['2 requests have no recorded price.']);
+    expect(priceGapLines({ uncounted: 0, plan: 0, undeclared: 0, unknown: 1200 })).toEqual(['1,200 requests have no price.']);
+    expect(priceGapLines({ uncounted: 1, plan: 2, undeclared: 3, unknown: 0 })).toHaveLength(3);
+    expect(priceGapLines({ uncounted: 0, plan: 0, undeclared: 0, unknown: 0 })).toEqual([]);
   });
 });
 

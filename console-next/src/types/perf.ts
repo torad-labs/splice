@@ -200,6 +200,10 @@ export interface TurnUsageStats {
   cost_usd: number | null;
   cache_share: number | null;
   unpriced_requests: number;
+  /** The same requests by cause, summing to unpriced_requests. A daemon older than the split omits them. */
+  unpriced_uncounted_requests?: number;
+  unpriced_plan_requests?: number;
+  unpriced_undeclared_requests?: number;
   missing_input_requests: number;
   missing_output_requests: number;
   missing_cache_requests: number;

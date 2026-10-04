@@ -1,4 +1,6 @@
 // What the Usage page says. Copy lives in modules like this one, never inline in a component.
+import { fmtInt } from './format';
+
 /** A window in hours as a person says it. */
 export const spanWords = (hours: number): string => (hours === 24 ? 'the last 24 hours' : hours === 168 ? 'the last 7 days' : `the last ${Math.round(hours / 24)} days`);
 
@@ -24,6 +26,10 @@ export const U = {
   totalsCostWhy: 'Equivalent API cost at the declared model prices, not a subscription bill.',
   totalsCostUnpriced: (n: number) => `${n} ${n === 1 ? 'turn' : 'turns'} left out: no price.`,
   totalsCostNone: 'No dollar estimate is available for this window.',
+  unpricedUncounted: (n: number) => `${fmtInt(n)} ${n === 1 ? 'request has' : 'requests have'} no token count, so ${n === 1 ? 'it' : 'they'} cannot be priced.`,
+  unpricedPlan: (n: number) => `${fmtInt(n)} ${n === 1 ? 'request is' : 'requests are'} covered by a plan, so ${n === 1 ? 'it has' : 'they have'} no price.`,
+  unpricedUndeclared: (n: number) => `${fmtInt(n)} ${n === 1 ? 'request has' : 'requests have'} no recorded price.`,
+  unpricedUnknown: (n: number) => `${fmtInt(n)} ${n === 1 ? 'request has' : 'requests have'} no price.`,
   plansTitle: 'Each command against its limit',
   plansWhy: 'The provider reports each limit. splice only marks a command out of quota when the provider refuses it.',
   plansNone: 'No command has reported its usage yet.',

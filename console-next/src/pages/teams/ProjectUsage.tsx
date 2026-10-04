@@ -1,5 +1,6 @@
 import { fmtInt, fmtTokens, fmtUsd } from '../../lib/format';
 import type { projectUsage } from '../../lib/project-teams';
+import { priceGapLines } from '../../lib/usage-breakdown';
 import { Fault } from '../../ui';
 import { T } from './copy';
 
@@ -18,6 +19,6 @@ export function ProjectUsage({ value, reading, partial, error, retry }: {
       <div><dt>{T.usageCost}</dt><dd>{measured(value.cost, fmtUsd, partial || value.unpriced > 0)}</dd></div>
     </dl>
     {partial ? <p className="hint">{T.usagePartial}</p> : null}
-    {value.unpriced === 0 ? null : <p className="hint">{T.usageUnpriced(value.unpriced)}</p>}
+    {priceGapLines(value.gaps).map(line => <p key={line} className="hint">{line}</p>)}
   </section>;
 }

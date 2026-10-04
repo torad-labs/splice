@@ -38,7 +38,6 @@ export const T = {
   usageTokens: 'Input / output tokens',
   usageCost: 'Estimated API cost',
   usageUnknown: 'Not reported',
-  usageUnpriced: (n: number) => `${n} ${n === 1 ? 'request has' : 'requests have'} no recorded price.`,
   atLeast: (value: string) => `At least ${value}`,
   seats: (n: number) => `${countWord(n)} ${n === 1 ? 'session' : 'sessions'}`,
   working: (n: number) => `${n} working`,

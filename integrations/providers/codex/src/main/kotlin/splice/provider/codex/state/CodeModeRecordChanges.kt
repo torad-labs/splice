@@ -2,6 +2,7 @@
 package splice.provider.codex.state
 
 import kotlinx.coroutines.CancellationException
+import splice.core.memory.HeapCapacityException
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModePersistenceException
 import splice.provider.codex.CodeModePhase
@@ -52,7 +53,7 @@ internal class CodeModeRecordChanges(
             startup.entries.remove(record.id)
             cleanup.rejected(cells.remove(record.id))
             record.phase = CodeModePhase.LOST
-            record.error = message
+            replaceError(record, message)
             record.updatedAt = config.clock.millis()
             try {
                 store.save(records, history.entries, dirtyKeys = setOf(record.key), changedRecord = record)
@@ -74,10 +75,31 @@ internal class CodeModeRecordChanges(
                     .filter { it.phase != CodeModePhase.STARTING }.forEach { record ->
                         cells.remove(record.id)?.close()
                         record.phase = CodeModePhase.LOST
-                        record.error = "completed client call ids=${record.results.keys}; source was not rerun"
+                        replaceError(record, "completed client call ids=${record.results.keys}; source was not rerun")
                     }
                 store.save(records, history.entries, dirtyKeys = setOf(key))
             }
+        }
+    }
+
+    /** Loss must finish even at capacity. The empty error is already covered by the record's charge. */
+    private fun replaceError(record: CodeModeRecord, message: String) {
+        val stored = CodeModeWeight.STORED
+        val replaced = record.error
+        val growth = (stored.text(message) - stored.text(replaced.orEmpty())).coerceAtLeast(0L)
+        record.error = try {
+            CodeModeHeap.grow(record, growth) { kept ->
+                if (replaced === message) {
+                    0L
+                } else if (replaced != null && kept.error === replaced) {
+                    stored.text(replaced)
+                } else {
+                    0L
+                }
+            }
+            message
+        } catch (_: HeapCapacityException) {
+            ""
         }
     }
 

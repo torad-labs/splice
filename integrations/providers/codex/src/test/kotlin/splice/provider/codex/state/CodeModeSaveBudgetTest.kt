@@ -1,6 +1,7 @@
 // NEW: save preparation and encoding refuse capacity before durable state changes.
 package splice.provider.codex.state
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
@@ -8,6 +9,7 @@ import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
@@ -25,7 +27,9 @@ import splice.provider.codex.CodexCodeModeRegistry
 import splice.provider.codex.CodexCodeModeStore
 import splice.provider.codex.stream.CodeModeSourceState
 import splice.provider.codex.stream.CodeModeSourceUsage
+import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
+import splice.upstream.codemode.CodeModeStep
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
@@ -43,15 +47,16 @@ class CodeModeSaveBudgetTest(@param:TempDir private val dir: Path) {
     private var writes = 0
     private var refuseWrite = false
     private val location = CodeModeStateLocation(dir.resolve("state"), dir.resolve("legacy.json"))
+    private val writer = CodeModeStateWrite { path, text ->
+        writes++
+        if (refuseWrite) throw IOException("synthetic refused force")
+        CodeModeStateJournal.write(path, text)
+    }
     private val store = CodexCodeModeStore(
         location,
         Json { encodeDefaults = true },
         {},
-        writer = CodeModeStateWrite { path, text ->
-            writes++
-            if (refuseWrite) throw IOException("synthetic refused force")
-            CodeModeStateJournal.write(path, text)
-        },
+        writer = writer,
         heap = heap,
     )
 
@@ -268,6 +273,225 @@ class CodeModeSaveBudgetTest(@param:TempDir private val dir: Path) {
         }
     }
 
+    @Test
+    fun `loss error is charged at stored width before a refused durable save`() {
+        val roomy = HeapBudget(Long.MAX_VALUE, 64 * 1024 * 1024)
+        val record = CodeModeRecords.of("synthetic", 1)
+        val registry = registry(record, roomy, writer)
+        try {
+            val before = checkNotNull(record.heapLease).bytes
+            val message = "x".repeat(200_000) + "ā"
+            val growth = CodeModeWeight.STORED.text(message) - CodeModeWeight.STORED.text("")
+            val hold = checkNotNull(roomy.reserve(roomy.available.value - growth))
+            try {
+                capacityRefused { registry.lose(record, message) }
+                assertEquals(message, record.error)
+                assertEquals(CodeModePhase.LOST, record.phase)
+                assertEquals(before + growth, checkNotNull(record.heapLease).bytes)
+            } finally {
+                hold.close()
+            }
+        } finally {
+            refuseWrite = false
+            registry.timed.finish { registry.onHeadStop() }
+        }
+    }
+
+    @Test
+    fun `head stop error is charged before a refused durable save without recording a use`() {
+        val record = CodeModeRecords.of("synthetic", 1)
+        val registry = registry(record, heap, writer)
+        val cell = ClosingCell()
+        assertTrue(registry.attach(record, cell))
+        try {
+            val before = checkNotNull(record.heapLease).bytes
+            val lastUse = record.updatedAt
+            val message = "completed client call ids=[]; source was not rerun"
+            val growth = CodeModeWeight.STORED.text(message) - CodeModeWeight.STORED.text("")
+            val hold = checkNotNull(heap.reserve(heap.available.value - growth))
+            try {
+                capacityRefused { registry.onHeadStop() }
+                assertEquals(message, record.error)
+                assertEquals(CodeModePhase.LOST, record.phase)
+                assertTrue(cell.closed)
+                assertEquals(lastUse, record.updatedAt)
+                assertEquals(before + growth, checkNotNull(record.heapLease).bytes)
+            } finally {
+                hold.close()
+            }
+        } finally {
+            refuseWrite = false
+            registry.timed.finish { registry.onHeadStop() }
+        }
+    }
+
+    @Test
+    fun `a replaced error remains charged on every retained saved snapshot`() {
+        val roomy = HeapBudget(Long.MAX_VALUE, 64 * 1024 * 1024)
+        val saved = "r".repeat(200_000)
+        val record = CodeModeRecords.of("synthetic", 1).apply { error = saved }
+        val registry = registry(record, roomy)
+        try {
+            val first = record.heapSnapshots.mapNotNull { it.get() }
+            assertTrue(first.isNotEmpty(), "the control must retain a real saved snapshot")
+            record.updatedAt++
+            registry.save()
+            val snapshots = record.heapSnapshots.mapNotNull { it.get() }.filter { it.error === saved }
+            assertTrue(snapshots.size >= 2, "each separately retained snapshot must be admitted")
+            java.lang.ref.Reference.reachabilityFence(first)
+            val replacement = "s".repeat(200_000) + "ā"
+            registry.lose(record, replacement)
+            val charged = settledCharge(roomy)
+            val minimum = CodeModeWeight.STORED.record(record) +
+                snapshots.size * CodeModeWeight.STORED.text(saved)
+            assertTrue(
+                charged >= minimum,
+                "$charged bytes must cover the live replacement and every saved error",
+            )
+            assertEquals(replacement, record.error)
+            assertTrue(snapshots.all { it.error === saved })
+            java.lang.ref.Reference.reachabilityFence(snapshots)
+        } finally {
+            refuseWrite = false
+            registry.timed.finish { registry.onHeadStop() }
+        }
+    }
+
+    @Test
+    fun `refused loss error growth still closes the cell and records a terminal loss`() {
+        val record = CodeModeRecords.of("synthetic", 1)
+        val registry = registry(record)
+        val cell = ClosingCell()
+        assertTrue(registry.attach(record, cell))
+        try {
+            val before = checkNotNull(record.heapLease).bytes
+            val hold = checkNotNull(heap.reserve(heap.available.value))
+            try {
+                capacityRefused { registry.lose(record, "lost".repeat(200_000)) }
+                assertEquals(CodeModePhase.LOST, record.phase)
+                assertEquals("", record.error, "a refused payload uses the already-counted empty error")
+                assertTrue(record.terminal())
+                assertTrue(cell.closed)
+                assertEquals(null, registry.cell(record))
+                assertEquals(before, checkNotNull(record.heapLease).bytes)
+            } finally {
+                hold.close()
+            }
+            registry.save()
+        } finally {
+            registry.timed.finish { registry.onHeadStop() }
+        }
+    }
+
+    @Test
+    fun `refused head stop error growth still closes every cell without recording a use`() {
+        val record = CodeModeRecords.of("synthetic", 1)
+        val registry = registry(record)
+        val cell = ClosingCell()
+        assertTrue(registry.attach(record, cell))
+        try {
+            val before = checkNotNull(record.heapLease).bytes
+            val lastUse = record.updatedAt
+            val hold = checkNotNull(heap.reserve(heap.available.value))
+            try {
+                capacityRefused { registry.onHeadStop() }
+                assertEquals(CodeModePhase.LOST, record.phase)
+                assertEquals("", record.error, "a refused payload uses the already-counted empty error")
+                assertTrue(record.terminal())
+                assertTrue(cell.closed)
+                assertEquals(null, registry.cell(record))
+                assertEquals(lastUse, record.updatedAt)
+                assertEquals(before, checkNotNull(record.heapLease).bytes)
+            } finally {
+                hold.close()
+            }
+            registry.save()
+        } finally {
+            registry.timed.finish { registry.onHeadStop() }
+        }
+    }
+
+    @Nested
+    inner class TerminalErrorOwnership {
+        @Test
+        fun `loss keeps cancellation primary when the charged error cannot be forced`() {
+            val record = CodeModeRecords.of("synthetic", 1)
+            val registry = registry(record, heap, writer)
+            val cell = ClosingCell()
+            assertTrue(registry.attach(record, cell))
+            try {
+                refuseWrite = true
+                val cancellation = CancellationException("synthetic cancellation")
+                registry.lose(record, "source was not rerun", cancellation)
+                assertEquals(CodeModePhase.LOST, record.phase)
+                assertTrue(cell.closed)
+                assertTrue(checkNotNull(record.heapLease).bytes >= CodeModeWeight.STORED.record(record))
+                assertTrue(cancellation.suppressed.single() is CodeModePersistenceException)
+            } finally {
+                refuseWrite = false
+                registry.timed.finish { registry.onHeadStop() }
+            }
+        }
+
+        @Test
+        fun `reusing the same error object needs no additional snapshot charge`() {
+            val saved = "r".repeat(2_000)
+            val record = CodeModeRecords.of("synthetic", 1).apply { error = saved }
+            val registry = registry(record)
+            try {
+                val snapshots = record.heapSnapshots.mapNotNull { it.get() }
+                assertTrue(snapshots.any { it.error === saved })
+                val hold = checkNotNull(heap.reserve(heap.available.value))
+                try {
+                    registry.lose(record, saved, CancellationException("synthetic cancellation"))
+                    assertTrue(record.error === saved, "unchanged payload must not be refused at capacity")
+                    assertEquals(CodeModePhase.LOST, record.phase)
+                } finally {
+                    hold.close()
+                }
+                java.lang.ref.Reference.reachabilityFence(snapshots)
+            } finally {
+                registry.timed.finish { registry.onHeadStop() }
+            }
+        }
+
+        @Test
+        fun `refused retained snapshot charge preserves the counted old error and terminal fallback`() {
+            val saved = "r".repeat(2_000)
+            val record = CodeModeRecords.of("synthetic", 1).apply { error = saved }
+            val registry = registry(record)
+            try {
+                val snapshots = record.heapSnapshots.mapNotNull { it.get() }
+                assertTrue(snapshots.any { it.error === saved })
+                val before = checkNotNull(record.heapLease).bytes
+                val hold = checkNotNull(heap.reserve(heap.available.value))
+                try {
+                    registry.lose(record, "short", CancellationException("synthetic cancellation"))
+                    assertEquals("", record.error, "zero record growth still admits retained snapshot ownership")
+                    assertEquals(CodeModePhase.LOST, record.phase)
+                    assertEquals(before, checkNotNull(record.heapLease).bytes)
+                    assertTrue(snapshots.all { it.error === saved })
+                } finally {
+                    hold.close()
+                }
+                java.lang.ref.Reference.reachabilityFence(snapshots)
+            } finally {
+                registry.timed.finish { registry.onHeadStop() }
+            }
+        }
+    }
+
+    private class ClosingCell : CodeModeCell {
+        var closed = false
+
+        override suspend fun advance(results: List<CodeModeResult>): CodeModeStep =
+            error("this accounting control never executes a source")
+
+        override fun close() {
+            closed = true
+        }
+    }
+
     /** The budget's charge once a full collection refunds nothing more: a save's stages are gone, owners remain. */
     private fun settledCharge(budget: HeapBudget): Long = runBlocking {
         repeat(40) {
@@ -279,13 +503,17 @@ class CodeModeSaveBudgetTest(@param:TempDir private val dir: Path) {
         error("the ledger never settled")
     }
 
-    private fun registry(record: CodeModeRecord, budget: HeapBudget = heap): CodexCodeModeRegistry {
+    private fun registry(
+        record: CodeModeRecord,
+        budget: HeapBudget = heap,
+        writer: CodeModeStateWrite? = null,
+    ): CodexCodeModeRegistry {
         val config = CodeModeBridgeConfig(
             runtimes = { error("this reservation control must not start a worker") },
             state = location,
             clock = Clock.fixed(Instant.ofEpochMilli(record.updatedAt), ZoneOffset.UTC),
         )
-        return CodexCodeModeRegistry(config, Json, 1.days, heap = budget).also {
+        return CodexCodeModeRegistry(config, Json, 1.days, writer = writer, heap = budget).also {
             assertTrue(it.add(record))
         }
     }

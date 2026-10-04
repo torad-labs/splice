@@ -3,7 +3,10 @@
 // the order stays its call: the head's layers first, then the slot text after them.
 package splice.head.turn
 
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import splice.core.perf.TurnPerf
 import splice.core.prompt.EffectiveSystemPrompt
 import splice.core.prompt.SYSTEM_PROMPT_APPLIED
@@ -94,5 +97,25 @@ internal class TurnPrompts(private val provider: Provider, private val deps: Hea
         layers.forEachIndexed { index, layer ->
             if (placed[index]) placed[index] = survived(layer, turn.requestBody)
         }
+    }
+}
+
+/** Whether a system-prompt layer's text is still in the finished request, asked of the TREE. It lives
+ *  beside TurnPrompts, its one caller, and is internal so features/turns' tests can pin parity and a
+ *  mutation against it (PromptSurvivalTest).
+ *
+ *  It replaced serialising the whole request body to a String to run `contains` over it, which cost one
+ *  body-sized String per round on any head configured with a strip layer: 2,259,840 bytes against
+ *  110,144 on a 1.05 MB body. Nothing about the answer reaches the wire. Asking the tree also retired a
+ *  class of mismatch: against a serialised body the needle had to be escaped too, or a multi-line
+ *  append's real newline never matched the `\n` the serialiser wrote (v0.4.0 prompt-review). A string
+ *  primitive's content is already unescaped, so raw matches raw. */
+internal object PromptSurvival {
+    /** True when some string value anywhere in [body] contains [text]. Walks the tree and copies no
+     *  value: a primitive's content is the stored String. A key or a number never matches. */
+    fun present(body: JsonElement, text: String): Boolean = when (body) {
+        is JsonPrimitive -> body.isString && body.content.contains(text)
+        is JsonObject -> body.values.any { present(it, text) }
+        is JsonArray -> body.any { present(it, text) }
     }
 }

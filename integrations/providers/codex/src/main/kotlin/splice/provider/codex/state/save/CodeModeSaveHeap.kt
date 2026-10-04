@@ -8,11 +8,13 @@ import splice.core.memory.HeapLease
 import splice.core.memory.HeapOwners
 import splice.core.memory.HeapWeights
 import splice.provider.codex.CodeModeExpiredSnapshot
+import splice.provider.codex.CodeModeNativeSegment
 import splice.provider.codex.CodeModePersistedState
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRecordSnapshot
 import splice.provider.codex.state.CodeModeHeap
 import splice.provider.codex.state.CodeModeKeptState
+import java.util.IdentityHashMap
 
 // why: mutable snapshot collections coexist with their immutable copies before durable publication.
 private const val SNAPSHOT_PEAK_FACTOR = 2L
@@ -70,32 +72,31 @@ internal class CodeModeSaveHeap(private val heap: HeapBudget) {
         return reserve(bytes, SNAPSHOT_PEAK_FACTOR)
     }
 
-    /** A surviving child materializes inherited native payload when its parent leaves this checkpoint. */
+    /** A surviving child materializes inherited native payload when its parent leaves this checkpoint. Its peak is
+     *  returned for the reservation, and the live child is charged what the inherited payload occupies. */
     private fun snapshotBytes(record: CodeModeRecord, retained: List<CodeModeRecord>): Long {
-        var bytes = CodeModeHeap.bytes(record)
+        val bytes = CodeModeHeap.bytes(record)
         val parent = record.nativeParent ?: return bytes
         if (retained.any { it.key == record.key && it.id == parent.id }) return bytes
+        val inherited = mutableListOf<CodeModeNativeSegment>()
         var ancestor: CodeModeRecord? = parent
         while (ancestor != null) {
             val current = ancestor
-            current.nativeSegments.forEach { bytes = HeapJson.add(bytes, CodeModeHeap.bytes(it)) }
-            current.continuityReplay.forEach { bytes = HeapJson.add(bytes, CodeModeHeap.bytes(it)) }
+            inherited += current.nativeSegments + current.continuityReplay
             ancestor = current.nativeParent
         }
         // The live child survives independently of the durable snapshot after publishRoot.
-        CodeModeHeap.own(record, heap, bytes)
-        return bytes
+        CodeModeHeap.own(record, heap, inherited)
+        return inherited.fold(bytes) { total, segment -> HeapJson.add(total, CodeModeHeap.bytes(segment)) }
     }
 
     /** Partition prepared graphs before any durable write, with no uncharged handoff interval. */
     fun retain(item: CodeModeSaveSnapshots.Prepared, peak: HeapLease) {
         val state = item.conversation
         val records = state?.records ?: item.cells.map(CodeModeSaveSnapshots.Cell::snapshot)
-        records.forEach { snapshot ->
-            if (snapshot.heapLease == null) {
-                snapshot.heapLease = peak.split(CodeModeHeap.bytes(snapshot)).also { HeapOwners.keep(snapshot, it) }
-            }
-        }
+        val sources = IdentityHashMap<CodeModeRecordSnapshot, CodeModeRecord>()
+        item.sources.forEach { sources[it.snapshot] = it.live }
+        records.filter { it.heapLease == null }.forEach { charge(it, sources[it], peak) }
         state?.expired.orEmpty().forEach { marker ->
             if (marker.heapLease == null) {
                 marker.heapLease = peak.split(CodeModeHeap.bytes(marker)).also { HeapOwners.keep(marker, it) }
@@ -105,6 +106,14 @@ internal class CodeModeSaveHeap(private val heap: HeapBudget) {
             val references = (state.records.size + state.expired.size) * SAVE_REFERENCE_BYTES
             HeapOwners.keep(state, peak.split(HeapJson.add(SAVE_METADATA_BYTES, references)))
         }
+    }
+
+    /** A snapshot shares the payload charge of the live record it was taken from, because both hold the same
+     *  payloads, and takes its own shell out of the peak. One without a source, or whose record cannot cover it,
+     *  takes its whole charge there. */
+    private fun charge(snapshot: CodeModeRecordSnapshot, source: CodeModeRecord?, peak: HeapLease) {
+        if (source != null && CodeModeHeap.share(source, snapshot, peak)) return
+        snapshot.heapLease = peak.split(CodeModeHeap.retained(snapshot)).also { HeapOwners.keep(snapshot, it) }
     }
 
     fun encoding(cells: List<CodeModeRecordSnapshot>, expired: List<CodeModeExpiredSnapshot>): Encoding {

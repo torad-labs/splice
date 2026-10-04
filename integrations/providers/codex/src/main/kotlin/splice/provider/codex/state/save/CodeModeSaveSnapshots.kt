@@ -16,12 +16,14 @@ internal class CodeModeSaveSnapshots(
     private val uncertain: Set<String>,
     private val capacity: CodeModeSaveHeap,
 ) {
+    /** [sources] pairs every snapshot with the live record it was taken from, so the snapshot shares its charge. */
     class Prepared(
         val key: String,
         val conversation: CodeModePersistedState?,
         private val peak: HeapLease,
         val cells: List<Cell> = emptyList(),
         val nativeRoots: List<Cell> = emptyList(),
+        val sources: List<Cell> = cells,
     ) : AutoCloseable {
         override fun close() {
             peak.close()
@@ -86,7 +88,7 @@ internal class CodeModeSaveSnapshots(
             .takeUnless { it.records.isEmpty() && it.expired.isEmpty() }
         val changed = key in uncertain || next != prior || next?.records?.zip(prior?.records.orEmpty())
             ?.any { (left, right) -> !CodeModeStateJournal.same(left, right) } == true
-        return if (changed) Prepared(key, next, peak, nativeRoots = roots) else null
+        return if (changed) Prepared(key, next, peak, nativeRoots = roots, sources = snapshots) else null
     }
 
     private fun canPrepareCells(

@@ -19,15 +19,16 @@ internal class CodeModeRecordRestorer {
             }
             else -> saved.error
         }
-        return record(saved, if (stale || lost) CodeModePhase.LOST else saved.phase, error).also {
-            it.accepted.restore(saved.results)
-            it.issued.addAll(saved.issued)
-            it.sessionId = saved.sessionId
-            it.conversationId = saved.conversationId
-            it.nativeBaseId = saved.nativeBaseId
-            it.replayAnchors = saved.replayAnchors
-            it.retainedBytes = saved.retainedBytes
-            it.sourceState = saved.sourceState
+        return record(saved, if (stale || lost) CodeModePhase.LOST else saved.phase, error).also { record ->
+            record.accepted.restore(saved.results)
+            record.issued.addAll(saved.issued)
+            record.sessionId = saved.sessionId
+            record.conversationId = saved.conversationId
+            record.nativeBaseId = saved.nativeBaseId
+            record.replayAnchors = saved.replayAnchors
+            record.retainedBytes = saved.retainedBytes
+            record.sourceState = saved.sourceState
+            CodeModeHeap.adopt(record, saved)
         }
     }
 

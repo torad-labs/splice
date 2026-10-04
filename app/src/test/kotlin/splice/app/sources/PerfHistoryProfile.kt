@@ -52,7 +52,18 @@ internal class PerfHistoryProfile {
         val constructor = type.declaredConstructors.single()
         val method = type.getDeclaredMethod("json")
         val payload = phase("aggregation") {
-            method.invoke(constructor.newInstance(rows, null, ZoneId.of("America/Chicago"))) as JsonObject
+            val head = splice.usage.UsageHead(
+                "synthetic",
+                "synthetic",
+                splice.usage.quota.HeadUsageSource {
+                    splice.usage.quota.UsageView(0, 0, null)
+                },
+                80,
+                0,
+            )
+            val plans = Class.forName("splice.usage.perf.AccountPlans")
+                .getDeclaredConstructor(splice.usage.UsageHead::class.java).newInstance(head)
+            method.invoke(constructor.newInstance(rows, null, plans, ZoneId.of("America/Chicago"))) as JsonObject
         }
         return phase("serialization") { JsonWire.string(payload).toByteArray(Charsets.UTF_8).size }
     }

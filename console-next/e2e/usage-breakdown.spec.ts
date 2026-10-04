@@ -39,6 +39,8 @@ test('Usage counts refused requests, keeps exact drill-down bounds, and offers a
   const chart = page.getByRole('region', { name: 'Spend and tokens', exact: true });
   await expect(chart).toContainText('2,502 requests');
   await expect(chart).toContainText('At least $1.48');
+  await expect(chart.locator('.usage-spend-track')).toBeVisible();
+  await expect(chart).toContainText('A bar opens the matching Requests.');
   await expect(chart).not.toContainText('This breakdown is incomplete');
   await expect(total).toContainText('90% came from the cache');
   const command = page.locator('.uplan').filter({ has: page.getByText(STACK.oauthHead, { exact: true }) });
@@ -55,6 +57,10 @@ test('Usage counts refused requests, keeps exact drill-down bounds, and offers a
   expect(query.get('account')).toBe('synthetic & account');
   await chart.getByRole('button', { name: 'Show the values as a table', exact: true }).click();
   await expect(chart.getByRole('table')).toBeVisible();
+  await expect(chart).not.toContainText('A bar opens the matching Requests.');
+  await chart.getByRole('button', { name: 'Show spend bars', exact: true }).click();
+  await expect(chart).toContainText('A bar opens the matching Requests.');
+  await chart.getByRole('button', { name: 'Show the values as a table', exact: true }).click();
   await expect(chart.getByRole('columnheader', { name: 'Input tokens', exact: true })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

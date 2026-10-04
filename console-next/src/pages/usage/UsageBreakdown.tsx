@@ -58,6 +58,7 @@ export function UsageValues({ items, by, since, until, labelOf }: { items: reado
   const dimension = dimensions.find(([key]) => key === by)?.[1];
   return <>
     <Button small kind="quiet" onClick={() => setTable(!table)}>{table ? B.plot : B.table}</Button>
+    {!table && items.some(item => (item.cost ?? 0) > 0) ? <p className="hint">{B.barWhy}</p> : null}
     <div className="usage-values" data-table={table}>
       {table ? <table>
         <caption className="sr">{B.title} · {dimension}</caption>

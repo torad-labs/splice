@@ -29,6 +29,19 @@ test('a capped request slice cannot shrink full-window model facts or claim aggr
   expect(html).not.toContain('requests returned');
 });
 
+test('the bar guidance appears only with a visible spend bar', () => {
+  const guidance = 'A bar opens the matching Requests.';
+  const unavailable = renderToStaticMarkup(<MemoryRouter><UsageBreakdown read={reading({ usageBy: {} })} labelOf={key => key} /></MemoryRouter>);
+  expect(unavailable).not.toContain(guidance);
+  for (const cost of [null, 0]) {
+    const usage = { ...complete, models: complete.models.map(model => ({ ...model, cost_usd: cost })) };
+    const html = renderToStaticMarkup(<MemoryRouter><UsageBreakdown read={reading({ usageBy: { synthetic: usage } })} labelOf={key => key} /></MemoryRouter>);
+    expect(html).not.toContain(guidance);
+  }
+  const priced = renderToStaticMarkup(<MemoryRouter><UsageValues items={items} by="model" since={0} until={200} labelOf={key => key} /></MemoryRouter>);
+  expect(priced).toContain(guidance);
+});
+
 test('an older daemon never substitutes its display slice for an aggregate', () => {
   const html = renderToStaticMarkup(<MemoryRouter><UsageBreakdown read={reading({ usageBy: {} })} labelOf={key => key} /></MemoryRouter>);
   expect(html).toContain('does not report full-window usage');

@@ -2,7 +2,8 @@ import { fmtInt, fmtUsd } from '../../lib/format';
 
 export const B = {
   title: 'Spend and tokens',
-  why: 'Recorded requests, grouped by what they actually used. A bar opens the matching Requests.',
+  why: 'Recorded requests, grouped by what they actually used.',
+  barWhy: 'A bar opens the matching Requests.',
   group: 'Group usage by',
   model: 'Model',
   account: 'Account',

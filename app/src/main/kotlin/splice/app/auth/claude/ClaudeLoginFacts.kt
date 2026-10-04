@@ -3,6 +3,7 @@
 
 package splice.app.auth.claude
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonIgnoreUnknownKeys
@@ -59,9 +60,42 @@ internal class ClaudeLoginFactsReader {
         )
     }
 
+    /** The account a CONFIG DIR records, or null when it holds none that splice can read. The folder form of
+     *  [read]'s identity half, for the per-account folders a Claude head's pool is built from. */
+    fun identity(configDir: Path): ClaudeAccountIdentity? =
+        Cancellables.runCatchingCancellable { account(configDir.resolve(CLAUDE_JSON)) }.getOrNull()
+
+    /** The access token a CONFIG DIR's credential file holds, or null when it holds none that splice can read.
+     *  Read at send and probe time only; the value never enters a log, a view or another type. */
+    fun token(configDir: Path): String? = Cancellables.runCatchingCancellable {
+        Files.newInputStream(configDir.resolve(CREDENTIALS_JSON)).use {
+            json.decodeFromStream<NativeCredentialDocument>(it)
+        }.claudeAiOauth?.accessToken?.takeIf { it.isNotBlank() }
+    }.getOrNull()
+
+    /** When splice filed the folder [record] sits in, or null when there is no readable record. */
+    fun addedAt(record: Path): Long? = Cancellables.runCatchingCancellable {
+        Files.newInputStream(record).use { json.decodeFromStream<ClaudeAccountRecord>(it) }.addedAtEpochMillis
+    }.getOrNull()
+
     private fun account(file: Path): ClaudeAccountIdentity? {
         val record = Files.newInputStream(file).use { json.decodeFromStream<NativeAccountDocument>(it) }.oauthAccount
         val uuid = record?.accountUuid?.takeIf { it.isNotBlank() } ?: return null
         return ClaudeAccountIdentity(uuid, record.emailAddress)
     }
 }
+
+// why: the two file names Claude Code itself reads in a config dir. internal, not private: this package's folder
+// store and its auth provider read the same two names, and the const law wants one declaration for them.
+internal const val CREDENTIALS_JSON = ".credentials.json"
+internal const val CLAUDE_JSON = ".claude.json"
+
+/** splice's own record in a per-account folder: when the account was added, which is the pool's default order.
+ *  Claude Code neither writes nor reads it, so it carries nothing of the account itself. */
+@Serializable
+internal data class ClaudeAccountRecord(@SerialName(ADDED_AT) val addedAtEpochMillis: Long) {
+    fun wire(): String = """{"$ADDED_AT":$addedAtEpochMillis}"""
+}
+
+// why: the field name in the file, snake_case like the Claude Code documents it sits beside.
+private const val ADDED_AT = "added_at"

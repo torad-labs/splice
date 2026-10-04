@@ -166,6 +166,10 @@
       "integrations/upstream/src/main/kotlin/splice/upstream/ToolNameShortener.kt",
       "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/request/ResponsesStableIds.kt"
     ],
+    "COPY CLAUDE_JSON": [
+      "app/src/main/kotlin/splice/app/auth/claude/ClaudeLoginFacts.kt",
+      "integrations/claude-code/src/main/kotlin/splice/client/ClaudeConfigKeys.kt"
+    ],
     "COPY CONTENT": [
       "integrations/claude-code/src/main/kotlin/splice/client/transcript/TranscriptTypes.kt",
       "integrations/dialects/anthropic/src/main/kotlin/splice/dialect/anthropic/PassthroughWireKeys.kt",

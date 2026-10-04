@@ -267,6 +267,8 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "app/src/main/kotlin/splice/app/cli/status/DashboardCommand.kt" to mapOf("writeAtomic0600(" to 1),
     "app/src/main/kotlin/splice/app/daemon/DaemonLock.kt" to mapOf("FileChannel.open(" to 1),
     "app/src/main/kotlin/splice/app/head/HeadTraceStores.kt" to mapOf("ActivityDays(" to 1),
+    "app/src/main/kotlin/splice/app/auth/claude/ClaudeAccountFolders.kt" to mapOf("writeAtomic0600(" to 3),
+    "app/src/main/kotlin/splice/app/auth/claude/ClaudeFolderAuth.kt" to mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/config/ConfigService.kt" to mapOf("writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/config/KeyStore.kt" to mapOf("FileChannel.open(" to 1, "writeAtomic0600(" to 1),
     "core/src/main/kotlin/splice/core/config/MgmtKey.kt" to mapOf("writeAtomic0600(" to 1),

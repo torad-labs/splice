@@ -1,13 +1,16 @@
 import com.github.jk1.license.render.JsonReportRenderer
 import com.github.jk1.license.render.ReportRenderer
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+import com.github.jengelman.gradle.plugins.shadow.transformers.IncludeResourceTransformer
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import org.cyclonedx.model.Component
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.PosixFilePermissions
 import java.security.MessageDigest
+import java.util.zip.ZipFile
 
 plugins {
     id("splice.kotlin-common")
@@ -113,7 +116,29 @@ val rawLicenses = rawLicenseDir.map { it.file("dependency-licenses.json") }
 val bom = complianceDir.map { it.file("bom.cdx.json") }
 val licenses = complianceDir.map { it.file("dependency-licenses.json") }
 val thirdPartyLicenses = complianceDir.map { it.file("THIRD_PARTY_LICENSES.txt") }
-val thirdPartyNotices = repositoryRoot.file("THIRD_PARTY_NOTICES.md")
+val thirdPartyNoticesSource = repositoryRoot.file("THIRD_PARTY_NOTICES.md")
+val thirdPartyNotices = complianceDir.map { it.file("THIRD_PARTY_NOTICES.md") }
+// Preserve each bundled dependency's own texts, including notices and shaded-library licenses.
+val runtimeLegalArtifacts = configurations.runtimeClasspath.get().incoming.artifactView {
+    componentFilter { it is ModuleComponentIdentifier }
+}.artifacts
+val legalResourceName = Regex("(?i)(?:.*[-_])?(LICENSE|NOTICE)(?:\\.(txt|md))?")
+val runtimeLegalTexts = providers.provider {
+    runtimeLegalArtifacts.artifacts.filter { it.file.extension == "jar" }
+        .sortedBy { it.id.displayName }.flatMap { artifact ->
+            ZipFile(artifact.file).use { archive ->
+                archive.entries().asSequence().filter { entry ->
+                    !entry.isDirectory && legalResourceName.matches(entry.name.substringAfterLast('/'))
+                }.sortedBy { it.name }.map { entry ->
+                    Triple(
+                        artifact.id.componentIdentifier.displayName,
+                        entry.name,
+                        archive.getInputStream(entry).bufferedReader(Charsets.UTF_8).use { it.readText() },
+                    )
+                }.toList()
+            }
+        }
+}
 val icuLicense = repositoryRoot.file("tools/release/licenses/icu-LICENSE.txt")
 val licenseFile = repositoryRoot.file("LICENSE")
 // PR 6: PROVENANCE.md lives under docs/ — the repository root keeps only the files GitHub itself
@@ -247,8 +272,30 @@ val copyReleaseLicenses = tasks.register("copyReleaseLicenses") {
     }
 }
 
+val generateThirdPartyNotices = tasks.register("generateThirdPartyNotices") {
+    inputs.file(thirdPartyNoticesSource)
+    inputs.files(runtimeLegalArtifacts.artifactFiles)
+    outputs.file(thirdPartyNotices)
+    doLast {
+        val output = thirdPartyNotices.get().asFile
+        output.parentFile.mkdirs()
+        output.writeText(buildString {
+            append(thirdPartyNoticesSource.asFile.readText())
+            runtimeLegalTexts.get().filter { (_, name, _) -> "NOTICE" in name.uppercase() }
+                .forEach { (coordinate, name, text) ->
+                    appendLine()
+                    appendLine("## $coordinate / $name")
+                    appendLine()
+                    append(text)
+                    appendLine()
+                }
+        })
+    }
+}
+
 val generateThirdPartyLicenses = tasks.register("generateThirdPartyLicenses") {
     inputs.file(icuLicense)
+    inputs.files(runtimeLegalArtifacts.artifactFiles)
     outputs.file(thirdPartyLicenses)
     doLast {
         val sections = linkedMapOf(
@@ -281,6 +328,16 @@ val generateThirdPartyLicenses = tasks.register("generateThirdPartyLicenses") {
             appendLine("ICU license and bundled third-party notices")
             appendLine("================================================================================")
             appendLine(icuLicense.asFile.readText().trimEnd())
+            runtimeLegalTexts.get().filter { (_, name, _) -> "LICENSE" in name.uppercase() }
+                .forEach { (coordinate, name, text) ->
+                    appendLine()
+                    appendLine("================================================================================")
+                    appendLine("$coordinate / $name")
+                    appendLine("================================================================================")
+                    appendLine()
+                    append(text)
+                    appendLine()
+                }
         }
         val output = thirdPartyLicenses.get().asFile
         output.parentFile.mkdirs()
@@ -289,7 +346,7 @@ val generateThirdPartyLicenses = tasks.register("generateThirdPartyLicenses") {
 }
 
 val verifyReleaseCompliance = tasks.register("verifyReleaseCompliance") {
-    dependsOn(normalizeReleaseBom, copyReleaseLicenses, generateThirdPartyLicenses)
+    dependsOn(normalizeReleaseBom, copyReleaseLicenses, generateThirdPartyLicenses, generateThirdPartyNotices)
     inputs.files(bom, licenses, thirdPartyLicenses, thirdPartyNotices, dashboard)
     doLast {
         val bomJson = JsonSlurper().parse(bom.get().asFile) as Map<*, *>
@@ -358,7 +415,11 @@ val verifyReleaseCompliance = tasks.register("verifyReleaseCompliance") {
             "ICU License - ICU 1.8.1 to ICU 57.1",
             "Chinese/Japanese Word Break Dictionary Data",
         ).forEach { marker -> check(marker in licenseTexts) { "third-party license bundle missing $marker" } }
-        val notices = thirdPartyNotices.asFile.readText()
+        val notices = thirdPartyNotices.get().asFile.readText()
+        runtimeLegalTexts.get().forEach { (coordinate, name, text) ->
+            val bundle = if ("NOTICE" in name.uppercase()) notices else licenseTexts
+            check(text.isNotBlank() && text in bundle) { "release legal bundle missing $coordinate / $name" }
+        }
         // V4-444: the markers of the console-next bundle the jar now ships; console-next/tests/notices.test.ts
         // holds the full list against the bundle itself, this is the release task's floor.
         listOf(
@@ -478,7 +539,7 @@ tasks.register("stageRelease") {
             "splice-launch" to launchShim.asFile,
             "install.sh" to installScript.asFile,
             "LICENSE" to licenseFile.asFile,
-            "THIRD_PARTY_NOTICES.md" to thirdPartyNotices.asFile,
+            "THIRD_PARTY_NOTICES.md" to thirdPartyNotices.get().asFile,
             "THIRD_PARTY_LICENSES.txt" to thirdPartyLicenses.get().asFile,
             "PROVENANCE.md" to provenance.asFile,
             "bom.cdx.json" to bom.get().asFile,
@@ -555,7 +616,26 @@ tasks.withType<ShadowJar>().configureEach {
     }
     archiveFileName.set("app-all.jar")
     dependsOn(verifyReleaseCompliance)
-    from(repositoryRoot.file("LICENSE")) { into("META-INF"); rename { "LICENSE" } }
+    // Copy order cannot select a dependency's license: discard every input at this path,
+    // then emit splice's authoritative bytes once, after Shadow has processed the inputs.
+    exclude("META-INF/LICENSE")
+    transform<IncludeResourceTransformer> {
+        file.set(licenseFile)
+        resource.set("META-INF/LICENSE")
+    }
+    // Dependency notices may share this path. The generated sidecar also retains each full text.
+    filesMatching("META-INF/NOTICE") { duplicatesStrategy = DuplicatesStrategy.INCLUDE }
+    append("META-INF/NOTICE")
+    doLast {
+        ZipFile(archiveFile.get().asFile).use { archive ->
+            val entries = archive.entries().asSequence().filter { it.name == "META-INF/LICENSE" }.toList()
+            check(entries.size == 1) { "splice jar must carry exactly one META-INF/LICENSE" }
+            val packaged = archive.getInputStream(entries.single()).use { it.readBytes() }
+            check(packaged.contentEquals(licenseFile.asFile.readBytes())) {
+                "splice LICENSE differs from META-INF/LICENSE in the built jar"
+            }
+        }
+    }
     from(thirdPartyNotices) { into("META-INF") }
     from(thirdPartyLicenses) { into("META-INF") }
     from(provenance) { into("META-INF") }

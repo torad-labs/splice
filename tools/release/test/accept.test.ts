@@ -76,9 +76,14 @@ function accept(dist: string, options: { javaDir?: string; argv?: readonly strin
 }
 
 /** Stored ZIP records keep the dashboard tests independent of java/jar and of any real build. */
-function packagedBundle(dist: string, dashboard: string): void {
+function packagedBundle(dist: string, dashboard: string, packagedLicense?: string): void {
   const entries = ["LICENSE", "THIRD_PARTY_NOTICES.md", "THIRD_PARTY_LICENSES.txt", "PROVENANCE.md", "bom.cdx.json", "dependency-licenses.json"]
-    .map((name) => ({ name: "META-INF/" + name, body: readFileSync(join(dist, name)) }));
+    .map((name) => ({
+      name: "META-INF/" + name,
+      body: name === "LICENSE" && packagedLicense !== undefined
+        ? Buffer.from(packagedLicense)
+        : readFileSync(join(dist, name)),
+    }));
   entries.push({ name: "webui/index.html", body: Buffer.from(dashboard) });
   const local: Buffer[] = [];
   const central: Buffer[] = [];
@@ -137,6 +142,15 @@ describe("release accept", () => {
     expect(run.code).toBe(1); // The synthetic installer deliberately installs no command.
     expect(run.output).toContain("installed splice command is missing or dangling");
     expect(run.output).not.toContain("packaged dashboard differs");
+  });
+
+  test("a dependency license winning the jar resource fails even with matching checksums", () => {
+    const fixture = dashboardFixture("<html>console-next</html>");
+    packagedBundle(fixture.dist, "<html>console-next</html>", "synthetic dependency Apache license\n");
+    const run = accept(fixture.dist, { root: fixture.root });
+    expect(run.code).toBe(1);
+    expect(run.output).toContain("LICENSE differs from META-INF/LICENSE in splice.jar");
+    expect(run.output).not.toContain("installed splice command");
   });
 
   test("a different dashboard fails even when it matches the retained old build", () => {

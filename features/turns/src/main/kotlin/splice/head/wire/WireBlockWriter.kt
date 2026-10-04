@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 private const val TYPE = "type"
 private const val INDEX = "index"
-private const val BLOCK_START = "content_block_start"
+internal const val BLOCK_START = "content_block_start"
 private const val BLOCK_DELTA = "content_block_delta"
 private const val BLOCK_STOP = "content_block_stop"
 

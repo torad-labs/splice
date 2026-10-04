@@ -8,7 +8,6 @@ import splice.core.memory.HeapJson
 import splice.core.util.JsonScalars
 import splice.upstream.transport.BufferCapacity
 
-private const val BLOCK_START = "content_block_start"
 private const val CONTENT_BLOCK = "content_block"
 
 /** Scoped source fields stay with the real opened block, never with a synthetic notice. */

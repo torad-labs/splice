@@ -15,8 +15,14 @@ private const val PROC_ROW_PREFIX_BYTES = 512
 
 // why: sl, local, remote, state, tx_queue:rx_queue, counted from zero.
 private const val PROC_FIELDS = 5
+
+// why: local_address follows the row ordinal in Linux's proc_net_tcp columns, counted from zero.
 private const val PROC_LOCAL = 1
+
+// why: rem_address follows local_address in the same kernel table.
 private const val PROC_REMOTE = 2
+
+// why: tx_queue:rx_queue follows the connection-state column in the same kernel table.
 private const val PROC_QUEUES = 4
 
 // why: one kernel address word is four bytes, printed as eight hex digits.
@@ -24,11 +30,17 @@ private const val PROC_WORD_BYTES = 4
 
 // why: Linux writes IPv4 and IPv6 as 4 and 16 bytes, respectively.
 private const val PROC_IPV4_BYTES = 4
+
+// why: IPv6's 128-bit address occupies sixteen bytes, including IPv4-mapped addresses.
 private const val PROC_IPV6_BYTES = 16
 
 // why: hexadecimal digits, and the ten zero bytes then two 0xff in an IPv4-mapped IPv6 address.
 private const val PROC_HEX = 16
+
+// why: an IPv4-mapped IPv6 address begins with ten zero bytes before its two 0xff bytes.
 private const val PROC_MAPPED_ZEROS = 10
+
+// why: each 0xff byte in the mapped-address marker is the unsigned byte maximum.
 private const val PROC_BYTE_MAX = 255
 
 internal class ProcSocketRows(keys: Set<SocketKey>) {

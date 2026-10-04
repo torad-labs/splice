@@ -307,7 +307,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
         "Files.move(" to 1,
     ),
     "features/models/src/main/kotlin/splice/models/discovery/RosterCache.kt" to mapOf("writeAtomic0600(" to 1),
-    "features/sessions/src/main/kotlin/splice/sessions/activity/ActivityStore.kt" to mapOf("ActivityDays(" to 2),
+    "features/sessions/src/main/kotlin/splice/sessions/activity/ActivityStores.kt" to mapOf("ActivityDays(" to 2),
     "features/sessions/src/main/kotlin/splice/sessions/teams/TeamStore.kt" to mapOf("writeAtomic0600(" to 2),
     "features/turns/src/main/kotlin/splice/head/compact/Compact.kt" to mapOf("JsonlSink.appendLine(" to 1),
     "features/turns/src/main/kotlin/splice/head/compaction/CompactionRecordings.kt" to mapOf("writeAtomic0600(" to 1),

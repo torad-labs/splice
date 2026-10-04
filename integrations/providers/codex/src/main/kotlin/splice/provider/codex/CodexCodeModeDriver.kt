@@ -89,7 +89,7 @@ internal class CodexCodeModeDriver(
         return round.localFailure ?: if (record.phase == CodeModePhase.COMPLETED) {
             finishGenerated(record, context, body)
         } else {
-            advanced
+            streams.billFinished(record, advanced)
         }
     }
 

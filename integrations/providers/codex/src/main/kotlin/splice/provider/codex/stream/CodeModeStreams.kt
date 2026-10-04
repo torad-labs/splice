@@ -9,6 +9,8 @@ import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.provider.codex.CodeModeBody
 import splice.provider.codex.CodeModeBridgeConfig
+import splice.provider.codex.CodeModeOutcomeAccumulator
+import splice.provider.codex.CodeModePersistenceException
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRunContext
 import splice.provider.codex.CodexCodeModeBridge
@@ -106,6 +108,22 @@ internal class CodeModeStreams(
             null -> usage?.let { TurnOutcome.Success(false, false, it) }
             else -> raw
         }
+    }
+
+    /** A source round that finished before the client step that posted it ended is billed on that step, since its
+     *  usage is in hand when the step's row is written. One still streaming then is billed by the step that finishes
+     *  its script ([takeOutcome]); [CodeModeSourceRecords.consume] hands a round's usage out once either way. A claim
+     *  that cannot be saved leaves the round to that later step rather than failing a step whose calls already left. */
+    fun billFinished(record: CodeModeRecord, step: TurnOutcome): TurnOutcome {
+        val usage = try {
+            registry.source.consume(record)
+        } catch (error: CodeModePersistenceException) {
+            config.log("[code-mode] source round billed later: its claim was not saved (${error::class.simpleName})")
+            null
+        } ?: return step
+        val accumulated = CodeModeOutcomeAccumulator()
+        accumulated.absorb(TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = usage))
+        return accumulated.finishLocal(step)
     }
 
     suspend fun endStep(record: CodeModeRecord) {

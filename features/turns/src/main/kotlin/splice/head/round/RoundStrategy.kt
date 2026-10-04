@@ -58,9 +58,9 @@ internal class RoundStrategy(
         perf: TurnPerf?,
     ) {
         val notice = RetryNotice { log(it) }
-        val interceptedPost = PostRound { body -> intercept(body, emitter, postRound) }
+        val interceptedPost = PostRound { body -> intercept(body, emitter, postRound, perf) }
         val interceptedPostToSink = PostRoundToSink { body, sink ->
-            intercept(body, sink, PostRound { posted -> postRoundToSink(posted, sink) })
+            intercept(body, sink, PostRound { posted -> postRoundToSink(posted, sink) }, perf)
         }
         if (fold != null) {
             FoldRunner(
@@ -94,11 +94,13 @@ internal class RoundStrategy(
         }
     }
 
-    private fun observedPost(ordinary: InterceptedRoundPost): InterceptedRoundPost = ObservedRoundPost(
-        postRoundToSink,
-        ordinary,
-        if (interception.interceptor != null) interception.rawRoundObserved else null,
-    )
+    private fun observedPost(ordinary: InterceptedRoundPost, perf: TurnPerf?): InterceptedRoundPost =
+        ObservedRoundPost(
+            postRoundToSink,
+            ordinary,
+            if (interception.interceptor != null) interception.rawRoundObserved else null,
+            perf,
+        )
 
     /** With no interceptor this is the ordinary path and it never reads [body]'s text: the round goes
      *  straight to the transport, which wants bytes, and ObservedRoundPost's observation is wired only
@@ -108,12 +110,13 @@ internal class RoundStrategy(
         body: RoundBody,
         sink: WireSink,
         direct: PostRound,
+        perf: TurnPerf?,
     ): TurnOutcome {
         val interceptor = interception.interceptor ?: return refusingCustomCalls(direct(body))
         return interceptor.intercept(
             body.text,
             sink,
-            observedPost(InterceptedRoundPost { posted -> direct(RoundBody.Text(posted)) }),
+            observedPost(InterceptedRoundPost { posted -> direct(RoundBody.Text(posted)) }, perf),
         )
     }
 

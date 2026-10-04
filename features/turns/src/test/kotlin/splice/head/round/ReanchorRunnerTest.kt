@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.perf.TurnPerf
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.ToolSearchCall
@@ -896,6 +897,31 @@ class RoundStrategyUsageObservationTest {
         assertEquals(listOf(100L, 200L), observed.map { (it as TurnOutcome.Success).usage.inputTokens })
         assertEquals(listOf(3L, 5L), observed.map { (it as TurnOutcome.Success).usage.outputTokens })
         assertNull(h.finished, "a cancelled hidden post must never manufacture a terminal outcome")
+    }
+
+    /** The interceptor's local work (a failed source, a disposed cell) counts on the turn it serves. */
+    @Test
+    fun `an interceptor's round post carries the turn's perf record`() = runTest {
+        val h = Harness()
+        val perf = TurnPerf()
+        var seen: TurnPerf? = null
+        RoundStrategy(
+            key = "t",
+            log = { },
+            emitter = h.emitter,
+            signals = h.signals(),
+            postRoundToSink = { _, _ -> error("the direct code-mode path must not buffer") },
+            postRound = { TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage()) },
+            finish = { h.finish(it) },
+            interception = RoundInterception(
+                interceptor = RoundInterceptor { _, _, post ->
+                    seen = post.perf
+                    post("round")
+                },
+            ),
+        ).run(continuationBody(), fold = null, reanchor = null, perf)
+
+        assertSame(perf, seen, "the post an interceptor receives must name the turn's perf record")
     }
 
     @Test

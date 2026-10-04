@@ -146,8 +146,8 @@ private class PassthroughFailureRules {
      * discriminator values COUNTED needs a per-turn telemetry channel the dialects do not have (see the
      * ledger note on W4-A) and is proposed as its own item rather than smuggled in here.
      */
-    // V4-117: a CAUSE per arm, not a type. The three arms derive the same wire types they named by
-    // hand before (refusal → API_ERROR, pause_turn → OVERLOADED, context-exceeded → INVALID_REQUEST),
+    // V4-117: a CAUSE per arm, not a type. The arms derive their wire types from the cause (refusal →
+    // INVALID_REQUEST since b21329586, pause_turn → OVERLOADED, context-exceeded → INVALID_REQUEST),
     // and the overflow arm reads the classifier's own cause rather than re-stating its type.
     fun stopReasonFailure(reason: String): Pair<FailureCause, String>? = when (reason) {
         "refusal" -> FailureCause.MODEL_REFUSED to "generation refused by the model (stop_reason=refusal)"

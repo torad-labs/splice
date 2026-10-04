@@ -181,6 +181,7 @@ public class Daemon(
         // usage endpoint buckets by (ClaudeUsageProbe). One tracker, the same one every head observes into.
         clientUserAgent = ClientUserAgent(clientVersions::newestClaudeCodeUserAgent),
         playgroundProviders = controlPlane.playgroundProviders,
+        perfSources = controlPlane.perfRows,
     )
 
     // set once in start(); the daemon is not usable before it

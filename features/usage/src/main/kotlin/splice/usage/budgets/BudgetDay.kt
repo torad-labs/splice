@@ -19,6 +19,9 @@ internal class DayTally(val day: Long) {
     var seeded: Boolean = false
         private set
 
+    /** Claimed under the ledger lock before launching the one historical read for this day. */
+    var seeding: Boolean = false
+
     /** The limit the operator was last told about today, or null before the first warning. */
     private var warnedAt: Double? = null
 
@@ -37,6 +40,7 @@ internal class DayTally(val day: Long) {
         unpriced += before.unpriced
         historyReadable = historyReadable && before.historyReadable
         seeded = true
+        seeding = false
     }
 
     /** True the first time today [model] could not be priced. */

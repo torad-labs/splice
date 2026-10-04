@@ -40,8 +40,9 @@ public class BudgetEnforcement(
     private val history: HeadPerfHistory,
     log: LogSink,
     clock: WallClock = WallClock(System::currentTimeMillis),
+    seed: BudgetSeedRuntime,
 ) {
-    private val context = LedgerContext(budgets, alert, log, clock, bootMs = clock())
+    private val context = LedgerContext(BudgetPolicy(budgets, seed), alert, log, clock, bootMs = clock(), seed = seed)
     private val ledgers = ConcurrentHashMap<String, BudgetLedger>()
 
     /** [head]'s ledger, pricing its turns against [catalog]'s rate cards. One per head: the key is

@@ -71,6 +71,18 @@ public class BudgetStore(
     private var cached: List<Budget> = emptyList()
     private var cachedStamp: Long? = null
 
+    @Volatile
+    private var current = BudgetsRead(emptyList(), null)
+
+    /** Last published policy, without acquiring the file reader's lock or touching the filesystem. */
+    public fun current(): BudgetsRead = current
+
+    /** Refreshes the published policy on the startup or background I/O owner, never on admission. */
+    @Synchronized
+    public fun refresh() {
+        current = read()
+    }
+
     /** The stamp of the version that does not parse whose line was logged, so each is said once. */
     private var saidStamp: Long? = null
 
@@ -85,7 +97,7 @@ public class BudgetStore(
     public fun read(): BudgetsRead = load().fold(
         onSuccess = { BudgetsRead(it, null) },
         onFailure = { failure -> BudgetsRead(emptyList(), unreadable(failure)) },
-    )
+    ).also { current = it }
 
     private fun unreadable(failure: Throwable): String {
         val why = "$file could not be read (${SafeFailureText.render(failure)}); every head runs with no " +
@@ -147,8 +159,9 @@ public class BudgetStore(
             SecureFile.writeAtomic0600(file.resolveSibling("${file.fileName}.bak"), Files.readString(file))
         }
         SecureFile.writeAtomic0600(file, json.encodeToString(BudgetsDocument.serializer(), BudgetsDocument(budgets)))
-        cached = budgets
+        cached = budgets.toList()
         cachedStamp = stamp()
+        current = BudgetsRead(cached, null)
     }
 
     /** The current budgets, or a refusal when the file exists and does not parse — never silently

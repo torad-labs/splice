@@ -7,6 +7,9 @@
 // the alert and the arithmetic, never only that something happened.
 package splice.usage.budgets
 
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
@@ -23,6 +26,7 @@ import splice.core.topology.Dialect
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.util.WallClock
+import splice.upstream.Ticker
 import splice.usage.perf.PerfRow
 import splice.usage.perf.PerfRowsSource
 import splice.usage.perf.PerfRowsWindow
@@ -56,17 +60,20 @@ private class FakeHistory(private val rows: List<PerfRow> = emptyList()) : HeadP
     }
 }
 
+@OptIn(ExperimentalCoroutinesApi::class)
 private class Rig(tmp: Path, history: FakeHistory = FakeHistory(), startMs: Long = DAY_START + 10 * HOUR_MS) {
     var now: Long = startMs
     val store = BudgetStore(tmp.resolve("budgets.json"))
     val alerts = CopyOnWriteArrayList<Pair<String, String>>()
     val logs = CopyOnWriteArrayList<String>()
+    private val scope = TestScope()
     val enforcement = BudgetEnforcement(
         store,
         BudgetAlert { head, text -> alerts.add(head to text) },
         history,
         { logs.add(it) },
         WallClock { now },
+        BudgetSeedRuntime(scope, UnconfinedTestDispatcher(scope.testScheduler), Ticker { false }),
     )
 
     fun budget(head: String, dailyUsd: Double?, action: String) {

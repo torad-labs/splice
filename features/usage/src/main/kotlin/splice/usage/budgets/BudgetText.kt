@@ -18,12 +18,18 @@ internal object BudgetText {
             1L -> " 1 turn today ran on a model with no rate card and is not counted."
             else -> " ${tally.unpriced} turns today ran on a model with no rate card and are not counted."
         }
+        val partial = when {
+            !tally.seeded -> " Earlier spend is still loading, so this tally is partial."
+            !tally.historyReadable -> " Earlier spend could not all be read, so this tally is partial."
+            else -> ""
+        }
         return BudgetBlock(
             message = "splice refused this turn: head '$head' has run up ${ApiCostText.sentence(tally.usd)} " +
                 "today (UTC) against its ${ApiCostText.limit(limit)} daily budget, and the budget's action is " +
                 "block. New turns on this head are refused until 00:00 UTC; raise or clear the budget in the " +
-                "splice console to continue sooner.$uncounted",
-            detail = "${amounts(tally.usd, limit)} unpriced_turns=${tally.unpriced}",
+                "splice console to continue sooner.$uncounted$partial",
+            detail = "${amounts(tally.usd, limit)} unpriced_turns=${tally.unpriced}" +
+                if (partial.isEmpty()) "" else " spend_complete=false",
         )
     }
 

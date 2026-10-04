@@ -37,7 +37,6 @@ import splice.app.auth.ConsoleAccountsImpl
 import splice.app.console.DrainingRestartAdapter
 import splice.app.control.ControlServer
 import splice.app.daemon.BootedTopology
-import splice.app.sources.PerfRowsFileSource
 import splice.core.config.ConfigService
 import splice.core.config.KeyStore
 import splice.core.config.KeyStorePath
@@ -199,7 +198,7 @@ internal object ConsoleWiring {
      *  on [scope] (the control plane's own, cancelled at stop); a budgeted head's spend from before
      *  this boot is read from its perf files, archive included. */
     internal fun budgetEnforcement(
-        statePaths: StatePaths,
+        history: HeadPerfHistory,
         budgets: BudgetStore,
         alerts: AlertStore,
         scope: CoroutineScope,
@@ -207,8 +206,9 @@ internal object ConsoleWiring {
     ): BudgetEnforcement = BudgetEnforcement(
         budgets,
         AlertDelivery(alerts, log, scope),
-        HeadPerfHistory { head -> PerfRowsFileSource(statePaths.perfStatsFile(head), statePaths.perfArchiveDir) },
+        history,
         log,
+        seed = splice.usage.budgets.BudgetSeedRuntime(scope),
     )
 
     /** V4-131: a session id to its SendMessage address, from the same registry /api/sessions reads (the

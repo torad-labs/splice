@@ -28,6 +28,7 @@ import splice.app.probe.UpstreamPlaygroundProbe
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ModelRosters
 import splice.app.provider.ProviderAssembly
+import splice.app.sources.PerfSourceFiles
 import splice.client.ClaudeConfigMaterializer
 import splice.client.mcp.McpAccessKey
 import splice.client.mcp.McpSharing
@@ -119,6 +120,7 @@ internal class ControlPlane(
     /** V4-133 (FEATURES.md §5/§6): the daemon's ONE budget and alert-settings stores. */
     internal val budgets = ConsoleWiring.budgetStore(statePaths)
     internal val alerts = ConsoleWiring.alertStore(statePaths)
+    internal val perfRows = PerfSourceFiles(statePaths)
 
     /** V4-444: each assembled head's provider, registered by ManagedHeadFactory, so the Playground sends
      *  through the head's own request builder rather than a hand-built copy of it. */
@@ -134,7 +136,7 @@ internal class ControlPlane(
         ConsoleWiring.activityStores(statePaths, config),
         slots = SlotInstructions(teams, ConsoleWiring.sessionAddress(statePaths)),
         // V4-133 review: the budgets and alerts above, enforced on every head's turns (BudgetWiringPinTest).
-        budgets = ConsoleWiring.budgetEnforcement(statePaths, budgets, alerts, probeScope, log),
+        budgets = ConsoleWiring.budgetEnforcement(perfRows, budgets, alerts, probeScope, log),
         // V4-252: a SendMessage name is stored with the session holding it then (ConsoleActivityPublishTest).
         names = ConsoleWiring.nameHolders(statePaths),
     )

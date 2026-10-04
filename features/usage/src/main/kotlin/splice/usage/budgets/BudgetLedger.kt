@@ -7,10 +7,13 @@
 // the ledger through spent(), so the cut at boot counts each turn exactly once. An unbudgeted head
 // never reads anything, and a day that began after boot was seen whole, so it reads nothing either.
 //
-// ONE LOCK per ledger guards its day. The history is read OUTSIDE it, so a slow disk never holds up
-// another turn's admission; two first turns racing may both read it, and only one folds it in.
+// ONE LOCK per ledger guards its day and claims one seed. History reads run on owned background I/O,
+// never the admission thread. Until that seed lands, the live tally is explicitly partial.
 package splice.usage.budgets
 
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import splice.core.budget.BudgetBlock
 import splice.core.budget.HeadBudget
 import splice.core.model.TurnPrice
@@ -25,12 +28,13 @@ import java.time.ZoneOffset
 
 /** What every head's ledger shares, built once by [BudgetEnforcement]. */
 internal data class LedgerContext(
-    val budgets: BudgetStore,
+    val policy: BudgetPolicy,
     val alert: BudgetAlert,
     val log: LogSink,
     val clock: WallClock,
     /** Every perf row at or after this instant was written by this daemon. */
     val bootMs: Long,
+    val seed: BudgetSeedRuntime,
 )
 
 internal class BudgetLedger(
@@ -64,7 +68,7 @@ internal class BudgetLedger(
         seededTally(now)
         return synchronized(lock) {
             val tally = tallyAt(now) ?: return@synchronized BudgetSpend(null, null, 0, false)
-            val complete = tally.historyReadable && tally.unpriced == 0L
+            val complete = tally.seeded && tally.historyReadable && tally.unpriced == 0L
             val used = tally.usd.takeIf { complete }
             val remaining = used?.let { spend -> limit()?.usd?.let { (it - spend).coerceAtLeast(0.0) } }
             BudgetSpend(used, remaining, tally.unpriced, complete)
@@ -73,7 +77,7 @@ internal class BudgetLedger(
 
     /** This head's budget, read live from the store the route writes, or null when it has none. */
     private fun limit(): Limit? {
-        val row = context.budgets.budgets().firstOrNull { it.head == head } ?: return null
+        val row = context.policy.forHead(head) ?: return null
         return row.dailyUsd?.let { Limit(it, row.action) }
     }
 
@@ -101,15 +105,25 @@ internal class BudgetLedger(
         return today.takeIf { it.day == day }
     }
 
-    /** [tallyAt], with the spend a previous daemon recorded earlier that day folded in once. */
+    /** Return the current tally immediately and claim at most one background seed for its day. */
     private fun seededTally(atMs: Long): DayTally? {
-        val unseeded = synchronized(lock) { tallyAt(atMs)?.takeIf { !it.seeded } }
-            ?: return synchronized(lock) { tallyAt(atMs) }
-        val before = beforeBoot(unseeded.day)
-        return synchronized(lock) {
-            unseeded.seed(before)
-            tallyAt(atMs)
+        val unseeded = synchronized(lock) {
+            val tally = tallyAt(atMs) ?: return@synchronized null
+            val dayStart = LocalDate.ofEpochDay(tally.day).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+            if (!tally.seeded && context.bootMs <= dayStart) tally.seed(DayTally(tally.day))
+            tally.takeIf { !it.seeded && !it.seeding }?.also { it.seeding = true }
         }
+        if (unseeded != null) {
+            context.log("[${LogSafe.str(head)}][budget] today's spend is partial while pre-boot history loads\n")
+            context.seed.scope.launch(context.seed.dispatcher) {
+                val before = beforeBoot(unseeded.day)
+                currentCoroutineContext().ensureActive()
+                synchronized(lock) { unseeded.seed(before) }
+                val limit = limit()
+                if (limit?.action == BudgetActions.WARN && reached(atMs, limit.usd)) warnOnce(atMs, limit.usd)
+            }
+        }
+        return synchronized(lock) { tallyAt(atMs) }
     }
 
     /** The spend recorded on [day] before this daemon's boot. */

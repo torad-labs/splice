@@ -14,7 +14,6 @@ import splice.app.provider.ProviderBuild
 import splice.app.provider.Wired
 import splice.app.sources.CompactStatsSource
 import splice.app.sources.EconomicsStoreSource
-import splice.app.sources.PerfRowsFileSource
 import splice.app.sources.PerfStatsSource
 import splice.app.sources.UsageStoreSource
 import splice.core.auth.AuthProvider
@@ -74,6 +73,7 @@ internal class ManagedHeadFactory(
     private val clientUserAgent: ClientUserAgent = ClientUserAgent { null },
     /** V4-444: where each assembled head's provider is registered for the Playground's one call. */
     private val playgroundProviders: PlaygroundProviders = PlaygroundProviders(),
+    private val perfSources: splice.app.sources.PerfSourceFiles = splice.app.sources.PerfSourceFiles(statePaths),
 ) {
     private val quotaProbes by lazy { QuotaProbes(AuthHttpClientFactory().create()) }
     private val accountPools = HeadAccountPools()
@@ -116,7 +116,7 @@ internal class ManagedHeadFactory(
         val keyPresence = splice.launch.KeyPresenceProbe {
             (wired.auth as? ApiKeyAuthProvider)?.hasKeyNow() != false
         }
-        val perfRows = PerfRowsFileSource(statePaths.perfStatsFile(key), statePaths.perfArchiveDir)
+        val perfRows = perfSources.rowsFor(key)
         return ManagedHead(
             head = server,
             auth = wired.auth,

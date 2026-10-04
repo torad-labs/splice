@@ -1,4 +1,5 @@
 source	sha256	disposition	destination	reason
+app/src/test/kotlin/splice/app/sources/EconomicsEvidenceCacheTest.kt	4957c745e804ef721c679a93ecaef0567910d271003376151cc1ab98b3c976b6	created		Pins complete economics evidence across wide reads and cache eviction while preserving refusal for in-window truncation
 integrations/providers/codex/src/test/kotlin/splice/provider/codex/CodeModeRoundTreeTest.kt	98b9c8d495a7e4aec3d817b4316680e853c5e776d575836352dcf53a2ff89e04	created		Proves a code-mode round that arrives as a tree is read once and persists and posts what its text did
 integrations/providers/codex/src/test/kotlin/splice/provider/codex/CodeModeUpstreamPostTest.kt	f95ea6e5b52fe0320c6b9a6b9cc82196cb9dd458da8bdffab5f11e1bc95d7c30	created		Pins that code mode's round post wrappers keep the turn's perf record, and that a plain post gains no redirect
 app/src/main/kotlin/splice/app/sources/PerfNumericBuilder.kt	f716fbbfe92a58dd64544c9b74d83bc02cd524c08e290b73d04e4eb86b09bb26	created		Reusable primitive streamed numeric facts avoid per row boxed map construction

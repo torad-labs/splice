@@ -221,7 +221,7 @@ public class PerfRowsFileSource internal constructor(
                 latestCandidate(Skipped(hint, line))
                 return
             }
-            parsed(decode(line))
+            kept(decode(line))
         }
 
         fun decode(line: String): PerfCachedLine = cache.decoder.decode(line).fold(
@@ -287,22 +287,6 @@ public class PerfRowsFileSource internal constructor(
             if (line.dropsCandidate) candidate(Baseline(drops = line.drops))
             latestCandidate(Skipped(hint, ts = line.row?.ts))
             return true
-        }
-
-        private fun parsed(line: PerfCachedLine) {
-            val row = line.row
-            if (row == null) {
-                skipped++
-                return
-            }
-            oldest = minOf(oldest ?: row.ts, row.ts)
-            if (row.ts < sinceMs) line.drops?.let { candidate(Baseline(drops = it)) }
-            if (line.probe) {
-                probe(row)
-                return
-            }
-            newest = maxOf(newest ?: row.ts, row.ts)
-            if (row.ts >= sinceMs) rows += row
         }
 
         private fun probe(row: PerfRow) {

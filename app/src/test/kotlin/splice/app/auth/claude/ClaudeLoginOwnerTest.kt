@@ -39,8 +39,18 @@ class ClaudeLoginOwnerTest {
         val folder = Files.createDirectories(home.resolve("native"))
         return ClaudeLoginLocation(
             ClaudeLoginPlaceId.NATIVE,
-            ClaudeLoginTarget(ClaudeHead("claude-splice", folder), home.resolve(".claude.json")),
+            ClaudeLoginTarget(ClaudeHead("claude", folder), home.resolve(".claude.json")),
             home.resolve("copies"),
+        )
+    }
+
+    /** The other command's place, whose head key is NOT the one a fixed string would name. */
+    private fun other(): ClaudeLoginLocation {
+        val folder = Files.createDirectories(home.resolve("splice-native"))
+        return ClaudeLoginLocation(
+            ClaudeLoginPlaceId.SPLICE,
+            ClaudeLoginTarget(ClaudeHead("claude-splice", folder), home.resolve("splice.claude.json")),
+            home.resolve("splice-copies"),
         )
     }
 
@@ -59,6 +69,7 @@ class ClaudeLoginOwnerTest {
         scope: CoroutineScope,
         start: NativeAuthStart,
         sessions: ClaudeLoginSessions = sessions(),
+        places: List<ClaudeLoginLocation> = listOf(location),
     ): ClaudeLoginOwner {
         val paths = StatePaths(baseOverride = home.resolve("state"))
         val auth = NativeClaudeAuth(
@@ -67,7 +78,7 @@ class ClaudeLoginOwnerTest {
             ProcessDispatchers().io(),
             start,
         )
-        return ClaudeLoginOwner(listOf(location), ClaudeLoginRead(paths, {}, WallClock { 1000 }), sessions, auth, scope)
+        return ClaudeLoginOwner(places, ClaudeLoginRead(paths, {}, WallClock { 1000 }), sessions, auth, scope)
     }
 
     @Test
@@ -112,6 +123,23 @@ class ClaudeLoginOwnerTest {
                 scope.coroutineContext[Job]!!.cancelAndJoin()
             }
         }
+
+    @Test
+    fun `a sign-in names its own command, so the console shows it on that card and not another's`() = runBlocking {
+        val native = location()
+        live(native, "outgoing", "outgoing bytes")
+        val scope = CoroutineScope(SupervisorJob() + ProcessDispatchers().io())
+        val child = NativeLoginTestProcess()
+        val owner = owner(native, scope, NativeAuthStart { child }, places = listOf(native, other()))
+        try {
+            val login = owner.login(ClaudeLoginPlaceId.NATIVE, null)
+
+            assertEquals("claude", login.head, "the sign-in opened on the claude card belongs to claude")
+            assertEquals("claude", owner.poll(login.id)?.head, "and the status the console polls says the same")
+        } finally {
+            scope.coroutineContext[Job]!!.cancelAndJoin()
+        }
+    }
 
     @Test
     fun `daemon cancellation stops the native child before releasing launch and never restores outgoing bytes`() =

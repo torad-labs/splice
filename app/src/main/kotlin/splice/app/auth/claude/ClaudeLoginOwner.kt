@@ -64,7 +64,10 @@ internal class ClaudeLoginOwner(
     }
 
     override suspend fun login(place: ClaudeLoginPlaceId, label: String?): LoginStatus {
-        val cell = AtomicReference(LoginStatus(UUID.randomUUID().toString(), "claude-splice", LoginState.STARTING))
+        // The status names the login's OWN head. A fixed string here made every card's "Sign in again" report
+        // claude-splice's head, so the console drew one command's running sign-in on another command's card.
+        val head = locations.firstOrNull { it.id == place }?.target?.head?.key ?: place.command
+        val cell = AtomicReference(LoginStatus(UUID.randomUUID().toString(), head, LoginState.STARTING))
         val attempt = synchronized(lock) {
             remember(cell)
             prepare(place, label, cell)

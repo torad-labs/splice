@@ -165,8 +165,11 @@ internal object Concentration {
     // the band fell from 12 to 11 in code-mode-count-final with all provider count proofs green.
     // 2026-10-04: the account snapshot/attribution adapters raise splice.app.control's median. Unchanged
     // McpHost.kt leaves HIGH: C 130.0, denominator 42.5 -> 44.5, ratio 3.06 -> 2.92; account packet alone is 10.
+    // 2026-10-04: 8b76ad531 removes NativeAccountRows' uncommitted projection dependency. The committed
+    // control median falls 44.0 -> 40.0; unchanged McpHost returns to HIGH by neighbourhood: denominator
+    // 44.5 -> 42.5, ratio 2.92 -> 3.06. The committed band returns from 10 to 11.
     const val RATCHET_RECORDED = "2026-10-04"
-    const val RATCHET_MAX_HIGH = 10
+    const val RATCHET_MAX_HIGH = 11
 
     /** THE PACKAGE-SCALE BASELINE — the worst package's FILE COUNT. The package is named here so
      *  the diff reads without running anything, but the NAME is not gated: a different package

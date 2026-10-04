@@ -32,8 +32,10 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.upstream.RetryNotice
+import splice.upstream.codemode.ProcessElapsedNow
 import java.io.FilterInputStream
 import java.io.IOException
 import java.io.InputStream
@@ -172,9 +174,12 @@ class UpstreamClientThreadRefusalTest {
 class RefusedThreadStartPostTest {
 
     @Test
+    @Timeout(CAPS_BACKSTOP_S)
     fun `a post whose connection takes a refused thread start retries it by name and completes - V4-307`() {
         LoopbackUpstream().use { upstream ->
-            val client = refusalClient()
+            // This checks refusal classification and connection reuse, not host scheduling or cold class loading.
+            // The transport's socket timeout and the JUnit backstop remain real.
+            val client = refusalClient(ElapsedClock { 0L })
             val retries = CopyOnWriteArrayList<String>()
             val restore = refuseTaskRunnerThreads()
             val answer = try {
@@ -243,11 +248,12 @@ class OkioTimeoutsRefusedTest {
     }
 }
 
-private fun refusalClient() = UpstreamClient(
+private fun refusalClient(clock: ElapsedClock = ProcessElapsedNow()) = UpstreamClient(
     totalTimeoutMs = REFUSAL_TOTAL_MS,
     maxRetries = 2,
     client = UpstreamTransport().defaultClient(REFUSAL_TOTAL_MS),
     waiter = RecordingWaiter(),
+    clock = clock,
 )
 
 /** Long enough for a loopback post, short enough that a post hung on a dead connect fails the test quickly. */

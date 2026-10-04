@@ -2,8 +2,8 @@
 package splice.provider.codex.state
 
 import kotlinx.serialization.json.JsonElement
-import splice.core.memory.HeapJson
 import splice.provider.codex.CodeModeAcceptedResult
+import splice.provider.codex.CodeModeRecordSnapshot
 import splice.provider.codex.CodeModeResultSnapshot
 import splice.upstream.codemode.CodeModeResult
 
@@ -23,20 +23,28 @@ internal class CodeModeAccepted(entries: Map<String, CodeModeAcceptedResult> = e
         supplied.forEach { (id, result) -> entries[id] = CodeModeAcceptedResult(result, media[id].orEmpty()) }
     }
 
-    fun heapBytes(): Long = entries.entries.sumOf { (id, value) ->
-        HeapJson.text(id) + acceptedBytes(value.result, value.media.orEmpty())
-    }
-
+    /** What accepting [supplied] adds to the record, at stored width. */
     fun heapGrowth(supplied: Map<String, CodeModeResult>, media: Map<String, List<JsonElement>>): Long =
         supplied.entries.sumOf { (id, result) ->
             val prior = entries[id]
             val before = prior?.let { acceptedBytes(it.result, it.media.orEmpty()) } ?: 0L
-            val after = acceptedBytes(result, media[id].orEmpty()) + if (prior == null) HeapJson.text(id) else 0L
+            val after = acceptedBytes(result, media[id].orEmpty()) +
+                if (prior == null) CodeModeWeight.STORED.text(id) else 0L
             (after - before).coerceAtLeast(0L)
         }
 
+    /** What [snapshot] still holds of the prior results that accepting [supplied] replaces. */
+    fun kept(snapshot: CodeModeRecordSnapshot, supplied: Map<String, CodeModeResult>): Long =
+        supplied.keys.sumOf { id ->
+            val prior = entries[id]
+            val held = snapshot.results[id]
+            if (prior == null || held == null) return@sumOf 0L
+            val output = if (held.output === prior.result.output) CodeModeWeight.STORED.text(held.output) else 0L
+            output + if (held.media === prior.media) held.media.orEmpty().sumOf(CodeModeWeight.STORED::json) else 0L
+        }
+
     private fun acceptedBytes(result: CodeModeResult, media: List<JsonElement>): Long =
-        HeapJson.text(result.output) + media.sumOf(HeapJson::bytes)
+        CodeModeWeight.STORED.text(result.output) + media.sumOf(CodeModeWeight.STORED::json)
 
     fun copy(): CodeModeAccepted = CodeModeAccepted(entries)
 

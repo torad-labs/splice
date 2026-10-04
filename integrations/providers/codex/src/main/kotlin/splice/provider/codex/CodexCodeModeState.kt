@@ -5,6 +5,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import splice.core.memory.HeapBudget
 import splice.core.memory.HeapLease
 import splice.provider.codex.state.CodeModeAccepted
 import splice.provider.codex.state.CodeModeRecordRestorer
@@ -13,6 +14,7 @@ import splice.provider.codex.state.CodeModeReplayAnchors
 import splice.provider.codex.stream.CodeModeSourceLease
 import splice.provider.codex.stream.CodeModeSourceState
 import splice.upstream.codemode.CodeModeResult
+import java.lang.ref.WeakReference
 
 @Serializable
 internal data class CodeModePersistedState(
@@ -124,6 +126,12 @@ internal data class CodeModeRecord(
 
     @Volatile var retainedBytes: Long? = null
     var heapLease: HeapLease? = null
+
+    /** The ledger [heapLease] was charged on, and the snapshots that share it. A payload a mutation takes off the
+     *  record stays live while one of them still holds it, so that snapshot is charged it on this ledger until it
+     *  goes. */
+    var heapBudget: HeapBudget? = null
+    val heapSnapshots: MutableList<WeakReference<CodeModeRecordSnapshot>> = mutableListOf()
 
     fun visiblePending(): List<CodeModePending> = pending.filter(CodeModePending::exposed)
 

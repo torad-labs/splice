@@ -2,7 +2,6 @@
 package splice.provider.codex.state
 
 import kotlinx.coroutines.CancellationException
-import splice.core.memory.HeapJson
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModePersistenceException
 import splice.provider.codex.CodeModePhase
@@ -35,7 +34,11 @@ internal class CodeModeRecordChanges(
     private val cleanup = CodeModeCellCleanup(config.log)
 
     fun complete(record: CodeModeRecord, output: String) = access.withKey(record.key) {
-        CodeModeHeap.grow(record, (HeapJson.text(output) - HeapJson.text(record.output.orEmpty())).coerceAtLeast(0L))
+        val stored = CodeModeWeight.STORED
+        val replaced = record.output
+        CodeModeHeap.grow(record, (stored.text(output) - stored.text(replaced.orEmpty())).coerceAtLeast(0L)) { kept ->
+            if (replaced != null && kept.output === replaced) stored.text(replaced) else 0L
+        }
         startup.entries.remove(record.id)
         record.output = output
         record.phase = CodeModePhase.COMPLETED

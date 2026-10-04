@@ -303,7 +303,9 @@ internal class CodexCodeModeRegistry(
         media: Map<String, List<JsonElement>> = emptyMap(),
     ) = access.withKey(record.key) {
         // The prior issuance is already durable. New results and the worker's next step commit together.
-        CodeModeHeap.grow(record, record.accepted.heapGrowth(supplied, media))
+        CodeModeHeap.grow(record, record.accepted.heapGrowth(supplied, media)) { kept ->
+            record.accepted.kept(kept, supplied)
+        }
         record.lastDigest = digest
         record.updatedAt = config.clock.millis()
         record.accepted.accept(supplied, media)

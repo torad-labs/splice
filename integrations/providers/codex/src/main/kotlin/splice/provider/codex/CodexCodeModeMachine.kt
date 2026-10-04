@@ -94,7 +94,7 @@ internal class CodexCodeModeMachine(
             registry.changes.save(
                 record,
                 undo = { it.issued.remove(issued) },
-                growthBytes = calls.sumOf(splice.provider.codex.state.CodeModeHeap::bytes),
+                growthBytes = calls.sumOf(splice.provider.codex.state.CodeModeWeight.STORED::call),
             ) {
                 checkIssuable(it, cell)
                 it.issued += issued
@@ -226,7 +226,7 @@ internal class CodexCodeModeMachine(
         }
         registry.changes.edit(
             request.record,
-            growthBytes = pending.sumOf(splice.provider.codex.state.CodeModeHeap::bytes),
+            growthBytes = pending.sumOf(splice.provider.codex.state.CodeModeWeight.STORED::call),
         ) { record ->
             checkIssuable(record, cell)
             record.totalCalls += calls.size

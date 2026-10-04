@@ -1,16 +1,17 @@
 // NEW: source staging and billing commits share the callback and result transition conversation key.
 package splice.provider.codex.stream
 
-import splice.core.memory.HeapJson
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.Usage
 import splice.provider.codex.CodeModeContinuity
 import splice.provider.codex.CodeModePersistenceException
 import splice.provider.codex.CodeModeRecord
+import splice.provider.codex.CodeModeRecordSnapshot
 import splice.provider.codex.CodexCodeModeStore
 import splice.provider.codex.state.CodeModeExpiredHistory
 import splice.provider.codex.state.CodeModeHeap
 import splice.provider.codex.state.CodeModeRegistryAccess
+import splice.provider.codex.state.CodeModeWeight.STORED
 
 internal class CodeModeSourceRecords(
     private val access: CodeModeRegistryAccess,
@@ -25,7 +26,11 @@ internal class CodeModeSourceRecords(
         // Completion may already have staged a longer prefix while this cursor was waking.
         if (record.source.startsWith(text)) return@withKey
         check(text.startsWith(record.source)) { "dispatched source changed" }
-        CodeModeHeap.grow(record, (text.length - record.source.length) * 2L)
+        // One appended character outside Latin-1 re-widens the whole source, so the growth is the stored difference.
+        val replaced = record.source
+        CodeModeHeap.grow(record, (STORED.text(text) - STORED.text(replaced)).coerceAtLeast(0L)) { kept ->
+            if (kept.source === replaced) STORED.text(replaced) else 0L
+        }
         record.source = text
     }
 
@@ -33,11 +38,11 @@ internal class CodeModeSourceRecords(
     fun finish(record: CodeModeRecord, call: GatewayCustomCall, continuity: CodeModeContinuity, usage: Usage) =
         access.withKey(record.key) {
             check(record in records && record.error == null) { "code-mode source no longer owns its record" }
-            val next = HeapJson.bytes(call.raw) + HeapJson.text(call.input) +
-                continuity.logicalItems.sumOf(HeapJson::bytes) + continuity.replayItems.sumOf(CodeModeHeap::bytes)
-            val before = HeapJson.bytes(record.outer) + HeapJson.text(record.source) +
-                record.continuity.sumOf(HeapJson::bytes) + record.continuityReplay.sumOf(CodeModeHeap::bytes)
-            CodeModeHeap.grow(record, (next - before).coerceAtLeast(0L))
+            val next = STORED.json(call.raw) + STORED.text(call.input) +
+                continuity.logicalItems.sumOf(STORED::json) + continuity.replayItems.sumOf(STORED::segment)
+            val before = STORED.json(record.outer) + STORED.text(record.source) +
+                record.continuity.sumOf(STORED::json) + record.continuityReplay.sumOf(STORED::segment)
+            CodeModeHeap.grow(record, (next - before).coerceAtLeast(0L)) { kept -> replaced(kept, record) }
             record.outer = call.raw
             record.source = call.input
             record.continuity = continuity.logicalItems
@@ -71,5 +76,14 @@ internal class CodeModeSourceRecords(
             throw error
         }
         usage.value()
+    }
+
+    /** What [kept] still holds of the payloads a finished round replaces on [record]. */
+    private fun replaced(kept: CodeModeRecordSnapshot, record: CodeModeRecord): Long {
+        val outer = if (kept.outer === record.outer) STORED.json(record.outer) else 0L
+        val source = if (kept.source === record.source) STORED.text(record.source) else 0L
+        val logical = if (kept.continuity === record.continuity) record.continuity.sumOf(STORED::json) else 0L
+        val replay = record.continuityReplay.takeIf { it === kept.continuityReplay }?.sumOf(STORED::segment) ?: 0L
+        return outer + source + logical + replay
     }
 }

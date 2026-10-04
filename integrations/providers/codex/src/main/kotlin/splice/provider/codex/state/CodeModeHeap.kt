@@ -18,6 +18,8 @@ import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRecordSnapshot
 import splice.upstream.memory.JvmHeap
 import java.lang.management.ManagementFactory
+import java.lang.ref.WeakReference
+import java.util.IdentityHashMap
 import javax.management.JMException
 import javax.management.ObjectName
 import javax.management.openmbean.CompositeData
@@ -66,8 +68,8 @@ private object CodeModeTextLayout {
 }
 
 /** How a payload is weighed. A save or decode stage reserves its peak on UTF-16 text, the estimate its factor was
- *  sized on, and releases it. A retained graph is charged what it occupies. */
-private enum class CodeModeWeight {
+ *  sized on, and releases it. A retained graph, and each growth of one, is charged what it occupies. */
+internal enum class CodeModeWeight {
     PEAK {
         override fun text(value: String): Long = HeapJson.text(value)
 
@@ -132,14 +134,17 @@ private enum class CodeModeWeight {
     fun segment(segment: CodeModeNativeSegment): Long = RECORD_METADATA_BYTES + segment.items.sumOf(::json)
 }
 
+/** What a snapshot still holds, at stored width, of the payloads a mutation takes off its record. */
+internal fun interface CodeModeKeptPayload {
+    operator fun invoke(snapshot: CodeModeRecordSnapshot): Long
+}
+
 /** Peak weights size the reservations of save and decode stages. Retained weights are what a record or snapshot
  *  holds, and a payload a record and its snapshots hold together is charged once, on the lease they share. */
 internal object CodeModeHeap {
     fun bytes(record: CodeModeRecord): Long = CodeModeWeight.PEAK.record(record)
 
     fun bytes(record: CodeModeRecordSnapshot): Long = CodeModeWeight.PEAK.snapshot(record)
-
-    fun bytes(call: CodeModePending): Long = CodeModeWeight.PEAK.call(call)
 
     fun bytes(segment: CodeModeNativeSegment): Long = CodeModeWeight.PEAK.segment(segment)
 
@@ -158,6 +163,7 @@ internal object CodeModeHeap {
         val minimumBytes = inherited.fold(CodeModeWeight.STORED.record(record)) { total, segment ->
             HeapJson.add(total, CodeModeWeight.STORED.segment(segment))
         }
+        if (record.heapBudget == null) record.heapBudget = heap
         val lease = record.heapLease
         if (lease == null) {
             record.heapLease = HeapOwners.charge(record, heap, minimumBytes)
@@ -185,6 +191,7 @@ internal object CodeModeHeap {
             (snapshot.issued.size + snapshot.nativeSegments.size) * SNAPSHOT_SLOT_BYTES
         HeapOwners.keep(snapshot, peak.split(shell))
         snapshot.heapLease = lease.share().also { HeapOwners.keep(snapshot, it) }
+        record.heapSnapshots += WeakReference(snapshot)
         return true
     }
 
@@ -195,6 +202,7 @@ internal object CodeModeHeap {
         val lease = saved.heapLease ?: return
         if (!lease.resize(HeapJson.add(lease.bytes, RECORD_METADATA_BYTES))) return
         record.heapLease = lease.share().also { HeapOwners.keep(record, it) }
+        record.heapSnapshots += WeakReference(saved)
     }
 
     /** Adopt the returned aggregate and each independently escapable snapshot before closing decode stages. */
@@ -209,13 +217,38 @@ internal object CodeModeHeap {
         return state
     }
 
-    /** Reserve before mutation. High-water collection capacity is never refunded by a logical clear. The growth lands
-     *  on the charge the record shares with its snapshots, so it covers the payloads a snapshot still holds after this
-     *  mutation replaces them on the record. A save re-weighs the record when its next snapshot shares the charge. */
-    fun grow(record: CodeModeRecord, bytes: Long) {
+    /** Reserve before mutation, [bytes] weighed at stored width. High-water collection capacity is never refunded by a
+     *  logical clear. The record's charge grows by the difference, and a payload this mutation takes off the record
+     *  stays live while a snapshot sharing the charge still holds it: [kept] weighs what each such snapshot holds, and
+     *  that snapshot is charged it until it goes. All of it is reserved before any of it is kept. */
+    fun grow(record: CodeModeRecord, bytes: Long, kept: CodeModeKeptPayload = CodeModeKeptPayload { 0L }) {
         if (record.heapLease == null) own(record)
         val lease = checkNotNull(record.heapLease)
-        val needed = HeapJson.add(lease.bytes, bytes)
-        if (!lease.resize(needed)) throw HeapCapacityException()
+        val held = holders(record, kept)
+        if (!lease.resize(HeapJson.add(lease.bytes, bytes))) {
+            held.values.forEach(HeapLease::close)
+            throw HeapCapacityException()
+        }
+        held.forEach { (snapshot, charge) -> HeapOwners.keep(snapshot, charge) }
+    }
+
+    /** A reservation for each live snapshot of [record] that still holds payload [kept] weighs above zero. */
+    private fun holders(
+        record: CodeModeRecord,
+        kept: CodeModeKeptPayload,
+    ): Map<CodeModeRecordSnapshot, HeapLease> {
+        record.heapSnapshots.removeAll { it.get() == null }
+        val heap = record.heapBudget ?: JvmHeap.budget
+        val held = IdentityHashMap<CodeModeRecordSnapshot, HeapLease>()
+        record.heapSnapshots.mapNotNull(WeakReference<CodeModeRecordSnapshot>::get).forEach { snapshot ->
+            val bytes = kept(snapshot)
+            if (bytes > 0 && snapshot !in held) {
+                held[snapshot] = heap.reserve(bytes) ?: run {
+                    held.values.forEach(HeapLease::close)
+                    throw HeapCapacityException()
+                }
+            }
+        }
+        return held
     }
 }

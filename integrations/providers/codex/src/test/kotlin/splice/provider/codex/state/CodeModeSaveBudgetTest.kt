@@ -1,6 +1,9 @@
 // NEW: save preparation and encoding refuse capacity before durable state changes.
 package splice.provider.codex.state
 
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -22,6 +25,7 @@ import splice.provider.codex.CodexCodeModeRegistry
 import splice.provider.codex.CodexCodeModeStore
 import splice.provider.codex.stream.CodeModeSourceState
 import splice.provider.codex.stream.CodeModeSourceUsage
+import splice.upstream.codemode.CodeModeResult
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
@@ -32,6 +36,7 @@ import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
 import kotlin.time.Duration.Companion.days
+import kotlin.time.Duration.Companion.milliseconds
 
 class CodeModeSaveBudgetTest(@param:TempDir private val dir: Path) {
     private val heap = HeapBudget(Long.MAX_VALUE, 512 * 1024)
@@ -203,13 +208,84 @@ class CodeModeSaveBudgetTest(@param:TempDir private val dir: Path) {
         }
     }
 
-    private fun registry(record: CodeModeRecord): CodexCodeModeRegistry {
+    @Test
+    fun `a source streamed larger after its save stays charged while the saved snapshot holds the old one`() {
+        val roomy = HeapBudget(Long.MAX_VALUE, 64 * 1024 * 1024)
+        val record = CodeModeRecords.of("synthetic", 1).apply { source = "x".repeat(200_000) }
+        val registry = registry(record, roomy)
+        try {
+            val saved = record.source
+            val streamed = saved + "y".repeat(100_000)
+            registry.source.append(record, streamed)
+            // The kept snapshot still holds the saved source and the record holds the streamed one: both are live.
+            val charged = settledCharge(roomy)
+            assertTrue(
+                charged >= saved.length + streamed.length.toLong(),
+                "$charged bytes charged for ${saved.length + streamed.length} live source characters",
+            )
+        } finally {
+            registry.timed.finish { registry.onHeadStop() }
+        }
+    }
+
+    @Test
+    fun `one appended character that re-widens a Latin-1 source is charged at the new width`() {
+        val roomy = HeapBudget(Long.MAX_VALUE, 64 * 1024 * 1024)
+        val record = CodeModeRecords.of("synthetic", 1).apply { source = "x".repeat(200_000) }
+        val registry = registry(record, roomy)
+        try {
+            val saved = record.source
+            val widened = saved + "\u0101"
+            registry.source.append(record, widened)
+            // The whole streamed source now stores two bytes a character, beside the saved one the snapshot holds.
+            val charged = settledCharge(roomy)
+            assertTrue(
+                charged >= saved.length + 2L * widened.length,
+                "$charged bytes charged for ${saved.length + 2L * widened.length} live source bytes",
+            )
+        } finally {
+            registry.timed.finish { registry.onHeadStop() }
+        }
+    }
+
+    @Test
+    fun `a result supplied again stays charged while the saved snapshot holds the one it replaces`() {
+        val roomy = HeapBudget(Long.MAX_VALUE, 64 * 1024 * 1024)
+        val saved = CodeModeResult("call-1", "r".repeat(200_000), false)
+        val record = CodeModeRecords.of("synthetic", 1).apply { accepted.accept(mapOf("call-1" to saved), emptyMap()) }
+        val registry = registry(record, roomy)
+        try {
+            val again = CodeModeResult("call-1", "s".repeat(200_000), false)
+            registry.acceptResults(record, "digest-2", mapOf("call-1" to again))
+            // The kept snapshot still holds the saved output and the record holds the new one: both are live.
+            val charged = settledCharge(roomy)
+            assertTrue(
+                charged >= saved.output.length + again.output.length.toLong(),
+                "$charged bytes charged for ${saved.output.length + again.output.length} live result characters",
+            )
+        } finally {
+            registry.timed.finish { registry.onHeadStop() }
+        }
+    }
+
+    /** The budget's charge once a full collection refunds nothing more: a save's stages are gone, owners remain. */
+    private fun settledCharge(budget: HeapBudget): Long = runBlocking {
+        repeat(40) {
+            val seen = budget.available.value
+            System.gc()
+            withTimeoutOrNull(300.milliseconds) { budget.available.first { it != seen } }
+                ?: return@runBlocking budget.limitBytes - seen
+        }
+        error("the ledger never settled")
+    }
+
+    private fun registry(record: CodeModeRecord, budget: HeapBudget = heap): CodexCodeModeRegistry {
         val config = CodeModeBridgeConfig(
             runtimes = { error("this reservation control must not start a worker") },
             state = location,
             clock = Clock.fixed(Instant.ofEpochMilli(record.updatedAt), ZoneOffset.UTC),
         )
-        return CodexCodeModeRegistry(config, Json, 1.days, heap = heap).also {
+        return CodexCodeModeRegistry(config, Json, 1.days, heap = budget).also {
             assertTrue(it.add(record))
         }
     }

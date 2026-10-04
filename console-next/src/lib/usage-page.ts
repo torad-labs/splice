@@ -56,6 +56,8 @@ export interface PlanUsage {
   /** Dollars of the priced turns, null when none was priced. */
   cost: number | null;
   spark: number[];
+  /** Why the daemon shows no hours for this plan, said in its own sentence; the row prints it in place of the spark. */
+  hourlyReason?: string;
   /** Dollars of the last 24 hours, the figure a daily budget is measured against. */
   spentToday: number | null;
 }
@@ -81,6 +83,7 @@ export function planUsage(head: HeadEconomics, label: string, colour: ModelColou
     cache: hitRate(totals),
     cost: totals.turns === 0 ? null : costOf(totals),
     spark: hourly(head.buckets, 24, now),
+    ...(head.unavailable === undefined ? {} : { hourlyReason: head.unavailable }),
     spentToday: costOf(day),
   };
 }

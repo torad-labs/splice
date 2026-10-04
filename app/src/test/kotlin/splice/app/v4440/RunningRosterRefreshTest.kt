@@ -9,6 +9,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -18,6 +19,7 @@ import org.junit.jupiter.api.io.TempDir
 import org.opentest4j.AssertionFailedError
 import splice.core.model.DiscoveredModel
 import splice.core.model.ModelRates
+import splice.usage.economics.EconomicsRead
 import splice.usage.perf.HeadSessionPerfSource
 import java.nio.file.Path
 
@@ -95,7 +97,8 @@ class RunningRosterRefreshTest {
         val total = checkNotNull(perf.sessionTotal("synthetic-session")).models.getValue(JOINED)
         assertEquals(10.0, total.usd)
         assertEquals(0L, total.unpricedTurns)
-        val bucket = checkNotNull(fixture.managed.economics).buckets().single()
+        val read = checkNotNull(fixture.managed.economics).read()
+        val bucket = assertInstanceOf(EconomicsRead.Rows::class.java, read).rows.single()
         assertEquals(10.0, bucket.costUsd)
         assertEquals(0L, bucket.unpricedTurns)
     }

@@ -20,9 +20,20 @@ private val LOCAL_ECONOMICS_REFUSALS = setOf(
     OutcomeTag.COMPACTION_PREFLIGHT_COMPACT_OVERFLOW.wire,
 )
 
+/** Why one head's legacy probe deduction cannot be made, each a fixed sentence the console shows for that head. */
+internal enum class ProbeGap(val sentence: String) {
+    UNREADABLE("Hourly history is not shown because this command's request log could not be read in full."),
+    UNRECONCILED("Hourly history is not shown because it does not match this command's request log."),
+    SPLIT_HOUR("Hourly history is not shown because an old probe request cannot be placed in one hour."),
+    EXCEEDS("Hourly history is not shown because the request log holds more probe requests than the history counted."),
+}
+
+/** Thrown inside [ProbeEconomics] and caught by its one caller, which answers this head as unavailable. */
+internal class UnreconciledEconomics(val gap: ProbeGap) : IllegalStateException(gap.sentence)
+
 /** A deduction must reconcile with the complete retained rollup and its affected hour.
  *  Perf and economics sampled different clocks: a boundary crossing cannot be guessed.
- *  Lost, torn or mismatched evidence makes the view unavailable, never falsely clean.
+ *  Lost, torn or mismatched evidence makes this head's view unavailable, never falsely clean.
  *  New probes cannot dispatch, so successfully reconciled legacy deductions are immutable. */
 internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
     private var deductions: Map<Long, EconomicsBucket>? = null
@@ -36,9 +47,7 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
 
     private fun read(buckets: List<EconomicsBucket>): Map<Long, EconomicsBucket> {
         val evidence = perf.economicsEvidence(buckets.minOf { it.hour })
-        check(evidence.work.readError == null && evidence.work.skipped == 0) {
-            "legacy probe economics evidence incomplete: ${evidence.work.readError ?: "unreadable rows"}"
-        }
+        hold(evidence.work.readError == null && evidence.work.skipped == 0, ProbeGap.UNREADABLE)
         // TurnTelemetry.recordLocalRefusal writes perf, but never EconomicsStore.record.
         val work = evidence.work.rows.filterNot {
             it.outcome in LOCAL_ECONOMICS_REFUSALS && it.fields[PerfKeys.ATTEMPTS] == 0L
@@ -48,9 +57,8 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
         reconcile(buckets, all, probes)
         val recorded = buckets.associateBy { it.hour }
         probes.keys.forEach { hour ->
-            check(recorded[hour]?.let { signature(listOf(it)) } == all[hour]?.let { signature(listOf(it)) }) {
-                "legacy probe economics hour cannot be assigned from its retained evidence"
-            }
+            val assigned = recorded[hour]?.let { signature(listOf(it)) } == all[hour]?.let { signature(listOf(it)) }
+            hold(assigned, ProbeGap.SPLIT_HOUR)
         }
         return probes
     }
@@ -69,7 +77,7 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
             signature(buckets.filter { it.hour <= latestProbe }) ==
                 signature(all.filterKeys { it <= latestProbe }.values)
         }
-        check(matches) { "legacy probe economics evidence does not reconcile with the retained rollup" }
+        hold(matches, ProbeGap.UNRECONCILED)
     }
 
     private fun summarize(rows: List<PerfRow>): Map<Long, EconomicsBucket> =
@@ -128,7 +136,11 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
     )
 
     private fun remaining(total: Long, probes: Long): Long {
-        check(probes in 0..total) { "legacy probe economics evidence exceeds its recorded bucket" }
+        hold(probes in 0..total, ProbeGap.EXCEEDS)
         return total - probes
+    }
+
+    private fun hold(holds: Boolean, gap: ProbeGap) {
+        if (!holds) throw UnreconciledEconomics(gap)
     }
 }

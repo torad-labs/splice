@@ -8,12 +8,16 @@
 // where it does not, and a null ceiling must render as "no ceiling known", never as a guess — an
 // invented denominator is how a quota gauge lies.
 //
+// A head whose rollup cannot be shown honestly answers with no buckets and an `unavailable` sentence, and the
+// other heads still answer: one head's evidence never takes the whole route down.
+//
 // A SIBLING of PerfPayloads rather than a method on it: perf answers "where did the latency go"
 // from a bounded tail, economics answers "what has this cost against the plan" from week-wide sums,
 // and the two share no input, no reader and no window.
 package splice.usage.economics
 
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -46,30 +50,38 @@ public class EconomicsPayloads(
                     put(LABEL, m.label)
                     val ceiling = m.usage.snapshot().ratelimit?.limitTokens
                     if (ceiling == null) put("ceiling_tokens", JsonNull) else put("ceiling_tokens", ceiling)
-                    putJsonArray("buckets") {
-                        m.economics?.buckets().orEmpty().forEach { b ->
-                            addJsonObject {
-                                put("hour", b.hour)
-                                put("turns", b.turns)
-                                put("local_steps", b.localSteps)
-                                put("in_tokens", b.inTokens)
-                                put("cached_tokens", b.cachedTokens)
-                                put("cache_write_tokens", b.cacheWriteTokens)
-                                put("out_tokens", b.outTokens)
-                                put("req_bytes", b.reqBytes)
-                                put("upstream_req_bytes", b.upstreamBytes)
-                                put("tools_eager", b.toolsEager)
-                                put("tools_deferred", b.toolsDeferred)
-                                put("deferral_turns", b.deferralTurns)
-                                put("rate_limited", b.rateLimited)
-                                // V4-221: null is "not priced then" (an hour from before the field).
-                                put("cost_usd", b.costUsd)
-                                put("unpriced_turns", b.unpricedTurns)
-                            }
+                    when (val read = m.economics?.read() ?: EconomicsRead.Rows(emptyList())) {
+                        is EconomicsRead.Rows -> buckets(this, read.rows)
+                        is EconomicsRead.Unavailable -> {
+                            buckets(this, emptyList())
+                            put("unavailable", read.reason)
                         }
                     }
                 }
             }
         }
     }.toString()
+
+    private fun buckets(head: JsonObjectBuilder, rows: List<EconomicsRow>) = head.putJsonArray("buckets") {
+        rows.forEach { b ->
+            addJsonObject {
+                put("hour", b.hour)
+                put("turns", b.turns)
+                put("local_steps", b.localSteps)
+                put("in_tokens", b.inTokens)
+                put("cached_tokens", b.cachedTokens)
+                put("cache_write_tokens", b.cacheWriteTokens)
+                put("out_tokens", b.outTokens)
+                put("req_bytes", b.reqBytes)
+                put("upstream_req_bytes", b.upstreamBytes)
+                put("tools_eager", b.toolsEager)
+                put("tools_deferred", b.toolsDeferred)
+                put("deferral_turns", b.deferralTurns)
+                put("rate_limited", b.rateLimited)
+                // V4-221: null is "not priced then" (an hour from before the field).
+                put("cost_usd", b.costUsd)
+                put("unpriced_turns", b.unpricedTurns)
+            }
+        }
+    }
 }

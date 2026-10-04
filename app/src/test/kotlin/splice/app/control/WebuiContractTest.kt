@@ -37,6 +37,7 @@ import splice.diagnostics.logs.HeadLogSource
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
 import splice.head.usage.EconomicsBucket
+import splice.usage.economics.EconomicsRead
 import splice.usage.economics.EconomicsRow
 import splice.usage.economics.EconomicsTurnCounts
 import splice.usage.economics.HeadEconomicsSource
@@ -95,10 +96,12 @@ class WebuiContractTest {
                 override fun path() = "/tmp/codex.log"
             },
             economics = HeadEconomicsSource {
-                listOf(
-                    EconomicsRow(
-                        1_000, EconomicsTurnCounts(2, 1), 300, 270, 24, 5, 400, 440, 28, 48, 2, 1,
-                        costUsd = 0.42, unpricedTurns = 1,
+                EconomicsRead.Rows(
+                    listOf(
+                        EconomicsRow(
+                            1_000, EconomicsTurnCounts(2, 1), 300, 270, 24, 5, 400, 440, 28, 48, 2, 1,
+                            costUsd = 0.42, unpricedTurns = 1,
+                        ),
                     ),
                 )
             },

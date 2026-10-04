@@ -47,7 +47,7 @@ function PlanRow({ plan }: { plan: PlanUsage }) {
         {plan.observations?.map(window => <small key={window.window}>{window.window === '5h' ? '5 hours' : 'Week'} · {Q.observed(window.observedAt === null ? null : localZonedInstantText(window.observedAt))}</small>)}
       </div>
       <div className="tok">{plan.requestState === 'loading' ? <span role="status">{U.readingRequests}</span> : plan.turns === null ? <span>{U.requestsUnavailable}</span> : plan.turns === 0 ? <span>{U.idle}</span> : <><strong>{plan.partial && plan.inTokens !== null ? B.atLeast(tokensText(plan.inTokens)) : tokensText(plan.inTokens)}</strong>{U.readIn}</>}{plan.requestReason === undefined ? null : <small>{plan.requestReason}</small>}</div>
-      {plan.spark.length === 0 ? <span className="hint">{B.unknown}</span> : <Spark values={plan.spark} />}
+      {plan.spark.length === 0 ? <span className="hint">{plan.hourlyReason ?? B.unknown}</span> : <Spark values={plan.spark} />}
       <div className="cost">{plan.requestState === 'loading' ? U.readingMetric : plan.costPartial && plan.cost !== null ? B.atLeast(costLine(plan.cost)) : costLine(plan.cost)}<small>{plan.requestState === 'loading' ? U.readingMetric : cacheLine(plan.cache)}</small></div>
     </li>
   );

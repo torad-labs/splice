@@ -22,6 +22,7 @@ import splice.head.usage.EconomicsBucket
 import splice.head.usage.EconomicsStore
 import splice.head.usage.QuotaTracker
 import splice.head.usage.UsageStore
+import splice.usage.economics.EconomicsRead
 import splice.usage.economics.EconomicsRow
 import splice.usage.economics.EconomicsTurnCounts
 import splice.usage.economics.HeadEconomicsSource
@@ -91,9 +92,14 @@ public class EconomicsStoreSource(
 ) : HeadEconomicsSource {
     private val probes = perfRows?.let(::ProbeEconomics)
 
-    override fun buckets(): List<EconomicsRow> {
+    override fun read(): EconomicsRead {
         val held = store.read()
-        return (probes?.withoutProbes(held) ?: held).map { row(it) }
+        val kept = try {
+            probes?.withoutProbes(held) ?: held
+        } catch (unreconciled: UnreconciledEconomics) {
+            return EconomicsRead.Unavailable(unreconciled.gap.sentence)
+        }
+        return EconomicsRead.Rows(kept.map { row(it) })
     }
 
     private fun row(it: EconomicsBucket): EconomicsRow =

@@ -1,9 +1,15 @@
 // NEW: V4-454 — historical probes leave no economics work; correction never edits history.
 package splice.app.sources
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertNull
-import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.model.ModelCatalog
@@ -14,6 +20,14 @@ import splice.core.turn.AbsorbedRounds
 import splice.core.util.WallClock
 import splice.head.usage.EconomicsStore
 import splice.head.usage.TurnEconomics
+import splice.usage.UsageHead
+import splice.usage.UsageHeads
+import splice.usage.economics.EconomicsPayloads
+import splice.usage.economics.EconomicsRead
+import splice.usage.economics.EconomicsRow
+import splice.usage.economics.HeadEconomicsSource
+import splice.usage.quota.HeadUsageSource
+import splice.usage.quota.UsageView
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -44,14 +58,14 @@ class ProbeEconomicsTest {
         val control = store(dir.resolve("control"))
         recordWork(control)
         val source = EconomicsStoreSource(store, PerfRowsFileSource(file))
-        val expected = EconomicsStoreSource(control).buckets()
-        assertEquals(expected, source.buckets())
-        assertEquals(expected, source.buckets())
-        assertEquals(expected, EconomicsStoreSource(store(dir), PerfRowsFileSource(file)).buckets())
+        val expected = EconomicsStoreSource(control).rows()
+        assertEquals(expected, source.rows())
+        assertEquals(expected, source.rows())
+        assertEquals(expected, EconomicsStoreSource(store(dir), PerfRowsFileSource(file)).rows())
         assertEquals(original, Files.readString(dir.resolve("economics.json")))
         // A healthy second poll must not re-scan history: the frozen deductions still apply.
         Files.delete(file)
-        assertEquals(expected, source.buckets())
+        assertEquals(expected, source.rows())
     }
 
     // The rollup meters a turn's absorbed rounds beside its final round, so the perf evidence must sum
@@ -68,8 +82,8 @@ class ProbeEconomicsTest {
         val control = store(dir.resolve("control"))
         control.record(turn("synthetic", 5, 100, 50, 3L to 2L, script))
 
-        val buckets = EconomicsStoreSource(store, PerfRowsFileSource(file)).buckets()
-        assertEquals(EconomicsStoreSource(control).buckets(), buckets)
+        val buckets = EconomicsStoreSource(store, PerfRowsFileSource(file)).rows()
+        assertEquals(EconomicsStoreSource(control).rows(), buckets)
         assertEquals(9L, buckets.single().inTokens, "the final round's 5 and the absorbed round's 4")
     }
 
@@ -79,7 +93,7 @@ class ProbeEconomicsTest {
         Files.writeString(file, SYNTHETIC_PROBE_ROW + "\n")
         val store = store(dir)
         store.record(turn("", 0, 30, 15, 2L to 1L))
-        assertEquals(emptyList<Any>(), EconomicsStoreSource(store, PerfRowsFileSource(file)).buckets())
+        assertEquals(emptyList<Any>(), EconomicsStoreSource(store, PerfRowsFileSource(file)).rows())
     }
 
     @Test
@@ -88,7 +102,7 @@ class ProbeEconomicsTest {
         val store = store(dir)
         recordWork(store)
         val source = EconomicsStoreSource(store, PerfRowsFileSource(file))
-        assertThrows(IllegalStateException::class.java) { source.buckets() }
+        assertEquals(ProbeGap.UNREADABLE.sentence, source.gap())
     }
 
     @Test
@@ -99,7 +113,7 @@ class ProbeEconomicsTest {
             dir.resolve("economics.json"),
             """[{"hour":3600000,"turns":2,"req_bytes":130,"upstream_req_bytes":65,"tools_eager":5,"tools_deferred":3,"deferral_turns":2,"unpriced_turns":1,"in_tokens":5,"cached_tokens":2,"cache_write_tokens":1,"out_tokens":10}]""",
         )
-        val row = EconomicsStoreSource(store(dir), PerfRowsFileSource(file)).buckets().single()
+        val row = EconomicsStoreSource(store(dir), PerfRowsFileSource(file)).rows().single()
         assertEquals(1L, row.turns)
         assertEquals(5L, row.inTokens)
         assertEquals(10L, row.outTokens)
@@ -115,9 +129,9 @@ class ProbeEconomicsTest {
         store.record(turn("", 0, 30, 15, 2L to 1L))
         Files.writeString(file, SYNTHETIC_PROBE_ROW.dropLast(1) + "\n")
         val source = EconomicsStoreSource(store, PerfRowsFileSource(file))
-        assertThrows(IllegalStateException::class.java) { source.buckets() }
+        assertEquals(ProbeGap.UNREADABLE.sentence, source.gap())
         Files.writeString(file, SYNTHETIC_PROBE_ROW + "\n")
-        assertEquals(emptyList<Any>(), source.buckets())
+        assertEquals(emptyList<Any>(), source.rows())
     }
 
     @Test
@@ -127,9 +141,7 @@ class ProbeEconomicsTest {
         store.record(turn("", 0, 30, 15, 2L to 1L))
         recordWork(store)
         Files.writeString(file, MODELED_WORK_ROW + "\n" + LOCAL_WORK_ROW + "\n")
-        assertThrows(IllegalStateException::class.java) {
-            EconomicsStoreSource(store, PerfRowsFileSource(file)).buckets()
-        }
+        assertEquals(ProbeGap.UNRECONCILED.sentence, EconomicsStoreSource(store, PerfRowsFileSource(file)).gap())
     }
 
     @Test
@@ -141,7 +153,7 @@ class ProbeEconomicsTest {
         )
         val store = store(dir)
         store.record(turn("", 0, 30, 15, 2L to 1L))
-        assertEquals(emptyList<Any>(), EconomicsStoreSource(store, PerfRowsFileSource(file)).buckets())
+        assertEquals(emptyList<Any>(), EconomicsStoreSource(store, PerfRowsFileSource(file)).rows())
     }
 
     @Test
@@ -150,7 +162,7 @@ class ProbeEconomicsTest {
         Files.writeString(file, SYNTHETIC_PROBE_ROW.dropLast(1) + ""","response_message_id":"synthetic-id"}""" + "\n")
         val store = store(dir)
         store.record(turn("", 0, 30, 15, 2L to 1L))
-        assertEquals(emptyList<Any>(), EconomicsStoreSource(store, PerfRowsFileSource(file)).buckets())
+        assertEquals(emptyList<Any>(), EconomicsStoreSource(store, PerfRowsFileSource(file)).rows())
     }
 
     @Test
@@ -171,8 +183,8 @@ class ProbeEconomicsTest {
         val control = store(dir.resolve("control"))
         recordWork(control)
         assertEquals(
-            EconomicsStoreSource(control).buckets(),
-            EconomicsStoreSource(store, PerfRowsFileSource(file)).buckets(),
+            EconomicsStoreSource(control).rows(),
+            EconomicsStoreSource(store, PerfRowsFileSource(file)).rows(),
         )
     }
 
@@ -191,11 +203,50 @@ class ProbeEconomicsTest {
         now = PROBE_HOUR
         store.record(turn("", 0, 30, 15, 2L to 1L))
         val original = store.read()
-        assertThrows(IllegalStateException::class.java) {
-            EconomicsStoreSource(store, PerfRowsFileSource(file)).buckets()
-        }
+        assertEquals(ProbeGap.UNRECONCILED.sentence, EconomicsStoreSource(store, PerfRowsFileSource(file)).gap())
         assertEquals(original, store.read(), "uncertainty never mutates the genuine bucket")
     }
+
+    // splice-lead, Oct 4: GET /api/economics failed on every poll from 5:18 AM CT because one head's
+    // evidence threw. A head that cannot reconcile now answers unavailable with its reason, alone.
+    @Test
+    fun `one head whose evidence does not reconcile answers unavailable while the others still answer`(
+        @TempDir dir: Path,
+    ) {
+        val file = dir.resolve("head-perf.jsonl")
+        // The probe's own row rotated away, so its rollup cannot be cleaned.
+        Files.writeString(file, MODELED_WORK_ROW + "\n" + LOCAL_WORK_ROW + "\n")
+        val contaminated = store(dir.resolve("contaminated"))
+        contaminated.record(turn("", 0, 30, 15, 2L to 1L))
+        recordWork(contaminated)
+        val healthy = store(dir.resolve("healthy"))
+        recordWork(healthy)
+        val heads = UsageHeads {
+            listOf(
+                head("claudex", EconomicsStoreSource(contaminated, PerfRowsFileSource(file))),
+                head("grok", EconomicsStoreSource(healthy)),
+            )
+        }
+
+        val payload = Json.parseToJsonElement(EconomicsPayloads(heads).economicsJson()).jsonObject
+        val (hidden, answering) = payload.getValue("heads").jsonArray.map { it.jsonObject }
+
+        assertEquals(ProbeGap.UNRECONCILED.sentence, hidden.getValue("unavailable").jsonPrimitive.content)
+        assertEquals(JsonArray(emptyList()), hidden.getValue("buckets"), "no hour of the head that cannot be cleaned")
+        assertNull(answering["unavailable"], "the other head is not marked")
+        val hour = answering.getValue("buckets").jsonArray.single().jsonObject
+        val held = EconomicsStoreSource(healthy).rows().single()
+        assertEquals(held.inTokens, hour.getValue("in_tokens").jsonPrimitive.long, "the other head's hour, whole")
+    }
+
+    private fun EconomicsStoreSource.rows(): List<EconomicsRow> =
+        assertInstanceOf(EconomicsRead.Rows::class.java, read()).rows
+
+    private fun EconomicsStoreSource.gap(): String =
+        assertInstanceOf(EconomicsRead.Unavailable::class.java, read()).reason
+
+    private fun head(key: String, economics: HeadEconomicsSource) =
+        UsageHead(key, key, HeadUsageSource { UsageView(0, 0, null) }, 80, 0, economics = economics)
 
     private fun recordWork(store: EconomicsStore) {
         store.record(turn("synthetic", 5, 100, 50, 3L to 2L))

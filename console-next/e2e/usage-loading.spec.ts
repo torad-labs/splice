@@ -144,6 +144,35 @@ test('an economics failure stays in hourly history while independent Usage readi
   expect(faults.failedReads.every(path => path.includes('/api/economics'))).toBe(true);
 });
 
+test('a command whose hours cannot be shown says why in its own row while its sibling draws its hours', async ({ page }) => {
+  const hour = Math.floor(Date.now() / 3_600_000) * 3_600_000;
+  const why = 'Hourly history is not shown because it does not match this command\'s request log.';
+  await page.route('**/api/economics', route => route.fulfill({ json: { retention_hours: 168, generated_at: Date.now(), heads: [
+    { key: STACK.oauthHead, label: STACK.oauthHead, ceiling_tokens: null, buckets: [], unavailable: why },
+    { key: STACK.keyHead, label: STACK.keyHead, ceiling_tokens: null, buckets: [{
+      hour, turns: 3, in_tokens: 9000, cached_tokens: 0, cache_write_tokens: 0, out_tokens: 300, req_bytes: 0,
+      upstream_req_bytes: 0, tools_eager: 0, tools_deferred: 0, deferral_turns: 0, rate_limited: 0, cost_usd: 0.01, unpriced_turns: 0,
+    }] },
+  ] } }));
+  await page.route(url => url.pathname === '/api/perf/turns', route => {
+    const query = new URL(route.request().url()).searchParams;
+    const key = query.get('head') ?? '';
+    const used = key === STACK.oauthHead || key === STACK.keyHead;
+    return route.fulfill({ json: { since: Number(query.get('since')), n: 1,
+      heads: [{ key, label: key, count: used ? 2502 : 0, usage: used ? usage : empty, rows: [] }],
+    } });
+  });
+  const faults = await open(page, 'usage');
+  const rows = page.locator('li.uplan');
+  const spark = page.getByRole('img', { name: 'Tokens per hour, last 24 hours' });
+  await expect(rows.filter({ hasText: why })).toHaveCount(1);
+  await expect(rows.filter({ hasText: why }).locator('svg')).toHaveCount(0);
+  await expect(rows.filter({ has: spark })).toHaveCount(1);
+  await expect(rows.filter({ has: spark })).not.toContainText(why);
+  await expect(page.getByRole('main')).not.toContainText('Hourly usage history could not load');
+  expect(faults.pageErrors).toEqual([]);
+});
+
 test('a cold seven-day page waits for retention before starting a history read', async ({ page }) => {
   const heads = await read<HeadsPayload>(page, '/api/heads');
   let release!: () => void;

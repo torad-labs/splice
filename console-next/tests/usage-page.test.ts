@@ -118,6 +118,13 @@ describe('a plan', () => {
     expect(spark).toHaveLength(24);
     expect(spark.filter((n) => n > 0)).toHaveLength(1);
   });
+  test('a head the daemon cannot show hours for carries its reason, and the others carry none', () => {
+    const why = 'Hourly history is not shown because it does not match this command\'s request log.';
+    const hidden = planUsage({ ...head('a', []), unavailable: why }, 'A', 'none', null, 24, NOW);
+    expect(hidden.hourlyReason).toBe(why);
+    expect(hidden.inTokens).toBe(0);
+    expect('hourlyReason' in planUsage(head('b', [bucket(1)]), 'B', 'none', null, 24, NOW)).toBe(false);
+  });
   test('the fullest limit goes first, plans that report none last', () => {
     const order = orderPlans([plan({ key: 'a', pct: null, inTokens: 9 }), plan({ key: 'b', pct: 90 }), plan({ key: 'c', pct: 20 })]);
     expect(order.map((p) => p.key)).toEqual(['b', 'c', 'a']);

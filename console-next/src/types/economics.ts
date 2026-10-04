@@ -37,6 +37,9 @@ export interface HeadEconomics {
    * renders as "no ceiling known" — never as a guess. */
   ceiling_tokens: number | null;
   buckets: EconomicsBucket[];
+  /** Present when this head's hours cannot be shown honestly: one plain sentence saying why, beside
+   *  empty buckets. The other heads still answer. Absent on a head whose hours are its buckets. */
+  unavailable?: string;
 }
 
 export interface EconomicsPayload {

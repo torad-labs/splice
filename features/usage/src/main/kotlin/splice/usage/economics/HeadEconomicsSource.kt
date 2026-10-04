@@ -7,7 +7,17 @@ package splice.usage.economics
  *  economics answers "what has this cost against the plan" and needs SUMS over a week — a figure
  *  no percentile over the last few hundred turns can reconstruct. */
 public fun interface HeadEconomicsSource {
-    public fun buckets(): List<EconomicsRow>
+    public fun read(): EconomicsRead
+}
+
+/** One head's rollup as the control plane may show it. A head whose rows cannot be shown honestly answers
+ *  [Unavailable] with a fixed sentence and never file content, and the other heads keep answering. */
+public sealed class EconomicsRead {
+    /** The hours, oldest first. */
+    public data class Rows(val rows: List<EconomicsRow>) : EconomicsRead()
+
+    /** Why this head shows no hours, as one plain sentence the console prints as it is. */
+    public data class Unavailable(val reason: String) : EconomicsRead()
 }
 
 /** The control plane's client-turn and local-step counts, projected from the head's bucket. */

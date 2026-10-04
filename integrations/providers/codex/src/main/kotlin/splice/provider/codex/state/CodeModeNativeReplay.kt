@@ -69,7 +69,7 @@ internal class CodeModeNativeReplay(
         claims.forEach { count(counted, it.offset, it.items) }
         val replay = clientReplay(emptySet(), counted, IntArray(input.logicalItems.size + 1) { it }).toMutableList()
         claims.forEach { replay += ResponsesCodeModeReplay(it.offset, null, it.items) }
-        return input.copy(replayItems = CodeModeNativeChain.normalizedReplay(replay))
+        return input.copy(replayItems = CodeModeNativeChain.emittedReplay(replay))
     }
 
     fun rewrite(

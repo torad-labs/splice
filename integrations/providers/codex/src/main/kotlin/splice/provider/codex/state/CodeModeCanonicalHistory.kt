@@ -166,6 +166,6 @@ internal class CodeModeCanonicalHistory(private val codec: CodexCodeModeHistoryC
             if (at < input.logicalItems.size && at !in removed) logical += input.logicalItems[at]
         }
         val replay = natives.rewrite(placements, offsets, starts)
-        return ResponsesCodeModeInput(logical, CodeModeNativeChain.normalizedReplay(replay + continuityReplay))
+        return ResponsesCodeModeInput(logical, CodeModeNativeChain.emittedReplay(replay + continuityReplay))
     }
 }

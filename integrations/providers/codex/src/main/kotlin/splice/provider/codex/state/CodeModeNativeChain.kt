@@ -89,6 +89,24 @@ internal object CodeModeNativeChain {
             fragments.first().copy(items = fragments.flatMap(ResponsesCodeModeReplay::items))
         }.sortedBy(ResponsesCodeModeReplay::logicalOffset)
 
+    /**
+     * The replay a rewrite emits: [normalizedReplay], with an item that several owners hold at one slot
+     * emitted once. A record captured from a body splice posted, whose slots no longer line up
+     * with its predecessor's, is a root that holds the whole native history, including the reasoning an
+     * earlier record emits as its own continuity. Each owner re-emitting its copy put the same reasoning
+     * at one slot twice, the next root captured both, and a live conversation's posts doubled per script
+     * to 38 MB. Upstream never produces one item twice, so a repeat at a slot is always a copy; the same
+     * bytes at another slot are the client's own history and stay. A slot's natives come before its
+     * callback replay, which is the order the request is rebuilt in.
+     */
+    fun emittedReplay(replay: List<ResponsesCodeModeReplay>): List<ResponsesCodeModeReplay> {
+        val seen = mutableMapOf<Int, MutableSet<JsonElement>>()
+        return normalizedReplay(replay).sortedBy { it.callbackId != null }.sortedBy { it.logicalOffset }.mapNotNull {
+            val slot = seen.getOrPut(it.logicalOffset) { mutableSetOf() }
+            it.copy(items = it.items.filter(slot::add)).takeIf { segment -> segment.items.isNotEmpty() }
+        }
+    }
+
     fun allowed(record: CodeModeRecord): Set<Pair<Int, List<JsonElement>>> {
         val baseline = replay(record)
         val continuity = continuity(record)

@@ -49,12 +49,9 @@ import splice.head.compact.HeadCompactSource
 import splice.head.usage.CredentialQuotaFiles
 import splice.models.roster.DeclaredHead
 import splice.models.roster.DeclaredHeads
-import splice.usage.perf.PerfProjectionRead
 import splice.usage.perf.PerfRow
-import splice.usage.perf.PerfRowsProjection
 import splice.usage.perf.PerfRowsSource
 import splice.usage.perf.PerfRowsWindow
-import splice.usage.perf.ProjectedPerfRowsSource
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.UsageView
 import java.nio.file.Files
@@ -273,29 +270,18 @@ class NativeUsageTruthTest {
     }
 
     @Test
-    fun `native attribution preserves projected completion identity and all window evidence`() {
+    fun `native attribution changes only the unproved name and preserves all window evidence`() {
         val row = PerfRow(ts = 100, outcome = "ok", fields = emptyMap(), account = "claude-code")
-        val held = PerfRowsWindow(listOf(row), 50, 7, "synthetic unread generation", 2, 100)
-        val source = object : PerfRowsSource, ProjectedPerfRowsSource {
-            override fun window(sinceMs: Long): PerfRowsWindow = error("must not materialize the full window")
-            override fun <T> projected(sinceMs: Long, read: PerfProjectionRead<T>): T = read(
-                object : PerfRowsProjection {
-                    override val window: PerfRowsWindow = held
-                    override fun complete(rows: List<PerfRow>): List<PerfRow> {
-                        assertSame(row, rows.single(), "completion requires the source's original row reference")
-                        return rows.map { it.copy(turn = "synthetic-completed") }
-                    }
-                },
-            )
+        val proved = row.copy(ts = 101, account = "proved@example.invalid")
+        val held = PerfRowsWindow(listOf(row, proved), 50, 7, "synthetic unread generation", 2, 101)
+        val source = PerfRowsSource { since ->
+            assertEquals(42L, since)
+            held
         }
-        NativeAccountRows(source).projected(0) { projection ->
-            val normalized = projection.window
-            assertEquals(held.copy(rows = normalized.rows), normalized)
-            assertNull(normalized.rows.single().account)
-            val completed = projection.complete(normalized.rows).single()
-            assertNull(completed.account)
-            assertEquals("synthetic-completed", completed.turn)
-        }
+        val normalized = NativeAccountRows(source).window(42)
+        assertEquals(held.copy(rows = listOf(row.copy(account = null), proved)), normalized)
+        assertNull(normalized.rows.first().account)
+        assertSame(proved, normalized.rows.last(), "proved attribution remains borrowed, not rebuilt")
     }
 
     @Test

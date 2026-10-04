@@ -160,8 +160,40 @@ class CodexCodeModeSourceTearTest : CodeModeStatementStreamSupport() {
             assertFalse(sink.callback.isCompleted, "no statement after the round's terminal may execute")
             assertEquals(1, runtime.starts)
             assertEquals(1, post.posts, "the uncompleted source is never regenerated")
+            val branch = ending?.let { "failure cause=${it.cause} permanent=${it.permanent}" } ?: "incomplete"
+            val line = logLines.single { "upstream exec source did not complete" in it }
+            assertTrue(line.startsWith("[code-mode] upstream exec source did not complete: $branch"), line)
+            assertFalse(
+                "synthetic" in line || "content filter" in line || "tools." in line,
+                "the line names the ending, never upstream text or source: $line",
+            )
         } finally {
             manager.onHeadStop()
+        }
+    }
+
+    /** Control: with no step holding the cell, the uncompleted source is reclaimed and the next result step continues on
+     *  the client's history, as it did before the waiting step's fix, rather than reporting the round's ending. */
+    @Test
+    @Timeout(20)
+    fun `a parked script whose round ends incomplete continues on the client's history at its next step`() {
+        runBlocking<Unit> {
+            val runtime = ClosingRuntime("closed")
+            val manager = bridge(runtime)
+            val sink = StepSink()
+            val post = GatedPost(sink)
+            try {
+                manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, post)
+                val first = sink.callback.await()
+                post.terminalProblem = "incomplete"
+                endRound(post)
+                withTimeout(5_000) {
+                    while (JsonScalars.str(stateFiles.records().single()["error"]) == null) kotlinx.coroutines.yield()
+                }
+                assertLostRecovery(manager, first, post, runtime)
+            } finally {
+                manager.onHeadStop()
+            }
         }
     }
 

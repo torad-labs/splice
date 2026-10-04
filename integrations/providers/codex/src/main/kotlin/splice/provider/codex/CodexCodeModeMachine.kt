@@ -174,7 +174,11 @@ internal class CodexCodeModeMachine(
             started.remove(record.id)
             val message = "upstream code-mode source interrupted; ${lostMessage(record)}"
             registry.lose(record, message)
-            TurnOutcome.Failure(message, cause = FailureCause.UPSTREAM_CONN_RESET, phase = FailurePhase.MID_OUTPUT)
+            error.verdict ?: TurnOutcome.Failure(
+                message,
+                cause = FailureCause.UPSTREAM_CONN_RESET,
+                phase = FailurePhase.MID_OUTPUT,
+            )
         }
         is CodeModeWorkerLostException -> {
             started.remove(record.id)

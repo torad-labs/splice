@@ -32,17 +32,20 @@ internal class CodeModeStreamingCell(
         } catch (error: CodeModePersistenceException) {
             throw error
         } catch (error: IOException) {
-            if (round.sourceInterrupted) throw CodeModeSourceInterruptedException()
+            checkSource()
             throw error
         } catch (error: IllegalStateException) {
-            if (round.sourceInterrupted) throw CodeModeSourceInterruptedException()
+            checkSource()
             throw error
         }
     }
 
-    /** Also checked under the registry key immediately before calls are saved or issued. */
+    /** Also checked under the registry key immediately before calls are saved or issued. A step holding this cell when
+     *  the round lost an uncertified source ends as a torn source's step does. */
     fun checkSource() {
-        if (round.sourceInterrupted) throw CodeModeSourceInterruptedException()
+        if (round.sourceInterrupted || round.sourceUncertified) {
+            throw CodeModeSourceInterruptedException(round.permanentEnding)
+        }
     }
 
     override fun close() {

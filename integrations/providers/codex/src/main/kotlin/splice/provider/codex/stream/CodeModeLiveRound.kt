@@ -67,6 +67,16 @@ internal class CodeModeLiveRound(
     @Volatile var localFailure: TurnOutcome.Failure? = null
         private set
 
+    /** The round's terminal did not certify its admitted source, so the capture lost the record and closed its cell.
+     *  Only the step that was advancing that cell reads it; a later step continues on the client's history. */
+    @Volatile var sourceUncertified = false
+        private set
+
+    /** The permanent upstream failure that ended this round before its exec source completed. A client step whose cell
+     *  that loss closed ends with it as it is, since no retry can change it. */
+    @Volatile var permanentEnding: TurnOutcome.Failure? = null
+        private set
+
     /** The row of the client step that posted this round, owed its usage when the step returned first. Both
      *  guarded by [lifecycle], with [readerEnded]. */
     private var postingRow: PostingTurnRow? = null
@@ -129,6 +139,10 @@ internal class CodeModeLiveRound(
         if (headStopped) throw CancellationException(HEAD_STOPPED)
         localFailure?.let { return@synchronized it }
         sourceInterrupted = record != null && (outcome as? TurnOutcome.Failure)?.cause in SOURCE_TEAR_CAUSES
+        // The capture loses a source its terminal does not certify, which closes the cell a client step may still be
+        // advancing. Set first, so that step ends as a torn source's step does, or with a permanent failure as it is.
+        sourceUncertified = !sourceInterrupted && capture.uncertified(outcome) != null
+        permanentEnding = (outcome as? TurnOutcome.Failure)?.takeIf { sourceUncertified && it.permanent }
         Cancellables.runCatchingBestEffort { capture.finish(outcome) }
             .getOrElse { return@synchronized reject(it) }
         if (sourceInterrupted && outcome is TurnOutcome.Failure) {

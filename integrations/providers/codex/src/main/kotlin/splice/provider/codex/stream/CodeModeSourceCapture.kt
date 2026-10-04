@@ -81,15 +81,34 @@ internal class CodeModeSourceCapture(
         }
     }
 
+    /** Why the terminal [outcome] does not certify the admitted source, with no source text and no ids, or null when
+     *  no source was admitted or the terminal is a complete success carrying exactly one exec call. */
+    fun uncertified(outcome: TurnOutcome): String? = if (record == null) {
+        null
+    } else {
+        when (outcome) {
+            is TurnOutcome.Failure ->
+                "failure cause=${outcome.cause} permanent=${outcome.permanent} provider=${outcome.providerReported}"
+            is TurnOutcome.ClientAbandoned -> "client abandoned"
+            is TurnOutcome.Success -> when {
+                outcome.incomplete -> "incomplete ${outcome.outputShape}"
+                outcome.customCalls.size != 1 -> "calls=${outcome.customCalls.size} ${outcome.outputShape}"
+                else -> null
+            }
+        }
+    }
+
     fun finish(outcome: TurnOutcome) {
         val current = record ?: return
-        val success = outcome as? TurnOutcome.Success
-        val call = success?.customCalls?.singleOrNull()
-        if (call == null || success.incomplete) {
-            source.fail("upstream exec source did not complete; source was not rerun")
-            registry.lose(current, "upstream exec source did not complete; source was not rerun")
+        val why = uncertified(outcome)
+        val success = (outcome as? TurnOutcome.Success)?.takeIf { why == null }
+        if (success == null) {
+            config.log("[code-mode] upstream exec source did not complete: $why")
+            source.fail(SOURCE_INCOMPLETE)
+            registry.lose(current, SOURCE_INCOMPLETE)
             return
         }
+        val call = success.customCalls.single()
         val started = checkNotNull(startedCall)
         checkIdentity(call, started)
         completedCall?.let { captured ->
@@ -102,3 +121,5 @@ internal class CodeModeSourceCapture(
         source.complete(call.input)
     }
 }
+
+private const val SOURCE_INCOMPLETE = "upstream exec source did not complete; source was not rerun"

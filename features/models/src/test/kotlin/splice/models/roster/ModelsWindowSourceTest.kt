@@ -7,6 +7,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import splice.core.model.DiscoveredModel
@@ -57,6 +58,29 @@ class ModelsWindowSourceTest {
         val head = HeadConfig("xai", 4104, "claude-grok--", "grok-4.6", contextWindow = 300_000)
         val discovered = listOf(DiscoveredModel("grok-4.7", contextWindow = 128_000))
         assertEquals("model", sources(head, discovered)["grok-4.7"])
+    }
+
+    @Test
+    fun `forwarded model rows report the capped native window and its provenance`() {
+        val native = provider.copy(
+            auth = AuthConfig("client"),
+            models = listOf(
+                ModelEntry("native-small", contextWindow = 200_000),
+                ModelEntry("native-wide", contextWindow = 1_000_000),
+            ),
+        )
+        val head = HeadConfig("native", 4104, "native--", "native-wide", contextWindow = 1_000_000)
+        val catalog = native.catalogFor(head)
+        val payload = ModelsRoute(listOf(RosterHead("native", catalog)))
+            .modelsJson(mapOf("native" to DeclaredHead("native", null)))
+        val rows = Json.parseToJsonElement(payload).jsonObject.getValue("heads").jsonArray.single().jsonObject
+            .getValue("models").jsonArray.associate { row ->
+                row.jsonObject.getValue("id").jsonPrimitive.content to row.jsonObject
+            }
+        assertEquals(200_000L, rows.getValue("native-small").getValue("context_window").jsonPrimitive.long)
+        assertEquals("model", rows.getValue("native-small").getValue("context_window_source").jsonPrimitive.content)
+        assertEquals(1_000_000L, rows.getValue("native-wide").getValue("context_window").jsonPrimitive.long)
+        assertEquals("head", rows.getValue("native-wide").getValue("context_window_source").jsonPrimitive.content)
     }
 
     @Test

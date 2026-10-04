@@ -343,11 +343,12 @@ public data class ProviderConfig(
         return if (served || declaredOnly) roster else roster + pinnedOnly(pinned)
     }
 
-    /** A head-wide window replaces a declared row's window, which is the operator's number for this
-     *  head. It never raises a model this provider does not declare past the ceiling the endpoint
-     *  published for it: that ceiling is the backend's fact, and a window above it compacts past what
-     *  the backend accepts (a 1M head window over a 262k model). An unpublished window takes the head's. */
+    /** A forwarded client login keeps each native row's declared window as its ceiling: a head-wide
+     *  window may narrow it, never widen it. Translated providers still replace declared targets with
+     *  the head's window. An undeclared model stays below its published backend ceiling; an unpublished
+     *  window takes the head's. The client uses each resulting row window as its usage-scaling divisor. */
     private fun headWindow(entry: ModelEntry, window: Long, discovered: List<DiscoveredModel>): Long {
+        if (clientPicksModels && entry.contextWindow > 0) return minOf(window, entry.contextWindow)
         if (models.any { it.id == entry.id }) return window
         val model = discovered.firstOrNull { it.id == entry.id }
         val published = model?.maxContextWindow?.takeIf { it > 0 } ?: model?.contextWindow?.takeIf { it > 0 }

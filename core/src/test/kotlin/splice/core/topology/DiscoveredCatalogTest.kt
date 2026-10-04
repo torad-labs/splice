@@ -159,6 +159,29 @@ class DiscoveredCatalogTest {
     }
 
     @Test
+    fun `a forwarded login keeps native model windows below the head window and scales the client at each row`() {
+        val native = provider.copy(
+            auth = AuthConfig("client"),
+            models = listOf(
+                ModelEntry("claude-synthetic-small", contextWindow = 200_000),
+                ModelEntry("claude-synthetic-equal", contextWindow = 1_000_000),
+                ModelEntry("claude-synthetic-wide", contextWindow = 2_000_000),
+            ),
+        )
+        val forwarded = head.copy(pinnedModel = "claude-synthetic-wide", contextWindow = 1_000_000)
+        val catalog = native.catalogFor(forwarded)
+        assertEquals(200_000L, catalog.contextWindowFor("claude-synthetic-small"))
+        assertEquals(5.0, catalog.usageScale("claude-synthetic-small", sessionWindow = 1_000_000))
+        assertEquals(1_000_000L, catalog.contextWindowFor("claude-synthetic-equal"))
+        assertEquals(1_000_000L, catalog.contextWindowFor("claude-synthetic-wide"))
+        assertEquals(1.0, catalog.usageScale("claude-synthetic-wide", sessionWindow = 1_000_000))
+        val translated = native.copy(auth = provider.auth).catalogFor(forwarded)
+        assertEquals(1_000_000L, translated.contextWindowFor("claude-synthetic-small"))
+        val narrowed = native.catalogFor(forwarded, contextWindowOverride = 100_000)
+        assertEquals(setOf(100_000L), narrowed.models.map { it.contextWindow }.toSet())
+    }
+
+    @Test
     fun `a provider with no rows serves what its endpoint lists, and its pinned model when nothing answered`() {
         val bare = provider.copy(models = emptyList())
         val listed = listOf(DiscoveredModel("grok-4.7"), DiscoveredModel("grok-4.6"))

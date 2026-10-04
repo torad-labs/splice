@@ -52,6 +52,10 @@ import splice.upstream.Provider
 private const val STOP_DRAIN_NS = 45_000_000_000L // 45s: above a 16s deepseek turn, inside the ladder
 private const val STOP_DRAIN_POLL_MS = 50L
 
+// why 250ms: the real held-client cut sealed in 34ms (HeadServerStopDrainTest); allow five 50ms polls.
+// Empty heads skip this wait entirely, and a released slot ends it early.
+private const val STOP_SEAL_NS = 250_000_000L
+
 public class HeadServer(
     private val provider: Provider,
     private val listenPort: Int,
@@ -154,6 +158,7 @@ public class HeadServer(
         // live on the long-lived TurnDriver, so reset them here (review 2026-07-19).
         // restart() is stop-then-start, so this reset alone suffices — a bare stop keeps counters intact.
         driver.resetHealth()
+        driver.headStarted()
         // NF-01: restart clears whichever cooldown authority the turn path actually uses. Pooled
         // turns bypass the client-owned legacy cooldown, so reset every account instead.
         deps.quotaBundle.accountPool?.reset() ?: deps.upstream.clearRateLimitCooldown()
@@ -184,7 +189,12 @@ public class HeadServer(
         // the drive, and the drain budget above belongs to that feature — a detached compaction that
         // finishes inside the budget releases its slot and keeps its recording for the retry. End
         // only what is STILL driving once the budget is spent.
+        driver.stopActive()
         driver.stopDetached()
+        val sealDeadlineNs = System.nanoTime() + STOP_SEAL_NS
+        while (gate.snapshot().inflight > 0 && System.nanoTime() < sealDeadlineNs) {
+            deps.seams.waiter.wait(STOP_DRAIN_POLL_MS)
+        }
         engine.stop()
         provider.onHeadStop()
         deps.stores.usageStore.flushNow()

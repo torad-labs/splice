@@ -24,25 +24,39 @@ import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.perf.OutcomeTag
+import splice.core.perf.OutcomeTags
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
+import splice.core.util.AsyncFileIo
 import splice.upstream.ProviderTuning
+import splice.upstream.Waiter
+import splice.upstream.codemode.ProcessWaiter
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
+import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.seconds
 
 // why 6.5s: it must OUTLIVE the old 5s STOP_DRAIN_NS so reverting the ladder to 5s makes the
@@ -65,10 +79,18 @@ class HeadServerStopDrainTest {
     /** A real HeadServer over the mock upstream, on an OS-assigned port it binds itself (0) and
      *  reports after start. maxRetries = 1 so the turn reaches the hold scenario and STAYS there
      *  rather than backing off through it. */
-    private class Rig(tmp: Path) {
+    private class Rig(
+        tmp: Path,
+        watchdog: WatchdogBudget = WatchdogBudget(30.seconds, 30.seconds, 60.seconds),
+        waiter: Waiter = ProcessWaiter(),
+    ) {
         val mock = MockChatGptUpstream()
+        val cutAt = AtomicLong(0L)
         val gate = InflightGate(maxInflight = { 4 }, maxQueued = { 4 })
-        val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
+        val client = HttpClient(CIO) {
+            engine { requestTimeout = 90_000 }
+            defaultRequest { bearerAuth("test-inference-token") }
+        }
         val port: Int get() = head.port
         val head = HeadServer(
             provider = TestResponsesProvider(
@@ -83,7 +105,7 @@ class HeadServerStopDrainTest {
                     pinnedModel = "gpt-5.6-sol",
                     auth = DrainFakeAuth(),
                     baseUrl = mock.baseUrl,
-                    watchdog = WatchdogBudget(30.seconds, 30.seconds, 60.seconds),
+                    watchdog = watchdog,
                     loginCommand = "claudex login",
                 ),
                 showReasoning = ReasoningDisplay.TEXT,
@@ -94,9 +116,12 @@ class HeadServerStopDrainTest {
             listenPort = 0,
             deps = headDeps(
                 tmp = tmp,
-                upstream = UpstreamClient(totalTimeoutMs = 60_000, maxRetries = 1),
+                upstream = UpstreamClient(totalTimeoutMs = 900_000, maxRetries = 1),
                 gate = gate,
-                log = {},
+                seams = HeadDeps.HeadSeams(waiter = waiter),
+                log = { line ->
+                    if (line.contains("draining timed out")) cutAt.compareAndSet(0L, System.nanoTime())
+                },
             ),
         )
 
@@ -114,15 +139,15 @@ class HeadServerStopDrainTest {
 
         /** The held turn, read to its END: a torn socket throws here, which is the failure this
          *  test exists to catch, so the read itself is part of the assertion. */
-        suspend fun heldTurn(): String =
+        suspend fun heldTurn(stream: Boolean = true): HttpResponse =
             client.post("http://127.0.0.1:$port/v1/messages") {
                 header("Content-Type", "application/json")
                 setBody(
-                    """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":64,
+                    """{"model":"claude-codex--gpt-5.6-sol","stream":$stream,"max_tokens":64,
                         "system":"You are a test. SCENARIO:hold",
                         "messages":[{"role":"user","content":"go"}]}""",
                 )
-            }.bodyAsText()
+            }
 
         suspend fun awaitInflight(): Boolean {
             repeat(50) {
@@ -133,6 +158,73 @@ class HeadServerStopDrainTest {
         }
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    fun `a turn beyond the drain receives a restart overload before its socket closes`(
+        stream: Boolean,
+        @TempDir tmp: Path,
+    ) = runBlocking {
+        val rig = Rig(tmp, WatchdogBudget(600.seconds, 600.seconds, 900.seconds))
+        rig.start()
+        try {
+            val turn = async(Dispatchers.IO) {
+                val response = rig.heldTurn(stream)
+                response.status.value to response.bodyAsText()
+            }
+            assertTrue(rig.awaitInflight(), "precondition: a real client still holds this request")
+            val began = System.nanoTime()
+            val stopping = async(Dispatchers.IO) { rig.head.stop() }
+            val (status, body) = turn.await()
+            val receivedAt = System.nanoTime()
+            stopping.await()
+            val stoppedAt = System.nanoTime()
+            assertTrue(rig.cutAt.get() > began, "the measured cut must follow the drain")
+            println(
+                "stream=$stream restart_cut_terminal_ns=${receivedAt - rig.cutAt.get()} stop_ns=${stoppedAt - began}",
+            )
+            assertEquals(if (stream) 200 else 529, status)
+            assertTrue(body.contains("overloaded_error"), "a connected client must receive an automatic-retry error")
+            assertTrue(body.contains("splice restarted"), "the terminal must name the owner of the cut")
+            assertTrue(!body.contains("operator stopped"), "a restart never impersonates a user stop")
+            assertTrue(AsyncFileIo.drain())
+            val outcome = Files.readAllLines(tmp.resolve("perf.jsonl"))
+                .map { Json.parseToJsonElement(it).jsonObject }
+                .single()["outcome"]?.jsonPrimitive?.content
+            assertEquals(OutcomeTag.RESTARTED.wire, outcome)
+            assertTrue(OutcomeTags.isFailed(outcome.orEmpty()))
+            assertTrue(!OutcomeTags.isStopped(outcome.orEmpty()))
+            rig.mock.releaseHold()
+            rig.head.start()
+            awaitListening(rig.port)
+            val retry = rig.heldTurn(stream)
+            val retryBody = retry.bodyAsText()
+            assertEquals(
+                200,
+                retry.status.value,
+                "the same request is accepted after restart without an operator stop mark",
+            )
+            assertTrue(!retryBody.contains("overloaded_error"), "the restarted driver must accept new turn jobs")
+            assertTrue(retryBody.contains(if (stream) "message_stop" else "stop_reason"))
+        } finally {
+            rig.mock.releaseHold()
+            rig.close()
+        }
+    }
+
+    @Test
+    fun `an empty shutdown never waits for a cancellation seal`(@TempDir tmp: Path) = runBlocking {
+        val rig = Rig(tmp, waiter = Waiter { error("an empty head must not wait") })
+        rig.start()
+        try {
+            val began = System.nanoTime()
+            rig.head.stop()
+            println("empty_stop_ns=${System.nanoTime() - began}")
+            assertEquals(0, rig.gate.snapshot().inflight)
+        } finally {
+            rig.close()
+        }
+    }
+
     @Test
     fun `a stop during a held turn drains it to its terminal instead of tearing the socket`(
         @TempDir tmp: Path,
@@ -140,7 +232,7 @@ class HeadServerStopDrainTest {
         val rig = Rig(tmp)
         rig.start()
         try {
-            val turn = async(Dispatchers.IO) { rig.heldTurn() }
+            val turn = async(Dispatchers.IO) { rig.heldTurn().bodyAsText() }
             assertTrue(rig.awaitInflight(), "precondition: the turn must be holding a slot")
 
             // THE STOP, issued while the turn is mid-stream, on its own dispatcher so the drain and

@@ -137,6 +137,7 @@ export const OUTCOME_WORD: Readonly<Record<string, string>> = {
   empty_compact: 'Empty answer',
   empty_message: 'Empty answer',
   'error:cancelled': 'Cancelled',
+  'error:restarted': 'Restarted by splice',
   'error:unexpected': 'Unexpected failure',
   'error:rate-limited': 'Rate limited',
   'error:plan-limit': 'Out of quota',

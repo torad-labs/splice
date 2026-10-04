@@ -181,6 +181,12 @@ internal class TurnDriver(
         deps.quotaBundle.accountPool?.reset()
     }
 
+    /** Cancel active turns with a head-owned cause while their client sockets are still open. */
+    internal fun stopActive() = oneDrive.stopActive()
+
+    /** A restarted head reuses this driver. */
+    internal fun headStarted() = oneDrive.headStarted()
+
     /** Head stop: end the detached compactions this head still drives; the scope stays usable for
      *  the restart (TurnStreamer.stopDetached). */
     internal fun stopDetached() = streamer.stopDetached()

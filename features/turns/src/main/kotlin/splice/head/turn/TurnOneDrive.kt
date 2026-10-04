@@ -3,6 +3,7 @@
 // billed for the other's subsystems. Same-package.
 package splice.head.turn
 
+import kotlinx.coroutines.CompletableJob
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
@@ -25,6 +26,22 @@ internal class TurnOneDrive(
      *  waiting on a tick nobody sends holds the turn's admission slot after message_stop. */
     private val paceTicker: Ticker = ProcessTicker(),
 ) {
+    private val lifecycle = Any()
+    private var stopping = false
+    private val activeJobs = mutableSetOf<Job>()
+
+    /** Stop unfinished child turns before the engine closes their client sockets. */
+    fun stopActive() {
+        val jobs = synchronized(lifecycle) {
+            stopping = true
+            activeJobs.toList()
+        }
+        jobs.forEach { it.cancel(HeadRestart()) }
+    }
+
+    /** The same driver is used after a head restart; new turns may run again. */
+    fun headStarted() { synchronized(lifecycle) { stopping = false } }
+
     // The turn coroutine is a CHILD job: the watchdog cancels just the turn subtree (then the
     // blocking Writer still lets the honest error frame out), while a client disconnect cancels
     // the PARENT call and propagates DOWN into the turn — a parentless Job() severed that, so
@@ -34,7 +51,7 @@ internal class TurnOneDrive(
         val parent = currentCoroutineContext()[Job]
         // CompletableJob completed in finally: a plain child Job never completes on its own and
         // would park the PARENT call forever after the turn returns.
-        val turnJob = Job(parent)
+        val turnJob = newTurnJob(parent)
         // V4-319: the operator's stop cancels exactly this job, the one the watchdog cancels (LiveTurns).
         deps.liveTurns.driving(drive.slot, turnJob)
         // Per TURN: the line remembers whether it has spoken, so the first one explains itself, and
@@ -96,8 +113,19 @@ internal class TurnOneDrive(
                 }
             }
         } finally {
+            synchronized(lifecycle) { activeJobs.remove(turnJob) }
             turnJob.complete()
         }
+    }
+
+    private fun newTurnJob(parent: Job?): CompletableJob {
+        val job = Job(parent)
+        val cut = synchronized(lifecycle) {
+            activeJobs += job
+            stopping
+        }
+        if (cut) job.cancel(HeadRestart())
+        return job
     }
 
     /** V4-456: a provider batch (a whole thinking summary in one read) reaches the client spread over the

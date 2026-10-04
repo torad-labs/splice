@@ -23,6 +23,9 @@ import splice.head.pipeline.FailurePresenter
 import splice.upstream.Provider
 import java.io.IOException
 
+/** A head-owned cut, issued before the server closes client sockets so the seal can still write a retry. */
+internal class HeadRestart : CancellationException("splice restarted while this request was running")
+
 internal class CancellationSeal(
     private val provider: Provider,
     private val log: LogSink,
@@ -31,6 +34,10 @@ internal class CancellationSeal(
     private val usageStamp: TurnUsageStamp,
 ) {
     private val presenter = FailurePresenter()
+
+    /** Coroutine recovery may wrap the explicit head-owned cancellation. */
+    fun isRestart(cause: Throwable): Boolean =
+        generateSequence(cause) { it.cause }.take(CAUSE_DEPTH).any { it is HeadRestart }
 
     private fun retainCleanup(original: CancellationException, cleanup: Throwable) {
         if (cleanup !== original) original.addSuppressed(cleanup)
@@ -59,18 +66,17 @@ internal class CancellationSeal(
         }
     }
 
-    /** [seal] gates the cancellation seal to the STREAM path only: collect passes seal=false —
-     *  it never commits a 200 before its terminal respondText, so a cancelled collect has no
-     *  half-open response to rescue; sealing there only wrote an error body nobody reads while
-     *  polluting localOriginErrors (review 2026-07-22 round 3). [cause] is the cancellation being
-     *  sealed, which says whether it was the operator's stop (V4-319, [endingOf]). */
+    /** [seal] selects the stream's terminal write. Collect has no half-open 200 to rescue, so generic
+     *  cancellation only records its ending. A known head restart cancels the child rather than the
+     *  connected parent call: collect can buffer the retry error and still send its 529 response.
+     *  [cause] preserves the owner of the cut, including the operator's permanent stop ([endingOf]). */
     suspend fun seal(drive: TurnDrive, seal: Boolean, cause: Throwable) {
         // Flat when (not nested if) so the still-connected try/catch stays shallow:
         // catch → if(seal) → if(clientGone) → try would trip NestedBlockDepth's depth-4 ceiling.
         when {
             !seal -> recordUnstreamed(drive, cause)
             drive.emitter.hasEnded -> Unit
-            drive.channel.clientGone.get() -> {
+            drive.channel.clientGone.get() && !isRestart(cause) -> {
                 drive.emitter.abandon()
                 telemetry.recordPerf(drive, OutcomeTag.CLIENT_ABORT.wire)
             }
@@ -93,10 +99,13 @@ internal class CancellationSeal(
     }
 
     private suspend fun recordUnstreamed(drive: TurnDrive, cause: Throwable) {
-        if (drive.channel.clientGone.get()) {
+        if (drive.channel.clientGone.get() && !isRestart(cause)) {
             telemetry.recordPerf(drive, OutcomeTag.CLIENT_ABORT.wire)
         } else {
             val ending = endingOf(drive, cause)
+            if (isRestart(cause) && !drive.channel.clientGone.get()) {
+                withContext(NonCancellable) { drive.emitter.emitError(ending.type, ending.message) }
+            }
             drive.trace?.failureSentence(ending.message)
             telemetry.recordPerf(drive, ending.outcome)
         }
@@ -125,6 +134,14 @@ internal class CancellationSeal(
                 detail = ": the operator stopped the turn",
                 outcome = OutcomeTags.error("stopped"),
                 local = false,
+            )
+            isRestart(cause) -> Ending(
+                type = ErrorType.OVERLOADED,
+                message = HEAD_RESTART_SENTENCE,
+                kind = "restarted",
+                detail = ": the head ended this request before closing its engine",
+                outcome = OutcomeTag.RESTARTED.wire,
+                local = true,
             )
             // Pre-stream and independent-source cancellation use the stream's own cap sentence.
             fired is splice.upstream.retry.WatchdogFired.TotalCap ->
@@ -157,7 +174,12 @@ internal class CancellationSeal(
             // NOT an error:cancelled — no health bump (review 2026-07-22 round 3).
             log("[${provider.key}] turn cancelled + error frame unwritable (${io.message}); client gone\n")
             drive.emitter.abandon()
-            telemetry.recordPerf(drive, OutcomeTag.CLIENT_ABORT.wire)
+            if (ending.outcome == OutcomeTag.RESTARTED.wire) {
+                drive.trace?.failureSentence(ending.message)
+                telemetry.recordPerf(drive, ending.outcome)
+            } else {
+                telemetry.recordPerf(drive, OutcomeTag.CLIENT_ABORT.wire)
+            }
         }
     }
 }

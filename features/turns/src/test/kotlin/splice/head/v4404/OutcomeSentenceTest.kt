@@ -330,6 +330,43 @@ class OutcomeSentenceTest {
         assertEquals(if (stream) ErrorType.OVERLOADED else null, wireType)
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    fun `shutdown cut remains a local failure even after its socket closes`(
+        stream: Boolean,
+        @TempDir tmp: Path,
+    ) = runBlocking {
+        val rig = Rig("restart-$stream", tmp)
+        val deps = headDeps(tmp.resolve("stores"))
+        val seal = CancellationSeal(
+            provider(),
+            rig.log,
+            rig.telemetry,
+            HeadHealthCounters(),
+            TurnUsageStamp(deps.stores.usageStore, rig.log, rig.telemetry),
+        )
+        var wireType: ErrorType? = null
+        val terminal = object : TurnTerminal by RecordingTerminal() {
+            override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean) {
+                wireType = type
+                throw java.io.IOException("synthetic server socket closed")
+            }
+        }
+        val drive = rig.drive().copy(emitter = terminal)
+        drive.channel.clientGone.set(true)
+        try {
+            seal.seal(drive, stream, splice.head.turn.HeadRestart())
+        } finally {
+            drive.slot.release()
+        }
+        val record = rig.turnRecord()
+        assertEquals(OutcomeTag.RESTARTED.wire, record.getValue("outcome").jsonPrimitive.content)
+        assertTrue(sentenceOf(record)?.contains("splice restarted") == true)
+        assertTrue(OutcomeTags.isFailed(OutcomeTag.RESTARTED.wire))
+        assertTrue(!OutcomeTags.isStopped(OutcomeTag.RESTARTED.wire))
+        assertEquals(if (stream) ErrorType.OVERLOADED else null, wireType)
+    }
+
     @Test
     fun `a local refusal closes its trace with its sentence`(@TempDir tmp: Path) = runBlocking {
         val refusals = listOf(OutcomeTag.RATE_LIMITED, OutcomeTag.ALL_ACCOUNTS_EXHAUSTED, OutcomeTag.BUDGET_BLOCKED)

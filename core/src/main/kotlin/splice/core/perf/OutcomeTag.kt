@@ -30,6 +30,9 @@ public enum class OutcomeTag(public val wire: String) {
     EMPTY_COMPACT("empty_compact"),
     EMPTY_MESSAGE("empty_message"),
     CANCELLED("error:cancelled"),
+
+    /** The head interrupted an unfinished turn during its own shutdown, not a client hang-up. */
+    RESTARTED("error:restarted"),
     UNEXPECTED("error:unexpected"),
     RATE_LIMITED("error:rate-limited"),
 

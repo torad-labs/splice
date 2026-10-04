@@ -44,6 +44,10 @@ describe('outcomes', () => {
     expect(outcomeOf('failure:overloaded')).toMatchObject({ word: 'Failed', failed: true });
     expect(outcomeOf('?')).toMatchObject({ word: 'Unknown', failed: false });
   });
+  test('a restart cut belongs to Failed and never claims the client stopped it', () => {
+    expect(outcomeOf('error:restarted')).toMatchObject({ word: 'Restarted by splice', tone: 'stuck', failed: true });
+    expect(failedCount(summary({ outcomes: { 'error:restarted': 1, client_abort: 1, 'error:stopped': 1 } }))).toBe(1);
+  });
   test('the unattributed tag is not a failure in a head count', () => {
     expect(failedCount(summary())).toBe(1);
   });

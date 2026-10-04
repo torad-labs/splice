@@ -187,9 +187,10 @@ val DISPOSITIONS: Map<String, Disposition> = mapOf(
     // V4-254 (4e7601053): yes to the live check keeps the saved head for every subscription and
     // client-auth profile, one case per profile (@ValueSource codex, grok, kimi, muse, claude).
     "AddLiveCommandTest" to Disposition("1 @ParameterizedTest expands to 5 cases (1 @Test + 5 = 6)", 6),
-    // 13d44f0b2: a progress timeout records one sentence for a buffered and a streamed turn
-    // (@ValueSource stream false, true).
-    "OutcomeSentenceTest" to Disposition("1 @ParameterizedTest expands to 2 cases (6 @Test + 2 = 8)", 8),
+    // Progress timeout and head-owned shutdown keep their sentences for buffered and streamed turns.
+    "OutcomeSentenceTest" to Disposition("2 @ParameterizedTest methods expand to 4 cases (6 @Test + 4 = 10)", 10),
+    // V4-444: real connected stream and collect clients receive the restart retry before teardown.
+    "HeadServerStopDrainTest" to Disposition("1 @ParameterizedTest expands to 2 cases (2 @Test + 2 = 4)", 4),
     // 9422e4392: one statement batch forces before client-visible state whether or not the post
     // suspends between chunks (@ValueSource suspendBetweenChunks false, true).
     "CodeModeStatementForceCostTest" to

@@ -82,6 +82,30 @@ test('stops stay out of failure counts and have a separate reloadable view with 
   await assertHealthy(page, faults);
 });
 
+test('a restart cut keeps its owner in Failed and never falls back to an operator stop', async ({ page }) => {
+  const at = Date.now();
+  const row = {
+    ts: at, model: STACK.soloModel, outcome: 'error:restarted', compact: false, total: 20,
+    session: null, account: null, cache_cold: null, turn: null, session_id: null, response_message_id: null,
+  };
+  await page.route('**/api/perf/summary?*', route => route.fulfill({ json: { window: '1h', heads: [{
+    key: STACK.soloHead, label: STACK.soloHead, count: 1, empty: false, outcomes: { 'error:restarted': 1 },
+  }] } }));
+  await page.route(url => url.pathname === '/api/perf/turns', route => {
+    const key = new URL(route.request().url()).searchParams.get('head') ?? '';
+    return route.fulfill({ json: { since: at - 1000, n: 200, heads: [{
+      key, label: key, count: key === STACK.soloHead ? 1 : 0, rows: key === STACK.soloHead ? [row] : [],
+    }] } });
+  });
+  const faults = await open(page, 'requests?status=failed');
+  await expect(page.locator('.turn.failed')).toHaveCount(1);
+  await expect(page.locator('.turn .state')).toHaveText('Restarted by splice');
+  await page.locator('.turn h3 a').click();
+  await expect(page.locator('.failure-sentence')).toHaveText('This request ended: Restarted by splice. No detailed failure reason was kept.');
+  await expect(page.getByRole('main')).not.toContainText('No detailed stop reason was kept.');
+  await assertHealthy(page, faults);
+});
+
 test('the headline reads the pooled request timing while command bars keep their own percentiles', async ({ page }) => {
   const commands = [
     { key: 'busy', count: 100, first: 100 },

@@ -27,6 +27,9 @@ private const val MAX_WINDOW_WORDS = 40
 /** What a plan-limit sentence tells the reader to do: a re-send before the reset meets the same refusal. */
 private const val WAIT_FOR_RESET = "retrying sooner cannot succeed, so wait for the reset, then retry"
 
+/** The fixed shutdown sentence is shared by the retry terminal and the trace fallback. */
+internal const val HEAD_RESTART_SENTENCE = "splice restarted while this request was running; retry the request"
+
 internal object OutcomeSentences {
 
     /** The fixed tags. A null is a tag that is not a failure, and each says why beside it. */
@@ -42,6 +45,7 @@ internal object OutcomeSentences {
             "retry the compaction",
         OutcomeTag.CANCELLED to
             "the turn was cancelled before it finished; retry the request",
+        OutcomeTag.RESTARTED to HEAD_RESTART_SENTENCE,
         OutcomeTag.UNEXPECTED to
             "splice hit an internal error on this turn; retry the request, and if it repeats read the daemon " +
             "log around this turn's time",

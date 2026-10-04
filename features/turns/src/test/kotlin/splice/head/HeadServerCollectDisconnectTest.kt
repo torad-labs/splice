@@ -26,6 +26,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
@@ -111,7 +112,7 @@ class HeadServerCollectDisconnectTest {
         val request = "POST /v1/messages HTTP/1.1\r\n" +
             "Host: 127.0.0.1:$port\r\n" +
             "Authorization: Bearer test-inference-token\r\n" +
-            "x-claude-code-session-id: synthetic-collect-$stream\r\n" +
+            "x-claude-code-session-id: synthetic-collect-$stream-$scenario\r\n" +
             "Content-Type: application/json\r\n" +
             "Content-Length: ${body.toByteArray().size}\r\n" +
             "Connection: close\r\n\r\n" + body
@@ -153,6 +154,11 @@ class HeadServerCollectDisconnectTest {
         mock.releaseHold()
         // Whatever the outcome, leave the gate empty for the next arm.
         assertTrue(waitFor(30_000) { gate.snapshot().inflight == 0 }, "the released turn must drain")
+        assertTrue(AsyncFileIo.drain())
+        val row = Files.readAllLines(tmp.resolve("perf.jsonl"))
+            .map { Json.parseToJsonElement(it).jsonObject }
+            .single { it["session_id"]?.jsonPrimitive?.content == "synthetic-collect-$stream-hold" }
+        assertEquals(OutcomeTag.CLIENT_ABORT.wire, row["outcome"]?.jsonPrimitive?.content)
         return freed
     }
 
@@ -200,7 +206,7 @@ class HeadServerCollectDisconnectTest {
         assertTrue(AsyncFileIo.drain())
         val row = Files.readAllLines(tmp.resolve("perf.jsonl"))
             .map { Json.parseToJsonElement(it).jsonObject }
-            .single { it["session_id"]?.jsonPrimitive?.content == "synthetic-collect-false" }
+            .single { it["session_id"]?.jsonPrimitive?.content == "synthetic-collect-false-hold" }
         assertTrue(PerfKeys.ARRIVAL_TO_FIRST_CLIENT_BYTE_MS !in row, "an abandoned collect sent no reply")
     }
 }

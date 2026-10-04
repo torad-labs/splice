@@ -5,11 +5,17 @@ package splice.provider.codex
 import com.sun.management.ThreadMXBean
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestReporter
+import splice.core.perf.InputDigest
 import splice.core.turn.TurnOutcome
 import splice.core.util.JsonWire
 import splice.provider.codex.state.CodeModeTurnIdentity
@@ -33,8 +39,9 @@ private const val UNCHANGED_TREE_PERCENT = 50
 private const val REWRITTEN_TEXT_PERCENT = 750
 private const val REWRITTEN_TREE_PERCENT = 500
 
-// The rewrite itself, on a tree: 429 percent after, 788 before (it parsed and rendered the body).
-private const val REWRITE_STAGE_PERCENT = 500
+// Rewriting a borrowed tree must allocate less than one body, including anchor validation and rebuilding.
+// The per-item digest scratch baseline allocated 4,097,720 bytes for a 911,104-byte body.
+private const val REWRITE_STAGE_PERCENT = 100
 
 // A stage reads the round's one parse. Parsing the body again costs about one body (the text parse, measured
 // here), so a quarter of a body rejects a stage that parses and passes one that walks the parsed tree.
@@ -139,6 +146,7 @@ internal class CodeModeRoundAllocationTest : CodeModeBridgeTestSupport() {
             val next = completeOneScript(manager)
             val wire = CodexCodeModeWire(Json) {}
             val size = JsonWire.byteSize(next)
+            reporter.publishEntry("codemode_rewritten_body_bytes", size.toString())
             val tree = Json.parseToJsonElement(next).jsonObject
             val body = wire.body(RoundBody.Tree(tree))
             val records = completed(manager)
@@ -159,6 +167,37 @@ internal class CodeModeRoundAllocationTest : CodeModeBridgeTestSupport() {
         } finally {
             manager.onHeadStop()
         }
+    }
+
+    @Test
+    fun `one encoder preserves every anchor in the same 420 item allocation history`() {
+        val items = Json.parseToJsonElement(plain).jsonObject.getValue("input").jsonArray.drop(1).take(PREFIX_ITEMS)
+        assertEquals(PREFIX_ITEMS, items.size)
+        assertEquals(items.map { InputDigest.hex(it) }, InputDigest.hexItems(items).toList())
+    }
+
+    @Test
+    fun `reused digest scratch retains escapes scalars and item boundaries`() {
+        val literals = listOf("null", "true", "false", "1e2", "1.00", "-0", "184467440737095516160", "1e-300")
+        val strings = listOf(
+            "",
+            "café 🧪",
+            "\uD800",
+            "\uDC00",
+            "\uD800x\uDC00",
+            "\u0000\n\t\"\\",
+            "é".repeat(8_191) + "🧪" + "é".repeat(8_193),
+        )
+        val scalars = literals.map(Json::parseToJsonElement) + strings.map(::JsonPrimitive)
+        val items = scalars + Json.parseToJsonElement("""{"b":2,"a":[null,true,"escaped\\n"]}""") +
+            JsonArray(scalars) + JsonNull
+        val expected = items.map { InputDigest.hex(it) }
+        val digests = InputDigest.hexItems(items)
+        assertEquals(expected, digests.toList())
+        assertEquals(items.map { InputDigest.hex(it.toString()) }, expected)
+        assertEquals(expected.take(2), digests.take(2).toList())
+        assertEquals(expected, digests.toList(), "each iterator owns its digest and encoder")
+        assertEquals(emptyList<String>(), InputDigest.hexItems(emptyList()).toList())
     }
 
     /** The bridge's interceptor through the entry the head uses for a round it holds as a tree. */

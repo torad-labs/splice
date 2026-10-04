@@ -55,7 +55,7 @@ internal object CodeModeAnchorCapture {
     ): CodeModeReplayAnchors {
         val owned = completed.flatMap { it.clientIds() + it.outerCallId }.toSet()
         val continuity = completed.flatMap(CodeModeRecord::continuity).toSet()
-        val fingerprints = items.map { InputDigest.hex(it) }
+        val fingerprints = InputDigest.hexItems(items).toList()
         val eligible = items.indices.filter { codec.callId(items[it]) !in owned && items[it] !in continuity }
         fun at(boundary: Int): CodeModeHistoryAnchor {
             val prior = eligible.lastOrNull { it < boundary } ?: return CodeModeHistoryAnchor(null, 0, boundary)
@@ -77,10 +77,11 @@ internal class CodeModeHistoryIndex(
     private val anchors = mutableMapOf<String, MutableList<Int>>()
 
     init {
-        items.forEachIndexed { index, item ->
+        InputDigest.hexItems(items).forEachIndexed { index, digest ->
+            val item = items[index]
             val type = codec.string(item as? JsonObject, "type")
             if (type in OWNED_TYPES) codec.callId(item)?.let { ids.getOrPut(it) { mutableListOf() } += index }
-            anchors.getOrPut(InputDigest.hex(item)) { mutableListOf() } += index
+            anchors.getOrPut(digest) { mutableListOf() } += index
         }
     }
 

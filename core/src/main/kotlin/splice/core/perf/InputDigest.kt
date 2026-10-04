@@ -28,6 +28,16 @@ public object InputDigest {
         return format.formatHex(digest.digest())
     }
 
+    /** Independent canonical digests from one encoder and scratch buffer per sequence traversal. */
+    public fun hexItems(values: Iterable<JsonElement>): Sequence<String> = sequence {
+        val digest = MessageDigest.getInstance("SHA-256")
+        val wire = JsonWire.encoder(DigestOutputStream(OutputStream.nullOutputStream(), digest))
+        for (value in values) {
+            wire.write(value)
+            yield(format.formatHex(digest.digest()))
+        }
+    }
+
     public fun capture(request: JsonObject): InputPrefix? {
         val input = request[PREFIX_INPUT_FIELD] as? JsonArray ?: return null
         val properties = JsonObject(request.filterKeys { it != PREFIX_INPUT_FIELD })

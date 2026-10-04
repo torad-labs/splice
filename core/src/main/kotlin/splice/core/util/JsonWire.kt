@@ -70,6 +70,20 @@ public object JsonWire {
         wire.drain()
     }
 
+    /** One caller-owned stream encoder. Each value drains before returning; its fixed scratch is reused. */
+    public fun encoder(output: OutputStream): Encoder = Encoder(output)
+
+    /** Sequential values share scratch, never pending bytes. This encoder does not close the caller's stream. */
+    public class Encoder internal constructor(output: OutputStream) {
+        private val wire = StreamWire(output)
+        private val tree = WireTree(wire)
+
+        public fun write(element: JsonElement) {
+            tree.tree(element)
+            wire.drain()
+        }
+    }
+
     /** Counts the exact streamed bytes without materializing a wire string or byte array. */
     public fun byteSize(element: JsonElement): Long {
         val counter = WireByteCount()

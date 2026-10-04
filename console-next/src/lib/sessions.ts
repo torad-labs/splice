@@ -183,7 +183,7 @@ const STATE_TONE: Readonly<Record<SessionState, SessionTone>> = {
 };
 export const stateTone = (state: SessionState): SessionTone => STATE_TONE[state];
 
-/** One primary status for registry-backed session surfaces; stale still means the process is alive. */
+/** One primary status for registry-backed surfaces. A stale idle timestamp does not imply new activity or an exited process. */
 export function sessionStatus(row: SessionRow): { state: SessionState; word: string; tone: SessionTone; old: boolean } {
   const state = stateOf(row);
   const known = row.availability === 'gone' || ['busy', 'shell', 'waiting', 'idle'].includes(row.status ?? '');
@@ -191,7 +191,7 @@ export function sessionStatus(row: SessionRow): { state: SessionState; word: str
     state,
     word: known ? stateWord(state) : SW.statusUnknown,
     tone: known ? stateTone(state) : 'wait',
-    old: row.availability === 'stale',
+    old: row.availability === 'stale' && row.status !== 'idle',
   };
 }
 
@@ -264,17 +264,17 @@ const NUMBER_WORDS = ['none', 'one', 'two', 'three', 'four', 'five', 'six', 'sev
 const numberWord = (n: number): string => NUMBER_WORDS[n] ?? String(n);
 const capital = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
 
-/** The page's one-sentence summary: what is working, what needs a person, what finished. A registry with no
- *  live session says so. Counts are words up to twelve, digits after. */
+/** The page's summary separates work, questions and idle processes from exited ones. Only a gone registration
+ *  counts as ended. Counts are words up to twelve, digits after. */
 export function sessionsLede(rows: readonly SessionRow[]): string {
   const count = { working: 0, waiting: 0, idle: 0, gone: 0 };
   for (const row of rows) count[stateOf(row)] += 1;
   const parts: string[] = [];
   if (count.working > 0) parts.push(`${numberWord(count.working)} ${count.working === 1 ? 'is' : 'are'} working`);
   if (count.waiting > 0) parts.push(`${numberWord(count.waiting)} ${count.waiting === 1 ? 'is' : 'are'} waiting on you`);
-  const finished = count.idle + count.gone;
+  if (count.idle > 0) parts.push(`${numberWord(count.idle)} ${count.idle === 1 ? 'is' : 'are'} idle`);
   const first = parts.length === 0 ? '' : `${capital(parts.join(', '))}.`;
-  const last = finished === 0 ? '' : `${capital(numberWord(finished))} finished earlier.`;
+  const last = count.gone === 0 ? '' : `${capital(numberWord(count.gone))} ${count.gone === 1 ? 'session' : 'sessions'} ended earlier.`;
   return [first, last].filter((sentence) => sentence !== '').join(' ');
 }
 

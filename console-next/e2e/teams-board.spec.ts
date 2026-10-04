@@ -41,3 +41,37 @@ test('Teams groups real registry seats without saved membership and reads a mess
   expect(faults.pageErrors).toEqual([]);
   expect(faults.failedReads).toEqual([]);
 });
+
+test('idle sessions use one live-process rule on Sessions and Teams while only an exited process is ended', async ({ page }) => {
+  await page.route(url => url.pathname === '/api/sessions', async route => {
+    const response = await route.fetch();
+    const body = await response.json() as SessionsPayload;
+    const source = body.sessions.find(row => row.session_id === STACK.sender.id);
+    if (source === undefined) throw new Error('isolated fixture must contain the synthetic sender');
+    body.sessions = (['live', 'stale', 'gone'] as const).map(availability => ({
+      ...source, session_id: `synthetic-${availability}-idle`, name: `Synthetic ${availability} idle`,
+      status: 'idle', availability, team: null, last: null, status_updated_at: Date.now() - 3_600_000,
+    }));
+    await route.fulfill({ response, json: body });
+  });
+  const faults = await open(page, 'sessions');
+  await expect(page.getByRole('main')).toContainText('Two are idle. One session ended earlier.');
+  const idle = page.getByRole('region', { name: 'Idle', exact: true });
+  await expect(idle.getByRole('listitem')).toHaveCount(2);
+  await expect(idle).toContainText('Waiting for your next message');
+  await expect(idle).not.toContainText('Finished');
+  await expect(page.getByRole('region', { name: 'Ended', exact: true }).getByRole('listitem')).toHaveCount(1);
+  await open(page, 'teams');
+  const project = page.locator('.project-team').filter({ has: page.locator('a[href="#/sessions/synthetic-live-idle"]') });
+  await expect(project.locator('.project-seat')).toHaveCount(2);
+  for (const availability of ['live', 'stale']) {
+    const member = project.locator('.project-seat').filter({ has: page.locator(`a[href="#/sessions/synthetic-${availability}-idle"]`) });
+    await expect(member.getByText('Idle', { exact: true })).toBeVisible();
+    await expect(member).toContainText('waiting for your next message');
+    await expect(member).not.toContainText('last status update is old');
+  }
+  await expect(project).not.toContainText('status old');
+  await expect(project.locator('a[href="#/sessions/synthetic-gone-idle"]')).toHaveCount(0);
+  expect(faults.pageErrors).toEqual([]);
+  expect(faults.failedReads).toEqual([]);
+});

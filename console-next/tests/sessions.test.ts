@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import type { SessionLast, SessionRow } from '../src/types/sessions';
 import type { LiveTurn } from '../src/types/turns';
 import { answerWhere, cardSays, waitingAsks } from '../src/lib/session-says';
-import { activityText, cardLine, groupSessions, timingOf, handoffOf, matchesQuery, noConversation, sessionsLede, peerLabel, repoName, sessionKey, sessionLabel, sinceOf, spanText, stateOf, stateTone, stateWord } from '../src/lib/sessions';
+import { activityText, cardLine, groupSessions, timingOf, handoffOf, matchesQuery, noConversation, sessionsLede, peerLabel, repoName, sessionKey, sessionLabel, sinceOf, spanText, stateOf, stateTone, stateWord, sessionStatus } from '../src/lib/sessions';
 
 const NOW = 1_790_000_000_000;
 const row = (over: Partial<SessionRow> = {}): SessionRow => ({
@@ -33,6 +33,11 @@ describe('a session\'s state', () => {
   });
   test('a gone registration is gone, whatever the status', () =>
     expect(stateOf(row({ availability: 'gone', status: 'waiting' }))).toBe('gone'));
+  test('an old idle status remains idle, never an ended process or an activity warning', () => {
+    expect(sessionStatus(row({ status: 'idle', availability: 'stale' }))).toMatchObject({ state: 'idle', word: 'Idle', old: false });
+    expect(sessionStatus(row({ status: 'busy', availability: 'stale' })).old).toBe(true);
+    expect(sessionStatus(row({ status: 'idle', availability: 'gone' }))).toMatchObject({ state: 'gone', word: 'Ended', old: false });
+  });
   test('idle is idle, and an unknown word is idle', () => {
     expect(stateOf(row({ status: 'idle' }))).toBe('idle');
     expect(stateOf(row({ status: null }))).toBe('idle');
@@ -45,7 +50,7 @@ describe('a session\'s state', () => {
     expect(seats.map((seat) => stateOf(seat))).not.toContain('stuck');
     const keys = groupSessions(seats, 'state').map((group) => group.key);
     expect(keys).not.toContain('needs');
-    expect(sessionsLede(seats)).toBe('Six are working. Four finished earlier.');
+    expect(sessionsLede(seats)).toBe('Six are working, four are idle.');
   });
 });
 
@@ -267,7 +272,7 @@ describe('what a card says', () => {
 });
 
 describe('the lede', () => {
-  test('it counts working provider waits, client questions and finished sessions, in words', () => {
+  test('it counts working provider waits, client questions and idle sessions, in words', () => {
     const rows = [
       row(), row({ session_id: 'b' }), row({ session_id: 'c' }),
       row({ session_id: 'd', status: 'waiting' }),
@@ -275,7 +280,10 @@ describe('the lede', () => {
       row({ session_id: 'f', status: 'idle' }), row({ session_id: 'g', status: 'idle' }),
     ];
     // @ts-expect-error -- legacy provider silence must not remove a Working session from the count.
-    expect(sessionsLede(rows, (session: SessionRow) => session.session_id === 'e' ? quietTurnOf(session) : null)).toBe('Four are working, one is waiting on you. Two finished earlier.');
+    expect(sessionsLede(rows, (session: SessionRow) => session.session_id === 'e' ? quietTurnOf(session) : null)).toBe('Four are working, one is waiting on you, two are idle.');
+  });
+  test('only an exited process is counted as ended, separately from an old idle session', () => {
+    expect(sessionsLede([row({ status: 'idle', availability: 'stale' }), row({ status: 'busy', availability: 'gone' })])).toBe('One is idle. One session ended earlier.');
   });
   test('an empty registry has no sentence to print', () => {
     expect(sessionsLede([])).toBe('');

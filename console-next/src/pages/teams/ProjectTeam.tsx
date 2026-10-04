@@ -21,7 +21,7 @@ export function ProjectSeat({ row, model, reading = false }: { row: SessionRow; 
   return (
     <li className="project-seat">
       <div className="project-seat-name"><Link to={sessionPath(row)}>{sessionLabel(row)}</Link><small>{model === undefined ? reading ? T.modelReading : T.modelUnknown : T.lastModel(model)}</small></div>
-      <p className={line.agent ? 'project-work' : 'project-work muted'}>{row.last == null ? T.notReported : line.line}</p>
+      <p className={line.agent ? 'project-work' : 'project-work muted'}>{row.last == null && row.status !== 'idle' ? T.notReported : line.line}</p>
       <div className="project-seat-state"><State tone={status.tone}>{status.word}</State>{status.old ? <small>{T.staleWhy}</small> : null}</div>
     </li>
   );
@@ -38,7 +38,7 @@ export interface ProjectReading {
 export function ProjectTeam({ group, reading }: { group: ProjectTeamRow; reading?: ProjectReading }) {
   const edges = useBoardEdges();
   const messages = projectHandoffs(group.sessions, edges.data?.sessions ?? {});
-  const stale = group.sessions.filter(row => row.availability === 'stale').length;
+  const stale = group.sessions.filter(row => sessionStatus(row).old).length;
   const working = group.sessions.filter(row => row.availability !== 'gone' && stateOf(row) === 'working').length;
   const [shown, setShown] = useState(5);
   const visible = messages.slice(0, shown);

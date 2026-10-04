@@ -69,6 +69,15 @@ describe('the project teams board', () => {
     expect(off).toContain('Synthetic transcript view is off.');
     expect(off).not.toContain('No handoffs recorded');
   });
+  test.each(['live', 'stale'] as const)('an %s idle session awaits a message rather than reporting unknown work or an old-status warning', availability => {
+    const html = render(client => client.setQueryData(['sessions', '/api/sessions'], { note: '', sessions: [seat('idle', { status: 'idle', availability })] }));
+    expect(html).toContain('>Idle<');
+    expect(html).toContain('Waiting for your next message');
+    expect(html).not.toContain('Current work is not reported');
+    expect(html).not.toContain('last status update is old');
+    expect(html).not.toContain('1 status old');
+    expect(html).not.toContain('>Ended<');
+  });
   test('an absent client status is unknown rather than idle', () => {
     const html = render(client => client.setQueryData(['sessions', '/api/sessions'], { note: '', sessions: [seat('unknown', { status: null })] }));
     expect(html).toContain('Status not reported');

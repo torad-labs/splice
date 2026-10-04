@@ -1,4 +1,6 @@
 // What the Sessions page says. Copy lives in modules like this one, never inline in a component.
+import { SW } from '../../lib/words-sessions';
+
 export const P = {
   title: 'Sessions',
   groupBy: 'Group by',
@@ -12,7 +14,7 @@ export const P = {
   working: 'Working',
   workingWhy: 'Drag to reorder; the order is yours.',
   idle: 'Idle',
-  idleWhy: 'Finished; a message wakes them.',
+  idleWhy: SW.idle,
   gone: 'Ended',
   goneWhy: 'The process exited.',
   earlier: 'Earlier sessions',

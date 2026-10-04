@@ -26,6 +26,7 @@ import splice.provider.codex.state.CodeModeSessionEnd
 import splice.provider.codex.state.CodeModeStartupAdmissions
 import splice.provider.codex.state.CodeModeTurnStart
 import splice.provider.codex.state.query.CodeModeRecordQueries
+import splice.provider.codex.stream.CodeModeClientContexts
 import splice.provider.codex.stream.CodeModeSourceEnds
 import splice.provider.codex.stream.CodeModeSourceRecords
 import splice.upstream.codemode.CodeModeCell
@@ -78,7 +79,12 @@ internal class CodexCodeModeRegistry(
     private val retention = CodeModeRecordRetention(config.retention, json, config.log, config.sessionAlive)
     private val cells = mutableMapOf<String, CodeModeCell>()
     val startup = CodeModeStartupAdmissions(access, records, history, store, config.clock, cells)
-    val source = CodeModeSourceRecords(access, records, history, store)
+
+    /** Each conversation's last measured context; after a restart, the newest round its records kept. */
+    val contexts = CodeModeClientContexts { key ->
+        recordsFor(key).lastOrNull { it.sourceState?.usage != null }?.sourceState?.usage?.value()
+    }
+    val source = CodeModeSourceRecords(access, records, history, store, contexts)
     val changes = CodeModeRecordChanges(access, records, history, store, cells, startup, config)
     private val admissions = startup.entries
     val retainedCells = CodeModeCellRetention(config, access, records, cells, admissions, closeSession)

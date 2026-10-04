@@ -31,6 +31,11 @@ public data class Usage(
     val codeModeDiverged: Boolean = false,
     /** Output already recorded by an independently owned raw round, not a client-turn stamp. */
     val recordedOutputTokens: Long = 0,
+    /** The context the client is told about when this usage measured no input of its own: a code-mode
+     *  step with no upstream round carries its conversation's last measured round here, because Claude
+     *  Code reads every assistant message's usage as the context total. Only the client payload reads
+     *  it, and only while [inputTokens] is zero; splice's own accounting keeps the raw buckets above. */
+    val clientContext: Usage? = null,
 ) {
     public val unrecordedOutputTokens: Long get() = outputTokens - recordedOutputTokens
 
@@ -44,6 +49,7 @@ public data class Usage(
         localStep = localStep || other.localStep,
         codeModeDiverged = codeModeDiverged || other.codeModeDiverged,
         recordedOutputTokens = recordedOutputTokens + other.recordedOutputTokens,
+        clientContext = other.clientContext ?: clientContext,
     )
 }
 

@@ -71,7 +71,7 @@ internal class CodexCodeModeTurn(
         )
         val held = locks.acquire(key)
         return try {
-            try {
+            val outcome = try {
                 // An identical request is served before retention can trim its recorded step.
                 val replay = branch.replay(context)
                 if (replay != null) {
@@ -83,6 +83,8 @@ internal class CodexCodeModeTurn(
             } catch (error: CodeModePersistenceException) {
                 error.outcome()
             }
+            // The one exit every client-facing step takes, so none tells Claude Code its context is zero.
+            registry.contexts.report(key, outcome)
         } finally {
             locks.release(key, held)
         }

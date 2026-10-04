@@ -17,6 +17,7 @@ internal class CodeModeSourceRecords(
     private val records: List<CodeModeRecord>,
     private val history: CodeModeExpiredHistory,
     private val store: CodexCodeModeStore,
+    private val contexts: CodeModeClientContexts,
 ) {
     /** The durable no-rerun admission precedes execution; prefixes join the next client-visible batch. */
     fun append(record: CodeModeRecord, text: String) = access.withKey(record.key) {
@@ -52,6 +53,8 @@ internal class CodeModeSourceRecords(
                     usage.recordedOutputTokens,
                 ),
             )
+            // A round that finishes after its client turn ended is still the conversation's newest context.
+            contexts.note(record.key, usage)
         }
 
     /** A result request takes terminal billing once, and the claim survives a later restart. */

@@ -20,6 +20,7 @@ import splice.provider.codex.state.CodeModeExpiredHistory
 import splice.provider.codex.state.CodeModeKeyLocks
 import splice.provider.codex.state.CodeModeRegistryAccess
 import splice.provider.codex.state.CodeModeStateJournal
+import splice.provider.codex.stream.CodeModeClientContexts
 import splice.provider.codex.stream.CodeModeLiveRound
 import splice.provider.codex.stream.CodeModeSourceCapture
 import splice.provider.codex.stream.CodeModeSourceRecords
@@ -237,11 +238,13 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
         private val records = listOf(record)
         private val history = CodeModeExpiredHistory(mutableListOf(), null)
         private val store = CodexCodeModeStore(stateLocation(), Json, {})
+        val contexts = CodeModeClientContexts { null }
         val source = CodeModeSourceRecords(
             CodeModeRegistryAccess(ReentrantLock(), CodeModeKeyLocks()),
             records,
             history,
             store,
+            contexts,
         )
         val terminal = GatewayCustomCall(
             record.outerCallId,
@@ -257,6 +260,15 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
         init {
             store.save(records, history.entries)
         }
+    }
+
+    @Test
+    fun `a source round that finishes after its client turn is its conversation's newest context`() {
+        val state = SourceState()
+        state.source.finish(state.record, state.terminal, state.continuity, Usage(1_400, 12, 1_100))
+        val step = TurnOutcome.Success(true, false, Usage(localStep = true))
+        val reported = state.contexts.report(state.record.key, step) as TurnOutcome.Success
+        assertEquals(Usage(inputTokens = 1_400, cachedTokens = 1_100), reported.usage.clientContext)
     }
 
     @Test

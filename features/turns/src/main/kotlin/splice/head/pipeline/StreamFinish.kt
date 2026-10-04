@@ -5,7 +5,6 @@ package splice.head.pipeline
 
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
-import splice.core.turn.Usage
 import splice.core.util.LogSink
 import splice.head.usage.OutputClamp
 import splice.head.wire.TurnTerminal
@@ -30,14 +29,12 @@ internal class StreamFinish(
         // Reasoning mirror (L2): one mirrorInto for both paths; tools stay on.
         honesty.mirrorGated(emitter, outcome.thinkingText, meta)
 
+        // The whole usage with only the output clamped: the payload builder also reads the cache write
+        // (V4-248) and a code-mode step's client context, and a three-field rebuild dropped both.
         emitter.emitTerminal(
             hasToolUse = outcome.hasToolUse,
             incomplete = outcome.incomplete,
-            usage = Usage(
-                outcome.usage.inputTokens,
-                clampOutput(outcome.usage.outputTokens),
-                outcome.usage.cachedTokens,
-            ),
+            usage = outcome.usage.copy(outputTokens = clampOutput(outcome.usage.outputTokens)),
         )
         // DR-87: the collect-path terminal can downgrade this emit into an error envelope
         // (malformed-tool/capacity). A literal "ok" here is what blinded perf/health/log to a

@@ -34,16 +34,20 @@ internal class TurnWiring(
     ): UsagePayloadBuilder {
         var factorLogged = false
         return { usage ->
+            // Claude Code reads every assistant message's usage as the context total, zeros included,
+            // so a usage that measured no input reports the context it carries for the client: a
+            // code-mode step's conversation's last measured round. Output is still this usage's own.
+            val context = usage?.clientContext?.takeIf { usage.inputTokens == 0L } ?: usage
             // Anthropic convention (Claude Code HUD/autocompact): input_tokens and cache_read_input_tokens
             // are DISJOINT. OpenAI's input_tokens INCLUDES the cached portion, so subtract it — else
             // input+cache_read double-counts and the context bar/autocompact fire ~2x early (the
             // "compaction ate my quota" class).
-            val cached = usage?.cachedTokens ?: 0
+            val cached = context?.cachedTokens ?: 0
             // V4-248: the cache WRITE is its own bucket too (cache_creation_input_tokens), disjoint from
             // input like the read. Folded into input_tokens it read as a cache that never writes, and
             // the client priced the write as plain input. Zero on every wire that reports no write.
-            val written = usage?.cacheWriteTokens ?: 0
-            val nonCachedInput = ((usage?.inputTokens ?: 0) - cached - written).coerceAtLeast(0)
+            val written = context?.cacheWriteTokens ?: 0
+            val nonCachedInput = ((context?.inputTokens ?: 0) - cached - written).coerceAtLeast(0)
             // Per-model context windows are a PROXY concern. Claude Code fixes its window per PROCESS
             // (the launch env: the pinned row's window) for every id except a "[1m]" one, so another
             // row's real window can only be served from this side — by moving the numerator of the

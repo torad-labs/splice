@@ -12,14 +12,23 @@ package splice.head.wire
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import splice.core.memory.HeapBudget
+import splice.core.memory.HeapCapacityException
+import splice.core.memory.HeapJson
+import splice.core.memory.HeapOwners
 import splice.core.util.Cancellables
+import splice.upstream.memory.JvmHeap
 
-internal class FrameRecording {
+// why: the array-list's reference and growth slack; escaped strings own their metadata separately.
+private const val FRAME_ENTRY_BYTES = 64L
+
+internal class FrameRecording(private val heap: HeapBudget = JvmHeap.budget) {
 
     private data class Progress(val frames: Int, val complete: Boolean, val whole: Boolean = false)
 
     private val lock = Any()
     private val frames = ArrayList<String>()
+    private val heapLease = HeapOwners.charge(frames, heap, 0L)
     private val progress = MutableStateFlow(Progress(0, false))
 
     // Allocated before recording starts: a failed completion must still wake attached followers.
@@ -32,12 +41,31 @@ internal class FrameRecording {
     val size: Int get() = synchronized(lock) { frames.size }
 
     /** Every frame recorded so far, in order (V4-216: what a finished recording is stored as). */
-    fun frames(): List<String> = synchronized(lock) { frames.toList() }
+    fun frames(): List<String> = synchronized(lock) {
+        val copy = heap.reserve(frames.size * FRAME_ENTRY_BYTES) ?: throw HeapCapacityException()
+        var kept = false
+        try {
+            frames.toList().also {
+                HeapOwners.keep(it, copy)
+                kept = true
+            }
+        } finally {
+            if (!kept) copy.close()
+        }
+    }
 
     fun append(frame: String) {
         val count = synchronized(lock) {
-            frames.add(frame)
-            frames.size
+            // The copied string and its temporary character array coexist before the handoff.
+            val peak = heap.reserve(HeapJson.text(frame) + frame.length * 2L) ?: throw HeapCapacityException()
+            peak.use {
+                if (!heapLease.resize(heapLease.bytes + FRAME_ENTRY_BYTES)) throw HeapCapacityException()
+                // Fresh ownership also works for empty, static and interned caller strings.
+                val owned = String(frame.toCharArray())
+                HeapOwners.keep(owned, peak.split(HeapJson.text(owned)))
+                frames.add(owned)
+                frames.size
+            }
         }
         progress.update { it.copy(frames = count) }
     }
@@ -60,9 +88,11 @@ internal class FrameRecording {
             val now = progress.value
             val count = size
             if (count > seen) {
-                val batch = synchronized(lock) { frames.subList(seen, count).toList() }
-                batch.forEach { write(it) }
-                seen = count
+                while (seen < count) {
+                    val frame = synchronized(lock) { frames[seen] }
+                    write(frame)
+                    seen++
+                }
             }
             if (now.complete && size == seen) return now.whole
             progress.first { it.frames > seen || it.complete }

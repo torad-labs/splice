@@ -61,6 +61,7 @@ internal object CodeModeNativeChain {
                 it.sessionId = state.sessionId
                 it.conversationId = state.conversationId
                 it.replayAnchors = state.replayAnchors
+                it.sourceState = state.sourceState
             }
         }
     }

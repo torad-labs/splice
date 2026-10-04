@@ -16,6 +16,8 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.memory.HeapBudget
+import splice.core.memory.HeapCapacityException
 import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSnapshot
 import splice.core.storage.ActivityDays
@@ -74,12 +76,16 @@ class TurnTraceTest {
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    private fun store(maxBodyChars: Int = 1 shl 20): TraceStore = TraceStore(
+    private fun store(
+        maxBodyChars: Int = 1 shl 20,
+        heap: HeapBudget = HeapBudget(Long.MAX_VALUE),
+    ): TraceStore = TraceStore(
         ActivityDays(tmp.resolve("trace"), "kimi", retentionDays = 7, clock = WallClock { DAY_ONE }, ownerOnly = true),
         head = "kimi",
         maxBodyChars = maxBodyChars,
         now = WallClock { DAY_ONE },
         ids = TurnIdMint { "turn-0001" },
+        heap = heap,
     )
 
     private fun lines(): List<JsonObject> {
@@ -94,6 +100,25 @@ class TurnTraceTest {
     private fun JsonObject.str(key: String): String? = this[key]?.jsonPrimitive?.content
 
     private fun JsonObject.obj(key: String): JsonObject = getValue(key).jsonObject
+
+    @Test
+    fun `a trace refuses buffer growth before mutating its already captured response`() {
+        val heap = HeapBudget(heapLimitBytes = Long.MAX_VALUE, budgetBytes = 1024 * 1024)
+        val trace = store(heap = heap).begin(meta, inbound)
+        trace.responseText("kept")
+        val blocked = checkNotNull(heap.reserve(heap.available.value))
+        assertThrows(HeapCapacityException::class.java) { trace.responseText("x".repeat(100_000)) }
+        blocked.close()
+        trace.attempted(attempt(1, "{}"))
+        assertEquals("kept", lines().single().at("response", "text"))
+    }
+
+    @Test
+    fun `a retained inbound cannot bypass another heap owner's reservation`() {
+        val heap = HeapBudget(heapLimitBytes = Long.MAX_VALUE, budgetBytes = 1)
+        assertThrows(HeapCapacityException::class.java) { store(heap = heap).begin(meta, inbound) }
+        assertEquals(1L, heap.available.value)
+    }
 
     /** The scalar at a nested path, e.g. `at("request", "headers", "x-api-key")`. */
     private fun JsonObject.at(vararg path: String): String? =

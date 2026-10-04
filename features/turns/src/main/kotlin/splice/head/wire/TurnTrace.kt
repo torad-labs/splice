@@ -18,6 +18,10 @@ import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
+import splice.core.memory.HeapBudget
+import splice.core.memory.HeapCapacityException
+import splice.core.memory.HeapJson
+import splice.core.memory.HeapOwners
 import splice.core.perf.PerfSnapshot
 import splice.core.turn.TurnMeta
 import splice.core.util.ERR_SNIPPET
@@ -41,9 +45,17 @@ public class TurnTrace internal constructor(
     private val now: WallClock,
 ) : WireObserver {
     private val lock = Any()
-    private var inbound: ClientInbound? = inbound
-    private val response = BoundedText(store.maxBodyChars)
-    private val streamed = BoundedText(store.maxBodyChars)
+    private var inbound: ClientInbound? = inbound.also {
+        HeapOwners.charge(
+            it,
+            store.heap,
+            HeapJson.text(it.body) + it.headers.entries.sumOf { header ->
+                HeapJson.text(header.key) + HeapJson.text(header.value)
+            },
+        )
+    }
+    private val response = BoundedText(store.maxBodyChars, store.heap)
+    private val streamed = BoundedText(store.maxBodyChars, store.heap)
     private var collected: ClientAnswerSource? = null
     private var failureSentenceText: String? = null
     private var rounds = 0
@@ -202,11 +214,19 @@ public class TurnTrace internal constructor(
 }
 
 /** A text buffer that stops growing at [max] and remembers that it did. */
-private class BoundedText(private val max: Int) {
+private class BoundedText(private val max: Int, private val heap: HeapBudget) {
     private val text = StringBuilder()
+    private val heapLease = HeapOwners.charge(text, heap, HeapJson.text(text) + text.capacity() * 2L)
     private var truncated = false
 
     fun append(chunk: CharSequence) {
+        val needed = text.length.toLong() + minOf(chunk.length, max - text.length)
+        val capacity = if (needed <= text.capacity()) {
+            text.capacity().toLong()
+        } else {
+            maxOf(needed, text.capacity() * 2L + 2L)
+        }
+        if (!heapLease.resize(capacity * 2L + HeapJson.text(""))) throw HeapCapacityException()
         val room = max - text.length
         if (chunk.length <= room) {
             text.append(chunk)
@@ -218,10 +238,20 @@ private class BoundedText(private val max: Int) {
 
     /** The text so far and the flag; the buffer is empty afterwards. */
     fun take(): Pair<String, Boolean> {
-        val taken = text.toString() to truncated
-        text.setLength(0)
-        truncated = false
-        return taken
+        val copy = heap.reserve(HeapJson.text(text)) ?: throw HeapCapacityException()
+        var kept = false
+        try {
+            val value = text.toString()
+            HeapOwners.keep(value, copy)
+            kept = true
+            val taken = value to truncated
+            // Length is reset, not capacity. The builder's high-water reservation remains charged.
+            text.setLength(0)
+            truncated = false
+            return taken
+        } finally {
+            if (!kept) copy.close()
+        }
     }
 }
 

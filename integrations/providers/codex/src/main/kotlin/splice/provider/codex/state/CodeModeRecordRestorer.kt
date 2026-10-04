@@ -3,7 +3,6 @@ package splice.provider.codex.state
 
 import splice.provider.codex.CODE_MODE_LEGACY_METADATA_VERSION
 import splice.provider.codex.CODE_MODE_METADATA_VERSION
-import splice.provider.codex.CodeModeAccepted
 import splice.provider.codex.CodeModePhase
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRecordSnapshot
@@ -21,6 +20,7 @@ internal class CodeModeRecordRestorer {
             else -> saved.error
         }
         return record(saved, if (stale || lost) CodeModePhase.LOST else saved.phase, error).also {
+            it.accepted.restore(saved.results)
             it.issued.addAll(saved.issued)
             it.sessionId = saved.sessionId
             it.conversationId = saved.conversationId
@@ -47,7 +47,6 @@ internal class CodeModeRecordRestorer {
         source = saved.source,
         phase = phase,
         pending = saved.pending.toMutableList(),
-        accepted = CodeModeAccepted(saved.results.mapValues { (id, value) -> value.restore(id) }),
         output = saved.output,
         error = error,
         totalCalls = saved.totalCalls,
@@ -63,4 +62,39 @@ internal class CodeModeRecordRestorer {
         continuity = saved.continuity,
         continuityReplay = saved.continuityReplay,
     )
+}
+
+/** Immutable copies preserve every source, replay and continuity field under the same conversation lock. */
+internal object CodeModeRecordSnapshots {
+    fun of(record: CodeModeRecord): CodeModeRecordSnapshot = CodeModeRecordSnapshot(
+        id = record.id,
+        key = record.key,
+        outer = record.outer,
+        outerCallId = record.outerCallId,
+        source = record.source,
+        phase = record.phase,
+        pending = record.pending.map { it.copy() },
+        results = record.accepted.snapshot(),
+        output = record.output,
+        error = record.error,
+        totalCalls = record.totalCalls,
+        rounds = record.rounds,
+        updatedAt = record.updatedAt,
+        lastDigest = record.lastDigest,
+        baselineInputCount = record.baselineInputCount,
+        baselineInputDigest = record.baselineInputDigest,
+        metadataVersion = record.metadataVersion,
+        baselineLogicalCount = record.baselineLogicalCount,
+        baselineLogicalDigest = record.baselineLogicalDigest,
+        nativeSegments = record.nativeSegments,
+        continuity = record.continuity,
+        continuityReplay = record.continuityReplay,
+    ).also {
+        it.issued = record.issued.toList()
+        it.sessionId = record.sessionId
+        it.conversationId = record.conversationId
+        it.nativeBaseId = record.nativeBaseId
+        it.replayAnchors = record.replayAnchors
+        it.sourceState = record.sourceState
+    }
 }

@@ -3,18 +3,14 @@ package splice.provider.codex.stream
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
-import kotlinx.coroutines.launch
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.util.Cancellables
-import splice.core.util.SafeFailureText
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModePersistenceException
 import splice.provider.codex.CodeModeRecord
@@ -42,6 +38,7 @@ internal class CodeModeLiveRound(
     private val record: CodeModeRecord? get() = capture.record
     private var finished: Deferred<TurnOutcome>? = null
     private val settled = CompletableDeferred<Unit>()
+    private val completion = CodeModeRoundCompletion(config.log, settled, CodeModeReaderDeath(::died))
 
     @Volatile var unexpectedDeath: Boolean = false
         private set
@@ -80,21 +77,7 @@ internal class CodeModeLiveRound(
                 if (!ready.isCompleted) ready.complete(null)
             }
         }.also { reader ->
-            reader.invokeOnCompletion { cause -> completed(scope, cause, end) }
-        }
-    }
-
-    /** Non-suspending cleanup runs immediately even on cancellation, outside coroutine completion machinery. */
-    private fun completed(scope: CoroutineScope, cause: Throwable?, end: TurnEnd) {
-        val handler = CoroutineExceptionHandler { _, failure ->
-            config.log("[code-mode] source completion callback failed: ${SafeFailureText.render(failure)}")
-        }
-        scope.launch(NonCancellable + handler, CoroutineStart.UNDISPATCHED) {
-            try {
-                died(cause)
-            } finally {
-                Cancellables.withCleanup({ settled.complete(Unit) }) { end.ended() }
-            }
+            reader.invokeOnCompletion { cause -> completion.completed(scope, cause, end) }
         }
     }
 

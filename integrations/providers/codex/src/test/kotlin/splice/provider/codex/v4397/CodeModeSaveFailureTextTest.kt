@@ -11,7 +11,7 @@ import splice.provider.codex.CodeModePersistenceException
 import splice.provider.codex.CodeModeRecords
 import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexCodeModeStore
-import splice.provider.codex.StateDiskSpace
+import splice.provider.codex.state.save.StateDiskSpace
 import java.nio.file.Files
 import java.nio.file.Path
 

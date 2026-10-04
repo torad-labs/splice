@@ -14,9 +14,10 @@ package splice.provider.codex
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
-import splice.provider.codex.state.CodeModeCellCleanup
+import splice.core.memory.HeapBudget
 import splice.provider.codex.state.CodeModeCellRetention
 import splice.provider.codex.state.CodeModeExpiredHistory
+import splice.provider.codex.state.CodeModeHeap
 import splice.provider.codex.state.CodeModeKeyLocks
 import splice.provider.codex.state.CodeModeNativeChain
 import splice.provider.codex.state.CodeModeRecordChanges
@@ -24,10 +25,12 @@ import splice.provider.codex.state.CodeModeRegistryAccess
 import splice.provider.codex.state.CodeModeSessionEnd
 import splice.provider.codex.state.CodeModeStartupAdmissions
 import splice.provider.codex.state.CodeModeTurnStart
+import splice.provider.codex.state.query.CodeModeRecordQueries
 import splice.provider.codex.stream.CodeModeSourceEnds
 import splice.provider.codex.stream.CodeModeSourceRecords
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
+import splice.upstream.memory.JvmHeap
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import kotlin.time.Duration
@@ -43,14 +46,23 @@ internal class CodexCodeModeRegistry(
     private val sweepInterval: Duration,
     writer: CodeModeStateWrite? = null,
     private val closeSession: CodeModeSessionEnd = CodeModeSessionEnd {},
+    private val heap: HeapBudget = JvmHeap.budget,
 ) {
     private val monitor = ReentrantLock()
     private val keyLocks = CodeModeKeyLocks()
     private val access = CodeModeRegistryAccess(monitor, keyLocks)
     private val store = if (writer == null) {
-        CodexCodeModeStore(config.state, json, config.log, registryLock = monitor, keyLocks = keyLocks)
+        CodexCodeModeStore(config.state, json, config.log, registryLock = monitor, keyLocks = keyLocks, heap = heap)
     } else {
-        CodexCodeModeStore(config.state, json, config.log, writer = writer, registryLock = monitor, keyLocks = keyLocks)
+        CodexCodeModeStore(
+            config.state,
+            json,
+            config.log,
+            writer = writer,
+            registryLock = monitor,
+            keyLocks = keyLocks,
+            heap = heap,
+        )
     }
     private val records: MutableList<CodeModeRecord>
     private val history: CodeModeExpiredHistory
@@ -58,19 +70,23 @@ internal class CodexCodeModeRegistry(
     init {
         // The boot snapshots must not pin payloads after the live record expires or is purged.
         val loaded = store.load()
-        records = loaded.records.map(CodeModeRecordSnapshot::restore).toMutableList()
+        records = loaded.records.map { it.restore().also { record -> CodeModeHeap.own(record, heap) } }
+            .toMutableList()
             .also(CodeModeNativeChain::link)
-        history = CodeModeExpiredHistory(loaded.expired.toMutableList(), config.retention.records)
+        history = CodeModeExpiredHistory(loaded.expired.toMutableList(), config.retention.records, heap)
     }
     private val retention = CodeModeRecordRetention(config.retention, json, config.log, config.sessionAlive)
     private val cells = mutableMapOf<String, CodeModeCell>()
-    private val cellCleanup = CodeModeCellCleanup(config.log)
-    val startup = CodeModeStartupAdmissions(access, records, history, store, config.clock)
+    val startup = CodeModeStartupAdmissions(access, records, history, store, config.clock, cells)
     val source = CodeModeSourceRecords(access, records, history, store)
-    val changes = CodeModeRecordChanges(access, records, history, store)
+    val changes = CodeModeRecordChanges(access, records, history, store, cells, startup, config)
     private val admissions = startup.entries
     val retainedCells = CodeModeCellRetention(config, access, records, cells, admissions, closeSession)
     private val sweeper = CodexCodeModeSweeper(config, records, cells, admissions, history, closeSession, retainedCells)
+    private val queries = CodeModeRecordQueries(access, records, history) { key ->
+        val changed = sweeper.sweep(key, key)
+        store.save(records, history.entries, retryOnly = !changed, dirtyKeys = setOf(key))
+    }
     val timed = CodeModeTimedSweep(
         monitor,
         records,
@@ -92,46 +108,23 @@ internal class CodexCodeModeRegistry(
         }
     }
 
-    /** ACTIVE owns visible calls before their result; LOST still needs a result or an exact retry. */
+    /** ACTIVE owns visible calls before their result; LOST still needs a result or exact retry. */
     fun owner(
         key: String,
         digest: String,
         resultIds: Set<String>,
         callbackIds: Set<String>,
         excluded: Set<String> = emptySet(),
-    ): CodeModeRecord? = PeriodicSweep().withKey(key) {
-        val activeIds = if (callbackIds.isEmpty()) resultIds else resultIds + callbackIds
-        records.lastOrNull { record ->
-            record.key == key && record.phase == CodeModePhase.ACTIVE &&
-                CodeModeOwnerMatch.matches(record, digest, activeIds, excluded)
-        } ?: records.lastOrNull { record ->
-            record.key == key && (record.phase == CodeModePhase.LOST || record.phase == CodeModePhase.STARTING) &&
-                CodeModeOwnerMatch.matches(record, digest, resultIds, excluded)
-        }
-    }
+    ): CodeModeRecord? = queries.owner(key, digest, resultIds, callbackIds, excluded)
 
-    /** One conversation's records for replay and divergence checks under a single sweep. */
-    fun recordsFor(key: String): List<CodeModeRecord> = PeriodicSweep().withKey(key) {
-        records.filter { it.key == key }
-    }
+    fun recordsFor(key: String): List<CodeModeRecord> = queries.recordsFor(key)
 
-    fun completed(key: String): List<CodeModeRecord> = PeriodicSweep().withKey(key) {
-        records.filter { it.key == key && it.phase == CodeModePhase.COMPLETED }
-    }
+    fun completed(key: String): List<CodeModeRecord> = queries.completed(key)
 
-    fun expiredHistory(key: String, digest: String, ids: Set<String>): Boolean = PeriodicSweep().withKey(key) {
-        history.entries.any { marker ->
-            marker.key == key && (marker.lastDigest == digest || marker.resultIds.any { it in ids })
-        }
-    }
+    fun expiredHistory(key: String, digest: String, ids: Set<String>): Boolean =
+        queries.expiredHistory(key, digest, ids)
 
-    /** Classify foreign and missing result ids from one consistent record snapshot. */
-    fun resultOwners(key: String, ids: Set<String>): CodeModeResultOwners = PeriodicSweep().withKey(key) {
-        val foreign = records.firstOrNull { record -> record.key != key && record.clientIds().any { it in ids } }
-        val known = records.filter { it.key == key }.flatMap(CodeModeRecord::clientIds).toSet()
-        val unknown = ids.filter { it.startsWith(CODE_MODE_CLIENT_ID_PREFIX) && it !in known }.toSet()
-        CodeModeResultOwners(foreign, unknown)
-    }
+    fun resultOwners(key: String, ids: Set<String>): CodeModeResultOwners = queries.resultOwners(key, ids)
 
     fun add(record: CodeModeRecord): Boolean = Admission(record).run()
 
@@ -141,6 +134,7 @@ internal class CodexCodeModeRegistry(
         private var blockedKey: String? = null
 
         fun run(): Boolean {
+            CodeModeHeap.own(record, heap)
             // A failed boot already has durable source; an exact retry reuses its identity.
             startup.resume(record)?.let { return it }
             while (true) {
@@ -202,7 +196,7 @@ internal class CodexCodeModeRegistry(
                     record.conversationId != null && it.conversationId == record.conversationId
             }
             val candidate = records.toMutableList()
-            val nextHistory = CodeModeExpiredHistory(history.entries.toMutableList(), config.retention.records)
+            val nextHistory = CodeModeExpiredHistory(history.entries.toMutableList(), config.retention.records, heap)
             if (!retention.makeRoom(candidate, nextHistory, record, config.clock.millis())) return null
             candidate += record
             return AdmissionPlan(candidate, nextHistory, previous)
@@ -250,24 +244,7 @@ internal class CodexCodeModeRegistry(
         }
     }
 
-    fun attach(record: CodeModeRecord, cell: CodeModeCell): Boolean = access.withKey(record.key) {
-        val admittedGeneration = admissions.remove(record.id)
-        val rejected = admittedGeneration != startup.generation || record !in records || record.error != null
-        if (rejected) {
-            cell.close()
-            if (record in records) {
-                record.phase = CodeModePhase.LOST
-                record.error = record.error ?: "code-mode runtime stopped during startup; source was not rerun"
-                record.updatedAt = config.clock.millis()
-                store.save(records, history.entries, dirtyKeys = setOf(record.key), changedRecord = record)
-            }
-            false
-        } else {
-            cells[record.id] = cell
-            record.phase = CodeModePhase.ACTIVE
-            true
-        }
-    }
+    fun attach(record: CodeModeRecord, cell: CodeModeCell): Boolean = startup.attach(record, cell)
 
     fun cell(record: CodeModeRecord): CodeModeCell? = access.withKey(record.key) { cells[record.id] }
 
@@ -276,49 +253,12 @@ internal class CodexCodeModeRegistry(
         monitor.withLock { store.save(records, history.entries) }
     }
 
-    fun complete(record: CodeModeRecord, output: String) = access.withKey(record.key) {
-        admissions.remove(record.id)
-        record.output = output
-        record.phase = CodeModePhase.COMPLETED
-        record.updatedAt = config.clock.millis()
-        cells.remove(record.id)?.close()
-        store.save(records, history.entries, dirtyKeys = setOf(record.key), changedRecord = record)
-    }
+    fun complete(record: CodeModeRecord, output: String) = changes.complete(record, output)
 
     fun lose(record: CodeModeRecord, message: String, cancellation: CancellationException? = null) =
-        access.withKey(record.key) {
-            admissions.remove(record.id)
-            cellCleanup.rejected(cells.remove(record.id))
-            record.phase = CodeModePhase.LOST
-            record.error = message
-            record.updatedAt = config.clock.millis()
-            try {
-                store.save(records, history.entries, dirtyKeys = setOf(record.key), changedRecord = record)
-            } catch (error: CodeModePersistenceException) {
-                if (cancellation == null) throw error
-                cancellation.addSuppressed(error)
-            }
-        }
+        changes.lose(record, message, cancellation)
 
-    /** Every live cell closes and its record is lost. The records keep their updatedAt, the time of
-     *  their last use: a head stop is not a use (V4-287: a stop 23 hours on kept a record ~47 hours). */
-    fun onHeadStop() {
-        val keys = monitor.withLock {
-            startup.stop()
-            records.map(CodeModeRecord::key).distinct()
-        }
-        keys.forEach { key ->
-            access.withKey(key) {
-                records.filter { it.key == key && !it.terminal() }
-                    .filter { it.phase != CodeModePhase.STARTING }.forEach { record ->
-                        cells.remove(record.id)?.close()
-                        record.phase = CodeModePhase.LOST
-                        record.error = "completed client call ids=${record.results.keys}; source was not rerun"
-                    }
-                store.save(records, history.entries, dirtyKeys = setOf(key))
-            }
-        }
-    }
+    fun onHeadStop() = changes.onHeadStop()
 
     /** Global idle order is snapshotted, then each candidate is rechecked and saved under its own key. */
     fun evictIdleCell(): CodeModeRecord? {
@@ -334,25 +274,7 @@ internal class CodexCodeModeRegistry(
         return null
     }
 
-    /** A retry or this record's client ids, never just another turn on the same conversation key. */
-    private object CodeModeOwnerMatch {
-        fun matches(
-            record: CodeModeRecord,
-            digest: String,
-            ids: Set<String>,
-            excluded: Set<String>,
-        ): Boolean = record.id !in excluded &&
-            (record.lastDigest == digest || (ids.isNotEmpty() && record.clientIds().any { it in ids }))
-    }
-
     private inner class PeriodicSweep {
-        inline fun <T> withKey(key: String, block: () -> T): T = access.withKey(key) {
-            // Requests only clean their own key. The timer owns cross-key housekeeping and its I/O.
-            val changed = sweeper.sweep(key, key)
-            store.save(records, history.entries, retryOnly = !changed, dirtyKeys = setOf(key))
-            block()
-        }
-
         fun run() {
             val keys = monitor.withLock {
                 records.map(CodeModeRecord::key).toSet() +
@@ -375,6 +297,7 @@ internal class CodexCodeModeRegistry(
         media: Map<String, List<JsonElement>> = emptyMap(),
     ) = access.withKey(record.key) {
         // The prior issuance is already durable. New results and the worker's next step commit together.
+        CodeModeHeap.grow(record, record.accepted.heapGrowth(supplied, media))
         record.lastDigest = digest
         record.updatedAt = config.clock.millis()
         record.accepted.accept(supplied, media)

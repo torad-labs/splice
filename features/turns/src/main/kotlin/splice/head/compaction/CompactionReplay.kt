@@ -15,11 +15,13 @@
 package splice.head.compaction
 
 import kotlinx.serialization.json.JsonObject
+import splice.core.memory.HeapBudget
 import splice.core.turn.TurnMeta
 import splice.core.util.ElapsedClock
 import splice.core.util.JsonWire
 import splice.core.util.MonoClock
 import splice.head.wire.FrameRecording
+import splice.upstream.memory.JvmHeap
 import java.io.OutputStream
 import java.security.DigestOutputStream
 import java.security.MessageDigest
@@ -29,6 +31,7 @@ internal class CompactionReplay(
     private val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
     private val ttlMs: Long = RECORDING_TTL_MS,
     private val capacity: Int = DEFAULT_CAPACITY,
+    private val heap: HeapBudget = JvmHeap.budget,
 ) {
     private data class Entry(val recording: FrameRecording, val startedAtMs: Long)
 
@@ -102,7 +105,7 @@ internal class CompactionReplay(
     /** An answer a previous process kept: complete and whole by construction (only those are saved). */
     private fun restored(key: String): FrameRecording? {
         val frames = recordings?.load(key) ?: return null
-        val recording = FrameRecording()
+        val recording = FrameRecording(heap)
         frames.forEach(recording::append)
         recording.complete(whole = true)
         entries[key] = Entry(recording, clock())

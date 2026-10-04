@@ -23,6 +23,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.memory.HeapCapacityException
 import splice.core.storage.DayFiles
 import splice.core.util.Cancellables
 import splice.core.util.JsonWire
@@ -100,6 +101,7 @@ public class TraceRoute(
 
     /** V4-286: a trace dir or day that cannot be read is said, never an empty list blaming the knob. */
     private fun unreadable(key: String, traceDir: Path, failure: Throwable): JsonReply {
+        if (failure is HeapCapacityException) throw failure
         val why = SafeFailureText.render(failure)
         return refuse(HttpStatusCode.InternalServerError, "cannot read $key's trace under $traceDir: $why")
     }

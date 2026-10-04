@@ -10,11 +10,17 @@ package splice.head.trace
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import splice.core.memory.HeapBudget
+import splice.core.memory.HeapCapacityException
+import splice.core.memory.HeapJson
+import splice.core.memory.HeapOwners
+import splice.core.memory.HeapText
 import splice.core.storage.DayLine
 import splice.core.storage.LineVisit
 import splice.core.util.JsonScalars
 import splice.head.trace.body.TraceBodies
 import splice.head.trace.body.TraceBodyReaders
+import splice.upstream.memory.JvmHeap
 
 // why: how far before a turn's first attempt its turn record can lie when the attempt was written late. A
 // record is stamped when it is built and the file lane writes in order, so the gap is the lane's queue:
@@ -22,7 +28,11 @@ import splice.head.trace.body.TraceBodyReaders
 private const val LATE_WRITE_SLACK_MS = 60_000L
 
 /** One read from the newest line back: the turns taken so far, newest first, each held until it is whole. */
-internal class TraceTail(private val ask: TraceAsk, private val json: Json) : LineVisit, AutoCloseable {
+internal class TraceTail(
+    private val ask: TraceAsk,
+    private val json: Json,
+    private val heap: HeapBudget = JvmHeap.budget,
+) : LineVisit, AutoCloseable {
     private val taken = LinkedHashMap<String, HeldTurn>()
     private val unopened = HashSet<String>()
 
@@ -30,9 +40,9 @@ internal class TraceTail(private val ask: TraceAsk, private val json: Json) : Li
      *  turn is still running, or its turn record was written before its first attempt (a late write on the
      *  file lane, V4-174) and lies a little further back. */
     private val unended = HashMap<String, Long>()
-    private val stamps = TraceStamps(json)
-    private val bodies = TraceBodies()
-    private val readers = TraceBodyReaders()
+    private val stamps = TraceStamps(json, heap)
+    private val bodies = TraceBodies(heap = heap)
+    private val readers = TraceBodyReaders(heap)
 
     override fun close() = readers.close()
 
@@ -53,8 +63,7 @@ internal class TraceTail(private val ask: TraceAsk, private val json: Json) : Li
 
     private fun take(id: String, stamp: TraceStamp, line: DayLine) {
         val held = taken[id] ?: admit(id, stamp) ?: return
-        val record = json.parseToJsonElement(line.text()).jsonObject
-        held.add(bodies.selected(record, line.file, readers), stamp.isTurnRecord)
+        held.add(selected(line), stamp.isTurnRecord)
         if (stamp.isTurnRecord) unended -= id
         if (stamp.opens) {
             unopened -= id
@@ -63,26 +72,60 @@ internal class TraceTail(private val ask: TraceAsk, private val json: Json) : Li
         }
     }
 
+    private fun selected(line: DayLine): JsonObject {
+        if (line.byteSize >= Int.MAX_VALUE) throw HeapCapacityException()
+        return line.bytes().use { input ->
+            HeapText.Reader.read(input, line.byteSize, heap).use { staged ->
+                val record = json.parseToJsonElement(staged.text).jsonObject
+                bodies.selected(record, line.file, readers).also { selected ->
+                    // Hydrated strings have their own owners; only parsed row metadata survives this stage.
+                    staged.retain(selected, HeapJson.bytes(record))
+                }
+            }
+        }
+    }
+
     /** A turn met at its latest record, taken while the read still wants turns and the ask admits it. */
     private fun admit(id: String, stamp: TraceStamp): HeldTurn? {
         if (taken.size >= ask.wanted || !ask.admits(id, JsonScalars.str(stamp.session))) return null
         unopened += id
-        return HeldTurn().also { taken[id] = it }
+        return HeldTurn(heap).also { taken[id] = it }
     }
 }
 
 /** One taken turn's records as they were read, newest first. */
-private class HeldTurn {
+private class HeldTurn(private val heap: HeapBudget) {
     private val attempts = ArrayList<JsonObject>()
+    private val attemptLease = HeapOwners.charge(attempts, heap, HeapJson.text(""))
     private var ending: JsonObject? = null
 
     val ended: Boolean get() = ending != null
 
     /** The newest turn record is the one kept, as it was when the day was read forward. */
     fun add(record: JsonObject, isTurnRecord: Boolean) {
-        if (!isTurnRecord) attempts += record else if (ending == null) ending = record
+        if (!isTurnRecord) {
+            val needed = (attempts.size + 1L) * TRACE_ATTEMPT_REFERENCE_BYTES
+            if (!attemptLease.resize(needed)) throw HeapCapacityException()
+            attempts += record
+        } else if (ending == null) {
+            ending = record
+        }
     }
 
     /** The turn in the order it was written: its attempts oldest first, then its turn record. */
-    fun turn(id: String): TracedTurn = TracedTurn(id, attempts.asReversed().toList(), ending)
+    fun turn(id: String): TracedTurn {
+        val copy = heap.reserve(attempts.size * TRACE_ATTEMPT_REFERENCE_BYTES) ?: throw HeapCapacityException()
+        var kept = false
+        try {
+            val records = attempts.asReversed().toList()
+            HeapOwners.keep(records, copy)
+            kept = true
+            return TracedTurn(id, records, ending)
+        } finally {
+            if (!kept) copy.close()
+        }
+    }
 }
+
+// why: array references and backing-array growth for the selected attempt list.
+private const val TRACE_ATTEMPT_REFERENCE_BYTES = 64L

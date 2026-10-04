@@ -5,9 +5,12 @@ package splice.head.compaction
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.memory.HeapBudget
+import splice.core.memory.HeapCapacityException
 import splice.core.util.WallClock
 import splice.head.wire.FrameRecording
 import java.nio.file.Files
@@ -50,6 +53,25 @@ class FileCompactionRecordingsTest(@TempDir tempDir: Path) {
         next.consumed(key)
         assertNull(CompactionReplay(store()).lookup(key), "a delivered replay is spent on disk too")
         assertTrue(lines.isEmpty(), lines.joinToString())
+    }
+
+    @Test
+    fun `heap capacity preserves a cold answer and never reports it absent`() = runTest {
+        val key = checkNotNull(CompactionReplay().key("sess-1", "{}"))
+        kept(CompactionReplay(store()), key)
+        val file = Files.list(dir).use { it.toList().single() }
+        val before = Files.readString(file)
+        val heap = HeapBudget(heapLimitBytes = Long.MAX_VALUE, budgetBytes = 64 * 1024)
+        val reader = FileCompactionRecordings(dir, now = WallClock { wallMs }, heap = heap)
+        val blocked = checkNotNull(heap.reserve(heap.limitBytes))
+        assertThrows(HeapCapacityException::class.java) { reader.load(key) }
+        assertThrows(HeapCapacityException::class.java) { CompactionReplay(reader, heap = heap).lookup(key) }
+        assertEquals(before, Files.readString(file))
+        blocked.close()
+        val restored = checkNotNull(CompactionReplay(reader, heap = heap).lookup(key))
+        val received = mutableListOf<String>()
+        assertTrue(restored.follow { received += it })
+        assertEquals(frames, received)
     }
 
     @Test

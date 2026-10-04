@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.reasoning.ReasoningReplay
 import splice.provider.codex.state.CodeModeNativeChain
+import splice.provider.codex.stream.CodeModeSourceState
 import splice.upstream.codemode.CodeModeStep
 import java.time.Clock
 import java.time.Instant
@@ -85,8 +86,11 @@ class CodeModeNativeStorageTest : CodeModeBridgeTestSupport() {
         val records = store.load().records.map { it.restore() }
         CodeModeNativeChain.link(records)
         val child = records.last()
+        val sourceState = CodeModeSourceState(complete = true, consumed = true)
+        child.sourceState = sourceState
         store.save(listOf(child), emptyList(), dirtyKeys = setOf(child.key))
         assertEquals(1, stateFiles.records().size)
+        assertEquals(sourceState, store.load().records.single().sourceState, "promotion preserves source settlement")
         val restored = manager(QueuedRuntime(ArrayDeque()))
         val history = """{"input":[{"role":"user","content":"start"},{"role":"user","content":"next"}]}"""
         var posted = ""

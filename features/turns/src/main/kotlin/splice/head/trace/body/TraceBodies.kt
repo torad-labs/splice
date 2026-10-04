@@ -7,10 +7,13 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.memory.HeapBudget
+import splice.core.memory.HeapCapacityException
 import splice.core.storage.DAY_BODY_MAX_BYTES
 import splice.core.storage.DAY_BODY_SUFFIX
 import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
+import splice.upstream.memory.JvmHeap
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.nio.file.Path
@@ -22,16 +25,19 @@ private const val UNAVAILABLE_TAG = "unavailable"
 private val BODY_FIELDS = mapOf("request" to "body", "response" to "text", "client" to "body", "answer" to "body")
 
 /** JSONL stamps stay inline. Only body literals enter a daily pack, once, directly through the Gear encoder. */
-internal class TraceBodies(private val maxPackBytes: Long = DAY_BODY_MAX_BYTES) {
+internal class TraceBodies(
+    private val maxPackBytes: Long = DAY_BODY_MAX_BYTES,
+    private val heap: HeapBudget = JvmHeap.budget,
+) {
     private var activeFile: Path? = null
-    private var activeIndex = TracePackIndex()
+    private var activeIndex = TracePackIndex(heap)
 
     /** Runs on ActivityDays' one file lane. No complete record String or complete encoded body is built. */
     fun encode(record: JsonObject, day: Path): ByteArray {
         val file = companion(day)
         if (file != activeFile) {
             activeFile = file
-            activeIndex = TracePackIndex()
+            activeIndex = TracePackIndex(heap)
         }
         return TraceBodyPack(file, activeIndex, maxPackBytes).use { pack ->
             val references = replace(record) { value ->
@@ -47,7 +53,7 @@ internal class TraceBodies(private val maxPackBytes: Long = DAY_BODY_MAX_BYTES) 
 
     /** Old inline rows require no companion. New references resolve against the actual selected line's day. */
     fun hydrate(record: JsonObject, day: Path): JsonObject =
-        TraceBodyReaders().use { hydrate(record, day, it) }
+        TraceBodyReaders(heap).use { hydrate(record, day, it) }
 
     private fun hydrate(record: JsonObject, day: Path, readers: TraceBodyReaders): JsonObject =
         replace(record) { value -> if (value is JsonObject) resolve(value, day, readers) else value }
@@ -59,6 +65,8 @@ internal class TraceBodies(private val maxPackBytes: Long = DAY_BODY_MAX_BYTES) 
                 if (value is JsonObject) {
                     try {
                         resolve(value, day, readers)
+                    } catch (capacity: HeapCapacityException) {
+                        throw capacity
                     } catch (_: IOException) {
                         JsonObject(value + (UNAVAILABLE_TAG to JsonPrimitive(true)))
                     }
@@ -87,9 +95,9 @@ internal class TraceBodies(private val maxPackBytes: Long = DAY_BODY_MAX_BYTES) 
 
     private fun literal(text: String, pack: TraceBodyPack): JsonObject = try {
         val parts = pack.cached(text) ?: run {
-            val chunks = TraceChunker(pack)
-            TraceLiteral.encode(text, chunks)
-            chunks.finish().also { activeIndex.literals[text] = it }
+            val chunks = TraceChunker(pack, heap)
+            TraceLiteral.encode(text, chunks, heap)
+            chunks.finish().also { activeIndex.cache(text, it) }
         }
         buildJsonObject {
             put(REFERENCE_TAG, REFERENCE_VERSION)

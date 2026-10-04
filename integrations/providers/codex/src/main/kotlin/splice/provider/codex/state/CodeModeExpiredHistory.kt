@@ -1,12 +1,15 @@
 // NEW: bounds expiry evidence independently of the durable record schema.
 package splice.provider.codex.state
 
+import splice.core.memory.HeapBudget
 import splice.provider.codex.CodeModeExpiredSnapshot
 import splice.provider.codex.CodeModeRecord
+import splice.upstream.memory.JvmHeap
 
 internal class CodeModeExpiredHistory(
     val entries: MutableList<CodeModeExpiredSnapshot>,
     private val limit: Int?,
+    private val heap: HeapBudget = JvmHeap.budget,
 ) {
     fun remember(record: CodeModeRecord, now: Long) {
         entries += CodeModeExpiredSnapshot(
@@ -14,7 +17,7 @@ internal class CodeModeExpiredHistory(
             lastDigest = record.lastDigest,
             resultIds = record.clientIds(),
             expiredAt = now,
-        )
+        ).also { CodeModeHeap.own(it, heap) }
         while (limit?.let { entries.size > it } == true) entries.removeAt(0)
     }
 }

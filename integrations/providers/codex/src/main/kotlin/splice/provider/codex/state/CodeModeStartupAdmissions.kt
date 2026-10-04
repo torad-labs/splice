@@ -5,6 +5,7 @@ import splice.provider.codex.CodeModePersistenceException
 import splice.provider.codex.CodeModePhase
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeStore
+import splice.upstream.codemode.CodeModeCell
 import java.time.Clock
 
 /** Owns generation tickets and retry-proof transitions through the existing exact-key changed-cell journal. */
@@ -14,6 +15,7 @@ internal class CodeModeStartupAdmissions(
     private val history: CodeModeExpiredHistory,
     private val store: CodexCodeModeStore,
     private val clock: Clock,
+    private val cells: MutableMap<String, CodeModeCell>,
 ) {
     val entries = mutableMapOf<String, Long>()
     var generation = 0L
@@ -41,11 +43,31 @@ internal class CodeModeStartupAdmissions(
             store.save(records, history.entries, dirtyKeys = setOf(record.key), changedRecord = record)
         } catch (error: CodeModePersistenceException) {
             // No dispatch occurred. Preserve the earlier proof unless a newer transition owns it.
-            if (record.saveGeneration == snapshotGeneration) record.phase = CodeModePhase.STARTING
+            if (record.saveGeneration <= snapshotGeneration) record.phase = CodeModePhase.STARTING
             throw error
         }
         entries[record.id] = admittedGeneration
         return true
+    }
+
+    /** A worker attaches only to the generation that admitted its source. */
+    fun attach(record: CodeModeRecord, cell: CodeModeCell): Boolean = access.withKey(record.key) {
+        val admittedGeneration = entries.remove(record.id)
+        val rejected = admittedGeneration != generation || record !in records || record.error != null
+        if (rejected) {
+            cell.close()
+            if (record in records) {
+                record.phase = CodeModePhase.LOST
+                record.error = record.error ?: "code-mode runtime stopped during startup; source was not rerun"
+                record.updatedAt = clock.millis()
+                store.save(records, history.entries, dirtyKeys = setOf(record.key), changedRecord = record)
+            }
+            false
+        } else {
+            cells[record.id] = cell
+            record.phase = CodeModePhase.ACTIVE
+            true
+        }
     }
 
     /** The typed runtime failure proved source was never sent, including across a head stop. */

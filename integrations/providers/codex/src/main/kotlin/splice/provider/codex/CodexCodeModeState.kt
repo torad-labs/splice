@@ -5,7 +5,10 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import splice.core.memory.HeapLease
+import splice.provider.codex.state.CodeModeAccepted
 import splice.provider.codex.state.CodeModeRecordRestorer
+import splice.provider.codex.state.CodeModeRecordSnapshots
 import splice.provider.codex.state.CodeModeReplayAnchors
 import splice.provider.codex.stream.CodeModeSourceLease
 import splice.provider.codex.stream.CodeModeSourceState
@@ -24,7 +27,9 @@ internal data class CodeModeExpiredSnapshot(
     val lastDigest: String,
     val resultIds: Set<String>,
     val expiredAt: Long,
-)
+) {
+    @Transient var heapLease: HeapLease? = null
+}
 
 /** The detail an abandoned record carries (V4-342: [CodeModeRecord.abandoned] reads it back). */
 internal const val CODE_MODE_ABANDONED: String = "code-mode history no longer places the running script"
@@ -68,6 +73,8 @@ internal data class CodeModeRecordSnapshot(
 
     @Transient var encodedFieldBytes: Map<String, Long>? = null
 
+    @Transient var heapLease: HeapLease? = null
+
     fun restore(): CodeModeRecord = CodeModeRecordRestorer().restore(this)
 }
 
@@ -79,7 +86,6 @@ internal data class CodeModeRecord(
     var source: String,
     var phase: CodeModePhase,
     val pending: MutableList<CodeModePending> = mutableListOf(),
-    val accepted: CodeModeAccepted = CodeModeAccepted(),
     var output: String? = null,
     var error: String? = null,
     var totalCalls: Int = 0,
@@ -95,6 +101,7 @@ internal data class CodeModeRecord(
     var continuity: List<JsonElement>,
     var continuityReplay: List<CodeModeNativeSegment>,
 ) {
+    val accepted: CodeModeAccepted = CodeModeAccepted()
     val results: Map<String, CodeModeResult> get() = accepted.results
     val issued: MutableList<CodeModeIssuedStep> = mutableListOf()
 
@@ -116,6 +123,7 @@ internal data class CodeModeRecord(
     var cellLastAliveAt: Long? = null
 
     @Volatile var retainedBytes: Long? = null
+    var heapLease: HeapLease? = null
 
     fun visiblePending(): List<CodeModePending> = pending.filter(CodeModePending::exposed)
 
@@ -129,73 +137,7 @@ internal data class CodeModeRecord(
      *  abandoned before this rule reads the same from its store. */
     fun abandoned(): Boolean = error?.startsWith(CODE_MODE_ABANDONED) == true
 
-    fun snapshot(): CodeModeRecordSnapshot = CodeModeRecordSnapshot(
-        id = id,
-        key = key,
-        outer = outer,
-        outerCallId = outerCallId,
-        source = source,
-        phase = phase,
-        pending = pending.map { it.copy() },
-        results = accepted.snapshot(),
-        output = output,
-        error = error,
-        totalCalls = totalCalls,
-        rounds = rounds,
-        updatedAt = updatedAt,
-        lastDigest = lastDigest,
-        baselineInputCount = baselineInputCount,
-        baselineInputDigest = baselineInputDigest,
-        metadataVersion = metadataVersion,
-        baselineLogicalCount = baselineLogicalCount,
-        baselineLogicalDigest = baselineLogicalDigest,
-        nativeSegments = nativeSegments,
-        continuity = continuity,
-        continuityReplay = continuityReplay,
-    ).also {
-        it.issued = issued.toList()
-        it.sessionId = sessionId
-        it.conversationId = conversationId
-        it.nativeBaseId = nativeBaseId
-        it.replayAnchors = replayAnchors
-        it.sourceState = sourceState
-    }
-}
-
-/**
- * What the client has returned for a record so far: each accepted result with, V4-179, the
- * follow-up wire items (images) it rendered to. One map, so a result and its media can never
- * disagree on their keys or their order — the map's insertion order IS the acceptance order, the
- * order the persisted sequence rides in, and kotlinx keeps a JSON object's key order on both sides.
- */
-internal class CodeModeAccepted(entries: Map<String, CodeModeAcceptedResult> = emptyMap()) {
-    private val entries: MutableMap<String, CodeModeAcceptedResult> = LinkedHashMap(entries)
-
-    val results: Map<String, CodeModeResult> get() = entries.mapValues { (_, entry) -> entry.result }
-
-    /** null: a LEGACY result, accepted before media was captured — it owns nothing and whatever the
-     *  client's history carries for it stays ordinary content. Empty: captured, with no media. */
-    fun media(id: String): List<JsonElement>? = entries[id]?.media
-
-    /** Every accepted result's follow-ups, flattened in acceptance order: the durable sequence the
-     *  canonical history carries once, right after the record's custom output. */
-    fun durableMedia(): List<JsonElement> = entries.values.flatMap { it.media.orEmpty() }
-
-    /** A supplied id absent from [media] is captured as "no media" (an empty list), never left legacy. */
-    fun accept(supplied: Map<String, CodeModeResult>, media: Map<String, List<JsonElement>>) {
-        supplied.forEach { (id, result) -> entries[id] = CodeModeAcceptedResult(result, media[id].orEmpty()) }
-    }
-
-    fun copy(): CodeModeAccepted = CodeModeAccepted(entries)
-
-    fun restore(prior: CodeModeAccepted) {
-        entries.clear()
-        entries.putAll(prior.entries)
-    }
-
-    fun snapshot(): Map<String, CodeModeResultSnapshot> = entries.mapValues { (_, entry) ->
-        CodeModeResultSnapshot(entry.result.output, entry.result.isError, entry.media)
-    }
+    fun snapshot(): CodeModeRecordSnapshot = CodeModeRecordSnapshots.of(this)
 }
 
 internal data class CodeModeAcceptedResult(val result: CodeModeResult, val media: List<JsonElement>?)

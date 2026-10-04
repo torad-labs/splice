@@ -21,8 +21,6 @@ import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import java.security.MessageDigest
 import java.util.HexFormat
-import java.util.UUID
-import java.util.WeakHashMap
 import java.util.concurrent.TimeUnit
 
 // why: each binary entry has a byte length followed by its SHA-256 digest and its content.
@@ -38,17 +36,6 @@ private val HEX = HexFormat.of()
 
 /** Capacity is a stored omission marker, not an I/O failure or a successful partial literal. */
 internal class TracePackFull : IOException("daily trace body budget exhausted")
-
-/** Only the active day's index is retained by a TraceBodies writer; readers hold no global body cache. */
-internal class TracePackIndex {
-    var generation: UUID? = null
-    var end: Long = TRACE_PACK_START_BYTES.toLong()
-    var tail: JsonObject? = null
-    val chunks = HashMap<String, JsonObject>()
-
-    // Weak keys reuse queued equal literals without keeping completed request bodies alive.
-    val literals = WeakHashMap<String, JsonArray>()
-}
 
 /** Append-only content-addressed binary entries. The OS page cache, not per-entry force, owns durability. */
 internal class TraceBodyPack(
@@ -91,6 +78,7 @@ internal class TraceBodyPack(
         index.chunks[hash]?.takeIf(::current)?.let { return it }
         val offset = index.end + HEADER_BYTES
         if (offset > maxBytes - bytes.size) throw TracePackFull()
+        index.admitChunk()
         val header = ByteBuffer.allocate(HEADER_BYTES).putInt(bytes.size).put(digest).array()
         channel.position(index.end)
         TracePackBytes.write(channel, header)
@@ -153,6 +141,7 @@ internal class TraceBodyPack(
         val digest = ByteArray(TRACE_PACK_DIGEST_BYTES)
         header.get(digest)
         val hash = HEX.formatHex(digest)
+        index.admitChunk()
         val part = reference(hash, index.end + HEADER_BYTES, length)
         index.chunks.putIfAbsent(hash, part)
         index.end = next

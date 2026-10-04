@@ -91,7 +91,11 @@ internal class CodexCodeModeMachine(
             val issued = CodeModeIssuedStep(record.lastDigest, calls.map(CodeModePending::copy))
             // A failed save: the worker already advanced, but no callback reached the client. A retry
             // reuses persisted pending ids and earns this issuance with a successful save.
-            registry.changes.save(record, undo = { it.issued.remove(issued) }) {
+            registry.changes.save(
+                record,
+                undo = { it.issued.remove(issued) },
+                growthBytes = calls.sumOf(splice.provider.codex.state.CodeModeHeap::bytes),
+            ) {
                 checkIssuable(it, cell)
                 it.issued += issued
             }
@@ -220,7 +224,10 @@ internal class CodexCodeModeMachine(
                 exposed = !request.disableParallel || index == 0,
             )
         }
-        registry.changes.edit(request.record) { record ->
+        registry.changes.edit(
+            request.record,
+            growthBytes = pending.sumOf(splice.provider.codex.state.CodeModeHeap::bytes),
+        ) { record ->
             checkIssuable(record, cell)
             record.totalCalls += calls.size
             record.pending += pending

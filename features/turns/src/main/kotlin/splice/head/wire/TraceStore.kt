@@ -15,11 +15,18 @@ package splice.head.wire
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.memory.HeapBudget
+import splice.core.memory.HeapCapacityException
+import splice.core.memory.HeapJson
+import splice.core.memory.HeapOwners
+import splice.core.memory.HeapWeights
 import splice.core.storage.ActivityDays
 import splice.core.storage.DayRecord
 import splice.core.turn.TurnMeta
+import splice.core.util.JsonWire
 import splice.core.util.WallClock
 import splice.head.trace.body.TraceBodies
+import splice.upstream.memory.JvmHeap
 import java.util.UUID
 
 /** The record kinds a trace file holds, spelled once for the writer and the `splice trace` reader. */
@@ -55,8 +62,9 @@ public class TraceStore(
     public val maxBodyChars: Int,
     private val now: WallClock = WallClock(System::currentTimeMillis),
     private val ids: TurnIdMint = randomTurnIds,
+    public val heap: HeapBudget = JvmHeap.budget,
 ) {
-    private val bodies = TraceBodies()
+    private val bodies = TraceBodies(heap = heap)
 
     init {
         require(maxBodyChars > 0) { "a trace keeps at least one character of a body; maxBodyChars=$maxBodyChars" }
@@ -71,7 +79,19 @@ public class TraceStore(
         if (text.length <= maxBodyChars) text.toString() to false else text.substring(0, maxBodyChars) to true
 
     internal fun write(record: JsonObject) {
-        days.append(DayRecord { file -> bodies.encode(record, file) })
+        val retained = HeapOwners.charge(record, heap, HeapJson.bytes(record))
+        val peak = heap.reserve(HeapWeights.multiply(JsonWire.byteSize(record), 2L)) ?: throw HeapCapacityException()
+        var queued = false
+        try {
+            val payload = DayRecord { file -> bodies.encode(record, file) }
+            // The queue can drop a callback without invoking it. Its actual lifetime owns the charge.
+            HeapOwners.keep(payload, peak)
+            days.append(payload)
+            queued = true
+        } finally {
+            if (!queued) peak.close()
+            java.lang.ref.Reference.reachabilityFence(retained)
+        }
     }
 
     /** The fields every record of this head carries, in front of the kind's own. */

@@ -23,11 +23,16 @@
 package splice.head.trace
 
 import kotlinx.serialization.json.Json
+import splice.core.memory.HeapBudget
+import splice.core.memory.HeapCapacityException
+import splice.core.memory.HeapJson
+import splice.core.memory.HeapOwners
 import splice.core.storage.DayFiles
 import splice.core.storage.DayLine
 import splice.core.storage.FileVisit
 import splice.core.storage.LineFile
 import splice.core.storage.LineVisit
+import splice.upstream.memory.JvmHeap
 import java.io.IOException
 import java.nio.file.Path
 import java.util.concurrent.Callable
@@ -40,6 +45,9 @@ import java.util.concurrent.atomic.AtomicReference
 // why: the bytes a file is known by at each end of what was counted: a trace record's turn id and stamp lie in
 // its first hundred bytes, and one page is what the kernel reads to hand over any of them
 private const val KNOWN_BYTES = 4096
+
+// why: a boxed map/set entry, its references and table growth, beyond the separately weighted id text.
+private const val TRACE_CENSUS_ENTRY_BYTES = 128L
 
 // why: a lane for every four cores at most: the operator's machine runs at load 11-17, and the turns in flight
 // come before a count
@@ -59,6 +67,7 @@ internal class TraceCensus(
     private val json: Json,
     private val processors: Int = Runtime.getRuntime().availableProcessors(),
     private val fileRead: TraceCountFileRead = TraceCountFileRead(),
+    private val heap: HeapBudget = JvmHeap.budget,
 ) {
     /** What the store's files held at the last count, each by the first bytes it is known by. */
     @Volatile
@@ -86,13 +95,19 @@ internal class TraceCensus(
         val lanes = minOf(files.size, processors / CORES_PER_LANE, MAX_LANES)
         val reads = files.map { file ->
             Callable {
-                fileRead.read(days, file) { opened -> counted(opened, before, TraceStamps(json)) }
+                fileRead.read(days, file) { opened -> counted(opened, before, TraceStamps(json, heap)) }
             }
         }
         val counts = (if (lanes < 2) reads.map { it.call() } else onLanes(lanes, reads)).filterNotNull()
-        kept = counts.mapNotNull { it.kept }.associateBy { it.first }
-        val placed = counts.flatMapTo(HashSet()) { it.placed }
-        return Count(placed.size, counts.sumOf { it.skipped })
+        val next = counts.mapNotNull { it.kept }.associateBy { it.first }
+        HeapOwners.charge(next, heap, next.size * TRACE_CENSUS_ENTRY_BYTES)
+        kept = next
+        val peak = heap.reserve(counts.sumOf { it.placed.size * TRACE_CENSUS_ENTRY_BYTES })
+            ?: throw HeapCapacityException()
+        peak.use {
+            val placed = counts.flatMapTo(HashSet()) { it.placed }
+            return Count(placed.size, counts.sumOf { it.skipped })
+        }
     }
 
     /** What each of [reads] answered, run on [lanes] threads at once, which end with the call. */
@@ -123,9 +138,9 @@ internal class TraceCensus(
         val settled = file.settledEnd()
         val first = text(file.bytes(0L, KNOWN_BYTES))
         val known = before[first]?.takeIf { it.end <= settled && it.last == lastBefore(file, it.end) }
-        val whole = Tally(stamps, known)
+        val whole = Tally(stamps, known, heap)
         val _ = file.lines(known?.end ?: 0L, settled, whole)
-        val torn = Tally(stamps, null)
+        val torn = Tally(stamps, null, heap)
         val _ = file.lines(settled, file.size, torn)
         val keep = if (settled < KNOWN_BYTES) null else Counted(settled, first, lastBefore(file, settled), whole)
         return FileCount(keep, whole.placed + torn.placed, whole.skipped + torn.skipped)
@@ -151,13 +166,21 @@ internal class TraceCensus(
     private data class FileCount(val kept: Counted?, val placed: Set<String>, val skipped: Int)
 
     /** Lines tallied from what [from] counted: the turn ids they placed and how many placed none. */
-    private class Tally(private val stamps: TraceStamps, from: Counted?) : LineVisit {
-        val placed = HashSet(from?.placed.orEmpty())
+    private class Tally(private val stamps: TraceStamps, from: Counted?, heap: HeapBudget) : LineVisit {
+        private val lease = heap.reserve(from?.placed.orEmpty().sumOf { HeapJson.text(it) + TRACE_CENSUS_ENTRY_BYTES })
+            ?: throw HeapCapacityException()
+        val placed = HashSet(from?.placed.orEmpty()).also { HeapOwners.keep(it, lease) }
         var skipped = from?.skipped ?: 0
 
         override fun line(line: DayLine): Boolean {
             val id = stamps.of(line)?.placedId
-            if (id == null) skipped += 1 else placed += id
+            if (id == null) {
+                skipped += 1
+            } else if (id !in placed) {
+                val needed = lease.bytes + HeapJson.text(id) + TRACE_CENSUS_ENTRY_BYTES
+                if (!lease.resize(needed)) throw HeapCapacityException()
+                placed += id
+            }
             return true
         }
     }

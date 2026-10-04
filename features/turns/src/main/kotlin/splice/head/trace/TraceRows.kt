@@ -21,54 +21,18 @@
 package splice.head.trace
 
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonObject
-import splice.core.perf.PerfKeys
+import splice.core.memory.HeapBudget
+import splice.core.memory.HeapCapacityException
+import splice.core.memory.HeapOwners
 import splice.core.storage.DayFiles
 import splice.core.util.JsonScalars
+import splice.upstream.memory.JvmHeap
 import java.io.IOException
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
 
-/** Every record of one turn, in the order they were written: the attempts, then the turn record
- *  (null when the turn has not ended yet, or its ending was lost to the file lane). */
-internal data class TracedTurn(val id: String, val attempts: List<JsonObject>, val turn: JsonObject?) {
-    init {
-        // `first` is the record every column is read off, so a turn holding neither an attempt
-        // nor a turn record has nothing to show. TraceRows groups only records it placed under
-        // an id; this is that contract, stated where a future producer has to meet it.
-        require(turn != null || attempts.isNotEmpty()) { "traced turn $id holds no records" }
-    }
-
-    val first: JsonObject get() = turn ?: attempts.first()
-    val ts: Long get() = JsonScalars.long(first, "ts") ?: 0L
-    val session: String? get() = JsonScalars.str(first, "session")
-    val model: String get() = JsonScalars.strOrEmpty(first["model"])
-    val compact: Boolean get() = JsonScalars.str(first, "compact") == "true"
-
-    /** How the turn ended, off its turn record; null while it is open. The verb's table and the
-     *  console's list read the same columns from here (V4-239). */
-    val ending: TurnEnding? get() = turn?.let { record ->
-        val marks = record["perf"]?.jsonObject?.get("marks")?.jsonObject
-        TurnEnding(
-            outcome = JsonScalars.strOrEmpty(record["outcome"]),
-            failureSentence = JsonScalars.str(record, "failure_sentence"),
-            rounds = JsonScalars.strOrEmpty(record["rounds"]),
-            attempts = JsonScalars.strOrEmpty(record["attempts"]),
-            totalMs = marks?.let { JsonScalars.str(it, PerfKeys.TOTAL) },
-        )
-    }
-}
-
-/** A turn record's closing columns, as the record wrote them; [totalMs] is null when its perf carried
- *  no total. */
-internal data class TurnEnding(
-    val outcome: String,
-    val failureSentence: String?,
-    val rounds: String,
-    val attempts: String,
-    val totalMs: String?,
-)
+// why: a census shell, its flight reference, the directory/head key and the retained registry node.
+private const val TRACE_CENSUS_OWNER_BYTES = 1024L
 
 /** What a reader asked for: the newest [last] turns, of the sessions starting with [session] when one is
  *  given, or the one turn whose id is [turn]. */
@@ -89,9 +53,22 @@ internal data class TraceRead(val turns: List<TracedTurn>, val onDisk: Int, val 
     }
 }
 
-internal class TraceRows(private val json: Json = Json { ignoreUnknownKeys = true }) {
+internal class TraceRows(
+    private val json: Json = Json { ignoreUnknownKeys = true },
+    private val heap: HeapBudget = JvmHeap.budget,
+) {
     /** Each store's count, by its trace dir and head, kept for as long as this reader lives. */
     private val censuses = ConcurrentHashMap<Pair<Path, String>, TraceCensus>()
+    private val censusLease = HeapOwners.charge(censuses, heap, 0L)
+
+    private fun census(traceDir: Path, head: String): TraceCensus = synchronized(censuses) {
+        val key = traceDir to head
+        censuses[key] ?: run {
+            val bytes = (censuses.size + 1L) * TRACE_CENSUS_OWNER_BYTES
+            if (!censusLease.resize(bytes)) throw HeapCapacityException()
+            TraceCensus(json, heap = heap).also { censuses[key] = it }
+        }
+    }
 
     /** The head's day files, everything on disk (retention is the daemon's business, V4-273). */
     internal fun days(traceDir: Path, head: String): DayFiles = DayFiles(traceDir, head)
@@ -102,14 +79,14 @@ internal class TraceRows(private val json: Json = Json { ignoreUnknownKeys = tru
     @Throws(IOException::class)
     internal fun read(traceDir: Path, head: String, ask: TraceAsk): TraceRead {
         val turns = turns(traceDir, head, ask)
-        val count = censuses.computeIfAbsent(traceDir to head) { TraceCensus(json) }.count(days(traceDir, head))
+        val count = census(traceDir, head).count(days(traceDir, head))
         return TraceRead(turns, count.onDisk, count.skippedLines)
     }
 
     /** The turns [ask] names, oldest first, read from the newest line only until each is whole. */
     @Throws(IOException::class)
     internal fun turns(traceDir: Path, head: String, ask: TraceAsk): List<TracedTurn> {
-        return TraceTail(ask, json).use { tail ->
+        return TraceTail(ask, json, heap).use { tail ->
             days(traceDir, head).newestFirst(tail)
             tail.turns()
         }

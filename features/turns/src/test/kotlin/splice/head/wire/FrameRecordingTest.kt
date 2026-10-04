@@ -8,10 +8,112 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.memory.HeapBudget
+import splice.core.memory.HeapCapacityException
+import splice.core.memory.HeapJson
+import java.lang.ref.Reference
+import java.lang.ref.WeakReference
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.LockSupport
+
+// why: bounded ordinary allocation pressure exercises GC-owned release without an explicit GC call.
+private const val OWNER_PRESSURE_BYTES = 1024 * 1024
 
 class FrameRecordingTest {
+    @Volatile private var ownerPressure: ByteArray? = null
+
+    @Test
+    fun `static frame literals cannot retain a discarded recording's reservation`() {
+        refundsStaticFrame("static-frame")
+    }
+
+    @Test
+    fun `interned frame content cannot retain a discarded recording's reservation`() {
+        refundsStaticFrame("interned-frame".intern())
+    }
+
+    @Test
+    fun `empty frames release their actual copied string owner`() {
+        refundsStaticFrame("")
+    }
+
+    @Test
+    fun `an escaped frame keeps its string metadata after the recording is collected`() {
+        val heap = HeapBudget(Long.MAX_VALUE, 4096)
+        val (recording, escaped) = escapedFrame(heap)
+        awaitUntil { recording.refersTo(null) && heap.available.value >= heap.limitBytes - HeapJson.text(escaped) }
+        assertTrue(
+            heap.available.value <= heap.limitBytes - HeapJson.text(escaped),
+            "escaped string metadata belongs to the frame, not the discarded recording",
+        )
+        Reference.reachabilityFence(escaped)
+    }
+
+    private fun refundsStaticFrame(text: String) {
+        val heap = HeapBudget(Long.MAX_VALUE, 4096)
+        val recording = discardedRecording(heap, text)
+        awaitUntil { recording.refersTo(null) && heap.available.value == heap.limitBytes }
+        Reference.reachabilityFence(text)
+    }
+
+    private fun discardedRecording(heap: HeapBudget, frame: String): WeakReference<FrameRecording> =
+        WeakReference(FrameRecording(heap).also { it.append(frame) })
+
+    private fun escapedFrame(heap: HeapBudget): Pair<WeakReference<FrameRecording>, String> {
+        val recording = FrameRecording(heap)
+        recording.append("escaped-frame")
+        return WeakReference(recording) to recording.frames().single()
+    }
+
+    private fun awaitUntil(done: () -> Boolean) {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+        while (!done()) {
+            check(System.nanoTime() < deadline) { "frame owner did not settle before its deadline" }
+            ownerPressure = ByteArray(OWNER_PRESSURE_BYTES)
+            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(5))
+        }
+    }
+
+    @Test
+    fun `failed append preserves prior frames and wakes followers with an honest verdict`() = runBlocking {
+        val heap = HeapBudget(heapLimitBytes = Long.MAX_VALUE, budgetBytes = 140)
+        val recording = FrameRecording(heap)
+        recording.append("one")
+        assertThrows(HeapCapacityException::class.java) { recording.append("two") }
+        recording.complete(whole = false)
+        val received = mutableListOf<String>()
+        assertFalse(recording.follow { received += it })
+        assertEquals(listOf("one"), received)
+        assertEquals(6L, heap.available.value, "only the temporary character array's charge was returned")
+    }
+
+    @Test
+    fun `recordings across heads compete for the same reservation bytes`() {
+        val heap = HeapBudget(heapLimitBytes = Long.MAX_VALUE, budgetBytes = 280)
+        val first = FrameRecording(heap)
+        val second = FrameRecording(heap)
+        first.append("one")
+        second.append("two")
+        assertThrows(HeapCapacityException::class.java) { first.append("three") }
+        assertThrows(HeapCapacityException::class.java) { second.append("four") }
+        assertEquals(1, first.size)
+        assertEquals(1, second.size)
+    }
+
+    @Test
+    fun `an escaped frame list reserves its copy before allocating`() {
+        val heap = HeapBudget(heapLimitBytes = Long.MAX_VALUE, budgetBytes = 198)
+        val recording = FrameRecording(heap)
+        recording.append("one")
+        val escaped = recording.frames()
+        assertEquals(listOf("one"), escaped)
+        assertEquals(0L, heap.available.value)
+        assertThrows(HeapCapacityException::class.java) { recording.frames() }
+        assertEquals(1, recording.size)
+    }
 
     @Test
     fun `a follower that starts after completion gets every frame in order and returns`() = runBlocking {

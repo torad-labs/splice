@@ -61,7 +61,10 @@ public class HeadServer(
     private val gate get() = deps.gate
     private val log get() = deps.log
 
-    private val compactionReplay = CompactionReplay(deps.stores.compactionRecordings)
+    private val compactionReplay = CompactionReplay(
+        deps.stores.compactionRecordings,
+        heap = deps.seams.requestMaterializationGate.heap,
+    )
     private val driver = TurnDriver(provider, deps, compactionReplay)
     private val window = AdmissionWindow()
     private val responses = AdmissionResponses()

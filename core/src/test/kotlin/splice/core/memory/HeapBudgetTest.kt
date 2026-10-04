@@ -4,6 +4,7 @@ package splice.core.memory
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.util.concurrent.Executors
@@ -68,6 +69,39 @@ class HeapBudgetTest {
         request.close()
         connection.close()
         assertEquals(heap.limitBytes, heap.available.value)
+    }
+
+    @Test
+    fun `partitioning a peak never refunds its retained owner during handoff`() {
+        val budget = HeapBudget(256, 100)
+        val peak = requireNotNull(budget.reserve(100))
+        val retained = peak.split(30)
+        assertEquals(70, peak.bytes)
+        assertEquals(30, retained.bytes)
+        assertNull(budget.reserve(1))
+        val escaped = retained.share()
+        peak.close()
+        assertEquals(70, budget.available.value)
+        retained.close()
+        assertEquals(70, budget.available.value)
+        escaped.close()
+        assertEquals(100, budget.available.value)
+    }
+
+    @Test
+    fun `a shared peak refuses partition without changing either ownership or capacity`() {
+        val budget = HeapBudget(256, 100)
+        val peak = requireNotNull(budget.reserve(100))
+        val shared = peak.share()
+        assertThrows(IllegalStateException::class.java) { peak.split(30) }
+        assertEquals(100, peak.bytes)
+        assertEquals(0, budget.available.value)
+        shared.close()
+        assertThrows(IllegalArgumentException::class.java) { peak.split(101) }
+        assertThrows(IllegalArgumentException::class.java) { peak.split(-1) }
+        assertEquals(100, peak.bytes)
+        peak.close()
+        assertEquals(100, budget.available.value)
     }
 
     @Test

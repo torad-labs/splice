@@ -46,6 +46,13 @@ public class HeapBudget(
         true
     }
 
+    internal fun split(allocation: HeapAllocation, bytes: Long): HeapLease = synchronized(lock) {
+        check(allocation.owners == 1) { "a shared allocation cannot be partitioned" }
+        require(bytes in 0..allocation.bytes)
+        allocation.bytes -= bytes
+        HeapLease(this, HeapAllocation(bytes))
+    }
+
     internal fun bytes(allocation: HeapAllocation): Long = synchronized(lock) { allocation.bytes }
 
     internal fun release(allocation: HeapAllocation) {

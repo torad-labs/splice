@@ -47,6 +47,9 @@ public class DayLine internal constructor(
     /** The actual source day, including a rolled generation, for resolving selected record companions. */
     public val file: Path get() = reads.file
 
+    /** The source span's byte count, before whole-line allocation. */
+    public val byteSize: Long get() = end - start
+
     /** Its bytes in order, its terminator not among them, read from the file as they are asked for. */
     public fun bytes(): InputStream = SpanStream(reads, start, end)
 

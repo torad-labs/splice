@@ -753,7 +753,8 @@ class RoleRegistryLawTest {
         // 134 since Oct 3 CT: V4-456's CurrentUpstreamAttempt and PidAlive, the attempt-number and pid probes.
         // 135 since Oct 3 CT: IngressErrorBody renders pre-turn HTTP errors, never OAuth forms or human answers.
         // Oct 3 CT: native URL announcements and native child spawning are distinct from diagnostics and worker boots.
-        assertEquals(138, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
+        // Oct 3 CT: CodeModeQueryPreparation makes one key current before an ownership query.
+        assertEquals(139, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
         assertTrue(config.entries.values.all { !it.text("reason").isNullOrBlank() }) { "every entry is reasoned" }
         assertTrue(config.entries.values.all { !it.text("dated").isNullOrBlank() }) { "every entry is dated" }
 

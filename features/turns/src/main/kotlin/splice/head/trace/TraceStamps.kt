@@ -13,10 +13,14 @@ import kotlinx.serialization.descriptors.elementNames
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import splice.core.memory.HeapBudget
+import splice.core.memory.HeapCapacityException
+import splice.core.memory.HeapText
 import splice.core.storage.DayLine
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.head.wire.TraceKinds
+import splice.upstream.memory.JvmHeap
 
 /** The fields a trace line is placed by, decoded without building the line's tree: the bodies are
  *  nearly all of a record's bytes, and a line that does not decode is not a record. */
@@ -47,8 +51,8 @@ internal data class TraceStamp(
 }
 
 /** Reads lines' stamps, one line at a time: it keeps a buffer, so one read holds one. */
-internal class TraceStamps(private val json: Json) {
-    private val shape = JsonLineShape(TraceStamp.serializer().descriptor.elementNames.toSet())
+internal class TraceStamps(private val json: Json, private val heap: HeapBudget = JvmHeap.budget) {
+    private val shape = JsonLineShape(TraceStamp.serializer().descriptor.elementNames.toSet(), heap)
 
     /** The line's stamp off its bytes when the shape vouches for it, its named members decoded alone by the same
      *  serializer; else the whole line decoded, as every line was before V4-343; null when it is no record. */
@@ -58,7 +62,15 @@ internal class TraceStamps(private val json: Json) {
         return json.decodeFromJsonElement(TraceStamp.serializer(), fields)
     }
 
-    private fun decoded(line: DayLine): TraceStamp? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- V4-174: a torn or foreign line is counted as skipped by the caller and shown to the operator
-        Cancellables.runCatchingCancellable { json.decodeFromString(TraceStamp.serializer(), line.text()) }.getOrNull()
+    private fun decoded(line: DayLine): TraceStamp? {
+        if (line.byteSize >= Int.MAX_VALUE) throw HeapCapacityException()
+        return line.bytes().use { input ->
+            HeapText.Reader.read(input, line.byteSize, heap).use { staged ->
+                // ast-grep-ignore: kt-no-silent-result-collapse -- a torn or foreign line is counted as skipped, while capacity propagates before parsing
+                Cancellables.runCatchingCancellable {
+                    json.decodeFromString(TraceStamp.serializer(), staged.text)
+                }.getOrNull()?.also(staged::retain)
+            }
+        }
+    }
 }

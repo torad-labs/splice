@@ -3,11 +3,14 @@
 package splice.provider.codex.state
 
 import kotlinx.serialization.json.Json
+import splice.core.memory.HeapBudget
+import splice.core.memory.HeapCapacityException
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.provider.codex.CodeModeExpiredSnapshot
 import splice.provider.codex.CodeModePersistedState
 import splice.provider.codex.CodeModeRecordSnapshot
+import splice.upstream.memory.JvmHeap
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -19,6 +22,7 @@ internal class CodeModeStateDirectory(
     private val dir: Path,
     private val json: Json,
     private val log: LogSink,
+    private val heap: HeapBudget = JvmHeap.budget,
 ) {
     data class Loaded(val state: CodeModePersistedState, val checkpoint: Boolean)
 
@@ -68,13 +72,15 @@ internal class CodeModeStateDirectory(
     /** Invalid state is dropped alone. An I/O failure preserves the file for the next start. */
     private fun read(file: Path): OnDisk? {
         val why = try {
-            val conversation = CodeModeStateJournal.read(file, json)
-            val live = CodeModeStateJournal.liveBytes(conversation, json)
+            val conversation = CodeModeStateJournal.read(file, json, heap)
+            val live = CodeModeStateJournal.liveBytes(conversation, json, heap)
             val key = (conversation.records.map { it.key } + conversation.expired.map { it.key }).distinct()
                 .singleOrNull()
             val namedKey = key?.takeIf { path(it) == file || olderPath(it) == file }
             if (namedKey != null) return OnDisk(file, namedKey, conversation, live)
             "it does not hold exactly the one conversation its name says"
+        } catch (capacity: HeapCapacityException) {
+            throw capacity
         } catch (failure: IOException) {
             log(
                 "[code-mode] conversation file ${file.fileName} not read " +

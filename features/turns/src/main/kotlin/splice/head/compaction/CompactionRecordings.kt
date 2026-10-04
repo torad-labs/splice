@@ -10,12 +10,16 @@ package splice.head.compaction
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import splice.core.memory.HeapBudget
+import splice.core.memory.HeapCapacityException
+import splice.core.memory.HeapText
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
+import splice.upstream.memory.JvmHeap
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
@@ -44,6 +48,7 @@ public class FileCompactionRecordings(
     private val log: LogSink = LogSink(DaemonLog::write),
     private val now: WallClock = WallClock(System::currentTimeMillis),
     private val ttlMs: Long = RECORDING_TTL_MS,
+    private val heap: HeapBudget = JvmHeap.budget,
 ) : CompactionRecordings {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -67,10 +72,13 @@ public class FileCompactionRecordings(
                 Files.deleteIfExists(file)
                 null
             } else {
-                val kept = json.decodeFromString(KeptRecording.serializer(), Files.readString(file))
-                kept.frames.takeIf { kept.key == key }
+                HeapText.Reader.read(file, heap).use { staged ->
+                    val kept = json.decodeFromString(KeptRecording.serializer(), staged.text)
+                    kept.frames.takeIf { kept.key == key }?.also(staged::retain)
+                }
             }
         }.getOrElse { failure ->
+            if (failure is HeapCapacityException) throw failure
             if (failure !is NoSuchFileException) {
                 val why = SafeFailureText.render(failure)
                 log("[compaction] a kept compaction answer is unreadable ($why); $UPSTREAM\n")

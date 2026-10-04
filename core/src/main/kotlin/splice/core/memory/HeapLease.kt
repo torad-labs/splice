@@ -26,6 +26,14 @@ public class HeapLease internal constructor(
         budget.resize(allocation, bytes)
     }
 
+    /** Partition a sole-owned peak without refunding any bytes during the transfer.
+     *  Shared peaks cannot be split because another owner still retains their whole allocation.
+     */
+    public fun split(bytes: Long): HeapLease = synchronized(lock) {
+        check(!closed)
+        budget.split(allocation, bytes)
+    }
+
     override fun close() {
         synchronized(lock) {
             if (closed) return

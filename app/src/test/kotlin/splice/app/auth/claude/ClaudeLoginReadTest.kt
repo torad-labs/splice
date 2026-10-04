@@ -8,15 +8,18 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.claude.ClaudeLoginPlaceView
+import splice.app.head.ProviderHoldFiles
 import splice.client.ClaudeHead
 import splice.client.ClaudeLoginTarget
 import splice.core.auth.CredentialKey
 import splice.core.config.StatePaths
+import splice.core.usage.PlanLimit
 import splice.core.usage.QuotaJson
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
 import splice.core.util.WallClock
 import splice.head.usage.CredentialQuotaFiles
+import splice.upstream.retry.ProviderHold
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -117,5 +120,49 @@ class ClaudeLoginReadTest {
 
         assertEquals(63.0, used(own, ClaudeLoginPlaceId.SPLICE), "it still reads its own credential's observation")
         assertEquals(52.0, used(own, ClaudeLoginPlaceId.NATIVE), "and lends nothing to an account it is not in")
+    }
+
+    private fun hold(token: String, reset: Long) {
+        ProviderHoldFiles(paths(), {}).forHead("claude-splice").forCredential(key(token))!!
+            .save(ProviderHold(reset, PlanLimit("5-hour", reset)))
+    }
+
+    @Test
+    fun `one account held through a native place holds its other place's different token too`() {
+        val native = place(ClaudeLoginPlaceId.NATIVE, "native-held-synthetic", account = "one-subscription")
+        val added = place(ClaudeLoginPlaceId.SPLICE, "splice-free-synthetic", account = "one-subscription")
+        hold("native-held-synthetic", 18_000L)
+
+        val shared = read(native, added)
+
+        assertEquals(true, shared.getValue(ClaudeLoginPlaceId.NATIVE).standing.held)
+        assertEquals(true, shared.getValue(ClaudeLoginPlaceId.SPLICE).standing.held)
+        assertEquals(18_000L, shared.getValue(ClaudeLoginPlaceId.SPLICE).standing.untilEpochSeconds)
+
+        hold("splice-free-synthetic", 25_000L)
+        val later = read(native, added)
+        assertEquals(25_000L, later.getValue(ClaudeLoginPlaceId.NATIVE).standing.untilEpochSeconds)
+        assertEquals(25_000L, later.getValue(ClaudeLoginPlaceId.SPLICE).standing.untilEpochSeconds)
+
+        Files.writeString(native.credentials, """{"claudeAiOauth":{"accessToken":"rotated-synthetic"}}""")
+        Files.writeString(added.credentials, """{"claudeAiOauth":{"accessToken":"other-rotated-synthetic"}}""")
+        val rotated = read(native, added)
+        assertNull(rotated.getValue(ClaudeLoginPlaceId.NATIVE).standing.held, "retired observers lend no hold")
+        assertNull(rotated.getValue(ClaudeLoginPlaceId.SPLICE).standing.held)
+    }
+
+    @Test
+    fun `an account's hold is not lent to a different account or an unknown identity`() {
+        val held = place(ClaudeLoginPlaceId.NATIVE, "held-synthetic", account = "held-account")
+        val other = place(ClaudeLoginPlaceId.SPLICE, "other-synthetic", account = "other-account")
+        hold("held-synthetic", 18_000L)
+        assertNull(read(held, other).getValue(ClaudeLoginPlaceId.SPLICE).standing.held)
+
+        val anonymous = place(ClaudeLoginPlaceId.SPLICE, "anonymous-synthetic")
+        assertNull(read(held, anonymous).getValue(ClaudeLoginPlaceId.SPLICE).standing.held)
+        hold("anonymous-synthetic", 22_000L)
+        val separate = read(held, anonymous)
+        assertEquals(18_000L, separate.getValue(ClaudeLoginPlaceId.NATIVE).standing.untilEpochSeconds)
+        assertEquals(22_000L, separate.getValue(ClaudeLoginPlaceId.SPLICE).standing.untilEpochSeconds)
     }
 }

@@ -1,6 +1,6 @@
 // NEW: each place joins only its currently live credential to successful windows and provider refusals.
 //
-// WINDOWS ARE JOINED BY ACCOUNT, NOT BY TOKEN (2026-10-04): Anthropic's 5-hour and 7-day windows belong to the
+// WINDOWS AND HOLDS ARE JOINED BY ACCOUNT, NOT BY TOKEN (2026-10-04): Anthropic's 5-hour and 7-day windows belong to the
 // SUBSCRIPTION, so every credential of one account is spending the same window. A reading is FILED under the token
 // that observed it, and joining it back by that token split one account's window across its tokens: on this machine
 // both Claude places hold one account under two different tokens, and Accounts drew the same email twice, one card
@@ -37,8 +37,13 @@ internal class ClaudeLoginRead(
         val newest = read.mapNotNull { (location, native) -> filed(location, native) }
             .groupBy({ it.first }, { it.second })
             .mapValues { (_, windows) -> windows.maxBy(QuotaSnapshot::updatedAt) }
+        val held = read.mapNotNull { (location, native) ->
+            val account = native.account?.uuid ?: return@mapNotNull null
+            holdUntil(location, native)?.let { account to it }
+        }.groupBy({ it.first }, { it.second }).mapValues { (_, resets) -> resets.max() }
         return read.map { (location, native) ->
-            view(location, native, native.account?.uuid?.let(newest::get))
+            val account = native.account?.uuid
+            view(location, native, account?.let(newest::get), account?.let(held::get))
         }
     }
 
@@ -53,11 +58,11 @@ internal class ClaudeLoginRead(
         location: ClaudeLoginLocation,
         native: ClaudeLoginFacts,
         joined: QuotaSnapshot?,
+        joinedUntil: Long?,
     ): ClaudeLoginPlaceView {
         val head = location.target.head.key
         val quota = joined ?: native.key?.takeIf { native.account == null }?.let { quota(location, it) }
-        val hold = native.key?.let { holds.forHead(head).forCredential(it)?.load() }
-        val until = listOfNotNull(hold?.providerResetAtEpochSeconds, hold?.plan?.resetEpochSeconds).maxOrNull()
+        val until = if (native.account == null) holdUntil(location, native) else joinedUntil
         return ClaudeLoginPlaceView(
             id = location.id,
             head = head,
@@ -71,6 +76,12 @@ internal class ClaudeLoginRead(
             ),
             refusal = native.refusal,
         )
+    }
+
+    /** Only a live token can lend its provider's hold to the account it proves, just as with windows. */
+    private fun holdUntil(location: ClaudeLoginLocation, native: ClaudeLoginFacts): Long? {
+        val hold = native.key?.let { holds.forHead(location.target.head.key).forCredential(it)?.load() }
+        return listOfNotNull(hold?.providerResetAtEpochSeconds, hold?.plan?.resetEpochSeconds).maxOrNull()
     }
 
     private fun quota(location: ClaudeLoginLocation, key: String): QuotaSnapshot? =

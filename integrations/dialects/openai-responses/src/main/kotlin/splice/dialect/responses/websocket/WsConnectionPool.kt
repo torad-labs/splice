@@ -3,6 +3,7 @@
 // idle-only eviction (a busy connection is never evicted mid-round) are both unchanged.
 package splice.dialect.responses.websocket
 
+import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 
 /**
@@ -18,17 +19,21 @@ internal class WsConnectionPool(
     private val log: LogSink,
     private val logKeys: WsLogKeys,
     connector: WsConnector,
+    /** The age at which an idle connection is retired rather than handed to a new round. */
+    private val maxSocketAgeMs: Long,
+    /** The clock every socket's [WsPulse.openedAt] is stamped on, so an age is one subtraction. */
+    private val clock: ElapsedClock,
 ) {
     private val connections = LinkedHashMap<String, WsConnection>()
     private val lock = Any()
 
     // Declared AFTER the registry it reads: the OpenSockets seam is only ever invoked from a
     // listener callback, long after construction, but property order keeps the dependency honest.
-    private val factory = WsConnectionFactory(connector, log, logKeys, OpenSockets { openCount() })
+    private val factory = WsConnectionFactory(connector, log, logKeys, OpenSockets { openCount() }, clock)
 
     /** Get-or-connect, and win the busy flag — or null (SSE round). */
     internal suspend fun acquire(key: String, headers: Map<String, String>, wssUrl: String): WsConnection? {
-        val existing = synchronized(lock) { connections[key]?.takeIf { !it.dead.get() } }
+        val existing = synchronized(lock) { connections[key]?.takeIf { !it.dead.get() } }?.let { retireIfAged(key, it) }
         val conn = existing ?: connect(key, headers, wssUrl) ?: return null
         if (!conn.busy.compareAndSet(false, true)) {
             // A concurrent round of the SAME conversation is already on the socket — never
@@ -45,6 +50,20 @@ internal class WsConnectionPool(
         conn.lease.incrementAndGet()
         conn.pulse.roundStarted()
         return conn.takeIf { !it.dead.get() }
+    }
+
+    /** [conn], or null once it is retired: OpenAI ends a websocket connection at 60 minutes, so an IDLE one
+     *  at [maxSocketAgeMs] is closed here and the round connects afresh, which full-sends like any other
+     *  reconnect. The busy CAS reserves it first, as [removeOldestIdle] does, so a concurrent acquire can
+     *  never win a socket this is about to kill. A busy one is kept: the round on it is never torn, a
+     *  concurrent round of the key rides SSE as before, and the next acquire after its release retires it. */
+    private fun retireIfAged(key: String, conn: WsConnection): WsConnection? {
+        val age = clock() - conn.pulse.openedAt
+        if (age < maxSocketAgeMs || !conn.busy.compareAndSet(false, true)) return conn
+        synchronized(lock) { if (connections[key] === conn) connections.remove(key) }
+        conn.kill()
+        log("[ws] ${logKeys.logKey(key)} retired at ${age / MS_PER_MINUTE} minutes, before the 60-minute limit\n")
+        return null
     }
 
     private suspend fun connect(key: String, headers: Map<String, String>, wssUrl: String): WsConnection? {
@@ -114,3 +133,5 @@ internal class WsConnectionPool(
         synchronized(lock) { if (connections[key] === conn) connections.remove(key) }
     }
 }
+
+private const val MS_PER_MINUTE = 60_000L

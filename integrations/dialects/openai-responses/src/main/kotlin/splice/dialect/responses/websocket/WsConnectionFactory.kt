@@ -7,6 +7,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.Cancellables
 import splice.core.util.ERR_SNIPPET
+import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import java.net.URI
 import java.util.concurrent.atomic.AtomicBoolean
@@ -25,6 +26,7 @@ internal class WsConnectionFactory(
     private val log: LogSink,
     private val logKeys: WsLogKeys,
     private val openSockets: OpenSockets,
+    private val clock: ElapsedClock,
 ) {
     private val generations = AtomicLong(0)
 
@@ -35,7 +37,7 @@ internal class WsConnectionFactory(
         val anomalyObserved = AtomicBoolean(false)
         // Born with the socket, before the listener: the first server ping can land during the
         // handshake, and a close line must be able to name the socket that never got registered.
-        val pulse = WsPulse(logKeys.logKey(key), openSockets)
+        val pulse = WsPulse(logKeys.logKey(key), openSockets, clock)
         val listener = InboxListener(
             inbox,
             log,

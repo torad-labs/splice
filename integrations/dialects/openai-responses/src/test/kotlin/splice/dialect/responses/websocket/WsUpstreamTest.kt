@@ -60,6 +60,9 @@ private const val DELTA = """{"type":"response.output_text.delta","delta":"hi"}"
 private const val DONE = """{"type":"response.completed"}"""
 private const val CAP = 2
 
+// The fixture's socket age limit: an hour of virtual clock would read the same, a small number reads plainer.
+private const val AGE_LIMIT = 1_000L
+
 // RFC 6455 §7.4.1: never sent on the wire — the JDK's word for "the connection ended without a close
 // frame" (WebSocketImpl.onComplete → CLOSED_ABNORMALLY). Every live "socket closed by the server" line
 // of 2026-09-02 carried it.
@@ -181,6 +184,9 @@ private class Fixture {
             socket
         }
 
+    /** The socket clock's reading, moved by the age tests; every socket opens at the value it holds. */
+    var now = 0L
+
     fun start(
         firstEventTimeoutMs: Long = BUDGET,
         maxConnections: Int = 32,
@@ -192,6 +198,8 @@ private class Fixture {
             sendTimeoutMs = sendTimeoutMs,
             log = { log += it },
             connector = connector,
+            maxSocketAgeMs = AGE_LIMIT,
+            clock = ElapsedClock { now },
         )
         return this
     }
@@ -691,6 +699,45 @@ class WsUpstreamTest {
         )
         assertFalse(fx.logged("connected"), "an anomalous handshake must not register or announce a dead socket")
         assertTrue(fx.logged("unexpected binary frame"))
+    }
+}
+
+/** Oct 4: OpenAI ends a websocket connection at 60 minutes, and six rounds between Oct 2 and Oct 4 met
+ *  websocket_connection_limit_reached on a pooled socket, each falling back to a full HTTP send. The pool
+ *  retires an idle socket at its age limit instead. Split from WsUpstreamTest (detekt LargeClass). */
+class WsUpstreamSocketAgeTest {
+    @Test
+    fun `an idle connection at the age limit is retired and the round rides a fresh socket`() = runTest {
+        val fx = Fixture().apply { reply = replyWith(DONE) }.start()
+        assertEquals(1, fx.types().size)
+        fx.now = AGE_LIMIT - 1
+        assertEquals(1, fx.types().size)
+        assertEquals(1, fx.connects, "a socket younger than the limit is reused")
+
+        fx.now = AGE_LIMIT
+        assertEquals(1, fx.types().size, "the round still rides the websocket, never SSE")
+        assertEquals(2, fx.connects, "a socket at the limit is replaced before a round starts on it")
+        assertEquals(1, fx.opened[0].aborts, "the retired socket is closed, not leaked")
+        assertTrue(fx.handed[2].generation > fx.handed[1].generation, "the fresh socket's round full-sends")
+        assertEquals(listOf(FRAME), fx.opened[1].sent, "the retired socket carries no round of the new one")
+        assertTrue(fx.logged("retired"), "the retirement is said in daemon.log")
+    }
+
+    @Test
+    fun `a round in flight on an aged socket is never torn by retirement`() = runTest {
+        val fx = Fixture().apply { reply = replyWith(CREATED) }.start()
+        val inFlight = fx.go() ?: error("the first round fell back to SSE")
+        fx.now = AGE_LIMIT * 2
+
+        assertNull(fx.go(), "a concurrent round on the same key rides SSE, as before")
+        assertEquals(0, fx.opened[0].aborts, "the socket carrying a live round is not retired under it")
+        fx.opened[0].push(DONE)
+        assertEquals(listOf("response.created", "response.completed"), inFlight.toList().map { it.type() })
+
+        fx.reply = replyWith(DONE)
+        assertEquals(1, fx.types().size)
+        assertEquals(2, fx.connects, "once the round released it, the aged socket is retired on the next acquire")
+        assertEquals(1, fx.opened[0].aborts)
     }
 }
 

@@ -24,7 +24,9 @@ internal class WsPulse(
     private val openSockets: OpenSockets,
     private val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
 ) {
-    private val openedAt = clock()
+    /** When the socket opened, on the clock the pool also holds: it retires an idle one before OpenAI's
+     *  60-minute limit. */
+    internal val openedAt = clock()
     private val lastFrameAt = AtomicLong(openedAt)
     private val lastPingAt = AtomicLong(NEVER)
     private val roundStartedAt = AtomicLong(NEVER)

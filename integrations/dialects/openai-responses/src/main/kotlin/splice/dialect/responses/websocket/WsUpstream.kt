@@ -28,7 +28,9 @@ package splice.dialect.responses.websocket
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.JsonObject
+import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
+import splice.core.util.MonoClock
 
 /**
  * The WebSocket upstream: a bounded per-key connection registry plus the one operation the head
@@ -51,9 +53,13 @@ public class WsUpstream(
     private val connector: WsConnector = WsConnector { uri, headers, listener ->
         JdkWebSocketConnector().jdkConnect(uri, headers, listener, CONNECT_TIMEOUT_MS)
     },
+    /** The age past which an idle pooled connection is retired; see MAX_SOCKET_AGE_MS. */
+    maxSocketAgeMs: Long = MAX_SOCKET_AGE_MS,
+    /** Where socket ages are read; tests pass a clock they move. */
+    clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
 ) {
     private val logKeys = WsLogKeys()
-    private val pool = WsConnectionPool(maxConnections, log, logKeys, connector)
+    private val pool = WsConnectionPool(maxConnections, log, logKeys, connector, maxSocketAgeMs, clock)
     private val opener = WsRoundOpener(log, logKeys, firstEventTimeoutMs, pool, sendTimeoutMs)
     private val stream = WsRoundStream(log, logKeys, pool)
 
@@ -109,3 +115,10 @@ private const val FIRST_EVENT_TIMEOUT_MS = 15_000L
 // the largest frame observed" was true when this was written and 7.7 MB frames are routine now).
 private const val SEND_TIMEOUT_MS = 10_000L
 private const val MAX_CONNECTIONS = 32
+
+// OpenAI's websocket mode ends a connection at 60 minutes and answers the next request on it with
+// websocket_connection_limit_reached (developers.openai.com/api/docs/guides/websocket-mode). Six
+// rounds met that error between Oct 2 and Oct 4; each fell back to a full HTTP send. An idle socket
+// is retired at 45 minutes instead, so a round that starts on the oldest socket the pool hands out
+// still has the default upstream timeout (Knob.UPSTREAM_TIMEOUT_MS, 900 seconds) before the limit.
+private const val MAX_SOCKET_AGE_MS = 2_700_000L

@@ -76,6 +76,10 @@ import java.util.concurrent.atomic.AtomicInteger
 private const val TIMEOUT_MS = 10_000L
 private const val POLL_MS = 25L
 private const val SETTLE_MS = 1_500L
+
+// AddRoutes answers an accepted save and only then drains, so a test that saves must see that drain land before it
+// ends. One that ends first leaves the drain to arrive after the next test's reset, where it is counted as that test's.
+private const val SAVE_DRAINS = "an accepted save drains the daemon once"
 private const val HEAD_KEY = "claudex"
 private const val TWO_MINUTES_MS = 120_000L
 
@@ -194,6 +198,7 @@ class AddBackendRouteTest {
         assertEquals(HttpStatusCode.OK, saved.status, saved.bodyAsText())
         assertEquals("local-runtime-no-auth", store.read("BONSAI_API_KEY"))
         assertTrue("[heads.bonsai]" in Files.readString(config))
+        assertEquals(1, drainsAfter(TIMEOUT_MS), SAVE_DRAINS)
     }
 
     @Test
@@ -205,6 +210,7 @@ class AddBackendRouteTest {
         val id = body(post("/api/add", requestJson)).getValue("id").jsonPrimitive.content
         assertEquals(HttpStatusCode.OK, post("/api/add/$id/save").status)
         assertEquals("operator-owned", KeyStore(KeyStorePath.defaultPath(env)).read(name))
+        assertEquals(1, drainsAfter(TIMEOUT_MS), SAVE_DRAINS)
     }
 
     @Test
@@ -331,6 +337,7 @@ class AddBackendRouteTest {
         assertEquals("$config changed while this add was open, so nothing was saved; open the add again.", error(late))
         val written = Files.readString(config)
         assertTrue("[heads.fw]" in written && "[heads.fx]" !in written, written)
+        assertEquals(1, drainsAfter(TIMEOUT_MS), SAVE_DRAINS)
     }
 
     @Test

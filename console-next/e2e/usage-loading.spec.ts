@@ -120,6 +120,30 @@ test('headline metrics keep loading after an early failure while a readable sibl
   }
 });
 
+test('an economics failure stays in hourly history while independent Usage readings still load', async ({ page }) => {
+  await page.route('**/api/economics', route => route.fulfill({ status: 500, json: {
+    error: 'IllegalStateException: synthetic economics failure',
+  } }));
+  await page.route(url => url.pathname === '/api/perf/turns', route => {
+    const query = new URL(route.request().url()).searchParams;
+    const key = query.get('head') ?? '';
+    return route.fulfill({ json: { since: Number(query.get('since')), n: 1,
+      heads: [{ key, label: key, count: key === STACK.oauthHead ? 2502 : 0, usage: key === STACK.oauthHead ? usage : empty, rows: [] }],
+    } });
+  });
+  const faults = await open(page, 'usage');
+  const total = page.getByRole('region', { name: 'Usage', exact: true });
+  await expect(total.getByRole('heading', { name: 'Requests', exact: true }).locator('..')).toContainText('2,502');
+  await expect(total.getByRole('heading', { name: 'Tokens read in', exact: true }).locator('..')).toContainText('2.50M');
+  await expect(total.getByRole('heading', { name: 'API cost, estimated', exact: true }).locator('..')).toContainText('$1.48');
+  await expect(page.getByRole('alert')).toContainText('Hourly usage history could not load');
+  await expect(page.getByRole('main')).not.toContainText('IllegalStateException');
+  await expect(page.locator('.usage-pricing')).toBeVisible();
+  await expect(page.locator('[aria-labelledby="usage-budgets"]')).toBeVisible();
+  expect(faults.pageErrors).toEqual([]);
+  expect(faults.failedReads.every(path => path.includes('/api/economics'))).toBe(true);
+});
+
 test('a cold seven-day page waits for retention before starting a history read', async ({ page }) => {
   const heads = await read<HeadsPayload>(page, '/api/heads');
   let release!: () => void;

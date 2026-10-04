@@ -63,20 +63,18 @@ export function UsagePage() {
   const choices = windowChoices(economics.data?.retention_hours ?? 24);
   const asked = params.get('window') ?? '24';
   const hours = Number((choices.find(([id]) => id === asked) ?? choices[0])?.[0] ?? '24');
-  const requests = useUsageTurns(hours, Intl.DateTimeFormat().resolvedOptions().timeZone, economics.isSuccess);
+  const requests = useUsageTurns(hours, Intl.DateTimeFormat().resolvedOptions().timeZone, economics.isSuccess || economics.isError);
   const recorded = requests.data === undefined || isPendingRoute(requests.data) ? null : requests.data;
   const loading = recorded === null && !requests.isError && requests.data === undefined;
 
-  if (economics.isPending) return <PageHead title={U.title} lede={U.reading} />;
-  if (economics.isError) return <><PageHead title={U.title} /><Fault message={failureText(economics.error)} onRetry={() => void economics.refetch()} /></>;
-
+  const economicHeads = economics.isError ? [] : economics.data?.heads ?? [];
   const now = Date.now();
   const headRows = heads.data?.heads ?? [];
   const colourOf = colourFromRegistry(status.data);
   const label = (key: string): string => headRows.find((head) => head.key === key)?.label ?? key;
-  const sourceHeads = [...new Set([...headRows.map(head => head.key), ...economics.data.heads.map(head => head.key), ...Object.keys(recorded?.matchedBy ?? {}), ...Object.keys(recorded?.usageBy ?? {}), ...recorded?.pendingHeads ?? [], ...recorded?.unread.map(row => row.head) ?? []])];
+  const sourceHeads = [...new Set([...headRows.map(head => head.key), ...economicHeads.map(head => head.key), ...Object.keys(recorded?.matchedBy ?? {}), ...Object.keys(recorded?.usageBy ?? {}), ...recorded?.pendingHeads ?? [], ...recorded?.unread.map(row => row.head) ?? []])];
   const plans = orderPlans(sourceHeads.map(key => {
-    const head = economics.data.heads.find(head => head.key === key) ?? { key, label: label(key), ceiling_tokens: null, buckets: [] };
+    const head = economicHeads.find(head => head.key === key) ?? { key, label: label(key), ceiling_tokens: null, buckets: [] };
     const plan = planUsage(head, label(key), colourOf(key), usage.data ?? null, hours, now, headRows.find(status => status.key === key));
     const values = recorded?.usageBy?.[key]?.totals;
     const reason = recorded?.unread.find(row => row.head === key)?.reason;
@@ -86,7 +84,7 @@ export function UsagePage() {
     return { ...plan, requestState, ...(reason === undefined ? {} : { requestReason: reason }), turns, inTokens: values?.input_tokens ?? null, cost: values?.cost_usd ?? null, cache: values?.cache_share ?? null, partial: reason !== undefined || (values?.missing_input_requests ?? 0) > 0, costPartial: reason !== undefined || (values?.unpriced_requests ?? 0) > 0, models: recorded?.usageBy?.[key]?.models.flatMap(model => model.key === null ? [] : [model.key]) ?? [], subscription: usage.data?.heads.find(row => row.key === key)?.usage?.quota?.plan, spark: head.buckets.length === 0 ? [] : plan.spark };
   }));
   const { active, idle } = splitIdle(plans);
-  const totals = totalsOf(economics.data.heads, hours, now);
+  const totals = totalsOf(economicHeads, hours, now);
   const values = reportedWindowUsage(recorded);
   const count = reportedRequestCount(recorded);
   const usedCommands = plans.filter(plan => plan.turns !== null && plan.turns > 0).length;
@@ -104,6 +102,8 @@ export function UsagePage() {
         lede={pendingNames.length === 0 ? lede : `${lede} ${U.commandsReading(pendingNames.join(', '))}`}
         tools={choices.length < 2 ? undefined : <Segmented label={U.window} value={String(hours)} options={choices} onChange={(next) => setParams(next === '24' ? {} : { window: next }, { replace: true })} />}
       />
+      {economics.isError ? <section className="section" aria-label={B.hourlyHistory}><Fault message={B.hourlyUnavailable} onRetry={() => void economics.refetch()} /></section>
+        : economics.isPending ? <p className="hint" role="status">{B.hourlyReading}</p> : null}
       {plans.length === 0 ? loading || heads.isPending ? <p className="hint" role="status">{U.readingRequests}</p> : heads.isError ? <Fault message={failureText(heads.error)} onRetry={() => void heads.refetch()} /> : <Empty title={U.plansNone} /> : (
         <>
           <section className="section" aria-label={U.title}>

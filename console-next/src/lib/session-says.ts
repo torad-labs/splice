@@ -1,13 +1,19 @@
 // What one line may say of a session: the newest thing it SAID (its last assistant words, first sentence) or DID (a tool call as the tool
 // and what it was for). A card on Sessions and an item on Needs you read it here, so the two cannot tell different stories. The daemon
 // never sends a tool's result or a system note as a session's activity; harness text that rides in a message is dropped here.
-import type { SessionLast } from '../types/sessions';
+import type { SessionAsk, SessionLast, SessionRow } from '../types/sessions';
 import { toolLabel } from './conversation';
 import { cleanMessage } from './message';
 import { MSG } from './words-message';
 import { SW } from './words-sessions';
 
 const ASK_USER = 'AskUserQuestion';
+
+/** Claude Code's entrypoint for a session started at the command line. */
+const CLI = 'cli';
+
+/** Claude Code's `waitingFor` for a session held on a permission prompt rather than a question. */
+const PERMISSION_PROMPT = 'permission prompt';
 
 const SENTENCE = /^[\s\S]*?[.!?](?=\s|$)/;
 
@@ -58,4 +64,23 @@ export function waitingQuestion(last: SessionLast | null | undefined): string | 
   const sentences = plain(cleaned.text).match(/[^.!?]*[.!?]+|[^.!?]+$/g) ?? [];
   const asked = sentences.map((sentence) => sentence.trim()).filter((sentence) => sentence.endsWith('?'));
   return asked.at(-1) ?? null;
+}
+
+/** Whether a waiting session is held on a permission prompt. Its transcript then holds no pending call, so nothing it last said, an
+ *  ask it was already answered included, is what it waits on. */
+export const onPermission = (row: Pick<SessionRow, 'waiting_for'>): boolean => row.waiting_for === PERMISSION_PROMPT;
+
+/** The questions a waiting session asked through AskUserQuestion, as the daemon read them: none when it asked in plain words, called
+ *  another tool, waits on a permission prompt, or the daemon is older than the field. */
+export function waitingAsks(row: Pick<SessionRow, 'last' | 'waiting_for'>): SessionAsk[] {
+  const last = row.last;
+  return !onPermission(row) && last?.role === 'assistant' && last.tool === ASK_USER ? last.asks ?? [] : [];
+}
+
+/** Where a person answers a waiting session: its terminal when it was started at the command line, else the client it names. Null when
+ *  the registry did not say, never a guessed place. */
+export function answerWhere(row: Pick<SessionRow, 'entrypoint'>): string | null {
+  const entry = row.entrypoint?.trim() ?? '';
+  if (entry === '') return null;
+  return entry === CLI ? SW.answerInTerminal : SW.answerIn(entry);
 }

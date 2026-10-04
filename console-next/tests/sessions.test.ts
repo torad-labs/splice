@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
-import type { SessionRow } from '../src/types/sessions';
+import type { SessionLast, SessionRow } from '../src/types/sessions';
 import type { LiveTurn } from '../src/types/turns';
-import { cardSays } from '../src/lib/session-says';
+import { answerWhere, cardSays, waitingAsks } from '../src/lib/session-says';
 import { activityText, cardLine, groupSessions, timingOf, handoffOf, matchesQuery, noConversation, sessionsLede, peerLabel, repoName, sessionKey, sessionLabel, sinceOf, spanText, stateOf, stateTone, stateWord } from '../src/lib/sessions';
 
 const NOW = 1_790_000_000_000;
@@ -188,6 +188,37 @@ describe('what a card says', () => {
     expect(cardLine(withLast('assistant', 'The box run failed and used up the credit, my mistake.'), 'waiting', 8 * 3_600_000, null).agent).toBe(false);
     expect(cardLine(withLast('user', '<system-reminder>A process claiming the address uds:/run/user/1000/cc-socks/1.sock</system-reminder>'), 'waiting', 4 * 3_600_000, null).line).toBe('Waiting for your answer for 4 h');
     expect(cardLine(withLast('assistant', 'Which plan should take the session?', 'AskUserQuestion'), 'waiting', null, null).line).toBe('Which plan should take the session?');
+  });
+
+  test('a waiting session asked its questions through AskUserQuestion: the card has them with their options, and nothing else does', () => {
+    const asks = [{ question: 'Which plan should take the session?', options: ['Max', 'Pro'], multi: false }];
+    const bare = { role: 'assistant' as const, tool: 'AskUserQuestion', text: 'Which plan should take the session?', ts: NOW };
+    const asked = { ...bare, asks };
+    const on = (last: SessionLast | null, waiting_for: string | null = 'input needed') => waitingAsks(row({ status: 'waiting', waiting_for, last }));
+    expect(on(asked)).toEqual(asks);
+    expect(on(asked, null)).toEqual(asks);
+    expect(on(bare)).toEqual([]);
+    expect(on({ role: 'assistant', tool: null, text: 'Should I push it?', ts: NOW })).toEqual([]);
+    expect(on({ ...asked, tool: 'Bash' })).toEqual([]);
+    expect(on(null)).toEqual([]);
+    // The daemon skips tool results, so an answered ask stays the newest message while the next call waits on a permission prompt.
+    expect(on(asked, 'permission prompt')).toEqual([]);
+  });
+
+  test('a session waiting on a permission prompt says it needs permission, never a question it did not ask', () => {
+    const waiting = (last: SessionLast | null) => row({ status: 'waiting', waiting_for: 'permission prompt', last });
+    const said = { role: 'assistant' as const, tool: null, text: 'I will run it. Should I push after?', ts: NOW };
+    expect(cardLine(waiting(said), 'waiting', 4 * 3_600_000, null)).toEqual({ line: 'Waiting for your permission for 4 h', note: null, agent: false });
+    expect(cardLine(waiting(null), 'waiting', null, null).line).toBe('Waiting for your permission');
+    expect(cardLine(row({ status: 'waiting', waiting_for: 'input needed', last: said }), 'waiting', null, null).line).toBe('Should I push after?');
+  });
+
+  test('a waiting card says where it is answered: the terminal for the command line, else the client by its own name', () => {
+    expect(answerWhere(row({ entrypoint: 'cli' }))).toBe('Answer in its terminal');
+    expect(answerWhere(row({ entrypoint: 'eli-telegram' }))).toBe('Answer in eli-telegram');
+    expect(answerWhere(row({ entrypoint: null }))).toBeNull();
+    expect(answerWhere(row({ entrypoint: '  ' }))).toBeNull();
+    expect(answerWhere(row())).toBeNull();
   });
 
   test('with no newest message the card says what the state means, and the note is empty', () => {

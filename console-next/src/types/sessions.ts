@@ -12,6 +12,16 @@ export interface SessionLast {
   tool: string | null;
   text: string;
   ts: number | null;
+  /** On an AskUserQuestion call, the questions it asks (AskedQuestions.kt). Absent on anything else and from a daemon older than it. */
+  asks?: SessionAsk[];
+}
+
+/** One question a session asked through AskUserQuestion: the question whole, its options' labels, and whether several may be chosen.
+ *  The descriptions under each option stay in the client where the question is answered. */
+export interface SessionAsk {
+  question: string;
+  options: string[];
+  multi: boolean;
 }
 
 export type SessionAvailability = 'live' | 'stale' | 'gone';
@@ -53,6 +63,11 @@ export interface SessionRow {
   cwd: string | null;
   /** The client's own status word ("busy", "shell", ...), not a console state. */
   status: string | null;
+  /** What a waiting session waits for, in Claude Code's words ("input needed", "permission prompt"). Absent from a daemon older than
+   *  it, and null when the client wrote none. */
+  waiting_for?: string | null;
+  /** How the session was started, in Claude Code's words: "cli" is a terminal, another client names itself ("eli-telegram"). */
+  entrypoint?: string | null;
   status_updated_at: number | null;
   started_at: number | null;
   updated_at: number | null;

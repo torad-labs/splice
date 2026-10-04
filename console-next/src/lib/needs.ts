@@ -27,8 +27,8 @@ import { WINDOW_NAME } from './fleet';
 import { ABSENT } from './format';
 import { headAttention, localInstantText, quotaRefusedUntil } from './heads';
 import { nearestLimit } from './nearest-limit';
-import { waitingQuestion } from './session-says';
-import { activityText, needsPerson, repoName, sessionKey, sessionLabel, stateOf, sinceOf } from './sessions';
+import { onPermission, waitingQuestion } from './session-says';
+import { activityText, needsPerson, permissionText, repoName, sessionKey, sessionLabel, stateOf, sinceOf } from './sessions';
 import { H, K, S, U } from './words-needs';
 
 export { INPUTS };
@@ -235,6 +235,9 @@ function sessionNeeds(rows: readonly SessionRow[], now: number): Need[] {
     if (!needsPerson(state)) return [];
     const head = row.head === UNKNOWN_HEAD || row.head === '' ? null : row.head;
     const at = hrefOf('sessions', sessionKey(row));
+    const since = sinceOf(row, now);
+    // A permission prompt leaves no pending call in the transcript, so nothing the session last said is what it waits on.
+    const held = onPermission(row);
     return [{
       key: `sessions:${row.session_id ?? row.pid ?? sessionLabel(row)}`,
       severity: 'warn',
@@ -243,9 +246,9 @@ function sessionNeeds(rows: readonly SessionRow[], now: number): Need[] {
       state: 'waiting',
       head,
       subject: sessionLabel(row),
-      finding: activityText(state, sinceOf(row, now)),
+      finding: held ? permissionText(since) : activityText(state, since),
       // Only a question the session itself asked is quoted: a system notice or a tool's output is not one.
-      session: { id: row.session_id, said: waitingQuestion(row.last), repo: repoName(row) },
+      session: { id: row.session_id, said: held ? null : waitingQuestion(row.last), repo: repoName(row) },
       fix: open(at, S.openSession),
       at,
     }];

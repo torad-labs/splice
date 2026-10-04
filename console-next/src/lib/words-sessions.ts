@@ -9,6 +9,11 @@ export const SW = {
   noteRefusedUnknown: (newest: string): string =>
     `This session did not say which Claude Code it runs, so a note cannot be sent. Relaunch it on Claude Code ${newest}.`,
   waiting: 'Waiting for your answer',
+  permission: 'Waiting for your permission',
+  permissionFor: (span: string): string => `Waiting for your permission for ${span}`,
+  answerInTerminal: 'Answer in its terminal',
+  answerIn: (client: string): string => `Answer in ${client}`,
+  chooseAny: 'Choose any',
   compacted: 'Compacted its context',
   waitingFor: (span: string): string => `Waiting for your answer for ${span}`,
   toolQuiet: (span: string): string => `Running a tool, quiet for ${span}`,

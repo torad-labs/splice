@@ -296,6 +296,33 @@ describe('a session card', () => {
     expect(html).toContain('Copy resume command');
     expect(html).toContain('Waiting on you');
   });
+  test('a card waiting on its questions shows each one whole with its options, and says where it is answered', () => {
+    const asks = [
+      { question: 'Which plan should take the session?', options: ['Max', 'Pro'], multi: false },
+      { question: 'Which checks should run first?', options: ['Unit', 'E2E', 'Lint'], multi: true },
+    ];
+    const last = { role: 'assistant' as const, tool: 'AskUserQuestion', text: 'Which plan should take the session?', ts: 1, asks };
+    const html = render(facts({ state: 'waiting', row: row({ status: 'waiting', waiting_for: 'input needed', entrypoint: 'cli', last }) }));
+    expect(html).toContain('Which plan should take the session?');
+    expect(html).toContain('Which checks should run first?');
+    for (const option of ['Max', 'Pro', 'Unit', 'E2E', 'Lint']) expect(html).toContain(`<li class="tag">${option}</li>`);
+    expect(html.match(/Choose any/g)).toHaveLength(1);
+    expect(html.match(/Which plan should take the session\?/g)).toHaveLength(1);
+    expect(html).toContain('Answer in its terminal');
+  });
+  test('a card waiting on a permission prompt says so, offers no options, and names the client it is answered in', () => {
+    const answered = { role: 'assistant' as const, tool: 'AskUserQuestion', text: 'Which plan?', ts: 1, asks: [{ question: 'Which plan?', options: ['Max'], multi: false }] };
+    for (const last of [null, answered]) {
+      const html = render(facts({ state: 'waiting', row: row({ status: 'waiting', waiting_for: 'permission prompt', entrypoint: 'eli-telegram', last }) }));
+      expect(html).toContain('Waiting for your permission for 42 min');
+      expect(html).not.toContain('class="tag"');
+      expect(html).not.toContain('Which plan?');
+      expect(html).toContain('Answer in eli-telegram');
+    }
+  });
+  test('only a waiting card says where to answer', () => {
+    expect(render(facts({ row: row({ entrypoint: 'cli' }) }))).not.toContain('Answer in');
+  });
   test('an earlier session offers its resume command on its own plan and on another, and no open link', () => {
     const html = render(facts({ state: 'gone', row: row({ status: null, availability: 'gone', pid: null }) }));
     expect(html).toContain('Copy resume command');

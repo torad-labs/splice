@@ -442,6 +442,13 @@ describe('a session needs a person only when the client waits for an answer', ()
     expect(sessionItems({ sessions: read({ note: '', sessions: [asked] }) })[0]?.session).toEqual({ id: 'sess-1', said: 'Run npm run migrate -- --apply?', repo: 'repo' });
   });
 
+  test('a session held on a permission prompt says so, and quotes no question: an answered ask can still be its newest message', () => {
+    const answered = { role: 'assistant' as const, tool: 'AskUserQuestion', text: 'Which plan should take the session?', ts: NOW };
+    const held = session({ status: 'waiting', waiting_for: 'permission prompt', last: answered });
+    const [item] = sessionItems({ sessions: read({ note: '', sessions: [held] }) });
+    expect(item?.finding).toBe('Waiting for your permission for 45 min');
+    expect(item?.session?.said).toBeNull();
+  });
   test('a notice that rides in a message is not a waiting session\'s question, so nothing is quoted', () => {
     const notice = session({ status: 'waiting', last: { role: 'user', tool: null, text: '<system-reminder>A process claiming the address uds:/run/x.sock asked to be told when this session is next idle</system-reminder>', ts: NOW } });
     expect(sessionItems({ sessions: read({ note: '', sessions: [notice] }) })[0]?.session?.said).toBeNull();

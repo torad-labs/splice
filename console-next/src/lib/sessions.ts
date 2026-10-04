@@ -4,7 +4,7 @@ import type { SessionEdge, SessionRow } from '../types/sessions';
 import type { LiveTurn } from '../types/turns';
 import { UNKNOWN_HEAD } from '../types/sessions';
 import { repoNameOf } from './repo';
-import { cardSays, waitingQuestion } from './session-says';
+import { cardSays, onPermission, waitingQuestion } from './session-says';
 import { SW } from './words-sessions';
 
 /** Other clients register a product/version tag; Claude Code registers its bare version. */
@@ -196,9 +196,16 @@ export const QUIET_AFTER_MS = 2 * 60_000;
  *  beside the facts; the state's sentence alone when there is nothing fit to say. */
 /** `agent` is whose words the line is: the session's own (its newest say or do: the terminal) or splice's about it (the state's sentence). */
 export function cardLine(row: SessionRow, state: SessionState, since: number | null, quiet: number | null): { line: string; note: string | null; agent: boolean } {
+  // A session held on a permission prompt says so: what it last said is not what it waits on, and its transcript holds no pending call.
+  if (state === 'waiting' && onPermission(row)) return { line: permissionText(since), note: null, agent: false };
   // A session that waits shows the question it asked; one that asked none says it waits. The rest show what they last said or did.
   const last = state === 'waiting' ? waitingQuestion(row.last) : cardSays(row.last);
   return last === null ? { line: activityText(state, since, quiet), note: null, agent: false } : { line: last, note: noteText(state, since), agent: true };
+}
+
+/** A session held on a permission prompt, and for how long when the registry gave a time: the state's sentence, never a question. */
+export function permissionText(since: number | null): string {
+  return since === null ? SW.permission : SW.permissionFor(spanText(since));
 }
 
 /** The state's duration in a few words, for the quiet line beside a newest message; nothing when the daemon gave no start. */

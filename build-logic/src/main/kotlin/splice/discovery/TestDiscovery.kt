@@ -168,8 +168,9 @@ val DISPOSITIONS: Map<String, Disposition> = mapOf(
     // Completed/torn/cancelled tails and zero/slow ping delivery expand the two timing methods.
     "UpstreamEventTimingTest" to Disposition("2 @ParameterizedTest methods expand to 5 cases (7 @Test + 5 = 12)", 12),
     "CodeModePreAdvanceTearTest" to Disposition("1 @ParameterizedTest expands to 2 cases (2 @Test + 2 = 4)", 4),
+    // 73aad1d4a, 14b6bc4b4 and f34d165fb: posting and result steps whose cell the round's lost source closed.
     "CodexCodeModeSourceTearTest" to
-        Disposition("2 @ParameterizedTest methods expand to 12 cases (9 source tears + 3 startup tears)", 12),
+        Disposition("2 @ParameterizedTest methods expand to 12 cases (9 + 3 startup tears); 10 @Test + 12 = 22", 22),
     // Control characters and non-ASCII must not reach HTTP echoes; empty and TAB remain valid.
     "CodexTurnStateSseTest" to Disposition("2 @ParameterizedTest methods expand to 7 cases (2 @Test + 7 = 9)", 9),
     "CodexAuthAbsenceTest" to Disposition("1 @ParameterizedTest expands to 4 cases (2 @Test + 4 = 6)", 6),

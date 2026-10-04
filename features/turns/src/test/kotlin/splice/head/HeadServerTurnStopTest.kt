@@ -185,7 +185,9 @@ class HeadServerTurnStopTest {
             assertFalse(body.contains("message_stop"), "a stopped turn does not end as finished: $body")
 
             rig.until("the stopped turn's slot is released") { rig.gate.snapshot().inflight == 0 }
-            assertEquals(emptyList<Any>(), rig.turns.list())
+            // The gate counts the slot free before it runs the slot's release hooks, and one of those
+            // hooks unlists the turn (InflightGate.releaseOwner), so the list empties just after.
+            rig.until("the stopped turn leaves the live list") { rig.turns.list().isEmpty() }
             assertEquals(404, rig.routes.stop("codex", id).status.value, "an ended turn is not live")
             rig.until("the journal names the stop") { rig.journal.any { "turn ERROR stopped" in it } }
             rig.until("the perf row records the stop") { "error:stopped" in rig.perfRows() }

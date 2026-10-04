@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { fullWindowUsage, fullUsageBreakdown, mergeWindowStats, budgetWarning, reportedWindowUsage, reportedRequestCount, priceGaps, priceGapLines } from '../src/lib/usage-breakdown';
+import { fullWindowUsage, fullUsageBreakdown, mergeWindowStats, budgetWarning, reportedWindowUsage, reportedRequestCount, priceGaps, priceGapLines, cutLines } from '../src/lib/usage-breakdown';
 import type { TurnsState, TurnUsageStats, TurnUsageWire } from '../src/types/perf';
 
 const stats = (over: Partial<TurnUsageStats> = {}): TurnUsageStats => ({
@@ -84,6 +84,22 @@ describe('why a request has no price', () => {
     expect(priceGapLines({ uncounted: 0, plan: 0, undeclared: 0, unknown: 1200 })).toEqual(['1,200 requests have no price.']);
     expect(priceGapLines({ uncounted: 1, plan: 2, undeclared: 3, unknown: 0 })).toHaveLength(3);
     expect(priceGapLines({ uncounted: 0, plan: 0, undeclared: 0, unknown: 0 })).toEqual([]);
+  });
+});
+
+// A reply cut off by a new message while it streamed was billed upstream and never reported; the daemon counts it.
+describe('replies cut off by a new message', () => {
+  test('merged commands add the count, and no command reporting it leaves it absent', () => {
+    expect(mergeWindowStats([stats({ cut_source_rounds: 2 }), stats(), stats({ cut_source_rounds: 1 })]).cut_source_rounds).toBe(3);
+    expect(mergeWindowStats([stats()])).toEqual(stats());
+  });
+  test('a breakdown row carries its count, and one sentence says what it means', () => {
+    const reading = data({ synthetic: usage({ models: [{ key: 'gpt-5.6-sol', ...stats({ cut_source_rounds: 2 }) }] }) });
+    expect(fullUsageBreakdown(reading, 'model')?.[0]?.cut).toBe(2);
+    expect(fullUsageBreakdown(data(), 'model')?.[0]?.cut).toBe(0);
+    expect(cutLines(1)).toEqual(['1 reply was cut off by a new message, so its tokens are not reported.']);
+    expect(cutLines(2)).toEqual(['2 replies were cut off by a new message, so their tokens are not reported.']);
+    expect(cutLines(0)).toEqual([]);
   });
 });
 

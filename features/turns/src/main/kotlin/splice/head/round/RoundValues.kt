@@ -36,6 +36,8 @@ internal data class RoundUsage(
     /** Each round this law superseded, billed as a request of its own ([AbsorbedRounds]): the
      *  cumulative law keeps the context, and this keeps the bill. */
     val absorbed: AbsorbedRounds = AbsorbedRounds(),
+    /** Source rounds the turn cut while they streamed ([splice.core.turn.Usage.cutRounds]); they accrue. */
+    val cutRounds: Long = 0,
 ) {
     fun plusRound(u: Usage) = RoundUsage(
         lastInput = u.inputTokens,
@@ -48,6 +50,7 @@ internal data class RoundUsage(
         recordedOutputSum = recordedOutputSum + u.recordedOutputTokens,
         clientContext = u.clientContext ?: clientContext,
         absorbed = absorbed + toUsage().finalRound + u.absorbed,
+        cutRounds = cutRounds + u.cutRounds,
     )
 
     /** DR-124: fold the TERMINAL failed round's harvested usage (Failure.partial.usage) under the
@@ -65,6 +68,7 @@ internal data class RoundUsage(
         recordedOutputSum = recordedOutputSum + u.recordedOutputTokens,
         clientContext = u.clientContext ?: clientContext,
         absorbed = absorbed + (if (u.inputTokens > 0) toUsage().finalRound else AbsorbedRounds()) + u.absorbed,
+        cutRounds = cutRounds + u.cutRounds,
     )
 
     fun toUsage() = Usage(
@@ -78,5 +82,6 @@ internal data class RoundUsage(
         recordedOutputTokens = recordedOutputSum,
         clientContext = clientContext,
         absorbed = absorbed,
+        cutRounds = cutRounds,
     )
 }

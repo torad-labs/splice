@@ -38,6 +38,9 @@ public data class Usage(
     val clientContext: Usage? = null,
     /** The rounds this usage billed before its final one, each a request of its own ([AbsorbedRounds]). */
     val absorbed: AbsorbedRounds = AbsorbedRounds(),
+    /** Source rounds this usage's turn cut while they still streamed: their backend bill never arrived, so their
+     *  tokens are in none of the buckets above. Appended last, as [cacheWriteTokens] was, for positional callers. */
+    val cutRounds: Long = 0,
 ) {
     public val unrecordedOutputTokens: Long get() = outputTokens - recordedOutputTokens
 
@@ -61,6 +64,7 @@ public data class Usage(
         recordedOutputTokens = recordedOutputTokens + other.recordedOutputTokens,
         clientContext = other.clientContext ?: clientContext,
         absorbed = absorbed + other.absorbed,
+        cutRounds = cutRounds + other.cutRounds,
     )
 }
 

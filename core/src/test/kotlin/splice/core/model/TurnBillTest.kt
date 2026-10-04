@@ -48,6 +48,17 @@ class TurnBillTest {
         assertEquals(9L, row[PerfKeys.OUT_TOKENS], "out_tokens stays the turn's whole output")
     }
 
+    /** A cut round's tokens never arrived, so the row counts the round and bills nothing more for it. */
+    @Test
+    fun `a turn that cut a source round counts it beside its own buckets, and only then`() {
+        val plain = Usage(inputTokens = 10, outputTokens = 2)
+        assertTrue(PerfKeys.CUT_SOURCE_ROUNDS !in TurnBill.counters(plain), "${TurnBill.counters(plain)}")
+
+        val row = TurnBill.counters(plain + Usage(cutRounds = 2))
+        assertEquals(2L, row[PerfKeys.CUT_SOURCE_ROUNDS], "$row")
+        assertEquals(TurnBill.usd(TurnBill.counters(plain), rates), TurnBill.usd(row, rates), CENT_FRACTION)
+    }
+
     @Test
     fun `each absorbed round is priced as a request of its own, at its own tier`() {
         val early = Usage(inputTokens = 100_000, outputTokens = 300, cachedTokens = 60_000)

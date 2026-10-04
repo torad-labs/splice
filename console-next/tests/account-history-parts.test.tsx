@@ -5,7 +5,7 @@ import { UsageValues, requestsFor } from '../src/pages/usage/UsageBreakdown';
 import type { UsageBreakdown } from '../src/lib/usage-breakdown';
 import { B } from '../src/pages/usage/copy';
 
-const unknown: UsageBreakdown = { id: 'synthetic', key: null, head: 'synthetic', turns: 2, cost: null, input: null, output: null, unpriced: 2, missingInput: 2, missingOutput: 2, gaps: { uncounted: 0, plan: 0, undeclared: 0, unknown: 2 } };
+const unknown: UsageBreakdown = { id: 'synthetic', key: null, head: 'synthetic', turns: 2, cost: null, input: null, output: null, unpriced: 2, missingInput: 2, missingOutput: 2, gaps: { uncounted: 0, plan: 0, undeclared: 0, unknown: 2 }, cut: 0 };
 
 test('historical requests without identity stay honestly named and link to the matching unknown group', () => {
   const html = renderToStaticMarkup(<MemoryRouter><UsageValues items={[unknown]} by="account" since={0} until={200} labelOf={key => key} /></MemoryRouter>);

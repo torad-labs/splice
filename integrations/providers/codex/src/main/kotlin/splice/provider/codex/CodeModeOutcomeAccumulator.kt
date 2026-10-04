@@ -79,6 +79,7 @@ internal class CodeModeOutcomeAccumulator {
         codeModeDiverged = prior.codeModeDiverged || latest.codeModeDiverged,
         recordedOutputTokens = prior.recordedOutputTokens + latest.recordedOutputTokens,
         absorbed = absorbed(prior, latest),
+        cutRounds = prior.cutRounds + latest.cutRounds,
     )
 
     private fun mergeTerminalUsage(prior: Usage, latest: Usage): Usage = Usage(
@@ -91,6 +92,7 @@ internal class CodeModeOutcomeAccumulator {
         codeModeDiverged = prior.codeModeDiverged || latest.codeModeDiverged,
         recordedOutputTokens = prior.recordedOutputTokens + latest.recordedOutputTokens,
         absorbed = absorbed(prior, latest),
+        cutRounds = prior.cutRounds + latest.cutRounds,
     )
 
     /** A round whose input replaces the prior's final round keeps that round billed as its own request:

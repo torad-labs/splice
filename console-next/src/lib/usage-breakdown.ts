@@ -15,6 +15,8 @@ export interface UsageBreakdown {
   missingInput: number;
   missingOutput: number;
   gaps: PriceGaps;
+  /** Replies cut off by a new message, whose tokens were never reported. */
+  cut: number;
 }
 
 /** Why requests have no dollar figure. [unknown] is the count a daemon older than the causes left unexplained. */
@@ -35,6 +37,11 @@ export function priceGapLines(gaps: PriceGaps): string[] {
   return lines.flatMap(([n, line]) => n === 0 ? [] : [line(n)]);
 }
 
+/** The sentence for replies cut off by a new message, or none. */
+export function cutLines(cut: number): string[] {
+  return cut === 0 ? [] : [U.cutRounds(cut)];
+}
+
 /** Adds daemon aggregates across commands; absent token and price facts remain absent. */
 export function mergeWindowStats(stats: readonly TurnUsageStats[]): TurnUsageStats {
   const sum = (key: 'input_tokens' | 'cached_tokens' | 'output_tokens' | 'cost_usd'): number | null => stats.reduce<number | null>((total, row) => row[key] === null ? total : (total ?? 0) + row[key], null);
@@ -45,9 +52,13 @@ export function mergeWindowStats(stats: readonly TurnUsageStats[]): TurnUsageSta
   const merged: TurnUsageStats = { requests: count('requests'), input_tokens: input, cached_tokens: cached, output_tokens: sum('output_tokens'), cost_usd: sum('cost_usd'), cache_share: input !== null && input > 0 && cached !== null && missingCache === 0 ? cached / input : null, unpriced_requests: count('unpriced_requests'), missing_input_requests: count('missing_input_requests'), missing_output_requests: count('missing_output_requests'), missing_cache_requests: missingCache };
   // A command without causes adds its unpriced requests to the total only, so they stay unexplained.
   const cause = (key: typeof CAUSES[number]): number => stats.reduce((total, row) => total + (row[key] ?? 0), 0);
-  return stats.some(row => CAUSES.some(key => row[key] !== undefined))
+  const caused = stats.some(row => CAUSES.some(key => row[key] !== undefined))
     ? { ...merged, unpriced_uncounted_requests: cause('unpriced_uncounted_requests'), unpriced_plan_requests: cause('unpriced_plan_requests'), unpriced_undeclared_requests: cause('unpriced_undeclared_requests') }
     : merged;
+  // Like the causes, the cut count stays absent when no command reports it.
+  return stats.some(row => row.cut_source_rounds !== undefined)
+    ? { ...caused, cut_source_rounds: stats.reduce((total, row) => total + (row.cut_source_rounds ?? 0), 0) }
+    : caused;
 }
 
 export function fullWindowUsage(data: TurnsState | null): TurnUsageStats | null {
@@ -83,7 +94,7 @@ export function fullUsageBreakdown(data: TurnsState, by: UsageDimension): UsageB
   }
   return [...groups.entries()].map(([id, group]) => {
     const stats = mergeWindowStats(group.stats);
-    return { id, key: group.key, head: group.head, turns: stats.requests, input: stats.input_tokens, output: stats.output_tokens, cost: stats.cost_usd, unpriced: stats.unpriced_requests, missingInput: stats.missing_input_requests, missingOutput: stats.missing_output_requests, gaps: priceGaps(stats) };
+    return { id, key: group.key, head: group.head, turns: stats.requests, input: stats.input_tokens, output: stats.output_tokens, cost: stats.cost_usd, unpriced: stats.unpriced_requests, missingInput: stats.missing_input_requests, missingOutput: stats.missing_output_requests, gaps: priceGaps(stats), cut: stats.cut_source_rounds ?? 0 };
   }).sort((a, b) => by === 'day' ? (b.key ?? '').localeCompare(a.key ?? '') : (b.cost ?? -1) - (a.cost ?? -1) || b.turns - a.turns || (a.key ?? '').localeCompare(b.key ?? ''));
 }
 

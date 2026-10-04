@@ -48,6 +48,18 @@ class RoundSpliceSalvageTest {
         )
     }
 
+    /** A code-mode step that cut a streaming source round carries the count of it ([Usage.cutRounds]); a re-anchored
+     *  turn folds that step with later rounds, and the count accrues instead of being superseded like the input. */
+    @Test
+    fun `source rounds a turn cut accrue across its folded rounds and its dying one`() {
+        val acc = RoundUsage()
+            .plusRound(Usage(inputTokens = 100, outputTokens = 3, cutRounds = 1))
+            .plusRound(Usage(inputTokens = 120, outputTokens = 2, cutRounds = 2))
+        assertEquals(3L, acc.toUsage().cutRounds)
+        val out = rounds.withFailureSalvage(failure(Usage(outputTokens = 1, cutRounds = 1)), acc) as TurnOutcome.Failure
+        assertEquals(4L, out.salvagedUsage.cutRounds)
+    }
+
     @Test
     fun `single-round failure with reported usage stamps its own burn - DR-124`() {
         val out = rounds.withFailureSalvage(

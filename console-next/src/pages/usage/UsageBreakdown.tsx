@@ -4,7 +4,7 @@ import { isPendingRoute } from '../../api/auth';
 import { failureText } from '../../api/client';
 import { usePerfTurns } from '../../api/turns';
 import { fmtTokens, fmtUsd } from '../../lib/format';
-import { fullUsageBreakdown, priceGapLines } from '../../lib/usage-breakdown';
+import { cutLines, fullUsageBreakdown, priceGapLines } from '../../lib/usage-breakdown';
 import type { UsageBreakdown as Breakdown, UsageDimension } from '../../lib/usage-breakdown';
 import type { TurnsState } from '../../types/perf';
 import { Button, Empty, Fault, Segmented } from '../../ui';
@@ -51,7 +51,7 @@ export function UsageValues({ items, by, since, until, labelOf }: { items: reado
         </Link>
         {priceGapLines(item.gaps).map(line => <small key={line}>{line}</small>)}
       </div>,
-      input: <div className="usage-token" role="group" aria-label={B.input}><span className="usage-token-label">{B.input}</span><strong>{tokens(item.input, item.missingInput)}</strong>{item.missingInput === 0 ? null : <small>{B.inputMissing(item.missingInput)}</small>}</div>,
+      input: <div className="usage-token" role="group" aria-label={B.input}><span className="usage-token-label">{B.input}</span><strong>{tokens(item.input, item.missingInput)}</strong>{item.missingInput === 0 ? null : <small>{B.inputMissing(item.missingInput)}</small>}{cutLines(item.cut).map(line => <small key={line}>{line}</small>)}</div>,
       output: <div className="usage-token" role="group" aria-label={B.output}><span className="usage-token-label">{B.output}</span><strong>{tokens(item.output, item.missingOutput)}</strong>{item.missingOutput === 0 ? null : <small>{B.outputMissing(item.missingOutput)}</small>}</div>,
     };
   });

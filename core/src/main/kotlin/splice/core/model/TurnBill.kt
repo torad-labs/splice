@@ -33,6 +33,7 @@ public object TurnBill {
             put(PerfKeys.ABSORBED_CACHE_WRITE_TOKENS, absorbed.cacheWriteTokens)
             put(PerfKeys.ABSORBED_OUT_TOKENS, absorbed.outputTokens)
         }
+        if (usage.cutRounds > 0) put(PerfKeys.CUT_SOURCE_ROUNDS, usage.cutRounds)
     }
 
     /** The rounds [row] absorbed before its final one; none on a row that predates the counters. */

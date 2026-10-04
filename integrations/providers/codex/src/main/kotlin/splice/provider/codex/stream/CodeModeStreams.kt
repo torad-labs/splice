@@ -114,7 +114,7 @@ internal class CodeModeStreams(
             if (record.phase != splice.provider.codex.CodeModePhase.COMPLETED) throw error
             null
         }
-        val usage = registry.source.consume(record)
+        val usage = sourceUsage(record, round, raw)
         if (round != null) rounds.remove(record.id, round)
         record.sourceEnd = null
         round?.switching?.detach()
@@ -123,6 +123,15 @@ internal class CodeModeStreams(
             null -> usage?.let { TurnOutcome.Success(false, false, it) }
             else -> raw
         }
+    }
+
+    /** The round's usage for the step that finishes its script, handed out once ([CodeModeSourceRecords.consume]). A
+     *  round this step cut (an interrupt closed the cell while it streamed, so its reader was cancelled before the
+     *  backend's terminal stored any usage) has no tokens to give, only the count of it ([Usage.cutRounds]). */
+    private fun sourceUsage(record: CodeModeRecord, round: CodeModeLiveRound?, raw: TurnOutcome?): Usage? {
+        val usage = registry.source.consume(record)
+        val cut = round != null && raw == null && record.sourceState?.complete != true
+        return usage ?: Usage(cutRounds = 1).takeIf { cut }
     }
 
     /** A source round is billed on the client step that posted it. One that finished before the step ended is merged

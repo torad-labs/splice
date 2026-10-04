@@ -30,6 +30,7 @@ export const U = {
   unpricedPlan: (n: number) => `${fmtInt(n)} ${n === 1 ? 'request is' : 'requests are'} covered by a plan, so ${n === 1 ? 'it has' : 'they have'} no price.`,
   unpricedUndeclared: (n: number) => `${fmtInt(n)} ${n === 1 ? 'request has' : 'requests have'} no recorded price.`,
   unpricedUnknown: (n: number) => `${fmtInt(n)} ${n === 1 ? 'request has' : 'requests have'} no price.`,
+  cutRounds: (n: number) => `${fmtInt(n)} ${n === 1 ? 'reply was' : 'replies were'} cut off by a new message, so ${n === 1 ? 'its' : 'their'} tokens are not reported.`,
   plansTitle: 'Each command against its limit',
   plansWhy: 'The provider reports each limit. splice only marks a command out of quota when the provider refuses it.',
   plansNone: 'No command has reported its usage yet.',

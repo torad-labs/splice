@@ -100,9 +100,13 @@ internal class TurnUsage(rows: List<PerfRow>, price: TurnPrice?, plans: AccountP
         private var missingOutput = 0L
         private var missingCache = 0L
 
+        // Source rounds these requests cut while they streamed: billed upstream, their tokens never reported.
+        private var cutRounds = 0L
+
         fun add(row: PerfRow, usd: Double?, gap: PriceGap?) {
             requests++
             addTokens(row)
+            cutRounds += row.fields[PerfKeys.CUT_SOURCE_ROUNDS] ?: 0L
             if (usd != null) cost = (cost ?: 0.0) + usd
             if (gap != null) gaps[gap] = gaps.getValue(gap) + 1
         }
@@ -136,6 +140,7 @@ internal class TurnUsage(rows: List<PerfRow>, price: TurnPrice?, plans: AccountP
             put("missing_input_requests", missingInput)
             put("missing_output_requests", missingOutput)
             put("missing_cache_requests", missingCache)
+            put("cut_source_rounds", cutRounds)
             put("cache_share", cacheShare())
         }
     }

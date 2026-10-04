@@ -12,7 +12,7 @@ const complete: TurnUsageWire = {
   accounts: [], days: [],
 };
 const row: TurnRow = { head: 'synthetic', ts: 100, model: 'model / a', account: 'work & spare', compact: false, outcome: 'ok', cost_usd: 0.25, in_tokens: 200, out_tokens: 50 };
-const item = { id: 'synthetic', head: 'synthetic', key: row.model, turns: 1, cost: 0.25, input: 200, output: 50, unpriced: 0, missingInput: 0, missingOutput: 0, gaps: { uncounted: 0, plan: 0, undeclared: 0, unknown: 0 } };
+const item = { id: 'synthetic', head: 'synthetic', key: row.model, turns: 1, cost: 0.25, input: 200, output: 50, unpriced: 0, missingInput: 0, missingOutput: 0, gaps: { uncounted: 0, plan: 0, undeclared: 0, unknown: 0 }, cut: 0 };
 const items = [item];
 const reading = (over: Partial<TurnsState> = {}) => ({
   isError: false, isPending: false,
@@ -40,6 +40,13 @@ test('the bar guidance appears only with a visible spend bar', () => {
   }
   const priced = renderToStaticMarkup(<MemoryRouter><UsageValues items={items} by="model" since={0} until={200} labelOf={key => key} /></MemoryRouter>);
   expect(priced).toContain(guidance);
+});
+
+test('a group with replies cut off by a new message says their tokens are not reported', () => {
+  const cut = renderToStaticMarkup(<MemoryRouter><UsageValues items={[{ ...item, cut: 2 }]} by="model" since={0} until={200} labelOf={key => key} /></MemoryRouter>);
+  expect(cut).toContain('2 replies were cut off by a new message, so their tokens are not reported.');
+  const plain = renderToStaticMarkup(<MemoryRouter><UsageValues items={items} by="model" since={0} until={200} labelOf={key => key} /></MemoryRouter>);
+  expect(plain).not.toContain('cut off');
 });
 
 test('an older daemon never substitutes its display slice for an aggregate', () => {

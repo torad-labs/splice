@@ -197,6 +197,53 @@ class CodeModeRoundBillingTest {
         }
     }
 
+    /** Steering a parked script cuts its source round before the backend's terminal, so the tokens that round used
+     *  are billed upstream and never reach splice. The turn that cut it counts the round, and no row claims tokens
+     *  it never saw. */
+    @Test
+    @Timeout(BILLING_TEST_SECONDS)
+    fun `a source round cut by steering is counted on the turn that cut it, and its tokens on none`(
+        @TempDir tmp: Path,
+    ) = runBlocking {
+        val upstream = BillingUpstream(held = true)
+        val runtime = StatementGatewayRuntime()
+        val bridge = CodexCodeModeBridge(
+            CodeModeBridgeConfig(
+                runtimes = { runtime },
+                state = CodeModeStateLocation(tmp.resolve("records"), tmp.resolve("legacy.json")),
+            ),
+        )
+        val head = HeadServer(provider(upstream.url, bridge), 0, headDeps(tmp))
+        val client = HttpClient(CIO) {
+            engine { requestTimeout = TimeUnit.SECONDS.toMillis(BILLING_TEST_SECONDS) }
+        }
+        try {
+            head.start()
+            val url = "http://127.0.0.1:${head.port}/v1/messages"
+            val history = mutableListOf(message("user", JsonPrimitive("read the fixture twice")))
+            val parked = withTimeout(TURN_BOUND_MS) { send(client, url, history) }
+            assertTrue(parked.contains("\"name\":\"Read\""), parked)
+
+            history += message("assistant", JsonArray(toolUses(parked)))
+            history += message("user", JsonArray(toolUses(parked).map(::result) + text("never mind, stop")))
+            val steered = withTimeout(TURN_BOUND_MS) { send(client, url, history) }
+            assertTrue(steered.contains("fixture read"), steered)
+            assertEquals(2, upstream.posts.get(), "one source round, cut, and one continuation")
+
+            val (posting, steering) = rows(tmp, 2).sortedBy { it.count("ts") }
+            assertNull(posting[PerfKeys.CUT_SOURCE_ROUNDS], "the posting turn cut nothing: $posting")
+            assertEquals(0L, posting.count(PerfKeys.IN_TOKENS), "$posting")
+            assertEquals(1L, steering.count(PerfKeys.CUT_SOURCE_ROUNDS), "the steering turn cut the round: $steering")
+            assertEquals(ANSWER_INPUT, steering.count(PerfKeys.IN_TOKENS), "$steering")
+            assertNull(steering[PerfKeys.ABSORBED_ROUNDS], "$steering")
+        } finally {
+            head.stop()
+            runtime.close()
+            client.close()
+            upstream.close()
+        }
+    }
+
     /** The source round keeps its admission slot past the parked turn's message_stop and gives it back when it ends,
      *  as it did before rows were held (IndependentSourcePost). The held row is written after that, so a write that
      *  blocks or throws holds nothing: the slot is already free while the write is still stuck. */
@@ -303,6 +350,11 @@ class CodeModeRoundBillingTest {
         put("type", "tool_result")
         put("tool_use_id", call.getValue("id"))
         put("content", "fixture contents")
+    }
+
+    private fun text(words: String): JsonObject = buildJsonObject {
+        put("type", "text")
+        put("text", words)
     }
 
     private fun toolUses(wire: String): List<JsonObject> = wire.lineSequence()

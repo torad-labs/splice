@@ -177,6 +177,33 @@ class PerfTurnUsageTest {
         assertSummed(usage)
     }
 
+    /** A source round a turn cut was billed upstream and never reported, so its row carries only the count of it.
+     *  Totals and every group sum the count, and a row without the key counts none. */
+    @Test
+    fun `cut source rounds are summed in totals and every group`() = testApplication {
+        val row = priced.last()
+        val twice = fields + (PerfKeys.CUT_SOURCE_ROUNDS to 2L)
+        mount(
+            listOf(
+                row,
+                row.copy(ts = 1_001, fields = twice, model = "earlier", account = "spare"),
+                row.copy(ts = 1_002, fields = fields + (PerfKeys.CUT_SOURCE_ROUNDS to 1L), sessionId = "other-session"),
+            ),
+        )
+        val usage = head(client.get("/api/perf/turns?head=synthetic&since=1000&local=0&time_zone=UTC").bodyAsText())
+            .getValue("usage").jsonObject
+        assertEquals(3L, usage.getValue("totals").jsonObject.cut())
+        assertEquals(mapOf("m" to 1L, "earlier" to 2L), cutBy(usage, "models"))
+        assertEquals(mapOf("work" to 1L, "spare" to 2L), cutBy(usage, "accounts"))
+        assertEquals(mapOf("synthetic-full-session" to 2L, "other-session" to 1L), cutBy(usage, "sessions"))
+        assertEquals(listOf(3L), usage.getValue("days").jsonArray.map { it.jsonObject.cut() })
+    }
+
+    private fun JsonObject.cut(): Long? = this[CUT]?.jsonPrimitive?.long
+
+    private fun cutBy(usage: JsonObject, name: String): Map<String, Long?> =
+        usage.getValue(name).jsonArray.associate { it.jsonObject.let { group -> group.key() to group.cut() } }
+
     /** The unpriced total, then its causes: no token count, covered by a plan, no declared price. */
     private fun causes(group: JsonObject): List<Long> =
         listOf(UNPRICED, UNCOUNTED, PLAN, UNDECLARED).map { group.getValue(it).jsonPrimitive.long }
@@ -249,3 +276,4 @@ private const val UNPRICED = "unpriced_requests"
 private const val UNCOUNTED = "unpriced_uncounted_requests"
 private const val PLAN = "unpriced_plan_requests"
 private const val UNDECLARED = "unpriced_undeclared_requests"
+private const val CUT = "cut_source_rounds"

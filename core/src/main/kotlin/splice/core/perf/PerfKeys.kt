@@ -154,6 +154,11 @@ public object PerfKeys {
     /** The part of [OUT_TOKENS] the absorbed rounds produced; [OUT_TOKENS] stays the turn's whole output. */
     public const val ABSORBED_OUT_TOKENS: String = "absorbed_out_tokens"
 
+    /** Source rounds this turn cut while they still streamed ([splice.core.turn.Usage.cutRounds]): steering a
+     *  parked code-mode script ends its round before the backend's terminal, so the tokens that round used are
+     *  billed upstream and never reported here. Written only when the turn cut one, so an absent key reads as none. */
+    public const val CUT_SOURCE_ROUNDS: String = "cut_source_rounds"
+
     /** Concurrent turns in flight on this head at admission — the live-concurrency gauge. */
     public const val INFLIGHT: String = "inflight"
 

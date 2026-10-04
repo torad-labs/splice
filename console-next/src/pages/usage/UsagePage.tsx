@@ -5,7 +5,7 @@ import { useEconomics } from '../../api/usage';
 import { useUsageTurns } from '../../api/turns';
 import { isPendingRoute } from '../../api/auth';
 import { ABSENT, fmtInt, fmtShare } from '../../lib/format';
-import { reportedWindowUsage, reportedRequestCount } from '../../lib/usage-breakdown';
+import { cutLines, reportedWindowUsage, reportedRequestCount } from '../../lib/usage-breakdown';
 import { colourFromRegistry } from '../../lib/model';
 import { cacheLine, costLine, orderPlans, planUsage, splitIdle, tokensText, totalsOf, usageLede, windowChoices } from '../../lib/usage-page';
 import type { PlanUsage } from '../../lib/usage-page';
@@ -109,7 +109,7 @@ export function UsagePage() {
           <section className="section" aria-label={U.title}>
             <div className="totals">
               <div><div className="n">{count === null ? awaiting ? U.readingMetric : B.unknown : partial ? B.atLeast(fmtInt(count)) : fmtInt(count)}</div><h3>{U.totalsTurns}</h3><p>{count === null && awaiting ? U.totalsTurnsReading : U.totalsTurnsWhy(usedCommands, spanWords(hours), partial)}</p></div>
-              <div><div className="n">{measured(values?.input_tokens, values?.missing_input_requests ?? 0)}</div><h3>{U.totalsIn}</h3><p>{values?.cache_share == null || partial ? U.totalsInPlain : U.totalsInWhy(fmtShare(values.cache_share))}</p></div>
+              <div><div className="n">{measured(values?.input_tokens, values?.missing_input_requests ?? 0)}</div><h3>{U.totalsIn}</h3><p>{values?.cache_share == null || partial ? U.totalsInPlain : U.totalsInWhy(fmtShare(values.cache_share))}{cutLines(values?.cut_source_rounds ?? 0).map(line => ` ${line}`).join('')}</p></div>
               <div><div className="n">{measured(values?.output_tokens, values?.missing_output_requests ?? 0)}</div><h3>{U.totalsOut}</h3><p>{U.totalsOutWhy}</p></div>
               <div><div className="n">{cost === null ? awaiting ? U.readingMetric : ABSENT : partial || (values?.unpriced_requests ?? 0) > 0 ? B.atLeast(costLine(cost)) : costLine(cost)}</div><h3>{U.totalsCost}</h3><p>{cost === null ? awaiting ? U.readingRequests : U.totalsCostNone : `${U.totalsCostWhy}${(values?.unpriced_requests ?? 0) > 0 ? ` ${U.totalsCostUnpriced(values?.unpriced_requests ?? 0)}` : ''}`}</p></div>
             </div>

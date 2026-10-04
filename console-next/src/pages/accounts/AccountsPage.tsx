@@ -13,6 +13,14 @@ import './accounts.css';
 const PROVIDERS: Readonly<Record<string, string>> = { anthropic: A.claude, claude: A.claude, openai: 'OpenAI', chatgpt: 'OpenAI', grok: 'xAI', xai: 'xAI', kimi: 'Moonshot', muse: 'Muse' };
 const CLAUDE_PLACES: readonly ClaudeLoginPlaceId[] = ['claude', 'claude-splice'];
 
+/** How many SUBSCRIPTIONS a provider's logins hold, which is what a count of accounts means. Two logins of one
+ *  Claude subscription are one account spending one pair of limit windows, so counting login rows made this group
+ *  say two while its order had one thing to order. A login whose account splice cannot name counts as its own. */
+function subscriptions(rows: readonly AccountRow[]): number {
+  const signedIn = rows.filter(row => row.credential_present);
+  return new Set(signedIn.map((row, index) => row.account?.uuid ?? `row-${index}`)).size;
+}
+
 export function AccountsPage() {
   const accounts = useAccounts();
   const status = useStatus();
@@ -34,8 +42,8 @@ export function AccountsPage() {
         const heads = [...new Set([...(claude && status.data?.registry.some(row => row.key === 'claude-splice') ? ['claude-splice'] : []), ...rows.flatMap(row => row.heads)])];
         const addHead = heads[0];
         return <section className="accounts-provider" key={provider}>
-          <GroupHead title={PROVIDERS[provider] ?? provider} {...(claude && CLAUDE_PLACES.some(place => !rows.some(row => row.login_place?.id === place)) ? {} : { count: rows.filter(row => row.credential_present).length })}
-            {...(claude || addHead === undefined || rows.every(row => row.kind === 'api-key') ? {} : { action: <SignIn head={addHead} purpose="add"><Button small>{A.add}</Button></SignIn> })} />
+          <GroupHead title={PROVIDERS[provider] ?? provider} {...(claude && CLAUDE_PLACES.some(place => !rows.some(row => row.login_place?.id === place)) ? {} : { count: subscriptions(rows) })}
+            {...(addHead === undefined || rows.every(row => row.kind === 'api-key') ? {} : { action: <SignIn head={addHead} purpose="add"><Button small>{A.add}</Button></SignIn> })} />
           <ul className="accounts-grid">
             {claude ? CLAUDE_PLACES.map(place => <AccountCard key={place} place={place} account={rows.find(row => row.login_place?.id === place) ?? null} colour={colour('claude-splice')} now={now} />) : null}
             {rows.filter(row => !claude || row.login_place == null).map(row => <AccountCard key={accountIdentity(row)} account={row} colour={colour(row.heads[0] ?? '')} now={now} />)}

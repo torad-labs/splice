@@ -35,6 +35,7 @@ export function FailoverOrder({ head, accounts }: { head: string; accounts: read
   if ('unavailable' in data) return <p className="hint">{A.orderUnavailable}</p>;
   const order = data.effective_order;
   if (order.length < 2) return null;
+  const saved = data.order.length > 0;
   const move = (from: number, to: number): void => {
     if (save.isPending || from < 0 || from >= order.length || to < 0 || to >= order.length || from === to) return;
     save.mutate(arrayMove(order, from, to));
@@ -52,11 +53,13 @@ export function FailoverOrder({ head, accounts }: { head: string; accounts: read
       <h3>{head} · {A.failover}</h3>
       <p className="why">{A.orderWhy}</p>
       <p className="hint">{accounts.some(row => row.pinned === true) ? A.pinRule : A.nextBecause}</p>
+      <p className="hint">{saved ? A.orderYours : A.orderDefault}</p>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={dragEnd}>
         <SortableContext items={order} strategy={verticalListSortingStrategy}>
           <ol>{order.map((id, index) => <OrderedAccount key={id} id={id} name={nameOf(id)} index={index} length={order.length} disabled={save.isPending} move={move} />)}</ol>
         </SortableContext>
       </DndContext>
+      {saved ? <Button small disabled={save.isPending} onClick={() => save.mutate([])}>{A.orderReset}</Button> : null}
       {save.isPending ? <p className="hint" role="status">{A.orderSaving}</p> : save.isSuccess ? <p className="hint" role="status">{A.orderSaved}</p> : null}
       {save.isError ? <p className="hint alert" role="alert">{failureText(save.error)}</p> : null}
     </section>

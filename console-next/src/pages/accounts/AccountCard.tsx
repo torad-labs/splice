@@ -7,8 +7,10 @@ import { familyName } from '../../lib/heads';
 import type { AccountRow, ClaudeLoginPlaceId } from '../../types/accounts';
 import type { ModelColour } from '../../lib/model';
 import { Button, State, Window } from '../../ui';
+import { RemoveAccount } from '../shared/RemoveAccount';
 import { SignIn } from '../shared/SignIn';
 import { AccountLimits } from './AccountLimits';
+import { R } from '../../lib/words-remove';
 import { A } from './copy';
 
 export function accountIdentity(row: AccountRow): string {
@@ -27,6 +29,10 @@ export function AccountCard({ account, place, colour, now }: {
   const renewing = present === true || (place === undefined && account?.label != null);
   const refused = Boolean(account?.refusal);
   const excluded = account?.auth_excluded_until_epoch_millis != null && account.auth_excluded_until_epoch_millis > now;
+  // An added account can be taken off the command it was added to. The primary login cannot: for a Claude command
+  // that is the caller's own Claude Code sign-in, which splice forwards and has never held, and for every other
+  // provider it is the login the pool is built from.
+  const removable = place === undefined && account?.label != null && account.primary !== true && head !== '';
   const refresh = useMutation({
     mutationFn: async () => {
       if (place !== undefined) { await refreshClaudeLogin(place); return; }
@@ -56,6 +62,7 @@ export function AccountCard({ account, place, colour, now }: {
           <Button small disabled={refused} kind={present ? 'quiet' : 'go'}>{renewing ? A.renew : A.signIn}</Button>
         </SignIn>
         {present ? <Button small disabled={refresh.isPending} onClick={() => refresh.mutate()}>{refresh.isPending ? A.refreshing : A.refresh}</Button> : null}
+        {removable && account?.label != null ? <RemoveAccount head={head} label={account.label}><Button small kind="danger">{R.remove}</Button></RemoveAccount> : null}
         {refresh.isError ? <span className="hint alert" role="alert">{failureText(refresh.error)}</span> : null}
       </div>}
     </Window>

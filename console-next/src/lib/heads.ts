@@ -157,6 +157,10 @@ const FAMILY_BY_AUTH_KIND: Record<string, ProviderFamily> = {
   'kimi-oauth': 'kimi',
   'muse-oauth': 'muse',
   client: 'anthropic',
+  // An account splice ADDED to a Claude command describes itself as `claude-account`, not `client`, because splice
+  // holds and refreshes that one (ClaudeFolderAuth.kt). Without it here the kind fell through to `local`, and every
+  // added Claude subscription drew its own Accounts group called "this computer".
+  'claude-account': 'anthropic',
   'api-key': 'key',
 };
 

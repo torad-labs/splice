@@ -1,10 +1,12 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useState } from 'react';
 import { failureText } from '../../api/client';
-import { isPendingRoute, useRelabelAccount, useRemoveAccount, useSwitchAccount, useUnpinAccount } from '../../api/auth';
+import { isPendingRoute, useRelabelAccount, useSwitchAccount, useUnpinAccount } from '../../api/auth';
+import { R } from '../../lib/words-remove';
 import { accountState, exclusionText, isExcluded, isServable, nextRuleOf, refusalText, steppedPast, windowSpan, windowUsedText } from '../../lib/accounts';
 import type { AccountRow } from '../../types/accounts';
 import { Button, Close } from '../../ui';
+import { RemoveAccount } from '../shared/RemoveAccount';
 import { D } from './copy';
 
 const windowsText = (account: AccountRow): string =>
@@ -21,11 +23,9 @@ function useNote() {
 export function AccountRowView({ account, now, pooled, pool }: { account: AccountRow; now: number; pooled: boolean; pool: readonly AccountRow[] }) {
   const pick = useSwitchAccount();
   const unpin = useUnpinAccount();
-  const remove = useRemoveAccount();
   const relabel = useRelabelAccount();
   const { note, settle, fail } = useNote();
   const [renaming, setRenaming] = useState(false);
-  const [removing, setRemoving] = useState(false);
   const [name, setName] = useState(account.label ?? '');
   const head = account.heads[0] ?? '';
   const label = account.label;
@@ -86,23 +86,7 @@ export function AccountRowView({ account, now, pooled, pool }: { account: Accoun
               </Dialog.Content>
             </Dialog.Portal>
           </Dialog.Root>
-          <Dialog.Root open={removing} onOpenChange={setRemoving}>
-            <Dialog.Trigger asChild><Button small kind="danger">{D.remove}</Button></Dialog.Trigger>
-            <Dialog.Portal>
-              <Dialog.Overlay className="scrim" />
-              <Dialog.Content className="dialog">
-                <div className="dialog-head">
-                  <Dialog.Title>{D.removeAsk}</Dialog.Title>
-                  <Dialog.Close asChild><button type="button" className="icon-btn" aria-label={D.cancel}><Close /></button></Dialog.Close>
-                </div>
-                <Dialog.Description className="hint">{label}: {D.removeWhy}</Dialog.Description>
-                <div className="acts-row">
-                  <Button kind="go" disabled={remove.isPending} onClick={() => remove.mutate({ head, label }, { onSuccess: (answer) => { settle(answer); setRemoving(false); }, onError: fail })}>{D.remove}</Button>
-                  <Button onClick={() => setRemoving(false)}>{D.cancel}</Button>
-                </div>
-              </Dialog.Content>
-            </Dialog.Portal>
-          </Dialog.Root>
+          <RemoveAccount head={head} label={label}><Button small kind="danger">{R.remove}</Button></RemoveAccount>
         </div>
       )}
       {note === null ? null : <p className="hint alert" role="alert">{note}</p>}

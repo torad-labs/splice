@@ -1,6 +1,7 @@
 // NEW: wire projection preserves the transport's redirected-round capability.
 package splice.provider.codex.stream
 
+import splice.core.perf.TurnPerf
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
 import splice.provider.codex.CodeModeRunInput
@@ -24,18 +25,29 @@ internal class CodeModeRoundInterceptor(
 
     override suspend fun intercept(bodyJson: String, sink: WireSink, postRound: InterceptedRoundPost): TurnOutcome {
         val upstream = if (postRound is RedirectableRoundPost) {
-            CodeModeUpstreamPost(postRound, wire)
+            CodeModeRedirectablePost(postRound, wire)
         } else {
-            InterceptedRoundPost { body -> postRound(wire.upstream(body)) }
+            CodeModeUpstreamPost(postRound, wire)
         }
         return controller.run(CodeModeRunInput(turn, initialOuter, disableParallel, bodyJson, sink, upstream))
     }
 }
 
-internal class CodeModeUpstreamPost(
+/** The round post code mode is handed: what it posts leaves out the dialect's tool_search pairs, and
+ *  the turn's perf record rides through, so code mode's local work counts on the turn it serves. */
+internal open class CodeModeUpstreamPost(
+    private val post: InterceptedRoundPost,
+    private val wire: CodexCodeModeWire,
+) : InterceptedRoundPost {
+    override val perf: TurnPerf? get() = post.perf
+
+    override suspend fun invoke(bodyJson: String): TurnOutcome = post(wire.upstream(bodyJson))
+}
+
+/** The same for a post the transport can redirect, so a script can park while its round streams on. */
+internal class CodeModeRedirectablePost(
     private val post: RedirectableRoundPost,
     private val wire: CodexCodeModeWire,
-) : RedirectableRoundPost {
-    override suspend fun invoke(bodyJson: String): TurnOutcome = post(wire.upstream(bodyJson))
+) : CodeModeUpstreamPost(post, wire), RedirectableRoundPost {
     override suspend fun into(bodyJson: String, sink: WireSink): TurnOutcome = post.into(wire.upstream(bodyJson), sink)
 }

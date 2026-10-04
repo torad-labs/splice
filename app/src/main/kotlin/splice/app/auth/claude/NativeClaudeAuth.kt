@@ -10,6 +10,7 @@ import splice.client.wrap.WrapStateRead
 import splice.core.util.Cancellables
 import java.io.Closeable
 import java.net.URI
+import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -48,7 +49,13 @@ internal class NativeClaudeAuth(
     private val dispatcher: CoroutineDispatcher,
     private val start: NativeAuthStart = NativeAuthStart(ProcessBuilder::start),
 ) {
-    fun begin(location: ClaudeLoginLocation): NativeClaudeAuthRun {
+    /** The sign-in that REPLACES one command's own login, in that command's own config dir. */
+    fun begin(location: ClaudeLoginLocation): NativeClaudeAuthRun =
+        begin(location.target.head.configDir.takeIf { location.id == ClaudeLoginPlaceId.SPLICE })
+
+    /** One native sign-in, writing [configDir], or the caller's own `~/.claude` when it is null. An added account
+     *  always names its PENDING folder here, so a sign-in in flight can never write a login already filed. */
+    fun begin(configDir: Path?): NativeClaudeAuthRun {
         val builder = ProcessBuilder(wrap.realBinaryPath() ?: "claude", "auth", "login", "--claudeai")
             .redirectErrorStream(true)
         val env = builder.environment()
@@ -57,9 +64,7 @@ internal class NativeClaudeAuth(
             name.startsWith("ANTHROPIC_") || name.startsWith("CLAUDE_CODE_USE_") ||
                 name == "CLAUDE_CODE_OAUTH_TOKEN" || name == "CLAUDE_CONFIG_DIR"
         }
-        if (location.id == ClaudeLoginPlaceId.SPLICE) {
-            env["CLAUDE_CONFIG_DIR"] = location.target.head.configDir.toString()
-        }
+        if (configDir != null) env["CLAUDE_CONFIG_DIR"] = configDir.toString()
         return NativeClaudeAuthRun(start.start(builder), dispatcher)
     }
 }

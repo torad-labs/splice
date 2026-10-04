@@ -36,6 +36,7 @@ import splice.upstream.RoundBody
 import splice.upstream.StreamStart
 import splice.upstream.UpstreamHandler
 import splice.upstream.failure.FailureRules
+import splice.upstream.failure.WsSizeRefusal
 import splice.upstream.retry.MS_PER_S
 import splice.upstream.retry.RetryAfter
 import splice.upstream.sse.AttemptRecorder
@@ -211,7 +212,7 @@ internal class UpstreamRequest(
             val text = UpstreamResponse(resp).bodyTextLimited(MAX_ERROR_BODY_BYTES)
             recorder?.errorText(text)
             val status = quotaExhaustedStatus(realStatus, text, ctx)
-            RetryOutcome.Failed(
+            val failed = RetryOutcome.Failed(
                 status,
                 text,
                 retryAfter.retryAfterMs(resp.headers["Retry-After"]),
@@ -235,6 +236,7 @@ internal class UpstreamRequest(
                     null
                 },
             )
+            WsSizeRefusal.read(ctx, failed)
         }
     }
 

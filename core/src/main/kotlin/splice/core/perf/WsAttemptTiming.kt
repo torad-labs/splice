@@ -56,6 +56,11 @@ public class WsAttemptTiming(private val perf: TurnPerf) {
         }
     }
 
+    /** The peer refused this attempt's request frame as too large: a WebSocket close 1009 before any event. */
+    public fun refusedAsTooLarge() {
+        perf.add(PerfKeys.WS_REFUSED_TOO_LARGE, 1)
+    }
+
     private fun publish() {
         perf.recordUpstreamTiming(
             attempt,

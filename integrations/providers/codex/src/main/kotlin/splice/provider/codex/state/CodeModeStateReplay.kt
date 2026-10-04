@@ -131,7 +131,7 @@ internal class CodeModeStateReplay(
             val graph = JsonObject(
                 metadata + mapOf(REPLAY_RECORDS to JsonArray(records.values.toList()), REPLAY_EXPIRED to expired),
             )
-            CodeModeHeap.ownState(json.decodeFromJsonElement(graph), heap)
+            CodeModeHeap.ownState(CodeModeNativeCopies.dropped(json.decodeFromJsonElement(graph)), heap)
         }
     }
 

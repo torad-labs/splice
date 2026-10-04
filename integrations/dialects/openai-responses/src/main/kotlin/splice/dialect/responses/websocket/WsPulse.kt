@@ -70,6 +70,14 @@ internal class WsPulse(
         return if (ping == NEVER) Long.MAX_VALUE else clock() - ping
     }
 
+    /** The peer closed the socket with [statusCode]. A 1009 (RFC 6455: message too big) before any event of the
+     *  round in flight is the peer refusing that round's request frame as too large, and the attempt's timing
+     *  counts it on the turn: the SSE ride of the same body reads its 4xx as the same refusal (WsSizeRefusal). */
+    internal fun peerClosed(statusCode: Int) {
+        val beforeAnyEvent = roundStartedAt.get() != NEVER && roundEvents.read().first == 0
+        if (statusCode == MESSAGE_TOO_BIG && beforeAnyEvent) timing.get()?.refusedAsTooLarge()
+    }
+
     /** V4-242: the round in flight received an event of [type]. */
     internal fun event(type: String) {
         roundEvents.add(type)
@@ -143,3 +151,6 @@ private const val MS_PER_S = 1000L
 
 // Enough for a round's lifecycle and its content types; a close line is read by a person.
 private const val MAX_EVENT_TYPES = 8
+
+// why: RFC 6455 section 7.4.1 names 1009 "message too big": the peer refused a frame for its size.
+private const val MESSAGE_TOO_BIG = 1009

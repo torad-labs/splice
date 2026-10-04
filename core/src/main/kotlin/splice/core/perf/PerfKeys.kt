@@ -56,6 +56,9 @@ public object PerfKeys {
     /** JDK send acceptance to the first decoded text fragment, before JSON event assembly. */
     public const val WS_SEND_ACCEPTED_TO_FIRST_FRAGMENT_MS: String = "ws_send_accepted_to_first_fragment_ms"
 
+    /** WebSocket attempts whose peer refused the request frame as too large: a 1009 close before any event. */
+    public const val WS_REFUSED_TOO_LARGE: String = "ws_refused_too_large"
+
     /** OkHttp responseHeadersStart receipt on the arrival clock, before Ktor's response handoff. */
     public const val ARRIVAL_TO_UPSTREAM_HEADERS_START_MS: String = "arrival_to_upstream_headers_start_ms"
 

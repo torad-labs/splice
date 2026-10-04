@@ -76,6 +76,7 @@ internal class SseRoundPost(
                 wire = drive.trace,
             ).also { context ->
                 context.relayRateLimitReplies = provider.relayRateLimitReplies
+                context.bodyRefusedAsTooLarge = inputs.refusedAsTooLarge()
                 context.upstreamAccepted = splice.upstream.StreamStart {
                     drive.accountHandoff?.commit()
                     drive.upstreamAccepted?.invoke()

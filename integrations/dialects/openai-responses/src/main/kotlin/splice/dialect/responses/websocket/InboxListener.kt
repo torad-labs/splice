@@ -127,6 +127,8 @@ internal class InboxListener(
     // the round had received travel with the tear instead of stopping at this log line: the Codex outage
     // of 2026-09-25 closed 167 sockets 1011 before any output, and not one word of it reached the client.
     override fun onClose(webSocket: WebSocket, statusCode: Int, reason: String): CompletionStage<*>? {
+        // Before the inbox closes: the round that wakes on the close reads the count as it falls back to SSE.
+        pulse.peerClosed(statusCode)
         val ended = listOfNotNull(endOfStream(statusCode, reason), pulse.roundSoFar()).joinToString(" ")
         inbox.close(IOException(ended))
         log("[ws] $ended; ${pulse.describe()}; poisoning the pooled connection\n")

@@ -59,6 +59,11 @@ public data class PostContext(
     /** True only for the passthrough dialect, whose client understands the provider's native 429. */
     public var relayRateLimitReplies: Boolean = false
 
+    /** Another transport already refused this exact body as too large: the Responses WebSocket peer closed the
+     *  round's socket with 1009 (RFC 6455: message too big) before its first event. A 4xx for the same body is
+     *  then the second refusal of the same bytes, never retried, and read as an overflow (WsSizeRefusal). */
+    public var bodyRefusedAsTooLarge: Boolean = false
+
     /** A native pooled refusal is recoverable only by choosing another login, never by retrying this one. */
     internal val nativePool: Boolean get() = relayRateLimitReplies && rateLimitCooldown != null
 

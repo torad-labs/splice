@@ -50,7 +50,7 @@ internal class CodeModeCheckpointText(private val heap: HeapBudget) : AutoClosea
             if (committed) throw whole
             json.decodeFromString<CodeModePersistedState>(text.substring(0, lastStart))
         }
-        return CodeModeHeap.ownState(state, heap)
+        return CodeModeHeap.ownState(CodeModeNativeCopies.dropped(state), heap)
     }
 
     override fun close() {

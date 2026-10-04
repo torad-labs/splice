@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.provider.codex.state.CodeModeAnchorCapture
+import splice.provider.codex.state.CodeModeNativeChain
 import splice.upstream.codemode.CodeModeResult
 
 private const val SCRIPTS = 6
@@ -52,6 +53,38 @@ internal class CodeModeReplayGrowthTest : CodeModeBridgeTestSupport() {
         val growth = posted.zipWithNext { a, b -> b.length - a.length }
         assertTrue(growth.distinct().size == 1, "each script adds the same bytes to the post: $growth")
     }
+
+    /** The roots captured before the rewrite emitted each item once stored the copies, and a journal load now
+     *  drops them (CodeModeNativeCopies). What the conversation posts does not change. */
+    @Test
+    fun `records reloaded without their stored copies post the body they posted with them`() {
+        var client = history + callback("call-0")
+        val records = mutableListOf(record("script-0", history, "call-0", emptyList()))
+        repeat(SCRIPTS) { n ->
+            records += record("script-${n + 1}", items(rewrite(client, records)), "call-${n + 1}", records.toList())
+            client = client + callback("call-${n + 1}")
+        }
+        records.forEach { record ->
+            record.nativeSegments = record.nativeSegments.map { it.copy(items = it.items + it.items) }
+        }
+        val before = rewrite(client, records)
+        store().also { it.load() }.save(records, emptyList())
+
+        val reloaded = store().load().records.map { it.restore() }.also(CodeModeNativeChain::link)
+
+        assertEquals(natives(records) / 2, natives(reloaded), "the reload keeps each stored item once")
+        assertEquals(records.size, reasoningIn(before).size, "the post carries every script's reasoning")
+        assertEquals(before, rewrite(client, reloaded))
+    }
+
+    private fun store() = CodexCodeModeStore(stateLocation(), Json { encodeDefaults = true }, {})
+
+    private fun natives(records: List<CodeModeRecord>): Int = records.sumOf { record ->
+        record.nativeSegments.sumOf { it.items.size }
+    }
+
+    private fun reasoningIn(post: String): List<JsonElement> =
+        items(post).filter { it.jsonObject["type"]?.jsonPrimitive?.content == "reasoning" }
 
     /** A completed script started on [baseline]: one client callback, and its reasoning before the call. */
     private fun record(

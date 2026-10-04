@@ -22,6 +22,7 @@ import splice.provider.codex.state.CodeModeTurnIdentity
 import splice.upstream.TurnEnd
 import splice.upstream.sse.CustomToolSource
 import splice.upstream.sse.WireSink
+import splice.upstream.transport.UpstreamFailed
 import java.io.IOException
 
 internal class CodeModeLiveRound(
@@ -73,6 +74,8 @@ internal class CodeModeLiveRound(
                 failed(error)
             } catch (error: IllegalArgumentException) {
                 failed(error)
+            } catch (error: UpstreamFailed) {
+                refused(error)
             } finally {
                 if (!ready.isCompleted) ready.complete(null)
             }
@@ -85,7 +88,9 @@ internal class CodeModeLiveRound(
      *  out of the record's save). Its source had no terminal, so the cell reading it waited forever and nothing
      *  was logged. The source fails, the record is lost as [failed] loses it, and the throwable's class is named. */
     private fun died(cause: Throwable?) {
-        val unnamed = cause?.takeUnless { it is CancellationException || it is CodeModePersistenceException } ?: return
+        val unnamed = cause?.takeUnless {
+            it is CancellationException || it is CodeModePersistenceException || it is UpstreamFailed
+        } ?: return
         upstreamEnded = true
         unexpectedDeath = true
         config.log("[code-mode] upstream source reader died (${unnamed::class.simpleName}): $SOURCE_FAILED")
@@ -100,7 +105,7 @@ internal class CodeModeLiveRound(
     }
 
     private fun finish(outcome: TurnOutcome) = synchronized(lifecycle) {
-        if (headStopped) throw CancellationException("code-mode head stopped")
+        if (headStopped) throw CancellationException(HEAD_STOPPED)
         localFailure?.let { return@synchronized it }
         sourceInterrupted = record != null && (outcome as? TurnOutcome.Failure)?.cause in SOURCE_TEAR_CAUSES
         Cancellables.runCatchingBestEffort { capture.finish(outcome) }
@@ -132,7 +137,7 @@ internal class CodeModeLiveRound(
         upstreamEnded = true
         if (headStopped) {
             source.fail(SOURCE_FAILED)
-            throw CancellationException("code-mode head stopped", error)
+            throw CancellationException(HEAD_STOPPED, error)
         }
         localFailure?.let { return@synchronized it }
         val detail = SOURCE_FAILED
@@ -148,6 +153,21 @@ internal class CodeModeLiveRound(
             cause = if (sourceInterrupted) FailureCause.UPSTREAM_CONN_RESET else FailureCause.INTERNAL,
             phase = FailurePhase.MID_OUTPUT,
         )
+    }
+
+    /** The upstream refused the source post and the retry loop gave up on it. That refusal is the client turn's
+     *  ending, classified where a plain turn's is, so it leaves through [outcome] as itself. Oct 4: it reached
+     *  [died] as an unnamed throwable, ended the round as an internal fault, and Claude Code retried a refused
+     *  request as an overload for 36 minutes. */
+    private fun refused(error: UpstreamFailed): TurnOutcome.Failure = synchronized(lifecycle) {
+        upstreamEnded = true
+        source.fail(SOURCE_REFUSED)
+        if (headStopped) throw CancellationException(HEAD_STOPPED, error)
+        localFailure?.let { return@synchronized it }
+        // A record's next client step reads the source's outcome, as a torn source's does.
+        sourceInterrupted = record != null
+        record?.takeUnless(CodeModeRecord::terminal)?.let { registry.lose(it, SOURCE_REFUSED) }
+        throw error
     }
 
     fun owns(turn: CodexCodeModeBridge.Turn): Boolean = synchronized(lifecycle) {
@@ -169,7 +189,7 @@ internal class CodeModeLiveRound(
         // Deferred completion precedes died()'s registry write. Never continue before that cleanup settles.
         settled.await()
         val failure = awaited.exceptionOrNull() ?: return awaited.getOrThrow()
-        if (failure is CodeModePersistenceException) throw failure
+        if (failure is CodeModePersistenceException || failure is UpstreamFailed) throw failure
         return TurnOutcome.Failure(SOURCE_FAILED, cause = FailureCause.INTERNAL, phase = FailurePhase.MID_OUTPUT)
     }
 
@@ -185,7 +205,7 @@ internal class CodeModeLiveRound(
 
     /** Observer faults belong to splice. They never unwind through a transport's generic stream catch. */
     private fun observe(event: CustomToolSource) = synchronized(lifecycle) {
-        if (headStopped) throw CancellationException("code-mode head stopped")
+        if (headStopped) throw CancellationException(HEAD_STOPPED)
         if (localFailure != null) return@synchronized
         Cancellables.runCatchingBestEffort { capture.observe(event) }.onFailure(::reject)
     }
@@ -206,6 +226,8 @@ internal class CodeModeLiveRound(
 }
 
 private const val SOURCE_FAILED = "upstream source failed; source was not rerun"
+private const val HEAD_STOPPED = "code-mode head stopped"
+private const val SOURCE_REFUSED = "upstream refused the source request; source was not rerun"
 private val SOURCE_TEAR_CAUSES = setOf(
     FailureCause.UPSTREAM_CONN_RESET,
     FailureCause.UPSTREAM_TRUNCATED,

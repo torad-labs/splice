@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { fullWindowUsage, fullUsageBreakdown, mergeWindowStats, budgetWarning, reportedWindowUsage, reportedRequestCount, priceGaps, priceGapLines, cutLines } from '../src/lib/usage-breakdown';
+import { hasCompleteUsage, fullWindowUsage, fullUsageBreakdown, mergeWindowStats, budgetWarning, reportedWindowUsage, reportedRequestCount, priceGaps, priceGapLines, cutLines } from '../src/lib/usage-breakdown';
 import type { TurnsState, TurnUsageStats, TurnUsageWire } from '../src/types/perf';
 
 const stats = (over: Partial<TurnUsageStats> = {}): TurnUsageStats => ({
@@ -19,6 +19,7 @@ const data = (usageBy: Record<string, TurnUsageWire> = { synthetic: usage() }): 
 
 describe('daemon-backed usage', () => {
   test('a capped slice cannot shrink complete-window tokens, spend or groups', () => {
+    expect(hasCompleteUsage(data())).toBe(true);
     expect(fullWindowUsage(data())).toEqual(stats());
     expect(fullUsageBreakdown(data(), 'model')).toMatchObject([{ key: 'actual-model', turns: 2502, input: 2501000, cost: 1.47559 }]);
   });
@@ -38,6 +39,18 @@ describe('daemon-backed usage', () => {
     expect(reportedWindowUsage({ ...data(), usageBy: {} })).toBeNull();
     expect(reportedRequestCount({ ...data(), usageBy: {}, matchedBy: {}, matched: null })).toBeNull();
     expect(reportedRequestCount({ ...data(), matchedBy: {}, matched: null })).toBe(2502);
+  });
+  test('pending or unread commands cannot make settled aggregates a complete window', () => {
+    for (const requests of [0, 2502]) {
+      const settled = { ...data({ synthetic: usage({ totals: stats({ requests }), models: [] }) }), matched: requests, matchedBy: { synthetic: requests } };
+      const pending = { ...settled, matched: requests, pendingHeads: ['other'] };
+      expect(fullWindowUsage(pending)).toBeNull();
+      expect(fullUsageBreakdown(pending, 'model')).toBeNull();
+      expect(reportedWindowUsage(pending)?.requests).toBe(requests);
+      expect(fullWindowUsage({ ...pending, pendingHeads: [] })?.requests).toBe(requests);
+      expect(fullWindowUsage({ ...settled, unread: [{ head: 'other', reason: 'Synthetic unavailable history' }] })).toBeNull();
+      expect(fullWindowUsage({ ...settled, unread: [{ head: 'synthetic', reason: 'One record could not be read' }] })).toBeNull();
+    }
   });
   test('a refusal without counters or prices remains a request, not zero usage', () => {
     const refused = stats({ requests: 1, input_tokens: null, output_tokens: null, cached_tokens: null, cost_usd: null, cache_share: null });

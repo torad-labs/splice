@@ -61,9 +61,13 @@ export function mergeWindowStats(stats: readonly TurnUsageStats[]): TurnUsageSta
     : caused;
 }
 
+/** Full-window facts require every command to settle with readable counts and aggregates. */
+export function hasCompleteUsage(data: TurnsState | null): boolean {
+  return data !== null && data.unread.length === 0 && (data.pendingHeads?.length ?? 0) === 0 && data.matched !== null && data.usageBy !== undefined && Object.keys(data.usageBy).length > 0 && Object.keys(data.matchedBy).every(head => data.usageBy?.[head] !== undefined);
+}
+
 export function fullWindowUsage(data: TurnsState | null): TurnUsageStats | null {
-  if (data?.usageBy === undefined || data.matched === null || Object.keys(data.usageBy).length === 0 || Object.keys(data.matchedBy).some(head => data.usageBy?.[head] === undefined)) return null;
-  return mergeWindowStats(Object.values(data.usageBy).map(usage => usage.totals));
+  return hasCompleteUsage(data) ? reportedWindowUsage(data) : null;
 }
 
 /** Known command aggregates remain useful as lower bounds when fleet coverage is incomplete. */

@@ -5,7 +5,7 @@ import { useEconomics } from '../../api/usage';
 import { useUsageTurns } from '../../api/turns';
 import { isPendingRoute } from '../../api/auth';
 import { ABSENT, fmtInt, fmtShare } from '../../lib/format';
-import { cutLines, reportedWindowUsage, reportedRequestCount } from '../../lib/usage-breakdown';
+import { cutLines, hasCompleteUsage, reportedWindowUsage, reportedRequestCount } from '../../lib/usage-breakdown';
 import { colourFromRegistry } from '../../lib/model';
 import { cacheLine, costLine, orderPlans, planUsage, splitIdle, tokensText, totalsOf, usageLede, windowChoices } from '../../lib/usage-page';
 import type { PlanUsage } from '../../lib/usage-page';
@@ -89,7 +89,7 @@ export function UsagePage() {
   const count = reportedRequestCount(recorded);
   const usedCommands = plans.filter(plan => plan.turns !== null && plan.turns > 0).length;
   const awaiting = loading || (recorded?.pendingHeads?.length ?? 0) > 0;
-  const partial = recorded !== null && (recorded.unread.length > 0 || (recorded.pendingHeads?.length ?? 0) > 0 || recorded.matched === null || Object.keys(recorded.matchedBy).some(key => recorded.usageBy?.[key] === undefined));
+  const partial = recorded !== null && !hasCompleteUsage(recorded);
   const measured = (value: number | null | undefined, missing: number): string => value == null ? awaiting ? U.readingMetric : B.unknown : partial || missing > 0 ? B.atLeast(tokensText(value)) : tokensText(value);
   const cost = values?.cost_usd ?? null;
   const lede = count === null && awaiting ? U.reading : requests.isError ? U.requestsUnavailable : usageLede(totals, plans, hours, count, cost, partial || (values?.unpriced_requests ?? 0) > 0, partial);

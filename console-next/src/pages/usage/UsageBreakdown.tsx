@@ -89,10 +89,10 @@ export function UsageBreakdown({ labelOf, read }: {
       <div className="usage-breakdown-head"><div><h2 id="usage-breakdown">{B.title}</h2><p className="why">{B.why}</p></div><Segmented label={B.group} options={dimensions} value={by} onChange={setBy} /></div>
       {by === 'account' ? <p className="hint">{B.accountWhy}</p> : by === 'day' ? <p className="hint">{B.dayWhy}</p> : null}
       {read.isError ? <Fault message={failureText(read.error)} onRetry={() => void read.refetch()} />
-        : read.isPending ? <p className="hint">{B.reading}</p>
-        : data === null || items === null || window === undefined || window.until === null ? <p className="hint">{B.unavailable}</p> : <>
+        : read.isPending || (data?.pendingHeads?.length ?? 0) > 0 ? <p className="hint">{B.reading}</p>
+        : data === null || window === undefined || window.until === null ? <p className="hint">{B.unavailable}</p> : <>
           <Coverage data={data} labelOf={labelOf} />
-          <UsageValues items={items} by={by} since={window.since} until={window.until} labelOf={labelOf} />
+          {items === null ? data.unread.length === 0 ? <p className="hint">{B.unavailable}</p> : null : <UsageValues items={items} by={by} since={window.since} until={window.until} labelOf={labelOf} />}
         </>}
     </section>
   );

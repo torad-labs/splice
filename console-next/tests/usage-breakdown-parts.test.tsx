@@ -29,6 +29,32 @@ test('a capped request slice cannot shrink full-window model facts or claim aggr
   expect(html).not.toContain('requests returned');
 });
 
+test('an empty settled command keeps the breakdown reading until its sibling settles', () => {
+  const empty = { ...complete, totals: { ...complete.totals, requests: 0 }, models: [] };
+  const state = { matched: 0, matchedBy: { synthetic: 0 }, usageBy: { synthetic: empty } };
+  const render = (over: Partial<TurnsState>) => renderToStaticMarkup(<MemoryRouter><UsageBreakdown read={reading({ ...state, ...over })} labelOf={key => key} /></MemoryRouter>);
+  const pending = render({ pendingHeads: ['other'] });
+  expect(pending).toContain('Reading the request usage');
+  expect(pending).not.toContain('No requests in this window');
+  expect(pending).not.toContain('does not report full-window usage');
+  const unread = render({ unread: [{ head: 'other', reason: 'Synthetic unavailable history' }] });
+  expect(unread).not.toContain('No requests in this window');
+  expect(unread).not.toContain('Reading the request usage');
+  expect(unread).toContain('This breakdown is incomplete');
+  expect(unread).not.toContain('does not report full-window usage');
+  expect(render({ pendingHeads: [] })).toContain('No requests in this window');
+});
+
+test('an empty settled command cannot hide an unread sibling behind no requests', () => {
+  const empty = { ...complete, totals: { ...complete.totals, requests: 0 }, models: [] };
+  const read = reading({ matched: 0, matchedBy: { synthetic: 0 }, usageBy: { synthetic: empty }, unread: [{ head: 'other', reason: 'Synthetic unavailable history' }] });
+  const html = renderToStaticMarkup(<MemoryRouter><UsageBreakdown read={read} labelOf={key => key} /></MemoryRouter>);
+  expect(html).toContain('This breakdown is incomplete');
+  expect(html).toContain('other: Synthetic unavailable history');
+  expect(html).not.toContain('No requests in this window');
+  expect(html).not.toContain('Reading the request usage');
+});
+
 test('the bar guidance appears only with a visible spend bar', () => {
   const guidance = 'A bar opens the matching Requests.';
   const unavailable = renderToStaticMarkup(<MemoryRouter><UsageBreakdown read={reading({ usageBy: {} })} labelOf={key => key} /></MemoryRouter>);

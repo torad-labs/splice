@@ -52,6 +52,69 @@ test('a seven-day settled command publishes while its sibling remains loading', 
   }
 });
 
+for (const requests of [0, 1]) {
+  test(`an empty early command keeps the breakdown reading until its sibling reports ${requests} requests`, async ({ page }) => {
+    const heads = await read<HeadsPayload>(page, '/api/heads');
+    heads.heads = heads.heads.filter(head => head.key === STACK.oauthHead || head.key === STACK.soloHead);
+    await page.route('**/api/heads', route => route.fulfill({ json: heads }));
+    await page.route('**/api/economics', route => route.fulfill({ json: { retention_hours: 168, heads: [] } }));
+    let release!: () => void;
+    const released = new Promise<void>(resolve => { release = resolve; });
+    await page.route(url => url.pathname === '/api/perf/turns', async route => {
+      const query = new URL(route.request().url()).searchParams;
+      const key = query.get('head') ?? '';
+      if (key === STACK.soloHead) await released;
+      const totals = { ...stats, requests };
+      const used = key === STACK.soloHead && requests > 0;
+      return route.fulfill({ json: { since: Number(query.get('since')), n: 1,
+        heads: [{ key, label: key, count: used ? requests : 0,
+          usage: used ? { ...usage, totals, models: [{ key: 'Synthetic pending model', ...totals }] } : empty, rows: [] }],
+      } });
+    });
+    try {
+      await open(page, 'usage?window=168');
+      await expect(page.locator('.totals .n').first()).toHaveText('At least 0');
+      const pending = page.locator('.uplan').filter({ has: page.getByText(STACK.soloHead, { exact: true }) });
+      await expect(pending).toContainText('Reading requests');
+      const breakdown = page.locator('.usage-breakdown');
+      await expect(breakdown).toContainText('Reading the request usage');
+      await expect(breakdown).not.toContainText('No requests in this window');
+      await expect(breakdown).not.toContainText('does not report full-window usage');
+      if (requests === 0) await page.screenshot({ path: test.info().outputPath('usage-empty-pending.png'), fullPage: true });
+      release();
+      await expect(page.locator('.totals .n').first()).toHaveText(String(requests));
+      await expect(breakdown).not.toContainText('Reading the request usage');
+      if (requests === 0) await expect(breakdown).toContainText('No requests in this window');
+      else {
+        await expect(breakdown).toContainText('Synthetic pending model');
+        await expect(breakdown).not.toContainText('No requests in this window');
+      }
+    } finally {
+      release();
+    }
+  });
+}
+
+test('an empty command keeps an unread sibling visible as partial usage', async ({ page }) => {
+  const heads = await read<HeadsPayload>(page, '/api/heads');
+  heads.heads = heads.heads.filter(head => head.key === STACK.oauthHead || head.key === STACK.soloHead);
+  await page.route('**/api/heads', route => route.fulfill({ json: heads }));
+  await page.route('**/api/economics', route => route.fulfill({ json: { retention_hours: 168, heads: [] } }));
+  await page.route(url => url.pathname === '/api/perf/turns', route => {
+    const query = new URL(route.request().url()).searchParams;
+    const key = query.get('head') ?? '';
+    if (key === STACK.soloHead) return route.fulfill({ status: 503, json: { error: 'Synthetic unread history' } });
+    return route.fulfill({ json: { since: Number(query.get('since')), n: 1, heads: [{ key, label: key, count: 0, usage: empty, rows: [] }] } });
+  });
+  await open(page, 'usage?window=168');
+  const breakdown = page.locator('.usage-breakdown');
+  await expect(breakdown).toContainText('This breakdown is incomplete');
+  await expect(breakdown).toContainText(STACK.soloHead + ': Synthetic unread history');
+  await expect(breakdown).not.toContainText('No requests in this window');
+  await expect(breakdown).not.toContainText('Reading the request usage');
+  await page.screenshot({ path: test.info().outputPath('usage-empty-unread.png'), fullPage: true });
+});
+
 test('the request headline counts commands with requests, not every configured command', async ({ page }) => {
   await page.route('**/api/economics', route => route.fulfill({ json: { retention_hours: 168, heads: [] } }));
   await page.route(url => url.pathname === '/api/perf/turns', route => {

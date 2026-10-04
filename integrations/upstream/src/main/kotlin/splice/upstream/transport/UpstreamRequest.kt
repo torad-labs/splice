@@ -39,7 +39,6 @@ import splice.upstream.failure.FailureRules
 import splice.upstream.retry.MS_PER_S
 import splice.upstream.retry.RetryAfter
 import splice.upstream.sse.AttemptRecorder
-import java.io.ByteArrayOutputStream
 
 /** [json] for the RC-4 amender; [bytes] for the wire, encoded once.
  *
@@ -56,12 +55,10 @@ import java.io.ByteArrayOutputStream
  *  the gzip ban stands untouched. */
 internal data class RequestBody(val body: RoundBody, val zstd: Boolean = false) {
     /** Encoded ONCE and straight from [body]: a retry resends these bytes and never re-encodes, and a
-     *  round whose text nobody reads never builds one. The sink is sized from [RoundBody.byteSize] so the
-     *  encode is two bounded tree walks rather than a doubling buffer — on a 1.04 MB body the streamed
-     *  pair costs 16,536 bytes against 2,997,608 for serialise-then-encode (RequestParseAllocationTest). */
-    val bytes: ByteArray =
-        ByteArrayOutputStream(body.byteSize().toInt()).also(body::writeTo).toByteArray()
-            .let { if (zstd) com.github.luben.zstd.Zstd.compress(it) else it }
+     *  round whose text nobody reads never builds one. [RoundBody.bytes] fills one exactly sized array,
+     *  so on a 916,086-byte body this keeps about one body of allocation for a tree or text, where the
+     *  buffered encode it replaced kept 1,853,728 and 2,748,376 (RequestBodyAllocationTest). */
+    val bytes: ByteArray = body.bytes().let { if (zstd) com.github.luben.zstd.Zstd.compress(it) else it }
 
     /** The RC-4 amender's and the trace's view. Materialised on the first read, which on an ordinary
      *  round never comes: UpstreamClient reads it only inside `ctx.wire?.let` and on a failure. */

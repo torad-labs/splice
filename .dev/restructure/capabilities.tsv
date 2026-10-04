@@ -1,4 +1,5 @@
 source	sha256	disposition	destination	reason
+integrations/upstream/src/test/kotlin/splice/upstream/transport/RequestBodyAllocationTest.kt	35d318a71402423cffb855479c97917af2630f0242ce3f7be1d4f4082b4c6e61	created		Pins the transport's kept request bytes at one body copy for tree and text bodies against the old buffered encode
 app/src/main/kotlin/splice/app/sources/PerfCachedSelection.kt	9e5637684b67a9dbc74583dfea1f33765c42eea208ec4576cb4612dce795ba5b	created		Replays uncached source gaps in physical order so wider windows recover cold skipped input
 app/src/main/kotlin/splice/app/sources/PerfSkippedRange.kt	ac65ed98ac67b5a525e4a58c5d2299e34aa16ea220f4122d1de8aea2daa1ea9e	created		Byte charged pre window ranges retain bounded raw newest and counter anchors without a second disk format
 app/src/test/kotlin/splice/app/sources/PerfHistoryProfile.kt	cbdb81abea2f2243de0c683d7ebed6b7f7207871a2777e477694f72779e6bdf5	created		Aggregate only real source fold and serialization timing allocation and JFR disk measurements

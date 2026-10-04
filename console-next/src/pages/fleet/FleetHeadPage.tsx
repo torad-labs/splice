@@ -1,7 +1,8 @@
 import { Link, useParams, useSearchParams } from 'react-router';
 import { useKeyStore } from '../../api/auth';
+import { useAccountOrder } from '../../api/account-order';
 import { useAccounts, useAuth, useHealth, useHeads, useSessions, useStatus, useUsage } from '../../api/queries';
-import { SELECTOR_ORDER_TEXT, canRefresh, poolOf } from '../../lib/accounts';
+import { canRefresh, poolOf } from '../../lib/accounts';
 import { fleetCard } from '../../lib/fleet';
 import { isKeyHead } from '../../lib/heads';
 import { planWindows } from '../../lib/usage';
@@ -10,6 +11,7 @@ import { failureText } from '../../api/client';
 import { SignIn } from '../shared/SignIn';
 import { AccountRowView } from './AccountRows';
 import { D } from './copy';
+import { A } from '../accounts/copy';
 import { LogTab } from './LogTab';
 import { ModelsTab } from './ModelsTab';
 import { FleetFix } from './FleetFix';
@@ -42,6 +44,7 @@ export function FleetHeadPage() {
   const sessions = useSessions();
   const health = useHealth();
   const keyStore = useKeyStore();
+  const order = useAccountOrder(key, poolOf(accounts.data?.accounts ?? [], key).length > 1);
   const now = Date.now();
   const back = (
     <Link className="crumb" to="/models">
@@ -59,6 +62,7 @@ export function FleetHeadPage() {
   const oauth = !keyless && OAUTH.has(head.authKind);
   const rows = accounts.data?.accounts ?? [];
   const pool = poolOf(rows, head.key);
+  const policy = order.data === undefined ? null : 'unavailable' in order.data ? A.orderUnavailable : order.data.single_account ? A.orderSingleAccount : order.data.order.length > 0 ? A.orderYours : A.orderDefault;
   const live = new Map<string, number>();
   for (const row of sessions.data?.sessions ?? []) if (row.availability !== 'gone') live.set(row.head, (live.get(row.head) ?? 0) + 1);
   const facts = fleetCard(head, { usage: usage.data ?? null, auth: auth.data ?? null, accounts: rows, sessions: live, topologyStale: health.data?.topologyStale === true, family: status.data?.registry.find((row) => row.key === head.key)?.family ?? null, keys: keyStore.data ?? null, now });
@@ -93,7 +97,7 @@ export function FleetHeadPage() {
               <h2 className="sub-head">{D.accounts}</h2>
               {pool.length === 0 ? <p className="hint">{D.noAccounts}</p> : (
                 <>
-                {pool.length > 1 ? <p className="hint">{D.selectorOrder(SELECTOR_ORDER_TEXT)}</p> : null}
+                {pool.length > 1 ? policy !== null ? <p className="hint">{policy}</p> : order.isError ? <Fault message={failureText(order.error)} onRetry={() => void order.refetch()} /> : <p className="hint">{A.orderReading}</p> : null}
                 <ul className="accounts">
                   {pool.map((account) => (
                     <AccountRowView key={account.credential_path ?? account.label ?? account.kind} account={account} now={now} pooled={pool.length > 1 || account.single_login === false} pool={pool} />

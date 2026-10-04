@@ -385,13 +385,67 @@ test('the real account pool keeps provider windows, its exact next target and se
       await expect(row.getByRole('button', { name: 'Remove', exact: true })).toBeVisible();
     }
   }
-  await expect(page.getByRole('main')).toContainText('The next account is taken in this order: pinned, then saved order, then primary, then last used, then most weekly room.');
+  const main = page.getByRole('main');
+  await expect(main).toContainText('No order is saved.');
+  await expect(main).toContainText('available pinned account');
+  await expect(main).toContainText('Each session keeps its account');
+  await expect(main).toContainText('weekly reset comes soonest');
+  await expect(main).not.toContainText('most weekly room');
   await expect(page.getByRole('button', { name: 'Refresh sign-in', exact: true })).toBeVisible();
   await expect(accounts.filter({ hasText: STACK.soloHead })).toHaveCount(0);
   await page.goto(env('CONSOLE_E2E_BASE') + '/#/models/' + STACK.keyHead);
   await expect(page.locator('li.account')).toHaveCount(0);
   await expect(page.getByRole('main')).toContainText('This command has no account pool: it uses one login or a key.');
   expect(faults.pageErrors).toEqual([]);
+});
+
+test('Models reads a saved account order instead of guessing a default from the Next flag', async ({ page }) => {
+  await page.route('**/api/auth/' + STACK.oauthHead + '/order', route => route.fulfill({ json: {
+    head: STACK.oauthHead, order: [STACK.poolLabel, STACK.oauthHead], effective_order: [STACK.poolLabel, STACK.oauthHead],
+  } }));
+  await open(page, 'models/' + STACK.oauthHead);
+  const main = page.getByRole('main');
+  await expect(main).toContainText('You set this order.');
+  await expect(main).toContainText('after any available manual pin');
+  await expect(main).toContainText('saved accounts in order');
+  await expect(main).toContainText('primary account');
+  await expect(main).toContainText('session’s previous account');
+  await expect(main).toContainText('weekly reset comes soonest');
+  await expect(main).toContainText('the one whose reset is nearest');
+  await expect(main).not.toContainText('No order is saved.');
+  await expect(main).not.toContainText('most weekly room');
+});
+
+test('Models keeps account priority reading while its order route is pending', async ({ page }) => {
+  let release!: () => void;
+  const released = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/auth/' + STACK.oauthHead + '/order', async route => {
+    await released;
+    await route.fulfill({ json: { head: STACK.oauthHead, order: [], effective_order: [STACK.oauthHead, STACK.poolLabel] } });
+  });
+  try {
+    await open(page, 'models/' + STACK.oauthHead);
+    const main = page.getByRole('main');
+    await expect(main).toContainText('Reading failover order');
+    await expect(main).not.toContainText('No order is saved.');
+    await expect(main).not.toContainText('most weekly room');
+    release();
+    await expect(main).toContainText('No order is saved.');
+    await expect(main).toContainText('the one whose reset is nearest');
+  } finally {
+    release();
+  }
+});
+
+test('Models cannot invent a default account policy when the order source is unavailable', async ({ page }) => {
+  await page.route('**/api/auth/' + STACK.oauthHead + '/order', route => route.fulfill({ status: 409, json: { error: 'Synthetic order source unavailable' } }));
+  await open(page, 'models/' + STACK.oauthHead);
+  const main = page.getByRole('main');
+  await expect(main).toContainText('Account ordering is unavailable for this command.');
+  await expect(main).not.toContainText('No order is saved.');
+  await expect(main).not.toContainText('You set this order.');
+  await expect(main).not.toContainText('most weekly room');
+  await expect(main).not.toContainText('HTTP 409');
 });
 
 test('an excluded account prints its whole provider reason and cannot be switched to while a serving peer can', async ({ page }) => {

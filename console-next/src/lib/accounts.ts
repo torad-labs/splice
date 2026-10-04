@@ -27,9 +27,6 @@ export const NOT_REPORTED = 'unknown';
 export const SELECTOR_RULES = ['pinned', 'primary', 'last used', 'most weekly room'] as const;
 export type SelectorRule = (typeof SELECTOR_RULES)[number];
 
-/** Persisted priority follows the manual pin and precedes the selector's existing fallback. */
-export const SELECTOR_ORDER_TEXT = [SELECTOR_RULES[0], 'saved order', ...SELECTOR_RULES.slice(1)].join(', then ');
-
 /** The window length the daemon calls the seven-day window, for the selector's third rule. */
 /** The daemon's slot boundary (Quota.kt FIVE_HOUR_SLOT_MAX_SECONDS): a provider window up to six
  *  hours long is the five-hour slot, anything longer the seven-day slot, whatever its length. */

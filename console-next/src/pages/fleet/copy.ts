@@ -36,7 +36,6 @@ export const D = {
   next: 'Next',
   nextBecause: (rule: string): string => `Next because it is ${rule}.`,
   nextRule: { pinned: 'the pinned account', primary: 'the primary account', 'last used': 'the one this session last used', 'most weekly room': 'the one with the most weekly room' } as const,
-  selectorOrder: (order: string): string => `The next account is taken in this order: ${order}.`,
   primary: 'Primary',
   /** A window by the length the provider reported, as a person says it: `week`, `5-hour window`, else its length and `window`. */
   windowWord: (seconds: number | null, span: string): string => (seconds === 604800 ? 'week' : seconds === 18000 ? '5-hour window' : span.endsWith('window') ? span : `${span} window`),

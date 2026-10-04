@@ -14,7 +14,6 @@ import { describe, expect, test } from 'vitest';
 import {
   COCK_AT_PERCENT,
   NOT_REPORTED,
-  SELECTOR_ORDER_TEXT,
   accountState,
   accountsFromWire,
   canRefresh,
@@ -210,8 +209,16 @@ describe('not reported by provider', () => {
 });
 
 describe('the selector order is printed, not implied', () => {
-  test('the sentence is the daemon rule word for word', () => {
-    expect(SELECTOR_ORDER_TEXT).toBe('pinned, then saved order, then primary, then last used, then most weekly room');
+  test('default prose names the available pin before session stickiness and the soonest weekly reset', () => {
+    const pin = A.orderDefault.indexOf('available pinned account');
+    const sticky = A.orderDefault.indexOf('Each session keeps its account');
+    const reset = A.orderDefault.indexOf('weekly reset comes soonest');
+    expect(pin).toBeGreaterThanOrEqual(0);
+    expect(sticky).toBeGreaterThan(pin);
+    expect(reset).toBeGreaterThan(sticky);
+    expect(A.orderDefault).toContain('five-hour reset breaks ties');
+    expect(A.orderDefault).toContain('Unknown quota comes last');
+    expect(A.orderDefault).not.toContain('most weekly room');
   });
 });
 
@@ -400,8 +407,26 @@ describe('the reading time', () => {
 });
 
 describe('the selector order', () => {
-  test('is printed as the sentence the daemon implements, the pin first', () => {
-    expect(SELECTOR_ORDER_TEXT).toBe('pinned, then saved order, then primary, then last used, then most weekly room');
+  test('saved-order prose keeps the manual pin ahead and unlisted accounts as fallbacks', () => {
+    expect(A.orderYours).toContain('after any available manual pin');
+    expect(A.orderYours).toContain('unlisted accounts as fallbacks');
+    const pin = A.orderYours.indexOf('after any available manual pin');
+    const saved = A.orderYours.indexOf('saved accounts in order');
+    const primary = A.orderYours.indexOf('primary account');
+    const previous = A.orderYours.indexOf('session’s previous account');
+    const reset = A.orderYours.indexOf('weekly reset comes soonest');
+    expect(saved).toBeGreaterThan(pin);
+    expect(primary).toBeGreaterThan(saved);
+    expect(previous).toBeGreaterThan(primary);
+    expect(reset).toBeGreaterThan(previous);
+    expect(A.orderYours).toContain('five-hour reset breaks ties');
+    expect(A.orderYours).toContain('Unknown quota comes last');
+    for (const policy of [A.orderDefault, A.orderYours]) {
+      expect(policy).toContain('every selectable account is held');
+      expect(policy).toContain('the one whose reset is nearest');
+      expect(policy).toContain('reports its limit');
+    }
+    expect(A.orderYours).not.toContain('most weekly room');
   });
 
   /** Every row's rule in one pool, in order: null for each strip the daemon did not flag. */

@@ -1,5 +1,7 @@
 import { localZonedInstantText } from '../../lib/heads';
 
+const heldAccounts = 'If every selectable account is held, splice tries the one whose reset is nearest and reports its limit.';
+
 export const A = {
   title: 'Accounts',
   lede: 'Your provider logins, their limits, and the order splice uses them.',
@@ -53,8 +55,8 @@ export const A = {
   orderReading: 'Reading failover order…',
   orderSaving: 'Saving failover order…',
   orderSaved: 'Failover order saved',
-  orderDefault: 'No order is saved. Splice uses the account with quota whose weekly reset comes soonest. The five-hour reset breaks ties. Unknown quota comes last. Each session keeps its account while it remains available. Your saved order overrides this default.',
-  orderYours: 'You set this order. It stays until you change it or go back to the default.',
+  orderDefault: `No order is saved. Splice first tries an available pinned account. Each session keeps its account while it remains available, before choosing the account with quota whose weekly reset comes soonest. The five-hour reset breaks ties. Unknown quota comes last. Your saved order overrides this default after any available manual pin. ${heldAccounts}`,
+  orderYours: `You set this order. Splice starts after any available manual pin by trying saved accounts in order. It then tries unlisted accounts as fallbacks: the primary account, the session’s previous account, and the account with quota whose weekly reset comes soonest. The five-hour reset breaks ties. Unknown quota comes last. It stays until you change it or go back to the default. ${heldAccounts}`,
   orderReset: 'Use the default order',
   orderUnavailable: 'Account ordering is unavailable for this command.',
   orderSingle: 'This command uses one login. There is no account order to change.',

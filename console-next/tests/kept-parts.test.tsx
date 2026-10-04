@@ -33,6 +33,13 @@ describe('a kept panel still being read', () => {
   });
 });
 
+test('a request with a session but no reply says which lookup identity is absent', () => {
+  const unanswered = { ...row('a'), session_id: 'session-a' };
+  const html = page(<KeptTabs row={unanswered} plan="Solo" tab={null} />, () => undefined);
+  expect(html).toContain('No response message was recorded for this request');
+  expect(html).not.toContain('This request carries no session');
+});
+
 describe('a failed turn\'s sentence', () => {
   const seed = (client: QueryClient): void => {
     client.setQueryData(['trace', 'claude-solo', 'a'], kept('a', 'the connection for a closed mid-request; retry'));
@@ -46,11 +53,22 @@ describe('a failed turn\'s sentence', () => {
     expect(a).toContain('the connection for a closed mid-request; retry');
     expect(a).not.toContain('the connection for b');
   });
-  test('is absent when the daemon recorded none, and when the trace no longer holds the turn', () => {
-    const none = page(<KeptTabs row={row('a')} plan="Solo" tab={null} />, (client) => client.setQueryData(['trace', 'claude-solo', 'a'], kept('a', null)));
-    expect(none).not.toContain('failure-sentence');
-    const gone = page(<KeptTabs row={row('a')} plan="Solo" tab={null} />, (client) => client.setQueryData(['trace', 'claude-solo', 'a'], { gone: 'no such turn' }));
-    expect(gone).not.toContain('failure-sentence');
+  test('names a missing explanation without inventing the cause of a stopped request', () => {
+    const stopped = { ...row('a'), outcome: 'client_abort' };
+    const none = page(<KeptTabs row={stopped} plan="Solo" tab={null} />, (client) => client.setQueryData(['trace', 'claude-solo', 'a'], kept('a', null)));
+    expect(none).toContain('This answer stopped before it completed. No detailed stop reason was kept.');
+    expect(none).not.toContain('the client disconnected');
+    const gone = page(<KeptTabs row={stopped} plan="Solo" tab={null} />, (client) => client.setQueryData(['trace', 'claude-solo', 'a'], { gone: 'no such turn' }));
+    expect(gone).toContain('This answer stopped before it completed. No detailed stop reason was kept.');
+    expect(gone).toContain('no such turn');
+  });
+
+  test('an unavailable trace does not hide the recorded outcome, and a success needs no explanation', () => {
+    const noTrace = { head: 'claude-solo', ts: 1, model: 'm', outcome: 'error:rate-limited', compact: false };
+    const failed = page(<KeptTabs row={noTrace} plan="Solo" tab={null} />, () => undefined);
+    expect(failed).toContain('This request ended: Rate limited. No detailed failure reason was kept.');
+    const done = page(<KeptTabs row={{ ...noTrace, outcome: 'ok' }} plan="Solo" tab={null} />, () => undefined);
+    expect(done).not.toContain('failure-sentence');
   });
 });
 

@@ -7,7 +7,8 @@ package splice.head.trace
 
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -15,6 +16,8 @@ import kotlinx.serialization.json.putJsonArray
 import splice.core.util.Cancellables
 import splice.core.util.JsonWire
 import splice.http.JsonReply
+import splice.sessions.transcript.CONVERSATION_READ_TIMEOUT_MS
+import splice.sessions.transcript.CONVERSATION_READ_UNAVAILABLE
 import splice.sessions.transcript.MessageConversation
 import splice.sessions.transcript.SessionTranscriptViewEnabled
 import splice.sessions.transcript.TranscriptMessageSource
@@ -32,6 +35,7 @@ public class TranscriptRequestRoute(
     private val roots: TranscriptRoots,
     private val viewEnabled: SessionTranscriptViewEnabled,
     private val io: CoroutineDispatcher,
+    private val readTimeoutMs: Long = CONVERSATION_READ_TIMEOUT_MS,
 ) {
     public suspend fun read(head: String, sessionId: String?, responseId: String?): JsonReply {
         val approved = roots.forHead(head)
@@ -45,14 +49,18 @@ public class TranscriptRequestRoute(
     }
 
     private suspend fun served(sessionId: String, responseId: String, approved: List<Path>): JsonReply {
-        val lookup = withContext(io) {
-            Cancellables.runCatchingCancellable { source.lookup(sessionId, approved, responseId) }
-        }.getOrElse {
+        val read = withTimeoutOrNull(readTimeoutMs) {
+            Cancellables.runCatchingCancellable {
+                runInterruptible(io) { source.lookup(sessionId, approved, responseId) }
+            }
+        } ?: return state("unavailable", CONVERSATION_READ_UNAVAILABLE)
+        val lookup = read.getOrElse {
             return refuse(HttpStatusCode.InternalServerError, "Could not read this session's saved transcript.")
         }
         return when (lookup) {
             is MessageConversation.Found -> found(lookup)
             is MessageConversation.Missing -> state("missing", lookup.reason)
+            is MessageConversation.Unavailable -> state("unavailable", lookup.reason)
             is MessageConversation.Refused -> refuse(HttpStatusCode.BadRequest, lookup.reason)
         }
     }

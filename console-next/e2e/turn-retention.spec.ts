@@ -53,6 +53,38 @@ test('a recorded turn opens its own page with the exact received request and ans
   expect(faults.failedReads).toEqual([]);
 });
 
+test('a failed request listed in the day opens even after more than a detail tail of newer traffic', async ({ page }) => {
+  const at = Date.now() - 2 * 3_600_000;
+  const failure: TurnRowWire = {
+    ts: at, model: STACK.soloModel, outcome: 'error:rate-limited', compact: false,
+    session: null, account: null, cache_cold: null, turn: null,
+    session_id: null, response_message_id: null, total: 20,
+  };
+  const rows = [failure, ...Array.from({ length: 205 }, (_, index) => ({
+    ...failure, ts: at + (index + 1) * 1000, outcome: 'ok',
+  }))];
+  await page.route('**/api/perf/turns?*', (route) => {
+    const query = new URL(route.request().url()).searchParams;
+    if (query.get('head') !== STACK.soloHead) return route.fallback();
+    const since = Number(query.get('since') ?? 0);
+    const until = Number(query.get('until') ?? Date.now());
+    const n = Number(query.get('n') ?? 200);
+    const matching = rows.filter((row) => row.ts >= since && row.ts < until && (query.get('outcome') !== 'failed' || row.outcome !== 'ok'));
+    const returned = matching.slice(-n);
+    return route.fulfill({ json: {
+      since, n, heads: [{ key: STACK.soloHead, label: STACK.soloHead,
+        count: matching.length, returned: returned.length, truncated: returned.length < matching.length,
+        oldest_held_ts: at, rows: returned }],
+    } });
+  });
+  const faults = await open(page, 'requests?window=24h&status=failed&head=' + STACK.soloHead);
+  await openTurn(page, STACK.soloHead, at);
+  await expect(page.getByRole('heading', { name: 'Where the time went', exact: true })).toBeVisible();
+  await expect(page.getByRole('main')).toContainText('Rate limited');
+  await expect(page.getByRole('main')).not.toContainText('This request is no longer held');
+  expect(faults.pageErrors).toEqual([]);
+});
+
 test('a delayed conversation read stays visibly pending until its real messages arrive', async ({ page }) => {
   const faults = await open(page, 'requests');
   const responseId = await driveOneTurn(Number(env('CONSOLE_E2E_SOLO_PORT')), env('CONSOLE_E2E_KEY'), STACK.sender.id, STACK.soloModel);

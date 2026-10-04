@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.client.transcript.TranscriptMessageLookup
+import splice.core.util.ElapsedClock
 import splice.sessions.transcript.MessageConversation
 import splice.sessions.transcript.SentTexts
 import splice.sessions.transcript.SessionTranscripts
@@ -70,6 +71,48 @@ class TranscriptMessageLookupTest {
         transcript(root)
         val pruned = lookup.lookup(SESSION, listOf(root), "msg_not_kept") as MessageConversation.Missing
         assertTrue(pruned.reason.contains("reply", ignoreCase = true))
+    }
+
+    @Test
+    fun `a long conversation read ends with a reason instead of scanning every page`(@TempDir root: Path) {
+        var elapsed = 0L
+        var reads = 0
+        val copies = listOf(root.resolve("first"), root.resolve("second"))
+        val pages = object : SessionTranscripts {
+            override fun page(sessionId: String, roots: List<Path>, cursor: String?, limit: Int): TranscriptLookup {
+                reads++
+                elapsed += 6_000L
+                val preferred = roots.first() == copies.first()
+                val message = if (preferred) {
+                    TranscriptMessage(reads.toLong(), TranscriptRole.USER, null, "synthetic history")
+                } else {
+                    TranscriptMessage(
+                        reads.toLong(),
+                        TranscriptRole.ASSISTANT,
+                        null,
+                        "partial reply",
+                        messageId = RESPONSE,
+                    )
+                }
+                val next = if (preferred || reads == 100) null else "$reads.0"
+                return TranscriptLookup.Found(
+                    TranscriptPage(
+                        sessionId,
+                        roots.first().toString(),
+                        listOf(message),
+                        next,
+                        emptyMap(),
+                    ),
+                )
+            }
+
+            override fun sentTexts(sessionId: String, roots: List<Path>, ids: Set<String>): SentTexts =
+                SentTexts(null, emptyMap(), ids)
+        }
+        val answer = TranscriptMessageLookup(pages, ElapsedClock { elapsed }).lookup(SESSION, copies, RESPONSE)
+        assertTrue(answer is MessageConversation.Unavailable, "a slow read must say why it stopped, not claim absence")
+        assertTrue((answer as MessageConversation.Unavailable).reason.contains("Open the session"))
+        assertEquals(2, reads, "the next page is not read after the whole lookup's time budget")
     }
 
     @Test

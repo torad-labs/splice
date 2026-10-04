@@ -4,7 +4,7 @@ import { useCapture, useConversation, useKeptTurn, useWire } from '../../api/tur
 import { foldTranscript } from '../../lib/conversation';
 import { fmtMs } from '../../lib/format';
 import { readable } from '../../lib/message';
-import { askAndAnswer, wireFor } from '../../lib/turns-page';
+import { askAndAnswer, outcomeOf, wireFor } from '../../lib/turns-page';
 import { P } from '../../lib/words-turns';
 import type { TraceRecord, TraceSide, TurnRow } from '../../types/perf';
 import { Markdown } from '../../ui';
@@ -18,7 +18,8 @@ const tabOf = (raw: string | null): Tab => TABS.find(([id]) => id === raw)?.[0] 
 
 function Conversation({ row, plan }: { row: TurnRow; plan: string }) {
   const read = useConversation(row.head, row.session_id ?? null, row.response_message_id ?? null, row.session_id !== undefined && row.response_message_id !== undefined);
-  if (row.session_id === undefined || row.response_message_id === undefined) return <p className="kept-note">{P.conversationNoId}</p>;
+  if (row.session_id === undefined) return <p className="kept-note">{P.conversationNoId}</p>;
+  if (row.response_message_id === undefined) return <p className="kept-note">{P.conversationNoReply}</p>;
   if (read.isError) return <p className="kept-note" role="alert">{failureText(read.error)}</p>;
   if (read.data === undefined) return <p className="kept-note" role="status">{P.readingConversation}</p>;
   if (read.data.state !== 'found') return <p className="kept-note">{read.data.reason}</p>;
@@ -70,8 +71,12 @@ function Attempt({ record }: { record: TraceRecord }) {
 /** The sentence the daemon recorded for a failed turn, whole, under this turn's own read: a late answer for another turn lands in that turn's cache. */
 function Failure({ row }: { row: TurnRow }) {
   const kept = useKeptTurn(row.head, row.turn ?? null, row.turn !== undefined);
+  if (row.outcome === 'ok' || row.outcome === '?') return null;
+  if (row.turn !== undefined && kept.data === undefined && !kept.isError) return <p className="failure-sentence" role="status">{P.readingFailure}</p>;
   const sentence = kept.data === undefined || 'gone' in kept.data ? null : (kept.data.read.turn.failure_sentence ?? null);
-  return sentence === null || sentence.trim() === '' ? null : <p className="failure-sentence">{sentence}</p>;
+  const absent = row.outcome === 'client_abort' ? P.stoppedNoReason : P.failureNoReason(outcomeOf(row.outcome).word);
+  const problem = kept.isError ? failureText(kept.error) : kept.data !== undefined && 'gone' in kept.data ? kept.data.gone : null;
+  return <p className="failure-sentence">{sentence?.trim() ? sentence : absent}{problem === null ? '' : ` ${problem}`}</p>;
 }
 
 function Request({ row, plan }: { row: TurnRow; plan: string }) {

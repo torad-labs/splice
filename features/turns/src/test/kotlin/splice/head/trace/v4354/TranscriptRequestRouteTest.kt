@@ -4,13 +4,19 @@
 package splice.head.trace.v4354
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.head.trace.TranscriptRequestRoute
 import splice.head.trace.TranscriptRoots
@@ -20,6 +26,9 @@ import splice.sessions.transcript.TranscriptMessage
 import splice.sessions.transcript.TranscriptMessageSource
 import splice.sessions.transcript.TranscriptRole
 import java.nio.file.Path
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 private const val SESSION = "sess-v4354"
 private const val RESPONSE = "msg_42_7"
@@ -79,6 +88,66 @@ class TranscriptRequestRouteTest {
         val other = runBlocking { second.read("kimi", SESSION, RESPONSE) }
         assertEquals("off", Json.parseToJsonElement(other.body).jsonObject.getValue("state").jsonPrimitive.content)
         assertEquals(0, reads)
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `a blocked source is interrupted at the deadline and returns a reason`() = runTest {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val interrupted = AtomicBoolean()
+        val slow = TranscriptRequestRoute(
+            TranscriptMessageSource { _, _, _ ->
+                entered.countDown()
+                try {
+                    release.await()
+                    MessageConversation.Missing("the slow source finished without finding a reply")
+                } catch (failure: InterruptedException) {
+                    interrupted.set(true)
+                    throw failure
+                }
+            },
+            roots,
+            enabled,
+            Dispatchers.Default,
+            readTimeoutMs = 50L,
+        )
+        val read = async { slow.read("kimi", SESSION, RESPONSE) }
+        try {
+            runCurrent()
+            assertTrue(entered.await(1, TimeUnit.SECONDS), "the source must start before advancing its deadline")
+            advanceTimeBy(50)
+            runCurrent()
+            if (!read.isCompleted) release.countDown()
+            val reply = read.await()
+            val body = Json.parseToJsonElement(reply.body).jsonObject
+            assertEquals("unavailable", body.getValue("state").jsonPrimitive.content)
+            assertTrue(interrupted.get(), "the timed-out disk worker must not continue scanning")
+            assertEquals(200, reply.status.value)
+        } finally {
+            release.countDown()
+        }
+    }
+
+    @Test
+    fun `a lookup that cannot finish is unavailable rather than claiming the reply is missing`() = runBlocking {
+        val unavailable = TranscriptRequestRoute(
+            TranscriptMessageSource { _, _, _ ->
+                MessageConversation.Unavailable("Reading this conversation took too long. Open the session.")
+            },
+            roots,
+            enabled,
+            Dispatchers.Unconfined,
+        )
+        val reply = unavailable.read("kimi", SESSION, RESPONSE)
+        val body = Json.parseToJsonElement(reply.body).jsonObject
+        assertEquals(200, reply.status.value)
+        assertEquals("unavailable", body.getValue("state").jsonPrimitive.content)
+        assertEquals(setOf("state", "reason"), body.keys)
+        assertEquals(
+            "Reading this conversation took too long. Open the session.",
+            body.getValue("reason").jsonPrimitive.content,
+        )
     }
 
     @Test

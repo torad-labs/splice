@@ -17,7 +17,7 @@ export function TurnPage() {
   const { head = '', ts = '' } = useParams();
   const [params] = useSearchParams();
   const at = Number(ts);
-  const turns = usePerfTurns({ head, n: 200, since: Number.isFinite(at) ? at - 1 : 0 }, false);
+  const turns = usePerfTurns({ head, n: 1, since: Number.isFinite(at) ? at : 0, until: Number.isFinite(at) ? at + 1 : 0 }, false);
   const heads = useHeads();
   const status = useStatus();
   const sessions = useSessions();

@@ -11,6 +11,12 @@ internal const val DEFAULT_TRANSCRIPT_PAGE: Int = 100
 // and hold an entire multi-thousand-turn transcript.
 public const val MAX_TRANSCRIPT_PAGE: Int = 500
 
+// why: request detail must end a slow whole-conversation read and leave the session's paged view available.
+public const val CONVERSATION_READ_TIMEOUT_MS: Long = 10_000L
+
+public const val CONVERSATION_READ_UNAVAILABLE: String =
+    "Reading this conversation took too long. Open the session to read its transcript in pages."
+
 /** The skipped-record kinds the page publishes as their own counts, apart from the per-kind map. */
 public const val SKIPPED_UNPARSEABLE: String = "unparseable"
 public const val SKIPPED_SIDECHAIN: String = "sidechain"
@@ -64,6 +70,10 @@ public sealed class MessageConversation {
     ) : MessageConversation()
 
     public data class Missing(val reason: String) : MessageConversation()
+
+    /** The source could not complete this read; it does not claim the reply is absent. */
+    public data class Unavailable(val reason: String) : MessageConversation()
+
     public data class Refused(val reason: String) : MessageConversation()
 }
 

@@ -388,7 +388,7 @@ export interface ConversationMessageWire {
  *  it cannot be shown. The `off` branch proves the daemon read no private file for that request. */
 export type TranscriptConversationWire =
   | { state: 'found'; session_id: string; response_message_id: string; messages: ConversationMessageWire[]; earlier: number }
-  | { state: 'missing' | 'off'; reason: string };
+  | { state: 'missing' | 'off' | 'unavailable'; reason: string };
 
 /** One upstream request body a head sent, as its wire tap kept it (WireTap.json). */
 export interface WireRecordWire {

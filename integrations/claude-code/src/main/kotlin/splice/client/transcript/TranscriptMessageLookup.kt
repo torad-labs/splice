@@ -5,6 +5,10 @@
 // from the caller; this adapter returns only conversation text, never headers or raw request bytes.
 package splice.client.transcript
 
+import splice.core.util.ElapsedClock
+import splice.core.util.MonoClock
+import splice.sessions.transcript.CONVERSATION_READ_TIMEOUT_MS
+import splice.sessions.transcript.CONVERSATION_READ_UNAVAILABLE
 import splice.sessions.transcript.MAX_TRANSCRIPT_PAGE
 import splice.sessions.transcript.MessageConversation
 import splice.sessions.transcript.SessionTranscripts
@@ -24,10 +28,11 @@ private val RESPONSE_ID = Regex("[A-Za-z0-9_-]{1,128}")
 /** Claude Code's redacted conversation through one client-facing assistant response. */
 public class TranscriptMessageLookup(
     private val pages: SessionTranscripts = TranscriptReader(),
+    private val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
 ) : TranscriptMessageSource {
     override fun lookup(sessionId: String, roots: List<Path>, responseId: String): MessageConversation {
         return if (RESPONSE_ID.matches(responseId)) {
-            search(sessionId, roots, responseId)
+            search(sessionId, roots, responseId, clock() + CONVERSATION_READ_TIMEOUT_MS)
         } else {
             MessageConversation.Refused("not a response message id")
         }
@@ -35,9 +40,9 @@ public class TranscriptMessageLookup(
 
     /** One session id can exist in more than one own tree after a head hand-off. The preferred copy
      *  wins only if it HOLDS this response id; a copy ending before it cannot hide a later one. */
-    private fun search(sessionId: String, roots: List<Path>, responseId: String): MessageConversation {
+    private fun search(sessionId: String, roots: List<Path>, responseId: String, deadline: Long): MessageConversation {
         for (root in roots) {
-            val answer = scan(sessionId, listOf(root), responseId)
+            val answer = scan(sessionId, listOf(root), responseId, deadline)
             if (answer !is MessageConversation.Missing) return answer
         }
         return MessageConversation.Missing("No saved reply for this session; its transcript may be absent or pruned.")
@@ -50,10 +55,14 @@ public class TranscriptMessageLookup(
         var seen = 0L
     }
 
-    private fun scan(sessionId: String, roots: List<Path>, responseId: String): MessageConversation {
+    private fun scan(sessionId: String, roots: List<Path>, responseId: String, deadline: Long): MessageConversation {
         val state = ScanState()
         var answer: MessageConversation? = null
         while (answer == null) {
+            if (Thread.currentThread().isInterrupted) throw InterruptedException("conversation read cancelled")
+            if (clock() >= deadline) {
+                return MessageConversation.Unavailable(CONVERSATION_READ_UNAVAILABLE)
+            }
             answer = when (val read = pages.page(sessionId, roots, state.cursor, MAX_TRANSCRIPT_PAGE)) {
                 is TranscriptLookup.Missing -> MessageConversation.Missing("No saved transcript for this session.")
                 is TranscriptLookup.Refused -> MessageConversation.Refused(read.reason)

@@ -61,12 +61,17 @@ internal class ClaudeAccountPaths(private val stateDir: Path) {
 internal const val OWN_SIGN_IN_LABEL = "claude-code"
 
 /** One added account: its [label], the identity Claude Code recorded, when it was added, and the folder splice owns
- *  for it. Never its token — [ClaudeAccountFolders.token] is the one reader, at send and probe time. */
+ *  for it. Never its token — [ClaudeAccountFolders.token] is the one reader, at send and probe time.
+ *
+ *  A folder splice cannot read is STILL one of these: somebody added that account and its label is on the pool, so
+ *  it keeps its row with no [identity] and a [refusal] in words (V4-410). Dropping it, or hanging its sentence on
+ *  another account's row, is how a login disappears from Accounts or blames the wrong card. */
 internal data class ClaudeAccount(
     val label: String,
-    val identity: ClaudeAccountIdentity,
+    val identity: ClaudeAccountIdentity?,
     val addedAtEpochMillis: Long,
     val directory: Path,
+    val refusal: String? = null,
 ) {
     val credentials: Path get() = directory.resolve(CREDENTIALS_JSON)
 }
@@ -93,12 +98,21 @@ internal class ClaudeAccountFolders(
     private val facts = ClaudeLoginFactsReader()
     private val paths = ClaudeAccountPaths(stateDir)
 
-    /** Every readable account of [head], oldest first: the order they were added, which is the pool's default. */
-    fun accounts(head: String): List<ClaudeAccount> = read(head).mapNotNull { it.second }
+    /** Every account of [head], oldest first: the order they were added, which is the pool's default. A label whose
+     *  folder splice cannot read is here too, carrying its own refusal and no identity, and sorts last. */
+    fun accounts(head: String): List<ClaudeAccount> = read(head)
+        .map { (label, account) -> account ?: refused(label, head) }
         .sortedWith(compareBy(ClaudeAccount::addedAtEpochMillis, ClaudeAccount::label))
 
-    /** The labels of [head] whose folder exists and holds no readable account: Accounts names them, never guesses. */
-    fun unreadable(head: String): List<String> = read(head).filter { it.second == null }.map { it.first }
+    /** The row a label keeps when its folder is not a readable login. It sorts last because its own `added_at` is
+     *  unreadable with everything else in the folder, and a working login is the one a turn should reach first. */
+    private fun refused(label: String, head: String): ClaudeAccount = ClaudeAccount(
+        label = label,
+        identity = null,
+        addedAtEpochMillis = Long.MAX_VALUE,
+        directory = paths.account(head, label),
+        refusal = "this sign-in is unreadable; sign in again",
+    )
 
     /** [label]'s current access token, read at send or probe time, or null when nothing is filed under it. */
     fun token(head: String, label: String): String? =
@@ -140,17 +154,19 @@ internal class ClaudeAccountFolders(
      *  sign-in becomes [ClaudePendingAccount.label]'s own folder. A label signed in again keeps its original time. */
     private fun file(pending: ClaudePendingAccount, identity: ClaudeAccountIdentity): ClaudeAccountLanding {
         val added = accounts(pending.head)
-        val held = added.firstOrNull { it.identity.uuid == identity.uuid }
+        val held = added.firstOrNull { it.identity?.uuid == identity.uuid }
         if (held != null && held.label != pending.label) return ClaudeAccountLanding.AlreadyAdded(held.label)
-        move(pending, addedAt = held?.addedAtEpochMillis ?: filedAt(added))
+        move(pending, addedAt = held?.addedAtEpochMillis?.takeIf { it != Long.MAX_VALUE } ?: filedAt(added))
         return ClaudeAccountLanding.Added(pending.label)
     }
 
     /** When splice files a new account: the clock, carried past the newest account this command already holds so two
      *  sign-ins in one millisecond keep the order they were made in. Without that, the add order of a fast pair fell
      *  back to the labels' own order, which is not the order anybody added them in. */
-    private fun filedAt(added: List<ClaudeAccount>): Long =
-        maxOf(now(), (added.maxOfOrNull(ClaudeAccount::addedAtEpochMillis) ?: 0L) + 1L)
+    private fun filedAt(added: List<ClaudeAccount>): Long {
+        val newest = added.map(ClaudeAccount::addedAtEpochMillis).filter { it != Long.MAX_VALUE }.maxOrNull() ?: 0L
+        return maxOf(now(), newest + 1L)
+    }
 
     /** Puts the pending sign-in's two files in [label]'s own folder, owner-only. The account record lands first and
      *  the credential last, so an interrupted move leaves a folder [read] reports unreadable rather than an account

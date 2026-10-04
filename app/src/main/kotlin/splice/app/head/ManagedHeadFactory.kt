@@ -37,6 +37,7 @@ import splice.oauth.AuthHttpClientFactory
 import splice.provider.codex.CodexQuotaHeaderFamily
 import splice.provider.muse.MuseAuthProvider
 import splice.provider.openai.ApiKeyAuthProvider
+import splice.usage.quota.ClientUserAgent
 import splice.usage.quota.QuotaPoller
 import splice.usage.quota.QuotaProbe
 import splice.usage.quota.QuotaProbes
@@ -67,6 +68,9 @@ internal class ManagedHeadFactory(
         QuotaPoller(probeScope, head, probe, QuotaSnapshotSink(tracker::record), log, intervalMs = intervalMs).start()
     },
     private val onPrimaryQuota: OnPrimaryQuota = OnPrimaryQuota { _ -> },
+    /** The Claude Code User-Agent the quota probes present, which is the one this daemon's client was seen
+     *  sending. Null until a client has sent a turn, and a Claude head's probe then sends none. */
+    private val clientUserAgent: ClientUserAgent = ClientUserAgent { null },
     /** V4-444: where each assembled head's provider is registered for the Playground's one call. */
     private val playgroundProviders: PlaygroundProviders = PlaygroundProviders(),
 ) {
@@ -204,14 +208,15 @@ internal class ManagedHeadFactory(
         val baseUrl = ctx.providerCfg.baseUrl
         // Subscription heads have a usage endpoint. Every OAuth account gets its own persisted
         // snapshot and poller; non-pooled heads retain the legacy single tracker path.
+        val probeFor = { auth: AuthProvider ->
+            quotaProbes.forHead(authKind, baseUrl, auth, usageFields(auth), clientUserAgent)
+        }
         if (wired.accounts.isEmpty()) {
-            quotaProbes.forHead(authKind, baseUrl, wired.auth, usageFields(wired.auth))?.let { probe ->
-                startQuotaPoller(ctx.key, probe, stores.quota, intervalMs)
-            }
+            probeFor(wired.auth)?.let { probe -> startQuotaPoller(ctx.key, probe, stores.quota, intervalMs) }
             return
         }
         wired.accounts.forEach { account ->
-            quotaProbes.forHead(authKind, baseUrl, account.auth, usageFields(account.auth))?.let { probe ->
+            probeFor(account.auth)?.let { probe ->
                 startQuotaPoller(ctx.key, probe, stores.accountQuotas.getValue(account.label), intervalMs)
             }
         }

@@ -112,6 +112,9 @@ class QuotaProbesTest {
         val fields = UsageFields { null }
         assertTrue(probes.forHead("muse-oauth", BASE_URL, auth, fields) is MuseMintProbe)
         assertNull(probes.forHead("api-key", BASE_URL, auth, null))
+        assertNull(probes.forHead("client", BASE_URL, auth, null), "a Claude head with no client seen yet")
+        val agent = ClientUserAgent { "claude-cli/2.1.289 (external, cli)" }
+        assertTrue(probes.forHead("client", BASE_URL, auth, null, agent) is ClaudeUsageProbe)
     }
 
     @Test

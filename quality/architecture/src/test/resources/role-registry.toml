@@ -45,6 +45,12 @@
 # none, because it looks like work.
 
 [[groups]]
+signature = "suspend (WireSink)->Unit"
+dated = "2026-10-04"
+names = ["BufferedSinkWrite", "SourceFrameAction"]
+reason = """BufferedSinkWrite retains tentative client output until certification releases it. SourceFrameAction delivers one validated native event immediately inside an opaque-field scope that always unwinds; delaying that scope would lose source ordering."""
+
+[[groups]]
 signature = "(Path)->Boolean"
 dated = "2026-10-02"
 names = ["DayFileRemoval", "PluginFileMatch"]
@@ -324,6 +330,7 @@ signature = "()->String?"
 dated = "2026-09-17"
 names = [
     "ClasspathHtml",
+    "ClientUserAgent",
     "DaemonVersionRead",
     "ManagerEnvironmentBlock",
     "WrapStateRead",
@@ -332,7 +339,7 @@ reason = """ClasspathHtml reads the bundled dashboard HTML out of the jar and is
 resource is absent from this build. DaemonVersionRead asks the RUNNING daemon for its version and \
 is null when no daemon answers. One null means \"not packaged\", the other means \"not running\", \
 and the upgrade path branches on the second — a shared port would let a missing resource read as a \
-stopped daemon and trigger a restart nobody asked for. ADDED 2026-09-20 (V4-129): WrapStateRead is not a third way to read a string - it answers ONE question LaunchService must ask on every launch, wrapped or not: what absolute binary does the wrapped claude really point at, or null when nothing is wrapped. Null is the LOAD-BEARING value, not an absence: it is exactly the case where the bare name resolved through PATH is correct, which is today's byte-identical behaviour. ClasspathHtml reads a bundled asset and DaemonVersionRead reads a version string; neither can answer that question, and substituting one would make every head's launch exec the wrong binary or itself. ADDED 2026-09-28 (V4-395): ManagerEnvironmentBlock is the systemd user manager's environment block as text (`systemctl --user show-environment`), which SystemdUnitDaemon parses to learn the HOME and control port a supervisor unit's daemon runs under, so `splice restart` never acts on another home's unit. Null there means \"no manager answered\", and the restart refuses on it. ClasspathHtml reads a bundled asset, DaemonVersionRead a version and WrapStateRead a binary path; none can answer that question, and substituting one would let a restart judge ownership from the wrong string."""
+stopped daemon and trigger a restart nobody asked for. ADDED 2026-09-20 (V4-129): WrapStateRead is not a third way to read a string - it answers ONE question LaunchService must ask on every launch, wrapped or not: what absolute binary does the wrapped claude really point at, or null when nothing is wrapped. Null is the LOAD-BEARING value, not an absence: it is exactly the case where the bare name resolved through PATH is correct, which is today's byte-identical behaviour. ClasspathHtml reads a bundled asset and DaemonVersionRead reads a version string; neither can answer that question, and substituting one would make every head's launch exec the wrong binary or itself. ADDED 2026-09-28 (V4-395): ManagerEnvironmentBlock is the systemd user manager's environment block as text (`systemctl --user show-environment`), which SystemdUnitDaemon parses to learn the HOME and control port a supervisor unit's daemon runs under, so `splice restart` never acts on another home's unit. Null there means \"no manager answered\", and the restart refuses on it. ClasspathHtml reads a bundled asset, DaemonVersionRead a version and WrapStateRead a binary path; none can answer that question, and substituting one would let a restart judge ownership from the wrong string. ClientUserAgent (added 2026-10-04) is the whole User-Agent header splice has SEEN this daemon's Claude Code send, read at probe time and presented to Anthropic's subscription usage endpoint, which buckets that endpoint's rate limit by User-Agent and answers a caller that sends none with a 429 that does not recover (anthropics/claude-code#30930). It keeps its own port because the four reads above are a packaged resource, a running daemon version, a unit manager environment block and a wrap-state file: wiring any of them here would present the vendor an identity that never spoke to splice, and wiring this one into the upgrade path would compare a client header against a release version."""
 
 # ── 2 names, () -> TurnOutcome ────────────────────────────────────────────────────────────────────
 [[groups]]

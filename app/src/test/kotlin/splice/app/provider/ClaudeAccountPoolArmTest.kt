@@ -8,6 +8,7 @@ package splice.app.provider
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -81,14 +82,17 @@ class ClaudeAccountPoolArmTest {
     ) = runTest {
         val paths = StatePaths(baseOverride = tmp.resolve("template"))
         add(paths, "work", "uuid-work", "access-work", head = "claude")
-        val broken = paths.stateDir.resolve("claude-accounts").resolve("claude").resolve("broken")
-        Files.createDirectories(broken)
-        Files.writeString(broken.resolve(".credentials.json"), "{not json")
+        val folder = paths.stateDir.resolve("claude-accounts").resolve("claude").resolve("broken")
+        Files.createDirectories(folder)
+        Files.writeString(folder.resolve(".credentials.json"), "{not json")
 
         val wired = assemble(paths, head = "claude")
 
-        assertEquals(listOf("claude-code", "work"), wired.accounts.map { it.label })
-        assertEquals("the sign-in in 'broken' is unreadable; sign in again", wired.accounts.last().refusal, "named")
+        assertEquals(listOf("claude-code", "work", "broken"), wired.accounts.map { it.label }, "its own row, last")
+        val broken = wired.accounts.last()
+        assertEquals("this sign-in is unreadable; sign in again", broken.refusal, "on its own card, never another's")
+        assertFalse(broken.credentialPresent, "and splice offers no credential for it")
+        assertNull(wired.accounts.first { it.label == "work" }.refusal, "the working login is not blamed")
     }
 
     private fun add(paths: StatePaths, label: String, uuid: String, token: String, head: String = HEAD) {

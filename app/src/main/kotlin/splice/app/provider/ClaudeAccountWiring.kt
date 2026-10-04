@@ -7,8 +7,9 @@
 // the pool's primary, and the pre-pool path is what a command with no added account still gets. Each added account
 // follows, oldest first, with the credential of its own folder.
 //
-// A folder splice cannot read is NOT silently dropped: it rides on the last account's row as a refusal, because
-// Accounts shows a refusal in words and the alternative is a login that quietly vanished.
+// A folder splice cannot read keeps its OWN row, with no credential and its own refusal in words (V4-410): the
+// label is on the pool because somebody added it, and neither dropping it nor hanging its sentence on a working
+// account's row tells the truth about which login needs signing in again.
 package splice.app.provider
 
 import splice.app.auth.claude.ClaudeAccountFolders
@@ -32,8 +33,7 @@ internal class ClaudeAccountWiring(
     fun accounts(head: String, caller: RefreshableAuthProvider): List<WiredAccount> {
         val added = folders.accounts(head)
         if (added.isEmpty()) return emptyList()
-        val unreadable = folders.unreadable(head)
-        val entries = listOf(
+        return listOf(
             WiredAccount(
                 label = OWN_SIGN_IN_LABEL,
                 primary = true,
@@ -46,14 +46,10 @@ internal class ClaudeAccountWiring(
                 primary = false,
                 auth = ClaudeFolderAuth(account.directory, refresh = refresh),
                 quotaFile = account.directory.resolve(QUOTA_FILE),
+                credentialPresent = account.identity != null,
+                refusal = account.refusal,
             )
         }
-        return refusal(unreadable)?.let { why -> entries.dropLast(1) + entries.last().copy(refusal = why) } ?: entries
-    }
-
-    /** What Accounts says about the folders this command holds that are not readable logins. */
-    private fun refusal(unreadable: List<String>): String? = unreadable.takeIf { it.isNotEmpty() }?.let { labels ->
-        "the sign-in in ${labels.joinToString(", ") { "'$it'" }} is unreadable; sign in again"
     }
 }
 

@@ -50,8 +50,8 @@ class ClaudeAccountFoldersTest {
 
         val accounts = folders().accounts(HEAD)
         assertEquals(listOf("work", "home"), accounts.map { it.label }, "added order, oldest first")
-        assertEquals(listOf("uuid-work", "uuid-home"), accounts.map { it.identity.uuid })
-        assertEquals("work@synthetic", accounts.first().identity.email)
+        assertEquals(listOf("uuid-work", "uuid-home"), accounts.map { it.identity?.uuid })
+        assertEquals("work@synthetic", accounts.first().identity?.email)
         assertEquals("synthetic-work", folders().token(HEAD, "work"))
         val owner = setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE)
         assertEquals(owner, Files.getPosixFilePermissions(accounts.first().credentials))
@@ -90,7 +90,7 @@ class ClaudeAccountFoldersTest {
 
         signIn(OTHER_HEAD, "work", "uuid-work", null)
 
-        assertEquals("uuid-work", folders().accounts(OTHER_HEAD).single().identity.uuid)
+        assertEquals("uuid-work", folders().accounts(OTHER_HEAD).single().identity?.uuid)
     }
 
     @Test
@@ -137,8 +137,11 @@ class ClaudeAccountFoldersTest {
         Files.createDirectories(broken)
         Files.writeString(broken.resolve(".credentials.json"), "{not json")
 
-        assertEquals(listOf("work"), folders().accounts(HEAD).map { it.label })
-        assertEquals(listOf("broken"), folders().unreadable(HEAD))
+        val accounts = folders().accounts(HEAD)
+        assertEquals(listOf("work", "broken"), accounts.map { it.label }, "the broken label keeps its own row, last")
+        assertNull(accounts.last().identity, "with no identity until it is signed in again")
+        assertEquals("this sign-in is unreadable; sign in again", accounts.last().refusal)
+        assertNull(accounts.first().refusal, "and the working login carries no refusal of someone else's")
     }
 
     @Test

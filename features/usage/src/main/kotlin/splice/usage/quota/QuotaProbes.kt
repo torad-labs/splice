@@ -34,12 +34,22 @@ public class QuotaProbes(
     private val client: HttpClient,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
-    public fun forHead(authKind: String, baseUrl: String, auth: AuthProvider, usageFields: UsageFields?): QuotaProbe? =
+    public fun forHead(
+        authKind: String,
+        baseUrl: String,
+        auth: AuthProvider,
+        usageFields: UsageFields?,
+        userAgent: ClientUserAgent? = null,
+    ): QuotaProbe? =
         when (authKind) {
             "chatgpt-oauth" -> CodexQuotaProbe(client, baseUrl, auth, clock)
             "kimi-oauth" -> KimiQuotaProbe(client, baseUrl, auth, clock)
             "grok-oauth" -> GrokQuotaProbe(client, auth, clock)
             "muse-oauth" -> usageFields?.let { MuseMintProbe(it, MuseQuotaParser(), clock) }
+            // A Claude head's own accounts: Anthropic's subscription usage endpoint, one probe per account. The
+            // caller's forwarded sign-in gets one too and answers null from it, because splice holds no token of
+            // its own to ask with (ClaudeUsageProbe).
+            "client" -> userAgent?.let { ClaudeUsageProbe(client, auth, it, clock) }
             else -> null
         }
 }
@@ -61,7 +71,7 @@ internal class BearerGetProbe(
 
     override suspend fun probe(): QuotaSnapshot? {
         val creds = auth.credentials() ?: return null
-        val authHeaders = credentialHeaders(creds) ?: return null
+        val authHeaders = QuotaCredentialHeaders.of(creds) ?: return null
         val resp = client.get(url) {
             authHeaders.forEach { (name, value) -> header(name, value) }
             extraHeaders.forEach { (name, value) -> header(name, value) }
@@ -74,8 +84,13 @@ internal class BearerGetProbe(
         if (resp.status.value != HTTP_OK) throw QuotaEndpointRefused(resp.status.value)
         return parse.parse(json.parseToJsonElement(resp.bodyAsText()).jsonObject, clock())
     }
+}
 
-    private fun credentialHeaders(creds: Credentials): Map<String, String>? = when (creds) {
+/** How a credential rides on a usage GET, for every probe in this package. One reading, because a probe that
+ *  spelled it differently would ask the vendor as somebody else. A forwarded credential is no credential here:
+ *  splice holds nothing to send outside a turn. */
+internal object QuotaCredentialHeaders {
+    fun of(creds: Credentials): Map<String, String>? = when (creds) {
         is Credentials.Bearer -> mapOf("Authorization" to "Bearer ${creds.token}")
         is Credentials.ApiKey -> mapOf(creds.header to "${creds.prefix}${creds.key}")
         Credentials.ClientForwarded -> null

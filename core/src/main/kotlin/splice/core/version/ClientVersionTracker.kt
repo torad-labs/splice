@@ -22,12 +22,20 @@ public class ClientVersionTracker(
         "tested Claude Code version must be dotted numeric: $testedVersion"
     }
     private val observed = ConcurrentHashMap<String, ClientVersion>()
+
+    // why: the whole User-Agent of the newest Claude Code seen, kept because Anthropic's usage endpoint buckets
+    // its rate limit by User-Agent and answers a caller that sends none with a 429 that does not recover
+    // (anthropics/claude-code#30930). The probe sends what splice SAW, never a string it assembled, so a head
+    // that has seen no client sends none.
+    @Volatile
+    private var newestUserAgent: String? = null
     private val statuslineWarned: MutableSet<String> = ConcurrentHashMap.newKeySet()
     private val arrival = ConcurrentLinkedQueue<String>()
 
     public fun observe(sessionId: String?, userAgent: String?) {
         val session = sessionId?.takeIf(String::isNotBlank) ?: return
         val version = parser.fromUserAgent(userAgent) ?: return
+        remember(version, userAgent)
         observed.compute(session) { _, current ->
             if (current == null) arrival.add(session)
             if (current == null || version > current) version else current
@@ -38,6 +46,17 @@ public class ClientVersionTracker(
             statuslineWarned.remove(oldest)
         }
     }
+
+    /** Keeps [userAgent] when its Claude Code is at least as new as every version seen so far, so a straggler on
+     *  an older client never takes the identity back from the newest one. */
+    private fun remember(version: ClientVersion, userAgent: String?) {
+        if (version >= (observed.values.maxOrNull() ?: version)) newestUserAgent = userAgent
+    }
+
+    /** The whole User-Agent of the newest Claude Code this daemon has seen send a turn, or null before any has.
+     *  Only a User-Agent whose Claude Code version parsed is ever remembered, so no other tool's identity can
+     *  become the one splice presents. */
+    public fun newestClaudeCodeUserAgent(): String? = newestUserAgent
 
     /** How many sessions are remembered right now (bounded by [MAX_SESSIONS]). */
     public fun remembered(): Int = observed.size

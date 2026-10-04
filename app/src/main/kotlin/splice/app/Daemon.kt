@@ -50,6 +50,7 @@ import splice.models.roster.DeclaredHead
 import splice.models.roster.DeclaredHeads
 import splice.oauth.codex.CodexRefresh
 import splice.topology.TopologyLoader
+import splice.usage.quota.ClientUserAgent
 import java.nio.file.Path
 
 public class Daemon(
@@ -176,6 +177,9 @@ public class Daemon(
         launchSpecFactory,
         controlPlane.probeScope,
         log,
+        // The probes present the Claude Code this daemon has actually seen, which is the identity Anthropic's
+        // usage endpoint buckets by (ClaudeUsageProbe). One tracker, the same one every head observes into.
+        clientUserAgent = ClientUserAgent(clientVersions::newestClaudeCodeUserAgent),
         playgroundProviders = controlPlane.playgroundProviders,
     )
 

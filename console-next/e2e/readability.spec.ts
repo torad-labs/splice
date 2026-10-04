@@ -130,8 +130,11 @@ const FRAMES = [
   { width: 1600, height: 1000, used: 0.7, body: 17, caption: 12 },
 ] as const;
 
-async function drawing(page: Page) {
-  return page.getByRole('main').evaluate((root) => {
+// Focused Settings retains a 77.5rem form canvas, not the former all-sections board.
+const SETTINGS_CANVAS_REM = 77.5;
+
+async function drawing(page: Page, area: Locator = page.getByRole('main')) {
+  return area.evaluate((root) => {
     const drawn: DOMRect[] = [];
     const smallest: number[] = [];
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -142,8 +145,10 @@ async function drawing(page: Page) {
       if (style.visibility === 'hidden' || Number(style.opacity) === 0 || parent.closest('.sr, .tools') !== null) continue;
       const range = document.createRange();
       range.selectNodeContents(node);
+      const rects = [...range.getClientRects()].filter((rect) => rect.width > 1 && rect.height > 1);
+      if (rects.length === 0) continue;
       smallest.push(parseFloat(style.fontSize));
-      drawn.push(...[...range.getClientRects()].filter((rect) => rect.width > 1 && rect.height > 1));
+      drawn.push(...rects);
     }
     for (const element of root.querySelectorAll('svg, img, canvas, [role="img"]')) {
       const rect = element.getBoundingClientRect();
@@ -178,7 +183,7 @@ async function clipped(locator: Locator): Promise<string[]> {
   }));
 }
 
-// Every page, not three: the operator's frame is 3840 wide and a page that draws in a third of it fails him as much as one that overflows.
+// Every board retains its screen share. Focused Settings retains its independently pinned form canvas.
 const LISTS = ['sessions', 'usage', 'requests'];
 const PAGES = ['accounts', 'sessions', 'sessions/:id', 'teams/:id', 'models', 'models/:head', 'requests', 'requests/:head/:ts', 'usage', 'projects/:id', 'settings'];
 
@@ -198,13 +203,38 @@ for (const frame of FRAMES) {
         await page.waitForTimeout(800);
       }
       await page.evaluate(() => document.fonts.ready);
-      // Content that arrives late (a transcript) may widen the drawing; a layout that is wrong stays under the floor for the whole wait.
-      await expect.soft.poll(async () => { const now = await drawing(page); return (now.right - now.left) / frame.width; },
-        { message: 'actual glyphs and graphics use the retained screen share', timeout: 10_000 }).toBeGreaterThanOrEqual(frame.used);
-      const measured = await drawing(page);
+      const focused = route === 'settings';
+      const area = focused ? page.locator('.settings-page .split') : page.getByRole('main');
+      const drawingWidth = focused
+        ? SETTINGS_CANVAS_REM * await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize))
+        : frame.width;
+      if (focused) {
+        const box = await area.boundingBox();
+        expect.soft(box?.width ?? 0, 'the focused form keeps its declared canvas').toBeGreaterThanOrEqual(drawingWidth - 1);
+        expect.soft(box?.width ?? 0, 'the focused form does not become the former board').toBeLessThanOrEqual(drawingWidth + 1);
+        await expect(page.locator('.settings-sheet:visible')).toHaveCount(1);
+      }
+      // Late content may widen a board. Empty boxes never count as drawn glyphs or graphics.
+      await expect.soft.poll(async () => { const now = await drawing(page, area); return (now.right - now.left) / drawingWidth; },
+        { message: 'actual glyphs and graphics use the retained work area', timeout: 10_000 }).toBeGreaterThanOrEqual(frame.used);
+      const measured = await drawing(page, area);
       expect.soft(measured.body, 'body text keeps the retained pixel floor').toBeGreaterThanOrEqual(frame.body);
       expect.soft(measured.smallest, 'no text is below the caption floor').toBeGreaterThanOrEqual(frame.caption);
       expect.soft(measured.overflow, 'the document does not require horizontal scrolling').toBeLessThanOrEqual(1);
+      if (focused) {
+        const prior = await area.evaluate((element, rem) => {
+          const style = (element as HTMLElement).style;
+          const previous = style.maxWidth;
+          style.maxWidth = rem + 'rem';
+          return previous;
+        }, SETTINGS_CANVAS_REM / 2);
+        try {
+          const shrunk = await drawing(page, area);
+          expect((shrunk.right - shrunk.left) / drawingWidth, 'a half-width form fails the same drawing floor').toBeLessThan(frame.used);
+        } finally {
+          await area.evaluate((element, previous) => { (element as HTMLElement).style.maxWidth = previous; }, prior);
+        }
+      }
       expect(faults.pageErrors).toEqual([]);
     });
   }

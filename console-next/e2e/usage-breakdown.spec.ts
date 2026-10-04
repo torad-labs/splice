@@ -41,7 +41,9 @@ test('Usage counts refused requests, keeps exact drill-down bounds, and offers a
   await expect(chart).toContainText('At least $1.48');
   await expect(chart).not.toContainText('This breakdown is incomplete');
   await expect(total).toContainText('90% came from the cache');
-  await expect(page.locator('.uplan').filter({ hasText: STACK.oauthHead })).toContainText('90% cached');
+  const command = page.locator('.uplan').filter({ has: page.getByText(STACK.oauthHead, { exact: true }) });
+  await expect(command).toHaveCount(1);
+  await expect(command).toContainText('90% cached');
   await chart.getByRole('button', { name: 'Account', exact: true }).click();
   const href = await chart.getByRole('link', { name: /Open Requests for synthetic & account/ }).getAttribute('href');
   const bounds = windows.get(STACK.oauthHead);

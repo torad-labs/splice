@@ -110,6 +110,9 @@ data class Disposition(val reason: String, val expectedCount: Int)
 // CodexCodeModeInfrastructureTest do extend CodeModeBridgeTestSupport, but that base declares no
 // tests, and their declared count matches their own annotations exactly.)
 val DISPOSITIONS: Map<String, Disposition> = mapOf(
+    // The production-builder parity covers four providers; Responses input shape covers two of them.
+    "PlaygroundTurnParityTest" to
+        Disposition("2 @ParameterizedTest methods expand to 4 provider bodies + 2 Responses input shapes", 6),
     // Unnamed reader death resumes before source failure or after its persisted LOST record.
     "CodexCodeModeStatementStreamTest" to
         Disposition("1 @ParameterizedTest expands to 2 forced orderings (9 @Test + 2 = 11)", 11),

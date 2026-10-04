@@ -68,6 +68,8 @@ private const val DRAIN_HOLD_MS = 6_500L
 // bound (50 tries) from busy-spinning while still observing a slot promptly.
 private const val INFLIGHT_POLL_MS = 100L
 
+private const val EXPECTED_RESTART_SENTENCE = "Splice restarted while this request was running. Retry the request."
+
 private class DrainFakeAuth : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials = Credentials.Bearer("tok-drain", "acct-drain")
     override suspend fun refresh(): Credentials = credentials()
@@ -184,7 +186,7 @@ class HeadServerStopDrainTest {
             )
             assertEquals(if (stream) 200 else 529, status)
             assertTrue(body.contains("overloaded_error"), "a connected client must receive an automatic-retry error")
-            assertTrue(body.contains("splice restarted"), "the terminal must name the owner of the cut")
+            assertTrue(body.contains(EXPECTED_RESTART_SENTENCE), "the terminal must name the owner of the cut")
             assertTrue(!body.contains("operator stopped"), "a restart never impersonates a user stop")
             assertTrue(AsyncFileIo.drain())
             val outcome = Files.readAllLines(tmp.resolve("perf.jsonl"))

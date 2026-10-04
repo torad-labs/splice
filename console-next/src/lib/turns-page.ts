@@ -4,7 +4,7 @@ import { ABSENT, fmtDurationS, fmtShare, fmtUsd } from './format';
 import { waterfall } from './perf';
 import type { ModelColour } from './model';
 import { spanText } from './sessions';
-import { OUTCOME_WORD, STAGE_PHRASE, T } from './words-turns';
+import { LEGACY_RESTART_SENTENCE, OUTCOME_WORD, STAGE_PHRASE, T } from './words-turns';
 import type { RequestsRange, RequestsView } from './requests-view';
 import type { TopologyState } from '../types/topology';
 import type { LiveTurn } from '../types/turns';
@@ -289,8 +289,9 @@ export function turnLede(row: TurnRow, stages: readonly StageBar[]): string {
   return longest === undefined || longest.ms < 1000 ? `Took ${took}.` : `Took ${took}. Most of it, ${secondsText(longest.ms)}, was ${STAGE_PHRASE[longest.key]}.`;
 }
 
-/** Translate only the daemon's known progress-timeout sentence; raw request and answer bodies stay untouched. */
+/** Translate only known splice failure sentences; raw request and answer bodies stay untouched. */
 export function spokenFailure(sentence: string): string {
+  if (sentence === LEGACY_RESTART_SENTENCE) return T.restarted;
   const timeout = /^(?:\[SPLICE-OVERLOADED\]\s*)?splice progress timeout expired after (\d+)ms without upstream progress; retry\s*$/.exec(sentence);
   const quiet = Number(timeout?.[1]);
   return Number.isFinite(quiet) && quiet > 0 ? T.progressTimeout(secondsText(quiet)) : sentence;

@@ -171,7 +171,14 @@ class OutcomeSentenceTest {
     fun `every sentence says what to do in words and quotes no path or bytes`() {
         for (tag in everyTag()) {
             val sentence = OutcomeSentences.of(tag) ?: continue
-            assertTrue("; " in sentence, "$tag: `$sentence` must say what happened, then after a semicolon what to do")
+            if (tag == OutcomeTag.RESTARTED.wire) {
+                assertEquals("Splice restarted while this request was running. Retry the request.", sentence)
+            } else {
+                assertTrue(
+                    "; " in sentence,
+                    "$tag: `$sentence` must say what happened, then after a semicolon what to do",
+                )
+            }
             assertTrue(sentence.length <= ERR_SNIPPET, "$tag: the sentence is cut at $ERR_SNIPPET characters")
             val quoted = sentence.any { it in "/\\{}<>\"`" } || "://" in sentence || "~" in sentence
             assertTrue(!quoted, "$tag: `$sentence` quotes a path or bytes")
@@ -361,7 +368,7 @@ class OutcomeSentenceTest {
         }
         val record = rig.turnRecord()
         assertEquals(OutcomeTag.RESTARTED.wire, record.getValue("outcome").jsonPrimitive.content)
-        assertTrue(sentenceOf(record)?.contains("splice restarted") == true)
+        assertEquals("Splice restarted while this request was running. Retry the request.", sentenceOf(record))
         assertTrue(OutcomeTags.isFailed(OutcomeTag.RESTARTED.wire))
         assertTrue(!OutcomeTags.isStopped(OutcomeTag.RESTARTED.wire))
         assertEquals(if (stream) ErrorType.OVERLOADED else null, wireType)

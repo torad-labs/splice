@@ -203,14 +203,18 @@ describe('a turn', () => {
     expect(turnLede(timedOut, stages)).toBe('Ended by splice after 15m 15s.');
     expect(stagesOf(row({ ...timedOut, total: 1000 })).some(stage => stage.key === 'wait')).toBe(false);
   });
-  test('only the known timeout sentence becomes a plain explanation of provider silence', () => {
+  test('only known splice failures become plain explanations without rewriting provider words', () => {
     const reason = '[SPLICE-OVERLOADED] splice progress timeout expired after 900000ms without upstream progress; retry';
     expect(spokenFailure(reason)).toBe('splice gave up after 15m 0s without progress from the provider. Retry the request.');
     expect(spokenFailure('splice progress timeout expired after 0ms without upstream progress; retry'))
       .toBe('splice progress timeout expired after 0ms without upstream progress; retry');
     expect(spokenFailure('splice restarted while this request was running; retry the request'))
-      .toBe('splice restarted while this request was running; retry the request');
+      .toBe('Splice restarted while this request was running. Retry the request.');
+    expect(spokenFailure('Splice restarted while this request was running. Retry the request.'))
+      .toBe('Splice restarted while this request was running. Retry the request.');
     expect(spokenFailure('synthetic provider refused the request')).toBe('synthetic provider refused the request');
+    expect(spokenFailure('synthetic provider: splice restarted while this request was running; retry the request'))
+      .toBe('synthetic provider: splice restarted while this request was running; retry the request');
   });
   test('the finished line and detail both read the proven runtime port', () => {
     const refused = row({ outcome: 'error:conn-reset', refused_runtime_port: 8123, total: 20 });

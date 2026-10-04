@@ -10,6 +10,9 @@ export const STAGE_PHRASE = {
   wait: 'time after the last recorded activity',
 } as const;
 
+/** The older daemon sentence, recognized only to render retained restart history in current words. */
+export const LEGACY_RESTART_SENTENCE = 'splice restarted while this request was running; retry the request';
+
 export const T = {
   title: 'Requests',
   window: 'Window',
@@ -62,6 +65,7 @@ export const T = {
   notPriced: 'Not priced',
   runtimeRefused: (port: number) => `Couldn't reach its runtime on :${port}`,
   progressTimeout: (quiet: string) => `splice gave up after ${quiet} without progress from the provider. Retry the request.`,
+  restarted: 'Splice restarted while this request was running. Retry the request.',
   unreadTitle: 'Not read',
   unread: (head: string, why: string) => `${head}: ${why}`,
   runningFor: (age: string) => `running ${age}`,

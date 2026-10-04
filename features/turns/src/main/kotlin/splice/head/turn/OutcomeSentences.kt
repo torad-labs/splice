@@ -9,8 +9,8 @@
 // sources, and fails BY NAME on a tag that has no sentence. The typed failures are a `when` over their enum
 // with no else, so a new [ErrorType] does not even compile until it has one.
 //
-// A sentence is a clause and then what to do, after a semicolon, in the words of the one the conn-reset
-// surface already writes. It never quotes a path or bytes: it is written here, not taken from a failure.
+// A sentence says what happened and then what to do. Most use the conn-reset surface's semicolon;
+// the restart notice uses two complete sentences. Neither quotes a path or bytes taken from a failure.
 package splice.head.turn
 
 import splice.core.perf.OutcomeTag
@@ -28,7 +28,7 @@ private const val MAX_WINDOW_WORDS = 40
 private const val WAIT_FOR_RESET = "retrying sooner cannot succeed, so wait for the reset, then retry"
 
 /** The fixed shutdown sentence is shared by the retry terminal and the trace fallback. */
-internal const val HEAD_RESTART_SENTENCE = "splice restarted while this request was running; retry the request"
+internal const val HEAD_RESTART_SENTENCE = "Splice restarted while this request was running. Retry the request."
 
 internal object OutcomeSentences {
 

@@ -21,17 +21,26 @@ internal class PerfHistoryProfile {
         private set
     internal var sourceBytes: Long = 0L
         private set
+    internal var diskWriteBytes: Long = 0L
+        private set
 
-    internal fun source(source: PerfRowsFileSource, path: Path): List<PerfRow> {
+    internal var allocatedBytes: Long = 0L
+        private set
+
+    internal fun source(source: PerfRowsFileSource, path: Path): List<PerfRow> =
+        diskPhase("source", path) { source.window(SCALE_SINCE).rows }
+
+    internal fun <T> diskPhase(name: String, path: Path, readPaths: Set<Path> = emptySet(), action: () -> T): T {
         Recording().use { recording ->
             recording.enable("jdk.ExecutionSample").withPeriod(Duration.ofMillis(1))
             recording.enable("jdk.ObjectAllocationSample")
             recording.enable("jdk.FileRead").withThreshold(Duration.ZERO)
+            recording.enable("jdk.FileWrite").withThreshold(Duration.ZERO)
             recording.start()
-            val rows = phase("source") { source.window(SCALE_SINCE).rows }
+            val rows = phase(name, action)
             recording.stop()
             recording.dump(path)
-            samples(path)
+            samples(path, readPaths)
             Files.delete(path)
             return rows
         }
@@ -48,39 +57,44 @@ internal class PerfHistoryProfile {
         return phase("serialization") { JsonWire.string(payload).toByteArray(Charsets.UTF_8).size }
     }
 
-    private fun <T> phase(name: String, action: () -> T): T {
+    internal fun <T> phase(name: String, action: () -> T): T {
         val startBytes = allocations.getThreadAllocatedBytes(thread)
         val started = System.nanoTime()
         val result = action()
         val nanos = System.nanoTime() - started
         val bytes = allocations.getThreadAllocatedBytes(thread) - startBytes
+        allocatedBytes = bytes
         if (name == "source") sourceBytes = bytes
         println("perf_phase=$name elapsed_ns=$nanos allocated_bytes=$bytes")
         return result
     }
 
-    private fun samples(path: Path) {
-        val totals = Samples()
+    private fun samples(path: Path, readPaths: Set<Path>) {
+        val totals = Samples(readPaths.mapTo(HashSet()) { it.toString() })
         RecordingFile(path).use { recording ->
             while (recording.hasMoreEvents()) totals.accept(recording.readEvent())
         }
         totals.print()
         diskBytes = totals.diskBytes
+        diskWriteBytes = totals.diskWriteBytes
     }
 
-    private class Samples {
+    private class Samples(private val readPaths: Set<String>) {
         private val cpuSamples = mutableMapOf<String, Long>()
         private val sampledBytes = mutableMapOf<String, Long>()
         private var diskNanos = 0L
         var diskBytes = 0L
             private set
+        var diskWriteBytes = 0L
+            private set
 
         fun accept(event: RecordedEvent) {
             when (event.eventType.name) {
-                "jdk.FileRead" -> {
+                "jdk.FileRead" -> if (readPaths.isEmpty() || event.getString("path") in readPaths) {
                     diskNanos += event.duration.toNanos()
                     diskBytes += event.getLong("bytesRead").coerceAtLeast(0)
                 }
+                "jdk.FileWrite" -> diskWriteBytes += event.getLong("bytesWritten").coerceAtLeast(0)
                 "jdk.ExecutionSample" -> {
                     val phase = phase(event)
                     cpuSamples[phase] = (cpuSamples[phase] ?: 0) + 1
@@ -103,7 +117,9 @@ internal class PerfHistoryProfile {
         }
 
         fun print() {
-            println("perf_disk_read_ns=$diskNanos perf_disk_read_bytes=$diskBytes")
+            println(
+                "perf_disk_read_ns=$diskNanos perf_disk_read_bytes=$diskBytes perf_disk_write_bytes=$diskWriteBytes",
+            )
             println("perf_cpu_samples=$cpuSamples perf_sampled_allocation_bytes=$sampledBytes")
         }
     }

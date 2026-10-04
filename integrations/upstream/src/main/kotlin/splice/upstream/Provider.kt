@@ -21,6 +21,9 @@ import java.nio.file.Path
 /** A per-turn stream state machine: drives the WireSink from upstream events, returns an outcome
  *  AFTER the loop (cross-event state + harvest). Imperative, not a Flow operator (see the dialect). */
 public fun interface StreamTranslator {
+    /** Prepare the downstream opener before the head commits its early generated header. */
+    public fun prepareSink(sink: WireSink) {}
+
     public suspend fun driveTurn(upstream: Flow<JsonObject>, sink: WireSink): TurnOutcome
 }
 

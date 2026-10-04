@@ -58,7 +58,9 @@ public class PassthroughStreamTranslator(
     private val blocks = PassthroughBlockRegistry(ctx, quirks, channels, names)
     private val terminal = PassthroughTerminalState(quirks, blocks)
     private val usage = PassthroughUsage()
-    private val router = PassthroughEventRouter(blocks, terminal, usage, ctx.log, quirks.providerTag)
+    private val router = PassthroughEventRouter(blocks, terminal, usage)
+
+    override fun prepareSink(sink: WireSink): Unit = sink.deferMessageStart()
 
     override suspend fun driveTurn(upstream: Flow<JsonObject>, sink: WireSink): TurnOutcome {
         try {
@@ -72,7 +74,7 @@ public class PassthroughStreamTranslator(
                     val withinCapacity = !BufferCapacity.over(
                         channels.textBuf.length,
                         channels.thinkingBuf.length,
-                        toolIndexCount = blocks.openBlockCount,
+                        toolIndexCount = blocks.trackedBlockCount,
                         pendingArgsLen = blocks.bufferedToolArgsChars,
                     )
                     if (!withinCapacity) terminal.latchRunawayGuard()

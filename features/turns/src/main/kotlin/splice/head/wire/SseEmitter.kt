@@ -24,7 +24,9 @@ import kotlinx.serialization.json.putJsonObject
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.Usage
+import splice.core.util.JsonScalars
 import splice.core.wire.ErrorEnvelope
+import splice.upstream.sse.SourceFrameAction
 import splice.upstream.sse.WireSink
 import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
@@ -32,6 +34,19 @@ import java.util.concurrent.atomic.AtomicReference
 
 private const val TYPE = "type"
 private const val MESSAGE = "message"
+private const val MESSAGE_DELTA = "message_delta"
+private const val MESSAGE_STOP = "message_stop"
+
+// Only the sole terminal owns the protocol event names; generic relays cannot write these frames.
+internal val nativeProtocolEvents: Set<String> = setOf(
+    "message_start",
+    MESSAGE_DELTA,
+    MESSAGE_STOP,
+    "error",
+    "content_block_start",
+    "content_block_delta",
+    "content_block_stop",
+)
 
 internal class SseEmitter(
     private val frames: SseFrameWriter,
@@ -82,7 +97,12 @@ internal class SseEmitter(
 
     override val endedCleanly: Boolean get() = cleanEnd.get()
 
-    override suspend fun ensureStarted(): Unit = start.ensureStart()
+    override suspend fun ensureStarted(): Unit = start.openEarly()
+
+    override suspend fun withSourceFrame(event: JsonObject, action: SourceFrameAction) {
+        envelope.acceptSource(event)
+        blocks.withSourceFrame(event) { action.deliver(this) }
+    }
 
     // The pinger's seam is single-access-at-a-time: its writers and its open notice block sit behind
     // ProgressWire.lock, which TWO coroutines reach — the keepalive pinger for [heartbeat]/[progress],
@@ -147,17 +167,10 @@ internal class SseEmitter(
             start.ensureStart()
             closeProgress()
             frames.frame(
-                "message_delta",
-                buildJsonObject {
-                    put(TYPE, "message_delta")
-                    putJsonObject("delta") {
-                        put("stop_reason", envelope.deriveStopReason(hasToolUse, incomplete))
-                        put("stop_sequence", null as String?)
-                    }
-                    put("usage", usagePayload(usage))
-                },
+                MESSAGE_DELTA,
+                envelope.deltaFrame(hasToolUse, incomplete, usagePayload(usage)),
             )
-            frames.frame("message_stop", buildJsonObject { put(TYPE, "message_stop") })
+            frames.frame(MESSAGE_STOP, envelope.stopFrame())
             cleanEnd.set(true)
         } catch (e: CancellationException) {
             // Cancelled mid-frame — release so the cancellation seal's emitError
@@ -216,19 +229,66 @@ internal class SseEmitter(
      *  [CollectingTerminal] each hold one, and it constructs freely (non-inner) even though
      *  SseEmitter's own constructor is internal. Held-not-copied, per its callers. */
     class TerminalEnvelope {
+        private val fields = NativeFields()
+        private var nativeStart: JsonObject? = null
+        private var nativeDelta: JsonObject? = null
+        private var nativeStop: JsonObject? = null
+        private var futureFields = JsonObject(emptyMap())
+
+        internal fun acceptSource(event: JsonObject) {
+            when (JsonScalars.strOrEmpty(event[TYPE])) {
+                "message_start" -> nativeStart = event
+                MESSAGE_DELTA -> nativeDelta = fields.merge(nativeDelta, event)
+                MESSAGE_STOP -> nativeStop = event
+            }
+        }
+
+        internal fun acceptFuture(event: JsonObject) {
+            futureFields = fields.merge(futureFields, fields.extensions(event, TYPE, "index"))
+        }
+
+        internal fun deltaFrame(hasToolUse: Boolean, incomplete: Boolean, usage: JsonObject): JsonObject =
+            fields.merge(
+                nativeDelta,
+                buildJsonObject {
+                    put(TYPE, MESSAGE_DELTA)
+                    putJsonObject("delta") {
+                        put("stop_reason", deriveStopReason(hasToolUse, incomplete))
+                        put("stop_sequence", null as String?)
+                    }
+                    put("usage", usage)
+                },
+            )
+
+        internal fun stopFrame(): JsonObject = fields.merge(nativeStop, buildJsonObject { put(TYPE, MESSAGE_STOP) })
+
+        private fun collectedFields(): JsonObject {
+            var result = fields.merge(nativeStart?.get(MESSAGE) as? JsonObject, futureFields)
+            nativeStart?.let { result = fields.merge(result, fields.extensions(it, TYPE, MESSAGE)) }
+            nativeDelta?.let {
+                result = fields.merge(result, it["delta"] as? JsonObject ?: JsonObject(emptyMap()))
+                result = fields.merge(result, fields.extensions(it, TYPE, "delta"))
+            }
+            nativeStop?.let { result = fields.merge(result, fields.extensions(it, TYPE)) }
+            return result
+        }
+
         /** Non-stream terminal message (translateResponse envelope) — built HERE because the
          *  stop_reason derivation and its literals are walled to this file (L3). The envelope
          *  fields are grouped into [TerminalMessage] so the builder stays a single L3 argument. */
-        public fun terminalMessageJson(msg: TerminalMessage): JsonObject = buildJsonObject {
-            put("id", msg.id)
-            put(TYPE, MESSAGE)
-            put("role", "assistant")
-            put("content", buildJsonArray { msg.content.forEach { add(it) } })
-            put("model", msg.model)
-            put("stop_reason", deriveStopReason(msg.hasToolUse, msg.incomplete))
-            put("stop_sequence", null as String?)
-            put("usage", msg.usagePayload)
-        }
+        public fun terminalMessageJson(msg: TerminalMessage): JsonObject = fields.merge(
+            collectedFields(),
+            buildJsonObject {
+                put("id", msg.id)
+                put(TYPE, MESSAGE)
+                put("role", "assistant")
+                put("content", buildJsonArray { msg.content.forEach { add(it) } })
+                put("model", msg.model)
+                put("stop_reason", deriveStopReason(msg.hasToolUse, msg.incomplete))
+                put("stop_sequence", null as String?)
+                put("usage", msg.usagePayload)
+            },
+        )
 
         // `internal`, not `private`: a Kotlin private member is CLASS-private, and SseEmitter
         // (the enclosing class) must reach it — a second copy is what L3 forbids.

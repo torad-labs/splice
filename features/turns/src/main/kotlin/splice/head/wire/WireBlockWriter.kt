@@ -10,10 +10,16 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import splice.core.index.WireBlockIndex
+import splice.core.util.JsonScalars
+import splice.upstream.sse.SourceFrameAction
 import splice.upstream.sse.WireSink
 import java.util.concurrent.atomic.AtomicInteger
 
 private const val TYPE = "type"
+private const val INDEX = "index"
+private const val BLOCK_START = "content_block_start"
+private const val BLOCK_DELTA = "content_block_delta"
+private const val BLOCK_STOP = "content_block_stop"
 
 /** The content-block half of an Anthropic SSE stream: opens/closes blocks and deltas their
  *  content, delegating actual byte assembly to [frames]. Every field/value delta shape goes
@@ -41,20 +47,53 @@ internal class WireBlockWriter(
     private val notice: ProgressWire? = null,
 ) : WireSink {
     private val open = LinkedHashSet<Int>()
+    private val seen = LinkedHashSet<Int>()
+    private val native = NativeFields()
+
+    override fun deferMessageStart() = start.defer()
+
+    override suspend fun withSourceFrame(event: JsonObject, action: SourceFrameAction) {
+        if (JsonScalars.strOrEmpty(event[TYPE]) == "message_start") start.acceptSource(event)
+        native.deliver(event, this, action)
+    }
+
+    override suspend fun relayEvent(event: JsonObject, index: WireBlockIndex?) {
+        val type = JsonScalars.strOrEmpty(event[TYPE])
+        if (type.isEmpty() || type in nativeProtocolEvents) return
+        if (event.containsKey(INDEX)) {
+            if (index == null) return
+            if (index.value !in seen) return
+        }
+        val payload = if (index == null) {
+            event
+        } else {
+            buildJsonObject {
+                event.forEach { (key, value) -> put(key, value) }
+                put(INDEX, index.value)
+            }
+        }
+        frames.frame(type, payload)
+    }
 
     private suspend fun openBlock(contentBlock: JsonObject): WireBlockIndex {
         notice?.endNoticeAtBoundary()
         start.ensureStart()
         val idx = nextBlockIndex.getAndIncrement()
         open.add(idx)
-        frames.frame(
-            "content_block_start",
-            buildJsonObject {
-                put(TYPE, "content_block_start")
-                put("index", idx)
-                put("content_block", contentBlock)
-            },
-        )
+        seen.add(idx)
+        val sourceBlock = native.current(BLOCK_START)?.get("content_block") as? JsonObject
+        val initial = native.merge(contentBlock, sourceBlock ?: contentBlock)
+        val normalized = if (JsonScalars.strOrEmpty(contentBlock[TYPE]) == "tool_use") {
+            native.merge(initial, native.extensions(contentBlock, "input"))
+        } else {
+            initial
+        }
+        val owned = buildJsonObject {
+            put(TYPE, BLOCK_START)
+            put(INDEX, idx)
+            put("content_block", normalized)
+        }
+        frames.frame(BLOCK_START, native.enrich(BLOCK_START, owned))
         return WireBlockIndex(idx)
     }
 
@@ -93,7 +132,15 @@ internal class WireBlockWriter(
      */
     private suspend fun hotDelta(index: WireBlockIndex, deltaType: String, field: String, value: String) {
         if (index.value !in open) return
-        frames.writeDeltaFrame(index, deltaType, field, value)
+        if (!native.has(BLOCK_DELTA)) {
+            frames.writeDeltaFrame(index, deltaType, field, value)
+            return
+        }
+        val delta = buildJsonObject {
+            put(TYPE, deltaType)
+            put(field, value)
+        }
+        rawDelta(index, delta)
     }
 
     override suspend fun textDelta(index: WireBlockIndex, text: String) {
@@ -117,11 +164,18 @@ internal class WireBlockWriter(
     override suspend fun closeBlock(index: WireBlockIndex) {
         if (!open.remove(index.value)) return
         notice?.endNoticeAtBoundary()
-        // Fixed shape, no user content — hand-built, no JsonObject.
-        frames.writeRawFrame(
-            "content_block_stop",
-            "{\"type\":\"content_block_stop\",\"index\":${index.value}}",
-        )
+        if (native.has(BLOCK_STOP)) {
+            val owned = buildJsonObject {
+                put(TYPE, BLOCK_STOP)
+                put(INDEX, index.value)
+            }
+            frames.frame(BLOCK_STOP, native.enrich(BLOCK_STOP, owned))
+        } else {
+            frames.writeRawFrame(
+                BLOCK_STOP,
+                "{\"type\":\"content_block_stop\",\"index\":${index.value}}",
+            )
+        }
     }
 
     override suspend fun closeAll() {
@@ -154,13 +208,11 @@ internal class WireBlockWriter(
     // same [open] set; the L3 block-pairing law binds this entry exactly as it binds [hotDelta].
     override suspend fun rawDelta(index: WireBlockIndex, delta: JsonObject) {
         if (index.value !in open) return
-        frames.frame(
-            "content_block_delta",
-            buildJsonObject {
-                put(TYPE, "content_block_delta")
-                put("index", index.value)
-                put("delta", delta)
-            },
-        )
+        val owned = buildJsonObject {
+            put(TYPE, BLOCK_DELTA)
+            put(INDEX, index.value)
+            put("delta", delta)
+        }
+        frames.frame(BLOCK_DELTA, native.enrich(BLOCK_DELTA, owned))
     }
 }

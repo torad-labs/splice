@@ -19,7 +19,28 @@ public interface SourceProgressSink {
     public suspend fun customToolSource(event: CustomToolSource) {}
 }
 
-public interface WireSink : SourceProgressSink {
+/** One native frame's typed delivery. The scope ends even when validation drops the frame. */
+public fun interface SourceFrameAction {
+    public suspend fun deliver(sink: WireSink)
+}
+
+/** Backend-authored fields and future events, separate from the content grammar and terminal authority. */
+public interface NativeResponseSink {
+    /** Wait for the backend-authored opener rather than committing a generated opener early. */
+    public fun deferMessageStart() {}
+
+    /** Preserve opaque source fields on this frame's typed writes, never on later synthetic writes. */
+    public suspend fun withSourceFrame(event: JsonObject, action: SourceFrameAction)
+
+    /** Relay a future nonterminal event. An indexed event requires a real, opened client block. */
+    public suspend fun relayEvent(event: JsonObject, index: WireBlockIndex? = null) {}
+}
+
+public interface WireSink : SourceProgressSink, NativeResponseSink {
+    override suspend fun withSourceFrame(event: JsonObject, action: SourceFrameAction) {
+        action.deliver(this)
+    }
+
     public suspend fun openText(): WireBlockIndex
 
     public suspend fun openTool(id: String, name: String): WireBlockIndex

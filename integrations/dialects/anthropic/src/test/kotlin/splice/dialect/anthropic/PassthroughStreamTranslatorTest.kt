@@ -28,6 +28,8 @@ import splice.upstream.transport.BufferCapacity
 private class Rec : WireSink {
     val calls = mutableListOf<String>()
     val toolOpens = mutableListOf<Pair<String, String>>()
+    val relayed = mutableListOf<JsonObject>()
+    override suspend fun relayEvent(event: JsonObject, index: WireBlockIndex?) { relayed.add(event) }
     private var n = 0
     override suspend fun openText() = WireBlockIndex(n++).also { calls.add("openText") }
     override suspend fun openThinking() = WireBlockIndex(n++).also { calls.add("openThinking") }
@@ -776,7 +778,7 @@ class PassthroughRedactedThinkingTest {
         )
         assertTrue(outcome is TurnOutcome.Success, "got $outcome")
         assertTrue(
-            sink.calls.contains("redacted:EncBlob=="),
+            sink.calls.contains("""rawOpen:{"type":"redacted_thinking","data":"EncBlob=="}"""),
             "the encrypted replay block must survive the proxy; calls=${sink.calls}",
         )
         // Control: the neighbouring text block still flows normally around the pass-through.
@@ -985,7 +987,7 @@ class PassthroughBlockEvictionTest {
         val sink = Rec()
         drive(
             sink,
-            ev("""{"type":"content_block_start","index":0,"content_block":{"type":"who_knows"}}"""),
+            ev("""{"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use"}}"""),
             ev("""{"type":"content_block_start","index":0,"content_block":{"type":"text"}}"""),
             ev("""{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"real"}}"""),
             ev("""{"type":"content_block_stop","index":0}"""),
@@ -1022,13 +1024,11 @@ class PassthroughBlockEvictionTest {
     }
 }
 
-// V4-16: unknown SSE types (e.g. Muse response.subscription_usage on Responses, never observed on
-// /v1/messages) are log-dropped once per stream. Own class: the primary translator test is at
-// detekt LargeClass.
-class PassthroughUnknownEventDropTest {
+// Future native event types remain opaque and ordered. Separate class keeps the primary suite focused.
+class PassthroughUnknownEventRelayTest {
 
     @Test
-    fun `unknown SSE event types are log-dropped once per stream`() = runTest {
+    fun `unknown SSE event types and keepalives are relayed in stream order`() = runTest {
         val logs = mutableListOf<String>()
         val ctx = PassthroughTurnContext({ false }, { null }, 180_000, 900_000, log = { logs.add(it) })
         val unknown = ev(
@@ -1049,10 +1049,8 @@ class PassthroughUnknownEventDropTest {
         val outcome = PassthroughStreamTranslator(ctx, KIMI).driveTurn(events.asFlow(), sink)
         assertTrue(outcome is TurnOutcome.Success, "got $outcome")
         assertEquals("hi", (outcome as TurnOutcome.Success).bodyText)
-        assertEquals(1, logs.size, "two unknown frames must log once: $logs")
-        assertTrue(logs.single().contains("response.subscription_usage"), logs.single())
-        assertTrue(logs.single().contains("kimi"), logs.single())
-        assertTrue(sink.calls.none { it.contains("subscription") }, sink.calls.toString())
+        assertTrue(logs.isEmpty(), "valid future events are not anomalies: $logs")
+        assertEquals(listOf(unknown, ev("""{"type":"ping"}"""), unknown), sink.relayed)
     }
 }
 

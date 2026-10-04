@@ -4,6 +4,7 @@
 // held by the single collaborator both hold rather than duplicated per caller.
 package splice.head.wire
 
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -40,25 +41,41 @@ internal class MessageStart(
     /** message_start and its ping are written — the pinger may speak. */
     internal val hasOpened: Boolean get() = opened
 
+    private val fields = NativeFields()
+    private var deferred = false
+    private var nativeStart: JsonObject? = null
+
+    internal fun defer() {
+        if (!started) deferred = true
+    }
+
+    internal suspend fun openEarly() {
+        if (!deferred) ensureStart()
+    }
+
+    internal suspend fun acceptSource(event: JsonObject) {
+        if (started) return
+        nativeStart = event
+        ensureStart()
+    }
+
     internal suspend fun ensureStart() {
         if (started) return
         started = true
-        frames.frame(
-            "message_start",
-            buildJsonObject {
-                put(TYPE, "message_start")
-                putJsonObject(MESSAGE) {
-                    put("id", messageId)
-                    put(TYPE, MESSAGE)
-                    put("role", "assistant")
-                    putJsonArray("content") {}
-                    put("model", model)
-                    put("stop_reason", null as String?)
-                    put("stop_sequence", null as String?)
-                    put("usage", usagePayload(null))
-                }
-            },
-        )
+        val owned = buildJsonObject {
+            put(TYPE, "message_start")
+            putJsonObject(MESSAGE) {
+                put("id", messageId)
+                put(TYPE, MESSAGE)
+                put("role", "assistant")
+                putJsonArray("content") {}
+                put("model", model)
+                put("stop_reason", null as String?)
+                put("stop_sequence", null as String?)
+                put("usage", usagePayload(null))
+            }
+        }
+        frames.frame("message_start", fields.merge(nativeStart, owned))
         frames.writeVerbatim(PING_FRAME)
         opened = true
     }

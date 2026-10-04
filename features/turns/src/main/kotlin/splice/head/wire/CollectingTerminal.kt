@@ -11,8 +11,10 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.Usage
+import splice.core.util.JsonScalars
 import splice.core.wire.ErrorEnvelope
 import splice.core.wire.HttpStatus
+import splice.upstream.sse.SourceFrameAction
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** The status a stream turn commits before its first frame, and a clean collect answers with;
@@ -52,6 +54,27 @@ internal class CollectingTerminal(
 
     public fun httpStatus(): Int = status
 
+    override suspend fun withSourceFrame(event: JsonObject, action: SourceFrameAction) {
+        envelope.acceptSource(event)
+        content.source.native.deliver(event, this, action)
+    }
+
+    override suspend fun relayEvent(event: JsonObject, index: WireBlockIndex?) {
+        val type = JsonScalars.strOrEmpty(event["type"])
+        if (type.isEmpty() || type in nativeProtocolEvents) return
+        if (event.containsKey("index")) {
+            if (index == null) return
+            if (!content.source.hasBlock(index)) return
+        }
+        envelope.acceptFuture(event)
+    }
+
+    override suspend fun openRawBlock(contentBlock: JsonObject): WireBlockIndex = content.openRawBlock(contentBlock)
+
+    override suspend fun rawDelta(index: WireBlockIndex, delta: JsonObject) {
+        content.source.rawDelta(index, delta)
+    }
+
     // ── content accumulation (WireSink) ──────────────────────────────────────
     override suspend fun openText(): WireBlockIndex = content.openText()
 
@@ -76,7 +99,7 @@ internal class CollectingTerminal(
     }
 
     override suspend fun closeBlock(index: WireBlockIndex) {
-        // no-op: blocks finalize at build time (contentBlocks), never on close
+        content.source.stop(index) // finalization stays at build time, source stop extensions survive
     }
 
     override suspend fun closeAll() {

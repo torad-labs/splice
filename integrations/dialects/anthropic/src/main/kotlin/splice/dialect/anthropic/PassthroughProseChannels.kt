@@ -4,7 +4,9 @@
 // sink call — so the wire sequence the translator goldens pin is byte-identical.
 package splice.dialect.anthropic
 
+import kotlinx.serialization.json.JsonObject
 import splice.core.index.WireBlockIndex
+import splice.core.util.JsonScalars
 import splice.upstream.sse.WireSink
 
 /** The passthrough dialect's prose channels: the text and thinking buffers, the two content flags
@@ -18,6 +20,22 @@ internal class PassthroughProseChannels {
     // CX-09: the flag means "the client RECEIVED reasoning", not "a block was opened" — see the
     // note on [thinkingDelta].
     internal var emittedThinking = false
+
+    /** Initial prose already reached the sink in its native block start; do not duplicate a delta. */
+    internal fun acceptStart(block: JsonObject?) {
+        when (JsonScalars.strOrEmpty(block?.get("type"))) {
+            "text" -> {
+                val text = JsonScalars.strOrEmpty(block?.get("text"))
+                textBuf.append(text)
+                if (text.isNotEmpty()) emittedText = true
+            }
+            "thinking" -> {
+                val thinking = JsonScalars.strOrEmpty(block?.get("thinking"))
+                thinkingBuf.append(thinking)
+                if (thinking.isNotBlank()) emittedThinking = true
+            }
+        }
+    }
 
     internal suspend fun textDelta(wire: WireBlockIndex, t: String, sink: WireSink) {
         textBuf.append(t)

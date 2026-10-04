@@ -1,4 +1,9 @@
 source	sha256	disposition	destination	reason
+features/turns/src/main/kotlin/splice/head/wire/NativeFields.kt	26361d357a77f7f82a2e136d1f4910667a63811107b66ce9340bca978a72cb53	created		Scoped source fields and bounded opaque merges
+features/turns/src/main/kotlin/splice/head/wire/CollectedNativeFields.kt	2effe85e483eb03f97c25aeb9d86057a74a303584d52bd7cb47b753b00eb6f99	created		Collected block extension folds and aggregate capacity
+features/turns/src/test/kotlin/splice/head/wire/PassthroughOpenFieldsTest.kt	fbd5cd77208193556b3c10f9ec51f89729a582691e903be470ca377861d49466	created		Real-head stream and non-stream open-field preservation
+features/turns/src/test/kotlin/splice/head/wire/PassthroughNativeWireTest.kt	01513e9c4b53fdd9c25bbfc7187e11f44ac9a5dc597df68d00129f5908b72949	created		Notice and index plus signature and tear isolation
+features/turns/src/test/kotlin/splice/head/wire/PassthroughNativeCollectTest.kt	f7f1070d245a0d6f909da5d2cda94c1d2d875a1bb3caed6bda6efc14c76155dd	created		Native initial content and retention and relay boundaries
 app/src/main/kotlin/splice/app/auth/claude/ClaudeAccountSignIn.kt	2a2c59556a0ea7f04e6b5d82156c7806f24f89481338664d74e0bfe57626dcef	created		Sign in to another account on a Claude head run by Claude Code own auth login in a pending folder that lands only once the account is proven new to that head
 app/src/test/kotlin/splice/app/auth/claude/ClaudeAccountSignInTest.kt	0adf471d9807266f3c32421468bcf130b9269a52017c89699861aafe504cec58	created		A sign-in for one head or label writes only its own folder and adding an account never replaces a login already filed
 features/usage/src/main/kotlin/splice/usage/quota/ClaudeUsageProbe.kt	7196368d7eb7527a15158aa0f6129a4b2f07e0e27eec50b938d872f9a290056c	created		Anthropic own subscription usage endpoint read per account with the oauth beta header and the Claude Code User-Agent splice has seen its client send

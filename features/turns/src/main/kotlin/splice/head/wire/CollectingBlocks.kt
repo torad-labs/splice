@@ -26,12 +26,25 @@ internal class CollectingBlocks {
     private sealed class Blk {
         class Text(val sb: StringBuilder = StringBuilder()) : Blk()
         class Thinking(val sb: StringBuilder = StringBuilder(), val sig: StringBuilder = StringBuilder()) : Blk()
-        class Tool(val id: String, val name: String, val args: StringBuilder = StringBuilder()) : Blk()
+        class Tool(
+            val id: String,
+            val name: String,
+            val initialInput: JsonObject?,
+            val args: StringBuilder = StringBuilder(),
+        ) : Blk()
         class Redacted(val data: String) : Blk()
+        class Raw(val payload: JsonObject) : Blk()
     }
 
     // Blocks in OPEN order — the Anthropic content array order. Index handles are list positions.
     private val blocks = mutableListOf<Blk>()
+    internal val source = CollectedNativeFields()
+
+    internal fun openRawBlock(payload: JsonObject): WireBlockIndex {
+        blocks.add(Blk.Raw(payload))
+        source.start(blocks.lastIndex)
+        return WireBlockIndex(blocks.lastIndex)
+    }
 
     // stream:false retains every tool fragment until the terminal body is assembled; cap the
     // aggregate across blocks, not merely each individual tool.
@@ -50,30 +63,41 @@ internal class CollectingBlocks {
     private var toolSynthCounter = 0
 
     internal fun openText(): WireBlockIndex {
-        blocks.add(Blk.Text())
+        blocks.add(Blk.Text(StringBuilder(source.initial(FIELD_TEXT))))
+        source.start(blocks.lastIndex)
         return WireBlockIndex(blocks.lastIndex)
     }
 
     internal fun openThinking(): WireBlockIndex {
-        blocks.add(Blk.Thinking())
+        val thinking = StringBuilder(source.initial(FIELD_THINKING))
+        val signature = StringBuilder(source.initial("signature"))
+        blocks.add(Blk.Thinking(thinking, signature))
+        source.start(blocks.lastIndex)
         return WireBlockIndex(blocks.lastIndex)
     }
 
     internal fun openTool(id: String, name: String): WireBlockIndex {
-        blocks.add(Blk.Tool(id, name))
+        blocks.add(Blk.Tool(id, name, source.initialInput()))
+        source.start(blocks.lastIndex)
         return WireBlockIndex(blocks.lastIndex)
     }
 
     internal fun textDelta(index: WireBlockIndex, text: String) {
-        (blocks.getOrNull(index.value) as? Blk.Text)?.sb?.append(text)
+        val block = blocks.getOrNull(index.value) as? Blk.Text ?: return
+        block.sb.append(text)
+        source.delta(index)
     }
 
     internal fun thinkingDelta(index: WireBlockIndex, thinking: String) {
-        (blocks.getOrNull(index.value) as? Blk.Thinking)?.sb?.append(thinking)
+        val block = blocks.getOrNull(index.value) as? Blk.Thinking ?: return
+        block.sb.append(thinking)
+        source.delta(index)
     }
 
     internal fun signatureDelta(index: WireBlockIndex, signature: String) {
-        (blocks.getOrNull(index.value) as? Blk.Thinking)?.sig?.append(signature)
+        val block = blocks.getOrNull(index.value) as? Blk.Thinking ?: return
+        block.sig.append(signature)
+        source.delta(index)
     }
 
     internal fun inputJsonDelta(index: WireBlockIndex, partialJson: String) {
@@ -86,6 +110,7 @@ internal class CollectingBlocks {
         }
         tool.args.append(partialJson)
         bufferedToolArgsChars = nextSize
+        source.delta(index)
     }
 
     internal fun addTextBlock(text: String) {
@@ -98,21 +123,23 @@ internal class CollectingBlocks {
 
     /** Finalize the accumulated blocks into Anthropic content items. Empty text/thinking blocks are
      *  dropped (the wire rejects an empty text block; matches the stream path's honesty gate). */
-    internal fun contentBlocks(): List<JsonObject> = blocks.mapNotNull { blk ->
-        when (blk) {
-            is Blk.Text -> blk.sb.takeIf { it.isNotEmpty() }?.let { textBlock(FIELD_TEXT, it.toString()) }
+    internal fun contentBlocks(): List<JsonObject> = blocks.mapIndexedNotNull { index, blk ->
+        val content = when (blk) {
+            is Blk.Text -> blk.sb.takeIf { it.isNotEmpty() }?.let {
+                buildJsonObject {
+                    put(FIELD_TYPE, FIELD_TEXT)
+                    put(FIELD_TEXT, it.toString())
+                }
+            }
             is Blk.Thinking -> blk.sb.takeIf { it.isNotEmpty() }?.let { thinkingBlock(it.toString(), blk.sig) }
             is Blk.Tool -> toolBlock(blk)
             is Blk.Redacted -> buildJsonObject {
                 put(FIELD_TYPE, "redacted_thinking")
                 put("data", blk.data)
             }
+            is Blk.Raw -> source.raw(index, blk.payload)
         }
-    }
-
-    private fun textBlock(type: String, value: String): JsonObject = buildJsonObject {
-        put(FIELD_TYPE, type)
-        put(type, value)
+        content?.let { source.finish(index, it) }
     }
 
     private fun thinkingBlock(thinking: String, sig: StringBuilder): JsonObject = buildJsonObject {
@@ -137,7 +164,12 @@ internal class CollectingBlocks {
             put(FIELD_TYPE, "tool_use")
             put("id", id)
             put("name", tool.name)
-            put("input", parseToolInput(tool.args.toString()))
+            val input = if (tool.args.isEmpty()) {
+                tool.initialInput ?: EMPTY_INPUT
+            } else {
+                parseToolInput(tool.args.toString())
+            }
+            put("input", input)
         }
     }
 

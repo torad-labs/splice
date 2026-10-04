@@ -42,6 +42,12 @@ internal class SseRoundConsume(
         // UpstreamClient.attemptRequest), so a pre-stream failure still writes its error frame
         // first and nothing here pre-empts it. Recovers p50 2840ms of frozen screen per codex
         // turn; also gives the keepalive pinger an opened stream to ping into.
+        val signals = TurnSignals(
+            watchdogFired = { drive.watchdog.fired },
+            clientGone = { inputs.clientGone() },
+        )
+        val translator = provider.streamTranslator(drive.meta, signals)
+        translator.prepareSink(inputs.sink)
         val openingStartedMs = drive.perf.elapsedMs()
         openClient(drive)
         val postedAtMs = resp.postedAtMs?.plus(drive.perf.elapsedMs() - openingStartedMs)
@@ -110,11 +116,7 @@ internal class SseRoundConsume(
             val eventsBase = drive.perfCounter(PerfKeys.EVENTS_IN)
             val capture = ZeroEventCapture()
             val events = tearAwareEvents.run(drive, body, capture, inputs.frameEmittedThisRound, postedAtMs)
-            val signals = TurnSignals(
-                watchdogFired = { drive.watchdog.fired },
-                clientGone = { inputs.clientGone() },
-            )
-            val rawOutcome = provider.streamTranslator(drive.meta, signals).driveTurn(events, inputs.sink)
+            val rawOutcome = translator.driveTurn(events, inputs.sink)
             drive.perf.mark(PerfKeys.STREAM_END)
             return zeroEvent.classify(
                 drive,

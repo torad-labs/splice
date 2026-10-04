@@ -15,6 +15,7 @@ import splice.upstream.sse.WireSink
 
 // Kimi never verifies signatures; a verifying head drops this one from its requests (V4-455).
 private const val SYNTHETIC_SIGNATURE = SpliceSignatures.SYNTHESIZED
+private const val SOURCE_INDEX = "index"
 
 // FILE SCOPE ON PURPOSE: one shared empty object, read on the delta hot path — as a member it would
 // be rebuilt per translator instance (one per turn).
@@ -31,10 +32,20 @@ internal class PassthroughBlockRegistry(
 ) {
 
     private val blocks = HashMap<Int, Block>()
+    private val opened = HashMap<Int, WireBlockIndex>()
+    private var blockStarts = 0
+
+    internal suspend fun relayEvent(event: JsonObject, sink: WireSink) {
+        val sourceIndex = JsonScalars.int(event, SOURCE_INDEX)
+        if (event.containsKey(SOURCE_INDEX) && sourceIndex == null) return
+        val wire = sourceIndex?.let { opened[it] }
+        if (sourceIndex != null && wire == null) return
+        sink.relayEvent(event, wire)
+    }
 
     // NF-06: tool JSON bypasses the prose buffers, so retain its aggregate size as a count only.
     private var toolArgsCharCount = 0L
-    internal val openBlockCount: Int get() = blocks.size
+    internal val trackedBlockCount: Int get() = blockStarts
 
     /** A tool_use block still OPEN when the stream died. Partial argument JSON already reached the
      *  wire, so the block is corrupt and no continuation can splice onto it — the one tear a
@@ -55,7 +66,8 @@ internal class PassthroughBlockRegistry(
     private var crossKindDeltaLogged = false
 
     internal suspend fun onBlockStart(evt: JsonObject, sink: WireSink) {
-        val index = JsonScalars.int(evt, "index") ?: return
+        val index = JsonScalars.int(evt, SOURCE_INDEX) ?: return
+        blockStarts++ // Closed and reused indices also retain source-to-client history.
         // DR-163: a second content_block_start at a STILL-OPEN index used to overwrite the map
         // entry outright — DR-107's exact defect ("an added at an already-open output_index EVICTED
         // the live block map-only"), fixed in the Responses dialect and never swept in the
@@ -89,34 +101,50 @@ internal class PassthroughBlockRegistry(
             // DR-118: encrypted reasoning must SURVIVE the proxy — Claude Code replays assistant
             // turns from what it received, and Anthropic requires redacted_thinking back verbatim,
             // so a dropped block 400s the next signed-thinking request upstream. Data rides
-            // content_block_start (the WireSink contract) and no delta ever targets the block, so
-            // it emits complete here and the entry stays IGNORED for the delta/stop path.
-            "redacted_thinking" -> {
-                sink.addRedactedThinking(JsonScalars.strOrEmpty(cb?.get("data")))
-                Block(Kind.IGNORED, null)
-            }
+            // content_block_start (the WireSink contract). A raw-capable sink keeps the real
+            // lifecycle and index; legacy sinks use the complete one-shot fallback.
+            "redacted_thinking" -> openRawBlock(cb, sink)
             // DR-119: the server-tool result surface rides VERBATIM on the neutral head (CH-2 —
             // a head that declares nothing gets its bytes forwarded as sent); Claude Code renders
             // the search and keeps citations only if these blocks reach the transcript. Kimi's
             // profile keeps the historical swallow (quirk-gated, byte-identity law).
             "server_tool_use", "web_search_tool_result" -> openServerToolBlock(cb, sink)
-            // unknown: record + swallow its deltas.
-            else -> Block(Kind.IGNORED, null)
+            else -> openRawBlock(cb, sink)
+        }
+        rememberStart(index, cb)
+    }
+
+    private fun rememberStart(index: Int, content: JsonObject?) {
+        val block = blocks.getValue(index)
+        val wire = block.wire
+        if (wire == null) {
+            opened.remove(index)
+        } else {
+            opened[index] = wire
+            prose.acceptStart(content)
+            block.receivedThinkingText = JsonScalars.strOrEmpty(content?.get("thinking")).isNotBlank()
+            block.signatureSeen = JsonScalars.strOrEmpty(content?.get("signature")).isNotEmpty()
         }
     }
 
     private suspend fun openServerToolBlock(cb: JsonObject?, sink: WireSink): Block {
         if (quirks.dropServerToolBlocks || cb == null) return Block(Kind.IGNORED, null)
-        // A sink that cannot forward raw blocks (openRawBlock's default) degrades to the
-        // pre-DR-119 ignore, never to a half-opened block.
-        val wire = sink.openRawBlock(cb) ?: return Block(Kind.IGNORED, null)
-        return Block(Kind.RAW, wire)
+        return openRawBlock(cb, sink)
+    }
+
+    private suspend fun openRawBlock(cb: JsonObject?, sink: WireSink): Block {
+        if (cb == null) return Block(Kind.IGNORED, null)
+        val wire = sink.openRawBlock(cb)
+        if (wire == null && JsonScalars.strOrEmpty(cb["type"]) == "redacted_thinking") {
+            sink.addRedactedThinking(JsonScalars.strOrEmpty(cb["data"]))
+        }
+        return if (wire == null) Block(Kind.IGNORED, null) else Block(Kind.RAW, wire)
     }
 
     // The upstream delta type already matches the (non-ignored) block it targets, so we dispatch on
     // the delta type; the open block's wire is the only thing we need. Ignored blocks have no wire.
     internal suspend fun onBlockDelta(evt: JsonObject, sink: WireSink) {
-        val index = JsonScalars.int(evt, "index") ?: return
+        val index = JsonScalars.int(evt, SOURCE_INDEX) ?: return
         val block = blocks[index]
         if (block == null) {
             // PT-001: an index with no live block entry (never opened, or already closed) drops
@@ -143,7 +171,7 @@ internal class PassthroughBlockRegistry(
      *  one pairing where the protocol genuinely crosses: a server_tool_use block (RAW) streams its
      *  arguments through input_json_delta, so narrowing that to TOOL would regress DR-119. Citations
      *  ride TEXT blocks, as the citations_delta branch below has always said. Unknown delta types
-     *  keep falling through to the existing no-op rather than being judged here. */
+     *  are relayed opaquely rather than being judged here. */
     private fun deltaSuitsKind(kind: Kind, deltaType: String): Boolean {
         if (kind == Kind.IGNORED) return true // no wire; applyDelta swallows it silently, as before
         return when (deltaType) {
@@ -179,7 +207,7 @@ internal class PassthroughBlockRegistry(
             "citations_delta" -> {
                 if (!quirks.dropServerToolBlocks) sink.rawDelta(wire, delta)
             }
-            else -> Unit
+            else -> sink.rawDelta(wire, delta)
         }
     }
 
@@ -209,7 +237,7 @@ internal class PassthroughBlockRegistry(
         // PT-006: remove on close — a delta arriving after this index's content_block_stop must
         // find no entry (and drop honestly via onBlockDelta's unmapped-index path), not apply
         // itself to a logically closed block.
-        retire(blocks.remove(JsonScalars.int(evt, "index") ?: return) ?: return, sink)
+        retire(blocks.remove(JsonScalars.int(evt, SOURCE_INDEX) ?: return) ?: return, sink)
     }
 
     /** The ONE sanctioned retirement path for an open block: synthesize-at-most-once, then close.

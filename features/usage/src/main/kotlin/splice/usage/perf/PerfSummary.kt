@@ -60,7 +60,7 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
      *  per row), and null when no row exists. A source that cannot say falls back to the newest row
      *  it RETURNED, which is bounded by the window it was asked for: that is the only case where
      *  `last_ts` reads null over a head whose newest row predates the window. */
-    fun json(read: PerfRowsWindow, window: PerfWindow, now: Long): JsonObject {
+    fun json(read: PerfRowsWindow, window: PerfWindow, now: Long, firstBytes: MutableList<Long>? = null): JsonObject {
         val inWindow = read.rows.filter { it.ts >= now - window.ms }
         val (localSteps, turns) = inWindow.partition { it.fields[PerfKeys.LOCAL_STEP] == 1L }
         val coverage = coverage(read, window, now)
@@ -76,7 +76,7 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
             coverage.note()?.let { put("note", it) }
             read.readError?.let { put("read_error", it) }
             if (read.skipped > 0) put("skipped_lines", read.skipped)
-            if (turns.isNotEmpty()) metrics(turns).forEach { (k, v) -> put(k, v) }
+            if (turns.isNotEmpty()) metrics(turns, firstBytes).forEach { (k, v) -> put(k, v) }
             if (inWindow.isNotEmpty()) put("io_drops_in_window", ioDrops(inWindow, read.dropsBefore))
         }
     }
@@ -112,8 +112,8 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
     private fun span(ms: Long): String =
         if (ms >= MS_PER_HOUR) "${ms / MS_PER_HOUR}h" else "${ms / MS_PER_MINUTE}m"
 
-    private fun metrics(rows: List<PerfRow>): JsonObject = buildJsonObject {
-        latencies(rows).forEach { (k, v) -> put(k, v) }
+    private fun metrics(rows: List<PerfRow>, firstBytes: MutableList<Long>?): JsonObject = buildJsonObject {
+        latencies(rows, firstBytes).forEach { (k, v) -> put(k, v) }
         val byOutcome = rows.groupingBy { it.outcome }.eachCount().toSortedMap()
         putJsonObject("outcomes") { byOutcome.forEach { (tag, n) -> put(tag, n) } }
         // Stopped and unattributed rows stay in outcomes and the denominator, never the failure count.
@@ -125,8 +125,11 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
         counters(rows).forEach { (k, v) -> put(k, v) }
     }
 
-    private fun latencies(rows: List<PerfRow>): JsonObject = buildJsonObject {
-        stats(rows.mapNotNull { it.fields[PerfKeys.FIRST_BYTE] })?.let { put("time_before_first_byte_ms", it) }
+    private fun latencies(rows: List<PerfRow>, firstBytes: MutableList<Long>?): JsonObject = buildJsonObject {
+        val first = rows.mapNotNull { it.fields[PerfKeys.FIRST_BYTE] }
+        // The fleet reuses the same recorded facts gathered for each command, never another read or decode.
+        firstBytes?.addAll(first)
+        stats(first)?.let { put("time_before_first_byte_ms", it) }
         stats(rows.mapNotNull(::streaming))?.let { put("time_streaming_ms", it) }
         stats(rows.mapNotNull { it.fields[PerfKeys.TOTAL] })?.let { put("total_ms", it) }
     }

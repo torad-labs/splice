@@ -82,6 +82,29 @@ test('stops stay out of failure counts and have a separate reloadable view with 
   await assertHealthy(page, faults);
 });
 
+test('the headline reads the pooled request timing while command bars keep their own percentiles', async ({ page }) => {
+  const commands = [
+    { key: 'busy', count: 100, first: 100 },
+    { key: 'sparse', count: 1, first: 10_000 },
+    { key: 'slower', count: 1, first: 20_000 },
+  ];
+  await page.route('**/api/perf/summary?*', route => route.fulfill({ json: {
+    window: '1h',
+    time_before_first_byte_ms: { count: 102, p50: 100, p95: 100, max: 20_000 },
+    heads: commands.map(command => ({
+      key: command.key, label: command.key, window: '1h', count: command.count, empty: false,
+      coverage_known: true, clamped: false, covers_ms: 3_600_000, outcomes: { ok: command.count },
+      time_before_first_byte_ms: { count: command.count, p50: command.first, p95: command.first, max: command.first },
+    })),
+  } }));
+  const faults = await open(page, 'requests');
+  await expect(page.locator('.page-head .lede')).toHaveText('102 requests in the last hour. None failed, and the typical first word came back in 100 ms.');
+  await expect(page.locator('.plan-first span')).toHaveText([
+    '100 ms typical · 100 ms slowest', '20.0 s typical · 20.0 s slowest', '10.0 s typical · 10.0 s slowest',
+  ]);
+  await assertHealthy(page, faults);
+});
+
 test('a request\'s model opens the requests on that model, and its chip returns to them all', async ({ page }) => {
   const asks = turnsAsks(page);
   const faults = await open(page, 'requests');

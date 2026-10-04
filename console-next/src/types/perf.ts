@@ -74,6 +74,8 @@ export interface PerfSummaryHead {
 export interface PerfSummaryPayload {
   window: PerfWindowLabel;
   heads: PerfSummaryHead[];
+  /** Exact percentile of all recorded request timings in the window, not a percentile of command medians. */
+  time_before_first_byte_ms?: PerfStats;
 }
 
 /** The stage marks, in pipeline order, ms since the request arrived (PerfKeys.markOrder). */

@@ -90,12 +90,26 @@ describe('plan rows', () => {
     expect(planRows([bare], none)[0]).toMatchObject({ firstP50: null, firstP95: null });
   });
   test('the lede counts requests, failures and the typical first word', () => {
-    expect(turnsLede(planRows([summary()], none), '1h')).toBe('10 requests in the last hour. One failed, and the typical first word came back in 1.4 s.');
+    expect(turnsLede(planRows([summary()], none), '1h', summary().time_before_first_byte_ms)).toBe('10 requests in the last hour. One failed, and the typical first word came back in 1.4 s.');
     expect(turnsLede([], '24h')).toBe('No model has answered a request in the last 24 hours.');
+  });
+  test('the fleet headline uses the pooled request percentile, not equally weighted command medians', () => {
+    const heads = [
+      summary({ key: 'busy', count: 100, time_before_first_byte_ms: { count: 100, p50: 100, p95: 100, max: 100 }, outcomes: { ok: 100 } }),
+      summary({ key: 'sparse', count: 1, time_before_first_byte_ms: { count: 1, p50: 10_000, p95: 10_000, max: 10_000 }, outcomes: { ok: 1 } }),
+      summary({ key: 'slower', count: 1, time_before_first_byte_ms: { count: 1, p50: 20_000, p95: 20_000, max: 20_000 }, outcomes: { ok: 1 } }),
+    ];
+    const pooled = { count: 102, p50: 100, p95: 100, max: 20_000 };
+    expect(turnsLede(planRows(heads, none), '1h', pooled)).toBe('102 requests in the last hour. None failed, and the typical first word came back in 100 ms.');
+    expect(pageLede(viewOf(new URLSearchParams()), planRows(heads, none), 200, pooled)).toContain('100 ms.');
+  });
+  test('without pooled readings an older daemon keeps request counts but invents no fleet percentile', () => {
+    expect(turnsLede(planRows([summary()], none), '1h')).toBe('10 requests in the last hour. One failed.');
+    expect(turnsLede(planRows([summary()], none), '1h', { count: 10, p50: 0, p95: 1, max: 1 })).toContain('0 ms.');
   });
   test('every count reads with thousands separators', () => {
     const busy = summary({ count: 2362, outcomes: { ok: 1882, 'error:rate-limited': 480 } });
-    expect(turnsLede(planRows([busy], none), '7d')).toBe('2,362 requests in the last 7 days. 480 failed, and the typical first word came back in 1.4 s.');
+    expect(turnsLede(planRows([busy], none), '7d', busy.time_before_first_byte_ms)).toBe('2,362 requests in the last 7 days. 480 failed, and the typical first word came back in 1.4 s.');
     expect(T.shownOf(200, 2362)).toBe('Showing the newest 200 of 2,362. Narrow the window or filter to see the rest.');
     expect(T.matching(2362)).toBe('2,362 requests match.');
   });

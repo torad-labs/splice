@@ -1,7 +1,9 @@
 package splice.usage.perf
 
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -10,6 +12,11 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.perf.OutcomeTag
 import splice.core.perf.OutcomeTags
+import splice.core.perf.PerfKeys
+import splice.usage.UsageHead
+import splice.usage.UsageHeads
+import splice.usage.quota.HeadUsageSource
+import splice.usage.quota.UsageView
 
 class PerfSummaryTest {
 
@@ -40,6 +47,59 @@ class PerfSummaryTest {
             ).sortedBy { it.ts }
 
     private fun n(o: JsonObject, key: String) = o.getValue(key).jsonPrimitive.content
+
+    @Test
+    fun `fleet timing pools actual requests in the same read and clock as command summaries`() {
+        val reads = mutableListOf<Pair<String, Long>>()
+        val busy = (1..100).map { row(it.toLong(), "ok", PerfKeys.FIRST_BYTE to 100L) }
+        val local = (1..200).map { row(it.toLong(), "ok", PerfKeys.LOCAL_STEP to 1L, PerfKeys.FIRST_BYTE to 0L) }
+        val older = (1..200).map { row(hour + it, "ok", PerfKeys.FIRST_BYTE to 0L) }
+        val histories = mapOf(
+            "busy" to busy + local + older + row(500),
+            "sparse" to listOf(row(1000, "ok", PerfKeys.FIRST_BYTE to 10_000L)),
+            "slower" to listOf(row(2000, "ok", PerfKeys.FIRST_BYTE to 20_000L)),
+        )
+        val heads = histories.map { (key, rows) ->
+            UsageHead(
+                key = key,
+                label = key,
+                usage = HeadUsageSource { UsageView(0, 0, null) },
+                warnPct = 90,
+                warnTokens5h = 0,
+                perfRows = PerfRowsSource { since ->
+                    reads += key to since
+                    PerfRowsWindow(rows)
+                },
+            )
+        }
+        var clockReads = 0
+        val payloads = PerfPayloads(UsageHeads { heads }) {
+            clockReads++
+            now
+        }
+        val result = Json.parseToJsonElement(payloads.summaryJson(PerfWindow.H1)).jsonObject
+        val pooled = result.getValue("time_before_first_byte_ms").jsonObject
+        assertEquals("102", n(pooled, "count"), "local steps, old rows and absent marks never become timings")
+        assertEquals("100", n(pooled, "p50"), "one busy command must outweigh sparse command medians")
+        assertEquals("100", n(pooled, "p95"))
+        assertEquals("20000", n(pooled, "max"))
+        val commands = result.getValue("heads").jsonArray.map { it.jsonObject }
+        assertEquals(
+            listOf("100", "10000", "20000"),
+            commands.map { n(it.getValue("time_before_first_byte_ms").jsonObject, "p50") },
+        )
+        assertEquals("101", n(commands.first(), "count"))
+        assertEquals("200", n(commands.first(), "local_steps"))
+        assertEquals(histories.keys.map { it to now - hour }, reads, "every source is read once at one cutoff")
+        assertEquals(1, clockReads)
+    }
+
+    @Test
+    fun `fleet timing is absent when no request carries a mark`() {
+        val payloads = PerfPayloads(UsageHeads { emptyList() }) { now }
+        val result = Json.parseToJsonElement(payloads.summaryJson(PerfWindow.H1)).jsonObject
+        assertNull(result["time_before_first_byte_ms"], "an absent distribution is never a zero-latency claim")
+    }
 
     @Test
     fun `slow, retried and failed rows produce distinguishable numbers`() {

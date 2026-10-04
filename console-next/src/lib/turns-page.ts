@@ -8,7 +8,7 @@ import { OUTCOME_WORD, STAGE_PHRASE, T } from './words-turns';
 import type { RequestsRange, RequestsView } from './requests-view';
 import type { TopologyState } from '../types/topology';
 import type { LiveTurn } from '../types/turns';
-import type { InflightTurn, PerfSummaryHead, PerfWindowLabel, TurnRow } from '../types/perf';
+import type { InflightTurn, PerfStats, PerfSummaryHead, PerfWindowLabel, TurnRow } from '../types/perf';
 
 export const WINDOW_MS: Record<PerfWindowLabel, number> = { '1h': 3_600_000, '24h': 86_400_000, '7d': 604_800_000 };
 
@@ -83,14 +83,14 @@ export const barMax = (rows: readonly PlanRow[]): number => Math.max(1, ...rows.
 
 const WORDS = ['One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'];
 
-export function turnsLede(rows: readonly PlanRow[], window: PerfWindowLabel): string {
+export function turnsLede(rows: readonly PlanRow[], window: PerfWindowLabel, first: PerfStats | undefined = undefined): string {
   const turns = rows.reduce((n, row) => n + row.turns, 0);
   if (turns === 0) return `No model has answered a request in ${T.windowSpoken[window]}.`;
   const failed = rows.reduce((n, row) => n + row.failed, 0);
   const count = `${turns.toLocaleString('en-US')} ${turns === 1 ? 'request' : 'requests'} in ${T.windowSpoken[window]}`;
   const fails = failed === 0 ? 'None failed' : `${failed <= WORDS.length ? WORDS[failed - 1] : failed.toLocaleString('en-US')} failed`;
-  const firsts = rows.flatMap((row) => (row.firstP50 === null ? [] : [row.firstP50])).sort((a, b) => a - b);
-  const middle = firsts[Math.floor(firsts.length / 2)];
+  // Only the daemon's pooled request distribution can report a fleet percentile.
+  const middle = first?.p50;
   return middle === undefined ? `${count}. ${fails}.` : `${count}. ${fails}, and the typical first word came back in ${secondsText(middle)}.`;
 }
 
@@ -107,8 +107,8 @@ function spanSaid(range: Extract<RequestsRange, { kind: 'span' }>): string {
 /** What the page says first. A window is the summary's sentence and a span is the daemon's count of it; either says it is
  *  reading while its read is in flight, never that the window is empty before the answer came back. `plans` is null and
  *  `matched` undefined while their reads are in flight. */
-export function pageLede(view: RequestsView, plans: readonly PlanRow[] | null, matched: number | null | undefined): string {
-  if (view.range.kind === 'last') return plans === null ? T.reading : turnsLede(plans, view.range.window);
+export function pageLede(view: RequestsView, plans: readonly PlanRow[] | null, matched: number | null | undefined, first: PerfStats | undefined = undefined): string {
+  if (view.range.kind === 'last') return plans === null ? T.reading : turnsLede(plans, view.range.window, first);
   return matched === undefined ? T.reading : T.spanLede(matched, spanSaid(view.range));
 }
 

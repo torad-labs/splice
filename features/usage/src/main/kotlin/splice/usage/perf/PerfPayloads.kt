@@ -13,15 +13,19 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.core.perf.PerfKeys
+import splice.core.util.WallClock
 import splice.usage.UsageHeads
 
 private const val KEY = "key"
 private const val LABEL = "label"
 private const val HEADS = "heads"
 
-public class PerfPayloads(private val heads: UsageHeads) {
+public class PerfPayloads(
+    private val heads: UsageHeads,
+    private val clock: WallClock = WallClock(System::currentTimeMillis),
+) {
 
-    private val summary = PerfSummary()
+    private val summary = PerfSummary(clock)
 
     /** `/api/perf/summary?window=1h|24h|7d` (v0.4.0, FEATURES.md §3): one summary per head. An absent
      *  window is 24h; an unknown one is refused with 400, never answered with a different window
@@ -40,18 +44,24 @@ public class PerfPayloads(private val heads: UsageHeads) {
         }
     }
 
-    internal fun summaryJson(window: PerfWindow): String = buildJsonObject {
-        put("window", window.label)
-        putJsonArray(HEADS) {
-            heads.all().forEach { m ->
-                addJsonObject {
-                    put(KEY, m.key)
-                    put(LABEL, m.label)
-                    summary.summarize(m.perfRows, window).forEach { (k, v) -> put(k, v) }
+    internal fun summaryJson(window: PerfWindow): String {
+        val now = clock()
+        val firstBytes = mutableListOf<Long>()
+        return buildJsonObject {
+            put("window", window.label)
+            putJsonArray(HEADS) {
+                heads.all().forEach { m ->
+                    val read = m.perfRows?.window(now - window.ms) ?: PerfRowsWindow(emptyList())
+                    addJsonObject {
+                        put(KEY, m.key)
+                        put(LABEL, m.label)
+                        summary.json(read, window, now, firstBytes).forEach { (k, v) -> put(k, v) }
+                    }
                 }
             }
-        }
-    }.toString()
+            summary.stats(firstBytes)?.let { put("time_before_first_byte_ms", it) }
+        }.toString()
+    }
 
     // {heads:[{key,label,count,stages:{<field>:{count,p50,p95,max}}}]} — fields are the TurnPerf
     // marks/counters (PerfKeys names), marks first in pipeline order, counters after.

@@ -168,7 +168,7 @@ export function TurnsPage() {
   const plans = summary.data === undefined ? null : planRows(summary.data.heads, colourOf);
   const slice = turns.data === undefined || isPendingRoute(turns.data) ? undefined : turns.data;
   const matched = turns.isPending ? undefined : (slice?.matched ?? null);
-  const lede = window !== null && summary.isError && plans === null ? undefined : pageLede(view, plans, matched);
+  const lede = window !== null && summary.isError && plans === null ? undefined : pageLede(view, plans, matched, summary.data?.time_before_first_byte_ms);
   const narrow = (selector: Selector, value: string): string => requestsHref({ ...view, [selector]: value });
   const lines = slice === undefined ? [] : newestFirst(slice.landed.map((row) => lineOf(row, planLabel, colourOf, titleOf))).slice(0, LIST_CAP);
   const running = slice === undefined ? [] : runningOf(slice.inflight, planLabel, colourOf, (prefix) => titleOf(undefined, prefix));

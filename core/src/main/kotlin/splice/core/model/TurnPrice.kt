@@ -17,6 +17,9 @@ public class TurnPrice(private val catalog: ModelCatalog?, private val cost: Tok
         return TurnBill.usd(counters, rates, cost)
     }
 
+    /** Whether [model] has a rate card, so that a request on it with token counts gets a price. */
+    public fun declares(model: String?): Boolean = model?.let(::ratesFor) != null
+
     private fun ratesFor(model: String): ModelRates? {
         val c = catalog?.live() ?: return null
         val key = c.stripSuffixes(model)

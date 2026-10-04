@@ -19,10 +19,14 @@ import kotlinx.serialization.json.long
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.accounts.pool.HeadAccountPoolSource
+import splice.accounts.pool.HeadAccountPoolView
+import splice.accounts.pool.HeadAccountView
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.model.ModelRates
 import splice.core.perf.PerfKeys
+import splice.core.usage.QuotaView
 import splice.core.util.WallClock
 import splice.usage.UsageHead
 import splice.usage.UsageHeadLookup
@@ -60,12 +64,17 @@ class PerfTurnUsageTest {
     )
     private val outside = listOf(priced.first().copy(ts = 999), priced.last().copy(ts = 4_000))
 
-    private fun ApplicationTestBuilder.mount(rows: List<PerfRow>, onRead: () -> Unit = {}) {
+    private fun ApplicationTestBuilder.mount(
+        rows: List<PerfRow>,
+        usage: HeadUsageSource = HeadUsageSource { UsageView(0, 0, null) },
+        accountPool: HeadAccountPoolSource? = null,
+        onRead: () -> Unit = {},
+    ) {
         val catalog = ModelCatalog(
             discoveryPrefix = "synthetic--",
             models = listOf("m", "earlier").map { id ->
                 ModelEntry(id, contextWindow = 100_000, rates = ModelRates(1.0, 0.1, 4.0))
-            },
+            } + ModelEntry("free", contextWindow = 100_000),
             defaultContextWindow = 100_000,
         )
         val source = PerfRowsSource { since ->
@@ -75,11 +84,12 @@ class PerfTurnUsageTest {
         val head = UsageHead(
             key = "synthetic",
             label = "Synthetic",
-            usage = HeadUsageSource { UsageView(0, 0, null) },
+            usage = usage,
             warnPct = 80,
             warnTokens5h = 0,
             perfRows = source,
             catalog = catalog,
+            accountPool = accountPool,
         )
         val routes = PerfRoutes(UsageHeadLookup { listOf(head) }, WallClock { 5_000 })
         application { routing { get("/api/perf/turns") { routes.turns(call) } } }
@@ -91,7 +101,7 @@ class PerfTurnUsageTest {
     @Test
     fun `whole-window usage precedes the row limit and excludes local steps and interval edges`() = testApplication {
         var reads = 0
-        mount(priced + failure + local + outside) { reads++ }
+        mount(priced + failure + local + outside, onRead = { reads++ })
         val response = client.get(
             "/api/perf/turns?head=synthetic&since=1000&until=4000&n=2000&local=0&time_zone=UTC",
         )
@@ -119,6 +129,70 @@ class PerfTurnUsageTest {
         val session = usage.getValue("sessions").jsonArray.single().jsonObject
         assertEquals("synthetic-full-session", session.getValue("key").jsonPrimitive.content)
         assertEquals(2_502L, session.getValue("requests").jsonPrimitive.long)
+    }
+
+    /** Marlin's pass 5: one sentence, "no recorded price", stood for three causes. Each unpriced request is
+     *  counted under the cause the head can name: a priced model whose request has no token count, a model with
+     *  no price on an account a plan covers, and a model whose price was never declared. */
+    @Test
+    fun `an unpriced request is counted under its own cause`() = testApplication {
+        val pool = HeadAccountPoolSource {
+            HeadAccountPoolView(
+                "plan",
+                listOf(
+                    HeadAccountView("plan", true, true, true, "pro", null, null, null, null),
+                    HeadAccountView("key", false, false, true, null, null, null, null, null),
+                ),
+                null,
+            )
+        }
+        val row = priced.last()
+        mount(
+            listOf(
+                row,
+                row.copy(ts = 1_001, fields = emptyMap(), account = "key"),
+                row.copy(ts = 1_002, fields = emptyMap(), account = "plan"),
+                row.copy(ts = 1_003, model = "free", account = "plan"),
+                row.copy(ts = 1_004, model = "free", account = "key"),
+            ),
+            accountPool = pool,
+        )
+        val usage = head(client.get("/api/perf/turns?head=synthetic&since=1000&local=0").bodyAsText())
+            .getValue("usage").jsonObject
+        val totals = usage.getValue("totals").jsonObject
+        assertEquals(listOf(4L, 2L, 1L, 1L), causes(totals))
+        val models = usage.getValue("models").jsonArray.associate { it.jsonObject.let { m -> m.key() to causes(m) } }
+        assertEquals(listOf(2L, 2L, 0L, 0L), models["m"])
+        assertEquals(listOf(2L, 0L, 1L, 1L), models["free"])
+        assertSummed(usage)
+    }
+
+    @Test
+    fun `a head with no account pool is covered by the plan its own quota names`() = testApplication {
+        val plan = HeadUsageSource { UsageView(0, 0, null, QuotaView(null, null, "max")) }
+        mount(listOf(priced.last().copy(model = "free", account = "primary")), usage = plan)
+        val usage = head(client.get("/api/perf/turns?head=synthetic&since=1000&local=0").bodyAsText())
+            .getValue("usage").jsonObject
+        assertEquals(listOf(1L, 0L, 1L, 0L), causes(usage.getValue("totals").jsonObject))
+        assertSummed(usage)
+    }
+
+    /** The unpriced total, then its causes: no token count, covered by a plan, no declared price. */
+    private fun causes(group: JsonObject): List<Long> =
+        listOf(UNPRICED, UNCOUNTED, PLAN, UNDECLARED).map { group.getValue(it).jsonPrimitive.long }
+
+    private fun JsonObject.key(): String = getValue("key").jsonPrimitive.content
+
+    /** Every group's causes sum to its unpriced_requests, the total every existing reader keeps reading. */
+    private fun assertSummed(usage: JsonObject) {
+        val groups = listOf(usage.getValue("totals").jsonObject) +
+            listOf("models", "accounts", "days", "sessions").flatMap { name ->
+                usage.getValue(name).jsonArray.map { it.jsonObject }
+            }
+        groups.forEach { group ->
+            val counts = causes(group)
+            assertEquals(counts.first(), counts.drop(1).sum(), group.toString())
+        }
     }
 
     @Test
@@ -170,3 +244,8 @@ class PerfTurnUsageTest {
         )
     }
 }
+
+private const val UNPRICED = "unpriced_requests"
+private const val UNCOUNTED = "unpriced_uncounted_requests"
+private const val PLAN = "unpriced_plan_requests"
+private const val UNDECLARED = "unpriced_undeclared_requests"

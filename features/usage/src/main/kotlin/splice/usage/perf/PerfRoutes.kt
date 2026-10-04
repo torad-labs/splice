@@ -183,7 +183,7 @@ public class PerfRoutes(
             put("oldest_held_ts", read.oldestHeldTs)
             read.readError?.let { put("read_error", it) }
             if (read.skipped > 0) put("skipped_lines", read.skipped)
-            put("usage", TurnUsage(matching, price, asked.zone).json())
+            put("usage", TurnUsage(matching, price, AccountPlans(head), asked.zone).json())
             putJsonArray("rows") { rows.forEach { add(rowJson(it, price)) } }
         }
     }

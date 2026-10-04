@@ -21,13 +21,17 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonObject
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.AnnotatedElementContext
+import org.junit.jupiter.api.extension.ExtensionContext
 import org.junit.jupiter.api.io.TempDir
+import org.junit.jupiter.api.io.TempDirDeletionStrategy
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.ForeignHostLog
@@ -44,9 +48,11 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.WatchdogBudget
+import splice.core.util.AsyncFileIo
 import splice.head.AnthropicBodyParse
 import splice.head.ClientAuth
 import splice.head.HeadDeps
+import splice.head.HeadFileWriteCleanup
 import splice.head.RequestBodyRead
 import splice.head.RequestBodyReader
 import splice.head.RequestBodyTooLarge
@@ -71,7 +77,11 @@ import splice.upstream.memory.JvmHeap
 import splice.upstream.retry.InflightGate
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.UpstreamClient
+import java.io.IOException
+import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.time.Duration.Companion.seconds
 
 private class AdmissionTestAuth : RefreshableAuthProvider {
@@ -194,6 +204,46 @@ class SourceContinuationAdmissionTest {
 }
 
 class AdmissionGateTest {
+    private val fileWriterRelease = CountDownLatch(1)
+    private var bodyReturned = false
+    private var controlledRoot: Path? = null
+
+    @AfterEach
+    fun finishFileWrites() {
+        bodyReturned = true
+        // Omitting the join must leave the controlled writer held until the deletion walk captures its paths.
+        controlledRoot?.let { HeadFileWriteCleanup().awaitWrites(it.also { fileWriterRelease.countDown() }) }
+    }
+
+    /** Force the queued real perf append into the cleanup walk's directory-deletion window. */
+    class LateFileWriteDeletion : TempDirDeletionStrategy {
+        override fun delete(
+            root: Path,
+            elementContext: AnnotatedElementContext,
+            extensionContext: ExtensionContext,
+        ): TempDirDeletionStrategy.DeletionResult {
+            val test = checkNotNull(extensionContext.requiredTestInstance as? AdmissionGateTest)
+            check(test.bodyReturned) { "the controlled append must outlive the test body" }
+            val paths = Files.walk(root).use { it.sorted(Comparator.reverseOrder()).toList() }
+            test.fileWriterRelease.countDown()
+            assertTrue(AsyncFileIo.drain(), "the held perf append must finish before the deletion attempts")
+            val result = TempDirDeletionStrategy.DeletionResult.builder(root)
+            paths.forEach { path ->
+                try {
+                    Files.delete(path)
+                } catch (failure: IOException) {
+                    result.addFailure(path, failure)
+                }
+            }
+            // Reap our own synthetic residue, but return every failure to JUnit unchanged.
+            if (Files.exists(root)) {
+                val reaped = TempDirDeletionStrategy.Standard.INSTANCE.delete(root, elementContext, extensionContext)
+                reaped.failures().forEach { result.addFailure(it.path(), it.cause()) }
+            }
+            return result.build()
+        }
+    }
+
     @Test
     fun `head dependencies keep the reasoning mirror locked off`(@TempDir tmp: Path) {
         assertFalse(headDeps(tmp).policy.mirrorReasoning)
@@ -469,8 +519,10 @@ class AdmissionGateTest {
 
     @Test
     fun `a ready budget refusal returns its heap without waiting for the live source`(
-        @TempDir tmp: Path,
+        @TempDir(deletionStrategy = LateFileWriteDeletion::class) tmp: Path,
     ) = testApplication {
+        controlledRoot = tmp
+        assertTrue(AsyncFileIo.submit { check(fileWriterRelease.await(30, TimeUnit.SECONDS)) })
         val body = """{"model":"claude-codex--gpt-5.6-sol","max_tokens":64,
             "messages":[{"role":"user","content":"synthetic continuation"}]}"""
         val required = splice.core.memory.HeapWeights.request(body.toByteArray().size.toLong())

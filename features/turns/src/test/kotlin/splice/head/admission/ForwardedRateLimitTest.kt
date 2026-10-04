@@ -10,12 +10,17 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.Headers
 import io.ktor.http.HttpStatusCode
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -24,7 +29,6 @@ import splice.core.auth.CredentialKey
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.WatchdogBudget
-import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.dialect.anthropic.PassthroughProvider
@@ -41,6 +45,9 @@ import splice.upstream.transport.UpstreamClient
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardOpenOption
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 class ForwardedRateLimitTest {
@@ -63,7 +70,7 @@ class ForwardedRateLimitTest {
                 for (token in listOf("synthetic-healthy", "synthetic-new-login", "synthetic-unproved")) {
                     assertEquals(HttpStatusCode.OK, rig.turn(token, stream).first)
                 }
-                assertEquals(listOf("one@example.invalid", "two@example.invalid", "claude-code"), rig.accounts())
+                assertEquals(listOf("one@example.invalid", "two@example.invalid", "claude-code"), rig.accounts(3))
             } finally {
                 rig.close()
             }
@@ -80,9 +87,29 @@ class ForwardedRateLimitTest {
         try {
             repeat(2) { assertEquals(HttpStatusCode.TooManyRequests, rig.turn("synthetic-refused").first) }
             assertEquals(1, rig.requests.size)
-            assertEquals(listOf("held@example.invalid", "held@example.invalid"), rig.accounts())
+            assertEquals(listOf("held@example.invalid", "held@example.invalid"), rig.accounts(2))
         } finally {
             rig.close()
+        }
+    }
+
+    @Test
+    fun `account row wait includes a third append after the initial read`() = runBlocking {
+        val file = directory.resolve("synthetic-perf.jsonl")
+        Files.writeString(file, "{\"account\":\"one\"}\n{\"account\":\"two\"}\n")
+        val waiting = async { awaitAccounts(file, 3) }
+        yield()
+        assertFalse(waiting.isCompleted, "the first read must not certify a missing third row")
+        Files.writeString(file, "{\"account\":\"three\"}\n", StandardOpenOption.APPEND)
+        assertEquals(listOf("one", "two", "three"), waiting.await())
+    }
+
+    @Test
+    fun `account row wait fails within its bound when the third turn produces no row`() {
+        val file = directory.resolve("synthetic-perf.jsonl")
+        Files.writeString(file, "{\"account\":\"one\"}\n{\"account\":\"two\"}\n")
+        assertThrows(TimeoutCancellationException::class.java) {
+            runBlocking { awaitAccounts(file, 3, 100.milliseconds) }
         }
     }
 
@@ -314,12 +341,8 @@ private class LimitRig(
         return Triple(response.status, response.bodyAsText(), response.headers)
     }
 
-    fun accounts(): List<String?> {
-        assertTrue(AsyncFileIo.drain(), "synthetic account rows must be durable before reading")
-        return Files.readAllLines(directory.resolve("perf.jsonl")).map { line ->
-            Json.parseToJsonElement(line).jsonObject["account"]?.jsonPrimitive?.content
-        }
-    }
+    suspend fun accounts(expectedRows: Int): List<String?> =
+        awaitAccounts(directory.resolve("perf.jsonl"), expectedRows)
 
     suspend fun close() {
         head.stop()
@@ -327,6 +350,24 @@ private class LimitRig(
         providerClient.close()
         server.stop(0)
     }
+}
+
+/** Await the rows these turns owe, including an append submitted after the HTTP reply returned. */
+private suspend fun awaitAccounts(
+    file: Path,
+    expectedRows: Int,
+    timeout: Duration = 5.seconds,
+): List<String?> = withTimeout(timeout) {
+    var accounts = emptyList<String?>()
+    while (accounts.size < expectedRows) {
+        // A concurrent append may be partial: only newline-terminated rows are durable JSONL records.
+        val complete = if (Files.exists(file)) Files.readString(file).substringBeforeLast('\n', "") else ""
+        accounts = complete.lineSequence().filter { it.isNotEmpty() }.map { line ->
+            Json.parseToJsonElement(line).jsonObject["account"]?.jsonPrimitive?.content
+        }.toList()
+        if (accounts.size < expectedRows) yield()
+    }
+    accounts
 }
 
 private const val LIMIT_BODY = """{"type":"error","error":{"type":"rate_limit_error","message":"synthetic weekly window rejected"}}"""

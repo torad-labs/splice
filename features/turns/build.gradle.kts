@@ -26,8 +26,19 @@ dependencies {
     testImplementation(project(":integrations-dialects-anthropic"))
     testImplementation(project(":integrations-providers-codex"))
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.junit.platform.launcher)
+    testFixturesApi(platform(libs.junit.bom))
+    testFixturesApi(libs.junit.jupiter)
+    testFixturesImplementation(libs.junit.platform.launcher)
     testFixturesImplementation(libs.kotlinx.serialization.json)
     testFixturesImplementation(libs.zstd.jni) // CX-03: the mock decodes zstd like the real upstream
     testFixturesApi(project(":core")) // Public budget and logging types in the shared head builder
     testFixturesApi(project(":integrations-upstream")) // Public admission and transport types in that builder
+}
+
+tasks.test {
+    systemProperty(
+        "junit.jupiter.tempdir.deletion.strategy.default",
+        "splice.head.HeadFileWriteCleanup",
+    )
 }

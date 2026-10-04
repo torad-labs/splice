@@ -10,6 +10,7 @@ package splice.core.util
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Semaphore
@@ -37,6 +38,35 @@ class AsyncFileIoTest {
     fun `a slot another caller's delayed task holds is counted, not assumed free`() =
         saturateThenDrain(heldByOthers = 1)
 
+    @Test
+    fun `pending diagnostics count delayed tasks and include only nested paths below the root`(@TempDir root: Path) {
+        val started = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val tracked = root.resolve("nested/perf.jsonl").toAbsolutePath().normalize()
+        val sibling = root.resolveSibling("${root.fileName}-sibling").resolve("perf.jsonl")
+        assertTrue(
+            AsyncFileIo.submit {
+                started.countDown()
+                release.await()
+            },
+        )
+        try {
+            assertTrue(started.await(5, TimeUnit.SECONDS))
+            assertTrue(AsyncFileIo.submitFor(tracked) {})
+            assertTrue(AsyncFileIo.submitFor(sibling) {})
+            assertTrue(AsyncFileIo.submit(delayMs = 50) {})
+            val snapshot = AsyncFileIo.pendingUnder(root)
+            assertTrue(snapshot.count >= 4, "all our runnable and delayed slots remain held")
+            assertEquals(listOf(tracked), snapshot.paths, "a sibling with a matching string prefix is outside the root")
+        } finally {
+            release.countDown()
+        }
+        assertTrue(AsyncFileIo.awaitFile(tracked))
+        assertTrue(AsyncFileIo.awaitFile(sibling))
+        assertTrue(AsyncFileIo.drain())
+        assertEquals(emptyList<Path>(), AsyncFileIo.pendingUnder(root).paths)
+    }
+
     private fun saturateThenDrain(heldByOthers: Int) {
         val maxPendingTasks = 2_048 // splice.core.util.AsyncFileIo.MAX_PENDING_TASKS (private const)
         val margin = 32 // submissions past the cap, to prove rejection isn't a one-off boundary fluke
@@ -59,16 +89,16 @@ class AsyncFileIoTest {
         val rejected = AtomicInteger(0)
         val ran = AtomicInteger(0)
         val ranPermits = Semaphore(0)
-        val extraCount = maxPendingTasks + margin
         try {
             assertTrue(workerStarted.await(5, TimeUnit.SECONDS), "worker never picked up the blocking task")
+            holdRepeatedFileWrites()
             // The lane is process-wide: the blocking task holds a slot, and so does any delayed task another
             // test in this JVM scheduled and the blocked worker cannot run yet. CI run 36387318177 counted
             // 2046 for an assumed 2047 on exactly that. So the slots already held are read, never assumed.
             val held = AsyncFileIo.pendingCount()
             assertTrue(held >= 1 + heldByOthers, "the blocking task and the other caller's tasks hold slots ($held)")
 
-            repeat(extraCount) {
+            repeat(maxPendingTasks + margin) {
                 val ok = AsyncFileIo.submit {
                     ran.incrementAndGet()
                     ranPermits.release()
@@ -83,7 +113,7 @@ class AsyncFileIoTest {
             assertEquals(maxPendingTasks, saturated, "expected the lane to saturate exactly at its cap")
             val free = maxPendingTasks - held
             assertTrue(accepted.get() <= free, "accepted ${accepted.get()} past the $free free slots")
-            assertEquals(extraCount, accepted.get() + rejected.get(), "every submit either accepted or rejected")
+            assertEquals(maxPendingTasks + margin, accepted.get() + rejected.get(), "all submissions counted")
             assertTrue(rejected.get() >= margin, "expected submit() to return false once the pending cap was saturated")
             assertRejectedFileRow()
         } finally {
@@ -108,10 +138,21 @@ class AsyncFileIoTest {
         assertAcceptedFileRow()
     }
 
+    private fun holdRepeatedFileWrites() {
+        val tracked = Path.of("perf-admission-rejection.jsonl")
+        assertTrue(AsyncFileIo.submitFor(tracked) {})
+        assertTrue(AsyncFileIo.submitFor(tracked) {})
+    }
+
     private fun assertRejectedFileRow() {
         val file = Path.of("perf-admission-rejection.jsonl")
         assertTrue(!AsyncFileIo.submitFor(file) {}, "a saturated lane must refuse the file row")
         assertTrue(!AsyncFileIo.awaitFile(file), "a rejected row must not read as settled")
+        assertEquals(
+            listOf(file.toAbsolutePath().normalize()),
+            AsyncFileIo.pendingUnder(Path.of(".")).paths,
+            "a rejected replacement must not hide earlier accepted writes to the same path",
+        )
     }
 
     private fun assertAcceptedFileRow() {

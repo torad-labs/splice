@@ -44,6 +44,7 @@ public object AsyncFileIo {
     private val warned = AtomicBoolean(false)
     private val pathLock = Any()
     private val latestByPath = HashMap<Path, CompletableFuture<Boolean>>()
+    private val pendingByPath = HashMap<Path, Int>()
     private val failedPaths = HashSet<Path>()
 
     // Threads come from the platform factory, never from an ad-hoc `Thread(...)`: the factory owns
@@ -113,11 +114,17 @@ public object AsyncFileIo {
                 task()
                 written = true
             } finally {
-                if (!written) synchronized(pathLock) { failedPaths.add(key) }
+                synchronized(pathLock) {
+                    if (!written) failedPaths.add(key)
+                    val remaining = checkNotNull(pendingByPath[key]) - 1
+                    if (remaining == 0) pendingByPath.remove(key) else pendingByPath[key] = remaining
+                }
                 settled.complete(written)
             }
         }
-        if (!accepted) {
+        if (accepted) {
+            pendingByPath[key] = (pendingByPath[key] ?: 0) + 1
+        } else {
             failedPaths.add(key)
             settled.complete(false)
         }
@@ -149,6 +156,18 @@ public object AsyncFileIo {
     } catch (_: InterruptedException) {
         Thread.currentThread().interrupt()
         false
+    }
+
+    /** Delayed and runnable slots, with the not-done tracked paths below one temporary root. */
+    public data class PendingWrites(public val count: Int, public val paths: List<Path>)
+
+    /** A read-only cleanup diagnostic; untracked tasks still appear in [PendingWrites.count]. */
+    public fun pendingUnder(root: Path): PendingWrites = synchronized(pathLock) {
+        val normalized = root.toAbsolutePath().normalize()
+        PendingWrites(
+            pending.get(),
+            pendingByPath.keys.filter { path -> path.startsWith(normalized) },
+        )
     }
 
     /** Total tasks dropped since process start (pending cap exceeded or executor rejection). */

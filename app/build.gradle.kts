@@ -91,6 +91,10 @@ application {
 // (Before restructure PR 6 it lived at config/ and the tests walked up to it, which Gradle could
 // not see — caught 2026-07-26 when editing only the example left :app:test UP-TO-DATE.)
 tasks.test {
+    systemProperty(
+        "junit.jupiter.tempdir.deletion.strategy.default",
+        "splice.head.HeadFileWriteCleanup",
+    )
     systemProperty("codeMode.testClasspath", sourceSets.test.get().runtimeClasspath.asPath)
 
     // The arms that enter at a production call site (DR-97 login(), DR-99 runCli()) redirect

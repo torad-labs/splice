@@ -17,6 +17,9 @@ import splice.upstream.codemode.CodeModeSourcePart
 import splice.upstream.codemode.CodeModeStep
 import java.util.concurrent.atomic.AtomicInteger
 
+// why: the statement lexer stops at every slash; 40 stops doubled a 256-token buffer past the worker's 512 MB heap.
+private const val SLASH_RUN = 40
+
 class CodeModeStatementBoundaryTest {
     private val classpath = checkNotNull(System.getProperty("codeMode.testClasspath"))
 
@@ -51,6 +54,22 @@ class CodeModeStatementBoundaryTest {
     @Test
     fun `a multi line call expression waits for its closing argument list`(): Unit = runBlocking {
         heldStatement("text(await tools.Read({\npath:'line'\n", "}));\ntext(", listOf("line"))
+    }
+
+    @Test
+    fun `a multi line template cut after its substitution streams to its end`(): Unit = runBlocking {
+        val path = (1..SLASH_RUN).joinToString("/") { "d$it" }
+        streamsToEnd(
+            "const dir = 'src';\ntext(`listing:\n\${dir}/$path\n",
+            "done`);",
+            "listing:\nsrc/$path\ndone",
+        )
+    }
+
+    @Test
+    fun `a statement with a long run of divisions runs while its source still streams`(): Unit = runBlocking {
+        val quotient = (2..SLASH_RUN).joinToString("/")
+        streamsToEnd("const x = 1/$quotient;\n", "text(x > 0 ? 'divided' : 'zero');", "divided")
     }
 
     @Test
@@ -182,6 +201,22 @@ class CodeModeStatementBoundaryTest {
             val completed = runtime.startStreaming(source, emptySet()).advance() as CodeModeStep.Completed
             assertEquals("ran", completed.output)
             assertTrue(completed.error.orEmpty().contains("interrupted"), completed.toString())
+        }
+    }
+
+    /** Sends [first] as a frame of its own, so the worker reads it while the source is still open, then [last]. */
+    private suspend fun streamsToEnd(first: String, last: String, expected: String) {
+        runtime().use { runtime ->
+            runtime.start("return 'warm';", emptySet()).use { it.advance() }
+            val parts = ArrayDeque<CodeModeSourcePart>(
+                listOf(CodeModeSourcePart.Delta(first), CodeModeSourcePart.Complete(last)),
+            )
+            val step = withTimeout(2_000) {
+                runtime.startStreaming(CodeModeSource { parts.removeFirst() }, emptySet()).advance()
+            }
+            val completed = step as CodeModeStep.Completed
+            assertEquals(null, completed.error, completed.toString())
+            assertEquals(expected, completed.output)
         }
     }
 

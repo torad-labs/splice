@@ -6,10 +6,10 @@
 // observe per slot, already tallied here for tokens and cost, is whether each of the slot's turns
 // reached the backend and came back cleanly: PerfRow.outcome, the same tag TurnPipeline/TurnEnding
 // write and PerfSummary reads (splice.core.perf.OutcomeTag, kt-outcome-tag-single-source). A "check"
-// is therefore defined as the outcome tag of the slot's most recently tallied turn: "pass" when that
-// tag is OutcomeTag.OK, "fail" for anything else (a cancelled, rate-limited, upstream-failed or
-// otherwise non-OK turn) — a turn-health signal, not a build/test verdict. A slot that has tallied no
-// turns at all has nothing to observe, so it stays the honest empty: checks null, checks_source
+// is therefore defined as the outcome tag of the slot's most recently tallied turn: "pass" when the
+// client received a clean ending (OutcomeTags.isClean), "fail" for anything else (a cancelled,
+// rate-limited, upstream-failed or stopped turn) — a turn-health signal, not a build/test verdict.
+// A slot that has tallied no turns at all has nothing to observe, so it stays the honest empty: checks null, checks_source
 // naming why, exactly as it did before this row landed (CONTRACTS section 8).
 package splice.sessions.http
 
@@ -22,7 +22,7 @@ import kotlinx.serialization.json.put
 import splice.core.model.ModelCatalog
 import splice.core.model.TokenCost
 import splice.core.model.TurnBill
-import splice.core.perf.OutcomeTag
+import splice.core.perf.OutcomeTags
 import splice.core.perf.PerfKeys
 import splice.sessions.query.SessionHead
 import splice.sessions.query.SessionPerfRow
@@ -37,9 +37,6 @@ internal const val NO_TURNS_CHECKS_SOURCE = "no turns recorded yet for this slot
 private const val CHECKS_PASS = "pass"
 private const val CHECKS_FAIL = "fail"
 
-/** The single spelling a turn's outcome tag must match to count as a passing check
- *  (kt-outcome-tag-single-source: name the tag, never re-spell it). */
-private val OK = OutcomeTag.OK.wire
 private const val ROLE = "role"
 
 /** The perf row's session tag width (TurnDrive.SESSION_TAG_CHARS). */
@@ -83,7 +80,8 @@ internal class TeamEconomics(private val team: Team, private val heads: Map<Stri
     }
 
     /** "pass"/"fail" from the slot's newest tallied outcome tag, null before its first turn. */
-    private fun checksOf(outcome: String?): String? = outcome?.let { if (it == OK) CHECKS_PASS else CHECKS_FAIL }
+    private fun checksOf(outcome: String?): String? =
+        outcome?.let { if (OutcomeTags.isClean(it)) CHECKS_PASS else CHECKS_FAIL }
 
     /** Where [checksOf] came from, or why it has nothing to report yet. */
     private fun checksSourceOf(outcome: String?): String =

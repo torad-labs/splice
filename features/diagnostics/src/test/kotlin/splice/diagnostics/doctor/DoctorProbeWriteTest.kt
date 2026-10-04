@@ -40,6 +40,17 @@ class DoctorProbeWriteTest {
     }
 
     @Test
+    fun `empty answers the model closed are clean turns, never a failing head`(@TempDir tmp: Path) {
+        val file = tmp.resolve("synthetic-perf.jsonl")
+        val ts = System.currentTimeMillis()
+        val rows = (0 until 3).joinToString("") { """{"ts":${ts + it},"outcome":"empty_message"}""" + "\n" }
+        Files.writeString(file, rows)
+        val row = DoctorProbeWrite().perfTailRow("synthetic", file)
+        assertEquals(CheckStatus.OK, row.status, row.detail)
+        assertEquals("last 3 turn(s) clean", row.detail)
+    }
+
+    @Test
     fun `a symlink planted at the old probe name cannot truncate its victim - DR-171`(@TempDir tmp: Path) {
         val dir = Files.createDirectories(tmp.resolve("state"))
         val victim = tmp.resolve("victim.txt")

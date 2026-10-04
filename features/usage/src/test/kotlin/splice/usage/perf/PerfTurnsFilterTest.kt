@@ -42,7 +42,18 @@ class PerfTurnsFilterTest {
         row(ts = 9_100L + index * 100L, outcome = tag, session = "stops")
     }
     private val cancelled = row(ts = 9_300L, outcome = OutcomeTag.CANCELLED.wire, session = "watchdog")
-    private val rows = listOf(failure, unknown, bare, local) + stops + listOf(cancelled) + oks
+
+    // why: a model that closed an empty message ended the turn clean for the client. Its own model and a time past
+    // every until=10000 window keep it out of the other filters' counts.
+    private val emptyAnswer = PerfRow(
+        ts = 12_500L,
+        outcome = OutcomeTag.EMPTY_MESSAGE.wire,
+        fields = emptyMap(),
+        model = "sonnet",
+        account = "work",
+        session = "empty",
+    )
+    private val rows = listOf(failure, unknown, bare, local) + stops + listOf(cancelled, emptyAnswer) + oks
 
     private val head = UsageHead(
         key = "kimi",
@@ -94,7 +105,11 @@ class PerfTurnsFilterTest {
     fun `Failed includes watchdog cancellation but excludes stops however many newer rows fill the list`() = testApplication {
         mount()
         val head = ask(client, "n=2000&outcome=failed")
-        assertEquals(listOf(5_000L, 9_300L), stamps(head), "the refusal and watchdog cancellation, never stops or `?`")
+        assertEquals(
+            listOf(5_000L, 9_300L),
+            stamps(head),
+            "the refusal and watchdog cancellation, never stops, `?` or a clean empty answer",
+        )
         assertEquals(2L, count(head), "the count is the rows the filter matches")
     }
 

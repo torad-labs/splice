@@ -44,6 +44,11 @@ describe('outcome words', () => {
     expect(outcomeOf('ok', 8123)).toMatchObject({ word: 'Done', failed: false });
   });
 
+  test('an empty answer the model closed ended clean for the client, so it is never counted failed', () => {
+    expect(outcomeOf('empty_message')).toMatchObject({ word: 'Empty answer', tone: 'work', failed: false });
+    expect(outcomeOf('empty_model')).toMatchObject({ word: 'Empty answer', tone: 'stuck', failed: true });
+  });
+
   test('the denominator is parsed from the source', () => {
     expect(tags.length, `parsed ${tags.length} tags: ${tags.join(' ')}`).toBeGreaterThanOrEqual(25);
     expect(tags).toEqual(expect.arrayContaining(['error:conn-reset', 'error:stopped', 'error:compaction-preflight-compact-overflow', 'failure:api_error']));

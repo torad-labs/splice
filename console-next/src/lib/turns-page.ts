@@ -28,9 +28,13 @@ export interface OutcomeRead {
 export const isStopped = (outcome: string): boolean =>
   outcome === 'client_abort' || outcome === 'error:stopped';
 
+/** Endings the client received clean: an answer, or an empty message the model closed itself, which the daemon ends clean. */
+export const isClean = (outcome: string): boolean => outcome === 'ok' || outcome === 'empty_message';
+
 /** What a turn's outcome tag reads as. A tag this console does not know is still a failure, and says so plainly. */
 export function outcomeOf(outcome: string, refusedRuntimePort?: number): OutcomeRead {
   if (outcome === 'ok') return { word: 'Done', tone: 'work', failed: false };
+  if (isClean(outcome)) return { word: OUTCOME_WORD[outcome] ?? 'Done', tone: 'work', failed: false };
   if (outcome === '?') return { word: 'Unknown', tone: 'idle', failed: false };
   const refused = outcome === 'error:conn-reset' && Number.isInteger(refusedRuntimePort)
     && refusedRuntimePort !== undefined && refusedRuntimePort > 0 && refusedRuntimePort <= 65535;

@@ -75,9 +75,13 @@ public object OutcomeTags {
     public fun isStopped(tag: String): Boolean =
         tag == OutcomeTag.CLIENT_ABORT.wire || tag == error("stopped")
 
+    /** Read-side only: an ending the client received clean. That is an answer, or an empty message the model closed
+     *  itself, which StreamPromote ends clean. */
+    public fun isClean(tag: String): Boolean = tag == OutcomeTag.OK.wire || tag == OutcomeTag.EMPTY_MESSAGE.wire
+
     /** Unknown attribution is not failure; an unfamiliar recorded ending still is. */
     public fun isFailed(tag: String): Boolean =
-        tag != OutcomeTag.OK.wire && tag != OutcomeTag.EMPTY_MESSAGE.wire && tag != "?" && !isStopped(tag)
+        !isClean(tag) && tag != "?" && !isStopped(tag)
 }
 
 // The two prefixes, kept private so the only way to build a tag is through the helpers above.

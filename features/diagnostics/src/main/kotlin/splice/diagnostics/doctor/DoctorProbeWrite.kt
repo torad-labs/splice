@@ -7,7 +7,7 @@ package splice.diagnostics.doctor
 import kotlinx.serialization.json.jsonObject
 import splice.core.config.UserHome
 import splice.core.perf.LivenessProbe
-import splice.core.perf.OutcomeTag
+import splice.core.perf.OutcomeTags
 import splice.core.perf.PerfKeys
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
@@ -77,7 +77,7 @@ internal class DoctorProbeWrite(
     internal fun perfTailRow(headKey: String, perfFile: Path): DoctorCheck {
         val read = files.tails(perfFile, PROBE_TAIL_BYTES)
         val rows = read.lines.mapNotNull(::perfRow).takeLast(PERF_TAIL_TURNS)
-        val failures = rows.filter { (outcome, _) -> outcome != OutcomeTag.OK.wire }
+        val failures = rows.filter { (outcome, _) -> !OutcomeTags.isClean(outcome) }
         val name = "head $headKey turns"
         val unread = read.error?.let { " (a perf file could not be read: $it)" }.orEmpty()
         return when {
@@ -112,7 +112,7 @@ internal class DoctorProbeWrite(
      *  failures followed by two good turns has recovered and reads as history (V4-444, console review
      *  2026-09-29: claude-splice failed 18 of 20 turns, then answered twice, and still sat in Needs you). */
     private fun stillFailing(rows: List<Triple<String, Long, Long?>>): Boolean {
-        val newest = rows.takeLast(NEWEST_TURNS).map { (outcome, _) -> outcome != OutcomeTag.OK.wire }
+        val newest = rows.takeLast(NEWEST_TURNS).map { (outcome, _) -> !OutcomeTags.isClean(outcome) }
         val recovered = newest.takeLast(RECOVERY_RUN).let { it.size == RECOVERY_RUN && it.none { failed -> failed } }
         return newest.last() || (newest.count { it } >= FAILING_OF_NEWEST && !recovered)
     }

@@ -4,7 +4,7 @@ import { useCapture, useConversation, useKeptTurn, useWire } from '../../api/tur
 import { foldTranscript } from '../../lib/conversation';
 import { fmtMs } from '../../lib/format';
 import { readable } from '../../lib/message';
-import { askAndAnswer, isStopped, outcomeOf, wireFor } from '../../lib/turns-page';
+import { askAndAnswer, isClean, isStopped, outcomeOf, wireFor } from '../../lib/turns-page';
 import { P } from '../../lib/words-turns';
 import type { TraceRecord, TraceSide, TurnRow } from '../../types/perf';
 import { Markdown } from '../../ui';
@@ -71,7 +71,7 @@ function Attempt({ record }: { record: TraceRecord }) {
 /** The sentence the daemon recorded for a failed turn, whole, under this turn's own read: a late answer for another turn lands in that turn's cache. */
 function Failure({ row }: { row: TurnRow }) {
   const kept = useKeptTurn(row.head, row.turn ?? null, row.turn !== undefined);
-  if (row.outcome === 'ok' || row.outcome === '?') return null;
+  if (isClean(row.outcome) || row.outcome === '?') return null;
   if (row.turn !== undefined && kept.data === undefined && !kept.isError) return <p className="failure-sentence" role="status">{P.readingFailure}</p>;
   const sentence = kept.data === undefined || 'gone' in kept.data ? null : (kept.data.read.turn.failure_sentence ?? null);
   const absent = isStopped(row.outcome) ? P.stoppedNoReason : P.failureNoReason(outcomeOf(row.outcome).word);

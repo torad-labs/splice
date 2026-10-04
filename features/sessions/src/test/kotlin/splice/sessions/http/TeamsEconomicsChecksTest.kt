@@ -85,6 +85,12 @@ class TeamsEconomicsChecksTest {
     }
 
     @Test
+    fun `an empty answer the model closed reads pass, because the client got a clean finish`() {
+        val lead = leadSlot(listOf(row(CHECKS_AT, OutcomeTag.EMPTY_MESSAGE.wire)))
+        assertEquals("pass", lead.getValue("checks").jsonPrimitive.content)
+    }
+
+    @Test
     fun `checks follows the newest turn by timestamp, not the last one added`() {
         // The failing row is appended SECOND but carries the EARLIER timestamp: a naive
         // last-call-wins reading would report fail here. The slot's real newest turn (CHECKS_AT) is ok.

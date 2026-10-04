@@ -78,6 +78,8 @@ describe('a failed turn\'s sentence', () => {
     expect(failed).toContain('This request ended: Rate limited. No detailed failure reason was kept.');
     const done = page(<KeptTabs row={{ ...noTrace, outcome: 'ok' }} plan="Solo" tab={null} />, () => undefined);
     expect(done).not.toContain('failure-sentence');
+    const empty = page(<KeptTabs row={{ ...noTrace, outcome: 'empty_message' }} plan="Solo" tab={null} />, () => undefined);
+    expect(empty).not.toContain('failure-sentence');
   });
 });
 

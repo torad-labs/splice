@@ -50,7 +50,9 @@ internal class UsageMount(
     private val economicsPayloads = EconomicsPayloads(usageHeads)
     private val perfRoutes = PerfRoutes(usageLookup)
     private val statuslineRoute = StatuslineRoute(usageLookup, config, clientVersions)
-    private val turnStatsIo = ProcessDispatchers().io()
+
+    // File scans, cache-monitor waits and folds must not occupy Netty's control request event loops.
+    private val fileIo = ProcessDispatchers().io()
 
     // V4-133 (FEATURES.md §5/§6): read at CALL time through the same BudgetSource/AlertSource
     // discipline every other console port keeps — see ConsolePorts.
@@ -64,23 +66,33 @@ internal class UsageMount(
         }
         route.get("/api/perf") {
             guard.guarded(call) {
-                ControlReplies.respond(call, perfPayloads.perfJson(ControlReplies.tail(call, DEFAULT_PERF_TAIL)))
+                val result = withContext(fileIo) {
+                    perfPayloads.perfJson(ControlReplies.tail(call, DEFAULT_PERF_TAIL))
+                }
+                ControlReplies.respond(call, result)
             }
         }
-        route.get("/api/perf/summary") { guard.guarded(call) { perfPayloads.summary(call) } }
-        route.get("/api/perf/turns") { guard.guarded(call) { perfRoutes.turns(call) } }
+        route.get("/api/perf/summary") {
+            guard.guarded(call) { withContext(fileIo) { perfPayloads.summary(call) } }
+        }
+        route.get("/api/perf/turns") {
+            guard.guarded(call) { withContext(fileIo) { perfRoutes.turns(call) } }
+        }
         route.get("/api/kept/turns") {
             guard.guarded(call) {
-                withContext(turnStatsIo) { TurnKeptRoutes(ports.turnStatistics).kept() }.send(call)
+                withContext(fileIo) { TurnKeptRoutes(ports.turnStatistics).kept() }.send(call)
             }
         }
         route.delete("/api/kept/turns") {
             guard.guarded(call) {
-                withContext(turnStatsIo) { TurnKeptRoutes(ports.turnStatistics, liveTotals).delete() }.send(call)
+                withContext(fileIo) { TurnKeptRoutes(ports.turnStatistics, liveTotals).delete() }.send(call)
             }
         }
         route.get("/api/economics") {
-            guard.guarded(call) { ControlReplies.respond(call, economicsPayloads.economicsJson()) }
+            guard.guarded(call) {
+                val result = withContext(fileIo) { economicsPayloads.economicsJson() }
+                ControlReplies.respond(call, result)
+            }
         }
         route.get("/api/budgets") { guard.guarded(call) { budgetRoutes.read(ports.budgetSpending).send(call) } }
         route.put("/api/budgets") {

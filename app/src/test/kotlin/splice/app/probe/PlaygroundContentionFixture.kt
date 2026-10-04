@@ -47,7 +47,11 @@ internal const val CONTENTION_HEAD = "synthetic-playground"
 // Phase separation needs real cold/warm reads, not the independently covered full-history scale.
 private const val PROFILE_HISTORY_REQUESTS = 256
 
-internal class PlaygroundContentionFixture(private val root: Path, scope: CoroutineScope) : AutoCloseable {
+internal class PlaygroundContentionFixture(
+    private val root: Path,
+    scope: CoroutineScope,
+    historyRequests: Int = PROFILE_HISTORY_REQUESTS,
+) : AutoCloseable {
     val samples = PlaygroundPhaseSamples()
 
     @Volatile var headerDelayMs = 0L
@@ -59,7 +63,7 @@ internal class PlaygroundContentionFixture(private val root: Path, scope: Corout
 
     @Volatile private var readReleased = CountDownLatch(1)
 
-    private val history = SyntheticPerfHistory(root).apply { create(requests = PROFILE_HISTORY_REQUESTS) }
+    private val history = SyntheticPerfHistory(root).apply { create(requests = historyRequests) }
 
     @Volatile private var source = PerfRowsFileSource(history.file)
 

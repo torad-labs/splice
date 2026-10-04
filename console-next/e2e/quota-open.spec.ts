@@ -34,8 +34,8 @@ test('each quota surface calls probe-now on open and Usage prints the retained o
     await open(page, path);
     await expect.poll(() => probes, { message: path + ' must probe quota on open' }).toBe(index + 1);
   }
-  await expect(page.getByText('5 hours · ' + observedText(observed), { exact: true })).toBeVisible();
-  await expect(page.getByText('Week · ' + observedText(observed), { exact: true })).toBeVisible();
+  await expect(page.getByText('5 hours · 25% · resets ' + observedText(observed + 3_600).slice('Observed '.length) + ' · ' + observedText(observed), { exact: true })).toBeVisible();
+  await expect(page.getByText('Week · 50% · resets ' + observedText(observed + 86_400).slice('Observed '.length) + ' · ' + observedText(observed), { exact: true })).toBeVisible();
 });
 
 test('a late pre-probe usage read cannot replace the refreshed observation', async ({ page }) => {

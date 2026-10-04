@@ -30,7 +30,11 @@ internal class CodeModeHostBoots(
         host.boot = boot
         scope.launch {
             try {
-                boot.await().afterExit { lost(host, boot) }
+                val channel = boot.await()
+                channel.afterExit {
+                    channel.death?.let { log("[code-mode] worker task died: $it; worker process retired") }
+                    lost(host, boot)
+                }
             } catch (error: CancellationException) {
                 lost(host, boot)
                 throw error

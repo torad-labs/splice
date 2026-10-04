@@ -47,7 +47,14 @@ internal class SharedWorkerChannel(
     private val closed = AtomicBoolean()
     private val cells = ConcurrentHashMap<Long, HostCellLifetime>()
     private val exited = CompletableDeferred<Unit>()
-    val isClosed: Boolean get() = closed.get()
+    private val retiring = AtomicBoolean()
+
+    /** What a task on this worker died of, by class and frame name; set before the worker is retired. */
+    @Volatile var death: String? = null
+        private set
+
+    /** A retiring worker takes no new placement or control; it closes once the cell that saw the death closes. */
+    val isClosed: Boolean get() = closed.get() || retiring.get()
 
     init {
         transport.afterExit { exited.complete(Unit) }
@@ -160,8 +167,14 @@ internal class SharedWorkerChannel(
     private fun deliver(reply: HostFrame) {
         val waiting = pending[reply.request] ?: throw IOException("Code-mode host replied for an unknown request")
         if (reply.cell != waiting.cell) throw IOException("Code-mode host replied for a different cell")
+        // A task death leaves the worker JVM untrusted. With no reply, every waiting request fails now as a lost
+        // worker and the reader closes the process. With one, the cell gets its reply first, because closing now
+        // could lose it to the cell's closing signal, and the process closes when that cell closes.
+        val died = CodeModeFatalFrame.death(reply.payload)?.also { death = it.description }
+        if (died != null) retiring.set(true)
+        val payload = died?.owed() ?: reply.payload
         pending.remove(reply.request)
-        waiting.answer.complete(reply)
+        waiting.answer.complete(reply.copy(payload = payload))
     }
 
     private fun ensureOpen() {
@@ -175,6 +188,7 @@ internal class SharedWorkerChannel(
 
     fun closeCell(id: Long, session: Long) {
         val lifetime = cells[id] ?: return
+        if (retiring.get()) return close()
         lifetime.closing.complete(Unit)
         scope.launch {
             try {

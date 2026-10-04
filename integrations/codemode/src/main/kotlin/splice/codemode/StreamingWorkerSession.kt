@@ -16,6 +16,9 @@ internal class StreamingWorkerSession(
     private val parser = CodeModeStatementParser(syntax)
     private var receivedBytes = 0L
 
+    /** The stack overflow that parsing this source raised, if any. */
+    val overflow: StackOverflowError? get() = parser.overflow
+
     fun append(text: String, complete: Boolean, error: String?) {
         receivedBytes += text.encodeToByteArray().size
         require(receivedBytes <= CodeModeWire.maxTextBytes) { "Code-mode source exceeds its text budget" }

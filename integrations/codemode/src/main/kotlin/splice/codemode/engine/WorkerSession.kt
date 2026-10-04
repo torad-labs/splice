@@ -61,6 +61,9 @@ internal class WorkerSession(
     private var pendingCalls: List<CodeModeCall> = emptyList()
     private var streaming: StreamingWorkerSession? = null
 
+    /** The stack overflow that parsing the streamed source raised, if any. */
+    val overflow: StackOverflowError? get() = streaming?.overflow
+
     fun start(start: WorkerStart): WorkerReply {
         val bridge = WorkerBridge(start.tools).also { this.bridge = it }
         scopeViolation(start)?.let { return WorkerReply(null, "", it) }

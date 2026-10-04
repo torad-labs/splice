@@ -22,6 +22,10 @@ import java.util.concurrent.ConcurrentLinkedQueue
 // why: GraalJS's parser recurses about eight frames per parenthesis; 300 levels parse, 1,000 overflow a worker thread.
 private const val OVERFLOWING_DEPTH = 3_000
 
+// why: GraalJS parses a member chain in a loop, but the worker's compiler walks the tree it builds recursively:
+// 4,000 accesses compile, 8,000 overflow it, and 20,000 trip the guest parse's own heap guard first.
+private const val OVERFLOWING_CHAIN = 8_000
+
 // why: a warm worker answers in well under a second; the stall this replaces waited 900 s for the progress timeout.
 private const val ANSWER_BOUND_MS = 5_000L
 
@@ -45,6 +49,16 @@ class CodeModeWorkerTaskDeathTest {
             val completed = step as CodeModeStep.Completed
             assertEquals("SyntaxError: program nesting too deep to parse", completed.error, completed.toString())
             assertEquals("before", completed.output)
+        }
+    }
+
+    @Test
+    fun `a program whose member chain overflows the worker's compiler ends with its own error`() = runBlocking {
+        runtime().use { runtime ->
+            val chain = "const a = {}; a.a = a; const v = " + "a.".repeat(OVERFLOWING_CHAIN) + "a;\n"
+            val step = withTimeout(ANSWER_BOUND_MS) { run(runtime, chain, "") }
+            val completed = step as CodeModeStep.Completed
+            assertEquals("SyntaxError: program nesting too deep to parse", completed.error, completed.toString())
         }
     }
 

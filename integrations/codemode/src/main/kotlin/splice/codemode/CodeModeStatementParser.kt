@@ -37,6 +37,7 @@ private data class ParsedStatements(val body: FunctionNode?, val error: String?)
 
 // why: GraalJS 25.3 uses the ES2025 grammar; the boundary parser must accept the executing isolate's syntax.
 private const val STATEMENT_ECMASCRIPT_VERSION = 2025
+private const val NESTING_TOO_DEEP = "program nesting too deep to parse"
 private val STATEMENT_GRAMMAR = ScriptEnvironment.builder()
     .ecmaScriptVersion(STATEMENT_ECMASCRIPT_VERSION).strict(true).build()
 private val CONTINUATIONS = setOf(
@@ -56,6 +57,11 @@ internal class CodeModeStatementParser(private val syntax: CodeModeStatementSynt
 
     val isComplete: Boolean get() = complete
     val hasEnded: Boolean get() = complete || failure != null
+
+    /** The stack overflow that reading the program's source raised, in its parse or its compile, if any. The source
+     *  gets it as its SyntaxError, and the worker whose thread overflowed is retired once it has replied. */
+    var overflow: StackOverflowError? = null
+        private set
 
     fun terminalError(): String? {
         failure?.let { return it }
@@ -147,8 +153,13 @@ internal class CodeModeStatementParser(private val syntax: CodeModeStatementSynt
 
     private fun parse(text: String): ParsedStatements {
         val errors = StatementErrors()
-        val body = Parser(STATEMENT_GRAMMAR, Source.sourceFor("splice-statement", text), errors)
-            .parseFunctionBody(false, true)
+        val body = try {
+            Parser(STATEMENT_GRAMMAR, Source.sourceFor("splice-statement", text), errors).parseFunctionBody(false, true)
+        } catch (failure: StackOverflowError) {
+            // GraalJS's parser recurses per nesting level; a deep program is the program's error, not the worker's.
+            overflow = failure
+            return ParsedStatements(null, NESTING_TOO_DEEP)
+        }
         val diagnostic = errors.parserException?.message?.substringBefore('\n') ?: errors.diagnostic
         val valid = !errors.hasErrors() && syntax(text)
         return if (valid) {
@@ -158,7 +169,7 @@ internal class CodeModeStatementParser(private val syntax: CodeModeStatementSynt
         }
     }
 
-    private fun program(text: String, body: FunctionNode): StatementInput.Program {
+    private fun program(text: String, body: FunctionNode): StatementInput {
         val functions = body.body.statements.filterIsInstance<VarNode>()
             .filter(VarNode::isFunctionDeclaration).map { it.name.name }.toSet()
         val bindings = body.body.symbols
@@ -173,7 +184,14 @@ internal class CodeModeStatementParser(private val syntax: CodeModeStatementSynt
                 }
                 StatementBinding(symbol.name, kind)
             }
-        return StatementInput.Program(text, bindings, CodeModeStatementCompiler(text, body).compile())
+        val compiled = try {
+            CodeModeStatementCompiler(text, body).compile()
+        } catch (failure: StackOverflowError) {
+            // The compiler walks the parsed tree recursively, so a long member or call chain overflows it.
+            overflow = failure
+            return StatementInput.Failed("SyntaxError: $NESTING_TOO_DEEP")
+        }
+        return StatementInput.Program(text, bindings, compiled)
     }
 
     /**

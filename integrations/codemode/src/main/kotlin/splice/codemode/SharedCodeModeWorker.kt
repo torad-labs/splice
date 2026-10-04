@@ -144,7 +144,7 @@ private class HostWorkerCell(private val engine: Engine, val owner: Long) : Auto
         try {
             check(!closed.get()) { "Code-mode cell is closed" }
             isRunning = true
-            step(execute(frame))
+            answer(frame)
         } catch (error: CancellationException) {
             throw error
         } catch (_: IOException) {
@@ -159,9 +159,18 @@ private class HostWorkerCell(private val engine: Engine, val owner: Long) : Auto
             }
         } catch (_: RuntimeException) {
             CodeModeFatalFrame.create(CodeModeInfrastructureCategory.HOST, CodeModeInfrastructureClass.RUNTIME)
+        } catch (failure: VirtualMachineError) {
+            // An uncaught error would end the task with no reply and leave the host waiting on this request.
+            CodeModeFatalFrame.died(failure)
         } finally {
             isRunning = false
         }
+    }
+
+    /** The reply to [frame]. One whose source parse overflowed still answers, inside the frame that retires it. */
+    private fun answer(frame: JsonObject): JsonObject {
+        val reply = step(execute(frame))
+        return session?.overflow?.let { CodeModeFatalFrame.died(it, reply) } ?: reply
     }
 
     private fun step(reply: WorkerReply): JsonObject = when {

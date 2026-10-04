@@ -148,6 +148,15 @@ describe('an account row', () => {
 });
 
 describe('a command page\'s plan windows', () => {
+  test('an aged observation keeps its figure and reset without claiming the deadline already passed', () => {
+    const now = Date.UTC(2026, 9, 5, 18, 0);
+    const at = now / 1000 + 3600;
+    const html = renderToStaticMarkup(<WindowBars windows={[{ window: '5h', pct: 12, resetsAt: at, observedAt: now / 1000 - 3600, stale: true }]} now={now} />);
+    expect(html).toContain(`Last reading 12% · resets ${localZonedInstantText(at)} · Not current`);
+    expect(html).toContain(`Observed ${localZonedInstantText(now / 1000 - 3600)}`);
+    expect(html).not.toContain('has reset');
+    expect(html).toContain('width:0%');
+  });
   test('a reset reads in the viewer\'s own zone, the clock style Accounts and Usage use', () => {
     const now = Date.UTC(2026, 9, 5, 18, 0) ;
     const at = now / 1000 + 3600;

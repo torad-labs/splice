@@ -1,7 +1,6 @@
 import { localZonedInstantText } from '../../lib/heads';
 import type { PlanWindow } from '../../lib/usage';
 import { Q } from '../../lib/words-quota';
-import { D } from './copy';
 
 const NAME = { '5h': '5 hours', '7d': 'Week' } as const;
 
@@ -14,7 +13,7 @@ export function WindowBars({ windows, now }: { windows: readonly PlanWindow[]; n
         <div key={window.window} className="gauge">
           <div className="gl">
             <span>{NAME[window.window]}</span>
-            {window.stale ? <small>{D.resetPassed}</small> : (
+            {window.stale ? <small>{Q.window(NAME[window.window], window.pct, window.resetsAt === null ? null : localZonedInstantText(window.resetsAt), false)}</small> : (
               <>
                 <b>{Math.round(window.pct)}%</b>
                 {window.resetsAt === null ? null : <small>{window.resetsAt * 1000 > now ? 'resets' : 'reset'} {localZonedInstantText(window.resetsAt)}</small>}

@@ -163,8 +163,10 @@ internal object Concentration {
     // the source-enumerated band fell from 13 to 12 in code-mode-state-complete2.
     // 2026-10-01: removing the orphan standalone worker path measured CodeModeWorker.kt at 2.64;
     // the band fell from 12 to 11 in code-mode-count-final with all provider count proofs green.
-    const val RATCHET_RECORDED = "2026-10-01"
-    const val RATCHET_MAX_HIGH = 11
+    // 2026-10-04: the account snapshot/attribution adapters raise splice.app.control's median. Unchanged
+    // McpHost.kt leaves HIGH: C 130.0, denominator 42.5 -> 44.5, ratio 3.06 -> 2.92; account packet alone is 10.
+    const val RATCHET_RECORDED = "2026-10-04"
+    const val RATCHET_MAX_HIGH = 10
 
     /** THE PACKAGE-SCALE BASELINE — the worst package's FILE COUNT. The package is named here so
      *  the diff reads without running anything, but the NAME is not gated: a different package

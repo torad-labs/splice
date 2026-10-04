@@ -44,7 +44,7 @@ function PlanRow({ plan }: { plan: PlanUsage }) {
           <div className={`track${plan.full ? ' full' : ''}`} role="img" aria-label={U.ofLimit(Math.round(plan.pct), plan.limitWindow)}><i style={{ width: `${Math.min(100, plan.pct)}%` }} /></div>
         )}
         <span>{plan.pct === null ? null : <b>{U.ofLimit(Math.round(plan.pct), plan.limitWindow)}</b>}{plan.pct === null || words.length === 0 ? '' : ' · '}{words.join(' · ')}</span>
-        {plan.observations?.map(window => <small key={window.window}>{window.window === '5h' ? '5 hours' : 'Week'} · {Q.observed(window.observedAt === null ? null : localZonedInstantText(window.observedAt))}</small>)}
+        {plan.observations?.map(window => <small key={window.window}>{Q.window(window.window === '5h' ? '5 hours' : 'Week', window.pct, window.resetsAt === null ? null : localZonedInstantText(window.resetsAt), !window.stale)} · {Q.observed(window.observedAt === null ? null : localZonedInstantText(window.observedAt))}</small>)}
       </div>
       <div className="tok">{plan.requestState === 'loading' ? <span role="status">{U.readingRequests}</span> : plan.turns === null ? <span>{U.requestsUnavailable}</span> : plan.turns === 0 ? <span>{U.idle}</span> : <><strong>{plan.partial && plan.inTokens !== null ? B.atLeast(tokensText(plan.inTokens)) : tokensText(plan.inTokens)}</strong>{U.readIn}</>}{plan.requestReason === undefined ? null : <small>{plan.requestReason}</small>}</div>
       {plan.spark.length === 0 ? <span className="hint">{plan.hourlyReason ?? B.unknown}</span> : <Spark values={plan.spark} />}

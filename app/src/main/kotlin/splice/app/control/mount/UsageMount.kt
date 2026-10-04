@@ -9,6 +9,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import kotlinx.coroutines.withContext
+import splice.accounts.claude.ClaudeLoginPlacesSource
 import splice.app.control.ConsolePorts
 import splice.app.control.ManagedHead
 import splice.app.control.UsageHeadAdapter
@@ -43,7 +44,7 @@ internal class UsageMount(
     private val liveTotals = heads.mapNotNull { (key, managed) ->
         (managed.perf as? PerfStatsSource)?.sessionTotals?.let { key to it }
     }.toMap()
-    private val usageHeads = UsageHeadAdapter.heads(heads)
+    private val usageHeads = UsageHeadAdapter.heads(heads, ClaudeLoginPlacesSource { ports.claudeLogins })
     private val usageLookup = UsageHeadAdapter.lookup(resolver)
     private val usagePayloads = UsagePayloads(usageHeads, config)
     private val perfPayloads = PerfPayloads(usageHeads)

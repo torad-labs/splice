@@ -5,7 +5,7 @@
 // days out). Pinned here: the reset reads `in 3d 0h`, the window is the plan window the instant belongs
 // to or no window word at all, and the header sources keep the 5h token window they always named.
 import { describe, expect, test } from 'vitest';
-import { headWindow, nearestWindow } from '../src/lib/usage';
+import { headWindow, nearestWindow, planWindows } from '../src/lib/usage';
 import { limitText, nearestLimit } from '../src/lib/nearest-limit';
 import type { HeadUsage, UsagePayload, UsageWarn } from '../src/types/core';
 
@@ -48,6 +48,22 @@ describe('a head whose own warn is provider_reset', () => {
     const nearest = nearestWindow(usageOf({ warn: outFor3Days, quota: weekly }), null, NOW_MS);
     expect(nearest).toEqual({ head: 'grok', account: null, window: '7d', pct: 100, reset: 'in 3d 0h', resetsAt: NOW_S + 3 * 86_400 });
   });
+});
+
+test('a retained noncurrent quota is visible but cannot become the nearest limit', () => {
+  const reading = usageOf({ warn: { level: 'ok', pct: 0, source: 'none', reset: null }, quota: { five_hour: { used_pct: 99, resets_at: NOW_S + 3600, observed_at: NOW_S - 3600, current: false } } });
+  expect(planWindows(reading.heads[0]?.usage ?? null, NOW_MS)).toMatchObject([{ pct: 99, stale: true }]);
+  expect(nearestWindow(reading, null, NOW_MS)).toBeNull();
+});
+
+test('a cached current flag ages out while retaining its figures, reset and observation time', () => {
+  const reading = usageOf({ warn: { level: 'ok', pct: 0, source: 'none', reset: null }, quota: { five_hour: { used_pct: 99, resets_at: NOW_S + 3600, observed_at: NOW_S, current: true } } });
+  const later = NOW_MS + 901000;
+  expect(nearestWindow(reading, null, NOW_MS + 900000)?.pct).toBe(99);
+  expect(nearestWindow(reading, null, NOW_MS + 900999)?.pct).toBe(99);
+  expect(planWindows(reading.heads[0]?.usage ?? null, later)).toMatchObject([{ pct: 99, resetsAt: NOW_S + 3600, observedAt: NOW_S, stale: true }]);
+  expect(nearestWindow(reading, null, later)).toBeNull();
+  expect(headWindow(reading, 'grok', later)).toEqual({ pct: null, level: 'none', reset: null });
 });
 
 describe('the header sources keep the window they always named', () => {

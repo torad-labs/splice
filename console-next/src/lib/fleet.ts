@@ -12,6 +12,7 @@ import { poolOf, selectedExcluded } from './accounts';
 import { planLevel, planWindows, rateLimitAge } from './usage';
 import { countWord, noun, timeAgo } from './format';
 import { FL } from './words-fleet';
+import { Q } from './words-quota';
 
 /** Where a plan stands, in the few ways the page's one sentence counts them. */
 export type FleetStanding = 'ready' | 'quota' | 'signed-out' | 'off' | 'other';
@@ -76,6 +77,7 @@ function accountLine(pool: readonly AccountRow[], kind: string): string {
   if (providerFamily(kind) === 'local') return '';
   if (pool.length > 1) return `Pool · ${pool.length} accounts`;
   const only = pool[0];
+  if (only?.account?.email != null && only.account.email !== '') return only.account.email;
   if (only?.label != null && only.label !== '') return only.label;
   // The hashed account id the daemon also reports is a code, never printed: the plan the provider names is what a person knows the login by.
   const plan = only?.plan?.trim() ?? '';
@@ -96,7 +98,7 @@ function noWindowText(kind: string, keys: KeysPayload | null, usage: UsagePayloa
     return entry?.ratelimit == null ? FL.noReading : null;
   }
   const when = last.observedAt === null ? 'before its reset' : timeAgo(last.observedAt * 1000, now);
-  return FL.lastReading(when, Math.round(last.pct), WINDOW_NAME[last.window]);
+  return FL.lastReading(when, Math.round(last.pct), WINDOW_NAME[last.window], last.resetsAt !== null && last.resetsAt * 1000 <= now);
 }
 
 function tightest(head: HeadStatus, usage: UsagePayload | null, now: number): Extract<FleetLine, { kind: 'gauge' }> | null {
@@ -135,7 +137,10 @@ export function fleetCard(head: HeadStatus, inputs: FleetInputs): FleetCard {
   const count = sessions.get(head.key) ?? 0;
   const said = new Set<string>();
   const kind = kindOf(head, inputs.family);
-  const meta = [familyName(kind), accountLine(pool, kind), `${count === 0 ? 'no' : count} ${noun(count, 'session', 'sessions')}`].filter((part) => {
+  const entry = usage?.heads.find((row) => row.key === head.key)?.usage ?? null;
+  const otherWindows = planWindows(entry, now).filter(window => WINDOW_NAME[window.window] !== gauge?.name).map(window =>
+    `${Q.window(WINDOW_NAME[window.window], window.pct, window.resetsAt === null ? null : localZonedInstantText(window.resetsAt), !window.stale)} · ${Q.observed(window.observedAt === null ? null : localZonedInstantText(window.observedAt))}`);
+  const meta = [familyName(kind), accountLine(pool, kind), ...otherWindows, `${count === 0 ? 'no' : count} ${noun(count, 'session', 'sessions')}`].filter((part) => {
     const key = part.toLowerCase();
     if (part === '' || said.has(key)) return false;
     said.add(key);

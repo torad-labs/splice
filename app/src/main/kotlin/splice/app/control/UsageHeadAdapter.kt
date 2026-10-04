@@ -2,6 +2,7 @@
 // usage routes read their head facts without importing ManagedHead or any other control-plane record.
 package splice.app.control
 
+import splice.accounts.claude.ClaudeLoginPlacesSource
 import splice.app.control.api.HeadResolver
 import splice.core.auth.CLIENT_AUTH_KIND
 import splice.usage.UsageHead
@@ -10,8 +11,14 @@ import splice.usage.UsageHeads
 
 internal object UsageHeadAdapter {
     /** Adapted per call, never captured: a head's label follows a runtime rename (DR-22a). */
-    fun heads(heads: Map<String, ManagedHead>): UsageHeads = object : UsageHeads {
-        override fun all(): List<UsageHead> = heads.values.map(::adapt)
+    fun heads(
+        heads: Map<String, ManagedHead>,
+        native: ClaudeLoginPlacesSource = ClaudeLoginPlacesSource { null },
+    ): UsageHeads = object : UsageHeads {
+        override fun all(): List<UsageHead> = heads.values.map { head ->
+            val adapted = adapt(head)
+            if (head.authKind == CLIENT_AUTH_KIND) adapted.copy(usage = NativeUsageSource(head, native)) else adapted
+        }
 
         override fun providerResetForMs(key: String): Long = heads[key]?.head?.providerResetForMs() ?: 0L
     }
@@ -27,7 +34,7 @@ internal object UsageHeadAdapter {
         warnPct = head.warnPct,
         warnTokens5h = head.warnTokens5h,
         perf = head.perf,
-        perfRows = head.perfRows,
+        perfRows = head.perfRows?.let { if (head.authKind == CLIENT_AUTH_KIND) NativeAccountRows(it) else it },
         economics = head.economics,
         catalog = head.catalog,
         clientWindows = head.clientWindows,

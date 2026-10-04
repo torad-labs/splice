@@ -61,6 +61,14 @@ describe('the rows', () => {
     expect(rows([])[0]?.servedBy).toEqual({ kind: 'unreported' });
   });
 
+  test('two native places name their one proved account without a selected flag', () => {
+    const native = login('claudex', { kind: 'client', label: 'Native place', account: { uuid: 'synthetic-subscription', email: 'proved@example.invalid' } });
+    const wrapped = { ...native, label: 'Separate place' };
+    expect(rows([native, wrapped])[0]?.servedBy).toEqual({ kind: 'login', name: 'proved@example.invalid', plan: null, others: 0 });
+    expect(rows([native, { ...wrapped, account: { uuid: 'other-subscription', email: 'proved@example.invalid' } }])[0]?.servedBy).toEqual({ kind: 'unreported' });
+    expect(rows([{ ...native, account: null }, { ...wrapped, account: null }])[0]?.servedBy).toEqual({ kind: 'unreported' });
+  });
+
   test('an undeclared price stays null, a declared zero is zero, and a long-context tier is kept', () => {
     const [sol, , free, pro] = rows();
     expect([sol?.input, sol?.output]).toEqual([null, null]);

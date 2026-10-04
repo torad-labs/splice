@@ -20,8 +20,8 @@ export interface PlanWindow {
   resetsAt: number | null;
   /** When splice read the figure, epoch SECONDS; null where the daemon does not say. */
   observedAt: number | null;
-  /** The window's reset time has passed since the reading, so the figure describes a window that
-   *  no longer exists. It is not a candidate for "nearest"; the page says it reset instead. */
+  /** The daemon says the reading is not current, or its reset has passed. Retained figures remain
+   *  visible with their observation time but cannot be candidates for "nearest". */
   stale: boolean;
 }
 
@@ -38,7 +38,7 @@ export function planWindows(usage: HeadUsage | null, nowMs: number): PlanWindow[
       pct: entry.used_pct,
       resetsAt,
       observedAt: entry.observed_at ?? null,
-      stale: resetsAt !== null && resetsAt * 1000 <= nowMs,
+      stale: entry.current === false || (entry.observed_at != null && Math.floor(nowMs / 1000) - entry.observed_at > 15 * 60) || (resetsAt !== null && resetsAt * 1000 <= nowMs),
     });
   };
   add('5h', quota.five_hour);

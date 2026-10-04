@@ -146,6 +146,8 @@ export interface QuotaWindow {
   used_pct: number;
   resets_at: number | null;
   observed_at?: number | null;
+  /** False retains an old observation without claiming it governs the plan now. */
+  current?: boolean;
 }
 
 /** The head's plan windows (QuotaView): absent when the head tracks none. */

@@ -6,10 +6,10 @@
 // writes nothing into `~/.claude` (V4-445): it swaps one link. The daemon reads the link every time, so a shim removed by hand reads as separate.
 export type ClaudeHeadMode = 'separate' | 'wrapped';
 
-/** The stored Claude logins: what stands in for account rows on a head that signs in by the client. */
+/** Saved login copies and their selection marker, distinct from the live identities on Accounts. */
 export interface ClaudeLoginsCard {
   count: number;
-  /** The label a session would launch with; null when nothing is selected or the marker names a removed label. */
+  /** The label last saved or switched to; launches use the live login, never restore this copy. */
   selected: string | null;
   labels: string[];
   /** The daemon's own sentence about one login per head. */

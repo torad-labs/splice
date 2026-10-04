@@ -6,6 +6,7 @@ import type { AccountRow } from '../types/accounts';
 import type { HeadStatus } from '../types/core';
 import type { HeadCatalog } from '../types/models';
 import { kindOf } from './fleet';
+import { poolOf } from './accounts';
 
 /** Who pays for a command's tokens: a stored key, the operator's own machine, or a login. */
 export type ServedBy =
@@ -88,7 +89,7 @@ function servedBy(head: HeadStatus, family: string | null, accounts: readonly Ac
   const kind = kindOf(head, family);
   if (kind === 'local') return { kind: 'local' };
   if (kind === 'api-key') return { kind: 'key' };
-  const pool = accounts.filter((account) => account.kind !== 'api-key' && account.heads.includes(head.key));
+  const pool = poolOf(accounts, head.key);
   const serving = pool.find((account) => account.selected === true) ?? (pool.length === 1 ? pool[0] : undefined);
   if (serving === undefined) return { kind: 'unreported' };
   if (!serving.credential_present) return { kind: 'signedOut' };

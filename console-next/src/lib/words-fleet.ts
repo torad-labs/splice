@@ -11,7 +11,7 @@ export const FL = {
   payPerToken: 'Pays per token; no window',
   noReading: 'No reading yet',
   rateLimitReading: (age: string): string => `Last rate-limit reading ${age}`,
-  lastReading: (age: string, pct: number, window: string): string => `Last reading ${age}: ${pct}% of ${window}, which has reset since`,
+  lastReading: (age: string, pct: number, window: string, resetPassed: boolean): string => `Last reading ${age}: ${pct}% of ${window}, ${resetPassed ? 'which has reset since' : 'not current'}`,
   plans: (label: string, groups: string): string => `${label}${groups === '' ? '' : `: ${groups}`}.`,
   onePlan: 'One command',
   manyPlans: 'commands',

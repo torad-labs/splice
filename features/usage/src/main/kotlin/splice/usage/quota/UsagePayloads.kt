@@ -20,6 +20,7 @@ import splice.core.usage.RateLimitState
 import splice.core.usage.UsageWarn
 import splice.core.usage.UsageWarnPolicy
 import splice.core.util.WallClock
+import splice.usage.UsageHead
 import splice.usage.UsageHeads
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -64,7 +65,7 @@ public class UsagePayloads(
                 heads.all().forEach { m ->
                     val usage = m.usage.snapshot()
                     val pool = m.accountPool?.view(null)
-                    val selectedQuota = current(pool?.selectedQuota(), nowSeconds) ?: current(usage.quota, nowSeconds)
+                    val selectedQuota = quotaFor(m, pool?.selectedQuota(), usage.quota, nowSeconds)
                     val rlView = usage.ratelimit
                     val rl = rlView?.currentAt(nowSeconds)?.let {
                         RateLimitState(it.limitTokens, it.remainingTokens, it.resetTokens)
@@ -79,7 +80,7 @@ public class UsagePayloads(
                         putJsonObject("usage") {
                             put("output_tokens_5h", usage.outputTokens5h)
                             put("entries", usage.entries)
-                            selectedQuota?.let { q -> quota(this, q) }
+                            quota(this, m, usage.quota, selectedQuota, nowSeconds)
                             if (rlView != null) {
                                 putJsonObject("ratelimit") {
                                     put("limit_tokens", rlView.limitTokens)
@@ -122,21 +123,37 @@ public class UsagePayloads(
         return if (fiveHour == null && sevenDay == null) null else QuotaView(fiveHour, sevenDay, quota.plan)
     }
 
-    /** The head's tracked plan windows (see QuotaTracker): `{plan, five_hour, seven_day}`. */
-    private fun quota(into: JsonObjectBuilder, q: QuotaView) {
+    /** Native snapshots are already identity-joined; an absent one must never borrow a head aggregate. */
+    private fun quotaFor(head: UsageHead, pooled: QuotaView?, tracked: QuotaView?, nowSeconds: Long): QuotaView? =
+        if (head.anthropicUpstream) {
+            current(tracked, nowSeconds)
+        } else {
+            current(pooled, nowSeconds) ?: current(tracked, nowSeconds)
+        }
+
+    /** Retain native observations for display while only current windows contribute to warn. */
+    private fun quota(
+        into: JsonObjectBuilder,
+        head: UsageHead,
+        tracked: QuotaView?,
+        selected: QuotaView?,
+        nowSeconds: Long,
+    ) {
+        val q = (if (head.anthropicUpstream) tracked else selected) ?: return
         into.putJsonObject("quota") {
             q.plan?.let { put("plan", it) }
-            q.fiveHour?.let { w -> window(this, "five_hour", w) }
-            q.sevenDay?.let { w -> window(this, "seven_day", w) }
+            q.fiveHour?.let { w -> window(this, "five_hour", w, nowSeconds) }
+            q.sevenDay?.let { w -> window(this, "seven_day", w, nowSeconds) }
         }
     }
 
-    /** `{used_pct, resets_at, observed_at}`: both instants epoch SECONDS, each null when unknown. */
-    private fun window(into: JsonObjectBuilder, name: String, w: QuotaWindowView) {
+    /** Retained figures carry currentness; both instants are epoch SECONDS. */
+    private fun window(into: JsonObjectBuilder, name: String, w: QuotaWindowView, nowSeconds: Long) {
         into.putJsonObject(name) {
             put("used_pct", w.usedPct)
             put("resets_at", w.resetsAt)
             put(OBSERVED_AT, w.observedAt)
+            put("current", w.currentAt(nowSeconds) != null)
         }
     }
 }

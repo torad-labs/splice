@@ -89,13 +89,25 @@ describe('a fleet card', () => {
     const wrapped = { ...native, label: 'Wrapped alias', login_place: { id: 'claude-splice' as const, command: 'synthetic-wrapped' } };
     const card = fleetCard(head({ key: 'synthetic-head', authKind: 'client' }), inputs({ accounts: [native, wrapped], usage: null, family: 'anthropic' }));
     expect(card.meta).not.toContain('Pool · 2 accounts');
-    expect(card.meta).toContain('Primary alias');
+    expect(card.meta).toContain('synthetic@example.invalid');
+    expect(card.meta).not.toContain('Primary alias');
   });
   test('matching display email without matching account identity still counts as two accounts', () => {
     const first = account({ account: { uuid: 'synthetic-one', email: 'same@example.invalid' } });
     const second = account({ label: 'Second', account: { uuid: 'synthetic-two', email: 'same@example.invalid' } });
     expect(fleetCard(head(), inputs({ accounts: [first, second] })).meta).toContain('Pool · 2 accounts');
   });
+  test('a weekly gauge still reports the five-hour percentage and reset beside it', () => {
+    const reading = usage(12);
+    const quota = reading.heads[0]?.usage?.quota;
+    if (quota === undefined) throw new Error('synthetic quota missing');
+    quota.seven_day = { used_pct: 65, resets_at: NOW / 1000 + 86400 };
+    const card = fleetCard(head(), inputs({ usage: reading }));
+    expect(card.line).toMatchObject({ kind: 'gauge', name: 'Week', pct: 65 });
+    expect(card.meta).toContain(`5 hours · 12% · resets ${localZonedInstantText(NOW / 1000 + 3600)} · Observation time not reported`);
+    expect(card.meta.at(-1)).toBe('2 sessions');
+  });
+
   test('a head near its warn share says so, without needing a person', () => {
     const card = fleetCard(head(), inputs({ usage: usage(90) }));
     expect(card).toMatchObject({ state: 'Ready', standing: 'ready', tone: 'work', attention: false });
@@ -156,6 +168,18 @@ describe('a fleet card', () => {
     const card = fleetCard(head(), inputs({ usage: usage(99, NOW / 1000 - 60) }));
     expect(card.line).toBeNull();
   });
+  test('an aged reading before its reset stays visible and is not called reset or current', () => {
+    const reading = usage(41);
+    const window = reading.heads[0]?.usage?.quota?.five_hour;
+    if (window === undefined) throw new Error('synthetic quota missing');
+    window.observed_at = NOW / 1000 - 3600;
+    window.current = false;
+    const card = fleetCard(head(), inputs({ usage: reading }));
+    expect(card.line).toBeNull();
+    expect(card.none).toBe('Last reading 1h ago: 41% of 5 hours, not current');
+    expect(card.meta).toContain(`5 hours · Last reading 41% · resets ${localZonedInstantText(NOW / 1000 + 3600)} · Not current · Observed ${localZonedInstantText(NOW / 1000 - 3600)}`);
+  });
+
   test('a fact already said is not said twice', () => {
     expect(fleetCard(head({ authKind: 'api-key' }), inputs({ usage: null })).meta).toEqual(['api key', '2 sessions']);
   });

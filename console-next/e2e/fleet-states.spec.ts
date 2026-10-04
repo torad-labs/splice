@@ -116,7 +116,7 @@ test('a full reading stays Ready in command colour, reads as usage, and still se
     delete marked.quotaResetAtEpochSeconds;
     await route.fulfill({ response, json: body });
   });
-  await page.route((url) => url.pathname === '/api/usage', async (route) => {
+  await page.route((url) => url.pathname === '/api/usage' || url.pathname === '/api/usage/probe', async (route) => {
     const response = await route.fetch();
     const body = await response.json() as UsagePayload;
     const marked = body.heads.find((head) => head.key === STACK.oauthHead);

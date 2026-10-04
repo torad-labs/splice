@@ -57,7 +57,7 @@ test('a near-limit notice leads through the spare plan to exact cross-plan resum
   await page.route('**/api/accounts', (route) => route.fulfill({ json: { accounts: [
     account('synthetic-near', 99, STACK.oauthHead), account('synthetic-spare', 20, STACK.soloHead),
   ] } }));
-  await page.route('**/api/usage', async (route) => {
+  await page.route((url) => url.pathname === '/api/usage' || url.pathname === '/api/usage/probe', async (route) => {
     const response = await route.fetch();
     const body = await response.json() as UsagePayload;
     for (const [head, pct] of [[STACK.oauthHead, 99], [STACK.soloHead, 20]] as const) {

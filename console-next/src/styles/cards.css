@@ -15,6 +15,7 @@
 .card.dragging .card-link::after { cursor: grabbing; }
 /* A reading wears the command's colour; only a held refusal wears the quota red and hatch. */
 .gauge { display: grid; gap: var(--space-5); }
+.gauge > small { font: 400 var(--text-1)/1.5 var(--mono); color: var(--glass-dim); }
 .gauge .gl { display: flex; align-items: baseline; gap: var(--space-5); font: 500 0.8125rem var(--mono); }
 .gauge .gl span, .gauge .gl b { color: var(--glass-ink); font-weight: 600; }
 .gauge .gl small { margin-left: auto; font: 400 0.8125rem var(--mono); color: var(--glass-dim); }

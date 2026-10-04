@@ -18,6 +18,49 @@ describe('folding a transcript', () => {
     expect(items[0]).toMatchObject({ tool: 'Read', output: 'file body' });
     expect(items[1]).toMatchObject({ tool: 'Bash', output: null });
   });
+  test('parallel calls of one tool keep their own results when those results arrive in either order', () => {
+    for (const results of [[0, 1], [1, 0]]) {
+      const items = foldTranscript([
+        { ...call(0, 'Read', { file_path: '/synthetic/first' }), tool_use_id: 'first' },
+        { ...call(1, 'Read', { file_path: '/synthetic/second' }), tool_use_id: 'second' },
+        ...results.map((id, index) => ({ ...result(index + 2, 'Read', id === 0 ? 'first body' : 'second body'), tool_use_id: id === 0 ? 'first' : 'second' })),
+      ]);
+      expect(items).toHaveLength(2);
+      expect(items[0]).toMatchObject({ input: { file_path: '/synthetic/first' }, output: 'first body' });
+      expect(items[1]).toMatchObject({ input: { file_path: '/synthetic/second' }, output: 'second body' });
+    }
+  });
+  test('identity wins over a missing or different display name', () => {
+    const items = foldTranscript([
+      { ...call(0, 'Read', { file_path: '/synthetic/first' }), tool_use_id: 'first' },
+      { ...say(1, 'tool', 'first body'), result: true, tool_use_id: 'first' },
+    ]);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ tool: 'Read', output: 'first body' });
+  });
+  test('an identified orphan never answers another same-name call and an unnamed orphan stays readable', () => {
+    const items = foldTranscript([
+      { ...call(0, 'Read', { file_path: '/synthetic/current' }), tool_use_id: 'current' },
+      { ...result(1, 'Read', 'earlier body'), tool_use_id: 'earlier' },
+      { ...say(2, 'tool', 'unnamed body'), result: true, tool_use_id: 'unseen' },
+    ]);
+    expect(items).toHaveLength(3);
+    expect(items[0]).toMatchObject({ output: null });
+    expect(items[1]).toMatchObject({ output: 'earlier body', input: null });
+    expect(items[2]).toMatchObject({ output: 'unnamed body', input: null });
+  });
+  test('legacy results join only an unambiguous legacy call, never an identified call', () => {
+    const items = foldTranscript([
+      { ...call(0, 'Read', { file_path: '/synthetic/identified' }), tool_use_id: 'known' },
+      call(1, 'Read', { file_path: '/synthetic/legacy' }),
+      result(2, 'Read', 'legacy body'),
+    ]);
+    expect(items[0]).toMatchObject({ output: null });
+    expect(items[1]).toMatchObject({ output: 'legacy body' });
+    const ambiguous = foldTranscript([call(0, 'Read', {}), call(1, 'Read', {}), result(2, 'Read', 'unattributed')]);
+    expect(ambiguous).toHaveLength(3);
+    expect(ambiguous.slice(0, 2)).toMatchObject([{ output: null }, { output: null }]);
+  });
   test('a result whose call was on an earlier page is kept as an item, not dropped', () => {
     const items = foldTranscript([result(9, 'Bash', 'late')]);
     expect(items).toHaveLength(1);

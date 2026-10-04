@@ -26,11 +26,11 @@ function parseInput(text: string): unknown {
   }
 }
 
-/** Fold a transcript page into items, oldest first. A result joins the newest still-open call of the same
- *  tool; a result with no call to join (its call was on an earlier page) is an item of its own, never lost. */
+/** Fold a transcript page into items, oldest first. Results join by the client's tool-use identity.
+ *  Older idless messages join only one unambiguous idless call; orphan results remain readable. */
 export function foldTranscript(messages: readonly TranscriptMessage[]): Item[] {
   const items: Item[] = [];
-  const open: Extract<Item, { kind: 'tool' }>[] = [];
+  const open: { id: string | undefined; call: Extract<Item, { kind: 'tool' }> }[] = [];
   for (const message of messages) {
     const ts = message.ts ?? null;
     if (message.tool !== undefined && message.result !== true) {
@@ -38,21 +38,25 @@ export function foldTranscript(messages: readonly TranscriptMessage[]): Item[] {
         kind: 'tool', index: message.index, ts, tool: message.tool, input: parseInput(message.text), inputText: message.text, output: null, last: false,
       };
       items.push(call);
-      open.push(call);
+      open.push({ id: message.tool_use_id, call });
       continue;
     }
-    if (message.tool !== undefined) {
-      const at = open.findLastIndex((call) => call.tool === message.tool);
-      const call = at === -1 ? undefined : open[at];
+    if (message.result === true || message.role === 'tool') {
+      const candidates = open.flatMap((entry, index) => (
+        message.tool_use_id !== undefined
+          ? entry.id === message.tool_use_id
+          : entry.id === undefined && entry.call.tool === message.tool
+      ) ? [index] : []);
+      const at = candidates.length === 1 ? candidates[0] ?? -1 : -1;
+      const call = at === -1 ? undefined : open[at]?.call;
       if (call !== undefined) {
         call.output = message.text;
         open.splice(at, 1);
       } else {
-        items.push({ kind: 'tool', index: message.index, ts, tool: message.tool, input: null, inputText: '', output: message.text, last: false });
+        items.push({ kind: 'tool', index: message.index, ts, tool: message.tool ?? 'Tool', input: null, inputText: '', output: message.text, last: false });
       }
       continue;
     }
-    if (message.role === 'tool') continue;
     const cleaned = cleanMessage(message.text);
     if (cleaned.kind === 'hidden') continue;
     if (cleaned.kind === 'peer') {

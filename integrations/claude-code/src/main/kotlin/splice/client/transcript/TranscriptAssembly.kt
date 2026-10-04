@@ -97,8 +97,9 @@ internal class PageAssembly(
 
     private fun call(block: JsonObject, into: PendingAssistant) {
         val name = JsonScalars.str(block, "name") ?: "tool"
-        JsonScalars.str(block, "id")?.let { toolNames[it] = name }
-        into.calls += name to (block["input"]?.toString() ?: "{}")
+        val id = JsonScalars.str(block, "id")
+        id?.let { toolNames[it] = name }
+        into.calls += RecordedCall(id, name, block["input"]?.toString() ?: "{}")
     }
 
     private fun user(record: JsonObject, message: JsonObject, ts: Long?): Boolean {
@@ -116,8 +117,15 @@ internal class PageAssembly(
     private fun userBlock(block: JsonObject, speaker: TranscriptRole, ts: Long?) {
         when (JsonScalars.str(block, "type")) {
             "tool_result" -> {
-                val name = JsonScalars.str(block, "tool_use_id")?.let(toolNames::get)
-                emit(TranscriptRole.TOOL, ts, records.resultText(block[CONTENT]), tool = name, result = true)
+                val id = JsonScalars.str(block, "tool_use_id")
+                emit(
+                    TranscriptRole.TOOL,
+                    ts,
+                    records.resultText(block[CONTENT]),
+                    tool = id?.let(toolNames::get),
+                    result = true,
+                    toolUseId = id,
+                )
             }
             "text" -> JsonScalars.str(block, "text")?.let { emit(speaker, ts, it) }
             else -> count("user:${JsonScalars.str(block, "type") ?: "block"}")
@@ -147,15 +155,16 @@ internal class PageAssembly(
         if (done.texts.isNotEmpty()) {
             emit(TranscriptRole.ASSISTANT, done.ts, done.joined(), messageId = done.id, from = done.at)
         }
-        for ((name, input) in done.calls) {
+        for (call in done.calls) {
             emit(
                 TranscriptRole.ASSISTANT,
                 done.ts,
-                input,
-                tool = name,
+                call.input,
+                tool = call.name,
                 result = false,
                 messageId = done.id,
                 from = done.at,
+                toolUseId = call.id,
             )
         }
     }
@@ -168,9 +177,10 @@ internal class PageAssembly(
         result: Boolean? = null,
         messageId: String? = null,
         from: Long = at,
+        toolUseId: String? = null,
     ) {
         val index = if (byOffset) offsets.indexOf(from) else nextIndex
-        messages += TranscriptMessage(index, role, ts, redaction.shown(text), tool, result, messageId)
+        messages += TranscriptMessage(index, role, ts, redaction.shown(text), tool, result, messageId, toolUseId)
         nextIndex += 1
     }
 
@@ -179,9 +189,11 @@ internal class PageAssembly(
         return true
     }
 
+    private data class RecordedCall(val id: String?, val name: String, val input: String)
+
     private class PendingAssistant(val id: String?, val ts: Long?, val at: Long) {
         val texts = mutableListOf<String>()
-        val calls = mutableListOf<Pair<String, String>>()
+        val calls = mutableListOf<RecordedCall>()
 
         /** The message's text blocks as one text, in the order the client wrote them. */
         fun joined(): String = texts.joinToString("\n\n")

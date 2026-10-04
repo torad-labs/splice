@@ -76,8 +76,17 @@ class TranscriptReaderTest {
                     "Read",
                     false,
                     messageId = "msg_1",
+                    toolUseId = "toolu_1",
                 ),
-                TranscriptMessage(3, TranscriptRole.TOOL, TS_MS, "api_key = [redacted]", "Read", true),
+                TranscriptMessage(
+                    3,
+                    TranscriptRole.TOOL,
+                    TS_MS,
+                    "api_key = [redacted]",
+                    "Read",
+                    true,
+                    toolUseId = "toolu_1",
+                ),
                 TranscriptMessage(4, TranscriptRole.SYSTEM, null, "<command-name>/model</command-name>"),
                 TranscriptMessage(5, TranscriptRole.SYSTEM, null, "API error: overloaded_error"),
                 TranscriptMessage(6, TranscriptRole.ASSISTANT, null, "Done.", messageId = "msg_2"),
@@ -104,6 +113,35 @@ class TranscriptReaderTest {
         val rest = generateSequence(second) { page -> page.next?.let { found(reader.page(ID, roots, it, 2)) } }.toList()
         assertEquals((0L..6L).toList(), (first.messages + rest.flatMap { it.messages }).map { it.index })
         assertEquals(4, rest.sumOf { it.skipped.values.sum() } + first.skipped.values.sum(), "each skip counted once")
+    }
+
+    @Test
+    fun `tool ids survive forward pages newest pages and indexed response context`() {
+        val root = home.resolve(".claude")
+        val lines = listOf(
+            """{"type":"assistant","message":{"id":"calls","content":[{"type":"tool_use","id":"first","name":"Read","input":{"file_path":"/synthetic/first"}},{"type":"tool_use","id":"second","name":"Read","input":{"file_path":"/synthetic/second"}}]}}""",
+            """{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"first","content":"first body"},{"type":"tool_result","tool_use_id":"second","content":"second body"}]}}""",
+            """{"type":"assistant","message":{"id":"answer","content":[{"type":"text","text":"done"}]}}""",
+        )
+        transcript(root, lines)
+        val reader = TranscriptReader()
+        val roots = listOf(root)
+        val first = found(reader.page(ID, roots, null, 1))
+        assertEquals(listOf("first", "second"), first.messages.map { it.toolUseId })
+        val results = found(reader.page(ID, roots, first.next, 100)).messages
+        assertEquals(listOf("first", "second"), results.filter { it.result == true }.map { it.toolUseId })
+        assertTrue(
+            results.filter { it.result == true }.all { it.tool == null },
+            "ids survive without a call on this page",
+        )
+        val whole = found(reader.page(ID, roots, null, 100)).messages
+        val newest = found(reader.pageBefore(ID, roots, null, 100)).messages
+        assertEquals(whole.map { it.toolUseId }, newest.map { it.toolUseId })
+        val selected = reader.response(ID, roots, "answer", 100) { true }
+        assertTrue(selected is splice.sessions.transcript.MessageConversation.Found)
+        selected as splice.sessions.transcript.MessageConversation.Found
+        assertEquals(whole.map { it.toolUseId }, selected.messages.map { it.toolUseId })
+        assertEquals(0L, selected.earlier)
     }
 
     @Test

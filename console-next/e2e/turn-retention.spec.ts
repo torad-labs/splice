@@ -85,6 +85,43 @@ test('a failed request listed in the day opens even after more than a detail tai
   expect(faults.pageErrors).toEqual([]);
 });
 
+test('parallel same-name tool results stay paired in request detail and the session transcript', async ({ page }) => {
+  const messages = [
+    { index: 0, role: 'assistant', text: JSON.stringify({ file_path: '/synthetic/first.txt' }), tool: 'Read', result: false, tool_use_id: 'first' },
+    { index: 1, role: 'assistant', text: JSON.stringify({ file_path: '/synthetic/second.txt' }), tool: 'Read', result: false, tool_use_id: 'second' },
+    { index: 2, role: 'tool', text: 'first body', result: true, tool_use_id: 'first' },
+    { index: 3, role: 'tool', text: 'second body', result: true, tool_use_id: 'second' },
+  ];
+  const faults = await open(page, 'requests');
+  const responseId = await driveOneTurn(Number(env('CONSOLE_E2E_SOLO_PORT')), env('CONSOLE_E2E_KEY'), STACK.sender.id, STACK.soloModel);
+  const at = await newest(page, STACK.soloHead);
+  await page.route('**/api/heads/' + STACK.soloHead + '/conversation?*', route => route.fulfill({ json: {
+    state: 'found', session_id: STACK.sender.id, response_message_id: responseId, earlier: 0,
+    messages: messages.map(message => ({ ...message, selected: message.role === 'assistant' })),
+  } }));
+  await page.route(url => url.pathname === '/api/sessions/' + STACK.sender.id + '/transcript', route => route.fulfill({ json: {
+    session_id: STACK.sender.id, path: '/synthetic/transcript.jsonl', messages, next: null, earlier: null,
+    unparseable_lines: 0, sidechain_records: 0, skipped_records: {},
+  } }));
+  const paired = async (): Promise<void> => {
+    const tools = page.locator('main details.tool');
+    await expect(tools).toHaveCount(2);
+    for (const [index, target, body] of [[0, 'first.txt', 'first body'], [1, 'second.txt', 'second body']] as const) {
+      const tool = tools.nth(index);
+      await expect(tool.locator('summary')).toContainText(target);
+      await tool.locator('summary').click();
+      await expect(tool).toContainText(body);
+      await expect(tool).not.toContainText(index === 0 ? 'second body' : 'first body');
+    }
+  };
+  await openTurn(page, STACK.soloHead, at);
+  await paired();
+  await page.goto(new URL('/#/sessions/' + STACK.sender.id, page.url()).href);
+  await paired();
+  expect(faults.pageErrors).toEqual([]);
+  expect(faults.failedReads).toEqual([]);
+});
+
 test('a delayed conversation read stays visibly pending until its real messages arrive', async ({ page }) => {
   const faults = await open(page, 'requests');
   const responseId = await driveOneTurn(Number(env('CONSOLE_E2E_SOLO_PORT')), env('CONSOLE_E2E_KEY'), STACK.sender.id, STACK.soloModel);

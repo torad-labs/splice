@@ -71,6 +71,7 @@ private object MessageWire {
         put("text", m.text)
         m.tool?.let { put("tool", it) }
         m.result?.let { put("result", it) }
+        m.toolUseId?.let { put("tool_use_id", it) }
     }
 }
 

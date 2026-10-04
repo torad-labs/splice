@@ -34,6 +34,8 @@ public data class TranscriptMessage(
     /** The id Claude Code wrote on an assistant reply. Several lines share it, and the reader merges
      *  them into this message; the perf row joins its response to this id (V4-354). */
     val messageId: String? = null,
+    /** The client's tool-use id, carried on both the call and its result across page boundaries. */
+    val toolUseId: String? = null,
 )
 
 public data class TranscriptPage(

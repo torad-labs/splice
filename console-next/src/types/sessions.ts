@@ -222,6 +222,8 @@ export interface TranscriptMessage {
   text: string;
   /** The tool's name on a tool call or a tool result. */
   tool?: string;
+  /** The client's call identity, shared by that call and its result even across transcript pages. */
+  tool_use_id?: string;
   /** True on a tool RESULT, false on the call that produced it; absent on everything else. */
   result?: boolean;
 }

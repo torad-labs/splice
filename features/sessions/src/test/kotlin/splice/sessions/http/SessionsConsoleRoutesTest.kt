@@ -295,6 +295,25 @@ class SessionsConsoleRoutesTest {
     }
 
     @Test
+    fun `the transcript page publishes call identities even when results have no local call`() {
+        val messages = listOf(
+            TranscriptMessage(0, TranscriptRole.ASSISTANT, null, "{}", "Read", false, toolUseId = "first"),
+            TranscriptMessage(1, TranscriptRole.ASSISTANT, null, "{}", "Read", false, toolUseId = "second"),
+            TranscriptMessage(2, TranscriptRole.TOOL, null, "first body", result = true, toolUseId = "first"),
+            TranscriptMessage(3, TranscriptRole.TOOL, null, "second body", result = true, toolUseId = "second"),
+        )
+        val transcripts = TestTranscripts(pages = { session, _, _, _ ->
+            TranscriptLookup.Found(TranscriptPage(session, "/synthetic/transcript", messages, null, emptyMap()))
+        })
+        val routes = SessionsRoutes(registry(), transcripts, vanilla = tmp.resolve(".claude"))
+        val rows = json(routes.transcript(ALPHA, null, null).body).getValue("messages").jsonArray.map { it.jsonObject }
+        assertEquals(
+            listOf("first", "second", "first", "second"),
+            rows.map { it.getValue("tool_use_id").jsonPrimitive.content },
+        )
+    }
+
+    @Test
     fun `the transcript route reads from the end when asked, and names the cursor of the page before`() {
         val asked = mutableListOf<String?>()
         val transcripts = object : SessionTranscripts {

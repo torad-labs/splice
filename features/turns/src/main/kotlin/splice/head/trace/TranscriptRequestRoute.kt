@@ -79,6 +79,7 @@ public class TranscriptRequestRoute(
                         put("text", message.text)
                         message.tool?.let { put("tool", it) }
                         message.result?.let { put("result", it) }
+                        message.toolUseId?.let { put("tool_use_id", it) }
                         if (message.messageId == lookup.responseId) put("selected", true)
                     }
                 }

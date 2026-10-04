@@ -74,6 +74,30 @@ class TranscriptRequestRouteTest {
     }
 
     @Test
+    fun `conversation projection preserves parallel tool-use identity`() = runBlocking {
+        val calls = listOf(
+            TranscriptMessage(0, TranscriptRole.ASSISTANT, null, "{}", "Read", false, RESPONSE, "first"),
+            TranscriptMessage(1, TranscriptRole.ASSISTANT, null, "{}", "Read", false, RESPONSE, "second"),
+            TranscriptMessage(2, TranscriptRole.TOOL, null, "first body", result = true, toolUseId = "first"),
+            TranscriptMessage(3, TranscriptRole.TOOL, null, "second body", result = true, toolUseId = "second"),
+        )
+        val paired = TranscriptRequestRoute(
+            TranscriptMessageSource { session, _, response -> MessageConversation.Found(session, response, calls, 9) },
+            roots,
+            enabled,
+            Dispatchers.Unconfined,
+        )
+        val body = Json.parseToJsonElement(paired.read("kimi", SESSION, RESPONSE).body).jsonObject
+        val messages = body.getValue("messages").jsonArray.map { it.jsonObject }
+        assertEquals(
+            listOf("first", "second", "first", "second"),
+            messages.map { it.getValue("tool_use_id").jsonPrimitive.content },
+        )
+        assertEquals("9", body.getValue("earlier").jsonPrimitive.content)
+        assertEquals(listOf("true", "true", null, null), messages.map { it["selected"]?.jsonPrimitive?.content })
+    }
+
+    @Test
     fun `turning the view off reads no transcript and says where to turn it back on`() {
         val reply = read(on = false)
         val body = Json.parseToJsonElement(reply.body).jsonObject

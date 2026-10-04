@@ -1,6 +1,8 @@
 // PORT-OF: control/api/HeadResolver.kt — the heads capability owns its byte-stable status projection.
 package splice.heads
 
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -23,6 +25,7 @@ public object HeadStatus {
         put("wantVersion", GATEWAY_VERSION)
         put("running", h.running)
         put("healthy", h.ok)
+        put("last_provider_answer", providerAnswerJson(head))
         put("version", if (h.running) GATEWAY_VERSION else null as String?)
         put("versionMatch", if (h.running) true else null as Boolean?)
         put("mode", null as String?)
@@ -59,6 +62,15 @@ public object HeadStatus {
         put("maxInflight", if (gate.limit <= 0) null else gate.limit)
         put("health", healthJson(head, h))
         putJsonArray("pids") {}
+    }
+
+    private fun providerAnswerJson(head: Head): JsonElement {
+        val answer = head.providerAnswer() ?: return JsonNull
+        return buildJsonObject {
+            put("status", answer.status)
+            put("observed_at_epoch_ms", answer.observedAtEpochMs)
+            put("accepted", answer.accepted)
+        }
     }
 
     private fun healthJson(head: Head, h: splice.core.head.HeadHealth): JsonObject = buildJsonObject {

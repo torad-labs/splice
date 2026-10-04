@@ -86,6 +86,8 @@ class HeadSerializationTest {
                 }
                 val reply = sendSerialization(client, head.port, request)
                 assertTrue(if (stream) reply.contains("message_stop") else reply.contains("\"content\""), reply)
+                assertEquals(200, head.providerAnswer()?.status, "the real HTTP path publishes its provider answer")
+                assertTrue((head.providerAnswer()?.observedAtEpochMs ?: 0L) > 0L)
                 // Terminal delivery precedes perf publication; a drain cannot settle a not-yet-submitted row.
                 withTimeout(5.seconds) {
                     while (deps.stores.perfStats.tailNumeric(10).size <= index) delay(10.milliseconds)

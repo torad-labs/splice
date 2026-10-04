@@ -46,6 +46,7 @@ function head(over: Partial<HeadStatus> = {}): HeadStatus {
     maxInflight: 4,
     health: { localOriginErrors: 0, providerErrors: 0 },
     pids: [1],
+    last_provider_answer: { status: 200, observed_at_epoch_ms: 1, accepted: true },
     ...over,
   };
 }
@@ -77,6 +78,21 @@ function account(over: Partial<AccountRow> = {}): AccountRow {
 }
 
 describe('one printed cause, and the worst one wins', () => {
+  test.each([403, 429, 503])('a real provider refusal %s never reads healthy just because its daemon is running', status => {
+    const state = headAttention(head({ last_provider_answer: { status, observed_at_epoch_ms: 1, accepted: false } }), signals());
+    expect(state.cause).toBe('provider refused');
+    expect(state.edge).not.toBe('green');
+  });
+
+  test.each([null, undefined])('an unobserved provider %s is unknown, never accepted', last_provider_answer => {
+    const unobserved = head({ last_provider_answer: null });
+    if (last_provider_answer === undefined) delete unobserved.last_provider_answer;
+    const state = headAttention(unobserved, signals());
+    expect(state.cause).toBe('provider unobserved');
+    expect(state.cocked).toBe(false);
+    expect(state.edge).not.toBe('green');
+  });
+
   test('a healthy head is green and prints ok', () => {
     const state = headAttention(head(), signals());
     expect(state.edge).toBe('green');
@@ -94,6 +110,7 @@ describe('one printed cause, and the worst one wins', () => {
       headAttention(head(), signals({ accountExcluded: true })).cause,
       headAttention(head({ gate: gate({ queued: 4, max: 4 }) }), signals()).cause,
       headAttention(head(), signals({ topologyStale: true })).cause,
+      headAttention(head({ last_provider_answer: { status: 403, observed_at_epoch_ms: 1, accepted: false } }), signals()).cause,
     ]);
     for (const cause of ATTENTION_CAUSES) expect(reached.has(cause)).toBe(true);
     expect(reached.size).toBe(ATTENTION_CAUSES.length); // and nothing fires that is not in it

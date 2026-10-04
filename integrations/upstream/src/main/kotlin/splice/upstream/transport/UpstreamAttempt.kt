@@ -37,6 +37,11 @@ public fun interface AuthRefreshObserver {
     public operator fun invoke()
 }
 
+/** Observes the original HTTP status at header arrival, before normalization or body consumption. */
+public fun interface ProviderAnswerObserver {
+    public fun observed(status: Int, observedAtEpochMs: Long)
+}
+
 /** The per-post collaborators threaded through every attempt (grouped: one cohesive argument).
  *  Callers construct this and pass it to [UpstreamClient.post]. */
 public data class PostContext(
@@ -69,6 +74,9 @@ public data class PostContext(
 
     /** Delivered only after the provider accepts the HTTP request, before consuming its stream. */
     public var upstreamAccepted: splice.upstream.StreamStart = splice.upstream.StreamStart {}
+
+    /** Passive metadata only; a caller without an observer retains the existing transport behavior. */
+    public var providerAnswerObserver: ProviderAnswerObserver = ProviderAnswerObserver { _, _ -> }
 
     internal fun markRetry() {
         perf?.add(PerfKeys.RETRIES, 1)

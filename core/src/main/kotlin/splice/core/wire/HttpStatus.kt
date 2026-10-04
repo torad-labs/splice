@@ -36,6 +36,15 @@ package splice.core.wire
  *  more: what a status MEANS for retry or refusal stays with the module that decides it. */
 public object HttpStatus {
 
+    /** Valid HTTP response classes, including information, redirect and refusal responses. */
+    public const val MIN_CODE: Int = 100
+
+    // why: HTTP response classes end at 5xx; 599 bounds a recorded status, never a status splice emits.
+    public const val MAX_CODE: Int = 599
+
+    /** Upper edge of the successful response class, not a new status a route emits. */
+    public const val MAX_SUCCESS: Int = 299
+
     /** The endpoint answered, and answered successfully. */
     public const val OK: Int = 200
 

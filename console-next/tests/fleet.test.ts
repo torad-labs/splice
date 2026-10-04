@@ -9,7 +9,8 @@ import type { HeadStatus, UsagePayload } from '../src/types/core';
 const NOW = Date.parse('2026-09-29T18:00:00Z');
 const head = (over: Partial<HeadStatus> = {}): HeadStatus => ({
   key: 'claude-grok', label: 'claude-grok', name: 'grok', port: 1, authKind: 'grok-oauth', wantVersion: '1', running: true, healthy: true,
-  version: '1', versionMatch: true, mode: null, gate: null, maxInflight: null, health: {} as HeadStatus['health'], pids: [], ...over,
+  version: '1', versionMatch: true, mode: null, gate: null, maxInflight: null, health: {} as HeadStatus['health'], pids: [],
+  last_provider_answer: { status: 200, observed_at_epoch_ms: NOW - 60_000, accepted: true }, ...over,
 });
 const usage = (pct: number, resetsAt: number | null = NOW / 1000 + 3600): UsagePayload => ({
   window_hours: 1, warn_pct: 80, warn_tokens_5h: 0,
@@ -19,6 +20,47 @@ const inputs = (over: Partial<FleetInputs> = {}): FleetInputs => ({ usage: usage
 const account = (over: Partial<AccountRow> = {}): AccountRow => ({ heads: ['claude-grok'], label: 'Ava’s Grok', selected: null, ...over }) as AccountRow;
 
 describe('a fleet card', () => {
+  test.each([['kimi-oauth', 403, 'Access refused'], ['muse-oauth', 429, 'Rate limited']] as const)('the last %s provider answer overrides daemon liveness and old gauges', (authKind, status, state) => {
+    const refused = head({ authKind, last_provider_answer: { status, observed_at_epoch_ms: NOW - 3_600_000, accepted: false } });
+    const card = fleetCard(refused, inputs());
+    expect(card.state).toBe(state);
+    expect(card.standing).not.toBe('ready');
+    expect(card.line?.kind).toBe('note');
+    expect(card.none).not.toBe('No reading yet');
+    expect(card.providerAnswer).toContain(`HTTP ${status}`);
+    expect(card.providerAnswer).toContain('1h ago');
+    expect(fleetCard({ ...refused, last_provider_answer: { status: 200, observed_at_epoch_ms: NOW, accepted: true } }, inputs()).state).toBe('Ready');
+  });
+
+  test.each([null, undefined])('a provider with no observed answer %s never reads Ready', last_provider_answer => {
+    const unobserved = head({ last_provider_answer: null });
+    if (last_provider_answer === undefined) delete unobserved.last_provider_answer;
+    const card = fleetCard(unobserved, inputs());
+    expect(card.state).toBe('Readiness unknown');
+    expect(card.standing).not.toBe('ready');
+    expect(card.attention).toBe(false);
+  });
+
+  test('a refusal still suppresses No reading yet when a missing credential supplies the stronger fix', () => {
+    const denied = head({ last_provider_answer: { status: 403, observed_at_epoch_ms: NOW, accepted: false } });
+    const card = fleetCard(denied, inputs({ usage: null, auth: { 'claude-grok': { kind: 'grok-oauth', login: '', present: false } } }));
+    expect(card.state).toBe('Signed out');
+    expect(card.none).toBeNull();
+    expect(card.providerAnswer).toContain('HTTP 403');
+  });
+
+  test('unknown readiness preserves an independently current quota reading without treating it as acceptance', () => {
+    const card = fleetCard(head({ last_provider_answer: null }), inputs());
+    expect(card.state).toBe('Readiness unknown');
+    expect(card.line).toMatchObject({ kind: 'gauge', name: '5 hours', pct: 41 });
+  });
+
+  test('an accepted WebSocket response is proof without a fabricated HTTP status', () => {
+    const card = fleetCard(head({ last_provider_answer: { status: null, observed_at_epoch_ms: NOW - 60_000, accepted: true } }), inputs());
+    expect(card.state).toBe('Ready');
+    expect(card.providerAnswer).toContain('streamed request');
+    expect(card.providerAnswer).not.toContain('HTTP');
+  });
   test('the daemon family names a local runtime even when it has a key, and a remote head stays remote without one', () => {
     const local = head({ key: 'bonsai', label: 'bonsai', authKind: 'api-key' });
     const keyed = { path: '', keys: [{ name: 'BONSAI_API_KEY', stored: true, heads: [{ head: 'bonsai', source: 'store' }] }] } as never;
@@ -45,7 +87,7 @@ describe('a fleet card', () => {
     const key = head({ key: 'openrouter', label: 'openrouter', authKind: 'api-key' });
     expect(fleetCard(key, inputs({ keys: keyed, usage: null })).none).toBe('Pays per token; no window');
     expect(fleetCard(head({ key: 'bonsai', authKind: 'api-key' }), inputs({ family: 'local', keys: keyed, usage: null })).none).toBeNull();
-    expect(fleetCard(head(), inputs({ usage: null })).none).toBe('No reading yet');
+    expect(fleetCard(head(), inputs({ usage: null })).none).toBe('No quota reading reported');
     const old = usage(41, NOW / 1000 - 60);
     const read = old.heads[0]?.usage?.quota?.five_hour;
     if (read !== undefined) read.observed_at = NOW / 1000 - 3 * 3600 - 60;

@@ -16,13 +16,17 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonObject
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
+import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
+import splice.core.util.WallClock
 import splice.head.turn.TurnDrive
 import splice.head.turn.ZeroEventClassifier
 import splice.upstream.Provider
@@ -31,10 +35,17 @@ import splice.upstream.WsRoundAbort
 import splice.upstream.WsRoundRunner
 import splice.upstream.transport.HeaderRedaction
 
+/** A real response.created or failure frame, without invented HTTP metadata. */
+internal fun interface StreamAnswerObserver {
+    fun observed(accepted: Boolean, observedAtEpochMs: Long)
+}
+
 internal class WsRoundDriver(
     private val provider: Provider,
     private val log: LogSink,
     classifyZeroEvent: ZeroEventClassifier,
+    private val answerObserver: StreamAnswerObserver = StreamAnswerObserver { _, _ -> },
+    private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
     private val roundDrive = WsRoundDrive(provider, classifyZeroEvent)
 
@@ -44,6 +55,26 @@ internal class WsRoundDriver(
         val drive = inputs.drive
         clearAccountBoundary(runner, drive)
         return driveRound(runner, drive, inputs)
+    }
+
+    /** Observe one response boundary, never update readiness for each streamed delta or body completion. */
+    private fun startingEvents(round: WsRound, runner: WsRoundRunner, drive: TurnDrive): Flow<JsonObject> {
+        var observed = false
+        return round.events.onEach { event ->
+            if (!observed) {
+                val accepted = when {
+                    runner.isFailureTerminal(event) -> false
+                    JsonScalars.strOrEmpty(event["type"]) == "response.created" -> true
+                    else -> null
+                }
+                if (accepted != null) {
+                    observed = true
+                    answerObserver.observed(accepted, clock())
+                }
+            }
+            drive.emitter.ensureStarted()
+            drive.trace?.responseText(JsonWire.string(event) + "\n")
+        }
     }
 
     /** Start the reader clock at the attempt, before client opening, without changing the round's lease. */
@@ -95,10 +126,7 @@ internal class WsRoundDriver(
             // Start the client while the acquired cold flow is being collected, not before: if the
             // start write throws or is cancelled, the exception unwinds through the transport flow's
             // onCompletion and poisons its busy lease instead of stranding the connection forever.
-            val startingEvents = accepted.events.onEach { event ->
-                drive.emitter.ensureStarted()
-                drive.trace?.responseText(JsonWire.string(event) + "\n")
-            }
+            val startingEvents = startingEvents(accepted, runner, drive)
             drive.watchdog.resetRound()
             // DR-7 round 2: the idle watchdog reaps THIS ROUND here too, the same way
             // SseRoundConsume does. It used to cancel inputs.turnJob, so a WS stall killed the

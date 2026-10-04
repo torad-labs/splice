@@ -18,6 +18,7 @@ test('a ready command shows its real session launcher and copies it without star
   const ready = heads.heads.find(head => head.key === STACK.soloHead);
   if (ready === undefined) throw new Error('isolated stack has no solo command');
   ready.label = 'claude-ready-example';
+  ready.last_provider_answer = { status: 200, observed_at_epoch_ms: Date.now() - 60_000, accepted: true };
   await page.route('**/api/heads', route => route.fulfill({ json: heads }));
   let lifecyclePosts = 0;
   page.on('request', request => {
@@ -52,6 +53,48 @@ test('a ready command shows its real session launcher and copies it without star
   await expect(page.getByRole('alert')).toContainText('Synthetic clipboard denied');
   await expect(page.locator('header.top code')).toHaveText(ready.label);
   expect(lifecyclePosts).toBe(0);
+  await assertHealthy(page, faults);
+});
+
+test('Models and its detail use the last real provider answer instead of daemon liveness or a missing gauge', async ({ page }, testInfo) => {
+  const heads = await read<HeadsPayload>(page, '/api/heads');
+  const provider = heads.heads.find(head => head.key === STACK.soloHead);
+  if (provider === undefined) throw new Error('isolated stack has no solo provider command');
+  const observed = Date.now() - 3_600_000;
+  provider.label = 'claude-provider-observation';
+  provider.last_provider_answer = { status: 403, observed_at_epoch_ms: observed, accepted: false };
+  await page.route('**/api/heads', route => route.fulfill({ json: heads }));
+  const faults = await open(page, 'models');
+  const card = () => page.locator('li.card').filter({ has: page.getByRole('link', { name: provider.label, exact: true }) });
+  await expect(card().getByText('Access refused', { exact: true })).toBeVisible();
+  await expect(card()).toContainText('HTTP 403');
+  await expect(card()).toContainText('1h ago');
+  await expect(card()).not.toContainText('No reading yet');
+  await expect(card().getByText('Ready', { exact: true })).toHaveCount(0);
+  for (const width of [1536, 393]) {
+    await page.setViewportSize({ width, height: 1024 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await card().screenshot({ path: testInfo.outputPath('provider-refused-' + width + '.png') });
+  }
+  await card().getByRole('link', { name: provider.label, exact: true }).click();
+  await expect(page.locator('header.top')).toContainText('Access refused');
+  await expect(page.getByRole('main')).toContainText('HTTP 403');
+  await expect(page.getByRole('main')).not.toContainText('No reading yet');
+  provider.last_provider_answer = { status: 429, observed_at_epoch_ms: observed, accepted: false };
+  await open(page, 'models');
+  await page.reload();
+  await expect(card().getByText('Rate limited', { exact: true })).toBeVisible();
+  await expect(card()).toContainText('HTTP 429');
+  await expect(card()).toContainText('1h ago');
+  provider.last_provider_answer = null;
+  await page.reload();
+  await expect(card().getByText('Readiness unknown', { exact: true })).toBeVisible();
+  await expect(card().getByText('Ready', { exact: true })).toHaveCount(0);
+  provider.last_provider_answer = { status: null, observed_at_epoch_ms: Date.now(), accepted: true };
+  await page.reload();
+  await expect(card().getByText('Ready', { exact: true })).toBeVisible();
+  await expect(card()).toContainText('streamed request');
+  await expect(card()).not.toContainText('HTTP 200');
   await assertHealthy(page, faults);
 });
 
@@ -157,6 +200,7 @@ test('a full reading stays Ready in command colour, reads as usage, and still se
     const marked = body.heads.find((head) => head.key === STACK.oauthHead);
     if (marked === undefined) throw new Error('isolated stack has no OAuth head');
     delete marked.quotaResetAtEpochSeconds;
+    marked.last_provider_answer = { status: 200, observed_at_epoch_ms: Date.now() - 60_000, accepted: true };
     await route.fulfill({ response, json: body });
   });
   await page.route((url) => url.pathname === '/api/usage' || url.pathname === '/api/usage/probe', async (route) => {
@@ -228,6 +272,7 @@ test('quota refusal moves one card out of ready and keeps its local reset identi
     const marked = body.heads.find((head) => head.key === STACK.oauthHead);
     if (marked === undefined) throw new Error('isolated stack has no OAuth head');
     expect(marked.running).toBe(true);
+    marked.last_provider_answer = { status: marking ? 429 : 200, observed_at_epoch_ms: Date.now(), accepted: !marking };
     if (marking) marked.quotaResetAtEpochSeconds = reset;
     await route.fulfill({ response, json: body });
   });

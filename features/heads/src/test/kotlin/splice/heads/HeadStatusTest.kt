@@ -18,6 +18,7 @@ import splice.core.head.HeadHealth
 private class MeasuredHead(
     private val health: HeadHealth,
     private val rates: splice.core.head.RateLimitHealth? = null,
+    private val answer: splice.core.head.ProviderAnswer? = null,
 ) : Head {
     override val key: String = "claudex"
     override val label: String = "claudex"
@@ -26,6 +27,7 @@ private class MeasuredHead(
     override suspend fun stop() = Unit
     override fun healthSnapshot(): HeadHealth = health
     override fun rateLimitSnapshot(): splice.core.head.RateLimitHealth? = rates
+    override fun providerAnswer(): splice.core.head.ProviderAnswer? = answer
 }
 
 class HeadStatusTest {
@@ -40,6 +42,19 @@ class HeadStatusTest {
         val unknown = HeadStatus.json(MeasuredHead(measured), "client").getValue("health").jsonObject
         assertEquals(kotlinx.serialization.json.JsonNull, unknown["provider_rate_limit_turns"])
         assertEquals(kotlinx.serialization.json.JsonNull, unknown["cooldown_held_turns"])
+    }
+
+    @Test
+    fun `provider readiness carries the original answer and its measured time, never counters`() {
+        val answer = splice.core.head.ProviderAnswer(403, 1_800_000_000_123L)
+        val head = MeasuredHead(measured(emptyList()).copy(providerErrors = 9), answer = answer)
+        val observed = HeadStatus.json(head, "kimi-oauth").getValue("last_provider_answer").jsonObject
+        assertEquals(setOf("status", "observed_at_epoch_ms", "accepted"), observed.keys)
+        assertEquals("false", observed.getValue("accepted").jsonPrimitive.content)
+        assertEquals("403", observed.getValue("status").jsonPrimitive.content)
+        assertEquals("1800000000123", observed.getValue("observed_at_epoch_ms").jsonPrimitive.content)
+        val unknown = HeadStatus.json(MeasuredHead(measured(emptyList())), "kimi-oauth")
+        assertEquals(kotlinx.serialization.json.JsonNull, unknown["last_provider_answer"])
     }
 
     private fun gateOf(health: HeadHealth): JsonObject =

@@ -6,7 +6,8 @@
 // nobody. So the causes are ordered by severity and the first one that holds is the one printed.
 import type { HeadStatus } from '../types/core';
 import type { Edge } from './accounts';
-import { fmtMs } from './format';
+import { fmtMs, timeAgo } from './format';
+import { FL } from './words-fleet';
 
 /** Every condition that can cock a head's strip, in the order they are tested. The order is the
  *  severity order: the first cause that holds is the one reported. Each names what the operator
@@ -23,6 +24,7 @@ export const ATTENTION_CAUSES = [
   'account excluded',
   'queue full',
   'restart needed',
+  'provider refused',
 ] as const;
 
 export type AttentionCause = (typeof ATTENTION_CAUSES)[number];
@@ -30,7 +32,7 @@ export type AttentionCause = (typeof ATTENTION_CAUSES)[number];
 /** The printed cause, or 'down' for a struck head, 'runtime not answering' for a running head whose
  *  local runtime is silent 'out of quota' for one whose provider refuses turns until a
  *  reset that is still ahead or 'ok'. */
-export type HeadState = AttentionCause | 'down' | 'runtime not answering' | 'out of quota' | 'ok';
+export type HeadState = AttentionCause | 'down' | 'runtime not answering' | 'out of quota' | 'provider unobserved' | 'ok';
 
 /** The word a state prints on the strip's edge. The edge holds 8ch (ui.css), and the causes run to
  *  16: `account excluded` printed as `account…` and `signed out` as `signed o…` (walkthrough S1).
@@ -47,6 +49,8 @@ export const EDGE_WORDS: Record<HeadState, string> = {
   down: 'down',
   'runtime not answering': 'down',
   'out of quota': 'no quota',
+  'provider refused': 'refused',
+  'provider unobserved': 'unknown',
   ok: 'ok',
 };
 
@@ -139,9 +143,22 @@ export function headAttention(head: HeadStatus, signals: HeadSignals = NO_SIGNAL
               : signals.topologyStale ? 'restart needed'
                 : null;
   if (cause === null) {
+    const answer = head.last_provider_answer;
+    if (answer == null) {
+      return { edge: 'grey', cocked: false, struck: false, label: EDGE_WORDS['provider unobserved'], cause: 'provider unobserved' };
+    }
+    if (!answer.accepted) {
+      return { edge: 'amber', cocked: true, struck: false, label: EDGE_WORDS['provider refused'], cause: 'provider refused' };
+    }
     return { edge: 'green', cocked: false, struck: false, label: EDGE_WORDS.ok, cause: 'ok' };
   }
   return { edge: 'amber', cocked: true, struck: false, label: EDGE_WORDS[cause], cause };
+}
+
+/** The retained answer's age, never the time the console polled its state. */
+export function providerAnswerText(head: HeadStatus, now: number): string | null {
+  const answer = head.last_provider_answer;
+  return answer == null ? null : FL.providerAnswer(answer.accepted, answer.status, timeAgo(answer.observed_at_epoch_ms, now));
 }
 
 /** The provider families the fleet groups by. Derived from the head's auth kind, which is the only

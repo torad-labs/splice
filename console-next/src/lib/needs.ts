@@ -30,6 +30,7 @@ import { nearestLimit } from './nearest-limit';
 import { onPermission, waitingQuestion } from './session-says';
 import { activityText, needsPerson, permissionText, repoName, sessionKey, sessionLabel, stateOf, sinceOf } from './sessions';
 import { H, K, S, U } from './words-needs';
+import { FL } from './words-fleet';
 
 export { INPUTS };
 export type { Fix, InputName, Need, NeedInputs, NeedKind, NeedsList, Read, ReadState, Reading, Severity, Source };
@@ -139,7 +140,10 @@ function headNeeds(heads: readonly HeadStatus[], auth: AuthPayload | null, accou
         const until = quotaRefusedUntil(head, now);
         return until === null ? [] : [quotaNeed(head, until, accounts)];
       }
+      case 'provider refused':
+        return need('warn', K.failing, FL.providerRefused, open(hrefOf('heads', head.key), S.openFleet));
       // Fleet's own states, or said once elsewhere: never a head item.
+      case 'provider unobserved':
       case 'runtime not answering':
       case 'account excluded':
       case 'restart needed':

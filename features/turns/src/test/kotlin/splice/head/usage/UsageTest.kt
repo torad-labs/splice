@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.head.ProviderAnswer
 import splice.core.model.CodexCompactionReserves
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
@@ -35,6 +36,62 @@ private val hud = UsageHud()
 private val usageJson = UsageJson()
 
 class UsageTest {
+
+    @Test
+    fun `provider answers survive restart without quota headers and ignore older arrivals`(@TempDir tmp: Path) {
+        val usage = tmp.resolve("synthetic-usage.json")
+        val rates = tmp.resolve("synthetic-ratelimit.json")
+        val store = UsageStore(usage, rates)
+        assertNull(store.providerAnswer())
+        store.observeProviderAnswer(200, 100L)
+        store.observeProviderAnswer(403, 300L)
+        store.observeProviderAnswer(200, 200L)
+        assertEquals(ProviderAnswer(403, 300L), store.providerAnswer())
+        store.flushNow()
+        val restored = UsageStore(usage, rates)
+        assertEquals(ProviderAnswer(403, 300L), restored.providerAnswer())
+        restored.observeProviderAnswer(429, 400L)
+        restored.observeProviderAnswer(200, 500L)
+        restored.flushNow()
+        assertEquals(ProviderAnswer(200, 500L), UsageStore(usage, rates).providerAnswer())
+        restored.observeProviderStreamAnswer(true, 600L)
+        restored.flushNow()
+        assertEquals(ProviderAnswer(null, 600L, true), UsageStore(usage, rates).providerAnswer())
+        assertNull(store.readRateLimit(), "an answer is not a quota observation")
+    }
+
+    @Test
+    fun `a response burst stays nonblocking and coalesces writes while disk persistence is held`(@TempDir tmp: Path) {
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val writes = java.util.concurrent.atomic.AtomicInteger()
+        val answers = ProviderAnswers(
+            RateLimitFile(tmp.resolve("synthetic-answer.json")),
+            ProviderAnswerSink {
+                if (writes.incrementAndGet() == 1) {
+                    entered.countDown()
+                    check(release.await(5, java.util.concurrent.TimeUnit.SECONDS))
+                }
+            },
+        )
+        Executors.newFixedThreadPool(2).use { workers ->
+            answers.record(ProviderAnswer(200, 1L))
+            val writing = workers.submit { answers.flush() }
+            try {
+                assertTrue(entered.await(5, java.util.concurrent.TimeUnit.SECONDS))
+                workers.submit { repeat(1000) { answers.record(ProviderAnswer(403, 2L + it)) } }
+                    .get(1, java.util.concurrent.TimeUnit.SECONDS)
+                assertEquals(1, writes.get(), "no response waits for or performs a disk write")
+                assertEquals(ProviderAnswer(403, 1001L), answers.snapshot())
+            } finally {
+                release.countDown()
+            }
+            writing.get(5, java.util.concurrent.TimeUnit.SECONDS)
+            answers.flush()
+            answers.flush()
+            assertEquals(2, writes.get(), "one held write plus one latest snapshot for the whole burst")
+        }
+    }
 
     @Test
     fun `warn - ratelimit signal has priority and bounds`() {

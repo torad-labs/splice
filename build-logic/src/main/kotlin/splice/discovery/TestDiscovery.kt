@@ -140,7 +140,7 @@ val DISPOSITIONS: Map<String, Disposition> = mapOf(
     "CodeModeSourceBufferedCertificationTest" to
         Disposition("1 @ParameterizedTest expands to 2 cases; no plain @Test", 2),
     // Transport cleanup plus first-event/client-opening timing each expand into two observed cases.
-    "WsRoundDriverTest" to Disposition("2 @ParameterizedTest methods expand to 4 cases (13 @Test + 4 = 17)", 17),
+    "WsRoundDriverTest" to Disposition("2 @ParameterizedTest methods expand to 4 cases (14 @Test + 4 = 18)", 18),
     // 89e98adab: a completed burst and a clean EOF each run text and thinking, and a custom source
     // releases the WS turn on completion, EOF, a worker wait and a startup wait.
     "WsCompletionTest" to Disposition("3 @ParameterizedTest methods expand to 8 cases (2 + 2 + 4); no plain @Test", 8),

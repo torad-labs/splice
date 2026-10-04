@@ -77,6 +77,25 @@ class NativeRateLimitHeadersTest {
 class UpstreamClientRateLimitTest {
 
     @Test
+    fun `an access refusal reports its original HTTP status without a quota header`() = runTest {
+        val answers = mutableListOf<Pair<Int, Long>>()
+        val engine = MockEngine {
+            respond(
+                """{"error":{"code":"permission_denied","message":"synthetic access denied"}}""",
+                HttpStatusCode.Forbidden,
+            )
+        }
+        val client = UpstreamClient(totalTimeoutMs = 30_000L, maxRetries = 1, client = HttpClient(engine))
+        val context = PostContext("https://api.example.test/v1", fakeAuth, { emptyMap() }).also {
+            it.providerAnswerObserver = ProviderAnswerObserver { status, at -> answers += status to at }
+        }
+        val failure = assertThrows<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
+        assertEquals(403, failure.status)
+        assertTrue(answers.isNotEmpty())
+        assertTrue(answers.all { it.first == 403 && it.second > 0L })
+    }
+
+    @Test
     fun `an older accepted stream cannot erase a later native refusal when its body finishes`() = runTest {
         val accepted = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
@@ -100,18 +119,26 @@ class UpstreamClientRateLimitTest {
             auth = fakeAuth,
             extraHeaders = { emptyMap() },
         ).also { it.relayRateLimitReplies = true }
+        val answers = mutableListOf<Pair<Int, Long>>()
+        fun observedContext() = context().also {
+            it.providerAnswerObserver = ProviderAnswerObserver { status, at -> answers += status to at }
+        }
         val older = async {
-            client.posted(context(), "{}") {
+            client.posted(observedContext(), "{}") {
                 accepted.complete(Unit)
                 release.await()
                 "ok"
             }
         }
         accepted.await()
-        assertThrows<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
+        assertEquals(listOf(200), answers.map { it.first }, "header acceptance is visible while its body is held")
+        assertThrows<UpstreamFailed> { client.posted(observedContext(), "{}") { "unreachable" } }
         release.complete(Unit)
         assertEquals("ok", older.await())
-        val follower = assertThrows<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
+        val follower = assertThrows<UpstreamFailed> { client.posted(observedContext(), "{}") { "unreachable" } }
+        assertEquals(listOf(200, 429), answers.map { it.first }, "completion and local holds are not provider answers")
+        assertTrue(answers.all { it.second > 0L })
+        assertTrue(answers[1].second >= answers[0].second)
         assertEquals(native, follower.body, "completion is not a newer provider acceptance")
         assertEquals(listOf("true"), follower.rateLimitReply?.headers?.get("x-should-retry"))
         assertEquals(2, requests, "the follower uses the credential's latest native refusal")

@@ -79,6 +79,8 @@ export function FleetHeadPage() {
         </div>
         {facts.fix === null ? null : <div className="acts"><FleetFix fix={facts.fix} head={head} pool={pool} now={now} keyCommand={facts.keyCommand ?? null} /></div>}
       </header>
+      {facts.providerAnswer == null ? null : <p className="quiet-line">{facts.providerAnswer}</p>}
+      {facts.line?.kind === 'note' ? <p className="quiet-line">{facts.line.text}</p> : null}
       <Window as="section" colour={facts.colour} attention={facts.attention} className="sheet head-sheet" aria-label={D.windowsTab}>
         <div className="bar">
           <h3>{tab === 'windows' ? D.windowsTab : tab === 'models' ? D.models : D.log}</h3>

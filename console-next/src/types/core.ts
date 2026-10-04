@@ -62,6 +62,8 @@ export interface HeadStatus {
   maxInflight: number | null;
   health: HeadHealthCounters;
   pids: number[];
+  /** A real provider answer, not a health counter. HTTP status is null for a WebSocket response frame. */
+  last_provider_answer?: { status: number | null; observed_at_epoch_ms: number; accepted: boolean } | null;
   /** For a local head: for a local head whose runtime did not answer at the daemon's last background probe, the
    *  endpoint it was asked on (`:8099`). Absent when it answers, when the head is not a local runtime,
    *  and before the first probe: absence claims nothing, so it never reads as OK by itself. */

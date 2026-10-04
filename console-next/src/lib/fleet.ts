@@ -4,7 +4,7 @@
 import type { AccountRow } from '../types/accounts';
 import type { AuthPayload, HeadStatus, UsagePayload } from '../types/core';
 import type { KeysPayload } from '../types/login';
-import { familyName, headAttention, isKeyHead, localZonedInstantText, providerFamily, quotaRefusedUntil } from './heads';
+import { familyName, headAttention, isKeyHead, localZonedInstantText, providerAnswerText, providerFamily, quotaRefusedUntil } from './heads';
 import type { HeadSignals } from './heads';
 import { colourOf } from './model';
 import type { ModelColour } from './model';
@@ -45,6 +45,8 @@ export interface FleetCard {
   keyCommand?: string | null;
   /** What a card with no line says instead, only when it is true of this head: a key pays per token, a reading may be missing or old. Null says nothing. */
   none: string | null;
+  /** The provider's actual answer and observation age, separate from quota observation time. */
+  providerAnswer?: string | null;
 }
 
 export interface FleetInputs {
@@ -148,7 +150,7 @@ export function fleetCard(head: HeadStatus, inputs: FleetInputs): FleetCard {
   });
   const keyless = isKeyHead(head, card?.kind);
   const oauth = !keyless && OAUTH_KINDS.has(head.authKind);
-  const base = { key: head.key, title: head.label, colour: colourOf(inputs.family), meta, none: noWindowText(kind, inputs.keys, inputs.usage, head, now) };
+  const base = { key: head.key, title: head.label, colour: colourOf(inputs.family), meta, none: head.last_provider_answer?.accepted === false ? null : noWindowText(kind, inputs.keys, inputs.usage, head, now), providerAnswer: providerAnswerText(head, now) };
 
   const note = (tone: FleetTone, standing: FleetStanding, state: string, text: string, fix: FleetFix | null, needsPerson: boolean): FleetCard => ({
     ...base, tone, standing, state, attention: needsPerson, line: gauge === null || tone === 'idle' ? { kind: 'note', text } : gauge, fix,
@@ -185,6 +187,15 @@ export function fleetCard(head: HeadStatus, inputs: FleetInputs): FleetCard {
       return note('wait', 'other', 'Queue full', FL.queueFull, null, true);
     case 'restart needed':
       return note('wait', 'other', 'Restart needed', FL.restartNeeded, 'restart', true);
+    case 'provider unobserved':
+      return { ...base, tone: 'wait', standing: 'other', state: 'Readiness unknown', attention: false, line: gauge ?? { kind: 'note', text: FL.readinessUnknown }, fix: 'copy-launch' };
+    case 'provider refused': {
+      const status = head.last_provider_answer?.status;
+      const access = status === 401 || status === 403;
+      const limited = status === 429;
+      return { ...base, none: null, tone: limited ? 'quota' : 'stuck', standing: 'other', state: access ? 'Access refused' : limited ? 'Rate limited' : 'Provider refused', attention: true,
+        line: { kind: 'note', text: access ? FL.accessRefused : limited ? FL.rateRefused : FL.providerRefused }, fix: null };
+    }
     case 'ok': {
       const level = gauge === null || usage === null ? 'ok' : planLevel(gauge.pct, usage.warn_pct);
       const line = level !== 'ok' && gauge !== null ? { ...gauge, note: `near its limit · ${gauge.note.replace(' · resets ', ', resets ')}` } : gauge;

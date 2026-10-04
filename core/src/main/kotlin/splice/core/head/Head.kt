@@ -3,6 +3,7 @@
 package splice.core.head
 
 import splice.core.usage.QuotaFull
+import splice.core.wire.HttpStatus
 
 public interface Head {
     public val key: String
@@ -23,6 +24,9 @@ public interface Head {
     /** Distinct ended-turn rate refusals since restart, absent on an uninstrumented head. */
     public fun rateLimitSnapshot(): RateLimitHealth? = null
 
+    /** Last actual provider acceptance or refusal, retained across restarts; absence proves no acceptance. */
+    public fun providerAnswer(): ProviderAnswer? = null
+
     /** Milliseconds left on a refusal this head is HOLDING (V4-398/V4-412), zero when it holds none. The one value
      *  any surface may print as out of quota (V4-452). */
     public fun providerResetForMs(): Long = 0L
@@ -31,6 +35,14 @@ public interface Head {
      *  refusal: the head stays ready beside it. */
     public fun quotaFull(): QuotaFull? = null
 }
+
+/** HTTP headers or a WebSocket response frame, never body completion or a local failure. No identifiers. */
+public data class ProviderAnswer(
+    /** Original HTTP status; null when a WebSocket event carries no HTTP status. */
+    val status: Int?,
+    val observedAtEpochMs: Long,
+    val accepted: Boolean = status != null && status in HttpStatus.OK..HttpStatus.MAX_SUCCESS,
+)
 
 /** Provider rate failures and local cooldown holds are disjoint, not absorbed-round error events. */
 public data class RateLimitHealth(val providerTurns: Long, val heldTurns: Long)

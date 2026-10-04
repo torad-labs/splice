@@ -14,6 +14,7 @@ import splice.upstream.TurnSignals
 import splice.upstream.retry.WatchdogFired
 import splice.upstream.transport.AuthRefreshObserver
 import splice.upstream.transport.PostContext
+import splice.upstream.transport.ProviderAnswerObserver
 import splice.upstream.transport.UpstreamClient
 import splice.upstream.transport.UpstreamPost
 
@@ -75,6 +76,7 @@ internal class SseRoundPost(
                 // V4-174: the trace hears every send of this round from inside the retry loop.
                 wire = drive.trace,
             ).also { context ->
+                context.providerAnswerObserver = ProviderAnswerObserver(usageStore::observeProviderAnswer)
                 context.relayRateLimitReplies = provider.relayRateLimitReplies
                 context.bodyRefusedAsTooLarge = inputs.refusedAsTooLarge()
                 context.upstreamAccepted = splice.upstream.StreamStart {

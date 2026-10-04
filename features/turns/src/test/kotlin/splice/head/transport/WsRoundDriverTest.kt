@@ -810,6 +810,7 @@ class WsRoundDriverTest {
         }
         val scripted = ScriptedRunner(emptyList())
         var observedPerf: TurnPerf? = null
+        val answers = mutableListOf<Pair<Boolean, Long>>()
         val runner = object : WsRoundRunner by scripted {
             override suspend fun attempt(
                 bodyJson: String,
@@ -824,7 +825,7 @@ class WsRoundDriverTest {
                     flow {
                         emit(ev("""{"type":"response.created","response":{"id":"synthetic"}}"""))
                         delay(3_000)
-                        emit(ev("""{"type":"response.output_text.delta","delta":"synthetic"}"""))
+                        repeat(1000) { emit(ev("""{"type":"response.output_text.delta","delta":"synthetic"}""")) }
                         emit(ev("""{"type":"response.completed","response":{"status":"completed"}}"""))
                     },
                     WsRoundAbort {},
@@ -837,14 +838,40 @@ class WsRoundDriverTest {
                 provider(runner),
                 log = {},
                 classifyZeroEvent = ZeroEventClassifier { _, outcome, _, _ -> outcome },
+                answerObserver = StreamAnswerObserver { accepted, at -> answers += accepted to at },
+                clock = { testScheduler.currentTime },
             ).run(inputs)
             assertTrue(result is TurnOutcome.Success)
+            assertEquals(listOf(true to attemptWaitMs), answers, "one created frame, never one update per delta")
             assertSame(perf, observedPerf, "the head must forward this turn's recorder")
             assertEquals(maxOf(3_000L, attemptWaitMs), perf.snapshot().counters[PerfKeys.UP_GAP_MAX_MS])
             assertEquals(if (attemptWaitMs >= 2_000) 2L else 1L, perf.snapshot().counters[PerfKeys.UP_GAPS_2S])
             assertEquals(2_500L, perf.snapshot().counters[PerfKeys.UP_BLOCKED_MAX_MS])
             val expectedEnd = if (attemptWaitMs >= 3_000) "message_start" else "text_delta"
             assertEquals(expectedEnd, perf.snapshot().upstreamGapEnd?.wire)
+        } finally {
+            inputs.turnJob.cancel()
+            inputs.drive.slot.release()
+        }
+    }
+
+    @Test
+    fun `a first WebSocket failure records one refusal without inventing HTTP status`() = runTest {
+        val runner = ScriptedRunner(
+            listOf("""{"type":"error","code":"permission_denied","message":"synthetic refusal"}"""),
+        )
+        val inputs = coldFlowInputs(RecordingTerminal(), this)
+        val answers = mutableListOf<Pair<Boolean, Long>>()
+        val driver = WsRoundDriver(
+            provider(runner),
+            log = {},
+            classifyZeroEvent = ZeroEventClassifier { _, outcome, _, _ -> outcome },
+            answerObserver = StreamAnswerObserver { accepted, at -> answers += accepted to at },
+            clock = { 999L },
+        )
+        try {
+            driver.run(inputs)
+            assertEquals(listOf(false to 999L), answers)
         } finally {
             inputs.turnJob.cancel()
             inputs.drive.slot.release()

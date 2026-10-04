@@ -32,18 +32,27 @@ internal class CodeModeStreamingCell(
         } catch (error: CodeModePersistenceException) {
             throw error
         } catch (error: IOException) {
-            checkSource()
+            checkClosed()
             throw error
         } catch (error: IllegalStateException) {
-            checkSource()
+            checkClosed()
             throw error
         }
     }
 
     /** Also checked under the registry key immediately before calls are saved or issued. A step holding this cell when
-     *  the round lost an uncertified source ends as a torn source's step does. */
+     *  the round lost its source ends as a torn source's step does. */
     fun checkSource() {
-        if (round.sourceInterrupted || round.sourceUncertified) {
+        if (round.sourceInterrupted || round.sourceLost) {
+            throw CodeModeSourceInterruptedException(round.permanentEnding)
+        }
+    }
+
+    /** After the cell threw: a cell the round closed under this step, a dead reader's included, ends the step as a
+     *  torn source's step, never as splice's protocol failure. A dead reader alone does not stop a step that has not
+     *  met the closed cell, so a result already delivered before the loss still reaches the script. */
+    private fun checkClosed() {
+        if (round.sourceInterrupted || round.closedLiveCell) {
             throw CodeModeSourceInterruptedException(round.permanentEnding)
         }
     }

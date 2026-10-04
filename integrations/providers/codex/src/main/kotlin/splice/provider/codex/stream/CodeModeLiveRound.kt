@@ -67,10 +67,15 @@ internal class CodeModeLiveRound(
     @Volatile var localFailure: TurnOutcome.Failure? = null
         private set
 
-    /** The round's terminal did not certify its admitted source, so the capture lost the record and closed its cell.
-     *  Only the step that was advancing that cell reads it; a later step continues on the client's history. */
-    @Volatile var sourceUncertified = false
+    /** The round lost the record and closed its cell without a transport tear: its terminal did not certify the
+     *  admitted source, or its reader failed on splice's own non-IO fault. Only the step that was advancing that cell
+     *  reads it; a later step continues on the client's history. */
+    @Volatile var sourceLost = false
         private set
+
+    /** The round closed a live cell under its client steps: [sourceLost], or a reader that died on an unnamed
+     *  throwable. A step holding or acquiring that cell ends as a torn source's step does, never as invalid_request. */
+    val closedLiveCell: Boolean get() = sourceLost || unexpectedDeath
 
     /** The permanent upstream failure that ended this round before its exec source completed. A client step whose cell
      *  that loss closed ends with it as it is, since no retry can change it. */
@@ -141,8 +146,8 @@ internal class CodeModeLiveRound(
         sourceInterrupted = record != null && (outcome as? TurnOutcome.Failure)?.cause in SOURCE_TEAR_CAUSES
         // The capture loses a source its terminal does not certify, which closes the cell a client step may still be
         // advancing. Set first, so that step ends as a torn source's step does, or with a permanent failure as it is.
-        sourceUncertified = !sourceInterrupted && capture.uncertified(outcome) != null
-        permanentEnding = (outcome as? TurnOutcome.Failure)?.takeIf { sourceUncertified && it.permanent }
+        sourceLost = !sourceInterrupted && capture.uncertified(outcome) != null
+        permanentEnding = (outcome as? TurnOutcome.Failure)?.takeIf { sourceLost && it.permanent }
         Cancellables.runCatchingBestEffort { capture.finish(outcome) }
             .getOrElse { return@synchronized reject(it) }
         if (sourceInterrupted && outcome is TurnOutcome.Failure) {
@@ -176,12 +181,16 @@ internal class CodeModeLiveRound(
         }
         localFailure?.let { return@synchronized it }
         val detail = SOURCE_FAILED
-        sourceInterrupted = record != null && error is IOException && error !is CodeModePersistenceException
-        source.fail(detail)
         if (error is CodeModePersistenceException) {
+            source.fail(detail)
             if (!ready.isCompleted) ready.completeExceptionally(error)
             throw error
         }
+        sourceInterrupted = record != null && error is IOException
+        // Splice's own non-IO fault loses the record below and closes the cell a client step may be advancing, as an
+        // uncertified source does. Set before the source fails, so that step ends as a torn source's step does.
+        sourceLost = !sourceInterrupted && record?.terminal() == false
+        source.fail(detail)
         record?.takeUnless(CodeModeRecord::terminal)?.let { registry.lose(it, detail) }
         TurnOutcome.Failure(
             detail,

@@ -33,6 +33,7 @@ import splice.upstream.failure.CodeModeInfrastructureClass
 import splice.upstream.failure.CodeModeInfrastructureException
 import splice.upstream.sse.WireSink
 import java.io.IOException
+import java.util.ConcurrentModificationException
 
 /** A retained source can fail while a client-result step has already selected its live cell. */
 class CodexCodeModeSourceTearTest : CodeModeStatementStreamSupport() {
@@ -78,12 +79,10 @@ class CodexCodeModeSourceTearTest : CodeModeStatementStreamSupport() {
                 return@runBlocking
             }
             val outcome = withTimeout(5_000) { request.await() } as TurnOutcome.Failure
-            assertEquals(
-                sourceFailure == "local" || cellExit == "infrastructure",
-                outcome.deterministic,
-                outcome.toString(),
-            )
-            val localFault = sourceFailure == "local" || cellExit == "persistence" || cellExit == "infrastructure"
+            // A reader that failed on splice's own fault ("local") closes the cell under this step as an uncertified
+            // source does: retryable, never invalid_request.
+            assertEquals(cellExit == "infrastructure", outcome.deterministic, outcome.toString())
+            val localFault = cellExit == "persistence" || cellExit == "infrastructure"
             assertEquals(
                 if (localFault) FailureCause.CODE_MODE_PROTOCOL else FailureCause.UPSTREAM_CONN_RESET,
                 outcome.cause,
@@ -283,6 +282,75 @@ class CodexCodeModeSourceTearTest : CodeModeStatementStreamSupport() {
         }
 
     /** A client step's sink that holds the first progress write the round's buffer replays into it. */
+    /** The ledger's later followup: the reader's [CodeModeLiveRound] failed() on a non-IO error loses the record and
+     *  closes the cell under the step that posted the round, as an uncertified source does. */
+    @Test
+    @Timeout(20)
+    fun `the step that posted a round ends as a source tear when its reader fails on splice's own fault`() {
+        postingStepWhoseReaderEnds("local")
+    }
+
+    /** The same followup for died(): a reader killed by a throwable none of its catches names (Oct 2). */
+    @Test
+    @Timeout(20)
+    fun `the step that posted a round ends as a source tear when its reader dies`() {
+        postingStepWhoseReaderEnds("died")
+    }
+
+    private fun postingStepWhoseReaderEnds(failure: String) = runBlocking<Unit> {
+        val runtime = ClosingRuntime("closed", parkFirst = true)
+        val manager = bridge(runtime)
+        val sink = StepSink()
+        val post = GatedPost(sink)
+        val sourcePost = failingSource(post, failure)
+        try {
+            val request = async {
+                manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, sourcePost)
+            }
+            withTimeout(1_500) { runtime.advancing.await() }
+            post.tearAfterFirst = true
+            post.gates[1].complete(Unit)
+            assertSourceTear(withTimeout(5_000) { request.await() })
+            assertFalse(sink.callback.isCompleted, "no statement after the reader's end may execute")
+            assertEquals(1, runtime.starts)
+            assertEquals(1, post.posts, "the failed source is never regenerated")
+        } finally {
+            manager.onHeadStop()
+        }
+    }
+
+    /** Control for died() at a result step: the resume's accept converges an unnamed reader death through LOST, so a
+     *  result step whose cell the dead reader closes continues on the client's history. */
+    @Test
+    @Timeout(20)
+    fun `a result step whose reader dies under its cell continues on the client's history`() = runBlocking<Unit> {
+        val runtime = ClosingRuntime("closed")
+        val manager = bridge(runtime)
+        val sink = StepSink()
+        val post = GatedPost(sink)
+        val sourcePost = failingSource(post, "died")
+        try {
+            manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, sourcePost)
+            val first = sink.callback.await()
+            val next = StepSink()
+            val request = async {
+                manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
+                    .intercept(history(listOf(first)), next, sourcePost)
+            }
+            withTimeout(1_500) { runtime.advancing.await() }
+            post.tearAfterFirst = true
+            post.gates[1].complete(Unit)
+            val outcome = withTimeout(5_000) { request.await() }
+            assertTrue(outcome is TurnOutcome.Success, outcome.toString())
+            assertTrue(post.continuation.contains("source was not rerun"))
+            assertTrue(post.continuation.contains("result-0"))
+            assertFalse(next.callback.isCompleted, "no statement after the reader's death may execute")
+            assertEquals(1, runtime.starts)
+        } finally {
+            manager.onHeadStop()
+        }
+    }
+
     private class HeldSink : WireSink by RecordingSink() {
         val reached = CompletableDeferred<Unit>()
         val held = CompletableDeferred<Unit>()
@@ -410,6 +478,8 @@ class CodexCodeModeSourceTearTest : CodeModeStatementStreamSupport() {
                 beforeFailure()
                 if (failure == "io") throw error
                 if (failure == "local") error("synthetic private protocol bytes")
+                // Oct 2: the record's save raced and killed the reader with a throwable none of its catches names.
+                if (failure == "died") throw ConcurrentModificationException("synthetic record snapshot raced")
                 TurnOutcome.Failure(
                     "synthetic source transport failure",
                     cause = FailureCause.valueOf(failure),

@@ -50,9 +50,9 @@ internal class CodexCodeModeResume(
         record.error?.let {
             return when {
                 source?.sourceInterrupted == true -> source.outcome()
-                // The round lost its uncertified source between this step's cell acquire and this read. The step
-                // continues on the client's history as a reclaimed one does, never as splice's protocol failure.
-                source?.sourceUncertified == true -> lost(record, context, body)
+                // The round lost the source between this step's cell acquire and this read. The step continues on
+                // the client's history as a reclaimed one does, never as splice's protocol failure.
+                source?.sourceLost == true -> lost(record, context, body)
                 CodeModeReaderTermination.ended(source) -> lost(record, context, body)
                 else -> failure(it)
             }

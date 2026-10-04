@@ -66,8 +66,8 @@ internal class CodexCodeModeMachine(
                         started.remove(record.id)
                         source.outcome()
                     }
-                    // The round lost its uncertified source and removed this cell before the step could take it.
-                    source?.sourceUncertified == true ->
+                    // The round closed this live cell and removed it before the step could take it.
+                    source?.closedLiveCell == true ->
                         ioFailure(record, CodeModeSourceInterruptedException(source.permanentEnding))
                     else -> poison(record, "code-mode cell is unavailable: ${lostMessage(record)}")
                 }

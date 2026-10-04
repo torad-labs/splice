@@ -1,0 +1,45 @@
+id: webui-write-never-swallows
+valid:
+  - |
+    export async function putBudgets(budgets) {
+      try {
+        return { status: 'applied', answer: await request('/api/budgets', { method: 'PUT', body: '' }) };
+      } catch (err) {
+        return writeFailure(err, PENDING_BUDGETS);
+      }
+    }
+  - |
+    export async function fetchTopologyStale() {
+      try {
+        return (await request('/health')).topologyStale === true;
+      } catch {
+        return false;
+      }
+    }
+invalid:
+  - |
+    export async function putBudgets(budgets) {
+      try {
+        return await request('/api/budgets', { method: 'PUT', body: '' });
+      } catch (err) {
+        return null;
+      }
+    }
+  - |
+    export async function sendTestAlert() {
+      try {
+        await request('/api/alerts/test', { method: 'POST' });
+        return true;
+      } catch (err) {
+        if (pendingOf(err, ROW) !== null) return false;
+        return false;
+      }
+    }
+  - |
+    export const putAlerts = async (settings) => {
+      try {
+        return await request('/api/alerts', { method: 'PUT', body: '' });
+      } catch {
+        return undefined;
+      }
+    };

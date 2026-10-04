@@ -1,0 +1,29 @@
+# VENDOR-CONTRACT WALL (2026-07-18): NEVER gzip the upstream REQUEST body. xAI 400s on a gzipped
+# body ("Failed to parse the request body as JSON: expected value at line 1 column 1") — it SHIPPED
+# and broke every real-sized grok turn (bodies >=2KiB) until a live smoke turn caught it; small
+# smoke turns passed, which is exactly why mocks missed it. GZIPOutputStream on the request path is
+# the fingerprint (response DEcompression would use GZIPInputStream, which this rule does not touch).
+id: kt-no-request-body-gzip
+language: kotlin
+severity: error
+message: "Never gzip the upstream request body — xAI 400s on it (shipped & broke grok 2026-07-18)."
+note: >
+  Send the body as plain UTF-8 bytes. If a vendor documents accepting Content-Encoding: gzip on
+  requests, gate it per-provider behind a quirk AND prove it with a live >=2KiB turn — never a
+  blanket default. Response decompression (GZIPInputStream) is unaffected by this rule.
+files:
+  # DEFAULT-DENY (#924 Phase 0.5): request-body gzip is forbidden gateway-wide, not just where it
+  # first shipped. GZIPOutputStream on the request path is the fingerprint (response GZIPInputStream ok).
+  - "**/src/main/**/*.kt"
+# WIDENED (2026-07-26 audit): the original `pattern: GZIPOutputStream($$$ARGS)` matches only a
+# bare-identifier callee, a call_expression whose function is a plain simple_identifier. A
+# package-qualified construction — `java.util.zip.GZIPOutputStream($$$ARGS)` — parses to a
+# call_expression whose callee is a navigation_expression, a structurally different node the bare
+# pattern cannot see, so fully-qualifying the constructor silently evaded the wall. Added a second
+# `any` branch for the qualified-receiver form. `GZIPInputStream(...)` (response decompression, a
+# different identifier) and a bare `import java.util.zip.GZIPOutputStream` (an import_header, not a
+# call) both stay clean — neither is a call to GZIPOutputStream.
+rule:
+  any:
+    - pattern: GZIPOutputStream($$$ARGS)
+    - pattern: $PKG.GZIPOutputStream($$$ARGS)

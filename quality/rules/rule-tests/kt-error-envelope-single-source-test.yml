@@ -1,0 +1,82 @@
+# V4-90 (ARCH-AUDIT 2026-09-17): the red/green pins for kt-error-envelope-single-source.
+#
+# The rule requires BOTH halves of the envelope definition together — a `type` field carrying the
+# word `error`, AND a nested object builder under an `error` key. Every `valid` case below holds
+# ONE of those halves and must stay silent, because the cheap version of this rule (fire on any
+# nested buildJsonObject, or on any `"error"` literal) would red the dozens of unrelated JSON
+# builders in this tree and be turned off within a week. Every `invalid` case is a real key
+# spelling from the census: bare literals (AdmissionResponses), constants for BOTH keys with no
+# literal `"error"` anywhere (CollectingTerminal — the copy a literal-only matcher would miss), and
+# the mixed literal/constant form (SseEmitter, RateLimitCooldown).
+id: kt-error-envelope-single-source
+valid:
+  # THE COMPLIANT FORM — a CALL to the single builder. No nested builder here, so nothing to match,
+  # which is also why it stays green in law_pre_content_wire_type.py's denominator (d).
+  - 'body = ErrorEnvelope.of(type.wireName, message)'
+  - |
+    override suspend fun emitError(type: ErrorType, message: String, permanent: Boolean) {
+        val wireType = PreContentWireType.of(type, contentReached(), permanent)
+        frames.frame("error", ErrorEnvelope.of(wireType.wireName, message))
+    }
+  # HALF 1 ALONE: a `type` field saying `error` with no nested error object. This is a flat tag
+  # payload, not an envelope.
+  - 'val o = buildJsonObject { put("type", "error"); put("message", m) }'
+  # HALF 2 ALONE: a nested object under an `error` key with no envelope `type` marker — e.g. a
+  # diagnostics blob that reports an error alongside other fields.
+  - 'val o = buildJsonObject { put("head", h); putJsonObject("error") { put("count", n) } }'
+  # An ordinary nested builder, which is what most JSON in this tree looks like. A rule that fired
+  # here would be unusable.
+  - 'val o = buildJsonObject { put("type", "usage"); putJsonObject("usage") { put("in", i) } }'
+  - 'val o = buildJsonObject { put(FIELD_TYPE, FIELD_USAGE); put(FIELD_USAGE, buildJsonObject { put("in", i) }) }'
+  # The health ack — `ok` as a field name, no envelope anywhere.
+  - 'fun okJson(): String = buildJsonObject { put("ok", true) }.toString()'
+invalid:
+  # CENSUS SITE 1 — AdmissionResponses.errorBodyJson: both keys bare literals.
+  - |
+    private fun errorBodyJson(type: String, message: String): String = buildJsonObject {
+        put("type", "error")
+        put(
+            "error",
+            buildJsonObject {
+                put("type", type)
+                put("message", message)
+            },
+        )
+    }.toString()
+  # CENSUS SITE 2 — CollectingTerminal.errorEnvelope: BOTH keys are constants, so there is no
+  # literal `"error"` in the whole expression. This is the case that makes the matcher structural;
+  # a literal-only rule finds three of four sites and reports a complete census.
+  - |
+    private fun errorEnvelope(type: String, message: String, usage: JsonObject? = null): JsonObject =
+        buildJsonObject {
+            put(FIELD_TYPE, FIELD_ERROR)
+            put(
+                FIELD_ERROR,
+                buildJsonObject {
+                    put(FIELD_TYPE, type)
+                    put("message", message)
+                },
+            )
+            usage?.let { put("usage", it) }
+        }
+  # CENSUS SITE 3 — SseEmitter.emitError: constant key, literal value, putJsonObject nesting.
+  - |
+    val frame = buildJsonObject {
+        put(TYPE, "error")
+        putJsonObject("error") {
+            put(TYPE, wireType.wireName)
+            put(MESSAGE, message)
+        }
+    }
+  # CENSUS SITE 4 — RateLimitCooldown, the site the row's census missed.
+  - |
+    val body = buildJsonObject {
+        put("type", "error")
+        putJsonObject("error") {
+            put("type", "rate_limit_error")
+            put("message", detail)
+        }
+    }.toString()
+  # A FIFTH spelling nobody has written yet: the `error` key as a differently-named ERROR constant.
+  # Pinned so the constraint's identifier branch is proven, not assumed.
+  - 'val o = buildJsonObject { put(KEY_TYPE, ERROR_TYPE); put(ERROR_KEY, buildJsonObject { put("message", m) }) }'

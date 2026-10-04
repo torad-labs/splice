@@ -1,0 +1,159 @@
+// NEW: (no Node source) pure JsonObject -> JsonObject rewrite of a JSON Schema into Moonshot-
+// Flavored JSON Schema (MFJS, "walle" spec) — the shape Kimi's Anthropic tool surface accepts.
+// Invariants: total function (terminates on ANY input via SCHEMA_DEPTH_CAP; never throws); every schema
+// node gets an explicit `type` unless it is an anyOf/oneOf/allOf hub or a $ref; a $ref node keeps ONLY
+// the $ref key; tuple `items`/`prefixItems` collapse to a single item schema; a fixed key blocklist
+// is stripped at every node. No expansion of $ref targets, so a cyclic $ref cannot recurse — the
+// depth cap is the belt-and-suspenders guard for pathologically deep (but finite) trees.
+package splice.dialect.anthropic
+
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.longOrNull
+import kotlinx.serialization.json.put
+
+public object MfjsSanitizer {
+
+    /** Rewrite an input JSON Schema object into MFJS. Pure; terminating; never throws. */
+    public fun sanitize(schema: JsonObject): JsonObject = sanitizeNode(schema, 0)
+
+    private fun sanitizeNode(node: JsonObject, depth: Int): JsonObject {
+        // Depth cap: collapse anything deeper than the cap to a bare object schema (rule 6).
+        if (depth >= SCHEMA_DEPTH_CAP) return OBJECT_SCHEMA
+
+        // $ref node: keep ONLY the $ref key, drop every sibling (rule 5).
+        node[REF]?.let { ref -> return buildJsonObject { put(REF, ref) } }
+
+        // A node carrying anyOf/oneOf/allOf is a combinator hub: it must NOT keep a sibling `type`;
+        // instead each branch carries its own type (rule 2, applied recursively via sanitizeNode).
+        //
+        // DR-123: allOf was in neither this test nor the child router, so a composed node was
+        // stamped with a `type` — `string`, from inferType's fallback, since an allOf hub has no
+        // properties/items/enum of its own — beside a branch list that rode through verbatim,
+        // keeping the format/prefixItems/$schema keys Moonshot's validator rejects. Composition is
+        // ordinary in MCP tool schemas (zod .and(), anything OpenAPI-derived), so that shipped a
+        // self-contradictory schema for the tool and corrupted its argument contract.
+        //
+        // NAMED RESIDUAL, unrepaired here and NOT a regression: rule 1 gives every branch a type,
+        // and a branch that constrains without describing a shape (`{"required":["a"]}`,
+        // `{"minimum":0}`) infers `string`. Conjoined with an object branch that is unsatisfiable —
+        // but it was unsatisfiable BEFORE this change too, because the hub itself carried the same
+        // `string` stamp. Repairing it means changing what rule 1 infers, which is an MFJS spec
+        // question (there is no Node source to port from), not a routing defect.
+        val hasCombinator =
+            node.containsKey(ANY_OF) || node.containsKey(ONE_OF) || node.containsKey(ALL_OF)
+
+        return buildJsonObject {
+            putNodeType(this, node, hasCombinator)
+            for ((key, value) in node) {
+                if (key == TYPE || key in STRIP_KEYS) continue
+                putSanitizedChild(this, key, value, depth)
+            }
+        }
+    }
+
+    /** Rule 1/2: a combinator hub carries no type; otherwise keep the explicit type or infer one.
+     *  HD-20: the `JsonObjectBuilder` receiver became [sink], the first parameter — the emission
+     *  point and its ORDER relative to the loop below are unchanged, which is what keeps the built
+     *  bytes identical. */
+    private fun putNodeType(sink: JsonObjectBuilder, node: JsonObject, hasCombinator: Boolean) {
+        if (hasCombinator) return
+        val existing = node[TYPE]
+        if (existing != null) sink.put(TYPE, existing) else sink.put(TYPE, inferType(node))
+    }
+
+    private fun putSanitizedChild(sink: JsonObjectBuilder, key: String, value: JsonElement, depth: Int) {
+        when (key) {
+            PROPERTIES -> sink.put(PROPERTIES, sanitizeSchemaMap(value, depth))
+            ITEMS -> sink.put(ITEMS, sanitizeItems(value, depth))
+            ADDITIONAL_PROPERTIES -> sink.put(ADDITIONAL_PROPERTIES, sanitizeChild(value, depth + 1))
+            ANY_OF, ONE_OF, ALL_OF -> sink.put(key, sanitizeBranches(value, depth))
+            DEFS, DEFINITIONS -> sink.put(key, sanitizeSchemaMap(value, depth))
+            else -> sink.put(key, value)
+        }
+    }
+
+    /** `properties` / `$defs` shape: name -> schema; each value is a schema one level deeper. */
+    private fun sanitizeSchemaMap(value: JsonElement, depth: Int): JsonElement {
+        val obj = value as? JsonObject ?: return value
+        return buildJsonObject { for ((name, child) in obj) put(name, sanitizeChild(child, depth + 1)) }
+    }
+
+    /** anyOf/oneOf/allOf branch list: each branch is a schema; rule 1 fills a type on every branch.
+     *  A non-array value is not a branch list and rides verbatim, as every unknown key does. */
+    private fun sanitizeBranches(value: JsonElement, depth: Int): JsonElement {
+        val arr = value as? JsonArray ?: return value
+        return buildJsonArray { arr.forEach { add(sanitizeChild(it, depth + 1)) } }
+    }
+
+    /** Tuple-style `items` array collapses to its first element (or {} when empty) — rule 3. */
+    private fun sanitizeItems(value: JsonElement, depth: Int): JsonElement = when (value) {
+        is JsonArray -> value.firstOrNull()?.let { sanitizeChild(it, depth + 1) } ?: EMPTY_SCHEMA
+        else -> sanitizeChild(value, depth + 1)
+    }
+
+    private fun sanitizeChild(element: JsonElement, depth: Int): JsonElement =
+        if (element is JsonObject) sanitizeNode(element, depth) else element
+
+    /** Infer a type when none is present: object (has properties), array (has items),
+     *  enum (type of the first literal), else string. */
+    private fun inferType(node: JsonObject): String = when {
+        node.containsKey(PROPERTIES) -> OBJECT
+        node.containsKey(ITEMS) -> ARRAY
+        node[ENUM] is JsonArray -> enumType((node[ENUM] as JsonArray).firstOrNull())
+        else -> STRING
+    }
+
+    private fun enumType(first: JsonElement?): String {
+        val p = (first as? JsonPrimitive)?.takeUnless { it is JsonNull } ?: return STRING
+        return when {
+            p.isString -> STRING
+            p.booleanOrNull != null -> BOOLEAN
+            p.longOrNull != null -> INTEGER
+            p.doubleOrNull != null -> NUMBER
+            else -> STRING
+        }
+    }
+
+    // V4-122: named for the budget it IS. This was `DEPTH_CAP`, a third file carrying that name at
+    // a value of 10 while the other two carried 200 — one name over two unrelated bounds. This one
+    // caps SCHEMA nesting for a rewrite that substitutes a placeholder past the cap, which is a
+    // different purpose from the two client-JSON walk guards and cannot be unified with them.
+    private const val SCHEMA_DEPTH_CAP = 10
+
+    private const val REF = "\$ref"
+    private const val TYPE = "type"
+    private const val PROPERTIES = "properties"
+    private const val ITEMS = "items"
+    private const val ADDITIONAL_PROPERTIES = "additionalProperties"
+    private const val ANY_OF = "anyOf"
+    private const val ONE_OF = "oneOf"
+    private const val ALL_OF = "allOf"
+    private const val DEFS = "\$defs"
+    private const val DEFINITIONS = "definitions"
+    private const val ENUM = "enum"
+
+    private const val OBJECT = "object"
+    private const val ARRAY = "array"
+    private const val STRING = "string"
+    private const val BOOLEAN = "boolean"
+    private const val INTEGER = "integer"
+    private const val NUMBER = "number"
+
+    // Keys Moonshot rejects (or that break its validator) — stripped at every node (rule 4).
+    private val STRIP_KEYS = setOf(
+        "\$schema", "title", "\$comment", "format",
+        "exclusiveMinimum", "exclusiveMaximum", "minContains", "maxContains", "prefixItems",
+    )
+
+    private val OBJECT_SCHEMA = buildJsonObject { put(TYPE, OBJECT) }
+    private val EMPTY_SCHEMA = buildJsonObject { }
+}

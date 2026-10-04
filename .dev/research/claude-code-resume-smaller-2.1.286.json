@@ -1,0 +1,276 @@
+{
+  "probe": "tools/probes/claude-code-resume-smaller.ts",
+  "probe_sha256": "a0ba11ee3ad8955b3ac998a55ea4ee8791db26ec810673f776f6ace32337ce3a",
+  "client_version": "2.1.286",
+  "recorded_at": "2026-10-01T09:37:46.469Z",
+  "client_sha256": "fe503f65c6289d59c23e5b21ae44f03583f997dd33a2cbfc75ab4f96fb8fc73f",
+  "artifact_sha256": "e4a05cd0c950e89af7e02f233d6cde733d691fab11f8dee370a1545a00200cc8",
+  "artifactsUnchanged": true,
+  "loopback_only": true,
+  "product_path": true,
+  "verdict": "PASS",
+  "checks": [
+    {
+      "verdict": "PASS",
+      "mode": "prompt_too_long",
+      "source": {
+        "exit": 0,
+        "compactBoundary": false,
+        "done": true,
+        "sessionMatches": true,
+        "events": [
+          "system/ui_invalidate",
+          "system/commands_changed",
+          "system/init",
+          "assistant",
+          "result/success"
+        ],
+        "diagnostic": ""
+      },
+      "resumed": {
+        "exit": 0,
+        "compactBoundary": true,
+        "done": true,
+        "sessionMatches": true,
+        "events": [
+          "system/init",
+          "system/status",
+          "system/status",
+          "system/compact_boundary",
+          "user",
+          "assistant",
+          "result/success"
+        ],
+        "diagnostic": ""
+      },
+      "originalKept": true,
+      "rewritten": true,
+      "transcriptModels": [
+        "claude-haiku-4-5"
+      ],
+      "windowsMatch": true,
+      "modelsMatch": true,
+      "recoveryObserved": true,
+      "sourceWindow": 500000,
+      "targetWindow": 64000,
+      "seen": [
+        {
+          "head": "large",
+          "status": 200,
+          "summary": false,
+          "savedHistory": false
+        },
+        {
+          "head": "small",
+          "status": 400,
+          "summary": false,
+          "savedHistory": true
+        },
+        {
+          "head": "small",
+          "status": 200,
+          "summary": true,
+          "savedHistory": true
+        },
+        {
+          "head": "small",
+          "status": 200,
+          "summary": false,
+          "savedHistory": false
+        }
+      ],
+      "expectedVerdict": "PASS",
+      "controlPass": true
+    },
+    {
+      "verdict": "PASS",
+      "mode": "unrelated_400",
+      "source": {
+        "exit": 0,
+        "compactBoundary": false,
+        "done": true,
+        "sessionMatches": true,
+        "events": [
+          "system/ui_invalidate",
+          "system/commands_changed",
+          "system/init",
+          "assistant",
+          "result/success"
+        ],
+        "diagnostic": ""
+      },
+      "resumed": {
+        "exit": 0,
+        "compactBoundary": false,
+        "done": true,
+        "sessionMatches": true,
+        "events": [
+          "system/init",
+          "assistant",
+          "result/success"
+        ],
+        "diagnostic": ""
+      },
+      "originalKept": true,
+      "rewritten": true,
+      "transcriptModels": [
+        "claude-haiku-4-5"
+      ],
+      "windowsMatch": true,
+      "modelsMatch": true,
+      "recoveryObserved": false,
+      "sourceWindow": 500000,
+      "targetWindow": 64000,
+      "seen": [
+        {
+          "head": "large",
+          "status": 200,
+          "summary": false,
+          "savedHistory": false
+        },
+        {
+          "head": "small",
+          "status": 400,
+          "summary": false,
+          "savedHistory": true
+        },
+        {
+          "head": "small",
+          "status": 200,
+          "summary": false,
+          "savedHistory": true
+        }
+      ],
+      "expectedVerdict": "PASS",
+      "controlPass": true
+    },
+    {
+      "verdict": "PASS",
+      "mode": "no_overflow",
+      "source": {
+        "exit": 0,
+        "compactBoundary": false,
+        "done": true,
+        "sessionMatches": true,
+        "events": [
+          "system/ui_invalidate",
+          "system/commands_changed",
+          "system/init",
+          "assistant",
+          "result/success"
+        ],
+        "diagnostic": ""
+      },
+      "resumed": {
+        "exit": 0,
+        "compactBoundary": false,
+        "done": true,
+        "sessionMatches": true,
+        "events": [
+          "system/init",
+          "assistant",
+          "result/success"
+        ],
+        "diagnostic": ""
+      },
+      "originalKept": true,
+      "rewritten": true,
+      "transcriptModels": [
+        "claude-haiku-4-5"
+      ],
+      "windowsMatch": true,
+      "modelsMatch": true,
+      "recoveryObserved": false,
+      "sourceWindow": 500000,
+      "targetWindow": 64000,
+      "seen": [
+        {
+          "head": "large",
+          "status": 200,
+          "summary": false,
+          "savedHistory": false
+        },
+        {
+          "head": "small",
+          "status": 200,
+          "summary": false,
+          "savedHistory": true
+        }
+      ],
+      "expectedVerdict": "PASS",
+      "controlPass": true
+    },
+    {
+      "verdict": "FAIL",
+      "mode": "corrupt_original",
+      "source": {
+        "exit": 0,
+        "compactBoundary": false,
+        "done": true,
+        "sessionMatches": true,
+        "events": [
+          "system/ui_invalidate",
+          "system/commands_changed",
+          "system/init",
+          "assistant",
+          "result/success"
+        ],
+        "diagnostic": ""
+      },
+      "resumed": {
+        "exit": 0,
+        "compactBoundary": true,
+        "done": true,
+        "sessionMatches": true,
+        "events": [
+          "system/init",
+          "system/status",
+          "system/status",
+          "system/compact_boundary",
+          "user",
+          "assistant",
+          "result/success"
+        ],
+        "diagnostic": ""
+      },
+      "originalKept": false,
+      "rewritten": true,
+      "transcriptModels": [
+        "claude-haiku-4-5"
+      ],
+      "windowsMatch": true,
+      "modelsMatch": true,
+      "recoveryObserved": true,
+      "sourceWindow": 500000,
+      "targetWindow": 64000,
+      "seen": [
+        {
+          "head": "large",
+          "status": 200,
+          "summary": false,
+          "savedHistory": false
+        },
+        {
+          "head": "small",
+          "status": 400,
+          "summary": false,
+          "savedHistory": true
+        },
+        {
+          "head": "small",
+          "status": 200,
+          "summary": true,
+          "savedHistory": true
+        },
+        {
+          "head": "small",
+          "status": 200,
+          "summary": false,
+          "savedHistory": false
+        }
+      ],
+      "expectedVerdict": "FAIL",
+      "controlPass": true
+    }
+  ]
+}

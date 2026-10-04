@@ -1,0 +1,90 @@
+{
+  "class": "reasoning-blocks",
+  "about": "A prior assistant turn's reasoning: a thinking block with its signature and a redacted_thinking block. The Anthropic passthrough must return both byte for byte (an upstream verifies the signature); the translated dialects never send visible thinking back, so neither block may leak into their upstream as text, while the assistant's visible answer still arrives.",
+  "request": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "CONF-U1 explain the outage"
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "CONF-THINK weighing the two causes",
+            "signature": "SIG-CONF-AAAA"
+          },
+          {
+            "type": "redacted_thinking",
+            "data": "REDACTED-CONF-BBBB"
+          },
+          {
+            "type": "text",
+            "text": "CONF-A1 it was the expired certificate."
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": "CONF-U2 and the fix?"
+      }
+    ]
+  },
+  "expect": {
+    "anthropic-passthrough": [
+      {
+        "kind": "thinking",
+        "text": "CONF-THINK weighing the two causes",
+        "signature": "SIG-CONF-AAAA"
+      },
+      {
+        "kind": "redacted",
+        "data": "REDACTED-CONF-BBBB"
+      },
+      {
+        "kind": "item",
+        "role": "assistant",
+        "text": "CONF-A1 it was the expired certificate."
+      }
+    ],
+    "openai-chat": [
+      {
+        "kind": "absent",
+        "text": "CONF-THINK"
+      },
+      {
+        "kind": "absent",
+        "text": "SIG-CONF-AAAA"
+      },
+      {
+        "kind": "absent",
+        "text": "REDACTED-CONF-BBBB"
+      },
+      {
+        "kind": "item",
+        "role": "assistant",
+        "text": "CONF-A1 it was the expired certificate."
+      }
+    ],
+    "openai-responses": [
+      {
+        "kind": "absent",
+        "text": "CONF-THINK"
+      },
+      {
+        "kind": "absent",
+        "text": "SIG-CONF-AAAA"
+      },
+      {
+        "kind": "absent",
+        "text": "REDACTED-CONF-BBBB"
+      },
+      {
+        "kind": "item",
+        "role": "assistant",
+        "text": "CONF-A1 it was the expired certificate."
+      }
+    ]
+  }
+}

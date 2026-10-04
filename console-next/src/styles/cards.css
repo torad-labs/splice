@@ -1,0 +1,29 @@
+/* A list of cards (Sessions, Fleet): D, the calm version. A card is a window whose one accent is its head's shadow. */
+/* a card is as tall as what it says: `fit` keeps a short card short beside a tall one */
+.grid.fit { align-items: start; }
+.grid { list-style: none; margin: 0; padding: 0 var(--space-8) 0 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(28.75rem, 1fr)); gap: var(--space-15); }
+.card { position: relative; }
+.card.dragging { z-index: 5; opacity: .92; cursor: grabbing; }
+.card .bar h3 { font-size: var(--text-4); }
+.card-link { color: inherit; text-decoration: none; }
+/* the whole card opens the session; its acts stay above the link */
+.card-link::after { content: ''; position: absolute; inset: 0; z-index: 0; }
+.card .acts { position: relative; z-index: 1; align-items: center; flex-wrap: wrap; }
+.card .glass.one { padding: var(--space-6) var(--space-7); margin-bottom: var(--space-4); }
+.card .glass.one p { color: var(--glass-ink); }
+.card[tabindex="0"] .card-link::after { cursor: grab; }
+.card.dragging .card-link::after { cursor: grabbing; }
+/* A reading wears the command's colour; only a held refusal wears the quota red and hatch. */
+.gauge { display: grid; gap: var(--space-5); }
+.gauge .gl { display: flex; align-items: baseline; gap: var(--space-5); font: 500 0.8125rem var(--mono); }
+.gauge .gl span, .gauge .gl b { color: var(--glass-ink); font-weight: 600; }
+.gauge .gl small { margin-left: auto; font: 400 0.8125rem var(--mono); color: var(--glass-dim); }
+.gauge .track { height: 0.875rem; border-radius: 0.4375rem; background: var(--glass-track); overflow: hidden; }
+.gauge .track i { display: block; height: 100%; border-radius: 0.4375rem 0 0 0.4375rem; background: var(--rim); }
+.gauge .track.full i { background: repeating-linear-gradient(135deg, var(--stuck) 0 8px, var(--glass-hatch) 8px 16px); border-radius: 0.4375rem; }
+.add-card { display: grid; place-items: center; align-content: center; gap: var(--space-4); min-height: 15.625rem; padding: var(--space-10); border: 3px dashed var(--hair); border-radius: var(--r2); background: transparent; color: var(--mute); text-align: center; cursor: pointer; font: inherit; }
+.add-card b { font: 520 1.625rem/1.15 var(--display); color: var(--ink); }
+.add-card span { font: 400 1rem/1.5 var(--read); max-width: 30ch; }
+
+/* splice's own sentence about a card: serif, outside the glass, which is the terminal's and holds only what a session or a gauge says */
+.card .quiet-line { padding: 0 var(--space-7) var(--space-5); font: 400 1.0625rem/1.45 var(--read); color: var(--body); }

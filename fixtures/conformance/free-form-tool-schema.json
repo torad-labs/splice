@@ -1,0 +1,282 @@
+{
+  "class": "free-form-tool-schema",
+  "about": "MCP tools whose input_schema is free-form (no properties, additionalProperties true or a schema, an empty-schema property, $defs). The schema must reach the passthrough and chat upstreams unchanged (ChatWireMapper.toolsArray passes it through); the Responses dialect normalizes it as codex-rs does, and there the free-form constraints still hold. A tool_use in history must keep its input on every wire.",
+  "request": {
+    "tools": [
+      {
+        "name": "mcp__conf__open",
+        "description": "free-form object",
+        "input_schema": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      {
+        "name": "mcp__conf__bare",
+        "description": "bare object",
+        "input_schema": {
+          "type": "object"
+        }
+      },
+      {
+        "name": "mcp__conf__nested",
+        "description": "nested free-form",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "payload": {},
+            "filter": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": {}
+                }
+              ]
+            }
+          },
+          "additionalProperties": {},
+          "$defs": {
+            "any": {}
+          }
+        }
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "content": "CONF-U1 query it"
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool_use",
+            "id": "toolu_f1",
+            "name": "mcp__conf__nested",
+            "input": {
+              "payload": {
+                "rows": [
+                  1,
+                  2.5,
+                  {
+                    "k": null
+                  }
+                ],
+                "flag": true
+              },
+              "filter": "CONF-FILTER"
+            }
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "toolu_f1",
+            "content": "CONF-RESULT ok"
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": "CONF-U2 again"
+      }
+    ]
+  },
+  "expect": {
+    "anthropic-passthrough": [
+      {
+        "kind": "tool",
+        "name": "mcp__conf__open",
+        "schema": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      {
+        "kind": "tool",
+        "name": "mcp__conf__bare",
+        "schema": {
+          "type": "object"
+        }
+      },
+      {
+        "kind": "tool",
+        "name": "mcp__conf__nested",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "payload": {},
+            "filter": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": {}
+                }
+              ]
+            }
+          },
+          "additionalProperties": {},
+          "$defs": {
+            "any": {}
+          }
+        }
+      },
+      {
+        "kind": "toolcall",
+        "name": "mcp__conf__nested",
+        "input": {
+          "payload": {
+            "rows": [
+              1,
+              2.5,
+              {
+                "k": null
+              }
+            ],
+            "flag": true
+          },
+          "filter": "CONF-FILTER"
+        }
+      }
+    ],
+    "openai-chat": [
+      {
+        "kind": "tool",
+        "name": "mcp__conf__open",
+        "schema": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      {
+        "kind": "tool",
+        "name": "mcp__conf__bare",
+        "schema": {
+          "type": "object"
+        }
+      },
+      {
+        "kind": "tool",
+        "name": "mcp__conf__nested",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "payload": {},
+            "filter": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": {}
+                }
+              ]
+            }
+          },
+          "additionalProperties": {},
+          "$defs": {
+            "any": {}
+          }
+        }
+      },
+      {
+        "kind": "toolcall",
+        "name": "mcp__conf__nested",
+        "input": {
+          "payload": {
+            "rows": [
+              1,
+              2.5,
+              {
+                "k": null
+              }
+            ],
+            "flag": true
+          },
+          "filter": "CONF-FILTER"
+        }
+      }
+    ],
+    "openai-responses": [
+      {
+        "kind": "tool",
+        "name": "mcp__conf__open",
+        "schema": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "keys": [
+          "type",
+          "additionalProperties"
+        ]
+      },
+      {
+        "kind": "tool",
+        "name": "mcp__conf__bare",
+        "schema": {
+          "type": "object"
+        },
+        "keys": [
+          "type",
+          "additionalProperties"
+        ]
+      },
+      {
+        "kind": "tool",
+        "name": "mcp__conf__nested",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "payload": {},
+            "filter": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": {}
+                }
+              ]
+            }
+          },
+          "additionalProperties": {},
+          "$defs": {
+            "any": {}
+          }
+        },
+        "keys": [
+          "type",
+          "additionalProperties"
+        ]
+      },
+      {
+        "kind": "toolcall",
+        "name": "mcp__conf__nested",
+        "input": {
+          "payload": {
+            "rows": [
+              1,
+              2.5,
+              {
+                "k": null
+              }
+            ],
+            "flag": true
+          },
+          "filter": "CONF-FILTER"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,264 @@
+// PORT-OF: splice/spi/UpstreamClient.kt (RequestBody, HeaderRules, applyAuth, attemptRequest's assembly half) @ 3879c4c — invariants unchanged: bodies encoded once and NEVER gzipped, case-insensitive header dedupe, forward mode writes no auth header.
+//
+// ASSEMBLY of one upstream POST (HD-25): the body bytes, the headers, and the prepared statement.
+// Was UpstreamClient.RequestBody / HeaderRules / applyAuth and the first half of attemptRequest;
+// only the receiver moved.
+//
+// THE SEAM IS `statement.execute`. Status, error body and Retry-After are extracted INSIDE that
+// block because the response body channel dies at its close — which is why the whole execute
+// moved here rather than being split (HD-25 follow-up, 2026-08-20). The loop still owns the
+// four budgets; this file owns one attempt's HTTP round-trip.
+//
+// Request bodies are NEVER gzipped: xAI 400s on a gzipped body ("Failed to parse the request body
+// as JSON: expected value at line 1 column 1" — verified live 2026-07-18, first >=2KiB turn after
+// the gzip experiment deployed); ChatGPT is unproven. The body still rides as pre-encoded UTF-8
+// bytes so retries never re-encode the string.
+package splice.upstream.transport
+
+import io.ktor.client.HttpClient
+import io.ktor.client.request.headers
+import io.ktor.client.request.preparePost
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.HttpStatement
+import io.ktor.http.ContentType
+import io.ktor.http.content.ByteArrayContent
+import io.ktor.http.contentType
+import io.ktor.http.isSuccess
+import splice.core.auth.CredentialKey
+import splice.core.auth.Credentials
+import splice.core.perf.UpstreamAttemptTiming
+import splice.core.util.WallClock
+import splice.core.wire.HttpStatus
+import splice.core.wire.RateLimitReply
+import splice.upstream.CredentialHeaders
+import splice.upstream.StreamStart
+import splice.upstream.UpstreamHandler
+import splice.upstream.failure.FailureRules
+import splice.upstream.retry.MS_PER_S
+import splice.upstream.retry.RetryAfter
+import splice.upstream.sse.AttemptRecorder
+
+/** [json] for the RC-4 amender; [bytes] for the wire, encoded once.
+ *
+ *  ZSTD (CX-03, 2026-08-11): measured from codex-cli 0.145.0, which sends
+ *  `content-encoding: zstd` to this exact endpoint — 73,473 bytes compressed to 27,590 (2.7x).
+ *  The 2.7x is PER SSE-PATH TURN only: on a head with `websocket = true` (codex, live) the
+ *  chained majority of rounds ride raw WsUpstream text frames that never reach this method, so
+ *  compression covers the SSE-fallback minority. Codex-head bandwidth is dominated by WS, not
+ *  this path — see the CX-03 follow-up on compressing WS frames if the wire cost is the goal.
+ *
+ *  PER-PROVIDER AND DEFAULT OFF, deliberately: the no-compression rule exists because xAI 400d
+ *  on a GZIPPED body and broke grok live on 2026-07-18. This is zstd, not gzip, and it is
+ *  proven only for ChatGPT by its own first-party client — so it is opt-in per provider and
+ *  the gzip ban stands untouched. */
+internal data class RequestBody(val json: String, val zstd: Boolean = false) {
+    val bytes: ByteArray =
+        json.toByteArray(Charsets.UTF_8).let { if (zstd) com.github.luben.zstd.Zstd.compress(it) else it }
+
+    /** The content-encoding the bytes ride under, for the trace; null when they are the JSON itself. */
+    val encoding: String? get() = if (zstd) "zstd" else null
+}
+
+/** The header half of a request: what the credential writes, and the case-insensitive merge
+ *  that keeps a configured and a forwarded header from both reaching the wire. Was the
+ *  companion's `authHeaders` / `dedupeCaseInsensitive`; only the receiver moved. */
+internal class HeaderRules {
+    /** The auth header this credential writes, if any. FORWARD MODE writes NOTHING: the head
+     *  holds no credential and the caller's own auth rides in the per-turn extra headers, so
+     *  emitting anything here would either overwrite it or sit beside it as a second, empty
+     *  Authorization (campaign claude-head, CH-5). */
+    internal fun authHeaders(creds: Credentials): Map<String, String> = CredentialKey.headers(creds, emptyMap())
+
+    /** Ktor's header builder APPENDS and HTTP header names are case-INSENSITIVE, while a Kotlin
+     *  map merge is case-SENSITIVE — so a configured `anthropic-version` plus a forwarded
+     *  `Anthropic-Version` would survive the merge as two entries and reach the wire twice.
+     *  Last-wins on the case-folded name, which makes a forwarded header REPLACE a configured
+     *  default (the intent) instead of duplicating it. Casing of the surviving entry is kept. */
+    internal fun dedupeCaseInsensitive(headers: Map<String, String>): Map<String, String> =
+        headers.entries
+            .associateBy({ it.key.lowercase() }, { it.key to it.value })
+            .values
+            .toMap()
+}
+
+/** Every upstream answer is asked for uncompressed, whatever a provider's headers say: it is merged last, so
+ *  a configured Accept-Encoding cannot replace it. splice decodes no content encoding itself, and OkHttp
+ *  inflates only an encoding it asked for, so a configured gzip would hand raw gzip to the event parser.
+ *  With no Accept-Encoding of ours, OkHttp's BridgeInterceptor asks for gzip on its own and inflates the
+ *  answer out of sight of the trace.
+ *  Anthropic's event streams answer with Vary: Accept-Encoding, and a compressed event stream is flushed in
+ *  compressed blocks, not one event at a time. On Oct 2, 12 to 27 percent of Claude-head turns an hour had
+ *  their first delta past 90% of the turn, the whole thinking and tool input landing in its last tens of
+ *  milliseconds. A streaming proxy wants each event as it is made; the bytes saved are not worth one held event. */
+private val IDENTITY_RESPONSE = mapOf("Accept-Encoding" to "identity")
+
+/** Every header one upstream POST carries: the credential's auth header, then the provider's and the turn's own, merged
+ *  case-insensitively, and the identity answer encoding last. One composition for every sender: a turn's attempt and the
+ *  Playground's one call (V4-444), so the Playground cannot send a header set a turn would not. */
+public object UpstreamHeaders {
+    private val rules = HeaderRules()
+
+    public fun compose(creds: Credentials, extra: Map<String, String>): Map<String, String> =
+        rules.dedupeCaseInsensitive(rules.authHeaders(creds) + extra + IDENTITY_RESPONSE)
+}
+
+internal class UpstreamRequest(
+    private val client: HttpClient,
+    private val zstdRequestBody: Boolean,
+    /** V4-233: judges whether a plan-limit reset is still ahead; injectable so a test can pin it. */
+    private val wallClock: WallClock = WallClock(System::currentTimeMillis),
+) {
+    private val retryAfter = RetryAfter()
+    private val failureRules = FailureRules()
+
+    /** Encode ONCE; retries resend the same bytes (no per-attempt string re-encode). Never gzip. */
+    fun body(bodyJson: String): RequestBody = RequestBody(bodyJson, zstdRequestBody)
+
+    /** The prepared POST, up to but NOT including `execute` — [execute] owns the block because
+     *  the response body channel only lives inside it. */
+    suspend fun prepare(
+        url: String,
+        creds: Credentials,
+        extraHeaders: CredentialHeaders,
+        bodyBytes: ByteArray,
+        recorder: AttemptRecorder? = null,
+        timingToken: String? = null,
+    ): HttpStatement {
+        val allHeaders = UpstreamHeaders.compose(creds, extraHeaders(creds))
+        // V4-174: the recorder sees the SAME map the wire gets, after the dedupe — redacted on the
+        // way in (AttemptRecorder.request), so the credential never leaves this assembly.
+        recorder?.request(allHeaders)
+        return client.preparePost(url) {
+            contentType(ContentType.Application.Json)
+            headers {
+                allHeaders.forEach { (k, v) -> append(k, v) }
+                if (zstdRequestBody) append("Content-Encoding", "zstd")
+                if (timingToken != null) {
+                    remove(UPSTREAM_TIMING_HEADER)
+                    append(UPSTREAM_TIMING_HEADER, timingToken)
+                }
+            }
+            setBody(ByteArrayContent(bodyBytes, ContentType.Application.Json))
+        }
+    }
+
+    /** The READ-BEFORE-CLOSE half of one attempt. Status, error body and Retry-After are all
+     *  extracted INSIDE the execute block because the response body channel dies at its close. */
+    suspend fun <T> execute(
+        ctx: PostContext,
+        bodyBytes: ByteArray,
+        auth: AttemptCredentials,
+        onStreamStart: StreamStart,
+        block: UpstreamHandler<T>,
+        recorder: AttemptRecorder? = null,
+    ): RetryOutcome<T> {
+        val postedAtMs = auth.postedAtMs
+        val timing = ctx.perf?.let(::UpstreamAttemptTiming)
+        val bridge = client.attributes.getOrNull(upstreamTimingBridgeKey)
+        val token = timing?.let { bridge?.register(it) }
+        val accepted = StreamStart {
+            // Acceptance is newer than the body completion of any already-open stream.
+            auth.cooldown.answered()
+            onStreamStart()
+        }
+        try {
+            val statement = prepare(
+                ctx.url,
+                auth.credentials,
+                CredentialHeaders { auth.headers },
+                bodyBytes,
+                recorder,
+                token,
+            )
+            val handler = UpstreamHandler<T> { response ->
+                block(response.also { it.postedAtMs = postedAtMs })
+            }
+            return statement.execute { response ->
+                timing?.headersDelivered()
+                executeResponse(response, ctx, accepted, handler, recorder)
+            }
+        } finally {
+            token?.let { bridge?.release(it) }
+        }
+    }
+
+    private suspend fun <T> executeResponse(
+        resp: HttpResponse,
+        ctx: PostContext,
+        onStreamStart: StreamStart,
+        block: UpstreamHandler<T>,
+        recorder: AttemptRecorder?,
+    ): RetryOutcome<T> {
+        ctx.markHeaders()
+        // V4-220 item 6b: every answer reaches the provider, so a forwarded credential's verdict is known.
+        ctx.auth.upstreamAnswered(resp.status.value, resp.status.isSuccess())
+        recorder?.response(resp.status.value, resp.headers.entries().associate { (k, v) -> k to v.joinToString() })
+        return if (resp.status.isSuccess()) {
+            onStreamStart()
+            ctx.upstreamAccepted()
+            RetryOutcome.Done(block(UpstreamResponse(resp)))
+        } else {
+            val realStatus = resp.status.value
+            val text = UpstreamResponse(resp).bodyTextLimited(MAX_ERROR_BODY_BYTES)
+            recorder?.errorText(text)
+            val status = quotaExhaustedStatus(realStatus, text, ctx)
+            RetryOutcome.Failed(
+                status,
+                text,
+                retryAfter.retryAfterMs(resp.headers["Retry-After"]),
+                planLimit = if (status == HttpStatus.TOO_MANY_REQUESTS) {
+                    val nowSeconds = wallClock() / MS_PER_S
+                    ctx.auth.planLimit({ name -> resp.headers[name] }, nowSeconds)
+                        ?: ctx.auth.planLimitFromBody(text, nowSeconds)
+                } else {
+                    null
+                },
+                rateLimitReply = if (ctx.relayRateLimitReplies && realStatus == HttpStatus.TOO_MANY_REQUESTS) {
+                    RateLimitReply(
+                        text,
+                        resp.headers.entries().filter { (name, _) ->
+                            name.equals("retry-after", ignoreCase = true) ||
+                                name.equals("x-should-retry", ignoreCase = true) ||
+                                name.startsWith("anthropic-ratelimit-", ignoreCase = true)
+                        }.associate { (name, values) -> name to values.toList() },
+                    )
+                } else {
+                    null
+                },
+            )
+        }
+    }
+
+    /**
+     * V4-73: A QUOTA EXHAUSTION IS A RATE LIMIT, whatever status the vendor dressed it in.
+     *
+     *  One rewrite, at the single site that builds [RetryOutcome.Failed], is what makes every layer
+     *  above agree without any of them learning a vendor's spelling: rateLimitedPlan arms the shared
+     *  cooldown, the account pool marks the account unavailable and moves on, the thrown
+     *  UpstreamFailed carries 429, the classifier's RATE_LIMIT-by-status fires, and the admission
+     *  refusal answers with the headers the client's persistent retry reads.
+     *
+     *  AUTH REFRESH IS NEVER SPENT ON A REWRITTEN FAILURE, structurally rather than by a second
+     *  guard: the refresh decision asks isAuthRefreshableFailure(status, body), which is true only
+     *  for 401 and for 403-with-an-auth-body — and by the time it is asked, the status is 429. An
+     *  UNRECOGNISED 403 keeps its status and therefore keeps V4-38's freshness rule exactly.
+     *
+     *  The body rides through UNCHANGED: the vendor's own sentence (grok's "run out of credits") is
+     *  the honest thing to show, and it is deliberately none of the phrases that stop the client's
+     *  persistent retry (pinned in the client-contract test).
+     */
+    private fun quotaExhaustedStatus(realStatus: Int, body: String, ctx: PostContext): Int {
+        val exhausted = failureRules.isQuotaExhaustionStatus(realStatus) ||
+            ctx.auth.isQuotaExhausted(realStatus, body)
+        if (!exhausted) return realStatus
+        ctx.onRetry(
+            "upstream $realStatus is a quota exhaustion; treating it as " +
+                "${HttpStatus.TOO_MANY_REQUESTS} so the retry, cooldown and pool layers see the " +
+                "rate limit it is",
+        )
+        return HttpStatus.TOO_MANY_REQUESTS
+    }
+}
+
+private const val MAX_ERROR_BODY_BYTES = 64 * 1024

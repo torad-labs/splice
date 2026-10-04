@@ -1,0 +1,38 @@
+// What the Models table says. A price the provider does not declare is said in words, never as a dollar figure.
+import type { ModelSort } from '../../lib/model-table';
+
+export const MT = {
+  title: 'Every model',
+  table: 'Models table',
+  why: (models: string, commands: string): string => `${models} on ${commands}. Prices are per million tokens, as each provider declares them.`,
+  shown: (shown: string, total: string): string => `${shown} of ${total} models match.`,
+  models: (count: number): string => `${count.toLocaleString()} ${count === 1 ? 'model' : 'models'}`,
+  commands: (count: number): string => `${count.toLocaleString()} ${count === 1 ? 'command' : 'commands'}`,
+  search: 'Search models',
+  searchHint: 'Model or command',
+  reading: 'Reading the models.',
+  unserved: 'This daemon does not list its models yet.',
+  none: (query: string): string => `No model matches "${query}".`,
+  columns: {
+    model: 'Model',
+    command: 'Command',
+    account: 'Account',
+    window: 'Context window',
+    input: 'Input',
+    output: 'Output',
+  } as const satisfies Record<ModelSort, string>,
+  sortBy: (column: string): string => `Sort by ${column}`,
+  key: 'API key',
+  local: 'This computer',
+  unreported: 'Not reported',
+  signedOut: 'Not signed in',
+  signedIn: 'Signed in',
+  /** The plan as the command's card prints it, capitalised: the name a person knows the login by. */
+  onPlan: (plan: string): string => `Signed in, ${plan.charAt(0).toUpperCase()}${plan.slice(1)} plan`,
+  others: (name: string, count: number): string => `${name} and ${count} more`,
+  noPrice: 'Not declared',
+  noWindow: 'Not known',
+  above: (price: string, tokens: string): string => `${price} above ${tokens}`,
+  pinned: 'Pinned',
+  unresolved: 'Not resolved',
+} as const;

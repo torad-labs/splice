@@ -1,0 +1,174 @@
+// NEW: V4-146 — the census's own classification logic, isolated from the filesystem with stub
+// McpSourceReaders (McpSourcesTest.kt proves the real readers against fixtures; this file proves
+// the disposition rules and the row's mutation test: deleting a kind reader must REFUSE, never
+// silently report a smaller clean number).
+package splice.client.mcp
+
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import java.nio.file.Path
+
+class McpInventoryTest {
+
+    private val canonical: Path = Path.of("/home/.claude.json")
+    private val headHome: Path = Path.of("/home/.claude-bonsai")
+
+    private fun entry(json: String): JsonObject = Json.parseToJsonElement(json).jsonObject
+
+    private fun sharing() = McpSharing(
+        enabled = true,
+        exclude = emptySet(),
+        endpointPrefix = "http://127.0.0.1:3096/mcp/",
+        bearer = { "KEY" },
+        isDirectory = DirectoryProbe { false },
+    )
+
+    private fun stub(kind: McpSourceKind, regs: List<McpRegistration> = emptyList()): McpSourceReader =
+        McpSourceReader { McpSourceScan(kind, listOf(Path.of("/stub-root")), listOf(Path.of("/stub-file")), regs) }
+
+    private fun readers(
+        overrides: Map<McpSourceKind, McpSourceReader> = emptyMap(),
+    ): Map<McpSourceKind, McpSourceReader> =
+        McpSourceKind.entries.associateWith { kind -> overrides[kind] ?: stub(kind) }
+
+    private fun inventory(
+        overrides: Map<McpSourceKind, McpSourceReader> = emptyMap(),
+        plan: JsonObject = entry("{}"),
+        readerMap: Map<McpSourceKind, McpSourceReader> = readers(overrides),
+    ) = McpInventory(readerMap, canonical, McpGlobalPlan { sharing().plan(plan) }, setOf(headHome))
+
+    @Test
+    fun `deleting one kind reader makes the census refuse rather than under-report`() {
+        val incomplete = readers().toMutableMap()
+        incomplete.remove(McpSourceKind.PLUGIN_INLINE)
+        val ex = assertThrows(IllegalStateException::class.java) {
+            McpInventory(incomplete, canonical, McpGlobalPlan { sharing().plan(entry("{}")) }, emptySet())
+        }
+        assertTrue(ex.message!!.contains("PLUGIN_INLINE"), ex.message)
+    }
+
+    @Test
+    fun `a full reader map builds without complaint`() {
+        inventory() // must not throw
+    }
+
+    @Test
+    fun `a GLOBAL server on the canonical home is migrated when McpSharing would host it`() {
+        val reg = McpRegistration(McpSourceKind.GLOBAL, "exa", canonical, null, entry("""{"command":"npx"}"""))
+        val overrides = mapOf(McpSourceKind.GLOBAL to stub(McpSourceKind.GLOBAL, listOf(reg)))
+        val inv = inventory(overrides, entry("""{"exa":{"command":"npx"}}"""))
+        val d = inv.census().dispositioned.single { it.registration.name == "exa" }
+        assertEquals(McpDisposition.MIGRATED, d.disposition)
+    }
+
+    @Test
+    fun `a GLOBAL server McpSharing rejects is excluded with McpSharing's own reason, not a made-up one`() {
+        val entryJson = entry("""{"command":"node","cwd":"/x"}""")
+        val reg = McpRegistration(McpSourceKind.GLOBAL, "scoped", canonical, null, entryJson)
+        val plan = entry("""{"scoped":{"command":"node","cwd":"/x"}}""")
+        val overrides = mapOf(McpSourceKind.GLOBAL to stub(McpSourceKind.GLOBAL, listOf(reg)))
+        val inv = inventory(overrides, plan)
+        val d = inv.census().dispositioned.single()
+        assertEquals(McpDisposition.EXCLUDED, d.disposition)
+        assertTrue(d.reason.contains("cwd"), d.reason)
+    }
+
+    @Test
+    fun `a GLOBAL server declared in a different Claude identity is excluded, never migrated`() {
+        val otherHome = Path.of("/home/.claude-work/.claude.json")
+        val reg = McpRegistration(McpSourceKind.GLOBAL, "work-only", otherHome, null, entry("""{"command":"npx"}"""))
+        val inv = inventory(mapOf(McpSourceKind.GLOBAL to stub(McpSourceKind.GLOBAL, listOf(reg))))
+        val d = inv.census().dispositioned.single()
+        assertEquals(McpDisposition.EXCLUDED, d.disposition)
+        assertTrue(d.reason.contains("different Claude Code identity"), d.reason)
+    }
+
+    // v0.4.0 mcp review: a head that shares mcps gets its `.claude.json` servers written from the
+    // canonical home at launch, so a server found there is this daemon's own copy, never another
+    // identity's. It takes the canonical plan's answer, and the reason says it is the copy.
+    private fun headCopy(name: String, entryJson: String, plan: String): McpDispositioned {
+        val reg = McpRegistration(McpSourceKind.GLOBAL, name, headHome.resolve(".claude.json"), null, entry(entryJson))
+        val inv = inventory(mapOf(McpSourceKind.GLOBAL to stub(McpSourceKind.GLOBAL, listOf(reg))), entry(plan))
+        return inv.census().dispositioned.single()
+    }
+
+    @Test
+    fun `a head's copy of a hosted server is migrated, and the reason names the copy`() {
+        val canonical = """{"exa":{"command":"npx"}}"""
+        val d = headCopy("exa", written(canonical, "exa"), canonical)
+        assertEquals(McpDisposition.MIGRATED, d.disposition)
+        assertTrue(d.reason.contains("head's copy"), d.reason)
+    }
+
+    @Test
+    fun `a head's copy of a server hosting leaves as declared carries the plan's own reason`() {
+        val declared = """{"command":"node","cwd":"/x"}"""
+        val d = headCopy("scoped", declared, """{"scoped":$declared}""")
+        assertEquals(McpDisposition.EXCLUDED, d.disposition)
+        assertTrue(d.reason.contains("head's copy") && d.reason.contains("cwd"), d.reason)
+    }
+
+    /** What the materializer writes into a head for [name] from [canonical]: the plan's own rewrite. */
+    private fun written(canonical: String, name: String): String =
+        sharing().plan(entry(canonical)).rewritten.getValue(name).toString()
+
+    // v0.4.0 mcp review, second pass: a head's copy is written at its LAUNCH, the plan is read on every
+    // census, so a canonical edit since then leaves the copy saying something else. Matching the name
+    // alone reported what the canonical file says now, not what that head runs.
+    @Test
+    fun `a head's copy the canonical plan no longer writes is reported stale, whichever way it drifted`() {
+        val hostedNow = """{"exa":{"command":"npx"}}"""
+        val declaredNow = """{"exa":{"command":"npx","cwd":"/x"}}"""
+        val cases = mapOf(
+            "hosted now, the copy still spawns its own" to headCopy("exa", """{"command":"npx"}""", hostedNow),
+            "left as declared now, the copy still points at the host" to
+                headCopy("exa", written(hostedNow, "exa"), declaredNow),
+            "hosted, the copy carries an older bearer" to headCopy(
+                "exa",
+                written(hostedNow, "exa").replace("Bearer KEY", "Bearer OLD"),
+                hostedNow,
+            ),
+        )
+        cases.forEach { (case, d) ->
+            assertEquals(McpDisposition.EXCLUDED, d.disposition, case)
+            assertTrue(d.reason.contains("stale"), "$case: ${d.reason}")
+        }
+    }
+
+    @Test
+    fun `a server only in a head's copy is excluded as absent from the canonical home, not as a race`() {
+        val d = headCopy("added", """{"command":"npx"}""", "{}")
+        assertEquals(McpDisposition.EXCLUDED, d.disposition)
+        assertTrue(d.reason.contains("not among the canonical home's servers"), d.reason)
+    }
+
+    @Test
+    fun `PROJECT and REPO are pending, PLUGIN kinds are excluded — every kind carries a written reason`() {
+        fun reg(kind: McpSourceKind) = McpRegistration(kind, "x", Path.of("/f"), null, entry("{}"))
+        fun single(kind: McpSourceKind) = stub(kind, listOf(reg(kind)))
+        val overrides = mapOf(
+            McpSourceKind.PROJECT to single(McpSourceKind.PROJECT),
+            McpSourceKind.REPO to single(McpSourceKind.REPO),
+            McpSourceKind.PLUGIN_MCP_JSON to single(McpSourceKind.PLUGIN_MCP_JSON),
+            McpSourceKind.PLUGIN_INLINE to single(McpSourceKind.PLUGIN_INLINE),
+        )
+        val byKind = inventory(overrides).census().dispositioned.associateBy { it.registration.kind }
+        assertEquals(McpDisposition.PENDING, byKind.getValue(McpSourceKind.PROJECT).disposition)
+        assertEquals(McpDisposition.PENDING, byKind.getValue(McpSourceKind.REPO).disposition)
+        assertEquals(McpDisposition.EXCLUDED, byKind.getValue(McpSourceKind.PLUGIN_MCP_JSON).disposition)
+        assertEquals(McpDisposition.EXCLUDED, byKind.getValue(McpSourceKind.PLUGIN_INLINE).disposition)
+        byKind.values.forEach { assertTrue(it.reason.isNotBlank(), "${it.registration.kind} has no written reason") }
+    }
+
+    @Test
+    fun `the census reports all five kinds even when several are empty`() {
+        val report = inventory().census()
+        assertEquals(McpSourceKind.entries.toSet(), report.kinds.map { it.kind }.toSet())
+        assertTrue(report.kinds.all { it.rootsScanned > 0 }, "every stub kind was given a root; none should read 0")
+    }
+}

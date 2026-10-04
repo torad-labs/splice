@@ -1,0 +1,19 @@
+/* One project in D: its sentence, who works in it, what governs it, and the two texts that stand for it. */
+.crumb { display: flex; gap: var(--space-5); margin-bottom: var(--space-7); font: 600 0.96rem var(--meta); color: var(--mute); }
+.crumb a { color: var(--ink); text-decoration: underline; text-underline-offset: 0.25rem; text-decoration-thickness: 2px; text-decoration-color: var(--hair); }
+.proj-section { margin-top: var(--space-16); max-width: 67.5rem; }
+.proj-section > h2 { font: 520 1.625rem/1.15 var(--display); color: var(--ink); }
+.proj-section > .why { margin-top: var(--space-4); font: 400 1rem/1.5 var(--read); color: var(--mute); max-width: 70ch; }
+.proj-list { list-style: none; margin: var(--space-9) 0 0; padding: 0; display: grid; gap: var(--space-6); }
+.proj-list li { font: 500 1.0625rem var(--meta); color: var(--body); display: flex; gap: var(--space-6); align-items: baseline; flex-wrap: wrap; }
+.proj-list a { color: var(--ink); font-weight: 650; text-decoration: none; }
+.proj-list a:hover { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 0.25rem; }
+.proj-list li .on-request { margin: 0 0 0 auto; }
+.proj-list small { font: 500 0.875rem var(--meta); color: var(--mute); }
+.standing { display: grid; gap: var(--space-8); margin-top: var(--space-9); max-width: 47.5rem; }
+.standing .field { display: grid; gap: var(--space-3); }
+.standing textarea.input { min-height: 7.5rem; resize: vertical; font: 400 1rem/1.5 var(--read); width: 100%; box-sizing: border-box; }
+.standing .fromfile code { font: 500 0.875rem var(--mono); color: var(--body); overflow-wrap: anywhere; }
+.proj-files { list-style: none; margin: var(--space-9) 0 0; padding: 0; display: grid; gap: var(--space-8); }
+.proj-files summary { cursor: pointer; font: 600 1.0625rem var(--meta); color: var(--ink); }
+.proj-files pre { margin: var(--space-5) 0 0; padding: var(--space-6) var(--space-7); max-height: 22.5rem; overflow: auto; background: var(--glass); color: var(--glass-ink); border-radius: 0.625rem; font: 400 0.8125rem/1.55 var(--mono); white-space: pre-wrap; word-break: break-word; }

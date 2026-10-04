@@ -1,0 +1,181 @@
+// NEW: xAI Grok OAuth — the SuperGrok / X-Premium+ browser login the official `grok` CLI uses
+// (researched from xai-org/grok-build docs + the opencode-grok-auth / hermes-agent reference
+// implementations). Authorization-code + PKCE (S256) against auth.x.ai with a loopback redirect,
+// exactly like codex — only the endpoints/client-id/scope differ. Credentials land in
+// ~/.grok/auth.json (shape-compatible enough to interop with the official CLI's tokens). The public
+// desktop client id is not a secret (it's the CLI's, reused so no separate grok binary is needed).
+package splice.provider.grok
+
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import splice.core.auth.CredentialExpiry
+import splice.core.auth.Pkce
+import splice.core.util.EnvReader
+import splice.core.util.FormEncoding
+import splice.core.util.JsonScalars
+import java.security.MessageDigest
+import java.security.SecureRandom
+import java.util.Base64
+
+// 48 = PKCE verifier byte length used by the grok CLI (base64url ~64 chars).
+private const val PKCE_VERIFIER_BYTES = 48
+
+// The refresh-token grant name doubles as the persisted token field key (the wire contract).
+private const val WIRE_REFRESH_TOKEN = "refresh_token"
+
+// FILE SCOPE ON PURPOSE: one configured Json parser shared by every call. As a member it would be
+// rebuilt per GrokOAuth construction, and the callers construct one per login/refresh.
+private val grokJson = Json { ignoreUnknownKeys = true }
+
+/** The grok OAuth wire builders and response parsers. Stateless — collaborators construct one. */
+public class GrokOAuth {
+
+    public fun makeGrokPkce(random: SecureRandom = SecureRandom()): Pkce {
+        val verifier = grokBase64Url(ByteArray(PKCE_VERIFIER_BYTES).also { random.nextBytes(it) })
+        val challenge = grokBase64Url(MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray()))
+        return Pkce(verifier, challenge)
+    }
+
+    private fun grokBase64Url(bytes: ByteArray): String =
+        Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+
+    /** Authorize URL with the grok-CLI param set + %20 (not +) encoding. */
+    public fun buildGrokAuthorizeUrl(
+        challenge: String,
+        state: String,
+        nonce: String,
+        clientId: String,
+        env: EnvReader,
+        redirectUri: String = GrokOAuthEndpoints.REDIRECT_URI,
+    ): String {
+        val params = listOf(
+            "response_type" to "code",
+            "client_id" to clientId,
+            "redirect_uri" to redirectUri,
+            "scope" to GrokOAuthEndpoints.SCOPE,
+            "code_challenge" to challenge,
+            "code_challenge_method" to "S256",
+            "state" to state,
+            "nonce" to nonce,
+            "plan" to "generic",
+            "referrer" to "splice",
+        )
+        val query = params.joinToString("&") { (k, v) -> "$k=${FormEncoding.percentEncode(v)}" }
+        return "${GrokOAuthEndpoints.authorizeUrl(env)}?$query"
+    }
+
+    /** Form body for the authorization-code exchange (x-www-form-urlencoded). */
+    public fun grokCodeExchangeForm(
+        code: String,
+        verifier: String,
+        challenge: String,
+        clientId: String,
+        redirectUri: String,
+    ): String =
+        FormEncoding.formEncode(
+            "grant_type" to "authorization_code",
+            "code" to code,
+            "redirect_uri" to redirectUri,
+            "client_id" to clientId,
+            "code_verifier" to verifier,
+            "code_challenge" to challenge,
+            "code_challenge_method" to "S256",
+        )
+
+    /** Form body for the refresh-token grant. */
+    internal fun grokRefreshForm(refreshToken: String, clientId: String): String =
+        FormEncoding.formEncode(
+            "grant_type" to WIRE_REFRESH_TOKEN,
+            "client_id" to clientId,
+            WIRE_REFRESH_TOKEN to refreshToken,
+        )
+
+    /** Parse a token endpoint response into the ~/.grok/auth.json object GrokAuthProvider reads. */
+    public fun grokAuthJsonFromTokenResponse(
+        responseBody: String,
+        fallbackRefresh: String?,
+        nowMs: Long,
+        nowIso: String,
+    ): JsonObject {
+        val obj = jsonObjectOrEmpty(grokJson.parseToJsonElement(responseBody))
+        val access = JsonScalars.str(obj, "access_token").orEmpty()
+        val refresh = JsonScalars.str(obj, WIRE_REFRESH_TOKEN) ?: fallbackRefresh
+        val expiresIn = JsonScalars.long(obj, "expires_in")
+        return buildJsonObject {
+            put(
+                "tokens",
+                buildJsonObject {
+                    put("access_token", JsonPrimitive(access))
+                    if (refresh != null) put(WIRE_REFRESH_TOKEN, JsonPrimitive(refresh))
+                },
+            )
+            // DR-177: this was nowMs + expiresIn * 1000, which wrapped to a large NEGATIVE
+            // instant for any absurd expires_in — the persisted file then read as expired on
+            // every turn, and every turn refreshed. The file-local seconds constant went with
+            // it: the conversion belongs to CredentialExpiry now, not to each provider.
+            if (expiresIn != null) {
+                put("expires", JsonPrimitive(CredentialExpiry.expiryFromNowMs(nowMs, expiresIn)))
+            }
+            put("last_refresh", JsonPrimitive(nowIso))
+        }
+    }
+
+    /**
+     * xAI answers a BLOCKED account with 403 exactly as it answers an expired token — the same
+     * conflation GrokAuthProvider's header records for the 2026-07-18 grok-dead-head incident — so
+     * STATUS alone can never tell a billing state from an auth state. This recognises the
+     * entitlement codes and phrases xAI actually sends, case-insensitively, on the BODY only.
+     *
+     * RULE 3 (2026-09-16 operator report: the grok login page kept reopening). These phrases choose
+     * ONLY the sentence an operator reads. They never decide whether to refresh or to sign in: that
+     * decision is GrokAuthProvider.allowRefreshAfterFailure's freshness invariant, which needs no
+     * vendor strings at all and therefore still holds for the next unrecognised 403 code. Mirrors
+     * KimiOAuth.isPlanTierRejection.
+     */
+    public fun isEntitlementRejection(body: String): Boolean {
+        val lower = body.lowercase()
+        return ENTITLEMENT_PHRASES.any { lower.contains(it) }
+    }
+
+    /**
+     * The sentence an operator reads for a recognised entitlement body, or null when the body is
+     * not recognised — the caller's cue to fall back to an honest generic 403 line rather than
+     * guess a cause. A wrong guess then costs a vague message instead of a browser loop.
+     *
+     * The link is the VENDOR's own, taken from the body when it carries one: splice does not invent
+     * a top-up URL.
+     */
+    public fun entitlementSentence(body: String): String? {
+        if (!isEntitlementRejection(body)) return null
+        val topUp = VENDOR_LINK.find(body)?.value
+        val cause = "grok: this account has run out of credits or needs a Grok subscription " +
+            "(xAI personal-team-blocked / spending-limit). A refresh cannot change a billing state, " +
+            "so splice did not re-authenticate."
+        // SAFE-RENDER-EXEMPT[2026-09-16]: neither value is a throwable — cause is a fixed literal and
+        // topUp is a host-constrained, length-bounded vendor URL, so no exception text and no
+        // arbitrary body bytes can reach the operator through this sentence.
+        return if (topUp == null) cause else "$cause Top up: $topUp"
+    }
+
+    private fun jsonObjectOrEmpty(el: JsonElement): JsonObject =
+        el as? JsonObject ?: JsonObject(emptyMap())
+}
+
+// The entitlement spellings xAI sends today. Lower-case on purpose: the match lower-cases the body.
+private val ENTITLEMENT_PHRASES = listOf(
+    "personal-team-blocked",
+    "spending-limit",
+    "spending limit",
+    "run out of credits",
+    "need a grok subscription",
+)
+
+// The vendor's own top-up link, when the 403 body carries one.
+// The vendor's own top-up link, and ONLY the vendor's. This string is quoted back to the operator,
+// and the previous spelling was https://[^\s"'}]+ — ANY url anywhere in a 403 body, unbounded. A
+// redirect carrying a token in its query would have been echoed verbatim. The doc comment said "the
+// VENDOR's own"; nothing enforced it. Host-constrained and length-bounded now, so it does. (DR-65)
+private val VENDOR_LINK = Regex("""https://(?:[a-z0-9-]+\.)*(?:x\.ai|grok\.com)(?:/[^\s"'}]{0,120})?""")

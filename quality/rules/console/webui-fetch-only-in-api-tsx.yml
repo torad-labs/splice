@@ -1,0 +1,28 @@
+# UI strictly via typed query and mutation state — tsx variant. The HTTP client
+# is plain .ts, so ANY fetch in a .tsx file is a component fetching server state directly.
+#
+# Widened 2026-07-26 (ast-grep-walls-audit): same defect as webui-fetch-only-in-api
+# — the bare pattern only matched a bare or dot-accessed call callee; optional
+# chaining ($W?.fetch) and bracket access ($W['fetch'], $W["fetch"],
+# $W?.['fetch'], $W?.["fetch"]) are different node shapes and slipped through.
+# All six call shapes are now enumerated (double-quoted bracket form is an
+# audit addition with its own rule-test case, per §9 of the audit). The same
+# call shapes cover the successor.
+id: webui-fetch-only-in-api-tsx
+language: tsx
+severity: error
+message: "No fetch in components: use typed query and mutation hooks from src/api."
+note: |
+  Components render query state and keep only ephemeral input locally.
+  Move HTTP into src/api/client.ts and consume it through a typed hook.
+files:
+  - console-next/src/**/*.tsx
+rule:
+  any:
+    - pattern: fetch($$$A)
+    - pattern: $W.fetch($$$A)
+    - pattern: $W?.fetch($$$A)
+    - pattern: $W['fetch']($$$A)
+    - pattern: $W?.['fetch']($$$A)
+    - pattern: $W["fetch"]($$$A)
+    - pattern: $W?.["fetch"]($$$A)

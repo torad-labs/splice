@@ -1,0 +1,65 @@
+/* The site's and the film's world: model colours, and two walls (day, night) with one geometry. */
+:root {
+  --claude: #ee8f58; --gpt: #00c5be; --grok: #6eadfe; --kimi: #e3b341; --muse: #b896f3; --local: #7bc47f; --router: #f3b27a; --deepseek: #8fb8d8;
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23g)'/%3E%3C/svg%3E");
+  --display: 'Fraunces', Georgia, serif;
+  --read: 'Source Serif 4', Georgia, serif;
+  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  /* D: everything that is not code or terminal text (meta, buttons, nav, labels, values) reads in the reading face */
+  --meta: 'Source Serif 4', Georgia, serif;
+  --input: 2px solid color-mix(in srgb, var(--ink) 50%, transparent);
+  --ease: cubic-bezier(.22, 1, .36, 1);
+  --r1: 6px; --r2: 14px;
+  /* Spacing: one scale, on a 4px grid with the 2px and 6px half-steps. Every gap, margin, padding and offset is a rung; a size
+     between rungs is a new rung here, never a local value (webui-css-tokens-only). The px of each rung is in its comment. */
+  --space-px: 1px;
+  --space-0: 0;
+  --space-1: .125rem;   /*   2 */
+  --space-2: .25rem;    /*   4 */
+  --space-3: .375rem;   /*   6 */
+  --space-4: .5rem;     /*   8 */
+  --space-5: .75rem;    /*  12 */
+  --space-6: 1rem;      /*  16 */
+  --space-7: 1.25rem;   /*  20 */
+  --space-8: 1.5rem;    /*  24 */
+  --space-9: 1.75rem;   /*  28 */
+  --space-10: 2rem;     /*  32 */
+  --space-11: 2.5rem;   /*  40 */
+  --space-12: 3rem;     /*  48 */
+  --space-13: 3.5rem;   /*  56 */
+  --space-14: 4rem;     /*  64 */
+  --space-15: 4.5rem;   /*  72 */
+  --space-16: 5.5rem;   /*  88 */
+  --space-17: 6rem;     /*  96 */
+  --space-18: 7.5rem;   /* 120 */
+  /* The wall's side padding follows the window between 40 and 72. */
+  --gutter: clamp(2.5rem, 4.5vw, 4.5rem);
+  /* Type sizes for the places a size is set on its own (the rest set theirs in a `font` shorthand). */
+  --text-0: clamp(16px, calc(16px + (100vw - 1920px) * 0.0020833), 24px); /* the root: 16 through 1920, 20 at 3840, 24 at most */
+  --text-1: .875rem;    /* 14  captions, meta */
+  --text-2: 1rem;       /* 16  controls, inputs */
+  --text-3: 1.0625rem;  /* 17  reading */
+  --text-4: 1.375rem;   /* 22  a card's title */
+  /* The glass is one dark ground in both themes: its track, hatch and the tool result colours read on it. */
+  --glass-track: #26201a; --glass-hatch: #8a8272; --glass-ok: #7bc47f; --glass-wait: #e7c069;
+  --diff-add: rgba(97, 190, 163, .16); --diff-del: rgba(232, 93, 93, .16);
+}
+[data-theme='day'] {
+  --wall: #e9dcc0; --wall-shade: #cdbd9d;
+  --obj: #fbf3df; --obj-sunk: #efe4c8; --obj-hi: #fffaf0;
+  --ink: #241d14; --body: #4e4434; --mute: #635741; --faint: #8c8068;
+  --edge: #241d14; --hair: rgba(36, 29, 20, .16);
+  --glass: #14100c; --glass-ink: #ece3cf; --glass-dim: #a09785; --glass-line: rgba(236, 227, 207, .14);
+  --charge: #b52a16; --charge-ink: #fbf3df; --ok: #2c6555; --wait: #7d5419; --stuck: #a53b39;
+  --tan: #b9a684; --sel: rgba(197, 51, 29, .18);
+}
+[data-theme='night'] {
+  --wall: #1d2140; --wall-shade: #141731;
+  --obj: #1b1510; --obj-sunk: #120d09; --obj-hi: #241a12;
+  --ink: #efe2c6; --body: #cbbd9d; --mute: #b6a888; --faint: #968969;
+  --edge: #0c0912; --hair: rgba(239, 226, 198, .16);
+  --glass: #100c08; --glass-ink: #ece3cf; --glass-dim: #a09785; --glass-line: rgba(236, 227, 207, .12);
+  --charge: #e2563b; --charge-ink: #1b1510; --ok: #61bea3; --wait: #e7c069; --stuck: #ee7a70;
+  --tan: #3a2f27; --sel: rgba(226, 86, 59, .26);
+}
+

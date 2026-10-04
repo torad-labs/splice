@@ -1,0 +1,31 @@
+# UI strictly via typed query and mutation state. The management HTTP client
+# lives in console-next/src/api/client.ts; components consume hooks from src/api.
+# A fetch anywhere else is component-local server state.
+#
+# Widened 2026-07-26 (ast-grep-walls-audit): the bare pattern only matched a
+# `call_expression` with a bare or dot-accessed callee; optional chaining
+# ($W?.fetch) and bracket access ($W['fetch'], $W["fetch"], $W?.['fetch'],
+# $W?.["fetch"]) are different node shapes and slipped through. All six
+# call shapes are now enumerated (single- and double-quoted bracket forms
+# included — the double-quoted form was an audit addition with its own
+# rule-test case, per §9 of the audit). The same call shapes cover the successor.
+id: webui-fetch-only-in-api
+language: typescript
+severity: error
+message: "HTTP lives in src/api/client.ts; typed query and mutation hooks own server state."
+note: |
+  Pages use the typed hooks in src/api. Only src/api/client.ts calls fetch;
+  query hooks read its answers and mutation hooks report their failures.
+files:
+  - console-next/src/**/*.ts
+ignores:
+  - console-next/src/api/client.ts
+rule:
+  any:
+    - pattern: fetch($$$A)
+    - pattern: $W.fetch($$$A)
+    - pattern: $W?.fetch($$$A)
+    - pattern: $W['fetch']($$$A)
+    - pattern: $W?.['fetch']($$$A)
+    - pattern: $W["fetch"]($$$A)
+    - pattern: $W?.["fetch"]($$$A)

@@ -1,0 +1,31 @@
+# V4-218: the red/green pins for kt-user-home-single-resolver. Every invalid case is a way to reach the
+# home without UserHome: the census's own spelling, the name through a const or the properties map,
+# and HOME read through getenv or the EnvReader seam. Every valid case is the compliant form or a
+# neighbour that only looks alike.
+id: kt-user-home-single-resolver
+valid:
+  - 'val home = UserHome.dir()'
+  - 'val stateDir = UserHome.dir(envReader).resolve(".local/state/splice")'
+  - 'val path = UserHome.expand(raw)'
+  # other properties and variables
+  - 'val tmp = System.getProperty("java.io.tmpdir")'
+  - 'val xdg = envReader("XDG_CONFIG_HOME")'
+  - 'val path = env("PATH")'
+  # HOME written into a child's environment is not a read
+  - 'builder.environment()["HOME"] = home.toString()'
+  # a word that contains the name
+  - 'val label = "user.home.override"'
+invalid:
+  # the census spelling, 32 times at authoring
+  - 'val home = Paths.get(System.getProperty("user.home"), ".config")'
+  - 'fun home(): Path = Paths.get(System.getProperty("user.home"))'
+  # the name through a const, and through the properties map
+  - 'private const val USER_HOME = "user.home"'
+  - 'val home = System.getProperties()["user.home"]'
+  # HOME from the environment, through getenv and through the EnvReader seam
+  - 'val home = System.getenv("HOME")'
+  - 'val home = java.lang.System.getenv("HOME")'
+  - 'val home = envReader("HOME")'
+  - 'val home = env("HOME") ?: fallback'
+  - 'val home = env.invoke("HOME")'
+  - 'private const val HOME_VAR = "HOME"'

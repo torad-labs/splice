@@ -1,0 +1,43 @@
+import { expect, test } from '@playwright/test';
+import { appendFileSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import type { SessionsPayload } from '../src/types/sessions';
+import { env, open, read } from './support';
+import { sendHandOff, STACK } from './stack';
+
+test('Teams groups real registry seats without saved membership and reads a message only when opened', async ({ page }) => {
+  const requestedMessages: string[] = [];
+  page.on('request', request => {
+    if (/\/api\/sessions\/[^/]+\/edges$/.test(new URL(request.url()).pathname)) requestedMessages.push(request.url());
+  });
+  const faults = await open(page, 'teams');
+  const payload = await read<SessionsPayload>(page, '/api/sessions');
+  const sender = payload.sessions.find(row => row.session_id === STACK.sender.id);
+  const peer = payload.sessions.find(row => row.session_id === STACK.peer.id);
+  expect(sender?.repo?.root).toBeTruthy();
+  expect(sender?.repo?.root).toBe(peer?.repo?.root);
+  const project = page.locator('.project-team').filter({ has: page.locator('a[href="#/sessions/' + STACK.sender.id + '"]') });
+  await expect(project).toHaveCount(1);
+  await expect(project.locator('a[href="#/sessions/' + STACK.peer.id + '"]')).toBeVisible();
+  await expect(project).not.toContainText(env('CONSOLE_E2E_PEER_ADDRESS'));
+  expect(requestedMessages).toEqual([]);
+  const call = 'toolu_synthetic_project_team_' + Date.now();
+  const dir = join(env('CONSOLE_E2E_TRANSCRIPT_ROOT'), 'projects', 'console-e2e');
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  // The HTTP fixture is not Claude Code, so persist its own synthetic tool call as the client would.
+  appendFileSync(join(dir, STACK.sender.id + '.jsonl'), JSON.stringify({
+    type: 'assistant', message: { role: 'assistant', content: [{
+      type: 'tool_use', id: call, name: 'SendMessage',
+      input: { to: env('CONSOLE_E2E_PEER_ADDRESS'), message: 'review ready' },
+    }] },
+  }) + '\n', { mode: 0o600 });
+  await sendHandOff(Number(env('CONSOLE_E2E_OAUTH_PORT')), env('CONSOLE_E2E_KEY'), env('CONSOLE_E2E_PEER_ADDRESS'), call);
+  const handoff = project.locator('.project-handoffs summary').filter({ hasText: (sender?.name ?? '') + ' to ' + (peer?.name ?? '') }).first();
+  await expect(handoff).toBeVisible({ timeout: 20_000 });
+  expect(requestedMessages).toEqual([]);
+  await handoff.click();
+  await expect(project.locator('.team-message')).toContainText('review ready');
+  expect(requestedMessages.some(url => new URL(url).pathname === '/api/sessions/' + STACK.sender.id + '/edges')).toBe(true);
+  expect(faults.pageErrors).toEqual([]);
+  expect(faults.failedReads).toEqual([]);
+});

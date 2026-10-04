@@ -1,0 +1,38 @@
+// What the Needs-you page says around its cards. The card words are words-needs.ts.
+import type { InputName } from '../types/needs';
+
+export const N = {
+  title: 'Needs you',
+  reading: 'Reading what needs you…',
+  nothing: 'Nothing needs you. Everything is running.',
+  nothingYet: 'Nothing needs you that could be read. Some things could not be, listed below.',
+  thing: 'thing',
+  things: 'things',
+  aPersonHasToDo: 'a person has to do.',
+  restRunning: 'Everything else is running.',
+  restUnread: 'Some things could not be read, listed below.',
+  asOf: 'As of',
+  and: 'and',
+  workingTitle: 'Sessions working',
+  workingWhy: 'Nothing to do; they will surface here if that changes.',
+  servingTitle: 'Commands serving',
+  servingWhy: (names: string): string => `${names}.`,
+  servingNone: 'No command is running.',
+  notListedTitle: 'Not listed here',
+  notListedWhy: 'An idle session and a local runtime you switched off are not problems, so they are not items.',
+  worthTitle: 'Worth a look',
+  unreadTitle: 'Not read',
+  couldNotRead: 'Could not read',
+  stillReading: 'Still reading',
+  unserved: (what: string): string => `This version of splice does not serve ${what}.`,
+  input: {
+    heads: 'the commands',
+    auth: 'the sign-ins',
+    accounts: 'the accounts',
+    usage: 'command usage',
+    sessions: 'the sessions',
+    teams: 'the teams',
+    doctor: 'the doctor checks',
+    topology: 'the config file',
+  } as const satisfies Record<InputName, string>,
+} as const;

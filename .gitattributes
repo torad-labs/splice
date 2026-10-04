@@ -1,0 +1,7 @@
+# The census gains one row per new file, and every branch appends its rows at the end, so any two
+# branches that add files conflict there (once train 18 landed, five open PRs conflicted on it). Union
+# keeps both sides' rows. A row both sides edited comes out twice, and census.ts fails that by name
+# ("claimed by 2 rows"), so a wrong union is a red gate, never a silent one. GitHub's own
+# mergeability check ignores union (community discussion #9288): a PR still merges its base
+# locally to show clean.
+.dev/restructure/capabilities.tsv merge=union

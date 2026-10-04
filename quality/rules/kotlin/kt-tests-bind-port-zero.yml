@@ -1,0 +1,61 @@
+# THE LAW. A test never LEASES a port — open a socket on 0, read its number, close it, hand the number
+# to something that binds it later — because a leased port comes from the kernel's EPHEMERAL range,
+# and between the close and the bind any other bind(0) or outbound connection on the machine may take
+# it: the test then fails in @BeforeAll with a BindException that names a port, not a cause.
+#   - A server the test CONSTRUCTS binds port 0 and reads back the port it bound (`HeadServer.port`,
+#     `ControlServer.listeningPort`, `ControlPlane.listeningPort`).
+#   - A port that must be known BEFORE anything binds it (a full daemon renders its ports into launch
+#     specs first, a login flow renders redirect_uri first) or must stay DEAD (a connection-refused
+#     probe) comes from `splice.core.testing.TestPorts.reserve()`: below the ephemeral range, where the
+#     kernel never hands a port out, and locked across every JVM on the machine.
+#
+# THE SCAR (2026-09-23). CI run 35881955038 (job 107252372494, PR #177) failed HeadServerLoadTest in
+# @BeforeAll: `java.net.BindException: Address already in use`. The head's port was leased with
+# `ServerSocket(0).use { it.localPort }`, and the test's own mock upstream binds `ServerSocket(0)`
+# inside the window. TestNet.freshPort() documented the lease as "fine for tests"; one red in the
+# last 60 runs is the measurement that it is not. HeadEngine and ControlServer now read the bound
+# port from Ktor's resolvedConnectors(), and ~60 sites moved to port 0 in the same change. This wall
+# is what keeps the next test from re-leasing: the generator of new tests copies the nearest idiom,
+# and until this rule the nearest idiom was the lease.
+#
+# THE MATCHER, and what it deliberately does NOT match.
+#   - `ServerSocket(0).use { it.localPort }` and its named-parameter and fully-qualified spellings:
+#     the lambda's whole body is the port read, so the socket is closed before the number is used.
+#   - `ServerSocket(0).let { … it.localPort … it.close() … }`: the same lease, spelled by hand.
+#   NOT matched: a socket held OPEN while its port is used — `ServerSocket(0).use { l -> f(l.localPort) }`
+#   or `val s = ServerSocket(0)` — is a listener, not a lease, and is how a test builds a peer that
+#   accepts and never answers. The rule-test pins both sides.
+#
+# THE CENSUS. At authoring (2026-09-23) 35 sites in 15 files kept the lease under a dated `ignores:`
+# list: TestNet's freshPort(), six full-daemon boots, seven connection-refused probes and the OAuth
+# redirect listener. The same day TestPorts replaced all of them and freshPort() was deleted, so the
+# census is EMPTY and the rule has no `ignores:`. A file that needs an exemption now needs a reason
+# TestPorts does not cover, written here with a date.
+id: kt-tests-bind-port-zero
+language: kotlin
+severity: error
+message: "Never lease a port with ServerSocket(0) and bind it later: a server the test constructs binds port 0 and reads back the port it bound (HeadServer.port, ControlServer.listeningPort); a port needed before any bind comes from splice.core.testing.TestPorts.reserve()."
+note: >
+  A leased port is closed before the server binds it, and anything on the machine may take it in
+  between (CI run 35881955038: HeadServerLoadTest's BindException in @BeforeAll). Pass port 0 to the
+  server, start it, then read its bound port. A port a daemon renders before binding, or one that must
+  stay unbound for a connection-refused probe, comes from TestPorts.reserve(), which reserves below the
+  kernel's ephemeral range under a lock every JVM on the machine honours.
+files:
+  - "**/src/test/**/*.kt"
+  - "**/src/testFixtures/**/*.kt"
+rule:
+  any:
+    # the lease: the lambda's whole body is the port read, so the socket closes before the number
+    # is used. A lambda that USES the port while the socket is open is a listener and is not matched.
+    - pattern: ServerSocket(0).use { it.localPort }
+    - pattern: ServerSocket(0).use { $S -> $S.localPort }
+    - pattern: java.net.ServerSocket(0).use { it.localPort }
+    - pattern: java.net.ServerSocket(0).use { $S -> $S.localPort }
+    # the same lease by hand: read the port, close the socket, return the number
+    - all:
+        - any:
+            - pattern: ServerSocket(0).let { $$$B }
+            - pattern: java.net.ServerSocket(0).let { $$$B }
+        - has: {stopBy: end, pattern: it.localPort}
+        - has: {stopBy: end, pattern: it.close()}

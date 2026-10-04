@@ -1,0 +1,8 @@
+id: webui-lead-is-the-slot-flag-tsx
+valid:
+  - 'export const Edge = ({ member }: { member: { lead: boolean } }) => <HolderEdge state={member.lead ? "green" : "grey"} />;'
+  - "export const Role = ({ member }: { member: { role: string } }) => <span>{member.role}</span>;"
+invalid:
+  - "export const Edge = ({ member }: { member: { role: string } }) => <HolderEdge state={member.role === 'lead' ? 'green' : 'grey'} />;"
+  - 'export const Edge = ({ member }: { member: { role: string } }) => <HolderEdge state={member.role === "lead" ? "green" : "grey"} />;'
+  - "export const Wrap = ({ m }: { m: { role: string } }) => (m.role !== 'lead' ? null : <WrapStrip />);"

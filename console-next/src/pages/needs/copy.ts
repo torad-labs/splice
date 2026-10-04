@@ -1,0 +1,20 @@
+// What the Needs-you cards' acts say. Copy lives in modules like this one, never inline in a component.
+export const A = {
+  start: 'Start',
+  starting: 'Starting…',
+  restart: 'Restart',
+  restarting: 'Restarting…',
+  signIn: 'Sign in',
+  signInAgain: 'Sign in again',
+  sessionIn: 'It is a session in',
+  fix: 'Fix it',
+  fixing: 'Fixing…',
+  copy: 'Copy the command',
+  copied: 'Copied',
+  copyFailed: 'Could not copy:',
+  masked: 'Its command holds a value splice keeps out of this page. Run splice doctor in a terminal to see it.',
+  open: 'Show the details',
+  failed: 'That did not work:',
+  refused: 'The fix did not take:',
+  ran: 'Fixed.',
+} as const;

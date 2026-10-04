@@ -1,0 +1,51 @@
+// PORT-OF: splice/app/Daemon.kt (ProviderAssembly.passthroughProvider) @ ed5c868 — client-auth holds
+// no credential; every unregistered API-key/custom vendor takes the neutral profile. Kimi lives in
+// KimiPassthroughArm. ProviderAssembly rejects registered incompatible kinds first.
+package splice.app.provider
+
+import splice.core.auth.ClientAuthProvider
+import splice.dialect.anthropic.PassthroughQuirks
+import splice.provider.openai.ApiKeyAuthProvider
+import splice.topology.TopologyLoader
+import java.nio.file.Paths
+
+internal class PassthroughArm(
+    private val passthroughAssembly: PassthroughAssembly,
+) {
+    // CLIENT uses Anthropic's signature verification and eager custom-tool input streaming.
+    // It has no Moonshot deformations, headers, or device identity. Unregistered API-key/custom
+    // vendors start neutral and declare facts in TOML.
+    internal fun passthroughProvider(ctx: ProviderBuild, label: String): Wired {
+        val key = ctx.key
+        val providerCfg = ctx.providerCfg
+        if (providerCfg.auth.kind == CLIENT) {
+            val auth = ClientAuthProvider(key)
+            return Wired(
+                passthroughAssembly.passthroughProviderFor(
+                    ctx,
+                    label,
+                    auth,
+                    PassthroughQuirks(
+                        providerTag = key,
+                        verifiesThinkingSignatures = true,
+                        eagerToolInputs = true,
+                    ),
+                ),
+                auth,
+            )
+        }
+        val auth = ApiKeyAuthProvider(
+            envVar = providerCfg.auth.effectiveApiKeyEnv(key),
+            keyFile = providerCfg.auth.file?.let { Paths.get(TopologyLoader.expandHome(it)) },
+        )
+        return Wired(
+            passthroughAssembly.passthroughProviderFor(
+                ctx = ctx,
+                label = label,
+                auth = auth,
+                base = PassthroughQuirks(providerTag = key),
+            ),
+            auth,
+        )
+    }
+}

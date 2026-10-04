@@ -38,6 +38,7 @@
 #   actually run green; verified is orchestrator-only after diff read + gate.
 # LAW [2026-07-25]: BASE — orchestrator cuts the wave branch from MAIN tip (shared checkout is
 #   on feat/tool-surface-5.6; NEVER include tool-surface work in this campaign's PRs).
+# 2026-09-20 2026-09-20 MEASUREMENT (splice-lead): the CI gate job has never had bun. .github/workflows/ci.yml sets up temurin 21 and node 24 and runs 'npm run gate', but bun was on no PATH there and was not a declared dependency anywhere in the repo, so every bun-based leg has reported 'bun: command not found' in CI since the V4-143 python-to-bun port on 2026-09-18. Measured in the run for 42157e98: model-catalogs-single-source-selftest, campaign-cli-selftest, rule-routing-selftest and concentration-selftest all report failure in CI while passing locally, because locally bun is at ~/.local/bin. This is loud rather than silent - CI is red - but it has been read as noise. FIX: bun pinned to 1.4.2 as a devDependency, the same house pattern as @ast-grep/cli, so npm ci installs it with lockfile integrity hashes for every platform binary and npm run puts node_modules/.bin on PATH. No new GitHub Action and no new supply-chain class. Proven both ways rather than assumed: with node_modules/.bin on PATH 'command -v bun' resolves to the pinned 1.4.2 and 'npm run gate:no-python' passes; with it removed the same command prints exactly CI's 'bun: command not found'. NOT a row because the campaign is closed at 8 of 8; recorded here so the next CI seat has the measurement.
 
 [campaign]
 name = "ci-hardening"

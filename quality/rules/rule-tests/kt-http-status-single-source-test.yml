@@ -1,0 +1,58 @@
+id: kt-http-status-single-source
+valid:
+  # the remedy: reference the single source, never re-declare the number
+  - 'if (status == HttpStatus.TOO_MANY_REQUESTS) cooldown()'
+  - 'private val retryable = setOf(HttpStatus.BAD_GATEWAY, HttpStatus.OVERLOADED)'
+  # the BORING case the naive numeric ban gets wrong: 400/500 as magnitudes, not statuses.
+  # These are real declarations in the tree (DaemonLock.kt:227, DoctorLogEvents.kt:6,
+  # DoctorReportTail.kt:12, CompactClassifier.kt:133) and must stay green or the wall gets muted.
+  - 'private const val PROBE_TIMEOUT_MS = 400'
+  - 'private const val MAX_LINE_CHARS = 400'
+  - 'private const val LOG_TAIL_LINES = 500'
+  - 'private const val RING_MAX = 500'
+  # non-status numbers are none of this wall's business at any name
+  - 'private const val OK = 200'
+  - 'private const val RETRY_BUDGET = 3'
+  - 'private const val STATUS_POLL_ROUNDS = 7'
+  # not a const declaration: the declaration site is the subject (see the rule's disclosed gap)
+  - 'private val fallbackStatus = 429'
+invalid:
+  # branch 1 — the six 429 spellings and three 529 spellings the audit census found
+  - 'internal const val RATE_LIMITED = 429'
+  - 'private const val RATE_LIMIT_STATUS = 429'
+  - 'private const val HTTP_TOO_MANY = 429'
+  - 'private const val RATE_LIMITED_STATUS = 429'
+  - 'private const val STATUS_RATE_LIMIT = 429'
+  - 'private const val OVERLOADED_STATUS = 529'
+  - 'private const val GATEWAY_CAPACITY_STATUS = 529'
+  - 'private const val STATUS_OVERLOADED = 529'
+  # branch 1 is name-blind: a rename cannot dodge the wall at an unambiguous status value
+  - 'private const val WHATEVER = 429'
+  - 'const val X: Int = 529'
+  # the rest of the banned set, one witness each
+  - 'private const val HTTP_UNAUTHORIZED = 401'
+  - 'private const val PAYMENT_REQUIRED = 402'
+  - 'private const val HTTP_FORBIDDEN = 403'
+  - 'private const val HTTP_NOT_FOUND = 404'
+  - 'private const val REQUEST_TIMEOUT = 408'
+  - 'private const val HTTP_CONFLICT = 409'
+  - 'private const val CONTENT_TOO_LARGE_STATUS = 413'
+  - 'private const val REJECTION_STATUS_MAX = 422'
+  - 'private const val HTTP_BAD_GATEWAY = 502'
+  - 'private const val HTTP_UNAVAILABLE = 503'
+  - 'private const val HTTP_GATEWAY_TIMEOUT = 504'
+  # branch 2 — 400/500 red when the name is HTTP status vocabulary
+  - 'private const val HTTP_BAD_REQUEST = 400'
+  - 'private const val STATUS_INVALID = 400'
+  - 'private const val CLIENT_ERROR_MIN = 400'
+  - 'private const val CLIENT_ERROR_FLOOR = 400'
+  - 'private const val REJECTION_STATUS_MIN = 400'
+  - 'private const val HTTP_INTERNAL = 500'
+  - 'private const val HTTP_SERVER_ERROR = 500'
+  - 'private const val SERVER_ERROR_MIN = 500'
+  - 'private const val HTTP_SERVER_ERROR_FLOOR = 500'
+  # a const declared inside an object body, not only top level
+  - |
+    private object Statuses {
+        const val TOO_MANY = 429
+    }

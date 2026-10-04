@@ -1,0 +1,184 @@
+// NEW: V4-129 — WrappedHead's wrap/unwrap orchestration: the shim swap and the shadowed-symlink
+// preservation. V4-445: wrap and unwrap never touch the vanilla ~/.claude.json and ~/.claude, which the
+// tests below pin byte for byte. Every fixture is a
+// real filesystem under @TempDir (no fakes for Files.* — the safety property under test IS the
+// filesystem sequencing), with InstallPaths and WrapStateStore pointed at temp subdirectories so no
+// test touches the real ~/.local/bin or ~/.claude-codey/state.
+package splice.client.wrap
+
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import java.nio.file.Files
+import java.nio.file.Path
+import kotlin.io.path.createDirectories
+import kotlin.io.path.exists
+import kotlin.io.path.isSymbolicLink
+import kotlin.io.path.readSymbolicLink
+import kotlin.io.path.readText
+import kotlin.io.path.writeText
+
+class WrappedHeadTest {
+
+    @Test
+    fun `unwrapped status reports separate and the real path claude resolves to`(@TempDir home: Path) {
+        val rig = WrapRig(home)
+        rig.linkCmdToReal()
+        val status = rig.head.status()
+        assertEquals("separate", status.mode)
+        assertEquals(rig.realBinary.toRealPath().toString(), status.resolvesTo)
+        assertEquals(rig.shim.toString(), status.shimPath)
+    }
+
+    @Test
+    fun `status with no claude on PATH at all reports separate with a null resolution`(@TempDir home: Path) {
+        val rig = WrapRig(home)
+        val status = rig.head.status()
+        assertEquals("separate", status.mode)
+        assertEquals(null, status.resolvesTo)
+    }
+
+    @Test
+    fun `wrap preserves the shadowed symlink target, plants the real binary in state, and swaps the shim in`(
+        @TempDir home: Path,
+    ) {
+        val rig = WrapRig(home)
+        rig.linkCmdToReal()
+        val vanilla = VanillaState(home)
+
+        val result = rig.head.wrap()
+        assertTrue(result is WrapResult.Ok, "$result")
+        result as WrapResult.Ok
+        assertEquals("wrapped", result.status.mode)
+        assertEquals(rig.realBinary.toString(), result.status.realBinaryPath)
+
+        // The command now resolves to the shim, not the real binary.
+        assertTrue(rig.cmd.isSymbolicLink())
+        assertEquals(rig.shim.toRealPath(), rig.cmd.toRealPath())
+
+        // The shadowed target survived byte-for-byte in state, for unwrap to restore exactly.
+        val state = rig.stateStore.read()!!
+        assertEquals(rig.realBinary.toString(), state.shadowedSymlinkTarget)
+        assertEquals(rig.realBinary.toString(), state.realBinaryPath)
+
+        // V4-445: the operator's own state is where it was, byte for byte, and wrap added nothing to it.
+        vanilla.assertUntouched()
+        assertEquals("", state.settingsBackupPath, "there is nothing to back up when nothing is written")
+    }
+
+    @Test
+    fun `wrap refuses when the shim is not installed`(@TempDir home: Path) {
+        val rig = WrapRig(home)
+        rig.linkCmdToReal()
+        Files.delete(rig.shim)
+        val result = rig.head.wrap()
+        assertTrue(result is WrapResult.Refused, "$result")
+    }
+
+    @Test
+    fun `wrap refuses when claude is already wrapped`(@TempDir home: Path) {
+        val rig = WrapRig(home)
+        rig.linkCmdToReal()
+        assertTrue(rig.head.wrap() is WrapResult.Ok)
+        val second = rig.head.wrap()
+        assertTrue(second is WrapResult.Refused, "$second")
+        assertTrue((second as WrapResult.Refused).reason.contains("already wrapped"), second.reason)
+    }
+
+    @Test
+    fun `wrap refuses a real file at the command path rather than overwriting it`(@TempDir home: Path) {
+        val rig = WrapRig(home)
+        rig.cmd.writeText("#!/bin/sh\necho not a symlink\n")
+        val result = rig.head.wrap()
+        assertTrue(result is WrapResult.Refused, "$result")
+        assertTrue((result as WrapResult.Refused).reason.contains("not a symlink"), result.reason)
+        assertFalse(rig.cmd.isSymbolicLink(), "the real file must survive a refused wrap untouched")
+    }
+
+    @Test
+    fun `wrap refuses blind when there is nothing to preserve`(@TempDir home: Path) {
+        val rig = WrapRig(home)
+        val result = rig.head.wrap()
+        assertTrue(result is WrapResult.Refused, "$result")
+        assertFalse(rig.cmd.exists(), "a refused wrap creates nothing")
+    }
+
+    @Test
+    fun `wrap refuses a dangling shadowed link rather than wrapping over a broken install`(@TempDir home: Path) {
+        val rig = WrapRig(home)
+        Files.createSymbolicLink(rig.cmd, home.resolve("nowhere"))
+        val result = rig.head.wrap()
+        assertTrue(result is WrapResult.Refused, "$result")
+        assertTrue((result as WrapResult.Refused).reason.contains("dangling"), result.reason)
+    }
+
+    @Test
+    fun `unwrap restores the exact prior symlink target and clears state, the vanilla state untouched`(
+        @TempDir home: Path,
+    ) {
+        val rig = WrapRig(home)
+        rig.linkCmdToReal()
+        val vanilla = VanillaState(home)
+
+        assertTrue(rig.head.wrap() is WrapResult.Ok)
+        val result = rig.head.unwrap()
+        assertTrue(result is UnwrapResult.Ok, "$result")
+        result as UnwrapResult.Ok
+        assertEquals("separate", result.status.mode)
+
+        assertTrue(rig.cmd.isSymbolicLink())
+        assertEquals(rig.realBinary, rig.cmd.readSymbolicLink())
+        vanilla.assertUntouched()
+        assertEquals(null, rig.stateStore.read())
+    }
+
+    @Test
+    fun `wrap creates nothing in a home that has no claude state at all`(@TempDir home: Path) {
+        val rig = WrapRig(home)
+        rig.linkCmdToReal()
+        assertTrue(rig.head.wrap() is WrapResult.Ok)
+        assertFalse(home.resolve(".claude").exists(), "no ~/.claude was made")
+        assertFalse(home.resolve(".claude.json").exists(), "no ~/.claude.json was made")
+        assertTrue(rig.head.unwrap() is UnwrapResult.Ok)
+        assertFalse(home.resolve(".claude").exists())
+    }
+
+    @Test
+    fun `unwrap puts back the backups a wrap made before V4-445 recorded`(@TempDir home: Path) {
+        val rig = WrapRig(home)
+        rig.linkCmdToReal()
+        assertTrue(rig.head.wrap() is WrapResult.Ok)
+        val vanilla = home.resolve(".claude").createDirectories()
+        val backup = vanilla.resolve("settings.json.splice-wrap-backup-1")
+        backup.writeText("""{"before":"wrap"}""")
+        vanilla.resolve("settings.json").writeText("""{"rewritten":"by the old wrap"}""")
+        rig.stateStore.write(rig.stateStore.read()!!.copy(settingsBackupPath = backup.toString()))
+
+        assertTrue(rig.head.unwrap() is UnwrapResult.Ok)
+        assertEquals("""{"before":"wrap"}""", vanilla.resolve("settings.json").readText())
+        assertFalse(backup.exists(), "the backup was moved back, not copied")
+    }
+
+    @Test
+    fun `unwrap refuses when claude is not currently wrapped`(@TempDir home: Path) {
+        val rig = WrapRig(home)
+        rig.linkCmdToReal()
+        val result = rig.head.unwrap()
+        assertTrue(result is UnwrapResult.Refused, "$result")
+    }
+
+    @Test
+    fun `unwrap refuses honestly when the state file is missing, without touching the shim link`(
+        @TempDir home: Path,
+    ) {
+        val rig = WrapRig(home)
+        rig.linkCmdToReal()
+        assertTrue(rig.head.wrap() is WrapResult.Ok)
+        Files.delete(home.resolve("state/claude-head-wrap.json"))
+        val result = rig.head.unwrap()
+        assertTrue(result is UnwrapResult.Refused, "$result")
+        assertEquals("wrapped", rig.head.status().mode, "a refused unwrap must not have touched the live link")
+    }
+}

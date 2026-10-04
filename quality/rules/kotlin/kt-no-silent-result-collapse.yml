@@ -1,0 +1,172 @@
+# THE SWALLOW-INTO-NULL WALL (discipline L1, 2026-07-18): every incident of the gateway
+# stabilization day shared one shape — a runCatching* Result collapsed to null/default with the
+# failure never consumed (dead auth → HTTP 200 empty stream with zero log; refresh failures
+# indistinguishable from absent files). In the provider auth/transport modules, `.getOrNull()` /
+# `.getOrDefault(...)` on a catching chain MUST either consume the failure first (`.onFailure {…}`)
+# or carry an explicit reviewed exemption (`// ast-grep-ignore: kt-no-silent-result-collapse`
+# with the reason on the same comment). Compiler half: -Xreturn-value-checker flags bare discards;
+# Result.discard(why) is the sanctioned full-drop. Scope is provider-* + :integrations-upstream for now —
+# widening to app/core/control tracked in .dev/research/gateway-gaps-tracker.md.
+#
+# WIDENED 2026-09-17 (ARCH-AUDIT, audit D cross-cutting: :daemon-control and :app sat outside most walls'
+# `files:` globs). The 2026-07-18 scar this rule was written for — "auth failures identical to
+# missing files" — is an OPERATOR-DIAGNOSIS scar, and :app is where the operator looks: `doctor`,
+# `setup`, `upgrade`, `restart`, the login flows, the daemon lock. Scoping the rule to the five
+# provider modules protected the code path that produces the failure and left unwatched every path
+# that has to EXPLAIN it.
+# NEW RED AT WIDENING — 54, all pre-existing, none fixed here. Full list recorded in the V4-95
+# ledger note; by file: :app TopologyLoader 159, KimiRefresh 87, CodexRefresh 85, GrokRefresh 80,
+# auth/OAuthAccountWrites 107, DaemonLock 141/163/186/195, RefreshRetry 59/82, DashboardHtml 28/30,
+# PerfRowsFileSource 70/152, DaemonBoundary 79/104/165, LoginIo 64/66/117/178, OAuthLoginFlow
+# 161/230, DeviceLoginFlow 137, provider/local/LocalRuntimeProbe 242, provider/local/LocalLiveReading
+# 58, cli/{LoginMuse 103/173, ControlPlaneClient 26, DoctorProbes 86, AdminSupport 79/146/175,
+# RestartCommand 26, DoctorProbeWrite 94, UninstallCommand 56, AccountPools 43, AddCredentialFile 27,
+# AddSeams 21, DoctorInstallProbes 125/153, AddCommand 91, AddHttp 22, DoctorReportPerf 109,
+# SetupCommand 81, DoctorRedaction 77}; :daemon-control StatuslineRenderer 61/71/93/203/236, api/JsonBody 19,
+# api/StatuslineRoute 94.
+# The return-position gap named below is UNCHANGED by the widening and still open.
+#
+# WIDENED 2026-09-18 (V4-151): :features-turns was a coverage hole, not an exclusion. 7 NEW RED, all
+# dispositioned in the same unit. SURFACED (the degrade kept, a log added): usage/EconomicsStore
+# (an exists() pre-gate and no log; the next persist overwrote a corrupt history silently),
+# usage/QuotaTracker readFile, compact/Compact bad rows. EXEMPT, each ignore naming the file:line
+# that consumes the error: perf/PerfStats, usage/UsageRingFile size, usage/RateLimitStore,
+# wire/CollectingBlocks. STILL OUTSIDE the globs: :core (24 sites) and :providers-muse (2, MuseOAuth),
+# recorded on the V4-151 row as a followup; this widening does not close the tree.
+#
+# WIDENED 2026-09-24 (the LAYOUT-01 review): the tree is closed. :core, :providers-muse and
+# :integrations-claude-code are selected whole — the last carried ten reviewed ignores that suppressed
+# nothing once a move took it out of the globs. 34 NEW RED, all dispositioned in the same unit.
+# SURFACED: ClaudeLogins.materializeSelected (a selected login whose stored file cannot be read now
+# logs; LaunchService ignores the return, so the head silently started on its previous credential),
+# ProjectsLink.sweepLeftovers (an unlistable parent now logs), ResumeAcrossHeads (exceptionOrNull +
+# getOrDefault became one getOrElse). EXEMPT, each ignore naming where the null is consumed: the other
+# 31. Branch A also went STRUCTURAL (see its comment): one comment inside a chain had hidden a collapse.
+# WIDENED 2026-09-24 (v0.4.0 release, held to the 1.0 bar): the three dialects join. Excused as "pure
+# byte builders", but :dialects-openai-responses alone is 81 files with the stream controllers that
+# decide retries; measured with the file filter removed, all three carry ZERO findings, so this
+# closes the tree at no cost today and binds whatever they grow. Only :quality-compiler-plugin
+# (no Result path) stays outside.
+id: kt-no-silent-result-collapse
+language: kotlin
+severity: error
+message: "Silent Result collapse: consume the failure (.onFailure { log/classify }) before .getOrNull()/.getOrDefault(), or add a reviewed ast-grep-ignore with the reason."
+note: >
+  A collapsed Result made the 2026-07-18 incidents undiagnosable (auth failures identical to
+  missing files). Route the failure somewhere first: .onFailure { log(...) } / classify it /
+  return a sealed outcome. If null truly is the complete story (e.g. optional config probe),
+  keep the collapse and add `// ast-grep-ignore: kt-no-silent-result-collapse -- <reason>`.
+# Widened 2026-07-26 (audit 3.7): the original single-branch rule only matched a `.getOrNull()`/
+# `.getOrDefault()` node whose OWN subtree contains `runCatching` — assigning the Result to a val
+# first (`val result = runCatching { read() }` then `val token = result.getOrNull()` on a later
+# line) breaks that subtree relationship and the collapse vanished with zero textual trace. Added
+# branch B: a `property_declaration` whose initializer is the collapse call, tied by metavariable
+# identity on `$RECV` to a preceding sibling `val $RECV = runCatching {…}` (that identity is what
+# stops it firing on unrelated vals sharing the same collapse call shape).
+#
+# Widened 2026-07-27 (review round 2): branch B's binding arm required `val`, so the identical
+# collapse behind a `var` binding walked straight through. The arm now accepts either.
+#
+# NOT widened, and this is a decision with evidence, not an omission: the review also sketched
+# relaxing the `kind: property_declaration` anchor so a collapse in a `return` (or any non-
+# initializer position) would be caught, flagging it as a sketch to validate with rule-tests
+# before landing. It was validated, and it FAILS: with the anchor relaxed to include
+# `jump_expression`, this legitimately-handled shape trips the wall —
+#
+#     val r = runCatching { read() }
+#     r.onFailure { log(it) }          // failure consumed, on its own statement
+#     return r.getOrNull()
+#
+# because the `not: has onFailure` guards are scoped to the collapse node's subtree and the
+# binding's subtree, and a standalone `r.onFailure { … }` statement is in neither. Binding the
+# receiver in a `not: follows: $RECV.onFailure($$$)` arm does not suppress it (trailing-lambda
+# call shape). A wall that flags compliant code trains authors to reach for ast-grep-ignore —
+# the same argument this audit made against launcher-no-pkill's over-broad branch. The
+# return-position gap is therefore left OPEN and named here rather than closed with a rule that
+# cries wolf; closing it properly needs failure-consumption tracking the pattern layer lacks.
+files:
+  - features/sessions/src/main/**/*.kt
+  - features/models/src/main/**/*.kt
+  - core/src/main/**/*.kt
+  - features/usage/src/main/**/*.kt
+  - integrations/http/src/main/**/*.kt
+  - integrations/upstream/src/main/**/*.kt
+  - integrations/providers/grok/src/main/**/*.kt
+  - integrations/providers/kimi/src/main/**/*.kt
+  - integrations/providers/codex/src/main/**/*.kt
+  - integrations/providers/openai/src/main/**/*.kt
+  - integrations/providers/muse/src/main/**/*.kt
+  - integrations/dialects/anthropic/src/main/**/*.kt
+  - integrations/dialects/openai-chat/src/main/**/*.kt
+  - integrations/dialects/openai-responses/src/main/**/*.kt
+  - integrations/claude-code/src/main/**/*.kt
+  - integrations/mcp/src/main/**/*.kt
+  - app/src/main/**/*.kt
+  - features/turns/src/main/**/*.kt
+  - features/heads/src/main/**/*.kt
+  - integrations/topology/src/main/**/*.kt
+  - integrations/codemode/src/main/**/*.kt
+  - integrations/oauth/src/main/**/*.kt
+  - integrations/terminal/src/main/**/*.kt
+  - integrations/daemon-client/src/main/**/*.kt
+  - features/accounts/src/main/**/*.kt
+  - features/diagnostics/src/main/**/*.kt
+  - features/lifecycle/src/main/**/*.kt
+  - features/launch/src/main/**/*.kt
+  - features/configuration/src/main/**/*.kt
+  - features/events/src/main/**/*.kt
+rule:
+  any:
+    # A. direct chain. Matched by STRUCTURE since 2026-09-24, not by `$RECV.getOrNull()`: a comment
+    # between the receiver and `.getOrNull()` is an extra child of the navigation_expression, and the
+    # pattern stopped matching — one explanatory comment inside the chain hid the collapse from the
+    # wall (measured on a scratch file; an ast-grep-ignore placed there went unused for that reason).
+    - all:
+        - kind: call_expression
+        - has:
+            kind: navigation_expression
+            has:
+              kind: navigation_suffix
+              regex: "^\\.(getOrNull|getOrDefault)$"
+        - has:
+            stopBy: end
+            regex: "\\brunCatching(Cancellable)?\\b"
+        - not:
+            has:
+              stopBy: end
+              regex: "\\bonFailure\\b"
+    # B. split form: `val r = runCatching { … }` then `r.getOrNull()` on a later line.
+    - all:
+        - kind: property_declaration
+        - has:
+            stopBy: end
+            any:
+              - pattern: $RECV.getOrNull()
+              - pattern: $RECV.getOrDefault($$$ARGS)
+              # the same call with a comment inside the chain (see A); the receiver is the
+              # navigation's first child, bound to $RECV so the binding arm below still ties to it
+              - all:
+                  - kind: navigation_expression
+                  - has:
+                      nthChild: 1
+                      pattern: $RECV
+                  - has:
+                      kind: navigation_suffix
+                      regex: "^\\.(getOrNull|getOrDefault)$"
+        - not:
+            has:
+              stopBy: end
+              regex: "\\bonFailure\\b"
+        - follows:
+            stopBy: end
+            all:
+              - any:
+                  - pattern: val $RECV = $$$INIT
+                  - pattern: var $RECV = $$$INIT
+              - has:
+                  stopBy: end
+                  regex: "\\brunCatching(Cancellable)?\\b"
+              - not:
+                  has:
+                    stopBy: end
+                    regex: "\\bonFailure\\b"

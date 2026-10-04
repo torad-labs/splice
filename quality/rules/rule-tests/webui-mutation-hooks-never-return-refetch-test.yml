@@ -1,0 +1,59 @@
+id: webui-mutation-hooks-never-return-refetch
+valid:
+  - |
+    export function useTopologyEdit() {
+      const client = useQueryClient();
+      return useMutation({
+        mutationFn: saveTopology,
+        onSettled: () => refetch(client, [topologyKey, keys.health, mcpKey]),
+      });
+    }
+  - |
+    function useClaudeHeadAction(action) {
+      const client = useQueryClient();
+      return useMutation({
+        mutationFn: () => request(action),
+        onSettled: () => awaitRefetch(client, [claudeHeadKey]),
+      });
+    }
+  - |
+    export function useTopologyEdit() {
+      const client = useQueryClient();
+      return useMutation({
+        mutationFn: saveTopology,
+        onSettled: () => {
+          void Promise.all([topologyKey, keys.health].map((key) => client.invalidateQueries({ queryKey: [...key] })));
+        },
+      });
+    }
+  - |
+    export function useEvents() {
+      for (const key of STALE[frame.kind] ?? []) void client.invalidateQueries({ queryKey: [...key] });
+    }
+invalid:
+  - |
+    export function useTopologyEdit() {
+      const client = useQueryClient();
+      return useMutation({
+        mutationFn: saveTopology,
+        onSettled: () => Promise.all([topologyKey, keys.health, mcpKey].map((key) => client.invalidateQueries({ queryKey: [...key] }))),
+      });
+    }
+  - |
+    function useClaudeHeadAction(action) {
+      const client = useQueryClient();
+      return useMutation({
+        mutationFn: () => request(action),
+        onSettled: () => client.invalidateQueries({ queryKey: [...claudeHeadKey] }),
+      });
+    }
+  - |
+    export function useSetCapture() {
+      const client = useQueryClient();
+      return useMutation({
+        mutationFn: putCapture,
+        onSuccess: async (change) => {
+          await client.invalidateQueries({ queryKey: [...topologyKey] });
+        },
+      });
+    }

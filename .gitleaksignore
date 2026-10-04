@@ -67,3 +67,42 @@ c361520c57ecdd3eb7c9ab2257a71f037f5a899d:app/src/test/kotlin/splice/app/cli/stat
 # `abcdefghijklmnopqrstuvwxyz123456` as api_key= to prove the history index redacts it
 # (asserts `api_key=[redacted]`). Test-source literal, grants nothing; triaged by hand.
 3d0eb88804977ccaa6bcfd9cb20b6fbc83a2a89e:integrations/claude-code/src/test/kotlin/splice/client/transcript/v4344/TranscriptHistoryIndexTest.kt:generic-api-key:46
+# 2026-09-28: V4-389 wire golden. CodexWireGoldenTest asserts the byte-exact Codex request and its
+# `prompt_cache_key: "splice-<md5>"` is the deterministic cache key of the test's synthetic session,
+# the same class as the 13 oracle fixture keys above. Test-source literal, grants nothing; triaged by
+# hand. The `.gitleaks.toml` regex for this shape does not clear it: gitleaks applies an allowlist
+# regex to the captured secret (the bare md5), never to the line that carries the `"prompt_cache_key":`
+# prefix the regex spells.
+a7b4b778b66231d69bdcc446229febdb5605130d:integrations/dialects/openai-responses/src/test/kotlin/splice/dialect/responses/v4389/CodexWireGoldenTest.kt:generic-api-key:67
+a7b4b778b66231d69bdcc446229febdb5605130d:integrations/dialects/openai-responses/src/test/kotlin/splice/dialect/responses/v4389/CodexWireGoldenTest.kt:generic-api-key:78
+# 2026-09-29: V4-340 legacy-store fixture. KeptFilesLifetimeTest.singleFileWithOneConversation writes the JSON a
+# daemon before V4-340 kept a head's code-mode records in, and generic-api-key matched its field NAME `key` beside
+# the conversation id `"key":"conversation-1"`. Test-source literal, grants nothing; triaged by hand after the
+# scan went red on f37280280 (the last green scan was 63dfafbb3).
+f37280280b4768cf6c9f825e7fdee98145ccffc4:app/src/test/kotlin/splice/app/KeptFilesLifetimeTest.kt:generic-api-key:172
+# 2026-09-29: the two findings the entry above caused. Its own comment and V4-340's ledger note quoted the
+# fixture's JSON field beside its value, which the same rule matches. Prose, grants nothing; triaged by hand.
+# The history is not rewritten, so each commit that carries the quote is fingerprinted here.
+5319b63131cfe0ff25ba6ad85264cd741ba92fbd:.gitleaksignore:generic-api-key:80
+36a22e1a5821273c4592a592bf474e6441f55e30:.dev/campaigns/v0.4.0.toml:generic-api-key:8297
+# 2026-09-29 CT: V4-427 transcript fixtures plant the same synthetic token as the
+# vetted TranscriptSentTextsTest above, to assert cached hand-offs stay redacted.
+# Opened all three test lines and their assertions. No credential or auth consumer.
+13ef90fbd2b1f075c37612db8e13166d0c4d4dde:integrations/claude-code/src/test/kotlin/splice/client/transcript/v4427/CachedEdgesTest.kt:generic-api-key:34
+13ef90fbd2b1f075c37612db8e13166d0c4d4dde:integrations/claude-code/src/test/kotlin/splice/client/transcript/v4427/SendLedgerTest.kt:generic-api-key:43
+13ef90fbd2b1f075c37612db8e13166d0c4d4dde:integrations/claude-code/src/test/kotlin/splice/client/transcript/v4427/SendLedgerBoundaryTest.kt:generic-api-key:58
+# 2026-09-30 CT (splice-lead): three fixtures red on secret-scan and org-secret-scan since
+# 3962a5897 (Sep 29, 6:46 PM CT). Opened each line: TranscriptLastTest's synthetic assistant
+# reply text carrying a token= phrase in a 1970 transcript fixture (message id synthetic-reply),
+# and doctor.test.ts's planted fix and detail values of the report-redaction test, both spelling
+# PLANTED. No credential and no auth consumer; the doctor fix value is also exempt in
+# .github/secret-scan-allow.toml for the supplementary pass.
+1cc6847d61fec3a81471fb798090aeb65eda5eb4:integrations/claude-code/src/test/kotlin/splice/client/v4444/TranscriptLastTest.kt:generic-api-key:14
+1755abd8e5b5b228cff12fccfe86e50a283ca7d5:console-next/tests/doctor.test.ts:generic-api-key:243
+1755abd8e5b5b228cff12fccfe86e50a283ca7d5:console-next/tests/doctor.test.ts:generic-api-key:244
+# Sep 30 CT, vetted by hand after secret-scan and org-secret-scan went red on 6dd4a6204: the two
+# bare-key inputs of the doctor redaction tests added in beba60d0f (V4-254, doctor --json redacts a
+# bare 32-character key). Both lines assign the alphabet run AbCdEf...Yz012345, the input the test
+# proves the report never prints; no credential and no auth consumer.
+beba60d0f1545cad1d5a6b89c0ccb78df8cd15a5:features/diagnostics/src/test/kotlin/splice/diagnostics/doctor/DoctorRedactionTest.kt:generic-api-key:71
+beba60d0f1545cad1d5a6b89c0ccb78df8cd15a5:features/diagnostics/src/test/kotlin/splice/diagnostics/doctor/DoctorReportHardeningTest.kt:generic-api-key:85

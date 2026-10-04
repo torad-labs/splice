@@ -1,0 +1,769 @@
+// PORT-OF: server/test/codex-login.test.mjs + codex-oauth pins @ pre-public-port-baseline — PKCE shape,
+// authorize-URL param order + %20 (never +) encoding, JWT claim extraction, auth.json shape,
+// cached read (mtime+TTL), single-flight refresh preserving other fields + 0600, masked
+// introspection.
+package splice.provider.codex
+
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.yield
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
+import org.junit.jupiter.api.io.TempDir
+import splice.core.auth.Credentials
+import splice.core.auth.InvalidGrantLatch
+import splice.core.auth.RefreshAttempt
+import splice.core.auth.SYNTHETIC_EXPIRY_TTL_MS
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.attribute.FileTime
+import java.nio.file.attribute.PosixFilePermissions
+import java.util.Base64
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.io.path.readText
+import kotlin.io.path.writeText
+
+private fun jwt(payloadJson: String): String {
+    val enc = Base64.getUrlEncoder().withoutPadding()
+    val header = enc.encodeToString("""{"alg":"none"}""".toByteArray())
+    val payload = enc.encodeToString(payloadJson.toByteArray())
+    return "$header.$payload.sig"
+}
+
+// DR-186: the backstop InflightGateTest already puts on its racing arm ("a genuine leak hangs, and
+// must FAIL the suite, never wedge it"), applied to the other unbounded spin-wait. JUnit's
+// TimeoutInvocation schedules a real interrupt and runBlocking's joinBlocking tests
+// Thread.interrupted() on every turn of its event loop, so this bounds a spin that yield() alone
+// never will. Generous on purpose: it is a hang backstop, not a latency assertion.
+private const val HANG_BACKSTOP_S = 60L
+
+class CodexAuthTest {
+
+    private val oauth = CodexOAuth()
+    private val noEnv: (String) -> String? = { null }
+
+    @Test
+    fun `pkce - verifier and challenge are url-safe base64 without padding`() {
+        val p = oauth.makePkce()
+        assertTrue(p.verifier.matches(Regex("[A-Za-z0-9_-]+")))
+        assertTrue(p.challenge.matches(Regex("[A-Za-z0-9_-]+")))
+        assertFalse(p.verifier.contains("=") || p.challenge.contains("="))
+    }
+
+    @Test
+    fun `authorize url - exact param order and percent-not-plus encoding`() {
+        val url = oauth.buildAuthorizeUrl(challenge = "CH", state = "ST", clientId = "cid", env = noEnv)
+        val query = url.substringAfter("?")
+        val keys = query.split("&").map { it.substringBefore("=") }
+        assertEquals(
+            listOf(
+                "response_type", "client_id", "redirect_uri", "scope", "code_challenge",
+                "code_challenge_method", "id_token_add_organizations", "codex_cli_simplified_flow",
+                "state", "originator",
+            ),
+            keys,
+        )
+        // the CLI-parity gotcha: scope spaces are %20, never +
+        assertTrue(query.contains("scope=openid%20profile%20email%20offline_access"))
+        assertFalse(query.contains("+"))
+        assertTrue(url.startsWith("https://auth.openai.com/oauth/authorize?"))
+    }
+
+    @Test
+    fun `jwt claim extraction pulls the chatgpt account id`() {
+        val token = jwt("""{"email":"x@y.z","https://api.openai.com/auth":{"chatgpt_account_id":"acct-1234-5678"}}""")
+        assertEquals("acct-1234-5678", oauth.accountIdFromIdToken(token))
+        assertNull(oauth.accountIdFromIdToken("garbage"))
+    }
+
+    @Test
+    fun `auth json shape is codex-cli-compatible`() {
+        val idToken = jwt("""{"https://api.openai.com/auth":{"chatgpt_account_id":"acct-9"}}""")
+        val obj =
+            oauth.authJsonFromTokens(idToken, "access-1", "refresh-1", apiKey = "sk-x", nowIso = "2026-07-16T00:00:00Z")
+        assertEquals("sk-x", obj["OPENAI_API_KEY"]?.jsonPrimitive?.content)
+        val tokens = obj["tokens"]!!.jsonObject
+        assertEquals("access-1", tokens["access_token"]?.jsonPrimitive?.content)
+        assertEquals("refresh-1", tokens["refresh_token"]?.jsonPrimitive?.content)
+        assertEquals("acct-9", tokens["account_id"]?.jsonPrimitive?.content)
+        assertEquals("2026-07-16T00:00:00Z", obj["last_refresh"]?.jsonPrimitive?.content)
+    }
+
+    // Every prefetch-tier credentials() call launches a background refresh on this scope. Tests
+    // join its children before returning (drainPrefetch), so no in-flight coroutine touches the
+    // @TempDir while JUnit deletes it — the CI-only TempDirDeletionStrategy$DeletionException class.
+    //
+    // 2026-07-27: that discipline was PER-TEST and therefore opt-in, which is why this race has now
+    // been closed three times (e3a50e8, 60df304, PR #17) and come back: a test that launches a
+    // prefetch and forgets to drain leaves a coroutine running into JUnit's @TempDir deletion for
+    // THAT test, surfacing as NoSuchFileException somewhere unrelated. The scope is shared across
+    // the whole class, so the window is not even confined to the forgetful test. Draining in
+    // @AfterEach makes it structural: no test can forget, and the per-test drainPrefetch() calls
+    // below stay only because they document intent at the point the prefetch is launched.
+    // DR-186: the drain needs its OWN backstop, and it is the reason a @Timeout on the arm alone was
+    // not enough. When an arm dies before completing the gate its refresh coroutine stays parked on
+    // gate.await() forever, so this join never returns and the suite wedges in @AfterEach — after the
+    // arm has already been failed and reported. Measured: with only the arm bounded, a starved
+    // prefetch arm still hung past a 200s probe; with this line it fails and the suite finishes.
+    @AfterEach
+    @Timeout(HANG_BACKSTOP_S)
+    fun settlePrefetchBeforeTempDirCleanup(): Unit = runBlocking {
+        prefetchJob.children.toList().forEach { it.join() }
+    }
+
+    private val prefetchJob = SupervisorJob()
+    private val prefetchScope = CoroutineScope(prefetchJob + kotlinx.coroutines.Dispatchers.Default)
+
+    private suspend fun drainPrefetch() {
+        prefetchJob.children.toList().forEach { it.join() }
+    }
+
+    private fun provider(
+        tmp: Path,
+        clock: () -> Long,
+        refresh: suspend (String) -> RefreshAttempt<RefreshedTokens>,
+    ): Pair<CodexAuthProvider, Path> {
+        val authPath = tmp.resolve(".codex/auth.json")
+        return CodexAuthProvider(
+            authPath = authPath,
+            authCacheMs = 60_000,
+            clock = clock,
+            nowIso = { "2026-07-16T00:00:00Z" },
+            refreshCall = refresh,
+            prefetchScope = prefetchScope,
+        ) to authPath
+    }
+
+    @Test
+    fun `cached read keys on mtime and ttl`(@TempDir tmp: Path) = runTest {
+        var now = 1_000L
+        val (auth, path) = provider(tmp, { now }) { RefreshAttempt.Denied("test-denied") }
+        Files.createDirectories(path.parent)
+        path.writeText("""{"tokens":{"access_token":"tok-1","account_id":"acct-1"}}""")
+        val first = auth.credentials() as Credentials.Bearer
+        assertEquals("tok-1", first.token)
+        assertEquals("acct-1", first.accountId)
+        // external rewrite with a new mtime -> re-read even within TTL. The mtime is STEPPED, not
+        // waited for: a coarse-grained filesystem can stamp both writes identically.
+        val before = Files.getLastModifiedTime(path).toMillis()
+        path.writeText("""{"tokens":{"access_token":"tok-2"}}""")
+        Files.setLastModifiedTime(path, FileTime.fromMillis(before + 1_000))
+        assertEquals("tok-2", (auth.credentials() as Credentials.Bearer).token)
+    }
+
+    @Test
+    fun `single-flight refresh preserves other fields, writes 0600, one refresh call`(@TempDir tmp: Path) = runTest {
+        val calls = AtomicInteger(0)
+        // gate: the leader's refresh blocks until every caller has registered, so the
+        // single-flight dedup is exercised deterministically (not scheduler-dependent).
+        val gate = CompletableDeferred<Unit>()
+        val (auth, path) = provider(tmp, { 1_000L }) {
+            calls.incrementAndGet()
+            gate.await()
+            RefreshAttempt.Granted(
+                RefreshedTokens(accessToken = "tok-new", refreshToken = "refresh-2", idToken = "id-2"),
+            )
+        }
+        Files.createDirectories(path.parent)
+        path.writeText(
+            """{"OPENAI_API_KEY":"sk-keep","tokens":{"access_token":"tok-old",
+                "refresh_token":"refresh-1","account_id":"acct-keep"},"last_refresh":"old"}""",
+        )
+        // N concurrent refreshes -> ONE refresh call
+        val pending = (1..5).map { async { auth.refresh() } }
+        repeat(10) { yield() } // let all five register as leader/followers
+        gate.complete(Unit)
+        val results = pending.awaitAll()
+        assertEquals(1, calls.get())
+        assertTrue(results.all { (it as Credentials.Bearer).token == "tok-new" })
+        val onDisk = kotlinx.serialization.json.Json.parseToJsonElement(path.readText()).jsonObject
+        assertEquals("sk-keep", onDisk["OPENAI_API_KEY"]?.jsonPrimitive?.content)
+        val tokens = onDisk["tokens"]!!.jsonObject
+        assertEquals("tok-new", tokens["access_token"]?.jsonPrimitive?.content)
+        assertEquals("refresh-2", tokens["refresh_token"]?.jsonPrimitive?.content)
+        assertEquals("acct-keep", tokens["account_id"]?.jsonPrimitive?.content) // preserved
+        assertEquals("2026-07-16T00:00:00Z", onDisk["last_refresh"]?.jsonPrimitive?.content)
+        val perms = Files.getPosixFilePermissions(path)
+        assertEquals(
+            setOf(
+                java.nio.file.attribute.PosixFilePermission.OWNER_READ,
+                java.nio.file.attribute.PosixFilePermission.OWNER_WRITE,
+            ),
+            perms,
+        )
+    }
+
+    // G1: a peer process (or the official codex CLI) rotated the token on disk while we were about to
+    // refresh. The freshly-read access token differs from what we last served, so the POST is skipped
+    // and the peer's token is served — no wasted refresh, no double token burn.
+    @Test
+    fun `peer already rotated while we were about to refresh - POST skipped, peer token served`(@TempDir tmp: Path) =
+        runTest {
+            val calls = AtomicInteger(0)
+            val (auth, path) = provider(tmp, { 1_000L }) {
+                calls.incrementAndGet()
+                RefreshAttempt.Denied("test-denied")
+            }
+            Files.createDirectories(path.parent)
+            path.writeText("""{"tokens":{"access_token":"token-A","refresh_token":"R1","account_id":"acct-1"}}""")
+            assertEquals("token-A", (auth.credentials() as Credentials.Bearer).token) // cache holds A
+            // a concurrent process rotates the file to token B (mtime stepped, never waited for).
+            val before = Files.getLastModifiedTime(path).toMillis()
+            path.writeText("""{"tokens":{"access_token":"token-B","refresh_token":"R1","account_id":"acct-1"}}""")
+            Files.setLastModifiedTime(path, FileTime.fromMillis(before + 1_000))
+            val beforeContent = path.readText()
+            val served = auth.refresh() as Credentials.Bearer
+            assertEquals("token-B", served.token) // adopts B, no POST
+            assertEquals("acct-1", served.accountId)
+            assertEquals(0, calls.get())
+            assertEquals(beforeContent, path.readText()) // no extra write
+        }
+
+    // G1: the endpoint rejects R1, but disk shows a rotation to R2 landed underneath us — retry ONCE
+    // against R2, which succeeds. Exactly two POSTs, no more.
+    @Test
+    fun `refresh rejected once but the disk-fresh refresh token succeeds - one bounded retry`(@TempDir tmp: Path) =
+        runTest {
+            val seen = mutableListOf<String>()
+            val path = tmp.resolve(".codex/auth.json")
+            val (auth, _) = provider(tmp, { 1_000L }) { token ->
+                seen.add(token)
+                if (token == "R1") {
+                    // another process's rotation lands on disk between our read and the POST.
+                    path.writeText("""{"tokens":{"access_token":"acc","refresh_token":"R2"}}""")
+                    RefreshAttempt.Denied("codex rejected R1")
+                } else {
+                    RefreshAttempt.Granted(
+                        RefreshedTokens(accessToken = "tok-new", refreshToken = "R3", idToken = null),
+                    )
+                }
+            }
+            Files.createDirectories(path.parent)
+            path.writeText("""{"tokens":{"access_token":"acc","refresh_token":"R1"}}""")
+            assertEquals("tok-new", (auth.refresh() as Credentials.Bearer).token)
+            assertEquals(listOf("R1", "R2"), seen)
+            val onDisk = kotlinx.serialization.json.Json.parseToJsonElement(path.readText()).jsonObject
+            assertEquals("R3", onDisk["tokens"]!!.jsonObject["refresh_token"]?.jsonPrimitive?.content)
+        }
+
+    // G1: the retry is bounded even when the disk token keeps rotating and every POST is rejected —
+    // exactly two POSTs, then it gives up (the retry POSTs with allowRereadRetry=false, never loops).
+    @Test
+    fun `refresh genuinely dead - bounded to two POSTs, no infinite retry`(@TempDir tmp: Path) = runTest {
+        val calls = AtomicInteger(0)
+        val path = tmp.resolve(".codex/auth.json")
+        val (auth, _) = provider(tmp, { 1_000L }) {
+            val n = calls.incrementAndGet()
+            path.writeText("""{"tokens":{"access_token":"acc","refresh_token":"R${n + 1}"}}""")
+            RefreshAttempt.Denied("test-denied")
+        }
+        Files.createDirectories(path.parent)
+        path.writeText("""{"tokens":{"access_token":"acc","refresh_token":"R1"}}""")
+        assertNull(auth.refresh())
+        assertEquals(2, calls.get())
+    }
+
+    // G6: codex's access_token is itself a JWT, so proactive-expiry awareness comes from its own
+    // `exp` claim (decodeJwtClaims) rather than a stored `expires` field. Mirrors
+    // GrokAuthProviderTest's proactive-window idiom.
+    @Test
+    fun `token outside the proactive window serves without refreshing`(@TempDir tmp: Path) = runTest {
+        val now = 1_000_000L
+        val access = jwt("""{"exp":${(now + 3_600_000) / 1000}}""")
+        val calls = AtomicInteger(0)
+        val (auth, path) = provider(tmp, { now }) {
+            calls.incrementAndGet()
+            RefreshAttempt.Denied("test-denied")
+        }
+        Files.createDirectories(path.parent)
+        path.writeText("""{"tokens":{"access_token":"$access","account_id":"acct-1"}}""")
+        assertEquals(access, (auth.credentials() as Credentials.Bearer).token)
+        assertEquals(0, calls.get())
+    }
+
+    // G17: 60s remaining is inside the 5-minute proactive window but above the 30s stale floor —
+    // prefetch tier: the background refresh is fire-and-forget, so a failed refreshCall never
+    // affects the return value; the current token comes back immediately. Mirrors grok's test.
+    @Test
+    fun `above the stale floor (prefetch tier), a failed background refresh still serves the current token`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val now = 1_000_000L
+        val access = jwt("""{"exp":${(now + 60_000) / 1000}}""")
+        val (auth, path) = provider(tmp, { now }) { RefreshAttempt.Denied("test-denied") }
+        Files.createDirectories(path.parent)
+        path.writeText("""{"tokens":{"access_token":"$access","account_id":"acct-1"}}""")
+        assertEquals(access, (auth.credentials() as Credentials.Bearer).token)
+    }
+
+    // G17: 10s remaining is below the 30s stale floor — too close to hard expiry to risk serving a
+    // token that might not survive the request; credentials() still blocks and returns the FRESH one.
+    @Test
+    fun `below the stale floor, credentials() blocks and returns the refreshed token`(@TempDir tmp: Path) = runTest {
+        val now = 1_000_000L
+        val access = jwt("""{"exp":${(now + 10_000) / 1000}}""")
+        val newAccess = jwt("""{"exp":${(now + 3_600_000) / 1000}}""")
+        val (auth, path) = provider(tmp, { now }) {
+            RefreshAttempt.Granted(RefreshedTokens(newAccess, "new-refresh", idToken = null))
+        }
+        Files.createDirectories(path.parent)
+        path.writeText("""{"tokens":{"access_token":"$access","refresh_token":"old-r","account_id":"acct-1"}}""")
+        assertEquals(newAccess, (auth.credentials() as Credentials.Bearer).token)
+    }
+
+    // G17: proves the prefetch tier is truly fire-and-forget on a real dispatcher — if credentials()
+    // still awaited the refresh synchronously, this would deadlock/timeout on the un-completed gate.
+    // Mirrors GrokAuthProviderTest's "prefetch tier does not block on a slow background refresh"
+    // (runBlocking, not runTest, for deterministic real-dispatcher async proof).
+    @Test
+    @Timeout(HANG_BACKSTOP_S) // DR-186: the wait below is a SPIN, and a spin that never ends wedges the suite
+    fun `prefetch tier does not block on a slow background refresh`(@TempDir tmp: Path) = runBlocking {
+        val now = 1_000_000L
+        val access = jwt("""{"exp":${(now + 120_000) / 1000}}""") // inside window, above the floor
+        val calls = AtomicInteger()
+        val gate = CompletableDeferred<RefreshedTokens?>()
+        val (auth, path) = provider(tmp, { now }) {
+            calls.incrementAndGet()
+            val tokens = gate.await()
+            if (tokens == null) RefreshAttempt.Denied("test-denied") else RefreshAttempt.Granted(tokens)
+        }
+        Files.createDirectories(path.parent)
+        path.writeText("""{"tokens":{"access_token":"$access","refresh_token":"refresh-1","account_id":"acct-1"}}""")
+        // returns WITHOUT the gate ever completing — direct proof the background refresh isn't awaited.
+        assertEquals(access, (auth.credentials() as Credentials.Bearer).token)
+        while (calls.get() == 0) yield() // observe the background call actually started
+        gate.complete(RefreshedTokens(accessToken = "new-access", refreshToken = "new-refresh", idToken = null))
+        assertEquals(1, calls.get())
+        drainPrefetch() // settle the unblocked background refresh before @TempDir cleanup
+    }
+
+    @Test
+    fun `access token without an exp claim serves as-is (legacy - non-JWT shape)`(@TempDir tmp: Path) = runTest {
+        val calls = AtomicInteger(0)
+        val (auth, path) = provider(tmp, { 1_000_000L }) {
+            calls.incrementAndGet()
+            RefreshAttempt.Denied("test-denied")
+        }
+        Files.createDirectories(path.parent)
+        path.writeText("""{"tokens":{"access_token":"tok-1","account_id":"acct-1"}}""")
+        assertEquals("tok-1", (auth.credentials() as Credentials.Bearer).token)
+        assertEquals(0, calls.get())
+    }
+
+    @Test
+    fun `expired token refreshes proactively and persists rotation`(@TempDir tmp: Path) = runTest {
+        val now = 1_000_000L
+        val access = jwt("""{"exp":${(now - 1) / 1000}}""")
+        val newAccess = jwt("""{"exp":${(now + 3_600_000) / 1000}}""")
+        val (auth, path) = provider(tmp, { now }) {
+            RefreshAttempt.Granted(RefreshedTokens(accessToken = newAccess, refreshToken = "refresh-2", idToken = null))
+        }
+        Files.createDirectories(path.parent)
+        path.writeText("""{"tokens":{"access_token":"$access","refresh_token":"refresh-1","account_id":"acct-1"}}""")
+        assertEquals(newAccess, (auth.credentials() as Credentials.Bearer).token)
+        val onDisk = kotlinx.serialization.json.Json.parseToJsonElement(path.readText()).jsonObject
+        assertEquals(newAccess, onDisk["tokens"]!!.jsonObject["access_token"]?.jsonPrimitive?.content)
+    }
+
+    // BS-2: a filesystem hiccup during persistRotation's write (disk full, perms, NFS blip) must not
+    // throw through SingleFlight/credentials() — the endpoint already burned the old refresh_token
+    // (Granted), so a lost write must still serve the not-yet-expired CURRENT token, never an exception.
+    @Test
+    fun `write failure during persist serves the current not-yet-expired token, never throws`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val now = 1_000_000L
+        val access = jwt("""{"exp":${(now + 10_000) / 1000}}""") // below the 30s stale floor, still valid
+        val newAccess = jwt("""{"exp":${(now + 3_600_000) / 1000}}""")
+        val (auth, path) = provider(tmp, { now }) {
+            RefreshAttempt.Granted(RefreshedTokens(newAccess, "new-refresh", idToken = null))
+        }
+        Files.createDirectories(path.parent)
+        path.writeText("""{"tokens":{"access_token":"$access","refresh_token":"old-r","account_id":"acct-1"}}""")
+        // pre-create the CredentialLock sibling so its own file open doesn't need dir-write access.
+        Files.createFile(path.resolveSibling("${path.fileName}.lock"))
+        val writablePerms = Files.getPosixFilePermissions(path.parent)
+        Files.setPosixFilePermissions(
+            path.parent,
+            java.nio.file.attribute.PosixFilePermissions.fromString("r-xr-xr-x"),
+        )
+        try {
+            assertEquals(access, (auth.credentials() as Credentials.Bearer).token)
+        } finally {
+            Files.setPosixFilePermissions(path.parent, writablePerms)
+        }
+    }
+
+    @Test
+    fun `inside window but not expired a failed refresh still serves the current token`(@TempDir tmp: Path) =
+        runTest {
+            val now = 1_000_000L
+            val access = jwt("""{"exp":${(now + 60_000) / 1000}}""") // < 5 min window, still future
+            val (auth, path) = provider(tmp, { now }) { RefreshAttempt.Denied("test-denied") }
+            Files.createDirectories(path.parent)
+            path.writeText("""{"tokens":{"access_token":"$access","refresh_token":"refresh-1"}}""")
+            assertEquals(access, (auth.credentials() as Credentials.Bearer).token)
+            drainPrefetch() // the prefetch-tier read launched a background refresh; settle it before teardown
+        }
+
+    @Test
+    fun `fully expired token with dead refresh yields null`(@TempDir tmp: Path) = runTest {
+        val now = 1_000_000L
+        val access = jwt("""{"exp":${(now - 1) / 1000}}""")
+        val (auth, path) = provider(tmp, { now }) { RefreshAttempt.Denied("test-denied") }
+        Files.createDirectories(path.parent)
+        path.writeText("""{"tokens":{"access_token":"$access","refresh_token":"refresh-1"}}""")
+        assertNull(auth.credentials())
+    }
+
+    @Test
+    fun `describe masks the account id and never exposes tokens`(@TempDir tmp: Path) = runTest {
+        val (auth, path) = provider(tmp, { 1L }) { RefreshAttempt.Denied("test-denied") }
+        assertFalse(auth.describe().present)
+        Files.createDirectories(path.parent)
+        path.writeText("""{"tokens":{"access_token":"secret","account_id":"acct12345678"},"last_refresh":"then"}""")
+        val d = auth.describe()
+        assertTrue(d.present)
+        assertEquals("chatgpt-oauth", d.kind)
+        assertEquals("acct…5678", d.fields["account_id_masked"])
+        assertEquals("then", d.fields["last_refresh"])
+        assertFalse(d.fields.values.any { it.contains("secret") })
+    }
+
+    // G15: a confirmed invalid_grant (post-G1 re-read: disk untouched, so the retry-once check
+    // finds no rotation and gives up) latches — the SECOND call must not re-POST the dead token.
+    @Test
+    fun `latched invalid_grant skips the network POST on the next call`(@TempDir tmp: Path) = runTest {
+        val calls = AtomicInteger()
+        val (auth, path) = provider(tmp, { 1_000L }) {
+            calls.incrementAndGet()
+            RefreshAttempt.InvalidGrant("dead")
+        }
+        Files.createDirectories(path.parent)
+        path.writeText("""{"tokens":{"access_token":"acc","refresh_token":"dead-refresh"}}""")
+        assertNull(auth.refresh())
+        assertEquals(1, calls.get())
+        assertNull(auth.refresh()) // file untouched: gate short-circuits before the lock/network
+        assertEquals(1, calls.get())
+    }
+
+    // G15: the latch is keyed on the auth file's mtime — a re-login rewrite (fresh refresh token,
+    // new mtime) clears it automatically, so the very next call attempts a real refresh again.
+    @Test
+    fun `latch clears when the auth file's mtime changes`(@TempDir tmp: Path) = runTest {
+        val calls = AtomicInteger()
+        var granted = false
+        val (auth, path) = provider(tmp, { 1_000L }) {
+            calls.incrementAndGet()
+            if (granted) {
+                RefreshAttempt.Granted(
+                    RefreshedTokens(accessToken = "rotated-access", refreshToken = "rotated-refresh", idToken = null),
+                )
+            } else {
+                RefreshAttempt.InvalidGrant("dead")
+            }
+        }
+        Files.createDirectories(path.parent)
+        path.writeText("""{"tokens":{"access_token":"acc","refresh_token":"dead-refresh"}}""")
+        assertNull(auth.refresh())
+        assertEquals(1, calls.get())
+        val before = Files.getLastModifiedTime(path).toMillis()
+        path.writeText("""{"tokens":{"access_token":"acc","refresh_token":"fresh-refresh"}}""") // re-login
+        // the mtime is STEPPED rather than waited for, so a coarse-grained filesystem still advances it
+        Files.setLastModifiedTime(path, FileTime.fromMillis(before + 1_000))
+        granted = true
+        assertEquals("rotated-access", (auth.refresh() as Credentials.Bearer).token)
+        assertEquals(2, calls.get()) // the real POST fired — the latch did not suppress it
+    }
+
+    // G15: /mgmt/auth and /api/auth surface the suppressed state via describe().
+    @Test
+    fun `describe surfaces refresh_latched after a confirmed invalid_grant`(@TempDir tmp: Path) = runTest {
+        val (auth, path) = provider(tmp, { 1_000L }) { RefreshAttempt.InvalidGrant("dead") }
+        Files.createDirectories(path.parent)
+        path.writeText("""{"tokens":{"access_token":"acc","refresh_token":"dead-refresh"}}""")
+        assertNull(auth.describe().fields["refresh_latched"])
+        assertNull(auth.refresh())
+        assertEquals("invalid_grant", auth.describe().fields["refresh_latched"])
+    }
+
+    @Test
+    fun `non-jwt access token ages out at the synthesized ceiling - SH-01`(@TempDir tmp: Path) = runTest {
+        // G18's codex twin: an opaque (non-JWT) access token used to yield expiresAtMs=null and
+        // be served FOREVER. The shared policy synthesizes mtime+4h: before the ceiling the token
+        // serves with zero refresh traffic; past it, the stale floor forces a blocking refresh.
+        var now = 0L
+        val calls = AtomicInteger(0)
+        val (auth, path) = provider(tmp, { now }) {
+            calls.incrementAndGet()
+            RefreshAttempt.Granted(
+                RefreshedTokens(accessToken = jwt("""{"exp":99999999999}"""), refreshToken = "r2", idToken = null),
+            )
+        }
+        Files.createDirectories(path.parent)
+        path.writeText("""{"tokens":{"access_token":"opaque-no-jwt","refresh_token":"r1","account_id":"a"}}""")
+        val mtime = Files.getLastModifiedTime(path).toMillis()
+
+        now = mtime + 1_000 // fresh file, hours from the synthesized ceiling
+        assertEquals("opaque-no-jwt", (auth.credentials() as Credentials.Bearer).token)
+        assertEquals(0, calls.get(), "inside the synthesized ceiling: no refresh")
+
+        now = mtime + 4 * 60 * 60 * 1000L + 1_000 // past mtime+4h: below the stale floor
+        val refreshed = auth.credentials() as Credentials.Bearer
+        assertEquals(1, calls.get(), "past the synthesized ceiling: exactly one blocking refresh")
+        assertTrue(refreshed.token != "opaque-no-jwt", "the refreshed token must serve")
+    }
+}
+
+/** DR-177's overflow arm, in its own class for the same reason the peer-rotation one below is —
+ *  CodexAuthTest sits at detekt's LargeClass ceiling and this arm tips it. Same reason it carries
+ *  its own copy of the provider helper. */
+class CodexExpiryOverflowTest {
+
+    private val prefetchJob = kotlinx.coroutines.SupervisorJob()
+    private val prefetchScope = CoroutineScope(prefetchJob + kotlinx.coroutines.Dispatchers.Default)
+
+    private fun provider(
+        tmp: Path,
+        clock: () -> Long,
+        refresh: suspend (String) -> RefreshAttempt<RefreshedTokens>,
+    ): Pair<CodexAuthProvider, Path> {
+        val authPath = tmp.resolve(".codex/auth.json")
+        return CodexAuthProvider(
+            authPath = authPath,
+            authCacheMs = 60_000,
+            clock = clock,
+            nowIso = { "2026-07-16T00:00:00Z" },
+            refreshCall = refresh,
+            prefetchScope = prefetchScope,
+        ) to authPath
+    }
+
+    // DR-177: the exp claim went into a bare multiply by 1000, so an absurd one WRAPPED to a large
+    // negative instant and the token read as expired on its very first read — a blocking refresh
+    // per turn, forever, off one JWT field, and the refreshed token is not even the problem. An
+    // unrepresentable exp is not a usable expiry, which is precisely what the SH-01 ceiling already
+    // rules on, so it now takes that path: this is the SH-01 arm's shape with a HOSTILE exp in
+    // place of a missing one, and the call counts are what separate the two behaviours.
+    @Test
+    fun `a jwt exp too large to represent ages out at the ceiling, not immediately - DR-177`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        var now = 0L
+        val calls = AtomicInteger(0)
+        val hostile = jwt("""{"exp":${Long.MAX_VALUE}}""")
+        val (auth, path) = provider(tmp, { now }) {
+            calls.incrementAndGet()
+            RefreshAttempt.Granted(
+                RefreshedTokens(accessToken = jwt("""{"exp":99999999999}"""), refreshToken = "r2", idToken = null),
+            )
+        }
+        Files.createDirectories(path.parent)
+        path.writeText("""{"tokens":{"access_token":"$hostile","refresh_token":"r1","account_id":"a"}}""")
+        val mtime = Files.getLastModifiedTime(path).toMillis()
+
+        now = mtime + 1_000
+        assertEquals(hostile, (auth.credentials() as Credentials.Bearer).token)
+        assertEquals(0, calls.get(), "a wrapped exp read as already-expired and refreshed on the FIRST call")
+
+        now = mtime + 4 * 60 * 60 * 1000L + 1_000
+        assertTrue((auth.credentials() as Credentials.Bearer).token != hostile, "past the ceiling it refreshes")
+        assertEquals(1, calls.get(), "and exactly once — the ceiling is a floor on staleness, not a storm")
+    }
+}
+
+/** DR-145's peer-rotation expiry arm, in its own class because CodexAuthTest is at detekt's
+ *  LargeClass ceiling. Carries its own copy of the provider helper, which is private above. */
+class CodexPeerRotationExpiryTest {
+
+    private val prefetchJob = kotlinx.coroutines.SupervisorJob()
+    private val prefetchScope = CoroutineScope(prefetchJob + kotlinx.coroutines.Dispatchers.Default)
+
+    private fun provider(
+        tmp: Path,
+        clock: () -> Long,
+        refresh: suspend (String) -> RefreshAttempt<RefreshedTokens>,
+    ): Pair<CodexAuthProvider, Path> {
+        val authPath = tmp.resolve(".codex/auth.json")
+        return CodexAuthProvider(
+            authPath = authPath,
+            authCacheMs = 60_000,
+            clock = clock,
+            nowIso = { "2026-07-16T00:00:00Z" },
+            refreshCall = refresh,
+            prefetchScope = prefetchScope,
+        ) to authPath
+    }
+
+    // DR-145 (provider sweep, 2026-08-31): peerRotation is a SECOND writer of the credential cache
+    // and it took the JWT `exp` alone, with no fallback to the injected SH-01 synthesis that
+    // readSnapshot applies. An adopted OPAQUE token — the exact shape SH-01 exists for, and the one
+    // the arm above already uses without noticing — was cached with a NULL expiry and served as
+    // never-expiring: no proactive refresh, no stale floor, and the operator line about a token
+    // carrying no decodable exp never fired. The existing peer arm observes only the served token
+    // and the call count, so it passes either way.
+    @Test
+    fun `a peer-adopted opaque token gets the synthesized ceiling - DR-145`(@TempDir tmp: Path) =
+        runTest {
+            val now = 5_000_000_000L
+            val calls = AtomicInteger(0)
+            val (auth, path) = provider(tmp, { now }) {
+                calls.incrementAndGet()
+                RefreshAttempt.Denied("test-denied")
+            }
+            Files.createDirectories(path.parent)
+            path.writeText("""{"tokens":{"access_token":"opaque-A","refresh_token":"R1","account_id":"acct-1"}}""")
+            // Pin the mtime so the synthesized ceiling (mtime + 4h) leaves well over the 300s
+            // proactive window for token A: this read must NOT refresh.
+            Files.setLastModifiedTime(path, FileTime.fromMillis(now - 1_000))
+            assertEquals("opaque-A", (auth.credentials() as Credentials.Bearer).token)
+            assertEquals(0, calls.get(), "token A is nowhere near its synthesized ceiling")
+
+            // The peer rotates to another OPAQUE token — no JWT exp to read.
+            path.writeText("""{"tokens":{"access_token":"opaque-B","refresh_token":"R1","account_id":"acct-1"}}""")
+            // Its ceiling leaves 10s, inside the 30s stale floor.
+            Files.setLastModifiedTime(path, FileTime.fromMillis(now + 10_000 - SYNTHETIC_EXPIRY_TTL_MS))
+
+            assertEquals("opaque-B", (auth.refresh() as Credentials.Bearer).token)
+            assertEquals(0, calls.get(), "adoption is still POST-free")
+
+            // HOT read at the SAME clock: the adopted snapshot must carry the synthesized ceiling.
+            auth.credentials()
+            assertEquals(1, calls.get(), "an adopted opaque token must not be served as never-expiring")
+        }
+}
+
+// DR-176 (grok-splice finding H): the plumbing half. The core arms pin what CredentialFileIdentity
+// MEANS; this one proves a provider actually derives it from the file, because the defect lived in
+// the derivation — codexAuthMtimeOrNull returned FileTime.toMillis(), which truncates the
+// nanoseconds ext4 and xfs store, so two genuinely different credentials could not be told apart.
+// The fixture is the row's own scenario: rewrite the content, then RESTORE the original FileTime,
+// which is exactly what a same-tick re-login or a backup restore produces.
+class CodexAuthIdentityTest {
+
+    private fun identity(path: Path) =
+        CodexAuthFile().codexAuthIdentityOrNull(path) { }
+
+    @Test
+    fun `a rewritten credential with a restored FileTime is a DIFFERENT identity - DR-176`(@TempDir tmp: Path) {
+        val auth = tmp.resolve("auth.json")
+        Files.writeString(auth, """{"tokens":{"access_token":"old"}}""")
+        val before = identity(auth)
+        val stamp = Files.getLastModifiedTime(auth)
+
+        Files.writeString(auth, """{"tokens":{"access_token":"a-freshly-minted-replacement"}}""")
+        Files.setLastModifiedTime(auth, stamp)
+        val after = identity(auth)
+
+        assertEquals(
+            stamp.toMillis(),
+            after?.mtimeMs,
+            "the fixture must actually restore the timestamp, or this arm proves nothing",
+        )
+        assertNotEquals(before, after, "a replaced credential must not share the rejected file's identity")
+
+        val latch = InvalidGrantLatch()
+        latch.latch(before)
+        assertFalse(latch.isLatched(after), "the operator re-authenticated; the latch must release")
+    }
+
+    @Test
+    fun `an untouched credential keeps its identity and stays latched - DR-176 trap control`(@TempDir tmp: Path) {
+        val auth = tmp.resolve("auth.json")
+        Files.writeString(auth, """{"tokens":{"access_token":"unchanged"}}""")
+        val before = identity(auth)
+
+        val latch = InvalidGrantLatch()
+        latch.latch(before)
+        assertEquals(before, identity(auth), "statting an untouched file twice must agree")
+        assertTrue(
+            latch.isLatched(identity(auth)),
+            "an untouched credential must keep suppressing, or the lockout fix becomes a refresh storm",
+        )
+    }
+}
+
+class CodexAccountMetadataTest {
+    @Test
+    fun `JWT account label claims exclude email`() {
+        val oauth = CodexOAuth()
+        val token = jwt(
+            """{"email":"private@example.com","https://api.openai.com/auth":{
+                "chatgpt_account_id":"acct-1234","chatgpt_plan_type":"plus"}}""",
+        )
+
+        assertEquals("acct-1234", oauth.accountIdFromToken(token))
+        assertEquals("plus", oauth.planTypeFromToken(token))
+        assertNull(oauth.planTypeFromToken("garbage"))
+    }
+
+    @Test
+    fun `access token metadata does not change the legacy account header`() {
+        val oauth = CodexOAuth()
+        val access = jwt(
+            """{"https://api.openai.com/auth":{"chatgpt_account_id":"access-account"}}""",
+        )
+
+        val auth = oauth.authJsonFromTokens(
+            idToken = null,
+            accessToken = access,
+            refreshToken = "refresh",
+            apiKey = null,
+            nowIso = "2026-09-13T00:00:00Z",
+        )
+
+        assertFalse("account_id" in auth["tokens"]!!.jsonObject)
+        assertEquals("access-account", oauth.accountIdFromToken(access), "auto labels may still derive the safe hash")
+    }
+
+    @Test
+    fun `refresh preserves labeled metadata and never decorates the legacy primary`(@TempDir tmp: Path) = runTest {
+        for (labeled in listOf(false, true)) {
+            val file = tmp.resolve("auth-$labeled.json")
+            val metadata = if (labeled) {
+                ""","splice_auth_kind":"chatgpt-oauth","splice_account_label":"backup""""
+            } else {
+                ""
+            }
+            Files.writeString(
+                file,
+                """{"tokens":{"access_token":"old","refresh_token":"refresh",
+                    "account_id":"acct"},"last_refresh":"old"$metadata}""",
+            )
+            val auth = CodexAuthProvider(
+                authPath = file,
+                authCacheMs = 60_000L,
+                refreshCall = {
+                    RefreshAttempt.Granted(RefreshedTokens("new", "rotated", idToken = null))
+                },
+            )
+
+            auth.refresh()
+
+            val onDisk = kotlinx.serialization.json.Json.parseToJsonElement(Files.readString(file)).jsonObject
+            val tokens = onDisk["tokens"]!!.jsonObject
+            if (labeled) {
+                assertEquals("chatgpt-oauth", onDisk["splice_auth_kind"]?.jsonPrimitive?.content)
+                assertEquals("backup", onDisk["splice_account_label"]?.jsonPrimitive?.content)
+                assertFalse("splice_auth_kind" in tokens)
+                assertFalse("splice_account_label" in tokens)
+            } else {
+                assertFalse("splice_auth_kind" in onDisk)
+                assertFalse("splice_account_label" in onDisk)
+            }
+        }
+    }
+}

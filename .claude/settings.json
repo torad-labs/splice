@@ -6,58 +6,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator.py pretooluse",
+            "command": "bun $CLAUDE_PROJECT_DIR/tools/gate rules --stdin pretooluse",
             "timeout": 30
           },
           {
             "type": "command",
-            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator/pretooluse.py",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator.py stop",
-            "timeout": 30
-          },
-          {
-            "type": "command",
-            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator/stop.py",
+            "command": "bun $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator/pretooluse.ts",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/gradle-stop-guard.py",
-            "timeout": 30
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator.py stop",
-            "timeout": 30
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator/posttooluse.py",
+            "command": "bun $CLAUDE_PROJECT_DIR/tools/gate no-python --guard",
             "timeout": 10
           }
         ]
@@ -69,19 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator/sessionstart.py",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator/userpromptsubmit.py",
+            "command": "bun $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator/sessionstart.ts",
             "timeout": 10
           }
         ]

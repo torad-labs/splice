@@ -1,0 +1,41 @@
+/* Accounts use the same paper and measured glass as Sessions. Provider groups own the space. */
+.accounts-provider { margin-bottom: var(--space-16); }
+.accounts-provider .group-head { margin-bottom: var(--space-9); }
+.accounts-grid { list-style: none; margin: 0; padding: 0 var(--space-8) 0 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 28.75rem), 1fr)); gap: var(--space-15); align-items: start; }
+.account-card .bar { flex-wrap: wrap; }
+.account-card .bar h3 { min-width: 0; overflow-wrap: anywhere; }
+.account-card .account-place { padding: 0 var(--space-7) var(--space-5); overflow-wrap: anywhere; }
+.account-card .account-place p { font-size: var(--text-2); color: var(--mute); }
+.account-card .quiet-meta { flex-wrap: wrap; }
+.account-limits { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-9); }
+.account-limit { min-width: 0; display: grid; gap: var(--space-4); align-content: start; }
+.account-limit-label { display: flex; justify-content: space-between; flex-wrap: wrap; gap: var(--space-3); color: var(--glass-ink); }
+.account-limit-label b { white-space: nowrap; }
+.account-limit-track { height: var(--space-4); border-radius: var(--r1); background: var(--glass-track); overflow: hidden; }
+.account-limit-track i { display: block; height: 100%; background: var(--rim); }
+.account-limit-track i[data-stale] { opacity: .5; }
+.account-limit .hint { color: var(--glass-dim); font-size: var(--text-2); }
+.account-card .account-acts { padding: 0 var(--space-7) var(--space-6); display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4); }
+.account-order { margin-top: var(--space-10); }
+.account-order ol { list-style: none; padding: 0; margin: var(--space-6) 0 0; }
+.account-order li { display: flex; align-items: center; gap: var(--space-5); padding: var(--space-4) 0; }
+.account-order .drag-handle { cursor: grab; touch-action: none; }
+.account-order .drag-handle:active { cursor: grabbing; }
+.account-order .order-number { color: var(--mute); min-width: 2ch; }
+.account-order .order-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.account-order .order-controls { display: flex; gap: var(--space-3); }
+.account-budget { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-6); padding: var(--space-6) var(--space-7); }
+.account-budget .field { margin: 0; }
+.account-budget .input { width: 8rem; }
+@media (max-width: 700px) {
+  .app:has(.accounts-page) { grid-template-columns: minmax(0, 1fr); }
+  .app:has(.accounts-page) .side { min-height: auto; border-right: 0; border-bottom: var(--input); padding: var(--space-7); }
+  .app:has(.accounts-page) .nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .app:has(.accounts-page) .side .foot { margin-top: var(--space-5); display: flex; flex-wrap: wrap; }
+  .app:has(.accounts-page) .wall { padding: var(--space-9) var(--space-7); }
+  .accounts-page .page-head { flex-direction: column; align-items: flex-start; }
+  .accounts-page .page-head .tools { margin-left: 0; }
+  .accounts-grid { padding-right: var(--space-5); }
+  .account-limits { grid-template-columns: 1fr; }
+  .account-order .order-controls { gap: 0; }
+}

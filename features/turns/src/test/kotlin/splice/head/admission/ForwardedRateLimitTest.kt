@@ -31,6 +31,7 @@ import splice.head.headDeps
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.FileProviderHoldStore
 import splice.upstream.retry.InflightGate
+import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
 import splice.upstream.transport.UpstreamClient
 import java.net.InetSocketAddress
 import java.nio.file.Files
@@ -103,7 +104,7 @@ class ForwardedRateLimitTest {
     }
 
     @Test
-    fun `restart reports the scoped window before a turn without holding another login`() = runBlocking {
+    fun `restart retains the scoped native refusal without an upstream attempt or holding another login`() = runBlocking {
         val first = LimitRig(directory)
         first.head.start()
         try {
@@ -111,15 +112,28 @@ class ForwardedRateLimitTest {
         } finally {
             first.close()
         }
-        val restarted = LimitRig(directory)
+        var elapsed = 0L
+        val restarted = LimitRig(directory, clock = ElapsedClock { elapsed })
         restarted.head.start()
         try {
             assertEquals("seven_day", restarted.upstream.planHold?.claim)
             assertTrue(restarted.upstream.providerResetForMs > 0L)
-            assertEquals(0L, restarted.upstream.rateLimitedForMs, "restart keeps the bounded re-probe escape hatch")
+            assertEquals(
+                MAX_RATE_LIMIT_COOLDOWN_MS,
+                restarted.upstream.rateLimitedForMs,
+                "startup retains the native credential's refusal, bounded by the existing re-probe ceiling",
+            )
+            val (status, body, headers) = restarted.turn("synthetic-refused")
+            assertEquals(HttpStatusCode.TooManyRequests, status)
+            assertEquals(LIMIT_BODY, body)
+            first.limitHeaders.forEach { (name, value) -> assertEquals(value, headers[name], name) }
+            assertEquals(0, restarted.requests.size, "the persisted native refusal makes zero upstream attempts")
             assertEquals(HttpStatusCode.OK, restarted.turn("synthetic-new-login").first)
+            assertEquals(listOf("synthetic-new-login"), restarted.requests)
+
+            elapsed = MAX_RATE_LIMIT_COOLDOWN_MS + 1
             assertEquals(HttpStatusCode.TooManyRequests, restarted.turn("synthetic-refused").first)
-            assertEquals(2, restarted.requests.size)
+            assertEquals(listOf("synthetic-new-login", "synthetic-refused"), restarted.requests)
         } finally {
             restarted.close()
         }
@@ -158,7 +172,11 @@ class ForwardedRateLimitTest {
     }
 }
 
-private class LimitRig(private val directory: Path, private val limits: Boolean = true) {
+private class LimitRig(
+    private val directory: Path,
+    private val limits: Boolean = true,
+    clock: ElapsedClock = ElapsedClock { 0L },
+) {
     val requests = mutableListOf<String>()
     val refused = mutableListOf<String>()
     private val reset = System.currentTimeMillis() / 1_000 + 86_400
@@ -204,7 +222,7 @@ private class LimitRig(private val directory: Path, private val limits: Boolean 
         totalTimeoutMs = 30_000,
         maxRetries = 4,
         client = providerClient,
-        clock = ElapsedClock { 0L },
+        clock = clock,
         holdStore = FileProviderHoldStore(directory.resolve("provider-hold.json"), LogSink {}),
     )
     private val client = HttpClient(CIO)

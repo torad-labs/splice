@@ -47,6 +47,16 @@ describe('outcomes', () => {
   test('the unattributed tag is not a failure in a head count', () => {
     expect(failedCount(summary())).toBe(1);
   });
+  test('counts use the same stopped classification as request rows, without hiding unknown failures', () => {
+    const outcomes = { ok: 8, '?': 2, client_abort: 3, 'error:cancelled': 4, 'error:stopped': 5, 'error:rate-limited': 6, 'error:new-ending': 7 };
+    expect(failedCount(summary({ outcomes }))).toBe(17);
+    expect(outcomeOf('error:cancelled')).toMatchObject({ word: 'Cancelled', tone: 'stuck', failed: true });
+    for (const tag of ['client_abort', 'error:stopped']) {
+      expect(outcomeOf(tag)).toMatchObject({ tone: 'idle', failed: false });
+      expect(failedCount(summary({ outcomes: { [tag]: 1 } }))).toBe(0);
+    }
+    expect(turnsLede(planRows([summary({ count: 2, outcomes: { client_abort: 1, 'error:stopped': 1 } })], none), '1h')).toContain('None failed');
+  });
 });
 
 describe('a record splice answered itself', () => {

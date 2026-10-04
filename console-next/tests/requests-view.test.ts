@@ -70,6 +70,15 @@ describe('the view as the daemon\'s ask', () => {
     expect(askOf(view('status=compacted')).filter).toEqual({ compact: true, local: false });
   });
 
+  test('Stopped has its own reloadable address and asks for stopped outcomes, not failures', () => {
+    const stopped = view('status=stopped&head=claudex');
+    expect(stopped.unread).toBeNull();
+    expect(stopped.status).toBe('stopped');
+    expect(searchOf(stopped)).toEqual({ status: 'stopped', head: 'claudex' });
+    expect(viewOf(new URLSearchParams(searchOf(stopped)))).toEqual(stopped);
+    expect(askOf(stopped).filter).toEqual({ outcome: 'stopped', local: false });
+  });
+
   test('a span asks its since and until, and every selector rides the filter', () => {
     expect(askOf(view('since=1000&until=2000&model=m&account=a&session=s&unattributed=model'))).toEqual({
       head: undefined,

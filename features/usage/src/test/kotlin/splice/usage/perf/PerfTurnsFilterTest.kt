@@ -21,6 +21,8 @@ import kotlinx.serialization.json.long
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.perf.OutcomeTag
+import splice.core.perf.OutcomeTags
 import splice.core.perf.PerfKeys
 import splice.core.util.WallClock
 import splice.usage.UsageHead
@@ -36,7 +38,11 @@ class PerfTurnsFilterTest {
     private val unknown = row(ts = 6_000L, outcome = "?", session = "s1", compact = true)
     private val bare = PerfRow(ts = 7_000L, outcome = "ok", fields = emptyMap())
     private val local = row(ts = 8_000L, outcome = "ok", session = "s1", fields = mapOf(PerfKeys.LOCAL_STEP to 1L))
-    private val rows = listOf(failure, unknown, bare, local) + oks
+    private val stops = listOf(OutcomeTag.CLIENT_ABORT.wire, OutcomeTags.error("stopped")).mapIndexed { index, tag ->
+        row(ts = 9_100L + index * 100L, outcome = tag, session = "stops")
+    }
+    private val cancelled = row(ts = 9_300L, outcome = OutcomeTag.CANCELLED.wire, session = "watchdog")
+    private val rows = listOf(failure, unknown, bare, local) + stops + listOf(cancelled) + oks
 
     private val head = UsageHead(
         key = "kimi",
@@ -85,11 +91,21 @@ class PerfTurnsFilterTest {
     private fun count(head: JsonObject): Long = head.getValue("count").jsonPrimitive.long
 
     @Test
-    fun `Failed returns the one failure in the window however many newer rows fill the list`() = testApplication {
+    fun `Failed includes watchdog cancellation but excludes stops however many newer rows fill the list`() = testApplication {
         mount()
         val head = ask(client, "n=2000&outcome=failed")
-        assertEquals(listOf(5_000L), stamps(head), "the failure, and not the unattributed `?` row")
-        assertEquals(1L, count(head), "the count is the rows the filter matches")
+        assertEquals(listOf(5_000L, 9_300L), stamps(head), "the refusal and watchdog cancellation, never stops or `?`")
+        assertEquals(2L, count(head), "the count is the rows the filter matches")
+    }
+
+    @Test
+    fun `Stopped finds every stopped outcome before the clamp with its full matched count`() = testApplication {
+        mount()
+        val stopped = ask(client, "n=1&outcome=stopped&local=0")
+        assertEquals(listOf(9_200L), stamps(stopped), "newest stop, not watchdog cancellation or newer successes")
+        assertEquals(2L, count(stopped), "all stopped requests count before the newest-n clamp")
+        assertEquals(listOf(9_100L), stamps(ask(client, "outcome=client_abort")), "exact tag filters stay exact")
+        assertEquals(listOf(9_100L), stamps(ask(client, "outcome=stopped&until=9200")), "until stays exclusive")
     }
 
     @Test
@@ -98,7 +114,7 @@ class PerfTurnsFilterTest {
         assertEquals(listOf(5_000L), stamps(ask(client, "outcome=error:rate-limited")))
         assertEquals(2_003L, count(ask(client, "outcome=ok")), "2,001 ok rows, the bare row and the local step")
         assertEquals(listOf(5_000L), stamps(ask(client, "session=s2")))
-        assertEquals(2_004L, count(ask(client, "model=opus&account=work")), "every row but the bare one")
+        assertEquals(2_007L, count(ask(client, "model=opus&account=work")), "every row but the bare one")
     }
 
     @Test
@@ -113,8 +129,8 @@ class PerfTurnsFilterTest {
     fun `local=0 leaves out the steps splice answered itself, and the count agrees`() = testApplication {
         mount()
         val head = ask(client, "until=10000&local=0")
-        assertEquals(listOf(5_000L, 6_000L, 7_000L), stamps(head))
-        assertEquals(3L, count(head))
+        assertEquals(listOf(5_000L, 6_000L, 7_000L, 9_100L, 9_200L, 9_300L), stamps(head))
+        assertEquals(6L, count(head))
     }
 
     @Test
@@ -124,7 +140,11 @@ class PerfTurnsFilterTest {
         assertEquals(listOf(6_000L), stamps(compacted))
         assertEquals(1L, count(compacted))
         val rest = stamps(ask(client, "until=10000&compact=0"))
-        assertEquals(listOf(5_000L, 7_000L, 8_000L), rest, "a row with no compact field is not one")
+        assertEquals(
+            listOf(5_000L, 7_000L, 8_000L, 9_100L, 9_200L, 9_300L),
+            rest,
+            "a row with no compact field is not one",
+        )
     }
 
     @Test

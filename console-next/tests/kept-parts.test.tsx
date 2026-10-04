@@ -53,8 +53,17 @@ describe('a failed turn\'s sentence', () => {
     expect(a).toContain('the connection for a closed mid-request; retry');
     expect(a).not.toContain('the connection for b');
   });
-  test('names a missing explanation without inventing the cause of a stopped request', () => {
-    const stopped = { ...row('a'), outcome: 'client_abort' };
+  test('a lowercase rate-limit sentence starts as a sentence without losing the recorded reason', () => {
+    const sentence = 'rate limit reached; retry after the named reset, with the same session.';
+    const limited = { ...row('limited'), outcome: 'error:rate-limited' };
+    const data = kept('limited', sentence);
+    const html = page(<KeptTabs row={limited} plan="Solo" tab={null} />, client => client.setQueryData(['trace', 'claude-solo', 'limited'], data));
+    expect(html).toContain('<p class="failure-sentence">Rate limit reached; retry after the named reset, with the same session.</p>');
+    expect(data.read.turn.failure_sentence).toBe(sentence);
+  });
+
+  test.each(['client_abort', 'error:stopped'])('names a missing explanation without inventing the cause of %s', outcome => {
+    const stopped = { ...row('a'), outcome };
     const none = page(<KeptTabs row={stopped} plan="Solo" tab={null} />, (client) => client.setQueryData(['trace', 'claude-solo', 'a'], kept('a', null)));
     expect(none).toContain('This answer stopped before it completed. No detailed stop reason was kept.');
     expect(none).not.toContain('the client disconnected');

@@ -6,7 +6,7 @@ import { WINDOW_MS } from './turns-page';
 import { PERF_WINDOWS } from '../types/perf';
 import type { PerfTurnsFilter, PerfWindowLabel } from '../types/perf';
 
-export const REQUESTS_STATUSES = ['all', 'failed', 'compacted'] as const;
+export const REQUESTS_STATUSES = ['all', 'failed', 'stopped', 'compacted'] as const;
 export type RequestsStatus = (typeof REQUESTS_STATUSES)[number];
 
 export const SELECTORS = ['head', 'model', 'account', 'session'] as const;
@@ -121,7 +121,7 @@ export const narrowed = (view: RequestsView): boolean =>
  *  steps splice answered itself are left out: they are not requests to a model. */
 export function askOf(view: RequestsView): { head: string | undefined; last?: number; since?: number; until?: number; filter: PerfTurnsFilter } {
   const filter: PerfTurnsFilter = {
-    ...(view.status === 'failed' ? { outcome: 'failed' } : {}),
+    ...(view.status === 'failed' || view.status === 'stopped' ? { outcome: view.status } : {}),
     ...(view.status === 'compacted' ? { compact: true } : {}),
     ...(view.model === null ? {} : { model: view.model }),
     ...(view.account === null ? {} : { account: view.account }),

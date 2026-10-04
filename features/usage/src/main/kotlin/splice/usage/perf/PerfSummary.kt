@@ -16,7 +16,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
-import splice.core.perf.OutcomeTag
+import splice.core.perf.OutcomeTags
 import splice.core.perf.PerfKeys
 import splice.core.util.WallClock
 import kotlin.math.ceil
@@ -27,12 +27,6 @@ private const val MS_PER_MINUTE = 60_000L
 private const val MS_PER_HOUR = 3_600_000L
 private const val HOURS_PER_DAY = 24L
 private const val DAYS_PER_WEEK = 7L
-
-// V4-102: `val`, not `const val`, because the tag now comes from the single-source enum and an
-// enum property is not a compile-time constant. The value is unchanged, so every comparison and
-// every rendering is byte-identical — only the compile-time-foldability is lost, and nothing here
-// needed it.
-private val OK = OutcomeTag.OK.wire
 
 /** A row whose outcome could not be parsed: shown under this tag, never counted as a failure. */
 internal const val UNATTRIBUTED_OUTCOME: String = "?"
@@ -122,10 +116,10 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
         latencies(rows).forEach { (k, v) -> put(k, v) }
         val byOutcome = rows.groupingBy { it.outcome }.eachCount().toSortedMap()
         putJsonObject("outcomes") { byOutcome.forEach { (tag, n) -> put(tag, n) } }
-        // A row without a parseable outcome is unattributed: shown, never counted as a failure.
-        val failures = byOutcome.filterKeys { it != OK && it != UNATTRIBUTED_OUTCOME }
+        // Stopped and unattributed rows stay in outcomes and the denominator, never the failure count.
+        val failures = byOutcome.filterKeys(OutcomeTags::isFailed)
         put("failure_share", failures.values.sum().toDouble() / rows.size)
-        // Per tag, so four upstream failures and one client abort read 0.20 and 0.05, not one 0.25.
+        // Per failing tag, with the same classification as the Failed request filter.
         putJsonObject("failure_shares") { failures.forEach { (tag, n) -> put(tag, n.toDouble() / rows.size) } }
         put("unattributed", byOutcome[UNATTRIBUTED_OUTCOME] ?: 0)
         counters(rows).forEach { (k, v) -> put(k, v) }

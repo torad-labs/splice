@@ -4,7 +4,7 @@ import { useCapture, useConversation, useKeptTurn, useWire } from '../../api/tur
 import { foldTranscript } from '../../lib/conversation';
 import { fmtMs } from '../../lib/format';
 import { readable } from '../../lib/message';
-import { askAndAnswer, outcomeOf, wireFor } from '../../lib/turns-page';
+import { askAndAnswer, isStopped, outcomeOf, wireFor } from '../../lib/turns-page';
 import { P } from '../../lib/words-turns';
 import type { TraceRecord, TraceSide, TurnRow } from '../../types/perf';
 import { Markdown } from '../../ui';
@@ -74,9 +74,10 @@ function Failure({ row }: { row: TurnRow }) {
   if (row.outcome === 'ok' || row.outcome === '?') return null;
   if (row.turn !== undefined && kept.data === undefined && !kept.isError) return <p className="failure-sentence" role="status">{P.readingFailure}</p>;
   const sentence = kept.data === undefined || 'gone' in kept.data ? null : (kept.data.read.turn.failure_sentence ?? null);
-  const absent = row.outcome === 'client_abort' ? P.stoppedNoReason : P.failureNoReason(outcomeOf(row.outcome).word);
+  const absent = isStopped(row.outcome) ? P.stoppedNoReason : P.failureNoReason(outcomeOf(row.outcome).word);
+  const reason = row.outcome === 'error:rate-limited' ? sentence?.replace(/^\s*[a-z]/, initial => initial.toUpperCase()) : sentence;
   const problem = kept.isError ? failureText(kept.error) : kept.data !== undefined && 'gone' in kept.data ? kept.data.gone : null;
-  return <p className="failure-sentence">{sentence?.trim() ? sentence : absent}{problem === null ? '' : ` ${problem}`}</p>;
+  return <p className="failure-sentence">{reason?.trim() ? reason : absent}{problem === null ? '' : ` ${problem}`}</p>;
 }
 
 function Request({ row, plan }: { row: TurnRow; plan: string }) {

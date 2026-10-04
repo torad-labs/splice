@@ -56,9 +56,9 @@ export interface PerfSummaryHead {
   last_ts?: number | null;
   /** Outcome tag -> turn count. A row whose outcome could not be parsed is filed under "?". */
   outcomes?: Record<string, number>;
-  /** Failing turns over all turns, excluding both "ok" and the unattributed "?" tag. */
+  /** Failing requests over all requests, excluding successes, stopped endings and unattributed "?". */
   failure_share?: number;
-  /** Per failing tag, so four upstream failures and one client abort read 0.20 and 0.05. */
+  /** Per failing tag over all requests; stopped endings remain in outcomes, not failure_shares. */
   failure_shares?: Record<string, number>;
   unattributed?: number;
   retries?: number;

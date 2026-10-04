@@ -8,6 +8,8 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.perf.OutcomeTag
+import splice.core.perf.OutcomeTags
 
 class PerfSummaryTest {
 
@@ -54,10 +56,10 @@ class PerfSummaryTest {
         assertEquals("4", n(outcomes, "error:upstream-failed"))
         assertEquals("1", n(outcomes, "client_abort"))
         assertEquals("15", n(outcomes, "ok"))
-        assertEquals(0.25, n(s, "failure_share").toDouble(), 1e-9)
+        assertEquals(0.20, n(s, "failure_share").toDouble(), 1e-9)
         val shares = s.getValue("failure_shares").jsonObject
         assertEquals(0.20, n(shares, "error:upstream-failed").toDouble(), 1e-9)
-        assertEquals(0.05, n(shares, "client_abort").toDouble(), 1e-9)
+        assertNull(shares["client_abort"], "a stopped request is not a failure")
         assertNull(shares["ok"])
         val total = s.getValue("total_ms").jsonObject
         assertEquals("500", n(total, "p50"))
@@ -108,9 +110,29 @@ class PerfSummaryTest {
         val rows = listOf(fast(1000), row(2000, "?", "total" to 5L), row(3000, "client_abort", "total" to 5L))
         val s = PerfSummary { now }.json(PerfRowsWindow(rows), PerfWindow.H1, now)
         assertEquals("1", n(s, "unattributed"))
-        assertEquals(1.0 / 3, n(s, "failure_share").toDouble(), 1e-9, "one failure in three rows")
+        assertEquals(0.0, n(s, "failure_share").toDouble(), 1e-9, "a stop and an unknown outcome are not failures")
         assertNull(s.getValue("failure_shares").jsonObject["?"])
         assertEquals("1", n(s.getValue("outcomes").jsonObject, "?"))
+    }
+
+    @Test
+    fun `stops remain counted without failures while watchdog cancellation stays a failure`() {
+        val tags = listOf(
+            OutcomeTag.OK.wire,
+            "?",
+            OutcomeTag.CLIENT_ABORT.wire,
+            OutcomeTag.CANCELLED.wire,
+            OutcomeTags.error("stopped"),
+            "error:new-ending",
+        )
+        val rows = tags.mapIndexed { index, tag -> row((index + 1) * 1000L, tag) }
+        val s = PerfSummary { now }.json(PerfRowsWindow(rows), PerfWindow.H1, now)
+        assertEquals("6", n(s, "count"))
+        assertEquals(tags.toSet(), s.getValue("outcomes").jsonObject.keys)
+        assertEquals(2.0 / 6, n(s, "failure_share").toDouble(), 1e-9)
+        val failures = s.getValue("failure_shares").jsonObject
+        assertEquals(setOf(OutcomeTag.CANCELLED.wire, "error:new-ending"), failures.keys)
+        assertEquals(1.0 / 6, n(failures, OutcomeTag.CANCELLED.wire).toDouble(), 1e-9)
     }
 
     @Test

@@ -5,12 +5,12 @@
 package splice.usage.perf
 
 import io.ktor.http.Parameters
-import splice.core.perf.OutcomeTag
+import splice.core.perf.OutcomeTags
 import splice.core.perf.PerfKeys
 
-/** The outcome a request may ask for besides an exact tag: every row that ended anywhere but ok.
- *  The unattributed `?` is unknown, not failed, the same split [PerfSummary] counts its failures by. */
+/** Read-side selectors besides an exact recorded tag, shared with the summary classification. */
 private const val FAILED = "failed"
+private const val STOPPED = "stopped"
 
 /** A field a link may ask to be missing, so the requests nothing attributed can be listed without inventing a name. */
 internal enum class Unattributed(val wire: String) { MODEL("model"), ACCOUNT("account") }
@@ -41,7 +41,8 @@ internal data class TurnsFilter(
 
     private fun outcomeMatches(tag: String): Boolean = when (outcome) {
         null -> true
-        FAILED -> tag != OutcomeTag.OK.wire && tag != UNATTRIBUTED_OUTCOME
+        FAILED -> OutcomeTags.isFailed(tag)
+        STOPPED -> OutcomeTags.isStopped(tag)
         else -> tag == outcome
     }
 

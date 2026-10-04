@@ -24,6 +24,10 @@ export interface OutcomeRead {
   failed: boolean;
 }
 
+/** Recorded stopped endings, shared by request rows and their missing-reason explanation. */
+export const isStopped = (outcome: string): boolean =>
+  outcome === 'client_abort' || outcome === 'error:stopped';
+
 /** What a turn's outcome tag reads as. A tag this console does not know is still a failure, and says so plainly. */
 export function outcomeOf(outcome: string, refusedRuntimePort?: number): OutcomeRead {
   if (outcome === 'ok') return { word: 'Done', tone: 'work', failed: false };
@@ -31,7 +35,7 @@ export function outcomeOf(outcome: string, refusedRuntimePort?: number): Outcome
   const refused = outcome === 'error:conn-reset' && Number.isInteger(refusedRuntimePort)
     && refusedRuntimePort !== undefined && refusedRuntimePort > 0 && refusedRuntimePort <= 65535;
   const word = refused ? T.runtimeRefused(refusedRuntimePort) : (OUTCOME_WORD[outcome] ?? 'Failed');
-  const quiet = outcome === 'client_abort' || outcome === 'error:cancelled' || outcome === 'error:stopped';
+  const quiet = isStopped(outcome);
   return { word, tone: quiet ? 'idle' : 'stuck', failed: !quiet };
 }
 
@@ -50,9 +54,9 @@ export interface PlanRow {
   cache: number | null;
 }
 
-/** Turns that ended anywhere but `ok`, the unattributed `?` excluded (it is not a failure, it is unknown). */
+/** Failures use the row's classification, excluding successes, unknown attribution and stopped endings. */
 export function failedCount(head: PerfSummaryHead): number {
-  return Object.entries(head.outcomes ?? {}).reduce((n, [tag, count]) => (tag === 'ok' || tag === '?' ? n : n + count), 0);
+  return Object.entries(head.outcomes ?? {}).reduce((n, [tag, count]) => n + (outcomeOf(tag).failed ? count : 0), 0);
 }
 
 export function planRows(heads: readonly PerfSummaryHead[], colourOf: ColourOf): PlanRow[] {

@@ -67,6 +67,14 @@ public object OutcomeTags {
 
     /** `error:<kind>` — a locally-classified refusal whose kind is a fixed string. */
     public fun error(kind: String): String = ERROR_PREFIX + kind
+
+    /** Read-side only: operator stop and client abandon, never the watchdog failure [OutcomeTag.CANCELLED]. */
+    public fun isStopped(tag: String): Boolean =
+        tag == OutcomeTag.CLIENT_ABORT.wire || tag == error("stopped")
+
+    /** Unknown attribution is not failure; an unfamiliar recorded ending still is. */
+    public fun isFailed(tag: String): Boolean =
+        tag != OutcomeTag.OK.wire && tag != "?" && !isStopped(tag)
 }
 
 // The two prefixes, kept private so the only way to build a tag is through the helpers above.

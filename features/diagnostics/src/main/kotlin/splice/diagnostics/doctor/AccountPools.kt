@@ -188,6 +188,12 @@ internal class AccountPoolProjection {
 internal object AccountSwitchReasonText {
     private val reasons = setOf(
         "primary account reset",
+        "quota resets sooner",
+        "provider rate limit reached",
+        "operator pinned this account",
+        "operator account order",
+        "5-hour plan limit reached",
+        "7-day plan limit reached",
         "rate limit exceeds turn wait budget",
         "5-hour quota exhausted",
         "7-day quota exhausted",
@@ -195,5 +201,8 @@ internal object AccountSwitchReasonText {
         "7d window exhausted",
     )
 
-    fun isSafe(reason: String): Boolean = reason in reasons
+    // Model-scoped weekly windows are provider vocabulary, but never terminal controls or arbitrary prose.
+    private val planWindow = Regex("7-day [A-Za-z0-9][A-Za-z0-9 -]{0,63} plan limit reached")
+
+    fun isSafe(reason: String): Boolean = reason in reasons || planWindow.matches(reason)
 }

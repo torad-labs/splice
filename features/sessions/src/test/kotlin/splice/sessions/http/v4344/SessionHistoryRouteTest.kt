@@ -21,6 +21,7 @@ import splice.sessions.registry.SessionListing
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionRoute
 import splice.sessions.registry.SessionSource
+import splice.sessions.registry.SessionStatus
 import splice.sessions.transcript.SessionHistoryEntry
 import splice.sessions.transcript.SessionHistoryRoot
 import splice.sessions.transcript.SessionHistoryScan
@@ -42,8 +43,7 @@ class SessionHistoryRouteTest {
         name = null,
         kind = "interactive",
         version = null,
-        status = "busy",
-        statusUpdatedAt = at,
+        status = SessionStatus("busy", at),
         startedAt = at - 100,
         updatedAt = at,
         messagingSocketPath = null,

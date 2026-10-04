@@ -75,7 +75,7 @@ public class SessionsCommand(private val output: TerminalOutput, private val err
         val age = s.updatedAt?.let { ago(now - it) } ?: "never"
         val availability = s.availability.name.lowercase()
         output.line(
-            "  ${glyph(s.availability)} ${BOLD}$name$RESET  $CYAN$head$RESET  ${clean(s.status ?: "-")}  " +
+            "  ${glyph(s.availability)} ${BOLD}$name$RESET  $CYAN$head$RESET  ${clean(s.status.state ?: "-")}  " +
                 "$availability  $DIM$age · $cwd$RESET",
         )
         sendLine(s)?.let { output.line(it) }

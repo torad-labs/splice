@@ -165,4 +165,6 @@ internal class TranscriptLocator(private val files: TranscriptFiles = DiskTransc
     }
 }
 
+// why: the JDK's default load factor; LinkedHashMap takes access order only through the constructor that also
+// asks for it.
 private const val LOAD = 0.75f

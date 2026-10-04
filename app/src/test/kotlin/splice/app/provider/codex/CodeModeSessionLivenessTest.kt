@@ -16,6 +16,7 @@ import splice.sessions.registry.SessionListing
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionRoute
 import splice.sessions.registry.SessionSource
+import splice.sessions.registry.SessionStatus
 import splice.upstream.Ticker
 import java.io.IOException
 
@@ -128,8 +129,7 @@ class CodeModeSessionLivenessTest {
         name = null,
         kind = null,
         version = null,
-        status = null,
-        statusUpdatedAt = null,
+        status = SessionStatus(),
         startedAt = null,
         updatedAt = null,
         messagingSocketPath = null,

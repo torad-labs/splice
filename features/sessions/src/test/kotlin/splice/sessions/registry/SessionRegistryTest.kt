@@ -97,7 +97,7 @@ class SessionRegistryTest {
         assertEquals(SessionAvailability.LIVE, rows.getValue(11L).availability)
         assertEquals(SessionAvailability.STALE, rows.getValue(12L).availability)
         assertEquals(SessionAvailability.GONE, rows.getValue(13L).availability)
-        assertEquals("busy", rows.getValue(13L).status)
+        assertEquals("busy", rows.getValue(13L).status.state)
     }
 
     @Test
@@ -186,9 +186,9 @@ class SessionRegistryTest {
         write(dir, 11, waiting)
         write(dir, 12, """{"pid":12,"updatedAt":$now,"status":"busy"}""")
         val rows = registry(dir, alive = setOf(11L, 12L)).read().associateBy { it.pid }
-        assertEquals("input needed", rows.getValue(11L).waitingFor)
+        assertEquals("input needed", rows.getValue(11L).status.waitingFor)
         assertEquals("cli", rows.getValue(11L).entrypoint)
-        assertNull(rows.getValue(12L).waitingFor)
+        assertNull(rows.getValue(12L).status.waitingFor)
         assertNull(rows.getValue(12L).entrypoint)
     }
 }

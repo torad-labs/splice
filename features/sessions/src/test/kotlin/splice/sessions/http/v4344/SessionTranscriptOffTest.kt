@@ -19,6 +19,7 @@ import splice.sessions.registry.SessionListing
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionRoute
 import splice.sessions.registry.SessionSource
+import splice.sessions.registry.SessionStatus
 import splice.sessions.transcript.SentTexts
 import splice.sessions.transcript.SessionHistoryEntry
 import splice.sessions.transcript.SessionHistoryRoot
@@ -44,8 +45,7 @@ class SessionTranscriptOffTest {
         name = MARKER,
         kind = "interactive",
         version = null,
-        status = "busy",
-        statusUpdatedAt = null,
+        status = SessionStatus("busy"),
         startedAt = null,
         updatedAt = 1L,
         messagingSocketPath = null,

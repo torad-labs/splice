@@ -18,6 +18,7 @@ import splice.sessions.registry.SessionListing
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionRoute
 import splice.sessions.registry.SessionSource
+import splice.sessions.registry.SessionStatus
 import splice.sessions.transcript.SentTexts
 import splice.sessions.transcript.SessionTranscriptViewEnabled
 import splice.sessions.transcript.SessionTranscripts
@@ -140,9 +141,9 @@ class SessionsActivityTest {
     ): JsonObject {
         val record = SessionRecord(
             pid = null, sessionId = id, cwd = null, name = null, kind = null, version = null,
-            status = null, statusUpdatedAt = null, startedAt = null, updatedAt = null, messagingSocketPath = null,
-            route = SessionRoute.Unknown, availability = SessionAvailability.LIVE,
-            waitingFor = waitingFor, entrypoint = entrypoint,
+            status = SessionStatus(waitingFor = waitingFor), startedAt = null, updatedAt = null,
+            messagingSocketPath = null, route = SessionRoute.Unknown, availability = SessionAvailability.LIVE,
+            entrypoint = entrypoint,
         )
         val registry = object : SessionSource {
             override fun read(): List<SessionRecord> = listOf(record)

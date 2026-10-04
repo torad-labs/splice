@@ -16,6 +16,7 @@ import splice.sessions.registry.SessionListing
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionRoute
 import splice.sessions.registry.SessionSource
+import splice.sessions.registry.SessionStatus
 
 class SessionNoteRouteTest {
     private val hi = """{"text":"hi"}"""
@@ -32,8 +33,7 @@ class SessionNoteRouteTest {
         name = null,
         kind = null,
         version = version,
-        status = "idle",
-        statusUpdatedAt = null,
+        status = SessionStatus("idle"),
         startedAt = null,
         updatedAt = 1,
         messagingSocketPath = socket,

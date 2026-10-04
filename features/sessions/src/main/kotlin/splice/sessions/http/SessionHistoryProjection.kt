@@ -4,6 +4,7 @@ package splice.sessions.http
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionRoute
+import splice.sessions.registry.SessionStatus
 import splice.sessions.transcript.SessionHistoryEntry
 import java.util.Locale
 
@@ -32,8 +33,7 @@ internal data class JoinedSession(val entry: SessionHistoryEntry?, val live: Ses
             name = found.name,
             kind = null,
             version = null,
-            status = null,
-            statusUpdatedAt = null,
+            status = SessionStatus(),
             startedAt = null,
             updatedAt = found.updatedAt,
             messagingSocketPath = null,

@@ -16,13 +16,17 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.core.util.Cancellables
 
-// why: AskUserQuestion's own schema allows one to four questions with two to four options each; anything past that is
-// not a question Claude Code shows, so the card does not either.
+// why: AskUserQuestion's own schema allows one to four questions; past that it is not a question Claude Code shows, so
+// the card does not show it either.
 private const val MAX_QUESTIONS = 4
+
+// why: the same schema allows two to four options under each question.
 private const val MAX_OPTIONS = 4
 
-// why: a question is shown whole on the card, but one card is not a transcript page; an option is a short label.
+// why: a question is shown whole on the card, but one card is not a transcript page.
 private const val QUESTION_CHARS = 500
+
+// why: an option is a short label (the schema asks for one to five words); its description stays in the terminal.
 private const val LABEL_CHARS = 80
 
 internal object AskedQuestions {

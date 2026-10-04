@@ -12,6 +12,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionRoute
+import splice.sessions.registry.SessionStatus
 import java.net.StandardProtocolFamily
 import java.net.UnixDomainSocketAddress
 import java.nio.channels.Channels
@@ -32,8 +33,7 @@ class PeerNoteSocketTest {
         name = null,
         kind = null,
         version = version,
-        status = "idle",
-        statusUpdatedAt = null,
+        status = SessionStatus("idle"),
         startedAt = null,
         updatedAt = 1,
         messagingSocketPath = socket.toString(),

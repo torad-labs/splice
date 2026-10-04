@@ -32,6 +32,15 @@ public enum class SessionAvailability { LIVE, STALE, GONE }
  *  not, and both callers say which (review 2026-09-14). */
 public data class SessionListing(val sessions: List<SessionRecord>, val error: String? = null)
 
+/** Claude Code's own word for what a session is doing, when that last changed, and what a waiting session waits for:
+ *  the status block of its registration, read as written. */
+public data class SessionStatus(
+    val state: String? = null,
+    val updatedAt: Long? = null,
+    /** What a waiting session waits for, as Claude Code words it (`input needed`, `permission prompt`). */
+    val waitingFor: String? = null,
+)
+
 public data class SessionRecord(
     val pid: Long?,
     val sessionId: String?,
@@ -39,8 +48,7 @@ public data class SessionRecord(
     val name: String?,
     val kind: String?,
     val version: String?,
-    val status: String?,
-    val statusUpdatedAt: Long?,
+    val status: SessionStatus,
     val startedAt: Long?,
     val updatedAt: Long?,
     val messagingSocketPath: String?,
@@ -48,8 +56,6 @@ public data class SessionRecord(
      *  never read, so it is [SessionRoute.Unknown]). */
     val route: SessionRoute,
     val availability: SessionAvailability,
-    /** What a waiting session waits for, as Claude Code words it (`input needed`, `permission prompt`). */
-    val waitingFor: String? = null,
     /** How the session was started (`cli` is a terminal), which is where a person answers it. */
     val entrypoint: String? = null,
 ) {
@@ -151,15 +157,17 @@ public class SessionRegistry(
             name = JsonScalars.str(obj, "name"),
             kind = JsonScalars.str(obj, "kind"),
             version = JsonScalars.str(obj, "version"),
-            status = JsonScalars.str(obj, "status"),
-            statusUpdatedAt = JsonScalars.long(obj, "statusUpdatedAt"),
+            status = SessionStatus(
+                JsonScalars.str(obj, "status"),
+                JsonScalars.long(obj, "statusUpdatedAt"),
+                JsonScalars.str(obj, "waitingFor"),
+            ),
             startedAt = JsonScalars.long(obj, "startedAt"),
             updatedAt = updatedAt,
             messagingSocketPath = JsonScalars.str(obj, "messagingSocketPath"),
             route = pid?.takeIf { availability != SessionAvailability.GONE }?.let(routeOf::invoke)
                 ?: SessionRoute.Unknown,
             availability = availability,
-            waitingFor = JsonScalars.str(obj, "waitingFor"),
             entrypoint = JsonScalars.str(obj, "entrypoint"),
         )
     }

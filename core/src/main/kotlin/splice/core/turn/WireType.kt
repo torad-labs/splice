@@ -44,10 +44,11 @@ public object WireType {
         // A refusal and a filtered generation are the vendor's verdict on the REQUEST, the class
         // the vendor itself returns as HTTP 400 when it refuses before the stream. As api_error
         // they were a storm at every phase: at a pre-content phase the rule below made them
-        // overloaded_error, and at a later one, with nothing yet shown, the client re-sent the
-        // api_error itself, identical bytes for the identical verdict (three cyber_policy endings
-        // of one 1,234,161-byte request, 6:05 to 6:07 PM CT on 2026-10-04). `permanent` never
-        // reached the first choice, since this table and its rule run before the emitter reads it.
+        // overloaded_error, and at a later one the client re-sent the api_error itself within a
+        // second, after content frames as well. Of three such identical re-sends on 2026-10-04,
+        // two met the same refusal and one was served; one 1,234,161-byte request was refused five
+        // times from 6:05 to 6:07 PM CT. `permanent` never reached the first choice, since this
+        // table and its rule run before the emitter reads it.
         FailureCause.MODEL_REFUSED to ErrorType.INVALID_REQUEST,
         FailureCause.CONTENT_FILTERED to ErrorType.INVALID_REQUEST,
         FailureCause.TOOL_TEAR to ErrorType.API_ERROR,

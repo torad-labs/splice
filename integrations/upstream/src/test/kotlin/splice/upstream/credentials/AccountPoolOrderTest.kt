@@ -19,6 +19,7 @@ class AccountPoolOrderTest {
     fun `policy changes the next turn without losing the explicit pin override`() {
         val fixture = Fixture()
         val pool = fixture.pool
+        fixture.quota("primary", sevenReset = 1_500L)
         assertEquals("primary", pool.nextTargetLabel())
         pool.select("session")
         pool.order = listOf("higher", "lower", "primary")
@@ -61,10 +62,57 @@ class AccountPoolOrderTest {
         assertThrows<IllegalArgumentException> { fixture.pool.order = listOf("higher", "higher") }
         assertEquals(listOf("higher", "lower"), fixture.pool.order)
         fixture.pool.order = emptyList()
-        assertEquals("primary", fixture.pool.nextTargetLabel())
+        assertEquals("higher", fixture.pool.nextTargetLabel())
+    }
+
+    @Test
+    fun `default mode spends the more used account whose weekly reset comes first`() {
+        val fixture = Fixture()
+        fixture.quota("primary", sevenReset = 4_000L)
+        fixture.quota("higher", seven = 80.0, sevenReset = 2_000L)
+        fixture.quota("lower", seven = 1.0, sevenReset = 3_000L)
+        assertEquals("higher", fixture.pool.nextTargetLabel())
+        assertEquals("higher", (fixture.pool.select("session") as Selection.Chosen).account.account.label)
+    }
+
+    @Test
+    fun `default mode keeps a free current account after primary resets`() {
+        val fixture = Fixture()
+        fixture.quota("primary", five = 100.0, fiveReset = 1_100L, sevenReset = 1_500L)
+        fixture.quota("higher", sevenReset = 2_000L)
+        fixture.quota("lower", sevenReset = 3_000L)
+        assertEquals("higher", (fixture.pool.select("session") as Selection.Chosen).account.account.label)
+        fixture.at.set(1_200_000L)
+        assertEquals("higher", fixture.pool.nextTargetLabel("session"))
+        val kept = (fixture.pool.select("session") as Selection.Chosen).account
+        assertEquals("higher", kept.account.label)
+        assertEquals(null, kept.switch)
+        fixture.quota("higher", five = 100.0, fiveReset = 2_000L)
+        assertEquals("primary", fixture.pool.nextTargetLabel("session"))
+        val moved = (fixture.pool.select("session") as Selection.Chosen).account
+        assertEquals("primary", moved.account.label)
+        assertEquals("5-hour quota exhausted", moved.switch?.reason)
+    }
+
+    @Test
+    fun `five hour reset breaks weekly ties and unknown quota comes last`() {
+        val fixture = Fixture()
+        fixture.quota("higher", fiveReset = 1_800L, sevenReset = 2_000L)
+        fixture.quota("lower", fiveReset = 1_400L, sevenReset = 2_000L)
+        assertEquals(listOf("lower", "higher", "primary"), fixture.pool.effectiveOrder())
+        assertEquals("lower", fixture.pool.nextTargetLabel())
+        assertEquals("lower", (fixture.pool.select("session") as Selection.Chosen).account.account.label)
+    }
+
+    @Test
+    fun `observed quota without reset still ranks before unobserved primary`() {
+        val fixture = Fixture()
+        fixture.quota("higher", fiveReset = null, sevenReset = null)
+        assertEquals(listOf("lower", "higher", "primary"), fixture.pool.effectiveOrder())
     }
 
     private class Fixture {
+        val at = java.util.concurrent.atomic.AtomicLong(1_000_000L)
         private val quotas = mapOf(
             "primary" to AtomicReference(QuotaSnapshot()),
             "higher" to AtomicReference(QuotaSnapshot(sevenDay = QuotaWindow(80.0, 2000L, 604800L))),
@@ -86,14 +134,20 @@ class AccountPoolOrderTest {
                     credentialPresent = true,
                 )
             },
-            WallClock { 1000000L },
+            WallClock(at::get),
         )
 
-        fun quota(label: String, five: Double = 0.0, seven: Double = 0.0) {
+        fun quota(
+            label: String,
+            five: Double = 0.0,
+            seven: Double = 0.0,
+            fiveReset: Long? = 2_000L,
+            sevenReset: Long? = 2_000L,
+        ) {
             quotas.getValue(label).set(
                 QuotaSnapshot(
-                    fiveHour = QuotaWindow(five, 2000L, 18000L),
-                    sevenDay = QuotaWindow(seven, 2000L, 604800L),
+                    fiveHour = QuotaWindow(five, fiveReset, 18000L),
+                    sevenDay = QuotaWindow(seven, sevenReset, 604800L),
                 ),
             )
         }

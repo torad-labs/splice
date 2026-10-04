@@ -64,7 +64,7 @@ public class AccountPool(
     private val pinnedLabel = AtomicReference<String?>(null)
     private val orderedLabels = AtomicReference<List<String>>(emptyList())
 
-    /** Operator policy, retained across runtime resets. Empty keeps the existing weekly fallback. */
+    /** Operator priority, retained across runtime resets. Empty selects sticky, soonest-reset mode. */
     public var order: List<String>
         get() = orderedLabels.get()
         set(labels) {
@@ -195,31 +195,25 @@ public class AccountPool(
      *  testing only [available]: [acquireIfAvailable] takes a probe lease, which this must not. */
     public fun nextTargetLabel(sessionId: String? = null): String? {
         val at = now()
-        val previousLabel = if (sessionId == null) {
-            synchronized(statelessLock) { statelessPrevious?.label }
-        } else {
-            synchronized(sessions) { sessions[sessionId]?.label }
-        }
+        val previousLabel = synchronized(sessions) { sessionId?.let { sessions[it]?.label } }
         val order = candidates(previousLabel)
         val free = order.firstOrNull { AccountAvailability.available(it, at) }
         return (free ?: AccountAvailability.nearestHeld(order, at).firstOrNull())?.label
     }
 
-    /** The one selection order [choose] and [nextTargetLabel] both walk: the pin (if any), persisted
-     *  operator order, primary, the caller's previous account, then lowest seven-day used —
-     *  [distinctBy] below collapses whichever of those coincide (previous === primary is the
-     *  common case) so no account is probed twice in one call. Behaviour-identical to the pre-pin
-     *  order when nothing is pinned: that used to special-case "previous === primary" to avoid a
-     *  duplicate probe: same effect, one list. */
+    /** One order for selection and its preview. Default sessions stay on their free login, then spend
+     *  quota that resets soonest. A persisted operator order retains explicit priority, including primary. */
     private fun candidates(previousLabel: String?): List<PoolAccount> {
         val pin = pinnedLabel.get()?.let(byLabel::get)
         val previous = previousLabel?.let(byLabel::get)
-        val bySevenDay = accounts.sortedWith(
-            compareBy<PoolAccount>(AccountAvailability::sevenDayUsed).thenBy { it.label },
-        )
+        val byReset = accounts.sortedWith(AccountAvailability.resetOrder)
         val ordered = orderedLabels.get().mapNotNull(byLabel::get)
-        return (listOfNotNull(pin) + ordered + listOfNotNull(primary, previous) + bySevenDay)
-            .distinctBy { it.label }
+        val policy = if (ordered.isEmpty()) {
+            listOfNotNull(previous) + byReset
+        } else {
+            ordered + listOfNotNull(primary, previous) + byReset
+        }
+        return (listOfNotNull(pin) + policy).distinctBy { it.label }
     }
 
     /** The first free login in [candidates] order. When every selectable login is held on its plan, the one whose
@@ -244,8 +238,9 @@ public class AccountPool(
             chosen.label == pinnedLabel.get() -> "operator pinned this account"
             chosen.label in orderedLabels.get() && AccountAvailability.available(previous, at) ->
                 "operator account order"
+            !AccountAvailability.available(previous, at) -> AccountAvailability.limitReason(previous, at)
             chosen.primary -> "primary account reset"
-            else -> AccountAvailability.limitReason(previous, at)
+            else -> "quota resets sooner"
         }
     }
 
@@ -320,7 +315,14 @@ private object AccountAvailability {
         }
     }
 
-    fun sevenDayUsed(account: PoolAccount): Double = account.quota.snapshot()?.sevenDay?.usedPercent ?: 0.0
+    val resetOrder: Comparator<PoolAccount> =
+        compareBy<PoolAccount> { account ->
+            val quota = account.quota.snapshot()
+            quota?.sevenDay == null && quota?.fiveHour == null
+        }.thenBy { it.quota.snapshot()?.sevenDay?.resetsAt ?: Long.MAX_VALUE }
+            .thenBy { it.quota.snapshot()?.fiveHour?.resetsAt ?: Long.MAX_VALUE }
+            .thenByDescending { it.primary }
+            .thenBy { it.label }
 
     fun exhausted(window: QuotaWindow?, at: Long): Boolean {
         if (window == null || window.usedPercent < FULLY_USED) return false

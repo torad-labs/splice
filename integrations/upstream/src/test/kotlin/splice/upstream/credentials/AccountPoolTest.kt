@@ -132,7 +132,8 @@ class AccountPoolTest {
         assertEquals(605_800L, blocked.earliestResetEpochSeconds)
         assertTrue(blocked.message.contains(LocalTimeText().at(605_800L)), blocked.message)
         fixture.advanceElapsed(120_000L)
-        assertSame(primary, pool.chosen("session").account)
+        assertSame(backup, pool.chosen("session").account)
+        assertSame(primary, pool.chosen(null).account)
     }
 
     @Test
@@ -189,7 +190,7 @@ class AccountPoolTest {
     }
 
     @Test
-    fun `sticky sessions return to primary at its first turn after reset`() {
+    fun `sticky sessions keep their free backup after primary resets`() {
         val fixture = Fixture()
         val primary = fixture.account("primary", primary = true, five = 100.0, reset = 2_000L)
         val backup = fixture.account("plus-a")
@@ -199,9 +200,9 @@ class AccountPoolTest {
         fixture.now.set(2_000_000L)
         val returned = pool.chosen("session")
 
-        assertSame(primary, returned.account)
-        assertEquals("primary account reset", returned.switch?.reason)
-        assertTrue(returned.cacheCold)
+        assertSame(backup, returned.account)
+        assertEquals(null, returned.switch)
+        assertFalse(returned.cacheCold)
     }
 
     @Test
@@ -225,7 +226,9 @@ class AccountPoolTest {
         val backup = fixture.account("plus-a")
         val pool = fixture.pool(primary, backup)
 
-        assertSame(primary, pool.chosen("session").account)
+        assertSame(backup, pool.chosen("session").account)
+        assertTrue(pool.view("session").accounts.single { it.label == "primary" }.available)
+        assertSame(primary, fixture.pool(primary).chosen("session").account)
     }
 
     @Test
@@ -253,8 +256,9 @@ class AccountPoolTest {
 
         val initial = pool.chosen(null)
         val repeated = pool.chosen(null)
-        fixture.setQuota(first, fixture.quota(weekly = 30.0))
-        fixture.setQuota(second, fixture.quota(weekly = 5.0))
+        fixture.setQuota(first, fixture.quota(weekly = 30.0, reset = 3_000L))
+        fixture.setQuota(second, fixture.quota(weekly = 5.0, reset = 1_500L))
+        assertEquals("plus-b", pool.nextTargetLabel(null))
         val moved = pool.chosen(null)
 
         assertSame(first, initial.account)

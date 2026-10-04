@@ -79,7 +79,7 @@ class AccountPoolPinTest {
     }
 
     @Test
-    fun `unpin restores ordinary primary-first policy`() {
+    fun `unpin restores default stickiness on the current free account`() {
         val fixture = Fixture()
         val primary = fixture.account("primary", primary = true)
         val backup = fixture.account("plus-a")
@@ -90,7 +90,8 @@ class AccountPoolPinTest {
         pool.unpin()
         val restored = pool.chosen("session")
 
-        assertSame(primary, restored.account)
+        assertSame(backup, restored.account)
+        assertNull(restored.switch)
         assertNull(pool.pinned())
     }
 

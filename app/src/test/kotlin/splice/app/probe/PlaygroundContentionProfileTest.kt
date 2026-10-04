@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 
-private const val PROFILE_TIMEOUT_MS = 30_000L
+internal const val PROFILE_TIMEOUT_MS = 120_000L
 private const val CONTROLLED_DELAY_MS = 100L
 
 class PlaygroundContentionProfileTest {

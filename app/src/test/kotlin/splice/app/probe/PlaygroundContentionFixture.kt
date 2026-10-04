@@ -39,8 +39,13 @@ import splice.usage.perf.PerfRowsSource
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.UsageView
 import java.nio.file.Path
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 internal const val CONTENTION_HEAD = "synthetic-playground"
+
+// Phase separation needs real cold/warm reads, not the independently covered full-history scale.
+private const val PROFILE_HISTORY_REQUESTS = 256
 
 internal class PlaygroundContentionFixture(private val root: Path, scope: CoroutineScope) : AutoCloseable {
     val samples = PlaygroundPhaseSamples()
@@ -52,13 +57,19 @@ internal class PlaygroundContentionFixture(private val root: Path, scope: Corout
     @Volatile var readStarted = CompletableDeferred<Unit>()
         private set
 
-    private val history = SyntheticPerfHistory(root).apply { create() }
+    @Volatile private var readReleased = CountDownLatch(1)
+
+    private val history = SyntheticPerfHistory(root).apply { create(requests = PROFILE_HISTORY_REQUESTS) }
 
     @Volatile private var source = PerfRowsFileSource(history.file)
 
     private val paths = StatePaths(baseOverride = root.resolve("state"))
     private val mgmt = MgmtKey(paths)
-    private val client = HttpClient(CIO)
+
+    // The enclosing profile budget owns cancellation, not CIO's shorter engine default.
+    private val client = HttpClient(CIO) {
+        engine { requestTimeout = PROFILE_TIMEOUT_MS }
+    }
     private val upstream = HttpClient(
         MockEngine {
             samples.posted = System.nanoTime()
@@ -103,6 +114,7 @@ internal class PlaygroundContentionFixture(private val root: Path, scope: Corout
 
     fun beginReads() {
         readStarted = CompletableDeferred()
+        readReleased = CountDownLatch(1)
     }
 
     suspend fun controlRead(): String =
@@ -112,6 +124,9 @@ internal class PlaygroundContentionFixture(private val root: Path, scope: Corout
 
     suspend fun playground(): String {
         samples.started = System.nanoTime()
+        // Pending console reads overlap this instant even when a small warm scan finishes early.
+        // Release before POST: this is not a fabricated dependency in the Playground route.
+        readReleased.countDown()
         val response = client.post("http://127.0.0.1:${control.listeningPort}/api/playground") {
             header("Authorization", "Bearer ${mgmt.get()}")
             contentType(ContentType.Application.Json)
@@ -143,11 +158,16 @@ internal class PlaygroundContentionFixture(private val root: Path, scope: Corout
         warnTokens5h = 0,
         perfRows = PerfRowsSource { since ->
             readStarted.complete(Unit)
-            source.window(since)
+            source.window(since).also {
+                check(readReleased.await(PROFILE_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                    "the Playground sample did not release the synthetic console read"
+                }
+            }
         },
     )
 
     override fun close() {
+        readReleased.countDown()
         control.stop()
         client.close()
         upstream.close()

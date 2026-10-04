@@ -13,16 +13,16 @@ private const val WEEK_MS = 7L * 24 * 60 * 60 * 1_000
 internal class SyntheticPerfHistory(private val directory: Path) {
     internal val file: Path = directory.resolve("synthetic-perf.jsonl")
 
-    internal fun create() {
-        write(file.resolveSibling("${file.fileName}.1"), SCALE_SINCE - WEEK_MS)
-        write(file, SCALE_SINCE)
+    internal fun create(requests: Int = SCALE_REQUESTS) {
+        write(file.resolveSibling("${file.fileName}.1"), SCALE_SINCE - WEEK_MS, requests)
+        write(file, SCALE_SINCE, requests)
     }
 
-    private fun write(path: Path, start: Long) {
+    private fun write(path: Path, start: Long, requests: Int) {
         val metrics = (0 until 35).joinToString(",") { "\"metric_$it\":12" }
         val detail = "x".repeat(192)
         Files.newBufferedWriter(path).use { writer ->
-            repeat(SCALE_REQUESTS) { index ->
+            repeat(requests) { index ->
                 val tokens = SCALE_TOKENS / SCALE_REQUESTS + if (index < SCALE_TOKENS % SCALE_REQUESTS) 1 else 0
                 val timestamp = start + index * WEEK_MS / SCALE_REQUESTS
                 val input = tokens - 64

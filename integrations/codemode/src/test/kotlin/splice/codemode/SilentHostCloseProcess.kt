@@ -20,6 +20,9 @@ internal open class SilentHostCloseProcess : Process() {
     var exitOnEngineClose = false
     var holdEngineOpen = false
     var holdOpenWrite = false
+
+    /** When set, the host answers every start with this frame instead of its fixture reply. */
+    var startReply: JsonObject? = null
     private val writeRelease = CountDownLatch(1)
     val openEntered = CountDownLatch(1)
     val opens = AtomicInteger()
@@ -53,7 +56,7 @@ internal open class SilentHostCloseProcess : Process() {
                     HostProtocol.count(engines.size)
                 }
                 "engines" -> HostProtocol.count(engines.size)
-                "start" -> if (CodeModeFrames.parseStart(frame.payload).tools.isNotEmpty()) {
+                "start" -> startReply ?: if (CodeModeFrames.parseStart(frame.payload).tools.isNotEmpty()) {
                     CodeModeWire.callsFrame(listOf(CodeModeCall("1", "Read", JsonObject(emptyMap()))))
                 } else {
                     CodeModeWire.completedFrame("fixture", null)

@@ -1,4 +1,6 @@
 source	sha256	disposition	destination	reason
+console-next/tests/connection-parts.test.tsx	ee1ee1bac9edd5a45b2abd9da3a0c611c1a758b41b19ee46148a191bdf7c0de0	created		V4-444: Initial daemon reads remain checking instead of claiming success or failure
+console-next/e2e/accounts-introduction.spec.ts	545309680c08c2421852d33d3091a83e76acf142d884f7fc888f13de54b3da81	created		V4-444: Native and separate login destinations and pending Accounts and Settings states are explicit
 features/usage/src/main/kotlin/splice/usage/perf/TurnUsage.kt	c8c4b910dcf8a63d725706dea51007bfcd2f06c0fa21a041f47e31406e648e8f	created		V4-444: Full-window usage and session aggregates consume the existing filtered read before the display limit
 features/usage/src/test/kotlin/splice/usage/perf/PerfTurnUsageTest.kt	95b8f8d011b56b56820c0736648ef6d32a7bf636dae16f40ca3fe6a6183aa13c	created		V4-444: Route controls exceed the display limit and prove interval edges, refusals, viewer days and one source read
 console-next/src/lib/usage-breakdown.ts	cb4645c13a562c2f8bcba763a1cbe5a74e73cc8da578c2daf3673f1ab1edebdd	created		V4-444: Recorded request attribution and totals preserve missing prices and tokens

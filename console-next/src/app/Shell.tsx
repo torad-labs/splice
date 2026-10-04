@@ -11,7 +11,8 @@ export function Shell() {
   const { pathname } = useLocation();
   const status = useStatus();
   const theme = useTheme();
-  const answering = status.isSuccess || status.isPending;
+  const checking = status.isPending || (status.isFetching && status.data === undefined);
+  const answering = status.isSuccess;
   const stale = useStalePage();
   return (
     <div className="app">
@@ -26,8 +27,8 @@ export function Shell() {
         </nav>
         <div className="foot">
           <span className="live">
-            <i className="dot" data-off={answering ? undefined : ''} />
-            <b>{answering ? C.running : C.notAnswering}</b>
+            <i className="dot" data-off={answering ? undefined : ''} style={checking ? { background: 'var(--wait)' } : undefined} />
+            <b>{checking ? C.checking : answering ? C.running : C.notAnswering}</b>
           </span>
           <span>
             {status.data?.version ?? ''} · {C.thisComputer}

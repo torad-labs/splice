@@ -71,7 +71,8 @@ export function SignIn({ head, label = '', place, purpose, children }: { head: s
               </button>
             </Dialog.Close>
           </div>
-          <Dialog.Description className="hint">{head}</Dialog.Description>
+          <Dialog.Description className="hint">{H.destination(place, head)}</Dialog.Description>
+          {state.step === 'idle' ? <p className="hint">{H.startWhy}</p> : null}
           {state.step === 'pending' ? (
             <p className="hint">{LOGIN_PENDING_EMPTY.source}</p>
           ) : (
@@ -81,7 +82,7 @@ export function SignIn({ head, label = '', place, purpose, children }: { head: s
                 void submit();
               }}
             >
-              {purpose === 'renew' && label !== '' ? null : (
+              {place !== undefined || purpose === 'renew' && label !== '' ? null : (
                 <label className="field">
                   <span className="eyebrow">{S.label}</span>
                   <input className="input" value={state.label} disabled={running} onChange={(event) => dispatch({ kind: 'label', value: event.target.value })} autoFocus />

@@ -23,6 +23,12 @@ export const S = {
 } as const;
 
 export const H = {
+  startWhy: 'Start login opens provider sign-in. Finish in the browser, then return here to see the result.',
+  destination: (place: string | undefined, head: string): string => place === 'claude'
+    ? 'This changes the native Claude Code login. The separate claude-splice login is unchanged.'
+    : place === 'claude-splice'
+      ? 'This changes the separate claude-splice login. The native Claude Code login is unchanged.'
+      : `This signs in the ${head} command.`,
   signInUnavailable: 'This splice version cannot sign in here; run splice login <head>.',
   device: 'Finish signing in in the browser with this code.',
   browser: 'Finish signing in at this link.',

@@ -1,3 +1,5 @@
+import { localZonedInstantText } from '../../lib/heads';
+
 export const A = {
   title: 'Accounts',
   lede: 'Your provider logins, their limits, and the order splice uses them.',
@@ -6,7 +8,7 @@ export const A = {
   add: 'Sign in to another account',
   signIn: 'Sign in',
   renew: 'Sign in again',
-  refresh: 'Renew saved token',
+  refresh: 'Refresh sign-in',
   refreshing: 'Refreshing…',
   signedIn: 'Signed in',
   notSignedIn: 'Not signed in',
@@ -22,7 +24,7 @@ export const A = {
   serving: 'Last selected',
   limitReached: 'Limit reached',
   heldUntil: 'Held until',
-  instant: (seconds: number) => new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(seconds * 1000)),
+  instant: localZonedInstantText,
   pinRule: 'A manual pin overrides this order while its account is available.',
   nextBecause: 'Splice tries the first available account in this order, skipping accounts at their limit.',
   pinned: 'Pinned',

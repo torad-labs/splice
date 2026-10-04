@@ -15,6 +15,7 @@ export const C = {
   usage: 'Usage',
   settings: 'Settings',
   running: 'Daemon running',
+  checking: 'Checking daemon',
   notAnswering: 'Not answering',
   thisComputer: 'this computer',
   day: 'Day',

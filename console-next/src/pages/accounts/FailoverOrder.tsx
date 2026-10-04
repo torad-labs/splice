@@ -24,7 +24,7 @@ function OrderedAccount({ id, name, index, length, disabled, move }: {
   );
 }
 
-export function FailoverOrder({ head, accounts }: { head: string; accounts: readonly AccountRow[] }) {
+export function FailoverOrder({ head, label = head, accounts }: { head: string; label?: string; accounts: readonly AccountRow[] }) {
   const single = accounts.length > 0 && accounts.every(row => row.single_login && row.label === null && row.login_place == null);
   const read = useAccountOrder(head, !single);
   const save = useSaveAccountOrder(head);
@@ -33,6 +33,7 @@ export function FailoverOrder({ head, accounts }: { head: string; accounts: read
   if (single) return <p className="hint">{A.orderSingle}</p>;
   if (data === undefined) return read.isError ? <Fault message={failureText(read.error)} onRetry={() => void read.refetch()} /> : <p className="hint">{A.orderReading}</p>;
   if ('unavailable' in data) return <p className="hint">{A.orderUnavailable}</p>;
+  if (data.single_account) return <p className="hint">{A.orderSingleAccount}</p>;
   const order = data.effective_order;
   if (order.length < 2) return null;
   const saved = data.order.length > 0;
@@ -49,8 +50,8 @@ export function FailoverOrder({ head, accounts }: { head: string; accounts: read
     return row?.account?.email == null ? id : `${id} · ${row.account.email}`;
   };
   return (
-    <section className="account-order" aria-label={`${head} ${A.failover}`}>
-      <h3>{head} · {A.failover}</h3>
+    <section className="account-order" aria-label={`${label} ${A.failover}`}>
+      <h3>{label} · {A.failover}</h3>
       <p className="why">{A.orderWhy}</p>
       <p className="hint">{accounts.some(row => row.pinned === true) ? A.pinRule : A.nextBecause}</p>
       <p className="hint">{saved ? A.orderYours : A.orderDefault}</p>

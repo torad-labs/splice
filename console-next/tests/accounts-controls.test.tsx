@@ -21,6 +21,16 @@ test('an unsupported account source shows the plain state, never daemon internal
   expect(html).not.toContain('head');
 });
 
+test('one proven account in two login places explains why its order cannot change', () => {
+  const client = new QueryClient();
+  client.setQueryData(['account-order', 'synthetic-command'], {
+    head: 'synthetic-command', order: [], effective_order: [], single_account: true,
+  });
+  const html = renderToStaticMarkup(<QueryClientProvider client={client}><FailoverOrder head="synthetic-command" accounts={[]} /></QueryClientProvider>);
+  expect(html).toContain('This command uses one account. There is no account order to change.');
+  expect(html).not.toContain('drag-handle');
+});
+
 test('no cap explains how to set one without unknown used or remaining amounts', () => {
   const html = budget({ budgets: [] });
   expect(html).toContain('No daily cap is set.');

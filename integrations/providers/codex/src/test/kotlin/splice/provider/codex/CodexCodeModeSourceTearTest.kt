@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
@@ -94,6 +95,136 @@ class CodexCodeModeSourceTearTest : CodeModeStatementStreamSupport() {
         } finally {
             manager.onHeadStop()
         }
+    }
+
+    /** Oct 4 at 2:28, 2:53 and 3:20 PM CT, a round ended without a completed exec while its step was waiting on
+     *  the next statement. The capture lost the record, the loss closed the cell under that step, and the step
+     *  ended as invalid_request, which Claude Code does not retry. */
+    @Test
+    @Timeout(20)
+    fun `the step that posted a round ends as a source tear when the round leaves its exec incomplete`() {
+        postingStepEndedBy(null)
+    }
+
+    @Test
+    @Timeout(20)
+    fun `the step that posted a round ends as a source tear when the round fails transiently`() {
+        postingStepEndedBy(
+            TurnOutcome.Failure(
+                "upstream: synthetic transient failure",
+                cause = FailureCause.UPSTREAM_REPORTED,
+                phase = FailurePhase.MID_OUTPUT,
+                providerReported = true,
+            ),
+        )
+    }
+
+    @Test
+    @Timeout(20)
+    fun `the step that posted a round ends with the round's permanent failure as it is`() {
+        postingStepEndedBy(
+            TurnOutcome.Failure(
+                "upstream: generation stopped by content filter",
+                cause = FailureCause.CONTENT_FILTERED,
+                phase = FailurePhase.TERMINAL,
+                providerReported = true,
+                permanent = true,
+            ),
+        )
+    }
+
+    /** The posting step's cell waits on its next statement while the round ends: as an incomplete success with no
+     *  [ending], or with [ending] in place of the response's terminal. */
+    private fun postingStepEndedBy(ending: TurnOutcome.Failure?) = runBlocking<Unit> {
+        val runtime = ClosingRuntime("closed", parkFirst = true)
+        val manager = bridge(runtime)
+        val sink = StepSink()
+        val post = GatedPost(sink)
+        val roundPost = ending?.let { endingWith(post, it) } ?: post
+        try {
+            val request = async {
+                manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, roundPost)
+            }
+            withTimeout(1_500) { runtime.advancing.await() }
+            if (ending == null) post.terminalProblem = "incomplete"
+            endRound(post)
+            val outcome = withTimeout(5_000) { request.await() }
+            if (ending?.permanent == true) {
+                val failure = outcome as TurnOutcome.Failure
+                assertEquals(ending.cause, failure.cause, failure.toString())
+                assertTrue(failure.permanent, "a permanent upstream verdict reaches the client as it is: $failure")
+                assertEquals(ending.message, failure.message)
+            } else {
+                assertSourceTear(outcome)
+            }
+            assertFalse(sink.callback.isCompleted, "no statement after the round's terminal may execute")
+            assertEquals(1, runtime.starts)
+            assertEquals(1, post.posts, "the uncompleted source is never regenerated")
+        } finally {
+            manager.onHeadStop()
+        }
+    }
+
+    /** The round [post] streams, ended by [ending] in place of its own terminal. */
+    private fun endingWith(post: GatedPost, ending: TurnOutcome.Failure): RedirectableRoundPost =
+        object : RedirectableRoundPost by post {
+            override suspend fun into(bodyJson: String, sink: WireSink): TurnOutcome {
+                val outcome = post.into(bodyJson, sink)
+                return if (post.posts == 1) ending else outcome
+            }
+        }
+
+    @Test
+    @Timeout(20)
+    fun `a result step whose cell the incomplete round closes ends as a source tear`() {
+        resultStepAfterIncompleteRound("closed")
+    }
+
+    @Test
+    @Timeout(20)
+    fun `a result step whose buffered reply beats the incomplete round's close ends as a source tear`() {
+        resultStepAfterIncompleteRound("buffered")
+    }
+
+    private fun resultStepAfterIncompleteRound(cellExit: String) = runBlocking<Unit> {
+        val runtime = ClosingRuntime(cellExit)
+        val manager = bridge(runtime)
+        val sink = StepSink()
+        val post = GatedPost(sink)
+        try {
+            manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, post)
+            val first = sink.callback.await()
+            val next = StepSink()
+            val request = async {
+                manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
+                    .intercept(history(listOf(first)), next, post)
+            }
+            withTimeout(1_500) { runtime.advancing.await() }
+            post.terminalProblem = "incomplete"
+            endRound(post)
+            assertSourceTear(withTimeout(5_000) { request.await() })
+            assertFalse(next.callback.isCompleted, "no statement after the incomplete terminal may execute")
+            assertEquals(1, runtime.starts)
+            assertEquals(1, post.posts, "the incomplete source is never regenerated")
+            assertLostRecovery(manager, first, post, runtime)
+        } finally {
+            manager.onHeadStop()
+        }
+    }
+
+    /** The rest of the source streams and its item completes, then the response reaches its terminal. */
+    private fun endRound(post: GatedPost) {
+        post.gates.drop(1).forEach { it.complete(Unit) }
+        post.complete.complete(Unit)
+    }
+
+    private fun assertSourceTear(outcome: TurnOutcome) {
+        assertTrue(outcome is TurnOutcome.Failure, outcome.toString())
+        val failure = outcome as TurnOutcome.Failure
+        assertFalse(failure.deterministic, "a splice-local closed cell is retryable, never invalid_request: $failure")
+        assertEquals(FailureCause.UPSTREAM_CONN_RESET, failure.cause, failure.toString())
+        assertTrue(failure.message.contains("source was not rerun"), failure.message)
+        assertNull(failure.partial, "partial exec source cannot be regenerated by a server reanchor")
     }
 
     private suspend fun assertLostRecovery(
@@ -207,8 +338,10 @@ class CodexCodeModeSourceTearTest : CodeModeStatementStreamSupport() {
             }
         }
 
-    /** Matches JvmCodeModeCell disposal, including a buffered result racing the source failure. */
-    private inner class ClosingRuntime(private val exit: String) : CodeModeRuntime {
+    /** Matches JvmCodeModeCell disposal, including a buffered result racing the source failure. With [parkFirst],
+     *  the first advance already waits, as a cell waiting on its next streamed statement does. */
+    private inner class ClosingRuntime(private val exit: String, private val parkFirst: Boolean = false) :
+        CodeModeRuntime {
         val advancing = CompletableDeferred<Unit>()
         private val closed = CompletableDeferred<Unit>()
         var starts = 0
@@ -226,7 +359,7 @@ class CodexCodeModeSourceTearTest : CodeModeStatementStreamSupport() {
             starts++
             check(source.read() is CodeModeSourcePart.Delta)
             return object : CodeModeCell {
-                private var first = true
+                private var first = !parkFirst
                 override suspend fun advance(results: List<CodeModeResult>): CodeModeStep {
                     if (first) {
                         first = false

@@ -133,14 +133,20 @@ val DISPOSITIONS: Map<String, Disposition> = mapOf(
     "CodeModeSourceCertificationTest" to
         Disposition("1 @RepeatedTest(50) plus 1 @ParameterizedTest of 6 cases (50 + 6 = 56)", 56),
     // A sealed item rejects more bytes with and without a prefix, and a cursor never returns a pre-seal
-    // snapshot after a failed or a completed commit.
+    // snapshot after a failed or a completed commit. 89e98adab added the two startup @Test methods.
     "CodeModeSourceCursorCertificationTest" to
-        Disposition("2 @ParameterizedTest methods expand to 4 cases; no plain @Test", 4),
+        Disposition("2 @ParameterizedTest methods expand to 4 cases (2 @Test + 4 = 6)", 6),
     // 59a0fe3f9: an already buffered suffix waits, and an incomplete or malformed stop releases the waiter.
     "CodeModeSourceBufferedCertificationTest" to
         Disposition("1 @ParameterizedTest expands to 2 cases; no plain @Test", 2),
     // Transport cleanup plus first-event/client-opening timing each expand into two observed cases.
     "WsRoundDriverTest" to Disposition("2 @ParameterizedTest methods expand to 4 cases (13 @Test + 4 = 17)", 17),
+    // 89e98adab: a completed burst and a clean EOF each run text and thinking, and a custom source
+    // releases the WS turn on completion, EOF, a worker wait and a startup wait.
+    "WsCompletionTest" to Disposition("3 @ParameterizedTest methods expand to 8 cases (2 + 2 + 4); no plain @Test", 8),
+    // 89e98adab: closing a cell ends its withheld exchange with and without a late guest reply.
+    "SharedWorkerChannelCellCloseTest" to
+        Disposition("1 @ParameterizedTest expands to 2 cases; no plain @Test", 2),
     // 13d44f0b2: reasoning, text, ping, empty, metadata and rate-limit progress each renew the elapsed cap
     // on WS and on SSE, one case per transport and event (@ValueSource of 12 scenario strings).
     "WatchdogProgressRoundTest" to Disposition("1 @ParameterizedTest expands to 12 cases; no plain @Test", 12),

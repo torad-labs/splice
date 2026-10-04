@@ -20,8 +20,11 @@
  *       MOCK_ANTHROPIC_RETRY_AFTER (seconds; unset sends no retry-after), MOCK_ANTHROPIC_MESSAGE.
  */
 import { appendFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 
 export const RESUMED_TEXT = "resumed after the reset";
+const POOLED = process.env["MOCK_ANTHROPIC_POOLED"] === "1";
+const SUCCESS_TEXT = POOLED ? "completed on the next login" : RESUMED_TEXT;
 const RESET_S = Number(process.env["MOCK_ANTHROPIC_RESET_S"] ?? "90");
 const RETRY_AFTER = process.env["MOCK_ANTHROPIC_RETRY_AFTER"];
 const MESSAGE = process.env["MOCK_ANTHROPIC_MESSAGE"] ?? "Rate limited: this account has reached its usage limit.";
@@ -81,7 +84,7 @@ function sse(model: string): string {
       },
     }],
     ["content_block_start", { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }],
-    ["content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: RESUMED_TEXT } }],
+    ["content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: SUCCESS_TEXT } }],
     ["content_block_stop", { type: "content_block_stop", index: 0 }],
     ["message_delta", {
       type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { output_tokens: 6 },
@@ -94,7 +97,7 @@ function sse(model: string): string {
 function message(model: string): unknown {
   return {
     id: "msg_mock_resumed", type: "message", role: "assistant", model,
-    content: [{ type: "text", text: RESUMED_TEXT }],
+    content: [{ type: "text", text: SUCCESS_TEXT }],
     stop_reason: "end_turn", stop_sequence: null, usage: { input_tokens: 12, output_tokens: 6 },
   };
 }
@@ -120,15 +123,32 @@ const server = Bun.serve({
       record({ path, method: req.method, status: 404 });
       return new Response("not found", { status: 404 });
     }
-    const body = (await req.json().catch(() => ({}))) as { stream?: boolean; model?: string };
+    const bodyText = await req.text();
+    const body = (() => {
+      try { return JSON.parse(bodyText) as { stream?: boolean; model?: string }; }
+      catch { return {}; }
+    })();
+    // Only labels leave the synthetic mock; bearer values are never recorded.
+    const authorization = req.headers.get("authorization");
+    const login = authorization === "Bearer synthetic-one" ? "one"
+      : authorization === "Bearer synthetic-two" ? "two" : null;
+    const requestSha256 = createHash("sha256").update(bodyText).digest("hex");
+    if (POOLED && login === null) {
+      record({ path, status: 401, login: "unexpected", request_sha256: requestSha256 });
+      return Response.json({ type: "error", error: { type: "authentication_error", message: "synthetic pool login missing" } }, { status: 401 });
+    }
     const model = body.model ?? "claude-sonnet-5";
     const now = Date.now();
     if (firstAt === null) {
       firstAt = now;
       resetAtS = Math.ceil(now / 1000) + RESET_S;
     }
-    const limited = now < resetAtS * 1000;
-    const entry = { path, stream: body.stream === true, status: limited ? 429 : 200, since_first_ms: now - firstAt, reset_at_s: resetAtS };
+    const limited = now < resetAtS * 1000 && (!POOLED || login === "one");
+    const entry = {
+      path, stream: body.stream === true, status: limited ? 429 : 200,
+      since_first_ms: now - firstAt, reset_at_s: resetAtS,
+      request_sha256: requestSha256, ...(POOLED ? { login } : {}),
+    };
     if (limited) {
       const headers = planLimitHeaders();
       const nativeBody = JSON.stringify({ type: "error", error: { type: "rate_limit_error", message: MESSAGE }, request_id: "req_011CMockPlanLimit" });

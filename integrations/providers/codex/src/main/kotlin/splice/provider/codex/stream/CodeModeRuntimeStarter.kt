@@ -2,6 +2,7 @@
 package splice.provider.codex.stream
 
 import kotlinx.coroutines.CancellationException
+import splice.core.perf.PerfKeys
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
@@ -22,7 +23,29 @@ internal class CodeModeRuntimeStarter(
     private val registry: CodexCodeModeRegistry,
     private val config: CodeModeBridgeConfig,
 ) {
-    suspend fun start(record: CodeModeRecord, context: CodeModeRunContext, stream: CodeModeLiveRound?): CodeModeCell {
+    suspend fun start(record: CodeModeRecord, context: CodeModeRunContext, stream: CodeModeLiveRound?): CodeModeCell =
+        try {
+            if (stream == null) {
+                starting(record, context, null)
+            } else {
+                stream.source.whileStarting { starting(record, context, stream) }
+            }
+        } catch (error: IOException) {
+            reportSourceRejection(context, stream)
+            throw error
+        }
+
+    private fun reportSourceRejection(context: CodeModeRunContext, stream: CodeModeLiveRound?) {
+        if (stream?.source?.startupRejected != true) return
+        context.post.perf?.add(PerfKeys.CODE_MODE_START_REJECTED, 1)
+        config.log("[code-mode] failed source released runtime startup; no cell adopted or source rerun")
+    }
+
+    private suspend fun starting(
+        record: CodeModeRecord,
+        context: CodeModeRunContext,
+        stream: CodeModeLiveRound?,
+    ): CodeModeCell {
         while (true) {
             try {
                 return open(record, context, stream)

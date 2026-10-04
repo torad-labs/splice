@@ -77,6 +77,9 @@ public object PerfKeys {
     /** A changed code-mode callback was sent upstream without touching the owner's queued script. */
     public const val CODE_MODE_DIVERGENCE: String = "code_mode_divergence"
 
+    /** Failed executable source released a pending runtime boot or disposed its unadopted cell. */
+    public const val CODE_MODE_START_REJECTED: String = "code_mode_start_rejected"
+
     public const val RETRIES: String = "retries"
     public const val REFRESHES: String = "refreshes"
     public const val REQ_BYTES: String = "req_bytes"

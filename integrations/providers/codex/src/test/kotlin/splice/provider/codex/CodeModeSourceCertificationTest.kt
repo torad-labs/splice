@@ -2,9 +2,12 @@ package splice.provider.codex
 
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -12,6 +15,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.RepeatedTest
+import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
@@ -161,6 +165,61 @@ private class CertificationRuntime : CodeModeRuntime {
 }
 
 class CodeModeSourceCursorCertificationTest {
+    @Test
+    fun `startup rejection disposes a concurrently returned cell`() {
+        val source = CodeModeSourceBuffer()
+        var closed = 0
+        val cell = object : CodeModeCell {
+            override suspend fun advance(results: List<CodeModeResult>): CodeModeStep =
+                error("rejected startup must not advance")
+            override fun close() {
+                closed++
+            }
+        }
+        assertThrows(IOException::class.java) {
+            runBlocking {
+                source.whileStarting {
+                    source.fail("synthetic rejected source")
+                    cell
+                }
+            }
+        }
+        assertEquals(1, closed, "a returned cell must not be orphaned when source rejection wins")
+        assertTrue(source.startupRejected)
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `certified source imposes no deadline on a healthy pending startup`() = runTest {
+        val source = CodeModeSourceBuffer()
+        source.complete("synthetic certified source")
+        val entered = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+        var closed = 0
+        val cell = object : CodeModeCell {
+            override suspend fun advance(results: List<CodeModeResult>): CodeModeStep =
+                error("startup only")
+            override fun close() {
+                closed++
+            }
+        }
+        val boot = async {
+            source.whileStarting {
+                entered.complete(Unit)
+                release.await()
+                cell
+            }
+        }
+        entered.await()
+        advanceTimeBy(901_000)
+        assertFalse(boot.isCompleted, "healthy startup must not acquire a blanket execution timeout")
+        release.complete(Unit)
+        assertTrue(boot.await() === cell)
+        assertEquals(0, closed)
+        assertFalse(source.startupRejected)
+        cell.close()
+    }
+
     @ParameterizedTest
     @ValueSource(strings = ["", "prefix"])
     fun `more source bytes cannot reopen a sealed item`(prefix: String) {

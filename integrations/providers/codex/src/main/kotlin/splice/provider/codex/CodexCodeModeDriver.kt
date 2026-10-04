@@ -261,13 +261,20 @@ internal class CodexCodeModeDriver(
         )
         record to machine.interrupt(record, detail)
     } catch (error: IOException) {
-        record to starter.failed(record, error)
+        record to failedStart(record, stream, error)
     } catch (_: IllegalArgumentException) {
         registry.lose(record, "code-mode runtime rejected its input; source was not rerun")
         record to failure(record.error.orEmpty())
     } catch (_: RuntimeException) {
         record to starter.failed(record, null)
     }
+
+    private suspend fun failedStart(
+        record: CodeModeRecord,
+        stream: CodeModeLiveRound?,
+        error: IOException,
+    ): TurnOutcome =
+        if (stream?.sourceInterrupted == true) stream.outcome() else starter.failed(record, error)
 
     private fun failure(message: String): TurnOutcome.Failure =
         TurnOutcome.Failure(

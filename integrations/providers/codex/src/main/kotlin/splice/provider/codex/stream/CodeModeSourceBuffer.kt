@@ -1,14 +1,23 @@
 // NEW: a bounded captured source offers a fresh cursor only for proven pre-dispatch retries.
 package splice.provider.codex.stream
 
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.withContext
+import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeManual
 import splice.upstream.codemode.CodeModeSealedSource
 import splice.upstream.codemode.CodeModeSource
 import splice.upstream.codemode.CodeModeSourcePart
 import java.io.IOException
+import java.util.concurrent.atomic.AtomicReference
 
 private data class SourceSnapshot(
     val text: String,
@@ -21,11 +30,19 @@ internal fun interface CodeModeSourceCommit {
     fun commit(text: String)
 }
 
+/** Worker startup whose executable source must remain valid until a cell is returned. */
+internal fun interface CodeModeSourceStart {
+    suspend operator fun invoke(): CodeModeCell
+}
+
 internal class CodeModeSourceBuffer(
     private val beforeRead: CodeModeSourceCommit = CodeModeSourceCommit {},
 ) {
     private val state = MutableStateFlow(SourceSnapshot(""))
     val text: String get() = state.value.text
+
+    @Volatile var startupRejected: Boolean = false
+        private set
 
     fun publish(text: String) {
         state.update { previous ->
@@ -62,6 +79,34 @@ internal class CodeModeSourceBuffer(
         state.update { previous ->
             if (previous.terminal == null) previous.copy(terminal = CodeModeSourcePart.Failed(error)) else previous
         }
+    }
+
+    /** Failed source cancels a pending boot. Certified source imposes no execution deadline. */
+    suspend fun whileStarting(work: CodeModeSourceStart): CodeModeCell = coroutineScope {
+        val produced = AtomicReference<CodeModeCell?>()
+        val rejected = async { state.mapNotNull { it.terminal as? CodeModeSourcePart.Failed }.first() }
+        val running = async { work().also(produced::set) }
+        var adopted = false
+        try {
+            val cell = select {
+                rejected.onAwait { rejectStartup(it) }
+                running.onAwait { it }
+            }
+            (state.value.terminal as? CodeModeSourcePart.Failed)?.let(::rejectStartup)
+            adopted = true
+            cell
+        } finally {
+            rejected.cancel()
+            withContext(NonCancellable) {
+                running.cancelAndJoin()
+                if (!adopted) produced.getAndSet(null)?.close()
+            }
+        }
+    }
+
+    private fun rejectStartup(failure: CodeModeSourcePart.Failed): Nothing {
+        startupRejected = true
+        throw IOException(failure.error)
     }
 
     fun view(): CodeModeSource {

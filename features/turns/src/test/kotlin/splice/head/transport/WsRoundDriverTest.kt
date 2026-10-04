@@ -34,6 +34,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import org.junit.jupiter.api.AfterAll
@@ -54,6 +55,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.parse.AnthropicTurnBody
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.ErrorType
@@ -84,6 +86,10 @@ import splice.head.usage.OutputClamp
 import splice.head.wire.ClientChannel
 import splice.head.wire.ImmediateSseWriter
 import splice.head.wire.TurnTerminal
+import splice.provider.codex.CodeModeBridgeConfig
+import splice.provider.codex.CodeModeStateLocation
+import splice.provider.codex.CodexCodeModeBridge
+import splice.upstream.BuiltTurn
 import splice.upstream.ClientFrameEmitted
 import splice.upstream.NEVER_PINGED_MS
 import splice.upstream.Provider
@@ -93,6 +99,13 @@ import splice.upstream.WsPathPulse
 import splice.upstream.WsRound
 import splice.upstream.WsRoundAbort
 import splice.upstream.WsRoundRunner
+import splice.upstream.codemode.CodeModeCall
+import splice.upstream.codemode.CodeModeCell
+import splice.upstream.codemode.CodeModeResult
+import splice.upstream.codemode.CodeModeRuntime
+import splice.upstream.codemode.CodeModeSource
+import splice.upstream.codemode.CodeModeSourcePart
+import splice.upstream.codemode.CodeModeStep
 import splice.upstream.retry.InflightGate
 import splice.upstream.retry.LiveLimit
 import splice.upstream.retry.TurnWatchdog
@@ -101,6 +114,7 @@ import splice.upstream.transport.UpstreamClient
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
@@ -117,13 +131,31 @@ private fun ev(json: String): JsonObject =
 /** A runner that replays a scripted round, so the driver's decision is the only variable.
  *  [throwAfter], when set, makes the round's flow throw once it has emitted that many events —
  *  standing in for an unexpected throw out of the translator/reducer on a real round. */
-private class ScriptedRunner(private val events: List<String>, private val throwAfter: Int? = null) : WsRoundRunner {
+private class ScriptedRunner(
+    private val events: List<String>,
+    private val throwAfter: Int? = null,
+    private val continuationEvents: List<String> = events,
+    private val afterFirstSource: CompletableDeferred<Unit>? = null,
+) : WsRoundRunner {
     var attempts = 0
     var bypassed = 0
     var endedOk = 0
     var endedNotOk = 0
     var flowCompletions = 0
     var aborts = 0
+    var perf: TurnPerf? = null
+
+    override suspend fun attempt(
+        bodyJson: String,
+        meta: TurnMeta,
+        turnHeaders: Map<String, String>,
+        creds: Credentials,
+        perf: TurnPerf?,
+    ): WsRound {
+        this.perf = perf
+        perf?.beginUpstreamAttempt()
+        return attempt(bodyJson, meta, turnHeaders, creds)
+    }
 
     override suspend fun attempt(
         bodyJson: String,
@@ -132,8 +164,14 @@ private class ScriptedRunner(private val events: List<String>, private val throw
         creds: Credentials,
     ): WsRound {
         attempts += 1
+        val selected = if (attempts == 1) events else continuationEvents
         val scripted = if (throwAfter == null) {
-            flowOf(*events.map(::ev).toTypedArray())
+            flow {
+                selected.forEachIndexed { index, event ->
+                    emit(ev(event))
+                    if (index == 2) afterFirstSource?.await()
+                }
+            }
         } else {
             flow {
                 events.take(throwAfter).forEach { emit(ev(it)) }
@@ -256,13 +294,30 @@ private class ThrowingStartTerminal(
 private class ScriptedWsProvider(
     private val inner: TestResponsesProvider,
     private val runner: WsRoundRunner,
+    private val bridge: CodexCodeModeBridge? = null,
 ) : Provider by inner {
     override val wsRunner: WsRoundRunner get() = runner
+
+    override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {
+        val built = inner.buildTurn(body, compact, sessionId)
+        val manager = bridge ?: return built
+        val turn = CodexCodeModeBridge.Turn(
+            "synthetic-ws-session",
+            "synthetic-ws-conversation",
+            built.meta.upstreamModel,
+            setOf("SyntheticTool"),
+        )
+        return built.copy(roundInterceptor = manager.interceptor(turn, disableParallel = false))
+    }
+
+    override fun onHeadStop() {
+        bridge?.onHeadStop()
+    }
 }
 
 /** Provider and cold-flow construction shared by the driver's transport and timing controls. */
 private class WsDriverFixture(private val tmp: Path, private val baseUrl: String) {
-    fun provider(runner: WsRoundRunner): Provider = ScriptedWsProvider(
+    fun provider(runner: WsRoundRunner, bridge: CodexCodeModeBridge? = null): Provider = ScriptedWsProvider(
         TestResponsesProvider(
             tuning = ProviderTuning(
                 key = "codex",
@@ -284,6 +339,7 @@ private class WsDriverFixture(private val tmp: Path, private val baseUrl: String
             configSummary = "detailed",
         ),
         runner,
+        bridge,
     )
 
     suspend fun inputs(
@@ -459,6 +515,232 @@ class WatchdogProgressRoundTest {
 }
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class WsCompletionTest(@param:TempDir private val tmp: Path) {
+    private val mock = MockChatGptUpstream()
+    private val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
+    private var built = 0
+
+    @AfterAll
+    fun close() {
+        client.close()
+        mock.stop()
+    }
+
+    private fun head(runner: ScriptedRunner, bridge: CodexCodeModeBridge? = null): HeadServer = HeadServer(
+        provider = WsDriverFixture(tmp, mock.baseUrl).provider(runner, bridge),
+        listenPort = 0,
+        deps = headDeps(
+            tmp = tmp,
+            upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 2),
+            log = {},
+            seams = HeadDeps.HeadSeams(requestMaterializationGate = RequestMaterializationGate()),
+        ).copy(stores = headStores(tmp, suffix = "-completion-${++built}")),
+    )
+
+    private fun responseBurst(kind: String): List<String> = buildList {
+        add("""{"type":"response.created","response":{"id":"synthetic-burst"}}""")
+        val type = if (kind == "text") "response.output_text.delta" else "response.reasoning_summary_text.done"
+        val payload = if (kind == "text") "delta" else "text"
+        val item = if (kind == "text") "message" else "reasoning"
+        val part = if (kind == "text") "content_part" else "reasoning_summary_part"
+        val partType = if (kind == "text") "output_text" else "summary_text"
+        add(
+            """{"type":"response.output_item.added","output_index":0,"item":{"id":"synthetic-item","type":"$item","role":"assistant","content":[],"summary":[]}}""",
+        )
+        add(
+            """{"type":"response.$part.added","item_id":"synthetic-item","output_index":0,"content_index":0,"summary_index":0,"part":{"type":"$partType","text":""}}""",
+        )
+        repeat(300) {
+            add(
+                """{"type":"$type","item_id":"synthetic-item","output_index":0,"content_index":0,"summary_index":$it,"$payload":"synthetic part $it "}""",
+            )
+        }
+    }
+
+    private fun burstAggregate(kind: String, runner: ScriptedRunner) {
+        val snapshot = runner.perf?.snapshot()
+        println(
+            "ws-burst kind=$kind attempts=${runner.attempts} ok=${runner.endedOk} failed=${runner.endedNotOk} " +
+                "stream_end=${snapshot?.marks?.get(PerfKeys.STREAM_END)} " +
+                "finish=${snapshot?.marks?.get(PerfKeys.FINISH)} frames=${snapshot?.counters?.get(PerfKeys.FRAMES_OUT)} " +
+                "start_rejected=${snapshot?.counters?.get(PerfKeys.CODE_MODE_START_REJECTED)}",
+        )
+    }
+
+    private suspend fun boundedTurn(port: Int): String = withTimeout(5_000L) {
+        client.post("http://127.0.0.1:$port/v1/messages") {
+            setBody(
+                """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":100,
+                    "messages":[{"role":"user","content":"synthetic burst"}]}""",
+            )
+        }.bodyAsText()
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["text", "thinking"])
+    fun `a completed WS burst delivers its terminal without waiting for the watchdog`(kind: String) = runBlocking {
+        val events = responseBurst(kind) +
+            """{"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":10,"output_tokens":300}}}"""
+        val runner = ScriptedRunner(events)
+        val h = head(runner)
+        h.start()
+        try {
+            val body = boundedTurn(h.port)
+            assertTrue(body.contains("event: message_stop"), "the completed round must close the client message")
+            assertFalse(body.contains("event: error"))
+            assertEquals(1, runner.attempts)
+            assertEquals(1, runner.endedOk)
+        } finally {
+            burstAggregate(kind, runner)
+            h.stop()
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["text", "thinking"])
+    fun `clean WS EOF after content continues into one completed round`(
+        kind: String,
+    ) = runBlocking {
+        val runner = ScriptedRunner(
+            responseBurst(kind),
+            continuationEvents = listOf(
+                """{"type":"response.output_text.delta","delta":"synthetic recovered answer"}""",
+                """{"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":10,"output_tokens":3}}}""",
+            ),
+        )
+        val h = head(runner)
+        h.start()
+        try {
+            val body = boundedTurn(h.port)
+            assertTrue(body.contains("event: message_stop"), "the recovered answer must close the client message")
+            assertFalse(body.contains("event: error"))
+            assertTrue(body.contains("synthetic recovered answer"))
+            assertEquals(2, runner.attempts)
+            assertEquals(1, runner.endedOk)
+            assertEquals(1, runner.endedNotOk)
+        } finally {
+            burstAggregate(kind, runner)
+            h.stop()
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["completed", "eof", "worker-wait", "startup-wait"])
+    fun `custom source ending releases the intercepted WS turn`(ending: String) = runBlocking {
+        val runtime = SourceRuntime(ending)
+        val state = CodeModeStateLocation(tmp.resolve("source-$ending"), tmp.resolve("legacy-$ending.json"))
+        val lines = ConcurrentLinkedQueue<String>()
+        val bridge = CodexCodeModeBridge(CodeModeBridgeConfig({ runtime }, state, log = { lines += it }))
+        val runner = ScriptedRunner(
+            customSource(ending),
+            afterFirstSource = when (ending) {
+                "startup-wait" -> runtime.starting
+                "eof", "worker-wait" -> runtime.advancing
+                else -> null
+            },
+        )
+        val h = head(runner, bridge)
+        h.start()
+        try {
+            val body = boundedTurn(h.port)
+            assertEquals(1, runtime.starts, "the request must traverse the real interceptor")
+            assertEquals(1, runner.attempts)
+            val rejected = runner.perf?.snapshot()?.counters?.get(PerfKeys.CODE_MODE_START_REJECTED)
+            if (ending == "startup-wait") assertEquals(1L, rejected) else assertNull(rejected)
+            assertEquals(
+                if (ending == "startup-wait") 1 else 0,
+                lines.count { it.startsWith("[code-mode] failed source released runtime startup") },
+            )
+            if (ending == "completed") {
+                assertTrue(body.contains("event: message_stop"))
+                assertTrue(body.contains("SyntheticTool"))
+                assertFalse(body.contains("event: error"))
+            } else {
+                assertTrue(body.contains("event: error"), "torn custom source must fail without replay")
+                assertEquals(1, runner.endedNotOk)
+            }
+        } finally {
+            burstAggregate("custom-$ending", runner)
+            h.stop()
+        }
+    }
+
+    private fun customSource(ending: String): List<String> = buildList {
+        val prefix = """{"id":"synthetic-exec","type":"custom_tool_call","call_id":"synthetic-call","name":"exec","input":"""
+        val source = "synthetic source;".repeat(300)
+        add("""{"type":"response.created","response":{"id":"synthetic-custom-response"}}""")
+        add("""{"type":"response.output_item.added","output_index":0,"item":$prefix""}}""")
+        repeat(300) {
+            add(
+                """{"type":"response.custom_tool_call_input.delta","item_id":"synthetic-exec","output_index":0,"delta":"synthetic source;"}""",
+            )
+        }
+        if (ending != "worker-wait") {
+            add("""{"type":"response.output_item.done","output_index":0,"item":$prefix"$source"}}""")
+        }
+        if (ending == "completed") {
+            add(
+                """{"type":"response.completed","response":{"status":"completed","output":[$prefix"$source"}],"usage":{"input_tokens":10,"output_tokens":300}}}""",
+            )
+        }
+    }
+
+    private class SourceRuntime(private val mode: String) : CodeModeRuntime {
+        var starts = 0
+        val starting = CompletableDeferred<Unit>()
+        val advancing = CompletableDeferred<Unit>()
+        private val closed = CompletableDeferred<Unit>()
+
+        override suspend fun start(
+            source: String,
+            tools: Set<String>,
+            descriptions: Map<String, String>,
+        ): CodeModeCell = error("streaming source required")
+
+        override suspend fun startStreaming(
+            source: CodeModeSource,
+            tools: Set<String>,
+            descriptions: Map<String, String>,
+        ): CodeModeCell {
+            starts++
+            if (mode == "startup-wait") {
+                starting.complete(Unit)
+                closed.await()
+                throw IOException("synthetic startup closed")
+            }
+            return object : CodeModeCell {
+                override suspend fun advance(results: List<CodeModeResult>): CodeModeStep {
+                    if (mode == "worker-wait") {
+                        check(source.read() is CodeModeSourcePart.Delta)
+                        advancing.complete(Unit)
+                        closed.await()
+                        throw IOException("synthetic worker closed")
+                    }
+                    advancing.complete(Unit)
+                    while (true) {
+                        when (val part = source.read()) {
+                            is CodeModeSourcePart.Delta -> Unit
+                            is CodeModeSourcePart.Failed -> throw IOException(part.error)
+                            is CodeModeSourcePart.Complete -> return CodeModeStep.Calls(
+                                listOf(CodeModeCall("synthetic-runtime-call", "SyntheticTool", buildJsonObject {})),
+                            )
+                        }
+                    }
+                }
+
+                override fun close() {
+                    closed.complete(Unit)
+                }
+            }
+        }
+
+        override fun close() {
+            closed.complete(Unit)
+        }
+    }
+}
+
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class WsRoundDriverTest {
 
     private val mock = MockChatGptUpstream()
@@ -482,8 +764,12 @@ class WsRoundDriverTest {
 
     private fun provider(runner: WsRoundRunner): Provider = WsDriverFixture(tmp, mock.baseUrl).provider(runner)
 
-    private fun head(runner: ScriptedRunner, log: (String) -> Unit = {}): HeadServer = HeadServer(
-        provider = provider(runner),
+    private fun head(
+        runner: ScriptedRunner,
+        bridge: CodexCodeModeBridge? = null,
+        log: (String) -> Unit = {},
+    ): HeadServer = HeadServer(
+        provider = WsDriverFixture(tmp, mock.baseUrl).provider(runner, bridge),
         listenPort = 0,
         deps = headDeps(
             tmp = tmp,

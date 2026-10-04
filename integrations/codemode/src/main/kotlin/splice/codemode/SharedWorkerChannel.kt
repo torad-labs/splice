@@ -6,9 +6,12 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -22,6 +25,11 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 private data class PendingHostReply(val cell: Long, val answer: CompletableDeferred<HostFrame>)
+
+private class HostCellLifetime {
+    val closing = CompletableDeferred<Unit>()
+    val exited = CompletableDeferred<Unit>()
+}
 
 internal class SharedWorkerChannel(
     private val process: Process,
@@ -37,7 +45,7 @@ internal class SharedWorkerChannel(
     private val sequence = AtomicLong()
     private val writes = Mutex()
     private val closed = AtomicBoolean()
-    private val cells = ConcurrentHashMap<Long, CompletableDeferred<Unit>>()
+    private val cells = ConcurrentHashMap<Long, HostCellLifetime>()
     private val exited = CompletableDeferred<Unit>()
     val isClosed: Boolean get() = closed.get()
 
@@ -72,13 +80,13 @@ internal class SharedWorkerChannel(
 
     fun cell(id: Long, session: Long = 1): CellChannel {
         ensureOpen()
-        val exited = CompletableDeferred<Unit>()
-        cells[id] = exited
+        val lifetime = HostCellLifetime()
+        cells[id] = lifetime
         if (closed.get()) {
-            cells.remove(id)?.complete(Unit)
+            cells.remove(id)?.exited?.complete(Unit)
             throw CodeModeWorkerLostException()
         }
-        return HostCellChannel(this, id, exited, session)
+        return HostCellChannel(this, id, lifetime.exited, session)
     }
 
     suspend fun control(
@@ -87,14 +95,36 @@ internal class SharedWorkerChannel(
         session: Long = 1,
         timeoutMs: Long = DEFAULT_WORKER_START_TIMEOUT_MS,
     ): JsonObject = kotlinx.coroutines.withTimeoutOrNull(timeoutMs) {
-        exchange(cell, payload, session, timeoutMs)
+        send(cell, payload, session, timeoutMs)
     } ?: throw IOException("Code-mode control reply timed out after $timeoutMs ms")
 
+    /** Context close ends its awaits before the worker acknowledges disposal. Controls still own that ack. */
     suspend fun exchange(
         cell: Long,
         payload: JsonObject,
         session: Long = 1,
         writeTimeoutMs: Long? = null,
+    ): JsonObject {
+        ensureOpen()
+        val lifetime = cells[cell] ?: throw CodeModeWorkerLostException()
+        return coroutineScope {
+            val sending = async { send(cell, payload, session, writeTimeoutMs) }
+            try {
+                select {
+                    lifetime.closing.onAwait { throw CodeModeWorkerLostException() }
+                    sending.onAwait { it }
+                }
+            } finally {
+                sending.cancel()
+            }
+        }
+    }
+
+    private suspend fun send(
+        cell: Long,
+        payload: JsonObject,
+        session: Long,
+        writeTimeoutMs: Long?,
     ): JsonObject {
         ensureOpen()
         val request = sequence.incrementAndGet()
@@ -144,6 +174,8 @@ internal class SharedWorkerChannel(
     }
 
     fun closeCell(id: Long, session: Long) {
+        val lifetime = cells[id] ?: return
+        lifetime.closing.complete(Unit)
         scope.launch {
             try {
                 if (!closed.get()) control(id, HostProtocol.close(), session)
@@ -152,7 +184,8 @@ internal class SharedWorkerChannel(
             } catch (_: IOException) {
                 // A failed host already closes every cell; it cannot keep guest state.
             } finally {
-                cells.remove(id)?.complete(Unit)
+                cells.remove(id, lifetime)
+                lifetime.exited.complete(Unit)
             }
         }
     }
@@ -167,7 +200,10 @@ internal class SharedWorkerChannel(
         ready.completeExceptionally(error)
         pending.values.forEach { it.answer.completeExceptionally(error) }
         pending.clear()
-        cells.values.forEach { it.complete(Unit) }
+        cells.values.forEach {
+            it.closing.complete(Unit)
+            it.exited.complete(Unit)
+        }
         cells.clear()
         try {
             transport.close()

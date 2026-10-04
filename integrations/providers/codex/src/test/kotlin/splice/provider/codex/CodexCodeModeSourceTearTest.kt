@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
 import org.junit.jupiter.params.provider.ValueSource
+import splice.core.index.WireBlockIndex
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
@@ -241,6 +242,53 @@ class CodexCodeModeSourceTearTest : CodeModeStatementStreamSupport() {
             assertLostRecovery(manager, first, post, runtime)
         } finally {
             manager.onHeadStop()
+        }
+    }
+
+    /** A result step attaches its sink after the record-error check, and the attach replays the round's buffered
+     *  progress into it. The round can lose its uncertified source there, so the step reaches the machine's cell
+     *  acquire with the cell gone. It ends as a torn source's step, never as the machine's "cell is unavailable". */
+    @Test
+    @Timeout(20)
+    fun `a result step that reaches its cell after the incomplete round removed it ends as a source tear`() =
+        runBlocking<Unit> {
+            val runtime = ClosingRuntime("closed")
+            val manager = bridge(runtime)
+            val sink = StepSink()
+            val post = GatedPost(sink)
+            try {
+                manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, post)
+                val first = sink.callback.await()
+                post.gates.drop(1).forEach { it.complete(Unit) }
+                withTimeout(1_500) { post.itemDone.await() }
+                val next = HeldSink()
+                val request = async {
+                    manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
+                        .intercept(history(listOf(first)), next, post)
+                }
+                withTimeout(1_500) { next.reached.await() }
+                post.terminalProblem = "incomplete"
+                post.complete.complete(Unit)
+                withTimeout(5_000) {
+                    while (JsonScalars.str(stateFiles.records().single()["error"]) == null) kotlinx.coroutines.yield()
+                }
+                next.held.complete(Unit)
+                assertSourceTear(withTimeout(5_000) { request.await() })
+                assertEquals(1, runtime.starts)
+                assertEquals(1, post.posts, "the incomplete source is never regenerated")
+                assertLostRecovery(manager, first, post, runtime)
+            } finally {
+                manager.onHeadStop()
+            }
+        }
+
+    /** A client step's sink that holds the first progress write the round's buffer replays into it. */
+    private class HeldSink : WireSink by RecordingSink() {
+        val reached = CompletableDeferred<Unit>()
+        val held = CompletableDeferred<Unit>()
+        override suspend fun thinkingDelta(index: WireBlockIndex, thinking: String) {
+            reached.complete(Unit)
+            held.await()
         }
     }
 

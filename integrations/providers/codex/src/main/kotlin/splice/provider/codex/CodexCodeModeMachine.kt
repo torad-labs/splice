@@ -61,11 +61,15 @@ internal class CodexCodeModeMachine(
                     registry.retainedCells.release(record)
                 }
             }
-                ?: if (source?.sourceInterrupted == true) {
-                    started.remove(record.id)
-                    source.outcome()
-                } else {
-                    poison(record, "code-mode cell is unavailable: ${lostMessage(record)}")
+                ?: when {
+                    source?.sourceInterrupted == true -> {
+                        started.remove(record.id)
+                        source.outcome()
+                    }
+                    // The round lost its uncertified source and removed this cell before the step could take it.
+                    source?.sourceUncertified == true ->
+                        ioFailure(record, CodeModeSourceInterruptedException(source.permanentEnding))
+                    else -> poison(record, "code-mode cell is unavailable: ${lostMessage(record)}")
                 }
         }
     }

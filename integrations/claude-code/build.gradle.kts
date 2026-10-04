@@ -8,4 +8,5 @@ dependencies {
     // sessions without pulling the feature back toward Claude Code's on-disk format.
     implementation(project(":core"))
     api(project(":features-sessions"))
+    implementation(libs.jackson.core)
 }

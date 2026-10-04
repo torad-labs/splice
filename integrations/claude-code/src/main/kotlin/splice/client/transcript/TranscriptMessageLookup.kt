@@ -15,6 +15,7 @@ import splice.sessions.transcript.SessionTranscripts
 import splice.sessions.transcript.TranscriptLookup
 import splice.sessions.transcript.TranscriptMessage
 import splice.sessions.transcript.TranscriptMessageSource
+import splice.sessions.transcript.TranscriptReadBudget
 import splice.sessions.transcript.TranscriptRole
 import java.nio.file.Path
 
@@ -42,7 +43,12 @@ public class TranscriptMessageLookup(
      *  wins only if it HOLDS this response id; a copy ending before it cannot hide a later one. */
     private fun search(sessionId: String, roots: List<Path>, responseId: String, deadline: Long): MessageConversation {
         for (root in roots) {
-            val answer = scan(sessionId, listOf(root), responseId, deadline)
+            val budget = TranscriptReadBudget {
+                if (Thread.currentThread().isInterrupted) throw InterruptedException("conversation read cancelled")
+                clock() < deadline
+            }
+            val answer = pages.response(sessionId, listOf(root), responseId, CONTEXT_MESSAGES, budget)
+                ?: scan(sessionId, listOf(root), responseId, deadline)
             if (answer !is MessageConversation.Missing) return answer
         }
         return MessageConversation.Missing("No saved reply for this session; its transcript may be absent or pruned.")
@@ -117,7 +123,13 @@ public class TranscriptMessageLookup(
         return after
     }
 
-    private fun mergeReply(parts: List<TranscriptMessage>): List<TranscriptMessage> {
+    private fun mergeReply(parts: List<TranscriptMessage>): List<TranscriptMessage> =
+        TranscriptReplyMerger().merge(parts)
+}
+
+/** Skipped records can divide a reply into page messages without dividing its contiguous conversation output. */
+internal class TranscriptReplyMerger {
+    fun merge(parts: List<TranscriptMessage>): List<TranscriptMessage> {
         val merged = mutableListOf<TranscriptMessage>()
         for (part in parts) {
             val prior = merged.lastOrNull()

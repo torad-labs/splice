@@ -107,7 +107,7 @@ Teardown kills the process \
 where a component shutdown was meant, and RestoreStep for WsRoundAbort unwinds an upgrade in the \
 middle of a turn. These need MORE naming than a shared shape, not less."""
 
-# ── 14 names, () -> Boolean ───────────────────────────────────────────────────────────────────────
+# ── 15 names, () -> Boolean ───────────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "()->Boolean"
 dated = "2026-09-27"
@@ -124,6 +124,7 @@ names = [
     "StderrEcho",
     "TerminalSeen",
     "TopologyStale",
+    "TranscriptReadBudget",
     "UpgradeRun",
     "WatchdogTripped",
 ]
@@ -148,6 +149,9 @@ SessionTranscriptViewEnabled (V4-354, 2026-09-27) reads the live global transcri
 before either the sessions or turns route opens a Claude Code transcript; one port owned by \
 sessions serves both routes, and confusing it with a client disconnect or daemon-state probe \
 would silently expose private conversation text or hide it despite the operator's switch. \
+TranscriptReadBudget (2026-10-04) asks whether this request has time left across every root and \
+metadata chunk, not whether private transcript viewing is enabled or a client has disconnected. \
+Swapping those roles could scan past the deadline, stop a healthy read, or bypass its view guard. \
 StderrEcho (V4-353, 2026-09-27: should this daemon.log line also go to stderr, which is daemon-boot.log \
 until the daemon is up) is a logging decision read per line; read as any of the others it would either \
 re-grow the boot log for the daemon's whole life (V4-258) or drop the reason a failed boot prints. A single \

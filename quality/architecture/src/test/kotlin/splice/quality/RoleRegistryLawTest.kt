@@ -764,7 +764,8 @@ class RoleRegistryLawTest {
         // 142 since Oct 4 CT: ClientUserAgent joined `()->String?`, the Claude Code identity the usage probe presents.
         // 140 since Oct 4 CT: the removed `suspend (String)->TurnOutcome` entry took InterceptedRoundPost and
         // PostRound with it when PostRound began taking a RoundBody.
-        assertEquals(140, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
+        // 141 since Oct 4 CT: TranscriptReadBudget joins `()->Boolean`, the remaining time of one transcript request.
+        assertEquals(141, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
         assertTrue(config.entries.values.all { !it.text("reason").isNullOrBlank() }) { "every entry is reasoned" }
         assertTrue(config.entries.values.all { !it.text("dated").isNullOrBlank() }) { "every entry is dated" }
 

@@ -4,12 +4,16 @@
 // may leave the lookup. A missing or pruned file answers in words rather than an empty conversation.
 package splice.client.transcript.v4354
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.client.transcript.TranscriptLocator
 import splice.client.transcript.TranscriptMessageLookup
+import splice.client.transcript.TranscriptReader
 import splice.core.util.ElapsedClock
 import splice.sessions.transcript.MessageConversation
 import splice.sessions.transcript.SentTexts
@@ -20,6 +24,7 @@ import splice.sessions.transcript.TranscriptPage
 import splice.sessions.transcript.TranscriptRole
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardOpenOption
 
 private const val SESSION = "sess-v4354"
 private const val RESPONSE = "msg_42_7"
@@ -209,5 +214,96 @@ class TranscriptMessageLookupTest {
         assertEquals("the prompt", found.messages.first().text)
         assertEquals("first\n\nsecond", found.messages.single { it.messageId == RESPONSE }.text)
         assertFalse(found.messages.any { it.text == "later prompt" })
+    }
+}
+
+class TranscriptLookupScaleTest {
+    private fun history(root: Path): Path {
+        val file = root.resolve("projects/synthetic/$SESSION.jsonl")
+        Files.createDirectories(file.parent)
+        val payload = "synthetic history ".repeat(42)
+        Files.newBufferedWriter(file).use { out ->
+            repeat(120_000) { index ->
+                val message = if (index % 2 == 0) {
+                    """{"type":"user","message":{"content":"$payload"}}"""
+                } else {
+                    """{"type":"assistant","message":{"id":"msg_synthetic_$index","content":[{"type":"text","text":"$payload"}]}}"""
+                }
+                out.appendLine(message)
+            }
+            out.appendLine("""{"type":"user","message":{"content":"selected prompt"}}""")
+            out.appendLine(
+                """{"type":"assistant","message":{"id":"$RESPONSE","content":[{"type":"text","text":"first"}]}}""",
+            )
+            out.appendLine(
+                """{"type":"assistant","message":{"id":"$RESPONSE","content":[{"type":"text","text":"second"}]}}""",
+            )
+            out.appendLine("""{"type":"user","message":{"content":"later prompt"}}""")
+        }
+        return file
+    }
+
+    @Test
+    fun `a recent selected reply decodes its context rather than every history page`(@TempDir root: Path) {
+        val file = history(root)
+        val locating = System.nanoTime()
+        assertEquals(file, TranscriptLocator().locate(listOf(root), SESSION))
+        val locationMs = (System.nanoTime() - locating) / 1_000_000
+        val decoding = System.nanoTime()
+        var records = 0
+        Files.newBufferedReader(file).use { input ->
+            input.forEachLine { if (Json.parseToJsonElement(it) is JsonObject) records++ }
+        }
+        val decodeMs = (System.nanoTime() - decoding) / 1_000_000
+        val opened = CountingTranscriptOpener()
+        val reader = TranscriptReader(opened)
+        var pagesRead = 0
+        val pages = object : SessionTranscripts by reader {
+            override fun page(sessionId: String, roots: List<Path>, cursor: String?, limit: Int): TranscriptLookup {
+                pagesRead++
+                return reader.page(sessionId, roots, cursor, limit)
+            }
+        }
+        val lookup = TranscriptMessageLookup(pages)
+        val started = System.nanoTime()
+        val answer = lookup.lookup(SESSION, listOf(root), RESPONSE)
+        val lookupMs = (System.nanoTime() - started) / 1_000_000
+        println(
+            "conversation-profile bytes=${Files.size(file)} records=$records " +
+                "location_ms=$locationMs decode_ms=$decodeMs lookup_ms=$lookupMs " +
+                "pages=$pagesRead state=${answer::class.simpleName}",
+        )
+        assertTrue(answer is MessageConversation.Found, "the request must find a reply in realistic synthetic history")
+        val found = answer as MessageConversation.Found
+        assertEquals("first\n\nsecond", found.messages.last().text)
+        assertFalse(found.messages.any { it.text == "later prompt" })
+        assertTrue(pagesRead <= 2, "one request must not decode every history page: $pagesRead pages")
+        assertEquals(119_901L, found.earlier, "the earlier count remains exact without decoding historical payloads")
+    }
+
+    @Test
+    fun `unchanged and appended replies read a request window not the history`(@TempDir root: Path) {
+        val file = history(root)
+        val opened = CountingTranscriptOpener()
+        val lookup = TranscriptMessageLookup(TranscriptReader(opened))
+        val found = lookup.lookup(SESSION, listOf(root), RESPONSE) as MessageConversation.Found
+        opened.bytes = 0L
+        val warmStarted = System.nanoTime()
+        val warm = lookup.lookup(SESSION, listOf(root), RESPONSE) as MessageConversation.Found
+        val warmMs = (System.nanoTime() - warmStarted) / 1_000_000
+        assertEquals(found, warm)
+        assertTrue(opened.bytes < 1 shl 20, "an unchanged request reread ${opened.bytes} history bytes")
+        println("conversation-warm lookup_ms=$warmMs read_bytes=${opened.bytes}")
+        Files.writeString(
+            file,
+            """{"type":"assistant","message":{"id":"msg_new","content":[{"type":"text","text":"new reply"}]}}""" + "\n",
+            StandardOpenOption.APPEND,
+        )
+        opened.bytes = 0L
+        val appended = lookup.lookup(SESSION, listOf(root), "msg_new") as MessageConversation.Found
+        assertEquals("new reply", appended.messages.last().text)
+        assertEquals(119_903L, appended.earlier)
+        assertTrue(opened.bytes < 1 shl 20, "one appended response reread ${opened.bytes} history bytes")
+        println("conversation-append read_bytes=${opened.bytes}")
     }
 }

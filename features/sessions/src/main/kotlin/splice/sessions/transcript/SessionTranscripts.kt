@@ -91,6 +91,11 @@ public data class SentTexts(
     val searched: List<String> = emptyList(),
 )
 
+/** The request's remaining read budget, shared across every root and every indexing chunk. */
+public fun interface TranscriptReadBudget {
+    public fun hasTime(): Boolean
+}
+
 /** Reads Claude Code transcript data from [roots], in caller-defined priority order. */
 public interface SessionTranscripts {
     /** The newest redacted main-thread message that is not a tool result or a system note, read from a bounded
@@ -116,6 +121,16 @@ public interface SessionTranscripts {
         before: String?,
         limit: Int,
     ): TranscriptLookup = TranscriptLookup.Refused("this transcript source pages forward only")
+
+    /** An indexed response and at most [context] earlier messages. Null means this port does not support indexed
+     *  lookup; the caller may use its forward pages. A supported port reports absence or a spent [budget] explicitly. */
+    public fun response(
+        sessionId: String,
+        roots: List<Path>,
+        responseId: String,
+        context: Int,
+        budget: TranscriptReadBudget,
+    ): MessageConversation? = null
 
     public fun sentTexts(
         sessionId: String,

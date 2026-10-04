@@ -75,15 +75,16 @@ import kotlinx.serialization.json.jsonObject
 import splice.client.Keys
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
+import splice.sessions.transcript.CONVERSATION_READ_UNAVAILABLE
 import splice.sessions.transcript.MAX_TRANSCRIPT_PAGE
+import splice.sessions.transcript.MessageConversation
 import splice.sessions.transcript.SentTexts
 import splice.sessions.transcript.SessionTranscripts
 import splice.sessions.transcript.TranscriptLookup
 import splice.sessions.transcript.TranscriptMessage
 import splice.sessions.transcript.TranscriptPage
-import java.io.BufferedInputStream
-import java.io.ByteArrayOutputStream
-import java.io.InputStream
+import splice.sessions.transcript.TranscriptReadBudget
+import splice.sessions.transcript.TranscriptRole
 import java.nio.channels.Channels
 import java.nio.file.Files
 import java.nio.file.Path
@@ -93,9 +94,6 @@ import java.nio.file.StandardOpenOption
  *  turn one page into a full-file read. */
 private const val MAX_PAGE_BYTES = 16L shl 20
 
-/** One line this long is not a conversation record; it is read past, not kept, and counted. */
-private const val MAX_LINE_BYTES = 32 shl 20
-
 private const val BAD_ID = "not a session id"
 private const val SEND_MESSAGE = "SendMessage"
 private const val BAD_CURSOR = "not a cursor this daemon minted"
@@ -103,11 +101,12 @@ private const val BAD_CURSOR = "not a cursor this daemon minted"
 /** The Claude Code implementation of the sessions feature's transcript port: the feature chooses root
  *  priority, this class owns only Claude Code's on-disk format. */
 public class TranscriptReader(
-    opener: TranscriptOpener = TranscriptOpener { file, offset ->
+    private val opener: TranscriptOpener = TranscriptOpener { file, offset ->
         Channels.newInputStream(Files.newByteChannel(file, StandardOpenOption.READ).position(offset))
     },
 ) : SessionTranscripts {
     private val locator = TranscriptLocator()
+    private val replies = TranscriptResponseIndex(opener)
 
     private val sent = SentTextLedger(opener, SentTextCollector(::collect))
 
@@ -150,6 +149,51 @@ public class TranscriptReader(
             file == null -> TranscriptLookup.Missing(roots.map { it.resolve(Keys.PROJECTS).toString() })
             else -> fromEnd(file, sessionId, end, limit)
         }
+    }
+
+    override fun response(
+        sessionId: String,
+        roots: List<Path>,
+        responseId: String,
+        context: Int,
+        budget: TranscriptReadBudget,
+    ): MessageConversation {
+        if (!validSessionId.matches(sessionId)) return MessageConversation.Refused(BAD_ID)
+        val file = locate(roots, sessionId)
+            ?: return MessageConversation.Missing("No saved transcript for this session.")
+        return when (val indexed = replies.find(file, responseId, budget)) {
+            is IndexedReply.Found -> if (budget.hasTime()) {
+                val point = indexed.point
+                val page = back.read(file, sessionId, point.end, context + point.messages)
+                selected(page, responseId, point, context)
+            } else {
+                MessageConversation.Unavailable(CONVERSATION_READ_UNAVAILABLE)
+            }
+            IndexedReply.Missing -> MessageConversation.Missing("No matching reply in this session's saved transcript.")
+            IndexedReply.BudgetSpent -> MessageConversation.Unavailable(CONVERSATION_READ_UNAVAILABLE)
+        }
+    }
+
+    private fun selected(
+        page: TranscriptPage,
+        responseId: String,
+        point: TranscriptReplyPoint,
+        context: Int,
+    ): MessageConversation {
+        val at = page.messages.indexOfFirst { it.role == TranscriptRole.ASSISTANT && it.messageId == responseId }
+        if (at < 0) return MessageConversation.Unavailable(CONVERSATION_READ_UNAVAILABLE)
+        val reply = page.messages.drop(at).takeWhile {
+            it.role == TranscriptRole.ASSISTANT && it.messageId == responseId
+        }
+        val complete = reply.size == point.messages && reply.first().index / PER_RECORD == point.start
+        if (!complete) return MessageConversation.Unavailable(CONVERSATION_READ_UNAVAILABLE)
+        val before = page.messages.take(at).takeLast(context)
+        return MessageConversation.Found(
+            page.sessionId,
+            responseId,
+            before + TranscriptReplyMerger().merge(reply),
+            point.before - before.size,
+        )
     }
 
     /** The newest [limit] messages before byte [end] of [file], or before its last byte when [end] is null. */
@@ -199,14 +243,13 @@ public class TranscriptReader(
         val size = Files.size(file)
         val from = start.offset.coerceAtMost(size)
         var offset = from
-        Files.newInputStream(file).use { raw ->
-            val input = BufferedInputStream(raw)
-            input.skipNBytes(from)
+        opener.open(file, from).use { input ->
+            val lines = TranscriptLineReader(input, from, size)
             var more = true
             while (more && offset - from < MAX_PAGE_BYTES) {
-                val taken = nextLine(input)?.takeIf { assembly.accept(it.bytes?.let(::parse)) }
+                val taken = lines.next()?.takeIf { assembly.accept(it.bytes?.let(::parse)) }
                 more = taken != null
-                offset += taken?.length ?: 0L
+                offset = taken?.next ?: offset
             }
         }
         val messages = assembly.finish()
@@ -232,27 +275,5 @@ public class TranscriptReader(
         return if (offset != null && index != null) Position(offset, index) else null
     }
 
-    /** One line's bytes (null when it was longer than MAX_LINE_BYTES and read past), and how many
-     *  bytes it occupied including its newline; null at end of file. */
-    private fun nextLine(input: InputStream): Line? {
-        val buffer = ByteArrayOutputStream()
-        var length = 0L
-        var overflow = false
-        var b = input.read()
-        while (b >= 0) {
-            length += 1
-            if (b == '\n'.code) break
-            if (buffer.size() < MAX_LINE_BYTES) buffer.write(b) else overflow = true
-            b = input.read()
-        }
-        return when {
-            length == 0L -> null
-            overflow -> Line(null, length)
-            else -> Line(buffer.toByteArray(), length)
-        }
-    }
-
     private data class Position(val offset: Long, val index: Long)
-
-    private data class Line(val bytes: ByteArray?, val length: Long)
 }

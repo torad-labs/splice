@@ -45,7 +45,7 @@ internal class PageAssembly(
     fun accept(record: JsonObject?): Boolean {
         val messageId = (record?.get(MESSAGE) as? JsonObject)?.let { JsonScalars.str(it, "id") }
         val continues = continues(messageId)
-        if (!continues && full()) return false
+        if (!continues && full) return false
         if (!continues) flush()
         return when {
             record == null -> count(SKIPPED_UNPARSEABLE)
@@ -60,10 +60,15 @@ internal class PageAssembly(
         return messages
     }
 
+    val pendingOffset: Long? get() = pending?.at
+
+    /** Completed messages only. An incremental metadata index can count them without flushing a split reply. */
+    fun drain(): List<TranscriptMessage> = messages.toList().also { messages.clear() }
+
     /** The record's message id is the pending assistant message's: another block of the same message. */
     private fun continues(messageId: String?): Boolean = messageId != null && messageId == pending?.id
 
-    private fun full(): Boolean = messages.size + (if (pending != null) 1 else 0) >= limit
+    private val full: Boolean get() = messages.size + (if (pending != null) 1 else 0) >= limit
 
     private fun conversation(record: JsonObject, messageId: String?): Boolean {
         val type = JsonScalars.str(record, "type") ?: UNTYPED

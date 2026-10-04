@@ -241,9 +241,9 @@ class CodexCodeModeStartupFailureTest : CodeModeBridgeTestSupport() {
             "conversation",
             "digest",
             sink,
-            InterceptedRoundPost { completedOutcome() },
+            upstreamPost(InterceptedRoundPost { completedOutcome() }),
         )
-        val outcome = driver.drive(context, outer(), BASE_REQUEST, outerOutcome())
+        val outcome = driver.drive(context, outer(), codeModeBody(BASE_REQUEST), outerOutcome())
         assertTrue(outcome is TurnOutcome.Failure)
         assertEquals(ErrorType.OVERLOADED, (outcome as TurnOutcome.Failure).type)
         assertFalse(outcome.deterministic)

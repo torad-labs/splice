@@ -2,7 +2,9 @@
 package splice.provider.codex.state
 
 import kotlinx.coroutines.sync.Mutex
+import splice.core.perf.InputDigest
 import splice.provider.codex.CodexCodeModeBridge
+import splice.upstream.RoundBody
 import java.security.MessageDigest
 
 /** Full upstream drives share a mutex only when their conversation keys are equal. */
@@ -54,4 +56,12 @@ internal class CodeModeTurnIdentity {
     fun digest(value: String): String = MessageDigest.getInstance("SHA-256")
         .digest(value.toByteArray())
         .joinToString("") { "%02x".format(it) }
+
+    /** The request digest records persist, without rendering a tree to reach it. A tree streams the
+     *  bytes JsonWire writes, which are its rendered text's UTF-8, so a record written from a round's
+     *  text is found by the same round arriving as a tree (CodeModeRoundTreeTest). */
+    fun digest(body: RoundBody): String = when (body) {
+        is RoundBody.Tree -> InputDigest.hex(body.element)
+        is RoundBody.Text -> digest(body.text)
+    }
 }

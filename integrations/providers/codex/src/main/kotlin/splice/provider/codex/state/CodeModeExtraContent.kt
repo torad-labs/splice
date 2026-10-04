@@ -1,6 +1,7 @@
 // NEW: classify client content outside a parked script's owned callbacks and baseline.
 package splice.provider.codex.state
 
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.dialect.responses.request.ResponsesCodeModeInput
@@ -19,8 +20,9 @@ internal class CodeModeExtraContent(
 ) {
     private val messageTypes = setOf("", "message")
 
-    fun of(bodyJson: String, record: CodeModeRecord, candidateMedia: Map<String, List<JsonElement>>): CodeModeExtra {
-        val (projected, boundary) = onBaseline(bodyJson, record) ?: return CodeModeExtra.STEERING
+    /** [input]: the round's parsed input array, or null when the round is not a Responses request. */
+    fun of(input: JsonArray?, record: CodeModeRecord, candidateMedia: Map<String, List<JsonElement>>): CodeModeExtra {
+        val (projected, boundary) = input?.let { onBaseline(it, record) } ?: return CodeModeExtra.STEERING
         val owned = (record.results.keys + record.pending.map(CodeModePending::clientId)).toSet()
         val logicalExtra = unownedItems(projected.logicalItems, record, owned, candidateMedia, boundary)
         return when {
@@ -31,8 +33,7 @@ internal class CodeModeExtraContent(
         }
     }
 
-    private fun onBaseline(bodyJson: String, record: CodeModeRecord): Pair<ResponsesCodeModeInput, Int>? {
-        val input = codec.root(bodyJson)?.second ?: return null
+    private fun onBaseline(input: JsonArray, record: CodeModeRecord): Pair<ResponsesCodeModeInput, Int>? {
         val projected = codec.conversation(codec.projection.project(input)).body
         val boundary = codec.baselineBoundary(projected.logicalItems, record)
         val validBaseline = codec.validFullPrefix(input, record) || boundary != null

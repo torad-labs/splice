@@ -10,7 +10,7 @@ import splice.provider.codex.branch.CodexCodeModeBranch
 import splice.provider.codex.state.CodeModeTurnIdentity
 import splice.provider.codex.state.CodeModeTurnLocks
 import splice.provider.codex.state.CodeModeTurnNotes
-import splice.upstream.InterceptedRoundPost
+import splice.provider.codex.stream.CodeModeUpstreamPost
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.sse.WireSink
 
@@ -18,9 +18,9 @@ internal data class CodeModeRunInput(
     val turn: CodexCodeModeBridge.Turn,
     val initialOuter: GatewayCustomCall?,
     val disableParallel: Boolean,
-    val bodyJson: String,
+    val body: CodeModeBody,
     val sink: WireSink,
-    val post: InterceptedRoundPost,
+    val post: CodeModeUpstreamPost,
 )
 
 internal data class CodeModeRunContext(
@@ -29,7 +29,7 @@ internal data class CodeModeRunContext(
     val key: String,
     val digest: String,
     val sink: WireSink,
-    val post: InterceptedRoundPost,
+    val post: CodeModeUpstreamPost,
 ) {
     /** One filtered history for this request, extended only by its own completed scripts. */
     val completed: MutableList<CodeModeRecord> = mutableListOf()
@@ -57,7 +57,7 @@ internal class CodexCodeModeTurn(
     private val branch = CodexCodeModeBranch(registry, driver, machine, validation, log)
     private val locks = CodeModeTurnLocks()
 
-    private data class PlacedOwner(val record: CodeModeRecord, val bodyJson: String)
+    private data class PlacedOwner(val record: CodeModeRecord, val body: CodeModeBody)
 
     suspend fun run(input: CodeModeRunInput): TurnOutcome {
         val key = identity.turnKey(input.turn)
@@ -65,7 +65,7 @@ internal class CodexCodeModeTurn(
             input.turn,
             input.disableParallel,
             key,
-            identity.digest(input.bodyJson),
+            identity.digest(input.body.round),
             input.sink,
             input.post,
         )
@@ -78,7 +78,7 @@ internal class CodexCodeModeTurn(
                     replay
                 } else {
                     registry.turnStart.begin(context.key)
-                    runLocked(context, input.initialOuter, input.bodyJson)
+                    runLocked(context, input.initialOuter, input.body)
                 }
             } catch (error: CodeModePersistenceException) {
                 error.outcome()
@@ -91,23 +91,23 @@ internal class CodexCodeModeTurn(
     private suspend fun runLocked(
         context: CodeModeRunContext,
         initialOuter: GatewayCustomCall?,
-        bodyJson: String,
+        body: CodeModeBody,
     ): TurnOutcome {
         notes.announce(context)
-        return ordinary(context, initialOuter, bodyJson, branch.conflictingRecords(context))
+        return ordinary(context, initialOuter, body, branch.conflictingRecords(context))
     }
 
     private suspend fun ordinary(
         context: CodeModeRunContext,
         initialOuter: GatewayCustomCall?,
-        bodyJson: String,
+        body: CodeModeBody,
         conflicts: Set<String>,
     ): TurnOutcome {
         val completed = context.completed
         completed += registry.completed(context.key).filterNot { it.id in conflicts }
-        val completedHistory = wire.canonicalize(bodyJson, completed, context.turn.toolMedia)
+        val completedHistory = wire.canonicalize(body, completed, context.turn.toolMedia)
         completedHistory.error?.let { return failure(it) }
-        val canonicalBody = checkNotNull(completedHistory.bodyJson)
+        val canonicalBody = checkNotNull(completedHistory.body)
         reconcile(context, canonicalBody)
         val owner = placedOwner(context, canonicalBody, conflicts)
         val terminal = completed.lastOrNull { it.sourceState?.usage != null && it.sourceState?.consumed == false }
@@ -123,32 +123,36 @@ internal class CodexCodeModeTurn(
 
     /** Missing callbacks prove supersession only on a history that still extends the parked baseline.
      * Divergent or shorter side requests do not decide whether the original client can return. */
-    private fun reconcile(context: CodeModeRunContext, bodyJson: String) {
-        val callbacks = wire.callbackIds(bodyJson) + context.turn.toolResults.map(CodeModeResult::id)
+    private fun reconcile(context: CodeModeRunContext, body: CodeModeBody) {
+        val callbacks = wire.callbackIds(body) + context.turn.toolResults.map(CodeModeResult::id)
         val continued = registry.recordsFor(context.key).filter { it.phase == CodeModePhase.ACTIVE }
             .filter { record ->
-                record.clientIds().any { it in callbacks } || wire.restoreBaseline(bodyJson, record).error != null
+                record.clientIds().any { it in callbacks } || wire.restoreBaseline(body, record).error != null
             }.mapTo(mutableSetOf()) { it.id }
         registry.turnStart.begin(context.key, context.digest, continued)
     }
 
     /** The active or lost owner whose baseline still places in this history, with that history
      *  restored around it — or null when there is none, or when the one there was is abandoned. */
-    private fun placedOwner(context: CodeModeRunContext, canonicalBody: String, conflicts: Set<String>): PlacedOwner? {
+    private fun placedOwner(
+        context: CodeModeRunContext,
+        canonicalBody: CodeModeBody,
+        conflicts: Set<String>,
+    ): PlacedOwner? {
         val resultIds = context.turn.toolResults.map(CodeModeResult::id).toSet()
         val callbackIds = wire.callbackIds(canonicalBody)
         val owner = registry.owner(context.key, context.digest, resultIds, callbackIds, conflicts) ?: return null
         val restored = wire.restoreBaseline(canonicalBody, owner)
-        val error = restored.error ?: return PlacedOwner(owner, checkNotNull(restored.bodyJson))
+        val error = restored.error ?: return PlacedOwner(owner, checkNotNull(restored.body))
         abandon(owner, error)
         return null
     }
 
     private suspend fun resumeOwner(placed: PlacedOwner, context: CodeModeRunContext): TurnOutcome =
         when (placed.record.phase) {
-            CodeModePhase.STARTING -> driver.retryStart(placed.record, context, placed.bodyJson)
-            CodeModePhase.ACTIVE -> resume.active(placed.record, context, placed.bodyJson)
-            CodeModePhase.LOST -> resume.lost(placed.record, context, placed.bodyJson)
+            CodeModePhase.STARTING -> driver.retryStart(placed.record, context, placed.body)
+            CodeModePhase.ACTIVE -> resume.active(placed.record, context, placed.body)
+            CodeModePhase.LOST -> resume.lost(placed.record, context, placed.body)
             CodeModePhase.COMPLETED -> error("A completed record cannot own a pending turn")
         }
 

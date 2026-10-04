@@ -231,9 +231,9 @@ class CodeModeResumeLeaseTest : CodeModeBridgeTestSupport() {
                 record.key,
                 "callback",
                 RecordingSink(),
-                InterceptedRoundPost { completedOutcome() },
+                upstreamPost(InterceptedRoundPost { completedOutcome() }),
             )
-            val outcome = resume(manager).active(record, context, requestWithResult(id, "A"))
+            val outcome = resume(manager).active(record, context, codeModeBody(requestWithResult(id, "A")))
             assertTrue(outcome is TurnOutcome.Success && !outcome.hasToolUse, outcome.toString())
             assertEquals(1, runtime.cell.advances, "reclamation never reruns the source")
             assertEquals(CodeModePhase.COMPLETED, record.phase)
@@ -271,10 +271,10 @@ class CodeModeResumeLeaseTest : CodeModeBridgeTestSupport() {
                 record.key,
                 "callback",
                 RecordingSink(),
-                InterceptedRoundPost { completedOutcome() },
+                upstreamPost(InterceptedRoundPost { completedOutcome() }),
             )
             val request = async(Dispatchers.Default) {
-                resume(manager).active(record, context, requestWithResult(id, "A"))
+                resume(manager).active(record, context, codeModeBody(requestWithResult(id, "A")))
             }
             assertTrue(reached.await(5, TimeUnit.SECONDS), "callback validation reached the latched race point")
             deadSessions += record.sessionId.orEmpty()

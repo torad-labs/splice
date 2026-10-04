@@ -15,9 +15,11 @@ import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.provider.codex.stream.CodeModeLiveRound
+import splice.provider.codex.stream.CodeModeRedirectablePost
 import splice.provider.codex.stream.CodeModeStreamAdmission
 import splice.upstream.LifecycleScope
 import splice.upstream.RedirectableRoundPost
+import splice.upstream.RoundBody
 import splice.upstream.TurnEnd
 import splice.upstream.sse.WireSink
 import kotlin.time.Duration.Companion.hours
@@ -29,10 +31,11 @@ class CodeModeCompletionCallbackTest : CodeModeStatementStreamSupport() {
         val lines = mutableListOf<String>()
         val config = CodeModeBridgeConfig({ error("runtime unused") }, stateLocation(), log = { lines += it })
         val registry = CodexCodeModeRegistry(config, Json, 1.hours)
+        val wire = CodexCodeModeWire(Json, {})
         val round = CodeModeLiveRound(
             config,
             registry,
-            CodexCodeModeWire(Json, {}),
+            wire,
             CodeModeStreamAdmission { error("no source to admit") },
             StepSink(),
         )
@@ -47,8 +50,8 @@ class CodeModeCompletionCallbackTest : CodeModeStatementStreamSupport() {
             assertDoesNotThrow {
                 round.start(
                     scope,
-                    post,
-                    "{}",
+                    CodeModeRedirectablePost(post, wire),
+                    wire.body(RoundBody.Text("{}")),
                     TurnEnd {
                         endings++
                         error("synthetic private callback bytes")

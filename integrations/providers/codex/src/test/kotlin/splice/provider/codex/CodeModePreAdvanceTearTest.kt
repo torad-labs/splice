@@ -67,9 +67,9 @@ class CodeModePreAdvanceTearTest : CodeModeStatementStreamSupport() {
                     key,
                     "continuation",
                     next,
-                    post,
+                    upstreamPost(post),
                 )
-                resume.active(record, context, history(listOf(first)))
+                resume.active(record, context, codeModeBody(history(listOf(first))))
             }
             val record = picked.await()
             if (window == "before-resume") tear(post, record)

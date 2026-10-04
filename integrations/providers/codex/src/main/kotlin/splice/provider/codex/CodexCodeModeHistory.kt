@@ -13,26 +13,27 @@ import splice.provider.codex.state.CodeModeHistoryIndex
 import splice.provider.codex.state.CodeModeMetadataValidator
 import splice.provider.codex.state.CodeModeNativeChain
 import splice.provider.codex.state.CodeModeNativeReplay
+import splice.upstream.RoundBody
 
-internal class CodexCodeModeHistory(json: Json) {
+internal class CodexCodeModeHistory(private val json: Json) {
     private val codec = CodexCodeModeHistoryCodec(json)
     private val nativeReplayValidator = NativeReplayValidator()
     private val metadata = CodeModeMetadataValidator()
     private val ownership = CodeModeOwnership(codec)
     private val extras = CodeModeExtraContent(codec, ownership)
 
-    fun anchoredBoundary(bodyJson: String, completed: List<CodeModeRecord>): CodeModeInputBoundary? =
-        CodeModeAnchorCapture.inputBoundary(bodyJson, completed, codec)
+    fun anchoredBoundary(body: CodeModeBody, completed: List<CodeModeRecord>): CodeModeInputBoundary? =
+        CodeModeAnchorCapture.inputBoundary(body.request?.second, completed, codec)
 
     /** What the client added after the record's baseline that the record does not own (V4-336),
      *  sorted by [CodeModeExtraContent]. [candidateMedia]: follow-ups rendered for results the record
      *  has not accepted yet (this turn's), owned on sight so a screenshot arriving for a parked script
      *  is not "extra content". */
     fun extraContent(
-        bodyJson: String,
+        body: CodeModeBody,
         record: CodeModeRecord,
         candidateMedia: Map<String, List<JsonElement>> = emptyMap(),
-    ): CodeModeExtra = extras.of(bodyJson, record, candidateMedia)
+    ): CodeModeExtra = extras.of(body.request?.second, record, candidateMedia)
 
     /**
      * Rewrites every completed record it can still place, except an abandoned one (V4-342): its
@@ -48,37 +49,44 @@ internal class CodexCodeModeHistory(json: Json) {
      * canonical media riding beside the replayed ones. A legacy id (nothing captured) is not judged.
      */
     fun canonicalize(
-        bodyJson: String,
+        body: CodeModeBody,
         records: List<CodeModeRecord>,
         replayMedia: Map<String, List<JsonElement>> = emptyMap(),
     ): CodeModeRewrite {
-        val root = codec.root(bodyJson)
+        val root = body.request
             ?: return CodeModeRewrite(null, "code mode requires a Responses input array")
         val conversation = codec.conversation(codec.projection.project(root.second))
-        var body = conversation.body
+        var input = conversation.body
         val omitted = mutableListOf<CodeModeOmission>()
         val eligible = records.filterNot(CodeModeRecord::abandoned)
         eligible.filter { it.metadataVersion != CODE_MODE_METADATA_VERSION }.forEach { record ->
-            val rewritten = canonicalizeRecord(body, record, replayMedia)
+            val rewritten = canonicalizeRecord(input, record, replayMedia)
             val error = rewritten.error
-            if (error == null) body = checkNotNull(rewritten.input) else omitted += CodeModeOmission(record, error)
+            if (error == null) input = checkNotNull(rewritten.input) else omitted += CodeModeOmission(record, error)
         }
         val anchored = CodeModeCanonicalHistory(codec).rewrite(
-            body,
+            input,
             eligible.filter { it.metadataVersion == CODE_MODE_METADATA_VERSION },
             replayMedia,
         )
-        return codec.rebuilt(root.first, conversation, anchored.input, bodyJson)
+        return codec.rebuilt(root.first, conversation, anchored.input, body)
             .copy(omitted = omitted + anchored.omitted)
     }
 
-    fun restoreBaseline(bodyJson: String, record: CodeModeRecord): CodeModeRewrite {
-        val root = codec.root(bodyJson)
+    /** [canonicalize] for a request held as text: parsed once, as a text round is. */
+    fun canonicalize(
+        bodyJson: String,
+        records: List<CodeModeRecord>,
+        replayMedia: Map<String, List<JsonElement>> = emptyMap(),
+    ): CodeModeRewrite = canonicalize(CodeModeBody(RoundBody.Text(bodyJson), json), records, replayMedia)
+
+    fun restoreBaseline(body: CodeModeBody, record: CodeModeRecord): CodeModeRewrite {
+        val root = body.request
             ?: return CodeModeRewrite(null, "code mode requires a Responses input array")
         val conversation = codec.conversation(codec.projection.project(root.second))
         val restored = restoreProjected(conversation.body, record)
         return restored.error?.let { CodeModeRewrite(null, it) }
-            ?: codec.rebuilt(root.first, conversation, checkNotNull(restored.input), bodyJson)
+            ?: codec.rebuilt(root.first, conversation, checkNotNull(restored.input), body)
     }
 
     private fun restoreProjected(input: ResponsesCodeModeInput, record: CodeModeRecord): ProjectedRewrite {

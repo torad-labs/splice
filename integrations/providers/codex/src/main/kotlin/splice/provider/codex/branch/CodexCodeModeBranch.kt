@@ -4,6 +4,7 @@ package splice.provider.codex.branch
 import splice.core.turn.CodeModeDivergenceMarker
 import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
+import splice.provider.codex.CodeModeBody
 import splice.provider.codex.CodeModeRunContext
 import splice.provider.codex.CodexCodeModeDriver
 import splice.provider.codex.CodexCodeModeMachine
@@ -40,7 +41,7 @@ internal class CodexCodeModeBranch(
 
     /** No owned B callback remains: send B's already-canonicalized history upstream without
      * rewriting its changed results through A's completed record. */
-    suspend fun sendOwnHistory(context: CodeModeRunContext, ownHistory: String): TurnOutcome {
+    suspend fun sendOwnHistory(context: CodeModeRunContext, ownHistory: CodeModeBody): TurnOutcome {
         log("[code-mode] observable-divergence: accepted callback changed; sending this history upstream")
         return try {
             mark(driver.drive(context, null, ownHistory, context.post(ownHistory)))

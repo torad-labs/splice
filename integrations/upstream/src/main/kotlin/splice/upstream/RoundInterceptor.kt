@@ -19,6 +19,20 @@ public interface RedirectableRoundPost : InterceptedRoundPost {
     public suspend fun into(bodyJson: String, sink: WireSink): TurnOutcome
 }
 
+/**
+ * A round post that takes the body as the head holds it, so a tree reaches the transport as that tree and
+ * nothing renders text nobody reads. The turn's own post declares it; a post without it is handed text.
+ *
+ * It is a separate type and never a default overload on [InterceptedRoundPost]: Kotlin's `by` delegation
+ * forwards a default method to the delegate, so a wrapper that overrides the text form would be skipped
+ * on the body form without a word. A wrapper declares this only when it wraps both.
+ */
+public interface RoundBodyPost {
+    public suspend fun post(body: RoundBody): TurnOutcome
+
+    public suspend fun postInto(body: RoundBody, sink: WireSink): TurnOutcome
+}
+
 /** Optional per-turn wrapper around one upstream round. Null means the established direct path. */
 public fun interface RoundInterceptor {
     /** True only when this prepared request answers a source round that is still live. */
@@ -29,4 +43,11 @@ public fun interface RoundInterceptor {
         sink: WireSink,
         postRound: InterceptedRoundPost,
     ): TurnOutcome
+}
+
+/** An interceptor that reads the round as the head holds it, so a tree is read as that tree and never
+ *  rendered and parsed back. One without it is handed text. Separate from [RoundInterceptor] for the
+ *  reason [RoundBodyPost] is. */
+public interface RoundBodyInterceptor {
+    public suspend fun intercept(body: RoundBody, sink: WireSink, postRound: InterceptedRoundPost): TurnOutcome
 }

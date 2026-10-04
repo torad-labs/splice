@@ -15,6 +15,7 @@ import splice.dialect.responses.ResponsesFunctionNamespace
 import splice.dialect.responses.request.AssistantPhase
 import splice.dialect.responses.request.ResponsesAssistantText
 import splice.dialect.responses.request.ResponsesCodeModeProjection
+import splice.upstream.RoundBody
 import splice.upstream.codemode.CodeModeManual
 import java.util.concurrent.ConcurrentHashMap
 
@@ -58,18 +59,23 @@ internal class CodexCodeModeWire(private val json: Json, private val log: LogSin
         return JsonObject(request + (FIELD_INPUT to JsonArray(rebuilt)))
     }
 
+    /** The round as code mode reads it: parsed once here, and read as that one tree after. */
+    fun body(round: RoundBody): CodeModeBody = CodeModeBody(round, json)
+
     /** The body a code-mode round posts upstream: the client's history minus the tool_search pairs the
      *  dialect replays for deferred tools and a record's native searches, since exec declares no
      *  tool_search beside it. Records, digests and baselines keep reading the client's own history;
-     *  only the posted bytes change, the same way on every round, so the prompt cache prefix holds. */
-    fun upstream(bodyJson: String): String {
-        val request = json.parseToJsonElement(bodyJson) as? JsonObject ?: return bodyJson
-        val input = request[FIELD_INPUT] as? JsonArray ?: return bodyJson
+     *  only the posted bytes change, the same way on every round, so the prompt cache prefix holds.
+     *  A body with none goes out as the body it is; one with some keeps the spelling it always had. */
+    fun upstream(body: CodeModeBody): RoundBody {
+        val (request, input) = body.request ?: return body.round
         val kept = input.filterNot { string(it as? JsonObject, FIELD_TYPE) in TOOL_SEARCH_ITEMS }
         return if (kept.size == input.size) {
-            bodyJson
+            body.round
         } else {
-            json.encodeToString(JsonObject.serializer(), JsonObject(request + (FIELD_INPUT to JsonArray(kept))))
+            RoundBody.Text(
+                json.encodeToString(JsonObject.serializer(), JsonObject(request + (FIELD_INPUT to JsonArray(kept)))),
+            )
         }
     }
 
@@ -85,14 +91,13 @@ internal class CodexCodeModeWire(private val json: Json, private val log: LogSin
         return kept
     }
 
-    fun anchoredBoundary(bodyJson: String, completed: List<CodeModeRecord>): CodeModeInputBoundary? =
-        history.anchoredBoundary(bodyJson, completed)
+    fun anchoredBoundary(body: CodeModeBody, completed: List<CodeModeRecord>): CodeModeInputBoundary? =
+        history.anchoredBoundary(body, completed)
 
     /** An owned call can be present before its result arrives. Keep both wire forms as owner evidence;
      *  a call from a completed record is not an ACTIVE owner's id and cannot claim it. */
-    fun callbackIds(bodyJson: String): Set<String> {
-        val input = (json.parseToJsonElement(bodyJson) as? JsonObject)?.get(FIELD_INPUT) as? JsonArray
-            ?: return emptySet()
+    fun callbackIds(body: CodeModeBody): Set<String> {
+        val input = body.request?.second ?: return emptySet()
         return input.mapNotNull { element ->
             val item = element as? JsonObject
             when (string(item, FIELD_TYPE)) {
@@ -106,17 +111,17 @@ internal class CodexCodeModeWire(private val json: Json, private val log: LogSin
     /** [candidateMedia]: this turn's rendered follow-ups for result ids the record does not hold
      *  yet — owned on sight, so a screenshot arriving for a parked script resumes it. */
     fun extraContent(
-        bodyJson: String,
+        body: CodeModeBody,
         record: CodeModeRecord,
         candidateMedia: Map<String, List<JsonElement>> = emptyMap(),
-    ): CodeModeExtra = history.extraContent(bodyJson, record, candidateMedia)
+    ): CodeModeExtra = history.extraContent(body, record, candidateMedia)
 
     fun canonicalize(
-        bodyJson: String,
+        body: CodeModeBody,
         records: List<CodeModeRecord>,
         replayMedia: Map<String, List<JsonElement>> = emptyMap(),
     ): CodeModeRewrite {
-        val rewrite = history.canonicalize(bodyJson, records, replayMedia)
+        val rewrite = history.canonicalize(body, records, replayMedia)
         rewrite.omitted.filter { announced.add(it.record.id) }.forEach { omission ->
             log(
                 "[code-mode] history rewrite skipped record ${omission.record.id.take(RECORD_ID_LOG_CHARS)} " +
@@ -127,8 +132,8 @@ internal class CodexCodeModeWire(private val json: Json, private val log: LogSin
         return rewrite
     }
 
-    fun restoreBaseline(bodyJson: String, record: CodeModeRecord): CodeModeRewrite =
-        history.restoreBaseline(bodyJson, record)
+    fun restoreBaseline(body: CodeModeBody, record: CodeModeRecord): CodeModeRewrite =
+        history.restoreBaseline(body, record)
 
     fun continuity(outcome: TurnOutcome.Success): CodeModeContinuity {
         val items = buildList {
@@ -180,10 +185,13 @@ internal data class CodeModeInputBoundary(
 }
 
 internal data class CodeModeRewrite(
-    val bodyJson: String?,
+    val body: CodeModeBody?,
     val error: String? = null,
     val omitted: List<CodeModeOmission> = emptyList(),
-)
+) {
+    /** The rewritten request as text, rendered when read. Rounds post [body] and never read this. */
+    val bodyJson: String? get() = body?.round?.text
+}
 
 /** A completed record the rewrite could not place; the reason is what the digest check reported. */
 internal data class CodeModeOmission(val record: CodeModeRecord, val reason: String)

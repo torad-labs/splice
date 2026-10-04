@@ -11,16 +11,16 @@ import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.provider.codex.stream.CodeModeLiveRound
 import splice.provider.codex.stream.CodeModeRecordFactory
+import splice.provider.codex.stream.CodeModeRedirectablePost
 import splice.provider.codex.stream.CodeModeRuntimeStarter
 import splice.provider.codex.stream.CodeModeSourceState
 import splice.provider.codex.stream.CodeModeStreamingCell
 import splice.provider.codex.stream.CodeModeStreams
-import splice.upstream.RedirectableRoundPost
 import splice.upstream.failure.CodeModeCapacityException
 import java.io.IOException
 
 private data class CodeModeDriveState(
-    var bodyJson: String,
+    var body: CodeModeBody,
     var outcome: TurnOutcome,
     var suppliedOuter: GatewayCustomCall?,
 )
@@ -38,8 +38,8 @@ internal class CodexCodeModeDriver(
     private val starter = CodeModeRuntimeStarter(run, registry, config)
 
     /** A redirectable post can yield a durable script while its upstream response remains live. */
-    suspend fun post(context: CodeModeRunContext, initialOuter: GatewayCustomCall?, body: String): TurnOutcome {
-        val post = context.post as? RedirectableRoundPost
+    suspend fun post(context: CodeModeRunContext, initialOuter: GatewayCustomCall?, body: CodeModeBody): TurnOutcome {
+        val post = context.post as? CodeModeRedirectablePost
             ?: return drive(context, initialOuter, body, context.post(body))
         val round = streams.begin(context, body, post) { call ->
             driveProblem(context, listOf(call), call)?.let { error(it) }
@@ -78,7 +78,7 @@ internal class CodexCodeModeDriver(
     private suspend fun readyOutcome(
         context: CodeModeRunContext,
         initialOuter: GatewayCustomCall?,
-        body: String,
+        body: CodeModeBody,
         round: CodeModeLiveRound,
         record: CodeModeRecord?,
     ): TurnOutcome {
@@ -93,12 +93,12 @@ internal class CodexCodeModeDriver(
         }
     }
 
-    suspend fun finishGenerated(record: CodeModeRecord, context: CodeModeRunContext, body: String): TurnOutcome {
+    suspend fun finishGenerated(record: CodeModeRecord, context: CodeModeRunContext, body: CodeModeBody): TurnOutcome {
         val generated = streams.takeOutcome(record)
         if (context.completed.none { it.id == record.id }) context.completed += record
         val rewritten = wire.canonicalize(body, context.completed, context.turn.toolMedia)
         rewritten.error?.let { return failure(it) }
-        val outcome = post(context, null, checkNotNull(rewritten.bodyJson))
+        val outcome = post(context, null, checkNotNull(rewritten.body))
         val accumulated = CodeModeOutcomeAccumulator()
         when (generated) {
             is TurnOutcome.Success -> accumulated.absorb(generated)
@@ -116,7 +116,7 @@ internal class CodexCodeModeDriver(
     suspend fun drive(
         context: CodeModeRunContext,
         initialOuter: GatewayCustomCall?,
-        initialBody: String,
+        initialBody: CodeModeBody,
         initialOutcome: TurnOutcome,
     ): TurnOutcome {
         val accumulated = CodeModeOutcomeAccumulator()
@@ -175,26 +175,26 @@ internal class CodexCodeModeDriver(
     ): TurnOutcome? {
         accumulated.absorb(success)
         context.scripts++
-        val (record, advanced) = begin(context, outer, state.bodyJson, success)
+        val (record, advanced) = begin(context, outer, state.body, success)
         return if (record == null || record.phase != CodeModePhase.COMPLETED) {
             accumulated.finishLocal(advanced)
         } else {
             context.completed += record
-            val rewritten = wire.canonicalize(state.bodyJson, context.completed, context.turn.toolMedia)
+            val rewritten = wire.canonicalize(state.body, context.completed, context.turn.toolMedia)
             rewritten.error?.let { return accumulated.finishLocal(failure(it)) }
-            state.bodyJson = checkNotNull(rewritten.bodyJson)
-            accumulated.finish(post(context, null, state.bodyJson))
+            state.body = checkNotNull(rewritten.body)
+            accumulated.finish(post(context, null, state.body))
         }
     }
 
     private suspend fun begin(
         context: CodeModeRunContext,
         outer: GatewayCustomCall,
-        bodyJson: String,
+        body: CodeModeBody,
         outcome: TurnOutcome.Success,
     ): Pair<CodeModeRecord?, TurnOutcome> {
         validation.outer(outer)?.let { return null to failure(it) }
-        val boundary = wire.anchoredBoundary(bodyJson, context.completed)
+        val boundary = wire.anchoredBoundary(body, context.completed)
             ?: return null to failure("code mode requires a Responses input array")
         val continuity = wire.continuity(outcome)
         val record = factory.create(context, outer, boundary, continuity)
@@ -206,7 +206,7 @@ internal class CodexCodeModeDriver(
     }
 
     /** A proven failed boot retained unexecuted source, so an exact retry may start it. */
-    suspend fun retryStart(record: CodeModeRecord, context: CodeModeRunContext, bodyJson: String): TurnOutcome {
+    suspend fun retryStart(record: CodeModeRecord, context: CodeModeRunContext, body: CodeModeBody): TurnOutcome {
         check(registry.add(record)) { "Code-mode record cannot restart" }
         val stream = streams.find(record)
         if (stream == null && record.sourceState?.complete == false) {
@@ -215,7 +215,7 @@ internal class CodexCodeModeDriver(
         }
         val (_, advanced) = startRuntime(record, context, stream)
         stream?.switching?.detach()
-        return if (record.phase == CodeModePhase.COMPLETED) finishGenerated(record, context, bodyJson) else advanced
+        return if (record.phase == CodeModePhase.COMPLETED) finishGenerated(record, context, body) else advanced
     }
 
     private suspend fun attachmentFailure(record: CodeModeRecord, stream: CodeModeLiveRound?): TurnOutcome =

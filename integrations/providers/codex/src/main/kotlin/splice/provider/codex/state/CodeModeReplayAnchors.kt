@@ -2,6 +2,7 @@
 package splice.provider.codex.state
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.core.perf.InputDigest
@@ -20,12 +21,20 @@ internal data class CodeModeReplayAnchors(
 )
 
 internal object CodeModeAnchorCapture {
+    /** [inputBoundary] for a request held as text, parsed once. */
     fun inputBoundary(
         bodyJson: String,
         completed: List<CodeModeRecord>,
         codec: CodexCodeModeHistoryCodec,
+    ): CodeModeInputBoundary? = inputBoundary(codec.root(bodyJson)?.second, completed, codec)
+
+    /** [input]: the round's parsed input array, or null when the round is not a Responses request. */
+    fun inputBoundary(
+        input: JsonArray?,
+        completed: List<CodeModeRecord>,
+        codec: CodexCodeModeHistoryCodec,
     ): CodeModeInputBoundary? {
-        val input = codec.root(bodyJson)?.second ?: return null
+        if (input == null) return null
         val conversation = codec.conversation(codec.projection.project(input))
         val body = conversation.body
         val natives = body.nativeSegments.map { CodeModeNativeSegment(it.logicalOffset, it.items) }

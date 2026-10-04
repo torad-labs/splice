@@ -7,6 +7,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.provider.codex.CodeModeBody
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRunContext
@@ -14,7 +15,6 @@ import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexCodeModeRegistry
 import splice.provider.codex.CodexCodeModeWire
 import splice.upstream.LifecycleScope
-import splice.upstream.RedirectableRoundPost
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.sse.WireSink
 import java.util.concurrent.ConcurrentHashMap
@@ -65,8 +65,8 @@ internal class CodeModeStreams(
 
     fun begin(
         context: CodeModeRunContext,
-        body: String,
-        post: RedirectableRoundPost,
+        body: CodeModeBody,
+        post: CodeModeRedirectablePost,
         admission: CodeModeStreamAdmission,
     ): CodeModeLiveRound = CodeModeLiveRound(config, registry, wire, admission, context.sink).also { round ->
         reading += round

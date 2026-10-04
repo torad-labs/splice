@@ -4,12 +4,16 @@ package splice.provider.codex.stream
 import splice.core.perf.TurnPerf
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
+import splice.provider.codex.CodeModeBody
 import splice.provider.codex.CodeModeRunInput
 import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexCodeModeTurn
 import splice.provider.codex.CodexCodeModeWire
 import splice.upstream.InterceptedRoundPost
 import splice.upstream.RedirectableRoundPost
+import splice.upstream.RoundBody
+import splice.upstream.RoundBodyInterceptor
+import splice.upstream.RoundBodyPost
 import splice.upstream.RoundInterceptor
 import splice.upstream.sse.WireSink
 
@@ -20,34 +24,47 @@ internal class CodeModeRoundInterceptor(
     private val wire: CodexCodeModeWire,
     private val controller: CodexCodeModeTurn,
     private val streams: CodeModeStreams,
-) : RoundInterceptor {
+) : RoundInterceptor, RoundBodyInterceptor {
     override fun resumesSource(): Boolean = streams.owns(turn)
 
-    override suspend fun intercept(bodyJson: String, sink: WireSink, postRound: InterceptedRoundPost): TurnOutcome {
-        val upstream = if (postRound is RedirectableRoundPost) {
-            CodeModeRedirectablePost(postRound, wire)
-        } else {
-            CodeModeUpstreamPost(postRound, wire)
-        }
-        return controller.run(CodeModeRunInput(turn, initialOuter, disableParallel, bodyJson, sink, upstream))
+    /** The round as the head holds it: a tree is read as that tree, so nothing renders or reparses it here. */
+    override suspend fun intercept(body: RoundBody, sink: WireSink, postRound: InterceptedRoundPost): TurnOutcome {
+        val upstream = CodeModeUpstreamPosts.of(postRound, wire)
+        return controller.run(CodeModeRunInput(turn, initialOuter, disableParallel, wire.body(body), sink, upstream))
     }
+
+    override suspend fun intercept(bodyJson: String, sink: WireSink, postRound: InterceptedRoundPost): TurnOutcome =
+        intercept(RoundBody.Text(bodyJson), sink, postRound)
 }
 
-/** The round post code mode is handed: what it posts leaves out the dialect's tool_search pairs, and
- *  the turn's perf record rides through, so code mode's local work counts on the turn it serves. */
-internal open class CodeModeUpstreamPost(
-    private val post: InterceptedRoundPost,
-    private val wire: CodexCodeModeWire,
-) : InterceptedRoundPost {
-    override val perf: TurnPerf? get() = post.perf
+/** The code-mode post for a round post: redirectable when the transport can redirect it, plain otherwise. */
+internal object CodeModeUpstreamPosts {
+    fun of(post: InterceptedRoundPost, wire: CodexCodeModeWire): CodeModeUpstreamPost =
+        if (post is RedirectableRoundPost) CodeModeRedirectablePost(post, wire) else CodeModeUpstreamPost(post, wire)
+}
 
-    override suspend fun invoke(bodyJson: String): TurnOutcome = post(wire.upstream(bodyJson))
+/** How a code-mode round goes upstream: what it posts leaves out the dialect's tool_search pairs, and the
+ *  turn's perf record rides through, so code mode's local work counts on the turn it serves. A post that
+ *  declares RoundBodyPost is handed the body as it is; any other is handed its text. */
+internal open class CodeModeUpstreamPost(
+    private val target: InterceptedRoundPost,
+    private val wire: CodexCodeModeWire,
+) {
+    val perf: TurnPerf? get() = target.perf
+
+    suspend operator fun invoke(body: CodeModeBody): TurnOutcome {
+        val posted = wire.upstream(body)
+        return if (target is RoundBodyPost) target.post(posted) else target(posted.text)
+    }
 }
 
 /** The same for a post the transport can redirect, so a script can park while its round streams on. */
 internal class CodeModeRedirectablePost(
-    private val post: RedirectableRoundPost,
+    private val target: RedirectableRoundPost,
     private val wire: CodexCodeModeWire,
-) : CodeModeUpstreamPost(post, wire), RedirectableRoundPost {
-    override suspend fun into(bodyJson: String, sink: WireSink): TurnOutcome = post.into(wire.upstream(bodyJson), sink)
+) : CodeModeUpstreamPost(target, wire) {
+    suspend fun into(body: CodeModeBody, sink: WireSink): TurnOutcome {
+        val posted = wire.upstream(body)
+        return if (target is RoundBodyPost) target.postInto(posted, sink) else target.into(posted.text, sink)
+    }
 }

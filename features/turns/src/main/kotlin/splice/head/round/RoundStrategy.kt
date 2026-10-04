@@ -17,6 +17,7 @@ import splice.upstream.InterceptedRoundPost
 import splice.upstream.ReanchorController
 import splice.upstream.RetryNotice
 import splice.upstream.RoundBody
+import splice.upstream.RoundBodyInterceptor
 import splice.upstream.RoundInterceptor
 import splice.upstream.ToolSearchController
 import splice.upstream.sse.WireSink
@@ -94,7 +95,7 @@ internal class RoundStrategy(
         }
     }
 
-    private fun observedPost(ordinary: InterceptedRoundPost, perf: TurnPerf?): InterceptedRoundPost =
+    private fun observedPost(ordinary: PostRound, perf: TurnPerf?): InterceptedRoundPost =
         ObservedRoundPost(
             postRoundToSink,
             ordinary,
@@ -102,10 +103,10 @@ internal class RoundStrategy(
             perf,
         )
 
-    /** With no interceptor this is the ordinary path and it never reads [body]'s text: the round goes
-     *  straight to the transport, which wants bytes, and ObservedRoundPost's observation is wired only
-     *  when an interceptor exists, so there is nothing for a pass-through to observe. An interceptor
-     *  composes text, so it gets text — materialised here, once, for that round only. */
+    /** Neither path renders [body]'s text. With no interceptor the round goes straight to the transport,
+     *  which wants bytes, and ObservedRoundPost's observation is wired only when an interceptor exists.
+     *  An interceptor that declares RoundBodyInterceptor reads the body as the head holds it; any other
+     *  composes text, so it gets text, rendered here for that round only. */
     private suspend fun intercept(
         body: RoundBody,
         sink: WireSink,
@@ -113,11 +114,12 @@ internal class RoundStrategy(
         perf: TurnPerf?,
     ): TurnOutcome {
         val interceptor = interception.interceptor ?: return refusingCustomCalls(direct(body))
-        return interceptor.intercept(
-            body.text,
-            sink,
-            observedPost(InterceptedRoundPost { posted -> direct(RoundBody.Text(posted)) }, perf),
-        )
+        val observed = observedPost(direct, perf)
+        return if (interceptor is RoundBodyInterceptor) {
+            interceptor.intercept(body, sink, observed)
+        } else {
+            interceptor.intercept(body.text, sink, observed)
+        }
     }
 
     /** The direct path cannot execute a custom tool call, so a round that returns one ends the turn.

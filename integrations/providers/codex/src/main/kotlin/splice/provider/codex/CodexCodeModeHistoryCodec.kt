@@ -9,11 +9,11 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.perf.InputDigest
 import splice.core.util.JsonScalars
-import splice.core.util.JsonWire
 import splice.dialect.responses.request.ResponsesCodeModeInput
 import splice.dialect.responses.request.ResponsesCodeModeProjection
 import splice.dialect.responses.request.ResponsesContextMessage
 import splice.provider.codex.state.CodeModeHistoryIndex
+import splice.upstream.RoundBody
 
 /**
  * Every persisted count, digest and offset is CONVERSATION-relative: the lite preamble (the leading
@@ -88,11 +88,13 @@ internal class CodexCodeModeHistoryCodec(private val json: Json) {
         return end <= items.size && items.subList(at, end).map(::phaseless) == continuity.map(::phaseless)
     }
 
+    /** A rewrite that changes nothing is [original] itself; one that changes an item is the new tree, which
+     *  writes the bytes its text did (JsonWire.write and JsonWire.string walk the same tree). */
     fun rebuilt(
         root: JsonObject,
         conversation: CodeModeConversation,
         body: ResponsesCodeModeInput,
-        originalBody: String? = null,
+        original: CodeModeBody? = null,
     ): CodeModeRewrite {
         val offset = conversation.preamble.size
         val joined = ResponsesCodeModeInput(
@@ -100,20 +102,15 @@ internal class CodexCodeModeHistoryCodec(private val json: Json) {
             body.replayItems.map { it.copy(logicalOffset = it.logicalOffset + offset) },
         )
         val rebuilt = projection.rebuild(joined)
-        val original = root[FIELD_INPUT] as? JsonArray
+        val input = root[FIELD_INPUT] as? JsonArray
         // Only the same borrowed items in the same order earn the original transport spelling.
-        val unchanged = originalBody != null && original != null && rebuilt.size == original.size &&
-            rebuilt.indices.all { rebuilt[it] === original[it] }
-        return CodeModeRewrite(
-            if (unchanged) originalBody else JsonWire.string(JsonObject(root + (FIELD_INPUT to rebuilt))),
-        )
+        val unchanged = original != null && input != null && rebuilt.size == input.size &&
+            rebuilt.indices.all { rebuilt[it] === input[it] }
+        if (unchanged) return CodeModeRewrite(original)
+        return CodeModeRewrite(CodeModeBody(RoundBody.Tree(JsonObject(root + (FIELD_INPUT to rebuilt))), json))
     }
 
-    fun root(bodyJson: String): Pair<JsonObject, JsonArray>? {
-        val root = json.parseToJsonElement(bodyJson) as? JsonObject ?: return null
-        val input = root[FIELD_INPUT] as? JsonArray ?: return null
-        return root to input
-    }
+    fun root(bodyJson: String): Pair<JsonObject, JsonArray>? = CodeModeBody(RoundBody.Text(bodyJson), json).request
 
     fun customOutput(record: CodeModeRecord): JsonObject = buildJsonObject {
         put(FIELD_TYPE, TYPE_CUSTOM_OUTPUT)
@@ -144,6 +141,21 @@ internal data class CodeModeConversation(
     val preamble: List<JsonElement>,
     val body: ResponsesCodeModeInput,
 )
+
+/** One round's request as code mode reads it: [round] is what it posts, and [request] is what every reader
+ *  of the round reads. An unchanged history posts [round] as it arrived. */
+internal class CodeModeBody(val round: RoundBody, json: Json) {
+    /** The body parsed once: its root and input array, or null when it is not a Responses request. A tree
+     *  is read as itself; only text is parsed. */
+    val request: Pair<JsonObject, JsonArray>? = run {
+        val root = when (round) {
+            is RoundBody.Tree -> round.element
+            is RoundBody.Text -> json.parseToJsonElement(round.text)
+        } as? JsonObject
+        val input = root?.get(FIELD_INPUT) as? JsonArray
+        if (root != null && input != null) root to input else null
+    }
+}
 
 internal const val CODE_MODE_FIELD_CALL_ID = "call_id"
 internal const val CODE_MODE_FIELD_TYPE = "type"

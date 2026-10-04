@@ -11,6 +11,7 @@ import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.util.Cancellables
+import splice.provider.codex.CodeModeBody
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModePersistenceException
 import splice.provider.codex.CodeModeRecord
@@ -18,7 +19,6 @@ import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexCodeModeRegistry
 import splice.provider.codex.CodexCodeModeWire
 import splice.provider.codex.state.CodeModeTurnIdentity
-import splice.upstream.RedirectableRoundPost
 import splice.upstream.TurnEnd
 import splice.upstream.sse.CustomToolSource
 import splice.upstream.sse.WireSink
@@ -54,7 +54,7 @@ internal class CodeModeLiveRound(
     @Volatile var localFailure: TurnOutcome.Failure? = null
         private set
 
-    fun start(scope: CoroutineScope, post: RedirectableRoundPost, body: String, end: TurnEnd) {
+    fun start(scope: CoroutineScope, post: CodeModeRedirectablePost, body: CodeModeBody, end: TurnEnd) {
         check(finished == null)
         finished = scope.async(start = CoroutineStart.UNDISPATCHED) {
             switching.ownedBy(this)

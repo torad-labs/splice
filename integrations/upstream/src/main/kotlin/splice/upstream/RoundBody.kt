@@ -33,8 +33,9 @@ public sealed class RoundBody {
     /** The exact number of bytes [bytes] returns, computed once without encoding to an array. */
     public abstract fun byteSize(): Long
 
-    /** What a runner holds: the request tree it assembled. */
-    public class Tree(private val element: JsonElement) : RoundBody() {
+    /** What a runner holds: the request tree it assembled. [element] is readable so an interceptor
+     *  that reads the request reads this tree instead of parsing its text back into another one. */
+    public class Tree(public val element: JsonElement) : RoundBody() {
         private val size: Long by lazy { JsonWire.byteSize(element) }
         override val text: String by lazy { JsonWire.string(element) }
         override fun bytes(): ByteArray = ExactBytes(size).also { JsonWire.write(element, it) }.filled()

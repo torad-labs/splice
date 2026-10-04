@@ -25,16 +25,16 @@ internal class CodexCodeModeResume(
     suspend fun active(
         record: CodeModeRecord,
         context: CodeModeRunContext,
-        bodyJson: String,
+        body: CodeModeBody,
     ): TurnOutcome {
         val borrowed = registry.retainedCells.acquire(record)
         try {
             val source = driver.streams.find(record)
             val reclaimed = borrowed == null && record.phase == CodeModePhase.LOST
             return if (reclaimed && source?.sourceInterrupted != true) {
-                lost(record, context, bodyJson)
+                lost(record, context, body)
             } else {
-                retained(record, context, bodyJson)
+                retained(record, context, body)
             }
         } finally {
             if (borrowed != null) registry.retainedCells.release(record)
@@ -44,13 +44,13 @@ internal class CodexCodeModeResume(
     private suspend fun retained(
         record: CodeModeRecord,
         context: CodeModeRunContext,
-        bodyJson: String,
+        body: CodeModeBody,
     ): TurnOutcome {
         val source = driver.streams.find(record)
         record.error?.let {
             return when {
                 source?.sourceInterrupted == true -> source.outcome()
-                CodeModeReaderTermination.ended(source) -> lost(record, context, bodyJson)
+                CodeModeReaderTermination.ended(source) -> lost(record, context, body)
                 else -> failure(it)
             }
         }
@@ -61,7 +61,7 @@ internal class CodexCodeModeResume(
                 val pending = record.visiblePending().filter { it.clientId !in record.results }
                 if (pending.isNotEmpty()) return machine.emit(record, pending, attached.sink)
             }
-            fresh(record, attached, bodyJson)
+            fresh(record, attached, body)
         } finally {
             driver.streams.endStep(record)
         }
@@ -73,7 +73,7 @@ internal class CodexCodeModeResume(
     suspend fun lost(
         record: CodeModeRecord,
         context: CodeModeRunContext,
-        bodyJson: String,
+        body: CodeModeBody,
     ): TurnOutcome {
         val detail = record.error ?: "code-mode process state was lost; source was not rerun"
         val supplied = suppliedResults(record, context.turn, mode = CodeModeResultMode.INTERRUPT)
@@ -83,16 +83,16 @@ internal class CodexCodeModeResume(
         return if (interrupted is TurnOutcome.Failure) {
             interrupted
         } else {
-            driver.finishGenerated(record, context, bodyJson)
+            driver.finishGenerated(record, context, body)
         }
     }
 
     private suspend fun fresh(
         record: CodeModeRecord,
         context: CodeModeRunContext,
-        bodyJson: String,
+        body: CodeModeBody,
     ): TurnOutcome {
-        val extra = wire.extraContent(bodyJson, record, candidateMedia(record, context.turn))
+        val extra = wire.extraContent(body, record, candidateMedia(record, context.turn))
         val hasExtraContent = extra != CodeModeExtra.NONE
         val mode = if (hasExtraContent) CodeModeResultMode.INTERRUPT else CodeModeResultMode.RESUME
         val supplied = suppliedResults(record, context.turn, mode)
@@ -100,23 +100,23 @@ internal class CodexCodeModeResume(
         registry.acceptResults(record, context.digest, supplied.results, context.turn.toolMedia)
         record.pending.firstOrNull { it.name !in context.turn.tools }?.let { pending ->
             val message = "code-mode tool '${pending.name}' is no longer in the current tool catalog"
-            return reject(record, context, bodyJson, hasExtraContent, message)
+            return reject(record, context, body, hasExtraContent, message)
         }
-        return accept(record, context, bodyJson, extra, supplied.results)
+        return accept(record, context, body, extra, supplied.results)
     }
 
     private suspend fun accept(
         record: CodeModeRecord,
         context: CodeModeRunContext,
-        bodyJson: String,
+        body: CodeModeBody,
         extra: CodeModeExtra,
         supplied: Map<String, CodeModeResult>,
     ): TurnOutcome {
         val source = driver.streams.find(record)
         val advanced = advance(record, context, extra, supplied)
-        if (record.phase == CodeModePhase.COMPLETED) return driver.finishGenerated(record, context, bodyJson)
+        if (record.phase == CodeModePhase.COMPLETED) return driver.finishGenerated(record, context, body)
         if (record.phase != CodeModePhase.LOST || advanced !is TurnOutcome.Failure) return advanced
-        return if (CodeModeReaderTermination.ended(source)) lost(record, context, bodyJson) else advanced
+        return if (CodeModeReaderTermination.ended(source)) lost(record, context, body) else advanced
     }
 
     private suspend fun advance(
@@ -148,7 +148,7 @@ internal class CodexCodeModeResume(
     private suspend fun reject(
         record: CodeModeRecord,
         context: CodeModeRunContext,
-        bodyJson: String,
+        body: CodeModeBody,
         hasExtraContent: Boolean,
         message: String,
     ): TurnOutcome {
@@ -158,7 +158,7 @@ internal class CodexCodeModeResume(
         return if (interrupted is TurnOutcome.Failure) {
             interrupted
         } else {
-            driver.finishGenerated(record, context, bodyJson)
+            driver.finishGenerated(record, context, body)
         }
     }
 

@@ -1,5 +1,5 @@
 // NEW: one code-mode round's allocation on a history of about 1 MB, per stage and whole, with the history
-// unchanged and with a completed record rewriting it. Measured before deciding the interceptor contract.
+// unchanged and with a completed record rewriting it, pinned so a second parse or a render shows up red.
 package splice.provider.codex
 
 import com.sun.management.ThreadMXBean
@@ -10,15 +10,35 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestReporter
+import splice.core.turn.TurnOutcome
 import splice.core.util.JsonWire
 import splice.provider.codex.state.CodeModeTurnIdentity
+import splice.upstream.InterceptedRoundPost
 import splice.upstream.RoundBody
+import splice.upstream.RoundBodyInterceptor
+import splice.upstream.RoundBodyPost
 import splice.upstream.codemode.CodeModeStep
+import splice.upstream.sse.WireSink
 import java.lang.management.ManagementFactory
 
 private const val WARMUPS = 6
 private const val PREFIX_ITEMS = 420
 private const val START = """{"role":"user","content":"start"}"""
+
+// Whole-round budgets in percent of the body (911 KB). Before the tree contract an unchanged text round allocated
+// 595 percent and a rewritten one 1,247; a tree was rendered first (202 more). After it: 231 and 659 from text,
+// 9 and 435 from a tree. Each budget sits under the after figure plus one more parse of the body (121 percent).
+private const val UNCHANGED_TEXT_PERCENT = 260
+private const val UNCHANGED_TREE_PERCENT = 50
+private const val REWRITTEN_TEXT_PERCENT = 750
+private const val REWRITTEN_TREE_PERCENT = 500
+
+// The rewrite itself, on a tree: 429 percent after, 788 before (it parsed and rendered the body).
+private const val REWRITE_STAGE_PERCENT = 500
+
+// A stage reads the round's one parse. Parsing the body again costs about one body (the text parse, measured
+// here), so a quarter of a body rejects a stage that parses and passes one that walks the parsed tree.
+private const val STAGE_PERCENT = 25
 
 internal class CodeModeRoundAllocationTest : CodeModeBridgeTestSupport() {
     private val bean = ManagementFactory.getThreadMXBean() as ThreadMXBean
@@ -50,6 +70,18 @@ internal class CodeModeRoundAllocationTest : CodeModeBridgeTestSupport() {
 
     private val plain: String = body(START)
 
+    /** The turn's post as the head builds it: a tree goes on as a tree, so the post renders nothing. */
+    private val discarding = object : InterceptedRoundPost, RoundBodyPost {
+        override suspend fun invoke(bodyJson: String): TurnOutcome = completedOutcome()
+        override suspend fun post(body: RoundBody): TurnOutcome = completedOutcome()
+        override suspend fun postInto(body: RoundBody, sink: WireSink): TurnOutcome = completedOutcome()
+    }
+
+    private inline fun stage(name: String, reporter: TestReporter, budget: Long, action: () -> Unit) {
+        val allocated = measure(name, reporter, action)
+        assertTrue(allocated < budget, "$name allocated $allocated; a stage's budget is $budget")
+    }
+
     @Test
     fun `each stage of a code-mode round, on a 1 MB history`(reporter: TestReporter) = runTest {
         val size = JsonWire.byteSize(plain)
@@ -57,26 +89,40 @@ internal class CodeModeRoundAllocationTest : CodeModeBridgeTestSupport() {
         assertTrue(size in 900_000L..1_300_000L, "fixture is $size bytes")
         val wire = CodexCodeModeWire(Json) {}
         val tree = Json.parseToJsonElement(plain).jsonObject
+        val body = wire.body(RoundBody.Tree(tree))
         val identity = CodeModeTurnIdentity()
+        val budget = size * STAGE_PERCENT / 100
+
+        val parse = measure("parse_text", reporter) { val _ = wire.body(RoundBody.Text(plain)) }
+        assertTrue(parse >= budget, "the stage budget must reject a parse; one allocated $parse")
+        stage("identity_digest_tree", reporter, budget) { val _ = identity.digest(RoundBody.Tree(tree)) }
+        stage("canonicalize_unchanged", reporter, budget) { val _ = wire.canonicalize(body, emptyList()) }
+        stage("callback_ids", reporter, budget) { val _ = wire.callbackIds(body) }
+        stage("upstream", reporter, budget) { val _ = wire.upstream(body) }
+
+        // References: a text round's digest, the render the head used to do, and the bytes the transport keeps.
+        measure("identity_digest_text", reporter) { val _ = identity.digest(plain) }
         measure("render_tree_to_text", reporter) { val _ = JsonWire.string(tree) }
-        measure("identity_digest", reporter) { val _ = identity.digest(plain) }
-        measure("canonicalize_unchanged", reporter) { val _ = wire.canonicalize(plain, emptyList()) }
-        measure("callback_ids", reporter) { val _ = wire.callbackIds(plain) }
-        measure("upstream", reporter) { val _ = wire.upstream(plain) }
-        // What RequestBody.bytes keeps for the body, the way each case reaches the transport.
         measure("transport_text_bytes", reporter) { val _ = RoundBody.Text(plain).bytes() }
         measure("transport_tree_bytes", reporter) { val _ = RoundBody.Tree(tree).bytes() }
     }
 
-    /** No record, so canonicalize keeps the original text. */
+    /** No record, so canonicalize keeps the original body. The head hands code mode the tree it built;
+     *  before the tree contract it rendered that tree to text first, and code mode parsed it four times. */
     @Test
     fun `a whole round whose history is unchanged`(reporter: TestReporter) = runTest {
         val idle = bridge(ScriptedRuntime(ArrayDeque()))
+        val size = JsonWire.byteSize(plain)
+        val tree = Json.parseToJsonElement(plain).jsonObject
         try {
-            measure("round_unchanged", reporter) {
-                val _ = idle.interceptor(turn(), disableParallel = false)
-                    .intercept(plain, RecordingSink()) { completedOutcome() }
+            val text = measure("round_unchanged", reporter) {
+                val _ = idle.interceptor(turn(), disableParallel = false).intercept(plain, RecordingSink(), discarding)
             }
+            val asTree = measure("round_unchanged_tree", reporter) {
+                val _ = treeEntry(idle).intercept(RoundBody.Tree(tree), RecordingSink(), discarding)
+            }
+            assertTrue(text < size * UNCHANGED_TEXT_PERCENT / 100, "unchanged text round: $text for $size bytes")
+            assertTrue(asTree < size * UNCHANGED_TREE_PERCENT / 100, "unchanged tree round: $asTree for $size bytes")
         } finally {
             idle.onHeadStop()
         }
@@ -92,17 +138,32 @@ internal class CodeModeRoundAllocationTest : CodeModeBridgeTestSupport() {
         try {
             val next = completeOneScript(manager)
             val wire = CodexCodeModeWire(Json) {}
-            val rewritten = checkNotNull(wire.canonicalize(next, completed(manager)).bodyJson)
+            val size = JsonWire.byteSize(next)
+            val tree = Json.parseToJsonElement(next).jsonObject
+            val body = wire.body(RoundBody.Tree(tree))
+            val records = completed(manager)
+            val rewritten = checkNotNull(wire.canonicalize(body, records).bodyJson)
             assertTrue(rewritten != next, "the fixture must exercise a rewrite")
-            measure("canonicalize_rewritten", reporter) { val _ = wire.canonicalize(next, completed(manager)) }
-            measure("round_rewritten", reporter) {
-                val _ = manager.interceptor(turn(), disableParallel = false)
-                    .intercept(next, RecordingSink()) { completedOutcome() }
+            stage("canonicalize_rewritten", reporter, size * REWRITE_STAGE_PERCENT / 100) {
+                val _ = wire.canonicalize(body, records)
             }
+            val text = measure("round_rewritten", reporter) {
+                val _ = manager.interceptor(turn(), disableParallel = false)
+                    .intercept(next, RecordingSink(), discarding)
+            }
+            val asTree = measure("round_rewritten_tree", reporter) {
+                val _ = treeEntry(manager).intercept(RoundBody.Tree(tree), RecordingSink(), discarding)
+            }
+            assertTrue(text < size * REWRITTEN_TEXT_PERCENT / 100, "rewritten text round: $text for $size bytes")
+            assertTrue(asTree < size * REWRITTEN_TREE_PERCENT / 100, "rewritten tree round: $asTree for $size bytes")
         } finally {
             manager.onHeadStop()
         }
     }
+
+    /** The bridge's interceptor through the entry the head uses for a round it holds as a tree. */
+    private fun treeEntry(manager: CodexCodeModeBridge): RoundBodyInterceptor =
+        manager.interceptor(turn(), disableParallel = false) as RoundBodyInterceptor
 
     /** Runs one script to completion, and returns the request that follows it. */
     private suspend fun completeOneScript(manager: CodexCodeModeBridge): String {

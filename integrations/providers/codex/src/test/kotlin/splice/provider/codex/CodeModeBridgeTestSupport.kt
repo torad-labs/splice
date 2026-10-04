@@ -18,7 +18,11 @@ import splice.core.turn.Usage
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.dialect.responses.request.ResponsesToolResultMedia
+import splice.provider.codex.stream.CodeModeUpstreamPost
+import splice.provider.codex.stream.CodeModeUpstreamPosts
 import splice.upstream.BuiltTurn
+import splice.upstream.InterceptedRoundPost
+import splice.upstream.RoundBody
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
@@ -178,6 +182,14 @@ abstract class CodeModeBridgeTestSupport {
         TurnOutcome.Success(false, false, Usage(), customCalls = listOf(outer(callId, name = name)))
 
     protected fun completedOutcome() = TurnOutcome.Success(false, false, Usage(), messageClosed = true)
+
+    /** A request held as text, as code mode reads it: parsed once. */
+    internal fun codeModeBody(text: String): CodeModeBody =
+        CodexCodeModeWire(Json, LogSink {}).body(RoundBody.Text(text))
+
+    /** The post code mode is handed for [post], chosen as the interceptor chooses it. */
+    internal fun upstreamPost(post: InterceptedRoundPost): CodeModeUpstreamPost =
+        CodeModeUpstreamPosts.of(post, CodexCodeModeWire(Json, LogSink {}))
 
     protected fun requestWithCall(id: String) =
         """{"input":[{"role":"developer","content":"s"},{"type":"function_call","call_id":"$id","name":"Read","arguments":"{}"}]}"""

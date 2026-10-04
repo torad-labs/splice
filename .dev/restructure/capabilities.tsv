@@ -1,4 +1,5 @@
 source	sha256	disposition	destination	reason
+integrations/providers/codex/src/test/kotlin/splice/provider/codex/CodeModeRoundAllocationTest.kt	8e794081c64def78047d879049e9e06a9b4130ab603b293f0ec47c3ddf9a312d	created		Measures one code-mode round's allocation per stage and whole on a 1 MB history, unchanged and rewritten
 integrations/upstream/src/test/kotlin/splice/upstream/transport/RequestBodyAllocationTest.kt	35d318a71402423cffb855479c97917af2630f0242ce3f7be1d4f4082b4c6e61	created		Pins the transport's kept request bytes at one body copy for tree and text bodies against the old buffered encode
 app/src/main/kotlin/splice/app/sources/PerfCachedSelection.kt	9e5637684b67a9dbc74583dfea1f33765c42eea208ec4576cb4612dce795ba5b	created		Replays uncached source gaps in physical order so wider windows recover cold skipped input
 app/src/main/kotlin/splice/app/sources/PerfSkippedRange.kt	ac65ed98ac67b5a525e4a58c5d2299e34aa16ea220f4122d1de8aea2daa1ea9e	created		Byte charged pre window ranges retain bounded raw newest and counter anchors without a second disk format

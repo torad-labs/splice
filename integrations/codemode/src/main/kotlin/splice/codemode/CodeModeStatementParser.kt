@@ -176,6 +176,12 @@ internal class CodeModeStatementParser(private val syntax: CodeModeStatementSynt
         return StatementInput.Program(text, bindings, CodeModeStatementCompiler(text, body).compile())
     }
 
+    /**
+     * The tokens of [text]. lexify() also returns before the stream is full, after every token that can open a
+     * regular expression (only a parser can decide one), so the stream grows only when it is full, as GraalJS's
+     * own Parser grows it. A pass that adds no token, or more tokens than [text] has characters, ends the listing:
+     * a shorter listing certifies fewer boundaries, and the parse of the completed source decides the rest.
+     */
     private fun tokens(text: String): List<Long> {
         val stream = TokenStream()
         val lexer = Lexer(
@@ -189,11 +195,15 @@ internal class CodeModeStatementParser(private val syntax: CodeModeStatementSynt
             true,
         )
         try {
-            while (true) {
+            var listed = 0
+            do {
+                if (stream.isFull) stream.grow()
+                val before = listed
                 lexer.lexify()
-                if (!stream.isEmpty && Token.descType(stream.get(stream.last())) == TokenType.EOF) break
-                stream.grow()
-            }
+                listed = stream.last() + 1
+                val open = listed in before + 1..text.length + 1 &&
+                    Token.descType(stream.get(stream.last())) != TokenType.EOF
+            } while (open)
         } catch (_: ParserException) {
             // A partial string or template can follow already closed statements.
         }

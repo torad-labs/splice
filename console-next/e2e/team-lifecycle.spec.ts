@@ -1,6 +1,6 @@
 // NEW: V4-444 — real team composition, handoff, economics, unbind and unopened peers.
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import type { TeamEconomicsPayload, TeamRow } from '../src/types/teams';
+import type { TeamEconomicsPayload, TeamRow, TeamsPayload } from '../src/types/teams';
 import type { SessionsPayload } from '../src/types/sessions';
 import { env, open, read } from './support';
 import { sendHandOff, STACK } from './stack';
@@ -17,6 +17,19 @@ test('a team created through the console binds real sessions, joins handoff and 
   const peer = sessions.sessions.find((row) => row.session_id === STACK.peer.id);
   expect(sender?.name).not.toBeNull();
   expect(peer?.name).not.toBeNull();
+  // Earlier journeys may bind these same synthetic seats. The daemon deliberately selects the first
+  // unarchived binding, so release only this fixture's prior seats before testing the new team.
+  const existing = await read<TeamsPayload>(page, '/api/teams');
+  for (const prior of existing.teams.filter(team => !team.archived)) {
+    const bindings = Object.fromEntries(prior.slots
+      .filter(slot => slot.session === STACK.sender.id || slot.session === STACK.peer.id)
+      .map(slot => [slot.id, null]));
+    if (Object.keys(bindings).length === 0) continue;
+    const released = await page.request.put(env('CONSOLE_E2E_BASE') + '/api/teams/' + encodeURIComponent(prior.id) + '/sessions', {
+      headers: { Authorization: 'Bearer ' + env('CONSOLE_E2E_KEY') }, data: { bindings },
+    });
+    expect(released.ok(), 'synthetic fixture bindings must be released').toBe(true);
+  }
   await page.getByRole('button', { name: 'New team', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('textbox', { name: 'Name', exact: true }).fill('Synthetic handoff team');

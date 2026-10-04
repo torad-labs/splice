@@ -47,10 +47,10 @@ describe('a failed turn\'s sentence', () => {
   };
   test('is printed whole, and each turn prints the one its own read holds, whichever read answered last', () => {
     const b = page(<KeptTabs row={row('b')} plan="Solo" tab={null} />, seed);
-    expect(b).toContain('<p class="failure-sentence">the connection for b closed mid-request; retry</p>');
+    expect(b).toContain('<p class="failure-sentence">The connection for b closed mid-request; retry</p>');
     expect(b).not.toContain('the connection for a');
     const a = page(<KeptTabs row={row('a')} plan="Solo" tab={null} />, seed);
-    expect(a).toContain('the connection for a closed mid-request; retry');
+    expect(a).toContain('The connection for a closed mid-request; retry');
     expect(a).not.toContain('the connection for b');
   });
   test('a lowercase rate-limit sentence starts as a sentence without losing the recorded reason', () => {

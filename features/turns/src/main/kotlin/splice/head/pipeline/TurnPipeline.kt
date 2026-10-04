@@ -15,6 +15,7 @@ import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
 import splice.head.compact.CompactStats
+import splice.head.turn.OutcomeSentences
 import splice.head.usage.OutputClamp
 import splice.head.wire.TurnTerminal
 
@@ -60,7 +61,12 @@ internal class TurnPipeline(
                 // have left most failures still quoting a vendor's JSON at the client.
                 val spoken = failures.spoken(outcome.type, outcome.message)
                 if (outcome.deterministic) {
-                    emitter.emitExplained(EXPLAINED_PREFIX + spoken, outcome.salvagedUsage)
+                    val ending = if (outcome.providerReported) {
+                        EXPLAINED_PREFIX + spoken
+                    } else {
+                        OutcomeSentences.of(outcome) + ".\n\n" + EXPLAINED_PREFIX + spoken
+                    }
+                    emitter.emitExplained(ending, outcome.salvagedUsage)
                 } else {
                     // V4-81: the wire type is the EMITTER's decision now (SseEmitter.emitError
                     // holds the pre-content rule and the counter it needs), so the pipeline passes

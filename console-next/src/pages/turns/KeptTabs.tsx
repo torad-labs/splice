@@ -74,9 +74,9 @@ function Failure({ row }: { row: TurnRow }) {
   if (isClean(row.outcome) || row.outcome === '?') return null;
   if (row.turn !== undefined && kept.data === undefined && !kept.isError) return <p className="failure-sentence" role="status">{P.readingFailure}</p>;
   const sentence = kept.data === undefined || 'gone' in kept.data ? null : (kept.data.read.turn.failure_sentence ?? null);
-  const absent = isStopped(row.outcome) ? P.stoppedNoReason : P.failureNoReason(outcomeOf(row.outcome).word);
+  const absent = isStopped(row.outcome) ? P.stoppedNoReason : P.failureNoReason(outcomeOf(row.outcome, row.refused_runtime_port, row.cause).word);
   const spoken = sentence === null ? null : spokenFailure(sentence);
-  const reason = row.outcome === 'error:rate-limited' ? spoken?.replace(/^\s*[a-z]/, initial => initial.toUpperCase()) : spoken;
+  const reason = spoken?.replace(/^\s*[a-z]/, initial => initial.toUpperCase());
   const problem = kept.isError ? failureText(kept.error) : kept.data !== undefined && 'gone' in kept.data ? kept.data.gone : null;
   return <p className="failure-sentence">{reason?.trim() ? reason : absent}{problem === null ? '' : ` ${problem}`}</p>;
 }

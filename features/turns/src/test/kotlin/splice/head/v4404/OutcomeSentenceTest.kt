@@ -8,6 +8,7 @@ package splice.head.v4404
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withTimeout
@@ -35,8 +36,11 @@ import splice.core.perf.TurnPerf
 import splice.core.storage.ActivityDays
 import splice.core.turn.CONN_RESET_OUTCOME
 import splice.core.turn.ErrorType
+import splice.core.turn.FailureCause
+import splice.core.turn.FailurePhase
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
@@ -57,6 +61,7 @@ import splice.head.turn.CancellationSeal
 import splice.head.turn.OutcomeSentences
 import splice.head.turn.TurnDrive
 import splice.head.turn.TurnFailures
+import splice.head.turn.TurnFinish
 import splice.head.turn.TurnKnownEnd
 import splice.head.turn.TurnTelemetry
 import splice.head.turn.TurnUsageStamp
@@ -69,6 +74,7 @@ import splice.head.wire.TurnTerminal
 import splice.upstream.Provider
 import splice.upstream.ProviderTuning
 import splice.upstream.Ticker
+import splice.upstream.TurnSignals
 import splice.upstream.retry.InflightGate
 import splice.upstream.retry.LiveLimit
 import splice.upstream.retry.TurnWatchdog
@@ -183,6 +189,138 @@ class OutcomeSentenceTest {
             val quoted = sentence.any { it in "/\\{}<>\"`" } || "://" in sentence || "~" in sentence
             assertTrue(!quoted, "$tag: `$sentence` quotes a path or bytes")
         }
+    }
+
+    @Test
+    fun `a legacy typed tag does not invent provider origin`() {
+        for (type in ErrorType.entries) {
+            val sentence = checkNotNull(OutcomeSentences.of(OutcomeTags.failure(type)))
+            assertTrue("does not say whether splice or the provider" in sentence, sentence)
+        }
+    }
+
+    @Test
+    fun `local and provider invalid requests keep their origin in the trace and local terminal`(
+        @TempDir tmp: Path,
+    ) = runBlocking {
+        val localSentence = "splice could not complete this session's code-mode step; " +
+            "start a new session, and if it repeats read the daemon log"
+        val providerSentence = "the provider rejected the request as invalid, so resending it unchanged fails the same way; " +
+            "change the request before retrying"
+        for (reported in listOf(false, true)) {
+            val rig = Rig("origin-$reported", tmp)
+            val deps = headDeps(tmp.resolve("stores-$reported"))
+            var explained: String? = null
+            val terminal = object : TurnTerminal by RecordingTerminal() {
+                override suspend fun emitExplained(message: String, usage: Usage) {
+                    explained = message
+                }
+            }
+            val drive = rig.drive().copy(emitter = terminal)
+            val failure = TurnOutcome.Failure(
+                message = "code-mode runtime failed: IllegalStateException at SyntheticCell.kt:83; " +
+                    "accepted results=0; source was not rerun",
+                cause = if (reported) FailureCause.UPSTREAM_STATUS_4XX else FailureCause.CODE_MODE_PROTOCOL,
+                phase = FailurePhase.TERMINAL,
+                providerReported = reported,
+                deterministic = !reported,
+                permanent = true,
+            )
+            assertEquals(ErrorType.INVALID_REQUEST, failure.type)
+            val finish = TurnFinish(
+                ElapsedClock { 5L },
+                rig.log,
+                TurnUsageStamp(deps.stores.usageStore, rig.log, rig.telemetry),
+                HeadHealthCounters(),
+                rig.telemetry,
+            )
+            try {
+                finish.finishTurn(drive, failure)
+            } finally {
+                drive.slot.release()
+            }
+            assertEquals(if (reported) providerSentence else localSentence, sentenceOf(rig.turnRecord()))
+            if (!reported) {
+                assertTrue(checkNotNull(explained).startsWith(localSentence + ".\n\n"), explained)
+                assertTrue("[SPLICE-INVALID-REQUEST]" in checkNotNull(explained))
+                assertTrue(failure.message in checkNotNull(explained))
+            }
+        }
+    }
+
+    @Test
+    fun `a translator parsed provider invalid request retains provider origin`(@TempDir tmp: Path) = runBlocking {
+        val rig = Rig("parsed-provider", tmp)
+        val event = Json.parseToJsonElement(
+            """{"type":"response.failed","response":{"error":{"code":"request_too_large","message":"prompt is too long"}}}""",
+        ).jsonObject
+        val outcome = provider().streamTranslator(
+            rig.meta,
+            TurnSignals(watchdogFired = { null }, clientGone = { false }),
+        ).driveTurn(flowOf(event), RecordingTerminal())
+        val failure = outcome as? TurnOutcome.Failure ?: error("provider error must fail")
+        assertTrue(failure.providerReported)
+        assertEquals(ErrorType.INVALID_REQUEST, failure.type)
+        assertTrue(OutcomeSentences.of(failure).startsWith("the provider rejected"))
+    }
+
+    @Test
+    fun `every local cause fits its whole human action before a clipped card diagnostic`() {
+        for (cause in FailureCause.entries) {
+            val failure = TurnOutcome.Failure("synthetic", cause, FailurePhase.TERMINAL)
+            val sentence = OutcomeSentences.of(failure)
+            assertTrue(sentence.startsWith("splice "), "$cause: $sentence")
+            assertTrue("; " in sentence, "$cause: $sentence")
+            assertTrue(sentence.length < 150, "$cause: the card would clip its action")
+        }
+    }
+
+    @Test
+    fun `a typed local finish preserves a more specific recorded sentence`(@TempDir tmp: Path) = runBlocking {
+        val rig = Rig("specific-origin", tmp)
+        val deps = headDeps(tmp.resolve("stores"))
+        val drive = rig.drive()
+        val sentence = "splice could not save this step; free space and start a new session"
+        rig.trace.failureSentence(sentence)
+        try {
+            TurnFinish(
+                ElapsedClock { 5L },
+                rig.log,
+                TurnUsageStamp(deps.stores.usageStore, rig.log, rig.telemetry),
+                HeadHealthCounters(),
+                rig.telemetry,
+            ).finishTurn(
+                drive,
+                TurnOutcome.Failure("synthetic", FailureCause.CODE_MODE_PROTOCOL, FailurePhase.TERMINAL),
+            )
+        } finally {
+            drive.slot.release()
+        }
+        assertEquals(sentence, sentenceOf(rig.turnRecord()))
+    }
+
+    @Test
+    fun `provider content refusals keep the cause and provider words without calling them an outage`() {
+        val cyber = TurnOutcome.Failure(
+            "upstream: cyber_policy this request was flagged. Try rephrasing.",
+            FailureCause.CONTENT_FILTERED,
+            FailurePhase.MID_OUTPUT,
+            providerReported = true,
+            permanent = true,
+        )
+        assertEquals(
+            "OpenAI refused the request under its cybersecurity check. This request was flagged. Try rephrasing.",
+            OutcomeSentences.of(cyber),
+        )
+        val generic = cyber.copy(message = "upstream: generation stopped by content filter")
+        val sentence = OutcomeSentences.of(generic)
+        assertTrue("content check" in sentence, sentence)
+        assertTrue("cybersecurity" !in sentence, sentence)
+        for (failure in listOf(cyber, generic, cyber.copy(cause = FailureCause.MODEL_REFUSED))) {
+            val words = OutcomeSentences.of(failure)
+            assertTrue("failed on its side" !in words && "retry in a moment" !in words, words)
+        }
+        assertTrue(OutcomeSentences.of(cyber.copy(providerReported = false)).startsWith("splice "))
     }
 
     // ── the trace it closes ───────────────────────────────────────────────────────────────────

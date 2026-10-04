@@ -134,7 +134,7 @@ test('a progress timeout explains provider silence and draws the missing wait wi
   await expect(page.locator('.turn.failed')).toHaveCount(1);
   await expect(page.locator('.turn .state')).toHaveText('Ended by splice');
   await page.locator('.turn h3 a').click();
-  await expect(page.locator('.failure-sentence')).toHaveText('splice gave up after 15m 0s without progress from the provider. Retry the request.');
+  await expect(page.locator('.failure-sentence')).toHaveText('Splice gave up after 15m 0s without progress from the provider. Retry the request.');
   await expect(page.locator('.legend > div').filter({ hasText: 'Unrecorded time' }).locator('.v')).toHaveText('15m 3s');
   await expect(page.locator('.legend > div').filter({ hasText: 'Model thinking' }).locator('.v')).toHaveText('12.0 s');
   await expect(page.locator('.legend')).not.toContainText('Streaming');
@@ -150,6 +150,74 @@ test('a progress timeout explains provider silence and draws the missing wait wi
   await expect(page.locator('.attempts pre')).toHaveText(answer);
   await assertHealthy(page, faults);
 });
+
+for (const [origin, sentence] of [
+  ['splice', "splice could not complete this session's code-mode step; start a new session, and if it repeats read the daemon log"],
+  ['provider', 'the provider rejected the request as invalid, so resending it unchanged fails the same way; change the request before retrying'],
+] as const) {
+  test(`an invalid request shows the recorded ${origin} origin rather than guessing from its type`, async ({ page }) => {
+    const at = Date.now();
+    const row = { ts: at, model: STACK.soloModel, outcome: 'failure:invalid_request_error', compact: false,
+      total: 20, session: null, account: null, cache_cold: null, turn: 'synthetic-origin',
+      session_id: null, response_message_id: null };
+    await page.route('**/api/perf/summary?*', route => route.fulfill({ json: { window: '1h', heads: [{
+      key: STACK.soloHead, label: STACK.soloHead, count: 1, empty: false, outcomes: { [row.outcome]: 1 },
+    }] } }));
+    await page.route(url => url.pathname === '/api/perf/turns', route => {
+      const key = new URL(route.request().url()).searchParams.get('head') ?? '';
+      return route.fulfill({ json: { since: at - 1000, n: 200, heads: [{
+        key, label: key, count: key === STACK.soloHead ? 1 : 0, rows: key === STACK.soloHead ? [row] : [],
+      }] } });
+    });
+    await page.route('**/api/heads/*/trace?turn=*', route => route.fulfill({ json: {
+      head: STACK.soloHead, turn: { id: row.turn, ts: at, session: null, model: STACK.soloModel,
+        compact: false, open: false, outcome: row.outcome, failure_sentence: sentence,
+        rounds: 1, attempts: 1, total_ms: 20 }, records: [],
+    } }));
+    const faults = await open(page, 'requests?status=failed');
+    await page.locator('.turn h3 a').click();
+    await expect(page.locator('.failure-sentence')).toHaveText(sentence.charAt(0).toUpperCase() + sentence.slice(1));
+    if (origin === 'splice') {
+      await expect(page.locator('.failure-sentence')).not.toContainText('change the request');
+      await expect(page.locator('.failure-sentence')).not.toContainText('provider rejected');
+    }
+    await assertHealthy(page, faults);
+  });
+}
+
+for (const outcome of ['failure:api_error', 'failure:invalid_request_error']) {
+  test(`a provider policy refusal stays a refusal in its list badge and timed detail for ${outcome}`, async ({ page }) => {
+    const at = Date.now();
+    const sentence = 'OpenAI refused the request under its cybersecurity check. This request was flagged. Try rephrasing.';
+    const row = { ts: at, model: STACK.soloModel, outcome, cause: 'CONTENT_FILTERED', compact: false,
+      total: 422_000, session: null, account: null, cache_cold: null, turn: 'synthetic-policy',
+      session_id: null, response_message_id: null };
+    await page.route('**/api/perf/summary?*', route => route.fulfill({ json: { window: '1h', heads: [{
+      key: STACK.soloHead, label: STACK.soloHead, count: 1, empty: false, outcomes: { [outcome]: 1 },
+    }] } }));
+    await page.route(url => url.pathname === '/api/perf/turns', route => {
+      const key = new URL(route.request().url()).searchParams.get('head') ?? '';
+      return route.fulfill({ json: { since: at - 500_000, n: 200, heads: [{
+        key, label: key, count: key === STACK.soloHead ? 1 : 0, rows: key === STACK.soloHead ? [row] : [],
+      }] } });
+    });
+    await page.route('**/api/heads/*/trace?turn=*', route => route.fulfill({ json: {
+      head: STACK.soloHead, turn: { id: row.turn, ts: at, session: null, model: STACK.soloModel,
+        compact: false, open: false, outcome, failure_sentence: sentence, rounds: 1, attempts: 1, total_ms: 422_000 },
+      records: [],
+    } }));
+    const faults = await open(page, 'requests?status=failed');
+    await expect(page.locator('.turn .state')).toHaveText('Request refused');
+    await page.locator('.turn h3 a').click();
+    await expect(page.locator('.page-head .lede')).toHaveText('Request refused after 7m 2s.');
+    await expect(page.locator('.page-head .state')).toHaveText('Request refused');
+    await expect(page.locator('.failure-sentence')).toHaveText(sentence);
+    await expect(page.getByRole('main')).not.toContainText('Provider failed');
+    await expect(page.getByRole('main')).not.toContainText('failed on its side');
+    await expect(page.getByRole('main')).not.toContainText('retry in a moment');
+    await assertHealthy(page, faults);
+  });
+}
 
 test('the headline reads the pooled request timing while command bars keep their own percentiles', async ({ page }) => {
   const commands = [

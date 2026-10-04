@@ -42,6 +42,7 @@ class PerfRowTurnWireTest {
             turn = TRACED,
             sessionId = "sess-v4345",
             responseMessageId = "msg_42",
+            cause = "CONTENT_FILTERED",
         ),
         PerfRow(ts = 2_000, outcome = "ok", fields = mapOf("total" to 7L), model = "m"),
     )
@@ -82,6 +83,8 @@ class PerfRowTurnWireTest {
         val served = Json.parseToJsonElement(response.bodyAsText()).jsonObject
             .getValue("heads").jsonArray.single().jsonObject
             .getValue("rows").jsonArray.map { it.jsonObject }
+        assertEquals(JsonPrimitive("CONTENT_FILTERED"), served[0]["cause"])
+        assertEquals(JsonNull, served[1]["cause"], "a legacy row has no recorded cause")
         assertEquals(JsonPrimitive(TRACED), served[0]["turn"], "the traced row's id")
         assertEquals(JsonNull, served[1]["turn"], "no trace, a null")
         assertEquals(JsonPrimitive("sess-v4345"), served[0]["session_id"])

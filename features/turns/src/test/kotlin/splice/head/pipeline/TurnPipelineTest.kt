@@ -265,12 +265,19 @@ class TurnPipelineTest {
         )
         assertEquals("terminal", explained.ending)
         // V4-59: the verb is unchanged \u2014 still a text block, still marked as the proxy speaking \u2014
-        // and what changed is the words: the failure now names its stable code before the sentence.
+        // The human sentence leads; the stable code and the complete diagnostic follow it.
         // V4-117: the code is INVALID-REQUEST because the type is DERIVED, and the matrix gives
         // CODE_MODE_PROTOCOL an empty ceiling \u2014 a non-retryable class \u2014 so the wire type is the
         // client's bad-request one rather than api_error. The assertions follow the matrix; they are
         // not relaxed to whatever the code happens to emit.
-        assertEquals(listOf("\u26A0 splice [SPLICE-INVALID-REQUEST] code-mode cell is unavailable"), explained.texts)
+        assertEquals(
+            listOf(
+                "splice could not complete this session's code-mode step; " +
+                    "start a new session, and if it repeats read the daemon log.\n\n" +
+                    "\u26A0 splice [SPLICE-INVALID-REQUEST] code-mode cell is unavailable",
+            ),
+            explained.texts,
+        )
         assertEquals("failure:invalid_request_error", tag)
 
         val retried = RecTerminal()
@@ -552,8 +559,8 @@ class TurnPipelineTest {
             meta("text"),
             elapsedMs = 1,
         )
-        assertEquals(ErrorType.API_ERROR, rec.errorType)
+        assertEquals(ErrorType.INVALID_REQUEST, rec.errorType)
         assertEquals(true, rec.errorPermanent, "the permanence verdict must survive the pipeline")
-        assertEquals("failure:api_error", tag)
+        assertEquals("failure:invalid_request_error", tag)
     }
 }

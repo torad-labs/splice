@@ -66,6 +66,7 @@ internal class PerfRowDecode(private val pool: PerfFieldNames) {
 
     private class Headers {
         private var outcome: String? = null
+        private var cause: String? = null
         private var model: String? = null
         private var session: String? = null
         private var sessionId: String? = null
@@ -92,6 +93,7 @@ internal class PerfRowDecode(private val pool: PerfFieldNames) {
 
         private fun marker(key: String, parser: JsonParser) {
             when (key) {
+                "cause" -> cause = text(parser)
                 "cache_cold" -> cacheCold = text(parser)?.toBooleanStrictOrNull()
                 "compact" -> compact = text(parser)?.toBooleanStrictOrNull()
                 PerfKeys.ASYNC_IO_DROPS -> drops = text(parser)?.toLongOrNull()
@@ -104,6 +106,7 @@ internal class PerfRowDecode(private val pool: PerfFieldNames) {
             return PerfRow(
                 ts = requireNotNull(fields["ts"]) { "missing numeric perf timestamp" },
                 outcome = outcome ?: "?",
+                cause = cause,
                 fields = fields,
                 model = model,
                 session = session,

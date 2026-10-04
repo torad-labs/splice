@@ -31,6 +31,7 @@ internal data class PerfCachedLine(
             val value = row ?: return PERF_RECORD_OVERHEAD_BYTES
             val text = listOf(
                 value.outcome,
+                value.cause,
                 value.model,
                 value.session,
                 value.sessionId,

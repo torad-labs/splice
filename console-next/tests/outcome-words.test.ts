@@ -2,7 +2,7 @@
 // FROM THE KOTLIN SOURCE at test time (the tag enum, the typed failures, every `OutcomeTags.error(...)` call and the conn-reset
 // constant), so a tag added there with no word fails here BY NAME.
 import { describe, expect, test } from 'vitest';
-import { outcomeOf } from '../src/lib/turns-page';
+import { lineOf, outcomeOf, turnLede } from '../src/lib/turns-page';
 import { OUTCOME_WORD } from '../src/lib/words-turns';
 import { kotlinMain, read } from './support/coverage';
 
@@ -36,6 +36,18 @@ const tags = [...new Set([
 ])].filter((tag) => tag !== 'ok');
 
 describe('outcome words', () => {
+  test('the same recorded refusal cause drives the badge and lede across client error types', () => {
+    for (const outcome of ['failure:api_error', 'failure:invalid_request_error']) {
+      const row = { head: 'synthetic', ts: 1000, model: 'm', compact: false, outcome, cause: 'CONTENT_FILTERED', total: 422_000 };
+      const line = lineOf(row, head => head, () => 'none', () => null);
+      expect(line.outcome).toMatchObject({ word: 'Request refused', failed: true });
+      expect(turnLede(row, [])).toBe('Request refused after 7m 2s.');
+      expect(outcomeOf(outcome)).not.toMatchObject({ word: 'Request refused' });
+      expect(lineOf({ ...row, cause: 'MODEL_REFUSED' }, head => head, () => 'none', () => null).outcome.word).toBe('Model declined');
+    }
+    expect(lineOf({ head: 'synthetic', ts: 1000, model: 'm', compact: false, outcome: 'ok', cause: 'CONTENT_FILTERED' }, head => head, () => 'none', () => null).outcome.failed).toBe(false);
+  });
+
   test('a proven refused runtime carries its actual port while a reset stays a lost connection', () => {
     expect(outcomeOf('error:conn-reset', 8123)).toMatchObject({ word: "Couldn't reach its runtime on :8123", failed: true });
     expect(outcomeOf('error:conn-reset')).toMatchObject({ word: 'Connection lost', failed: true });

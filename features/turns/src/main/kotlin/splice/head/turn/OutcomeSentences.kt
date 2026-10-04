@@ -10,13 +10,15 @@
 // with no else, so a new [ErrorType] does not even compile until it has one.
 //
 // A sentence says what happened and then what to do. Most use the conn-reset surface's semicolon;
-// the restart notice uses two complete sentences. Neither quotes a path or bytes taken from a failure.
+// the restart notice uses two complete sentences. Policy refusals retain the provider's own words.
 package splice.head.turn
 
 import splice.core.perf.OutcomeTag
 import splice.core.perf.OutcomeTags
 import splice.core.turn.CONN_RESET_OUTCOME
 import splice.core.turn.ErrorType
+import splice.core.turn.FailureCause
+import splice.core.turn.TurnOutcome
 import splice.core.usage.PlanLimit
 import splice.core.util.LocalTimeText
 
@@ -95,7 +97,9 @@ internal object OutcomeSentences {
         val typed = ErrorType.entries.firstOrNull { OutcomeTags.failure(it) == tag }
         return when {
             known != null -> fixed[known]
-            typed != null -> typed(typed)
+            typed != null ->
+                "the request failed, but this record does not say whether splice or the provider " +
+                    "caused it; retry, and if it repeats read the daemon log around this turn's time"
             else -> kinds[tag]
         }
     }
@@ -106,6 +110,67 @@ internal object OutcomeSentences {
     fun planLimit(limit: PlanLimit, times: LocalTimeText = LocalTimeText()): String =
         "this plan's ${limit.windowWords.take(MAX_WINDOW_WORDS)} window is used up until " +
             "${times.at(limit.resetEpochSeconds)}; $WAIT_FOR_RESET"
+
+    /** Origin is carried by the outcome, never inferred from the client's retry type. */
+    fun of(failure: TurnOutcome.Failure): String = when {
+        !failure.providerReported -> local(failure.cause)
+        failure.cause == FailureCause.CONTENT_FILTERED -> contentRefusal(failure.message)
+        failure.cause == FailureCause.MODEL_REFUSED ->
+            "the model declined to answer; ask for a different task"
+        else -> typed(failure.type)
+    }
+
+    private fun contentRefusal(message: String): String {
+        val cyber = "upstream: cyber_policy "
+        return if (message.startsWith(cyber)) {
+            val words = message.removePrefix(cyber).trim().replaceFirstChar { it.uppercase() }
+            "OpenAI refused the request under its cybersecurity check. $words"
+        } else {
+            "the provider stopped the answer under its content check; ask for a different task"
+        }
+    }
+
+    private const val UNFINISHED =
+        "splice ended the request because the provider's answer did not finish; retry the request"
+    private const val CREDENTIALS =
+        "splice could not obtain credentials for this command; sign in or configure its key, then retry"
+    private const val UNAVAILABLE_ACCOUNT =
+        "splice could not use an available account for this request; wait for its limit to clear, then retry"
+    private const val INTERNAL_FAILURE =
+        "splice could not complete this request; retry, and if it repeats read the daemon log around this turn's time"
+
+    // Coverage is enumerated from FailureCause.entries by OutcomeSentenceTest, including card-length bounds.
+    private val localSentences: Map<FailureCause, String> = mapOf(
+        FailureCause.CODE_MODE_PROTOCOL to
+            "splice could not complete this session's code-mode step; " +
+            "start a new session, and if it repeats read the daemon log",
+        FailureCause.UPSTREAM_STALLED to UNFINISHED,
+        FailureCause.UPSTREAM_TRUNCATED to UNFINISHED,
+        FailureCause.UPSTREAM_CONN_RESET to
+            "splice lost the connection to the provider mid-request; retry the request",
+        FailureCause.MODEL_REFUSED to
+            "splice ended the request because the model declined to answer; ask for a different task",
+        FailureCause.CONTENT_FILTERED to
+            "splice ended the request because the model's content filter stopped the answer; ask for a different task",
+        FailureCause.DIALECT_UNSUPPORTED to
+            "splice cannot deliver this model's tool call through this connection; choose another model, then retry",
+        FailureCause.AUTH_MISSING to CREDENTIALS,
+        FailureCause.AUTH_REFRESH_FAILED to CREDENTIALS,
+        FailureCause.VENDOR_RATE_LIMITED to UNAVAILABLE_ACCOUNT,
+        FailureCause.VENDOR_QUOTA_EXHAUSTED to UNAVAILABLE_ACCOUNT,
+        FailureCause.POOL_EXHAUSTED to UNAVAILABLE_ACCOUNT,
+        FailureCause.REQUEST_TOO_LARGE to
+            "splice refused a request larger than this model can accept; compact the conversation, then retry",
+        FailureCause.ADMISSION_FULL to
+            "splice has no room to run this request yet; wait for a running request to finish, then retry",
+        FailureCause.UPSTREAM_STATUS_4XX to INTERNAL_FAILURE,
+        FailureCause.UPSTREAM_STATUS_5XX to INTERNAL_FAILURE,
+        FailureCause.UPSTREAM_REPORTED to INTERNAL_FAILURE,
+        FailureCause.TOOL_TEAR to INTERNAL_FAILURE,
+        FailureCause.INTERNAL to INTERNAL_FAILURE,
+    )
+
+    private fun local(cause: FailureCause): String = localSentences.getValue(cause)
 
     private fun typed(type: ErrorType): String = when (type) {
         ErrorType.INVALID_REQUEST ->

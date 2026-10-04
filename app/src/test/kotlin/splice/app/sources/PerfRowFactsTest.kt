@@ -103,6 +103,24 @@ class PerfRowFactsTest {
     }
 
     @Test
+    fun `failure causes survive streaming fallback and cached reads without inventing legacy causes`(
+        @TempDir dir: Path,
+    ) {
+        val file = dir.resolve("head-perf.jsonl")
+        Files.writeString(
+            file,
+            """{"ts":1000,"outcome":"failure:api_error","cause":"CONTENT_FILTERED"}""" + "\n" +
+                // A nested scalar forces the tree-reader path without changing the named cause.
+                """{"ts":2000,"outcome":"failure:invalid_request_error","cause":"MODEL_REFUSED","extra":{}}""" + "\n" +
+                """{"ts":3000,"outcome":"failure:api_error"}""" + "\n",
+        )
+        val source = PerfRowsFileSource(file)
+        repeat(2) {
+            assertEquals(listOf("CONTENT_FILTERED", "MODEL_REFUSED", null), source.window(0).rows.map { it.cause })
+        }
+    }
+
+    @Test
     fun `a torn fact reads absent rather than carrying a replacement character`(@TempDir dir: Path) {
         val file = dir.resolve("head-perf.jsonl")
         // A torn multi-byte char inside the model. The reader decodes with REPLACE, so the value is

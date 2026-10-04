@@ -34,7 +34,7 @@ export function TurnPage() {
   const colour = colourFromRegistry(status.data)(head);
   const session = (sessions.data?.sessions ?? []).find((candidate) => candidate.session_id !== null && (candidate.session_id === row.session_id || (row.session !== undefined && candidate.session_id.startsWith(row.session))));
   const title = session === undefined ? plan : sessionLabel(session);
-  const outcome = outcomeOf(row.outcome);
+  const outcome = outcomeOf(row.outcome, row.refused_runtime_port, row.cause);
   const stages = stagesOf(row);
   const moved = movedOf(row);
   const when = new Date(row.ts).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });

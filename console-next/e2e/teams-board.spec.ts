@@ -42,6 +42,29 @@ test('Teams groups real registry seats without saved membership and reads a mess
   expect(faults.failedReads).toEqual([]);
 });
 
+test('an idle card shows the human failure before the retained splice diagnostic', async ({ page }) => {
+  const sentence = "splice could not complete this session's code-mode step; start a new session, and if it repeats read the daemon log";
+  await page.route(url => url.pathname === '/api/sessions', async route => {
+    const response = await route.fetch();
+    const body = await response.json() as SessionsPayload;
+    const source = body.sessions.find(row => row.session_id === STACK.sender.id);
+    if (source === undefined) throw new Error('isolated fixture must contain the synthetic sender');
+    body.sessions = [{ ...source, status: 'idle', name: 'Synthetic local failure', team: null,
+      last: { role: 'assistant', tool: null, ts: Date.now(),
+        text: sentence + '.\n\n⚠ splice [SPLICE-INVALID-REQUEST] IllegalStateException at SyntheticCell.kt:83; accepted results=0; source was not rerun' },
+    }];
+    await route.fulfill({ response, json: body });
+  });
+  const faults = await open(page, 'sessions');
+  const card = page.getByRole('listitem').filter({ hasText: 'Synthetic local failure' });
+  await expect(card).toContainText(sentence);
+  await expect(card).not.toContainText('SPLICE-INVALID-REQUEST');
+  await expect(card).not.toContainText('IllegalStateException');
+  await expect(card).not.toContainText('provider rejected');
+  expect(faults.pageErrors).toEqual([]);
+  expect(faults.failedReads).toEqual([]);
+});
+
 test('idle sessions use one live-process rule on Sessions and Teams while only an exited process is ended', async ({ page }) => {
   await page.route(url => url.pathname === '/api/sessions', async route => {
     const response = await route.fetch();

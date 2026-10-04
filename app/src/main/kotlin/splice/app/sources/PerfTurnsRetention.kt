@@ -18,6 +18,7 @@ internal class PerfTurnsRetention : PerfLineKeep {
         return line.copy(
             row = row.copy(
                 outcome = requireNotNull(share(row.outcome)),
+                cause = share(row.cause),
                 model = share(row.model),
                 session = share(row.session),
                 account = share(row.account),

@@ -95,6 +95,8 @@ public data class PerfRow(
     /** V4-354: the full session and the response id the client recorded in its local transcript. */
     val sessionId: String? = null,
     val responseMessageId: String? = null,
+    /** The recorded failure cause, independent of the client-facing retry type; absent in older rows. */
+    val cause: String? = null,
 )
 
 /** What one coherent read of the perf files yields for a window (v0.4.0, FEATURES.md §3). */

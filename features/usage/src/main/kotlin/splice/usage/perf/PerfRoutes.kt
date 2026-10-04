@@ -211,6 +211,7 @@ public class PerfRoutes(
         row.fields.forEach { (key, value) -> if (key != TS) put(key, value) }
         put(TS, row.ts)
         put("outcome", row.outcome)
+        put("cause", row.cause)
         // ABSENT STAYS ABSENT. A null here is a row that never carried the field — `cache_cold` is
         // written only alongside an account, so a row without one never had the question asked — and
         // the JSON null is the third state that keeps the console from rendering "the cache was warm"

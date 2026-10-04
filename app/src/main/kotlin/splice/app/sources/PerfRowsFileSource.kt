@@ -421,6 +421,7 @@ public class PerfRowsFileSource internal constructor(
             return PerfRow(
                 ts = ts,
                 outcome = outcome,
+                cause = text(obj, "cause"),
                 fields = fields,
                 model = text(obj, MODEL_KEY),
                 session = text(obj, SESSION_KEY),

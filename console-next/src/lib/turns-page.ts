@@ -32,13 +32,14 @@ export const isStopped = (outcome: string): boolean =>
 export const isClean = (outcome: string): boolean => outcome === 'ok' || outcome === 'empty_message';
 
 /** What a turn's outcome tag reads as. A tag this console does not know is still a failure, and says so plainly. */
-export function outcomeOf(outcome: string, refusedRuntimePort?: number): OutcomeRead {
+export function outcomeOf(outcome: string, refusedRuntimePort?: number, cause?: string | null): OutcomeRead {
   if (outcome === 'ok') return { word: 'Done', tone: 'work', failed: false };
   if (isClean(outcome)) return { word: OUTCOME_WORD[outcome] ?? 'Done', tone: 'work', failed: false };
   if (outcome === '?') return { word: 'Unknown', tone: 'idle', failed: false };
   const refused = outcome === 'error:conn-reset' && Number.isInteger(refusedRuntimePort)
     && refusedRuntimePort !== undefined && refusedRuntimePort > 0 && refusedRuntimePort <= 65535;
-  const word = refused ? T.runtimeRefused(refusedRuntimePort) : (OUTCOME_WORD[outcome] ?? 'Failed');
+  const refusal = cause === 'CONTENT_FILTERED' ? 'Request refused' : cause === 'MODEL_REFUSED' ? 'Model declined' : null;
+  const word = refusal ?? (refused ? T.runtimeRefused(refusedRuntimePort) : (OUTCOME_WORD[outcome] ?? 'Failed'));
   const quiet = isStopped(outcome);
   return { word, tone: quiet ? 'idle' : 'stuck', failed: !quiet };
 }
@@ -146,7 +147,7 @@ export const turnKey = (row: Pick<TurnRow, 'head' | 'ts'>): string => `${row.hea
 export type TitleOf = (sessionId: string | undefined, short: string | undefined) => string | null;
 
 export function lineOf(row: TurnRow, planLabel: (head: string) => string, colourOf: ColourOf, titleOf: TitleOf): TurnLine {
-  const outcome = outcomeOf(row.outcome, row.refused_runtime_port);
+  const outcome = outcomeOf(row.outcome, row.refused_runtime_port, row.cause);
   return {
     key: turnKey(row),
     head: row.head,
@@ -279,7 +280,7 @@ export const servedLocally = (row: TurnRow): boolean => row.local_step === 1;
 export const localStepsOf = (heads: readonly PerfSummaryHead[]): number => heads.reduce((n, head) => n + (head.local_steps ?? 0), 0);
 
 export function turnLede(row: TurnRow, stages: readonly StageBar[]): string {
-  const outcome = outcomeOf(row.outcome, row.refused_runtime_port);
+  const outcome = outcomeOf(row.outcome, row.refused_runtime_port, row.cause);
   if (servedLocally(row)) return T.servedLocallyLede;
   const total = row.total ?? stages.reduce((n, stage) => n + stage.ms, 0);
   const took = total > 0 ? secondsText(total) : null;

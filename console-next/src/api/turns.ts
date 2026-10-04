@@ -177,7 +177,7 @@ function readableHistory(wire: unknown, head: string): wire is PerfTurnsWire {
   if (!record(wire) || !Array.isArray(wire.heads)) return false;
   return wire.heads.every(block => record(block) && typeof block.key === 'string' &&
     (block.count === undefined || numeric(block.count)) &&
-    (block.rows === undefined || Array.isArray(block.rows) && block.rows.every(row => record(row) && numeric(row.ts))) &&
+    (block.rows === undefined || Array.isArray(block.rows) && block.rows.every(row => record(row) && numeric(row.ts) && (row.cause === undefined || row.cause === null || typeof row.cause === 'string'))) &&
     (block.usage === undefined || usageWire(block.usage))) && wire.heads.some(block => block.key === head);
 }
 

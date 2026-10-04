@@ -14,12 +14,18 @@ class OutcomeTagChecksTest {
     @Test
     fun `stopped tags are not failures and unfamiliar endings remain failures`() {
         val stopped = setOf(OutcomeTag.CLIENT_ABORT.wire, OutcomeTags.error("stopped"))
+        val clean = setOf(OutcomeTag.OK.wire, OutcomeTag.EMPTY_MESSAGE.wire, "?")
         val tags = OutcomeTag.entries.map { it.wire } +
             listOf(OutcomeTags.error("stopped"), "?", "error:new-ending", "failure:new-ending")
         tags.forEach { tag ->
             assertEquals(tag in stopped, OutcomeTags.isStopped(tag), tag)
-            assertEquals(tag != OutcomeTag.OK.wire && tag != "?" && tag !in stopped, OutcomeTags.isFailed(tag), tag)
+            assertEquals(tag !in clean && tag !in stopped, OutcomeTags.isFailed(tag), tag)
         }
+    }
+
+    @Test
+    fun `an empty answer the model closed is a clean ending, never a failure`() {
+        assertEquals(false, OutcomeTags.isFailed(OutcomeTag.EMPTY_MESSAGE.wire))
     }
 
     @Test

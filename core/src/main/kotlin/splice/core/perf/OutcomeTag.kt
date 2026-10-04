@@ -77,7 +77,7 @@ public object OutcomeTags {
 
     /** Unknown attribution is not failure; an unfamiliar recorded ending still is. */
     public fun isFailed(tag: String): Boolean =
-        tag != OutcomeTag.OK.wire && tag != "?" && !isStopped(tag)
+        tag != OutcomeTag.OK.wire && tag != OutcomeTag.EMPTY_MESSAGE.wire && tag != "?" && !isStopped(tag)
 }
 
 // The two prefixes, kept private so the only way to build a tag is through the helpers above.

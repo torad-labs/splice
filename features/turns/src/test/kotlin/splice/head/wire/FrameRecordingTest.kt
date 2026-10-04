@@ -19,7 +19,7 @@ import java.lang.ref.WeakReference
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.LockSupport
 
-// why: bounded ordinary allocation pressure exercises GC-owned release without an explicit GC call.
+// why: pressure keeps collection going where a JVM ignores explicit GC; System.gc() is what makes the wait bounded.
 private const val OWNER_PRESSURE_BYTES = 1024 * 1024
 
 class FrameRecordingTest {
@@ -68,11 +68,20 @@ class FrameRecordingTest {
         return WeakReference(recording) to recording.frames().single()
     }
 
+    /** Pressure alone waits for the collector to choose to run. Each 1 MB array is a G1 humongous
+     *  object, which never fills eden, so the discarded recording is only cleared once the arrays
+     *  cross the heap-occupancy threshold, and that threshold scales with the heap's capacity. CI
+     *  measured that wait at 3.8 to 5.0 s on four green runs and 10.03 s on run 37187673053, past this
+     *  deadline. An explicit collection each turn clears it on the first or second turn, and the
+     *  refund still runs on the Cleaner's own thread, so the property is checked exactly as before.
+     *  Collection is what these arms test, so the explicit call detekt flags is the instrument here. */
+    @Suppress("ExplicitGarbageCollectionCall")
     private fun awaitUntil(done: () -> Boolean) {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
         while (!done()) {
             check(System.nanoTime() < deadline) { "frame owner did not settle before its deadline" }
             ownerPressure = ByteArray(OWNER_PRESSURE_BYTES)
+            System.gc()
             LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(5))
         }
     }

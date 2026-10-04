@@ -167,7 +167,9 @@ internal class ManagedHeadFactory(
         // V4-221: each turn priced at its own model's card, against the same catalog the budget uses.
         economics = EconomicsStore(statePaths.economicsFile(ctx.key), TurnPrice(ctx.catalog)),
         quota = primaryQuota,
-        accountPool = accountPools.build(wired, accountQuotas, providerHolds.forAccounts(ctx.key, wired)),
+        // Registered for the Playground too, which sends as the login this pool would choose next.
+        accountPool = accountPools.build(wired, accountQuotas, providerHolds.forAccounts(ctx.key, wired))
+            .also { pool -> playgroundProviders.logins(ctx.key, pool, wired.accounts) },
         accountQuotas = accountQuotas,
         clientWindows = ClientWindows(store = statePaths.clientWindowsFile(ctx.key), log = log),
         trace = traceStores.forHead(ctx.key, ctx.cfg),

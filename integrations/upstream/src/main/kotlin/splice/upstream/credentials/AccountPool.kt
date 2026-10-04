@@ -200,7 +200,9 @@ public class AccountPool(
         } else {
             synchronized(sessions) { sessions[sessionId]?.label }
         }
-        return candidates(previousLabel).firstOrNull { AccountAvailability.available(it, at) }?.label
+        val order = candidates(previousLabel)
+        val free = order.firstOrNull { AccountAvailability.available(it, at) }
+        return (free ?: AccountAvailability.nearestHeld(order, at).firstOrNull())?.label
     }
 
     /** The one selection order [choose] and [nextTargetLabel] both walk: the pin (if any), persisted
@@ -220,29 +222,30 @@ public class AccountPool(
             .distinctBy { it.label }
     }
 
-    private fun choose(previousLabel: String?, at: Long): ChosenAccount? =
-        candidates(previousLabel).firstNotNullOfOrNull { acquireIfAvailable(it, at) }
-
-    private fun acquireIfAvailable(account: PoolAccount, at: Long): ChosenAccount? {
-        if (!AccountAvailability.available(account, at)) return null
-        val lease = account.acquireCredential(at, now) ?: return null
-        return ChosenAccount(account, lease)
+    /** The first free login in [candidates] order. When every selectable login is held on its plan, the one whose
+     *  reset is nearest: its turn is answered with that login's own refusal while its horizon is armed, and is the
+     *  probe that notices a top-up once it lifts (V4-47), exactly as a head with one login behaves. */
+    private fun choose(previousLabel: String?, at: Long): ChosenAccount? {
+        val order = candidates(previousLabel)
+        val free = order.filter { AccountAvailability.available(it, at) }
+        return free.ifEmpty { AccountAvailability.nearestHeld(order, at) }.firstNotNullOfOrNull { acquire(it, at) }
     }
+
+    private fun acquire(account: PoolAccount, at: Long): ChosenAccount? =
+        account.acquireCredential(at, now)?.let { lease -> ChosenAccount(account, lease) }
 
     // V4-132 added the pin branch as a fifth case in the SAME `when` (rather than a fourth early
     // `return`) to stay under ReturnCount's limit of 3 — one `return when`, whatever its arm count.
+    // Which limit stopped the previous account is [AccountAvailability.limitReason], so this stays under the
+    // complexity ceiling as limits are added (the plan hold was the latest).
     private fun switchReason(previousLabel: String, chosen: PoolAccount, at: Long): String {
         val previous = byLabel.getValue(previousLabel)
-        val quota = previous.quota.snapshot()
         return when {
             chosen.label == pinnedLabel.get() -> "operator pinned this account"
             chosen.label in orderedLabels.get() && AccountAvailability.available(previous, at) ->
                 "operator account order"
             chosen.primary -> "primary account reset"
-            previous.cooldown.unavailableForMs() > 0L -> "rate limit exceeds turn wait budget"
-            AccountAvailability.exhausted(quota?.fiveHour, at) -> "5-hour quota exhausted"
-            AccountAvailability.exhausted(quota?.sevenDay, at) -> "7-day quota exhausted"
-            else -> "account unavailable"
+            else -> AccountAvailability.limitReason(previous, at)
         }
     }
 
@@ -286,11 +289,35 @@ public class AccountPool(
  *  pin/unpin/pinned/nextTargetLabel surface. Behaviour is byte-identical to the methods it
  *  replaces — a relocation, not a rewrite. */
 private object AccountAvailability {
-    fun available(account: PoolAccount, at: Long): Boolean {
+    /** Free to serve: selectable, and not held on a plan window the provider named spent. Failover within one
+     *  provider (operator ruling, Oct 3): a held login stays held until the reset it named, so the next turn of the
+     *  same command goes to the next login, and a restart restores the hold with the rest of the provider's word. */
+    fun available(account: PoolAccount, at: Long): Boolean =
+        selectable(account, at) && account.cooldown.planHold.live() == null
+
+    /** The logins held on their plan that could otherwise serve, nearest reset first; ties keep [order]. */
+    fun nearestHeld(order: List<PoolAccount>, at: Long): List<PoolAccount> =
+        order.filter { it.cooldown.planHold.live() != null && selectable(it, at) }
+            .sortedBy { it.cooldown.providerUnavailableForMs() }
+
+    private fun selectable(account: PoolAccount, at: Long): Boolean {
         val runtimeUnavailable = account.cooldown.unavailableForMs() > 0L
         if (!account.credentialStatus(at).selectable || runtimeUnavailable) return false
         val snapshot = account.quota.snapshot() ?: return true
         return !exhausted(snapshot.fiveHour, at) && !exhausted(snapshot.sevenDay, at)
+    }
+
+    /** Why [account] stopped serving, the plan the provider named spent first. */
+    fun limitReason(account: PoolAccount, at: Long): String {
+        val quota = account.quota.snapshot()
+        val plan = account.cooldown.planHold.live()
+        return when {
+            plan != null -> "${plan.windowWords} plan limit reached"
+            account.cooldown.unavailableForMs() > 0L -> "rate limit exceeds turn wait budget"
+            exhausted(quota?.fiveHour, at) -> "5-hour quota exhausted"
+            exhausted(quota?.sevenDay, at) -> "7-day quota exhausted"
+            else -> "account unavailable"
+        }
     }
 
     fun sevenDayUsed(account: PoolAccount): Double = account.quota.snapshot()?.sevenDay?.usedPercent ?: 0.0

@@ -21,6 +21,7 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
+import splice.core.usage.PlanLimit
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
 import splice.core.util.ElapsedClock
@@ -33,6 +34,8 @@ import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.AccountQuotaSource
 import splice.upstream.credentials.PoolAccount
 import splice.upstream.credentials.Selection
+import splice.upstream.retry.FileProviderHoldStore
+import splice.upstream.retry.ProviderHold
 import splice.upstream.retry.RateLimitCooldown
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
@@ -109,6 +112,37 @@ class AccountPoolWiringTest {
         pools.source(other, "two", store)
         assertEquals("primary", chosen(other).label)
     }
+
+    @Test
+    fun `a restart keeps the operator's order and the login the provider holds`(@TempDir tmp: Path) {
+        val two = wired(tmp)
+        val third = WiredAccount("third", false, TestAuth("third-token"), tmp.resolve("third-quota.json"))
+        val wired = two.copy(accounts = two.accounts + third)
+        val pools = HeadAccountPools()
+        val holdFile = { label: String -> tmp.resolve("head-$label-provider-hold.json") }
+        val holds = { wired.accounts.associate { it.label to FileProviderHoldStore(holdFile(it.label)) {} } }
+        val trackers = { dir: String ->
+            trackers(tmp.resolve(dir), primaryUsed = 0.0) + ("third" to thirdTracker(tmp.resolve(dir)))
+        }
+        val first = requireNotNull(pools.build(wired, trackers("first"), holds()))
+        val orders = { AccountOrderStore(tmp.resolve("order.json")) }
+        val source = pools.source(first, "head", orders()) as HeadAccountOrderSource
+        assertTrue(source.setOrder(listOf("third", "primary", "backup")))
+        assertEquals("third", chosen(first).label)
+        // What the first daemon wrote when the provider named third's 5-hour window spent.
+        val reset = System.currentTimeMillis() / 1_000L + 7_200L
+        FileProviderHoldStore(holdFile("third")) {}.save(ProviderHold(null, PlanLimit("five_hour", reset)))
+
+        val second = requireNotNull(pools.build(wired, trackers("second"), holds()))
+        val restored = pools.source(second, "head", orders()) as HeadAccountOrderSource
+
+        assertEquals(listOf("third", "primary", "backup"), restored.order())
+        assertEquals("primary", chosen(second).label, "third is held, so the next login in the order serves")
+        assertEquals(false, second.view(SESSION).accounts.single { it.label == "third" }.available)
+    }
+
+    private fun thirdTracker(dir: Path): QuotaTracker =
+        QuotaTracker(dir.resolve("third.json")).also { it.record(quota(20.0)) }
 
     private fun trackers(dir: Path, primaryUsed: Double): Map<String, QuotaTracker> {
         val primary = QuotaTracker(dir.resolve("primary.json"))

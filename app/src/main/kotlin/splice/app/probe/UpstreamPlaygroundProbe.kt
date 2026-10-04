@@ -15,8 +15,10 @@
 // ONE SHOT, NO PIPELINE — see PlaygroundRoute.kt's header for the full reason (never recorded means the
 // whole turn pipeline, not only the console). This bypasses :daemon-head's TurnDriver: no retry loop, no
 // account rotation, no perf, trace or economics write. The builder writes nothing for a turn with no tools
-// (code mode engages only on one that has them). The credential is the head's own (PlaygroundHead.auth,
-// which is ManagedHead.auth, the same instance the head's provider was built with).
+// (code mode engages only on one that has them). The credential is the one a real turn would use: on a command with
+// two or more logins, the login its pool would choose next, with that login's own headers on top of the provider's,
+// and named in the echoed request; otherwise the head's own (PlaygroundHead.auth, which is ManagedHead.auth, the same
+// instance the head's provider was built with).
 package splice.app.probe
 
 import io.ktor.client.HttpClient
@@ -104,7 +106,8 @@ internal class UpstreamPlaygroundProbe(
     override suspend fun run(head: PlaygroundHead, prompt: String, model: String?): PlaygroundOutcome {
         val provider = providers[head.key]
             ?: return PlaygroundFailure("head '${head.key}' has no running provider to send through")
-        val creds = Cancellables.runCatchingCancellable { head.auth.credentials() }
+        val login = providers.login(head.key)
+        val creds = Cancellables.runCatchingCancellable { (login?.auth ?: head.auth).credentials() }
             .getOrElse { return PlaygroundFailure("reading credentials failed: ${SafeFailureText.render(it)}") }
         return when {
             creds == null -> PlaygroundFailure("head '${head.key}' has no credential configured")
@@ -112,25 +115,31 @@ internal class UpstreamPlaygroundProbe(
                 val why = "head '${head.key}' forwards the caller's own auth; playground has none to send"
                 PlaygroundFailure(why)
             }
-            else -> build(provider, creds, model ?: provider.pinnedModel, prompt)
+            else -> build(provider, Sender(creds, login), model ?: provider.pinnedModel, prompt)
         }
     }
 
+    /** Who the one call goes as: the credential read, and the pooled login it came from, if any. */
+    private data class Sender(val creds: Credentials, val login: PlaygroundLogin?)
+
     private suspend fun build(
         provider: Provider,
-        creds: Credentials,
+        sender: Sender,
         model: String,
         prompt: String,
     ): PlaygroundOutcome {
         val turn = Cancellables.runCatchingCancellable {
             provider.buildTurn(AnthropicParse.parseAnthropicBody(PlaygroundTurn.of(model, prompt)), false, null)
         }.getOrElse { return PlaygroundFailure("building the request failed: ${SafeFailureText.render(it)}") }
-        return send(provider, creds, turn)
+        return send(provider, sender, turn)
     }
 
-    private suspend fun send(provider: Provider, creds: Credentials, turn: BuiltTurn): PlaygroundOutcome {
+    private suspend fun send(provider: Provider, sender: Sender, turn: BuiltTurn): PlaygroundOutcome {
         val url = provider.upstreamUrl
-        val headers = UpstreamHeaders.compose(creds, provider.extraHeaders(creds) + turn.extraHeaders)
+        val creds = sender.creds
+        // The login's headers ride ON TOP of the provider's, as on a real turn (SseRoundPost).
+        val own = sender.login?.headers?.invoke(creds).orEmpty()
+        val headers = UpstreamHeaders.compose(creds, provider.extraHeaders(creds) + own + turn.extraHeaders)
         val sent = Cancellables.runCatchingCancellable {
             client.post(url) {
                 headers { headers.forEach { (name, value) -> append(name, value) } }
@@ -140,6 +149,7 @@ internal class UpstreamPlaygroundProbe(
         }.getOrElse { return PlaygroundFailure("upstream call to $url failed: ${SafeFailureText.render(it)}") }
         val bodyText = sent.bodyAsText().take(MAX_RESPONSE_CHARS)
         val requestJson = buildJsonObject {
+            sender.login?.let { put("account", it.label) }
             put("url", url)
             put("method", "POST")
             putJsonObject("headers") { redacted(headers, creds).forEach { (k, v) -> put(k, v) } }

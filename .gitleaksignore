@@ -106,3 +106,9 @@ f37280280b4768cf6c9f825e7fdee98145ccffc4:app/src/test/kotlin/splice/app/KeptFile
 # proves the report never prints; no credential and no auth consumer.
 beba60d0f1545cad1d5a6b89c0ccb78df8cd15a5:features/diagnostics/src/test/kotlin/splice/diagnostics/doctor/DoctorRedactionTest.kt:generic-api-key:71
 beba60d0f1545cad1d5a6b89c0ccb78df8cd15a5:features/diagnostics/src/test/kotlin/splice/diagnostics/doctor/DoctorReportHardeningTest.kt:generic-api-key:85
+# Oct 4 CT, vetted by hand after secret-scan and org-secret-scan went red on 568589466: the OAuth
+# client id of Claude Code's own public client, which ClaudeOAuthRefresh names to rotate a login
+# that client made. A public OAuth client is an app identifier with no secret (PKCE); the same id
+# is printed in third-party usage tools' docs. It grants nothing alone. The supplementary pass was
+# green on the same run.
+5685894667979261c2e1533302b571cc0c067af5:app/src/main/kotlin/splice/app/auth/claude/ClaudeOAuthRefresh.kt:generic-api-key:38

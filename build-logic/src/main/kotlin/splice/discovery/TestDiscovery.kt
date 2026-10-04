@@ -147,6 +147,10 @@ val DISPOSITIONS: Map<String, Disposition> = mapOf(
     // 89e98adab: closing a cell ends its withheld exchange with and without a late guest reply.
     "SharedWorkerChannelCellCloseTest" to
         Disposition("1 @ParameterizedTest expands to 2 cases; no plain @Test", 2),
+    // 8b438c6f0: a record that stored one native item many times loads it once, patched after its checkpoint or not.
+    "CodeModeNativeCopiesTest" to Disposition("1 @ParameterizedTest expands to 2 cases; no plain @Test", 2),
+    // 8b438c6f0: after a WebSocket size refusal, a 429 and a 500 each keep their own path.
+    "WsSizeRefusalTest" to Disposition("1 @ParameterizedTest expands to 2 cases (3 @Test + 2 = 5)", 5),
     // 13d44f0b2: reasoning, text, ping, empty, metadata and rate-limit progress each renew the elapsed cap
     // on WS and on SSE, one case per transport and event (@ValueSource of 12 scenario strings).
     "WatchdogProgressRoundTest" to Disposition("1 @ParameterizedTest expands to 12 cases; no plain @Test", 12),

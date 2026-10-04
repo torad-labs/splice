@@ -1,5 +1,8 @@
 source	sha256	disposition	destination	reason
 integrations/providers/codex/src/test/kotlin/splice/provider/codex/CodeModeUpstreamPostTest.kt	f95ea6e5b52fe0320c6b9a6b9cc82196cb9dd458da8bdffab5f11e1bc95d7c30	created		Pins that code mode's round post wrappers keep the turn's perf record, and that a plain post gains no redirect
+app/src/main/kotlin/splice/app/sources/PerfNumericBuilder.kt	f716fbbfe92a58dd64544c9b74d83bc02cd524c08e290b73d04e4eb86b09bb26	created		Reusable primitive streamed numeric facts avoid per row boxed map construction
+app/src/main/kotlin/splice/app/sources/PerfRowDecode.kt	80af38931a7afb05cbad152f31ed2d8fde7fcc30cbc34ceb3108a4c1b668535b	created		Bounded checksum pinned streaming perf facts with honest tree fallback
+app/src/test/kotlin/splice/app/sources/PerfStreamingParityTest.kt	e10d6e6ad2bf13e0a3bbfe655c0899e8cd1f07738d44c163adfb9f878a662e5f	created		Whole synthetic history and edge differential parity with parser retention pressure controls
 integrations/providers/codex/src/test/kotlin/splice/provider/codex/CodeModeRoundAllocationTest.kt	8e794081c64def78047d879049e9e06a9b4130ab603b293f0ec47c3ddf9a312d	created		Measures one code-mode round's allocation per stage and whole on a 1 MB history, unchanged and rewritten
 integrations/upstream/src/test/kotlin/splice/upstream/transport/RequestBodyAllocationTest.kt	35d318a71402423cffb855479c97917af2630f0242ce3f7be1d4f4082b4c6e61	created		Pins the transport's kept request bytes at one body copy for tree and text bodies against the old buffered encode
 app/src/main/kotlin/splice/app/sources/PerfCachedSelection.kt	9e5637684b67a9dbc74583dfea1f33765c42eea208ec4576cb4612dce795ba5b	created		Replays uncached source gaps in physical order so wider windows recover cold skipped input

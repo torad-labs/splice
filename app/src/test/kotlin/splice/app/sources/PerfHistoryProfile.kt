@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonWire
 import splice.usage.perf.PerfRow
 import java.lang.management.ManagementFactory
+import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
 import java.time.ZoneId
@@ -17,6 +18,8 @@ internal class PerfHistoryProfile {
     private val allocations = ManagementFactory.getThreadMXBean() as ThreadMXBean
     private val thread = Thread.currentThread().threadId()
     internal var diskBytes: Long = 0L
+        private set
+    internal var sourceBytes: Long = 0L
         private set
 
     internal fun source(source: PerfRowsFileSource, path: Path): List<PerfRow> {
@@ -29,6 +32,7 @@ internal class PerfHistoryProfile {
             recording.stop()
             recording.dump(path)
             samples(path)
+            Files.delete(path)
             return rows
         }
     }
@@ -50,6 +54,7 @@ internal class PerfHistoryProfile {
         val result = action()
         val nanos = System.nanoTime() - started
         val bytes = allocations.getThreadAllocatedBytes(thread) - startBytes
+        if (name == "source") sourceBytes = bytes
         println("perf_phase=$name elapsed_ns=$nanos allocated_bytes=$bytes")
         return result
     }

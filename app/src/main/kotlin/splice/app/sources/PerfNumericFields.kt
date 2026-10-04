@@ -1,42 +1,32 @@
 // NEW: compact primitive-array numeric perf facts, with a bounded field-name pool.
 package splice.app.sources
 
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.longOrNull
-
 // Charges cover array headers, field references/values/indexes, and the shared map entry per key.
 private const val NUMERIC_ARRAY_OVERHEAD_BYTES = 160L
 
 // Each field retains an 8-byte reference, an 8-byte value and a 4-byte lookup index.
 private const val NUMERIC_FIELD_BYTES = 20L
 
-// Covers String/backing headers, worst-case collision tree nodes and table growth with 64-bit references.
-private const val FIELD_NAME_OVERHEAD_BYTES = 256L
+// Covers String/backing headers, both name tables, collision nodes and capacity with 64-bit references.
+private const val FIELD_NAME_OVERHEAD_BYTES = 320L
 
 /** Numeric facts retain primitive arrays, not a JSON tree or one boxed Long and map node per field. */
-internal class PerfNumericFields(obj: JsonObject, pool: PerfFieldNames) : AbstractMap<String, Long>() {
-    private val names: Array<String>
-    private val numbers: LongArray
-    private val order: IntArray
-    private val unsharedNameBytes: Long
+internal class PerfNumericFields(builder: PerfNumericBuilder) : AbstractMap<String, Long>() {
+    private val names = builder.names.toTypedArray()
+    private val numbers = builder.values.copyOf(names.size)
+    private val order = IntArray(names.size) { it }
+    private val unsharedNameBytes = builder.unsharedNameBytes
 
     init {
-        val keys = ArrayList<String>()
-        val values = LongArray(obj.size)
-        var extra = 0L
-        obj.forEach { (key, value) ->
-            val number = (value as? JsonPrimitive)?.takeUnless { it.isString }?.longOrNull
-            if (number != null) {
-                keys += pool.share(key)
-                if (!pool.contains(key)) extra += PERF_STRING_OVERHEAD_BYTES + key.length * PERF_CHAR_BYTES
-                values[keys.lastIndex] = number
+        for (at in 1 until order.size) {
+            val value = order[at]
+            var slot = at
+            while (slot > 0 && names[order[slot - 1]] > names[value]) {
+                order[slot] = order[slot - 1]
+                slot--
             }
+            order[slot] = value
         }
-        names = keys.toTypedArray()
-        order = names.indices.sortedBy { names[it] }.toIntArray()
-        numbers = values.copyOf(names.size)
-        unsharedNameBytes = extra
     }
 
     override val size: Int get() = numbers.size

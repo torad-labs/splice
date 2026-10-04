@@ -25,7 +25,7 @@ slf4j = "2.0.18"
 netty = "4.2.17.Final"          # 4.2.16.Final resolved; GHSA-8c42-7qj2-3j46 (CORS Vary cache poisoning) in netty-codec-http
 # jackson rides in on the PLUGIN classpath via detekt's jackson-dataformat-xml, which subproject
 # constraints cannot reach — so the floor is applied in build-logic/build.gradle.kts, the one build
-# that owns that classpath (see the reasoning there). Build-time only, never in the shipped jar.
+# that owns that classpath (see the reasoning there). The Usage source also ships jackson-core's streaming parser.
 # A detekt bump would be the cleaner fix but is unavailable: 1.23.8 is the latest release.
 jackson = "2.21.5"              # 2.20.1 resolved; advisories in jackson-core/databind
 # freemarker rides in on the ROOT script classpath under kover (kover-gradle-plugin -> kover-features-jvm
@@ -42,6 +42,7 @@ slf4j-nop = { module = "org.slf4j:slf4j-nop", version.ref = "slf4j" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
+jackson-core = { module = "com.fasterxml.jackson.core:jackson-core", version.ref = "jackson" }
 ktoml-core = { module = "com.akuleshov7:ktoml-core", version.ref = "ktoml" }
 ktor-server-core = { module = "io.ktor:ktor-server-core", version.ref = "ktor" }
 ktor-server-netty = { module = "io.ktor:ktor-server-netty", version.ref = "ktor" }

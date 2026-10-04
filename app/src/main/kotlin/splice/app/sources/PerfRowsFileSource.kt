@@ -221,16 +221,26 @@ public class PerfRowsFileSource internal constructor(
                 latestCandidate(Skipped(hint, line))
                 return
             }
-            val obj = parse(line)
-            val ts = obj?.let(::timestamp)
-            if (obj == null || ts == null) {
-                skipped += 1
-                return
-            }
-            parsed(ts, obj)
+            parsed(decode(line))
         }
 
-        fun decode(line: String): PerfCachedLine {
+        fun decode(line: String): PerfCachedLine = cache.decoder.decode(line).fold(
+            onSuccess = { decoded ->
+                parsedLines++
+                PerfCachedLine(
+                    row = decoded.row,
+                    numericBytes = decoded.numericBytes,
+                    leadingTs = ownRow.find(line)?.groupValues?.get(1)?.toLongOrNull(),
+                    emptyModel = emptyModel.containsMatchIn(line),
+                    dropsCandidate = dropsField.containsMatchIn(line),
+                    drops = decoded.drops,
+                    probe = false,
+                )
+            },
+            onFailure = { decodeTree(line) },
+        )
+
+        fun decodeTree(line: String): PerfCachedLine {
             val obj = parse(line)
             val ts = obj?.let(::timestamp)
             val facts = PerfCachedLine(
@@ -279,23 +289,24 @@ public class PerfRowsFileSource internal constructor(
             return true
         }
 
-        private fun parsed(ts: Long, obj: JsonObject) {
-            oldest = minOf(oldest ?: ts, ts)
-            if (ts < sinceMs) drops(obj)?.let { candidate(Baseline(drops = it)) }
-            if (LivenessProbe.legacyRow(obj)) {
-                probe(ts, obj)
+        private fun parsed(line: PerfCachedLine) {
+            val row = line.row
+            if (row == null) {
+                skipped++
                 return
             }
-            newest = maxOf(newest ?: ts, ts)
-            if (ts >= sinceMs) rows += row(ts, obj)
+            oldest = minOf(oldest ?: row.ts, row.ts)
+            if (row.ts < sinceMs) line.drops?.let { candidate(Baseline(drops = it)) }
+            if (line.probe) {
+                probe(row)
+                return
+            }
+            newest = maxOf(newest ?: row.ts, row.ts)
+            if (row.ts >= sinceMs) rows += row
         }
 
         private fun probe(row: PerfRow) {
             if (row.ts >= sinceMs && selection == PerfSelection.ECONOMICS) probes += row
-        }
-
-        private fun probe(ts: Long, obj: JsonObject) {
-            if (ts >= sinceMs && selection == PerfSelection.ECONOMICS) probes += row(ts, obj)
         }
 
         /** The leading ts of a writer-shaped line that is before the cutoff and not older than the

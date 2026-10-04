@@ -2,6 +2,7 @@
 package splice.app.sources
 
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.longOrNull
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
@@ -29,8 +30,8 @@ private const val FIELD_NAME_BUDGET_DIVISOR = 16L
 // Covers generation, identity, linked-list and map objects, digest and amortized map capacity.
 private const val GENERATION_OVERHEAD_BYTES = 1_024L
 
-// Covers the fixed 8 KiB hash buffer, digest provider and cache objects with alignment headroom.
-private const val CACHE_OVERHEAD_BYTES = 12L * 1_024
+// Covers the 8 KiB digest buffer, bounded parser recycler and scratch, and cache objects with headroom.
+private const val CACHE_OVERHEAD_BYTES = 24L * 1_024
 
 // Covers the path's byte/string forms and fallback normalized identity with worst-case UTF-16.
 private const val PATH_STORAGE_BYTES_PER_CHAR = 8L
@@ -48,12 +49,20 @@ internal class PerfRowsCache(private val limitBytes: Long = PERF_CACHE_BYTES) {
     private var recordBytes = 0L
     private var recordCount = 0
     private val prefix = PerfPrefixDigest()
+    internal val decoder = PerfRowDecode(names)
 
     val retainedBytes: Long
         get() = CACHE_OVERHEAD_BYTES + recordBytes + names.retainedBytes + generations.values.sumOf { it.metadataBytes }
     val retainedRows: Int get() = recordCount
 
-    fun fields(obj: JsonObject): PerfNumericFields = PerfNumericFields(obj, names)
+    fun fields(obj: JsonObject): PerfNumericFields {
+        val builder = PerfNumericBuilder(names)
+        obj.forEach { (key, value) ->
+            val number = (value as? kotlinx.serialization.json.JsonPrimitive)?.takeUnless { it.isString }?.longOrNull
+            if (number != null) builder.put(key, number)
+        }
+        return PerfNumericFields(builder)
+    }
 
     fun read(path: Path, priority: Int, visit: PerfLineVisit, decode: PerfLineDecode) {
         val before = attributes(path)

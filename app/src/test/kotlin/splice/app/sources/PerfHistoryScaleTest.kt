@@ -119,5 +119,9 @@ class PerfHistoryScaleTest {
             "unchanged reads may replay the requested window, never hash or frame the older generation",
         )
         println("perf_warm_disk_bytes=${profiler.diskBytes} requested_file_bytes=$requestedBytes")
+        assertTrue(
+            profiler.sourceBytes <= profiler.diskBytes * 6,
+            "warm allocation must stay within a small multiple of the requested bytes actually replayed",
+        )
     }
 }

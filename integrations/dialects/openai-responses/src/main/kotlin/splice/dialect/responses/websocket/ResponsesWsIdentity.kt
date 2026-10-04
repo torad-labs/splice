@@ -46,6 +46,16 @@ internal class ResponsesWsIdentity(
         commitResponse(chain, commit, event["response"] as? JsonObject)
     }
 
+    /** A round that ended on a failure or incomplete terminal names its socket's age and round on it. The ending's
+     *  status and codes are the translator's line, in the same second. */
+    fun observeEnding(key: String, event: JsonObject, pulse: WsPulse) {
+        val type = JsonScalars.str(event[WS_FIELD_TYPE])
+        val incomplete = type == "response.incomplete" ||
+            JsonScalars.str((event["response"] as? JsonObject)?.get("status")) == "incomplete"
+        if (type !in ResponsesRoundEnd.FAILED && !incomplete) return
+        log("[ws] ${logKey(key)} round ended on $type: ${pulse.ageAndRound()}\n")
+    }
+
     private fun commitResponse(chain: String, commit: PendingCommit, response: JsonObject?) {
         val output = (response?.get("output") as? JsonArray).orEmpty()
         val observedCalls = commit.callItems.ifEmpty {

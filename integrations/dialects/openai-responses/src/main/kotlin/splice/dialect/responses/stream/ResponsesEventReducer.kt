@@ -70,6 +70,7 @@ internal class ResponsesEventReducer(
         ) {
             state.incomplete = true
             val reason = JsonScalars.str(resp["incomplete_details"] as? JsonObject, "reason").orEmpty()
+            state.ending = "${word(JsonScalars.str(evt["type"]))} reason=${word(reason)}"
             // max_output_tokens is the honest "ran out of room" stop; any other reason
             // (content_filter, etc.) is a censored generation, never a clean incomplete.
             if (reason.isNotEmpty() && reason != INCOMPLETE_REASON_MAX_TOKENS) state.contentFiltered = true
@@ -108,11 +109,23 @@ internal class ResponsesEventReducer(
             "$code $message",
             code = realCode.ifEmpty { null },
         )
+        state.ending = "${word(JsonScalars.str(evt["type"]))} status=${word(JsonScalars.str(evt["status"]))} " +
+            "code=${word(JsonScalars.str(e["code"]))} type=${word(if (e === evt) null else typeField)}"
         // A response.failed payload can carry the round's usage — harvest it so the salvage
         // accounting is real (code-review 2026-07-24: the terminal-only harvest left
         // PartialRound.usage permanently zero).
         (evt[KEY_RESPONSE] as? JsonObject)?.let { accumulateUsage(it) }
     }
+
+    /** An upstream protocol word for the ending line: "-" when absent, "?" when it is anything but a short code, so
+     *  no message text can ride a field the backend filled. */
+    private fun word(value: String?): String = when {
+        value.isNullOrEmpty() -> "-"
+        protocolWord.matches(value) -> value
+        else -> "?"
+    }
+
+    private val protocolWord = Regex("[A-Za-z0-9_.:-]{1,64}")
 
     /** Shared usage harvest for terminal AND failure payloads. Guarded >0 so a later, richer
      *  payload never zeroes an earlier one. */

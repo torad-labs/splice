@@ -69,7 +69,7 @@ private fun round(id: String, vararg parts: String): List<JsonObject> = buildLis
     add(completed)
 }
 
-private fun codexSeams(): ResponsesTurnSeams {
+private fun codexSeams(log: LogSink = LogSink {}): ResponsesTurnSeams {
     val quirks = ResponsesQuirks(
         providerTag = "claudex",
         summaryDelivery = "sequential_cutoff",
@@ -108,6 +108,7 @@ private fun codexSeams(): ResponsesTurnSeams {
             replayReasoning = false,
             streamIdleMs = 180_000,
             upstreamTimeoutMs = 900_000,
+            log = log,
         ),
     )
 }
@@ -147,5 +148,22 @@ class SeamsCrossRoundDedupTest {
             "round-2 restatement leaked: ${sink2.out}",
         )
         assertEquals(1, sink2.out.count { it.contains(p2) }, "round-2 new part lost: ${sink2.out}")
+    }
+}
+
+/** Oct 4: the ending line reaches daemon.log through the seams the daemon builds, tagged with the provider. */
+class SeamsEndingLineTest {
+    @Test
+    fun `a failed round's ending line carries the provider tag through the real seams`() = runTest {
+        val lines = mutableListOf<String>()
+        val signals = TurnSignals(clientGone = { false }, watchdogFired = { null })
+        codexSeams(LogSink(lines::add)).streamTranslator(testMeta(), signals).driveTurn(
+            listOf(ev("""{"type":"error","status":429,"error":{"code":"rate_limit_exceeded"}}""")).asFlow(),
+            SeamsSink(),
+        )
+        assertEquals(
+            listOf("[claudex] upstream round ended on error status=429 code=rate_limit_exceeded type=-"),
+            lines,
+        )
     }
 }

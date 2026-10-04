@@ -21,6 +21,7 @@ import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.SharedSummaryParts
 import splice.core.turn.TurnOutcome
+import splice.core.util.LogSink
 import splice.dialect.responses.StreamTurnContext
 import splice.dialect.responses.reasoning.EmitEncryptedReasoning
 import splice.upstream.retry.WatchdogFired
@@ -1518,5 +1519,60 @@ class ResponsesStringErrorTest {
             (outcome as TurnOutcome.Success).messageClosed,
             "no message item, so the honest error still applies",
         )
+    }
+}
+
+/** Oct 4: five code-mode rounds ended on an error-family terminal and daemon.log kept no trace of which event, status
+ *  or vendor code it was, so whether splice provoked them could not be answered. A round that ends failed or
+ *  incomplete now leaves one line of protocol vocabulary, and never the backend's message text or an id. */
+class ResponsesEndingLineTest {
+    private suspend fun endingLines(vararg events: String): List<String> {
+        val lines = mutableListOf<String>()
+        ResponsesStreamTranslator(ctx(), log = LogSink(lines::add)).driveTurn(
+            events.map(::ev).asFlow(),
+            RecordingSink(),
+        )
+        return lines
+    }
+
+    @Test
+    fun `a websocket error names its event, status, vendor code and error type`() = runTest {
+        val lines = endingLines(
+            """{"type":"error","status":400,"error":{"type":"invalid_request_error",
+               "code":"websocket_connection_limit_reached","message":"synthetic words resp_secret"}}""",
+        )
+        assertEquals(
+            listOf(
+                "upstream round ended on error status=400 code=websocket_connection_limit_reached " +
+                    "type=invalid_request_error",
+            ),
+            lines,
+        )
+    }
+
+    @Test
+    fun `a failed response names its code, and a field holding text reads as unknown`() = runTest {
+        assertEquals(
+            listOf("upstream round ended on response.failed status=- code=server_error type=-"),
+            endingLines(
+                """{"type":"response.failed","response":{"id":"resp_1",
+                   "error":{"code":"server_error","message":"boom"}}}""",
+            ),
+        )
+        val lines = endingLines("""{"type":"error","code":"synthetic words here","error":"rate limit exceeded"}""")
+        assertEquals(listOf("upstream round ended on error status=- code=? type=-"), lines)
+        assertFalse(lines.single().contains("synthetic") || lines.single().contains("rate limit"), lines.single())
+    }
+
+    @Test
+    fun `an incomplete response names its reason, and a completed one leaves no line`() = runTest {
+        assertEquals(
+            listOf("upstream round ended on response.incomplete reason=max_output_tokens"),
+            endingLines(
+                """{"type":"response.incomplete","response":{"id":"r1","status":"incomplete",
+                   "incomplete_details":{"reason":"max_output_tokens"}}}""",
+            ),
+        )
+        assertEquals(emptyList<String>(), endingLines(completed.toString()))
     }
 }

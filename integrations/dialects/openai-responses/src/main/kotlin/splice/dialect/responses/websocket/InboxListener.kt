@@ -55,8 +55,12 @@ internal class InboxListener(
     private fun acceptText(data: CharSequence, last: Boolean) {
         if (terminalSeen()) {
             // A frame after the round's terminal: the round it belongs to is over, so this can only
-            // ever be served as some LATER round's first event. Poison instead.
-            log("[ws] frame arrived after the round terminal; poisoning rather than serving it later\n")
+            // ever be served as some LATER round's first event. Poison instead. Its event type says
+            // what followed the terminal, so the line names it, and never its text.
+            log(
+                "[ws] frame arrived after the round terminal (${lateType(data, last)}); " +
+                    "poisoning rather than serving it later\n",
+            )
             onAnomaly()
             return
         }
@@ -69,6 +73,16 @@ internal class InboxListener(
         }
         if (last) deliverAssembly()
     }
+
+    /** The late frame's event type when it arrived whole, "fragment" when it did not, and "?" when its type is not a
+     *  short protocol word. */
+    private fun lateType(data: CharSequence, last: Boolean): String {
+        if (!last || assembly.isNotEmpty()) return "fragment"
+        val event = Cancellables.runCatchingCancellable { wsJson.parseToJsonElement(data.toString()).jsonObject }
+        return JsonScalars.str(event.getOrNull()?.get(FIELD_TYPE))?.takeIf(protocolWord::matches) ?: "?"
+    }
+
+    private val protocolWord = Regex("[a-z_.]{1,64}")
 
     private fun deliverAssembly() {
         val payload = assembly.toString()

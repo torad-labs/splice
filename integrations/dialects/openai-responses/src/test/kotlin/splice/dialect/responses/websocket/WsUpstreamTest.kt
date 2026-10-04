@@ -754,6 +754,30 @@ class WsUpstreamInboxListenerTest {
         assertEquals("b", inbox.tryReceive().getOrNull()?.type(), "event 2 must not carry event 1's text")
     }
 
+    /** Oct 4: every code-mode round that failed was followed in the same second by a frame after its terminal, and
+     *  the line could not say what that frame was. It names the event type, and never the frame's text. */
+    @Test
+    fun `a frame after the round terminal names its event type and never its text`() {
+        val lines = mutableListOf<String>()
+        var anomalies = 0
+        val socket = FakeSocket(Fixture())
+        val listener = InboxListener(
+            Channel(Channel.UNLIMITED),
+            { lines += it },
+            terminalSeen = { true },
+            onAnomaly = { anomalies += 1 },
+        )
+        listener.onText(socket, """{"type":"response.failed","response":{"id":"resp_secret"}}""", true)
+        listener.onText(socket, """{"type":"synthetic words","x":1}""", true)
+        listener.onText(socket, """{"type":"response.out""", false)
+        assertEquals(
+            listOf("(response.failed)", "(?)", "(fragment)"),
+            lines.map { it.substringAfter("terminal ").substringBefore(";") },
+        )
+        assertFalse(lines.any { "resp_secret" in it || "synthetic" in it }, lines.toString())
+        assertEquals(3, anomalies)
+    }
+
     @Test
     fun `an oversized unfinished fragment poisons before the translator can see an event`() {
         val inbox = Channel<JsonObject>(Channel.UNLIMITED)

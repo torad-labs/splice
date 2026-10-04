@@ -78,6 +78,10 @@ internal class ResponsesTurnState {
     var finalResponse: JsonObject? = null
     var upstreamFailure: ClassifiedFailure? = null
 
+    /** The failure or incomplete terminal this round ended on, as protocol vocabulary only: the event type, the
+     *  status, the vendor code and error type, or the incomplete reason. Never message text, never an id. */
+    var ending: String? = null
+
     // CX-01: latched when a function_call block closes with malformed/empty argument JSON — a
     // truncated-but-terminated tool call would otherwise reach Claude Code as a corrupt tool_use.
     var toolArgsInvalid: String? = null

@@ -28,6 +28,7 @@ internal class WsPulse(
     private val lastFrameAt = AtomicLong(openedAt)
     private val lastPingAt = AtomicLong(NEVER)
     private val roundStartedAt = AtomicLong(NEVER)
+    private val rounds = AtomicLong(0)
     private val timing = AtomicReference<WsAttemptTiming?>(null)
     private val demandAt = AtomicLong(NEVER)
 
@@ -84,6 +85,7 @@ internal class WsPulse(
     }
 
     internal fun roundStarted() {
+        rounds.incrementAndGet()
         timing.set(null)
         roundEvents.clear()
         roundStartedAt.set(clock())
@@ -121,6 +123,10 @@ internal class WsPulse(
         return "$label age ${secs(now - openedAt)}, $state, last frame ${secs(now - lastFrameAt.get())} ago, " +
             "$pinged, open=${openSockets()}"
     }
+
+    /** The socket's age and which round on it this is, for a round that ended failed or incomplete: OpenAI's
+     *  websocket mode closes a connection at 60 minutes, and the pool ages none out. */
+    internal fun ageAndRound(): String = "socket age ${secs(clock() - openedAt)}, round ${rounds.get()}"
 
     private fun secs(ms: Long): String = "${ms / MS_PER_S}s"
 

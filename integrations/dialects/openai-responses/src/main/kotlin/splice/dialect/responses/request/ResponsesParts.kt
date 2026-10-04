@@ -63,6 +63,7 @@ internal class ResponsesParts(input: ResponsesPartsInput) {
             streamIdleMs = input.streamIdleMs,
             upstreamTimeoutMs = input.upstreamTimeoutMs,
             toolNames = input.toolNames,
+            log = input.log,
         ),
     )
     val failureAmend = ResponsesFailureAmend(

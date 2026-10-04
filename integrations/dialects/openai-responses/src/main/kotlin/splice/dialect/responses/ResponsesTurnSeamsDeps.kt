@@ -2,6 +2,7 @@
 // stays under the constructor-arity wall (concentration, 2026-08-19).
 package splice.dialect.responses
 
+import splice.core.util.LogSink
 import splice.dialect.responses.reasoning.ReasoningCache
 import splice.dialect.responses.reasoning.ReasoningCachePolicy
 import splice.dialect.responses.request.ResponsesStableIds
@@ -22,4 +23,5 @@ internal data class ResponsesTurnSeamsDeps(
     val streamIdleMs: Long,
     val upstreamTimeoutMs: Long,
     val toolNames: ToolNameShortener = ToolNameShortener(),
+    val log: LogSink = LogSink { },
 )

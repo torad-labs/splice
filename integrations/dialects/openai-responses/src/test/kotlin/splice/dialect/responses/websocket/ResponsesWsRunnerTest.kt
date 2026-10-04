@@ -30,6 +30,7 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.ReasoningDisplayParser
 import splice.core.turn.TurnMeta
+import splice.core.util.LogSink
 import splice.dialect.responses.request.responsesRequestJson
 import splice.dialect.responses.stream.ResponsesRoundEnd
 import splice.upstream.NEVER_PINGED_MS
@@ -71,11 +72,13 @@ private class Rig(private val script: (Int) -> List<String>) {
     private var sockets = 0
     private val transport = WsUpstream(connector = ::connect)
     val session = ResponsesWsSession()
+    val logs = mutableListOf<String>()
     val runner = ResponsesWsRunner(
         transport = transport,
         session = session,
         wssUrl = "wss://example.invalid/responses",
         handshakeHeaders = { emptyMap() },
+        log = LogSink { logs += it },
     )
 
     /** The live socket's listener, so a test can deliver a server ping the way the JDK would. */
@@ -632,3 +635,26 @@ class ResponsesWsRunnerTest {
 }
 
 private fun created(id: String) = """{"type":"response.created","response":{"id":"$id"}}"""
+
+/** Oct 4: five code-mode rounds ended on an error-family terminal on pooled sockets the pool never ages out, and
+ *  OpenAI closes a websocket connection at 60 minutes. A round that ends failed or incomplete names its socket's age
+ *  and which round on that socket it was, beside the conversation's digest and never its raw key. */
+class ResponsesWsEndingLineTest {
+    @Test
+    fun `a round that ends failed names the socket's age and its round on that socket`() = runTest {
+        val rig = Rig { round ->
+            when (round) {
+                0 -> listOf(completed("r1"))
+                1 -> listOf("""{"type":"response.incomplete","response":{"id":"r2","status":"incomplete"}}""")
+                else -> listOf("""{"type":"error","status":400,"error":{"code":"synthetic_code","message":"m"}}""")
+            }
+        }
+        repeat(3) { rig.round() }
+        val endings = rig.logs.filter { "round ended on" in it }
+        assertEquals(
+            listOf("response.incomplete: socket age 0s, round 2", "error: socket age 0s, round 3"),
+            endings.map { it.substringAfter("round ended on ").trim() },
+        )
+        assertTrue(endings.all { it.startsWith("[ws] ws-") && "splice-abc" !in it }, endings.toString())
+    }
+}

@@ -87,6 +87,8 @@ internal class ResponsesWsRunner(
         // The socket's liveness for the idle watchdog, closed over the same connection: a pooled
         // socket outlives the round, but the poller that reads this is cancelled with the round.
         var pathPulse = WsPathPulse { NEVER_PINGED_MS }
+        // The connection's vital signs, for the line a failed or incomplete round leaves (observeEnding).
+        var pulse: WsPulse? = null
         val flow = transport.round(
             key = key,
             headers = headers,
@@ -99,6 +101,7 @@ internal class ResponsesWsRunner(
             val lease = conn.lease.get()
             abort = WsRoundAbort { if (conn.lease.get() == lease) conn.kill() }
             pathPulse = WsPathPulse { conn.pulse.pingAgoMs() }
+            pulse = conn.pulse
             // F7: frame + epoch captured atomically. Two calls (frameFor then epochOf) left a
             // window where a concurrent clear bumped the epoch after the frame was built on
             // now-stale context, and the post-bump epoch still matched at commit — resurrecting the
@@ -121,6 +124,7 @@ internal class ResponsesWsRunner(
             events = flow.onEach { event ->
                 requestMetadata.captureEvent(meta, event)
                 identity.observeTerminal(chain, pending, event)
+                pulse?.let { identity.observeEnding(key, event, it) }
             },
             abort = abort,
             pathPulse = pathPulse,

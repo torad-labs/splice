@@ -33,6 +33,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.SharedSummaryParts
 import splice.core.turn.TurnOutcome
+import splice.core.util.LogSink
 import splice.dialect.responses.ResponsesTurnState
 import splice.dialect.responses.StreamTurnContext
 import splice.dialect.responses.reasoning.ResponsesReasoningFold
@@ -52,6 +53,9 @@ private const val RUNAWAY_GUARD_MESSAGE = "upstream: response exceeded max buffe
 public class ResponsesStreamTranslator(
     private val ctx: StreamTurnContext,
     private val names: ToolNameShortener = ToolNameShortener(),
+    /** daemon.log, tagged with the provider, for the one line a round that ends failed or incomplete gets. The
+     *  default drops it for tests that do not read it. */
+    private val log: LogSink = LogSink { },
 ) : StreamTranslator {
 
     // NF-06: latched when BufferCapacity trips; never provider-reported (the verdict is local).
@@ -141,6 +145,7 @@ public class ResponsesStreamTranslator(
         ResponsesTerminalBackfill().harvestFallback(state)
         val outcome = ResponsesTerminalDecision(ctx, ResponsesOutcomePayload(ctx))
             .terminalOutcome(state, runawayGuard, tear)
+        state.ending?.let { log("upstream round ended on $it") }
         captureTurnReasoning(state, outcome)
         return relabelUnrecognised(outcome)
     }

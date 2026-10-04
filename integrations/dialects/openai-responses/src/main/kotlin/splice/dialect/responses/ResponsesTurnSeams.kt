@@ -5,6 +5,7 @@ package splice.dialect.responses
 
 import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.TurnMeta
+import splice.core.util.LogSink
 import splice.dialect.responses.reasoning.EmitEncryptedReasoning
 import splice.dialect.responses.reasoning.ResponsesReanchorController
 import splice.dialect.responses.reasoning.TurnReasoningSink
@@ -69,6 +70,7 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
                     onTurnReasoning = reasoningSink(meta),
                 ),
                 deps.toolNames,
+                LogSink { line -> deps.log("[${deps.quirks.providerTag}] $line") },
             )
         }
 

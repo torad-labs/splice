@@ -5,6 +5,11 @@ import { dirname, join } from 'node:path';
 import { STACK } from './stack';
 import { assertHealthy, env, open, read } from './support';
 
+// Writes start background refetches. Keep their fetched bodies alive until every handler settles.
+test.afterEach(async ({ page }) => {
+  await page.unrouteAll({ behavior: 'wait' });
+});
+
 async function pick(page: Page, scope: Locator, label: string, value: string) {
   await scope.getByRole('button', { name: label, exact: true }).click();
   await page.getByRole('menuitemradio', { name: value, exact: true }).click();
@@ -27,6 +32,20 @@ async function topologyWrites(page: Page) {
   });
   return writes;
 }
+
+test('settings teardown lets an active route finish reading its fetched body', async ({ page }) => {
+  let fetched = false;
+  await page.route('**/api/topology', async route => {
+    const response = await route.fetch();
+    fetched = true;
+    // End the journey while this handler still owns a fetched response, as a save refetch can.
+    await new Promise(resolve => setTimeout(resolve, 500));
+    const body = await response.json();
+    await route.fulfill({ response, json: body });
+  });
+  await open(page, 'settings/advanced');
+  await expect.poll(() => fetched).toBe(true);
+});
 
 test('the warning slider makes its chosen percentage visibly selected', async ({ page }) => {
   await page.route(url => url.pathname === '/api/config', async route => {

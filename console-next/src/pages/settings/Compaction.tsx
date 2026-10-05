@@ -50,7 +50,7 @@ export function Compaction() {
                   {recent.map((row) => (
                     <li key={`${row.head}-${row.ts}`}>
                       <span>{clockTime(row.ts)}</span>
-                      <span>{row.head}</span>
+                      <span>{labelOf(row.head)}</span>
                       <State tone={TONE[stateOf(row.outcome ?? '')]}>{outcomeText(row.outcome ?? row.error ?? '')}</State>
                       <span>{row.ms === undefined ? '' : secondsText(row.ms)}</span>
                     </li>

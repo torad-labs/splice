@@ -9,6 +9,41 @@ import type { SessionRow } from '../src/types/sessions';
 import { FIRST_READ_MS, env, open, routePath } from './support';
 import { STACK } from './stack';
 
+test('Models puts command ordering before its catalog and supports click and keyboard Move', async ({ page }) => {
+  await page.route(url => url.pathname === '/api/heads', async route => {
+    const response = await route.fetch();
+    const body = await response.json() as HeadsPayload;
+    await route.fulfill({ response, json: { ...body, heads: body.heads.slice(0, 2).map((head, index) => ({ ...head, label: index === 0 ? 'Synthetic first command' : 'Synthetic second command' })) } });
+  });
+  const faults = await open(page, 'models');
+  const commands = page.getByRole('region', { name: 'Commands', exact: true });
+  const names = commands.locator('li.card h3');
+  await expect(names).toHaveText(['Synthetic first command', 'Synthetic second command']);
+  expect(await commands.evaluate(node => {
+    const catalog = document.querySelector('[aria-labelledby="every-model"]');
+    return catalog !== null && (node.compareDocumentPosition(catalog) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+  })).toBe(true);
+  await expect(commands.getByRole('button', { name: 'Move Synthetic first command earlier', exact: true })).toBeDisabled();
+  await commands.getByRole('button', { name: 'Move Synthetic first command later', exact: true }).click();
+  await expect(names).toHaveText(['Synthetic second command', 'Synthetic first command']);
+  await commands.getByRole('button', { name: 'Move Synthetic first command earlier', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await expect(names).toHaveText(['Synthetic first command', 'Synthetic second command']);
+  await page.reload();
+  await expect(names).toHaveText(['Synthetic first command', 'Synthetic second command']);
+  for (const width of [1536, 393]) {
+    await page.setViewportSize({ width, height: 980 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    const titleBounds = await names.first().boundingBox();
+    if (titleBounds === null) throw new Error('a command card lost its title');
+    expect(titleBounds.width).toBeGreaterThanOrEqual(160);
+    await commands.screenshot({ path: test.info().outputPath('model-order-' + width + '.png') });
+  }
+  expect(faults.pageErrors).toEqual([]);
+  expect(faults.failedReads).toEqual([]);
+  await page.unrouteAll({ behavior: 'wait' });
+});
+
 test('the retired needs-you bookmark opens Accounts', async ({ page }) => {
   const faults = await open(page, 'accounts');
   await page.goto(env('CONSOLE_E2E_BASE') + '/#/needs-you');

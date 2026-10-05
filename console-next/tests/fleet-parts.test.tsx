@@ -32,6 +32,13 @@ const render = (facts: FleetCard, fix: string | null = null) =>
   );
 
 describe('a fleet card', () => {
+  test('a command card offers named Move controls with the edge action disabled', () => {
+    const facts = card();
+    const html = renderToStaticMarkup(<MemoryRouter><DndContext><SortableContext items={[facts.key]}><FleetCardView facts={facts} fix={null} ordering={{ earlier: null, later: () => undefined }} /></SortableContext></DndContext></MemoryRouter>);
+    expect(html).toMatch(/<button(?=[^>]*aria-label="Move claude-grok earlier")(?=[^>]*disabled="")[^>]*>/);
+    expect(html).toContain('aria-label="Move claude-grok later"');
+  });
+
   test('a ready card is a title that opens its page, a state, one window and one quiet line', () => {
     const html = render(card());
     expect(html).toContain('href="/models/claude-grok"');

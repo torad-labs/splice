@@ -51,10 +51,11 @@ export function FleetPage() {
     facts: fleetCard(head, { usage: usage.data ?? null, auth: auth.data ?? null, accounts: rows, sessions: live, topologyStale: health.data?.topologyStale === true, family: families.get(head.key) ?? null, keys: keyStore.data ?? null, now }),
   }));
   const keys = cards.map((card) => card.head.key);
+  const move = (key: string, over: string): void => setOrder('fleet', moveKey(order, keys, key, over));
   const onDragEnd = (event: DragEndEvent): void => {
     const { active, over } = event;
     if (over === null || active.id === over.id) return;
-    setOrder('fleet', moveKey(order, keys, String(active.id), String(over.id)));
+    move(String(active.id), String(over.id));
   };
 
   return (
@@ -71,20 +72,25 @@ export function FleetPage() {
           </AddPlan>
         }
       />
-      <ModelTable />
       <section className="commands" aria-label={F.commands}>
         <GroupHead title={F.commands} count={cards.length} why={F.commandsWhy} />
         {cards.length === 0 ? <Empty title={F.empty} why={F.emptyWhy} /> : null}
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
           <SortableContext items={keys} strategy={rectSortingStrategy}>
             <ul className="grid fit">
-              {cards.map(({ head, facts }) => (
-                <FleetCardView
+              {cards.map(({ head, facts }, index) => {
+                const earlier = cards[index - 1];
+                const later = cards[index + 1];
+                return <FleetCardView
                   key={head.key}
                   facts={facts}
+                  ordering={{
+                    earlier: earlier === undefined ? null : () => move(head.key, earlier.head.key),
+                    later: later === undefined ? null : () => move(head.key, later.head.key),
+                  }}
                   fix={facts.fix === null ? null : <FleetFix fix={facts.fix} head={head} pool={poolOf(rows, head.key)} now={now} keyCommand={facts.keyCommand ?? null} />}
-                />
-              ))}
+                />;
+              })}
               <li>
                 <AddPlan>
                   <button type="button" className="add-card">
@@ -97,6 +103,7 @@ export function FleetPage() {
           </SortableContext>
         </DndContext>
       </section>
+      <ModelTable />
     </>
   );
 }

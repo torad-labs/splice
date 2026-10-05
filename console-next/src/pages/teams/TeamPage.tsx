@@ -10,7 +10,7 @@ import { repoLabel } from '../../lib/projects';
 import { atRetentionEdge, dayOf, dayWords, peerName, seatsOf, sessionIn, teamLede } from '../../lib/teams-page';
 import { M } from '../../lib/words-teams';
 import type { TeamSlotTally } from '../../types/teams';
-import { Button, Empty, Fault, PageHead, State } from '../../ui';
+import { Button, Empty, Fault, Markdown, PageHead, State } from '../../ui';
 import { sessionPath } from '../shared/SessionActions';
 import { TeamDialog } from './TeamDialog';
 import './teams.css';
@@ -130,7 +130,8 @@ export function TeamPage() {
           <ul className="talk">
             {[...chat.data.messages].sort((a, b) => b.at - a.at).map((message) => (
               <li key={`${message.at}-${message.from}-${message.to}`}>
-                <p><small>{nameOf(message.from_slot ?? message.from)} {M.to} {nameOf(message.to_slot ?? message.to)} · {clockTime(message.at)}</small>{message.text === null ? <span className="missing">{message.missing_reason ?? M.textMissing}</span> : message.text}</p>
+                <small>{nameOf(message.from_slot ?? message.from)} {M.to} {nameOf(message.to_slot ?? message.to)} · {clockTime(message.at)}</small>
+                {message.text === null ? <p className="missing">{message.missing_reason ?? M.textMissing}</p> : <Markdown>{message.text}</Markdown>}
               </li>
             ))}
           </ul>

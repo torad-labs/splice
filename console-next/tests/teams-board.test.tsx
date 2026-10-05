@@ -125,6 +125,13 @@ describe('one opened handoff', () => {
     expect(renderMessage('A different message.', null, 2)).not.toContain('A different message.');
     expect(renderMessage('A different message.', null, 2)).toContain('The message text is no longer available.');
   });
+  test('an opened handoff renders Markdown rather than raw message syntax', () => {
+    const html = renderMessage('**Synthetic handoff**\n\n```typescript\nconst boundary = 1;\n```');
+    expect(html).toContain('<strong>Synthetic handoff</strong>');
+    expect(html).toContain('class="code"');
+    expect(html).not.toContain('**Synthetic handoff**');
+    expect(html).not.toContain('```typescript');
+  });
   test('retained metadata with unavailable text keeps the daemon reason visible', () => {
     expect(renderMessage(null, 'Synthetic transcript was removed.')).toContain('Synthetic transcript was removed.');
   });

@@ -2,6 +2,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { TeamEconomicsPayload, TeamRow, TeamsPayload } from '../src/types/teams';
 import type { SessionsPayload } from '../src/types/sessions';
+import { repoNameOf } from '../src/lib/repo';
 import { env, open, read } from './support';
 import { sendHandOff, STACK } from './stack';
 
@@ -9,6 +10,33 @@ async function select(page: Page, scope: Locator, label: string, value: string):
   await scope.getByRole('button', { name: label, exact: true }).click();
   await page.getByRole('menuitemradio', { name: value, exact: true }).click();
 }
+
+test('team composition picks a named repository and discloses its unchanged folder identity on request', async ({ page }) => {
+  const root = env('CONSOLE_E2E_REPO');
+  await page.route(url => url.pathname === '/api/sessions', async route => {
+    const response = await route.fetch();
+    const body = await response.json() as SessionsPayload;
+    body.sessions = body.sessions.map(row => ({ ...row, repo: { root, remote: 'https://github.com/synthetic-labs/named-project.git' } }));
+    await route.fulfill({ response, json: body });
+  });
+  await open(page, 'sessions?group=team');
+  await page.getByRole('button', { name: 'New team', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('textbox', { name: 'Repository', exact: true })).toHaveCount(0);
+  await select(page, dialog, 'Repository', 'named-project');
+  await expect(dialog.getByRole('button', { name: 'Repository', exact: true })).toContainText('named-project');
+  await expect(dialog.getByRole('textbox', { name: 'Folder location', exact: true })).toHaveCount(0);
+  await dialog.getByText('Show or change the folder', { exact: true }).click();
+  await expect(dialog.getByRole('textbox', { name: 'Folder location', exact: true })).toHaveValue(root);
+  await dialog.getByRole('textbox', { name: 'Name', exact: true }).fill('Synthetic named repository team');
+  await dialog.getByRole('group', { name: 'Seat 1', exact: true }).getByRole('textbox', { name: 'Role', exact: true }).fill('lead');
+  await select(page, dialog, 'Seat 1 Command', STACK.oauthHead);
+  const saved = page.waitForResponse(response => new URL(response.url()).pathname === '/api/teams' && response.request().method() === 'PUT');
+  await dialog.getByRole('button', { name: 'Save the team', exact: true }).click();
+  const response = await saved;
+  expect(response.ok()).toBe(true);
+  expect(response.request().postDataJSON().repo).toBe(root);
+});
 
 test('a team created through the console binds real sessions, joins handoff and economics and explicitly opens a seat', async ({ page }) => {
   const faults = await open(page, 'sessions?group=team');
@@ -34,7 +62,7 @@ test('a team created through the console binds real sessions, joins handoff and 
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('textbox', { name: 'Name', exact: true }).fill('Synthetic handoff team');
   await dialog.getByRole('textbox', { name: 'Goal', exact: true }).fill('Deliver the synthetic review');
-  await dialog.getByRole('combobox', { name: /^Repository/ }).fill(env('CONSOLE_E2E_REPO'));
+  await select(page, dialog, 'Repository', repoNameOf(env('CONSOLE_E2E_REPO'), sender?.repo?.remote));
   const seat = (n: number) => dialog.getByRole('group', { name: 'Seat ' + n, exact: true });
   await seat(1).getByRole('textbox', { name: 'Role', exact: true }).fill('lead');
   await select(page, dialog, 'Seat 1 Command', STACK.oauthHead);

@@ -31,6 +31,7 @@
 .project-handoffs time { color: var(--mute); font: 400 0.875rem/1.6 var(--meta); }
 .project-handoffs summary:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
 .team-message { margin: var(--space-4) 0 var(--space-6); font: 400 1rem/1.6 var(--read); color: var(--body); white-space: pre-wrap; overflow-wrap: anywhere; }
+.team-message .prose { white-space: normal; }
 .project-handoffs-more { margin-top: var(--space-6); }
 .teams-registry-note { margin-top: var(--space-8); max-width: 75ch; color: var(--mute); font: 400 0.875rem/1.5 var(--read); }
 .project-team-unresolved, .saved-teams { margin-top: var(--space-14); }

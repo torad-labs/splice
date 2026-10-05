@@ -20,6 +20,7 @@
 .day { margin-top: var(--space-7); display: inline-flex; gap: var(--space-6); align-items: center; font: 600 0.96rem var(--meta); color: var(--ink); }
 .talk { list-style: none; margin: var(--space-9) 0 0; padding: 0; display: grid; gap: var(--space-9); max-width: 47.5rem; }
 .talk p { font: 400 1.0625rem/1.6 var(--read); color: var(--body); white-space: pre-wrap; }
+.talk .prose p { white-space: normal; }
 .talk small { display: block; margin-bottom: var(--space-2); font: 600 0.875rem var(--meta); color: var(--mute); }
 .talk .missing { color: var(--mute); }
 .team-note { margin-top: var(--space-8); font: 400 1rem/1.5 var(--read); color: var(--mute); max-width: 70ch; }

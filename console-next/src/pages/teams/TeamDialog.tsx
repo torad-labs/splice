@@ -6,6 +6,7 @@ import { useSaveTeam } from '../../api/teams';
 import { addSeat, blankDraft, draftOf, editSeat, keyFor, removeSeat, setLead, validateDraft, writeOf } from '../../lib/teams-page';
 import type { TeamDraft } from '../../lib/teams-page';
 import { sessionLabel } from '../../lib/sessions';
+import { repoNameOf } from '../../lib/repo';
 import { M } from '../../lib/words-teams';
 import type { TeamRow } from '../../types/teams';
 import { Button, Close, Select } from '../../ui';
@@ -25,7 +26,10 @@ export function TeamDialog({ team, onClose, onSaved }: { team: TeamRow | null; o
   const plans = (heads.data?.heads ?? []).map((head) => ({ id: head.key, label: head.label }));
   const rows = sessions.data?.sessions ?? [];
   const taken = new Set(draft.seats.flatMap((seat) => (seat.session === null ? [] : [seat.session])));
-  const repos = [...new Set(rows.flatMap((row) => (row.repo === undefined ? [] : [row.repo.root])))];
+  const repos = [...new Set([
+    ...rows.flatMap(row => row.repo === undefined || row.repo.root === '' ? [] : [row.repo.root]),
+    ...(draft.repo === '' ? [] : [draft.repo]),
+  ])].map(root => ({ id: root, label: repoNameOf(root, rows.find(row => row.repo?.root === root && row.repo.remote !== undefined)?.repo?.remote) }));
   const set = (change: Partial<TeamDraft>): void => setDraft({ ...draft, ...change });
 
   const submit = (): void => {
@@ -50,12 +54,15 @@ export function TeamDialog({ team, onClose, onSaved }: { team: TeamRow | null; o
             <label className="field"><span className="eyebrow">{C.name}</span><input className="input" value={draft.name} onChange={(event) => set({ name: event.target.value })} autoFocus /></label>
             <label className="field"><span className="eyebrow">{C.goal}</span><textarea className="input" value={draft.goal} onChange={(event) => set({ goal: event.target.value })} /></label>
             <label className="field"><span className="eyebrow">{C.features}</span><textarea className="input" value={draft.features} onChange={(event) => set({ features: event.target.value })} /><span className="hint">{C.featuresHint}</span></label>
-            <label className="field">
+            <div className="field">
               <span className="eyebrow">{C.repo}</span>
-              <input className="input" list="team-repos" spellCheck={false} value={draft.repo} onChange={(event) => set({ repo: event.target.value })} />
-              <datalist id="team-repos">{repos.map((repo) => <option key={repo} value={repo} />)}</datalist>
+              <Select label={C.repo} value={draft.repo} options={[{ id: '', label: C.chooseRepo }, ...repos]} onChange={repo => set({ repo })} />
               <span className="hint">{C.repoHint}</span>
-            </label>
+              <details>
+                <summary>{C.repoFolder}</summary>
+                <label className="field"><span>{C.folderLocation}</span><input className="input" spellCheck={false} value={draft.repo} onChange={event => set({ repo: event.target.value })} /></label>
+              </details>
+            </div>
             <h3 className="eyebrow">{C.seats}</h3>
             {draft.seats.map((seat, index) => (
               <div key={seat.id} className="seatform" role="group" aria-label={C.seat(index + 1)}>

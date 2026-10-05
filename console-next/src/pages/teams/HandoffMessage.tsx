@@ -4,7 +4,7 @@ import { useSessionEdges } from '../../api/sessions';
 import { handoffText } from '../../lib/project-teams';
 import { peerLabel, sessionLabel } from '../../lib/sessions';
 import type { SessionEdge, SessionRow } from '../../types/sessions';
-import { Fault } from '../../ui';
+import { Fault, Markdown } from '../../ui';
 import { T } from './copy';
 
 const clock = (at: number): string => new Date(at).toLocaleString('en-US', {
@@ -16,7 +16,9 @@ export function MessageText({ edge }: { edge: SessionEdge }) {
   if (read.isError) return <Fault message={failureText(read.error)} onRetry={() => void read.refetch()} />;
   if (read.isPending) return <p className="hint">{T.readingMessage}</p>;
   const message = handoffText(edge, read.data.edges);
-  return <p className="team-message">{message?.text ?? message?.missing_reason ?? read.data.reason ?? T.missingMessage}</p>;
+  return message?.text == null
+    ? <p className="team-message">{message?.missing_reason ?? read.data.reason ?? T.missingMessage}</p>
+    : <div className="team-message"><Markdown>{message.text}</Markdown></div>;
 }
 
 /** Transcript text is requested only when the operator opens the observed handoff. */

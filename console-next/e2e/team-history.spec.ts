@@ -37,7 +37,7 @@ test('team entry reads immediately and yesterday chat and activity remain select
       team_id: TEAM.id, day_start_epoch_millis: from, packet_note: 'Synthetic packet note',
       messages: from === yesterday && to === today ? [{
         at: yesterday + 12 * 3600_000, from: STACK.sender.id, from_slot: 'lead', from_head: STACK.oauthHead,
-        to: STACK.peer.id, to_slot: 'peer', packet: null, text: 'Yesterday synthetic handoff reached the builder.',
+        to: STACK.peer.id, to_slot: 'peer', packet: null, text: '**Yesterday synthetic handoff** reached the builder.\n\n- Preserve the boundary.\n\n```typescript\nconst ready = true;\n```',
         text_source: '/synthetic/transcript.jsonl', missing_reason: null,
       }] : [],
     } });
@@ -69,6 +69,13 @@ test('team entry reads immediately and yesterday chat and activity remain select
   const message = page.getByRole('listitem').filter({ hasText: 'Yesterday synthetic handoff' });
   await expect(message).toContainText('lead to builder');
   await expect(message).toContainText('Yesterday synthetic handoff reached the builder.');
+  await expect(message.locator('strong')).toHaveText('Yesterday synthetic handoff');
+  await expect(message.locator('pre.code')).toContainText('const ready = true;');
+  await expect(message.getByRole('listitem')).toHaveText('Preserve the boundary.');
+  for (const width of [1536, 393]) {
+    await page.setViewportSize({ width, height: 980 });
+    await page.screenshot({ path: test.info().outputPath(`team-rich-message-${width}.png`), fullPage: true });
+  }
   await expect(page.getByRole('listitem').filter({ hasText: 'Yesterday synthetic activity sample' })).toBeVisible();
   await expect(page.getByText('The seats sent each other nothing.', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Earlier', exact: true }).click();

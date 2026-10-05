@@ -87,6 +87,21 @@ describe('the team page', () => {
     expect(html).toContain('Planner to Builder');
     expect(html).toContain('Builder to Planner');
   });
+  test('team messages render Markdown and code instead of printing their syntax', () => {
+    const day = dayOf(NOW, 0);
+    const html = render(client => client.setQueryData(['team-panels', 'chat', teamChatPath('t1', day)], {
+      team_id: 't1', day_start_epoch_millis: day.from, packet_note: '',
+      messages: [{ at: NOW, from: 'a', from_slot: 's2', from_head: null, to: 'b', to_slot: 's1', packet: null,
+        text: '**Synthetic finding**\n\n- Check the boundary\n\n```typescript\nconst limit = 3;\n```',
+        text_source: 'synthetic', missing_reason: null }],
+    }));
+    expect(html).toContain('<strong>Synthetic finding</strong>');
+    expect(html).toContain('<li>Check the boundary</li>');
+    expect(html).toContain('class="code"');
+    expect(html).toContain('Planner to Builder');
+    expect(html).not.toContain('**Synthetic finding**');
+    expect(html).not.toContain('```typescript');
+  });
   test('an unknown team says so', () => {
     const client = new QueryClient();
     client.setQueryData(['teams', '/api/teams'], { teams: [] });

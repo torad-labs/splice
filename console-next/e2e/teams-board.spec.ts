@@ -31,12 +31,19 @@ test('Teams groups real registry seats without saved membership and reads a mess
       input: { to: env('CONSOLE_E2E_PEER_ADDRESS'), message: 'review ready' },
     }] },
   }) + '\n', { mode: 0o600 });
+  const sentAt = Date.now();
   await sendHandOff(Number(env('CONSOLE_E2E_OAUTH_PORT')), env('CONSOLE_E2E_KEY'), env('CONSOLE_E2E_PEER_ADDRESS'), call);
+  // Other journeys retain older handoffs with these same peers. Wait for this send's board entry,
+  // not merely an already-visible matching summary, before opening the newest observed message.
+  await expect.poll(() => project.locator('.project-handoffs time').evaluateAll((times, after) =>
+    times.some(time => Date.parse(time.getAttribute('datetime') ?? '') >= after), sentAt,
+  ), { timeout: 20_000 }).toBe(true);
   const handoff = project.locator('.project-handoffs summary').filter({ hasText: (sender?.name ?? '') + ' to ' + (peer?.name ?? '') }).first();
   await expect(handoff).toBeVisible({ timeout: 20_000 });
   expect(requestedMessages).toEqual([]);
   await handoff.click();
   await expect(project.locator('.team-message')).toContainText('review ready');
+  await expect(project.locator('.team-message .prose')).toContainText('review ready');
   expect(requestedMessages.some(url => new URL(url).pathname === '/api/sessions/' + STACK.sender.id + '/edges')).toBe(true);
   expect(faults.pageErrors).toEqual([]);
   expect(faults.failedReads).toEqual([]);

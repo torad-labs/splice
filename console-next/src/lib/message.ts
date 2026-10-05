@@ -17,7 +17,7 @@ export type Cleaned =
 const ESC = String.fromCharCode(27);
 const ANSI = new RegExp(`${ESC}\\[[0-9;]*[A-Za-z]`, 'g');
 const OUTER = /^\s*<([a-zA-Z][\w-]*)>/;
-const PEER = /^\s*<cross-session-message\b([^>]*)>([\s\S]*?)<\/cross-session-message>\s*$/;
+const PEER = /^\s*(?:Another Claude session sent a message while you were working:\s*)?<cross-session-message\b([^>]*)>([\s\S]*?)<\/cross-session-message>\s*(?:This came from another Claude session[\s\S]*)?$/;
 const CAVEAT = /<local-command-caveat>[\s\S]*?<\/local-command-caveat>/g;
 const REMINDER = /<system-reminder>[\s\S]*?<\/system-reminder>/g;
 
@@ -36,7 +36,7 @@ const named = (label: string, text: string): Cleaned => ({ kind: 'event', label,
 export function cleanMessage(raw: string): Cleaned {
   const text = raw.replace(ANSI, '');
   const tag = OUTER.exec(text)?.[1];
-  const peer = PEER.exec(text);
+  const peer = PEER.exec(tag === 'system-reminder' ? inner(text, tag) ?? text : text);
   if (peer !== null) {
     const words = (peer[2] ?? '').trim();
     const from = /\bfrom-name="([^"]*)"/.exec(peer[1] ?? '')?.[1]?.trim();

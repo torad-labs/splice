@@ -9,6 +9,7 @@ export const P = {
   you: 'You',
   assistant: 'Assistant',
   system: 'Claude Code note',
+  peerFrom: 'Message from',
   handoffFrom: 'Hand-off from',
   handoffTo: 'Hand-off to',
   handoffMissing: 'What was handed over is no longer in the sender’s transcript.',

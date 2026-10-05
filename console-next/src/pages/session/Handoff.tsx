@@ -11,7 +11,7 @@ const tint = (colour: ModelColour): React.CSSProperties => ({ '--c': colour === 
 export function PeerSaid({ from, at, text, colour }: { from: string; at: number | null; text: string; colour: ModelColour }) {
   return (
     <div className="msg peer" style={tint(colour)}>
-      <div className="stamp">{P.handoffFrom} {from}{at === null ? '' : ` · ${clockTime(at)}`}</div>
+      <div className="stamp">{P.peerFrom} {from}{at === null ? '' : ` · ${clockTime(at)}`}</div>
       <Markdown>{text}</Markdown>
     </div>
   );

@@ -25,6 +25,22 @@ describe('a message read for people', () => {
     expect(line).toMatchObject({ kind: 'event', label: 'Background task', text: 'new commits on feat/v0.4.0', line: 'Background task · new commits on feat/v0.4.0' });
     expect(cleanMessage('<task-notification><task-id>1</task-id><result>done here</result></task-notification>')).toMatchObject({ line: 'Background task · done here' });
   });
+  test.each([
+    '<cross-session-message from="uds:/synthetic/peer.sock" from-name="synthetic-reviewer" from-mode="bypass">**Synthetic review**\n\n- Preserve the boundary.</cross-session-message>',
+    '<cross-session-message from="uds:/synthetic/peer.sock" from-name="synthetic-reviewer" from-mode="bypass">**Synthetic review**\n\n- Preserve the boundary.</cross-session-message>\n\nThis came from another Claude session. Synthetic delivery metadata.',
+    '<system-reminder><cross-session-message from="uds:/synthetic/peer.sock" from-name="synthetic-reviewer" from-mode="bypass">**Synthetic review**\n\n- Preserve the boundary.</cross-session-message></system-reminder>',
+    '<system-reminder>Another Claude session sent a message while you were working:\n<cross-session-message from="uds:/synthetic/peer.sock" from-name="synthetic-reviewer" from-mode="bypass">**Synthetic review**\n\n- Preserve the boundary.</cross-session-message>\n\nThis came from another Claude session. Synthetic delivery metadata.</system-reminder>',
+  ])('a delivered peer envelope reads as its sender and body: %s', raw => {
+    expect(cleanMessage(raw)).toEqual({ kind: 'peer', from: 'synthetic-reviewer', text: '**Synthetic review**\n\n- Preserve the boundary.' });
+    expect(plainLine(raw)).toBe('synthetic-reviewer: **Synthetic review**');
+    expect(readable(raw)).toBe('synthetic-reviewer: **Synthetic review**\n\n- Preserve the boundary.');
+  });
+  test('quoted peer examples and unrelated words outside an envelope remain ordinary content', () => {
+    const example = 'An example:\n\n```xml\n<cross-session-message from-name="synthetic-reviewer">Example.</cross-session-message>\n```';
+    expect(cleanMessage(example)).toEqual({ kind: 'say', text: example });
+    const mixed = '<cross-session-message from-name="synthetic-reviewer">Example.</cross-session-message>\nKeep these unrelated words.';
+    expect(cleanMessage(mixed)).toEqual({ kind: 'say', text: mixed });
+  });
   test('a system reminder standing alone is a named note of its first line', () => {
     expect(cleanMessage('<system-reminder>\nThe task tools have not been used recently.\nMore words.\n</system-reminder>')).toMatchObject({ kind: 'event', line: 'System note · The task tools have not been used recently.' });
     expect(cleanMessage('<system-reminder></system-reminder>')).toEqual({ kind: 'hidden' });

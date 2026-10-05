@@ -64,8 +64,10 @@ internal class CodeModeSourceLease(
     private val id: String,
     private val round: CodeModeLiveRound,
     private val rounds: ConcurrentHashMap<String, CodeModeLiveRound>,
+    private val beforeEnd: Runnable? = null,
 ) {
     fun ended() {
+        beforeEnd?.run()
         rounds.remove(id, round)
         round.cancel()
     }

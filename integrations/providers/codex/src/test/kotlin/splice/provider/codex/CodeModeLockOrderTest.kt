@@ -34,11 +34,19 @@ import kotlin.time.Duration.Companion.hours
 class CodeModeLockOrderTest : CodeModeBridgeTestSupport() {
     @Test
     fun `a nested sweep releases the outer key before ending a blocked source reader`() {
-        val state = LiveState()
+        val beforeEnd = CountDownLatch(1)
+        val releaseEnd = CountDownLatch(1)
+        val state = LiveState(
+            beforeEnd = Runnable {
+                beforeEnd.countDown()
+                check(releaseEnd.await(WAIT_MILLIS, TimeUnit.MILLISECONDS))
+            },
+        )
         val readerError = AtomicReference<Throwable?>()
         val sweepError = AtomicReference<Throwable?>()
+        val read = AtomicReference<CodeModeSourcePart?>()
         val reader = daemon(readerError) {
-            readSource(state)
+            read.set(readSource(state))
         }
         val sweep = daemon(sweepError) {
             state.registry.changes.edit(state.record) {
@@ -50,14 +58,21 @@ class CodeModeLockOrderTest : CodeModeBridgeTestSupport() {
             }
         }
         sweep.start()
-        sweep.join(WAIT_MILLIS)
+        try {
+            assertTrue(beforeEnd.await(WAIT_MILLIS, TimeUnit.MILLISECONDS), "deferred end follows key release")
+            reader.join(WAIT_MILLIS)
+            assertFalse(reader.isAlive, "the reader must finish while cancellation is still held")
+            assertNull(readerError.get(), "disposed capture skips the reader's delta without failing its response")
+            assertTrue(read.get() is CodeModeSourcePart.Failed, "no unread source may dispatch after disposal")
+            assertEquals("", state.record.source)
+            assertNull(state.record.sourceEnd)
+        } finally {
+            releaseEnd.countDown()
+            sweep.join(WAIT_MILLIS)
+            reader.join(WAIT_MILLIS)
+        }
         assertFalse(sweep.isAlive, "the sweep must release its outer registry locks before stopping the reader")
-        reader.join(WAIT_MILLIS)
-        assertFalse(reader.isAlive, "the reader must leave its key wait after the record is parked")
         assertNull(sweepError.get())
-        assertNull(readerError.get(), "disposed capture skips the reader's delta without failing its response")
-        assertEquals("", state.record.source)
-        assertNull(state.record.sourceEnd)
     }
 
     @Test
@@ -156,11 +171,19 @@ class CodeModeLockOrderTest : CodeModeBridgeTestSupport() {
 
     @Test
     fun `admission releases its own key before ending a source blocked in ownership`() {
-        val state = LiveState()
+        val beforeEnd = CountDownLatch(1)
+        val releaseEnd = CountDownLatch(1)
+        val state = LiveState(
+            beforeEnd = Runnable {
+                beforeEnd.countDown()
+                check(releaseEnd.await(WAIT_MILLIS, TimeUnit.MILLISECONDS))
+            },
+        )
         val readerError = AtomicReference<Throwable?>()
         val admissionError = AtomicReference<Throwable?>()
+        val read = AtomicReference<CodeModeSourcePart?>()
         val reader = daemon(readerError) {
-            readSource(state)
+            read.set(readSource(state))
         }
         state.onDeath = Runnable {
             reader.start()
@@ -171,13 +194,20 @@ class CodeModeLockOrderTest : CodeModeBridgeTestSupport() {
             assertTrue(state.registry.add(CodeModeRecords.of(state.record.key, 1)))
         }
         admission.start()
-        admission.join(WAIT_MILLIS)
+        try {
+            assertTrue(beforeEnd.await(WAIT_MILLIS, TimeUnit.MILLISECONDS), "admission ends after its key releases")
+            reader.join(WAIT_MILLIS)
+            assertFalse(reader.isAlive, "the admission reader must finish while cancellation is still held")
+            assertNull(readerError.get())
+            assertTrue(read.get() is CodeModeSourcePart.Failed, "admission disposal cannot dispatch unread source")
+            assertEquals("", state.record.source, "disposed capture cannot stage a late delta")
+        } finally {
+            releaseEnd.countDown()
+            admission.join(WAIT_MILLIS)
+            reader.join(WAIT_MILLIS)
+        }
         assertFalse(admission.isAlive, "admission must release its own key before stopping the old reader")
-        reader.join(WAIT_MILLIS)
-        assertFalse(reader.isAlive)
         assertNull(admissionError.get())
-        assertNull(readerError.get())
-        assertEquals("", state.record.source, "disposed capture cannot stage a late delta")
     }
 
     @Test
@@ -311,6 +341,7 @@ class CodeModeLockOrderTest : CodeModeBridgeTestSupport() {
     private inner class LiveState(
         retention: CodeModeRetention = CodeModeRetention(),
         writer: CodeModeStateWrite? = null,
+        beforeEnd: Runnable? = null,
     ) {
         val dead = AtomicBoolean(false)
         var onDeath = Runnable {}
@@ -349,7 +380,7 @@ class CodeModeLockOrderTest : CodeModeBridgeTestSupport() {
             }
             val rounds = ConcurrentHashMap<String, CodeModeLiveRound>()
             rounds[record.id] = round
-            record.sourceEnd = CodeModeSourceLease(record.id, round, rounds)
+            record.sourceEnd = CodeModeSourceLease(record.id, round, rounds, beforeEnd)
         }
     }
 

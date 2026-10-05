@@ -19,14 +19,26 @@ internal class CodeModeSourceCapture(
 ) {
     // One use only: the driver's closure reaches the raw request, context and client call.
     private var admission: CodeModeStreamAdmission? = admission
-    val source = CodeModeSourceBuffer(
-        CodeModeSourceCommit { text -> registry.source.append(checkNotNull(record), text) },
+
+    @Volatile var disposed: Boolean = false
+        private set
+
+    val source: CodeModeSourceBuffer = CodeModeSourceBuffer(
+        CodeModeSourceCommit { text ->
+            if (!registry.source.append(checkNotNull(record), text)) dispose()
+        },
     )
     val ready = CompletableDeferred<CodeModeRecord?>()
     var record: CodeModeRecord? = null
         private set
     private var startedCall: GatewayCustomCall? = null
     private var completedCall: GatewayCustomCall? = null
+
+    /** Published before waking a source cursor, without taking its round's lifecycle monitor. */
+    private fun dispose() {
+        disposed = true
+        source.fail(SOURCE_DISPOSED)
+    }
 
     fun observe(event: CustomToolSource) {
         when (event) {
@@ -117,8 +129,11 @@ internal class CodeModeSourceCapture(
         }
         check(call.input.startsWith(source.text)) { "terminal exec source changed its dispatched prefix" }
         checkSource(call.input)
-        registry.source.finish(current, call, wire.continuity(success), success.usage)
-        source.complete(call.input)
+        if (registry.source.finish(current, call, wire.continuity(success), success.usage)) {
+            source.complete(call.input)
+        } else {
+            dispose()
+        }
     }
 }
 

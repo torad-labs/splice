@@ -21,10 +21,10 @@ internal class CodeModeSourceRecords(
     private val contexts: CodeModeClientContexts,
 ) {
     /** The durable no-rerun admission precedes execution; prefixes join the next client-visible batch. */
-    fun append(record: CodeModeRecord, text: String) = access.withKey(record.key) {
-        check(record in records && record.error == null) { "code-mode source no longer owns its record" }
+    fun append(record: CodeModeRecord, text: String): Boolean = access.withKey(record.key) {
+        if (record !in records || record.error != null) return@withKey false
         // Completion may already have staged a longer prefix while this cursor was waking.
-        if (record.source.startsWith(text)) return@withKey
+        if (record.source.startsWith(text)) return@withKey true
         check(text.startsWith(record.source)) { "dispatched source changed" }
         // One appended character outside Latin-1 re-widens the whole source, so the growth is the stored difference.
         val replaced = record.source
@@ -32,12 +32,13 @@ internal class CodeModeSourceRecords(
             if (kept.source === replaced) STORED.text(replaced) else 0L
         }
         record.source = text
+        true
     }
 
     /** Item completion alone is not response completion. Only the terminal round finalizes these values. */
-    fun finish(record: CodeModeRecord, call: GatewayCustomCall, continuity: CodeModeContinuity, usage: Usage) =
+    fun finish(record: CodeModeRecord, call: GatewayCustomCall, continuity: CodeModeContinuity, usage: Usage): Boolean =
         access.withKey(record.key) {
-            check(record in records && record.error == null) { "code-mode source no longer owns its record" }
+            if (record !in records || record.error != null) return@withKey false
             val next = STORED.json(call.raw) + STORED.text(call.input) +
                 continuity.logicalItems.sumOf(STORED::json) + continuity.replayItems.sumOf(STORED::segment)
             val before = STORED.json(record.outer) + STORED.text(record.source) +
@@ -60,6 +61,7 @@ internal class CodeModeSourceRecords(
             )
             // A round that finishes after its client turn ended is still the conversation's newest context.
             contexts.note(record.key, usage)
+            true
         }
 
     /** A result request takes terminal billing once, and the claim survives a later restart. */
@@ -68,6 +70,7 @@ internal class CodeModeSourceRecords(
         if (state.consumed) return@withKey null
         val usage = state.usage ?: return@withKey null
         record.sourceState = state.copy(consumed = true)
+        if (record !in records) return@withKey usage.value()
         val generation = record.saveGeneration + 1
         try {
             store.save(records, history.entries, dirtyKeys = setOf(record.key), changedRecord = record)

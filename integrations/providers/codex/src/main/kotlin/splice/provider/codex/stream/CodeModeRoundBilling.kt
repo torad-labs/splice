@@ -24,11 +24,20 @@ internal class CodeModeRoundBilling(
     private var postingRow: PostingTurnRow? = null
     private var owed: CodeModeOwedRound? = null
     private var readerEnded = false
+    private var reported: Usage? = null
 
     fun start(row: PostingTurnRow?) = synchronized(lifecycle) { postingRow = row }
 
+    /** A parsed terminal still belongs to its posting row when disposal prevented source staging. */
+    fun reported(outcome: TurnOutcome) = synchronized(lifecycle) {
+        reported = (outcome as? TurnOutcome.Success)?.usage
+    }
+
+    private fun consume(current: CodeModeRecord): Usage? =
+        (registry.source.consume(current) ?: reported)?.also { reported = null }
+
     fun claim(current: CodeModeRecord, step: TurnOutcome): Usage? = synchronized(lifecycle) {
-        registry.source.consume(current) ?: run {
+        consume(current) ?: run {
             if (step is TurnOutcome.Success && !readerEnded) {
                 postingRow?.takeIf { owed == null }?.let { owed = CodeModeOwedRound(it.hold(), step) }
             }
@@ -43,7 +52,7 @@ internal class CodeModeRoundBilling(
             val due = owed ?: return
             val current = record() ?: return
             val usage = try {
-                registry.source.consume(current)
+                consume(current)
             } catch (error: CodeModePersistenceException) {
                 log("[code-mode] source round billed later: its claim was not saved (${error::class.simpleName})")
                 null

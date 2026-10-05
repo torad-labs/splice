@@ -65,6 +65,8 @@ internal class CodeModeLiveRound(
 
     @Volatile private var upstreamEnded = false
 
+    @Volatile private var executionLost = false
+
     @Volatile var sourceInterrupted = false
         private set
 
@@ -74,8 +76,7 @@ internal class CodeModeLiveRound(
     /** The round lost the record and closed its cell without a transport tear: its terminal did not certify the
      *  admitted source, or its reader failed on splice's own non-IO fault. Only the step that was advancing that cell
      *  reads it; a later step continues on the client's history. */
-    @Volatile var sourceLost = false
-        private set
+    val sourceLost: Boolean get() = executionLost || capture.disposed
 
     /** The round closed a live cell under its client steps: [sourceLost], or a reader that died on an unnamed
      *  throwable. A step holding or acquiring that cell ends as a torn source's step does, never as invalid_request. */
@@ -140,12 +141,17 @@ internal class CodeModeLiveRound(
 
     private fun finish(outcome: TurnOutcome) = synchronized(lifecycle) {
         if (headStopped) throw CancellationException(HEAD_STOPPED)
+        billing.reported(outcome)
         localFailure?.let { return@synchronized it }
-        if (record?.terminal() == true) return@synchronized outcome
+        if (record?.terminal() == true) {
+            executionLost = true
+            source.fail(SOURCE_DISPOSED)
+            return@synchronized outcome
+        }
         sourceInterrupted = record != null && (outcome as? TurnOutcome.Failure)?.cause in SOURCE_TEAR_CAUSES
         // The capture loses a source its terminal does not certify, which closes the cell a client step may still be
         // advancing. Set first, so that step ends as a torn source's step does, or with a permanent failure as it is.
-        sourceLost = !sourceInterrupted && capture.uncertified(outcome) != null
+        executionLost = !sourceInterrupted && capture.uncertified(outcome) != null
         permanentEnding = (outcome as? TurnOutcome.Failure)?.takeIf { sourceLost && it.permanent }
         Cancellables.runCatchingBestEffort { capture.finish(outcome) }
             .getOrElse { return@synchronized reject(it) }
@@ -188,7 +194,7 @@ internal class CodeModeLiveRound(
         sourceInterrupted = record != null && error is IOException
         // Splice's own non-IO fault loses the record below and closes the cell a client step may be advancing, as an
         // uncertified source does. Set before the source fails, so that step ends as a torn source's step does.
-        sourceLost = !sourceInterrupted && record?.terminal() == false
+        executionLost = !sourceInterrupted && record?.terminal() == false
         source.fail(detail)
         record?.takeUnless(CodeModeRecord::terminal)?.let { registry.lose(it, detail) }
         TurnOutcome.Failure(
@@ -241,7 +247,7 @@ internal class CodeModeLiveRound(
         if (upstreamEnded) return
         val reader = finished
         if (!headStopped && reader?.isActive == true) clientCut.set(true)
-        sourceLost = true
+        executionLost = true
         source.fail(SOURCE_DISPOSED)
         reader?.cancel()
     }
@@ -261,6 +267,7 @@ internal class CodeModeLiveRound(
     /** Observer faults belong to splice. They never unwind through a transport's generic stream catch. */
     private fun observe(event: CustomToolSource) = synchronized(lifecycle) {
         if (headStopped) throw CancellationException(HEAD_STOPPED)
+        if (sourceLost) return@synchronized
         if (localFailure != null || record?.terminal() == true) return@synchronized
         Cancellables.runCatchingBestEffort { capture.observe(event) }.onFailure(::reject)
     }
@@ -281,7 +288,7 @@ internal class CodeModeLiveRound(
 }
 
 // why: a disposed execution cannot retain its response reader or dispatch unread source.
-private const val SOURCE_DISPOSED = "code-mode execution disposed; source was not rerun"
+internal const val SOURCE_DISPOSED = "code-mode execution disposed; source was not rerun"
 private const val SOURCE_FAILED = "upstream source failed; source was not rerun"
 private const val HEAD_STOPPED = "code-mode head stopped"
 private const val SOURCE_REFUSED = "upstream refused the source request; source was not rerun"

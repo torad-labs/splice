@@ -2,6 +2,7 @@
 // read from the topology app loads. The read has two honest answers, so it is a sealed result.
 package splice.head.trace
 
+import splice.core.turn.FailureCause
 import splice.core.util.EnvReader
 import java.io.IOException
 import java.nio.file.Path
@@ -15,6 +16,11 @@ public fun interface TraceHeadSource {
  *  the topology knows, so app resolves it; the environment alone would read the wrong dir (V4-109). */
 public fun interface TraceDirSource {
     public fun traceDir(env: EnvReader): Path
+}
+
+/** The selected turn's decoded perf cause, joined by exact head and turn id from its opening timestamp. */
+public fun interface TraceFailureCause {
+    public fun read(head: String, turn: String, sinceMs: Long): FailureCause?
 }
 
 /** The topology file [path] the heads were read from, and what the read found. */

@@ -14,6 +14,14 @@ internal data class TracedTurn(val id: String, val attempts: List<JsonObject>, v
 
     val first: JsonObject get() = turn ?: attempts.first()
     val ts: Long get() = JsonScalars.long(first, "ts") ?: 0L
+
+    /** Earliest attempt opening bounds its perf row; missing timing cannot justify skipping history. */
+    val startedAt: Long get() {
+        val attempt = attempts.firstOrNull() ?: return 0L
+        val at = JsonScalars.long(attempt, "ts") ?: return 0L
+        val duration = JsonScalars.long(attempt, "durationMs") ?: return 0L
+        return (at - duration.coerceAtLeast(0L)).coerceAtLeast(0L)
+    }
     val session: String? get() = JsonScalars.str(first, "session")
     val model: String get() = JsonScalars.strOrEmpty(first["model"])
     val compact: Boolean get() = JsonScalars.str(first, "compact") == "true"

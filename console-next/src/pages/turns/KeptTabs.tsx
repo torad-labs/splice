@@ -73,7 +73,9 @@ function Failure({ row }: { row: TurnRow }) {
   const kept = useKeptTurn(row.head, row.turn ?? null, row.turn !== undefined);
   if (isClean(row.outcome) || row.outcome === '?') return null;
   if (row.turn !== undefined && kept.data === undefined && !kept.isError) return <p className="failure-sentence" role="status">{P.readingFailure}</p>;
-  const sentence = kept.data === undefined || 'gone' in kept.data ? null : (kept.data.read.turn.failure_sentence ?? null);
+  const summary = kept.data === undefined || 'gone' in kept.data ? null : kept.data.read.turn;
+  const refusal = row.cause === 'CONTENT_FILTERED' ? P.contentRefusal : row.cause === 'MODEL_REFUSED' ? P.modelRefusal : null;
+  const sentence = refusal !== null && summary?.cause !== row.cause ? refusal : (summary?.failure_sentence ?? refusal);
   const absent = isStopped(row.outcome) ? P.stoppedNoReason : P.failureNoReason(outcomeOf(row.outcome, row.refused_runtime_port, row.cause).word);
   const spoken = sentence === null ? null : spokenFailure(sentence);
   const reason = spoken?.replace(/^\s*[a-z]/, initial => initial.toUpperCase());

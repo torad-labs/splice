@@ -1,6 +1,8 @@
 // NEW: V4-444 — the Requests filters run on the daemon and live in the address, so a link opens the same rows. A filter
 // run in the browser over the newest slice listed no failure while the header counted 480 (the persona walk of 36218a37c).
 import { expect, test, type Page } from '@playwright/test';
+import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { assertHealthy, env, open } from './support';
 import { driveOneTurn, STACK } from './stack';
 
@@ -203,7 +205,7 @@ for (const outcome of ['failure:api_error', 'failure:invalid_request_error']) {
     });
     await page.route('**/api/heads/*/trace?turn=*', route => route.fulfill({ json: {
       head: STACK.soloHead, turn: { id: row.turn, ts: at, session: null, model: STACK.soloModel,
-        compact: false, open: false, outcome, failure_sentence: sentence, rounds: 1, attempts: 1, total_ms: 422_000 },
+        compact: false, open: false, outcome, cause: row.cause, failure_sentence: sentence, rounds: 1, attempts: 1, total_ms: 422_000 },
       records: [],
     } }));
     const faults = await open(page, 'requests?status=failed');
@@ -215,6 +217,72 @@ for (const outcome of ['failure:api_error', 'failure:invalid_request_error']) {
     await expect(page.getByRole('main')).not.toContainText('Provider failed');
     await expect(page.getByRole('main')).not.toContainText('failed on its side');
     await expect(page.getByRole('main')).not.toContainText('retry in a moment');
+    await assertHealthy(page, faults);
+  });
+}
+
+for (const retained of [true, false]) {
+  test(`an old retained policy row corrects the real API and page with provider text ${retained ? 'kept' : 'unavailable'}`, async ({ page, request }) => {
+    const at = Date.now();
+    const id = retained ? 'synthetic-old-refusal-kept' : 'synthetic-old-refusal-absent';
+    const state = join(dirname(dirname(dirname(env('CONSOLE_E2E_CONFIG')))), '.splice/state');
+    const traceDir = join(state, 'trace');
+    mkdirSync(traceDir, { recursive: true });
+    const file = join(traceDir, `${STACK.soloHead}-${new Date(at).toISOString().slice(0, 10)}.jsonl`);
+    const stale = retained ? 'the provider failed on its side; retry in a moment' : 'a differently worded obsolete server failure';
+    const provider = JSON.stringify({ type: 'response.failed', response: { error: {
+      code: 'cyber_policy', message: 'this synthetic request was flagged. Try rephrasing.',
+    } } });
+    const records = [
+      { kind: 'attempt', turn: id, ts: at + 20, durationMs: 40, model: STACK.soloModel, attempt: 1, transport: 'ws',
+        response: { text: retained ? provider : { unavailable: true } } },
+      { kind: 'turn', turn: id, ts: at + 30, model: STACK.soloModel, outcome: 'failure:api_error',
+        failure_sentence: stale, rounds: 1, attempts: 1 },
+    ];
+    appendFileSync(file, records.map(record => JSON.stringify(record) + '\n').join(''));
+    appendFileSync(join(state, `${STACK.soloHead}-perf.jsonl`), JSON.stringify({
+      ts: at, model: STACK.soloModel, outcome: 'failure:api_error', cause: 'CONTENT_FILTERED',
+      compact: false, turn: id, total: 20,
+    }) + '\n');
+    const neighborId = id + '-overlap-outage';
+    const neighborSentence = 'the synthetic provider is temporarily unavailable; retry later';
+    appendFileSync(file, JSON.stringify({ ...records[1], turn: neighborId, failure_sentence: neighborSentence }) + '\n');
+    appendFileSync(join(state, `${STACK.soloHead}-perf.jsonl`), JSON.stringify({
+      ts: at + 1, model: STACK.soloModel, outcome: 'failure:api_error', cause: 'UPSTREAM_STATUS_5XX',
+      compact: false, turn: neighborId, total: 20,
+    }) + '\n');
+    const before = readFileSync(file, 'utf8');
+    const neighborApi = await request.get(env('CONSOLE_E2E_BASE') + `/api/heads/${STACK.soloHead}/trace?turn=${neighborId}`, {
+      headers: { Authorization: 'Bearer ' + env('CONSOLE_E2E_KEY') },
+    });
+    expect(neighborApi.ok()).toBe(true);
+    const neighborBody = await neighborApi.json() as { turn: { cause: string; failure_sentence: string } };
+    expect(neighborBody.turn.failure_sentence).toBe(neighborSentence);
+    const api = await request.get(env('CONSOLE_E2E_BASE') + `/api/heads/${STACK.soloHead}/trace?turn=${id}`, {
+      headers: { Authorization: 'Bearer ' + env('CONSOLE_E2E_KEY') },
+    });
+    expect(api.ok()).toBe(true);
+    const body = await api.json() as { turn: { cause: string; failure_sentence: string }; records: typeof records };
+    const sentence = retained
+      ? 'OpenAI refused the request under its cybersecurity check. This synthetic request was flagged. Try rephrasing.'
+      : 'the provider stopped the answer under its content check; ask for a different task';
+    expect(body.turn.failure_sentence).toBe(sentence);
+    expect(body.turn.cause).toBe('CONTENT_FILTERED');
+    expect(neighborBody.turn.cause).toBe('UPSTREAM_STATUS_5XX');
+    expect(body.records.at(-1)?.failure_sentence).toBe(stale);
+    expect(readFileSync(file, 'utf8')).toBe(before);
+    const faults = await open(page, `requests?head=${STACK.soloHead}&status=failed`);
+    const old = page.locator('.turn').filter({ has: page.locator(`a[href$="/${STACK.soloHead}/${at}"]`) });
+    await expect(old.locator('.state')).toHaveText('Request refused');
+    await old.locator('h3 a').click();
+    await expect(page.locator('.page-head .state')).toHaveText('Request refused');
+    await expect(page.locator('.failure-sentence')).toHaveText(sentence.charAt(0).toUpperCase() + sentence.slice(1));
+    await expect(page.locator('.failure-sentence')).not.toContainText(stale);
+    await page.goto(env('CONSOLE_E2E_BASE') + `/#/requests?head=${STACK.soloHead}&status=failed`);
+    const neighbor = page.locator('.turn').filter({ has: page.locator(`a[href$="/${STACK.soloHead}/${at + 1}"]`) });
+    await expect(neighbor.locator('.state')).toHaveText('Provider failed');
+    await neighbor.locator('h3 a').click();
+    await expect(page.locator('.failure-sentence')).toHaveText('The synthetic provider is temporarily unavailable; retry later');
     await assertHealthy(page, faults);
   });
 }

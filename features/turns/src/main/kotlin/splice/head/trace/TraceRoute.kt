@@ -53,6 +53,7 @@ public class TraceRoute(
     private val heads: TurnsHeadLookup,
     private val dir: TraceDirPort,
     private val io: CoroutineDispatcher,
+    private val cause: TraceFailureCause = TraceFailureCause { _, _, _ -> null },
 ) {
     private val rows = TraceRows()
     private val bodies = TraceReplyBodies()
@@ -95,7 +96,9 @@ public class TraceRoute(
             }
             refuse(HttpStatusCode.BadRequest, reason)
         } else {
-            JsonReply(HttpStatusCode.OK, bodies.turn(head, turns.single()))
+            val selected = turns.single()
+            val failureCause = withContext(io) { cause.read(key, selected.id, selected.startedAt) }
+            JsonReply(HttpStatusCode.OK, bodies.turn(head, selected, failureCause))
         }
     }
 

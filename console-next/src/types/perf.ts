@@ -323,7 +323,9 @@ export interface TracedTurnWire {
   compact: boolean;
   open: boolean;
   outcome: string | null;
-  /** Human failure text, present when the daemon recorded a failed turn's cause. */
+  /** Decoded perf cause used to correct this selected summary; absent in older daemon replies. */
+  cause?: string | null;
+  /** Human failure text, corrected from the decoded cause without changing stored records. */
   failure_sentence: string | null;
   rounds: number | null;
   attempts: number | null;

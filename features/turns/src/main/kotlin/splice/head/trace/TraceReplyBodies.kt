@@ -13,10 +13,10 @@ import splice.core.memory.HeapWeights
 import splice.core.model.TurnPrice
 import splice.core.perf.PerfKeys
 import splice.core.storage.DayFiles
+import splice.core.turn.FailureCause
 import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
 import splice.head.TurnsHead
-import splice.head.turn.OutcomeSentences
 import splice.upstream.memory.JvmHeap
 import java.nio.file.Path
 
@@ -44,12 +44,12 @@ internal class TraceReplyBodies(private val heap: HeapBudget = JvmHeap.budget) {
             put("on_disk", read.onDisk)
             put("skipped_lines", read.skippedLines)
             put("unavailable_records", read.unavailableRecords)
-            putJsonArray("turns") { read.turns.forEach { add(summary(it)) } }
+            putJsonArray("turns") { read.turns.forEach { add(TraceTurnSummary.of(it)) } }
         }.let(::encode)
 
-    fun turn(head: TurnsHead, turn: TracedTurn): String = buildJsonObject {
+    fun turn(head: TurnsHead, turn: TracedTurn, cause: FailureCause? = null): String = buildJsonObject {
         put("head", head.key)
-        put("turn", summary(turn))
+        put("turn", TraceTurnSummary.of(turn, cause))
         // V4-345: an ended turn is priced by its model's card; missing counters leave cost unknown.
         turn.turn?.let { ending ->
             val price = TurnPrice(head.catalog)
@@ -67,23 +67,5 @@ internal class TraceReplyBodies(private val heap: HeapBudget = JvmHeap.budget) {
     private fun countersOf(ending: JsonObject): Map<String, Long> {
         val counters = (ending["perf"] as? JsonObject)?.get("counters") as? JsonObject ?: return emptyMap()
         return buildMap { counters.keys.forEach { name -> JsonScalars.long(counters, name)?.let { put(name, it) } } }
-    }
-
-    /** The verb's table line as fields; an open turn uses the attempts still on disk. */
-    private fun summary(turn: TracedTurn): JsonObject = buildJsonObject {
-        val ending = turn.ending
-        val open = turn.attempts.size
-        put("id", turn.id)
-        put("ts", turn.ts)
-        put("session", turn.session)
-        put("model", turn.model)
-        put("compact", turn.compact)
-        put("open", ending == null)
-        put("outcome", ending?.outcome)
-        // V4-414: legacy endings without a stored sentence use the same outcome sentence as the CLI.
-        put("failure_sentence", ending?.let { it.failureSentence ?: OutcomeSentences.of(it.outcome) })
-        put("rounds", if (ending == null) open.toLong() else ending.rounds.toLongOrNull())
-        put("attempts", if (ending == null) open.toLong() else ending.attempts.toLongOrNull())
-        put("total_ms", ending?.totalMs?.toLongOrNull())
     }
 }

@@ -62,6 +62,47 @@ describe('a failed turn\'s sentence', () => {
     expect(data.read.turn.failure_sentence).toBe(sentence);
   });
 
+  test.each([
+    'the provider failed on its side; retry in a moment',
+    'an older failure sentence with entirely different wording; retry',
+    null,
+  ])('decoded policy cause overrides stale or absent kept wording: %s', sentence => {
+    const refused = { ...row('policy'), outcome: 'failure:api_error', cause: 'CONTENT_FILTERED' };
+    const data = kept('policy', sentence);
+    const html = page(<KeptTabs row={refused} plan="Solo" tab={null} />, client => client.setQueryData(['trace', 'claude-solo', 'policy'], data));
+    expect(html).toContain('The provider stopped the answer under its content check; ask for a different task');
+    if (sentence !== null) expect(html).not.toContain(sentence);
+    expect(html).not.toContain('cybersecurity');
+    expect(data.read.turn.failure_sentence).toBe(sentence);
+  });
+
+  test('a cause-corrected daemon sentence keeps the explicit provider words', () => {
+    const refused = { ...row('policy'), outcome: 'failure:api_error', cause: 'CONTENT_FILTERED' };
+    const sentence = 'OpenAI refused the request under its cybersecurity check. This synthetic request was flagged. Try rephrasing.';
+    const data = kept('policy', sentence);
+    data.read.turn.cause = refused.cause;
+    const html = page(<KeptTabs row={refused} plan="Solo" tab={null} />, client => client.setQueryData(['trace', 'claude-solo', 'policy'], data));
+    expect(html).toContain(sentence);
+    expect(data.read.turn.failure_sentence).toBe(sentence);
+  });
+
+  test('a retained summary for a different cause cannot contradict the perf row', () => {
+    const refused = { ...row('policy'), outcome: 'failure:api_error', cause: 'CONTENT_FILTERED' };
+    const data = kept('policy', 'an obsolete synthetic outage');
+    data.read.turn.cause = 'UPSTREAM_STATUS_5XX';
+    const html = page(<KeptTabs row={refused} plan="Solo" tab={null} />, client => client.setQueryData(['trace', 'claude-solo', 'policy'], data));
+    expect(html).toContain('The provider stopped the answer under its content check; ask for a different task');
+    expect(html).not.toContain('obsolete synthetic outage');
+  });
+
+  test('a model refusal without kept bodies overrides arbitrary older wording', () => {
+    const refused = { ...row('model'), outcome: 'failure:api_error', cause: 'MODEL_REFUSED' };
+    const data = kept('model', 'a synthetic obsolete server failure');
+    const html = page(<KeptTabs row={refused} plan="Solo" tab={null} />, client => client.setQueryData(['trace', 'claude-solo', 'model'], data));
+    expect(html).toContain('The model declined to answer; ask for a different task');
+    expect(html).not.toContain('obsolete server failure');
+  });
+
   test.each(['client_abort', 'error:stopped'])('names a missing explanation without inventing the cause of %s', outcome => {
     const stopped = { ...row('a'), outcome };
     const none = page(<KeptTabs row={stopped} plan="Solo" tab={null} />, (client) => client.setQueryData(['trace', 'claude-solo', 'a'], kept('a', null)));

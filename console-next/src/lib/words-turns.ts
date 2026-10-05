@@ -113,6 +113,8 @@ export const P = {
   conversationNoId: 'This request carries no session, so its conversation cannot be found.',
   conversationNoReply: 'No response message was recorded for this request, so its conversation cannot be selected. Open the session to read its transcript.',
   readingFailure: 'Reading the recorded reason…',
+  contentRefusal: 'The provider stopped the answer under its content check; ask for a different task',
+  modelRefusal: 'The model declined to answer; ask for a different task',
   stoppedNoReason: 'This answer stopped before it completed. No detailed stop reason was kept.',
   failureNoReason: (outcome: string) => `This request ended: ${outcome}. No detailed failure reason was kept.`,
   conversationEarlier: (n: number) => `${n} earlier ${n === 1 ? 'message' : 'messages'} not shown.`,

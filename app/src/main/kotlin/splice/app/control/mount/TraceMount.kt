@@ -15,7 +15,9 @@ import splice.app.control.api.HeadResolver
 import splice.client.transcript.TranscriptMessageLookup
 import splice.core.config.ConfigService
 import splice.core.config.UserHome
+import splice.core.turn.FailureCause
 import splice.head.trace.TraceDirPort
+import splice.head.trace.TraceFailureCause
 import splice.head.trace.TraceQuery
 import splice.head.trace.TraceRoute
 import splice.head.trace.TranscriptRequestRoute
@@ -37,7 +39,15 @@ internal class TraceMount(
 ) {
     private val turnsLookup = TurnsHeadAdapter.lookup(resolver)
     private val fileIo = ProcessDispatchers().io()
-    private val traceRoute = TraceRoute(turnsLookup, TraceDirPort { ports.traceDir }, fileIo)
+    private val traceRoute = TraceRoute(
+        turnsLookup,
+        TraceDirPort { ports.traceDir },
+        fileIo,
+        TraceFailureCause { key, turn, since ->
+            val row = heads[key]?.perfRows?.window(since)?.rows?.lastOrNull { it.turn == turn }
+            row?.cause?.let { recorded -> FailureCause.entries.firstOrNull { it.name == recorded } }
+        },
+    )
     private val traceDeleteRoutes = TraceDeleteRoutes(turnsLookup, TraceDirPort { ports.traceDir }, config)
     private val sessionHeads = SessionHeadAdapter.adapt(heads)
     private val transcriptRoute = TranscriptRequestRoute(

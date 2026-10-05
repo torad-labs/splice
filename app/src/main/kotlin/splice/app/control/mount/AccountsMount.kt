@@ -63,8 +63,10 @@ internal class AccountsMount(
         route.get("/api/accounts") {
             guard.guarded(call) {
                 val providers = ports.declaredHeads?.invoke()?.mapValues { it.value.provider }.orEmpty()
-                val native = ports.claudeLogins?.places().orEmpty()
-                ControlReplies.respond(call, accountsRoute.accountsJson(providers, native))
+                val logins = ports.claudeLogins
+                val native = logins?.places().orEmpty()
+                val carrying = native.map { it.head }.distinct().associateWith { logins?.carrying(it) }
+                ControlReplies.respond(call, accountsRoute.accountsJson(providers, native, carrying))
             }
         }
         route.post("/api/auth/{head}/login") { guard.guarded(call) { loginRoutes.startLogin(call) } }

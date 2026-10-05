@@ -355,6 +355,35 @@ class NativeUsageTruthTest {
         }
     }
 
+    /** The Accounts roster names the same login: true on the place whose credential carried the head's newest matched
+     *  request, false on its sibling, and null on both until a request matched, which is what a restart leaves. */
+    @Test
+    fun `the Accounts roster marks the login carrying a head's requests, and neither before one matched`() {
+        val places = listOf(
+            location(ClaudeLoginPlaceId.NATIVE, "native-subscription"),
+            location(ClaudeLoginPlaceId.SPLICE, "folder-subscription"),
+        )
+        val carried = ClaudeCarryingPlaces(places, ClaudeLoginRead(paths, {}, WallClock { now }))
+        serve(native(places, carried)) { read ->
+            suspend fun flags(): Map<String, String> = read("/api/accounts", false).getValue("accounts").jsonArray
+                .map { it.jsonObject }
+                .associate { row ->
+                    row.getValue("label").jsonPrimitive.content to (row["carrying_request"]?.toString() ?: "absent")
+                }
+            assertEquals(mapOf("claude" to "null", "claude-splice" to "null"), flags(), "no request has matched yet")
+
+            carried.sent(HEAD, digest("synthetic-${ClaudeLoginPlaceId.NATIVE.wire}"))
+            val nativeCarries = mapOf("claude" to "true", "claude-splice" to "false")
+            assertEquals(nativeCarries, flags(), "a request carrying the ~/.claude login marks that place")
+
+            carried.sent(HEAD, digest("synthetic-unknown-login"))
+            assertEquals(nativeCarries, flags(), "a credential no place holds leaves the last match standing")
+
+            carried.sent(HEAD, digest("synthetic-${ClaudeLoginPlaceId.SPLICE.wire}"))
+            assertEquals(mapOf("claude" to "false", "claude-splice" to "true"), flags(), "the newest match decides")
+        }
+    }
+
     @Test
     fun `different and unknown identities never inherit another native place's quota`() {
         val places = listOf(

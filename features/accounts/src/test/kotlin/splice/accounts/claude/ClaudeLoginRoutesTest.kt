@@ -41,6 +41,8 @@ private class TestNativePlaces : ClaudeLoginPlaces {
     override suspend fun refresh(place: ClaudeLoginPlaceId): ClaudeLoginPlaceView = places().single { it.id == place }
     override fun poll(id: String): LoginStatus? = status.takeIf { it.id == id }
     override suspend fun submit(id: String, code: String): Boolean = id == status.id && code == "synthetic-code"
+    override fun carrying(head: String): ClaudeLoginPlaceId? =
+        ClaudeLoginPlaceId.SPLICE.takeIf { head == "claude-splice" }
 }
 
 class ClaudeLoginRoutesTest {
@@ -79,6 +81,9 @@ class ClaudeLoginRoutesTest {
             val refresh = client.post("/api/claude-logins/claude-splice/refresh")
             assertEquals(HttpStatusCode.OK, refresh.status)
             assertTrue(refresh.bodyAsText().contains("\"command\":\"claude-splice\""))
+            assertTrue(refresh.bodyAsText().contains("\"carrying_request\":true"), "a refresh keeps the roster's flag")
+            val sibling = client.post("/api/claude-logins/claude/refresh").bodyAsText()
+            assertTrue(sibling.contains("\"carrying_request\":false"), sibling)
             assertEquals(HttpStatusCode.OK, client.get("/api/auth/claude-splice/login/native-id").status)
             assertEquals(HttpStatusCode.NotFound, client.get("/api/auth/other/login/native-id").status)
             val code = client.post("/api/auth/claude-splice/login/native-id/code") {

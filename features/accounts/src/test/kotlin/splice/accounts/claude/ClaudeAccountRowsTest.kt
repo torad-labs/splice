@@ -75,11 +75,15 @@ class ClaudeAccountRowsTest {
         val body = AccountsRoute(mapOf(head.key to head)).accountsJson(
             mapOf(head.key to "anthropic"),
             listOf(native),
+            mapOf(head.key to null),
             nowSeconds = 100,
         )
         val rows = Json.parseToJsonElement(body).jsonObject.getValue("accounts").jsonArray
         assertEquals(2, rows.size, "a real client pool is not discarded before folding")
         val work = rows.map { it.jsonObject }.single { it["label"]?.jsonPrimitive?.content == "work" }
+        val place = rows.map { it.jsonObject }.single { it["label"]?.jsonPrimitive?.content == "claude" }
+        assertEquals(JsonNull, place["carrying_request"], "before any request matched, no place is carrying")
+        assertFalse(work.containsKey("carrying_request"), "an added pool login keeps its own selection fields")
         assertEquals(11.0, work.getValue("five_hour_used_percent").jsonPrimitive.content.toDouble())
         assertTrue(work["account"] is JsonObject, body)
         assertEquals("work-account", work.getValue("account").jsonObject.getValue("uuid").jsonPrimitive.content)
@@ -111,6 +115,7 @@ class ClaudeAccountRowsTest {
             val body = AccountsRoute(emptyMap()).accountsJson(
                 mapOf("claude-splice" to "native-provider"),
                 listOf(first, second),
+                mapOf("claude-splice" to ClaudeLoginPlaceId.NATIVE),
                 nowSeconds = 100,
             )
             val rows = Json.parseToJsonElement(body).jsonObject.getValue("accounts").jsonArray
@@ -126,6 +131,8 @@ class ClaudeAccountRowsTest {
             assertEquals(JsonNull, native.getValue("failover_positions").jsonObject["claude-splice"])
             assertEquals(JsonNull, separate["five_hour_used_percent"])
             assertEquals(JsonNull, separate["held"])
+            assertEquals("true", native.getValue("carrying_request").jsonPrimitive.content, "the matched place is")
+            assertEquals("false", separate.getValue("carrying_request").jsonPrimitive.content, "the sibling is not")
             assertTrue(body.contains("separate-account"))
             assertFalse(body.contains("used_usd"))
             assertFalse(body.contains("credential_key"))

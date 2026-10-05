@@ -48,7 +48,8 @@ public class ClaudeLoginRoutes(private val source: ClaudeLoginPlacesSource) {
             AccountReplies.respondError(call, "native head provider is not wired", HttpStatusCode.ServiceUnavailable)
             return
         }
-        val row = ClaudeLoginRows.json(view, provider, TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis()))
+        val nowSeconds = TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis())
+        val row = ClaudeLoginRows.json(view, provider, owner.carrying(view.head), nowSeconds)
         AccountReplies.respond(call, row.toString())
     }
 

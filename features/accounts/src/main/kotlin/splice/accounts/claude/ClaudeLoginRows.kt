@@ -12,8 +12,14 @@ import kotlinx.serialization.json.putJsonObject
 import splice.core.usage.QuotaFreshness
 
 internal object ClaudeLoginRows {
-    /** Same row for the roster and an explicit refresh; no credential join key is part of the payload. */
-    fun json(view: ClaudeLoginPlaceView, provider: String, nowSeconds: Long): JsonObject = buildJsonObject {
+    /** Same row for the roster and an explicit refresh; no credential join key is part of the payload. [carrying] is
+     *  the place whose credential carried the head's newest matched request, or null before any matched. */
+    fun json(
+        view: ClaudeLoginPlaceView,
+        provider: String,
+        carrying: ClaudeLoginPlaceId?,
+        nowSeconds: Long,
+    ): JsonObject = buildJsonObject {
         put("provider", provider)
         put("credential_path", view.credentialPath)
         put("credential_present", view.credentialPresent)
@@ -46,6 +52,7 @@ internal object ClaudeLoginRows {
         put("held_until_epoch_seconds", view.standing.untilEpochSeconds)
         put("available", null as Boolean?)
         put("selected", null as Boolean?)
+        put("carrying_request", carrying?.let { it == view.id })
         put("pinned", null as Boolean?)
         put("next_target", null as Boolean?)
         put("auth_excluded_until_epoch_millis", null as Long?)

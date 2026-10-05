@@ -15,6 +15,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.accounts.AccountHead
 import splice.accounts.claude.ClaudeAccountIdentity
+import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.claude.ClaudeLoginPlaceView
 import splice.accounts.claude.ClaudeLoginRows
 import splice.core.auth.AuthDescription
@@ -31,12 +32,14 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
     /** [nowSeconds] decides which windows are current (V4-407), by the rule /api/usage applies (V4-396). */
     public suspend fun accountsJson(
         nowSeconds: Long = TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis()),
-    ): String = accountsJson(emptyMap(), emptyList(), nowSeconds)
+    ): String = accountsJson(emptyMap(), emptyList(), emptyMap(), nowSeconds)
 
-    /** Provider names come from the declared topology; native windows come only from command-local observations. */
+    /** Provider names come from the declared topology; native windows come only from command-local observations.
+     *  [carrying] maps a head to the place whose credential carried its newest matched request, null before any. */
     public suspend fun accountsJson(
         providers: Map<String, String>,
         native: List<ClaudeLoginPlaceView>,
+        carrying: Map<String, ClaudeLoginPlaceId?>,
         nowSeconds: Long = TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis()),
     ): String {
         val joined = LinkedHashMap<String, JoinedAccount>()
@@ -44,7 +47,9 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
         return buildJsonObject {
             putJsonArray("accounts") {
                 joined.values.forEach { row -> addJsonObject { write(this, row, nowSeconds, providers) } }
-                native.forEach { view -> add(ClaudeLoginRows.json(view, providers.getValue(view.head), nowSeconds)) }
+                native.forEach { view ->
+                    add(ClaudeLoginRows.json(view, providers.getValue(view.head), carrying[view.head], nowSeconds))
+                }
             }
         }.toString()
     }

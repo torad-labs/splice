@@ -1,4 +1,7 @@
 // NEW: V4-457 streaming Gear chunks and exact JSON body-literal encoding.
+// 2026-10-05: chunks target 8 KiB. A client edits each body in several places per request (the cache marker
+// moves, new messages land before the system prompt and tools), and the chunk around each edit is stored again
+// whole: at a 32 KiB target that was most of what filled the day's pack.
 package splice.head.trace.body
 
 import kotlinx.serialization.json.JsonArray
@@ -13,11 +16,12 @@ import java.io.Writer
 import java.nio.ByteBuffer
 import java.security.MessageDigest
 
-// why: Gear boundaries target 32 KiB, bounded below at 16 KiB and above at 64 KiB.
-internal const val CHUNK_MIN: Int = 16 * 1024
+// why: Gear boundaries target 8 KiB, bounded below at 4 KiB and above at 64 KiB. Re-chunking the 2026-10-05
+// packs at 4/8/64 KiB with zstd stored 113 MiB where 16/32/64 KiB raw stored 1023 MiB (claudex).
+internal const val CHUNK_MIN: Int = 4 * 1024
 
-// why: 32 KiB is the expected Gear boundary spacing for unchanged-prefix deduplication.
-internal const val CHUNK_TARGET: Int = 32 * 1024
+// why: 8 KiB is the expected Gear boundary spacing, so an edit re-stores about 8 KiB rather than about 32 KiB.
+internal const val CHUNK_TARGET: Int = 8 * 1024
 
 // why: cap one pack entry and one streaming buffer at 64 KiB regardless of input content.
 internal const val CHUNK_MAX: Int = 64 * 1024

@@ -1,4 +1,5 @@
 // NEW: V4-457 selected body hydration with digest and bounds validation.
+// 2026-10-05: a reader opens one pack in the format its references name, v1 raw or v2 zstd-framed.
 package splice.head.trace.body
 
 import kotlinx.serialization.json.Json
@@ -18,7 +19,6 @@ import splice.core.util.JsonScalars
 import splice.upstream.memory.JvmHeap
 import java.io.ByteArrayOutputStream
 import java.io.IOException
-import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.file.LinkOption
 import java.nio.file.Path
@@ -33,6 +33,7 @@ private const val TRACE_BOUNDARY_HEAP_BYTES = 96L
 /** Reads only selected body references; missing and corrupt content is never read as empty. */
 internal class TraceBodyReader(
     private val file: Path,
+    private val format: TracePackFormat,
     private val heap: HeapBudget = JvmHeap.budget,
 ) : AutoCloseable {
     private val channel = Cancellables.runCatchingCancellable {
@@ -48,7 +49,7 @@ internal class TraceBodyReader(
     init {
         var ready = false
         Cancellables.withCleanup({ if (!ready) close() }) {
-            TracePackBytes.generation(channel)
+            TracePackBytes.generation(channel, format)
             ready = true
         }
     }
@@ -92,33 +93,32 @@ internal class TraceBodyReader(
         val offset = required((part["offset"] as? JsonPrimitive)?.longOrNull)
         val length = required((part["bytes"] as? JsonPrimitive)?.intOrNull)
         bounds(offset, length)
-        if (!entry(offset) || !TracePackBytes.headerMatches(channel, offset, length, hash)) {
-            throw IOException("invalid trace body chunk entry at byte $offset: $file")
+        val header = (if (entry(offset)) format.entry(channel, offset) else null)
+            ?.takeIf { it.raw == length && it.hash == hash }
+            ?: throw IOException("invalid trace body chunk entry at byte $offset: $file")
+        val bytes = format.decode(TracePackBytes.read(channel, offset, header.stored), length)
+        if (bytes == null || TracePackBytes.hashOf(bytes) != hash) {
+            throw IOException("corrupt trace body chunk at byte $offset: $file")
         }
-        val bytes = TracePackBytes.read(channel, offset, length)
-        if (TracePackBytes.hashOf(bytes) != hash) throw IOException("corrupt trace body chunk at byte $offset: $file")
         return bytes
     }
 
     private fun bounds(offset: Long, length: Int) {
-        val first = TRACE_PACK_START_BYTES + TRACE_PACK_HEADER_BYTES
-        val inside = offset >= first && offset <= channel.size() - length
+        val first = TRACE_PACK_START_BYTES + format.headerBytes
+        val inside = offset >= first && offset < channel.size()
         if (!inside || length !in 1..CHUNK_MAX) throw IOException("invalid trace body chunk bounds: $file")
     }
 
     /** Scan headers, never unselected payloads, to reject references starting inside an entry. */
     private fun entry(offset: Long): Boolean {
         while (scanned < offset) {
-            val header = ByteBuffer.wrap(TracePackBytes.read(channel, scanned, TRACE_PACK_HEADER_BYTES))
-            val length = header.int
-            val payload = scanned + TRACE_PACK_HEADER_BYTES
-            if (length !in 1..CHUNK_MAX || payload > channel.size() - length) {
-                throw IOException("invalid trace body chunk header at byte $scanned: $file")
-            }
+            val payload = scanned + format.headerBytes
+            val header = format.entry(channel, payload)
+                ?: throw IOException("invalid trace body chunk header at byte $scanned: $file")
             val needed = (boundaries.size + 1L) * TRACE_BOUNDARY_HEAP_BYTES
             if (!boundaryLease.resize(needed)) throw HeapCapacityException()
             boundaries.add(payload)
-            scanned = payload + length
+            scanned = payload + header.stored
         }
         return offset in boundaries
     }

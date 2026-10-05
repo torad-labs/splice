@@ -119,6 +119,25 @@ class DayFilesDeletionTest {
     }
 
     @Test
+    fun `a v2 body pack is inventoried swept and purged with its day`(@TempDir dir: Path) {
+        val kept = dir.resolve("retired-2026-09-27.jsonl.bodies2")
+        val old = dir.resolve("retired-2026-09-17.jsonl.bodies2")
+        Files.write(kept, byteArrayOf(1, 2, 3, 4))
+        Files.write(old, byteArrayOf(5))
+        assertEquals(setOf("retired"), DayFileStores(dir).prefixes())
+        val at = Instant.parse("2026-09-27T10:00:00Z").toEpochMilli()
+        ActivityDays(dir, "retired", 7, WallClock { at })
+        assertFalse(Files.exists(old), "retention sweeps a retired day's v2 pack")
+        val inventory = DayFiles(dir, "retired").inventory(7)
+        assertEquals(1, inventory.days)
+        assertEquals(0L, inventory.rows)
+        assertEquals(4L, inventory.bytes)
+        val purged = DayFiles(dir, "retired").purge() as DayPurge.Listed
+        assertTrue(purged.failed.isEmpty())
+        assertFalse(Files.exists(kept))
+    }
+
+    @Test
     fun `private trace delete leaves its marker and directory owner-only`(@TempDir root: Path) {
         val dir = root.resolve("trace")
         val at = Instant.parse("2026-09-27T10:00:00Z").toEpochMilli()

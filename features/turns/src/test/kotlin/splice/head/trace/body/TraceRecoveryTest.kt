@@ -45,7 +45,7 @@ class TraceRecoveryTest {
         val damaged = Json.parseToJsonElement(bad.decodeToString()).jsonObject
         val reference = damaged.getValue("client").jsonObject.getValue("body").jsonObject
         val offset = reference.getValue("parts").jsonArray.single().jsonObject.getValue("offset").jsonPrimitive.long
-        val pack = dir.resolve("$RECOVERY_DAY.bodies")
+        val pack = dir.resolve("$RECOVERY_DAY.bodies2")
         val bytes = Files.readAllBytes(pack)
         bytes[offset.toInt() + 1] = 'S'.code.toByte()
         Files.write(pack, bytes)
@@ -69,7 +69,7 @@ class TraceRecoveryTest {
         val old = record("legacy", "synthetic legacy").toString() + "\n"
         val packed = TraceBodies().encode(record("packed", "synthetic packed"), day)
         Files.write(day, old.toByteArray() + packed)
-        Files.delete(dir.resolve("$RECOVERY_DAY.bodies"))
+        Files.delete(dir.resolve("$RECOVERY_DAY.bodies2"))
 
         val turns = TraceRows().turns(dir, RECOVERY_HEAD, TraceAsk(last = 2))
         assertEquals(listOf("legacy", "packed"), turns.map { it.id })
@@ -92,9 +92,9 @@ class TraceRecoveryTest {
             val day = dir.resolve(RECOVERY_DAY)
             val bodies = TraceBodies()
             val first = bodies.encode(record("first", "synthetic first"), day)
-            val pack = dir.resolve("$RECOVERY_DAY.bodies")
+            val pack = dir.resolve("$RECOVERY_DAY.bodies2")
             val intact = Files.size(pack)
-            val broken = ByteBuffer.allocate(TRACE_PACK_HEADER_BYTES).putInt(length).array()
+            val broken = ByteBuffer.allocate(TRACE_PACK_V2_HEADER_BYTES).putInt(length).putInt(length).array()
             Files.write(pack, broken, StandardOpenOption.APPEND)
             val later = bodies.encode(record("later", "synthetic later"), day)
             Files.write(day, first + later)
@@ -117,7 +117,7 @@ class TraceRecoveryTest {
         val day = dir.resolve(RECOVERY_DAY)
         val bodies = TraceBodies()
         val first = bodies.encode(record("first", "synthetic first"), day)
-        val pack = dir.resolve("$RECOVERY_DAY.bodies")
+        val pack = dir.resolve("$RECOVERY_DAY.bodies2")
         val bytes = Files.readAllBytes(pack)
         bytes[0] = 0
         Files.write(pack, bytes)
@@ -146,7 +146,7 @@ class TraceRecoveryTest {
         val indexed = Json.parseToJsonElement(encoded.decodeToString()).jsonObject
         val offset = indexed.getValue("answer").jsonObject.getValue("body").jsonObject
             .getValue("parts").jsonArray.single().jsonObject.getValue("offset").jsonPrimitive.long.toInt()
-        val pack = dir.resolve("$RECOVERY_DAY.bodies")
+        val pack = dir.resolve("$RECOVERY_DAY.bodies2")
         val bytes = Files.readAllBytes(pack)
         bytes[offset + 1] = 'S'.code.toByte()
         Files.write(pack, bytes)

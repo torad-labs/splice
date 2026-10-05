@@ -13,23 +13,22 @@ import java.time.format.DateTimeParseException
 
 /** Source-derived inventory of real day files; neither sizes nor lines follow a symlink target. */
 internal class DayFileInventory(prefix: String) {
-    private val namePattern = Regex("${Regex.escape(prefix)}-(\\d{4}-\\d{2}-\\d{2})\\.jsonl(?:\\.lock|\\.1|\\.bodies)?")
+    private val namePattern =
+        Regex("${Regex.escape(prefix)}-(\\d{4}-\\d{2}-\\d{2})\\.jsonl(?:\\.lock|\\.1|\\.bodies2?)?")
+    private val packs = listOf(DAY_BODY_SUFFIX, DAY_BODY_V2_SUFFIX)
 
     fun inventory(days: List<Pair<LocalDate, Path>>, retentionDays: Int): DayInventory {
         require(retentionDays > 0)
         val kept = days.mapNotNull { (date, file) ->
-            val content = listOf(
-                file.resolveSibling("${file.fileName}.1"),
-                file,
-                file.resolveSibling("${file.fileName}$DAY_BODY_SUFFIX"),
-            )
+            val siblings = listOf("${file.fileName}.1", "${file.fileName}") + packs.map { "${file.fileName}$it" }
+            val content = siblings.map { file.resolveSibling(it) }
                 .mapNotNull { path -> regularSize(path)?.let { path to it } }
             if (content.isEmpty()) null else date to content
         }
         return DayInventory(
             days = kept.size,
             rows = kept.sumOf { (_, content) ->
-                content.filterNot { (file, _) -> file.fileName.toString().endsWith(DAY_BODY_SUFFIX) }
+                content.filterNot { (file, _) -> packs.any { file.fileName.toString().endsWith(it) } }
                     .sumOf { (file, _) -> countLines(file) }
             },
             bytes = kept.sumOf { (_, content) -> content.sumOf { (_, size) -> size } },

@@ -11,8 +11,10 @@ import java.nio.file.Path
 internal class TraceBodyReaders(private val heap: HeapBudget = JvmHeap.budget) : AutoCloseable {
     private val readers = LinkedHashMap<Path, Result<TraceBodyReader>>()
 
-    fun of(file: Path): TraceBodyReader =
-        readers.getOrPut(file) { Cancellables.runCatchingCancellable { TraceBodyReader(file, heap) } }.getOrThrow()
+    fun of(file: Path, format: TracePackFormat): TraceBodyReader =
+        readers.getOrPut(file) {
+            Cancellables.runCatchingCancellable { TraceBodyReader(file, format, heap) }
+        }.getOrThrow()
 
     override fun close() {
         var failure: IOException? = null

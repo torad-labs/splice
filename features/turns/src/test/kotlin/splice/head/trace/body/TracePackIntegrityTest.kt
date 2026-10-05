@@ -1,9 +1,11 @@
 package splice.head.trace.body
 
+import com.github.luben.zstd.Zstd
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -26,7 +28,7 @@ class TracePackIntegrityTest {
     @Test
     fun `same inode truncate and equal size regrowth invalidate both literal and chunk caches`(@TempDir dir: Path) {
         val day = dir.resolve("synthetic-2026-09-18.jsonl")
-        val pack = dir.resolve("${day.fileName}.bodies")
+        val pack = dir.resolve("${day.fileName}.bodies2")
         val first = TraceBodies()
         first.encode(record("alpha"), day)
         first.encode(record("omega"), day)
@@ -52,12 +54,12 @@ class TracePackIntegrityTest {
         val fragment = "\"def\"".toByteArray()
         val hash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(fragment))
         val part = buildJsonObject {
-            put("offset", TRACE_PACK_START_BYTES + TRACE_PACK_HEADER_BYTES + 5)
+            put("offset", TRACE_PACK_START_BYTES + TRACE_PACK_V2_HEADER_BYTES + 5)
             put("bytes", fragment.size)
             put("hash", hash)
         }
         val reference = buildJsonObject {
-            put("trace_chunks", 1)
+            put("trace_chunks", TracePackFormat.V2.version)
             put("parts", JsonArray(listOf(part)))
         }
         val client = buildJsonObject { put("body", reference) }
@@ -74,14 +76,17 @@ class TracePackIntegrityTest {
         val part = encoded.getValue("client").jsonObject.getValue("body").jsonObject
             .getValue("parts").jsonArray.single().jsonObject
         val offset = part.getValue("offset").jsonPrimitive.long.toInt()
-        val pack = dir.resolve("${day.fileName}.bodies")
+        val pack = dir.resolve("${day.fileName}.bodies2")
         val bytes = Files.readAllBytes(pack)
-        bytes[offset + 1] = 'S'.code.toByte()
+        // A small literal is a raw block inside its zstd frame, so the frame still decodes after this flip.
+        val needle = "synthetic answer".toByteArray()
+        val at = (offset until bytes.size - needle.size).first { from ->
+            needle.indices.all { bytes[from + it] == needle[it] }
+        }
+        bytes[at] = 'S'.code.toByte()
         Files.write(pack, bytes)
-        assertEquals(
-            "Synthetic answer",
-            Json.parseToJsonElement(bytes.copyOfRange(offset, bytes.size).decodeToString()).jsonPrimitive.content,
-        )
+        val decoded = Zstd.decompress(bytes.copyOfRange(offset, bytes.size), part.getValue("bytes").jsonPrimitive.int)
+        assertEquals("Synthetic answer", Json.parseToJsonElement(decoded.decodeToString()).jsonPrimitive.content)
         val failure = assertThrows(IOException::class.java) { bodies.hydrate(encoded, day) }
         assertTrue(failure.message.orEmpty().startsWith("corrupt trace body chunk at byte"))
         assertTrue(!failure.message.orEmpty().contains("answer"))
@@ -92,7 +97,7 @@ class TracePackIntegrityTest {
         val day = dir.resolve("synthetic-2026-09-18.jsonl")
         val bodies = TraceBodies()
         val encoded = Json.parseToJsonElement(bodies.encode(record("synthetic body"), day).decodeToString()).jsonObject
-        Files.delete(dir.resolve("${day.fileName}.bodies"))
+        Files.delete(dir.resolve("${day.fileName}.bodies2"))
         val failure = assertThrows(IOException::class.java) { bodies.hydrate(encoded, day) }
         assertTrue(failure.message.orEmpty().contains("pack missing or unreadable"))
         assertEquals(record("synthetic legacy"), bodies.hydrate(record("synthetic legacy"), day))
@@ -101,7 +106,7 @@ class TracePackIntegrityTest {
     @Test
     fun `header preserving truncate regrow resets a stale writer tail before appending`(@TempDir dir: Path) {
         val day = dir.resolve("synthetic-2026-09-18.jsonl")
-        val pack = dir.resolve("${day.fileName}.bodies")
+        val pack = dir.resolve("${day.fileName}.bodies2")
         val first = TraceBodies()
         first.encode(record("alpha"), day)
         FileChannel.open(pack, StandardOpenOption.WRITE).use { it.truncate(TRACE_PACK_START_BYTES.toLong()) }

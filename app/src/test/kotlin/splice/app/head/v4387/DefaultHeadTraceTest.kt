@@ -89,7 +89,7 @@ class DefaultHeadTraceTest {
         val written = files.filter { it.fileName.toString().startsWith("traced-") && it.toString().endsWith(".jsonl") }
         assertTrue(written.size == 1, "one day for the default-on head: $files")
         assertEquals("synthetic request", clientBody(paths.traceDir))
-        assertTrue(Files.exists(written.single().resolveSibling("${written.single().fileName}.bodies")))
+        assertTrue(Files.exists(written.single().resolveSibling("${written.single().fileName}.bodies2")))
         assertTrue(files.none { it.fileName.toString().startsWith("untraced-") }, "opted-out head wrote: $files")
     }
 }

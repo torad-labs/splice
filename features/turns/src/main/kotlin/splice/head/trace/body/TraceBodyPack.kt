@@ -1,4 +1,6 @@
 // NEW: V4-457 bounded content-addressed daily trace body pack.
+// 2026-10-05: it writes the v2 store only, each chunk a zstd frame, deduplicated on the raw chunk's digest. A pack
+// that reaches its budget says so once in daemon.log.
 package splice.head.trace.body
 
 import kotlinx.serialization.json.JsonArray
@@ -11,8 +13,8 @@ import kotlinx.serialization.json.put
 import splice.core.storage.DAY_BODY_MAX_BYTES
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
+import splice.core.util.LogSink
 import java.io.IOException
-import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.channels.FileLock
 import java.nio.channels.OverlappingFileLockException
@@ -23,9 +25,8 @@ import java.security.MessageDigest
 import java.util.HexFormat
 import java.util.concurrent.TimeUnit
 
-// why: each binary entry has a byte length followed by its SHA-256 digest and its content.
-private const val TRACE_PACK_DIGEST_BYTES = 32
-private const val HEADER_BYTES = TRACE_PACK_HEADER_BYTES
+private val FORMAT = TracePackFormat.V2
+private val HEADER_BYTES = FORMAT.headerBytes
 
 // why: the single file lane must not wait indefinitely for another process's pack writer.
 private const val TRACE_PACK_LOCK_WAIT_MS = 1_000L
@@ -37,9 +38,23 @@ private val HEX = HexFormat.of()
 /** Capacity is a stored omission marker, not an I/O failure or a successful partial literal. */
 internal class TracePackFull : IOException("daily trace body budget exhausted")
 
+/** Says once per pack file that it reached its daily budget, so a day that stops recording bodies is never silent. */
+internal class TracePackFullLog(private val log: LogSink, private val maxBytes: Long) {
+    private var logged: Path? = null
+
+    fun full(file: Path) {
+        if (file == logged) return
+        logged = file
+        log(
+            "[trace] $file reached its daily body budget of ${maxBytes}B; " +
+                "new bodies are unavailable until the day ends\n",
+        )
+    }
+}
+
 /** Append-only content-addressed binary entries. The OS page cache, not per-entry force, owns durability. */
 internal class TraceBodyPack(
-    private val file: Path,
+    val file: Path,
     private val index: TracePackIndex,
     private val maxBytes: Long = DAY_BODY_MAX_BYTES,
 ) : AutoCloseable {
@@ -67,6 +82,7 @@ internal class TraceBodyPack(
 
     private fun current(part: JsonObject): Boolean = TracePackBytes.matches(
         channel,
+        FORMAT,
         part.getValue("offset").jsonPrimitive.long,
         part.getValue("bytes").jsonPrimitive.int,
         checkNotNull(JsonScalars.str(part["hash"])),
@@ -75,18 +91,18 @@ internal class TraceBodyPack(
     fun put(bytes: ByteArray): JsonObject {
         val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
         val hash = HEX.formatHex(digest)
-        index.chunks[hash]?.takeIf(::current)?.let { return it }
+        index.offset(hash)?.let { offset -> reference(hash, offset, bytes.size).takeIf(::current)?.let { return it } }
+        val (header, stored) = FORMAT.encode(bytes, digest)
         val offset = index.end + HEADER_BYTES
-        if (offset > maxBytes - bytes.size) throw TracePackFull()
-        index.admitChunk()
-        val header = ByteBuffer.allocate(HEADER_BYTES).putInt(bytes.size).put(digest).array()
+        if (offset > maxBytes - stored.size) throw TracePackFull()
+        index.admit()
         channel.position(index.end)
         TracePackBytes.write(channel, header)
-        TracePackBytes.write(channel, bytes)
+        TracePackBytes.write(channel, stored)
         val part = reference(hash, offset, bytes.size)
-        index.end = offset + bytes.size
+        index.end = offset + stored.size
         index.tail = part
-        index.chunks[hash] = part
+        index.put(hash, offset)
         return part
     }
 
@@ -109,12 +125,11 @@ internal class TraceBodyPack(
     }
 
     private fun refresh() {
-        val generation = TracePackBytes.initialize(channel)
+        val generation = TracePackBytes.initialize(channel, FORMAT)
         val tailLost = index.tail?.let { !current(it) } == true
         val changed = generation != index.generation || index.end > channel.size()
         if (changed || tailLost) {
-            index.chunks.clear()
-            index.literals.clear()
+            index.clear()
             index.end = TRACE_PACK_START_BYTES.toLong()
             index.tail = null
             index.generation = generation
@@ -126,25 +141,18 @@ internal class TraceBodyPack(
 
     /** An unreferenced incomplete final entry is healed before the next append, never fused into it. */
     private fun scanEntry(): Boolean {
-        val size = channel.size()
-        if (size - index.end < HEADER_BYTES) {
+        val offset = index.end + HEADER_BYTES
+        val entry = FORMAT.entry(channel, offset)
+        if (entry == null) {
             channel.truncate(index.end)
             return false
         }
-        val header = ByteBuffer.wrap(TracePackBytes.read(channel, index.end, HEADER_BYTES))
-        val length = header.int
-        val next = index.end + HEADER_BYTES + length
-        if (length !in 1..CHUNK_MAX || next > size) {
-            channel.truncate(index.end)
-            return false
+        val part = reference(entry.hash, offset, entry.raw)
+        if (!index.full) {
+            index.admit()
+            index.putIfAbsent(entry.hash, offset)
         }
-        val digest = ByteArray(TRACE_PACK_DIGEST_BYTES)
-        header.get(digest)
-        val hash = HEX.formatHex(digest)
-        index.admitChunk()
-        val part = reference(hash, index.end + HEADER_BYTES, length)
-        index.chunks.putIfAbsent(hash, part)
-        index.end = next
+        index.end = offset + entry.stored
         index.tail = part
         return true
     }

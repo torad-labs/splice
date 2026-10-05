@@ -67,7 +67,7 @@ class TraceChunkStorageTest {
             JsonlSink.appendLine(inline, it.toString())
         }
         val inlineBytes = Files.size(inline)
-        val storedBytes = Files.size(dir.resolve(DAY)) + Files.size(dir.resolve("$DAY.bodies"))
+        val storedBytes = Files.size(dir.resolve(DAY)) + Files.size(dir.resolve("$DAY.bodies2"))
         assertTrue(storedBytes < inlineBytes / 2, "stored=$storedBytes inline=$inlineBytes")
         println("TRACE_STORAGE turns=3 inline_bytes=$inlineBytes stored_bytes=$storedBytes")
     }
@@ -92,8 +92,8 @@ class TraceChunkStorageTest {
     fun `a missing body pack keeps metadata and explicit unavailable references`(@TempDir dir: Path) {
         write(store(dir), "synthetic request", "synthetic answer")
         assertTrue(AsyncFileIo.drain())
-        assertTrue(Files.exists(dir.resolve("$DAY.bodies")))
-        Files.delete(dir.resolve("$DAY.bodies"))
+        assertTrue(Files.exists(dir.resolve("$DAY.bodies2")))
+        Files.delete(dir.resolve("$DAY.bodies2"))
         val read = TraceRows().read(dir, HEAD, TraceAsk(last = 1))
         assertEquals(2, read.unavailableRecords)
         val body = read.turns.single().turn?.obj("client")?.obj("body")
@@ -105,7 +105,7 @@ class TraceChunkStorageTest {
     fun `a corrupt chunk keeps metadata and never substitutes empty successful text`(@TempDir dir: Path) {
         write(store(dir), "synthetic request", "synthetic answer")
         assertTrue(AsyncFileIo.drain())
-        val pack = dir.resolve("$DAY.bodies")
+        val pack = dir.resolve("$DAY.bodies2")
         assertTrue(Files.exists(pack))
         val bytes = Files.readAllBytes(pack)
         bytes[bytes.lastIndex - 1] = 'S'.code.toByte()

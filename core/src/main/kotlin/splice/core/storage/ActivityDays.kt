@@ -17,7 +17,7 @@
 //
 // RETENTION deletes whole day files older than the store's window (message edges: the
 // activityRetentionDays knob, default 90; activity labels: today and yesterday, V4-285; a head's trace days:
-// traceRetentionDays), WITH the day's `.lock`, rolled `.1` generation and trace `.bodies` pack.
+// traceRetentionDays), WITH the day's `.lock`, rolled `.1` generation and trace `.bodies` and `.bodies2` packs.
 // One stable `<prefix>.days.lock` excludes appends and purges and is never unlinked by either. Reads
 // ignore files older than the window too, so an unswept file never re-enters a view.
 //
@@ -72,6 +72,10 @@ public const val ACTIVITY_DIRECTORY: String = "activity"
 /** The content-addressed body pack shared by both JSONL generations of a trace day. */
 public const val DAY_BODY_SUFFIX: String = ".bodies"
 
+/** The zstd-framed body pack that replaced [DAY_BODY_SUFFIX] on 2026-10-05, in its own file so a jar from before it
+ *  never opens it; a day's `.bodies` pack is only read from then on. */
+public const val DAY_BODY_V2_SUFFIX: String = ".bodies2"
+
 // why: 512 MiB, chosen against JsonlSink's rotate rather than against disk — the file header
 // above states the contract: JsonlSink rolls ONE generation away when a day file passes this.
 private const val DAY_MAX_BYTES = 512L shl 20
@@ -82,7 +86,7 @@ public const val DAY_BODY_MAX_BYTES: Long = DAY_MAX_BYTES * 2
 /** A day file's own name, then JsonlSink's lock and its one rolled generation beside it. */
 /** JsonlSink's rotated generation of a day file: that day's OLDER rows, once it passed DAY_MAX_BYTES. */
 private const val ROLLED_SUFFIX = ".1"
-private val DAY_SIBLINGS = listOf("", ".lock", ROLLED_SUFFIX, DAY_BODY_SUFFIX)
+private val DAY_SIBLINGS = listOf("", ".lock", ROLLED_SUFFIX, DAY_BODY_SUFFIX, DAY_BODY_V2_SUFFIX)
 
 // why: a floor under the wait for the next midnight sweep. A run that starts a moment before
 // midnight (the wait is monotonic, the day is wall time) re-arms for the few ms left; a clock that
@@ -449,7 +453,7 @@ public sealed class DayPurge {
 }
 
 /** A day file's name: its store's prefix, then the UTC day. */
-private val DAY_FILE = Regex("(.+)-\\d{4}-\\d{2}-\\d{2}\\.jsonl(?:\\.1|\\.lock|\\.bodies)?")
+private val DAY_FILE = Regex("(.+)-\\d{4}-\\d{2}-\\d{2}\\.jsonl(?:\\.1|\\.lock|\\.bodies2?)?")
 
 /** V4-260: the [ActivityDays] stores that have day files in [dir], by prefix. For the trace dir that
  *  is every head with trace days on disk, so the days of a head splice.toml no longer names can go. */

@@ -1,4 +1,7 @@
 // NEW: V4-457 direct-byte trace reference encoding and selected-record hydration.
+// 2026-10-05: new bodies go to the day's v2 store, and a reference's `trace_chunks` version names the store it
+// resolves against, so a v1 day written before then still reads. A full pack is logged once per head and day:
+// the 1 GiB packs filled every day from Oct 3 to Oct 5 and nothing said so.
 package splice.head.trace.body
 
 import kotlinx.serialization.json.JsonArray
@@ -10,17 +13,15 @@ import kotlinx.serialization.json.put
 import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
 import splice.core.storage.DAY_BODY_MAX_BYTES
-import splice.core.storage.DAY_BODY_SUFFIX
+import splice.core.util.DaemonLog
 import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
+import splice.core.util.LogSink
 import splice.upstream.memory.JvmHeap
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.nio.file.Path
 
-// why: version one identifies daily Gear-chunk references; inline legacy body literals have no version tag.
-private const val REFERENCE_VERSION = 1
-private const val REFERENCE_TAG = "trace_chunks"
 private const val UNAVAILABLE_TAG = "unavailable"
 private val BODY_FIELDS = mapOf("request" to "body", "response" to "text", "client" to "body", "answer" to "body")
 
@@ -28,13 +29,15 @@ private val BODY_FIELDS = mapOf("request" to "body", "response" to "text", "clie
 internal class TraceBodies(
     private val maxPackBytes: Long = DAY_BODY_MAX_BYTES,
     private val heap: HeapBudget = JvmHeap.budget,
+    log: LogSink = LogSink(DaemonLog::write),
 ) {
     private var activeFile: Path? = null
     private var activeIndex = TracePackIndex(heap)
+    private val fullLog = TracePackFullLog(log, maxPackBytes)
 
     /** Runs on ActivityDays' one file lane. No complete record String or complete encoded body is built. */
     fun encode(record: JsonObject, day: Path): ByteArray {
-        val file = companion(day)
+        val file = TracePackFormat.V2.pack(day)
         if (file != activeFile) {
             activeFile = file
             activeIndex = TracePackIndex(heap)
@@ -77,12 +80,11 @@ internal class TraceBodies(
         )
 
     private fun resolve(value: JsonObject, day: Path, readers: TraceBodyReaders): JsonElement {
-        if (value[REFERENCE_TAG] != JsonPrimitive(REFERENCE_VERSION)) {
-            throw IOException("invalid trace body chunk version")
-        }
+        val format = TracePackFormat.entries.firstOrNull { it.names(value) }
+            ?: throw IOException("invalid trace body chunk version")
         if (JsonScalars.str(value, UNAVAILABLE_TAG) == "true") return value
         val parts = value["parts"] as? JsonArray ?: throw IOException("invalid trace body chunk parts")
-        return readers.of(companion(day)).literal(parts)
+        return readers.of(format.pack(day), format).literal(parts)
     }
 
     private fun withAvailability(record: JsonObject): JsonObject {
@@ -100,20 +102,18 @@ internal class TraceBodies(
             chunks.finish().also { activeIndex.cache(text, it) }
         }
         buildJsonObject {
-            put(REFERENCE_TAG, REFERENCE_VERSION)
+            put(TRACE_REFERENCE_TAG, TracePackFormat.V2.version)
             put("parts", parts)
         }
     } catch (_: TracePackFull) {
+        fullLog.full(pack.file)
         buildJsonObject {
-            put(REFERENCE_TAG, REFERENCE_VERSION)
+            put(TRACE_REFERENCE_TAG, TracePackFormat.V2.version)
             put(UNAVAILABLE_TAG, true)
             put("truncated", true)
             put("reason", "daily trace body budget exhausted")
         }
     }
-
-    private fun companion(day: Path): Path =
-        day.resolveSibling(day.fileName.toString().removeSuffix(".1") + DAY_BODY_SUFFIX)
 
     private inline fun replace(record: JsonObject, body: (JsonElement) -> JsonElement): JsonObject {
         val fields = record.toMutableMap()

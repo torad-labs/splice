@@ -27,7 +27,7 @@ class TraceReadScopeTest {
     @Test
     fun `one selected read scans each pack header once and closes its pack descriptors`(@TempDir dir: Path) {
         val day = dir.resolve("synthetic-2026-09-18.jsonl")
-        val pack = dir.resolve("${day.fileName}.bodies")
+        val pack = dir.resolve("${day.fileName}.bodies2")
         val bodies = TraceBodies()
         val lines = (1..SCOPE_RECORDS).flatMap { number ->
             bodies.encode(record(number), day).asIterable()
@@ -48,7 +48,7 @@ class TraceReadScopeTest {
             .filter { it.eventType.name == "jdk.FileRead" && it.getString("path") == pack.toString() }
             .sumOf { it.getLong("bytesRead") }
         val packBytes = Files.size(pack)
-        val bound = packBytes + SCOPE_RECORDS.toLong() * TRACE_PACK_HEADER_BYTES
+        val bound = packBytes + SCOPE_RECORDS.toLong() * TRACE_PACK_V2_HEADER_BYTES
         assertTrue(bytes >= packBytes, "positive control must observe actual pack reads: $bytes/$packBytes")
         assertTrue(bytes <= bound, "repeated header scans exceed the linear bound: $bytes > $bound")
         println("TRACE_PACK_READ bytes=$bytes linear_bound=$bound")

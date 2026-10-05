@@ -13,6 +13,7 @@ dependencies {
     implementation(libs.ktor.server.netty)
     implementation(libs.ktor.server.sse)
     implementation(libs.ktor.client.core)
+    implementation(libs.zstd.jni) // The v2 trace body pack frames each chunk with zstd
     testImplementation(libs.ktor.server.test.host) {
         // The test host drags in ktor-client-apache5 (httpclient5 5.5.1 / httpcore5 5.3.6 — dependabot
         // alerts #19, #21, #22), an engine no test here uses: testApplication's client is the

@@ -5,7 +5,6 @@ import { asOfText, calmOf, ledeOf, listText, unreadOf } from '../../lib/needs-pa
 import { N } from '../../lib/words-needs-page';
 import { Fault, PageHead } from '../../ui';
 import { NeedCard } from './NeedCard';
-import './needs.css';
 
 /** The first screen: everything a person has to do, each with its one act. Nothing here that is not a measured signal. */
 export function NeedsPage() {

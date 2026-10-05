@@ -11,6 +11,7 @@ import splice.core.model.TurnBill
 import splice.core.model.TurnPrice
 import splice.core.perf.OutcomeTags
 import splice.core.perf.PerfKeys
+import splice.core.turn.FailureCause
 import splice.usage.UsageBilling
 import splice.usage.UsageHead
 import java.time.Instant
@@ -21,6 +22,31 @@ private val UNREPORTED_SPEND_KEYS = listOf(
     PerfKeys.CUT_SOURCE_ROUNDS,
     PerfKeys.UPSTREAM_REQ_BYTES,
 )
+
+/** A refused request's posted bytes bought nothing; a round it cut or absorbed was still billed. */
+private val REFUSED_SPEND_KEYS = UNREPORTED_SPEND_KEYS - PerfKeys.UPSTREAM_REQ_BYTES
+
+/** Whether the provider refused a request before sending any event: a cause that names a refusal of the
+ *  request itself, and nothing received. 2026-10-04: seven such rows (rate limits and 4xx statuses, each
+ *  posted, none with an event) read as possible spend on the 7-day usage page. The `when` is exhaustive so
+ *  a new cause is decided here. A model refusal or a filtered generation is not one: the model answered. */
+private object ProviderRefusal {
+    fun before(row: PerfRow): Boolean =
+        refusal(FailureCause.entries.firstOrNull { it.name == row.cause }) &&
+            (row.fields[PerfKeys.EVENTS_IN] ?: 0L) == 0L && PerfKeys.FIRST_DELTA !in row.fields
+
+    private fun refusal(cause: FailureCause?): Boolean = when (cause) {
+        FailureCause.UPSTREAM_STATUS_4XX, FailureCause.VENDOR_RATE_LIMITED, FailureCause.VENDOR_QUOTA_EXHAUSTED,
+        FailureCause.AUTH_MISSING, FailureCause.AUTH_REFRESH_FAILED, FailureCause.REQUEST_TOO_LARGE,
+        -> true
+        FailureCause.UPSTREAM_STALLED, FailureCause.UPSTREAM_TRUNCATED, FailureCause.UPSTREAM_CONN_RESET,
+        FailureCause.UPSTREAM_STATUS_5XX, FailureCause.UPSTREAM_REPORTED, FailureCause.MODEL_REFUSED,
+        FailureCause.CONTENT_FILTERED, FailureCause.TOOL_TEAR, FailureCause.DIALECT_UNSUPPORTED,
+        FailureCause.CODE_MODE_PROTOCOL, FailureCause.INTERNAL, FailureCause.POOL_EXHAUSTED,
+        FailureCause.ADMISSION_FULL, null,
+        -> false
+    }
+}
 
 /** Full filtered-window facts, computed from the route's existing read, before its display-row limit. */
 internal class TurnUsage(rows: List<PerfRow>, price: TurnPrice?, plans: AccountPlans, zone: ZoneId) {
@@ -63,10 +89,12 @@ internal class TurnUsage(rows: List<PerfRow>, price: TurnPrice?, plans: AccountP
         put("sessions", sessionGroups())
     }
 
-    /** Failed with neither recorded model output nor billed usage; interrupted or absorbed source stays a gap. */
+    /** Failed with neither recorded model output nor billed usage; interrupted or absorbed source stays a gap.
+     *  Posted bytes are possible spend unless the provider refused the request before any event. */
     private fun unanswered(row: PerfRow): Boolean =
         OutcomeTags.isFailed(row.outcome) && TurnBill.isEmpty(row.fields) &&
-            UNREPORTED_SPEND_KEYS.none { row.fields.getOrDefault(it, 0L) > 0L } &&
+            (if (ProviderRefusal.before(row)) REFUSED_SPEND_KEYS else UNREPORTED_SPEND_KEYS)
+                .none { row.fields.getOrDefault(it, 0L) > 0L } &&
             PerfKeys.FIRST_DELTA !in row.fields &&
             ((row.fields[PerfKeys.CONTENT_FRAMES_OUT] ?: 0L) == 0L || row.fields[PerfKeys.ATTEMPTS] == 0L)
 

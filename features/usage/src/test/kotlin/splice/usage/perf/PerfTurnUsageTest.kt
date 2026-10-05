@@ -246,6 +246,38 @@ class PerfTurnUsageTest {
             }
         }
 
+    /** 2026-10-04: a request the provider refused before any event was posted, so its row carries the posted
+     *  bytes, and the page counted it as possible spend ("cannot be priced", "covered by a plan"). A refusal
+     *  is no answer whatever was posted; anything that streamed, a cut or absorbed round, and a 5xx or a
+     *  stall after posting stay possible spend. */
+    @Test
+    fun `a request the provider refused before any event is unanswered whatever it posted`() = testApplication {
+        val posted = mapOf(PerfKeys.UPSTREAM_REQ_BYTES to 1_234_161L, PerfKeys.ATTEMPTS to 1L)
+        fun failed(cause: String?, evidence: Map<String, Long> = emptyMap()) =
+            failure.copy(outcome = "error:upstream-failed", fields = posted + evidence, cause = cause)
+        val refused = listOf("VENDOR_RATE_LIMITED", "UPSTREAM_STATUS_4XX", "AUTH_MISSING").map { failed(it) }
+        val spend = listOf(
+            failed("UPSTREAM_STATUS_4XX", mapOf(PerfKeys.EVENTS_IN to 3L)),
+            failed("VENDOR_RATE_LIMITED", mapOf(PerfKeys.CUT_SOURCE_ROUNDS to 1L)),
+            failed("UPSTREAM_STATUS_4XX", mapOf(PerfKeys.ABSORBED_ROUNDS to 1L)),
+            failed("UPSTREAM_STATUS_5XX"),
+            failed("UPSTREAM_STALLED"),
+            failed(null),
+        )
+        mount((refused + spend).mapIndexed { index, row -> row.copy(ts = 1_010L + index) })
+
+        val usage = head(client.get("/api/perf/turns?head=synthetic&since=1000&local=0").bodyAsText())
+            .getValue("usage").jsonObject
+        val totals = usage.getValue("totals").jsonObject
+        assertEquals(3L, totals.getValue("unanswered_requests").jsonPrimitive.long, "refusals: $totals")
+        assertEquals(6L, totals.getValue(UNPRICED).jsonPrimitive.long, "possible spend: $totals")
+        listOf("models", "accounts", "days", "sessions").forEach { name ->
+            val rows = usage.getValue(name).jsonArray.map { it.jsonObject }
+            assertEquals(3L, rows.sumOf { it.getValue("unanswered_requests").jsonPrimitive.long }, name)
+            assertEquals(6L, rows.sumOf { it.getValue(UNPRICED).jsonPrimitive.long }, name)
+        }
+    }
+
     /** A source round a turn cut was billed upstream and never reported, so its row carries only the count of it.
      *  Totals and every group sum the count, and a row without the key counts none. */
     @Test

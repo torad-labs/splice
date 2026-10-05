@@ -71,6 +71,8 @@ internal class ClaudeLoginOwner(
 
     override fun carrying(head: String, session: String): ClaudeLoginPlaceId? = carried.carrying(head, session)
 
+    override fun carryingAccount(head: String, session: String): String? = carried.account(head, session)
+
     // One place is still read against ALL of them: a login's window belongs to its account, and the account's
     // other logins are where that reading may have been filed.
     override suspend fun refresh(place: ClaudeLoginPlaceId): ClaudeLoginPlaceView {

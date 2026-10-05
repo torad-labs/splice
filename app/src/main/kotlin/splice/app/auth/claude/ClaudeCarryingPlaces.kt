@@ -1,4 +1,4 @@
-// NEW: which native place carries each head's requests, read from the credential each request actually sent.
+// NEW: each session's native place or added account, proved by the credential its newest request actually sent.
 // 2026-10-04: claude-splice's requests carried the ~/.claude login while Models and Usage read the command's own
 // folder, so the console showed a stale 59% beside an account at 91%.
 package splice.app.auth.claude
@@ -12,15 +12,19 @@ import java.util.concurrent.ConcurrentHashMap
 // well above the sessions one daemon serves at once.
 private const val REMEMBERED_CARRYING_SESSIONS = 4096
 
-/** Per head, and per session on that head, the place its newest request carried, or none when the sent credential
- *  matches no native place. Only the digest splice already files readings under is held, never a token, and only in
- *  memory. An unmatched send replaces the previous place, not the records of other sessions. */
+/** Each head and session's newest sent credential identifies its native place or stable added-account label.
+ *  Only the private digest and matched label are held in memory, never a token. An unmatched send replaces the
+ *  previous match, not the records of other sessions. */
 internal class ClaudeCarryingPlaces(
     private val locations: List<ClaudeLoginLocation>,
     private val reads: ClaudeLoginRead,
 ) {
-    private data class Carried(val key: String, val place: ClaudeLoginPlaceId?) {
-        fun matching(candidate: String): Carried? = takeIf { key == candidate && place != null }
+    private data class Carried(
+        val key: String,
+        val place: ClaudeLoginPlaceId?,
+        val account: String? = place?.wire,
+    ) {
+        fun matching(candidate: String): Carried? = takeIf { key == candidate && account != null }
     }
 
     private data class SessionOnHead(val head: String, val session: String)
@@ -34,13 +38,10 @@ internal class ClaudeCarryingPlaces(
         val own = session?.let { SessionOnHead(head, it) }
         val previous = own?.let(::remembered) ?: carried[head]
         val known = previous?.matching(key) ?: carried[head]?.matching(key)
-        val match = known ?: Carried(
-            key,
-            locations.firstOrNull { it.target.head.key == head && reads.credentialKey(it) == key }?.id,
-        )
+        val match = known ?: resolve(head, key)
         carried[head] = match
         if (own != null) remember(own, match)
-        if (match.place == null && match != previous) reads.reportUnmatchedCarrying()
+        if (match.account == null && match != previous) reads.reportUnmatchedCarrying()
     }
 
     fun carrying(head: String): ClaudeLoginPlaceId? = carried[head]?.place
@@ -48,6 +49,14 @@ internal class ClaudeCarryingPlaces(
     /** [session]'s own newest send on [head], or null before it sent or when its credential matches no place:
      *  never the head's, which another session on the same head may have carried. */
     fun carrying(head: String, session: String): ClaudeLoginPlaceId? = remembered(SessionOnHead(head, session))?.place
+
+    /** The stable login label of this session's own newest sent credential, including added pool accounts. */
+    fun account(head: String, session: String): String? = remembered(SessionOnHead(head, session))?.account
+
+    private fun resolve(head: String, key: String): Carried {
+        val place = locations.firstOrNull { it.target.head.key == head && reads.credentialKey(it) == key }?.id
+        return Carried(key, place, place?.wire ?: reads.poolAccountForCredential(head, key))
+    }
 
     private fun remembered(session: SessionOnHead): Carried? = synchronized(sessions) { sessions[session] }
 

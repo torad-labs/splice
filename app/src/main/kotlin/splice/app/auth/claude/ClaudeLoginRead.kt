@@ -15,6 +15,7 @@ import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.claude.ClaudeLoginPlaceView
 import splice.accounts.claude.ClaudeLoginStanding
 import splice.app.head.ProviderHoldFiles
+import splice.core.auth.CredentialKey
 import splice.core.config.StatePaths
 import splice.core.usage.QuotaSnapshot
 import splice.core.util.LogSink
@@ -34,6 +35,7 @@ internal class ClaudeLoginRead(
 ) {
     private val facts = ClaudeLoginFactsReader(ClaudeCredentialProfiles(paths.stateDir, log), profileRefresh)
     private val holds = ProviderHoldFiles(paths, log)
+    private val folders = ClaudeAccountFolders(paths.stateDir)
 
     /** Every place's view. The whole set is read at once because the window join is a property of the SET: one
      *  account's reading is the newest filed under any of its live credentials, in whichever place it signed in. */
@@ -58,9 +60,16 @@ internal class ClaudeLoginRead(
     /** Internal saved-label proof only. The private digest never enters a view or a route payload. */
     fun credentialKey(location: ClaudeLoginLocation): String? = facts.read(location).key
 
-    /** No token, digest, account or session identifier enters the missing-place diagnostic. */
+    /** A stable pool label is proved by this head's sent credential, never by its current selection. */
+    fun poolAccountForCredential(head: String, key: String): String? =
+        folders.accounts(head).singleOrNull { account ->
+            val token = folders.token(head, account.label)
+            token != null && CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer $token")) == key
+        }?.label
+
+    /** No token, digest, account or session identifier enters the missing-login diagnostic. */
     fun reportUnmatchedCarrying() {
-        log("[claude] carrying login unreported: newest sent credential matches no native login place\n")
+        log("[claude] carrying login unreported: newest sent credential has no unambiguous login match\n")
     }
 
     /** Product refreshes wait only for the selected place's captured credential. Other places retain their facts. */

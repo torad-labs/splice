@@ -18,7 +18,7 @@ import java.nio.file.Path
 
 private const val HEAD = "synthetic-client"
 private const val NO_PLACE =
-    "[claude] carrying login unreported: newest sent credential matches no native login place\n"
+    "[claude] carrying login unreported: newest sent credential has no unambiguous login match\n"
 
 class ClaudeCarryingPlacesTest {
     @TempDir
@@ -116,6 +116,22 @@ class ClaudeCarryingPlacesTest {
     }
 
     @Test
+    fun `an added login on another head never names this head's unmatched send`() {
+        val native = location()
+        val folders = ClaudeAccountFolders(paths.stateDir, now = WallClock { 1000 })
+        val pending = folders.pending("synthetic-other-head", "foreign")
+        write(pending.directory, "synthetic-foreign", "foreign-account")
+        assertEquals(ClaudeAccountLanding.Added("foreign"), folders.land(pending))
+        val carried = carrying(native)
+        val credential = key("synthetic-foreign")
+        carried.sent("synthetic-other-head", "shared-session", credential)
+        carried.sent(HEAD, "shared-session", credential)
+        assertEquals("foreign", carried.account("synthetic-other-head", "shared-session"))
+        assertNull(carried.account(HEAD, "shared-session"))
+        assertEquals(listOf(NO_PLACE), lines)
+    }
+
+    @Test
     fun `a session switching from a native login to an added pool account reports no previous place`() {
         val native = location()
         write(native.target.head.configDir, "synthetic-native", "native-account")
@@ -136,7 +152,9 @@ class ClaudeCarryingPlacesTest {
             { assertNull(carried.carrying(HEAD, "moving"), "an added account cannot inherit the last native place") },
             { assertNull(carried.carrying(HEAD), "the newest head send has no native place either") },
             { assertEquals(ClaudeLoginPlaceId.NATIVE, carried.carrying(HEAD, "staying")) },
-            { assertEquals(listOf(NO_PLACE), lines, "a missing place needs its content-free reason") },
+            { assertEquals("added", carried.account(HEAD, "moving")) },
+            { assertEquals("claude", carried.account(HEAD, "staying")) },
+            { assertEquals(emptyList<String>(), lines, "a verified added account is a known login") },
             { assertFalse(lines.joinToString("").contains(addedKey)) },
             { assertFalse(lines.joinToString("").contains("synthetic-added")) },
             { assertFalse(lines.joinToString("").contains("moving")) },

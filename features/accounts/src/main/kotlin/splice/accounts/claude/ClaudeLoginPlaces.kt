@@ -59,6 +59,10 @@ public interface ClaudeLoginPlaces {
     /** The place whose live credential carried [session]'s own newest request on [head] that matched a place, or
      *  null before one did. Every session on a head forwards its own login, so this is never the head's answer. */
     public fun carrying(head: String, session: String): ClaudeLoginPlaceId? = null
+
+    /** The stable label proved by [session]'s newest sent credential on [head], or null when no login matches.
+     *  Native sends name their place; added-account sends name their pool member, never a selection not used. */
+    public fun carryingAccount(head: String, session: String): String? = carrying(head, session)?.wire
 }
 
 /** Read after composition assigns the native login owner, never capture an unwired null at server construction. */

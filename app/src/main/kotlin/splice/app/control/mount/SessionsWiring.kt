@@ -50,14 +50,14 @@ internal class SessionsWiring(
     }
 
     /** The stable label of the login [session]'s requests on [head] carry, the one the Accounts roster and the perf
-     *  rows use, so the console names it from the head plus this label. A client head forwards each session's own
-     *  login, so a session reads the place its own newest matched request carried, null until one has; never the
-     *  head's newest match or its current selection. */
+     *  rows use, so the console names it from the head plus this label. A client session reads the native place or
+     *  added-account label proved by its own newest sent credential, or null when no login matches. Never another
+     *  session's choice, the head's current selection, or a pool decision the request did not use. */
     private fun account(head: String, session: String): String? {
         val managed = heads[head] ?: return null
         val pool = managed.accountPool
         return when {
-            managed.authKind == CLIENT_AUTH_KIND -> ports.claudeLogins?.carrying(head, session)?.wire
+            managed.authKind == CLIENT_AUTH_KIND -> ports.claudeLogins?.carryingAccount(head, session)
             pool != null -> pool.view(session).selectedLabel
             AuthKindRegistry.isOAuth(managed.authKind) -> SINGLE_LOGIN_LABEL
             else -> null

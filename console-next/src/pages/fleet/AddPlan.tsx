@@ -61,7 +61,7 @@ function Details({ draft, profile, recovery, onDraft }: { draft: AddDraft; profi
             // a row is its position: its id is typed into it, so the id cannot key it
             <div key={at} className="model-row">
               <input className="input" aria-label={AD.modelId} placeholder={AD.modelId} value={row.id} onChange={(event) => setRow(at, { ...row, id: event.target.value })} spellCheck={false} />
-              <input className="input" aria-label={AD.window} placeholder={AD.window} inputMode="numeric" value={row.window} onChange={(event) => setRow(at, { ...row, window: event.target.value })} />
+              <input className="input" type="number" step="1" aria-label={AD.window} placeholder={AD.window} inputMode="numeric" value={row.window} onChange={(event) => setRow(at, { ...row, window: event.target.value })} />
             </div>
           ))}
           <Button small onClick={() => onDraft({ ...draft, models: [...draft.models, EMPTY_ROW] })}>{AD.addModel}</Button>

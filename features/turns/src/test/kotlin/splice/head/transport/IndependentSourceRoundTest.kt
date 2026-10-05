@@ -13,7 +13,10 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -171,7 +174,53 @@ class IndependentSourceRoundTest {
         }
     }
 
-    private class GatedSourceRunner(private val abortFailure: RuntimeException? = null) : WsRoundRunner {
+    @Test
+    @Timeout(20)
+    fun `a source cancelled after its WS terminal still bills after its successful client step`(
+        @TempDir tmp: Path,
+    ) = runBlocking {
+        val runner = GatedSourceRunner(ending = SourceEnding.CANCEL_AFTER_TERMINAL)
+        val interceptor = SourceInterceptor()
+        val provider = SourceProvider(
+            object : Provider by base("http://127.0.0.1:9/responses") {
+                override val wsRunner: WsRoundRunner = runner
+            },
+            interceptor,
+        )
+        val gate = InflightGate({ 1 })
+        val deps = headDeps(tmp, gate = gate)
+        val head = HeadServer(provider, 0, deps)
+        val client = HttpClient(CIO)
+        head.start()
+        try {
+            val body = sourceStep(client, head.port, "late-cancel-source", """[{"role":"user","content":"go"}]""")
+            assertTrue(body.contains("tool_use"))
+            assertTrue(body.contains("message_stop"), "the client step finished before source accounting")
+            client.close()
+            assertEquals(1, gate.snapshot().inflight, "the raw source is still reading")
+            runner.release.complete(Unit)
+            val reading = checkNotNull(interceptor.reading)
+            withTimeout(5_000) {
+                reading.join()
+                while (gate.snapshot().inflight != 0 || provider.ended.get() != 1) yield()
+            }
+            assertTrue(reading.isCancelled, "terminal accounting does not revoke the real source cancellation")
+            assertEquals(7L, deps.stores.usageStore.readState().outputTokens5h, "the received terminal is billed once")
+            assertEquals(1, runner.posts, "completed source is never rerun to recover its tokens")
+            assertEquals(1, runner.aborts)
+        } finally {
+            runner.release.complete(Unit)
+            head.stop()
+            client.close()
+        }
+    }
+
+    private enum class SourceEnding { NORMAL, CANCEL_AFTER_TERMINAL }
+
+    private class GatedSourceRunner(
+        private val abortFailure: RuntimeException? = null,
+        private val ending: SourceEnding = SourceEnding.NORMAL,
+    ) : WsRoundRunner {
         val release = CompletableDeferred<Unit>()
         var posts = 0
         var aborts = 0
@@ -200,6 +249,7 @@ class IndependentSourceRoundTest {
                             """{"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":100,"output_tokens":7},"output":[{"type":"custom_tool_call","id":"source-item","call_id":"source-call","name":"exec","input":"await tools.Read({});"}]}}""",
                         ).jsonObject,
                     )
+                    if (ending == SourceEnding.CANCEL_AFTER_TERMINAL) currentCoroutineContext().cancel()
                 },
                 WsRoundAbort {
                     aborts++
@@ -410,6 +460,9 @@ class IndependentSourceRoundTest {
     private class Reader(private val first: CompletableDeferred<Unit>) :
         IndependentRoundSink, WireSink by RecordingSink2() {
         override lateinit var ownerScope: CoroutineScope
+        override suspend fun closeAll() {
+            currentCoroutineContext().ensureActive()
+        }
         override suspend fun customToolSource(event: CustomToolSource) {
             if (event is CustomToolSource.Delta) first.complete(Unit)
         }

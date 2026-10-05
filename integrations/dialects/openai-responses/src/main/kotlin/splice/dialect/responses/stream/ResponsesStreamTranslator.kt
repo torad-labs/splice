@@ -31,9 +31,13 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
+import splice.core.turn.FailureCause
+import splice.core.turn.FailurePhase
 import splice.core.turn.SharedSummaryParts
 import splice.core.turn.TurnOutcome
+import splice.core.util.Cancellables
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.dialect.responses.ResponsesTurnState
 import splice.dialect.responses.StreamTurnContext
 import splice.dialect.responses.reasoning.ResponsesReasoningFold
@@ -85,6 +89,21 @@ public class ResponsesStreamTranslator(
         summaryParts: SharedSummaryParts,
     ): TurnOutcome {
         val state = ResponsesTurnState()
+        val attempt = try {
+            Cancellables.runCatchingCleanup { reduceRound(upstream, sink, summaryParts, state) }
+        } catch (cancelled: CancellationException) {
+            if (!terminalSeen(state)) throw cancelled
+            return billedOutcome(state)
+        }
+        return attempt.getOrElse { cleanupFailure(state, it) }
+    }
+
+    private suspend fun reduceRound(
+        upstream: Flow<JsonObject>,
+        sink: WireSink,
+        summaryParts: SharedSummaryParts,
+        state: ResponsesTurnState,
+    ): TurnOutcome {
         val reasoningFold = ResponsesReasoningFold(ctx, state, summaryParts)
         val replay = ResponsesReasoningReplay(ctx, state)
         val itemFold = ResponsesItemFold(state, reasoningFold, replay, names)
@@ -113,7 +132,7 @@ public class ResponsesStreamTranslator(
                 }
                 .collect { evt -> reducer.onEvent(evt, sink) }
         } catch (e: CancellationException) {
-            if (ctx.watchdogFired() == null) throw e
+            if (cancellationMustEscape(state)) throw e
         } catch (torn: IOException) {
             // upstream read error: fall through to the honest terminal decision, which names it
             tear = torn
@@ -140,11 +159,51 @@ public class ResponsesStreamTranslator(
             withContext(NonCancellable) { itemFold.execProgress.closeAll(sink) }
         }
 
+        // A parsed terminal owns real usage. Late reader cancellation cannot interrupt its cleanup or accounting.
+        return if (!terminalSeen(state)) {
+            finishRound(state, sink)
+        } else {
+            withContext(NonCancellable) { finishRound(state, sink) }
+        }
+    }
+
+    private fun terminalSeen(state: ResponsesTurnState): Boolean =
+        state.finalResponse != null || state.upstreamFailure != null
+
+    private fun cancellationMustEscape(state: ResponsesTurnState): Boolean =
+        ctx.watchdogFired() == null && !terminalSeen(state)
+
+    private fun cleanupFailure(state: ResponsesTurnState, error: Throwable): TurnOutcome {
+        if (!terminalSeen(state)) throw error
+        val terminal = billedOutcome(state)
+        if (terminal is TurnOutcome.Failure) {
+            val partial = terminal.partial ?: return terminal
+            return terminal.copy(partial = null, salvagedUsage = partial.usage + terminal.salvagedUsage)
+        }
+        return TurnOutcome.Failure(
+            "splice: response cleanup failed (${SafeFailureText.render(error)})",
+            cause = FailureCause.INTERNAL,
+            phase = FailurePhase.MID_OUTPUT,
+            salvagedUsage = ResponsesOutcomePayload(ctx).usageOf(state),
+        )
+    }
+
+    private fun billedOutcome(state: ResponsesTurnState): TurnOutcome {
+        latchSweptToolBlocks(state)
+        ResponsesTerminalBackfill().harvestFallback(state)
+        val payload = ResponsesOutcomePayload(ctx)
+        val outcome = ResponsesTerminalDecision(ctx, payload).terminalOutcome(state, runawayGuard, tear)
+        return if (outcome is TurnOutcome.Failure && outcome.partial == null) {
+            outcome.copy(salvagedUsage = payload.usageOf(state))
+        } else {
+            outcome
+        }
+    }
+
+    private suspend fun finishRound(state: ResponsesTurnState, sink: WireSink): TurnOutcome {
         latchSweptToolBlocks(state)
         sink.closeAll()
-        ResponsesTerminalBackfill().harvestFallback(state)
-        val outcome = ResponsesTerminalDecision(ctx, ResponsesOutcomePayload(ctx))
-            .terminalOutcome(state, runawayGuard, tear)
+        val outcome = billedOutcome(state)
         state.ending?.let { log("upstream round ended on $it") }
         captureTurnReasoning(state, outcome)
         return relabelUnrecognised(outcome)

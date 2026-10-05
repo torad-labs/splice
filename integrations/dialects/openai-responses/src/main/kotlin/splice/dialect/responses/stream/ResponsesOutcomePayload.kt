@@ -61,7 +61,7 @@ internal class ResponsesOutcomePayload(private val ctx: StreamTurnContext) {
 
     /** The round's harvested burn. One reader for both payload shapes (DR-130) so the compact
      *  carve-out above cannot drift from the full one. */
-    private fun usageOf(state: ResponsesTurnState): Usage = Usage(
+    internal fun usageOf(state: ResponsesTurnState): Usage = Usage(
         inputTokens = state.inputTokens,
         outputTokens = state.outputTokens,
         cachedTokens = state.cachedTokens,

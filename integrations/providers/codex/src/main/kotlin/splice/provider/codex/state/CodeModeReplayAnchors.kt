@@ -111,14 +111,21 @@ internal class CodeModeHistoryIndex(
         return when {
             owned.any { it < prior } -> null
             first == null -> afterParent(record, expected)
-            else -> beforeCallback(record, prior, expected, first)
+            else -> minOf(expected, continuityEcho(record).firstOrNull() ?: first)
         }
     }
 
-    private fun beforeCallback(record: CodeModeRecord, prior: Int, expected: Int, first: Int): Int {
+    /** The client's authenticated echo is adjacent to its owned callback, not necessarily at emission. */
+    fun continuityEcho(record: CodeModeRecord): IntRange {
+        val anchor = record.replayAnchors?.baseline
+        val first = owned(record).firstOrNull() ?: return IntRange.EMPTY
+        val prior = anchor?.let { resolve(it.copy(logicalTail = 0), first) } ?: return IntRange.EMPTY
         val start = first - record.continuity.size
-        val present = start >= prior && codec.continuityAt(items, start, record.continuity)
-        return minOf(expected, if (present) start else first)
+        return if (start >= prior && codec.continuityAt(items, start, record.continuity)) {
+            start until first
+        } else {
+            IntRange.EMPTY
+        }
     }
 
     private fun afterParent(record: CodeModeRecord, expected: Int): Int {

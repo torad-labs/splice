@@ -117,6 +117,7 @@ internal class CodeModeCanonicalHistory(private val codec: CodexCodeModeHistoryC
         val removed = index.owned(record).filter { at ->
             ownership.isCallback(index.items[at], ids) || ownership.isOpaque(index.items[at], record.outerCallId)
         }.toMutableSet()
+        removed += index.continuityEcho(record)
         removed += continuity.replayIndexes(index.items, boundary, record)
         index.owned(record).forEach { at ->
             val item = index.items[at] as? JsonObject

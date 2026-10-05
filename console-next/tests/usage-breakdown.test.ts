@@ -119,7 +119,8 @@ test('local and failed-unanswered causes survive command merges and every breakd
     expect(shown?.gaps).toMatchObject({ local: 1, unanswered: 1, plan: 1, unknown: 0 });
     if (shown === undefined) throw new Error('daemon group must be present');
     expect(priceGapLines(shown.gaps)).toContain('1 request ran its model on this computer, so it has no provider price.');
-    expect(priceGapLines(shown.gaps)).toContain('1 request failed without a recorded answer or token usage. It is not a missing-spend estimate.');
+    expect(priceGapLines(shown.gaps)).toContain('1 request failed without a recorded answer or token usage.');
+    expect(priceGapLines(shown.gaps).join(' ')).not.toContain('missing-spend estimate');
   }
 });
 

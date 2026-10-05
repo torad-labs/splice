@@ -30,7 +30,7 @@ export function requestsFor(item: Breakdown, by: UsageDimension, since: number, 
 
 const titleOf = (item: Breakdown, by: UsageDimension): string =>
   item.key ?? (by === 'account' ? B.unreportedAccount : B.unreportedModel);
-const amount = (item: Breakdown): string => item.cost === null ? B.unknown : item.unpriced === 0 ? fmtUsd(item.cost) : B.atLeast(fmtUsd(item.cost));
+const amount = (item: Breakdown): string => item.cost === null ? priceGapLines(item.gaps).join(' ') || B.unknown : item.unpriced === 0 ? fmtUsd(item.cost) : B.atLeast(fmtUsd(item.cost));
 const tokens = (value: number | null, missing: number): string => value === null ? B.unknown : missing === 0 ? fmtTokens(value) : B.atLeast(fmtTokens(value));
 
 export function UsageValues({ items, by, since, until, labelOf }: { items: readonly Breakdown[]; by: UsageDimension; since: number; until: number; labelOf: (head: string) => string }) {
@@ -46,10 +46,10 @@ export function UsageValues({ items, by, since, until, labelOf }: { items: reado
       name: <div className="usage-name"><Link to={href}>{name}</Link><small>{B.requestCount(item.turns)}</small></div>,
       cost: <div className="usage-spend">
         <Link to={href} className="usage-cost-link" aria-label={`${B.inspect(name)}: ${amount(item)}`} title={`${name}: ${amount(item)}`}>
-          <strong>{amount(item)}</strong>
+          {item.cost === null && priceGapLines(item.gaps).length > 0 ? <span>{amount(item)}</span> : <strong>{amount(item)}</strong>}
           {table || item.cost === null ? null : <span className="usage-spend-track" aria-hidden="true"><i style={{ width: `${item.cost / maximum * 100}%` }} /></span>}
         </Link>
-        {priceGapLines(item.gaps).map(line => <small key={line}>{line}</small>)}
+        {item.cost === null ? null : priceGapLines(item.gaps).map(line => <small key={line}>{line}</small>)}
       </div>,
       input: <div className="usage-token" role="group" aria-label={B.input}><span className="usage-token-label">{B.input}</span><strong>{tokens(item.input, item.missingInput)}</strong>{item.missingInput === 0 ? null : <small>{B.inputMissing(item.missingInput)}</small>}{cutLines(item.cut).map(line => <small key={line}>{line}</small>)}</div>,
       output: <div className="usage-token" role="group" aria-label={B.output}><span className="usage-token-label">{B.output}</span><strong>{tokens(item.output, item.missingOutput)}</strong>{item.missingOutput === 0 ? null : <small>{B.outputMissing(item.missingOutput)}</small>}</div>,

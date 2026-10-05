@@ -29,6 +29,11 @@ describe('the filtered read', () => {
     expect(merged.unread).toEqual([{ head: 'a', reason: '2 request records could not be read.' }]);
   });
 
+  test('one unread request record uses singular words without hiding its count', () => {
+    const merged = mergeTurns([{ since: 100, n: 1, heads: [{ key: 'synthetic', label: 'Synthetic', count: 0, rows: [], skipped_lines: 1 }] }]);
+    expect(merged.unread).toEqual([{ head: 'synthetic', reason: '1 request record could not be read.' }]);
+  });
+
   test('the viewer zone reaches the daemon without changing the captured interval', () => {
     const query = new URL(perfTurnsPath('a', 1, { since: 100, until: 200, timeZone: 'America/Los_Angeles', filter: { local: false } }), 'http://synthetic.invalid').searchParams;
     expect(query.get('time_zone')).toBe('America/Los_Angeles');

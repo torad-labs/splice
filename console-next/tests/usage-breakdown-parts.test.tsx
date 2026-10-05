@@ -117,7 +117,7 @@ test('an unanswered failure explains its cause without making recorded spend a l
   const gaps = { ...item.gaps, unanswered: 1 };
   const html = renderToStaticMarkup(<MemoryRouter><UsageValues items={[{ ...item, turns: 2, gaps }]} by="model" since={0} until={200} labelOf={key => key} /></MemoryRouter>);
   expect(html).toContain('1 request failed without a recorded answer or token usage.');
-  expect(html).toContain('It is not a missing-spend estimate.');
+  expect(html).not.toContain('missing-spend estimate');
   expect(html).toContain('$0.25');
   expect(html).not.toContain('At least');
   expect(html).not.toContain('no recorded price');
@@ -204,6 +204,17 @@ test('the spend cell says why each request has no price', () => {
   expect(html).toContain('2 requests are covered by a plan, so they have no price.');
   expect(html).toContain('1 request has no recorded price.');
   expect(html.match(/no recorded price/g)).toHaveLength(1);
+});
+
+test('a null cost shows its precise explanation instead of also claiming Not reported', () => {
+  const gaps = { uncounted: 0, plan: 1, undeclared: 0, unknown: 0 };
+  const html = renderToStaticMarkup(<MemoryRouter><UsageValues items={[{ ...item, cost: null, unpriced: 1, gaps }]} by="model" since={0} until={200} labelOf={key => key} /></MemoryRouter>);
+  expect(html).toContain('1 request is covered by a plan, so it has no price.');
+  expect(html).not.toContain('Not reported');
+  expect(html).not.toContain('$0');
+  expect(html).toContain('since=0&amp;until=200');
+  const unknown = renderToStaticMarkup(<MemoryRouter><UsageValues items={[{ ...item, cost: null }]} by="model" since={0} until={200} labelOf={key => key} /></MemoryRouter>);
+  expect(unknown).toContain('Not reported');
 });
 
 test('a completely read empty budget day displays its measured zero and full remaining balance', () => {

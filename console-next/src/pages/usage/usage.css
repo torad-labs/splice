@@ -18,6 +18,7 @@
 .use span { font: 500 0.96rem var(--meta); color: var(--body); }
 .use span b { display: inline; font: 650 0.96rem var(--meta); }
 .uplan .tok { font: 500 0.96rem var(--meta); color: var(--mute); }
+.uplan .tok small { display: block; margin-top: var(--space-3); }
 .uplan .tok strong { display: block; font: 500 1.375rem var(--display); color: var(--ink); }
 .uplan svg rect { fill: var(--c); opacity: .85; }
 .uplan .cost { font: 500 1.375rem var(--display); color: var(--ink); text-align: right; }

@@ -138,7 +138,7 @@ export function mergeTurns(answers: readonly PerfTurnsWire[]): MergedTurns {
   let counted = true;
   for (const answer of answers) {
     for (const block of answer.heads) {
-      const reasons = [block.error, block.read_error, (block.skipped_lines ?? 0) > 0 ? `${block.skipped_lines} request records could not be read.` : undefined].filter((reason): reason is string => reason !== undefined);
+      const reasons = [block.error, block.read_error, (block.skipped_lines ?? 0) > 0 ? `${block.skipped_lines} request ${block.skipped_lines === 1 ? 'record' : 'records'} could not be read.` : undefined].filter((reason): reason is string => reason !== undefined);
       if (reasons.length > 0) unread.push({ head: block.key, reason: reasons.join(' ') });
       if (typeof block.count === 'number') matchedBy[block.key] = block.count;
       else if (block.error === undefined) counted = false;

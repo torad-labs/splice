@@ -116,7 +116,10 @@ test('daemon-reported local and unanswered causes stay in words across the full 
     await chart.getByRole('button', { name: dimension, exact: true }).click();
     await expect(chart).toContainText('1 request ran its model on this computer, so it has no provider price.');
     await expect(chart).toContainText('1 request is covered by a plan, so it has no price.');
-    await expect(chart).toContainText('1 request failed without a recorded answer or token usage. It is not a missing-spend estimate.');
+    await expect(chart).toContainText('1 request failed without a recorded answer or token usage.');
+    await expect(chart).not.toContainText('missing-spend estimate');
+    const covered = chart.getByRole('listitem').filter({ hasText: 'covered by a plan' });
+    await expect(covered.locator('.usage-spend')).not.toContainText('Not reported');
     await expect(chart).not.toContainText('no recorded price');
     const answered = chart.getByRole('listitem').filter({ hasText: 'failed without a recorded answer' });
     await expect(answered).toContainText('$0.25');

@@ -16,6 +16,34 @@ const empty: TurnUsageWire = {
   models: [], accounts: [], days: [], sessions: [],
 };
 
+for (const requests of [0, 1]) {
+  test(`unread request evidence has its own line below a command's ${requests} requests`, async ({ page }) => {
+    const heads = await read<HeadsPayload>(page, '/api/heads');
+    heads.heads = heads.heads.filter(head => head.key === STACK.oauthHead);
+    await page.route('**/api/heads', route => route.fulfill({ json: heads }));
+    await page.route('**/api/economics', route => route.fulfill({ json: { retention_hours: 168, heads: [] } }));
+    await page.route(url => url.pathname === '/api/perf/turns', route => {
+      const query = new URL(route.request().url()).searchParams;
+      return route.fulfill({ json: { since: Number(query.get('since')), n: 1, heads: [{
+        key: STACK.oauthHead, label: STACK.oauthHead, count: requests, skipped_lines: 1,
+        usage: requests === 0 ? empty : usage, rows: [],
+      }] } });
+    });
+    await open(page, 'usage');
+    const tokens = page.locator('.uplan .tok');
+    const reason = tokens.locator('small');
+    await expect(reason).toHaveText('1 request record could not be read.');
+    expect(await reason.evaluate(element => {
+      const parent = element.parentElement;
+      if (parent === null) return false;
+      const before = document.createRange();
+      before.setStart(parent, 0);
+      before.setEndBefore(element);
+      return element.getBoundingClientRect().top >= before.getBoundingClientRect().bottom - 1;
+    })).toBe(true);
+  });
+}
+
 test('a seven-day settled command publishes while its sibling remains loading', async ({ page }) => {
   const heads = await read<HeadsPayload>(page, '/api/heads');
   heads.heads = heads.heads.filter(head => head.key === STACK.oauthHead || head.key === STACK.soloHead);

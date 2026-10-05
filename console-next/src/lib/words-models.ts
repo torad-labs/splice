@@ -5,6 +5,9 @@ export const M = {
   rate: (input: string, output: string): string => `${input} in, ${output} out per million tokens`,
   cached: (price: string): string => `${price} for a cached token`,
   noRate: 'No price declared',
+  commandDefault: 'Command default',
+  enterModelId: 'Enter a model ID',
+  customModelId: 'Custom model ID',
   verdict: {
     served: 'Served',
     capped: 'Served with a smaller window',

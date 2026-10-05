@@ -15,6 +15,7 @@ import type { HeadStatus } from '../../types/core';
 import type { HeadCatalog } from '../../types/models';
 import type { PlaygroundWire } from '../../types/playground';
 import { Button, Close, Empty, Fault, Markdown, PageHead, Plus, Select, Window, WindowBar } from '../../ui';
+import { ModelSelect } from '../../ui/ModelSelect';
 import { G } from './copy';
 import './playground.css';
 
@@ -24,37 +25,13 @@ interface Round {
   prompt: string;
 }
 
-/** The model a lane runs, typed or picked from the command's catalogue, taken when the field is left or Enter is pressed. A blank
- *  field runs the command's pinned model. */
-function ModelField({ lane, catalog, listId, onChange }: { lane: Lane; catalog: HeadCatalog | undefined; listId: string; onChange: (model: string | null) => void }) {
-  const [text, setText] = useState(lane.model ?? '');
-  useEffect(() => setText(lane.model ?? ''), [lane.model]);
-  const commit = (): void => {
-    const next = text.trim() === '' ? null : text.trim();
-    if (next !== lane.model) onChange(next);
-  };
+/** A catalog choice, the command default, or an explicitly entered custom ID. */
+function ModelField({ lane, catalog, onChange }: { lane: Lane; catalog: HeadCatalog | undefined; onChange: (model: string | null) => void }) {
   const pinned = catalog?.pinned_model ?? '';
-  // The list sits beside the label, not in it: inside, every option's name would join the label's text.
-  return (
-    <>
-      <label className="field">
-        <span className="eyebrow">{G.model}</span>
-        <input
-          className="input"
-          list={listId}
-          spellCheck={false}
-          value={text}
-          placeholder={pinned === '' ? G.anyModel : G.pinnedModel(pinned)}
-          onChange={(event) => setText(event.currentTarget.value)}
-          onBlur={commit}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') event.currentTarget.blur();
-          }}
-        />
-      </label>
-      <datalist id={listId}>{(catalog?.models ?? []).map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}</datalist>
-    </>
-  );
+  return <div className="field">
+    <span className="eyebrow">{G.model}</span>
+    <ModelSelect label={G.model} value={lane.model} models={catalog?.models ?? []} defaultLabel={pinned === '' ? G.anyModel : G.pinnedModel(pinned)} onChange={onChange} />
+  </div>;
 }
 
 /** What one lane's model answered: its text, how long and how many tokens it took, and the exchange itself on request. A refusal says
@@ -117,8 +94,8 @@ function LaneView({ lane, index, round, commands, catalog, colour, removable, on
   }, [round, lane, run]);
 
   const label = commands.find((command) => command.key === lane.head)?.label ?? lane.head;
-  const name = lane.model ?? catalog?.pinned_model ?? '';
-  const title = name === '' ? label : name;
+  const modelId = lane.model ?? catalog?.pinned_model ?? '';
+  const title = modelId === '' ? label : catalog?.models.find(model => model.id === modelId)?.label || modelId;
   const options = commands.map((command) => ({ id: command.key, label: command.label }));
   return (
     <Window as="li" colour={colour} className="pg-lane" aria-label={title}>
@@ -130,7 +107,7 @@ function LaneView({ lane, index, round, commands, catalog, colour, removable, on
           <span className="eyebrow">{G.command}</span>
           <Select label={`${G.command} ${index + 1}`} value={lane.head} options={options.some((option) => option.id === lane.head) ? options : [{ id: lane.head, label: lane.head }, ...options]} onChange={(head) => onChange({ head, model: null })} />
         </div>
-        <ModelField lane={lane} catalog={catalog} listId={`pg-models-${index}`} onChange={(model) => onChange({ ...lane, model })} />
+        <ModelField lane={lane} catalog={catalog} onChange={(model) => onChange({ ...lane, model })} />
       </div>
       <div className="pg-answer">
         {run.isIdle ? <p className="hint">{G.waiting}</p> : null}

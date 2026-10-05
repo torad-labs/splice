@@ -173,22 +173,30 @@ function page(path: string, heads: HeadStatus[] = [head('claudex', 'chatgpt-oaut
 const lanesIn = (html: string): string[] => [...html.matchAll(/<li class="win[^"]*pg-lane" aria-label="([^"]*)"/g)].map((match) => match[1] ?? '');
 
 describe('the Playground page', () => {
+  test('known models are selected by label, with custom IDs disclosed rather than a free-text field up front', () => {
+    const html = page('/playground?try=claudex:gpt-6-luna');
+    expect(html).toMatch(/<button[^>]*aria-label="Model"/);
+    expect(html).toContain('>GPT-6-LUNA');
+    expect(html).toContain('Enter a model ID');
+    expect(html).not.toContain('<datalist');
+  });
   test('opens on two lanes, each command on its pinned model, and names the command it leaves out and why', () => {
     const html = page('/playground');
     expect(html).toContain('<h1>Playground</h1>');
-    expect(lanesIn(html)).toEqual(['gpt-6-sol', 'claudeor']);
+    expect(lanesIn(html)).toEqual(['GPT-6-SOL', 'claudeor']);
     expect(html).toContain('claude-splice signs in with Claude Code&#x27;s own login, which the Playground does not have, so it is not offered here.');
     expect(html).not.toContain('aria-label="claude-splice"');
     expect(html).not.toContain('This page is being rebuilt');
   });
 
-  test('reads its lanes from the address, the named model in its field and the pinned one as the placeholder', () => {
+  test('reads selected lanes from the address and distinguishes catalog labels from command defaults', () => {
     const html = page('/playground?try=claudex:gpt-6-luna&try=claudex&try=openrouter');
-    expect(lanesIn(html)).toEqual(['gpt-6-luna', 'gpt-6-sol', 'claudeor']);
-    expect(html).toContain('value="gpt-6-luna"');
-    expect(html).toContain('placeholder="The pinned model, gpt-6-sol"');
-    expect(html).toContain('placeholder="Type or choose a model"');
-    expect(html).toContain('<option value="gpt-6-luna">GPT-6-LUNA</option>');
+    expect(lanesIn(html)).toEqual(['GPT-6-LUNA', 'GPT-6-SOL', 'claudeor']);
+    expect(html).toContain('>GPT-6-LUNA');
+    expect(html).toContain('>The pinned model, gpt-6-sol');
+    expect(html).toContain('>Command default');
+    expect(html).not.toContain('<datalist');
+    expect(page('/playground?try=claudex:synthetic-unlisted')).toContain('>synthetic-unlisted');
   });
 
   test('holds the send until there is a prompt, waits in every lane, and stops adding at four lanes', () => {

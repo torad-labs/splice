@@ -31,7 +31,7 @@ export const G = {
     ? `${names[0] ?? ''} signs in with Claude Code's own login, which the Playground does not have, so it is not offered here.`
     : `${names.slice(0, -1).join(', ')} and ${names.at(-1) ?? ''} sign in with Claude Code's own login, which the Playground does not have, so they are not offered here.`),
   pinnedModel: (id: string): string => `The pinned model, ${id}`,
-  anyModel: 'Type or choose a model',
+  anyModel: 'Command default',
   none: 'No command can be tried yet.',
   noneWhy: 'Add a command on Models, then come back.',
 } as const;

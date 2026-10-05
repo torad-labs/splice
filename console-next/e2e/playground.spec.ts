@@ -10,6 +10,45 @@ const PROMPT = 'one synthetic prompt from the console e2e';
 const NAMED = 'e2e-named-model';
 const hash = (url: string): string => decodeURIComponent(new URL(url).hash);
 
+test('catalog labels select their exact model ID while command defaults and custom models remain available', async ({ page }) => {
+  await page.route(url => url.pathname === '/api/models', route => route.fulfill({ json: { heads: [{
+    head: STACK.oauthHead, provider: 'codex', pinned_model: STACK.model,
+    models: [{ id: 'synthetic-selected-model', label: 'Synthetic selected model', description: '', slot: null, context_window: 100000, context_window_source: 'synthetic', pinned: false, resolved: true }],
+  }] } }));
+  const faults = await open(page, `playground?try=${STACK.oauthHead}`);
+  const lane = page.getByRole('list', { name: 'Answers', exact: true }).getByRole('listitem');
+  const picker = lane.getByRole('button', { name: 'Model', exact: true });
+  await expect(picker).toContainText('The pinned model, ' + STACK.model);
+  await expect(lane.getByRole('textbox', { name: 'Custom model ID', exact: true })).toHaveCount(0);
+  await picker.click();
+  await page.getByRole('menuitemradio', { name: 'Synthetic selected model', exact: true }).click();
+  await expect.poll(() => hash(page.url())).toBe(`#/playground?try=${STACK.oauthHead}:synthetic-selected-model`);
+  await expect(picker).toContainText('Synthetic selected model');
+  await page.reload();
+  await expect(picker).toContainText('Synthetic selected model');
+  for (const width of [1536, 393]) {
+    await page.setViewportSize({ width, height: 980 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    const command = lane.getByRole('button', { name: 'Command 1', exact: true });
+    const commandBounds = await command.boundingBox();
+    const modelBounds = await picker.boundingBox();
+    if (commandBounds === null || modelBounds === null) throw new Error('a model picker lost its layout');
+    expect(commandBounds.x + commandBounds.width <= modelBounds.x || commandBounds.y + commandBounds.height <= modelBounds.y).toBe(true);
+    await expect(lane).toHaveAttribute('aria-label', 'Synthetic selected model');
+    await page.screenshot({ path: test.info().outputPath('playground-picker-' + width + '.png'), fullPage: true });
+  }
+  await picker.click();
+  await page.getByRole('menuitemradio', { name: 'The pinned model, ' + STACK.model, exact: true }).click();
+  await expect.poll(() => hash(page.url())).toBe(`#/playground?try=${STACK.oauthHead}`);
+  await lane.getByRole('button', { name: 'Enter a model ID', exact: true }).click();
+  await lane.getByRole('textbox', { name: 'Custom model ID', exact: true }).fill('synthetic/custom:model');
+  await lane.getByRole('textbox', { name: 'Custom model ID', exact: true }).press('Enter');
+  await expect.poll(() => hash(page.url())).toBe(`#/playground?try=${STACK.oauthHead}:synthetic/custom:model`);
+  await expect(picker).toContainText('synthetic/custom:model');
+  await assertHealthy(page, faults);
+  await page.unrouteAll({ behavior: 'wait' });
+});
+
 test('one prompt reaches every lane, a named model is the one sent upstream, and a lane that cannot run fails alone', async ({ page }) => {
   const sent: unknown[] = [];
   page.on('request', (request) => {
@@ -53,13 +92,14 @@ test('Health opens the Playground, and an added lane and a named model live in t
   await expect(lanes).toHaveCount(2);
   await page.getByRole('button', { name: 'Add a model', exact: true }).click();
   await expect(lanes).toHaveCount(3);
-  const model = lanes.nth(0).getByLabel('Model', { exact: true });
+  await lanes.nth(0).getByRole('button', { name: 'Enter a model ID', exact: true }).click();
+  const model = lanes.nth(0).getByRole('textbox', { name: 'Custom model ID', exact: true });
   await model.fill('gpt-test-model');
   await model.press('Enter');
   await expect.poll(() => hash(page.url())).toBe(`#/playground?try=${first}:gpt-test-model&try=${second}&try=${third}`);
   await page.reload();
   await expect(lanes).toHaveCount(3);
   await expect(lanes.nth(0)).toHaveAttribute('aria-label', 'gpt-test-model');
-  await expect(lanes.nth(0).getByLabel('Model', { exact: true })).toHaveValue('gpt-test-model');
+  await expect(lanes.nth(0).getByRole('button', { name: 'Model', exact: true })).toContainText('gpt-test-model');
   await assertHealthy(page, faults);
 });

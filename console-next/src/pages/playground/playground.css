@@ -5,9 +5,13 @@
 .playground .pg-acts { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-6); }
 .playground .pg-add { margin-left: auto; display: inline-flex; align-items: center; gap: var(--space-3); }
 .playground .pg-forwarded { margin-top: var(--space-6); max-width: 72ch; }
-.playground .pg-lanes { display: grid; grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr)); gap: var(--space-11) var(--space-10); margin: var(--space-11) 0 var(--space-8); padding: 0; list-style: none; }
+.playground .pg-lanes { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(22rem, 100%), 1fr)); gap: var(--space-11) var(--space-10); margin: var(--space-11) 0 var(--space-8); padding: 0; list-style: none; }
 .playground .pg-pick { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: var(--space-6); padding: 0 var(--space-9) var(--space-7); }
-.playground .pg-pick .select { width: 100%; justify-content: space-between; }
+.playground .pg-pick .select { width: 100%; min-width: 0; height: auto; min-height: 2.625rem; justify-content: space-between; overflow-wrap: anywhere; }
+.playground .model-choice { display: grid; gap: var(--space-4); justify-items: start; }
+@media (max-width: 48rem) {
+  .playground .pg-pick { grid-template-columns: minmax(0, 1fr); }
+}
 .playground .pg-pick .input { width: 100%; min-width: 0; }
 .playground .pg-answer { display: grid; gap: var(--space-5); padding: var(--space-7) var(--space-9) var(--space-9); border-top: 1px solid var(--hair); min-width: 0; }
 .playground .pg-said { display: flex; flex-wrap: wrap; font: 500 0.875rem var(--meta); color: var(--mute); }

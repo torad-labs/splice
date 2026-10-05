@@ -15,7 +15,7 @@ const budgetCatalog = (priced: boolean): HeadCatalog => ({
 test('native and separate sign-in dialogs say what Start login does without inventing a label', async ({ page }) => {
   await page.route(url => url.pathname === '/api/accounts', route => route.fulfill({ json: { accounts: [] } }));
   const faults = await open(page, 'accounts');
-  const native = page.locator('.account-card').filter({ hasText: 'The login used by Claude Code in ~/.claude.' });
+  const native = page.locator('.account-card').filter({ hasText: 'The login stored for the plain claude command.' });
   await native.getByRole('button', { name: 'Sign in', exact: true }).click();
   let dialog = page.getByRole('dialog');
   await expect(dialog).toContainText('This changes the native Claude Code login.');
@@ -24,7 +24,7 @@ test('native and separate sign-in dialogs say what Start login does without inve
   await expect(dialog.getByRole('textbox')).toHaveCount(0);
   await expect(dialog.getByRole('button', { name: 'Start login', exact: true })).toBeEnabled();
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
-  const separate = page.locator('.account-card').filter({ hasText: 'The separate login used by claude-splice in its own configuration folder.' });
+  const separate = page.locator('.account-card').filter({ hasText: 'The login stored separately for the claude-splice command.' });
   await separate.getByRole('button', { name: 'Sign in', exact: true }).click();
   dialog = page.getByRole('dialog');
   await expect(dialog).toContainText('This changes the separate claude-splice login.');
@@ -214,6 +214,42 @@ test('an Accounts read failure stays visible while command kinds are still being
     release();
   }
 });
+
+for (const carrying of [true, false, null, undefined]) {
+  test(`Accounts marks native request carrying from the roster only: ${String(carrying)}`, async ({ page }) => {
+    await page.route(url => url.pathname === '/api/accounts', async route => {
+      const response = await route.fetch();
+      const body = await response.json() as AccountsWire;
+      const base = body.accounts.find(row => row.heads.includes(STACK.oauthHead));
+      if (base === undefined) throw new Error('synthetic login fixture is missing');
+      const common = { ...base, provider: 'anthropic', kind: 'client', heads: ['claude-splice'], primary: false, selected: false, pinned: false, next_target: false, windows: [], credential_path: null, identity_verified: false };
+      const rows: AccountWire[] = ['claude', 'claude-splice'].map((id, index) => ({
+        ...common, label: id, display_name: index === 0 ? 'Personal login' : 'Separate login',
+        login_place: { id: index === 0 ? 'claude' : 'claude-splice', command: id },
+        ...(carrying === undefined ? {} : { carrying_request: carrying === null ? null : index === 0 ? carrying : !carrying }),
+      }));
+      await route.fulfill({ json: { accounts: rows } });
+    });
+    await page.route(url => url.pathname === '/api/auth/claude-splice/order', route => route.fulfill({ json: { unavailable: 'Synthetic selection unavailable' } }));
+    const faults = await open(page, 'accounts');
+    const personal = page.locator('.account-card').filter({ has: page.getByRole('heading', { name: 'Personal login', exact: true }) });
+    const separate = page.locator('.account-card').filter({ has: page.getByRole('heading', { name: 'Separate login', exact: true }) });
+    if (carrying === true || carrying === false) {
+      const carried = carrying ? personal : separate;
+      const other = carrying ? separate : personal;
+      await expect(carried).toContainText('Carried the latest matched claude-splice request.');
+      await expect(other).toContainText('The latest matched claude-splice request used another login.');
+      await expect(other).not.toContainText('Carried the latest matched');
+    } else if (carrying === null) {
+      for (const card of [personal, separate]) await expect(card).toContainText('No claude-splice request has matched a login since the daemon started.');
+    } else {
+      for (const card of [personal, separate]) await expect(card).toContainText('The daemon has not reported which login carried this command’s requests.');
+      await expect(page.getByText('No claude-splice request has matched a login since the daemon started.', { exact: true })).toHaveCount(0);
+    }
+    await expect(separate).not.toContainText('login used by claude-splice');
+    await assertHealthy(page, faults);
+  });
+}
 
 for (const path of ['accounts', 'models/claude-splice', 'settings/tools']) {
   test(path + ' edits colliding native and pool labels by explicit location, even for one subscription', async ({ page }) => {

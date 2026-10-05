@@ -45,6 +45,7 @@ export function AccountCard({ account, place, colour, now, commandLabels, localR
       <div className="account-place">
         {place === undefined ? <p>{commands}{account?.plan ? ` · ${account.plan}` : ''}</p> : <><b>{place}</b><p>{place === 'claude' ? A.nativeWhy : A.spliceWhy}</p></>}
       </div>
+      {place === undefined ? null : <p className="quiet-line" role="status">{account?.carrying_request === true ? A.carrying(commands) : account?.carrying_request === false ? A.carriedElsewhere(commands) : account?.carrying_request === null ? A.notMatched(commands) : A.carryingUnknown}</p>}
       {localRuntime ? <p className="hint">{A.localWhy}</p> : keyed ? <p className="hint">{A.keyWhy}</p> : <div className="glass one"><AccountLimits windows={account?.windows ?? []} now={now} {...(account === null ? {} : { kind: account.kind })} /></div>}
       <div className="quiet-meta">
         {account?.next_target === true ? <span className="tag">{A.next}</span> : null}

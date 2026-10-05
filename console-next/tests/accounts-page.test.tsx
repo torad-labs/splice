@@ -63,6 +63,18 @@ test('Accounts names colliding native and pool logins from their display contrac
   expect(html.match(/>Rename<\/button>/g)).toHaveLength(1);
 });
 
+test('native cards mark only the login whose credential carried the newest matched request', () => {
+  const card = (carrying_request: boolean | null | undefined): string => renderToStaticMarkup(<QueryClientProvider client={new QueryClient()}>
+    <AccountCard account={{ ...claudeLogin('claude-splice'), ...(carrying_request === undefined ? {} : { carrying_request }) }} place="claude-splice" commandLabels={['Synthetic command']} colour="claude" now={now} />
+  </QueryClientProvider>);
+  expect(card(true)).toContain('Carried the latest matched Synthetic command request.');
+  expect(card(false)).toContain('The latest matched Synthetic command request used another login.');
+  expect(card(null)).toContain('No Synthetic command request has matched a login since the daemon started.');
+  expect(card(undefined)).toContain('The daemon has not reported which login carried this command’s requests.');
+  expect(card(false)).not.toContain('Carried the latest matched Synthetic command request.');
+  expect(card(null)).not.toContain('Carried the latest matched Synthetic command request.');
+});
+
 describe('the Claude group', () => {
   test('offers the add every other provider has, because a command can hold many subscriptions', () => {
     expect(page([claudeLogin('claude'), claudeLogin('claude-splice')])).toContain('Sign in to another account');

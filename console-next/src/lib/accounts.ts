@@ -401,6 +401,7 @@ function accountFromWire(wire: AccountWire): AccountRow {
     credential_present: wire.credential_present,
     ...(wire.provider === undefined ? {} : { provider: wire.provider }),
     ...(wire.login_place === undefined ? {} : { login_place: wire.login_place }),
+    ...(wire.carrying_request === undefined ? {} : { carrying_request: wire.carrying_request }),
     ...(wire.account === undefined ? {} : { account: wire.account }),
     ...(wire.held === undefined ? {} : { held: wire.held }),
     ...(wire.held_until_epoch_seconds === undefined ? {} : { held_until_epoch_seconds: wire.held_until_epoch_seconds }),

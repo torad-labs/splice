@@ -26,6 +26,8 @@ export interface AccountManagement {
   edit_target?: AccountEditTarget | null;
   provider?: string;
   login_place?: { id: ClaudeLoginPlaceId; command: string } | null;
+  /** Native rows only: newest matched request since boot; null before a match, absent on older replies. */
+  carrying_request?: boolean | null;
   account?: { uuid: string; email: string | null } | null;
   held?: boolean | null;
   held_until_epoch_seconds?: number | null;

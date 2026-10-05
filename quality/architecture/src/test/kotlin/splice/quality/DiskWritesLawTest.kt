@@ -335,7 +335,7 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
         "Files.move(" to 1,
         "writeAtomic0600(" to 2,
     ),
-    "integrations/claude-code/src/main/kotlin/splice/client/ClaudeLoginFiles.kt" to mapOf("writeAtomic0600(" to 4),
+    "integrations/claude-code/src/main/kotlin/splice/client/ClaudeLoginFiles.kt" to mapOf("writeAtomic0600(" to 5),
     "integrations/claude-code/src/main/kotlin/splice/client/ClaudeLogins.kt" to mapOf("writeAtomic0600(" to 2),
     "integrations/claude-code/src/main/kotlin/splice/client/login/HookScriptFiles.kt" to mapOf(
         "Files.createTempFile(" to 2,

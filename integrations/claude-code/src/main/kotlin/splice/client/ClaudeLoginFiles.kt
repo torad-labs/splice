@@ -1,5 +1,6 @@
 // NEW: V4-276 — the two sides ClaudeLogins.login reads and writes. The head's: Claude Code's own
-// .credentials.json (bytes, never parsed) and the account its .claude.json names in oauthAccount.
+// .credentials.json (copied verbatim) and the account its .claude.json names in oauthAccount.
+// A saved copy's access token is parsed only to prove its credential-bound display name, never to send it.
 // splice's: the store of labelled copies, each beside its account record, and the selection. Split
 // out of ClaudeLogins.kt for the concentration law.
 package splice.client
@@ -10,6 +11,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
+import splice.core.auth.CredentialKey
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.JsonScalars
@@ -118,11 +120,34 @@ internal class LoginStore(private val dir: Path) {
      *  bytes land first and the record second: a record that fails to land leaves the copy legacy or
      *  stale, never a record naming bytes of another account. */
     fun save(label: String, bytes: String, account: Account) {
-        SecureFile.writeAtomic0600(dir.resolve("$label$CREDENTIALS_FILE"), bytes)
+        SecureFile.writeAtomic0600(credential(label), bytes)
         write(label, Record(account, stale = false))
     }
 
-    fun credentials(label: String): String = Files.readString(dir.resolve("$label$CREDENTIALS_FILE"))
+    fun credentials(label: String): String = Files.readString(credential(label))
+
+    /** Used only to prove which saved name belongs to the live credential; no token enters the result. */
+    fun credentialKey(label: String): String? =
+        // ast-grep-ignore: kt-no-silent-result-collapse -- an unreadable copy proves no live display name or edit target
+        Cancellables.runCatchingCancellable {
+            val oauth = json.parseToJsonElement(credentials(label)).jsonObject["claudeAiOauth"] as? JsonObject
+            val token = oauth?.get("accessToken")?.let(JsonScalars::strIfString)?.takeIf(String::isNotBlank)
+            token?.let { CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer $it")) }
+        }.getOrNull()
+
+    fun relabel(old: String, label: String) {
+        val selected = selected()
+        val bytes = credentials(old)
+        val account = records()[old]
+        if (account != null) {
+            save(label, bytes, account.account)
+            if (account.stale) demote(label)
+        } else {
+            SecureFile.writeAtomic0600(credential(label), bytes)
+        }
+        remove(old)
+        selected?.let { select(if (it == old) label else it) }
+    }
 
     /** The copy stays on disk and its record keeps the account, marked stale: never put back until
      *  a live login of that account is saved over it. A legacy label has no record to mark. */
@@ -141,10 +166,12 @@ internal class LoginStore(private val dir: Path) {
 
     fun remove(label: String) {
         val wasSelected = selected() == label
-        Files.deleteIfExists(dir.resolve("$label$CREDENTIALS_FILE"))
+        Files.deleteIfExists(credential(label))
         Files.deleteIfExists(record(label))
         if (wasSelected) unselect()
     }
 
     private fun record(label: String): Path = dir.resolve("$label$ACCOUNT_FILE")
+
+    private fun credential(label: String): Path = dir.resolve("$label$CREDENTIALS_FILE")
 }

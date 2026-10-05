@@ -9,8 +9,8 @@
 //  1. SAVE-BACK: before the live login is replaced, it is stored under the label of its own account.
 //  2. Nothing changes while a session of the head is live, or while the caller cannot tell.
 //  3. IDENTITY: each label records its account's oauthAccount.accountUuid (emailAddress for display)
-//     from the head's .claude.json, never a token byte; the credential bytes are copied, never
-//     parsed. A live login is never filed under a label of another account.
+//     from the head's .claude.json, never a token byte; the credential bytes are copied verbatim.
+//     Saved access tokens are parsed only for display-name digest matching. Save-back rules are unchanged.
 //  4. FAIL CLOSED: an error in the identity read or the save-back changes nothing live.
 // A copy with no account record was stored before these rules, and one whose login left the head
 // without a save-back (a /login to another account, a /logout) is marked stale: splice puts neither
@@ -57,6 +57,23 @@ public class ClaudeLogins(
     /** The label the head's live login was saved as or switched to, or null. */
     public fun selected(): String? = store.selected()
 
+    /** A saved name belongs to this login only when its credential digest matches, never from a copied UUID. */
+    public fun labelForCredential(key: String): String? {
+        val matching = labels().filter { store.credentialKey(it) == key }
+        return selected()?.takeIf(matching::contains) ?: matching.singleOrNull()
+    }
+
+    /** Relabel only a saved copy. The live file and the native place's stable id never move. */
+    public fun relabel(old: String, label: String): ClaudeLoginResult = when {
+        !LABEL_SHAPE.matches(label) -> ClaudeLoginResult.Refused("that is not a valid login label")
+        old !in labels() -> ClaudeLoginResult.Refused("no stored Claude login named '$old'")
+        label in labels() -> ClaudeLoginResult.Refused("a stored Claude login already uses '$label'")
+        else -> {
+            store.relabel(old, label)
+            ClaudeLoginResult.Ok
+        }
+    }
+
     public fun remove(label: String): ClaudeLoginResult {
         if (label !in labels()) return ClaudeLoginResult.Refused("no stored Claude login named '$label'")
         store.remove(label)
@@ -96,27 +113,17 @@ public class ClaudeLogins(
         val records = store.records()
         val held = live as? Live.Held
         val owner = records.entries.firstOrNull { it.value.account.uuid == held?.account?.uuid }?.key
-        val replaced = demoteReplaced(owner)
-        val target = targetOf(records, label, replaced)
+        // A selected copy left behind without save-back must stay stale under its original account.
+        val replaced = store.selected()?.takeIf { it != owner }?.also { store.demote(it) }
+        val target = records[label]
         val result = when {
             held != null && owner == label -> refresh(head, label, held)
-            target != null && !target.stale -> toSaved(head, label to target.account, live, owner, discard)
+            target != null && !target.stale && label != replaced ->
+                toSaved(head, label to target.account, live, owner, discard)
             else -> toFresh(head, label to target?.account, live, owner, discard)
         }
         if (replaced == null) return result
         return Said.withNote(result, Said.demoted(head, replaced, records[replaced]?.account))
-    }
-
-    /** The selected label's live login left the head without a save-back (a /login to another
-     *  account, or a /logout): its copy may be older than its last refresh, so it goes stale. The
-     *  record keeps its account, so no other account's login is ever filed under it. */
-    private fun demoteReplaced(owner: String?): String? =
-        store.selected()?.takeIf { it != owner }?.also { store.demote(it) }
-
-    /** [label]'s record as this move sees it: the label just demoted is stale from here on. */
-    private fun targetOf(records: Map<String, Record>, label: String, replaced: String?): Record? {
-        val record = records[label] ?: return null
-        return if (label == replaced) record.copy(stale = true) else record
     }
 
     /** The live login is this label's account's newest: save it over the copy (clearing a stale mark). */

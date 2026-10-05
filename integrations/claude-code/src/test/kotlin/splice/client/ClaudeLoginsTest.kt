@@ -70,6 +70,41 @@ class ClaudeLoginsTest {
     }
 
     @Test
+    fun `renaming a stale saved copy preserves another selected login and all saved bytes`() {
+        val store = LoginStore(home.resolve("store"))
+        store.save("old", "synthetic-old-bytes", Account("old-account", "old@synthetic"))
+        store.demote("old")
+        store.save("other", "synthetic-other-bytes", Account("other-account", null))
+        store.select("other")
+
+        assertEquals(ClaudeLoginResult.Ok, logins.relabel("old", "new"))
+
+        assertEquals("other", logins.selected())
+        assertEquals("synthetic-old-bytes", stored("new"))
+        assertEquals("synthetic-other-bytes", stored("other"))
+        assertTrue(requireNotNull(store.records()["new"]).stale)
+        assertFalse("old" in logins.labels())
+    }
+
+    @Test
+    fun `saved rename preserves a selected legacy copy without inventing an account record`() {
+        val storeDir = home.resolve("store").createDirectories()
+        val bytes = """{"claudeAiOauth":{"accessToken":"synthetic-legacy"}}"""
+        storeDir.resolve("old.credentials.json").writeText(bytes)
+        LoginStore(storeDir).select("old")
+        assertEquals(ClaudeLoginResult.Ok, logins.relabel("old", "new"))
+        assertEquals("new", logins.selected())
+        assertEquals(bytes, stored("new"))
+        assertFalse(storeDir.resolve("new.account.json").exists())
+        val digest = requireNotNull(
+            splice.core.auth.CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer synthetic-legacy")),
+        )
+        assertEquals("new", logins.labelForCredential(digest))
+        assertTrue(logins.relabel("new", "../escape") is ClaudeLoginResult.Refused)
+        assertEquals(bytes, stored("new"))
+    }
+
+    @Test
     fun `an untouched store has no labels and no selection`() {
         assertEquals(emptyList<String>(), logins.labels())
         assertEquals(null, logins.selected())

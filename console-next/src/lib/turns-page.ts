@@ -286,8 +286,9 @@ export function turnLede(row: TurnRow, stages: readonly StageBar[]): string {
   const took = total > 0 ? secondsText(total) : null;
   const longest = [...stages].sort((left, right) => right.ms - left.ms)[0];
   if (outcome.failed) return took === null ? `${outcome.word}.` : `${outcome.word} after ${took}.`;
-  if (took === null) return `${outcome.word}. It carries no timing.`;
-  return longest === undefined || longest.ms < 1000 ? `Took ${took}.` : `Took ${took}. Most of it, ${secondsText(longest.ms)}, was ${STAGE_PHRASE[longest.key]}.`;
+  const empty = row.outcome === 'empty_message' ? `${T.emptyAnswerLede} ` : '';
+  if (took === null) return `${empty}${outcome.word}. It carries no timing.`;
+  return longest === undefined || longest.ms < 1000 ? `${empty}Took ${took}.` : `${empty}Took ${took}. Most of it, ${secondsText(longest.ms)}, was ${STAGE_PHRASE[longest.key]}.`;
 }
 
 /** Translate only known splice failure sentences; raw request and answer bodies stay untouched. */

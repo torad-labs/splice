@@ -52,6 +52,7 @@ export const T = {
   between: (from: string, to: string) => `from ${from} to ${to}`,
   sinceTime: (from: string) => `since ${from}`,
   failedOf: (count: number, command: string) => `${count.toLocaleString('en-US')} failed requests on ${command}`,
+  emptyAnswerLede: 'The session received an empty answer from the model, which ended its reply with no text and no tool call.',
   servedLocallyLede: 'This step sent no request to the model. Splice answered from the existing script, so its input and output token counts are zero.',
   servedLocallyTag: 'Answered by splice',
   localLeftOut: (count: number) => `${count.toLocaleString('en-US')} ${count === 1 ? 'step' : 'steps'} splice answered itself, without asking the model, ${count === 1 ? 'is' : 'are'} left out of this list.`,

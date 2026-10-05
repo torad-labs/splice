@@ -184,6 +184,23 @@ describe('a turn', () => {
     expect(stagesOf(row())).toEqual([]);
     expect(turnLede(row(), [])).toBe('Done. It carries no timing.');
   });
+  test('a clean empty answer explains what reached the session before unchanged timing', () => {
+    const sentence = 'The session received an empty answer from the model, which ended its reply with no text and no tool call.';
+    const timed = row({ ...marks, outcome: 'empty_message' });
+    expect(turnLede(timed, stagesOf(timed))).toBe(sentence + ' Took 14.2 s. Most of it, 8.5 s, was the answer arriving.');
+    expect(turnLede(row({ outcome: 'empty_message' }), [])).toBe(sentence + ' Empty answer. It carries no timing.');
+    expect(turnLede(row({ outcome: 'empty_message', total: 20 }), [])).toBe(sentence + ' Took 20 ms.');
+    expect(outcomeOf('empty_message')).toEqual({ word: 'Empty answer', tone: 'work', failed: false });
+    expect(failedCount(summary({ outcomes: { empty_message: 3, ok: 1 } }))).toBe(0);
+    expect(failedCount(summary({ outcomes: { empty_message: 3, 'error:upstream-failed': 1 } }))).toBe(1);
+    for (const out_tokens of [undefined, 0, 4000]) {
+      expect(turnLede(row({ ...timed, ...(out_tokens === undefined ? {} : { out_tokens }), in_tokens: 80 }), stagesOf(timed))).toBe(sentence + ' Took 14.2 s. Most of it, 8.5 s, was the answer arriving.');
+    }
+    expect(turnLede(row({ outcome: 'ok', ...marks }), stagesOf(row(marks)))).toBe('Took 14.2 s. Most of it, 8.5 s, was the answer arriving.');
+    expect(turnLede(row({ outcome: 'empty_model', total: 20 }), [])).toBe('Empty answer after 20 ms.');
+    expect(turnLede(row({ outcome: 'empty_message', local_step: 1 }), [])).toBe(T.servedLocallyLede);
+  });
+
   test('the lede names the longest stage; a failure says how long it ran', () => {
     expect(turnLede(row(marks), stagesOf(row(marks)))).toContain('Most of it, 8.5 s, was the answer arriving.');
     expect(turnLede(row({ ...marks, outcome: 'error:upstream-failed' }), stagesOf(row(marks)))).toBe('Provider failed after 14.2 s.');

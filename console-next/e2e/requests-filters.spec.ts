@@ -84,6 +84,31 @@ test('stops stay out of failure counts and have a separate reloadable view with 
   await assertHealthy(page, faults);
 });
 
+test('an empty answer stays clean in Requests and explains the delivered ending before timing', async ({ page }) => {
+  const at = Date.now();
+  const row = { ts: at, model: STACK.soloModel, outcome: 'empty_message', compact: false,
+    upstream_req_bytes: 512, in_tokens: 80, out_tokens: 4000, total: 14200, recv: 1, parse: 3, build: 20, gate: 2100, headers: 2300, first_byte: 5500, stream_end: 13900, finish: 14000,
+    session: null, account: null, cache_cold: null, turn: null, session_id: null, response_message_id: null };
+  await page.route('**/api/perf/summary?*', route => route.fulfill({ json: { window: '1h', heads: [{
+    key: STACK.soloHead, label: STACK.soloHead, count: 1, empty: false, outcomes: { empty_message: 1 },
+  }] } }));
+  await page.route(url => url.pathname === '/api/perf/turns', route => {
+    const query = new URL(route.request().url()).searchParams;
+    const key = query.get('head') ?? '';
+    const rows = key === STACK.soloHead && query.get('outcome') !== 'failed' ? [row] : [];
+    return route.fulfill({ json: { since: at - 1000, n: 200, heads: [{ key, label: key, count: rows.length, rows }] } });
+  });
+  const faults = await open(page, 'requests');
+  await expect(page.locator('.turn .state')).toHaveText('Empty answer');
+  await expect(page.locator('.turn.failed')).toHaveCount(0);
+  await page.locator('.turn h3 a').click();
+  await expect(page.locator('.page-head .lede')).toHaveText('The session received an empty answer from the model, which ended its reply with no text and no tool call. Took 14.2 s. Most of it, 8.5 s, was the answer arriving.');
+  await expect(page.locator('.failure-sentence')).toHaveCount(0);
+  await expect(page.locator('.page-head .lede')).not.toContainText('token');
+  await expect(page.locator('.page-head .lede')).not.toContainText('reasoning');
+  await assertHealthy(page, faults);
+});
+
 test('a restart cut keeps its owner in Failed and never falls back to an operator stop', async ({ page }) => {
   const at = Date.now();
   const row = {

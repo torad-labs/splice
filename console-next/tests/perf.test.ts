@@ -243,6 +243,16 @@ describe('request token tiles', () => {
     expect(shown).not.toContain('Not reported');
   });
 
+  test('a plan-covered request uses the exact Usage sentence instead of an unknown price', () => {
+    const shown = page(turn({ upstream_req_bytes: 320, in_tokens: 100, out_tokens: 417, cost_usd: null, cost_reason: 'plan', reasoning_tokens: 417 }));
+    expect(shown).toContain('1 request is covered by a plan, so it has no price.');
+    expect(shown).not.toContain('This request was not priced.');
+    expect(shown).not.toContain('The price is unknown because token counts were not reported.');
+    expect(shown).toContain('<div class="n">417</div><h3>Written out</h3>');
+    expect(shown).not.toContain('<div class="n">834</div>');
+    expect(shown).toContain('417 of the written tokens were reported as thinking.');
+  });
+
   test('a true local-only step keeps zero counts and its no-request explanation', () => {
     const shown = page(turn({ local_step: 1, upstream_req_bytes: 0, in_tokens: 0, out_tokens: 0 }));
     expect(shown).toContain('<div class="n">0</div><h3>Read in</h3>');

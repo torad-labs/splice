@@ -109,6 +109,27 @@ test('an empty answer stays clean in Requests and explains the delivered ending 
   await assertHealthy(page, faults);
 });
 
+test('an empty answer explains reported thinking and uses the same plan-cost sentence as Usage', async ({ page }) => {
+  const at = Date.now();
+  const row = { ts: at, model: STACK.soloModel, outcome: 'empty_message', compact: false,
+    upstream_req_bytes: 512, in_tokens: 80, out_tokens: 417, reasoning_tokens: 417,
+    cost_usd: null, cost_reason: 'plan', total: 20,
+    session: null, account: null, cache_cold: null, turn: null, session_id: null, response_message_id: null };
+  await page.route(url => url.pathname === '/api/perf/turns', route => {
+    const key = new URL(route.request().url()).searchParams.get('head') ?? '';
+    return route.fulfill({ json: { since: at, n: 1, heads: [{ key, label: key, count: 1, rows: [row] }] } });
+  });
+  const faults = await open(page, 'requests/' + STACK.soloHead + '/' + at);
+  await expect(page.locator('.page-head .lede')).toContainText('The model reported thinking tokens.');
+  await expect(page.locator('.page-head .lede')).toContainText('Took 20 ms.');
+  await expect(page.getByRole('heading', { name: 'Written out', exact: true }).locator('..')).toContainText('417 of the written tokens were reported as thinking.');
+  await expect(page.getByRole('heading', { name: 'Written out', exact: true }).locator('..').locator('.n')).toHaveText('417');
+  await expect(page.getByRole('heading', { name: 'API cost, estimated', exact: true }).locator('..')).toContainText('1 request is covered by a plan, so it has no price.');
+  await expect(page.getByRole('main')).not.toContainText('This request was not priced.');
+  await expect(page.locator('.failure-sentence')).toHaveCount(0);
+  await assertHealthy(page, faults);
+});
+
 test('a restart cut keeps its owner in Failed and never falls back to an operator stop', async ({ page }) => {
   const at = Date.now();
   const row = {

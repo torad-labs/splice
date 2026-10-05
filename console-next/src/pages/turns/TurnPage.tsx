@@ -5,7 +5,7 @@ import { usePerfTurns } from '../../api/turns';
 import { ABSENT, fmtInt, fmtUsd } from '../../lib/format';
 import { sessionLabel } from '../../lib/sessions';
 import { colourFromRegistry } from '../../lib/model';
-import { STAGE_ORDER, movedOf, outcomeOf, servedLocally, stagesOf, secondsText, turnLede } from '../../lib/turns-page';
+import { STAGE_ORDER, movedOf, outcomeOf, servedLocally, stagesOf, secondsText, turnCostWhy, turnLede } from '../../lib/turns-page';
 import { P, T } from '../../lib/words-turns';
 import { Empty, Fault, PageHead, State } from '../../ui';
 import { sessionPath } from '../shared/SessionActions';
@@ -38,7 +38,6 @@ export function TurnPage() {
   const stages = stagesOf(row);
   const moved = movedOf(row);
   const posted = (row.upstream_req_bytes ?? 0) > 0;
-  const unreported = posted && (moved.read === null || moved.written === null);
   const when = new Date(row.ts).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
   return (
@@ -85,8 +84,8 @@ export function TurnPage() {
         <h2 id="turn-moved">{P.movedTitle}</h2>
         <div className="figs">
           {moved.read === null && !posted ? null : <div><div className="n">{moved.read === null ? P.notReported : fmtInt(moved.read)}</div><h3>{P.readIn}</h3><p>{moved.read === null ? P.tokenCountNotReported : moved.cached === null ? P.readInPlain : P.readInWhy(fmtInt(moved.cached))}</p></div>}
-          {moved.written === null && !posted ? null : <div><div className="n">{moved.written === null ? P.notReported : fmtInt(moved.written)}</div><h3>{P.writtenOut}</h3><p>{moved.written === null ? P.tokenCountNotReported : P.writtenOutWhy}</p></div>}
-          <div><div className="n">{moved.cost === null ? ABSENT : fmtUsd(moved.cost)}</div><h3>{P.cost}</h3><p>{moved.cost === null ? unreported ? P.costUnreported : P.costNone : P.costWhy}</p></div>
+          {moved.written === null && !posted ? null : <div><div className="n">{moved.written === null ? P.notReported : fmtInt(moved.written)}</div><h3>{P.writtenOut}</h3><p>{moved.written === null ? P.tokenCountNotReported : (row.reasoning_tokens ?? 0) > 0 ? P.writtenOutThinking(fmtInt(row.reasoning_tokens ?? 0)) : P.writtenOutWhy}</p></div>}
+          <div><div className="n">{moved.cost === null ? ABSENT : fmtUsd(moved.cost)}</div><h3>{P.cost}</h3><p>{turnCostWhy(row)}</p></div>
           {moved.retries === null ? null : <div><div className="n">{moved.retries}</div><h3>{P.retries}</h3><p>{P.retriesWhy}</p></div>}
         </div>
       </section>

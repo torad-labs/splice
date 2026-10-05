@@ -139,6 +139,10 @@ export interface TurnRow {
   response_message_id?: string;
   /** The daemon's USD figure at this head's model card, null when it cannot price the turn. */
   cost_usd?: number | null;
+  /** The daemon's shared row/window price-gap classification; absent on older replies. */
+  cost_reason?: 'uncounted' | 'plan' | 'local' | 'undeclared' | 'unanswered' | null;
+  /** Reported thinking tokens, already included in out_tokens. Absence is unknown, never zero. */
+  reasoning_tokens?: number | null;
   recv?: number;
   parse?: number;
   build?: number;

@@ -4,7 +4,8 @@ import { ABSENT, fmtDurationS, fmtShare, fmtUsd } from './format';
 import { waterfall } from './perf';
 import type { ModelColour } from './model';
 import { spanText } from './sessions';
-import { LEGACY_RESTART_SENTENCE, OUTCOME_WORD, STAGE_PHRASE, T } from './words-turns';
+import { U } from './words-usage';
+import { LEGACY_RESTART_SENTENCE, OUTCOME_WORD, P, STAGE_PHRASE, T } from './words-turns';
 import type { RequestsRange, RequestsView } from './requests-view';
 import type { TopologyState } from '../types/topology';
 import type { LiveTurn } from '../types/turns';
@@ -286,7 +287,7 @@ export function turnLede(row: TurnRow, stages: readonly StageBar[]): string {
   const took = total > 0 ? secondsText(total) : null;
   const longest = [...stages].sort((left, right) => right.ms - left.ms)[0];
   if (outcome.failed) return took === null ? `${outcome.word}.` : `${outcome.word} after ${took}.`;
-  const empty = row.outcome === 'empty_message' ? `${T.emptyAnswerLede} ` : '';
+  const empty = row.outcome === 'empty_message' ? `${T.emptyAnswerLede} ${(row.reasoning_tokens ?? 0) > 0 ? `${T.emptyAnswerThinking} ` : ''}` : '';
   if (took === null) return `${empty}${outcome.word}. It carries no timing.`;
   return longest === undefined || longest.ms < 1000 ? `${empty}Took ${took}.` : `${empty}Took ${took}. Most of it, ${secondsText(longest.ms)}, was ${STAGE_PHRASE[longest.key]}.`;
 }
@@ -321,6 +322,24 @@ export function wireFor<W extends { ts: number; session?: string | undefined }>(
   const from = row.ts - (row.total ?? 0) - slack;
   const to = row.ts + slack;
   return records.filter((record) => record.ts >= from && record.ts <= to && (row.session === undefined || record.session === undefined || record.session === row.session));
+}
+
+/** A request and Usage use the same words for the daemon's shared cost classification. */
+export function turnCostWhy(row: TurnRow): string {
+  if (typeof row.cost_usd === 'number') return P.costWhy;
+  const reason = row.cost_reason;
+  switch (reason) {
+    case 'plan': return U.unpricedPlan(1);
+    case 'local': return U.unpricedLocal(1);
+    case 'uncounted': return U.unpricedUncounted(1);
+    case 'undeclared': return U.unpricedUndeclared(1);
+    case 'unanswered': return U.unanswered(1);
+    case null:
+    case undefined:
+      return (row.upstream_req_bytes ?? 0) > 0 && (row.in_tokens == null || row.out_tokens == null) ? P.costUnreported : P.costNone;
+  }
+  const remaining: never = reason;
+  return remaining;
 }
 
 /** The figures a turn moved, each only when the row carries it. */

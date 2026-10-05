@@ -173,11 +173,20 @@ function usageWire(value: unknown): value is TurnUsageWire {
   });
 }
 
+function readableRow(row: unknown): row is TurnRowWire {
+  if (!record(row) || !numeric(row.ts)) return false;
+  const reason = row.cost_reason;
+  const thinking = row.reasoning_tokens;
+  return (row.cause === undefined || row.cause === null || typeof row.cause === 'string') &&
+    (reason === undefined || reason === null || ['uncounted', 'plan', 'local', 'undeclared', 'unanswered'].some(word => reason === word)) &&
+    (thinking === undefined || thinking === null || numeric(thinking) && Number.isInteger(thinking) && thinking > 0);
+}
+
 function readableHistory(wire: unknown, head: string): wire is PerfTurnsWire {
   if (!record(wire) || !Array.isArray(wire.heads)) return false;
   return wire.heads.every(block => record(block) && typeof block.key === 'string' &&
     (block.count === undefined || numeric(block.count)) &&
-    (block.rows === undefined || Array.isArray(block.rows) && block.rows.every(row => record(row) && numeric(row.ts) && (row.cause === undefined || row.cause === null || typeof row.cause === 'string'))) &&
+    (block.rows === undefined || Array.isArray(block.rows) && block.rows.every(readableRow)) &&
     (block.usage === undefined || usageWire(block.usage))) && wire.heads.some(block => block.key === head);
 }
 

@@ -184,6 +184,16 @@ describe('a turn', () => {
     expect(stagesOf(row())).toEqual([]);
     expect(turnLede(row(), [])).toBe('Done. It carries no timing.');
   });
+  test('an empty answer names thinking only when its own row reports positive reasoning tokens', () => {
+    const empty = row({ outcome: 'empty_message', out_tokens: 417, reasoning_tokens: 417, total: 20 });
+    expect(turnLede(empty, [])).toContain('The model reported thinking tokens.');
+    expect(turnLede(empty, [])).toContain('Took 20 ms.');
+    for (const reasoning_tokens of [undefined, null, 0]) {
+      expect(turnLede(row({ outcome: 'empty_message', out_tokens: 417, ...(reasoning_tokens === undefined ? {} : { reasoning_tokens }) }), [])).not.toContain('reported thinking');
+    }
+    expect(turnLede(row({ outcome: 'ok', reasoning_tokens: 417 }), [])).not.toContain('reported thinking');
+    expect(turnLede(row({ outcome: 'empty_model', reasoning_tokens: 417 }), [])).not.toContain('reported thinking');
+  });
   test('a clean empty answer explains what reached the session before unchanged timing', () => {
     const sentence = 'The session received an empty answer from the model, which ended its reply with no text and no tool call.';
     const timed = row({ ...marks, outcome: 'empty_message' });

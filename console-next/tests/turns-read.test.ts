@@ -34,6 +34,19 @@ describe('the filtered read', () => {
     expect(merged.unread).toEqual([{ head: 'synthetic', reason: '1 request record could not be read.' }]);
   });
 
+  test.each([
+    { cost_reason: 'future-unknown-reason' },
+    { reasoning_tokens: '417' },
+    { reasoning_tokens: -1 },
+    { reasoning_tokens: 0.5 },
+  ])('malformed row evidence is unread, not an invented thinking or plan claim: %j', async evidence => {
+    vi.stubGlobal('fetch', (url: string) => {
+      if (url === '/api/heads') return json({ heads: [{ key: 'synthetic', gate: null }] });
+      return json({ since: 100, n: 1, heads: [{ key: 'synthetic', label: 'Synthetic', count: 1, rows: [{ ts: 100, model: 'synthetic', outcome: 'empty_message', compact: false, ...evidence }] }] });
+    });
+    await expect(fetchTurns({ since: 100, until: 200 })).rejects.toThrow('The daemon returned an unreadable request history.');
+  });
+
   test('the viewer zone reaches the daemon without changing the captured interval', () => {
     const query = new URL(perfTurnsPath('a', 1, { since: 100, until: 200, timeZone: 'America/Los_Angeles', filter: { local: false } }), 'http://synthetic.invalid').searchParams;
     expect(query.get('time_zone')).toBe('America/Los_Angeles');

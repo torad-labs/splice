@@ -13,6 +13,12 @@ const budgetCatalog = (priced: boolean): HeadCatalog => ({
   }],
 });
 
+function nativeLogin(rows: readonly AccountWire[], place: 'claude' | 'claude-splice'): AccountWire {
+  const row = rows.find(row => row.login_place?.id === place);
+  if (row === undefined) throw new Error(`synthetic ${place} login is missing`);
+  return row;
+}
+
 async function nativePool(page: Page) {
   const state = { rows: [] as AccountWire[], order: [] as string[], orders: [] as string[][], pins: [] as string[], edits: [] as string[], warnPct: 80 };
   await page.route(url => url.pathname === '/api/accounts', async route => {
@@ -69,8 +75,8 @@ async function nativePool(page: Page) {
     const id = url.searchParams.get('target_id');
     if (route.request().method() !== 'PATCH' || url.searchParams.get('target_kind') !== 'native') throw new Error('only synthetic native renaming is allowed');
     const row = state.rows.find(row => row.edit_target?.id === id);
-    if (row === undefined || decodeURIComponent(url.pathname.split('/').at(-1) ?? '') !== id) throw new Error('rename lost the native edit identity');
-    state.edits.push(id!);
+    if (id === null || row === undefined || decodeURIComponent(url.pathname.split('/').at(-1) ?? '') !== id) throw new Error('rename lost the native edit identity');
+    state.edits.push(id);
     row.display_name = (route.request().postDataJSON() as { label: string }).label;
     await route.fulfill({ json: { ok: true } });
   });
@@ -98,7 +104,7 @@ test('native takeover availability keeps the expired login remedy reachable and 
   await expect(dialog.getByRole('button', { name: 'Start login', exact: true })).toBeEnabled();
   await expect(dialog).toContainText('separate claude-splice login');
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
-  state.rows[1]!.available = null;
+  nativeLogin(state.rows, 'claude-splice').available = null;
   await page.reload();
   await expect(separate.locator('.state')).toHaveText('Takeover status not reported');
   await assertHealthy(page, faults);
@@ -111,24 +117,24 @@ test('native spare warning follows Settings and proven carrying, availability an
   await expect(warning).toContainText('Personal login is at 94%');
   await expect(warning).toContainText('Sign in again on Separate login');
   await page.screenshot({ path: 'captures/console-walk-oct3/native-spare-warning-wide.png' });
-  state.rows[1]!.available = true;
-  state.rows[1]!.refusal = null;
+  nativeLogin(state.rows, 'claude-splice').available = true;
+  nativeLogin(state.rows, 'claude-splice').refusal = null;
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Separate login', exact: true })).toBeVisible();
   await expect(warning).toHaveCount(0);
-  state.rows[1]!.available = false;
-  state.rows[1]!.refusal = 'Sign-in expired. Sign in again on this login.';
+  nativeLogin(state.rows, 'claude-splice').available = false;
+  nativeLogin(state.rows, 'claude-splice').refusal = 'Sign-in expired. Sign in again on this login.';
   state.warnPct = 95;
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Personal login', exact: true })).toBeVisible();
   await expect(warning).toHaveCount(0);
   state.warnPct = 80;
-  state.rows[0]!.carrying_request = null;
+  nativeLogin(state.rows, 'claude').carrying_request = null;
   await page.reload();
   await expect(page.getByText('The daemon has not identified a login for any Study command request since it started.', { exact: true })).toBeVisible();
   await expect(warning).toHaveCount(0);
-  state.rows[0]!.carrying_request = true;
-  state.rows[0]!.seven_day_current = false;
+  nativeLogin(state.rows, 'claude').carrying_request = true;
+  nativeLogin(state.rows, 'claude').seven_day_current = false;
   await page.reload();
   await expect(page.getByText('Usage reading is out of date')).toBeVisible();
   await expect(page.getByRole('img', { name: 'Weekly: 94% used', exact: true })).toHaveCount(0);
@@ -157,10 +163,10 @@ test('native order and switches use selector keys while rename keeps its native 
   await dialog.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(dialog).toHaveCount(0);
   expect(state.edits).toEqual(['claude-splice']);
-  expect(state.rows[1]!.selector_key).toBe('native:claude-splice');
-  state.rows[1]!.available = true;
-  state.rows[1]!.refusal = null;
-  state.rows[0]!.available = false;
+  expect(nativeLogin(state.rows, 'claude-splice').selector_key).toBe('native:claude-splice');
+  nativeLogin(state.rows, 'claude-splice').available = true;
+  nativeLogin(state.rows, 'claude-splice').refusal = null;
+  nativeLogin(state.rows, 'claude').available = false;
   await open(page, 'models/claude-splice');
   const row = page.locator('li.account').filter({ has: page.getByText('Separate renamed', { exact: true }) });
   await row.getByRole('button', { name: 'Switch to this one', exact: true }).click();

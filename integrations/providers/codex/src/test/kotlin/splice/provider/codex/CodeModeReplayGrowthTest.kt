@@ -11,12 +11,16 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.dialect.responses.request.AssistantPhase
+import splice.dialect.responses.request.ResponsesAssistantText
 import splice.provider.codex.state.CodeModeAnchorCapture
+import splice.provider.codex.state.CodeModeExtraContent
 import splice.provider.codex.state.CodeModeNativeChain
 import splice.upstream.codemode.CodeModeResult
 
@@ -75,6 +79,44 @@ internal class CodeModeReplayGrowthTest : CodeModeBridgeTestSupport() {
         assertEquals(natives(records) / 2, natives(reloaded), "the reload keeps each stored item once")
         assertEquals(records.size, reasoningIn(before).size, "the post carries every script's reasoning")
         assertEquals(before, rewrite(client, reloaded))
+    }
+
+    /** The witness is what makes the client's echo of a step owned rather than foreign content. A restart between
+     *  a Calls step and the client's continuation reloads the record from disk, so a witness that is not saved is
+     *  a round splice cuts after every restart. Both states are proven from the same reload: the saved witness
+     *  places the echo, and a step that captured none places nothing. */
+    @Test
+    fun `an issued step's delivered witness survives a restart and still owns the client's echo`() {
+        val witness = "Reading the rate limiter."
+        val carried = CodeModeRecords.of("key", 1).apply {
+            issued += CodeModeIssuedStep(lastDigest, emptyList(), witness)
+        }
+        val legacy = CodeModeRecords.of("key", 2).apply { issued += CodeModeIssuedStep(lastDigest, emptyList()) }
+        store().also { it.load() }.save(listOf(carried, legacy), emptyList())
+
+        // From the FILE, so this proves the save carries the witness rather than something rebuilding it.
+        val steps = stateFiles.records().flatMap { it.getValue("issued").jsonArray.map { step -> step.jsonObject } }
+        assertEquals(
+            listOf(witness),
+            steps.mapNotNull { it["deliveredText"]?.jsonPrimitive?.content },
+            "the saved bytes hold the captured witness and no key for the step without one: $steps",
+        )
+
+        val reloaded = store().load().records.map { it.restore() }.associateBy { it.id }
+        val echo = listOf(ResponsesAssistantText.item(witness, AssistantPhase.COMMENTARY))
+        val placement = CodeModeExtraContent(codec, CodeModeOwnership(codec))
+        val after = checkNotNull(reloaded[carried.id])
+        assertEquals(
+            listOf(witness),
+            after.issued.map { it.deliveredText },
+            "the reloaded step carries the prose the client was shown",
+        )
+        assertEquals(setOf(0), placement.indexes(echo, 0, after), "the echo is owned after a restart")
+        assertEquals(
+            emptySet<Int>(),
+            placement.indexes(echo, 0, checkNotNull(reloaded[legacy.id])),
+            "a step that captured no witness owns no echo",
+        )
     }
 
     private fun store() = CodexCodeModeStore(stateLocation(), Json { encodeDefaults = true }, {})

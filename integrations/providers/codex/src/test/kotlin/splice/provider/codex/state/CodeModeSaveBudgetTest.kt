@@ -6,6 +6,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -17,10 +19,12 @@ import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapJson
 import splice.provider.codex.CodeModeBridgeConfig
+import splice.provider.codex.CodeModeIssuedStep
 import splice.provider.codex.CodeModePersistenceException
 import splice.provider.codex.CodeModePhase
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRecords
+import splice.provider.codex.CodeModeStateFiles
 import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodeModeStateWrite
 import splice.provider.codex.CodexCodeModeRegistry
@@ -408,6 +412,52 @@ class CodeModeSaveBudgetTest(@param:TempDir private val dir: Path) {
             registry.save()
         } finally {
             registry.timed.finish { registry.onHeadStop() }
+        }
+    }
+
+    /** The witness an issued step keeps: what the heap ledger charges for it, and what a save writes.
+     *  @Nested so this file's own class stays under the size law while the controls live beside their rig. */
+    @Nested
+    inner class IssuedWitness {
+        /** The echo witness a step keeps is prose as large as the step's own text. Uncharged, a conversation whose
+         *  steps each kept one would hold megabytes the ledger never saw, and the 2 GiB journal of Oct 1 is what an
+         *  unweighed retained payload costs. It is charged while the record holds it and while a snapshot does. */
+        @Test
+        fun `an issued step's delivered witness is charged while the record and its saved snapshot hold it`() {
+            val roomy = HeapBudget(Long.MAX_VALUE, 64 * 1024 * 1024)
+            val witness = "w".repeat(200_000)
+            val record = CodeModeRecords.of("synthetic", 1).apply {
+                issued += CodeModeIssuedStep("digest-synthetic-1", emptyList(), witness)
+            }
+            val registry = registry(record, roomy)
+            try {
+                val charged = settledCharge(roomy)
+                assertTrue(
+                    charged >= witness.length,
+                    "$charged bytes charged for ${witness.length} live witness characters",
+                )
+            } finally {
+                registry.timed.finish { registry.onHeadStop() }
+            }
+        }
+
+        /** A step with no witness is a legacy step and a step whose cell delivered no prose. Its saved bytes are the
+         *  bytes the daemon wrote before the field existed, so an old checkpoint still replays and a journal written
+         *  by this daemon is readable by the one before it. */
+        @Test
+        fun `a step with no delivered witness saves the bytes it always did`() {
+            val record = CodeModeRecords.of("synthetic", 1).apply {
+                issued += CodeModeIssuedStep("digest-synthetic-1", emptyList())
+            }
+            val registry = registry(record)
+            try {
+                val saved = CodeModeStateFiles(location.dir).records().single()
+                val step = saved.getValue("issued").jsonArray.single().jsonObject
+                assertFalse("deliveredText" in step, "a null witness is not a key: $step")
+                assertEquals(setOf("requestDigest", "calls"), step.keys, "the step's saved keys: $step")
+            } finally {
+                registry.timed.finish { registry.onHeadStop() }
+            }
         }
     }
 

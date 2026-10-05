@@ -11,6 +11,7 @@ import splice.core.memory.HeapJson
 import splice.core.memory.HeapLease
 import splice.core.memory.HeapOwners
 import splice.provider.codex.CodeModeExpiredSnapshot
+import splice.provider.codex.CodeModeIssuedStep
 import splice.provider.codex.CodeModeNativeSegment
 import splice.provider.codex.CodeModePending
 import splice.provider.codex.CodeModePersistedState
@@ -114,9 +115,7 @@ internal enum class CodeModeWeight {
             text(id) + text(result.output) + record.accepted.media(id).orEmpty().sumOf(::json)
         } + text(record.output.orEmpty()) + text(record.error.orEmpty()) +
         record.nativeSegments.sumOf(::segment) + record.continuity.sumOf(::json) +
-        record.continuityReplay.sumOf(::segment) + record.issued.sumOf { step ->
-            text(step.requestDigest) + step.calls.sumOf(::call)
-        }
+        record.continuityReplay.sumOf(::segment) + record.issued.sumOf(::issued)
 
     fun snapshot(record: CodeModeRecordSnapshot): Long = RECORD_METADATA_BYTES +
         json(record.outer) + text(record.source) + record.pending.sumOf(::call) +
@@ -124,9 +123,15 @@ internal enum class CodeModeWeight {
             text(id) + text(result.output) + result.media.orEmpty().sumOf(::json)
         } + text(record.output.orEmpty()) + text(record.error.orEmpty()) +
         record.nativeSegments.sumOf(::segment) + record.continuity.sumOf(::json) +
-        record.continuityReplay.sumOf(::segment) + record.issued.sumOf { step ->
-            text(step.requestDigest) + step.calls.sumOf(::call)
-        }
+        record.continuityReplay.sumOf(::segment) + record.issued.sumOf(::issued)
+
+    /** A step's own payload. Its delivered witness (the prose the client was shown, kept so the next
+     *  continuation's echo is owned) is charged only when the step captured one: a legacy step and a step whose
+     *  cell delivered no prose weigh exactly what they weighed before the field existed, and a captured empty
+     *  string is a capture, charged like any other. The save path reserves from these weights, so an uncharged
+     *  witness is a reservation too small for the text the encoder retains. */
+    fun issued(step: CodeModeIssuedStep): Long =
+        text(step.requestDigest) + step.calls.sumOf(::call) + (step.deliveredText?.let(::text) ?: 0L)
 
     fun call(call: CodeModePending): Long =
         text(call.runtimeId) + text(call.clientId) + text(call.name) + json(call.arguments)

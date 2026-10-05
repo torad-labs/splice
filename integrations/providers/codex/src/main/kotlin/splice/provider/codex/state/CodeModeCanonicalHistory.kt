@@ -28,6 +28,7 @@ internal data class CodeModeCanonicalPlacement(
 /** No I/O or registry reads: the supplied record view is the entire rewrite authority. */
 internal class CodeModeCanonicalHistory(private val codec: CodexCodeModeHistoryCodec) {
     private val ownership = CodeModeOwnership(codec)
+    private val continuity = CodeModeExtraContent(codec, ownership)
 
     fun rewrite(
         input: ResponsesCodeModeInput,
@@ -114,9 +115,7 @@ internal class CodeModeCanonicalHistory(private val codec: CodexCodeModeHistoryC
         val removed = index.owned(record).filter { at ->
             ownership.isCallback(index.items[at], ids) || ownership.isOpaque(index.items[at], record.outerCallId)
         }.toMutableSet()
-        if (codec.continuityAt(index.items, boundary, record.continuity)) {
-            removed += boundary until boundary + record.continuity.size
-        }
+        removed += continuity.replayIndexes(index.items, boundary, record)
         index.owned(record).forEach { at ->
             val item = index.items[at] as? JsonObject
             val media = when (codec.string(item, CODE_MODE_FIELD_TYPE)) {

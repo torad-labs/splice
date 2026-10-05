@@ -1,6 +1,9 @@
 // NEW: defines the durable record, native-history, result, and expiry state for code mode.
+@file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+
 package splice.provider.codex
 
+import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonElement
@@ -167,7 +170,13 @@ internal data class CodeModePending(
 
 /** The exact client-visible step this request digest already received. */
 @Serializable
-internal data class CodeModeIssuedStep(val requestDigest: String, val calls: List<CodeModePending>)
+internal data class CodeModeIssuedStep(
+    val requestDigest: String,
+    val calls: List<CodeModePending>,
+    /** Client-echo matching only. Terminal model continuity remains the sole upstream replay payload. */
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val deliveredText: String? = null,
+)
 
 /** [media]: V4-179, see [CodeModeAccepted.media]. A v3 file has no such key: it decodes to null,
  *  which is exactly "legacy, not captured" — no metadata-version bump, no invalidated records. */

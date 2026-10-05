@@ -17,6 +17,9 @@ internal class CodeModeStreamingCell(
     private val record: CodeModeRecord,
     private val round: CodeModeLiveRound,
 ) : CodeModeCell by cell {
+    var deliveredText: String? = null
+        private set
+
     override suspend fun advance(results: List<CodeModeResult>): CodeModeStep {
         currentCoroutineContext().ensureActive()
         checkSource()
@@ -24,6 +27,7 @@ internal class CodeModeStreamingCell(
             val step = cell.advance(results)
             round.source.awaitCertification()
             checkSource()
+            if (step is CodeModeStep.Calls) deliveredText = round.switching.detach()
             step
         } catch (error: CancellationException) {
             throw error

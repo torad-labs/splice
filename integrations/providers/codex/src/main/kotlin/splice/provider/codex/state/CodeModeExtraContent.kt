@@ -4,6 +4,8 @@ package splice.provider.codex.state
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import splice.dialect.responses.request.AssistantPhase
+import splice.dialect.responses.request.ResponsesAssistantText
 import splice.dialect.responses.request.ResponsesCodeModeInput
 import splice.dialect.responses.request.ResponsesContextMessage
 import splice.provider.codex.CODE_MODE_FIELD_ROLE
@@ -18,8 +20,6 @@ internal class CodeModeExtraContent(
     private val codec: CodexCodeModeHistoryCodec,
     private val ownership: CodeModeOwnership,
 ) {
-    private val messageTypes = setOf("", "message")
-
     /** [input]: the round's parsed input array, or null when the round is not a Responses request. */
     fun of(input: JsonArray?, record: CodeModeRecord, candidateMedia: Map<String, List<JsonElement>>): CodeModeExtra {
         val (projected, boundary) = input?.let { onBaseline(it, record) } ?: return CodeModeExtra.STEERING
@@ -48,14 +48,72 @@ internal class CodeModeExtraContent(
         tailStart: Int,
     ): List<JsonElement> {
         val ownedFollowUps = ownership.followUps(items, record, candidateMedia)
-        val afterContinuity = if (codec.continuityAt(items, tailStart, record.continuity)) {
-            tailStart + record.continuity.size
-        } else {
-            tailStart
-        }
-        return (afterContinuity until items.size).filter { index ->
-            !ownership.isCallback(items[index], owned) && index !in ownedFollowUps
+        val delivered = indexes(items, tailStart, record, candidateMedia)
+        return (tailStart until items.size).filter { index ->
+            !ownership.isCallback(items[index], owned) && index !in ownedFollowUps && index !in delivered
         }.map(items::get)
+    }
+
+    /** Matches only already delivered client prose; terminal model items remain unchanged for upstream replay. */
+    fun indexes(
+        items: List<JsonElement>,
+        boundary: Int,
+        record: CodeModeRecord,
+        candidateMedia: Map<String, List<JsonElement>> = emptyMap(),
+    ): Set<Int> {
+        if (record.continuity.isNotEmpty() && codec.continuityAt(items, boundary, record.continuity)) {
+            return (boundary until boundary + record.continuity.size).toSet()
+        }
+        val expected = record.issued.mapNotNull { step ->
+            step.deliveredText?.takeUnless(String::isEmpty)?.let {
+                ResponsesAssistantText.item(it, AssistantPhase.COMMENTARY)
+            }
+        }
+        if (expected.isEmpty()) return emptySet()
+        return echoedIndexes(items, boundary, record, expected, candidateMedia)
+    }
+
+    /** A cut without terminal model continuity keeps its echoed prose in the original history. */
+    fun replayIndexes(items: List<JsonElement>, boundary: Int, record: CodeModeRecord): Set<Int> =
+        if (record.continuity.isEmpty()) emptySet() else indexes(items, boundary, record)
+
+    private fun echoedIndexes(
+        items: List<JsonElement>,
+        boundary: Int,
+        record: CodeModeRecord,
+        expected: List<JsonElement>,
+        candidateMedia: Map<String, List<JsonElement>>,
+    ): Set<Int> {
+        val followUps = ownership.followUps(items, record, candidateMedia)
+        val owned = record.clientIds()
+        val matched = linkedSetOf<Int>()
+        for (at in boundary until items.size) {
+            if (codec.continuityAt(items, at, listOf(expected[matched.size]))) {
+                matched += at
+                if (matched.size == expected.size) return matched
+            } else if (!skippable(items[at], at, record, owned, followUps)) {
+                return emptySet()
+            }
+        }
+        return emptySet()
+    }
+
+    private fun skippable(
+        item: JsonElement,
+        index: Int,
+        record: CodeModeRecord,
+        owned: Set<String>,
+        followUps: Set<Int>,
+    ): Boolean {
+        val callback = ownership.isCallback(item, owned) || ownership.isOpaque(item, record.outerCallId)
+        return callback || index in followUps || isSystemMessage(item)
+    }
+
+    private fun isSystemMessage(element: JsonElement): Boolean {
+        val item = element as? JsonObject
+        val message = codec.string(item, CODE_MODE_FIELD_TYPE) in setOf("", "message")
+        return (message && codec.string(item, CODE_MODE_FIELD_ROLE) == ResponsesContextMessage.CLIENT_ROLE) ||
+            ResponsesContextMessage.isContext(item)
     }
 
     private fun unexpectedReplay(
@@ -69,12 +127,5 @@ internal class CodeModeExtraContent(
             val expected = slot in allowed
             replay.logicalOffset >= record.baselineLogicalCount && !expected && replay.callbackId !in owned
         }
-    }
-
-    private fun isSystemMessage(element: JsonElement): Boolean {
-        val item = element as? JsonObject
-        val message = codec.string(item, CODE_MODE_FIELD_TYPE) in messageTypes
-        return (message && codec.string(item, CODE_MODE_FIELD_ROLE) == ResponsesContextMessage.CLIENT_ROLE) ||
-            ResponsesContextMessage.isContext(item)
     }
 }

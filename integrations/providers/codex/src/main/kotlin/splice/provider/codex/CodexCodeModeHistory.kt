@@ -136,7 +136,7 @@ internal class CodexCodeModeHistory(private val json: Json) {
 
     private fun rewriteRecord(input: ResponsesCodeModeInput, record: CodeModeRecord): ProjectedRewrite {
         val boundary = record.baselineLogicalCount
-        val continuity = continuityIndexes(input.logicalItems, boundary, record.continuity)
+        val continuity = extras.replayIndexes(input.logicalItems, boundary, record)
         val retained = ownership.retained(input.logicalItems, record, continuity)
             ?: return ProjectedRewrite(null, "code-mode owned history appears before its persisted boundary")
         opaqueProblem(input.logicalItems.drop(boundary), record)?.let { return ProjectedRewrite(null, it) }
@@ -227,13 +227,6 @@ internal class CodexCodeModeHistory(private val json: Json) {
             "code-mode opaque history conflicts with its persisted result"
         }
     }
-
-    private fun continuityIndexes(items: List<JsonElement>, boundary: Int, expected: List<JsonElement>): Set<Int> =
-        if (expected.isNotEmpty() && codec.continuityAt(items, boundary, expected)) {
-            (boundary until boundary + expected.size).toSet()
-        } else {
-            emptySet()
-        }
 }
 
 /**

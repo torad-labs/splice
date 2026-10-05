@@ -92,13 +92,15 @@ internal class CodexCodeModeMachine(
             )
         }
         if (previous == null) {
-            val issued = CodeModeIssuedStep(record.lastDigest, calls.map(CodeModePending::copy))
+            val text = (cell as? CodeModeStreamingCell)?.deliveredText
+            val issued = CodeModeIssuedStep(record.lastDigest, calls.map(CodeModePending::copy), text)
             // A failed save: the worker already advanced, but no callback reached the client. A retry
             // reuses persisted pending ids and earns this issuance with a successful save.
             registry.changes.save(
                 record,
                 undo = { it.issued.remove(issued) },
-                growthBytes = calls.sumOf(splice.provider.codex.state.CodeModeWeight.STORED::call),
+                growthBytes = calls.sumOf(splice.provider.codex.state.CodeModeWeight.STORED::call) +
+                    (text?.let(splice.provider.codex.state.CodeModeWeight.STORED::text) ?: 0L),
             ) {
                 checkIssuable(it, cell)
                 it.issued += issued

@@ -5,6 +5,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -195,6 +196,21 @@ class CodeModeStreamPortsTest : CodeModeBridgeTestSupport() {
         val signed = "sig#0:${SpliceNotice.SIGNATURE}"
         assertEquals(listOf("openThinking#0", "think#0:return 1;", signed, "close#0"), first.events)
         assertEquals(emptyList<String>(), next.events)
+    }
+
+    @Test
+    fun `oversized prose still reaches the client but is not remembered as complete continuity`() = runBlocking {
+        val target = EventSink()
+        val round = CodeModeSwitchingSink(target) {}
+        val block = round.openText()
+        val prose = "é".repeat(CodeModeLimits.MAX_FRAME_BYTES / 2)
+        round.textDelta(block, prose)
+        round.textDelta(block, "é")
+        assertNull(round.detach(), "a truncated continuity must never be staged as complete")
+        assertEquals(listOf("openText#0", "text#0:$prose", "text#0:é", "close#0"), target.events)
+        round.attach(RecordingSink())
+        round.textDelta(block, "later")
+        assertNull(round.detach(), "a later step cannot make the overflowed memory complete")
     }
 
     private class EventSink : WireSink {

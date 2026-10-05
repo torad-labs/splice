@@ -144,8 +144,11 @@ val DISPOSITIONS: Map<String, Disposition> = mapOf(
     // 89e98adab: a completed burst and a clean EOF each run text and thinking, and a custom source
     // releases the WS turn on completion, EOF, a worker wait and a startup wait.
     "WsCompletionTest" to Disposition("3 @ParameterizedTest methods expand to 8 cases (2 + 2 + 4); no plain @Test", 8),
-    // b95df37c2: the slot frees at the source round's end while the held row's write blocks and while it throws.
-    "CodeModeRoundBillingTest" to Disposition("1 @ParameterizedTest expands to 2 cases (4 @Test + 2 = 6)", 6),
+    // Source transport, liveness, context and prose controls run the real head over both wire transports.
+    "CodeModeRoundBillingTest" to
+        Disposition("3 @ParameterizedTest methods expand to 16 cases (4 @Test + 12 + 2 + 2 = 20)", 20),
+    "CodeModeSourceBoundaryTest" to
+        Disposition("1 @ParameterizedTest expands to 2 cases (1 @Test + 2 = 3)", 3),
     // 89e98adab: closing a cell ends its withheld exchange with and without a late guest reply.
     "SharedWorkerChannelCellCloseTest" to
         Disposition("1 @ParameterizedTest expands to 2 cases; no plain @Test", 2),

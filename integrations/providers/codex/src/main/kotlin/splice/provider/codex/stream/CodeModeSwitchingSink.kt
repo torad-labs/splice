@@ -24,6 +24,9 @@ internal class CodeModeSwitchingSink(
     private val blocks = CodeModeSinkBlocks()
     private val writes = CodeModeSinkWrites()
     private var readingScope: CoroutineScope? = null
+    private val deliveredText = StringBuilder()
+    private var deliveredBytes = 0
+    private var continuityComplete = true
     override val ownerScope: CoroutineScope get() = checkNotNull(readingScope)
 
     fun ownedBy(scope: CoroutineScope) {
@@ -36,9 +39,15 @@ internal class CodeModeSwitchingSink(
         writes.drain(sink)
     }
 
-    suspend fun detach() = mutex.withLock {
-        target?.let { blocks.detach(it) }
+    suspend fun detach(): String? = mutex.withLock {
+        val delivered = target?.let {
+            val text = deliveredText.toString().takeIf { continuityComplete }
+            deliveredText.clear()
+            blocks.detach(it)
+            text
+        }
         target = null
+        delivered
     }
 
     /** [block] names the block the write belongs to; a write to a notice spends [notice] instead of the
@@ -85,7 +94,10 @@ internal class CodeModeSwitchingSink(
 
     override suspend fun textDelta(index: WireBlockIndex, text: String) {
         write(text.encodeToByteArray().size) { sink ->
-            blocks.destination(sink, index)?.let { sink.textDelta(it, text) }
+            blocks.destination(sink, index)?.let {
+                sink.textDelta(it, text)
+                rememberText(text)
+            }
         }
     }
 
@@ -122,7 +134,22 @@ internal class CodeModeSwitchingSink(
     }
 
     override suspend fun addTextBlock(text: String) {
-        write(text.encodeToByteArray().size) { it.addTextBlock(text) }
+        write(text.encodeToByteArray().size) {
+            it.addTextBlock(text)
+            rememberText(text)
+        }
+    }
+
+    private fun rememberText(text: String) {
+        if (!continuityComplete) return
+        val bytes = text.encodeToByteArray().size
+        if (bytes > splice.upstream.codemode.CodeModeLimits.MAX_FRAME_BYTES - deliveredBytes) {
+            continuityComplete = false
+            deliveredText.clear()
+            return
+        }
+        deliveredBytes += bytes
+        deliveredText.append(text)
     }
 
     override suspend fun addRedactedThinking(data: String) {

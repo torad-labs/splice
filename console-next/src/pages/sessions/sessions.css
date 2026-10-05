@@ -6,6 +6,10 @@
 .card .asks .tag { color: var(--glass-ink); background: color-mix(in srgb, var(--glass-ink) 12%, transparent); }
 .card .asks .choose { margin-top: var(--space-1); font: 600 0.875rem/1.125rem var(--meta); color: var(--glass-dim); }
 
+.card .session-order { position: relative; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4); padding: 0 var(--space-7) var(--space-5); }
+.card .session-order .drag-handle { cursor: grab; touch-action: none; }
+.card .session-order .drag-handle:active { cursor: grabbing; }
+
 .sessions-tools { display: contents; }
 @media (max-width: 48rem) {
   .page-head .tools:has(> .sessions-tools) { width: 100%; min-width: 0; }

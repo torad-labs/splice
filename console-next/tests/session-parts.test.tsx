@@ -257,20 +257,33 @@ describe('a session card', () => {
     status_updated_at: 0, started_at: 0, updated_at: 0, address: null, head: 'claude-grok', availability: 'live', ...over,
   });
   const facts = (over: Partial<CardFacts> = {}): CardFacts => ({ row: row(), state: 'working', colour: 'grok', head: 'claude-grok', hand: null, since: 42 * 60_000, quiet: null, ...over });
-  const render = (f: CardFacts) =>
+  const render = (f: CardFacts, sortable = true, ordering?: { earlier: (() => void) | null; later: (() => void) | null }) =>
     renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
         <MemoryRouter>
           <DndContext>
             <SortableContext items={['sess-1']}>
               <ul>
-                <SessionCard facts={f} />
+                <SessionCard facts={f} sortable={sortable} {...(ordering === undefined ? {} : { ordering })} />
               </ul>
             </SortableContext>
           </DndContext>
         </MemoryRouter>
       </QueryClientProvider>,
     );
+  test('a current card has an explicit grip and move controls, not a focusable drag body', () => {
+    const html = render(facts(), true, { earlier: null, later: () => undefined });
+    expect(html).toMatch(/<button[^>]*aria-label="Drag Write the tests to reorder"/);
+    expect(html).toMatch(/<button(?=[^>]*aria-label="Move Write the tests earlier")(?=[^>]*disabled="")[^>]*>/);
+    expect(html).toContain('aria-label="Move Write the tests later"');
+    expect(html).not.toMatch(/<li[^>]*tabindex="0"/);
+  });
+  test('historical cards have no drag or move controls', () => {
+    const html = render(facts(), false);
+    expect(html).not.toContain('drag-handle');
+    expect(html).not.toContain('Move Write the tests');
+    expect(html).not.toMatch(/<li[^>]*tabindex="0"/);
+  });
   test('a working card is a title, a state, one line and one quiet line, and no act', () => {
     const html = render(facts({ hand: { kind: 'from', peer: 'claude-splice' } }));
     expect(html).toContain('Write the tests');

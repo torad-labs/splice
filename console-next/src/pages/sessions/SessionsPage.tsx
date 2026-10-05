@@ -1,7 +1,7 @@
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core';
 import type { DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, rectSortingStrategy, sortableKeyboardCoordinates } from '@dnd-kit/sortable';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { failureText } from '../../api/client';
 import { useProjects } from '../../api/projects';
@@ -47,6 +47,11 @@ export function SessionsPage() {
   const status = useStatus();
   const edges = useBoardEdges();
   const order = useOrder('sessions');
+  useEffect(() => {
+    const observed = (sessions.data?.sessions ?? []).map(sessionKey);
+    const next = [...order, ...observed.filter(key => !order.includes(key))];
+    if (next.length !== order.length) setOrder('sessions', next);
+  }, [sessions.data, order]);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -77,10 +82,13 @@ export function SessionsPage() {
   };
 
   const allKeys = live.map(sessionKey);
+  const move = (key: string, over: string): void => setOrder('sessions', moveKey(order, allKeys, key, over));
   const onDragEnd = (event: DragEndEvent): void => {
     const { active, over } = event;
     if (over === null || active.id === over.id) return;
-    setOrder('sessions', moveKey(order, allKeys, String(active.id), String(over.id)));
+    const from = String(active.id);
+    const to = String(over.id);
+    if (groups.some(group => group.sessions.some(row => sessionKey(row) === from) && group.sessions.some(row => sessionKey(row) === to))) move(from, to);
   };
 
   if (sessions.isPending) return <PageHead title={P.title} lede={P.reading} />;
@@ -130,9 +138,14 @@ export function SessionsPage() {
               <GroupHead title={title} count={rows.length} {...(text === undefined ? {} : { why: text.why })} {...(team !== undefined ? { action: <Link to={`/teams/${encodeURIComponent(team.id)}`}>{M.openTeam}</Link> } : root !== undefined && projects.data?.projects.some((project) => project.root === root) === true ? { action: <Link to={`/projects/${encodeURIComponent(root)}`}>{PJ.openProject}</Link> } : {})} />
               <SortableContext items={rows.map(sessionKey)} strategy={rectSortingStrategy}>
                 <ul className="grid">
-                  {rows.map((row) => (
-                    <SessionCard key={sessionKey(row)} facts={factsOf(row)} />
-                  ))}
+                  {rows.map((row, index) => {
+                    const earlier = rows[index - 1];
+                    const later = rows[index + 1];
+                    return <SessionCard key={sessionKey(row)} facts={factsOf(row)} ordering={{
+                      earlier: earlier === undefined ? null : () => move(sessionKey(row), sessionKey(earlier)),
+                      later: later === undefined ? null : () => move(sessionKey(row), sessionKey(later)),
+                    }} />;
+                  })}
                 </ul>
               </SortableContext>
             </section>

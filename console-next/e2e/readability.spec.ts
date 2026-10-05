@@ -18,6 +18,73 @@ test('the retired needs-you bookmark opens Accounts', async ({ page }) => {
   expect(faults.failedReads).toEqual([]);
 });
 
+test('Sessions preserves its initial order through new roster reads before anyone drags', async ({ page }) => {
+  let reverse = false;
+  let newcomer = false;
+  let reads = 0;
+  await page.route(url => url.pathname === '/api/sessions', async route => {
+    const response = await route.fetch();
+    const body = await response.json() as { sessions: SessionRow[] };
+    const base = body.sessions.find(row => row.session_id === STACK.sender.id);
+    if (base === undefined) throw new Error('synthetic sender is missing');
+    reads += 1;
+    const rows = ['first', 'second'].map(name => ({ ...base, session_id: 'synthetic-order-' + name,
+      name: 'Synthetic ' + name, status: 'busy', head: UNKNOWN_HEAD, availability: 'live', team: null }));
+    if (reverse) rows.reverse();
+    if (newcomer) rows.unshift({ ...base, session_id: 'synthetic-order-new', name: 'Synthetic new', status: 'busy', head: UNKNOWN_HEAD, availability: 'live', team: null });
+    await route.fulfill({ response, json: { ...body, sessions: rows } });
+  });
+  const faults = await open(page, 'sessions');
+  const names = page.locator('li.card h3');
+  await expect(names).toHaveText(['Synthetic first', 'Synthetic second']);
+  const firstRead = reads;
+  reverse = true;
+  await expect.poll(() => reads, { timeout: 20_000 }).toBeGreaterThan(firstRead);
+  await expect(names).toHaveText(['Synthetic first', 'Synthetic second']);
+  const secondRead = reads;
+  newcomer = true;
+  await expect.poll(() => reads, { timeout: 20_000 }).toBeGreaterThan(secondRead);
+  await expect(names).toHaveText(['Synthetic first', 'Synthetic second', 'Synthetic new']);
+  await page.reload();
+  await expect(names).toHaveText(['Synthetic first', 'Synthetic second', 'Synthetic new']);
+  expect(faults.pageErrors).toEqual([]);
+  expect(faults.failedReads).toEqual([]);
+  await page.unrouteAll({ behavior: 'wait' });
+});
+
+test('Sessions offers named grip and Move controls without turning card bodies into buttons', async ({ page }) => {
+  await page.route(url => url.pathname === '/api/sessions', async route => {
+    const response = await route.fetch();
+    const body = await response.json() as { sessions: SessionRow[] };
+    const base = body.sessions.find(row => row.session_id === STACK.sender.id);
+    if (base === undefined) throw new Error('synthetic sender is missing');
+    await route.fulfill({ response, json: { ...body, sessions: ['first', 'second'].map(name => ({
+      ...base, session_id: 'synthetic-move-' + name, name: 'Synthetic ' + name,
+      status: 'idle', head: UNKNOWN_HEAD, availability: 'live', team: null,
+    })) } });
+  });
+  const faults = await open(page, 'sessions');
+  const cards = page.locator('li.card');
+  const names = cards.locator('h3');
+  await expect(names).toHaveText(['Synthetic first', 'Synthetic second']);
+  await expect(page.getByRole('button', { name: 'Drag Synthetic first to reorder', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Move Synthetic first earlier', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Move Synthetic first later', exact: true }).click();
+  await expect(names).toHaveText(['Synthetic second', 'Synthetic first']);
+  await page.getByRole('button', { name: 'Move Synthetic first earlier', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await expect(names).toHaveText(['Synthetic first', 'Synthetic second']);
+  await expect(cards.first()).not.toHaveAttribute('tabindex', '0');
+  for (const width of [1536, 393]) {
+    await page.setViewportSize({ width, height: 980 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: test.info().outputPath('session-order-' + width + '.png'), fullPage: true });
+  }
+  expect(faults.pageErrors).toEqual([]);
+  expect(faults.failedReads).toEqual([]);
+  await page.unrouteAll({ behavior: 'wait' });
+});
+
 test('wide Finished rows keep each name beside its measurements', async ({ page }) => {
   await page.setViewportSize({ width: 3840, height: 2060 });
   const faults = await open(page, 'requests');
@@ -159,7 +226,7 @@ for (const width of [1440, 3840]) {
 }
 
 for (const board of ['models', 'sessions']) {
-  test(board + ' cards reorder by their bodies without rendering grips', async ({ page }) => {
+  test(board + (board === 'sessions' ? ' cards reorder by their handles and keep the order' : ' cards reorder by their bodies without rendering grips'), async ({ page }) => {
     if (board === 'sessions') {
       await page.route('**/api/sessions', async (route) => {
         const response = await route.fetch();
@@ -177,9 +244,10 @@ for (const board of ['models', 'sessions']) {
     await expect(cards.nth(1)).toBeVisible({ timeout: FIRST_READ_MS });
     const names = cards.locator('h3');
     const before = await names.allTextContents();
-    const start = await cards.first().locator('.quiet-meta').first().boundingBox();
-    const finish = await cards.nth(1).locator('.quiet-meta').first().boundingBox();
-    if (start === null || finish === null) throw new Error('card bodies have no layout');
+    const activator = board === 'sessions' ? '.drag-handle' : '.quiet-meta';
+    const start = await cards.first().locator(activator).first().boundingBox();
+    const finish = await cards.nth(1).locator(activator).first().boundingBox();
+    if (start === null || finish === null) throw new Error('card drag controls have no layout');
     await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
     await page.mouse.down();
     await page.mouse.move(finish.x + finish.width / 2, finish.y + finish.height / 2, { steps: 12 });
@@ -189,8 +257,10 @@ for (const board of ['models', 'sessions']) {
     expect([...after].sort()).toEqual([...before].sort());
     await page.reload();
     await expect.poll(() => names.allTextContents()).toEqual(after);
-    await expect(page.locator('.grip')).toHaveCount(0);
+    if (board === 'sessions') await expect(cards.locator('.drag-handle')).toHaveCount(after.length);
+    else await expect(page.locator('.grip')).toHaveCount(0);
     expect(faults.pageErrors).toEqual([]);
+    await page.unrouteAll({ behavior: 'wait' });
   });
 }
 

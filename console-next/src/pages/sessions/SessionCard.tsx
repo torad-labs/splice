@@ -7,7 +7,7 @@ import { answerWhere, waitingAsks } from '../../lib/session-says';
 import { canResumeSession, cardLine, needsPerson, sessionKey, sessionLabel, stateTone, stateWord, repoName } from '../../lib/sessions';
 import { SW } from '../../lib/words-sessions';
 import type { SessionAsk, SessionRow } from '../../types/sessions';
-import { ModelMark, State, Window } from '../../ui';
+import { Button, ModelMark, State, Window } from '../../ui';
 import { S } from '../shared/copy';
 import { OpenLink, ResumeCopy, sessionPath } from '../shared/SessionActions';
 import { P } from './copy';
@@ -54,7 +54,7 @@ function Asks({ asks }: { asks: SessionAsk[] }) {
 
 /** One session: its title, its state, one line of what it is doing (a waiting one's questions, when it asked through AskUserQuestion),
  *  where a waiting one is answered, one quiet line of facts, and at most one act. */
-export function SessionCard({ facts, sortable = true }: { facts: CardFacts; sortable?: boolean }) {
+export function SessionCard({ facts, sortable = true, ordering }: { facts: CardFacts; sortable?: boolean; ordering?: { earlier: (() => void) | null; later: (() => void) | null } }) {
   const { row, state, colour, head, hand, since, quiet } = facts;
   const key = sessionKey(row);
   const drag = useSortable({ id: key, disabled: !sortable });
@@ -69,11 +69,9 @@ export function SessionCard({ facts, sortable = true }: { facts: CardFacts; sort
       colour={colour}
       attention={needs}
       className={`card${drag.isDragging ? ' dragging' : ''}`}
-      ref={(node) => { drag.setNodeRef(node); drag.setActivatorNodeRef(node); }}
+      ref={drag.setNodeRef}
       style={{ transform: CSS.Transform.toString(drag.transform), transition: drag.transition }}
-      {...(sortable ? drag.attributes : {})}
       role="listitem"
-      {...drag.listeners}
     >
       <div className="bar">
         <h3>
@@ -100,6 +98,13 @@ export function SessionCard({ facts, sortable = true }: { facts: CardFacts; sort
           <span key={part}>{part}</span>
         ))}
       </div>
+      {sortable ? <div className="session-order">
+        <button type="button" className="btn sm drag-handle" ref={drag.setActivatorNodeRef} aria-label={P.drag(sessionLabel(row) || S.unnamed)} {...drag.attributes} {...drag.listeners}>⠿</button>
+        {ordering === undefined ? null : <>
+          <Button small disabled={ordering.earlier === null} aria-label={P.moveEarlier(sessionLabel(row) || S.unnamed)} onClick={() => ordering.earlier?.()}>{P.earlierMove}</Button>
+          <Button small disabled={ordering.later === null} aria-label={P.moveLater(sessionLabel(row) || S.unnamed)} onClick={() => ordering.later?.()}>{P.laterMove}</Button>
+        </>}
+      </div> : null}
       {needs || (state === 'gone' && canResumeSession(row)) ? (
         <div className="acts">
           {needs ? <OpenLink row={row} /> : null}

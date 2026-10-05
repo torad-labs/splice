@@ -3,6 +3,19 @@ import type { ConfigPayload } from '../src/types/core';
 import { open, assertHealthy } from './support';
 import { STACK } from './stack';
 
+test('Advanced names the key button that reveals a setting on request', async ({ page }) => {
+  const faults = await open(page, 'settings/advanced');
+  const advanced = page.getByRole('region', { name: 'Advanced', exact: true });
+  await expect(advanced).toContainText('use the key button on a row');
+  await expect(advanced).not.toContainText('<>');
+  await page.getByRole('button', { name: 'Open the full list', exact: true }).click();
+  const row = advanced.locator('.row').filter({ has: page.getByRole('heading', { name: 'Max request size', exact: true }) });
+  await expect(row.locator('.key code')).toHaveCount(0);
+  await row.locator('button.key').click();
+  await expect(row.locator('.key code')).toHaveText('maxRequestBytes');
+  await assertHealthy(page, faults);
+});
+
 test('thinking defaults write to their actual scope and keep saved defaults separate from the running value', async ({ page }) => {
   let globalEffort = 'high';
   const patches: unknown[] = [];

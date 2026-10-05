@@ -95,7 +95,7 @@ export const T = {
   rechecking: 'Checking…',
   // Advanced
   showKeys: 'Show setting keys',
-  showKeysWhy: 'Print each setting’s name under it, the way it is written in splice.toml. Off, only the <> on a row reveals its key.',
+  showKeysWhy: 'Print each setting’s name under it, the way it is written in splice.toml. When this is off, use the key button on a row to reveal its key.',
   everyOther: 'Every other setting',
   everyOtherWhy: 'The settings this page does not group above, each as its own control, for one command or all.',
   openList: 'Open the full list',

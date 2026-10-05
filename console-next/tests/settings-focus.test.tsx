@@ -45,6 +45,12 @@ test('the warning slider visibly names its current selected value rather than a 
   expect(html).not.toContain('<b>80%</b>');
 });
 
+test('Advanced explains the real key-icon button rather than a nonexistent code glyph', () => {
+  const html = render('/settings/advanced');
+  expect(html).toContain('use the key button on a row');
+  expect(html).not.toContain('&lt;&gt;');
+});
+
 test('a deep link stays a pending read, not a failure, until the initial settings arrive', () => {
   const html = render('/settings/health', false);
   expect(html).toContain('Reading the settings');

@@ -60,10 +60,11 @@ export function UsagePage() {
   const heads = useHeads();
   const status = useStatus();
   const usage = useUsage();
-  const choices = windowChoices(economics.data?.retention_hours ?? 24);
   const asked = params.get('window') ?? '24';
+  const choices = windowChoices(economics.data?.retention_hours ?? Number(asked));
   const hours = Number((choices.find(([id]) => id === asked) ?? choices[0])?.[0] ?? '24');
-  const requests = useUsageTurns(hours, Intl.DateTimeFormat().resolvedOptions().timeZone, economics.isSuccess || economics.isError);
+  const notRetained = economics.data !== undefined && Number(asked) > hours && windowChoices(Number(asked)).some(([id]) => id === asked);
+  const requests = useUsageTurns(hours, Intl.DateTimeFormat().resolvedOptions().timeZone, true);
   const recorded = requests.data === undefined || isPendingRoute(requests.data) ? null : requests.data;
   const loading = recorded === null && !requests.isError && requests.data === undefined;
 
@@ -102,6 +103,7 @@ export function UsagePage() {
         lede={pendingNames.length === 0 ? lede : `${lede} ${U.commandsReading(pendingNames.join(', '))}`}
         tools={choices.length < 2 ? undefined : <Segmented label={U.window} value={String(hours)} options={choices} onChange={(next) => setParams(next === '24' ? {} : { window: next }, { replace: true })} />}
       />
+      {notRetained ? <p className="hint" role="status">{U.notRetained(spanWords(Number(asked)), spanWords(hours))}</p> : null}
       {economics.isError ? <section className="section" aria-label={B.hourlyHistory}><Fault message={B.hourlyUnavailable} onRetry={() => void economics.refetch()} /></section>
         : economics.isPending ? <p className="hint" role="status">{B.hourlyReading}</p> : null}
       {plans.length === 0 ? loading || heads.isPending ? <p className="hint" role="status">{U.readingRequests}</p> : heads.isError ? <Fault message={failureText(heads.error)} onRetry={() => void heads.refetch()} /> : <Empty title={U.plansNone} /> : (

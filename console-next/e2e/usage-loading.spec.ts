@@ -264,37 +264,80 @@ test('a command whose hours cannot be shown says why in its own row while its si
   expect(faults.pageErrors).toEqual([]);
 });
 
-test('a cold seven-day page waits for retention before starting a history read', async ({ page }) => {
+for (const hours of [24, 168]) {
+  test(`a cold ${hours}-hour page publishes requests while hourly history is pending`, async ({ page }) => {
+    const heads = await read<HeadsPayload>(page, '/api/heads');
+    let release!: () => void;
+    const released = new Promise<void>(resolve => { release = resolve; });
+    await page.route('**/api/heads', route => route.fulfill({ json: heads }));
+    await page.route('**/api/economics', async route => {
+      await released;
+      await route.fulfill({ json: { retention_hours: 168, heads: [] } });
+    });
+    const spans: number[] = [];
+    await page.route(url => url.pathname === '/api/perf/turns', route => {
+      const query = new URL(route.request().url()).searchParams;
+      const key = query.get('head') ?? '';
+      const since = Number(query.get('since'));
+      const until = Number(query.get('until'));
+      spans.push(until - since);
+      return route.fulfill({ json: {
+        since, n: 1, heads: [{ key, label: key, count: key === STACK.oauthHead ? 2502 : 0,
+          usage: key === STACK.oauthHead ? usage : empty, rows: [] }],
+      } });
+    });
+    try {
+      await open(page, 'usage?window=' + hours);
+      const total = page.getByRole('region', { name: 'Usage', exact: true });
+      await expect(total.getByRole('heading', { name: 'Requests', exact: true }).locator('..')).toContainText('2,502');
+      await expect(page.getByText('Reading hourly usage history…', { exact: true })).toBeVisible();
+      const ready = page.locator('.uplan').filter({ has: page.getByText(STACK.oauthHead, { exact: true }) });
+      await expect(ready).toContainText('90% cached');
+      await expect(ready).not.toContainText('Reading requests');
+      expect(spans.length).toBeGreaterThan(0);
+      expect(spans.every(span => span === hours * 3_600_000)).toBe(true);
+      release();
+      await expect(page.getByText('Reading hourly usage history…', { exact: true })).toHaveCount(0);
+    } finally {
+      release();
+    }
+  });
+}
+
+test('a shorter reported retention replaces the requested week with day-specific totals', async ({ page }) => {
   const heads = await read<HeadsPayload>(page, '/api/heads');
+  heads.heads = heads.heads.filter(head => head.key === STACK.oauthHead);
+  await page.route('**/api/heads', route => route.fulfill({ json: heads }));
   let release!: () => void;
   const released = new Promise<void>(resolve => { release = resolve; });
-  await page.route('**/api/heads', route => route.fulfill({ json: heads }));
   await page.route('**/api/economics', async route => {
     await released;
-    await route.fulfill({ json: { retention_hours: 168, heads: [] } });
+    await route.fulfill({ json: { retention_hours: 24, heads: [] } });
   });
   const spans: number[] = [];
   await page.route(url => url.pathname === '/api/perf/turns', route => {
     const query = new URL(route.request().url()).searchParams;
-    const key = query.get('head') ?? '';
     const since = Number(query.get('since'));
-    const until = Number(query.get('until'));
-    spans.push(until - since);
-    return route.fulfill({ json: {
-      since, n: 1, heads: [{ key, label: key, count: key === STACK.oauthHead ? 2502 : 0,
-        usage: key === STACK.oauthHead ? usage : empty, rows: [] }],
-    } });
+    const span = Number(query.get('until')) - since;
+    spans.push(span);
+    const requests = span === 24 * 3_600_000 ? 31 : 2502;
+    return route.fulfill({ json: { since, n: 1, heads: [{
+      key: STACK.oauthHead, label: STACK.oauthHead, count: requests,
+      usage: { ...usage, totals: { ...stats, requests } }, rows: [],
+    }] } });
   });
-  const headReply = page.waitForResponse(response => new URL(response.url()).pathname === '/api/heads');
   try {
     await open(page, 'usage?window=168');
-    await (await headReply).finished();
-    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-    expect(spans, 'retention is pending, so no default day read may start').toEqual([]);
-    release();
-    const total = page.getByRole('region', { name: 'Usage', exact: true });
-    await expect(total.getByRole('heading', { name: 'Requests', exact: true }).locator('..')).toContainText('2,502');
+    const requests = page.locator('.totals .n').first();
+    await expect(requests).toHaveText('2,502');
+    expect(spans.length).toBeGreaterThan(0);
     expect(spans.every(span => span === 168 * 3_600_000)).toBe(true);
+    release();
+    await expect(requests).toHaveText('31');
+    await expect(page.getByText('The full range of the last 7 days is not retained. Showing the last 24 hours.', { exact: true })).toBeVisible();
+    expect(spans).toContain(24 * 3_600_000);
+    await expect(page.getByRole('button', { name: '7 days', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('region', { name: 'Usage', exact: true })).toContainText('the last 24 hours');
   } finally {
     release();
   }

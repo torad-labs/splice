@@ -14,6 +14,7 @@ export const U = {
   historyUnreadable: 'The daemon returned an unreadable request history.',
   commandsReading: (names: string) => `Still reading requests for ${names}.`,
   window: 'Window',
+  notRetained: (asked: string, shown: string) => `The full range of ${asked} is not retained. Showing ${shown}.`,
   totalsTurns: 'Requests',
   totalsTurnsWhy: (commands: number, span: string, incomplete = false) => `${incomplete ? 'Across at least' : 'Across'} ${commands} ${commands === 1 ? 'command' : 'commands'} with requests in ${span}.`,
   totalsTurnsReading: 'Reading which commands had requests…',

@@ -26,7 +26,7 @@ export function sessionAccountName(rows: readonly AccountRow[], head: string, la
 /** Native selection keys never fall back to native edit ids. Pooled logins retain their stable label. */
 export const accountSelector = (account: AccountRow): string | null => account.selector_key ?? (account.login_place == null ? account.label : null);
 
-export interface NativeTakeoverWarning { head: string; carrying: AccountRow; pct: number; renew: readonly AccountRow[] }
+export interface NativeTakeoverWarning { head: string; carrying: AccountRow; pct: number; window: AccountWindow; renew: readonly AccountRow[] }
 
 /** The roster's carrying and availability facts, measured against the operator's Settings warning level. */
 export function nativeTakeoverWarnings(rows: readonly AccountRow[], warnPct: number | undefined, now: number): NativeTakeoverWarning[] {
@@ -34,12 +34,13 @@ export function nativeTakeoverWarnings(rows: readonly AccountRow[], warnPct: num
   return rows.flatMap(carrying => {
     if (carrying.login_place == null || carrying.carrying_request !== true) return [];
     const head = carrying.heads[0];
-    const pct = nearestWindow(carrying, now)?.used_percent;
-    if (head === undefined || pct == null || pct < warnPct || pct >= 100) return [];
+    const window = nearestWindow(carrying, now);
+    const pct = window?.used_percent;
+    if (head === undefined || window === null || pct == null || pct < warnPct || pct >= 100) return [];
     const others = rows.filter(row => row !== carrying && row.heads.includes(head));
     if (others.some(row => row.available !== false)) return [];
     const renew = others.filter(row => row.login_place != null && /expired|refresh|sign[ -]?in/i.test(refusalText(row) ?? ''));
-    return [{ head, carrying, pct, renew }];
+    return [{ head, carrying, pct, window, renew }];
   });
 }
 

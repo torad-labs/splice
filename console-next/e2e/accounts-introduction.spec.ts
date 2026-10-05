@@ -34,7 +34,7 @@ async function nativePool(page: Page) {
         edit_target: { kind: 'native', id }, can_rename: true, can_remove: true, credential_present: true,
         account: { uuid: 'synthetic-native-' + id, email: null }, identity_verified: false,
         selected: index === 0, carrying_request: index === 0, available: index === 0, pinned: false, next_target: index === 0,
-        refusal: index === 0 ? null : 'Native access token expired; run claude-splice to refresh its own login.',
+        refusal: index === 0 ? null : 'Access token expired. Sign in again on claude-splice in the console.',
         five_hour_used_percent: null, five_hour_reset_epoch_seconds: null, five_hour_window_seconds: null,
         seven_day_used_percent: index === 0 ? 94 : 12, seven_day_reset_epoch_seconds: now + 3600,
         seven_day_window_seconds: 604800, seven_day_current: true, observed_at_epoch_seconds: now,
@@ -93,8 +93,10 @@ test('native takeover availability keeps the expired login remedy reachable and 
   const personal = page.locator('.account-card').filter({ has: page.getByRole('heading', { name: 'Personal login', exact: true }) });
   const separate = page.locator('.account-card').filter({ has: page.getByRole('heading', { name: 'Separate login', exact: true }) });
   await expect(personal.locator('.state')).toHaveText('Can take over');
-  await expect(separate.locator('.state')).toContainText('Can’t take over: Native access token expired');
-  await expect(separate.locator('.state')).toContainText('run claude-splice to refresh its own login');
+  await expect(separate.locator('.state')).toContainText('Can’t take over: Access token expired.');
+  await expect(separate.locator('.state')).toContainText('Sign in again on claude-splice in the console.');
+  await expect(separate).toContainText('Login not identified yet.');
+  await expect(separate).not.toContainText('native');
   await expect(separate).not.toContainText('Signed in');
   expect(await separate.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
   await separate.scrollIntoViewIfNeeded();
@@ -102,7 +104,11 @@ test('native takeover availability keeps the expired login remedy reachable and 
   await separate.getByRole('button', { name: 'Sign in again', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('button', { name: 'Start login', exact: true })).toBeEnabled();
-  await expect(dialog).toContainText('separate claude-splice login');
+  await expect(dialog.getByRole('heading', { name: 'Sign in again: claude-splice’s own login', exact: true })).toBeVisible();
+  await expect(dialog).toContainText('This changes claude-splice’s own login.');
+  await expect(dialog).toContainText('Sign in again on claude-splice in the console.');
+  await expect(dialog).not.toContainText('native');
+  await page.screenshot({ path: 'captures/console-walk-oct3/login-coherence-dialog-narrow.png' });
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   nativeLogin(state.rows, 'claude-splice').available = null;
   await page.reload();
@@ -115,7 +121,9 @@ test('native spare warning follows Settings and proven carrying, availability an
   const faults = await open(page, 'accounts');
   const warning = page.getByRole('alert').filter({ hasText: 'No other login can take over' });
   await expect(warning).toContainText('Personal login is at 94%');
-  await expect(warning).toContainText('Sign in again on Separate login');
+  await expect(warning).toContainText('94% of its weekly limit');
+  await expect(warning).toContainText(/which resets [A-Z][a-z]{2} \d{1,2}, \d{1,2}:\d{2} [AP]M/);
+  await expect(warning).toContainText('Sign in again on claude-splice in the console.');
   await page.screenshot({ path: 'captures/console-walk-oct3/native-spare-warning-wide.png' });
   nativeLogin(state.rows, 'claude-splice').available = true;
   nativeLogin(state.rows, 'claude-splice').refusal = null;
@@ -179,18 +187,36 @@ test('native order and switches use selector keys while rename keeps its native 
   await assertHealthy(page, faults);
 });
 
+test('Models names the last carrying native login when neither login is selected', async ({ page }) => {
+  const state = await nativePool(page);
+  const faults = await open(page, 'accounts');
+  await expect(page.getByRole('heading', { name: 'Personal login', exact: true })).toBeVisible();
+  for (const row of state.rows) { row.selected = null; row.carrying_request = row.login_place?.id === 'claude-splice'; }
+  await open(page, 'models');
+  await page.reload();
+  const rows = page.locator('.model-table tbody tr').filter({ has: page.getByRole('cell', { name: 'Study command', exact: true }) });
+  await expect(rows.first()).toBeVisible();
+  for (const row of await rows.all()) {
+    await expect(row.locator('td').nth(1)).toContainText('Separate login');
+    await expect(row.locator('td').nth(1)).not.toContainText('Not reported');
+    await expect(row.locator('td').nth(1)).toContainText('and 1 more');
+  }
+  await assertHealthy(page, faults);
+});
+
 test('Sessions names each attributed native place and the single-login primary without borrowing selection', async ({ page }) => {
   const state = await nativePool(page);
   let solo = false;
-  let matched = true;
+  let matched: boolean | undefined = true;
   await page.route(url => url.pathname === '/api/heads/claude-splice/turns/live', route => route.fulfill({ json: { head: 'claude-splice', turns: [] } }));
   await page.route(url => url.pathname === '/api/sessions', async route => {
     const response = await route.fetch();
     const body = await response.json() as SessionsPayload;
-    body.sessions = body.sessions.filter(row => row.session_id === STACK.sender.id || row.session_id === STACK.peer.id).map(row => ({
-      ...row, head: row.session_id === STACK.sender.id && solo ? STACK.soloHead : 'claude-splice',
-      account: !matched ? null : row.session_id === STACK.sender.id ? solo ? 'primary' : 'claude' : 'claude-splice',
-    }));
+    body.sessions = body.sessions.filter(row => row.session_id === STACK.sender.id || row.session_id === STACK.peer.id).map(row => {
+      const projected = { ...row, head: row.session_id === STACK.sender.id && solo ? STACK.soloHead : 'claude-splice' };
+      if (matched === undefined) { delete projected.account; return projected; }
+      return { ...projected, account: !matched ? null : row.session_id === STACK.sender.id ? solo ? 'primary' : 'claude' : 'claude-splice' };
+    });
     await route.fulfill({ response, json: body });
   });
   const faults = await open(page, 'sessions');
@@ -213,6 +239,12 @@ test('Sessions names each attributed native place and the single-login primary w
   await page.reload();
   await expect(sender).toContainText('Login not reported');
   await expect(peer).toContainText('Login not reported');
+  await expect(peer).toContainText('No request with a known login is recorded for this session.');
+  await expect(sender).not.toContainText('No request with a known login is recorded for this session.');
+  matched = undefined;
+  await page.reload();
+  await expect(peer).toContainText('Login not reported');
+  await expect(peer).not.toContainText('No request with a known login is recorded for this session.');
   await assertHealthy(page, faults);
 });
 
@@ -223,9 +255,11 @@ test('native and separate sign-in dialogs say what Start login does without inve
   const native = page.locator('.account-card').filter({ hasText: 'The login stored for the plain claude command.' });
   await native.getByRole('button', { name: 'Sign in', exact: true }).click();
   let dialog = page.getByRole('dialog');
-  await expect(dialog).toContainText('This changes the native Claude Code login.');
-  await expect(dialog).toContainText('The separate claude-splice login is unchanged.');
-  await expect(dialog).toContainText('Native means the login stored for plain claude.');
+  await expect(dialog.getByRole('heading', { name: 'Sign in: plain claude’s login', exact: true })).toBeVisible();
+  await expect(dialog).toContainText('This changes plain claude’s login.');
+  await expect(dialog).toContainText('claude-splice’s own login is unchanged.');
+  await expect(dialog).toContainText('Sign in again on claude in the console.');
+  await expect(dialog).not.toContainText('native');
   await expect(dialog).toContainText('Start login opens provider sign-in.');
   await expect(dialog.getByRole('textbox')).toHaveCount(0);
   await expect(dialog.getByRole('button', { name: 'Start login', exact: true })).toBeEnabled();
@@ -233,9 +267,11 @@ test('native and separate sign-in dialogs say what Start login does without inve
   const separate = page.locator('.account-card').filter({ hasText: 'The login stored separately for the claude-splice command.' });
   await separate.getByRole('button', { name: 'Sign in', exact: true }).click();
   dialog = page.getByRole('dialog');
-  await expect(dialog).toContainText('This changes the separate claude-splice login.');
-  await expect(dialog).toContainText('The native Claude Code login is unchanged.');
-  await expect(dialog).toContainText('Separate means a login stored in claude-splice’s own configuration folder.');
+  await expect(dialog.getByRole('heading', { name: 'Sign in: claude-splice’s own login', exact: true })).toBeVisible();
+  await expect(dialog).toContainText('This changes claude-splice’s own login.');
+  await expect(dialog).toContainText('Plain claude’s login is unchanged.');
+  await expect(dialog).toContainText('Sign in again on claude-splice in the console.');
+  await expect(dialog).not.toContainText('native');
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   await assertHealthy(page, faults);
 });

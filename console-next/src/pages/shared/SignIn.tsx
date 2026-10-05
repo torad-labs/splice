@@ -65,7 +65,7 @@ export function SignIn({ head, commandLabel = head, label = '', displayName, pla
         <Dialog.Overlay className="scrim" />
         <Dialog.Content className="dialog">
           <div className="dialog-head">
-            <Dialog.Title>{purpose === 'renew' ? S.renew : S.add}</Dialog.Title>
+            <Dialog.Title>{H.title(purpose === 'renew' ? S.renew : place === undefined ? S.add : S.signIn, place === undefined ? displayName ?? commandLabel : H.loginName(place))}</Dialog.Title>
             <Dialog.Close asChild>
               <button type="button" className="icon-btn" aria-label={S.cancel}>
                 <Close />
@@ -73,7 +73,7 @@ export function SignIn({ head, commandLabel = head, label = '', displayName, pla
             </Dialog.Close>
           </div>
           <Dialog.Description className="hint">{H.destination(place, commandLabel)}</Dialog.Description>
-          {state.step === 'idle' ? <p className="hint">{H.startWhy}</p> : null}
+          {state.step === 'idle' ? <p className="hint">{place === undefined ? H.startWhy : `${H.signInAgain(place)} ${H.startWhy}`}</p> : null}
           {state.step === 'idle' && purpose === 'add' && place === undefined ? <p className="hint">{H.addWhy(commandLabel)}</p> : null}
           {state.step === 'pending' ? (
             <p className="hint">{LOGIN_PENDING_EMPTY.source}</p>

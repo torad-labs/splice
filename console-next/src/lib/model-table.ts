@@ -83,13 +83,13 @@ const longContextOf = (rates: unknown): LongContext | null => {
   return typeof over === 'number' && typeof input === 'number' && typeof output === 'number' ? { over, input, output } : null;
 };
 
-/** The selected login's displayed name, with provider-verified email kept separately. */
+/** The selected or last carrying login's displayed name, with provider-verified email kept separately. */
 function servedBy(head: HeadStatus, family: string | null, accounts: readonly AccountRow[]): ServedBy {
   const kind = kindOf(head, family);
   if (kind === 'local') return { kind: 'local' };
   if (kind === 'api-key') return { kind: 'key' };
   const pool = poolOf(accounts, head.key);
-  const serving = pool.find((account) => account.selected === true) ?? (pool.length === 1 ? pool[0] : undefined);
+  const serving = pool.find((account) => account.selected === true) ?? accounts.find((account) => account.heads.includes(head.key) && account.carrying_request === true) ?? (pool.length === 1 ? pool[0] : undefined);
   if (serving === undefined) return { kind: 'unreported' };
   if (!serving.credential_present) return { kind: 'signedOut' };
   return { kind: 'login', name: accountName(serving), email: accountEmail(serving), plan: serving.plan ?? null, others: pool.length - 1 };

@@ -1,6 +1,7 @@
 import * as Menu from '@radix-ui/react-dropdown-menu';
 import { useEffect, useState } from 'react';
 import { Check, Chevron } from './icons';
+import { W } from '../lib/words';
 
 /** An on/off choice that takes effect as it is made. */
 export function Switch({ checked, onChange, label, disabled = false }: { checked: boolean; onChange: (next: boolean) => void; label: string; disabled?: boolean }) {
@@ -42,7 +43,7 @@ export function Slider({ value, onCommit, min, max, unit, label }: { value: numb
       />
       <small>
         <span>{min}{unit}</span>
-        <b>{held}{unit}</b>
+        <b>{W.selectedValue(held, unit)}</b>
         <span>{max}{unit}</span>
       </small>
     </div>

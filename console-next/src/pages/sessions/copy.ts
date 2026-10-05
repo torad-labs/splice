@@ -34,4 +34,5 @@ export const P = {
   needsAnswer: 'Waiting for your answer',
   login: (name: string): string => `Login: ${name}`,
   loginUnknown: 'Login not reported',
+  loginUnidentified: 'No request with a known login is recorded for this session.',
 } as const;

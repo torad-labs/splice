@@ -10,7 +10,7 @@ vi.mock('../src/lib/show-keys', () => ({ useShowKeys: () => false, setShowKeys: 
 vi.mock('../src/lib/restart-pending', () => ({ useRestartPending: () => [], recordSaved: vi.fn() }));
 
 const config: ConfigPayload = {
-  effective: { effort: 'high', maxInflight: 2, showReasoning: 'text' },
+  effective: { effort: 'high', maxInflight: 2, showReasoning: 'text', usageWarnPct: 80 },
   layers: { defaults: {}, toml: {}, perHead: {}, file: {}, env: {}, runtime: {} },
   restart_required_keys: [], source: 'synthetic',
 };
@@ -37,6 +37,12 @@ test('thinking has an explicit command scope, a selected effective value and lev
   expect(html).toContain('Currently running: High');
   expect(html).toContain('Less thinking for straightforward work');
   expect(html).toContain('More thinking for difficult work');
+});
+
+test('the warning slider visibly names its current selected value rather than a third endpoint', () => {
+  const html = render('/settings');
+  expect(html).toContain('Selected: 80%');
+  expect(html).not.toContain('<b>80%</b>');
 });
 
 test('a deep link stays a pending read, not a failure, until the initial settings arrive', () => {

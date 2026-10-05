@@ -21,6 +21,7 @@ export const A = {
   refused: 'Credential refused',
   excluded: 'Temporarily excluded',
   unknownLogin: 'Login not reported',
+  unidentified: 'Login not identified yet.',
   unknownLoginWhy: 'Refresh accounts to check this login, or sign in to add it.',
   primary: 'Primary account',
   localState: 'Local runtime',

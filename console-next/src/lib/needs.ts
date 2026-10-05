@@ -368,7 +368,7 @@ export function needsOf(inputs: NeedInputs, now: number): NeedsList {
   const about = new Map(wanted.map((check) => [check, headsOfCheck(check, said, down)] as const));
   const spareWarnings: Need[] = inputs.accounts.error !== null || inputs.usage.error !== null ? [] : nativeTakeoverWarnings(accounts, usage?.warn_pct, now).map(warning => ({
     key: `native-spare:${warning.head}`, severity: 'warn', source: 'accounts', kind: K.plan, head: warning.head,
-    subject: accountName(warning.carrying), finding: H.nativeSpare(accountName(warning.carrying), warning.pct, warning.renew.map(accountName)),
+    subject: accountName(warning.carrying), finding: H.nativeSpare(accountName(warning.carrying), warning.pct, warning.window, warning.renew.flatMap(row => row.login_place == null ? [] : [row.login_place.command])),
     fix: open('#/accounts', warning.renew.length === 0 ? S.openAccounts : S.signIn), at: '#/accounts',
   }));
   const needs = [

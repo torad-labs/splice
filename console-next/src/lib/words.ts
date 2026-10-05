@@ -10,5 +10,6 @@ export const W = {
   /** What a read says when the daemon did not answer at all. */
   notAnswering: 'splice is not answering.',
   retry: 'Try again',
+  selectedValue: (value: number, unit: string): string => `Selected: ${value}${unit}`,
   searchKey: '⌘K',
 } as const;

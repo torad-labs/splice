@@ -293,6 +293,13 @@ describe('a session card', () => {
     expect(unknown).toContain('Login not reported');
     expect(unknown).not.toContain('Login:');
   });
+  test('only an explicitly unidentified session login explains the missing request attribution', () => {
+    const why = 'No request with a known login is recorded for this session.';
+    expect(render(facts({ row: row({ account: null }), loginUnidentified: true }))).toContain(why);
+    expect(render(facts({ row: row(), loginUnidentified: true }))).not.toContain(why);
+    expect(render(facts({ row: row({ account: 'known-login' }), loginUnidentified: true }))).not.toContain(why);
+    expect(render(facts({ row: row({ account: null }) }))).not.toContain(why);
+  });
   test('a hand-off line says what happened: the last message to a session, or the sessions a lead messaged', () => {
     expect(render(facts({ hand: { kind: 'to', peer: 'claude-muse' } }))).toContain('last message to claude-muse');
     expect(render(facts({ hand: { kind: 'lead', peers: 50 } }))).toContain('messaged 50 sessions');

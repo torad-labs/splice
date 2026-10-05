@@ -6,7 +6,7 @@
 // provider refuses is one explicit out-of-quota item.
 import { describe, expect, test } from 'vitest';
 import { accountsFromWire } from '../src/lib/accounts';
-import { localInstantText } from '../src/lib/heads';
+import { localInstantText, localZonedInstantText } from '../src/lib/heads';
 import { doctorFixOf, hrefOf, INPUTS, needsOf, readingOf, SOURCE_ORDER } from '../src/lib/needs';
 import { calmOf, ledeOf } from '../src/lib/needs-page';
 import { H, K, S, U } from '../src/lib/words-needs';
@@ -94,8 +94,17 @@ test('the carrying native login warns at Settings level when its other login can
   }), NOW);
   const warning = list([carrying, expired]).needs.find(need => need.finding.includes('No other login can take over'));
   expect(warning?.finding).toContain('Personal login');
-  expect(warning?.finding).toContain('Sign in again on Separate login');
+  expect(warning?.finding).toContain('94% of its weekly limit');
+  expect(warning?.finding).toContain(`which resets ${localZonedInstantText(NOW / 1000 + 3600)}`);
+  expect(warning?.finding).toContain('Sign in again on claude-splice in the console.');
   expect(warning?.fix).toMatchObject({ kind: 'open', href: '#/accounts' });
+  const warningOf = (windows: AccountRow['windows']) => list([{ ...carrying, windows }, expired]).needs.find(need => need.finding.includes('No other login can take over'));
+  expect(warningOf([{ seconds: 18000, used_percent: 98, reset_epoch_seconds: NOW / 1000 + 600 }, ...carrying.windows])?.finding)
+    .toContain(`98% of its five-hour limit, which resets ${localZonedInstantText(NOW / 1000 + 600)}`);
+  const unknownLength = warningOf(carrying.windows.map(window => ({ ...window, length_known: false })));
+  expect(unknownLength?.finding).toContain('long window limit');
+  expect(unknownLength?.finding).not.toContain('weekly limit');
+  expect(warningOf(carrying.windows.map(window => ({ ...window, reset_epoch_seconds: null })))?.finding).toContain('Its reset has not been reported.');
   expect(list([carrying, expired]).needs.find(need => need.finding === expired.refusal)).toMatchObject({ subject: 'Separate login', at: '#/accounts', fix: { kind: 'open', href: '#/accounts' } });
   expect(list([carrying, { ...expired, available: null }]).needs.some(need => need.finding.includes('No other login can take over'))).toBe(false);
   const failed = quiet({ accounts: { ...read({ accounts: [carrying, expired] }), error: 'Synthetic read failed' }, usage: read(USAGE) });

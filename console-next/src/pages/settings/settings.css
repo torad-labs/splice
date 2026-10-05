@@ -63,7 +63,7 @@
 .slider input[type='range']::-moz-range-thumb { width: 1.125rem; height: 1.125rem; border-radius: 50%; background: var(--obj); border: 3px solid var(--edge); box-shadow: 0 0.125rem 0 var(--tan); }
 .slider input[type='range']:focus-visible { outline: 3px solid var(--charge); outline-offset: 4px; }
 .slider small { display: flex; justify-content: space-between; font: 500 0.8125rem var(--meta); color: var(--mute); }
-.slider small b { font-family: var(--meta); color: var(--ink); }
+.slider small b { font-family: var(--meta); color: var(--ink); padding: var(--space-2) var(--space-4); background: var(--sel); border-radius: var(--r1); }
 .folders { display: flex; gap: var(--space-5); flex-wrap: wrap; justify-content: flex-end; align-items: center; }
 .folder { display: inline-flex; align-items: center; gap: var(--space-5); padding: var(--space-4) var(--space-5); background: color-mix(in srgb, var(--ink) 8%, transparent); border: 0; border-radius: var(--r1); font: 600 0.96rem var(--meta); color: var(--ink); }
 .folder.code { font-family: var(--mono); font-size: var(--text-1); }

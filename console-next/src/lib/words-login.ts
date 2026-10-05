@@ -3,6 +3,7 @@
 export const S = {
   add: 'Add account',
   renew: 'Sign in again',
+  signIn: 'Sign in',
   label: 'Label',
   start: 'Start login',
   cancel: 'Cancel',
@@ -26,10 +27,13 @@ export const H = {
   startWhy: 'Start login opens provider sign-in. Finish in the browser, then return here to see the result.',
   addWhy: (command: string): string => `The new login joins ${command}. Its label lets you identify it in the account list and choose its order.`,
   labelWhy: 'Choose a short label for this login, such as work or personal.',
+  loginName: (place: string): string => place === 'claude' ? 'plain claude’s login' : `${place}’s own login`,
+  title: (action: string, name: string): string => `${action}: ${name}`,
+  signInAgain: (command: string): string => `Sign in again on ${command} in the console.`,
   destination: (place: string | undefined, head: string): string => place === 'claude'
-    ? 'This changes the native Claude Code login. The separate claude-splice login is unchanged. Native means the login stored for plain claude.'
+    ? 'This changes plain claude’s login. claude-splice’s own login is unchanged.'
     : place === 'claude-splice'
-      ? 'This changes the separate claude-splice login. The native Claude Code login is unchanged. Separate means a login stored in claude-splice’s own configuration folder.'
+      ? 'This changes claude-splice’s own login. Plain claude’s login is unchanged.'
       : `This signs in the ${head} command.`,
   signInUnavailable: 'This splice version cannot sign in here; run splice login <head>.',
   device: 'Finish signing in in the browser with this code.',

@@ -16,6 +16,17 @@ const view = (state: LoginStatusPayload['state'], extra: Partial<LoginStatusPayl
   failure_reason: null, label: null, usage_set_aside: null, ...extra,
 });
 
+test('Claude folder login destinations name the changed login without native or competing refresh instructions', () => {
+  const plain = LOGIN.destination('claude', 'claude-splice');
+  const own = LOGIN.destination('claude-splice', 'claude-splice');
+  expect(plain).toContain('plain claude’s login');
+  expect(own).toContain('claude-splice’s own login');
+  for (const words of [plain, own]) {
+    expect(words).not.toMatch(/native/i);
+    expect(words).not.toContain('to refresh');
+  }
+});
+
 describe('the login flow machine', () => {
   test('a blank label cannot start: an unnamed credential is not a credential', () => {
     expect(canStart(IDLE)).toBe(false);

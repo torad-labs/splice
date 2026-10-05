@@ -4,6 +4,7 @@ import { failureText } from '../../api/client';
 import { keys } from '../../api/queries';
 import { awaitRefetch } from '../../api/refetch';
 import { familyName } from '../../lib/heads';
+import { H as LOGIN } from '../../lib/words-login';
 import { accountEmail, accountName } from '../../lib/accounts';
 import type { AccountRow, ClaudeLoginPlaceId } from '../../types/accounts';
 import type { ModelColour } from '../../lib/model';
@@ -41,9 +42,9 @@ export function AccountCard({ account, place, colour, now, commandLabels, localR
   return (
     <Window as="li" colour={colour} className="card account-card" attention={place !== undefined ? account?.available === false : !localRuntime && (refused || excluded || held || present === false)}>
       <div className="bar"><h3>{name}</h3><State tone={place !== undefined ? account?.available === true ? 'work' : account?.available === false ? 'stuck' : 'wait' : localRuntime ? 'idle' : refused || excluded ? 'stuck' : held ? 'quota' : present ? 'work' : present === false ? 'stuck' : 'wait'}>{state}</State></div>
-      {email === null ? null : <p className="quiet-line">{email}</p>}
+      {email === null ? place !== undefined && account?.identity_verified === false ? <p className="quiet-line">{A.unidentified}</p> : null : <p className="quiet-line">{email}</p>}
       <div className="account-place">
-        {place === undefined ? <p>{commands}{account?.plan ? ` · ${account.plan}` : ''}</p> : <><b>{place}</b><p>{place === 'claude' ? A.nativeWhy : A.spliceWhy}</p></>}
+        {place === undefined ? <p>{commands}{account?.plan ? ` · ${account.plan}` : ''}</p> : <><b>{LOGIN.loginName(place)}</b><p>{place === 'claude' ? A.nativeWhy : A.spliceWhy}</p></>}
       </div>
       {place === undefined ? null : <p className="quiet-line" role="status">{account?.carrying_request === true ? A.carrying(commands) : account?.carrying_request === false ? A.carriedElsewhere(commands) : account?.carrying_request === null ? A.notMatched(commands) : A.carryingUnknown}</p>}
       {localRuntime ? <p className="hint">{A.localWhy}</p> : keyed ? <p className="hint">{A.keyWhy}</p> : <div className="glass one"><AccountLimits windows={account?.windows ?? []} now={now} {...(account === null ? {} : { kind: account.kind })} /></div>}

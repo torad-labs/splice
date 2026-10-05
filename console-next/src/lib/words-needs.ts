@@ -2,6 +2,10 @@
 // words or fewer, sentence case), `H` the one-line sentences a finding prints, `U` the fragments printed
 // beside a figure or a name, `K` the word a card prints as its state.
 import type { NeedKind } from '../types/needs';
+import type { AccountWindow } from '../types/accounts';
+import { windowSpan } from './accounts';
+import { localZonedInstantText } from './heads';
+import { H as LOGIN } from './words-login';
 
 export const S = {
   /** The daemon's item is named for the daemon. */
@@ -32,7 +36,12 @@ export const H = {
   tracePending: (head: string): string => `Trace for ${head} in splice.toml applies after restart.`,
   checkPending: 'A change in splice.toml applies after restart.',
   accountSignedOut: 'Its login is gone; sign in again under this label.',
-  nativeSpare: (name: string, pct: number, renew: readonly string[]): string => `${name} is at ${Math.round(pct)}% of its reported limit. No other login can take over. ${renew.length === 0 ? 'Check the other logins on Accounts before the limit.' : `Sign in again on ${renew.join(', ')} before the limit.`}`,
+  nativeSpare: (name: string, pct: number, window: AccountWindow, renew: readonly string[]): string => {
+    const span = window.length_known === false ? windowSpan(window) : window.seconds === 604800 ? 'weekly' : window.seconds === 18000 ? 'five-hour' : windowSpan(window);
+    const model = window.model === undefined ? '' : ` ${window.model}`;
+    const reset = window.reset_epoch_seconds === null ? '. Its reset has not been reported.' : `, which resets ${localZonedInstantText(window.reset_epoch_seconds)}.`;
+    return `${name} is at ${Math.round(pct)}% of its ${span}${model} limit${reset} No other login can take over. ${renew.length === 0 ? 'Check the other logins on Accounts before the limit.' : renew.map(LOGIN.signInAgain).join(' ')}`;
+  },
   seatEnded: 'Its assigned session ended; assign another in the team.',
   seatUnlisted: 'Its assigned session is not in the session list.',
   /** A head whose provider refuses turns, said with the instant the refusal lifts. */

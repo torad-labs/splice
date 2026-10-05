@@ -69,6 +69,20 @@ describe('the rows', () => {
     expect(rows([{ ...native, account: null }, { ...wrapped, account: null }])[0]?.servedBy).toEqual({ kind: 'unreported' });
   });
 
+  test('a native pool without selection names the carrying login and preserves the other-account count', () => {
+    const roster = [login('claude-splice', { kind: 'client', label: 'claude', display_name: 'Personal login', carrying_request: true,
+      login_place: { id: 'claude', command: 'claude' }, single_login: false }),
+    login('claude-splice', { kind: 'client', label: 'claude-splice', display_name: 'Separate login', carrying_request: false,
+      login_place: { id: 'claude-splice', command: 'claude-splice' }, single_login: false })];
+    const listed = (accounts: AccountRow[]) => modelRows([{ head: 'claude-splice', provider: 'anthropic', pinned_model: '', models: [model('synthetic')] }],
+      [head('claude-splice', 'client')], accounts, new Map([['claude-splice', 'anthropic']]));
+    expect(listed(roster)[0]?.servedBy).toEqual({ kind: 'login', name: 'Personal login', email: null, plan: null, others: 1 });
+    expect(listed(roster.map(row => ({ ...row, selected: row.label === 'claude-splice' })))[0]?.servedBy).toMatchObject({ kind: 'login', name: 'Separate login', others: 1 });
+    expect(listed(roster.map(row => ({ ...row, carrying_request: null })))[0]?.servedBy).toEqual({ kind: 'unreported' });
+    expect(listed(roster.map(row => ({ ...row, account: { uuid: 'synthetic-shared', email: null }, carrying_request: row.label === 'claude-splice' })))[0]?.servedBy)
+      .toEqual({ kind: 'login', name: 'Separate login', email: null, plan: null, others: 0 });
+  });
+
   test('an undeclared price stays null, a declared zero is zero, and a long-context tier is kept', () => {
     const [sol, , free, pro] = rows();
     expect([sol?.input, sol?.output]).toEqual([null, null]);

@@ -3,7 +3,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { STACK } from './stack';
-import { env, open, read } from './support';
+import { assertHealthy, env, open, read } from './support';
 
 async function pick(page: Page, scope: Locator, label: string, value: string) {
   await scope.getByRole('button', { name: label, exact: true }).click();
@@ -27,6 +27,26 @@ async function topologyWrites(page: Page) {
   });
   return writes;
 }
+
+test('the warning slider makes its chosen percentage visibly selected', async ({ page }) => {
+  await page.route(url => url.pathname === '/api/config', async route => {
+    const response = await route.fetch();
+    const body = await response.json();
+    await route.fulfill({ response, json: { ...body, effective: { ...body.effective, usageWarnPct: 80 } } });
+  });
+  const faults = await open(page, 'settings/general');
+  const slider = page.getByRole('slider', { name: 'Warn me when a command is this full', exact: true });
+  await expect(slider).toHaveValue('80');
+  await expect(page.locator('.slider b')).toHaveText('Selected: 80%');
+  await expect(page.locator('.slider small')).toContainText('50%');
+  await expect(page.locator('.slider small')).toContainText('100%');
+  await page.screenshot({ path: 'captures/console-walk-oct3/login-coherence-settings-wide.png' });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator('.slider b')).toHaveText('Selected: 80%');
+  expect(await page.locator('.slider').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await page.screenshot({ path: 'captures/console-walk-oct3/login-coherence-settings-narrow.png', fullPage: true });
+  await assertHealthy(page, faults);
+});
 
 test('the configuration editor writes compaction instructions without discarding model rules', async ({ page }) => {
   const writes = await topologyWrites(page);

@@ -79,6 +79,16 @@ test('native cards mark only the login whose credential carried the newest match
   expect(card(null)).not.toContain('known login used this login.');
 });
 
+test('an unidentified Claude folder login states the missing identity while keeping its one sign-in remedy', () => {
+  const card = (identity_verified: boolean) => renderToStaticMarkup(<QueryClientProvider client={new QueryClient()}>
+    <AccountCard account={{ ...claudeLogin('claude-splice'), identity_verified, account: null, available: false,
+      refusal: 'Access token expired. Sign in again on claude-splice in the console.' }} place="claude-splice" colour="claude" now={now} />
+  </QueryClientProvider>);
+  expect(card(false)).toContain('Login not identified yet.');
+  expect(card(false)).toContain('Sign in again on claude-splice in the console.');
+  expect(card(true)).not.toContain('Login not identified yet.');
+});
+
 test('native takeover status follows availability, not a credential file’s presence', () => {
   const card = (available: boolean | null, refusal?: string): string => renderToStaticMarkup(<QueryClientProvider client={new QueryClient()}>
     <AccountCard account={{ ...claudeLogin('claude-splice'), selector_key: 'native:claude-splice', available, ...(refusal === undefined ? {} : { refusal }) }} place="claude-splice" colour="claude" now={now} />

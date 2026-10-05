@@ -111,9 +111,10 @@ export const LOGIN_PENDING_EMPTY = {
 
 /** The line the operator reads back. Kept here rather than in the component so the wording for
  *  each step is testable, and so no step can silently lose its sentence. */
-export function stepMessage(state: LoginFlowState, purpose: 'add' | 'renew' = 'add'): string | null {
-  const renewed = purpose === 'renew' && state.status?.label != null
-    ? state.status.usage_set_aside !== null ? H.renewed(state.status.label) : H.renewedExisting(state.status.label)
+export function stepMessage(state: LoginFlowState, purpose: 'add' | 'renew' = 'add', displayName?: string): string | null {
+  const name = displayName ?? state.status?.label;
+  const renewed = purpose === 'renew' && state.status != null && name != null
+    ? state.status.usage_set_aside !== null ? H.renewed(name) : H.renewedExisting(name)
     : null;
   switch (state.step) {
     case 'awaiting':

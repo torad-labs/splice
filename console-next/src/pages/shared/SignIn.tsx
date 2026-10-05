@@ -12,7 +12,7 @@ import { useSignInTab } from './useSignInTab';
 
 /** The sign-in flow in a dialog: name the account, start the login, finish it in the browser with the code or link the
  *  daemon hands out, then wait for the head to restart with the account. A renewal begins at its existing label. */
-export function SignIn({ head, label = '', place, purpose, children }: { head: string; label?: string; place?: ClaudeLoginPlaceId; purpose: 'add' | 'renew'; children: ReactNode }) {
+export function SignIn({ head, label = '', displayName, place, purpose, children }: { head: string; label?: string; displayName?: string; place?: ClaudeLoginPlaceId; purpose: 'add' | 'renew'; children: ReactNode }) {
   const initialLabel = label || place || '';
   const [open, setOpen] = useState(false);
   const [state, dispatch] = useReducer(next, initialLoginState(initialLabel));
@@ -44,7 +44,7 @@ export function SignIn({ head, label = '', place, purpose, children }: { head: s
     }
   };
 
-  const message = stepMessage(state, purpose);
+  const message = stepMessage(state, purpose, displayName);
   const code = state.status?.user_code ?? null;
   const link = state.status?.verification_uri ?? state.status?.browser_url ?? null;
   const running = state.step === 'starting' || state.step === 'awaiting' || state.step === 'landed';

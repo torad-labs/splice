@@ -1,6 +1,9 @@
 import { expect, test } from '@playwright/test';
 import { open, assertHealthy, env } from './support';
 import { STACK } from './stack';
+import type { AccountWire, AccountsWire } from '../src/types/accounts';
+import type { HeadStatus } from '../src/types/core';
+import type { HeadCatalog } from '../src/types/models';
 
 test('native and separate sign-in dialogs say what Start login does without inventing a label', async ({ page }) => {
   await page.route(url => url.pathname === '/api/accounts', route => route.fulfill({ json: { accounts: [] } }));
@@ -106,6 +109,117 @@ test('an Accounts read failure stays visible while command kinds are still being
     release();
   }
 });
+
+for (const path of ['accounts', 'models/claude-splice', 'settings/tools']) {
+  test(path + ' edits colliding native and pool labels by explicit location, even for one subscription', async ({ page }) => {
+    let logins: AccountWire[] = [];
+    let loaded = false;
+    const calls: { method: string; kind: string | null; id: string | null; pathId: string; name?: string }[] = [];
+    await page.route(url => url.pathname === '/api/accounts', async route => {
+      if (!loaded) {
+        const response = await route.fetch();
+        const body = await response.json() as AccountsWire;
+        const base = body.accounts.find(row => row.heads.includes(STACK.oauthHead));
+        if (base === undefined) throw new Error('the isolated stack must supply its synthetic login');
+        const common: AccountWire = { ...base, provider: 'anthropic', heads: ['claude-splice'], kind: 'claude-account', label: 'claude', credential_path: null, primary: false, selected: false, pinned: false, next_target: false, can_remove: true, can_rename: true, account: { uuid: 'synthetic-shared-subscription', email: 'verified@example.invalid' }, identity_verified: true };
+        logins = [
+          { ...common, kind: 'client', display_name: 'Personal login', selected: true, login_place: { id: 'claude', command: 'claude' }, edit_target: { kind: 'native', id: 'claude' } },
+          { ...common, display_name: 'Work login', identity_verified: false, account: { uuid: 'synthetic-shared-subscription', email: 'unverified@example.invalid' }, edit_target: { kind: 'pool', id: 'claude' } },
+          { ...common, label: 'locked', display_name: 'Locked login', can_remove: false, can_rename: false, account: { uuid: 'synthetic-shared-subscription', email: null }, edit_target: { kind: 'pool', id: 'locked' } },
+        ];
+        loaded = true;
+      }
+      await route.fulfill({ json: { accounts: logins } });
+    });
+    await page.route(url => url.pathname === '/api/heads', async route => {
+      const response = await route.fetch();
+      const body = await response.json() as { heads: HeadStatus[] };
+      const base = body.heads.find(row => row.key === STACK.oauthHead);
+      if (base === undefined) throw new Error('synthetic command is missing');
+      body.heads.push({ ...base, key: 'claude-splice', label: 'claude-splice', authKind: 'client' });
+      await route.fulfill({ response, json: body });
+    });
+    await page.route(url => url.pathname === '/api/models', async route => {
+      const response = await route.fetch();
+      const body = await response.json() as { heads: HeadCatalog[] };
+      const base = body.heads.find(row => row.head === STACK.oauthHead);
+      if (base === undefined) throw new Error('synthetic model is missing');
+      body.heads.push({ ...base, head: 'claude-splice', provider: 'anthropic' });
+      await route.fulfill({ response, json: body });
+    });
+    await page.route(url => url.pathname === '/api/status', async route => {
+      const response = await route.fetch();
+      const body = await response.json() as { registry: { key: string; label: string; family: string | null }[] };
+      const base = body.registry.find(row => row.key === STACK.oauthHead);
+      if (base === undefined) throw new Error('synthetic registry row is missing');
+      body.registry.push({ ...base, key: 'claude-splice', label: 'claude-splice', family: 'anthropic' });
+      await route.fulfill({ response, json: body });
+    });
+    await page.route(url => url.pathname === '/api/auth/claude-splice/order', route => route.fulfill({ json: {
+      head: 'claude-splice', order: [], effective_order: ['claude'], single_account: true,
+    } }));
+    await page.route(url => url.pathname === '/api/claude-head', route => route.fulfill({ json: {
+      mode: 'separate', resolves_to: null, shim_path: '/synthetic/splice-launch', real_binary_path: null,
+      claude_logins: { count: 1, selected: 'saved-copy', labels: ['saved-copy'], constraint: '' },
+    } }));
+    // Every edit is intercepted. No Remove can reach any real credential store.
+    await page.route(url => url.pathname.startsWith('/api/auth/') && url.pathname.includes('/accounts/'), async route => {
+      const request = route.request();
+      const url = new URL(request.url());
+      const kind = url.searchParams.get('target_kind');
+      const id = url.searchParams.get('target_id');
+      const pathId = decodeURIComponent(url.pathname.split('/').at(-1) ?? '');
+      const target = logins?.find(row => row.edit_target?.kind === kind && row.edit_target.id === id);
+      if (target === undefined || id !== pathId) throw new Error('edit did not identify its synthetic credential location');
+      if (request.method() === 'PATCH') {
+        const name = (request.postDataJSON() as { label: string }).label;
+        calls.push({ method: 'PATCH', kind, id, pathId, name });
+        target.display_name = name;
+      } else if (request.method() === 'DELETE') {
+        calls.push({ method: 'DELETE', kind, id, pathId });
+        logins = logins?.filter(row => row !== target) ?? [];
+      } else throw new Error('unexpected synthetic account edit method');
+      await route.fulfill({ json: { ok: true } });
+    });
+    const faults = await open(page, path);
+    const item = (name: string) => page.locator(path === 'accounts' ? 'li.account-card' : 'li.account').filter({ has: page.getByText(name, { exact: true }) });
+    await expect(item('Personal login')).toBeVisible();
+    await expect(item('Work login')).toBeVisible();
+    await expect(item('Personal login')).toContainText('verified@example.invalid');
+    await expect(page.getByRole('main')).not.toContainText('unverified@example.invalid');
+    await expect(item('Locked login').getByRole('button', { name: 'Remove', exact: true })).toHaveCount(0);
+    await expect(item('Locked login').getByRole('button', { name: 'Rename', exact: true })).toHaveCount(0);
+    if (path === 'models/claude-splice') {
+      // Same UUID collapses subscription facts, never physical management rows.
+      await expect(page.getByRole('main')).not.toContainText('Pool · 2 accounts');
+    }
+    if (path === 'settings/tools') await expect(page.getByRole('main')).toContainText('Saved Claude login copies');
+    for (const [kind, name] of [['native', 'Personal login'], ['pool', 'Work login']] as const) {
+      const next = name + ' renamed';
+      await item(name ?? '').getByRole('button', { name: 'Rename', exact: true }).click();
+      let dialog = page.getByRole('dialog');
+      await expect(dialog).toContainText(name ?? '');
+      await dialog.getByRole('textbox', { name: 'New name', exact: true }).fill(next);
+      await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect(item(next)).toBeVisible();
+      expect(logins?.find(row => row.edit_target?.kind === kind)?.label).toBe('claude');
+      await item(next).getByRole('button', { name: 'Remove', exact: true }).click();
+      dialog = page.getByRole('dialog');
+      await expect(dialog).toContainText(next);
+      await dialog.getByRole('button', { name: 'Remove', exact: true }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect(item(next)).toHaveCount(0);
+    }
+    expect(calls).toEqual([
+      { method: 'PATCH', kind: 'native', id: 'claude', pathId: 'claude', name: 'Personal login renamed' },
+      { method: 'DELETE', kind: 'native', id: 'claude', pathId: 'claude' },
+      { method: 'PATCH', kind: 'pool', id: 'claude', pathId: 'claude', name: 'Work login renamed' },
+      { method: 'DELETE', kind: 'pool', id: 'claude', pathId: 'claude' },
+    ]);
+    await assertHealthy(page, faults);
+  });
+}
 
 for (const path of ['accounts', 'settings', 'settings/health']) {
   test(path + ' remains a loading state while its first daemon reads are pending', async ({ page }) => {

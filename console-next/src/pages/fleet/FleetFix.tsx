@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { failureText } from '../../api/client';
 import { useSwitchAccount } from '../../api/auth';
 import { useHeadAction } from '../../api/queries';
-import { isExcluded } from '../../lib/accounts';
+import { accountEmail, accountIdentity, accountName, isExcluded } from '../../lib/accounts';
 import { startCommandOf } from '../../lib/fleet';
 import { shellWord } from '../../lib/shell';
 import type { FleetFix as Fix } from '../../lib/fleet';
@@ -67,7 +67,7 @@ export function FleetFix({ fix, head, pool, now, keyCommand = null }: { fix: Fix
     }
     case 'sign-in':
       return (
-        <SignIn head={head.key} purpose="renew" {...(pool[0]?.label != null ? { label: pool[0].label } : {})}>
+        <SignIn head={head.key} purpose="renew" {...(pool[0] === undefined ? {} : { displayName: accountName(pool[0]) })} {...(pool[0]?.label != null ? { label: pool[0].label } : {})}>
           <Button kind="go" small>{F.signIn}</Button>
         </SignIn>
       );
@@ -85,8 +85,8 @@ export function FleetFix({ fix, head, pool, now, keyCommand = null }: { fix: Fix
             <Menu.Portal>
               <Menu.Content className="menu" align="start" sideOffset={6} collisionPadding={8}>
                 {choices.map((account) => (
-                  <Menu.Item key={account.label} className="menu-item" onSelect={() => pin.mutate({ head: head.key, label: account.label ?? '' })}>
-                    {account.label}
+                  <Menu.Item key={accountIdentity(account)} className="menu-item" onSelect={() => pin.mutate({ head: head.key, label: account.label ?? '' })}>
+                    {accountName(account)}{accountEmail(account) === null ? null : <small>{accountEmail(account)}</small>}
                   </Menu.Item>
                 ))}
               </Menu.Content>

@@ -56,6 +56,25 @@ describe('the claude command row', () => {
     expect(html).not.toContain('None chosen');
   });
 
+  test('live logins remain separate editable locations, with names and only verified email', () => {
+    const common = { kind: 'claude-account', provider: 'anthropic', label: 'claude', credential_path: null, single_login: false, primary: false, selected: false, available: true, pinned: false, next_target: false, credential_present: true, windows: [], heads: ['claude-splice'] };
+    const accounts = [
+      { ...common, display_name: 'Personal login', identity_verified: true, account: { uuid: 'synthetic-shared', email: 'verified@example.invalid' }, can_remove: true, can_rename: true, edit_target: { kind: 'native', id: 'claude' } },
+      { ...common, display_name: 'Work login', identity_verified: false, account: { uuid: 'synthetic-shared', email: 'unverified@example.invalid' }, can_remove: true, can_rename: false, edit_target: { kind: 'pool', id: 'claude' } },
+    ];
+    const html = render(<ClaudeHead />, client => {
+      seedCard(card())(client);
+      client.setQueryData(['accounts', '/api/accounts'], { accounts });
+    });
+    expect(html).toContain('<b>Personal login</b>');
+    expect(html).toContain('<b>Work login</b>');
+    expect(html).toContain('verified@example.invalid');
+    expect(html).not.toContain('unverified@example.invalid');
+    expect(html.match(/>Remove<\/button>/g)).toHaveLength(2);
+    expect(html.match(/>Rename<\/button>/g)).toHaveLength(1);
+    expect(html).toContain('Saved Claude login copies');
+  });
+
   test('a claude that is not on the path says so rather than printing a blank', () => {
     expect(render(<ClaudeHead />, seedCard(card({ resolves_to: null, claude_logins: { count: 0, selected: null, labels: [], constraint: '' } })))).toContain('Nothing named claude');
   });

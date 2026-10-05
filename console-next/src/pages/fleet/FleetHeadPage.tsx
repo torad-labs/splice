@@ -2,7 +2,7 @@ import { Link, useParams, useSearchParams } from 'react-router';
 import { useKeyStore } from '../../api/auth';
 import { useAccountOrder } from '../../api/account-order';
 import { useAccounts, useAuth, useHealth, useHeads, useSessions, useStatus, useUsage } from '../../api/queries';
-import { canRefresh, poolOf } from '../../lib/accounts';
+import { accountIdentity, canRefresh, poolOf } from '../../lib/accounts';
 import { fleetCard } from '../../lib/fleet';
 import { isKeyHead } from '../../lib/heads';
 import { planWindows } from '../../lib/usage';
@@ -62,6 +62,7 @@ export function FleetHeadPage() {
   const oauth = !keyless && OAUTH.has(head.authKind);
   const rows = accounts.data?.accounts ?? [];
   const pool = poolOf(rows, head.key);
+  const logins = rows.filter(row => row.kind !== 'api-key' && row.heads.includes(head.key));
   const policy = order.data === undefined ? null : 'unavailable' in order.data ? A.orderUnavailable : order.data.single_account ? A.orderSingleAccount : order.data.order.length > 0 ? A.orderYours : A.orderDefault;
   const live = new Map<string, number>();
   for (const row of sessions.data?.sessions ?? []) if (row.availability !== 'gone') live.set(row.head, (live.get(row.head) ?? 0) + 1);
@@ -95,12 +96,12 @@ export function FleetHeadPage() {
             <>
               {windows.length === 0 ? <p className="hint">{facts.none ?? D.noWindows}</p> : <WindowBars windows={windows} now={now} />}
               <h2 className="sub-head">{D.accounts}</h2>
-              {pool.length === 0 ? <p className="hint">{D.noAccounts}</p> : (
+              {logins.length === 0 ? <p className="hint">{D.noAccounts}</p> : (
                 <>
                 {pool.length > 1 ? policy !== null ? <p className="hint">{policy}</p> : order.isError ? <Fault message={failureText(order.error)} onRetry={() => void order.refetch()} /> : <p className="hint">{A.orderReading}</p> : null}
                 <ul className="accounts">
-                  {pool.map((account) => (
-                    <AccountRowView key={account.credential_path ?? account.label ?? account.kind} account={account} now={now} pooled={pool.length > 1 || account.single_login === false} pool={pool} />
+                  {logins.map((account) => (
+                    <AccountRowView key={accountIdentity(account)} account={account} now={now} pooled={pool.length > 1 || account.single_login === false} pool={pool} />
                   ))}
                 </ul>
                 </>

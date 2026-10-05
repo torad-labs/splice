@@ -348,6 +348,15 @@ function windowUsedTextOf(row: AccountRow): string {
 }
 
 describe('the accounts wire becomes the page model', () => {
+  test('display names and exact native/pool edit targets survive colliding stable labels', () => {
+    const native = wireRow({ label: 'claude', kind: 'client', display_name: 'Personal login', identity_verified: true, can_remove: true, can_rename: true, edit_target: { kind: 'native', id: 'claude' } });
+    const pooled = wireRow({ label: 'claude', display_name: 'Work login', identity_verified: false, can_remove: false, can_rename: true, edit_target: { kind: 'pool', id: 'claude' } });
+    const rows = accountsFromWire({ accounts: [native, pooled] }).accounts;
+    expect(rows).toMatchObject([
+      { label: 'claude', display_name: 'Personal login', identity_verified: true, can_remove: true, can_rename: true, edit_target: { kind: 'native', id: 'claude' } },
+      { label: 'claude', display_name: 'Work login', identity_verified: false, can_remove: false, can_rename: true, edit_target: { kind: 'pool', id: 'claude' } },
+    ]);
+  });
   test('the two Claude folders retain distinct identities even when they hold the same account UUID', () => {
     const rows = accountsFromWire({ accounts: [
       wireRow({ provider: 'anthropic', kind: 'client', label: 'claude', login_place: { id: 'claude', command: 'claude' }, account: { uuid: 'synthetic-same', email: 'synthetic@example.invalid' }, held: null, held_until_epoch_seconds: null, failover_positions: { 'claude-splice': 1 }, heads: ['claude-splice'] }),

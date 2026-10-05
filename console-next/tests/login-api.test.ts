@@ -23,17 +23,40 @@ afterEach(() => {
 });
 
 describe('an account edit', () => {
+  test('colliding native and pool ids send their own explicit location on Remove and Rename', async () => {
+    const { auth } = await fresh();
+    const fetchMock = vi.fn(async () => reply(200, { ok: true }));
+    vi.stubGlobal('fetch', fetchMock);
+    for (const kind of ['native', 'pool'] as const) {
+      const target = { kind, id: 'claude' };
+      await auth.removeAccount('claude-splice', target);
+      await auth.relabelAccount('claude-splice', target, 'New display name');
+    }
+    const calls = fetchMock.mock.calls as unknown as [string, RequestInit][];
+    expect(calls.map(([path, init]) => {
+      const url = new URL(path, 'http://synthetic.invalid');
+      return [init.method, url.pathname, url.searchParams.get('target_kind'), url.searchParams.get('target_id')];
+    })).toEqual([
+      ['DELETE', '/api/auth/claude-splice/accounts/claude', 'native', 'claude'],
+      ['PATCH', '/api/auth/claude-splice/accounts/claude', 'native', 'claude'],
+      ['DELETE', '/api/auth/claude-splice/accounts/claude', 'pool', 'claude'],
+      ['PATCH', '/api/auth/claude-splice/accounts/claude', 'pool', 'claude'],
+    ]);
+    expect(calls.filter(([, init]) => init.method === 'PATCH').map(([, init]) => init.body)).toEqual([
+      JSON.stringify({ label: 'New display name' }), JSON.stringify({ label: 'New display name' }),
+    ]);
+  });
   test('names the head the pool rides, and an unknown head is an error, never a route the daemon does not serve', async () => {
     const { auth } = await fresh();
     const fetchMock = vi.fn(async () => reply(200, { ok: true }));
     vi.stubGlobal('fetch', fetchMock);
-    await auth.removeAccount('claudex', 'work 2');
-    await auth.relabelAccount('claudex', 'work 2', 'spare');
+    await auth.removeAccount('claudex', { kind: 'pool', id: 'work 2' });
+    await auth.relabelAccount('claudex', { kind: 'pool', id: 'work 2' }, 'spare');
     expect((fetchMock.mock.calls as unknown as [string, RequestInit][]).map(([path, init]) => `${init.method} ${path}`)).toEqual([
-      'DELETE /api/auth/claudex/accounts/work%202', 'PATCH /api/auth/claudex/accounts/work%202',
+      'DELETE /api/auth/claudex/accounts/work%202?target_kind=pool&target_id=work+2', 'PATCH /api/auth/claudex/accounts/work%202?target_kind=pool&target_id=work+2',
     ]);
     vi.stubGlobal('fetch', vi.fn(async () => reply(404, { error: 'unknown head' })));
-    await expect(auth.removeAccount('chatgpt-oauth', 'work')).rejects.toMatchObject({ status: 404, message: 'unknown head' });
+    await expect(auth.removeAccount('chatgpt-oauth', { kind: 'pool', id: 'work' })).rejects.toMatchObject({ status: 404, message: 'unknown head' });
   });
 });
 
@@ -70,7 +93,7 @@ describe('the paths', () => {
     expect(auth.loginStatusPath('a/b', '../c?d')).toBe('/api/auth/a%2Fb/login/..%2Fc%3Fd');
     expect(auth.refreshPath('a/b')).toBe('/api/auth/a%2Fb/refresh');
     expect(auth.switchPath('a/b')).toBe('/api/auth/a%2Fb/switch');
-    expect(auth.accountPath('claude', 'work 2/x')).toBe('/api/auth/claude/accounts/work%202%2Fx');
+    expect(auth.accountPath('claude', { kind: 'pool', id: 'work 2/x' })).toBe('/api/auth/claude/accounts/work%202%2Fx?target_kind=pool&target_id=work+2%2Fx');
     expect(auth.keyPath('A/B')).toBe('/api/keys/A%2FB');
   });
 });

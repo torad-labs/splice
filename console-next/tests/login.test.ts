@@ -108,6 +108,15 @@ describe('renew an account under its own label', () => {
     expect(message).toContain('next request');
   });
 
+  test('renewal words use the display name while the flow retains its stable label', () => {
+    const live = next({ ...IDLE, label: 'work' }, { kind: 'status', payload: renewed() });
+    expect(stepMessage(live, 'renew', 'Work login')).toBe(LOGIN.renewed('Work login'));
+    const existing = next({ ...IDLE, label: 'work' }, { kind: 'status', payload: renewed({ usage_set_aside: null }) });
+    expect(stepMessage(existing, 'renew', 'Work login')).toBe(LOGIN.renewedExisting('Work login'));
+    expect(live.label).toBe('work');
+    expect(live.status?.label).toBe('work');
+  });
+
   test('a renew with no usage record to set aside says signed in again, not renewed', () => {
     const live = next({ ...IDLE, label: 'work' }, { kind: 'status', payload: renewed({ usage_set_aside: null }) });
     expect(stepMessage(live, 'renew')).toBe(LOGIN.renewedExisting('work'));

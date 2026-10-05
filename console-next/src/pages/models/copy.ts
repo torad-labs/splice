@@ -26,9 +26,6 @@ export const MT = {
   local: 'This computer',
   unreported: 'Not reported',
   signedOut: 'Not signed in',
-  signedIn: 'Signed in',
-  /** The plan as the command's card prints it, capitalised: the name a person knows the login by. */
-  onPlan: (plan: string): string => `Signed in, ${plan.charAt(0).toUpperCase()}${plan.slice(1)} plan`,
   others: (name: string, count: number): string => `${name} and ${count} more`,
   noPrice: 'Not declared',
   noWindow: 'Not known',

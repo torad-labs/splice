@@ -13,6 +13,11 @@ import type { AccountRow, AccountWindow, AccountWire, AccountsPayload, AccountsW
 import { fmtDurationS, timeAgo } from './format';
 import { W } from './words';
 
+/** One name across every login surface; older replies use the same stable-label fallback. */
+export const accountName = (account: AccountRow): string => account.display_name ?? account.label ?? account.login_place?.command ?? account.heads[0] ?? account.kind;
+export const accountEmail = (account: AccountRow): string | null => account.identity_verified === true ? account.account?.email ?? null : null;
+export const accountIdentity = (account: AccountRow): string => account.login_place?.id ?? account.credential_path ?? `${account.edit_target?.kind ?? account.kind}:${account.edit_target?.id ?? account.label ?? account.heads.join(',')}`;
+
 /** The colour a strip's edge wears. */
 export type Edge = 'green' | 'amber' | 'red' | 'grey';
 
@@ -229,7 +234,7 @@ export function steppedPast(account: AccountRow, pool: readonly AccountRow[], no
   const window = nearestWindow(account, nowMs);
   if (window === null || (window.used_percent ?? 0) < EXHAUSTED_AT_PERCENT) return null;
   const serving = pool.find((other) => other !== account && other.selected === true && other.label !== null && isServable(other) && !isExcluded(other, nowMs));
-  return serving?.label == null ? null : { serving: serving.label, window };
+  return serving === undefined ? null : { serving: accountName(serving), window };
 }
 
 export interface AccountState {
@@ -372,6 +377,11 @@ function accountFromWire(wire: AccountWire): AccountRow {
   return {
     kind: wire.kind,
     label: wire.label,
+    ...(wire.display_name === undefined ? {} : { display_name: wire.display_name }),
+    ...(wire.identity_verified === undefined ? {} : { identity_verified: wire.identity_verified }),
+    ...(wire.can_remove === undefined ? {} : { can_remove: wire.can_remove }),
+    ...(wire.can_rename === undefined ? {} : { can_rename: wire.can_rename }),
+    ...(wire.edit_target === undefined ? {} : { edit_target: wire.edit_target }),
     single_login: wire.single_login,
     credential_path: wire.credential_path,
     plan: wire.plan,

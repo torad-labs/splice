@@ -4,18 +4,16 @@ import { failureText } from '../../api/client';
 import { keys } from '../../api/queries';
 import { awaitRefetch } from '../../api/refetch';
 import { familyName } from '../../lib/heads';
+import { accountEmail, accountName } from '../../lib/accounts';
 import type { AccountRow, ClaudeLoginPlaceId } from '../../types/accounts';
 import type { ModelColour } from '../../lib/model';
 import { Button, State, Window } from '../../ui';
-import { RemoveAccount } from '../shared/RemoveAccount';
+import { AccountEdits } from '../shared/AccountEdits';
 import { SignIn } from '../shared/SignIn';
 import { AccountLimits } from './AccountLimits';
-import { R } from '../../lib/words-remove';
 import { A } from './copy';
 
-export function accountIdentity(row: AccountRow): string {
-  return row.login_place?.id ?? row.credential_path ?? `${row.kind}:${row.label ?? row.heads.join(',')}`;
-}
+export { accountIdentity } from '../../lib/accounts';
 
 export function AccountCard({ account, place, colour, now, commandLabels, localRuntime = false }: {
   account: AccountRow | null; place?: ClaudeLoginPlaceId; colour: ModelColour; now: number; commandLabels?: readonly string[]; localRuntime?: boolean;
@@ -25,15 +23,12 @@ export function AccountCard({ account, place, colour, now, commandLabels, localR
   const present = account?.credential_present;
   const keyed = account?.kind === 'api-key';
   const commands = (commandLabels ?? account?.heads ?? []).join(' · ');
-  const name = keyed || localRuntime ? commands : account?.account?.email ?? account?.label ?? (place ?? A.primary);
+  const name = keyed || localRuntime ? commands : account === null ? place ?? A.primary : accountName(account);
+  const email = account === null ? null : accountEmail(account);
   const held = account?.held === true;
   const renewing = present === true || (place === undefined && account?.label != null);
   const refused = Boolean(account?.refusal);
   const excluded = account?.auth_excluded_until_epoch_millis != null && account.auth_excluded_until_epoch_millis > now;
-  // An added account can be taken off the command it was added to. The primary login cannot: for a Claude command
-  // that is the caller's own Claude Code sign-in, which splice forwards and has never held, and for every other
-  // provider it is the login the pool is built from.
-  const removable = place === undefined && account?.label != null && account.primary !== true && head !== '';
   const refresh = useMutation({
     mutationFn: async () => {
       if (place !== undefined) { await refreshClaudeLogin(place); return; }
@@ -46,6 +41,7 @@ export function AccountCard({ account, place, colour, now, commandLabels, localR
   return (
     <Window as="li" colour={colour} className="card account-card" attention={!localRuntime && (refused || excluded || held || present === false)}>
       <div className="bar"><h3>{name}</h3><State tone={localRuntime ? 'idle' : refused || excluded ? 'stuck' : held ? 'quota' : present ? 'work' : present === false ? 'stuck' : 'wait'}>{state}</State></div>
+      {email === null ? null : <p className="quiet-line">{email}</p>}
       <div className="account-place">
         {place === undefined ? <p>{commands}{account?.plan ? ` · ${account.plan}` : ''}</p> : <><b>{place}</b><p>{place === 'claude' ? A.nativeWhy : A.spliceWhy}</p></>}
       </div>
@@ -59,11 +55,11 @@ export function AccountCard({ account, place, colour, now, commandLabels, localR
       {account?.refusal || account?.auth_exclusion_reason ? <p className="quiet-line alert">{account.refusal ?? account.auth_exclusion_reason}</p> : null}
       {!localRuntime && present === undefined ? <p className="hint">{A.unknownLoginWhy}</p> : null}
       {keyed || localRuntime ? null : <div className="account-acts">
-        <SignIn head={head} {...(place === undefined ? {} : { place })} label={account?.label ?? ''} purpose={renewing ? 'renew' : 'add'}>
+        <SignIn head={head} {...(place === undefined ? {} : { place })} label={account?.label ?? ''} displayName={name} purpose={renewing ? 'renew' : 'add'}>
           <Button small disabled={refused} kind={present ? 'quiet' : 'go'}>{renewing ? A.renew : A.signIn}</Button>
         </SignIn>
         {present ? <Button small disabled={refresh.isPending} onClick={() => refresh.mutate()}>{refresh.isPending ? A.refreshing : A.refresh}</Button> : null}
-        {removable && account?.label != null ? <RemoveAccount head={head} label={account.label}><Button small kind="danger">{R.remove}</Button></RemoveAccount> : null}
+        {account === null ? null : <AccountEdits account={account} head={head} />}
         {refresh.isError ? <span className="hint alert" role="alert">{failureText(refresh.error)}</span> : null}
       </div>}
     </Window>

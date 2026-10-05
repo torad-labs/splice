@@ -18,10 +18,7 @@ function accountWords(served: ServedBy): string {
     case 'local': return MT.local;
     case 'unreported': return MT.unreported;
     case 'signedOut': return MT.signedOut;
-    case 'login': {
-      const name = served.name ?? (served.plan === null ? MT.signedIn : MT.onPlan(served.plan));
-      return served.others === 0 ? name : MT.others(name, served.others);
-    }
+    case 'login': return served.others === 0 ? served.name : MT.others(served.name, served.others);
   }
 }
 
@@ -45,7 +42,7 @@ function Row({ row }: { row: ModelTableRow }) {
         {row.label === row.id ? null : <code>{row.id}</code>}
       </th>
       <td>{row.command}</td>
-      <td>{accountWords(row.servedBy)}</td>
+      <td>{accountWords(row.servedBy)}{row.servedBy.kind === 'login' && row.servedBy.email != null ? <small>{row.servedBy.email}</small> : null}</td>
       <td className="num">{row.window === null ? <span className="none">{MT.noWindow}</span> : fmtTokens(row.window)}</td>
       <td className="num"><Price usd={row.input} long={row.longContext} side="input" /></td>
       <td className="num"><Price usd={row.output} long={row.longContext} side="output" /></td>

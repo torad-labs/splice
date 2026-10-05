@@ -1,4 +1,5 @@
 source	sha256	disposition	destination	reason
+console-next/src/pages/shared/AccountEdits.tsx	47d6812636c06521ea51506db97b5c0cb174c0f529a6454ae6d7cc20f377dc89	created		Shared login edits honor daemon capabilities and send explicit credential locations independently of display names.
 features/turns/src/main/kotlin/splice/head/trace/TracePolicyRefusal.kt	221f708a93ce31bab3b51d3a57331915c7051403c1eb40bc4b15e48908294983	created		Decoded refusal causes override stale retained sentences; optional final provider terminals supply explicit words without rewriting stored records.
 features/turns/src/main/kotlin/splice/head/trace/TraceTurnSummary.kt	5e070a34f67efe3cebbb1fa3715ddf5bd0a8baf1a1859ff37ef28c4cac2d69aa	created		Selected trace summary projection separates cause-corrected explanations from reply encoding and raw retained records.
 features/accounts/src/main/kotlin/splice/accounts/pool/AccountRowManagement.kt	3e73657deff7a9b1fb5989b7738996fce288b2fc2b6e55f2b3d7cc3859797607	created		One roster presentation boundary renders credential-proved display identity and explicitly addressed edit capabilities.

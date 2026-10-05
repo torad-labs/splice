@@ -1,12 +1,10 @@
-import * as Dialog from '@radix-ui/react-dialog';
 import { useState } from 'react';
 import { failureText } from '../../api/client';
-import { isPendingRoute, useRelabelAccount, useSwitchAccount, useUnpinAccount } from '../../api/auth';
-import { R } from '../../lib/words-remove';
-import { accountState, exclusionText, isExcluded, isServable, nextRuleOf, refusalText, steppedPast, windowSpan, windowUsedText } from '../../lib/accounts';
+import { isPendingRoute, useSwitchAccount, useUnpinAccount } from '../../api/auth';
+import { accountEmail, accountName, accountState, exclusionText, isExcluded, isServable, nextRuleOf, refusalText, steppedPast, windowSpan, windowUsedText } from '../../lib/accounts';
 import type { AccountRow } from '../../types/accounts';
-import { Button, Close } from '../../ui';
-import { RemoveAccount } from '../shared/RemoveAccount';
+import { Button } from '../../ui';
+import { AccountEdits } from '../shared/AccountEdits';
 import { D } from './copy';
 
 const windowsText = (account: AccountRow): string =>
@@ -23,10 +21,9 @@ function useNote() {
 export function AccountRowView({ account, now, pooled, pool }: { account: AccountRow; now: number; pooled: boolean; pool: readonly AccountRow[] }) {
   const pick = useSwitchAccount();
   const unpin = useUnpinAccount();
-  const relabel = useRelabelAccount();
   const { note, settle, fail } = useNote();
-  const [renaming, setRenaming] = useState(false);
-  const [name, setName] = useState(account.label ?? '');
+  const name = accountName(account);
+  const email = accountEmail(account);
   const head = account.heads[0] ?? '';
   const label = account.label;
   const state = accountState(account, now, pool);
@@ -46,49 +43,23 @@ export function AccountRowView({ account, now, pooled, pool }: { account: Accoun
   return (
     <li className="account">
       <div className="account-main">
-        <b>{label ?? account.plan ?? account.kind}</b>
+        <b>{name}</b>
+        {email === null ? null : <span className="hint">{email}</span>}
         <span className="state-word">{state.label}</span>
         {shown.map((mark) => (
           <span key={mark} className="tag">{mark}</span>
         ))}
         <span className="windows-text">{windowsText(account)}</span>
       </div>
-      {past !== null ? <p className="hint">{D.steppedPast(label ?? D.thisAccount, D.windowWord(past.window.length_known === false ? null : past.window.seconds, windowSpan(past.window)), past.serving)}</p> : isExcluded(account, now) ? <p className="hint">{exclusionText(account)}</p> : null}
+      {past !== null ? <p className="hint">{D.steppedPast(name, D.windowWord(past.window.length_known === false ? null : past.window.seconds, windowSpan(past.window)), past.serving)}</p> : isExcluded(account, now) ? <p className="hint">{exclusionText(account)}</p> : null}
       {rule === null ? null : <p className="hint">{D.nextBecause(D.nextRule[rule])}</p>}
       {refusal === null ? null : <p className="hint alert" role="alert">{refusal}</p>}
       {refusal === null && !account.credential_present ? <p className="hint">{D.noCredential}</p> : null}
-      {label === null ? null : (
-        <div className="account-acts">
-          {canSwitch ? <Button small disabled={pick.isPending} onClick={() => pick.mutate({ head, label }, { onSuccess: settle, onError: fail })}>{D.switch}</Button> : null}
-          {account.pinned === true ? <Button small disabled={unpin.isPending} onClick={() => unpin.mutate(head, { onSuccess: settle, onError: fail })}>{D.unpin}</Button> : null}
-          <Dialog.Root open={renaming} onOpenChange={setRenaming}>
-            <Dialog.Trigger asChild><Button small>{D.relabel}</Button></Dialog.Trigger>
-            <Dialog.Portal>
-              <Dialog.Overlay className="scrim" />
-              <Dialog.Content className="dialog">
-                <div className="dialog-head">
-                  <Dialog.Title>{D.relabelAsk}</Dialog.Title>
-                  <Dialog.Close asChild><button type="button" className="icon-btn" aria-label={D.cancel}><Close /></button></Dialog.Close>
-                </div>
-                <Dialog.Description className="hint">{label}</Dialog.Description>
-                <form
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    relabel.mutate({ head, label, next: name.trim() }, { onSuccess: (answer) => { settle(answer); setRenaming(false); }, onError: fail });
-                  }}
-                >
-                  <label className="field">
-                    <span className="eyebrow">{D.newName}</span>
-                    <input className="input" value={name} onChange={(event) => setName(event.target.value)} autoFocus />
-                  </label>
-                  <Button kind="go" type="submit" disabled={name.trim() === '' || name.trim() === label || relabel.isPending}>{D.save}</Button>
-                </form>
-              </Dialog.Content>
-            </Dialog.Portal>
-          </Dialog.Root>
-          <RemoveAccount head={head} label={label}><Button small kind="danger">{R.remove}</Button></RemoveAccount>
-        </div>
-      )}
+      <div className="account-acts">
+        {canSwitch && label !== null ? <Button small disabled={pick.isPending} onClick={() => pick.mutate({ head, label }, { onSuccess: settle, onError: fail })}>{D.switch}</Button> : null}
+        {account.pinned === true ? <Button small disabled={unpin.isPending} onClick={() => unpin.mutate(head, { onSuccess: settle, onError: fail })}>{D.unpin}</Button> : null}
+        <AccountEdits account={account} head={head} />
+      </div>
       {note === null ? null : <p className="hint alert" role="alert">{note}</p>}
     </li>
   );

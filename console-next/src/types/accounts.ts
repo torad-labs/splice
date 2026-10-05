@@ -13,8 +13,17 @@
 
 export type ClaudeLoginPlaceId = 'claude' | 'claude-splice';
 
+/** The daemon's explicit credential location, independent of its displayed name. */
+export interface AccountEditTarget { kind: 'native' | 'pool'; id: string }
+
 /** Additive management facts. Optional only for a daemon that predates account-place management. */
 export interface AccountManagement {
+  /** Additive for older daemon replies; absence never grants edit permission. */
+  display_name?: string;
+  identity_verified?: boolean;
+  can_remove?: boolean;
+  can_rename?: boolean;
+  edit_target?: AccountEditTarget | null;
   provider?: string;
   login_place?: { id: ClaudeLoginPlaceId; command: string } | null;
   account?: { uuid: string; email: string | null } | null;

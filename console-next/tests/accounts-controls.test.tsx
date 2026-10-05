@@ -50,6 +50,18 @@ test.each([
   expect(html).not.toContain('drag-handle');
 });
 
+test('order controls show the shared display name and only verified email, not stable keys', () => {
+  const common: AccountRow = { kind: 'chatgpt-oauth', label: 'stable-work', display_name: 'Work login', identity_verified: true, account: { uuid: 'synthetic-work', email: 'verified@example.invalid' }, single_login: false, credential_path: null, credential_present: true, windows: [], heads: ['synthetic-command'], primary: false, selected: false, available: true, pinned: false, next_target: false };
+  const client = new QueryClient();
+  client.setQueryData(['account-order', 'synthetic-command'], { head: 'synthetic-command', order: ['stable-work', 'stable-home'], effective_order: ['stable-work', 'stable-home'], single_account: false });
+  const html = renderToStaticMarkup(<QueryClientProvider client={client}><FailoverOrder head="synthetic-command" accounts={[common, { ...common, label: 'stable-home', display_name: 'Home login', identity_verified: false, account: { uuid: 'synthetic-home', email: 'unverified@example.invalid' } }]} /></QueryClientProvider>);
+  expect(html).toContain('Work login · verified@example.invalid');
+  expect(html).toContain('Home login');
+  expect(html).not.toContain('stable-work');
+  expect(html).not.toContain('stable-home');
+  expect(html).not.toContain('unverified@example.invalid');
+});
+
 test('no cap explains how to set one without unknown used or remaining amounts', () => {
   const html = budget({ budgets: [] });
   expect(html).toContain('No daily cap is set.');

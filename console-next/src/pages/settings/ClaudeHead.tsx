@@ -1,4 +1,7 @@
 import { failureText } from '../../api/client';
+import { useAccounts } from '../../api/queries';
+import { accountEmail, accountIdentity, accountName } from '../../lib/accounts';
+import { AccountEdits } from '../shared/AccountEdits';
 import { useClaudeHead, useUnwrapClaudeHead, useWrapClaudeHead } from '../../api/claude-head';
 import { proseOf } from '../../lib/settings';
 import { C } from '../../lib/words-claude';
@@ -15,6 +18,7 @@ const Path = ({ children }: { children: string }) =>
  *  effects (wrap swaps the claude link on the PATH), so each asks once and prints any backup the daemon names. */
 export function ClaudeHead() {
   const head = useClaudeHead();
+  const accounts = useAccounts();
   const wrap = useWrapClaudeHead();
   const unwrap = useUnwrapClaudeHead();
   const card = head.data;
@@ -22,6 +26,7 @@ export function ClaudeHead() {
   if (card === undefined) return <p className="hint row-note">{T.reading}</p>;
   const wrapped = card.mode === 'wrapped';
   const logins = card.claude_logins;
+  const live = accounts.data?.accounts.filter(row => row.login_place != null || row.kind === 'claude-account' || row.provider === 'anthropic' && row.kind !== 'api-key');
   const backups = !wrapped ? [] : [wrap.data?.settings_backup_path, wrap.data?.claude_json_backup_path].filter((path): path is string => path !== undefined);
   const act = wrapped
     ? <Confirm trigger={<Button>{C.unwrap}</Button>} title={C.unwrapTitle} why={C.unwrapWhy} act={C.unwrap} cancel={C.cancel} onConfirm={async () => void (await unwrap.mutateAsync())} />
@@ -32,6 +37,15 @@ export function ClaudeHead() {
       <Row title={C.onPath} why="" control={<Path>{card.resolves_to ?? C.notFound}</Path>} />
       <Row title={C.shim} why="" control={<Path>{card.shim_path}</Path>} />
       {wrapped ? <Row title={C.realBinary} why="" control={<Path>{card.real_binary_path ?? C.unknown}</Path>} /> : null}
+      <Row title={C.liveLogins} why={C.liveLoginsWhy} control={
+        accounts.isError ? <span role="alert">{failureText(accounts.error)}</span>
+          : live === undefined ? <span>{C.readingLiveLogins}</span>
+          : live.length === 0 ? <span>{C.noLiveLogins}</span>
+          : <ul className="accounts">{live.map(account => <li className="account" key={accountIdentity(account)}>
+              <div className="account-main"><b>{accountName(account)}</b>{accountEmail(account) === null ? null : <span className="hint">{accountEmail(account)}</span>}</div>
+              <div className="account-acts"><AccountEdits account={account} /></div>
+            </li>)}</ul>
+      } />
       <Row title={C.logins} why={`${C.loginsWhy} ${proseOf(logins.constraint)}`} control={<span>{logins.count === 0 ? C.noLogins : logins.labels.join(', ')}</span>} />
       <Row title={C.selected} why={C.selectedWhy} control={<span>{logins.selected ?? C.noneSelected}</span>} />
       {backups.map((path) => <Row key={path} title={C.backups} why="" control={<Path>{path}</Path>} />)}

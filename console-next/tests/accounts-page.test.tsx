@@ -23,6 +23,7 @@ const claudeLogin = (place: 'claude' | 'claude-splice'): AccountRow => ({
 
 const added: AccountRow = {
   kind: 'claude-account', label: 'account-2', single_login: false,
+  display_name: 'account-2', identity_verified: true, can_remove: true, can_rename: true, edit_target: { kind: 'pool', id: 'account-2' },
   credential_path: '/synthetic/claude-accounts/claude-splice/account-2/.credentials.json',
   primary: false, selected: false, available: true, pinned: false, next_target: false,
   credential_present: true, windows: [], heads: ['claude-splice'],
@@ -49,6 +50,18 @@ function order(head: string, saved: readonly string[], effective: readonly strin
     <QueryClientProvider client={client}><FailoverOrder head={head} accounts={rows} /></QueryClientProvider>,
   );
 }
+
+test('Accounts names colliding native and pool logins from their display contract and shows only verified email', () => {
+  const native = { ...claudeLogin('claude'), label: 'claude', display_name: 'Personal login', identity_verified: true, can_remove: true, can_rename: true, edit_target: { kind: 'native' as const, id: 'claude' } };
+  const pool = { ...added, label: 'claude', display_name: 'Work login', identity_verified: false, account: { uuid: 'other', email: 'unverified@example.invalid' }, can_remove: true, can_rename: false, edit_target: { kind: 'pool' as const, id: 'claude' } };
+  const html = page([native, pool]);
+  expect(html).toContain('<h3>Personal login</h3>');
+  expect(html).toContain('<h3>Work login</h3>');
+  expect(html).toContain('synthetic@example.invalid');
+  expect(html).not.toContain('unverified@example.invalid');
+  expect(html.match(/>Remove<\/button>/g)).toHaveLength(2);
+  expect(html.match(/>Rename<\/button>/g)).toHaveLength(1);
+});
 
 describe('the Claude group', () => {
   test('offers the add every other provider has, because a command can hold many subscriptions', () => {
@@ -138,10 +151,7 @@ describe('removing an account', () => {
     expect(html).toContain('Remove');
   });
 
-  test("the caller's own Claude Code login has no remove, because splice never held it", () => {
-    // The fixture carries a label on purpose. A place row with no label is excluded by the label check alone, so a
-    // test using one would pass with the place guard deleted, and that guard is what stands between a click and
-    // the person's real Claude Code login.
+  test("an older native reply cannot grant removal merely by carrying a label", () => {
     const html = renderToStaticMarkup(<QueryClientProvider client={new QueryClient()}>
       <AccountCard account={{ ...claudeLogin('claude'), label: 'claude-code' }} place="claude" colour="claude" now={now} />
     </QueryClientProvider>);
@@ -149,9 +159,13 @@ describe('removing an account', () => {
     expect(html).not.toContain('Remove');
   });
 
-  test('a command primary login has no remove either', () => {
-    const html = renderToStaticMarkup(<QueryClientProvider client={new QueryClient()}>
+  test('a command primary login obeys a refused removal capability', () => {
+    const allowed = renderToStaticMarkup(<QueryClientProvider client={new QueryClient()}>
       <AccountCard account={{ ...added, primary: true }} colour="claude" now={now} />
+    </QueryClientProvider>);
+    expect(allowed).toContain('Remove');
+    const html = renderToStaticMarkup(<QueryClientProvider client={new QueryClient()}>
+      <AccountCard account={{ ...added, primary: true, can_remove: false }} colour="claude" now={now} />
     </QueryClientProvider>);
 
     expect(html).not.toContain('Remove');

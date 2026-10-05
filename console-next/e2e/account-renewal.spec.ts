@@ -18,6 +18,7 @@ test('Accounts renews a missing pooled login under its retained label and prints
     const orphan = body.accounts.find((account) => account.label === STACK.poolLabel);
     if (orphan === undefined) throw new Error('synthetic pool is missing its retained account');
     orphan.credential_present = false;
+    orphan.display_name = 'Synthetic work login';
     await route.fulfill({ response, json: body });
   });
   const labels: string[] = [];
@@ -32,13 +33,13 @@ test('Accounts renews a missing pooled login under its retained label and prints
     }),
   }));
   const faults = await open(page, 'accounts');
-  const item = page.locator('li.account-card').filter({ has: page.getByRole('heading', { name: STACK.poolLabel, exact: true }) });
-  await expect(item).toContainText(STACK.poolLabel);
+  const item = page.locator('li.account-card').filter({ has: page.getByRole('heading', { name: 'Synthetic work login', exact: true }) });
+  await expect(item).toContainText('Synthetic work login');
   await item.getByRole('button', { name: 'Sign in again', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('textbox', { name: 'Label', exact: true })).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Start login', exact: true }).click();
-  await expect(dialog.getByRole('status')).toContainText(STACK.poolLabel + ' renewed; old usage set aside, read again next request.');
+  await expect(dialog.getByRole('status')).toContainText('Synthetic work login renewed; old usage set aside, read again next request.');
   expect(labels).toEqual([STACK.poolLabel]);
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   await item.getByRole('button', { name: 'Sign in again', exact: true }).click();

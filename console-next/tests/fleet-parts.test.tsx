@@ -108,12 +108,18 @@ describe('an account row', () => {
     expect(html).not.toContain('role="alert"');
   });
   test('a refused account prints the daemon\'s sentence and offers no Switch, but keeps Rename and Remove', () => {
-    const html = row(acct({ credential_present: false, refusal: REFUSED }));
+    const html = row(acct({ credential_present: false, refusal: REFUSED, can_remove: true, can_rename: true, edit_target: { kind: 'pool', id: 'work' } }));
     expect(html).toContain(REFUSED.replace(/'/g, '&#x27;'));
     expect(html).not.toContain('Switch to this one');
     expect(html).toContain('Rename');
     expect(html).toContain('Remove');
     expect(html).not.toContain('Its login file is gone');
+    const denied = row(acct({ can_remove: false, can_rename: false, edit_target: { kind: 'pool', id: 'work' } }));
+    expect(denied).not.toContain('>Rename<');
+    expect(denied).not.toContain('>Remove<');
+    const untargeted = row(acct({ can_remove: true, can_rename: true }));
+    expect(untargeted).not.toContain('>Rename<');
+    expect(untargeted).not.toContain('>Remove<');
   });
   test('the next marker does not invent a fallback cause while saved priority is unreported', () => {
     const primary = acct({ label: 'primary', primary: true, next_target: true });

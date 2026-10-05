@@ -6,13 +6,13 @@ import type { AccountRow } from '../types/accounts';
 import type { HeadStatus } from '../types/core';
 import type { HeadCatalog } from '../types/models';
 import { kindOf } from './fleet';
-import { poolOf } from './accounts';
+import { accountEmail, accountName, poolOf } from './accounts';
 
 /** Who pays for a command's tokens: a stored key, the operator's own machine, or a login. */
 export type ServedBy =
   | { kind: 'key' }
   | { kind: 'local' }
-  | { kind: 'login'; name: string | null; plan: string | null; others: number }
+  | { kind: 'login'; name: string; email: string | null; plan: string | null; others: number }
   | { kind: 'signedOut' }
   | { kind: 'unreported' };
 
@@ -83,8 +83,7 @@ const longContextOf = (rates: unknown): LongContext | null => {
   return typeof over === 'number' && typeof input === 'number' && typeof output === 'number' ? { over, input, output } : null;
 };
 
-/** The login that serves a command: the one its pool selected, else its only one. It is named by its email or its pool label, and
- *  a login the daemon names neither way (a single login, most of the operator's) is said by its plan. */
+/** The selected login's displayed name, with provider-verified email kept separately. */
 function servedBy(head: HeadStatus, family: string | null, accounts: readonly AccountRow[]): ServedBy {
   const kind = kindOf(head, family);
   if (kind === 'local') return { kind: 'local' };
@@ -93,7 +92,7 @@ function servedBy(head: HeadStatus, family: string | null, accounts: readonly Ac
   const serving = pool.find((account) => account.selected === true) ?? (pool.length === 1 ? pool[0] : undefined);
   if (serving === undefined) return { kind: 'unreported' };
   if (!serving.credential_present) return { kind: 'signedOut' };
-  return { kind: 'login', name: serving.account?.email ?? serving.label, plan: serving.plan ?? null, others: pool.length - 1 };
+  return { kind: 'login', name: accountName(serving), email: accountEmail(serving), plan: serving.plan ?? null, others: pool.length - 1 };
 }
 
 /** One row per command and model, in the catalogue's own order: commands as the daemon lists them, each command's models as its
@@ -125,7 +124,7 @@ export function modelRows(
   });
 }
 
-const accountText = (served: ServedBy): string => (served.kind === 'login' ? [served.name, served.plan].join(' ') : served.kind);
+const accountText = (served: ServedBy): string => (served.kind === 'login' ? [served.name, served.email, served.plan].join(' ') : served.kind);
 
 /** Rows whose model, id, command or account holds every word of the query, in any case. */
 export function searchRows(rows: readonly ModelTableRow[], query: string): ModelTableRow[] {

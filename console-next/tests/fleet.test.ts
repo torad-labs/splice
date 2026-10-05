@@ -116,15 +116,16 @@ describe('a fleet card', () => {
     expect(card.line).toMatchObject({ kind: 'gauge', name: '5 hours', pct: 41, full: false });
     expect(card.meta).toEqual(['grok', 'Ava’s Grok', '2 sessions']);
   });
-  test('a single login with no label is named by its plan, never by the hashed account id', () => {
+  test('an older login uses the shared command fallback, never its plan or hashed account id', () => {
     const auth = { 'claude-grok': { kind: 'grok-oauth', login: '', present: true, account_id_masked: '3460...b1aa' } };
     const meta = fleetCard(head(), inputs({ auth, accounts: [account({ label: null, plan: 'pro' })] })).meta;
-    expect(meta).toEqual(['grok', 'Pro', '2 sessions']);
-    expect(fleetCard(head(), inputs({ auth, accounts: [account({ label: null })] })).meta).toEqual(['grok', '2 sessions']);
+    expect(meta).toEqual(['grok', 'claude-grok', '2 sessions']);
+    expect(fleetCard(head(), inputs({ auth, accounts: [account({ label: null, plan: 'pro', display_name: 'Personal login' })] })).meta).toEqual(['grok', 'Personal login', '2 sessions']);
+    expect(fleetCard(head(), inputs({ auth, accounts: [account({ label: null })] })).meta).toEqual(['grok', 'claude-grok', '2 sessions']);
   });
   test('one proven Claude account in two login places is not a two-account pool', () => {
     const native = account({
-      kind: 'client', heads: ['synthetic-head'], label: 'Primary alias',
+      kind: 'client', heads: ['synthetic-head'], label: 'Primary alias', display_name: 'Personal login', identity_verified: true,
       login_place: { id: 'claude', command: 'synthetic-native' },
       account: { uuid: 'synthetic-account', email: 'synthetic@example.invalid' },
     });
@@ -132,7 +133,11 @@ describe('a fleet card', () => {
     const card = fleetCard(head({ key: 'synthetic-head', authKind: 'client' }), inputs({ accounts: [native, wrapped], usage: null, family: 'anthropic' }));
     expect(card.meta).not.toContain('Pool · 2 accounts');
     expect(card.meta).toContain('synthetic@example.invalid');
+    expect(card.meta).toContain('Personal login');
     expect(card.meta).not.toContain('Primary alias');
+    const unverified = fleetCard(head({ key: 'synthetic-head', authKind: 'client' }), inputs({ accounts: [{ ...native, identity_verified: false }], usage: null, family: 'anthropic' }));
+    expect(unverified.meta).toContain('Personal login');
+    expect(unverified.meta).not.toContain('synthetic@example.invalid');
   });
   test('matching display email without matching account identity still counts as two accounts', () => {
     const first = account({ account: { uuid: 'synthetic-one', email: 'same@example.invalid' } });

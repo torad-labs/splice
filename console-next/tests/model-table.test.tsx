@@ -39,7 +39,7 @@ const CATALOGS: HeadCatalog[] = [
 ];
 const HEADS = [head('claudex', 'chatgpt-oauth'), head('openrouter', 'api-key', 'claudeor'), head('bonsai', 'api-key')];
 const FAMILIES = new Map([['bonsai', 'local']]);
-const rows = (accounts: AccountRow[] = [login('claudex', { account: { uuid: 'u', email: 'ava@x.io' } })]): ModelTableRow[] =>
+const rows = (accounts: AccountRow[] = [login('claudex', { display_name: 'Personal login', identity_verified: true, account: { uuid: 'u', email: 'ava@x.io' } })]): ModelTableRow[] =>
   modelRows(CATALOGS, HEADS, accounts, FAMILIES);
 const ids = (list: readonly ModelTableRow[]): string[] => list.map((row) => row.id);
 
@@ -48,23 +48,23 @@ describe('the rows', () => {
     const all = rows();
     expect(ids(all)).toEqual(['gpt-6-sol', 'gpt-6-luna', 'free/one', 'pro/two', 'cheap/three', 'bonsai-2']);
     expect(all.map((row) => row.command)).toEqual(['claudex', 'claudex', 'claudeor', 'claudeor', 'claudeor', 'bonsai']);
-    expect(all[0]?.servedBy).toEqual({ kind: 'login', name: 'ava@x.io', plan: null, others: 0 });
+    expect(all[0]?.servedBy).toEqual({ kind: 'login', name: 'Personal login', email: 'ava@x.io', plan: null, others: 0 });
     expect(all[2]?.servedBy).toEqual({ kind: 'key' });
     expect(all[5]?.servedBy).toEqual({ kind: 'local' });
   });
 
-  test('a pool names the login it selected and counts the rest; an unnamed login keeps its plan; none, or one signed out, says so', () => {
-    const pool = [login('claudex', { label: 'work', selected: false }), login('claudex', { label: 'home', selected: true }), login('claudex', { label: 'spare', selected: false })];
-    expect(rows(pool)[0]?.servedBy).toEqual({ kind: 'login', name: 'home', plan: null, others: 2 });
-    expect(rows([login('claudex', { plan: 'pro' })])[0]?.servedBy).toEqual({ kind: 'login', name: null, plan: 'pro', others: 0 });
+  test('a pool names the selected login and counts subscriptions; an older unnamed login never substitutes its plan', () => {
+    const pool = [login('claudex', { label: 'work', selected: false }), login('claudex', { label: 'home', display_name: 'Home login', selected: true }), login('claudex', { label: 'spare', selected: false })];
+    expect(rows(pool)[0]?.servedBy).toEqual({ kind: 'login', name: 'Home login', email: null, plan: null, others: 2 });
+    expect(rows([login('claudex', { plan: 'pro' })])[0]?.servedBy).toEqual({ kind: 'login', name: 'claudex', email: null, plan: 'pro', others: 0 });
     expect(rows([login('claudex', { credential_present: false })])[0]?.servedBy).toEqual({ kind: 'signedOut' });
     expect(rows([])[0]?.servedBy).toEqual({ kind: 'unreported' });
   });
 
   test('two native places name their one proved account without a selected flag', () => {
-    const native = login('claudex', { kind: 'client', label: 'Native place', account: { uuid: 'synthetic-subscription', email: 'proved@example.invalid' } });
+    const native = login('claudex', { kind: 'client', label: 'Native place', display_name: 'Personal login', identity_verified: true, account: { uuid: 'synthetic-subscription', email: 'proved@example.invalid' } });
     const wrapped = { ...native, label: 'Separate place' };
-    expect(rows([native, wrapped])[0]?.servedBy).toEqual({ kind: 'login', name: 'proved@example.invalid', plan: null, others: 0 });
+    expect(rows([native, wrapped])[0]?.servedBy).toEqual({ kind: 'login', name: 'Personal login', email: 'proved@example.invalid', plan: null, others: 0 });
     expect(rows([native, { ...wrapped, account: { uuid: 'other-subscription', email: 'proved@example.invalid' } }])[0]?.servedBy).toEqual({ kind: 'unreported' });
     expect(rows([{ ...native, account: null }, { ...wrapped, account: null }])[0]?.servedBy).toEqual({ kind: 'unreported' });
   });
@@ -85,6 +85,8 @@ describe('search and sort', () => {
   test('every word must match the model, its id, its command or its account', () => {
     expect(ids(searchRows(rows(), 'claudeor PRO'))).toEqual(['pro/two']);
     expect(ids(searchRows(rows(), 'ava'))).toEqual(['gpt-6-sol', 'gpt-6-luna']);
+    expect(ids(searchRows(rows(), 'Personal login'))).toEqual(['gpt-6-sol', 'gpt-6-luna']);
+    expect(searchRows(rows([login('claudex', { display_name: 'Work login', identity_verified: false, account: { uuid: 'u', email: 'ava@x.io' } })]), 'ava')).toEqual([]);
     expect(ids(searchRows(rows(), '  '))).toHaveLength(6);
   });
 
@@ -135,14 +137,19 @@ describe('the Models page', () => {
     expect(html).toContain('6 models on 3 commands.');
   });
 
-  test('a login with no name is said by its plan, capitalised as its command card prints it', () => {
+  test('an older unnamed login uses the same fallback as Accounts, never a plan name', () => {
     const client = new QueryClient();
     client.setQueryData([...modelsKey], { heads: CATALOGS });
     client.setQueryData([...keys.heads, '/api/heads'], { heads: HEADS });
     client.setQueryData([...keys.accounts, '/api/accounts'], { accounts: [{ ...login('claudex', { plan: 'pro' }), windows: [] }] });
     client.setQueryData([...keys.status, '/api/status'], { registry: [{ key: 'bonsai', family: 'local' }] });
     const html = renderToStaticMarkup(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/models']}><ModelTable /></MemoryRouter></QueryClientProvider>);
-    expect(html).toContain('<td>Signed in, Pro plan</td>');
+    expect(html).toContain('<td>claudex</td>');
+    expect(html).not.toContain('Signed in, Pro plan');
+    client.setQueryData([...keys.accounts, '/api/accounts'], { accounts: [login('claudex', { label: 'stable-id', display_name: 'Work login', plan: 'pro', identity_verified: true, account: { uuid: 'synthetic', email: 'verified@example.invalid' } })] });
+    const modern = renderToStaticMarkup(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/models']}><ModelTable /></MemoryRouter></QueryClientProvider>);
+    expect(modern).toContain('<td>Work login<small>verified@example.invalid</small></td>');
+    expect(modern).not.toContain('stable-id');
     expect(html).toContain('<td>API key</td>');
     expect(html).toContain('<td>This computer</td>');
   });

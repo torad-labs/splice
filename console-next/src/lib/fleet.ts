@@ -8,7 +8,7 @@ import { familyName, headAttention, isKeyHead, localZonedInstantText, providerAn
 import type { HeadSignals } from './heads';
 import { colourOf } from './model';
 import type { ModelColour } from './model';
-import { poolOf, selectedExcluded } from './accounts';
+import { accountEmail, accountName, poolOf, selectedExcluded } from './accounts';
 import { planLevel, planWindows, rateLimitAge } from './usage';
 import { countWord, noun, timeAgo } from './format';
 import { FL } from './words-fleet';
@@ -79,12 +79,7 @@ function accountLine(pool: readonly AccountRow[], kind: string): string {
   if (providerFamily(kind) === 'local') return '';
   if (pool.length > 1) return `Pool · ${pool.length} accounts`;
   const only = pool[0];
-  if (only?.account?.email != null && only.account.email !== '') return only.account.email;
-  if (only?.label != null && only.label !== '') return only.label;
-  // The hashed account id the daemon also reports is a code, never printed: the plan the provider names is what a person knows the login by.
-  const plan = only?.plan?.trim() ?? '';
-  if (plan !== '') return plan.charAt(0).toUpperCase() + plan.slice(1);
-  return kind === 'api-key' ? 'API key' : '';
+  return only === undefined ? kind === 'api-key' ? 'API key' : '' : accountName(only);
 }
 
 /** Why a head draws no window. A key has none by nature; a plan that draws none has either never been read or been read before its window reset. */
@@ -142,7 +137,8 @@ export function fleetCard(head: HeadStatus, inputs: FleetInputs): FleetCard {
   const entry = usage?.heads.find((row) => row.key === head.key)?.usage ?? null;
   const otherWindows = planWindows(entry, now).filter(window => WINDOW_NAME[window.window] !== gauge?.name).map(window =>
     `${Q.window(WINDOW_NAME[window.window], window.pct, window.resetsAt === null ? null : localZonedInstantText(window.resetsAt), !window.stale)} · ${Q.observed(window.observedAt === null ? null : localZonedInstantText(window.observedAt))}`);
-  const meta = [familyName(kind), accountLine(pool, kind), ...otherWindows, `${count === 0 ? 'no' : count} ${noun(count, 'session', 'sessions')}`].filter((part) => {
+  const email = pool.length === 1 && pool[0] !== undefined ? accountEmail(pool[0]) : null;
+  const meta = [familyName(kind), accountLine(pool, kind), ...(email === null ? [] : [email]), ...otherWindows, `${count === 0 ? 'no' : count} ${noun(count, 'session', 'sessions')}`].filter((part) => {
     const key = part.toLowerCase();
     if (part === '' || said.has(key)) return false;
     said.add(key);

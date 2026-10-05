@@ -10,10 +10,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { MgmtError, request } from './client';
 import { keys, read } from './queries';
 import { awaitRefetch } from './refetch';
+import { claudeHeadKey } from './claude-head';
 import { PENDING_AUTH_WRITES } from '../types/login';
 import type { PendingRoute } from '../types/budget';
 import type { AuthActionResult } from '../types/core';
-import type { AccountWire, ClaudeLoginPlaceId } from '../types/accounts';
+import type { AccountEditTarget, AccountWire, ClaudeLoginPlaceId } from '../types/accounts';
 import type {
   AccountMutationPayload,
   AuthActionOutcome,
@@ -39,7 +40,7 @@ export const loginPath = (head: string): string => `/api/auth/${seg(head)}/login
 export const loginStatusPath = (head: string, id: string): string => `${loginPath(head)}/${seg(id)}`;
 export const refreshPath = (head: string): string => `/api/auth/${seg(head)}/refresh`;
 export const switchPath = (head: string): string => `/api/auth/${seg(head)}/switch`;
-export const accountPath = (head: string, label: string): string => `/api/auth/${seg(head)}/accounts/${seg(label)}`;
+export const accountPath = (head: string, target: AccountEditTarget): string => `/api/auth/${seg(head)}/accounts/${seg(target.id)}?${new URLSearchParams({ target_kind: target.kind, target_id: target.id })}`;
 export const keyPath = (name: string): string => `/api/keys/${seg(name)}`;
 
 // ── the pending-route rule ───────────────────────────────────────────────────────────────────────
@@ -117,15 +118,13 @@ export async function unpinAccount(head: string): Promise<AuthActionState> {
   }
 }
 
-/** DELETE /api/auth/{head}/accounts/{label}: remove a pooled account. Addressed by a head key the pool rides, which is how the daemon
- *  resolves the name; the kind (`chatgpt-oauth`) is no head and was a 404. */
-export const removeAccount = (head: string, label: string): Promise<AuthActionState> =>
-  settle<AccountMutationPayload>(accountPath(head, label), { method: 'DELETE' }, (result) => ({ action: 'remove', result }));
+/** Remove only the daemon's explicit credential location, never a displayed login name. */
+export const removeAccount = (head: string, target: AccountEditTarget): Promise<AuthActionState> =>
+  settle<AccountMutationPayload>(accountPath(head, target), { method: 'DELETE' }, (result) => ({ action: 'remove', result }));
 
-/** PATCH /api/auth/{head}/accounts/{label}: relabel a pooled account. Its windows, exclusions and pool
- *  position are keyed by the credential path, so a relabel loses none of them. */
-export const relabelAccount = (head: string, label: string, nextLabel: string): Promise<AuthActionState> =>
-  settle<AccountMutationPayload>(accountPath(head, label), { method: 'PATCH', body: JSON.stringify({ label: nextLabel }) }, (result) => ({ action: 'relabel', result }));
+/** Rename changes the displayed name; the explicit target and its stable id do not move. */
+export const relabelAccount = (head: string, target: AccountEditTarget, nextLabel: string): Promise<AuthActionState> =>
+  settle<AccountMutationPayload>(accountPath(head, target), { method: 'PATCH', body: JSON.stringify({ label: nextLabel }) }, (result) => ({ action: 'relabel', result }));
 
 /** PUT /api/keys/{ENV}: store (or replace) a key. THE VALUE GOES ONE WAY: it is the body and nothing else;
  *  no cache holds it and no answer carries it. A refusal (400 name or value, 409 store) throws the daemon's words. */
@@ -147,7 +146,7 @@ function useAuthWrite<Vars, Out>(run: (vars: Vars) => Promise<Out>, stale: reado
   });
 }
 
-const accountsChanged = [keys.accounts, keys.auth, keys.heads, keys.usage] as const;
+const accountsChanged = [keys.accounts, keys.auth, keys.heads, keys.usage, claudeHeadKey] as const;
 
 /** Start a login. Resolves `{ action: 'login', result }` (poll `result.id`) or `{ pending }`. */
 export const useStartLogin = () => useMutation({ mutationFn: ({ head, label, place }: { head: string; label: string; place?: ClaudeLoginPlaceId }) => startLogin(head, label, place) });
@@ -180,9 +179,9 @@ export const useRefreshLogin = () => useAuthWrite((head: string) => refreshLogin
 export const useSwitchAccount = () => useAuthWrite(({ head, label }: { head: string; label: string }) => switchAccount(head, label), accountsChanged);
 export const useUnpinAccount = () => useAuthWrite((head: string) => unpinAccount(head), accountsChanged);
 export const useRemoveAccount = () =>
-  useAuthWrite(({ head, label }: { head: string; label: string }) => removeAccount(head, label), accountsChanged);
+  useAuthWrite(({ head, target }: { head: string; target: AccountEditTarget }) => removeAccount(head, target), accountsChanged);
 export const useRelabelAccount = () =>
-  useAuthWrite(({ head, label, next }: { head: string; label: string; next: string }) => relabelAccount(head, label, next), accountsChanged);
+  useAuthWrite(({ head, target, next }: { head: string; target: AccountEditTarget; next: string }) => relabelAccount(head, target, next), accountsChanged);
 
 /** The key store: every key a head reads or the store holds, by name, never by value. */
 export const useKeyStore = () => useQuery(read<KeysPayload>(keyStoreKey, '/api/keys'));

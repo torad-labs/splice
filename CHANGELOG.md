@@ -127,7 +127,7 @@ origin.
   compaction and is still streaming after that is cut, and Claude Code does not retry a turn cut
   after its text began. A compaction is let finish first (see Changed). `splice upgrade` waits up to 30 minutes for
   every head to go idle, then leaves the release staged unless you rerun with `--now`.
-- **splice is tested against Claude Code 2.1.287.** When a session runs a newer one, doctor and
+- **splice is tested against Claude Code 2.1.289.** When a session runs a newer one, doctor and
   `splice status` report it; the status line warns once per session during the daemon's lifetime.
 - **Claude Code's header reads `API Usage Billing` on every head but `claude-splice`.** Claude Code
   only has names for Anthropic's plans and the clouds that sell Claude, so it prints that for any

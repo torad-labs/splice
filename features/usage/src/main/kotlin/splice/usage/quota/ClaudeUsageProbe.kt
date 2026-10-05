@@ -61,6 +61,7 @@ private const val CLAUDE_OAUTH_BETA = "oauth-2025-04-20"
 // a model-scoped window has nowhere to go without inventing a third slot.
 private const val USAGE_FIVE_HOUR = "five_hour"
 private const val USAGE_SEVEN_DAY = "seven_day"
+
 // why: a half-second bias rounds fractional endpoint resets instead of flooring them to the prior minute.
 private const val RESET_ROUNDING_HALF_SECOND_NANOS = 500_000_000L
 

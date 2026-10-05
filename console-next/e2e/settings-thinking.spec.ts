@@ -3,7 +3,21 @@ import type { ConfigPayload } from '../src/types/core';
 import { open, assertHealthy } from './support';
 import { STACK } from './stack';
 
+test.afterEach(async ({ page }) => {
+  await page.unrouteAll({ behavior: 'wait' });
+});
+
 test('Advanced quantity controls preserve exact base values, save timing and command scope', async ({ page }) => {
+  const cpu = await page.context().newCDPSession(page);
+  await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+  const checkpoint = async (): Promise<void> => {
+    await page.evaluate(async () => {
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      const response = await fetch('/synthetic-quantity-checkpoint');
+      if (!response.ok) throw new Error('synthetic quantity checkpoint failed');
+    });
+  };
+  await page.route('**/synthetic-quantity-checkpoint', route => route.fulfill({ status: 204 }));
   const patches: Record<string, unknown>[] = [];
   const writes: Record<string, unknown>[] = [];
   const effective = { requestReadTimeoutMs: 1501, maxRequestBytes: 8 * 1024 * 1024, maxQueued: 3 };
@@ -38,19 +52,29 @@ test('Advanced quantity controls preserve exact base values, save timing and com
   await expect(timeout).toHaveValue('1.501');
   await expect(size).toHaveValue('8');
   await expect(count).toHaveAttribute('step', '1');
-  await page.getByRole('button', { name: 'Unit for Request read limit', exact: true }).click();
+  const unitButton = page.getByRole('button', { name: 'Unit for Request read limit', exact: true });
+  await unitButton.click();
   await page.getByRole('menuitemradio', { name: 'Milliseconds', exact: true }).click();
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  await expect(unitButton).toBeFocused();
   await expect(timeout).toHaveValue('1501');
+  await checkpoint();
   expect(patches).toHaveLength(0);
-  await page.getByRole('button', { name: 'Unit for Request read limit', exact: true }).click();
+  await unitButton.click();
   await page.getByRole('menuitemradio', { name: 'Seconds', exact: true }).click();
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  await expect(unitButton).toBeFocused();
   await timeout.fill('1.001');
+  await checkpoint();
+  await expect(timeout).toBeFocused();
   expect(patches).toHaveLength(0);
   await timeout.press('Enter');
   await expect.poll(() => patches).toEqual([{ requestReadTimeoutMs: 1001 }]);
+  await expect(timeout).toHaveValue('1.001');
   await timeout.fill('1.0001');
   await timeout.press('Tab');
   await expect(timeout).toHaveValue('1.001');
+  await checkpoint();
   expect(patches).toHaveLength(1);
   await size.fill('8.5');
   await size.press('Enter');
@@ -58,6 +82,7 @@ test('Advanced quantity controls preserve exact base values, save timing and com
   await count.fill('3.5');
   await count.press('Enter');
   await expect(count).toHaveValue('3');
+  await checkpoint();
   expect(patches).toHaveLength(2);
   await page.getByRole('button', { name: 'Which command', exact: true }).click();
   await page.getByRole('menuitemradio', { name: STACK.oauthHead, exact: true }).click();

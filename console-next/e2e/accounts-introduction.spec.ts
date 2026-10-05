@@ -125,7 +125,7 @@ test('native spare warning follows Settings and proven carrying, availability an
   state.warnPct = 80;
   state.rows[0]!.carrying_request = null;
   await page.reload();
-  await expect(page.getByText('No Study command request has matched a login since the daemon started.', { exact: true })).toBeVisible();
+  await expect(page.getByText('The daemon has not identified a login for any Study command request since it started.', { exact: true })).toBeVisible();
   await expect(warning).toHaveCount(0);
   state.rows[0]!.carrying_request = true;
   state.rows[0]!.seven_day_current = false;
@@ -525,14 +525,14 @@ for (const carrying of [true, false, null, undefined]) {
     if (carrying === true || carrying === false) {
       const carried = carrying ? personal : separate;
       const other = carrying ? separate : personal;
-      await expect(carried).toContainText('Carried the latest matched claude-splice request.');
-      await expect(other).toContainText('The latest matched claude-splice request used another login.');
-      await expect(other).not.toContainText('Carried the latest matched');
+      await expect(carried).toContainText('The last claude-splice request with a known login used this login.');
+      await expect(other).toContainText('The last claude-splice request with a known login used another login.');
+      await expect(other).not.toContainText('known login used this login.');
     } else if (carrying === null) {
-      for (const card of [personal, separate]) await expect(card).toContainText('No claude-splice request has matched a login since the daemon started.');
+      for (const card of [personal, separate]) await expect(card).toContainText('The daemon has not identified a login for any claude-splice request since it started.');
     } else {
       for (const card of [personal, separate]) await expect(card).toContainText('The daemon has not reported which login carried this command’s requests.');
-      await expect(page.getByText('No claude-splice request has matched a login since the daemon started.', { exact: true })).toHaveCount(0);
+      await expect(page.getByText('The daemon has not identified a login for any claude-splice request since it started.', { exact: true })).toHaveCount(0);
     }
     await expect(separate).not.toContainText('login used by claude-splice');
     await assertHealthy(page, faults);

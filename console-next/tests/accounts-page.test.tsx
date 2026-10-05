@@ -67,12 +67,16 @@ test('native cards mark only the login whose credential carried the newest match
   const card = (carrying_request: boolean | null | undefined): string => renderToStaticMarkup(<QueryClientProvider client={new QueryClient()}>
     <AccountCard account={{ ...claudeLogin('claude-splice'), ...(carrying_request === undefined ? {} : { carrying_request }) }} place="claude-splice" commandLabels={['Synthetic command']} colour="claude" now={now} />
   </QueryClientProvider>);
-  expect(card(true)).toContain('Carried the latest matched Synthetic command request.');
-  expect(card(false)).toContain('The latest matched Synthetic command request used another login.');
-  expect(card(null)).toContain('No Synthetic command request has matched a login since the daemon started.');
+  expect(card(true)).toContain('The last Synthetic command request with a known login used this login.');
+  expect(card(false)).toContain('The last Synthetic command request with a known login used another login.');
+  expect(card(null)).toContain('The daemon has not identified a login for any Synthetic command request since it started.');
   expect(card(undefined)).toContain('The daemon has not reported which login carried this command’s requests.');
-  expect(card(false)).not.toContain('Carried the latest matched Synthetic command request.');
-  expect(card(null)).not.toContain('Carried the latest matched Synthetic command request.');
+  for (const carrying of [true, false, null]) {
+    expect(card(carrying)).not.toContain('matched');
+    expect(card(carrying)).not.toContain('latest Synthetic command request');
+  }
+  expect(card(false)).not.toContain('known login used this login.');
+  expect(card(null)).not.toContain('known login used this login.');
 });
 
 test('native takeover status follows availability, not a credential file’s presence', () => {

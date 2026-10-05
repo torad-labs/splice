@@ -5,6 +5,7 @@
 package splice.head.usage
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -31,6 +32,22 @@ class QuotaTrackerTest {
         LogSink { },
         extraFamily = XCodexFamily(),
     )
+
+    @Test
+    fun `a retired account retains late quota evidence without recreating its deleted file`() {
+        val quota = tracker()
+        val file = dir.resolve("codex-quota.json")
+        val first = QuotaSnapshot(fiveHour = QuotaWindow(10.0, 1_788_010_000L, 18_000L))
+        quota.record(first)
+        quota.retire()
+        Files.delete(file)
+        val late = QuotaSnapshot(fiveHour = QuotaWindow(20.0, 1_788_020_000L, 18_000L))
+
+        quota.record(late)
+
+        assertEquals(late, quota.snapshot())
+        assertFalse(Files.exists(file), "a completed removed-account turn cannot resurrect its folder")
+    }
 
     @Test
     fun `x-codex headers on a round become unified headers on the next client response, and survive a restart`() {

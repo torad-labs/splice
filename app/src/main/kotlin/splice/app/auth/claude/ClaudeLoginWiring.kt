@@ -29,6 +29,7 @@ internal object ClaudeLoginWiring {
         log: LogSink,
         userAgent: ClientUserAgent = ClientUserAgent { null },
         identityRefresh: ClaudeIdentityRefresh? = null,
+        poolChanges: ClaudePoolChanges? = null,
     ): ClaudeLoginArm {
         val home = paths.rootDir.parent ?: paths.rootDir
         val topology = topologyPath?.let(TopologyLoader::loadOrMaterialize) ?: Topology()
@@ -45,7 +46,7 @@ internal object ClaudeLoginWiring {
         val identities = identityRefresh
             ?: ClaudeIdentityRefresh(scope, dispatcher, profiles, ClaudeProfileProbe(userAgent, log), log)
         // One store for both verbs: the sign-in files an account into it, and the arm's remove deletes from it.
-        val folders = ClaudeAccountFolders(paths.stateDir, profileRefresh = identities)
+        val folders = ClaudeAccountFolders(paths.stateDir, profileRefresh = identities, changes = poolChanges)
         return ClaudeLoginArm(
             owner = ClaudeLoginOwner(
                 ClaudeLoginLocations(home, paths).read(topology),

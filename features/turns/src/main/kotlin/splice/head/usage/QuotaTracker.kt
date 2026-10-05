@@ -22,6 +22,8 @@ import splice.upstream.transport.CredentialQuotaReceiver
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 /** Receives a timestamped quota reading for one proved credential. The key stays inside the process and state. */
 public fun interface CredentialQuotaListener {
@@ -37,6 +39,13 @@ public class QuotaTracker(
     private val codec = QuotaJson()
     private val headers = QuotaHeaders(clock)
     private val latest = AtomicReference<QuotaSnapshot?>(readFile())
+    private val writes = ReentrantLock()
+    private var retired = false
+
+    /** Removed members retain in-flight observations in memory, but cannot recreate a deleted folder. */
+    public fun retire() {
+        writes.withLock { retired = true }
+    }
 
     /** Bound by native-login composition. The head snapshot remains the aggregate view. */
     @Volatile
@@ -48,8 +57,12 @@ public class QuotaTracker(
     public fun record(snapshot: QuotaSnapshot) {
         if (snapshot.isEmpty) return
         latest.set(snapshot)
-        Cancellables.runCatchingCancellable { SecureFile.writeAtomic0600(file, codec.encode(snapshot)) }
-            .onFailure { log("[quota] $file write FAILED (${SafeFailureText.render(it)})\n") }
+        writes.withLock {
+            if (!retired) {
+                Cancellables.runCatchingCancellable { SecureFile.writeAtomic0600(file, codec.encode(snapshot)) }
+                    .onFailure { log("[quota] $file write FAILED (${SafeFailureText.render(it)})\n") }
+            }
+        }
     }
 
     /** V4-452: the window the CURRENT reading names fully used, and its reset ([QuotaSnapshot.fullAt]). A reading,

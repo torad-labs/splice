@@ -66,7 +66,7 @@ public class SwitchRoute(private val resolver: AccountHeadResolver) {
      *  for it. A refused link says so in its own words (V4-410's sentence, from the account's description); an
      *  account with no credential file gets the plain one. Not listed is not refused here: the pin answers that. */
     private suspend fun refusalFor(head: AccountHead, label: String): String? {
-        val account = head.pool?.view(null)?.accounts?.firstOrNull { it.label == label } ?: return null
+        val account = head.activePool?.view(null)?.accounts?.firstOrNull { it.label == label } ?: return null
         if (account.credentialPresent) return null
         return head.accountAuth?.descriptions()?.get(label)?.fields?.get(REFUSAL_FIELD)
             ?: "'$label' has no credential file; sign in to it first"
@@ -75,7 +75,7 @@ public class SwitchRoute(private val resolver: AccountHeadResolver) {
     private suspend fun pinTarget(call: ApplicationCall): PinTarget? {
         val key = call.parameters["head"].orEmpty()
         val head = resolver.resolveOrRespond(call, key) ?: return null
-        val pin = head.pool as? HeadAccountPinSource
+        val pin = head.activePool as? HeadAccountPinSource
         if (pin == null) {
             AccountReplies.respondError(call, "head '$key' has no account pool to switch", HttpStatusCode.BadRequest)
             return null

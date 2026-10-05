@@ -28,12 +28,20 @@ internal object WiredAccounts {
     }
 }
 
+/** Reads an app-owned immutable account publication, without giving a value bundle a mutable handle. */
+internal fun interface WiredAccountsRead {
+    fun current(): List<WiredAccount>
+}
+
 /** Provider + default auth chosen by dispatch, plus OAuth accounts when this is a pooled head. */
 internal data class Wired(
     val provider: Provider,
     val auth: RefreshableAuthProvider,
     val accounts: List<WiredAccount> = emptyList(),
+    val membership: WiredAccountsRead? = null,
 ) {
+    val liveAccounts: List<WiredAccount> get() = membership?.current() ?: accounts
+
     init {
         val defaultAuth = accounts.takeIf { it.isNotEmpty() }
             ?.let(WiredAccounts::providerAccount)

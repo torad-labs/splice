@@ -184,6 +184,7 @@ internal class ControlPlane(
             log,
             splice.usage.quota.ClientUserAgent(clientVersions::newestClaudeCodeUserAgent),
             claudeIdentities,
+            providerAssembly.claudePoolChanges,
         )
         val owner = arm.owner
         claudeLoginOwner = owner

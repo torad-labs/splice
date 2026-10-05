@@ -187,6 +187,7 @@ internal class UpstreamPlaygroundProbe(
             headers,
             sender.login?.label,
             (creds as? Credentials.ApiKey)?.header,
+            sender.login?.selectedAccount,
         )
         sender.observer?.observed(ProviderReply(sent.status.value, at, responseHeaders), replySender)
         (sender.auth as? RefreshableAuthProvider)?.upstreamAnswered(sent.status.value, sent.status.isSuccess())

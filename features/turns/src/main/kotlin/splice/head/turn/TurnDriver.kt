@@ -181,7 +181,7 @@ internal class TurnDriver(
      *  counters lived through control-plane restarts before — review 2026-07-19). */
     internal fun resetHealth() {
         health.reset()
-        deps.quotaBundle.accountPool?.reset()
+        deps.quotaBundle.activePool?.reset()
     }
 
     /** Cancel active turns with a head-owned cause while their client sockets are still open. */

@@ -26,7 +26,10 @@ public data class AccountHead(
      *  the exact same fallback ([splice.usage.quota.UsagePayloads]'s `pool?.selectedQuota() ?:
      *  usage.quota`) for the same head. Null only for a test double that wires neither source. */
     val quota: HeadQuotaSource? = null,
-)
+) {
+    /** Membership is live even when this head was adapted before its first stored account landed. */
+    val activePool: HeadAccountPoolSource? get() = pool?.takeIf { it.active }
+}
 
 /** [AccountHead.quota]'s one read: the head's effective plan windows, already resolved through the
  *  pool-or-tracker fallback so a caller never re-derives it. */

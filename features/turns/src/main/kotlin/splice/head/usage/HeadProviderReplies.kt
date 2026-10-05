@@ -7,6 +7,7 @@ import splice.core.usage.QuotaHeaderRead
 import splice.core.wire.HttpStatus
 import splice.head.HeadDeps
 import splice.upstream.RetryNotice
+import splice.upstream.credentials.PoolAccount
 import splice.upstream.retry.RateLimitCooldown
 
 // why: response observation is milliseconds while a declared plan reset uses epoch seconds.
@@ -27,9 +28,16 @@ internal class HeadProviderReplies(private val deps: HeadDeps) : ProviderReplyOb
         }
     }
 
-    private fun cooldown(sender: ProviderReplySender): RateLimitCooldown? =
-        sender.account?.let { deps.quotaBundle.accountPool?.responseCooldowns?.get(it) }
+    private fun cooldown(sender: ProviderReplySender): RateLimitCooldown? {
+        val selected = sender.selectedAccount
+        if (selected != null) {
+            return selected.takeIf { owned ->
+                deps.quotaBundle.activePool?.members?.any { it === owned } == true
+            }?.cooldown
+        }
+        return sender.account?.let { deps.quotaBundle.activePool?.responseCooldowns?.get(it) }
             ?: deps.upstream.credentialCooldown(sender.requestHeaders, sender.declaredCarrier)
+    }
 
     private fun refused(reply: ProviderReply, sender: ProviderReplySender, cooldown: RateLimitCooldown) {
         val auth = sender.auth as? RefreshableAuthProvider
@@ -62,6 +70,8 @@ public data class ProviderReplySender(
     public val requestHeaders: Map<String, String>,
     public val account: String?,
     public val declaredCarrier: String?,
+    /** The captured owner, so a removed label cannot redirect an old reply to its replacement. */
+    public val selectedAccount: PoolAccount? = null,
 ) {
     override fun toString(): String = "ProviderReplySender(account=$account, requestHeaders=<redacted>)"
 }

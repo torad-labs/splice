@@ -152,7 +152,7 @@ public class HeadServer(
 
     /** The refusal this head holds (V4-398/V4-412), and nothing else: a full reading is [quotaFull] (V4-452). */
     override fun providerResetForMs(): Long =
-        deps.quotaBundle.accountPool?.providerResetForMs ?: deps.upstream.providerResetForMs
+        deps.quotaBundle.activePool?.providerResetForMs ?: deps.upstream.providerResetForMs
 
     /** The provider's own current reading (V4-418, renamed V4-452). Reporting only: nothing here reaches
      *  admission, which still lets the first turn probe the upstream (V4-47). */
@@ -167,7 +167,7 @@ public class HeadServer(
         driver.headStarted()
         // NF-01: restart clears whichever cooldown authority the turn path actually uses. Pooled
         // turns bypass the client-owned legacy cooldown, so reset every account instead.
-        deps.quotaBundle.accountPool?.reset() ?: deps.upstream.clearRateLimitCooldown()
+        deps.quotaBundle.activePool?.reset() ?: deps.upstream.clearRateLimitCooldown()
         engine.start()
         window.open()
         deps.seams.events.lifecycle(HeadLifecycle.STARTED)

@@ -134,7 +134,10 @@ public data class HeadDeps(
          *  without one says so ([splice.core.budget.NoHeadBudget]) rather than forgetting. */
         val budget: HeadBudget,
         val credentialAccountNames: CredentialAccountNames,
-    )
+    ) {
+        /** A forwarded caller alone uses the legacy path until a stored member is published. */
+        val activePool: AccountPool? get() = accountPool?.takeIf { it.active }
+    }
 
     /** A proved account name for the effective credential digest, never the credential or a head alias.
      *  Null means no identity was proved. Implementations never throw or expose credential values. */

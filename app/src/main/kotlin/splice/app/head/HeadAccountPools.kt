@@ -12,13 +12,14 @@ import splice.accounts.pool.HeadAccountView
 import splice.app.provider.Wired
 import splice.app.provider.WiredAccount
 import splice.core.auth.AuthDescription
+import splice.core.auth.ClientAuthProvider
 import splice.core.auth.REFUSAL_FIELD
 import splice.core.util.WallClock
 import splice.head.usage.QuotaTracker
+import splice.head.usage.TrackedAccountQuota
 import splice.upstream.codemode.ProcessElapsedNow
 import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.AccountPoolView
-import splice.upstream.credentials.AccountQuotaSource
 import splice.upstream.credentials.PoolAccount
 import splice.upstream.retry.ProviderHoldStore
 import splice.upstream.retry.RateLimitCooldown
@@ -34,15 +35,30 @@ internal class HeadAccountPools {
         wired: Wired,
         trackers: Map<String, QuotaTracker>,
         holds: Map<String, ProviderHoldStore> = emptyMap(),
+        primaryQuota: QuotaTracker? = null,
     ): AccountPool? {
-        if (!pooled(wired)) return null
+        if (!pooled(wired)) {
+            if (wired.auth !is ClientAuthProvider || primaryQuota == null) return null
+            return AccountPool(
+                listOf(
+                    PoolAccount(
+                        label = splice.app.auth.claude.OWN_SIGN_IN_LABEL,
+                        primary = true,
+                        auth = wired.auth,
+                        quota = TrackedAccountQuota(primaryQuota),
+                        cooldown = RateLimitCooldown(elapsedNow),
+                    ),
+                ),
+                accountNow,
+            )
+        }
         val accounts = wired.accounts.map { account ->
             val tracker = trackers.getValue(account.label)
             PoolAccount(
                 label = account.label,
                 primary = account.primary,
                 auth = account.auth,
-                quota = AccountQuotaSource { tracker.snapshot() },
+                quota = TrackedAccountQuota(tracker),
                 cooldown = RateLimitCooldown(elapsedNow, store = holds[account.label]),
                 credentialPresent = account.credentialPresent,
                 extraHeaders = account.extraHeaders,
@@ -65,11 +81,13 @@ internal class HeadAccountPools {
         PoolSource(it, head, orders)
     }
 
-    fun authSource(wired: Wired): HeadAccountAuthSource? = wired.accounts.takeIf { pooled(wired) }
-        ?.let { accounts ->
+    fun authSource(wired: Wired): HeadAccountAuthSource? =
+        if (pooled(wired) || wired.auth is ClientAuthProvider) {
             HeadAccountAuthSource {
-                accounts.associate { account -> account.label to described(account) }
+                wired.liveAccounts.associate { account -> account.label to described(account) }
             }
+        } else {
+            null
         }
 
     /** A refused credential (V4-410) says why in its own description, beside `auth_path`, so /api/accounts and
@@ -116,6 +134,8 @@ internal class HeadAccountPools {
         private val head: String? = null,
         private val orders: AccountOrderStore? = null,
     ) : HeadAccountPoolSource, HeadAccountPinSource, HeadAccountOrderSource {
+        override val active: Boolean get() = pool.active
+
         override fun view(sessionId: String?): HeadAccountPoolView = controlView(pool.view(sessionId)).copy(
             pinnedLabel = pool.pinned(),
             nextTargetLabel = pool.nextTargetLabel(),

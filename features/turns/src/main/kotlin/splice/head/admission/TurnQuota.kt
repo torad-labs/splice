@@ -10,6 +10,7 @@ package splice.head.admission
 
 import splice.core.usage.QuotaFull
 import splice.head.usage.QuotaTracker
+import splice.head.usage.TrackedAccountQuota
 import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.AccountSelection
 
@@ -22,6 +23,7 @@ internal class TurnQuota(
     private val primary: QuotaTracker?,
 ) {
     fun forSession(sessionId: String?, account: AccountSelection?): QuotaTracker? {
+        (account?.account?.quota as? TrackedAccountQuota)?.let { return it.tracker }
         val label = account?.account?.label ?: accountPool?.view(sessionId)?.selectedLabel
         return label?.let(accountQuotas::get) ?: primary
     }
@@ -30,7 +32,9 @@ internal class TurnQuota(
      *  reads full when every account it holds does, so a pool needs all of its trackers full and answers with the
      *  earliest reset; a head with no tracker never reads full. Head-wide, so no session or selection is asked. */
     fun full(): QuotaFull? {
-        val readings = accountQuotas.values.ifEmpty { listOfNotNull(primary) }.map(QuotaTracker::full)
+        val current = accountPool?.takeIf { it.active }?.members
+            ?.mapNotNull { accountQuotas[it.label] } ?: listOfNotNull(primary)
+        val readings = current.map(QuotaTracker::full)
         if (readings.any { it == null }) return null
         return readings.filterNotNull().minByOrNull { it.resetsAtEpochSeconds }
     }

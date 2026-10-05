@@ -18,7 +18,7 @@ public class AccountOrderRoute(private val resolver: AccountHeadResolver) {
 
     public suspend fun get(call: ApplicationCall, native: List<ClaudeLoginPlaceView> = emptyList()) {
         val head = resolver.resolveOrRespond(call, call.parameters["head"].orEmpty()) ?: return
-        val source = head.pool as? HeadAccountOrderSource
+        val source = head.activePool as? HeadAccountOrderSource
         if (source != null) {
             respond(call, Target(head.key, source))
             return
@@ -56,7 +56,7 @@ public class AccountOrderRoute(private val resolver: AccountHeadResolver) {
 
     private suspend fun target(call: ApplicationCall): Target? {
         val head = resolver.resolveOrRespond(call, call.parameters["head"].orEmpty()) ?: return null
-        val source = head.pool as? HeadAccountOrderSource
+        val source = head.activePool as? HeadAccountOrderSource
         if (source == null) {
             unavailable(call, head.key)
             return null

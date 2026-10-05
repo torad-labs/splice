@@ -62,12 +62,13 @@ dated = "2026-10-02"
 names = ["DayFileRemoval", "PluginFileMatch"]
 reason = """DayFileRemoval performs filesystem deletion and reports whether a file existed; its IOException refuses a purge. PluginFileMatch only classifies a path for plugin discovery and never deletes it. A predicate cannot implement the destructive operation, so these contracts remain distinct."""
 
-# ── 15 names, () -> Unit ──────────────────────────────────────────────────────────────────────────
+# ── 21 names, () -> Unit ──────────────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "()->Unit"
-dated = "2026-10-02"
+dated = "2026-10-04"
 names = [
     "AuthRefreshObserver",
+    "ClaudePoolChange",
     "CodeModeCleanup",
     "FileIoTask",
     "HaltJvm",
@@ -90,7 +91,10 @@ names = [
 ]
 reason = """A nullary effect is the widest shape in the language and the one that says the least: \
 every one of these is an EVENT or an ACTION with its own lifecycle owner, and no two are wired \
-from the same place. Notifications the caller only observes: AuthRefreshObserver (a credential \
+from the same place. ClaudePoolChange publishes current stored membership into one booted head, \
+retaining session choices and captured credentials. ShutdownDaemon ends that head instead; swapping \
+these roles would stop serving on login edits or fail to release resources on shutdown. \
+Notifications the caller only observes: AuthRefreshObserver (a credential \
 refresh happened mid-attempt), WorkerExited (the code-mode worker process died), ProtocolAnomaly \
 (a WS frame arrived that the protocol does not allow), StreamStart (the upstream began emitting), \
 PulseTick (the spinner's next frame is due), UpstreamBytes (a provider body chunk or WebSocket JSON \

@@ -63,7 +63,7 @@ internal class CredentialHoldAdmission(
         cooldown: RateLimitCooldown,
     ): AccountSelection? {
         if (account == null) return null
-        val pool = deps.quotaBundle.accountPool
+        val pool = deps.quotaBundle.activePool
             ?.takeIf { provider.relayRateLimitReplies && cooldown.rateLimitReply != null } ?: return null
         return when (val next = pool.select(prepared.built.meta.sessionId, setOf(account.account.label))) {
             is Selection.Chosen -> next.account

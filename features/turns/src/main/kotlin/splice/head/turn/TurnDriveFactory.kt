@@ -70,7 +70,7 @@ internal class TurnDriveFactory(
         ).also { drive ->
             drive.fallbackAccountLabel = if (provider.auth is ClientAuthProvider) "claude-code" else "primary"
             drive.credentialAccountNames = deps.quotaBundle.credentialAccountNames
-            drive.accountHandoff = deps.quotaBundle.accountPool?.let { TurnAccountHandoff(it, deps.turnQuota) }
+            drive.accountHandoff = deps.quotaBundle.activePool?.let { TurnAccountHandoff(it, deps.turnQuota) }
             drive.sourceRoundStarted = TurnDrive.SourceRoundStarted { job -> deps.liveTurns.driving(inputs.slot, job) }
         }
     }

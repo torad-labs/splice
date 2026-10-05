@@ -769,7 +769,8 @@ class RoleRegistryLawTest {
         // 141 since Oct 4 CT: TranscriptReadBudget joins `()->Boolean`, the remaining time of one transcript request.
         // 142 since Oct 4 CT: CredentialAccountNames proves account identity from the effective credential digest.
         // 144 since Oct 4 CT: the two names of the new `(Usage?)->Unit` entry, RowRelease and RowWrite.
-        assertEquals(144, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
+        // 145 since Oct 4 CT: ClaudePoolChange publishes live account membership without stopping its head.
+        assertEquals(145, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
         assertTrue(config.entries.values.all { !it.text("reason").isNullOrBlank() }) { "every entry is reasoned" }
         assertTrue(config.entries.values.all { !it.text("dated").isNullOrBlank() }) { "every entry is dated" }
 

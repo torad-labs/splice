@@ -51,7 +51,7 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
 
     private suspend fun fold(head: AccountHead, joined: MutableMap<String, JoinedAccount>) {
         val description = head.auth.describe()
-        val pool = head.pool
+        val pool = head.activePool
         // A forwarded head's stored pool logins are real accounts. Only its unheld caller is represented by places.
         if (description.kind == "client" && pool == null) return
         if (!AuthKindRegistry.isOAuth(description.kind) && description.kind !in listOf("api-key", "client")) return

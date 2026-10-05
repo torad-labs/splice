@@ -135,7 +135,11 @@ internal class ClaudeAccountSignIn(
                 // A head that will not come up is still a landed account: the credential is filed and the row
                 // reads signed in, live after the next start. Its failure is the restart's to report, not this
                 // sign-in's to undo.
-                restart?.let { Cancellables.discard(Cancellables.runCatchingBestEffort { it.restart() }, RESTARTED) }
+                if (!landed.membershipPublished) {
+                    restart?.let {
+                        Cancellables.discard(Cancellables.runCatchingBestEffort { it.restart() }, RESTARTED)
+                    }
+                }
             }
             is ClaudeAccountLanding.AlreadyAdded ->
                 failed(cell, "that account is already on this command as '${landed.label}'")

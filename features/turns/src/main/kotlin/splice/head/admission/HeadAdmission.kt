@@ -162,7 +162,7 @@ internal class HeadAdmission(
         // retrying for no visible reason. Null for every head whose trace is off.
         val trace = prepared.takeInbound()?.let { deps.stores.trace?.begin(prepared.built.meta, it) }
         if (refuseIfOverBudget(call, prepared, admitted, trace)) return
-        var account = when (val selection = deps.quotaBundle.accountPool?.select(prepared.built.meta.sessionId)) {
+        var account = when (val selection = deps.quotaBundle.activePool?.select(prepared.built.meta.sessionId)) {
             null -> null
             is Selection.Chosen -> selection.account
             is Selection.Exhausted -> {

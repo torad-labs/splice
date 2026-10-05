@@ -101,7 +101,7 @@ internal sealed class ClaudeAccountRemoval {
 /** What [ClaudeAccountFolders.land] did with a finished sign-in. */
 internal sealed class ClaudeAccountLanding {
     /** The account is this head's now, under [label]. */
-    data class Added(val label: String) : ClaudeAccountLanding()
+    data class Added(val label: String, val membershipPublished: Boolean = false) : ClaudeAccountLanding()
 
     /** This head's pool already holds that account, under [label]; nothing was written. */
     data class AlreadyAdded(val label: String) : ClaudeAccountLanding()
@@ -114,6 +114,7 @@ internal class ClaudeAccountFolders(
     stateDir: Path,
     private val now: WallClock = WallClock(System::currentTimeMillis),
     private val profileRefresh: ClaudeIdentityRefresh? = null,
+    private val changes: ClaudePoolChanges? = null,
 ) {
     private val facts = ClaudeLoginFactsReader(
         ClaudeCredentialProfiles(stateDir, splice.core.util.LogSink { }),
@@ -175,8 +176,15 @@ internal class ClaudeAccountFolders(
         val owned = paths.names(label) && paths.names(head)
         val directory = if (owned) paths.account(head, label) else null
         if (directory == null || !Files.isDirectory(directory)) return ClaudeAccountRemoval.NotFound
+        changes?.withdraw(head, label)
         discard(directory)
-        return if (Files.exists(directory)) ClaudeAccountRemoval.Failed else ClaudeAccountRemoval.Removed
+        return if (Files.exists(directory)) {
+            changes?.publish(head)
+            ClaudeAccountRemoval.Failed
+        } else {
+            changes?.publish(head)
+            ClaudeAccountRemoval.Removed
+        }
     }
 
     /** Renames display metadata only. The stable id, credential, quota, pin and account order stay unchanged. */
@@ -205,7 +213,7 @@ internal class ClaudeAccountFolders(
         val held = added.firstOrNull { it.identity?.uuid == identity.uuid }
         if (held != null && held.label != pending.label) return ClaudeAccountLanding.AlreadyAdded(held.label)
         move(pending, addedAt = held?.addedAtEpochMillis?.takeIf { it != Long.MAX_VALUE } ?: filedAt(added))
-        return ClaudeAccountLanding.Added(pending.label)
+        return ClaudeAccountLanding.Added(pending.label, changes?.publish(pending.head) == true)
     }
 
     /** When splice files a new account: the clock, carried past the newest account this command already holds so two

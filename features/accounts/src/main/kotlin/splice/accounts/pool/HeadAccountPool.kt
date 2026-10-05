@@ -7,6 +7,9 @@ import splice.core.usage.QuotaWindowView
 
 /** Secret-free account-pool state safe for every operator surface, including the statusline. */
 public fun interface HeadAccountPoolSource {
+    /** False only for a dormant forwarded caller with no stored account choice. */
+    public val active: Boolean get() = true
+
     public fun view(sessionId: String?): HeadAccountPoolView
 }
 

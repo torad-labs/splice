@@ -37,7 +37,7 @@ public class AuthStatusRoutes(
                     put("present", description.present)
                     CredentialVerdictJson().write(this, description.verdict)
                     description.fields.forEach { (key, value) -> put(key, value) }
-                    head.pool?.view(null)?.let { pool ->
+                    head.activePool?.view(null)?.let { pool ->
                         AccountPoolJson().write(this, pool, accountAuth)
                     }
                 }

@@ -15,10 +15,16 @@ import splice.head.usage.ProviderReplyObserver
 import splice.upstream.CredentialHeaders
 import splice.upstream.Provider
 import splice.upstream.credentials.AccountPool
+import splice.upstream.credentials.PoolAccount
 import java.util.concurrent.ConcurrentHashMap
 
 /** The login a real turn would use next on a pooled command: its [label], its credential and its own headers. */
-internal data class PlaygroundLogin(val label: String, val auth: AuthProvider, val headers: CredentialHeaders?)
+internal data class PlaygroundLogin(
+    val label: String,
+    val auth: AuthProvider,
+    val headers: CredentialHeaders?,
+    val selectedAccount: PoolAccount? = null,
+)
 
 /** One head generation, captured before credentials suspend. Raw provider-only callers supply their own auth. */
 internal data class PlaygroundTarget(
@@ -31,7 +37,7 @@ internal data class PlaygroundTarget(
 internal class PlaygroundProviders {
     private val byKey = ConcurrentHashMap<String, Binding>()
 
-    private data class Pooled(val pool: AccountPool, val logins: Map<String, WiredAccount>)
+    private data class Pooled(val pool: AccountPool)
     private data class Binding(
         val provider: Provider,
         val auth: AuthProvider? = null,
@@ -61,11 +67,18 @@ internal class PlaygroundProviders {
         return PlaygroundTarget(binding.provider, binding.auth, login(binding.pooled), binding.observer)
     }
 
-    private fun pooled(pool: AccountPool?, accounts: List<WiredAccount>): Pooled? =
-        pool?.let { Pooled(it, accounts.associateBy(WiredAccount::label)) }
+    private fun pooled(pool: AccountPool?, accounts: List<WiredAccount>): Pooled? = pool?.let {
+        val labels = accounts.map(WiredAccount::label).toSet()
+        require(accounts.isEmpty() || labels == it.members.map { member -> member.label }.toSet()) {
+            "Playground binding and selector must start with the same accounts"
+        }
+        Pooled(it)
+    }
 
     private fun login(pooled: Pooled?): PlaygroundLogin? {
-        val account = pooled?.pool?.nextTargetLabel()?.let(pooled.logins::get) ?: return null
-        return PlaygroundLogin(account.label, account.auth, account.extraHeaders)
+        val pool = pooled?.pool?.takeIf { it.active } ?: return null
+        val account = pool.nextTargetLabel()?.let { label -> pool.members.singleOrNull { it.label == label } }
+            ?: return null
+        return PlaygroundLogin(account.label, account.auth, account.extraHeaders, account)
     }
 }

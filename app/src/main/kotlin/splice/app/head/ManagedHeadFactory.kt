@@ -16,7 +16,6 @@ import splice.app.sources.CompactStatsSource
 import splice.app.sources.EconomicsStoreSource
 import splice.app.sources.PerfStatsSource
 import splice.app.sources.UsageStoreSource
-import splice.core.auth.AuthProvider
 import splice.core.auth.ClientAuthProvider
 import splice.core.config.Knob
 import splice.core.config.StatePaths
@@ -34,14 +33,12 @@ import splice.head.usage.QuotaTracker
 import splice.head.usage.UsageStore
 import splice.oauth.AuthHttpClientFactory
 import splice.provider.codex.CodexQuotaHeaderFamily
-import splice.provider.muse.MuseAuthProvider
 import splice.provider.openai.ApiKeyAuthProvider
 import splice.usage.quota.ClientUserAgent
 import splice.usage.quota.QuotaPoller
 import splice.usage.quota.QuotaProbe
 import splice.usage.quota.QuotaProbes
 import splice.usage.quota.QuotaSnapshotSink
-import splice.usage.quota.UsageFields
 
 internal fun interface StartQuotaPoller {
     operator fun invoke(head: String, probe: QuotaProbe, tracker: QuotaTracker, intervalMs: Long): QuotaPoller?
@@ -99,7 +96,8 @@ internal class ManagedHeadFactory(
             ?: QuotaTracker(statePaths.quotaFile(key), extraFamily = CodexQuotaHeaderFamily())
         onPrimaryQuota(primaryQuota)
         val stores = headStores(ctx, wired, primaryQuota, accountQuotas)
-        val quotaPollers = startQuotaPollers(ctx, wired, stores, cfg.quotaPollOff)
+        val quotaPollers = HeadQuotaPolling(ctx, quotaProbes, startQuotaPoller, clientUserAgent)
+            .start(wired, stores, accountQuotas, providerAssembly, providerHolds)
         val logFile = statePaths.logsDir.resolve("daemon.log")
         // Derived from the CREDENTIAL, never from the declared string. The bypass is safe only
         // because splice holds nothing for this head, so it reads the artifact that IS that fact:
@@ -113,9 +111,7 @@ internal class ManagedHeadFactory(
         // DR-81: key presence is NOT baked into the spec — it is a per-launch read of the SAME
         // wired credential, so `splice key set`/unset changes the very next launch. Non-api-key
         // auth reads true: capture/advertiser stay disarmed, which is the safe side.
-        val keyPresence = splice.launch.KeyPresenceProbe {
-            (wired.auth as? ApiKeyAuthProvider)?.hasKeyNow() != false
-        }
+        val keyPresence = keyPresence(wired)
         val perfRows = perfSources.rowsFor(key)
         return ManagedHead(
             head = server,
@@ -140,6 +136,10 @@ internal class ManagedHeadFactory(
             accountPool = accountPools.source(stores.accountPool, key, accountOrders),
             accountAuth = accountPools.authSource(wired),
         )
+    }
+
+    private fun keyPresence(wired: Wired): splice.launch.KeyPresenceProbe = splice.launch.KeyPresenceProbe {
+        (wired.auth as? ApiKeyAuthProvider)?.hasKeyNow() != false
     }
 
     /** Assembly binds independent replies to this head before the head is exposed to the control plane. */
@@ -177,7 +177,7 @@ internal class ManagedHeadFactory(
         // V4-221: each turn priced at its own model's card, against the same catalog the budget uses.
         economics = EconomicsStore(statePaths.economicsFile(ctx.key), TurnPrice(ctx.catalog)),
         quota = primaryQuota,
-        accountPool = accountPools.build(wired, accountQuotas, providerHolds.forAccounts(ctx.key, wired)),
+        accountPool = accountPools.build(wired, accountQuotas, providerHolds.forAccounts(ctx.key, wired), primaryQuota),
         accountQuotas = accountQuotas,
         clientWindows = ClientWindows(store = statePaths.clientWindowsFile(ctx.key), log = log),
         trace = traceStores.forHead(ctx.key, ctx.cfg),
@@ -192,42 +192,9 @@ internal class ManagedHeadFactory(
     /** The primary's snapshot stays where every install before 0.4.0 wrote it (per HEAD, under the
      *  state dir): an upgrade boots with its windows intact, and two heads of one kind never share a
      *  file. Labeled accounts persist next to their credential. */
-    private fun accountQuotas(key: String, wired: Wired): Map<String, QuotaTracker> =
-        wired.accounts.associate { account ->
+    private fun accountQuotas(key: String, wired: Wired): MutableMap<String, QuotaTracker> =
+        wired.accounts.associateTo(java.util.concurrent.ConcurrentHashMap()) { account ->
             val file = if (account.primary) statePaths.quotaFile(key) else account.quotaFile
             account.label to QuotaTracker(file, extraFamily = CodexQuotaHeaderFamily())
         }
-
-    private fun startQuotaPollers(
-        ctx: ProviderBuild,
-        wired: Wired,
-        stores: HeadStores,
-        off: Boolean,
-    ): List<QuotaPoller> {
-        if (off) return emptyList()
-        // V4-110: the poll cadence is the quotaPollIntervalMs knob (floored in ConfigCoercion),
-        // read per head from the merged+normalized map — always seeded, so `as Long` is safe.
-        val intervalMs = ctx.cfg.asMap()[Knob.QUOTA_POLL_INTERVAL_MS.key] as Long
-        val authKind = ctx.providerCfg.auth.kind
-        val baseUrl = ctx.providerCfg.baseUrl
-        // Subscription heads have a usage endpoint. Every OAuth account gets its own persisted
-        // snapshot and poller; non-pooled heads retain the legacy single tracker path.
-        val probeFor = { auth: AuthProvider ->
-            quotaProbes.forHead(authKind, baseUrl, auth, usageFields(auth), clientUserAgent)
-        }
-        if (wired.accounts.isEmpty()) {
-            return listOfNotNull(
-                probeFor(wired.auth)?.let { probe -> startQuotaPoller(ctx.key, probe, stores.quota, intervalMs) },
-            )
-        }
-        return wired.accounts.mapNotNull { account ->
-            probeFor(account.auth)?.let { probe ->
-                startQuotaPoller(ctx.key, probe, stores.accountQuotas.getValue(account.label), intervalMs)
-            }
-        }
-    }
-
-    /** Muse reports plan usage on its mint response; the usage slice reads it through [UsageFields]. */
-    private fun usageFields(auth: AuthProvider): UsageFields? =
-        (auth as? MuseAuthProvider)?.let { muse -> UsageFields { muse.usageFields() } }
 }

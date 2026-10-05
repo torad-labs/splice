@@ -49,6 +49,22 @@ class CodeModeSessionLivenessTest {
         assertNull(probe("headless"))
     }
 
+    /** The registry's start trim reads this port in its own init, right after the daemon builds the probe,
+     *  and spares an over-bound conversation only on `true` (CodeModeRecordRetention in CodexCodeModeSweeper).
+     *  A first sample launched onto the scope had not landed by then, so a live conversation read as unknown
+     *  and was trimmed. Nothing here runs the launched loop before the read, exactly as at daemon start. */
+    @Test
+    fun `the first sample has landed when the probe is built, before any start trim reads it`() = runTest {
+        val source = ListingSource(SessionListing(listOf(record("live", SessionAvailability.LIVE))))
+        val probe = CodeModeSessionLiveness(
+            backgroundScope,
+            source,
+            Ticker { false },
+            StandardTestDispatcher(testScheduler),
+        )
+        assertEquals(true, probe("live"), "the start trim read the live conversation as unknown")
+    }
+
     @Test
     fun `an unavailable registry clears stale death evidence instead of declaring missing sessions dead`() = runTest {
         val next = CompletableDeferred<Unit>()

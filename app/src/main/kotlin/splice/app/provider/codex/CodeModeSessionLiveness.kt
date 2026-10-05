@@ -32,22 +32,24 @@ internal class CodeModeSessionLiveness(
     private val ioDispatcher: CoroutineDispatcher = ProcessDispatchers().io(),
     private val log: LogSink = LogSink { },
 ) : CodeModeSessionAlive {
-    @Volatile private var alive = emptyMap<String, Boolean>()
+    // The first sample is taken here, on the constructing thread. The registry's start trim reads this
+    // port in its own init, right after the daemon builds the probe, and an unknown conversation is
+    // evictable by design; a first sample launched onto the scope had not landed by then, so a live
+    // conversation over its bounds was trimmed as unknown (2026-10-04).
+    @Volatile private var alive = sample()
 
     init {
         scope.launch {
-            do {
-                alive = sample()
-            } while (isActive && ticker.awaitTick(SESSION_POLL_MS))
+            while (isActive && ticker.awaitTick(SESSION_POLL_MS)) {
+                alive = withContext(ioDispatcher) { sample() }
+            }
         }
     }
 
     override fun invoke(sessionId: String): Boolean? = alive[sessionId]
 
-    private suspend fun sample(): Map<String, Boolean> {
-        val listing = withContext(ioDispatcher) {
-            Cancellables.runCatchingBestEffort { source.list() }
-        }.getOrElse { failure ->
+    private fun sample(): Map<String, Boolean> {
+        val listing = Cancellables.runCatchingBestEffort { source.list() }.getOrElse { failure ->
             log("[code-mode] session liveness unavailable (${SafeFailureText.render(failure)}); remains unknown")
             return emptyMap()
         }

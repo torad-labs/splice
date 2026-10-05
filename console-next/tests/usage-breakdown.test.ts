@@ -100,6 +100,21 @@ describe('why a request has no price', () => {
   });
 });
 
+test('local and failed-unanswered causes survive command merges and every breakdown without becoming spend gaps', () => {
+  const reported = { ...stats({ requests: 4, unpriced_requests: 2, unpriced_plan_requests: 1 }), unpriced_local_requests: 1, unanswered_requests: 1 };
+  const merged = mergeWindowStats([reported, stats({ unpriced_requests: 3 })]);
+  expect(merged).toMatchObject({ unpriced_requests: 5, unpriced_local_requests: 1, unanswered_requests: 1 });
+  expect(priceGaps(merged)).toMatchObject({ local: 1, unanswered: 1, plan: 1, unknown: 3 });
+  const groups = { totals: reported, models: [{ key: 'synthetic-model', ...reported }], accounts: [{ key: 'synthetic-account', ...reported }], days: [{ key: '2026-10-02', ...reported }] };
+  for (const by of ['model', 'account', 'day'] as const) {
+    const shown = fullUsageBreakdown(data({ synthetic: groups }), by)?.[0];
+    expect(shown?.gaps).toMatchObject({ local: 1, unanswered: 1, plan: 1, unknown: 0 });
+    if (shown === undefined) throw new Error('daemon group must be present');
+    expect(priceGapLines(shown.gaps)).toContain('1 request ran its model on this computer, so it has no provider price.');
+    expect(priceGapLines(shown.gaps)).toContain('1 request failed without a recorded answer or token usage. It is not a missing-spend estimate.');
+  }
+});
+
 // A reply cut off by a new message while it streamed was billed upstream and never reported; the daemon counts it.
 describe('replies cut off by a new message', () => {
   test('merged commands add the count, and no command reporting it leaves it absent', () => {

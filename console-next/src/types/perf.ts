@@ -206,6 +206,9 @@ export interface TurnUsageStats {
   unpriced_uncounted_requests?: number;
   unpriced_plan_requests?: number;
   unpriced_undeclared_requests?: number;
+  unpriced_local_requests?: number;
+  /** Failed with no recorded answer or token usage. Separate from unpriced_requests, not missing spend. */
+  unanswered_requests?: number;
   missing_input_requests: number;
   missing_output_requests: number;
   missing_cache_requests: number;

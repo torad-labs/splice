@@ -162,7 +162,7 @@ function usageStats(value: unknown): value is TurnUsageStats {
   if (!record(value)) return false;
   return ['requests', 'unpriced_requests', 'missing_input_requests', 'missing_output_requests', 'missing_cache_requests'].every(key => numeric(value[key])) &&
     ['input_tokens', 'cached_tokens', 'output_tokens', 'cost_usd', 'cache_share'].every(key => value[key] === null || numeric(value[key])) &&
-    ['unpriced_uncounted_requests', 'unpriced_plan_requests', 'unpriced_undeclared_requests'].every(key => value[key] === undefined || numeric(value[key]));
+    ['unpriced_uncounted_requests', 'unpriced_plan_requests', 'unpriced_undeclared_requests', 'unpriced_local_requests', 'unanswered_requests'].every(key => value[key] === undefined || numeric(value[key]));
 }
 
 function usageWire(value: unknown): value is TurnUsageWire {

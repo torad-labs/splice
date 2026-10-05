@@ -5,6 +5,10 @@ package splice.app.control
 import splice.accounts.claude.ClaudeLoginPlacesSource
 import splice.app.control.api.HeadResolver
 import splice.core.auth.CLIENT_AUTH_KIND
+import splice.core.topology.AuthKind
+import splice.core.topology.AuthKindRegistry
+import splice.models.roster.DeclaredHeads
+import splice.usage.UsageBilling
 import splice.usage.UsageHead
 import splice.usage.UsageHeadLookup
 import splice.usage.UsageHeads
@@ -24,8 +28,22 @@ internal object UsageHeadAdapter {
     }
 
     /** The shared by-name lookup (key first, then every wrapper-command match). */
-    fun lookup(resolver: HeadResolver): UsageHeadLookup =
-        UsageHeadLookup { name -> resolver.headByName(name).map(::adapt) }
+    fun lookup(
+        resolver: HeadResolver,
+        declared: DeclaredHeads = DeclaredHeads { emptyMap() },
+    ): UsageHeadLookup = object : UsageHeadLookup {
+        override fun byName(name: String): List<UsageHead> = resolver.headByName(name).map(::adapt)
+
+        override fun billing(key: String): UsageBilling? {
+            val head = resolver.headByName(key).firstOrNull { it.head.key == key } ?: return null
+            val auth = AuthKindRegistry.from(head.authKind)
+            return when {
+                declared()[key]?.family == "local" -> UsageBilling.LOCAL_RUNTIME
+                auth?.isOAuth == true || auth == AuthKind.Client -> UsageBilling.SUBSCRIPTION
+                else -> UsageBilling.API_RATE
+            }
+        }
+    }
 
     private fun adapt(head: ManagedHead): UsageHead = UsageHead(
         key = head.head.key,

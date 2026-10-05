@@ -25,6 +25,8 @@ export interface Budget {
   /** The daemon's measured spending in this head's budget window, never per-account attribution. */
   used_usd?: number | null;
   remaining_usd?: number | null;
+  /** True only while the daemon is reading the day's history; false does not prove spending is known. */
+  spend_pending?: boolean | null;
 }
 
 export interface BudgetsPayload {

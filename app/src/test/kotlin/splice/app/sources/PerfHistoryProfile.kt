@@ -33,8 +33,11 @@ internal class PerfHistoryProfile {
     internal fun writesUnder(directory: Path): Long =
         diskWritesByPath.entries.sumOf { (path, bytes) -> if (path?.startsWith(directory) == true) bytes else 0L }
 
-    internal fun source(source: PerfRowsFileSource, path: Path): List<PerfRow> =
-        diskPhase("source", path) { source.window(SCALE_SINCE).rows }
+    internal fun source(
+        source: PerfRowsFileSource,
+        path: Path,
+        readPaths: Set<Path> = emptySet(),
+    ): List<PerfRow> = diskPhase("source", path, readPaths) { source.window(SCALE_SINCE).rows }
 
     internal fun <T> diskPhase(name: String, path: Path, readPaths: Set<Path> = emptySet(), action: () -> T): T {
         Recording().use { recording ->
@@ -68,7 +71,8 @@ internal class PerfHistoryProfile {
                 0,
             )
             val plans = Class.forName("splice.usage.perf.AccountPlans")
-                .getDeclaredConstructor(splice.usage.UsageHead::class.java).newInstance(head)
+                .getDeclaredConstructor(splice.usage.UsageHead::class.java, splice.usage.UsageBilling::class.java)
+                .newInstance(head, null)
             method.invoke(constructor.newInstance(rows, null, plans, ZoneId.of("America/Chicago"))) as JsonObject
         }
         return phase("serialization") { JsonWire.string(payload).toByteArray(Charsets.UTF_8).size }

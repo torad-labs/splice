@@ -3,6 +3,7 @@ import { isPendingRoute } from '../../api/auth';
 import { failureText } from '../../api/client';
 import { useBudgets, usePutBudgets } from '../../api/usage';
 import { fmtUsd } from '../../lib/format';
+import { U } from '../../lib/words-usage';
 import { Button } from '../../ui';
 import { A } from './copy';
 
@@ -31,7 +32,7 @@ export function AccountBudget({ head, label = head }: { head: string; label?: st
     <div className="account-budget">
       <b>{A.headBudget(label)}</b>
       <span>{cap === null ? A.noCapWhy : fmtUsd(cap)}</span>
-      {cap === null ? null : budget?.used_usd == null ? <span className="hint">{A.spendUnknown}</span> : <>
+      {cap === null ? null : budget?.used_usd == null ? <span className="hint">{budget?.spend_pending === true ? U.budgetReading : A.spendUnknown}</span> : <>
         <span>{A.spent}: {fmtUsd(budget.used_usd)}</span>
         {budget.remaining_usd == null ? null : <span>{A.left}: {fmtUsd(budget.remaining_usd)}</span>}
       </>}

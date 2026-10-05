@@ -13,6 +13,8 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.config.ConfigService
+import splice.core.config.StatePaths
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.model.ModelRates
@@ -62,13 +64,45 @@ class BudgetSeedTest {
         head.spent(SEED_BOOT_MS, "priced", tokens(2))
         repeat(3) { assertNull(head.admit()) }
         assertEquals(0, reads, "admission has not executed the historical reader")
-        assertEquals(BudgetSpend(null, null, 0, false), owner.spending("head"))
+        assertEquals(BudgetSpend(null, null, 0, false, pending = true), owner.spending("head"))
         head.spent(SEED_BOOT_MS + 1, "priced", tokens(1))
         runCurrent()
         assertEquals(1, reads, "every pending admission shares one seed")
         assertEquals(BudgetSpend(4.0, 1.0, 0, true), owner.spending("head"))
         head.spent(SEED_BOOT_MS + 2, "priced", tokens(1))
         assertNotNull(head.admit(), "the seeded and live spend together enforce the cap")
+        assertEquals(1, reads)
+    }
+
+    @Test
+    fun `a saved budget on an empty day says history is pending then reports its measured zero`() = runTest {
+        val paths = StatePaths(baseOverride = directory.resolve("empty-state"))
+        val store = BudgetStore(paths.stateDir.resolve("budgets.json"), {})
+        var reads = 0
+        val owner = BudgetEnforcement(
+            store,
+            BudgetAlert { _, _ -> },
+            HeadPerfHistory {
+                PerfRowsSource {
+                    reads++
+                    PerfRowsWindow(emptyList())
+                }
+            },
+            {},
+            WallClock { SEED_BOOT_MS },
+            BudgetSeedRuntime(backgroundScope, StandardTestDispatcher(testScheduler)),
+        )
+        owner.forHead("head", seedCatalog)
+        val routes = BudgetRoutes(BudgetSource { store }, ConfigService(paths))
+        val saved = routes.write("""{"budgets":[{"head":"head","daily_usd":50,"action":"warn"}]}""", owner)
+        assertTrue(saved.body.contains("\"used_usd\":null"), saved.body)
+        assertTrue(saved.body.contains("\"spend_pending\":true"), saved.body)
+        assertEquals(0, reads, "the route does not pretend to have completed the historical read")
+        runCurrent()
+        val complete = routes.read(owner)
+        assertTrue(complete.body.contains("\"used_usd\":0.0"), complete.body)
+        assertTrue(complete.body.contains("\"remaining_usd\":50.0"), complete.body)
+        assertTrue(complete.body.contains("\"spend_pending\":false"), complete.body)
         assertEquals(1, reads)
     }
 

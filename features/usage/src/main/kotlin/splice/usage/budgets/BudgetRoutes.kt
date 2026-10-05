@@ -97,6 +97,7 @@ public class BudgetRoutes(private val source: BudgetSource, private val config: 
                     put("remaining_usd", spend?.remainingUsd)
                     put("unpriced_turns", spend?.unpricedTurns)
                     put("spend_complete", spend?.complete)
+                    put("spend_pending", spend?.pending)
                 }
                 add(row)
             }

@@ -60,4 +60,6 @@ internal data class BudgetSpend(
     val remainingUsd: Double?,
     val unpricedTurns: Long,
     val complete: Boolean,
+    /** True only while the daemon is still reading this day's pre-boot history. */
+    val pending: Boolean = false,
 )

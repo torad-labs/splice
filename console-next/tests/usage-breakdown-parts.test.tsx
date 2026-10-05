@@ -75,6 +75,16 @@ test('a group with replies cut off by a new message says their tokens are not re
   expect(plain).not.toContain('cut off');
 });
 
+test('an unanswered failure explains its cause without making recorded spend a lower bound', () => {
+  const gaps = { ...item.gaps, unanswered: 1 };
+  const html = renderToStaticMarkup(<MemoryRouter><UsageValues items={[{ ...item, turns: 2, gaps }]} by="model" since={0} until={200} labelOf={key => key} /></MemoryRouter>);
+  expect(html).toContain('1 request failed without a recorded answer or token usage.');
+  expect(html).toContain('It is not a missing-spend estimate.');
+  expect(html).toContain('$0.25');
+  expect(html).not.toContain('At least');
+  expect(html).not.toContain('no recorded price');
+});
+
 test('an older daemon never substitutes its display slice for an aggregate', () => {
   const html = renderToStaticMarkup(<MemoryRouter><UsageBreakdown read={reading({ usageBy: {} })} labelOf={key => key} /></MemoryRouter>);
   expect(html).toContain('does not report full-window usage');
@@ -156,6 +166,14 @@ test('the spend cell says why each request has no price', () => {
   expect(html).toContain('2 requests are covered by a plan, so they have no price.');
   expect(html).toContain('1 request has no recorded price.');
   expect(html.match(/no recorded price/g)).toHaveLength(1);
+});
+
+test('a completely read empty budget day displays its measured zero and full remaining balance', () => {
+  const html = renderToStaticMarkup(<BudgetBalance budget={{ head: 'synthetic', daily_usd: 50, action: 'warn', used_usd: 0, remaining_usd: 50 }} />);
+  expect(html).toContain('$0.00 spent');
+  expect(html).toContain('$50.00 left');
+  expect(html).not.toContain('$0.000');
+  expect(html).not.toContain('not reported');
 });
 
 test('daily budgets use their own measured window and warn before exhaustion', () => {

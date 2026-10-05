@@ -91,6 +91,41 @@ class BudgetSpendTest {
     }
 
     @Test
+    fun `a skipped history row or posted source without usage cannot become a measured zero`() {
+        val samples = listOf(
+            PerfRowsWindow(emptyList(), skipped = 1),
+            PerfRowsWindow(
+                listOf(
+                    PerfRow(
+                        ts = SPEND_BOOT_MS - 1,
+                        outcome = "failure:api_error",
+                        fields = mapOf(PerfKeys.UPSTREAM_REQ_BYTES to 32L),
+                        model = "priced",
+                    ),
+                ),
+            ),
+        )
+        samples.forEachIndexed { index, sample ->
+            val store = BudgetStore(directory.resolve("budget-$index.json"))
+            store.replace(listOf(Budget("head", 50.0, BudgetActions.WARN)))
+            val owner = BudgetEnforcement(
+                store,
+                BudgetAlert { _, _ -> },
+                HeadPerfHistory { PerfRowsSource { sample } },
+                {},
+                WallClock { SPEND_BOOT_MS },
+                immediateSeed(),
+            )
+            owner.forHead("head", catalog)
+            val spend = owner.spending("head")!!
+            assertNull(spend.usedUsd, "unreported or missing history is not a zero-dollar day")
+            assertNull(spend.remainingUsd)
+            assertFalse(spend.complete)
+            assertFalse(spend.pending, "unreadable is not a still-running history read")
+        }
+    }
+
+    @Test
     fun `budget GET includes head-wide amounts and never any account allocation`() {
         val paths = StatePaths(baseOverride = directory.resolve("state"))
         val store = BudgetStore(paths.stateDir.resolve("budgets.json"))

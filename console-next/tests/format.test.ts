@@ -6,6 +6,7 @@ describe('formatting', () => {
     expect(fmtBytes(512)).toBe('512 B');
     expect(fmtBytes(1536)).toBe('1.5 KiB');
     expect(fmtTokens(1_234_567)).toBe('1.23M');
+    expect(fmtUsd(0)).toBe('$0.00');
     expect(fmtUsd(0.4234)).toBe('$0.423');
     expect(fmtUsd(12.3)).toBe('$12.30');
   });

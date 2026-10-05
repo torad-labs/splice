@@ -18,6 +18,7 @@ import splice.app.sources.PerfStatsSource
 import splice.core.config.ConfigService
 import splice.core.version.ClientVersionTracker
 import splice.head.perf.TurnKeptRoutes
+import splice.models.roster.DeclaredHeads
 import splice.upstream.codemode.ProcessDispatchers
 import splice.usage.alerts.AlertRoutes
 import splice.usage.alerts.AlertSource
@@ -45,7 +46,10 @@ internal class UsageMount(
         (managed.perf as? PerfStatsSource)?.sessionTotals?.let { key to it }
     }.toMap()
     private val usageHeads = UsageHeadAdapter.heads(heads, ClaudeLoginPlacesSource { ports.claudeLogins })
-    private val usageLookup = UsageHeadAdapter.lookup(resolver)
+    private val usageLookup = UsageHeadAdapter.lookup(
+        resolver,
+        DeclaredHeads { ports.declaredHeads?.invoke().orEmpty() },
+    )
     private val usagePayloads = UsagePayloads(usageHeads, config)
     private val perfPayloads = PerfPayloads(usageHeads)
     private val economicsPayloads = EconomicsPayloads(usageHeads)

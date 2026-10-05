@@ -7,11 +7,20 @@ import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.model.TurnBill
 import splice.core.model.TurnPrice
+import splice.core.perf.OutcomeTags
 import splice.core.perf.PerfKeys
+import splice.usage.UsageBilling
 import splice.usage.UsageHead
 import java.time.Instant
 import java.time.ZoneId
+
+private val UNREPORTED_SPEND_KEYS = listOf(
+    PerfKeys.ABSORBED_ROUNDS,
+    PerfKeys.CUT_SOURCE_ROUNDS,
+    PerfKeys.UPSTREAM_REQ_BYTES,
+)
 
 /** Full filtered-window facts, computed from the route's existing read, before its display-row limit. */
 internal class TurnUsage(rows: List<PerfRow>, price: TurnPrice?, plans: AccountPlans, zone: ZoneId) {
@@ -27,9 +36,11 @@ internal class TurnUsage(rows: List<PerfRow>, price: TurnPrice?, plans: AccountP
             val declared = price?.declares(row.model) == true
             val known = PerfKeys.IN_TOKENS in row.fields && PerfKeys.OUT_TOKENS in row.fields
             val cost = price?.takeIf { declared && known }?.usd(row.model, row.fields)
-            // A missing card is the cause even when the counts are there; counts matter only once a card exists.
             val gap = when {
+                unanswered(row) -> PriceGap.UNANSWERED
                 cost != null -> null
+                plans.kind == UsageBilling.LOCAL_RUNTIME -> PriceGap.LOCAL
+                plans.kind == UsageBilling.SUBSCRIPTION -> PriceGap.PLAN
                 declared -> PriceGap.UNCOUNTED
                 plans.of(row.account) != null -> PriceGap.PLAN
                 else -> PriceGap.UNDECLARED
@@ -51,6 +62,13 @@ internal class TurnUsage(rows: List<PerfRow>, price: TurnPrice?, plans: AccountP
         put("days", grouped(days))
         put("sessions", sessionGroups())
     }
+
+    /** Failed with neither recorded model output nor billed usage; interrupted or absorbed source stays a gap. */
+    private fun unanswered(row: PerfRow): Boolean =
+        OutcomeTags.isFailed(row.outcome) && TurnBill.isEmpty(row.fields) &&
+            UNREPORTED_SPEND_KEYS.none { row.fields.getOrDefault(it, 0L) > 0L } &&
+            PerfKeys.FIRST_DELTA !in row.fields &&
+            ((row.fields[PerfKeys.CONTENT_FRAMES_OUT] ?: 0L) == 0L || row.fields[PerfKeys.ATTEMPTS] == 0L)
 
     private fun sessionGroups(): JsonArray = buildJsonArray {
         sessions.forEach { (id, counters) ->
@@ -87,7 +105,7 @@ internal class TurnUsage(rows: List<PerfRow>, price: TurnPrice?, plans: AccountP
     private data class LastModel(val ts: Long, val model: String)
 
     /** Why a request has no dollar figure. */
-    private enum class PriceGap { UNCOUNTED, PLAN, UNDECLARED }
+    private enum class PriceGap { UNCOUNTED, PLAN, LOCAL, UNDECLARED, UNANSWERED }
 
     private class Counters {
         private var requests = 0L
@@ -132,11 +150,13 @@ internal class TurnUsage(rows: List<PerfRow>, price: TurnPrice?, plans: AccountP
             put("cached_tokens", cached)
             put("output_tokens", output)
             put("cost_usd", cost)
-            // Every request without a dollar figure, then the same requests by cause; the three sum to it.
-            put("unpriced_requests", gaps.values.sum())
+            // Unanswered failures remain requests, but do not qualify estimates as missing spend.
+            put("unpriced_requests", gaps.values.sum() - gaps.getValue(PriceGap.UNANSWERED))
             put("unpriced_uncounted_requests", gaps.getValue(PriceGap.UNCOUNTED))
             put("unpriced_plan_requests", gaps.getValue(PriceGap.PLAN))
+            put("unpriced_local_requests", gaps.getValue(PriceGap.LOCAL))
             put("unpriced_undeclared_requests", gaps.getValue(PriceGap.UNDECLARED))
+            put("unanswered_requests", gaps.getValue(PriceGap.UNANSWERED))
             put("missing_input_requests", missingInput)
             put("missing_output_requests", missingOutput)
             put("missing_cache_requests", missingCache)
@@ -148,7 +168,9 @@ internal class TurnUsage(rows: List<PerfRow>, price: TurnPrice?, plans: AccountP
 
 /** The plan each recorded account runs on, as the head reports it now. An account the head's pool names
  *  answers for itself, an API key with no plan included; any other row falls back to the head's own quota. */
-internal class AccountPlans(head: UsageHead) {
+internal class AccountPlans(head: UsageHead, billing: UsageBilling? = null) {
+    val kind: UsageBilling? = billing ?: if (head.anthropicUpstream) UsageBilling.SUBSCRIPTION else null
+
     // Read only when a request lacks a price, so a fully priced window never touches the pool or the quota file.
     private val byLabel by lazy { head.accountPool?.view(null)?.accounts.orEmpty().associate { it.label to it.plan } }
     private val headPlan by lazy { head.usage.snapshot().quota?.plan }

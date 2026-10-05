@@ -28,6 +28,7 @@ import splice.core.model.ModelRates
 import splice.core.perf.PerfKeys
 import splice.core.usage.QuotaView
 import splice.core.util.WallClock
+import splice.usage.UsageBilling
 import splice.usage.UsageHead
 import splice.usage.UsageHeadLookup
 import splice.usage.quota.HeadUsageSource
@@ -69,6 +70,7 @@ class PerfTurnUsageTest {
         usage: HeadUsageSource = HeadUsageSource { UsageView(0, 0, null) },
         accountPool: HeadAccountPoolSource? = null,
         onRead: () -> Unit = {},
+        billing: UsageBilling? = null,
     ) {
         val catalog = ModelCatalog(
             discoveryPrefix = "synthetic--",
@@ -91,7 +93,11 @@ class PerfTurnUsageTest {
             catalog = catalog,
             accountPool = accountPool,
         )
-        val routes = PerfRoutes(UsageHeadLookup { listOf(head) }, WallClock { 5_000 })
+        val lookup = object : UsageHeadLookup {
+            override fun byName(name: String): List<UsageHead> = listOf(head)
+            override fun billing(key: String): UsageBilling? = billing
+        }
+        val routes = PerfRoutes(lookup, WallClock { 5_000 })
         application { routing { get("/api/perf/turns") { routes.turns(call) } } }
     }
 
@@ -118,7 +124,8 @@ class PerfTurnUsageTest {
         assertEquals(250_100L, totals.getValue("output_tokens").jsonPrimitive.long)
         assertEquals(0.9, totals.getValue("cache_share").jsonPrimitive.double, 0.000001)
         assertEquals(1.47559, totals.getValue("cost_usd").jsonPrimitive.double, 0.000001)
-        assertEquals(1L, totals.getValue("unpriced_requests").jsonPrimitive.long)
+        assertEquals(0L, totals.getValue("unpriced_requests").jsonPrimitive.long)
+        assertEquals(1L, totals.getValue("unanswered_requests").jsonPrimitive.long)
         val models = usage.getValue("models").jsonArray.map { it.jsonObject }
         val earlier = models.single { it.getValue("key").jsonPrimitive.content == "earlier" }
         assertEquals(1L, earlier.getValue("requests").jsonPrimitive.long)
@@ -176,6 +183,68 @@ class PerfTurnUsageTest {
         assertEquals(listOf(1L, 0L, 1L, 0L), causes(usage.getValue("totals").jsonObject))
         assertSummed(usage)
     }
+
+    @Test
+    fun `subscription and local heads classify unpriced rows without a quota plan or account record`() {
+        for ((kind, cause) in listOf(
+            UsageBilling.SUBSCRIPTION to PLAN,
+            UsageBilling.LOCAL_RUNTIME to "unpriced_local_requests",
+        )) {
+            testApplication {
+                mount(
+                    listOf(priced.last().copy(model = "free"), priced.last().copy(ts = 1_002, fields = emptyMap())),
+                    usage = HeadUsageSource { error("billing kind must not need quota metadata") },
+                    billing = kind,
+                )
+                val usage = head(client.get("/api/perf/turns?head=synthetic&since=1000&local=0").bodyAsText())
+                    .getValue("usage").jsonObject
+                val groups = listOf(usage.getValue("totals").jsonObject) +
+                    listOf("models", "accounts", "days", "sessions").flatMap { name ->
+                        usage.getValue(name).jsonArray.map { it.jsonObject }
+                    }
+                groups.forEach { group ->
+                    assertEquals(group.getValue(UNPRICED), group.getValue(cause), "$kind: $group")
+                    assertEquals(0L, group.getValue(UNCOUNTED).jsonPrimitive.long, "$kind: $group")
+                    assertEquals(0L, group.getValue(UNDECLARED).jsonPrimitive.long, "$kind: $group")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `failed unanswered rows are separate from spend gaps but partial usage and cut rounds stay visible`() =
+        testApplication {
+            val partial = listOf(
+                mapOf(PerfKeys.IN_TOKENS to 3L),
+                mapOf(PerfKeys.OUT_TOKENS to 3L),
+                mapOf(PerfKeys.FIRST_DELTA to 100L),
+                mapOf(PerfKeys.CONTENT_FRAMES_OUT to 1L),
+                mapOf(PerfKeys.CUT_SOURCE_ROUNDS to 1L),
+                mapOf(PerfKeys.ABSORBED_ROUNDS to 1L),
+                mapOf(PerfKeys.UPSTREAM_REQ_BYTES to 32L),
+                mapOf(PerfKeys.UPSTREAM_REQ_BYTES to 32L, PerfKeys.ATTEMPTS to 0L, PerfKeys.CONTENT_FRAMES_OUT to 1L),
+            ).mapIndexed { index, evidence -> failure.copy(ts = 1_010L + index, fields = evidence) }
+            mount(
+                listOf(failure, failure.copy(ts = 1_001, model = "free")) +
+                    partial + priced.last().copy(ts = 1_030, fields = emptyMap()),
+            )
+            val usage = head(client.get("/api/perf/turns?head=synthetic&since=1000&local=0").bodyAsText())
+                .getValue("usage").jsonObject
+            val totals = usage.getValue("totals").jsonObject
+            assertEquals(2L, totals.getValue("unanswered_requests").jsonPrimitive.long)
+            assertEquals(9L, totals.getValue(UNPRICED).jsonPrimitive.long)
+            assertEquals(9L, totals.getValue(UNCOUNTED).jsonPrimitive.long)
+            assertEquals(0L, totals.getValue(UNDECLARED).jsonPrimitive.long)
+            assertEquals(JsonNull, totals.getValue("cost_usd"))
+            assertEquals(1L, totals.getValue(CUT).jsonPrimitive.long)
+            assertEquals(3L, totals.getValue("input_tokens").jsonPrimitive.long)
+            assertEquals(3L, totals.getValue("output_tokens").jsonPrimitive.long)
+            listOf("models", "accounts", "days", "sessions").forEach { name ->
+                val groups = usage.getValue(name).jsonArray.map { it.jsonObject }
+                assertEquals(2L, groups.sumOf { it.getValue("unanswered_requests").jsonPrimitive.long }, name)
+                assertEquals(9L, groups.sumOf { it.getValue(UNPRICED).jsonPrimitive.long }, name)
+            }
+        }
 
     /** A source round a turn cut was billed upstream and never reported, so its row carries only the count of it.
      *  Totals and every group sum the count, and a row without the key counts none. */

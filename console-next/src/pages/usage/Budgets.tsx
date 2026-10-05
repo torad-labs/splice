@@ -84,7 +84,7 @@ export function BudgetBalance({ budget }: { budget: Budget | null }) {
   const spent = budget.used_usd ?? null;
   const warning = budgetWarning(budget.daily_usd, spent);
   return <div>
-    <span>{spent === null ? `${fmtUsd(budget.daily_usd)} a day. ${B.spentUnknown}` : U.budgetSet(fmtUsd(budget.daily_usd), fmtUsd(spent), budget.action)}</span>
+    <span>{spent === null ? `${fmtUsd(budget.daily_usd)} a day. ${budget.spend_pending === true ? U.budgetReading : B.spentUnknown}` : U.budgetSet(fmtUsd(budget.daily_usd), fmtUsd(spent), budget.action)}{spent === null || budget.remaining_usd == null ? '' : ` ${U.budgetLeft(fmtUsd(budget.remaining_usd))}`}</span>
     {warning === null ? null : <p className="budget-early-warning" role="status">{warning.kind === 'reached' ? B.reached : B.near(warning.remaining)}</p>}
   </div>;
 }

@@ -31,6 +31,8 @@ export const addKey = (id: string) => ['add', id] as const;
 /** Hourly buckets: a 30 s poll is already far finer than the data's own resolution. */
 export const ECONOMICS_POLL_MS = 30_000;
 export const BUDGETS_POLL_MS = 30_000;
+/** Finish a pending daily-history read without retaining its initial unknown balance for a full poll. */
+export const BUDGET_SEED_POLL_MS = 1000;
 /** How often an open add is re-read: the credential is re-checked and the sign-in polled at each read. */
 export const ADD_POLL_MS = 2500;
 
@@ -54,7 +56,11 @@ async function orPending<T>(run: () => Promise<T>, row: string): Promise<T | Pen
 /** GET /api/budgets: every head's daily budget, or `{ pending }`. */
 export const fetchBudgets = (): Promise<BudgetsSlice> => orPending(() => request<BudgetsPayload>('/api/budgets'), PENDING_BUDGETS);
 
-export const useBudgets = () => useQuery({ queryKey: [...budgetsKey], queryFn: fetchBudgets, refetchInterval: BUDGETS_POLL_MS });
+export const useBudgets = () => useQuery({ queryKey: [...budgetsKey], queryFn: fetchBudgets, refetchInterval: query => {
+  const data = query.state.data;
+  return data !== undefined && !isPendingRoute(data) && data.budgets.some(budget => budget.spend_pending === true)
+    ? BUDGET_SEED_POLL_MS : BUDGETS_POLL_MS;
+} });
 
 /** PUT /api/budgets: the WHOLE budget set. Answers the budgets the daemon now holds, or `{ pending }`. */
 export const putBudgets = (budgets: readonly Budget[]): Promise<BudgetsSlice> =>

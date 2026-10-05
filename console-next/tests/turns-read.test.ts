@@ -45,6 +45,20 @@ describe('the filtered read', () => {
     expect(mergeTurns([{ since: 100, n: 1, heads: [{ key: 'a', label: 'a', count: 2362, rows: [] }] }]).usageBy).toEqual({});
   });
 
+  test.each(['unpriced_local_requests', 'unanswered_requests'])('a malformed %s cause is an unread history, not a silent spend gap', async field => {
+    const totals = { requests: 1, input_tokens: null, cached_tokens: null, output_tokens: null, cost_usd: null, cache_share: null, unpriced_requests: 1, missing_input_requests: 1, missing_output_requests: 1, missing_cache_requests: 0 };
+    vi.stubGlobal('localStorage', undefined);
+    vi.stubGlobal('fetch', (url: string) => {
+      if (url === '/api/heads') return json({ heads: [{ key: 'readable', gate: null }, { key: 'synthetic', gate: null }] });
+      const key = new URL(url, 'http://synthetic.invalid').searchParams.get('head');
+      return json({ since: 100, n: 1, heads: [{ key, label: key, count: 1, rows: [], ...(key === 'synthetic' ? { usage: { totals: { ...totals, [field]: 'not a count' }, models: [], accounts: [], days: [] } } : {}) }] });
+    });
+    const read = await fetchTurns({ since: 0 });
+    if ('pending' in read) throw new Error('not a pending route');
+    expect(read.unread).toEqual([{ head: 'synthetic', reason: 'The daemon returned an unreadable request history.' }]);
+    expect(read.usageBy).toEqual({});
+  });
+
   test('every head is asked the same window and filters, a rolling window pinned to the moment of the read', async () => {
     const urls: string[] = [];
     daemon(urls);

@@ -51,4 +51,10 @@ public fun interface UsageHeads {
  *  every capability resolves a name the same way. */
 public fun interface UsageHeadLookup {
     public fun byName(name: String): List<UsageHead>
+
+    /** Provider billing facts, keyed by the resolved head, independent of quota or account metadata. */
+    public fun billing(key: String): UsageBilling? = null
 }
+
+/** How the configured provider runs; declared token rates remain equivalent API estimates for every kind. */
+public enum class UsageBilling { API_RATE, SUBSCRIPTION, LOCAL_RUNTIME }

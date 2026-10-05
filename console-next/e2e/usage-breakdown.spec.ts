@@ -67,6 +67,62 @@ test('Usage counts refused requests, keeps exact drill-down bounds, and offers a
   await assertHealthy(page, faults);
 });
 
+test('daemon-reported local and unanswered causes stay in words across the full Usage breakdown', async ({ page }) => {
+  const stats = { ...emptyUsage.totals, requests: 2, cost_usd: 0.25, unpriced_requests: 0, unanswered_requests: 1 };
+  const local = { ...emptyUsage.totals, requests: 1, unpriced_requests: 1, unpriced_local_requests: 1 };
+  const plan = { ...emptyUsage.totals, requests: 1, unpriced_requests: 1, unpriced_plan_requests: 1 };
+  const totals = { ...stats, requests: 4, unpriced_requests: 2, unpriced_local_requests: 1, unpriced_plan_requests: 1 };
+  const groups = [{ key: 'synthetic answered and failed', ...stats }, { key: 'synthetic runtime', ...local }, { key: 'synthetic subscription', ...plan }];
+  const usage = { totals, models: groups, accounts: groups, days: groups.map((group, index) => ({ ...group, key: '2026-10-0' + (index + 1) })), sessions: [] };
+  await page.route(url => url.pathname === '/api/economics', route => route.fulfill({ json: { retention_hours: 24, heads: [] } }));
+  await page.route(url => url.pathname === '/api/perf/turns', route => {
+    const head = new URL(route.request().url()).searchParams.get('head') ?? '';
+    return route.fulfill({ json: { since: 0, n: 1, heads: [{ key: head, label: head, count: head === STACK.oauthHead ? 4 : 0, rows: [], usage: head === STACK.oauthHead ? usage : emptyUsage }] } });
+  });
+  const faults = await open(page, 'usage');
+  const chart = page.getByRole('region', { name: 'Spend and tokens', exact: true });
+  for (const dimension of ['Model', 'Account', 'Day']) {
+    await chart.getByRole('button', { name: dimension, exact: true }).click();
+    await expect(chart).toContainText('1 request ran its model on this computer, so it has no provider price.');
+    await expect(chart).toContainText('1 request is covered by a plan, so it has no price.');
+    await expect(chart).toContainText('1 request failed without a recorded answer or token usage. It is not a missing-spend estimate.');
+    await expect(chart).not.toContainText('no recorded price');
+    const answered = chart.getByRole('listitem').filter({ hasText: 'failed without a recorded answer' });
+    await expect(answered).toContainText('$0.25');
+    await expect(answered).not.toContainText('At least');
+  }
+  await assertHealthy(page, faults);
+});
+
+test('a pending empty-day budget finishes on Usage without a page change and agrees with Accounts', async ({ page }) => {
+  let reads = 0;
+  await page.route(url => url.pathname === '/api/economics', route => route.fulfill({ json: { retention_hours: 24, heads: [] } }));
+  await page.route(url => url.pathname === '/api/perf/turns', route => {
+    const head = new URL(route.request().url()).searchParams.get('head') ?? '';
+    return route.fulfill({ json: { since: 0, n: 1, heads: [{ key: head, label: head, count: 0, rows: [], usage: emptyUsage }] } });
+  });
+  await page.route(url => url.pathname === '/api/budgets', route => {
+    reads++;
+    const pending = reads === 1;
+    return route.fulfill({ json: { budgets: [{ head: STACK.soloHead, daily_usd: 50, action: 'warn',
+      used_usd: pending ? null : 0, remaining_usd: pending ? null : 50,
+      spend_complete: !pending, spend_pending: pending, unpriced_turns: 0 }] } });
+  });
+  const faults = await open(page, 'usage');
+  const budgets = page.getByRole('region', { name: 'Budgets', exact: true });
+  await expect(budgets).toContainText('$0.00 spent', { timeout: 5000 });
+  await expect(budgets).toContainText('$50.00 left');
+  await expect(budgets).not.toContainText('$0.000');
+  await expect(budgets).not.toContainText('Spending is not reported');
+  await expect.poll(() => reads).toBeGreaterThanOrEqual(2);
+  await page.getByRole('link', { name: 'Accounts', exact: true }).click();
+  const balance = page.locator('.account-budget').filter({ hasText: 'Left in budget: $50.00' });
+  await expect(balance).toHaveCount(1);
+  await expect(balance).toContainText('Budget used: $0.00');
+  await expect(balance).not.toContainText('$0.000');
+  await assertHealthy(page, faults);
+});
+
 test('eleven budget commands stay in the viewport and an outside menu click never discards typed input', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.route(url => url.pathname === '/api/models', route => route.fulfill({ json: { heads: [{ head: 'synthetic-command-10', provider: 'synthetic', pinned_model: '', models: [{ id: 'synthetic-priced-model', rates: { input: 1, cache_read: 0.1, output: 2 } }] }] } }));

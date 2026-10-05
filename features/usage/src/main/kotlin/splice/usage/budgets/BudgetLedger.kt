@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 import splice.core.budget.BudgetBlock
 import splice.core.budget.HeadBudget
 import splice.core.model.TurnPrice
+import splice.core.perf.PerfKeys
 import splice.core.util.Cancellables
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
@@ -55,7 +56,7 @@ internal class BudgetLedger(
     }
 
     override fun spent(atMs: Long, model: String, counters: Map<String, Long>) {
-        val usd = price.usd(model, counters)
+        val usd = measuredCost(model, counters)
         synchronized(lock) { tallyAt(atMs)?.add(usd) }
         val limit = limit() ?: return
         if (usd == null) noteUnpriced(atMs, model)
@@ -71,7 +72,7 @@ internal class BudgetLedger(
             val complete = tally.seeded && tally.historyReadable && tally.unpriced == 0L
             val used = tally.usd.takeIf { complete }
             val remaining = used?.let { spend -> limit()?.usd?.let { (it - spend).coerceAtLeast(0.0) } }
-            BudgetSpend(used, remaining, tally.unpriced, complete)
+            BudgetSpend(used, remaining, tally.unpriced, complete, pending = tally.seeding)
         }
     }
 
@@ -85,8 +86,8 @@ internal class BudgetLedger(
     private fun noteUnpriced(atMs: Long, model: String) {
         if (synchronized(lock) { tallyAt(atMs)?.firstUnpriced(model) == true }) {
             context.log(
-                "[${LogSafe.str(head)}][budget] model ${LogSafe.str(model)} has no rate card: its turns are " +
-                    "not counted against the daily budget\n",
+                "[${LogSafe.str(head)}][budget] model ${LogSafe.str(model)} has no complete price or token usage: " +
+                    "its turns are not counted against the daily budget\n",
             )
         }
     }
@@ -141,10 +142,18 @@ internal class BudgetLedger(
             before.historyReadable = false
             unread(it)
         }
+        if (window.skipped > 0) {
+            before.historyReadable = false
+            unread("${window.skipped} historical request records could not be read")
+        }
         window.rows.filter { it.ts in dayStart until context.bootMs }
-            .forEach { before.add(price.usd(it.model, it.fields)) }
+            .forEach { before.add(measuredCost(it.model, it.fields)) }
         return before
     }
+
+    /** Missing billing counters cannot turn a posted-but-unreported source into a zero-dollar request. */
+    private fun measuredCost(model: String?, fields: Map<String, Long>): Double? =
+        if (PerfKeys.IN_TOKENS in fields || PerfKeys.OUT_TOKENS in fields) price.usd(model, fields) else null
 
     /** Today's earlier spend is short by what could not be read, and the head's log says so. */
     private fun unread(why: String) {

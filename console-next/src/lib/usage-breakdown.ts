@@ -20,7 +20,7 @@ export interface UsageBreakdown {
 }
 
 /** Why requests have no dollar figure. [unknown] is the count a daemon older than the causes left unexplained. */
-export interface PriceGaps { uncounted: number; plan: number; undeclared: number; unknown: number }
+export interface PriceGaps { uncounted: number; plan: number; undeclared: number; unknown: number; local?: number; unanswered?: number }
 
 const CAUSES = ['unpriced_uncounted_requests', 'unpriced_plan_requests', 'unpriced_undeclared_requests'] as const;
 
@@ -28,12 +28,13 @@ export function priceGaps(stats: TurnUsageStats): PriceGaps {
   const uncounted = stats.unpriced_uncounted_requests ?? 0;
   const plan = stats.unpriced_plan_requests ?? 0;
   const undeclared = stats.unpriced_undeclared_requests ?? 0;
-  return { uncounted, plan, undeclared, unknown: Math.max(0, stats.unpriced_requests - uncounted - plan - undeclared) };
+  const local = stats.unpriced_local_requests ?? 0;
+  return { uncounted, plan, undeclared, unknown: Math.max(0, stats.unpriced_requests - uncounted - plan - undeclared - local), ...(stats.unpriced_local_requests === undefined ? {} : { local }), ...(stats.unanswered_requests === undefined ? {} : { unanswered: stats.unanswered_requests }) };
 }
 
 /** One sentence per cause. Only a price that was never declared reads as "no recorded price". */
 export function priceGapLines(gaps: PriceGaps): string[] {
-  const lines: [number, (n: number) => string][] = [[gaps.uncounted, U.unpricedUncounted], [gaps.plan, U.unpricedPlan], [gaps.undeclared, U.unpricedUndeclared], [gaps.unknown, U.unpricedUnknown]];
+  const lines: [number, (n: number) => string][] = [[gaps.uncounted, U.unpricedUncounted], [gaps.plan, U.unpricedPlan], [gaps.local ?? 0, U.unpricedLocal], [gaps.unanswered ?? 0, U.unanswered], [gaps.undeclared, U.unpricedUndeclared], [gaps.unknown, U.unpricedUnknown]];
   return lines.flatMap(([n, line]) => n === 0 ? [] : [line(n)]);
 }
 
@@ -55,10 +56,11 @@ export function mergeWindowStats(stats: readonly TurnUsageStats[]): TurnUsageSta
   const caused = stats.some(row => CAUSES.some(key => row[key] !== undefined))
     ? { ...merged, unpriced_uncounted_requests: cause('unpriced_uncounted_requests'), unpriced_plan_requests: cause('unpriced_plan_requests'), unpriced_undeclared_requests: cause('unpriced_undeclared_requests') }
     : merged;
-  // Like the causes, the cut count stays absent when no command reports it.
-  return stats.some(row => row.cut_source_rounds !== undefined)
-    ? { ...caused, cut_source_rounds: stats.reduce((total, row) => total + (row.cut_source_rounds ?? 0), 0) }
-    : caused;
+  // New causes and source-cut evidence stay absent when no command reports them.
+  const optional = ['unpriced_local_requests', 'unanswered_requests', 'cut_source_rounds'] as const;
+  return optional.reduce<TurnUsageStats>((merged, key) => stats.some(row => row[key] !== undefined)
+    ? { ...merged, [key]: stats.reduce((total, row) => total + (row[key] ?? 0), 0) }
+    : merged, caused);
 }
 
 /** Full-window facts require every command to settle with readable counts and aggregates. */

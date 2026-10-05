@@ -38,6 +38,8 @@ import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.head.Head
 import splice.core.head.HeadHealth
+import splice.core.topology.API_KEY_WIRE
+import splice.core.topology.AuthKindRegistry
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaView
 import splice.core.usage.QuotaWindow
@@ -206,13 +208,19 @@ class NativeUsageTruthTest {
     private fun serve(
         port: ClaudeLoginPlaces?,
         kind: String = "client",
+        usageSource: HeadUsageSource? = null,
+        family: String? = null,
         check: suspend (suspend (String, Boolean) -> JsonObject) -> Unit,
     ) = runBlocking {
         withTimeout(TIMEOUT_MS) {
             val key = MgmtKey(paths)
             val server = ControlServer(
                 port = 0,
-                heads = mapOf(HEAD to managed(kind)),
+                heads = mapOf(
+                    HEAD to managed(kind).let { head ->
+                        if (usageSource == null) head else head.copy(usage = usageSource)
+                    },
+                ),
                 config = ConfigService(paths),
                 mgmtKey = key,
                 dashboardHtml = { "<!doctype html>" },
@@ -220,7 +228,7 @@ class NativeUsageTruthTest {
             )
             // Late binding is intentional: UsageMount must not capture the construction-time null.
             server.ports.claudeLogins = port
-            server.ports.declaredHeads = DeclaredHeads { mapOf(HEAD to DeclaredHead("synthetic-provider", null)) }
+            server.ports.declaredHeads = DeclaredHeads { mapOf(HEAD to DeclaredHead("synthetic-provider", null, family)) }
             HttpClient(CIO).use { client ->
                 try {
                     server.start()
@@ -244,6 +252,30 @@ class NativeUsageTruthTest {
 
     private fun usage(root: JsonObject): JsonObject =
         root.getValue("heads").jsonArray.single().jsonObject.getValue("usage").jsonObject
+
+    @Test
+    fun `every registered subscription kind and the late-bound local family classify rows without plan metadata`() {
+        val noPlan = HeadUsageSource { UsageView(0, 0, null) }
+        val kinds = AuthKindRegistry.knownKinds().map { it.wire to "unpriced_plan_requests" } +
+            (API_KEY_WIRE to "unpriced_local_requests")
+        kinds.forEach { (kind, cause) ->
+            serve(null, kind, noPlan, if (kind == API_KEY_WIRE) "local" else null) { read ->
+                val block = read("/api/perf/turns?head=$HEAD&since=0", false)
+                    .getValue("heads").jsonArray.single().jsonObject
+                val totals = block.getValue("usage").jsonObject.getValue("totals").jsonObject
+                assertEquals("3", totals.getValue(cause).jsonPrimitive.content, kind)
+                assertEquals("0", totals.getValue("unpriced_undeclared_requests").jsonPrimitive.content, kind)
+            }
+        }
+        serve(null, API_KEY_WIRE, noPlan, "openai") { read ->
+            val block = read("/api/perf/turns?head=$HEAD&since=0", false)
+                .getValue("heads").jsonArray.single().jsonObject
+            val totals = block.getValue("usage").jsonObject.getValue("totals").jsonObject
+            assertEquals("3", totals.getValue("unpriced_undeclared_requests").jsonPrimitive.content)
+            assertEquals("0", totals.getValue("unpriced_local_requests").jsonPrimitive.content)
+            assertEquals("0", totals.getValue("unpriced_plan_requests").jsonPrimitive.content)
+        }
+    }
 
     @Test
     fun `Accounts and Usage read the same sibling-observed account snapshot and refused probes retain it`() {

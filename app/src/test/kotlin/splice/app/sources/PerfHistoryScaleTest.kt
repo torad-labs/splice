@@ -225,7 +225,8 @@ class PerfHistoryScaleTest {
         history.create()
         val source = PerfRowsFileSource(history.file)
         val profiler = PerfHistoryProfile()
-        val rows = profiler.source(source, dir.resolve("source.jfr"))
+        val paths = setOf(history.file, history.file.resolveSibling("${history.file.fileName}.1"))
+        val rows = profiler.source(source, dir.resolve("source.jfr"), readPaths = paths)
         val bytes = profiler.payload(rows)
         val tokens = rows.sumOf { (it.fields[PerfKeys.IN_TOKENS] ?: 0) + (it.fields[PerfKeys.OUT_TOKENS] ?: 0) }
         val diskBytes = Files.size(history.file) + Files.size(history.file.resolveSibling("${history.file.fileName}.1"))
@@ -240,7 +241,7 @@ class PerfHistoryScaleTest {
             "the cold decode budget belongs to the requested window plus bounded retention and drop anchors",
         )
         val coldParses = source.parsedLines
-        val warmRows = profiler.source(source, dir.resolve("warm-source.jfr"))
+        val warmRows = profiler.source(source, dir.resolve("warm-source.jfr"), readPaths = paths)
         assertEquals(rows, warmRows, "warm selection must preserve every requested row and field")
         assertEquals(0L, source.parsedLines - coldParses, "the one retained row view supplies the whole week")
         val requestedBytes = Files.size(history.file)
@@ -250,7 +251,7 @@ class PerfHistoryScaleTest {
             profiler.sourceBytes <= requestedBytes * 6,
             "warm allocation keeps the original absolute requested-window ceiling",
         )
-        profiler.source(PerfRowsFileSource(history.file), dir.resolve("cold-read-control.jfr"))
+        profiler.source(PerfRowsFileSource(history.file), dir.resolve("cold-read-control.jfr"), readPaths = paths)
         assertTrue(profiler.diskBytes > 0, "a separate cold source proves the byte instrument still observes reads")
     }
 }

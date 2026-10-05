@@ -32,7 +32,7 @@
     "promote": "bun tools/release promote"
   },
   "devDependencies": {
-    "@ast-grep/cli": "0.45.2",
+    "@ast-grep/cli": "0.45.3",
     "@playwright/test": "1.63.0",
     "@typescript/native": "npm:typescript@^7.0.2",
     "@types/bun": "^1.3.9",

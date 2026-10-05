@@ -3,7 +3,7 @@
 # index was stale — always check metadata <latest>, not search "latestVersion").
 [versions]
 kotlin = "2.3.21"
-ktor = "3.5.2"
+ktor = "3.6.0"
 coroutines = "1.11.0"
 serialization = "1.11.0"
 ktoml = "0.7.1"
@@ -37,7 +37,7 @@ freemarker = "2.3.35"           # 2.3.32 resolved; GHSA-27j2-h3m2-8237 (critical
 [libraries]
 graaljs-polyglot = { module = "org.graalvm.polyglot:polyglot", version.ref = "graaljs" }
 graaljs-community = { module = "org.graalvm.polyglot:js-community", version.ref = "graaljs" }
-zstd-jni = { module = "com.github.luben:zstd-jni", version = "1.5.7-15" }
+zstd-jni = { module = "com.github.luben:zstd-jni", version = "1.5.7-18" }
 slf4j-nop = { module = "org.slf4j:slf4j-nop", version.ref = "slf4j" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }

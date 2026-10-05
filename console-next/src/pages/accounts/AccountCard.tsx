@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router';
 import { refreshClaudeLogin, refreshLogin } from '../../api/auth';
 import { failureText } from '../../api/client';
 import { keys } from '../../api/queries';
@@ -29,6 +30,8 @@ export function AccountCard({ account, place, colour, now, commandLabels, localR
   const held = account?.held === true;
   const renewing = (place !== undefined && account !== null) || present === true || (place === undefined && account?.label != null);
   const refused = Boolean(account?.refusal);
+  const lastRefusal = account?.last_refusal ?? null;
+  const quotaRefused = lastRefusal?.status === 429;
   const excluded = account?.auth_excluded_until_epoch_millis != null && account.auth_excluded_until_epoch_millis > now;
   const refresh = useMutation({
     mutationFn: async () => {
@@ -38,10 +41,10 @@ export function AccountCard({ account, place, colour, now, commandLabels, localR
     },
     onSuccess: () => awaitRefetch(client, [keys.accounts, keys.auth, keys.heads, keys.usage]),
   });
-  const state = place !== undefined ? account?.available === true ? A.canTakeOver : account?.available === false ? A.cannotTakeOver(account.refusal ?? account.auth_exclusion_reason ?? A.takeoverReasonUnknown) : A.takeoverUnknown : localRuntime ? A.localState : refused ? A.refused : excluded ? A.excluded : present === undefined ? A.unknownLogin : keyed ? present ? A.keyReady : A.keyMissing : !present ? A.notSignedIn : held ? A.limitReached : A.signedIn;
+  const state = lastRefusal !== null ? quotaRefused ? A.limitReached : A.requestRefused : place !== undefined ? account?.available === true ? A.canTakeOver : account?.available === false ? A.cannotTakeOver(account.refusal ?? account.auth_exclusion_reason ?? A.takeoverReasonUnknown) : A.takeoverUnknown : localRuntime ? A.localState : refused ? A.refused : excluded ? A.excluded : present === undefined ? A.unknownLogin : keyed ? present ? A.keyReady : A.keyMissing : !present ? A.notSignedIn : held ? A.limitReached : A.signedIn;
   return (
-    <Window as="li" colour={colour} className="card account-card" attention={place !== undefined ? account?.available === false : !localRuntime && (refused || excluded || held || present === false)}>
-      <div className="bar"><h3>{name}</h3><State tone={place !== undefined ? account?.available === true ? 'work' : account?.available === false ? 'stuck' : 'wait' : localRuntime ? 'idle' : refused || excluded ? 'stuck' : held ? 'quota' : present ? 'work' : present === false ? 'stuck' : 'wait'}>{state}</State></div>
+    <Window as="li" colour={colour} className="card account-card" attention={lastRefusal !== null || (place !== undefined ? account?.available === false : !localRuntime && (refused || excluded || held || present === false))}>
+      <div className="bar"><h3>{name}</h3><State tone={lastRefusal !== null ? quotaRefused ? 'quota' : 'stuck' : place !== undefined ? account?.available === true ? 'work' : account?.available === false ? 'stuck' : 'wait' : localRuntime ? 'idle' : refused || excluded ? 'stuck' : held ? 'quota' : present ? 'work' : present === false ? 'stuck' : 'wait'}>{state}</State></div>
       {email === null ? place !== undefined && account?.identity_verified === false ? <p className="quiet-line">{A.unidentified}</p> : null : <p className="quiet-line">{email}</p>}
       <div className="account-place">
         {place === undefined ? <p>{commands}{account?.plan ? ` · ${account.plan}` : ''}</p> : <><b>{LOGIN.loginName(place)}</b><p>{place === 'claude' ? A.nativeWhy : A.spliceWhy}</p></>}
@@ -55,12 +58,15 @@ export function AccountCard({ account, place, colour, now, commandLabels, localR
         {account?.held_until_epoch_seconds == null ? null : <span>{A.heldUntil} {A.instant(account.held_until_epoch_seconds)}</span>}
       </div>
       {place === undefined && (account?.refusal || account?.auth_exclusion_reason) ? <p className="quiet-line alert">{account.refusal ?? account.auth_exclusion_reason}</p> : null}
+      {lastRefusal === null ? null : <p className="quiet-line alert" role="status">{A.refusalAt(lastRefusal.status, lastRefusal.at_ms)}{quotaRefused ? ` ${A.quotaRefusal}` : ''}</p>}
+      {lastRefusal !== null && place !== undefined && account?.refusal ? <p className="quiet-line alert">{account.refusal}</p> : null}
+      {lastRefusal !== null && !localRuntime && !quotaRefused && (keyed || lastRefusal.status === 403) ? <div className="account-acts"><Link className="btn sm" to={`/models/${encodeURIComponent(head)}`}>{A.reviewAccess}</Link></div> : null}
       {!localRuntime && present === undefined ? <p className="hint">{A.unknownLoginWhy}</p> : null}
       {keyed || localRuntime ? null : <div className="account-acts">
-        <SignIn head={head} {...(place === undefined ? {} : { place })} label={account?.label ?? ''} displayName={name} purpose={renewing ? 'renew' : 'add'}>
+        {lastRefusal === null || lastRefusal.status === 401 ? <SignIn head={head} {...(place === undefined ? {} : { place })} label={account?.label ?? ''} displayName={name} purpose={renewing ? 'renew' : 'add'}>
           <Button small disabled={refused && place === undefined} kind={present ? 'quiet' : 'go'}>{renewing ? A.renew : A.signIn}</Button>
-        </SignIn>
-        {present && (place === undefined || account?.available === true) ? <Button small disabled={refresh.isPending} onClick={() => refresh.mutate()}>{refresh.isPending ? A.refreshing : A.refresh}</Button> : null}
+        </SignIn> : null}
+        {lastRefusal === null && present && (place === undefined || account?.available === true) ? <Button small disabled={refresh.isPending} onClick={() => refresh.mutate()}>{refresh.isPending ? A.refreshing : A.refresh}</Button> : null}
         {account === null ? null : <AccountEdits account={account} head={head} />}
         {refresh.isError ? <span className="hint alert" role="alert">{failureText(refresh.error)}</span> : null}
       </div>}

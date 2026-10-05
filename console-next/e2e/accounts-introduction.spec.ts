@@ -86,6 +86,59 @@ async function nativePool(page: Page) {
   return state;
 }
 
+test('a login’s newest refusal is displayed until a newer success clears it', async ({ page }) => {
+  let last: { status: number; at_ms: number } | null = { status: 403, at_ms: Date.now() - 60_000 };
+  let keyed = false;
+  await page.route(url => url.pathname === '/api/accounts', async route => {
+    const response = await route.fetch();
+    const body = await response.json() as AccountsWire;
+    const base = body.accounts.find(row => row.heads.includes(STACK.oauthHead));
+    if (base === undefined) throw new Error('synthetic login is missing');
+    await route.fulfill({ response, json: { accounts: [{ ...base,
+      label: null, display_name: 'Synthetic refused login', single_login: true,
+      selected: null, available: null, pinned: null, next_target: null,
+      credential_present: true, refusal: null, auth_exclusion_reason: null,
+      ...(keyed ? { kind: 'api-key' } : {}),
+      auth_excluded_until_epoch_millis: null, last_refusal: last,
+    }] } });
+  });
+  const faults = await open(page, 'accounts');
+  const card = page.locator('.account-card').filter({ has: page.getByRole('heading', { name: 'Synthetic refused login', exact: true }) });
+  await expect(card.locator('.state')).toHaveText('Last request refused');
+  await expect(card).toContainText('The last request was refused with 403');
+  await expect(card.getByRole('link', { name: 'Review command access', exact: true })).toHaveAttribute('href', '#/models/' + STACK.oauthHead);
+  await expect(card).not.toContainText('Signed in');
+  for (const width of [1536, 393]) {
+    await page.setViewportSize({ width, height: 980 });
+    await card.scrollIntoViewIfNeeded();
+    expect(await card.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await page.screenshot({ path: test.info().outputPath('last-refusal-' + width + '.png'), fullPage: true });
+  }
+  last = { status: 401, at_ms: Date.now() - 60_000 };
+  await page.reload();
+  await expect(card).toContainText('The last request was refused with 401');
+  await expect(card.getByRole('button', { name: 'Sign in again', exact: true })).toBeEnabled();
+  await expect(card.getByRole('button', { name: 'Refresh sign-in', exact: true })).toHaveCount(0);
+  last = { status: 429, at_ms: Date.now() - 60_000 };
+  await page.reload();
+  await expect(card.locator('.state')).toHaveText('Limit reached');
+  await expect(card).toContainText('Wait for this login’s quota to reset.');
+  await expect(card.getByRole('button', { name: 'Sign in again', exact: true })).toHaveCount(0);
+  last = null;
+  await page.reload();
+  await expect(card.locator('.state')).toHaveText('Signed in');
+  await expect(card).not.toContainText('The last request was refused');
+  keyed = true;
+  last = { status: 429, at_ms: Date.now() - 60_000 };
+  await page.reload();
+  const keyCard = page.locator('.account-card').filter({ hasText: 'This command uses an API key' });
+  await expect(keyCard.locator('.state')).toHaveText('Limit reached');
+  await expect(keyCard).toContainText('Wait for this login’s quota to reset.');
+  await expect(keyCard.getByRole('link', { name: 'Review command access', exact: true })).toHaveCount(0);
+  await assertHealthy(page, faults);
+  await page.unrouteAll({ behavior: 'wait' });
+});
+
 test('native takeover availability keeps the expired login remedy reachable and contained', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const state = await nativePool(page);

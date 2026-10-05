@@ -34,6 +34,8 @@ export interface AccountManagement {
   held?: boolean | null;
   held_until_epoch_seconds?: number | null;
   failover_positions?: Record<string, number | null>;
+  /** This credential's newest refused answer. Null after a newer success; absent on older daemons. */
+  last_refusal?: { status: number; at_ms: number } | null;
 }
 
 /** One window of an account, at the length the PROVIDER reported. */

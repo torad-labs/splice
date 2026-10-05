@@ -17,7 +17,8 @@ const windowsText = (account: AccountRow, now: number): string =>
     const words = `${windowSpan(window)} ${elapsed || old ? A.unreported : windowUsedText(window)}`;
     if (!elapsed && !old) return words;
     const observed = Q.observed(window.observed_at_epoch_seconds == null ? null : A.instant(window.observed_at_epoch_seconds));
-    return `${words} · ${elapsed ? A.reset : A.readingOld} · ${observed}`;
+    const freshness = elapsed && window.reset_epoch_seconds !== null ? `${A.reset} ${A.instant(window.reset_epoch_seconds)}` : A.readingOld;
+    return `${words} · ${freshness} · ${observed}`;
   }).join(' · ');
 
 /** What a write's answer says when the daemon does not serve the route. */

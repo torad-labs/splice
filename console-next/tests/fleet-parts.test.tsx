@@ -167,8 +167,10 @@ describe('an account row', () => {
     expect(fresh).toContain('7d 59%');
     expect(fresh).not.toContain('Usage reading is out of date');
     const expired = row(acct({ windows: [{ ...window, current: true, reset_epoch_seconds: 1_799_999_999 }] }));
-    expect(expired).toContain('Window reset');
+    expect(expired).toContain(`Window reset ${localZonedInstantText(1_799_999_999)}`);
+    expect(expired).not.toContain('Window reset · Observed');
     expect(expired).not.toContain('7d 59%');
+    expect(stale).not.toContain('Window reset');
   });
   test('an account whose login file is gone offers no Switch and says so', () => {
     const html = row(acct({ credential_present: false }));

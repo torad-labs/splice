@@ -478,6 +478,7 @@ test('Accounts keeps complete observed and reset timestamps readable on a narrow
 
 test('Models account rows honor the daemon freshness verdict without making a retained quota current', async ({ page }) => {
   let current = false;
+  let elapsed = false;
   await page.route(url => url.pathname === '/api/accounts', async route => {
     const response = await route.fetch();
     const body = await response.json() as AccountsWire;
@@ -487,7 +488,7 @@ test('Models account rows honor the daemon freshness verdict without making a re
     const row: AccountWire = {
       ...base, label: 'synthetic-reading', display_name: 'Synthetic reading', selected: false,
       five_hour_used_percent: null, five_hour_reset_epoch_seconds: null,
-      seven_day_used_percent: 59, seven_day_reset_epoch_seconds: now + 3600,
+      seven_day_used_percent: 59, seven_day_reset_epoch_seconds: elapsed ? now - 60 : now + 3600,
       seven_day_window_seconds: 604800, seven_day_current: current, observed_at_epoch_seconds: now - 3600,
     };
     await route.fulfill({ json: { accounts: [row] } });
@@ -500,6 +501,11 @@ test('Models account rows honor the daemon freshness verdict without making a re
   await page.reload();
   await expect(account).toContainText('7d 59%');
   await expect(account).not.toContainText('Usage reading is out of date');
+  elapsed = true;
+  await page.reload();
+  await expect(account).toContainText(/Window reset [A-Z][a-z]{2} \d{1,2}, \d{1,2}:\d{2} [AP]M \S+ · Observed/);
+  await expect(account).not.toContainText('Window reset · Observed');
+  await expect(account).not.toContainText('7d 59%');
   await assertHealthy(page, faults);
 });
 

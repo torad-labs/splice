@@ -198,7 +198,7 @@ origin.
   its folder has no other owner. Removing or renaming a Claude login requires an explicit target
   kind and id, so a folder account and a physical login with the same visible name cannot collide.
 - **Claude login attribution follows requests.** Sessions names the login its own newest request
-  with an identified login carried, not another session's choice. Usage reads the head's carrying
+  carried, an added account included, never another session's choice. Usage reads the head's carrying
   login's quota, then the next selectable target if that reading is absent. Models names the
   carrying login when no login is selected, retaining its count of other subscriptions.
   An unidentified login says “Login not identified yet.” The card, warning and sign-in dialog use

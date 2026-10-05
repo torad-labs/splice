@@ -240,7 +240,7 @@ The dashboard's data and control API need a secret key and answer only on this m
 
 ### Plan usage in Claude Code
 
-splice passes provider-reported usage into Claude Code's status line, including usage windows and reset times where available. On Claude heads, Usage reads the carrying login's quota, then the next selectable login if no carrying reading is available. Models uses the carrying login's name when no login is selected, while keeping its count of other subscriptions. Sessions resolves only that session's own known login and does not borrow another session's selection.
+splice passes provider-reported usage into Claude Code's status line, including usage windows and reset times where available. On Claude heads, Usage reads the carrying login's quota, then the next selectable login if no carrying reading is available. Models uses the carrying login's name when no login is selected, while keeping its count of other subscriptions. Sessions names the login that session's own newest request carried, an added account included, and never borrows another session's selection.
 
 Accounts warns when the known carrying login reaches the percentage selected in Settings and no other login is reported able to take over. The warning names the quota window and its reset; the card, banner and dialog give the same sign-in remedy for an expired login. An unidentified login says “Login not identified yet.” Settings marks the current warning percentage as “Selected”. These warnings are advisory; they do not block requests.
 

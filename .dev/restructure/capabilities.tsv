@@ -1,4 +1,5 @@
 source	sha256	disposition	destination	reason
+app/src/main/kotlin/splice/app/auth/claude/ClaudeCarryingPlaces.kt	c6d5c368eee7dd62fbb1b5cc3cf5ef9c05051fb87efe042d77b94ce54c33c791	created		Per head, the native place whose live credential carried its newest matched request, held as a digest in memory, so usage names the login actually spending.
 app/src/main/kotlin/splice/app/auth/claude/ClaudePoolChanges.kt	048f512f6fabcdbeda9e83e8f86a70fab74fccfb369ea481100fa28eed446461	created		Head-local membership publication connects actual landing and removal to the running selector without engine restarts.
 app/src/main/kotlin/splice/app/head/HeadAccountMembership.kt	3178c92464ecdab004be1983a33e8d158fbb84a2b356c50ac2001c2e26391296	created		Publishes current account generations while preserving surviving cooldowns and retiring removed quota owners before file deletion.
 app/src/main/kotlin/splice/app/head/HeadQuotaPolling.kt	42be93242213e16a394f406074094ad66ef893d8245ef032a334eb20b5de704d	created		A live borrowed poller list follows account membership and ends removed-account probes without another scope.

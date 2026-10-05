@@ -19,6 +19,7 @@ internal fun interface CodeModeSourceObserver {
 
 internal class CodeModeSwitchingSink(
     initial: WireSink,
+    private val disposed: CodeModeExecutionDisposed = CodeModeExecutionDisposed { false },
     private val observer: CodeModeSourceObserver,
 ) : IndependentRoundSink {
     private val mutex = Mutex()
@@ -65,6 +66,7 @@ internal class CodeModeSwitchingSink(
         notice: DetachedSpend = DetachedSpend.NOTICE_TEXT,
         action: BufferedSinkWrite,
     ) = mutex.withLock {
+        if (disposed()) return@withLock
         val spend = if (block != null && blocks.isNotice(block)) notice else DetachedSpend.MODEL
         writes.deliver(target, bytes, spend, action)
     }
@@ -75,6 +77,7 @@ internal class CodeModeSwitchingSink(
         name: String = "",
         raw: JsonObject? = null,
     ): WireBlockIndex = mutex.withLock {
+        if (disposed()) return@withLock WireBlockIndex(0)
         val bytes = JsonWire.byteSize(id) + JsonWire.byteSize(name) + (raw?.let(JsonWire::byteSize) ?: 0L)
         require(bytes <= splice.upstream.codemode.CodeModeLimits.MAX_FRAME_BYTES) {
             "stream block exceeds byte budget"

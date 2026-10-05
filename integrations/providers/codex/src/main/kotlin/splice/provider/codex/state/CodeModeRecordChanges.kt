@@ -51,10 +51,10 @@ internal class CodeModeRecordChanges(
     fun lose(record: CodeModeRecord, message: String, cancellation: CancellationException?) =
         access.withKey(record.key) {
             startup.entries.remove(record.id)
-            cleanup.rejected(cells.remove(record.id))
             record.phase = CodeModePhase.LOST
             replaceError(record, message)
             record.updatedAt = config.clock.millis()
+            cleanup.rejected(cells.remove(record.id))
             try {
                 store.save(records, history.entries, dirtyKeys = setOf(record.key), changedRecord = record)
             } catch (error: CodeModePersistenceException) {

@@ -98,6 +98,100 @@ internal class CodeModeHistoryIndex(
         return prior?.let { (it + anchor.logicalTail).takeIf { end -> end <= items.size } ?: it }
     }
 
+    /** A canonical tail is an emission proposal; an observed native needs its own raw-history witness. */
+    fun nativeOffset(
+        record: CodeModeRecord,
+        source: CodeModeRecord,
+        segment: CodeModeNativeSegment,
+        replay: Map<Int, List<JsonElement>>,
+        origins: List<CodeModeNativeOrigin>,
+    ): Int? {
+        val anchor = nativeAnchor(record, source, segment.logicalOffset)
+        val adjacent = anchor?.takeIf { it.logicalTail == 0 }?.let { resolve(it) }
+        if (adjacent != null) return adjacent
+        val bounds = nativeBounds(record, source, anchor)
+        if (!nativeOrder(source, replay, bounds)) return null
+        val actual = replay.filter { (offset, items) ->
+            offset in bounds && containsNative(items, segment.items)
+        }.keys.sorted()
+        val expected = nativeExpected(source, bounds).filter { containsNative(it.items, segment.items) }
+            .map(CodeModeNativeSegment::logicalOffset).distinct().sorted()
+        val absent = if (actual.isEmpty()) nativeOwner(segment, origins, bounds) else null
+        return countedNative(record, source, segment, expected, actual) ?: absent
+    }
+
+    /** An absent native can be placed by the earlier script that produced it, never by a canonical tail. */
+    private fun nativeOwner(
+        segment: CodeModeNativeSegment,
+        origins: List<CodeModeNativeOrigin>,
+        bounds: IntRange,
+    ): Int? = origins.filter { containsNative(segment.items, it.segment.items) && owned(it.record).isNotEmpty() }
+        .mapNotNull { origin ->
+            boundary(origin.record)?.plus(origin.segment.logicalOffset)?.takeIf { it in bounds }
+        }.distinct().singleOrNull()
+
+    private fun nativeAnchor(record: CodeModeRecord, source: CodeModeRecord, offset: Int): CodeModeHistoryAnchor? =
+        source.replayAnchors?.native?.get(offset) ?: record.replayAnchors?.native?.get(offset)
+
+    private fun nativeBounds(
+        record: CodeModeRecord,
+        source: CodeModeRecord,
+        anchor: CodeModeHistoryAnchor?,
+    ): IntRange {
+        val upper = owned(record).firstOrNull() ?: owned(source).firstOrNull() ?: items.size
+        val lower = anchor?.let { resolve(it.copy(logicalTail = 0), upper) } ?: 0
+        return lower..upper
+    }
+
+    /** Repeated payloads retain their captured ordinal; extra or incomplete occurrences prove no position. */
+    private fun countedNative(
+        record: CodeModeRecord,
+        source: CodeModeRecord,
+        segment: CodeModeNativeSegment,
+        expected: List<Int>,
+        actual: List<Int>,
+    ): Int? {
+        if (actual.isNotEmpty()) {
+            return actual.takeIf { it.size == expected.size }?.getOrNull(expected.indexOf(segment.logicalOffset))
+        }
+        if (segment.logicalOffset == record.baselineLogicalCount) {
+            return continuityEcho(record).firstOrNull() ?: owned(record).firstOrNull() ?: boundary(record)
+        }
+        val references = source.replayAnchors?.native.orEmpty() +
+            listOfNotNull(source.replayAnchors?.baseline?.let { source.baselineLogicalCount to it }).toMap()
+        // The immediately following stable item places an absent native before itself, not at a guessed tail.
+        return references.firstNotNullOfOrNull { (offset, anchor) ->
+            resolve(anchor.copy(logicalTail = 0))?.minus(1)
+                ?.takeIf { offset - anchor.logicalTail == segment.logicalOffset + 1 }
+        }
+    }
+
+    /** Translate only the captured lower bound whose stable item actually resolved in the raw history. */
+    private fun nativeExpected(source: CodeModeRecord, bounds: IntRange): List<CodeModeNativeSegment> {
+        val lower = source.replayAnchors?.native.orEmpty().entries.filter { (_, anchor) ->
+            resolve(anchor.copy(logicalTail = 0)) == bounds.first
+        }.minOfOrNull { (offset, anchor) -> offset - anchor.logicalTail } ?: 0
+        return CodeModeNativeChain.replay(source).filter { it.logicalOffset >= lower }
+    }
+
+    /** Exact identities keep the source's order even when opaque-to-callback expansion moves their slots. */
+    private fun nativeOrder(
+        source: CodeModeRecord,
+        replay: Map<Int, List<JsonElement>>,
+        bounds: IntRange,
+    ): Boolean {
+        val expected = nativeExpected(source, bounds).flatMap(CodeModeNativeSegment::items)
+        val known = expected.toSet()
+        val actual = replay.toSortedMap().filterKeys { it in bounds }.values.flatten().filter { it in known }
+        val present = actual.toSet()
+        return expected.filter { it in present } == actual
+    }
+
+    private fun containsNative(items: List<JsonElement>, expected: List<JsonElement>): Boolean =
+        expected.isNotEmpty() && (0..(items.size - expected.size)).any { at ->
+            expected.indices.all { items[at + it] == expected[it] }
+        }
+
     fun owned(record: CodeModeRecord): List<Int> =
         (record.clientIds() + record.outerCallId).flatMap { ids[it].orEmpty() }.sorted()
 

@@ -126,6 +126,9 @@ class CodexCodeModeSourceTerminalTest : CodeModeStatementStreamSupport() {
             resumed.cancel()
             resumed.join()
             assertTrue(resumed.isCancelled)
+            assertFalse(post.stopped.isCompleted, "the cancelled execution drains its already-posted response")
+            post.gates.drop(1).forEach { it.complete(Unit) }
+            post.complete.complete(Unit)
             withTimeout(1_500) { post.stopped.await() }
             assertEquals(1, runtime.starts)
             assertEquals(1, post.posts)
@@ -377,6 +380,9 @@ class CodexCodeModeSourceTerminalTest : CodeModeStatementStreamSupport() {
             manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, post)
             clock.now += 2_000
             sweepOwnHistory(manager)
+            assertFalse(post.stopped.isCompleted, "lease expiry stops execution, not its response")
+            post.gates.drop(1).forEach { it.complete(Unit) }
+            post.complete.complete(Unit)
             withTimeout(1_500) { post.stopped.await() }
             assertTrue(stateFiles.records().isEmpty())
             assertEquals(1, runtime.starts)
@@ -388,7 +394,7 @@ class CodexCodeModeSourceTerminalTest : CodeModeStatementStreamSupport() {
 
     @Test
     @Timeout(20)
-    fun `poisoning a live source at its explicit round bound cancels the reader and cannot dispatch twice`() = runBlocking {
+    fun `poisoning a live source at its explicit round bound drains the reader and cannot dispatch twice`() = runBlocking {
         val runtime = IncrementalRuntime()
         val manager = bridge(runtime, maxRounds = 1)
         val sink = StepSink()
@@ -399,6 +405,9 @@ class CodexCodeModeSourceTerminalTest : CodeModeStatementStreamSupport() {
             val outcome = manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
                 .intercept(history(listOf(first)), StepSink(), post)
             assertTrue(outcome is TurnOutcome.Failure)
+            assertFalse(post.stopped.isCompleted, "poisoning stops execution while its response drains")
+            post.gates.drop(1).forEach { it.complete(Unit) }
+            post.complete.complete(Unit)
             withTimeout(1_500) { post.stopped.await() }
             assertFalse(manager.interceptor(turn(first.id, "result-0"), disableParallel = false).resumesSource())
             assertEquals(1, runtime.starts)

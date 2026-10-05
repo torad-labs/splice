@@ -378,6 +378,9 @@ class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
                     .intercept(JsonObject(mapOf("input" to JsonArray(input))).toString(), StepSink(), post)
             }
             assertTrue(outcome is TurnOutcome.Success, outcome.toString())
+            assertFalse(post.stopped.isCompleted, "the steered execution leaves its response draining")
+            post.gates.drop(1).forEach { it.complete(Unit) }
+            post.complete.complete(Unit)
             withTimeout(1_500) { post.stopped.await() }
             assertEquals(1, runtime.starts)
             assertTrue(post.continuation.contains("stop this script"))

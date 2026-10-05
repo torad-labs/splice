@@ -11,6 +11,8 @@ import splice.provider.codex.CodexCodeModeHistoryCodec
 
 private data class NativeClaim(val recordId: String, val offset: Int, val items: List<JsonElement>)
 
+internal data class CodeModeNativeOrigin(val record: CodeModeRecord, val segment: CodeModeNativeSegment)
+
 internal class CodeModeNativeReplay(
     private val codec: CodexCodeModeHistoryCodec,
     private val input: ResponsesCodeModeInput,
@@ -18,12 +20,16 @@ internal class CodeModeNativeReplay(
     records: List<CodeModeRecord>,
 ) {
     private val bad = mutableSetOf<String>()
+    private val origins = ancestors(records).flatMap { record ->
+        record.continuityReplay.map { CodeModeNativeOrigin(record, it) }
+    }
+    private val replay = input.replayItems.groupBy { it.logicalOffset }.mapValues { (_, segments) ->
+        segments.flatMap { it.items }
+    }
 
     init {
         val claims = claims(records)
-        val replayed = input.replayItems.groupBy { it.logicalOffset }.mapValues { (_, segments) ->
-            segments.flatMap { it.items }.groupBy(::identity)
-        }
+        val replayed = replay.mapValues { (_, items) -> items.groupBy(::identity) }
         claims.forEach { claim ->
             claim.items.forEach { expected ->
                 val actual = replayed[claim.offset]?.get(identity(expected))
@@ -129,18 +135,15 @@ internal class CodeModeNativeReplay(
         return ancestors(records).flatMap { record ->
             val source = sources.getValue(record.id)
             val inherited = if (record.id in placed) emptyList() else CodeModeNativeChain.continuity(record)
-            (record.nativeSegments + inherited).map { segment -> claim(record, source, segment) }
+            (record.nativeSegments + inherited).mapNotNull { segment -> claim(record, source, segment) }
         }
     }
 
-    private fun claim(record: CodeModeRecord, source: CodeModeRecord, segment: CodeModeNativeSegment): NativeClaim {
-        val anchor = source.replayAnchors?.native?.get(segment.logicalOffset)
-            ?: record.replayAnchors?.native?.get(segment.logicalOffset)
-        val boundary = index.boundary(record) ?: index.boundary(source) ?: 0
-        val at = if (segment.logicalOffset == record.baselineLogicalCount) {
-            boundary
-        } else {
-            anchor?.let { index.resolve(it) } ?: minOf(segment.logicalOffset, input.logicalItems.size)
+    private fun claim(record: CodeModeRecord, source: CodeModeRecord, segment: CodeModeNativeSegment): NativeClaim? {
+        val at = index.nativeOffset(record, source, segment, replay, origins)
+        if (at == null) {
+            bad += record.id
+            return null
         }
         return NativeClaim(record.id, at, segment.items)
     }

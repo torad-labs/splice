@@ -771,7 +771,8 @@ class RoleRegistryLawTest {
         // 144 since Oct 4 CT: the two names of the new `(Usage?)->Unit` entry, RowRelease and RowWrite.
         // 145 since Oct 4 CT: ClaudePoolChange publishes live account membership without stopping its head.
         // 145 again since Oct 5, 12:05 AM CT: HeadSentCredentials now hears the session too, a shape no other seam has.
-        assertEquals(145, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
+        // 146 since Oct 5 CT: CodeModeExecutionDisposed ends capture while its response drains for billing.
+        assertEquals(146, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
         assertTrue(config.entries.values.all { !it.text("reason").isNullOrBlank() }) { "every entry is reasoned" }
         assertTrue(config.entries.values.all { !it.text("dated").isNullOrBlank() }) { "every entry is dated" }
 

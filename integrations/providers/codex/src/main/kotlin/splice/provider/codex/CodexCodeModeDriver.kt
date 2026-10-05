@@ -3,6 +3,8 @@ package splice.provider.codex
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
@@ -63,9 +65,11 @@ internal class CodexCodeModeDriver(
             val outcome = readyOutcome(context, initialOuter, body, round, record)
             return round.localFailure ?: outcome
         } finally {
+            val clientCancelled = !currentCoroutineContext().isActive
             withContext(NonCancellable) {
                 val parked = admitted?.phase == CodeModePhase.ACTIVE || admitted?.phase == CodeModePhase.STARTING
-                if (!parked) round.cancel()
+                // A cancelled first client step must release even a reader blocked writing to that client.
+                if (clientCancelled) round.stop() else if (!parked) round.cancel()
                 try {
                     round.switching.detach()
                 } finally {

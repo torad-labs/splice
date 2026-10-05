@@ -1,4 +1,4 @@
-// NEW: cell disposal cancels an unfinished source reader, while normal EOF preserves its terminal outcome.
+// NEW: cell disposal ends execution; the already-posted response reader drains to its usage terminal.
 package splice.provider.codex.stream
 
 import kotlinx.coroutines.CancellationException

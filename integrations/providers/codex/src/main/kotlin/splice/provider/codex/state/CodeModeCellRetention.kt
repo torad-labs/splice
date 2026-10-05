@@ -127,12 +127,12 @@ internal class CodeModeCellRetention(
     fun park(record: CodeModeRecord, message: String) {
         check(!running(record)) { "an executing code-mode cell cannot be reclaimed" }
         admissions.remove(record.id)
+        record.phase = CodeModePhase.LOST
+        record.error = "$message; source was not rerun"
         CodeModeSourceEnds.defer(record.sourceEnd)
         record.sourceEnd = null
         cells.remove(record.id)?.close()
         record.cellIdleSince = null
-        record.phase = CodeModePhase.LOST
-        record.error = "$message; source was not rerun"
         if (records.none { it.key == record.key && it.phase == CodeModePhase.ACTIVE }) closeSession(record.key)
         config.log("[code-mode] ${record.id.take(CODE_MODE_RECORD_LOG_CHARS)} (outer ${record.outerCallId}): $message")
     }

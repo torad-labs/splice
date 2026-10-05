@@ -55,7 +55,8 @@ class CodeModeLockOrderTest : CodeModeBridgeTestSupport() {
         reader.join(WAIT_MILLIS)
         assertFalse(reader.isAlive, "the reader must leave its key wait after the record is parked")
         assertNull(sweepError.get())
-        assertTrue(readerError.get() is IllegalStateException, "the parked record must reject the reader's delta")
+        assertNull(readerError.get(), "disposed capture skips the reader's delta without failing its response")
+        assertEquals("", state.record.source)
         assertNull(state.record.sourceEnd)
     }
 
@@ -175,7 +176,8 @@ class CodeModeLockOrderTest : CodeModeBridgeTestSupport() {
         reader.join(WAIT_MILLIS)
         assertFalse(reader.isAlive)
         assertNull(admissionError.get())
-        assertTrue(readerError.get() is IllegalStateException)
+        assertNull(readerError.get())
+        assertEquals("", state.record.source, "disposed capture cannot stage a late delta")
     }
 
     @Test
@@ -301,7 +303,8 @@ class CodeModeLockOrderTest : CodeModeBridgeTestSupport() {
         reader.join(WAIT_MILLIS)
         assertFalse(reader.isAlive, "the revoked reader must leave its key wait")
         assertNull(endingError.get())
-        assertTrue(readerError.get() is IllegalStateException, "the revoked record must reject the reader's delta")
+        assertNull(readerError.get(), "disposed capture must discard the delta without tearing the response")
+        assertEquals("", state.record.source)
         assertNull(state.record.sourceEnd)
     }
 

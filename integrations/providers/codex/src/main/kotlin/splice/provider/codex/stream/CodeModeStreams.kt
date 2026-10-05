@@ -59,7 +59,7 @@ internal class CodeModeOwedRound(private val release: RowRelease, private val st
     }
 }
 
-/** A retained record owns its reader until finalization, disposal or head stop. */
+/** A record leases execution; the separately owned response reader survives execution disposal. */
 internal class CodeModeSourceLease(
     private val id: String,
     private val round: CodeModeLiveRound,
@@ -67,7 +67,7 @@ internal class CodeModeSourceLease(
 ) {
     fun ended() {
         rounds.remove(id, round)
-        round.stop()
+        round.cancel()
     }
 }
 
@@ -108,7 +108,7 @@ internal class CodeModeStreams(
     suspend fun takeOutcome(record: CodeModeRecord): TurnOutcome? {
         val round = rounds[record.id]
         val raw = try {
-            round?.outcome()
+            round?.takeUnless(CodeModeLiveRound::drainingUsage)?.outcome()
         } catch (error: CancellationException) {
             currentCoroutineContext().ensureActive()
             if (record.phase != splice.provider.codex.CodeModePhase.COMPLETED) throw error
@@ -125,12 +125,12 @@ internal class CodeModeStreams(
         }
     }
 
-    /** The round's usage for the step that finishes its script, handed out once ([CodeModeSourceRecords.consume]). A
-     *  round this step cut (an interrupt closed the cell while it streamed, so its reader was cancelled before the
-     *  backend's terminal stored any usage) has no tokens to give, only the count of it ([Usage.cutRounds]). */
+    /** The finishing step consumes unclaimed source usage once. Disposed execution never waits on its response:
+     *  the original posting row remains owed its terminal usage, or its cut when the watchdog ends the reader. */
     private fun sourceUsage(record: CodeModeRecord, round: CodeModeLiveRound?, raw: TurnOutcome?): Usage? {
         val usage = registry.source.consume(record)
-        val cut = round != null && raw == null && record.sourceState?.complete != true
+        val ended = round?.drainingUsage == false && raw == null
+        val cut = ended && record.sourceState?.complete != true
         return usage ?: Usage(cutRounds = 1).takeIf { cut }
     }
 

@@ -5,6 +5,13 @@ import type { AccountWire, AccountsWire } from '../src/types/accounts';
 import type { HeadStatus } from '../src/types/core';
 import type { HeadCatalog } from '../src/types/models';
 
+const budgetCatalog = (priced: boolean): HeadCatalog => ({
+  head: STACK.keyHead, provider: 'synthetic', pinned_model: 'synthetic-budget-model', models: [{
+    id: 'synthetic-budget-model', label: 'Synthetic budget model', description: '', slot: null, context_window: 1000, context_window_source: 'synthetic', pinned: true, resolved: true,
+    ...(priced ? { rates: { input: 1, cache_read: 0, output: 2 } } : {}),
+  }],
+});
+
 test('native and separate sign-in dialogs say what Start login does without inventing a label', async ({ page }) => {
   await page.route(url => url.pathname === '/api/accounts', route => route.fulfill({ json: { accounts: [] } }));
   const faults = await open(page, 'accounts');
@@ -27,6 +34,7 @@ test('native and separate sign-in dialogs say what Start login does without inve
 });
 
 test('command labels name Accounts while a renamed label never changes the budget API identity', async ({ page }) => {
+  await page.route(url => url.pathname === '/api/models', route => route.fulfill({ json: { heads: [budgetCatalog(true)] } }));
   let command = 'claude-synthetic-wrapper';
   await page.route(url => url.pathname === '/api/status', async route => {
     const response = await route.fetch();
@@ -65,6 +73,103 @@ test('command labels name Accounts while a renamed label never changes the budge
     });
     expect(restored.ok()).toBe(true);
   }
+});
+
+for (const [priced, narrow] of [[false, false], [true, false], [false, true]] as const) {
+  test(`Accounts and Usage budgets state the command's actual declared-price capability: priced=${priced}, narrow=${narrow}`, async ({ page }) => {
+    if (narrow) await page.setViewportSize({ width: 390, height: 844 });
+    await page.route(url => url.pathname === '/api/models', route => route.fulfill({ json: { heads: [budgetCatalog(priced)] } }));
+    let budgets: { head: string; daily_usd: number | null; action: string }[] = [];
+    const writes: unknown[] = [];
+    await page.route(url => url.pathname === '/api/budgets', route => {
+      if (route.request().method() === 'PUT') {
+        const body = route.request().postDataJSON() as { budgets: typeof budgets };
+        writes.push(body);
+        budgets = body.budgets;
+      }
+      return route.fulfill({ json: { budgets } });
+    });
+    const faults = await open(page, 'accounts');
+    const offer = page.locator('.account-budget').filter({ has: page.getByText(STACK.keyHead + ' daily budget', { exact: true }) });
+    await expect(offer).not.toContainText('public prices');
+    if (priced) {
+      await expect(offer).toContainText('declared token prices');
+      await offer.getByRole('button', { name: 'Set daily cap', exact: true }).click();
+      await offer.getByRole('spinbutton').fill('3');
+      await offer.getByRole('button', { name: 'Save', exact: true }).click();
+      await expect.poll(() => writes.length).toBe(1);
+      expect(budgets).toEqual([{ head: STACK.keyHead, daily_usd: 3, action: 'warn' }]);
+      await expect(offer.getByRole('spinbutton')).toHaveCount(0);
+    } else {
+      await expect(offer).toContainText('budget cannot count spending yet');
+      await expect(offer.getByRole('button', { name: 'Set daily cap', exact: true })).toBeDisabled();
+      await offer.getByRole('link', { name: 'Prices for ' + STACK.keyHead, exact: true }).click();
+      await expect.poll(() => decodeURIComponent(new URL(page.url()).hash)).toBe('#/usage?prices=' + STACK.keyHead);
+      const card = page.locator('.usage-pricing-command').filter({ has: page.getByText('Prices for ' + STACK.keyHead, { exact: true }) });
+      await expect(card).toHaveAttribute('open', '');
+      await expect(card).toContainText('No price is declared for: synthetic-budget-model');
+      await expect(card).toContainText('[heads.');
+      expect(writes).toEqual([]);
+    }
+    budgets = [];
+    await open(page, 'usage');
+    await page.getByRole('button', { name: 'Add a budget', exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('button', { name: 'Command', exact: true }).click();
+    await page.getByRole('menuitemradio', { name: STACK.keyHead, exact: true }).click();
+    await dialog.getByRole('spinbutton', { name: 'Dollars a day', exact: true }).fill('3');
+    await expect(dialog).not.toContainText('public prices');
+    if (priced) {
+      await expect(dialog).toContainText('declared token prices');
+      await expect(dialog.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
+    } else {
+      await expect(dialog).toContainText('budget cannot count spending yet');
+      await expect(dialog.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+      await dialog.getByText('Prices for ' + STACK.keyHead, { exact: true }).click();
+      await expect(dialog).toContainText('No price is declared for: synthetic-budget-model');
+      expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+      await page.screenshot({ path: 'captures/console-walk-oct3/budget-contained-' + (narrow ? 'narrow' : 'wide') + '.png' });
+    }
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Discard changes', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await assertHealthy(page, faults);
+  });
+}
+
+test('a cap can still be removed on Accounts and Usage after its command loses prices', async ({ page }) => {
+  await page.route(url => url.pathname === '/api/models', route => route.fulfill({ json: { heads: [budgetCatalog(false)] } }));
+  let budgets: { head: string; daily_usd: number | null; action: string }[] = [{ head: STACK.keyHead, daily_usd: 3, action: 'warn' }];
+  const writes: unknown[] = [];
+  await page.route(url => url.pathname === '/api/budgets', route => {
+    if (route.request().method() === 'PUT') {
+      const body = route.request().postDataJSON() as { budgets: typeof budgets };
+      writes.push(body);
+      budgets = body.budgets;
+    }
+    return route.fulfill({ json: { budgets } });
+  });
+  const faults = await open(page, 'accounts');
+  const offer = page.locator('.account-budget').filter({ has: page.getByText(STACK.keyHead + ' daily budget', { exact: true }) });
+  await expect(offer).toContainText('budget cannot count spending yet');
+  await offer.getByRole('button', { name: 'Edit cap', exact: true }).click();
+  await offer.getByRole('spinbutton').fill('');
+  await offer.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(() => writes.length).toBe(1);
+  expect(budgets).toEqual([{ head: STACK.keyHead, daily_usd: null, action: 'warn' }]);
+  await expect(offer).toContainText('No daily cap is set.');
+
+  budgets = [{ head: STACK.keyHead, daily_usd: 3, action: 'warn' }];
+  await open(page, 'usage');
+  const row = page.locator('.usrow').filter({ has: page.getByText(STACK.keyHead, { exact: true }) });
+  await row.getByRole('button', { name: 'Change', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await dialog.getByRole('button', { name: 'Remove the budget', exact: true }).click();
+  await expect.poll(() => writes.length).toBe(2);
+  expect(budgets).toEqual([]);
+  await expect(dialog).toHaveCount(0);
+  await assertHealthy(page, faults);
 });
 
 test('a daemon-declared local runtime has local guidance on Accounts, not a provider login alternative', async ({ page }) => {

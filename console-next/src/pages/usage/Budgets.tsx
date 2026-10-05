@@ -6,7 +6,7 @@ import { useModels } from '../../api/models';
 import { CommandPricing } from './UsagePricing';
 import { useBudgets, usePutBudgets } from '../../api/usage';
 import { fmtUsd } from '../../lib/format';
-import { budgetFor } from '../../lib/budget';
+import { budgetFor, hasBudgetPrices } from '../../lib/budget';
 import { budgetWarning } from '../../lib/usage-breakdown';
 import { B } from './copy';
 import type { PlanUsage } from '../../lib/usage-page';
@@ -26,7 +26,7 @@ function BudgetDialog({ plans, budgets, first, onClose }: { plans: readonly Plan
   const [discarding, setDiscarding] = useState(false);
   const [openMenu, setOpenMenu] = useState<'command' | 'action' | null>(null);
   const catalogs = models.data === undefined || isPendingRoute(models.data) ? [] : models.data.heads;
-  const hasPrices = (command: string): boolean => catalogs.find(head => head.head === command)?.models.some(model => model.rates != null) === true;
+  const hasPrices = (command: string): boolean => hasBudgetPrices(catalogs.find(head => head.head === command));
   const free = plans.filter((plan) => budgetFor({ budgets: [...budgets] }, plan.key)?.daily_usd == null).sort((a, b) => Number(hasPrices(b.key)) - Number(hasPrices(a.key)));
   const [key, setKey] = useState(first ?? '');
   const current = budgetFor({ budgets: [...budgets] }, key);
@@ -35,7 +35,7 @@ function BudgetDialog({ plans, budgets, first, onClose }: { plans: readonly Plan
   const [action, setAction] = useState<BudgetAction>(current?.action ?? 'warn');
   const plan = plans.find((candidate) => candidate.key === key);
   const catalog = models.data === undefined || isPendingRoute(models.data) ? undefined : models.data.heads.find(head => head.head === key);
-  const priced = catalog?.models.some(model => model.rates != null) === true;
+  const priced = hasBudgetPrices(catalog);
   const initial = budgetFor({ budgets: [...budgets] }, first ?? '');
   const dirty = key !== (first ?? '') || amount !== (initial?.daily_usd == null ? '' : String(initial.daily_usd)) || action !== (initial?.action ?? 'warn');
   const close = (): void => { if (openMenu !== null) setOpenMenu(null); else if (dirty) setDiscarding(true); else onClose(); };
@@ -45,7 +45,7 @@ function BudgetDialog({ plans, budgets, first, onClose }: { plans: readonly Plan
     <Dialog.Root open onOpenChange={(open) => (open ? undefined : close())}>
       <Dialog.Portal>
         <Dialog.Overlay className="scrim" />
-        <Dialog.Content className="dialog" onInteractOutside={event => {
+        <Dialog.Content className="dialog budget-dialog" onInteractOutside={event => {
             event.preventDefault();
             const target = event.detail.originalEvent.target;
             if (!(target instanceof Element) || target.closest('.budget-command-menu') === null) setOpenMenu(null);
@@ -54,7 +54,7 @@ function BudgetDialog({ plans, budgets, first, onClose }: { plans: readonly Plan
             <Dialog.Title>{plan === undefined ? U.budgetAdd : U.budgetDialog(plan.label)}</Dialog.Title>
             <Dialog.Close asChild><button type="button" className="icon-btn" aria-label={U.budgetCancel}><Close /></button></Dialog.Close>
           </div>
-          <Dialog.Description className="hint">{U.budgetDialogWhy}</Dialog.Description>
+          <Dialog.Description className="hint">{key === '' ? U.budgetChoose : models.isPending ? B.pricesReading : models.isError || catalog === undefined ? B.priceCatalogMissing : priced ? U.budgetDialogWhy : B.budgetUnpriced}</Dialog.Description>
           <div className="budget-form">
             {first !== null ? null : (
               <div className="field"><span className="eyebrow">{U.budgetPlan}</span><Select value={key} placeholder={B.chooseCommand} options={free.map((candidate) => ({ id: candidate.key, label: candidate.label }))} onChange={setKey} label={U.budgetPlan} menuClassName="budget-command-menu" menuState={{ open: openMenu === 'command', onOpenChange: open => setOpenMenu(open ? 'command' : null) }} />{free.length <= 7 ? null : <small className="hint">{B.commandScroll}</small>}</div>
@@ -62,8 +62,8 @@ function BudgetDialog({ plans, budgets, first, onClose }: { plans: readonly Plan
             <label className="field"><span className="eyebrow">{U.budgetDollars}</span><input className="input" type="number" min="0.01" step="0.01" value={amount} onChange={event => setAmount(event.currentTarget.value)} aria-label={U.budgetDollars} /></label>
             <div className="field"><span className="eyebrow">{U.budgetAction}</span><Select value={action} options={ACTIONS} onChange={setAction} label={U.budgetAction} menuClassName="budget-command-menu" menuState={{ open: openMenu === 'action', onOpenChange: open => setOpenMenu(open ? 'action' : null) }} /></div>
             {key === '' ? null : models.isPending ? <p className="hint">{B.pricesReading}</p> : models.isError ? <p className="hint alert">{failureText(models.error)}</p> : <>
-              <p className="hint" role="status">{priced ? B.budgetPriced : B.budgetUnpriced}</p>
-              {priced ? null : <CommandPricing command={key} label={plan?.label ?? key} catalog={catalog} unpriced={0} usedModels={plan?.models ?? []} subscription={plan?.subscription} path={undefined} />}
+              {priced ? <p className="hint" role="status">{B.budgetPriced}</p> : null}
+              {priced ? null : <CommandPricing command={key} label={plan?.label ?? key} catalog={catalog} unpriced={0} usedModels={plan?.models?.length ? plan.models : catalog?.models.map(model => model.id) ?? []} subscription={plan?.subscription} path={undefined} />}
             </>}
             <div className="acts-row">
               <Button kind="go" disabled={put.isPending || !priced || usd === null || !Number.isFinite(usd) || usd <= 0 || key === ''} onClick={() => { if (usd !== null) write([...others, { head: key, daily_usd: usd, action }]); }}>{U.budgetSave}</Button>

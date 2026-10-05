@@ -238,7 +238,8 @@ describe('request token tiles', () => {
     const shown = page(turn({ upstream_req_bytes: 320, in_tokens: 100, out_tokens: 7, cost_usd: 0.002 }));
     expect(shown).toContain('<div class="n">100</div><h3>Read in</h3>');
     expect(shown).toContain('<div class="n">7</div><h3>Written out</h3>');
-    expect(shown).toContain('What this would cost at the model’s public prices.');
+    expect(shown).toContain('Estimated at this command’s declared token prices.');
+    expect(shown).not.toContain('public prices');
     expect(shown).not.toContain('Not reported');
   });
 

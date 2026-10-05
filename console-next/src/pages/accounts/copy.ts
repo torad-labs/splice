@@ -69,7 +69,7 @@ export const A = {
   drag: (name: string) => `Drag ${name} to change failover order`,
   spent: 'Budget used',
   budgetScope: 'Shared by all accounts on this command.',
-  noCapWhy: 'No daily cap is set. Set a daily cap to limit spending.',
+  noCapWhy: 'No daily cap is set.',
   setCap: 'Set daily cap',
   spendUnknown: 'Spending is not reported. A remaining balance is available after priced requests.',
   budgetMissing: 'Budget information is not available in this daemon yet.',

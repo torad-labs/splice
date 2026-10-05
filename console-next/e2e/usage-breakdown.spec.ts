@@ -212,7 +212,7 @@ test('a new budget starts blank and its Command menu stays inside the dialog und
   await dialog.getByRole('button', { name: 'Command', exact: true }).click();
   await page.getByRole('menuitemradio', { name: STACK.oauthHead, exact: true }).click();
   await dialog.getByRole('spinbutton', { name: 'Dollars a day', exact: true }).fill('2.50');
-  await expect(dialog).toContainText('A dollar budget cannot measure its spending');
+  await expect(dialog).toContainText('Its budget cannot count spending yet. Declare prices in its price card first.');
   await expect(dialog.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
   await dialog.getByRole('button', { name: 'Command', exact: true }).click();
   await page.getByRole('menuitemradio', { name: STACK.keyHead, exact: true }).click();

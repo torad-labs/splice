@@ -100,7 +100,7 @@ export const P = {
   writtenOut: 'Written out',
   writtenOutWhy: 'The answer, tools and thinking.',
   cost: 'API cost, estimated',
-  costWhy: 'What this would cost at the model’s public prices.',
+  costWhy: 'Estimated at this command’s declared token prices.',
   costNone: 'This request was not priced.',
   costUnreported: 'The price is unknown because token counts were not reported.',
   retries: 'Retries',

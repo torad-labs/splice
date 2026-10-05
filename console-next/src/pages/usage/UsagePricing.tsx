@@ -1,4 +1,4 @@
-import { Link } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import { useModels } from '../../api/models';
 import { useTopology } from '../../api/config';
 import { useUsage } from '../../api/queries';
@@ -10,13 +10,13 @@ import type { TurnsState } from '../../types/perf';
 import { Fault } from '../../ui';
 import { B } from './copy';
 
-export function CommandPricing({ command, label, catalog, unpriced, path, usedModels = [], subscription, missingInput = 0, missingOutput = 0 }: {
+export function CommandPricing({ command, label, catalog, unpriced, path, usedModels = [], subscription, missingInput = 0, missingOutput = 0, expanded = false }: {
   command: string; label: string; catalog: HeadCatalog | undefined; unpriced: number; path: string | undefined;
-  usedModels?: readonly string[]; subscription?: string | undefined; missingInput?: number; missingOutput?: number;
+  usedModels?: readonly string[]; subscription?: string | undefined; missingInput?: number; missingOutput?: number; expanded?: boolean;
 }) {
   const missing = usedModels.filter(id => catalog?.models.find(model => model.id === id)?.rates == null);
-  if (catalog !== undefined && missing.length === 0 && unpriced === 0 && missingInput === 0 && missingOutput === 0 && subscription === undefined) return null;
-  return <details className="usage-pricing-command">
+  if (!expanded && catalog !== undefined && missing.length === 0 && unpriced === 0 && missingInput === 0 && missingOutput === 0 && subscription === undefined) return null;
+  return <details className="usage-pricing-command" open={expanded}>
     <summary>{B.pricesFor(label)}</summary>
     {subscription === undefined ? null : <p>{B.subscription(subscription)}</p>}
     <p>{catalog === undefined ? B.priceCatalogMissing : missing.length > 0 ? B.missingPrices(missing.join(', ')) : usedModels.length === 0 ? B.noUsedModels : B.pricesDeclared}</p>
@@ -34,6 +34,8 @@ export function CommandPricing({ command, label, catalog, unpriced, path, usedMo
 }
 
 export function UsagePricing({ heads, recorded }: { heads: readonly HeadStatus[]; recorded: TurnsState | null }) {
+  const [params] = useSearchParams();
+  const focused = params.get('prices');
   const models = useModels();
   const topology = useTopology();
   const usage = useUsage();
@@ -44,6 +46,10 @@ export function UsagePricing({ heads, recorded }: { heads: readonly HeadStatus[]
     <h2 id="usage-pricing">{B.pricing}</h2><p className="why">{B.pricingWhy}</p>
     {models.isError ? <Fault message={failureText(models.error)} onRetry={() => void models.refetch()} />
       : models.isPending ? <p className="hint">{B.pricesReading}</p>
-      : isPendingRoute(models.data) ? <p className="hint">{B.pricesUnavailable}</p> : commands.map(command => <CommandPricing key={command} command={command} label={heads.find(head => head.key === command)?.label ?? command} catalog={catalog?.heads.find(head => head.head === command)} unpriced={recorded?.usageBy?.[command]?.totals.unpriced_requests ?? 0} missingInput={recorded?.usageBy?.[command]?.totals.missing_input_requests ?? 0} missingOutput={recorded?.usageBy?.[command]?.totals.missing_output_requests ?? 0} usedModels={recorded?.usageBy?.[command]?.models.flatMap(model => model.key === null ? [] : [model.key]) ?? []} subscription={usage.data?.heads.find(head => head.key === command)?.usage?.quota?.plan} path={path} />)}
+      : isPendingRoute(models.data) ? <p className="hint">{B.pricesUnavailable}</p> : commands.map(command => {
+          const declared = catalog?.heads.find(head => head.head === command);
+          const used = recorded?.usageBy?.[command]?.models.flatMap(model => model.key === null ? [] : [model.key]) ?? [];
+          return <CommandPricing key={command} command={command} label={heads.find(head => head.key === command)?.label ?? command} catalog={declared} unpriced={recorded?.usageBy?.[command]?.totals.unpriced_requests ?? 0} missingInput={recorded?.usageBy?.[command]?.totals.missing_input_requests ?? 0} missingOutput={recorded?.usageBy?.[command]?.totals.missing_output_requests ?? 0} usedModels={command === focused && used.length === 0 ? declared?.models.map(model => model.id) ?? [] : used} subscription={usage.data?.heads.find(head => head.key === command)?.usage?.quota?.plan} path={path} expanded={command === focused} />;
+        })}
   </section>;
 }

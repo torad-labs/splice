@@ -1,5 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { MemoryRouter } from 'react-router';
+import { modelsKey } from '../src/api/models';
+import type { HeadCatalog } from '../src/types/models';
 import { expect, test } from 'vitest';
 import { budgetsKey } from '../src/api/usage';
 import { AccountBudget } from '../src/pages/accounts/AccountBudget';
@@ -7,10 +10,18 @@ import { FailoverOrder } from '../src/pages/accounts/FailoverOrder';
 import type { BudgetsPayload } from '../src/types/budget';
 import type { AccountRow } from '../src/types/accounts';
 
-function budget(data: BudgetsPayload): string {
+const catalog = (priced: boolean): HeadCatalog => ({
+  head: 'synthetic-command', provider: 'synthetic', pinned_model: 'synthetic-model', models: [{
+    id: 'synthetic-model', label: 'Synthetic model', description: '', slot: null, context_window: 1000, context_window_source: 'synthetic', pinned: true, resolved: true,
+    ...(priced ? { rates: { input: 1, cache_read: 0, output: 2 } } : {}),
+  }],
+});
+
+function budget(data: BudgetsPayload, priced: boolean | null = true): string {
   const client = new QueryClient();
   client.setQueryData(budgetsKey, data);
-  return renderToStaticMarkup(<QueryClientProvider client={client}><AccountBudget head="synthetic-command" /></QueryClientProvider>);
+  if (priced !== null) client.setQueryData(modelsKey, { heads: [catalog(priced)] });
+  return renderToStaticMarkup(<QueryClientProvider client={client}><MemoryRouter><AccountBudget head="synthetic-command" /></MemoryRouter></QueryClientProvider>);
 }
 
 test('an unsupported account source shows the plain state, never daemon internals', () => {
@@ -68,6 +79,22 @@ test('no cap explains how to set one without unknown used or remaining amounts',
   expect(html).toContain('Set daily cap');
   expect(html).not.toContain('Budget used');
   expect(html).not.toContain('Left in budget');
+});
+
+test('a command without declared prices cannot promise its cap will count spending', () => {
+  const html = budget({ budgets: [] }, false);
+  expect(html).toContain('budget cannot count spending yet');
+  expect(html).not.toContain('Set a daily cap to limit spending');
+  expect(html).toContain('href="/usage?prices=synthetic-command"');
+  expect(html).toContain('Prices for synthetic-command');
+  expect(html).not.toContain('public prices');
+});
+
+test('the declared-price capability is not invented while its catalog is pending', () => {
+  const html = budget({ budgets: [] }, null);
+  expect(html).toContain('Reading the model prices');
+  expect(html).not.toContain('Set a daily cap to limit spending');
+  expect(html).not.toContain('has no declared token prices');
 });
 
 test('a cap without priced spend does not invent zero or a remaining balance', () => {

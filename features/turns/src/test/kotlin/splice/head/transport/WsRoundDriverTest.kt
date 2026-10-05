@@ -133,6 +133,21 @@ private const val POLICY_REFUSAL =
     """{"type":"response.failed","response":{"id":"r1","status":"failed",""" +
         """"error":{"code":"cyber_policy","message":"This request was flagged. Try rephrasing."}}}"""
 
+/** A round that opens one text part and streams one delta into it, so a client frame goes out. */
+private val TEXT_ROUND = listOf(
+    """{"type":"response.created","response":{"id":"r1"}}""",
+    """{"type":"response.output_item.added","output_index":0,"item":{"type":"message","role":"assistant"}}""",
+    """{"type":"response.content_part.added","output_index":0,"content_index":0,""" +
+        """"part":{"type":"output_text","text":""}}""",
+    """{"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"late text"}""",
+)
+
+private const val LATE_ERROR_SENTENCE = "Synthetic access check failed. Please try again."
+
+/** A synthetic in-band error event of the shape the backend sends mid-round, with a request-class vendor code. */
+private const val LATE_ERROR =
+    """{"type":"error","error":{"type":"invalid_request_error","message":"$LATE_ERROR_SENTENCE"}}"""
+
 /** A runner that replays a scripted round, so the driver's decision is the only variable.
  *  [throwAfter], when set, makes the round's flow throw once it has emitted that many events —
  *  standing in for an unexpected throw out of the translator/reducer on a real round. */
@@ -1260,11 +1275,16 @@ class WsRoundDriverTest {
     }
 }
 
-/** A POLICY REFUSAL before any client frame is the vendor's verdict on the REQUEST, so the round ends on it
+/** How a WebSocket round's failure terminal reaches the client.
+ *
+ *  A POLICY REFUSAL before any client frame is the vendor's verdict on the REQUEST, so the round ends on it
  *  as its own failure: re-served over SSE, the identical context met the identical refusal (live
- *  2026-10-04, both re-sends that could be attributed: 2:18 to 2:21 and 6:05 PM CT). */
+ *  2026-10-04, both re-sends that could be attributed: 2:18 to 2:21 and 6:05 PM CT).
+ *
+ *  ANY failure after a frame of the round stays on the websocket, because the client already holds that
+ *  frame, and the turn ends on it as an error the client reads, never as a clean end over the partial. */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-class WsPolicyRefusalTest(@param:TempDir private val tmp: Path) {
+class WsRoundFailureTest(@param:TempDir private val tmp: Path) {
     private val mock = MockChatGptUpstream()
     private val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
 
@@ -1326,6 +1346,27 @@ class WsPolicyRefusalTest(@param:TempDir private val tmp: Path) {
             assertEquals(1, runner.attempts, "the refused context was re-sent over the websocket")
             assertTrue(sse.contains("\"type\":\"invalid_request_error\""), "not the bad-request class: $sse")
             assertTrue(sse.contains("This request was flagged. Try rephrasing."), "the vendor's sentence: $sse")
+        } finally {
+            runBlocking { h.stop() }
+        }
+    }
+
+    /** The upstream's in-band error event after this round's text reached the client. Its code names the request
+     *  class but no refusal, so the refusal arm does not end it; the turn's ordinary failure ending does. */
+    @Test
+    fun `an upstream error after this round's content ends the turn as an error the client reads`() {
+        val runner = ScriptedRunner(TEXT_ROUND + LATE_ERROR)
+        val h = head(runner)
+        runBlocking { h.start() }
+        try {
+            val before = mock.upstreamBodies.size
+            val sse = turn(h.port)
+            assertEquals(0, runner.bypassed, "the client held this round's text, and the round was re-served")
+            assertEquals(before, mock.upstreamBodies.size, "an SSE request re-sent the context")
+            assertTrue(sse.contains("late text"), "the text the client already read: $sse")
+            assertTrue(sse.contains("event: error"), "the failed turn ended without an error frame: $sse")
+            assertTrue(sse.contains(LATE_ERROR_SENTENCE), "the vendor's sentence: $sse")
+            assertFalse(sse.contains("\"stop_reason\":\"end_turn\""), "the failed turn ended as a clean end: $sse")
         } finally {
             runBlocking { h.stop() }
         }

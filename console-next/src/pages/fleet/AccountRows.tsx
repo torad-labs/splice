@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { failureText } from '../../api/client';
+import { useAccountOrder } from '../../api/account-order';
 import { isPendingRoute, useSwitchAccount, useUnpinAccount } from '../../api/auth';
 import { accountEmail, accountName, accountState, exclusionText, isExcluded, isServable, nextRuleOf, refusalText, steppedPast, windowSpan, windowUsedText } from '../../lib/accounts';
 import type { AccountRow } from '../../types/accounts';
@@ -26,6 +27,8 @@ export function AccountRowView({ account, now, pooled, pool }: { account: Accoun
   const email = accountEmail(account);
   const head = account.heads[0] ?? '';
   const label = account.label;
+  const order = useAccountOrder(head, pooled && head !== '');
+  const selectable = order.data !== undefined && !('unavailable' in order.data) && order.data.single_account !== true;
   const state = accountState(account, now, pool);
   const past = steppedPast(account, pool, now);
   const marks = [
@@ -38,7 +41,7 @@ export function AccountRowView({ account, now, pooled, pool }: { account: Accoun
   const refusal = refusalText(account);
   // The next flag proves who wins, not whether saved order or a fallback selected them.
   const rule = account.pinned === true ? nextRuleOf(account, pool) : null;
-  const canSwitch = pooled && label !== null && account.selected !== true && !isExcluded(account, now) && isServable(account) && head !== '';
+  const canSwitch = pooled && selectable && label !== null && account.selected !== true && !isExcluded(account, now) && isServable(account) && head !== '';
 
   return (
     <li className="account">

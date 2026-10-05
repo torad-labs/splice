@@ -91,14 +91,19 @@ const acct = (over: Partial<AccountRow> = {}): AccountRow => ({
   kind: 'chatgpt-oauth', label: 'work', single_login: false, credential_path: null, primary: false, selected: false, available: true,
   pinned: false, next_target: false, credential_present: true, windows: [], heads: ['claudex'], ...over,
 });
-const row = (account: AccountRow, pool: readonly AccountRow[] = [account]) =>
-  renderToStaticMarkup(
-    <QueryClientProvider client={new QueryClient()}>
+const row = (account: AccountRow, pool: readonly AccountRow[] = [account], order: 'ready' | 'unavailable' | 'pending' | 'single' = 'ready') => {
+  const client = new QueryClient();
+  if (order !== 'pending') client.setQueryData(['account-order', account.heads[0]], order === 'unavailable'
+    ? { unavailable: 'Synthetic command has no selectable account source' }
+    : { head: account.heads[0], order: [], effective_order: ['work', 'home'], single_account: order === 'single' });
+  return renderToStaticMarkup(
+    <QueryClientProvider client={client}>
       <ul>
         <AccountRowView account={account} now={1_800_000_000_000} pooled pool={pool} />
       </ul>
     </QueryClientProvider>,
   );
+};
 
 describe('an account row', () => {
   const REFUSED = "'work' is a symbolic link, and splice does not load a linked credential; remove the link and sign in again";
@@ -106,6 +111,13 @@ describe('an account row', () => {
     const html = row(acct());
     expect(html).toContain('Switch to this one');
     expect(html).not.toContain('role="alert"');
+  });
+  test.each(['unavailable', 'pending', 'single'] as const)('a loadable account offers no Switch when selection is %s', order => {
+    const account = acct({ can_remove: true, can_rename: true, edit_target: { kind: 'pool', id: 'work' } });
+    const html = row(account, [account], order);
+    expect(html).not.toContain('Switch to this one');
+    expect(html).toContain('Rename');
+    expect(html).toContain('Remove');
   });
   test('a refused account prints the daemon\'s sentence and offers no Switch, but keeps Rename and Remove', () => {
     const html = row(acct({ credential_present: false, refusal: REFUSED, can_remove: true, can_rename: true, edit_target: { kind: 'pool', id: 'work' } }));
@@ -150,6 +162,23 @@ describe('an account row', () => {
     const html = row(acct({ credential_present: false }));
     expect(html).not.toContain('Switch to this one');
     expect(html).toContain('Its login file is gone');
+  });
+});
+
+describe('a command switch menu', () => {
+  test.each(['ready', 'pending', 'unavailable', 'single'] as const)('it follows the same selectable-source evidence as account rows: %s', order => {
+    const head: HeadStatus = {
+      key: 'synthetic-command', label: 'Synthetic command', name: 'synthetic-command', port: 1, authKind: 'chatgpt-oauth',
+      wantVersion: '1', running: true, healthy: true, version: '1', versionMatch: true, mode: null,
+      gate: null, maxInflight: null, health: {} as HeadStatus['health'], pids: [],
+    };
+    const client = new QueryClient();
+    if (order !== 'pending') client.setQueryData(['account-order', head.key], order === 'unavailable'
+      ? { unavailable: 'Synthetic unavailable source' }
+      : { head: head.key, order: [], effective_order: ['work', 'home'], single_account: order === 'single' });
+    const html = renderToStaticMarkup(<QueryClientProvider client={client}><FleetFix fix="switch" head={head} pool={[acct({ heads: [head.key] })]} now={0} /></QueryClientProvider>);
+    if (order === 'ready') expect(html).toContain('Switch account');
+    else expect(html).not.toContain('Switch account');
   });
 });
 

@@ -2,6 +2,7 @@ import * as Menu from '@radix-ui/react-dropdown-menu';
 import { useEffect, useRef, useState } from 'react';
 import { failureText } from '../../api/client';
 import { useSwitchAccount } from '../../api/auth';
+import { useAccountOrder } from '../../api/account-order';
 import { useHeadAction } from '../../api/queries';
 import { accountEmail, accountIdentity, accountName, isExcluded } from '../../lib/accounts';
 import { startCommandOf } from '../../lib/fleet';
@@ -17,6 +18,7 @@ import { F } from './copy';
 export function FleetFix({ fix, head, pool, now, keyCommand = null }: { fix: Fix; head: HeadStatus; pool: readonly AccountRow[]; now: number; keyCommand?: string | null }) {
   const action = useHeadAction();
   const pin = useSwitchAccount();
+  const order = useAccountOrder(head.key, fix === 'switch');
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState<unknown>(null);
   const timer = useRef<number | undefined>(undefined);
@@ -72,6 +74,7 @@ export function FleetFix({ fix, head, pool, now, keyCommand = null }: { fix: Fix
         </SignIn>
       );
     case 'switch': {
+      if (order.data === undefined || 'unavailable' in order.data || order.data.single_account === true) return null;
       const choices = pool.filter((account) => account.label !== null && account.selected !== true && !isExcluded(account, now));
       return (
         <>

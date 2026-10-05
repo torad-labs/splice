@@ -116,7 +116,7 @@ internal class CodexCodeModeResume(
         supplied: Map<String, CodeModeResult>,
     ): TurnOutcome {
         val source = driver.streams.find(record)
-        val advanced = advance(record, context, extra, supplied)
+        val advanced = advance(record, context, body, extra, supplied)
         if (record.phase == CodeModePhase.COMPLETED) return driver.finishGenerated(record, context, body)
         if (record.phase != CodeModePhase.LOST || advanced !is TurnOutcome.Failure) return advanced
         return if (CodeModeReaderTermination.ended(source)) lost(record, context, body) else advanced
@@ -125,10 +125,12 @@ internal class CodexCodeModeResume(
     private suspend fun advance(
         record: CodeModeRecord,
         context: CodeModeRunContext,
+        body: CodeModeBody,
         extra: CodeModeExtra,
         supplied: Map<String, CodeModeResult>,
     ): TurnOutcome = when {
         interrupts(extra, record) -> {
+            wire.extraContent(body, record, candidateMedia(record, context.turn), report = extra)
             machine.interrupt(record)
         }
         context.disableParallel && record.pending.any { !it.exposed } -> {

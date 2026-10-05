@@ -50,6 +50,7 @@ import splice.core.model.TurnPrice
 import splice.core.perf.PerfKeys
 import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.ReasoningDisplay
+import splice.core.turn.SpliceNotice
 import splice.core.turn.TurnMeta
 import splice.core.turn.WatchdogBudget
 import splice.core.util.LogSink
@@ -923,6 +924,38 @@ class CodeModeCrossScriptSourceTest {
         }
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    @Timeout(BILLING_TEST_SECONDS)
+    fun `extra-content interruption logs one structural cause without private item content`(
+        systemOnly: Boolean,
+        @TempDir tmp: Path,
+    ) = runBlocking {
+        val fixture = Fixture(tmp, 1)
+        val privateText = "SYNTHETIC_PRIVATE_DO_NOT_LOG"
+        try {
+            val history = fixture.begin()
+            if (systemOnly) history.removeAt(history.lastIndex)
+            val role = if (systemOnly) "system" else "user"
+            history += message(role, JsonPrimitive(privateText))
+            val final = withTimeout(TURN_BOUND_MS) { send(fixture.client, fixture.url, history) }
+            assertTrue(final.contains("fixture read"))
+            assertEquals(1, fixture.ws.aborts.get(), "the chosen extra content must actually interrupt B")
+            val lines = fixture.logs.filter { "[code-mode] interrupted" in it }
+            assertEquals(1, lines.size, "each extra-content interruption needs one deciding structural log line")
+            val line = lines.single()
+            val kind = if (systemOnly) "SYSTEM" else "STEERING"
+            assertTrue("extra=$kind" in line, line)
+            assertTrue("baselineLogicalCount=4" in line && "boundary=4" in line, line)
+            val item = if (systemOnly) "msg:developer@5" else "msg:user@6"
+            assertTrue("unowned=[$item]" in line, line)
+            assertTrue("answered=${!systemOnly}" in line, line)
+            assertTrue(privateText !in line && PRELUDE_COMMENTARY !in line && "xxxx" !in line, line)
+        } finally {
+            fixture.close()
+        }
+    }
+
     private fun assertCommentaryOnce(bodyJson: String) {
         val input = Json.parseToJsonElement(bodyJson).jsonObject.getValue("input") as JsonArray
         val count = input.count { item ->
@@ -934,15 +967,17 @@ class CodeModeCrossScriptSourceTest {
     private class Fixture(tmp: Path, private val preludeCalls: Int) {
         val upstream = BillingUpstream()
         val runtime = StatementGatewayRuntime()
+        val logs = ConcurrentLinkedQueue<String>()
         val ws = BillingWsRunner(CROSS_SCRIPT_SOURCE, reasoning = true, preludeCalls = preludeCalls)
         private val bridge = CodexCodeModeBridge(
             CodeModeBridgeConfig(
                 runtimes = { runtime },
                 state = CodeModeStateLocation(tmp.resolve("records"), tmp.resolve("legacy.json")),
                 clock = Clock.fixed(Instant.EPOCH, ZoneOffset.UTC),
+                log = LogSink { logs += it },
             ),
         )
-        private val head = HeadServer(withWs(upstream.url, bridge, ws, replayReasoning = true), 0, headDeps(tmp))
+        private val head = HeadServer(withWs(upstream.url, bridge, ws, replayReasoning = false), 0, headDeps(tmp))
         val client = HttpClient(CIO)
         val url: String get() = "http://127.0.0.1:${head.port}/v1/messages"
 
@@ -952,10 +987,12 @@ class CodeModeCrossScriptSourceTest {
             val history = mutableListOf(opening)
             val a = withTimeout(TURN_BOUND_MS) { send(client, url, history) }
             assertEquals(preludeCalls, toolUses(a).size, "A delivers its real client callback batch")
+            assertSignedNotice(a, "Promise.all")
             history += returned(a)
             val b = withTimeout(TURN_BOUND_MS) { send(client, url, history) }
             assertEquals(1, toolUses(b).size, "B publishes its first native-only callback while its source is live")
             assertTrue(!b.contains(PRELUDE_COMMENTARY), "B must not emit A commentary")
+            assertSignedNotice(b, "tools.Read")
             withTimeout(TURN_BOUND_MS) { runtime.delivered.receive() }
             history += returned(b)
             return history
@@ -972,6 +1009,17 @@ class CodeModeCrossScriptSourceTest {
             runtime.close()
             client.close()
             upstream.close()
+        }
+
+        private fun assertSignedNotice(wire: String, sourceMarker: String) {
+            val blocks = clientBlocks(wire)
+            assertTrue(blocks.none { it["type"]?.jsonPrimitive?.content == "redacted_thinking" })
+            val notices = blocks.filter {
+                it["type"]?.jsonPrimitive?.content == "thinking" &&
+                    it["signature"]?.jsonPrimitive?.content == SpliceNotice.SIGNATURE
+            }
+            assertEquals(1, notices.size, "the client echoes the actual signed live-script notice")
+            assertTrue(sourceMarker in notices.single().getValue("thinking").jsonPrimitive.content)
         }
 
         private fun clientBlocks(wire: String): List<JsonObject> {

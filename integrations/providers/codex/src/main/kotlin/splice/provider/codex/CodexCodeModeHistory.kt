@@ -35,6 +35,13 @@ internal class CodexCodeModeHistory(private val json: Json) {
         candidateMedia: Map<String, List<JsonElement>> = emptyMap(),
     ): CodeModeExtra = extras.of(body.request?.second, record, candidateMedia)
 
+    fun describeExtraContent(
+        body: CodeModeBody,
+        record: CodeModeRecord,
+        candidateMedia: Map<String, List<JsonElement>>,
+        extra: CodeModeExtra,
+    ): String = extras.describe(body.request?.second, record, candidateMedia, extra)
+
     /**
      * Rewrites every completed record it can still place, except an abandoned one (V4-342): its
      * conversation went on upstream on the client's history, and a later rewrite of it would move the

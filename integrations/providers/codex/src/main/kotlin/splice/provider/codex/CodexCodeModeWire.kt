@@ -114,7 +114,13 @@ internal class CodexCodeModeWire(private val json: Json, private val log: LogSin
         body: CodeModeBody,
         record: CodeModeRecord,
         candidateMedia: Map<String, List<JsonElement>> = emptyMap(),
-    ): CodeModeExtra = history.extraContent(body, record, candidateMedia)
+        report: CodeModeExtra? = null,
+    ): CodeModeExtra = if (report == null) {
+        history.extraContent(body, record, candidateMedia)
+    } else {
+        log(history.describeExtraContent(body, record, candidateMedia, report))
+        report
+    }
 
     fun canonicalize(
         body: CodeModeBody,

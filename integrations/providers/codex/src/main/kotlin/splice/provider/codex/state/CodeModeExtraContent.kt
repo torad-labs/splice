@@ -26,12 +26,48 @@ internal class CodeModeExtraContent(
     fun of(input: JsonArray?, record: CodeModeRecord, candidateMedia: Map<String, List<JsonElement>>): CodeModeExtra {
         val (projected, boundary) = input?.let { onBaseline(it, record) } ?: return CodeModeExtra.STEERING
         val owned = (record.results.keys + record.pending.map(CodeModePending::clientId)).toSet()
-        val logicalExtra = unownedItems(projected.logicalItems, record, owned, candidateMedia, boundary)
+        val logicalExtra = unownedIndexes(projected.logicalItems, record, owned, candidateMedia, boundary)
+            .map(projected.logicalItems::get)
         return when {
             unexpectedReplay(projected, record, owned, boundary) || logicalExtra.any { !isSystemMessage(it) } ->
                 CodeModeExtra.STEERING
             logicalExtra.isNotEmpty() -> CodeModeExtra.SYSTEM
             else -> CodeModeExtra.NONE
+        }
+    }
+
+    /** Only whitelisted kinds and numeric positions leave the history through this diagnostic. */
+    fun describe(
+        input: JsonArray?,
+        record: CodeModeRecord,
+        candidateMedia: Map<String, List<JsonElement>>,
+        extra: CodeModeExtra,
+    ): String {
+        val baseline = input?.let { onBaseline(it, record) }
+        val tail = baseline?.let { (projected, boundary) ->
+            val owned = (record.results.keys + record.pending.map(CodeModePending::clientId)).toSet()
+            val items = unownedIndexes(projected.logicalItems, record, owned, candidateMedia, boundary).map {
+                "${itemKind(projected.logicalItems[it])}@$it"
+            }
+            if (unexpectedReplay(projected, record, owned, boundary)) items + "unexpectedReplay" else items
+        } ?: listOf("baselineMismatch")
+        val answered = record.pending.all { it.clientId in record.results }
+        return "[code-mode] interrupted extra=$extra baselineLogicalCount=${record.baselineLogicalCount} " +
+            "boundary=${baseline?.second ?: "unresolved"} unowned=[${tail.joinToString(",")}] answered=$answered"
+    }
+
+    private fun itemKind(element: JsonElement): String {
+        val item = element as? JsonObject ?: return "other"
+        val type = codec.string(item, CODE_MODE_FIELD_TYPE)
+        return when (type) {
+            "", "message" -> {
+                val roles = setOf("user", "assistant", "developer", "system")
+                val role = codec.string(item, CODE_MODE_FIELD_ROLE).takeIf { it in roles } ?: "other"
+                val phase = codec.string(item, "phase").takeIf { it in setOf("commentary", "final_answer") }
+                "msg:$role${phase?.let { "/$it" }.orEmpty()}"
+            }
+            "function_call", "function_call_output", "custom_tool_call", "custom_tool_call_output" -> type
+            else -> "other"
         }
     }
 
@@ -42,18 +78,18 @@ internal class CodeModeExtraContent(
         return if (validBaseline) projected to (boundary ?: record.baselineLogicalCount) else null
     }
 
-    private fun unownedItems(
+    private fun unownedIndexes(
         items: List<JsonElement>,
         record: CodeModeRecord,
         owned: Set<String>,
         candidateMedia: Map<String, List<JsonElement>>,
         tailStart: Int,
-    ): List<JsonElement> {
+    ): List<Int> {
         val ownedFollowUps = ownership.followUps(items, record, candidateMedia)
         val delivered = indexes(items, tailStart, record, candidateMedia)
         return (tailStart until items.size).filter { index ->
             !ownership.isCallback(items[index], owned) && index !in ownedFollowUps && index !in delivered
-        }.map(items::get)
+        }
     }
 
     /** Matches only already delivered client prose; terminal model items remain unchanged for upstream replay. */

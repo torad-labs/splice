@@ -3,7 +3,9 @@ package splice.app.control
 
 import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.claude.ClaudeLoginPlacesSource
+import splice.accounts.pool.HeadAccountPoolView
 import splice.app.auth.claude.OWN_SIGN_IN_LABEL
+import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaView
 import splice.core.usage.QuotaWindow
 import splice.core.usage.QuotaWindowView
@@ -17,28 +19,36 @@ internal class NativeUsageSource(
 ) : HeadUsageSource by head.usage {
     override fun snapshot(): UsageView {
         val pool = head.accountPool?.view(null)
-        val selected = pool?.selectedAccount()
+        val selected = pool?.selectedLabel?.let { pool.selectedAccount() }
         val quota = if (pool?.selectionUnknown == true) {
             null
         } else if (selected != null && selected.label != OWN_SIGN_IN_LABEL) {
             pool.selectedQuota()
         } else {
-            // The login this head's requests carry. The command's own folder only until a request has matched one.
-            val places = native()
-            val carrying = places?.carrying(head.head.key) ?: ClaudeLoginPlaceId.SPLICE
-            val place = places?.places()?.singleOrNull { it.head == head.head.key && it.id == carrying }
-            place?.quota?.let { snapshot ->
-                val observed = snapshot.observedAtEpochSeconds
-                QuotaView(
-                    snapshot.fiveHour?.let { window(it, observed) },
-                    snapshot.sevenDay?.let { window(it, observed) },
-                    snapshot.plan,
-                )
-            }
+            nativeQuota(pool)
         }
         // No native observation means no quota, never another credential's aggregate fallback.
         return head.usage.snapshot().copy(quota = quota)
     }
+
+    private fun nativeQuota(pool: HeadAccountPoolView?): QuotaView? {
+        val owner = native()
+        val views = owner?.places().orEmpty().filter { it.head == head.head.key }
+        val carrying = owner?.carrying(head.head.key)
+        val carried = views.singleOrNull { it.id == carrying }?.quota
+        return carried?.let(::quotaView) ?: if (pool?.accounts?.any { it.label.startsWith("native:") } == true) {
+            pool.nextTargetLabel?.takeIf { target -> pool.accounts.any { it.label == target } }
+                ?.let { pool.copy(selectedLabel = it).selectedQuota() }
+        } else {
+            views.singleOrNull { it.id == ClaudeLoginPlaceId.SPLICE }?.quota?.let(::quotaView)
+        }
+    }
+
+    private fun quotaView(snapshot: QuotaSnapshot): QuotaView = QuotaView(
+        snapshot.fiveHour?.let { window(it, snapshot.observedAtEpochSeconds) },
+        snapshot.sevenDay?.let { window(it, snapshot.observedAtEpochSeconds) },
+        snapshot.plan,
+    )
 
     private fun window(window: QuotaWindow, observed: Long?): QuotaWindowView =
         QuotaWindowView(window.usedPercent.toInt(), window.resetsAt, observed, window.windowSeconds)

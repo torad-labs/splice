@@ -111,6 +111,41 @@ class AccountPoolOrderTest {
         assertEquals(listOf("lower", "higher", "primary"), fixture.pool.effectiveOrder())
     }
 
+    @Test
+    fun `an elapsed five hour window cannot win a tie between current weekly resets`() {
+        val fixture = Fixture()
+        fixture.quota("higher", fiveReset = 1_800L, sevenReset = 2_000L)
+        fixture.quota("lower", fiveReset = 999L, sevenReset = 2_000L)
+        assertEquals(listOf("higher", "lower", "primary"), fixture.pool.effectiveOrder())
+        assertEquals("higher", fixture.pool.nextTargetLabel())
+    }
+
+    @Test
+    fun `a snapshot whose windows have both reset ranks with unknown quota last`() {
+        val fixture = Fixture()
+        fixture.quota("higher", fiveReset = 999L, sevenReset = 999L)
+        assertEquals(listOf("lower", "primary", "higher"), fixture.pool.effectiveOrder())
+    }
+
+    @Test
+    fun `an unavailable login cannot lend its reset ordering a known quota`() {
+        val fixture = Fixture()
+        fixture.quota("lower", fiveReset = 1_100L, sevenReset = 1_500L)
+        fixture.pool.members.single { it.label == "lower" }.cooldown.markUnavailable(60_000L)
+        assertEquals(listOf("higher", "primary", "lower"), fixture.pool.effectiveOrder())
+        assertEquals("higher", fixture.pool.nextTargetLabel())
+    }
+
+    @Test
+    fun `unknown quota on an unavailable primary cannot precede a selectable unknown login`() {
+        val fixture = Fixture()
+        fixture.pool.members = fixture.pool.members.map {
+            it.copy(quota = AccountQuotaSource { QuotaSnapshot() })
+        }
+        fixture.pool.members.single { it.primary }.cooldown.markUnavailable(60_000L)
+        assertEquals(listOf("higher", "lower", "primary"), fixture.pool.effectiveOrder())
+    }
+
     private class Fixture {
         val at = java.util.concurrent.atomic.AtomicLong(1_000_000L)
         private val quotas = mapOf(

@@ -47,11 +47,29 @@ class ClaudeUsageProbeTest {
 
         assertEquals(33.0, snapshot.fiveHour!!.usedPercent, 1e-9)
         assertEquals(FIVE_HOURS_SECONDS, snapshot.fiveHour!!.windowSeconds)
-        assertEquals(1_775_890_800L, snapshot.fiveHour!!.resetsAt, "2026-04-11T07:00:00Z")
+        assertEquals(1_775_890_801L, snapshot.fiveHour!!.resetsAt, "2026-04-11T07:00:01Z")
         assertEquals(13.0, snapshot.sevenDay!!.usedPercent, 1e-9)
         assertEquals(SEVEN_DAYS_SECONDS, snapshot.sevenDay!!.windowSeconds)
-        assertEquals(1_776_387_599L, snapshot.sevenDay!!.resetsAt, "2026-04-17T00:59:59Z")
+        assertEquals(1_776_387_600L, snapshot.sevenDay!!.resetsAt, "2026-04-17T01:00:00Z")
         assertEquals(NOW_MS, snapshot.updatedAt)
+    }
+
+    @Test
+    fun `fractional reset seconds round at the boundary instead of disagreeing about the reset minute`() {
+        val readings = listOf(
+            "2026-04-17T00:59:59.49Z" to 1_776_387_599L,
+            "2026-04-17T00:59:59.50Z" to 1_776_387_600L,
+            "2026-04-17T00:59:59.951713Z" to 1_776_387_600L,
+            "2026-04-17T01:59:59.95+01:00" to 1_776_387_600L,
+            "2026-04-17T01:00:00Z" to 1_776_387_600L,
+        )
+        for ((reset, expected) in readings) {
+            val snapshot = parser.parse(
+                obj("""{"seven_day":{"utilization":98.0,"resets_at":"$reset"}}"""),
+                NOW_MS,
+            )!!
+            assertEquals(expected, snapshot.sevenDay!!.resetsAt, reset)
+        }
     }
 
     @Test

@@ -4,8 +4,16 @@ package splice.app.auth.claude
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
+import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import io.ktor.server.engine.embeddedServer
+import io.ktor.server.netty.Netty
+import io.ktor.server.request.receiveText
+import io.ktor.server.response.header
+import io.ktor.server.response.respondText
+import io.ktor.server.routing.post
+import io.ktor.server.routing.routing
 import kotlinx.coroutines.CompletableDeferred
 import org.junit.jupiter.api.Assertions.assertEquals
 import splice.accounts.claude.ClaudeAccountIdentity
@@ -45,7 +53,7 @@ import kotlin.time.Duration.Companion.seconds
 internal class ClaudeNativePoolFixture(private val home: Path) {
     val paths = StatePaths(baseOverride = home.resolve(".splice/state"))
 
-    fun seed(place: String, expiresAt: Long = NATIVE_ACCESS_EXPIRY) {
+    fun seed(place: String, expiresAt: Long = NATIVE_ACCESS_EXPIRY, quota: QuotaSnapshot? = null) {
         val directory = home.resolve(if (place == "native") ".claude" else ".claude-splice")
         Files.createDirectories(directory)
         val token = "synthetic-$place"
@@ -58,7 +66,7 @@ internal class ClaudeNativePoolFixture(private val home: Path) {
         ClaudeCredentialProfiles(paths.stateDir, {}).observed(key, ClaudeAccountIdentity("account-$place", null))
         CredentialQuotaFiles(paths.quotaFile(NATIVE_HEAD), {}).observed(
             key,
-            QuotaSnapshot(
+            quota ?: QuotaSnapshot(
                 plan = "synthetic",
                 fiveHour = QuotaWindow(10.0, if (place == "native") 4_102_000_000L else 4_102_100_000L, 18_000L),
                 updatedAt = System.currentTimeMillis(),
@@ -153,7 +161,10 @@ internal class ClaudeNativePoolFixture(private val home: Path) {
         val factory = ManagedHeadFactory(
             paths,
             plane.providerAssembly,
-            HeadServerFactory(config, key, {}),
+            HeadServerFactory(config, key, {}).also {
+                it.sentCredentials = plane.sentCredentials
+                it.credentialAccountNames = plane.credentialAccountNames
+            },
             LaunchSpecFactory(topology, plane.signInPlanner, key, plane.buildInputs),
             plane.probeScope,
             {},
@@ -189,6 +200,58 @@ internal class ClaudeNativePoolFixture(private val home: Path) {
         )
         return Rig(plane, head, server, key)
     }
+
+    fun nativeUpstream(
+        sent: MutableList<String?>,
+        bodies: MutableList<String>,
+        refusedCredential: String? = "Bearer synthetic-native",
+    ) =
+        embeddedServer(Netty, host = "127.0.0.1", port = 0) {
+            routing {
+                post("/v1/messages") {
+                    val credential = call.request.headers["Authorization"]
+                    sent.add(credential)
+                    bodies.add(call.receiveText())
+                    if (credential == refusedCredential) {
+                        call.response.header("anthropic-ratelimit-unified-status", "rejected")
+                        call.response.header("anthropic-ratelimit-unified-representative-claim", "seven_day")
+                        call.response.header(
+                            "anthropic-ratelimit-unified-reset",
+                            (System.currentTimeMillis() / 1_000L + 3_600L).toString(),
+                        )
+                        call.respondText(
+                            """{"type":"error","error":{"type":"rate_limit_error","message":"synthetic weekly limit"}}""",
+                            ContentType.Application.Json,
+                            HttpStatusCode.TooManyRequests,
+                        )
+                    } else {
+                        call.respondText(
+                            """
+                            event: message_start
+                            data: {"type":"message_start","message":{"id":"msg_synthetic","type":"message","role":"assistant","model":"synthetic-model","content":[],"stop_reason":null,"usage":{"input_tokens":1,"output_tokens":0}}}
+
+                            event: content_block_start
+                            data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+                            event: content_block_delta
+                            data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}
+
+                            event: content_block_stop
+                            data: {"type":"content_block_stop","index":0}
+
+                            event: message_delta
+                            data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}
+
+                            event: message_stop
+                            data: {"type":"message_stop"}
+
+                            """.trimIndent() + "\n\n",
+                            ContentType.Text.EventStream,
+                        )
+                    }
+                }
+            }
+        }
 
     class Rig(
         val plane: ControlPlane,

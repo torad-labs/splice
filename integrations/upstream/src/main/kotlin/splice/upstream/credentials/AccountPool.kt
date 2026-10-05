@@ -243,7 +243,7 @@ public class AccountPool(
         val primary = current.primary
         val pin = pinnedLabel.get()?.let(byLabel::get)
         val previous = previousLabel?.let(byLabel::get)
-        val byReset = current.accounts.sortedWith(AccountAvailability.resetOrder)
+        val byReset = current.accounts.sortedWith(AccountAvailability.resetOrder(now()))
         val ordered = orderedLabels.get().mapNotNull(byLabel::get)
         val policy = if (ordered.isEmpty()) {
             listOfNotNull(previous) + byReset
@@ -369,14 +369,21 @@ private object AccountAvailability {
         }
     }
 
-    val resetOrder: Comparator<PoolAccount> =
+    fun resetOrder(at: Long): Comparator<PoolAccount> =
         compareBy<PoolAccount> { account ->
             val quota = account.quotaSnapshot
-            quota?.sevenDay == null && quota?.fiveHour == null
-        }.thenBy { it.quotaSnapshot?.sevenDay?.resetsAt ?: Long.MAX_VALUE }
-            .thenBy { it.quotaSnapshot?.fiveHour?.resetsAt ?: Long.MAX_VALUE }
+            rankingWindow(account, quota?.sevenDay, at) == null && rankingWindow(account, quota?.fiveHour, at) == null
+        }.thenBy { !available(it, at) }
+            .thenBy { rankingWindow(it, it.quotaSnapshot?.sevenDay, at)?.resetsAt ?: Long.MAX_VALUE }
+            .thenBy { rankingWindow(it, it.quotaSnapshot?.fiveHour, at)?.resetsAt ?: Long.MAX_VALUE }
             .thenByDescending { it.primary }
             .thenBy { it.label }
+
+    private fun rankingWindow(account: PoolAccount, window: QuotaWindow?, at: Long): QuotaWindow? =
+        window?.takeIf {
+            val reset = it.resetsAt
+            available(account, at) && (reset == null || reset > at / MS_PER_SECOND)
+        }
 
     fun exhausted(window: QuotaWindow?, at: Long): Boolean {
         if (window == null || window.usedPercent < FULLY_USED) return false

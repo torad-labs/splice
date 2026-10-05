@@ -15,13 +15,6 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
-import io.ktor.server.engine.embeddedServer
-import io.ktor.server.netty.Netty
-import io.ktor.server.request.receiveText
-import io.ktor.server.response.header
-import io.ktor.server.response.respondText
-import io.ktor.server.routing.post
-import io.ktor.server.routing.routing
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
@@ -136,7 +129,7 @@ class ClaudeNativePoolWiringTest {
         val before = files.map(Files::readAllBytes)
         val sent = java.util.concurrent.CopyOnWriteArrayList<String?>()
         val bodies = java.util.concurrent.CopyOnWriteArrayList<String>()
-        val upstream = nativeUpstream(sent, bodies).start()
+        val upstream = fixture.nativeUpstream(sent, bodies).start()
         val port = upstream.engine.resolvedConnectors().single().port
         val rig = rig(upstreamUrl = "http://127.0.0.1:$port")
         try {
@@ -150,7 +143,7 @@ class ClaudeNativePoolWiringTest {
                     val message = error.getValue("message").jsonPrimitive.content
                     assertTrue(message.contains("synthetic weekly limit"))
                     assertTrue(message.contains("claude-splice cannot take over") && message.contains("expired"))
-                    assertTrue(message.contains("run claude-splice"))
+                    assertTrue(message.contains("Sign in again on claude-splice in the console."))
                     assertEquals(HttpStatusCode.TooManyRequests, second.status)
                     assertTrue(second.bodyAsText().contains("claude-splice cannot take over"))
                     assertEquals(listOf("Bearer synthetic-native"), sent)
@@ -174,54 +167,6 @@ class ClaudeNativePoolWiringTest {
             upstream.stop()
         }
     }
-
-    private fun nativeUpstream(sent: MutableList<String?>, bodies: MutableList<String>) =
-        embeddedServer(Netty, host = "127.0.0.1", port = 0) {
-            routing {
-                post("/v1/messages") {
-                    val credential = call.request.headers["Authorization"]
-                    sent.add(credential)
-                    bodies.add(call.receiveText())
-                    if (credential == "Bearer synthetic-native") {
-                        call.response.header("anthropic-ratelimit-unified-status", "rejected")
-                        call.response.header("anthropic-ratelimit-unified-representative-claim", "seven_day")
-                        call.response.header(
-                            "anthropic-ratelimit-unified-reset",
-                            (System.currentTimeMillis() / 1_000L + 3_600L).toString(),
-                        )
-                        call.respondText(
-                            """{"type":"error","error":{"type":"rate_limit_error","message":"synthetic weekly limit"}}""",
-                            ContentType.Application.Json,
-                            HttpStatusCode.TooManyRequests,
-                        )
-                    } else {
-                        call.respondText(
-                            """
-                            event: message_start
-                            data: {"type":"message_start","message":{"id":"msg_synthetic","type":"message","role":"assistant","model":"synthetic-model","content":[],"stop_reason":null,"usage":{"input_tokens":1,"output_tokens":0}}}
-
-                            event: content_block_start
-                            data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
-
-                            event: content_block_delta
-                            data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}
-
-                            event: content_block_stop
-                            data: {"type":"content_block_stop","index":0}
-
-                            event: message_delta
-                            data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}
-
-                            event: message_stop
-                            data: {"type":"message_stop"}
-
-                            """.trimIndent() + "\n\n",
-                            ContentType.Text.EventStream,
-                        )
-                    }
-                }
-            }
-        }
 
     private suspend fun nativeTurn(client: HttpClient, rig: ClaudeNativePoolFixture.Rig): HttpResponse =
         client.post("http://127.0.0.1:${rig.head.head.port}/v1/messages") {
@@ -370,6 +315,87 @@ class ClaudeNativePoolWiringTest {
         }
     }
 
+    private fun seedUsage(place: String, percent: Double, observed: Long, expiresAt: Long) {
+        fixture.seed(
+            place,
+            expiresAt,
+            splice.core.usage.QuotaSnapshot(
+                sevenDay = splice.core.usage.QuotaWindow(
+                    percent,
+                    System.currentTimeMillis() / 1_000L + 86_400L,
+                    604_800L,
+                ),
+                updatedAt = observed,
+            ),
+        )
+    }
+
+    @Test
+    fun `usage before any send falls back to the next selectable native login`() = runBlocking {
+        val observed = System.currentTimeMillis()
+        seedUsage("native", 98.0, observed, NATIVE_ACCESS_EXPIRY)
+        seedUsage("splice", 59.0, observed - 75_600_000L, 1L)
+        val rig = rig()
+        try {
+            HttpClient(Java).use { client ->
+                val response = client.get("http://127.0.0.1:${rig.server.listeningPort}/api/usage") {
+                    bearerAuth(rig.key.get())
+                }
+                assertEquals(HttpStatusCode.OK, response.status)
+                val usage = Json.parseToJsonElement(response.bodyAsText()).jsonObject
+                    .getValue("heads").jsonArray.single().jsonObject.getValue("usage").jsonObject
+                val weekly = usage.getValue("quota").jsonObject.getValue("seven_day").jsonObject
+                assertEquals("98", weekly.getValue("used_pct").jsonPrimitive.content)
+                assertEquals("98", usage.getValue("warn").jsonObject.getValue("pct").jsonPrimitive.content)
+            }
+        } finally {
+            rig.close()
+        }
+    }
+
+    @Test
+    fun `usage reads the carrying login instead of the expired primary folder reading`() = runBlocking {
+        val observed = System.currentTimeMillis()
+        seedUsage("native", 98.0, observed, NATIVE_ACCESS_EXPIRY)
+        seedUsage("splice", 59.0, observed - 75_600_000L, 1L)
+        val sent = java.util.concurrent.CopyOnWriteArrayList<String?>()
+        val bodies = java.util.concurrent.CopyOnWriteArrayList<String>()
+        val upstream = fixture.nativeUpstream(sent, bodies, refusedCredential = null).start()
+        val port = upstream.engine.resolvedConnectors().single().port
+        val rig = rig(upstreamUrl = "http://127.0.0.1:$port")
+        try {
+            HttpClient(Java).use { client ->
+                assertEquals(HttpStatusCode.OK, nativeTurn(client, rig).status)
+                assertEquals(listOf("Bearer synthetic-native"), sent)
+                val accounts = client.get("http://127.0.0.1:${rig.server.listeningPort}/api/accounts") {
+                    bearerAuth(rig.key.get())
+                }
+                val native = Json.parseToJsonElement(accounts.bodyAsText()).jsonObject
+                    .getValue("accounts").jsonArray.single {
+                        it.jsonObject["selector_key"]?.jsonPrimitive?.content == NATIVE_SELECTOR
+                    }
+                assertEquals("true", native.jsonObject.getValue("carrying_request").jsonPrimitive.content)
+                val response = client.get("http://127.0.0.1:${rig.server.listeningPort}/api/usage") {
+                    bearerAuth(rig.key.get())
+                }
+                assertEquals(HttpStatusCode.OK, response.status)
+                val head = Json.parseToJsonElement(response.bodyAsText()).jsonObject
+                    .getValue("heads").jsonArray.single().jsonObject
+                assertEquals("null", head.getValue("account_pool").jsonObject.getValue("selected_label").toString())
+                val usage = head.getValue("usage").jsonObject
+                val weekly = usage.getValue("quota").jsonObject.getValue("seven_day").jsonObject
+                assertEquals("98", weekly.getValue("used_pct").jsonPrimitive.content)
+                assertEquals((observed / 1_000L).toString(), weekly.getValue("observed_at").jsonPrimitive.content)
+                val warn = usage.getValue("warn").jsonObject
+                assertEquals("98", warn.getValue("pct").jsonPrimitive.content)
+                assertTrue(warn.getValue("level").jsonPrimitive.content != "ok")
+            }
+        } finally {
+            rig.close()
+            upstream.stop()
+        }
+    }
+
     @Test
     fun `an expired native place is skipped and its credential is never refreshed or written`() = runBlocking {
         seed("native", expiresAt = 1L)
@@ -395,7 +421,10 @@ class ClaudeNativePoolWiringTest {
                 val expired = rows.single { it.jsonObject["label"]?.jsonPrimitive?.content == "claude" }.jsonObject
                 val usable = rows.single { it.jsonObject["label"]?.jsonPrimitive?.content == "claude-splice" }.jsonObject
                 assertEquals("false", expired.getValue("available").jsonPrimitive.content)
-                assertTrue(expired.getValue("refusal").jsonPrimitive.content.contains("run claude"))
+                assertEquals(
+                    "Access token expired. Sign in again on claude in the console.",
+                    expired.getValue("refusal").jsonPrimitive.content,
+                )
                 assertEquals(NATIVE_SELECTOR, expired.getValue("selector_key").jsonPrimitive.content)
                 assertEquals("claude", expired.getValue("edit_target").jsonObject.getValue("id").jsonPrimitive.content)
                 assertEquals("true", usable.getValue("available").jsonPrimitive.content)

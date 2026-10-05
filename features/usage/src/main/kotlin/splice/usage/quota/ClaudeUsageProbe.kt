@@ -61,6 +61,8 @@ private const val CLAUDE_OAUTH_BETA = "oauth-2025-04-20"
 // a model-scoped window has nowhere to go without inventing a third slot.
 private const val USAGE_FIVE_HOUR = "five_hour"
 private const val USAGE_SEVEN_DAY = "seven_day"
+// why: a half-second bias rounds fractional endpoint resets instead of flooring them to the prior minute.
+private const val RESET_ROUNDING_HALF_SECOND_NANOS = 500_000_000L
 
 /** The Claude Code User-Agent this daemon has seen its client send, read at probe time rather than at head start:
  *  a head is assembled before any client connects, so a value captured at construction would be null forever. */
@@ -126,7 +128,7 @@ internal class ClaudeUsageParser : QuotaParse {
     private fun instant(element: JsonElement?): Long? {
         val text = (element as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return null
         return try {
-            OffsetDateTime.parse(text).toEpochSecond()
+            OffsetDateTime.parse(text).plusNanos(RESET_ROUNDING_HALF_SECOND_NANOS).toEpochSecond()
         } catch (_: DateTimeException) {
             null
         }

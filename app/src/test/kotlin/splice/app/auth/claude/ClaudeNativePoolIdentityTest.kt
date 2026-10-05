@@ -8,10 +8,14 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.accounts.claude.ClaudeAccountIdentity
+import splice.accounts.claude.ClaudeLoginPlacesSource
+import splice.accounts.pool.HeadAccountPoolSource
+import splice.app.control.NativeUsageSource
 import splice.app.probe.UpstreamPlaygroundProbe
 import splice.core.auth.CredentialKey
 import splice.diagnostics.playground.PlaygroundHead
@@ -20,6 +24,27 @@ import java.nio.file.Path
 class ClaudeNativePoolIdentityTest {
     @TempDir
     lateinit var home: Path
+
+    @Test
+    fun `a newly announced target cannot borrow the previous generation's primary quota`() = runBlocking {
+        val fixture = ClaudeNativePoolFixture(home)
+        fixture.seed("native")
+        fixture.seed("splice", expiresAt = 1L)
+        val rig = fixture.rig()
+        try {
+            val observed = requireNotNull(rig.head.accountPool).view(null)
+            val announcing = rig.head.copy(
+                accountPool = HeadAccountPoolSource { observed.copy(nextTargetLabel = "new-login") },
+            )
+            val source = NativeUsageSource(
+                announcing,
+                ClaudeLoginPlacesSource { rig.server.ports.claudeLogins },
+            )
+            assertNull(source.snapshot().quota, "the new target has no observation in the captured account generation")
+        } finally {
+            rig.close()
+        }
+    }
 
     @Test
     fun `native places proving one account share its refusal instead of claiming another free subscription`() = runBlocking {

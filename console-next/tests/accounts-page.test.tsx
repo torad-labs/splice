@@ -216,7 +216,8 @@ describe('the failover order', () => {
     const html = order('claude-splice', [], ['claude-splice', 'account-2'], rows);
 
     expect(html).toContain('No order is saved');
-    expect(html).toContain('skipping accounts at their limit');
+    expect(html).toContain('Each session keeps its account while it remains available');
+    expect(html).not.toContain('Splice tries the first available account in this order');
     expect(html).not.toContain('Use the default order');
   });
 

@@ -9,9 +9,32 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import splice.accounts.AccountHead
+import splice.accounts.pool.HeadAccountPoolView
+import splice.accounts.pool.HeadAccountView
+import splice.core.auth.AuthDescription
+import splice.core.auth.REFUSAL_FIELD
 import splice.core.usage.QuotaFreshness
 
 internal object ClaudeLoginRows {
+    suspend fun list(
+        native: List<ClaudeLoginPlaceView>,
+        providers: Map<String, String>,
+        carrying: Map<String, ClaudeLoginPlaceId?>,
+        heads: Map<String, AccountHead>,
+        nowSeconds: Long,
+    ): List<JsonObject> = native.map { view ->
+        val head = heads[view.head]
+        json(
+            view,
+            providers.getValue(view.head),
+            carrying[view.head],
+            nowSeconds,
+            head?.activePool?.view(null),
+            head?.accountAuth?.descriptions()?.get("native:${view.id.wire}"),
+        )
+    }
+
     /** Same row for the roster and an explicit refresh; no credential join key is part of the payload. [carrying] is
      *  the place whose credential carried the head's newest matched request, or null before any matched. */
     fun json(
@@ -19,6 +42,8 @@ internal object ClaudeLoginRows {
         provider: String,
         carrying: ClaudeLoginPlaceId?,
         nowSeconds: Long,
+        pool: HeadAccountPoolView? = null,
+        description: AuthDescription? = null,
     ): JsonObject = buildJsonObject {
         put("provider", provider)
         put("credential_path", view.credentialPath)
@@ -50,16 +75,41 @@ internal object ClaudeLoginRows {
         windows(this, view, nowSeconds)
         put("held", view.standing.held)
         put("held_until_epoch_seconds", view.standing.untilEpochSeconds)
-        put("available", null as Boolean?)
-        put("selected", null as Boolean?)
+        selection(this, view, pool, description)
         put("carrying_request", carrying?.let { it == view.id })
-        put("pinned", null as Boolean?)
-        put("next_target", null as Boolean?)
-        put("auth_excluded_until_epoch_millis", null as Long?)
-        put("auth_exclusion_reason", null as String?)
-        put("refusal", view.refusal)
         putJsonArray("heads") { add(JsonPrimitive(view.head)) }
         putJsonObject("failover_positions") { put(view.head, null as Int?) }
+    }
+
+    private fun selection(
+        into: JsonObjectBuilder,
+        view: ClaudeLoginPlaceView,
+        pool: HeadAccountPoolView?,
+        description: AuthDescription?,
+    ) = with(into) {
+        val key = "native:${view.id.wire}"
+        val selected = pool?.accounts?.singleOrNull { it.label == key }
+        val available = selected?.available == true
+        put("selector_key", key)
+        put("available", available)
+        put("selected", selected?.selected)
+        put("pinned", pool?.let { it.pinnedLabel == key })
+        put("next_target", pool?.let { it.nextTargetLabel == key })
+        put("auth_excluded_until_epoch_millis", selected?.authExcludedUntilEpochMillis)
+        put("auth_exclusion_reason", selected?.authExclusionReason)
+        val reason = description?.fields?.get(REFUSAL_FIELD) ?: view.refusal
+        put("refusal", refusal(view, selected, reason))
+    }
+
+    private fun refusal(view: ClaudeLoginPlaceView, selected: HeadAccountView?, reason: String?): String? {
+        val signIn = "run ${view.id.command} to sign in again."
+        return when {
+            selected?.available == true -> null
+            reason != null -> reason
+            selected?.credentialPresent != true -> "No usable native access token; $signIn"
+            selected.authExclusionReason != null -> "This login was refused; $signIn"
+            else -> "This login reached its subscription limit; wait for its reported reset before it can take over."
+        }
     }
 
     private fun windows(into: JsonObjectBuilder, view: ClaudeLoginPlaceView, nowSeconds: Long) = with(into) {

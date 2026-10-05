@@ -6,6 +6,7 @@
 package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope
+import splice.accounts.claude.ClaudeLoginPlacesSource
 import splice.app.TokenUrlRefreshCall
 import splice.core.config.StatePaths
 import splice.core.topology.AuthKind
@@ -30,11 +31,13 @@ internal class ProviderAssembly(
     private val kimiArm: KimiPassthroughArm = KimiPassthroughArm(statePaths, probeScope, log),
     private val claudeIdentities: splice.app.auth.claude.ClaudeIdentityRefresh? = null,
     private val claudeChanges: splice.app.auth.claude.ClaudePoolChanges = splice.app.auth.claude.ClaudePoolChanges(),
+    nativePlaces: ClaudeLoginPlacesSource = ClaudeLoginPlacesSource { null },
 ) {
     private val grokRefresh = GrokRefresh(log)
     private val passthroughAssembly = PassthroughAssembly()
     private val chatArm = ChatArm(probeScope, log, grokRefresh)
-    private val claudeAccounts = ClaudeAccountWiring(statePaths, log, identities = claudeIdentities)
+    private val claudeAccounts =
+        ClaudeAccountWiring(statePaths, log, identities = claudeIdentities, nativePlaces = nativePlaces)
     internal val claudePoolChanges = claudeChanges
     private val passthroughArm = PassthroughArm(passthroughAssembly, claudeAccounts, claudePoolChanges)
 

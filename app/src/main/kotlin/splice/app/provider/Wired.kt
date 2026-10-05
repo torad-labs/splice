@@ -2,9 +2,12 @@
 // while OAuth heads also carry every discovered credential into head-local account-pool assembly.
 package splice.app.provider
 
+import splice.accounts.claude.ClaudeLoginPlaceId
+import splice.core.auth.ClientAuthProvider
 import splice.core.auth.RefreshableAuthProvider
 import splice.upstream.CredentialHeaders
 import splice.upstream.Provider
+import splice.upstream.credentials.AccountQuotaSource
 import java.nio.file.Path
 
 /** One discovered OAuth account, with secrets retained behind [auth]. */
@@ -17,6 +20,9 @@ internal data class WiredAccount(
     val extraHeaders: CredentialHeaders? = null,
     /** V4-410: why splice will not load this account's credential (a symlinked file), in words. */
     val refusal: String? = null,
+    /** A read-only native place, never a managed folder or the caller's forwarding placeholder. */
+    val nativePlace: ClaudeLoginPlaceId? = null,
+    val quotaRead: AccountQuotaSource? = null,
 )
 
 /** Chooses the legacy primary when readable, otherwise the first readable labeled credential. */
@@ -46,7 +52,7 @@ internal data class Wired(
         val defaultAuth = accounts.takeIf { it.isNotEmpty() }
             ?.let(WiredAccounts::providerAccount)
             ?.auth
-        require(defaultAuth == null || defaultAuth === auth) {
+        require(defaultAuth == null || auth is ClientAuthProvider || defaultAuth === auth) {
             "wired OAuth accounts must contain the provider's default auth"
         }
     }

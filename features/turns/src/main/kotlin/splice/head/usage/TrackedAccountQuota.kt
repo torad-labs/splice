@@ -4,6 +4,11 @@ package splice.head.usage
 import splice.core.usage.QuotaSnapshot
 import splice.upstream.credentials.AccountQuotaSource
 
-public class TrackedAccountQuota(public val tracker: QuotaTracker) : AccountQuotaSource {
-    override fun snapshot(): QuotaSnapshot? = tracker.snapshot()
+public class TrackedAccountQuota(
+    public val tracker: QuotaTracker,
+    private val read: AccountQuotaSource? = null,
+) : AccountQuotaSource {
+    override val held: Boolean get() = read?.held == true
+
+    override fun snapshot(): QuotaSnapshot? = if (read == null) tracker.snapshot() else read.snapshot()
 }

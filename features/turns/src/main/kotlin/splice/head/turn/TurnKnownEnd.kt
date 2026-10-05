@@ -8,6 +8,7 @@ import splice.core.usage.PlanLimit
 import splice.core.util.ERR_SNIPPET
 import splice.core.util.LogSink
 import splice.head.HeadHealthCounters
+import splice.head.admission.TurnQuota
 import splice.head.pipeline.FailurePresenter
 import splice.upstream.Provider
 import splice.upstream.failure.FailureSource
@@ -22,6 +23,7 @@ internal class TurnKnownEnd(
     private val telemetry: TurnTelemetry,
     private val failures: TurnFailures,
     private val health: HeadHealthCounters,
+    private val quotas: TurnQuota? = null,
 ) {
 
     // V4-59: named for the presenter, not the TurnFailures above — the classified message reaching
@@ -61,16 +63,13 @@ internal class TurnKnownEnd(
             // login-hint test, which is exactly what it is for.
             val classified = presenter.present(failure.type, failure.message)
             val boundedMessage = "[${classified.code}] ${classified.body.take(ERR_SNIPPET)}"
-            val message = if (failure.type == ErrorType.AUTHENTICATION && provider.loginCommand.isNotEmpty()) {
-                "$boundedMessage; run: ${provider.loginCommand}"
-            } else {
-                boundedMessage
-            }
+            val standby = if (failure.type == ErrorType.RATE_LIMIT) quotas?.standbyRefusal(drive.account) else null
+            val message = message(failure.type, boundedMessage, standby)
             // The emitter first decides the pending HTTP status. Record the resulting trace and
             // perf row in finally, so a dead-client write still counts the exact failure, its cause,
             // and the retry loop's attempt count. The pre-commit 400 must not leave a 200 trace.
             accountFailure(e, failure.type)
-            e.rateLimitReply?.let { drive.rateLimitRelay?.relay(it) }
+            e.rateLimitReply?.let { reply -> drive.rateLimitRelay?.relay(quotas?.withStandby(reply, standby) ?: reply) }
             // V4-81: translated failures retain the emitter's wire type and permanence.
             // Native 429s choose HTTP refusal above while status remains uncommitted; classified
             // context overflow before client content can still choose HTTP 400.
@@ -89,6 +88,13 @@ internal class TurnKnownEnd(
         }
         else -> false
     }
+
+    private fun message(type: ErrorType, bounded: String, standby: String?): String =
+        if (type == ErrorType.AUTHENTICATION && provider.loginCommand.isNotEmpty()) {
+            "$bounded; run: ${provider.loginCommand}"
+        } else {
+            bounded + standby?.let { " $it" }.orEmpty()
+        }
 
     private fun accountFailure(error: UpstreamFailed, type: ErrorType) {
         if (error.localHold) health.local() else health.provider()

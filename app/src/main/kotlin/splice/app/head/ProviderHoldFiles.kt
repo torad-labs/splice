@@ -3,6 +3,7 @@
 // label, so one account's refusal never reads as its sibling's and no two writers rewrite one file.
 package splice.app.head
 
+import splice.app.auth.claude.ClaudeNativeAuth
 import splice.app.provider.Wired
 import splice.core.config.StatePaths
 import splice.core.util.LogSink
@@ -18,9 +19,12 @@ internal class ProviderHoldFiles(
 
     fun forAccounts(key: String, wired: Wired): Map<String, ProviderHoldStore> =
         wired.accounts.associate { account ->
-            account.label to FileProviderHoldStore(
-                statePaths.stateDir.resolve("$key-${account.label}-provider-hold.json"),
-                log,
-            )
+            val native = account.auth as? ClaudeNativeAuth
+            val store = if (native != null) {
+                forHead(key)
+            } else {
+                FileProviderHoldStore(statePaths.stateDir.resolve("$key-${account.label}-provider-hold.json"), log)
+            }
+            account.label to (native?.credentialKey?.let(store::forCredential) ?: store)
         }
 }

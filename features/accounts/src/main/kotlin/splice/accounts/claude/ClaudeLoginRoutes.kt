@@ -5,6 +5,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
+import splice.accounts.AccountHead
 import splice.accounts.AccountReplies
 import splice.accounts.signin.LoginStatusJson
 import splice.core.util.JsonScalars
@@ -39,7 +40,11 @@ public class ClaudeLoginRoutes(private val source: ClaudeLoginPlacesSource) {
         return NativeLoginRequest((label as? JsonPrimitive)?.takeIf { it.isString }?.content)
     }
 
-    public suspend fun refresh(call: ApplicationCall, providers: Map<String, String>) {
+    public suspend fun refresh(
+        call: ApplicationCall,
+        providers: Map<String, String>,
+        heads: Map<String, AccountHead> = emptyMap(),
+    ) {
         val owner = owner(call) ?: return
         val place = place(call, owner) ?: return
         val view = owner.refresh(place)
@@ -49,7 +54,13 @@ public class ClaudeLoginRoutes(private val source: ClaudeLoginPlacesSource) {
             return
         }
         val nowSeconds = TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis())
-        val row = ClaudeLoginRows.json(view, provider, owner.carrying(view.head), nowSeconds)
+        val row = ClaudeLoginRows.list(
+            listOf(view),
+            mapOf(view.head to provider),
+            mapOf(view.head to owner.carrying(view.head)),
+            heads,
+            nowSeconds,
+        ).single()
         AccountReplies.respond(call, row.toString())
     }
 

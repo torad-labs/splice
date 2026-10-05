@@ -72,7 +72,7 @@ internal class ManagedHeadFactory(
     private val playgroundProviders: PlaygroundProviders = PlaygroundProviders(),
     private val perfSources: splice.app.sources.PerfSourceFiles = splice.app.sources.PerfSourceFiles(statePaths),
 ) {
-    private val quotaProbes by lazy { QuotaProbes(AuthHttpClientFactory().create()) }
+    internal var quotaProbes: QuotaProbes = QuotaProbes(AuthHttpClientFactory().create())
     private val accountPools = HeadAccountPools()
     private val accountOrders = AccountOrderStore(statePaths.stateDir.resolve(ACCOUNT_ORDER_FILE))
     private val providerHolds = ProviderHoldFiles(statePaths, log)
@@ -91,12 +91,12 @@ internal class ManagedHeadFactory(
         )
         val wired = providerAssembly.buildProvider(ctx)
         val accountQuotas = accountQuotas(key, wired)
-        val primaryQuota = wired.accounts.singleOrNull { it.primary }
+        val primaryQuota = wired.accounts.singleOrNull { it.primary && it.nativePlace == null }
             ?.let { accountQuotas.getValue(it.label) }
             ?: QuotaTracker(statePaths.quotaFile(key), extraFamily = CodexQuotaHeaderFamily())
         onPrimaryQuota(primaryQuota)
         val stores = headStores(ctx, wired, primaryQuota, accountQuotas)
-        val quotaPollers = HeadQuotaPolling(ctx, quotaProbes, startQuotaPoller, clientUserAgent)
+        val quotaPollers = HeadQuotaPolling(ctx, quotaProbes, startQuotaPoller, clientUserAgent, accountOrders)
             .start(wired, stores, accountQuotas, providerAssembly, providerHolds)
         val logFile = statePaths.logsDir.resolve("daemon.log")
         // Derived from the CREDENTIAL, never from the declared string. The bypass is safe only
@@ -194,7 +194,10 @@ internal class ManagedHeadFactory(
      *  file. Labeled accounts persist next to their credential. */
     private fun accountQuotas(key: String, wired: Wired): MutableMap<String, QuotaTracker> =
         wired.accounts.associateTo(java.util.concurrent.ConcurrentHashMap()) { account ->
-            val file = if (account.primary) statePaths.quotaFile(key) else account.quotaFile
-            account.label to QuotaTracker(file, extraFamily = CodexQuotaHeaderFamily())
+            val file =
+                if (account.primary && account.nativePlace == null) statePaths.quotaFile(key) else account.quotaFile
+            account.label to QuotaTracker(file, extraFamily = CodexQuotaHeaderFamily()).also {
+                it.credentialListener = account.quotaRead as? splice.head.usage.CredentialQuotaListener
+            }
         }
 }

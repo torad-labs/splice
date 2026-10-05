@@ -16,11 +16,18 @@ public object AccountLabelPolicy {
     private val safe = Regex("[a-z0-9][a-z0-9._-]{0,47}")
 
     public fun isSafe(label: String): Boolean = safe.matches(label)
+
+    /** Native selector ids have their own namespace; credential-folder labels never admit a colon. */
+    public fun isSelector(label: String): Boolean =
+        isSafe(label) || label.startsWith("native:") && isSafe(label.removePrefix("native:"))
 }
 
 /** Reads one account's latest provider quota without coupling the SPI to gateway persistence. */
 public fun interface AccountQuotaSource {
     public fun snapshot(): QuotaSnapshot?
+
+    /** A provider-proved refusal shared by credentials of the same account, never inferred from a full reading. */
+    public val held: Boolean get() = false
 }
 
 // V4-101: AccountNow IS GONE. This module names [splice.core.util.WallClock] directly — the same role
@@ -45,17 +52,24 @@ public data class PoolAccount(
     /** Account-specific identity headers, notably Kimi's device identity. */
     public val extraHeaders: CredentialHeaders? = null,
 ) {
+    private data class QuotaObservation(val snapshot: QuotaSnapshot?, val held: Boolean)
+
+    @Volatile
+    private var quotaObservation = QuotaObservation(quota.snapshot(), quota.held)
+    internal val quotaSnapshot: QuotaSnapshot? get() = quotaObservation.snapshot
+    internal val quotaHeld: Boolean get() = quotaObservation.held
     private val identitySource = TtlCredentialIdentitySource(auth as? AccountCredentialIdentitySource)
     private val credentialEligibility = AccountCredentialEligibility(identitySource, credentialPresent)
 
     init {
-        require(AccountLabelPolicy.isSafe(label)) { "invalid OAuth account label" }
+        require(AccountLabelPolicy.isSelector(label)) { "invalid OAuth account label" }
     }
 
-    /** Re-reads this account's credential evidence OFF the sticky-session monitor; [AccountPool.select]
-     *  calls it for every account before taking the lock, so the in-monitor selection reads the cache. */
+    /** Re-reads credential, quota and proved standing OFF the sticky-session monitor; [AccountPool.select]
+     *  calls it for every account before taking the lock, so the in-monitor selection reads only cached facts. */
     internal fun refreshCredentialEvidence() {
         identitySource.refresh()
+        quotaObservation = QuotaObservation(quota.snapshot(), quota.held)
     }
 
     internal fun acquireCredential(at: Long, now: WallClock): AccountCredentialEligibility.Lease? =
@@ -80,7 +94,10 @@ public data class PoolAccount(
 
     internal fun markCredentialRefreshSucceeded(
         lease: AccountCredentialEligibility.Lease,
-    ): AccountCredentialEligibility.Lease = credentialEligibility.refreshSucceeded(lease)
+    ): AccountCredentialEligibility.Lease {
+        identitySource.refresh()
+        return credentialEligibility.refreshSucceeded(lease)
+    }
 
     internal fun resetCredentialAvailability() {
         credentialEligibility.reset()

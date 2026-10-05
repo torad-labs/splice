@@ -8,7 +8,15 @@
 // while six siblings kept the old shape. This file is the single place the decision lives.
 package splice.head.admission
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import splice.core.auth.REFUSAL_FIELD
 import splice.core.usage.QuotaFull
+import splice.core.util.Cancellables
+import splice.core.util.JsonScalars
+import splice.core.util.JsonWire
+import splice.core.wire.RateLimitReply
 import splice.head.usage.QuotaTracker
 import splice.head.usage.TrackedAccountQuota
 import splice.upstream.credentials.AccountPool
@@ -26,6 +34,33 @@ internal class TurnQuota(
         (account?.account?.quota as? TrackedAccountQuota)?.let { return it.tracker }
         val label = account?.account?.label ?: accountPool?.view(sessionId)?.selectedLabel
         return label?.let(accountQuotas::get) ?: primary
+    }
+
+    /** No native login can take over. Each unavailable place names its own remedy without acquiring credentials. */
+    suspend fun standbyRefusal(account: AccountSelection?): String? {
+        val pool = accountPool?.takeIf { it.active } ?: return null
+        if (pool.view(null).accounts.any { it.available }) return null
+        val others = pool.members.filter { it.label.startsWith("native:") && it.label != account?.account?.label }
+        val reasons = others.map { other ->
+            val command = other.label.removePrefix("native:")
+            val description = other.auth.describe()
+            val reason = description.fields[REFUSAL_FIELD]
+                ?: "its subscription is held; wait for its reported reset"
+            "$command cannot take over: $reason."
+        }
+        return reasons.takeIf { it.isNotEmpty() }?.joinToString(" ")
+    }
+
+    /** Preserve the provider status, error type and headers. Only its JSON message gains the takeover explanation. */
+    fun withStandby(reply: RateLimitReply?, sentence: String?): RateLimitReply? {
+        if (reply == null || sentence == null) return reply
+        return Cancellables.runCatchingCancellable {
+            val body = Json.parseToJsonElement(reply.body) as? JsonObject ?: return@runCatchingCancellable reply
+            val error = body["error"] as? JsonObject ?: return@runCatchingCancellable reply
+            val message = JsonScalars.str(error, "message") ?: return@runCatchingCancellable reply
+            val changed = JsonObject(error + ("message" to JsonPrimitive("$message $sentence")))
+            reply.copy(body = JsonWire.string(JsonObject(body + ("error" to changed))))
+        }.fold(onSuccess = { it }, onFailure = { reply })
     }
 
     /** V4-452: the head's full reading by the providers' own CURRENT readings, null when there is none. A head

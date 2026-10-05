@@ -54,6 +54,7 @@ internal object ClaudeLoginWiring {
                 ClaudeLoginSessions(registry),
                 native,
                 scope,
+                poolChanges,
             ),
             accounts = ClaudeAccountsPort(ClaudeAccountSignIn(folders, native, scope), folders),
         )

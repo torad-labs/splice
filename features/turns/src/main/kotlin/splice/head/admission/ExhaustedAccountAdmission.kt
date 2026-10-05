@@ -45,6 +45,8 @@ internal class ExhaustedAccountAdmission(
         deps.turnQuota.forSession(prepared.built.meta.sessionId, null)?.clientHeadersRejected(retryEpochSeconds)
             ?.forEach { (name, value) -> call.response.header(name, value) }
         admitted.close()
-        responses.respondRateLimited(call, exhausted.message, retryEpochSeconds)
+        val standby = deps.turnQuota.standbyRefusal(null)
+        val message = exhausted.message + standby?.let { " $it" }.orEmpty()
+        responses.respondRateLimited(call, message, retryEpochSeconds)
     }
 }

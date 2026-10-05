@@ -44,12 +44,11 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
     ): String {
         val joined = LinkedHashMap<String, JoinedAccount>()
         heads.values.forEach { head -> fold(head, joined) }
+        val nativeRows = ClaudeLoginRows.list(native, providers, carrying, heads, nowSeconds)
         return buildJsonObject {
             putJsonArray("accounts") {
                 joined.values.forEach { row -> addJsonObject { write(this, row, nowSeconds, providers) } }
-                native.forEach { view ->
-                    add(ClaudeLoginRows.json(view, providers.getValue(view.head), carrying[view.head], nowSeconds))
-                }
+                nativeRows.forEach { add(it) }
             }
         }.toString()
     }
@@ -117,6 +116,7 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
         view.accounts.forEach { account ->
             if (kind == "client" && account.primary) return@forEach
             val fields = described[account.label]?.fields.orEmpty()
+            if (fields["native_place"] != null) return@forEach
             merge(joined, fields["auth_path"] ?: "$headKey:${account.label}", headKey) {
                 pooledAccount(kind, account, view, fields)
             }

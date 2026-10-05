@@ -58,7 +58,7 @@ internal class HeadAccountPools {
                 label = account.label,
                 primary = account.primary,
                 auth = account.auth,
-                quota = TrackedAccountQuota(tracker),
+                quota = TrackedAccountQuota(tracker, account.quotaRead),
                 cooldown = RateLimitCooldown(elapsedNow, store = holds[account.label]),
                 credentialPresent = account.credentialPresent,
                 extraHeaders = account.extraHeaders,
@@ -98,7 +98,7 @@ internal class HeadAccountPools {
             ?: description
     }
 
-    private fun pooled(wired: Wired): Boolean = wired.accounts.size > 1
+    private fun pooled(wired: Wired): Boolean = wired.accounts.size > 1 || wired.accounts.any { it.nativePlace != null }
 
     private fun controlView(view: AccountPoolView): HeadAccountPoolView = HeadAccountPoolView(
         selectedLabel = view.selectedLabel,

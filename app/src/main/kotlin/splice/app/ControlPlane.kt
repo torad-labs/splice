@@ -134,6 +134,7 @@ internal class ControlPlane(
         log,
         refreshCall,
         claudeIdentities = claudeIdentities,
+        nativePlaces = splice.accounts.claude.ClaudeLoginPlacesSource { claudeLoginOwner },
     )
 
     /** V4-131: the daemon's ONE team store: the routes edit it and every head's slot resolver reads it. */
@@ -195,6 +196,7 @@ internal class ControlPlane(
         val owner = arm.owner
         claudeLoginOwner = owner
         claudeAccounts = arm.accounts
+        owner.places().map { it.head }.distinct().forEach(providerAssembly.claudePoolChanges::publish)
         return LaunchService(materializer, resumeAcrossHeads = ResumeAcrossHeads(rewriter), wrap = wrap).also {
             it.loginGuard = owner
         }

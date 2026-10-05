@@ -98,7 +98,8 @@ internal class CredentialHoldAdmission(
         held: HeldCredential,
     ) {
         val cooldown = held.cooldown
-        val native = cooldown.rateLimitReply
+        val standby = deps.turnQuota.standbyRefusal(null)
+        val native = deps.turnQuota.withStandby(cooldown.rateLimitReply, standby)
         native?.let { reply -> trace?.collectedAnswer { ClientAnswer(reply.status, reply.body) } }
         val plan = cooldown.planHold.live()
         val armedMs = cooldown.remainingMs()
@@ -123,7 +124,8 @@ internal class CredentialHoldAdmission(
             val retryEpochSeconds = plan?.resetEpochSeconds ?: (now + armedMs) / MILLIS_PER_SECOND
             deps.turnQuota.forSession(prepared.built.meta.sessionId, null)?.clientHeadersRejected(retryEpochSeconds)
                 ?.forEach { (name, value) -> call.response.header(name, value) }
-            responses.respondRateLimited(call, message(armedMs, reset, plan), retryEpochSeconds)
+            val message = message(armedMs, reset, plan) + standby?.let { " $it" }.orEmpty()
+            responses.respondRateLimited(call, message, retryEpochSeconds)
         }
     }
 

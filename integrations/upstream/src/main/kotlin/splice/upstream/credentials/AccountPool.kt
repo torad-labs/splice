@@ -97,7 +97,11 @@ public class AccountPool(
         }
 
     /** The exact candidate policy, including an explicit runtime pin and fallback accounts. */
-    public fun effectiveOrder(): List<String> = candidates(null, membership.get()).map(PoolAccount::label)
+    public fun effectiveOrder(): List<String> {
+        val current = membership.get()
+        current.accounts.forEach { it.refreshCredentialEvidence() }
+        return candidates(null, current).map(PoolAccount::label)
+    }
 
     /** Chooses before acceptance. Null sessions re-evaluate policy without becoming sticky.
      *  Nonempty [excluded] skips refused logins and permits only a free login, never a held fallback.
@@ -155,6 +159,7 @@ public class AccountPool(
         val session = synchronized(sessions) { sessionId?.let(sessions::get) }
         val current = membership.get()
         val accounts = current.accounts
+        accounts.forEach { it.refreshCredentialEvidence() }
         return AccountPoolView(
             selectedLabel = session?.label?.takeIf(current.byLabel::containsKey),
             accounts = accounts.map { account -> accountView(account, session?.label, at) },
@@ -174,9 +179,10 @@ public class AccountPool(
         get() {
             val accounts = membership.get().accounts
             if (accounts.none { it.cooldown.providerUnavailableForMs() > 0L }) return 0L
+            accounts.forEach { it.refreshCredentialEvidence() }
             val at = now()
             val free = accounts.any {
-                it.credentialStatus(at).selectable && it.cooldown.providerUnavailableForMs() <= 0L
+                it.credentialStatus(at).selectable && !it.quotaHeld && it.cooldown.providerUnavailableForMs() <= 0L
             }
             if (free) return 0L
             val reset = AccountAvailability.earliestReset(accounts, at) ?: return 0L
@@ -223,7 +229,9 @@ public class AccountPool(
     public fun nextTargetLabel(sessionId: String? = null): String? {
         val at = now()
         val previousLabel = synchronized(sessions) { sessionId?.let { sessions[it]?.label } }
-        val order = candidates(previousLabel, membership.get())
+        val current = membership.get()
+        current.accounts.forEach { it.refreshCredentialEvidence() }
+        val order = candidates(previousLabel, current)
         val free = order.firstOrNull { AccountAvailability.available(it, at) }
         return (free ?: AccountAvailability.nearestHeld(order, at).firstOrNull())?.label
     }
@@ -285,7 +293,7 @@ public class AccountPool(
     }
 
     private fun accountView(account: PoolAccount, selected: String?, at: Long): AccountView {
-        val snapshot = account.quota.snapshot()
+        val snapshot = account.quotaSnapshot
         val credential = account.credentialStatus(at)
         return AccountView(
             label = account.label,
@@ -328,7 +336,7 @@ private object AccountAvailability {
      *  provider (operator ruling, Oct 3): a held login stays held until the reset it named, so the next turn of the
      *  same command goes to the next login, and a restart restores the hold with the rest of the provider's word. */
     fun available(account: PoolAccount, at: Long): Boolean =
-        selectable(account, at) && account.cooldown.planHold.live() == null &&
+        selectable(account, at) && !account.quotaHeld && account.cooldown.planHold.live() == null &&
             (account.cooldown.rateLimitReply == null || account.cooldown.remainingMs() <= 0L)
 
     /** The logins held on their plan that could otherwise serve, nearest reset first; ties keep [order]. */
@@ -342,13 +350,13 @@ private object AccountAvailability {
     private fun selectable(account: PoolAccount, at: Long): Boolean {
         val runtimeUnavailable = account.cooldown.unavailableForMs() > 0L
         if (!account.credentialStatus(at).selectable || runtimeUnavailable) return false
-        val snapshot = account.quota.snapshot() ?: return true
+        val snapshot = account.quotaSnapshot ?: return true
         return !exhausted(snapshot.fiveHour, at) && !exhausted(snapshot.sevenDay, at)
     }
 
     /** Why [account] stopped serving, the plan the provider named spent first. */
     fun limitReason(account: PoolAccount, at: Long): String {
-        val quota = account.quota.snapshot()
+        val quota = account.quotaSnapshot
         val plan = account.cooldown.planHold.live()
         return when {
             plan != null -> AccountSwitchReason.planLimit(plan.windowWords)
@@ -363,10 +371,10 @@ private object AccountAvailability {
 
     val resetOrder: Comparator<PoolAccount> =
         compareBy<PoolAccount> { account ->
-            val quota = account.quota.snapshot()
+            val quota = account.quotaSnapshot
             quota?.sevenDay == null && quota?.fiveHour == null
-        }.thenBy { it.quota.snapshot()?.sevenDay?.resetsAt ?: Long.MAX_VALUE }
-            .thenBy { it.quota.snapshot()?.fiveHour?.resetsAt ?: Long.MAX_VALUE }
+        }.thenBy { it.quotaSnapshot?.sevenDay?.resetsAt ?: Long.MAX_VALUE }
+            .thenBy { it.quotaSnapshot?.fiveHour?.resetsAt ?: Long.MAX_VALUE }
             .thenByDescending { it.primary }
             .thenBy { it.label }
 
@@ -382,7 +390,7 @@ private object AccountAvailability {
     fun blockedUntil(account: PoolAccount, at: Long): Long? {
         val credential = account.credentialStatus(at)
         if (!credential.credentialPresent) return null
-        val snapshot = account.quota.snapshot()
+        val snapshot = account.quotaSnapshot
         val blocked = listOfNotNull(snapshot?.fiveHour, snapshot?.sevenDay).filter { exhausted(it, at) }
         val quotaReset = blocked.mapNotNull(QuotaWindow::resetsAt).maxOrNull()
         val remaining = account.cooldown.providerUnavailableForMs()

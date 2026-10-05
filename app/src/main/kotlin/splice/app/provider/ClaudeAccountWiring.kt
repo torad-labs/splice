@@ -12,6 +12,7 @@
 // account's row tells the truth about which login needs signing in again.
 package splice.app.provider
 
+import splice.accounts.claude.ClaudeLoginPlacesSource
 import splice.app.auth.claude.ClaudeAccountFolders
 import splice.app.auth.claude.ClaudeFolderAuth
 import splice.app.auth.claude.ClaudeOAuthRefresh
@@ -27,21 +28,27 @@ internal class ClaudeAccountWiring(
     private val folders: ClaudeAccountFolders = ClaudeAccountFolders(statePaths.stateDir),
     private val refresh: ClaudeTokenRefresh = ClaudeTokenRefresh(ClaudeOAuthRefresh(log)::rotate),
     private val identities: splice.app.auth.claude.ClaudeIdentityRefresh? = null,
+    nativePlaces: ClaudeLoginPlacesSource = ClaudeLoginPlacesSource { null },
 ) {
-    /** [head]'s pool entries, or none when nobody has added an account to it. [caller] is the head's own forwarding
-     *  credential, which stays the primary: a pool whose primary were an added account would send someone else's
-     *  login for the person at the keyboard. */
+    private val native = ClaudeNativeAccountWiring(statePaths, nativePlaces, log)
+
+    /** Native places provide read-only selectable credentials. Without one, [caller] remains the forwarded primary;
+     *  managed folders are always separate members, never a replacement for the native login owner. */
     fun accounts(head: String, caller: RefreshableAuthProvider): List<WiredAccount> {
         val added = folders.accounts(head)
-        if (added.isEmpty()) return emptyList()
-        return listOf(
-            WiredAccount(
-                label = OWN_SIGN_IN_LABEL,
-                primary = true,
-                auth = caller,
-                quotaFile = statePaths.quotaFile(head),
-            ),
-        ) + added.map { account ->
+        val places = native.accounts(head)
+        if (added.isEmpty() && places.isEmpty()) return emptyList()
+        val primary = places.ifEmpty {
+            listOf(
+                WiredAccount(
+                    label = OWN_SIGN_IN_LABEL,
+                    primary = true,
+                    auth = caller,
+                    quotaFile = statePaths.quotaFile(head),
+                ),
+            )
+        }
+        return primary + added.map { account ->
             WiredAccount(
                 label = account.label,
                 primary = false,

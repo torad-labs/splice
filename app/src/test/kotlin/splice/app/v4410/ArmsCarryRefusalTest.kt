@@ -7,6 +7,7 @@
 package splice.app.v4410
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.nio.file.Files
@@ -18,7 +19,7 @@ class ArmsCarryRefusalTest {
     private val comments = Regex("""(?sm)/\*.*?\*/|^\s*//[^\n]*| //[^\n]*""")
     private val listsPoolFiles = Regex("""accountFiles\.discover\(""")
     private val buildsWiredAccount = Regex("""(?<!class )WiredAccount\(""")
-    private val carriesRefusal = Regex("""refusal\s*=\s*(file|account)\.refusal""")
+    private val carriesRefusal = Regex("""refusal\s*=\s*(file|account|view)\.refusal""")
 
     /** Every main source of this module, comments stripped, by file name. */
     private fun sources(): Map<String, String> {
@@ -28,6 +29,13 @@ class ArmsCarryRefusalTest {
             files.filter { it.toString().endsWith(".kt") }.toList()
                 .associate { it.fileName.toString() to comments.replace(Files.readString(it), "") }
         }
+    }
+
+    @Test
+    fun `native view refusal is a carried reading but absence and an invented sentence are not`() {
+        assertTrue(carriesRefusal.containsMatchIn("WiredAccount(refusal = view.refusal)"))
+        assertFalse(carriesRefusal.containsMatchIn("WiredAccount(credentialPresent = view.credentialPresent)"))
+        assertFalse(carriesRefusal.containsMatchIn("""WiredAccount(refusal = "invented")"""))
     }
 
     @Test

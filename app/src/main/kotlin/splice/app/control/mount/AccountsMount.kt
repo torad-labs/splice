@@ -77,7 +77,7 @@ internal class AccountsMount(
         route.post("/api/claude-logins/{place}/refresh") {
             guard.guarded(call) {
                 val providers = ports.declaredHeads?.invoke()?.mapValues { it.value.provider }.orEmpty()
-                claudeRoutes.refresh(call, providers)
+                claudeRoutes.refresh(call, providers, accountHeads)
             }
         }
         route.post("/api/auth/{head}/login/{id}/code") { guard.guarded(call) { claudeRoutes.submit(call) } }

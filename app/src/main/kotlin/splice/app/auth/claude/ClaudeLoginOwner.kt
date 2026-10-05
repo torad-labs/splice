@@ -47,6 +47,7 @@ internal class ClaudeLoginOwner(
     private val sessions: ClaudeLoginSessions,
     private val auth: NativeClaudeAuth,
     private val scope: CoroutineScope,
+    private val changes: ClaudePoolChanges? = null,
 ) : ClaudeLoginPlaces, LaunchLoginGuard {
     private val lock = Any()
     private val logins = locations.associate { it.id to ClaudeLogins(it.storeDir) }
@@ -73,7 +74,9 @@ internal class ClaudeLoginOwner(
     // One place is still read against ALL of them: a login's window belongs to its account, and the account's
     // other logins are where that reading may have been filed.
     override suspend fun refresh(place: ClaudeLoginPlaceId): ClaudeLoginPlaceView {
-        reads.refresh(locations.single { it.id == place })
+        val location = locations.single { it.id == place }
+        reads.refresh(location)
+        changes?.publish(location.target.head.key)
         return places().single { it.id == place }
     }
 
@@ -149,6 +152,7 @@ internal class ClaudeLoginOwner(
                 edits.relabel(location, store, label)
             }
         } finally {
+            changes?.publish(location.target.head.key)
             synchronized(lock) { mutating -= place }
         }
     }
@@ -191,8 +195,9 @@ internal class ClaudeLoginOwner(
         val target = attempt.location.target
         when (val result = attempt.logins.completeNative(target, attempt.prepared, sessions.read(attempt.location))) {
             is ClaudeLoginResult.Refused -> failed(attempt.status, result.reason)
-            is ClaudeLoginResult.Done -> attempt.status.updateAndGet {
-                it.copy(state = LoginState.SIGNED_IN, label = attempt.logins.selected())
+            is ClaudeLoginResult.Done -> {
+                changes?.publish(target.head.key)
+                attempt.status.updateAndGet { it.copy(state = LoginState.SIGNED_IN, label = attempt.logins.selected()) }
             }
             ClaudeLoginResult.Ok -> failed(attempt.status, "native login did not record a completed account")
         }

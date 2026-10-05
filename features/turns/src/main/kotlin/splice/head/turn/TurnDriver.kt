@@ -94,7 +94,7 @@ internal class TurnDriver(
         telemetry,
         health,
         TurnConnEnd(provider, log, telemetry, failures, health),
-        TurnKnownEnd(provider, log, telemetry, failures, health),
+        TurnKnownEnd(provider, log, telemetry, failures, health, deps.turnQuota),
     )
     private val usageStamp = TurnUsageStamp(deps.stores.usageStore, log, telemetry)
     private val cancellationSeal = CancellationSeal(provider, log, telemetry, health, usageStamp)

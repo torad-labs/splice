@@ -58,6 +58,11 @@ internal class ClaudeLoginRead(
     /** Internal saved-label proof only. The private digest never enters a view or a route payload. */
     fun credentialKey(location: ClaudeLoginLocation): String? = facts.read(location).key
 
+    /** No token, digest, account or session identifier enters the missing-place diagnostic. */
+    fun reportUnmatchedCarrying() {
+        log("[claude] carrying login unreported: newest sent credential matches no native login place\n")
+    }
+
     /** Product refreshes wait only for the selected place's captured credential. Other places retain their facts. */
     suspend fun refresh(location: ClaudeLoginLocation) = facts.refresh(location.target.head.configDir)
 

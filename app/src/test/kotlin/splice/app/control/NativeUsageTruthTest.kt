@@ -359,7 +359,7 @@ class NativeUsageTruthTest {
             assertEquals("91", warn.getValue("pct").jsonPrimitive.content, "the near-limit warning: $warn")
 
             carried.sent(HEAD, null, digest("synthetic-unknown-login"))
-            assertEquals("91", fiveHour(), "a credential no place holds leaves the last match standing")
+            assertEquals("59", fiveHour(), "an unmatched send clears the stale native place before fallback")
 
             carried.sent(HEAD, null, digest("synthetic-${ClaudeLoginPlaceId.SPLICE.wire}"))
             assertEquals("59", fiveHour(), "the newest matched request decides, in either direction")
@@ -388,7 +388,11 @@ class NativeUsageTruthTest {
             assertEquals(nativeCarries, flags(), "a request carrying the ~/.claude login marks that place")
 
             carried.sent(HEAD, null, digest("synthetic-unknown-login"))
-            assertEquals(nativeCarries, flags(), "a credential no place holds leaves the last match standing")
+            assertEquals(
+                mapOf("claude" to "null", "claude-splice" to "null"),
+                flags(),
+                "a credential no place holds must not mark the previous place as carrying",
+            )
 
             carried.sent(HEAD, null, digest("synthetic-${ClaudeLoginPlaceId.SPLICE.wire}"))
             assertEquals(mapOf("claude" to "false", "claude-splice" to "true"), flags(), "the newest match decides")
@@ -521,7 +525,11 @@ class NativeUsageTruthTest {
 
                 carried.sent(HEAD, first, digest("synthetic-unknown-login"))
                 carried.sent(HEAD, null, digest("synthetic-${ClaudeLoginPlaceId.NATIVE.wire}"))
-                assertEquals(own, accounts(read), "an unknown login and a request naming no session move no session")
+                assertEquals(
+                    own + (first to null),
+                    accounts(read),
+                    "an unknown credential clears only its session; an unnamed request restores no session",
+                )
 
                 carried.sent(HEAD, first, digest("synthetic-${ClaudeLoginPlaceId.SPLICE.wire}"))
                 assertEquals(own + (first to "claude-splice"), accounts(read), "a session's newest match decides")

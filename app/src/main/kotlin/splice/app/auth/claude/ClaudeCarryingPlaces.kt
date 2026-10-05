@@ -12,38 +12,41 @@ import java.util.concurrent.ConcurrentHashMap
 // well above the sessions one daemon serves at once.
 private const val REMEMBERED_CARRYING_SESSIONS = 4096
 
-/** Per head, and per session on that head, the place whose live credential its newest matched request carried. Only
- *  the digest splice already files readings under is held, never a token, and only in memory: after a restart no head
- *  or session has a match until its first request is sent. A digest that matches no place (another login, or a token
- *  already rotated out of its file) leaves the last match standing. */
+/** Per head, and per session on that head, the place its newest request carried, or none when the sent credential
+ *  matches no native place. Only the digest splice already files readings under is held, never a token, and only in
+ *  memory. An unmatched send replaces the previous place, not the records of other sessions. */
 internal class ClaudeCarryingPlaces(
     private val locations: List<ClaudeLoginLocation>,
     private val reads: ClaudeLoginRead,
 ) {
-    private data class Carried(val key: String, val place: ClaudeLoginPlaceId)
+    private data class Carried(val key: String, val place: ClaudeLoginPlaceId?) {
+        fun matching(candidate: String): Carried? = takeIf { key == candidate && place != null }
+    }
 
     private data class SessionOnHead(val head: String, val session: String)
 
     private val carried = ConcurrentHashMap<String, Carried>()
     private val sessions = LinkedHashMap<SessionOnHead, Carried>()
 
-    /** Heard on every attempt. The places' files are read only when the digest is neither the session's nor the head's
-     *  current match; an equal digest is the same credential, so it names the same place whoever sent it first. */
+    /** Heard on every attempt. Only positive matches are reused: the same previously unmatched credential can
+     *  become a native login later. A repeated unmatched send keeps its absence without repeating the diagnostic. */
     fun sent(head: String, session: String?, key: String) {
         val own = session?.let { SessionOnHead(head, it) }
-        val known = own?.let(::remembered)?.takeIf { it.key == key } ?: carried[head]?.takeIf { it.key == key }
-        val match = known
-            ?: locations.firstOrNull { it.target.head.key == head && reads.credentialKey(it) == key }
-                ?.let { Carried(key, it.id) }
-            ?: return
+        val previous = own?.let(::remembered) ?: carried[head]
+        val known = previous?.matching(key) ?: carried[head]?.matching(key)
+        val match = known ?: Carried(
+            key,
+            locations.firstOrNull { it.target.head.key == head && reads.credentialKey(it) == key }?.id,
+        )
         carried[head] = match
         if (own != null) remember(own, match)
+        if (match.place == null && match != previous) reads.reportUnmatchedCarrying()
     }
 
     fun carrying(head: String): ClaudeLoginPlaceId? = carried[head]?.place
 
-    /** [session]'s own newest match on [head], or null before it has one: never the head's, which another session on
-     *  the same head may have carried. */
+    /** [session]'s own newest send on [head], or null before it sent or when its credential matches no place:
+     *  never the head's, which another session on the same head may have carried. */
     fun carrying(head: String, session: String): ClaudeLoginPlaceId? = remembered(SessionOnHead(head, session))?.place
 
     private fun remembered(session: SessionOnHead): Carried? = synchronized(sessions) { sessions[session] }

@@ -67,6 +67,37 @@ test('Usage counts refused requests, keeps exact drill-down bounds, and offers a
   await assertHealthy(page, faults);
 });
 
+for (const hours of [24, 168]) {
+  test(`an unread command cannot hide a reporting command's Usage rows in the ${hours}-hour window`, async ({ page }) => {
+    await page.route(url => url.pathname === '/api/economics', route => route.fulfill({ json: { retention_hours: 168, heads: [] } }));
+    await page.route(url => url.pathname === '/api/perf/turns', route => {
+      const query = new URL(route.request().url()).searchParams;
+      const head = query.get('head') ?? '';
+      const span = Number(query.get('until')) - Number(query.get('since'));
+      expect(span).toBe(hours * 3_600_000);
+      return route.fulfill({ json: { since: Number(query.get('since')), n: 1, heads: [{
+        key: head, label: head, count: head === STACK.oauthHead ? 2502 : 0, rows: [],
+        usage: head === STACK.oauthHead ? fullUsage : emptyUsage,
+        ...(head === STACK.soloHead ? { read_error: 'Three synthetic old records could not be read' } : {}),
+      }] } });
+    });
+    const faults = await open(page, hours === 168 ? 'usage?window=168' : 'usage');
+    const chart = page.getByRole('region', { name: 'Spend and tokens', exact: true });
+    await expect(chart).toContainText('This breakdown is incomplete');
+    await expect(chart).toContainText('Three synthetic old records could not be read');
+    await expect(chart).toContainText('earlier synthetic model');
+    await expect(chart).toContainText('2,502 requests');
+    await expect(chart).toContainText('At least $1.48');
+    await chart.getByRole('button', { name: 'Account', exact: true }).click();
+    await expect(chart).toContainText('synthetic & account');
+    await expect(chart).toContainText('This breakdown is incomplete');
+    await chart.getByRole('button', { name: 'Show the values as a table', exact: true }).click();
+    await expect(chart.getByRole('table')).toBeVisible();
+    await expect(chart.getByRole('table')).toContainText('synthetic & account');
+    await assertHealthy(page, faults);
+  });
+}
+
 test('daemon-reported local and unanswered causes stay in words across the full Usage breakdown', async ({ page }) => {
   const stats = { ...emptyUsage.totals, requests: 2, cost_usd: 0.25, unpriced_requests: 0, unanswered_requests: 1 };
   const local = { ...emptyUsage.totals, requests: 1, unpriced_requests: 1, unpriced_local_requests: 1 };

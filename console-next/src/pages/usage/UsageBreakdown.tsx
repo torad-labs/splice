@@ -4,7 +4,7 @@ import { isPendingRoute } from '../../api/auth';
 import { failureText } from '../../api/client';
 import { usePerfTurns } from '../../api/turns';
 import { fmtTokens, fmtUsd } from '../../lib/format';
-import { cutLines, fullUsageBreakdown, priceGapLines } from '../../lib/usage-breakdown';
+import { cutLines, fullUsageBreakdown, fullWindowUsage, priceGapLines } from '../../lib/usage-breakdown';
 import type { UsageBreakdown as Breakdown, UsageDimension } from '../../lib/usage-breakdown';
 import type { TurnsState } from '../../types/perf';
 import { Button, Empty, Fault, Segmented } from '../../ui';
@@ -73,7 +73,7 @@ export function UsageValues({ items, by, since, until, labelOf }: { items: reado
 }
 
 function Coverage({ data, labelOf }: { data: TurnsState; labelOf: (head: string) => string }) {
-  if (data.unread.length === 0) return null;
+  if (data.unread.length === 0 && (data.pendingHeads?.length ?? 0) === 0) return null;
   return <div className="usage-coverage" role="status"><b>{B.partial}</b>{data.unread.map(row => <p key={row.head}>{labelOf(row.head)}: {row.reason}</p>)}</div>;
 }
 
@@ -89,10 +89,11 @@ export function UsageBreakdown({ labelOf, read }: {
       <div className="usage-breakdown-head"><div><h2 id="usage-breakdown">{B.title}</h2><p className="why">{B.why}</p></div><Segmented label={B.group} options={dimensions} value={by} onChange={setBy} /></div>
       {by === 'account' ? <p className="hint">{B.accountWhy}</p> : by === 'day' ? <p className="hint">{B.dayWhy}</p> : null}
       {read.isError ? <Fault message={failureText(read.error)} onRetry={() => void read.refetch()} />
-        : read.isPending || (data?.pendingHeads?.length ?? 0) > 0 ? <p className="hint">{B.reading}</p>
+        : read.isPending ? <p className="hint">{B.reading}</p>
         : data === null || window === undefined || window.until === null ? <p className="hint">{B.unavailable}</p> : <>
           <Coverage data={data} labelOf={labelOf} />
-          {items === null ? data.unread.length === 0 ? <p className="hint">{B.unavailable}</p> : null : <UsageValues items={items} by={by} since={window.since} until={window.until} labelOf={labelOf} />}
+          {(data.pendingHeads?.length ?? 0) > 0 ? <p className="hint">{B.reading}</p> : null}
+          {items === null ? <p className="hint">{B.unavailable}</p> : items.length === 0 && fullWindowUsage(data) === null ? null : <UsageValues items={items} by={by} since={window.since} until={window.until} labelOf={labelOf} />}
         </>}
     </section>
   );

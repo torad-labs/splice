@@ -29,6 +29,44 @@ test('a capped request slice cannot shrink full-window model facts or claim aggr
   expect(html).not.toContain('requests returned');
 });
 
+test.each([24, 168])('known model rows remain under the incomplete notice for a %s-hour window', hours => {
+  const until = 1_791_151_200_000;
+  const since = until - hours * 3_600_000;
+  const read = reading({
+    matched: null,
+    matchedBy: { synthetic: 2502 },
+    unread: [{ head: 'unreadable', reason: 'Three synthetic old records could not be read' }],
+    window: { since, until },
+  });
+  const html = renderToStaticMarkup(<MemoryRouter><UsageBreakdown read={read} labelOf={key => key} /></MemoryRouter>);
+  expect(html).toContain('This breakdown is incomplete');
+  expect(html).toContain('unreadable: Three synthetic old records could not be read');
+  expect(html).toContain('earlier model');
+  expect(html).toContain('2,502 requests');
+  expect(html).toContain('At least $1.48');
+  expect(html).toContain(`since=${since}&amp;until=${until}`);
+  expect(html.indexOf('This breakdown is incomplete')).toBeLessThan(html.indexOf('earlier model'));
+  expect(html).not.toContain('does not report full-window usage');
+});
+
+test('known rows remain visible while an unread sibling is still being read', () => {
+  const read = reading({ pendingHeads: ['other'] });
+  const html = renderToStaticMarkup(<MemoryRouter><UsageBreakdown read={read} labelOf={key => key} /></MemoryRouter>);
+  expect(html).toContain('Reading the request usage');
+  expect(html).toContain('This breakdown is incomplete');
+  expect(html).toContain('earlier model');
+  expect(html).toContain('At least $1.48');
+});
+
+test('no reporting command shows unavailable under the incomplete notice, never fabricated zero', () => {
+  const read = reading({ usageBy: {}, unread: [{ head: 'other', reason: 'Synthetic unreadable history' }] });
+  const html = renderToStaticMarkup(<MemoryRouter><UsageBreakdown read={read} labelOf={key => key} /></MemoryRouter>);
+  expect(html).toContain('This breakdown is incomplete');
+  expect(html).toContain('does not report full-window usage');
+  expect(html).not.toContain('No requests in this window');
+  expect(html).not.toContain('$0');
+});
+
 test('an empty settled command keeps the breakdown reading until its sibling settles', () => {
   const empty = { ...complete, totals: { ...complete.totals, requests: 0 }, models: [] };
   const state = { matched: 0, matchedBy: { synthetic: 0 }, usageBy: { synthetic: empty } };

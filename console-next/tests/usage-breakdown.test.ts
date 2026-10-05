@@ -45,12 +45,20 @@ describe('daemon-backed usage', () => {
       const settled = { ...data({ synthetic: usage({ totals: stats({ requests }), models: [] }) }), matched: requests, matchedBy: { synthetic: requests } };
       const pending = { ...settled, matched: requests, pendingHeads: ['other'] };
       expect(fullWindowUsage(pending)).toBeNull();
-      expect(fullUsageBreakdown(pending, 'model')).toBeNull();
+      expect(fullUsageBreakdown(pending, 'model')).toEqual([]);
       expect(reportedWindowUsage(pending)?.requests).toBe(requests);
       expect(fullWindowUsage({ ...pending, pendingHeads: [] })?.requests).toBe(requests);
       expect(fullWindowUsage({ ...settled, unread: [{ head: 'other', reason: 'Synthetic unavailable history' }] })).toBeNull();
       expect(fullWindowUsage({ ...settled, unread: [{ head: 'synthetic', reason: 'One record could not be read' }] })).toBeNull();
     }
+  });
+  test('unread coverage keeps each reported dimension without becoming an exact total', () => {
+    const partial = { ...data(), matched: null, unread: [{ head: 'other', reason: 'Synthetic old record unreadable' }] };
+    expect(fullWindowUsage(partial)).toBeNull();
+    for (const by of ['model', 'account', 'day'] as const) {
+      expect(fullUsageBreakdown(partial, by)).toEqual(fullUsageBreakdown(data(), by));
+    }
+    expect(fullUsageBreakdown({ ...partial, usageBy: {} }, 'model')).toBeNull();
   });
   test('a refusal without counters or prices remains a request, not zero usage', () => {
     const refused = stats({ requests: 1, input_tokens: null, output_tokens: null, cached_tokens: null, cost_usd: null, cache_share: null });

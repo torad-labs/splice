@@ -86,8 +86,9 @@ export function reportedRequestCount(data: TurnsState | null): number | null {
   return heads.size === 0 ? null : [...heads].reduce((sum, head) => sum + (data.matchedBy[head] ?? data.usageBy?.[head]?.totals.requests ?? 0), 0);
 }
 
+/** Whole-window groups from reporting commands remain visible when sibling coverage is incomplete. */
 export function fullUsageBreakdown(data: TurnsState, by: UsageDimension): UsageBreakdown[] | null {
-  if (fullWindowUsage(data) === null) return null;
+  if (reportedWindowUsage(data) === null) return null;
   const groups = new Map<string, { key: string | null; head: string | null; stats: TurnUsageStats[] }>();
   for (const [command, usage] of Object.entries(data.usageBy ?? {})) {
     for (const row of usage[by === 'model' ? 'models' : by === 'account' ? 'accounts' : 'days']) {

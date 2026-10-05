@@ -54,6 +54,8 @@ test('a team created through the console binds real sessions, joins handoff and 
   const team = await response.json() as TeamRow;
   expect(team.slots.map((slot) => slot.session)).toEqual([STACK.sender.id, STACK.peer.id]);
   expect(response.request().headers()['idempotency-key']).toBeTruthy();
+  // The response precedes the awaited refetch and the dialog's saved-team navigation.
+  await expect.poll(() => new URL(page.url()).hash).toBe('#/teams/' + team.id);
   await open(page, 'sessions?group=team');
   const savedGroup = page.getByRole('region', { name: 'Synthetic handoff team', exact: true });
   await expect(savedGroup.getByRole('listitem')).toHaveCount(2);

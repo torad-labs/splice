@@ -80,7 +80,7 @@ export async function open(page: Page, path: string): Promise<ReturnType<typeof 
   }
   await page.goto(env('CONSOLE_E2E_BASE') + '/#/' + path);
   await expect(page.getByRole('navigation', { name: 'Pages', exact: true })).toBeVisible();
-  expect(new URL(page.url()).hash).toBe('#/' + path);
+  await expect.poll(() => new URL(page.url()).hash).toBe('#/' + path);
   return faults;
 }
 

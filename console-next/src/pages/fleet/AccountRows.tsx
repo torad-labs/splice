@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { failureText } from '../../api/client';
 import { useAccountOrder } from '../../api/account-order';
 import { isPendingRoute, useSwitchAccount, useUnpinAccount } from '../../api/auth';
-import { accountEmail, accountName, accountState, exclusionText, isExcluded, isServable, isStale, nextRuleOf, refusalText, steppedPast, windowSpan, windowUsedText } from '../../lib/accounts';
+import { accountEmail, accountName, accountSelector, accountState, exclusionText, isExcluded, isServable, isStale, nextRuleOf, refusalText, steppedPast, windowSpan, windowUsedText } from '../../lib/accounts';
 import type { AccountRow } from '../../types/accounts';
 import { Button } from '../../ui';
 import { AccountEdits } from '../shared/AccountEdits';
@@ -35,7 +35,7 @@ export function AccountRowView({ account, now, pooled, pool }: { account: Accoun
   const name = accountName(account);
   const email = accountEmail(account);
   const head = account.heads[0] ?? '';
-  const label = account.label;
+  const label = accountSelector(account);
   const order = useAccountOrder(head, pooled && head !== '');
   const selectable = order.data !== undefined && !('unavailable' in order.data) && order.data.single_account !== true;
   const state = accountState(account, now, pool);

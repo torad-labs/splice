@@ -21,7 +21,7 @@ import type {
 import type { SessionRow } from '../types/sessions';
 import { UNKNOWN_HEAD } from '../types/sessions';
 import type { TeamRow } from '../types/teams';
-import { exclusionText, isExcluded, isServable, poolOf, refusalText } from './accounts';
+import { accountName, nativeTakeoverWarnings, exclusionText, isExcluded, isServable, poolOf, refusalText } from './accounts';
 import { checkFinding, collapseChecks, fixMasked, logsHrefOf, wantsAttention } from './doctor';
 import { WINDOW_NAME } from './fleet';
 import { ABSENT } from './format';
@@ -213,11 +213,14 @@ function accountNeeds(accounts: readonly AccountRow[], now: number): Need[] {
       source: 'accounts',
       kind: K.account,
       head: head ?? null,
-      subject: account.label ?? S.singleLogin,
+      subject: account.login_place == null ? account.label ?? S.singleLogin : accountName(account),
       finding,
       fix,
-      at: hrefOf('accounts', head),
+      at: account.login_place == null ? hrefOf('accounts', head) : '#/accounts',
     }];
+    // A native refusal reports takeover availability; its named place owns the remedy on Accounts.
+    if (account.login_place != null) return account.available === false
+      ? need(refusalText(account) ?? exclusionText(account), open('#/accounts', S.openAccounts)) : [];
     // A credential the daemon refuses to load says why and opens Fleet: signing in again is not its fix.
     const refusal = refusalText(account);
     if (refusal !== null) return need(refusal, open(hrefOf('accounts'), S.openFleet));
@@ -363,7 +366,13 @@ export function needsOf(inputs: NeedInputs, now: number): NeedsList {
   const refused = new Set(fromHeads.filter((need) => need.kind === K.quota).flatMap(headOf));
   const wanted = (doctor?.checks ?? []).filter((check) => wantsAttention(check.status));
   const about = new Map(wanted.map((check) => [check, headsOfCheck(check, said, down)] as const));
+  const spareWarnings: Need[] = inputs.accounts.error !== null || inputs.usage.error !== null ? [] : nativeTakeoverWarnings(accounts, usage?.warn_pct, now).map(warning => ({
+    key: `native-spare:${warning.head}`, severity: 'warn', source: 'accounts', kind: K.plan, head: warning.head,
+    subject: accountName(warning.carrying), finding: H.nativeSpare(accountName(warning.carrying), warning.pct, warning.renew.map(accountName)),
+    fix: open('#/accounts', warning.renew.length === 0 ? S.openAccounts : S.signIn), at: '#/accounts',
+  }));
   const needs = [
+    ...spareWarnings,
     ...fromHeads.map((need) => withDoctor(need, wanted.filter((check) => need.head !== null && about.get(check)?.includes(need.head)))),
     ...daemonNeeds(topologyStale, inputs.restartPending, wanted.filter((check) => check.pending_restart === true)),
     ...planNeeds(accounts, usage, auth, now, refused),

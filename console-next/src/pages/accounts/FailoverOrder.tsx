@@ -4,7 +4,7 @@ import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, v
 import { CSS } from '@dnd-kit/utilities';
 import { useAccountOrder, useSaveAccountOrder } from '../../api/account-order';
 import { failureText } from '../../api/client';
-import { accountEmail, accountName } from '../../lib/accounts';
+import { accountEmail, accountName, accountSelector } from '../../lib/accounts';
 import type { AccountRow } from '../../types/accounts';
 import { Button, Fault } from '../../ui';
 import { A } from './copy';
@@ -50,7 +50,7 @@ export function FailoverOrder({ head, label = head, accounts, localRuntime = fal
     move(order.indexOf(String(active.id)), order.indexOf(String(over.id)));
   };
   const nameOf = (id: string): string => {
-    const row = accounts.find(account => (account.login_place?.id ?? account.label) === id);
+    const row = accounts.find(account => accountSelector(account) === id);
     if (row === undefined) return id;
     const email = accountEmail(row);
     return email === null ? accountName(row) : `${accountName(row)} · ${email}`;

@@ -1,15 +1,213 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { open, assertHealthy, env } from './support';
 import { STACK } from './stack';
 import type { AccountWire, AccountsWire } from '../src/types/accounts';
 import type { HeadStatus } from '../src/types/core';
 import type { HeadCatalog } from '../src/types/models';
+import type { SessionsPayload } from '../src/types/sessions';
 
 const budgetCatalog = (priced: boolean): HeadCatalog => ({
   head: STACK.keyHead, provider: 'synthetic', pinned_model: 'synthetic-budget-model', models: [{
     id: 'synthetic-budget-model', label: 'Synthetic budget model', description: '', slot: null, context_window: 1000, context_window_source: 'synthetic', pinned: true, resolved: true,
     ...(priced ? { rates: { input: 1, cache_read: 0, output: 2 } } : {}),
   }],
+});
+
+async function nativePool(page: Page) {
+  const state = { rows: [] as AccountWire[], order: [] as string[], orders: [] as string[][], pins: [] as string[], edits: [] as string[], warnPct: 80 };
+  await page.route(url => url.pathname === '/api/accounts', async route => {
+    if (state.rows.length === 0) {
+      const response = await route.fetch();
+      const body = await response.json() as AccountsWire;
+      const base = body.accounts.find(row => row.heads.includes(STACK.oauthHead));
+      if (base === undefined) throw new Error('synthetic login is missing');
+      const now = Math.floor(Date.now() / 1000);
+      state.rows = (['claude', 'claude-splice'] as const).map((id, index) => ({
+        ...base, provider: 'anthropic', kind: 'client', heads: ['claude-splice'], label: id, selector_key: 'native:' + id,
+        display_name: index === 0 ? 'Personal login' : 'Separate login', login_place: { id, command: id },
+        edit_target: { kind: 'native', id }, can_rename: true, can_remove: true, credential_present: true,
+        account: { uuid: 'synthetic-native-' + id, email: null }, identity_verified: false,
+        selected: index === 0, carrying_request: index === 0, available: index === 0, pinned: false, next_target: index === 0,
+        refusal: index === 0 ? null : 'Native access token expired; run claude-splice to refresh its own login.',
+        five_hour_used_percent: null, five_hour_reset_epoch_seconds: null, five_hour_window_seconds: null,
+        seven_day_used_percent: index === 0 ? 94 : 12, seven_day_reset_epoch_seconds: now + 3600,
+        seven_day_window_seconds: 604800, seven_day_current: true, observed_at_epoch_seconds: now,
+      }));
+    }
+    await route.fulfill({ json: { accounts: state.rows } });
+  });
+  await page.route(url => url.pathname === '/api/usage' || url.pathname === '/api/usage/probe', async route => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...await response.json(), warn_pct: state.warnPct } });
+  });
+  for (const path of ['/api/status', '/api/heads', '/api/models']) {
+    await page.route(url => url.pathname === path, async route => {
+      const response = await route.fetch();
+      const body = await response.json();
+      const rows = path === '/api/status' ? body.registry : body.heads;
+      const base = rows.find((row: { key?: string; head?: string }) => (row.key ?? row.head) === STACK.oauthHead);
+      if (base === undefined) throw new Error('synthetic command is missing');
+      rows.push(path === '/api/models' ? { ...base, head: 'claude-splice', provider: 'anthropic' }
+        : { ...base, key: 'claude-splice', label: 'Study command', authKind: 'client', family: 'anthropic' });
+      await route.fulfill({ response, json: body });
+    });
+  }
+  await page.route(url => url.pathname === '/api/auth/claude-splice/order', async route => {
+    if (route.request().method() === 'PUT') {
+      state.order = (route.request().postDataJSON() as { order: string[] }).order;
+      state.orders.push(state.order);
+    }
+    await route.fulfill({ json: { head: 'claude-splice', order: state.order,
+      effective_order: state.order.length === 0 ? ['native:claude', 'native:claude-splice'] : state.order, single_account: false } });
+  });
+  await page.route(url => url.pathname === '/api/auth/claude-splice/switch', async route => {
+    state.pins.push((route.request().postDataJSON() as { label: string }).label);
+    await route.fulfill({ json: { ok: true } });
+  });
+  await page.route(url => url.pathname.startsWith('/api/auth/claude-splice/accounts/'), async route => {
+    const url = new URL(route.request().url());
+    const id = url.searchParams.get('target_id');
+    if (route.request().method() !== 'PATCH' || url.searchParams.get('target_kind') !== 'native') throw new Error('only synthetic native renaming is allowed');
+    const row = state.rows.find(row => row.edit_target?.id === id);
+    if (row === undefined || decodeURIComponent(url.pathname.split('/').at(-1) ?? '') !== id) throw new Error('rename lost the native edit identity');
+    state.edits.push(id!);
+    row.display_name = (route.request().postDataJSON() as { label: string }).label;
+    await route.fulfill({ json: { ok: true } });
+  });
+  await page.route(url => url.pathname.startsWith('/api/claude-logins/') || url.pathname.endsWith('/login'), () => {
+    throw new Error('this walk must never start or refresh a provider login');
+  });
+  return state;
+}
+
+test('native takeover availability keeps the expired login remedy reachable and contained', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const state = await nativePool(page);
+  const faults = await open(page, 'accounts');
+  const personal = page.locator('.account-card').filter({ has: page.getByRole('heading', { name: 'Personal login', exact: true }) });
+  const separate = page.locator('.account-card').filter({ has: page.getByRole('heading', { name: 'Separate login', exact: true }) });
+  await expect(personal.locator('.state')).toHaveText('Can take over');
+  await expect(separate.locator('.state')).toContainText('Can’t take over: Native access token expired');
+  await expect(separate.locator('.state')).toContainText('run claude-splice to refresh its own login');
+  await expect(separate).not.toContainText('Signed in');
+  expect(await separate.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await separate.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: 'captures/console-walk-oct3/native-takeover-contained-narrow.png' });
+  await separate.getByRole('button', { name: 'Sign in again', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('button', { name: 'Start login', exact: true })).toBeEnabled();
+  await expect(dialog).toContainText('separate claude-splice login');
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  state.rows[1]!.available = null;
+  await page.reload();
+  await expect(separate.locator('.state')).toHaveText('Takeover status not reported');
+  await assertHealthy(page, faults);
+});
+
+test('native spare warning follows Settings and proven carrying, availability and current-window facts', async ({ page }) => {
+  const state = await nativePool(page);
+  const faults = await open(page, 'accounts');
+  const warning = page.getByRole('alert').filter({ hasText: 'No other login can take over' });
+  await expect(warning).toContainText('Personal login is at 94%');
+  await expect(warning).toContainText('Sign in again on Separate login');
+  await page.screenshot({ path: 'captures/console-walk-oct3/native-spare-warning-wide.png' });
+  state.rows[1]!.available = true;
+  state.rows[1]!.refusal = null;
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Separate login', exact: true })).toBeVisible();
+  await expect(warning).toHaveCount(0);
+  state.rows[1]!.available = false;
+  state.rows[1]!.refusal = 'Sign-in expired. Sign in again on this login.';
+  state.warnPct = 95;
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Personal login', exact: true })).toBeVisible();
+  await expect(warning).toHaveCount(0);
+  state.warnPct = 80;
+  state.rows[0]!.carrying_request = null;
+  await page.reload();
+  await expect(page.getByText('No Study command request has matched a login since the daemon started.', { exact: true })).toBeVisible();
+  await expect(warning).toHaveCount(0);
+  state.rows[0]!.carrying_request = true;
+  state.rows[0]!.seven_day_current = false;
+  await page.reload();
+  await expect(page.getByText('Usage reading is out of date')).toBeVisible();
+  await expect(page.getByRole('img', { name: 'Weekly: 94% used', exact: true })).toHaveCount(0);
+  await expect(warning).toHaveCount(0);
+  await assertHealthy(page, faults);
+});
+
+test('native order and switches use selector keys while rename keeps its native edit id', async ({ page }) => {
+  const state = await nativePool(page);
+  const faults = await open(page, 'accounts');
+  const order = page.locator('.account-order');
+  await expect(order).toContainText('weekly reset comes soonest');
+  await expect(order).toContainText('No order is saved');
+  await expect(order).not.toContainText('native:claude');
+  await expect(order).not.toContainText('Account ordering is unavailable');
+  await order.getByRole('button', { name: 'Move Separate login earlier', exact: true }).click();
+  await expect(order).toContainText('You set this order');
+  expect(state.orders).toEqual([['native:claude-splice', 'native:claude']]);
+  await order.getByRole('button', { name: 'Use the default order', exact: true }).click();
+  await expect(order).toContainText('No order is saved');
+  expect(state.orders).toEqual([['native:claude-splice', 'native:claude'], []]);
+  const separate = page.locator('.account-card').filter({ has: page.getByRole('heading', { name: 'Separate login', exact: true }) });
+  await separate.getByRole('button', { name: 'Rename', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('textbox', { name: 'New name', exact: true }).fill('Separate renamed');
+  await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(state.edits).toEqual(['claude-splice']);
+  expect(state.rows[1]!.selector_key).toBe('native:claude-splice');
+  state.rows[1]!.available = true;
+  state.rows[1]!.refusal = null;
+  state.rows[0]!.available = false;
+  await open(page, 'models/claude-splice');
+  const row = page.locator('li.account').filter({ has: page.getByText('Separate renamed', { exact: true }) });
+  await row.getByRole('button', { name: 'Switch to this one', exact: true }).click();
+  await expect.poll(() => state.pins.length).toBe(1);
+  expect(state.pins).toEqual(['native:claude-splice']);
+  await page.getByRole('button', { name: 'Switch account', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Separate renamed', exact: true }).click();
+  await expect.poll(() => state.pins.length).toBe(2);
+  expect(state.pins).toEqual(['native:claude-splice', 'native:claude-splice']);
+  await assertHealthy(page, faults);
+});
+
+test('Sessions names each attributed native place and the single-login primary without borrowing selection', async ({ page }) => {
+  const state = await nativePool(page);
+  let solo = false;
+  let matched = true;
+  await page.route(url => url.pathname === '/api/heads/claude-splice/turns/live', route => route.fulfill({ json: { head: 'claude-splice', turns: [] } }));
+  await page.route(url => url.pathname === '/api/sessions', async route => {
+    const response = await route.fetch();
+    const body = await response.json() as SessionsPayload;
+    body.sessions = body.sessions.filter(row => row.session_id === STACK.sender.id || row.session_id === STACK.peer.id).map(row => ({
+      ...row, head: row.session_id === STACK.sender.id && solo ? STACK.soloHead : 'claude-splice',
+      account: !matched ? null : row.session_id === STACK.sender.id ? solo ? 'primary' : 'claude' : 'claude-splice',
+    }));
+    await route.fulfill({ response, json: body });
+  });
+  const faults = await open(page, 'sessions');
+  const sender = page.locator('li.card').filter({ has: page.getByRole('link', { name: STACK.sender.name, exact: true }) });
+  const peer = page.locator('li.card').filter({ has: page.getByRole('link', { name: STACK.peer.name, exact: true }) });
+  await expect(sender).toContainText('Personal login');
+  await expect(peer).toContainText('Separate login');
+  await expect(peer).not.toContainText('Personal login');
+  const base = state.rows[0];
+  if (base === undefined) throw new Error('synthetic native row is missing');
+  const { selector_key: selector, ...single } = base;
+  expect(selector).toBe('native:claude');
+  state.rows.push({ ...single, label: null, single_login: true, display_name: 'Single login', kind: 'chatgpt-oauth',
+    login_place: null, edit_target: null, heads: [STACK.soloHead], carrying_request: null });
+  solo = true;
+  await page.reload();
+  await expect(sender).toContainText('Single login');
+  await expect(sender).not.toContainText('Personal login');
+  matched = false;
+  await page.reload();
+  await expect(sender).toContainText('Login not reported');
+  await expect(peer).toContainText('Login not reported');
+  await assertHealthy(page, faults);
 });
 
 test('native and separate sign-in dialogs say what Start login does without inventing a label', async ({ page }) => {

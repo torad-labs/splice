@@ -11,6 +11,7 @@ export const S = {
   signIn: 'Sign in',
   openLog: 'Open log',
   openFleet: 'Open fleet',
+  openAccounts: 'Open Accounts',
   openUsage: 'Open usage',
   openTurns: 'Open turns',
   openTeams: 'Open team',
@@ -31,6 +32,7 @@ export const H = {
   tracePending: (head: string): string => `Trace for ${head} in splice.toml applies after restart.`,
   checkPending: 'A change in splice.toml applies after restart.',
   accountSignedOut: 'Its login is gone; sign in again under this label.',
+  nativeSpare: (name: string, pct: number, renew: readonly string[]): string => `${name} is at ${Math.round(pct)}% of its reported limit. No other login can take over. ${renew.length === 0 ? 'Check the other logins on Accounts before the limit.' : `Sign in again on ${renew.join(', ')} before the limit.`}`,
   seatEnded: 'Its assigned session ended; assign another in the team.',
   seatUnlisted: 'Its assigned session is not in the session list.',
   /** A head whose provider refuses turns, said with the instant the refusal lifts. */

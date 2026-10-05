@@ -1,6 +1,8 @@
 import { failureText } from '../../api/client';
-import { useAccounts, useStatus } from '../../api/queries';
+import { useAccounts, useStatus, useUsage } from '../../api/queries';
 import { colourFromRegistry } from '../../lib/model';
+import { accountName, nativeTakeoverWarnings } from '../../lib/accounts';
+import { H } from '../../lib/words-needs';
 import type { AccountRow, ClaudeLoginPlaceId } from '../../types/accounts';
 import { Button, Empty, Fault, GroupHead, PageHead } from '../../ui';
 import { SignIn } from '../shared/SignIn';
@@ -24,6 +26,7 @@ function subscriptions(rows: readonly AccountRow[]): number {
 export function AccountsPage() {
   const accounts = useAccounts();
   const status = useStatus();
+  const usage = useUsage();
   const colour = colourFromRegistry(status.data);
   const commandLabel = (head: string): string => status.data?.registry.find(row => row.key === head)?.label ?? head;
   const localCommands = new Set(status.data?.registry.filter(row => row.family === 'local').map(row => row.key));
@@ -48,6 +51,7 @@ export function AccountsPage() {
         return <section className="accounts-provider" key={provider}>
           <GroupHead title={title} {...(claude && CLAUDE_PLACES.some(place => !rows.some(row => row.login_place?.id === place)) ? {} : { count: subscriptions(rows) })}
             {...(addHead === undefined || rows.every(row => row.kind === 'api-key') ? {} : { action: <SignIn head={addHead} commandLabel={commandLabel(addHead)} purpose="add"><Button small>{A.add}</Button></SignIn> })} />
+          {nativeTakeoverWarnings(rows, usage.isError ? undefined : usage.data?.warn_pct, now).map(warning => <p className="why alert" role="alert" key={warning.head}>{H.nativeSpare(accountName(warning.carrying), warning.pct, warning.renew.map(accountName))}</p>)}
           <ul className="accounts-grid">
             {claude ? CLAUDE_PLACES.map(place => <AccountCard key={place} place={place} account={rows.find(row => row.login_place?.id === place) ?? null} commandLabels={[commandLabel('claude-splice')]} colour={colour('claude-splice')} now={now} />) : null}
             {rows.filter(row => !claude || row.login_place == null).map(row => <AccountCard key={accountIdentity(row)} account={row} commandLabels={row.heads.map(commandLabel)} localRuntime={row.heads.length > 0 && row.heads.every(head => localCommands.has(head))} colour={colour(row.heads[0] ?? '')} now={now} />)}

@@ -75,6 +75,17 @@ test('native cards mark only the login whose credential carried the newest match
   expect(card(null)).not.toContain('Carried the latest matched Synthetic command request.');
 });
 
+test('native takeover status follows availability, not a credential file’s presence', () => {
+  const card = (available: boolean | null, refusal?: string): string => renderToStaticMarkup(<QueryClientProvider client={new QueryClient()}>
+    <AccountCard account={{ ...claudeLogin('claude-splice'), selector_key: 'native:claude-splice', available, ...(refusal === undefined ? {} : { refusal }) }} place="claude-splice" colour="claude" now={now} />
+  </QueryClientProvider>);
+  expect(card(true)).toContain('Can take over');
+  expect(card(false, 'Sign-in expired. Sign in again on this login.')).toContain('Can’t take over: Sign-in expired. Sign in again on this login.');
+  expect(card(false, 'Sign-in expired. Sign in again on this login.')).not.toContain('>Signed in<');
+  expect(card(false, 'Sign-in expired. Sign in again on this login.')).not.toMatch(/disabled=""[^>]*>Sign in again/);
+  expect(card(null)).toContain('Takeover status not reported');
+});
+
 describe('the Claude group', () => {
   test('offers the add every other provider has, because a command can hold many subscriptions', () => {
     expect(page([claudeLogin('claude'), claudeLogin('claude-splice')])).toContain('Sign in to another account');

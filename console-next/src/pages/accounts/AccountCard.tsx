@@ -26,7 +26,7 @@ export function AccountCard({ account, place, colour, now, commandLabels, localR
   const name = keyed || localRuntime ? commands : account === null ? place ?? A.primary : accountName(account);
   const email = account === null ? null : accountEmail(account);
   const held = account?.held === true;
-  const renewing = present === true || (place === undefined && account?.label != null);
+  const renewing = (place !== undefined && account !== null) || present === true || (place === undefined && account?.label != null);
   const refused = Boolean(account?.refusal);
   const excluded = account?.auth_excluded_until_epoch_millis != null && account.auth_excluded_until_epoch_millis > now;
   const refresh = useMutation({
@@ -37,10 +37,10 @@ export function AccountCard({ account, place, colour, now, commandLabels, localR
     },
     onSuccess: () => awaitRefetch(client, [keys.accounts, keys.auth, keys.heads, keys.usage]),
   });
-  const state = localRuntime ? A.localState : refused ? A.refused : excluded ? A.excluded : present === undefined ? A.unknownLogin : keyed ? present ? A.keyReady : A.keyMissing : !present ? A.notSignedIn : held ? A.limitReached : A.signedIn;
+  const state = place !== undefined ? account?.available === true ? A.canTakeOver : account?.available === false ? A.cannotTakeOver(account.refusal ?? account.auth_exclusion_reason ?? A.takeoverReasonUnknown) : A.takeoverUnknown : localRuntime ? A.localState : refused ? A.refused : excluded ? A.excluded : present === undefined ? A.unknownLogin : keyed ? present ? A.keyReady : A.keyMissing : !present ? A.notSignedIn : held ? A.limitReached : A.signedIn;
   return (
-    <Window as="li" colour={colour} className="card account-card" attention={!localRuntime && (refused || excluded || held || present === false)}>
-      <div className="bar"><h3>{name}</h3><State tone={localRuntime ? 'idle' : refused || excluded ? 'stuck' : held ? 'quota' : present ? 'work' : present === false ? 'stuck' : 'wait'}>{state}</State></div>
+    <Window as="li" colour={colour} className="card account-card" attention={place !== undefined ? account?.available === false : !localRuntime && (refused || excluded || held || present === false)}>
+      <div className="bar"><h3>{name}</h3><State tone={place !== undefined ? account?.available === true ? 'work' : account?.available === false ? 'stuck' : 'wait' : localRuntime ? 'idle' : refused || excluded ? 'stuck' : held ? 'quota' : present ? 'work' : present === false ? 'stuck' : 'wait'}>{state}</State></div>
       {email === null ? null : <p className="quiet-line">{email}</p>}
       <div className="account-place">
         {place === undefined ? <p>{commands}{account?.plan ? ` · ${account.plan}` : ''}</p> : <><b>{place}</b><p>{place === 'claude' ? A.nativeWhy : A.spliceWhy}</p></>}
@@ -53,13 +53,13 @@ export function AccountCard({ account, place, colour, now, commandLabels, localR
         {account?.pinned === true ? <span>{A.pinned}</span> : null}
         {account?.held_until_epoch_seconds == null ? null : <span>{A.heldUntil} {A.instant(account.held_until_epoch_seconds)}</span>}
       </div>
-      {account?.refusal || account?.auth_exclusion_reason ? <p className="quiet-line alert">{account.refusal ?? account.auth_exclusion_reason}</p> : null}
+      {place === undefined && (account?.refusal || account?.auth_exclusion_reason) ? <p className="quiet-line alert">{account.refusal ?? account.auth_exclusion_reason}</p> : null}
       {!localRuntime && present === undefined ? <p className="hint">{A.unknownLoginWhy}</p> : null}
       {keyed || localRuntime ? null : <div className="account-acts">
         <SignIn head={head} {...(place === undefined ? {} : { place })} label={account?.label ?? ''} displayName={name} purpose={renewing ? 'renew' : 'add'}>
-          <Button small disabled={refused} kind={present ? 'quiet' : 'go'}>{renewing ? A.renew : A.signIn}</Button>
+          <Button small disabled={refused && place === undefined} kind={present ? 'quiet' : 'go'}>{renewing ? A.renew : A.signIn}</Button>
         </SignIn>
-        {present ? <Button small disabled={refresh.isPending} onClick={() => refresh.mutate()}>{refresh.isPending ? A.refreshing : A.refresh}</Button> : null}
+        {present && (place === undefined || account?.available === true) ? <Button small disabled={refresh.isPending} onClick={() => refresh.mutate()}>{refresh.isPending ? A.refreshing : A.refresh}</Button> : null}
         {account === null ? null : <AccountEdits account={account} head={head} />}
         {refresh.isError ? <span className="hint alert" role="alert">{failureText(refresh.error)}</span> : null}
       </div>}

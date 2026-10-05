@@ -18,9 +18,29 @@ export const accountName = (account: AccountRow): string => account.display_name
 /** A session's own attributed label, never the account selected for another session on its head. */
 export function sessionAccountName(rows: readonly AccountRow[], head: string, label: string | null | undefined): string | null {
   if (label == null) return null;
-  const matching = rows.filter(row => row.heads.includes(head) && row.label === label);
+  const matching = rows.filter(row => row.heads.includes(head) && (row.selector_key === label || row.label === label || (label === 'primary' && row.single_login && row.label === null)));
   const account = matching[0];
   return matching.length === 1 && account !== undefined ? accountName(account) : label;
+}
+
+/** Native selection keys never fall back to native edit ids. Pooled logins retain their stable label. */
+export const accountSelector = (account: AccountRow): string | null => account.selector_key ?? (account.login_place == null ? account.label : null);
+
+export interface NativeTakeoverWarning { head: string; carrying: AccountRow; pct: number; renew: readonly AccountRow[] }
+
+/** The roster's carrying and availability facts, measured against the operator's Settings warning level. */
+export function nativeTakeoverWarnings(rows: readonly AccountRow[], warnPct: number | undefined, now: number): NativeTakeoverWarning[] {
+  if (warnPct === undefined || !Number.isFinite(warnPct)) return [];
+  return rows.flatMap(carrying => {
+    if (carrying.login_place == null || carrying.carrying_request !== true) return [];
+    const head = carrying.heads[0];
+    const pct = nearestWindow(carrying, now)?.used_percent;
+    if (head === undefined || pct == null || pct < warnPct || pct >= 100) return [];
+    const others = rows.filter(row => row !== carrying && row.heads.includes(head));
+    if (others.some(row => row.available !== false)) return [];
+    const renew = others.filter(row => row.login_place != null && /expired|refresh|sign[ -]?in/i.test(refusalText(row) ?? ''));
+    return [{ head, carrying, pct, renew }];
+  });
 }
 
 export const accountEmail = (account: AccountRow): string | null => account.identity_verified === true ? account.account?.email ?? null : null;
@@ -205,11 +225,8 @@ export function isExcluded(account: AccountRow, nowMs: number): boolean {
   return until !== null && until > nowMs;
 }
 
-/**
- * The daemon's sentence for a credential it refuses to load at all a symlinked credential file),
- * or null when it refuses none. A refused account has no credential either, but signing in cannot renew
- * it, so it is never the same state as a credential that is simply gone.
- */
+/** The daemon's refusal sentence. Native rows explain takeover availability; pooled rows explain
+ *  a credential it cannot load. Blank and absent sentences make no claim. */
 export function refusalText(account: AccountRow): string | null {
   const text = account.refusal?.trim() ?? '';
   return text === '' ? null : text;
@@ -402,6 +419,7 @@ function accountFromWire(wire: AccountWire): AccountRow {
     ...(wire.provider === undefined ? {} : { provider: wire.provider }),
     ...(wire.login_place === undefined ? {} : { login_place: wire.login_place }),
     ...(wire.carrying_request === undefined ? {} : { carrying_request: wire.carrying_request }),
+    ...(wire.selector_key === undefined ? {} : { selector_key: wire.selector_key }),
     ...(wire.account === undefined ? {} : { account: wire.account }),
     ...(wire.held === undefined ? {} : { held: wire.held }),
     ...(wire.held_until_epoch_seconds === undefined ? {} : { held_until_epoch_seconds: wire.held_until_epoch_seconds }),

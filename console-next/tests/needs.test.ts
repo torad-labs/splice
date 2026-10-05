@@ -81,6 +81,32 @@ function doctor(checks: DoctorCheck[]): DoctorPayload {
 
 const USAGE: UsagePayload = { window_hours: 24, warn_pct: 80, warn_tokens_5h: 0, heads: [] };
 
+test('the carrying native login warns at Settings level when its other login cannot take over', () => {
+  const carrying = account({ kind: 'client', label: 'claude', selector_key: 'native:claude', display_name: 'Personal login', carrying_request: true,
+    login_place: { id: 'claude', command: 'claude' }, heads: ['claude-splice'], available: true,
+    windows: [{ seconds: 604800, used_percent: 94, reset_epoch_seconds: NOW / 1000 + 3600, current: true }] });
+  const expired = account({ kind: 'client', label: 'claude-splice', selector_key: 'native:claude-splice', display_name: 'Separate login', carrying_request: false,
+    login_place: { id: 'claude-splice', command: 'claude-splice' }, heads: ['claude-splice'], available: false,
+    refusal: 'Sign-in expired. Sign in again on this login.' });
+  const list = (rows: AccountRow[], warn_pct = 80) => needsOf(quiet({
+    heads: read([head({ key: 'claude-splice', label: 'Study', authKind: 'client' })]),
+    accounts: read({ accounts: rows }), usage: read({ ...USAGE, warn_pct }),
+  }), NOW);
+  const warning = list([carrying, expired]).needs.find(need => need.finding.includes('No other login can take over'));
+  expect(warning?.finding).toContain('Personal login');
+  expect(warning?.finding).toContain('Sign in again on Separate login');
+  expect(warning?.fix).toMatchObject({ kind: 'open', href: '#/accounts' });
+  expect(list([carrying, expired]).needs.find(need => need.finding === expired.refusal)).toMatchObject({ subject: 'Separate login', at: '#/accounts', fix: { kind: 'open', href: '#/accounts' } });
+  expect(list([carrying, { ...expired, available: null }]).needs.some(need => need.finding.includes('No other login can take over'))).toBe(false);
+  const failed = quiet({ accounts: { ...read({ accounts: [carrying, expired] }), error: 'Synthetic read failed' }, usage: read(USAGE) });
+  expect(needsOf(failed, NOW).needs.some(need => need.finding.includes('No other login can take over'))).toBe(false);
+  expect(needsOf({ ...failed, accounts: read({ accounts: [carrying, expired] }), usage: { ...read(USAGE), error: 'Synthetic read failed' } }, NOW).needs.some(need => need.finding.includes('No other login can take over'))).toBe(false);
+  expect(list([carrying, { ...expired, available: true, refusal: null }]).needs.some(need => need.finding.includes('No other login can take over'))).toBe(false);
+  expect(list([carrying, expired], 95).needs.some(need => need.finding.includes('No other login can take over'))).toBe(false);
+  expect(list([{ ...carrying, carrying_request: null }, expired]).needs.some(need => need.finding.includes('No other login can take over'))).toBe(false);
+  expect(list([{ ...carrying, windows: carrying.windows.map(window => ({ ...window, current: false })) }, expired]).needs.some(need => need.finding.includes('No other login can take over'))).toBe(false);
+});
+
 /** Every input read, and nothing in any of them that needs the operator. */
 function quiet(over: Partial<NeedInputs> = {}): NeedInputs {
   return {

@@ -73,6 +73,24 @@ test('order controls show the shared display name and only verified email, not s
   expect(html).not.toContain('unverified@example.invalid');
 });
 
+test('native selector keys name the order while edit ids and visible names stay independent', () => {
+  const rows: AccountRow[] = ['claude', 'claude-splice'].map(id => ({
+    kind: 'client', label: id, selector_key: 'native:' + id, display_name: id === 'claude' ? 'Personal login' : 'Separate login',
+    login_place: { id: id === 'claude' ? 'claude' : 'claude-splice', command: id },
+    edit_target: { kind: 'native', id }, single_login: true, credential_path: null, credential_present: true,
+    windows: [], heads: ['synthetic-command'], primary: false, selected: false, available: true, pinned: false, next_target: false,
+  }));
+  const client = new QueryClient();
+  client.setQueryData(['account-order', 'synthetic-command'], {
+    head: 'synthetic-command', order: ['native:claude-splice', 'native:claude'], effective_order: ['native:claude-splice', 'native:claude'],
+  });
+  const html = renderToStaticMarkup(<QueryClientProvider client={client}><FailoverOrder head="synthetic-command" accounts={rows} /></QueryClientProvider>);
+  expect(html).toContain('Separate login');
+  expect(html).toContain('Personal login');
+  expect(html).not.toContain('native:claude');
+  expect(html).toContain('You set this order.');
+});
+
 test('no cap explains how to set one without unknown used or remaining amounts', () => {
   const html = budget({ budgets: [] });
   expect(html).toContain('No daily cap is set.');

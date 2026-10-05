@@ -4,7 +4,7 @@ import { failureText } from '../../api/client';
 import { useSwitchAccount } from '../../api/auth';
 import { useAccountOrder } from '../../api/account-order';
 import { useHeadAction } from '../../api/queries';
-import { accountEmail, accountIdentity, accountName, isExcluded } from '../../lib/accounts';
+import { accountEmail, accountIdentity, accountName, accountSelector, isExcluded } from '../../lib/accounts';
 import { startCommandOf } from '../../lib/fleet';
 import { shellWord } from '../../lib/shell';
 import type { FleetFix as Fix } from '../../lib/fleet';
@@ -75,7 +75,7 @@ export function FleetFix({ fix, head, pool, now, keyCommand = null }: { fix: Fix
       );
     case 'switch': {
       if (order.data === undefined || 'unavailable' in order.data || order.data.single_account === true) return null;
-      const choices = pool.filter((account) => account.label !== null && account.selected !== true && !isExcluded(account, now));
+      const choices = pool.filter((account) => accountSelector(account) !== null && account.selected !== true && !isExcluded(account, now));
       return (
         <>
           <Menu.Root>
@@ -88,7 +88,7 @@ export function FleetFix({ fix, head, pool, now, keyCommand = null }: { fix: Fix
             <Menu.Portal>
               <Menu.Content className="menu" align="start" sideOffset={6} collisionPadding={8}>
                 {choices.map((account) => (
-                  <Menu.Item key={accountIdentity(account)} className="menu-item" onSelect={() => pin.mutate({ head: head.key, label: account.label ?? '' })}>
+                  <Menu.Item key={accountIdentity(account)} className="menu-item" onSelect={() => pin.mutate({ head: head.key, label: accountSelector(account) ?? '' })}>
                     {accountName(account)}{accountEmail(account) === null ? null : <small>{accountEmail(account)}</small>}
                   </Menu.Item>
                 ))}

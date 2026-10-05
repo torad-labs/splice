@@ -4,6 +4,8 @@
 .accounts-grid { list-style: none; margin: 0; padding: 0 var(--space-8) 0 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 28.75rem), 1fr)); gap: var(--space-15); align-items: start; }
 .account-card .bar { flex-wrap: wrap; }
 .account-card .bar h3 { min-width: 0; overflow-wrap: anywhere; }
+.account-card .state { min-width: 0; white-space: normal; line-height: 1.4; }
+.account-card .state i { flex-shrink: 0; }
 .account-card .account-place { padding: 0 var(--space-7) var(--space-5); overflow-wrap: anywhere; }
 .account-card .account-place p { font-size: var(--text-2); color: var(--mute); }
 .account-card .quiet-meta { flex-wrap: wrap; }

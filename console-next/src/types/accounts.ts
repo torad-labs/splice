@@ -28,6 +28,8 @@ export interface AccountManagement {
   login_place?: { id: ClaudeLoginPlaceId; command: string } | null;
   /** Native rows only: newest matched request since boot; null before a match, absent on older replies. */
   carrying_request?: boolean | null;
+  /** Pool selection identity; native keys are independent of native edit targets and display labels. */
+  selector_key?: string;
   account?: { uuid: string; email: string | null } | null;
   held?: boolean | null;
   held_until_epoch_seconds?: number | null;
@@ -107,9 +109,8 @@ export interface AccountRow extends AccountManagement {
   auth_excluded_until_epoch_millis?: number | null;
   /** The daemon's own sentence for the exclusion, printed as-is. */
   auth_exclusion_reason?: string | null;
-  /** Why the daemon will not load this account's credential at all (a symlinked credential file), in its own
-   *  words; null or absent when it can. Unlike a missing credential this is not renewed by signing in: the
-   *  writer refuses the label until the link is gone. */
+  /** The daemon's refusal and remedy. Native rows explain why the login cannot take over, including
+   *  expiry or quota. Pooled rows explain a credential it cannot load, such as a refused symlink. */
   refusal?: string | null;
   /** Every window the provider reported, at its reported length. Empty, never missing: an account
    *  whose provider reports nothing shows its empty, it does not vanish. */

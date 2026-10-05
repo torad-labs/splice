@@ -17,6 +17,7 @@ import {
   accountState,
   sessionAccountName,
   accountsFromWire,
+  accountSelector,
   canRefresh,
   exclusionText,
   isExcluded,
@@ -45,6 +46,36 @@ test('a session login name uses its own label and head, never another session’
   expect(sessionAccountName([work, home], 'synthetic', null)).toBeNull();
   expect(sessionAccountName([work, home], 'other', 'work')).toBe('work');
   expect(sessionAccountName([work, { ...work, display_name: 'Another place' }], 'synthetic', 'work')).toBe('work');
+});
+
+test('a single-login session resolves primary only on its own reported head', () => {
+  const single = account({ label: null, single_login: true, display_name: 'Single login', heads: ['solo'] });
+  expect(sessionAccountName([single], 'solo', 'primary')).toBe('Single login');
+  expect(sessionAccountName([single], 'other', 'primary')).toBe('primary');
+  expect(sessionAccountName([single], 'solo', null)).toBeNull();
+  expect(sessionAccountName([single, { ...single, display_name: 'Ambiguous login' }], 'solo', 'primary')).toBe('primary');
+});
+
+test('native selection identities preserve edit targets and session-specific names', () => {
+  const wire = wireRow({ label: 'claude', selector_key: 'native:claude', display_name: 'Personal login', kind: 'client',
+    login_place: { id: 'claude', command: 'claude' }, edit_target: { kind: 'native', id: 'claude' }, carrying_request: true });
+  const rows = accountsFromWire({ accounts: [wire] }).accounts;
+  const row = rows[0];
+  if (row === undefined) throw new Error('native row is missing');
+  const head = row.heads[0] ?? '';
+  expect(accountSelector(row)).toBe('native:claude');
+  expect(row.edit_target).toEqual({ kind: 'native', id: 'claude' });
+  expect(row.carrying_request).toBe(true);
+  expect(sessionAccountName(rows, head, 'native:claude')).toBe('Personal login');
+  expect(sessionAccountName(rows, head, 'claude')).toBe('Personal login');
+  expect(sessionAccountName([...rows, { ...row, selector_key: 'pooled', display_name: 'Other login' }], head, 'claude')).toBe('claude');
+  const { selector_key: omitted, ...legacy } = wire;
+  expect(omitted).toBe('native:claude');
+  const older = accountsFromWire({ accounts: [legacy] }).accounts[0];
+  if (older === undefined) throw new Error('legacy row is missing');
+  expect(older).not.toHaveProperty('selector_key');
+  expect(accountSelector(older)).toBeNull();
+  expect(accountSelector(account({ label: 'work' }))).toBe('work');
 });
 
 test('the daemon’s stale window verdict prevents a retained percentage from becoming current standing', () => {

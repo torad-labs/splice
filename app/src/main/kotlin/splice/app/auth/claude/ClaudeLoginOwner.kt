@@ -56,10 +56,16 @@ internal class ClaudeLoginOwner(
     private val edits = ClaudeLoginEdits(reads)
 
     private val names = ClaudeLoginNames { place, key -> logins[place]?.labelForCredential(key) }
+    private val carried = ClaudeCarryingPlaces(locations, reads)
 
     override fun places(): List<ClaudeLoginPlaceView> = reads.places(locations, names)
 
     internal fun accountForCredential(key: String): ClaudeAccountIdentity? = reads.accountForCredential(locations, key)
+
+    /** The digest of a credential [head] just sent, never the token: it decides which place carries that head. */
+    internal fun sent(head: String, key: String) = carried.sent(head, key)
+
+    override fun carrying(head: String): ClaudeLoginPlaceId? = carried.carrying(head)
 
     // One place is still read against ALL of them: a login's window belongs to its account, and the account's
     // other logins are where that reading may have been filed.

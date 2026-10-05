@@ -23,9 +23,10 @@ internal class NativeUsageSource(
         } else if (selected != null && selected.label != OWN_SIGN_IN_LABEL) {
             pool.selectedQuota()
         } else {
-            val place = native()?.places()?.singleOrNull {
-                it.head == head.head.key && it.id == ClaudeLoginPlaceId.SPLICE
-            }
+            // The login this head's requests carry. The command's own folder only until a request has matched one.
+            val places = native()
+            val carrying = places?.carrying(head.head.key) ?: ClaudeLoginPlaceId.SPLICE
+            val place = places?.places()?.singleOrNull { it.head == head.head.key && it.id == carrying }
             place?.quota?.let { snapshot ->
                 val observed = snapshot.observedAtEpochSeconds
                 QuotaView(

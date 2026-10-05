@@ -50,6 +50,11 @@ public interface ClaudeLoginPlaces {
     /** The native owner, not the pooled-login store, owns this place's display name. */
     public suspend fun relabel(place: ClaudeLoginPlaceId, label: String): AccountMutation =
         AccountMutation.Refused("this native login has no stored rename target")
+
+    /** The place whose live credential carried [head]'s newest request that matched a place since the daemon
+     *  started, or null before any did. Both commands send through one head, so this, not the command's own
+     *  place, is the login whose windows that head is spending. */
+    public fun carrying(head: String): ClaudeLoginPlaceId? = null
 }
 
 /** Read after composition assigns the native login owner, never capture an unwired null at server construction. */

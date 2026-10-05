@@ -27,6 +27,7 @@ import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.claude.ClaudeLoginPlaceView
 import splice.accounts.claude.ClaudeLoginPlaces
 import splice.accounts.signin.LoginStatus
+import splice.app.auth.claude.ClaudeCarryingPlaces
 import splice.app.auth.claude.ClaudeCredentialProfiles
 import splice.app.auth.claude.ClaudeLoginLocation
 import splice.app.auth.claude.ClaudeLoginRead
@@ -159,7 +160,10 @@ class NativeUsageTruthTest {
         )
     }
 
-    private fun native(locations: List<ClaudeLoginLocation>): ClaudeLoginPlaces = object : ClaudeLoginPlaces {
+    private fun native(
+        locations: List<ClaudeLoginLocation>,
+        carried: ClaudeCarryingPlaces? = null,
+    ): ClaudeLoginPlaces = object : ClaudeLoginPlaces {
         override fun places(): List<ClaudeLoginPlaceView> =
             ClaudeLoginRead(paths, {}, WallClock { now }).places(locations)
         override suspend fun refresh(place: ClaudeLoginPlaceId): ClaudeLoginPlaceView =
@@ -168,7 +172,11 @@ class NativeUsageTruthTest {
             error("no login in this fixture")
         override fun poll(id: String): LoginStatus? = null
         override suspend fun submit(id: String, code: String): Boolean = false
+        override fun carrying(head: String): ClaudeLoginPlaceId? = carried?.carrying(head)
     }
+
+    private fun digest(token: String): String =
+        requireNotNull(CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer $token")))
 
     private fun managed(kind: String = "client"): ManagedHead = ManagedHead(
         head = object : Head {
@@ -312,6 +320,38 @@ class NativeUsageTruthTest {
                 "a probe that files no new reading retains the snapshot",
             )
             assertEquals(1, probes)
+        }
+    }
+
+    /** Both commands send through one head, so its usage is the login its requests carry (2026-10-04: claude-splice
+     *  sent the ~/.claude login at 91% while Models and Usage read the folder's stale 59%). The record starts empty,
+     *  which is what a restart leaves: until a request matches a place, the head reads the command's own folder. */
+    @Test
+    fun `a client head's usage reads the login its newest request carried, not the command's own folder`() {
+        val places = listOf(
+            location(ClaudeLoginPlaceId.NATIVE, "native-subscription"),
+            location(ClaudeLoginPlaceId.SPLICE, "folder-subscription"),
+        )
+        observed(ClaudeLoginPlaceId.NATIVE, 91.0)
+        observed(ClaudeLoginPlaceId.SPLICE, 59.0)
+        val carried = ClaudeCarryingPlaces(places, ClaudeLoginRead(paths, {}, WallClock { now }))
+        serve(native(places, carried)) { read ->
+            suspend fun headUsage(): JsonObject = usage(read("/api/usage", false))
+            suspend fun fiveHour(): String = headUsage().getValue("quota").jsonObject.getValue("five_hour").jsonObject
+                .getValue("used_pct").jsonPrimitive.content
+            assertEquals("59", fiveHour(), "before any request the head reads its command's own folder")
+
+            carried.sent(HEAD, digest("synthetic-${ClaudeLoginPlaceId.NATIVE.wire}"))
+            assertEquals("91", fiveHour(), "a request carrying the ~/.claude login moves the head to that login")
+            val warn = headUsage().getValue("warn").jsonObject
+            assertEquals("quota_5h", warn.getValue("source").jsonPrimitive.content, "the near-limit warning: $warn")
+            assertEquals("91", warn.getValue("pct").jsonPrimitive.content, "the near-limit warning: $warn")
+
+            carried.sent(HEAD, digest("synthetic-unknown-login"))
+            assertEquals("91", fiveHour(), "a credential no place holds leaves the last match standing")
+
+            carried.sent(HEAD, digest("synthetic-${ClaudeLoginPlaceId.SPLICE.wire}"))
+            assertEquals("59", fiveHour(), "the newest matched request decides, in either direction")
         }
     }
 

@@ -1,6 +1,11 @@
 // The turns page's arithmetic: the waterfall, the grouping and the in-flight set. Ported from the pure blocks of
 // console/tests/entities-turns.test.ts ('waterfall', 'groupTurns', 'inflightFrom').
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import { describe, expect, test } from 'vitest';
+import { TurnPage } from '../src/pages/turns/TurnPage';
 import { groupTurns, inflightFrom, marksOf, UNATTRIBUTED, waterfall } from '../src/lib/perf';
 import type { GateSnapshot, HeadStatus } from '../src/types/core';
 import type { TurnRow } from '../src/types/perf';
@@ -199,5 +204,72 @@ describe('inflightFrom', () => {
 
   test('a stopped fleet is idle, not an error', () => {
     expect(inflightFrom([head({ key: 'claudex', running: false, gate: gate() })])).toEqual([]);
+  });
+});
+
+// Render the actual request page with synthetic cached rows, without any HTTP reads.
+describe('request token tiles', () => {
+  const page = (row: TurnRow): string => {
+    const client = new QueryClient();
+    client.setQueryData(['perf-window', row.head, 1, row.ts, null, row.ts + 1, {}], { landed: [row] });
+    client.setQueryData(['heads', '/api/heads'], { heads: [] });
+    client.setQueryData(['status', '/api/status'], { registry: [] });
+    client.setQueryData(['sessions', '/api/sessions'], { sessions: [] });
+    try {
+      return renderToStaticMarkup(createElement(QueryClientProvider, { client },
+        createElement(MemoryRouter, { initialEntries: [`/requests/${row.head}/${row.ts}`] },
+          createElement(Routes, null, createElement(Route, {
+            path: '/requests/:head/:ts', element: createElement(TurnPage),
+          })))));
+    } finally {
+      client.clear();
+    }
+  };
+
+  test('a posted row without usage keeps both tiles and explains the unknown price', () => {
+    const shown = page(turn({ upstream_req_bytes: 320, cost_usd: null }));
+    expect(shown).toContain('<div class="n">Not reported</div><h3>Read in</h3>');
+    expect(shown).toContain('<div class="n">Not reported</div><h3>Written out</h3>');
+    expect(shown).toContain('The price is unknown because token counts were not reported.');
+    expect(shown).not.toContain('This step sent no request to the model.');
+  });
+
+  test('a posted row with measured counts retains its numbers and price explanation', () => {
+    const shown = page(turn({ upstream_req_bytes: 320, in_tokens: 100, out_tokens: 7, cost_usd: 0.002 }));
+    expect(shown).toContain('<div class="n">100</div><h3>Read in</h3>');
+    expect(shown).toContain('<div class="n">7</div><h3>Written out</h3>');
+    expect(shown).toContain('What this would cost at the model’s public prices.');
+    expect(shown).not.toContain('Not reported');
+  });
+
+  test('a true local-only step keeps zero counts and its no-request explanation', () => {
+    const shown = page(turn({ local_step: 1, upstream_req_bytes: 0, in_tokens: 0, out_tokens: 0 }));
+    expect(shown).toContain('<div class="n">0</div><h3>Read in</h3>');
+    expect(shown).toContain('<div class="n">0</div><h3>Written out</h3>');
+    expect(shown).toContain('This step sent no request to the model.');
+    expect(shown).not.toContain('Not reported');
+    expect(shown).not.toContain('The price is unknown because token counts were not reported.');
+  });
+
+  test.each([{ in_tokens: 100 }, { out_tokens: 7 }])('a partial bill keeps the known count and marks only the missing one: %j', counts => {
+    const shown = page(turn({ upstream_req_bytes: 320, ...counts }));
+    expect(shown.match(/<div class="n">Not reported<\/div>/g)).toHaveLength(1);
+    expect(shown).toContain('The price is unknown because token counts were not reported.');
+  });
+
+  test('a row with no upstream post does not claim that model token counts were missing', () => {
+    const shown = page(turn({ outcome: 'error:admission', upstream_req_bytes: 0 }));
+    expect(shown).not.toContain('<h3>Read in</h3>');
+    expect(shown).not.toContain('<h3>Written out</h3>');
+    expect(shown).not.toContain('Not reported');
+    expect(shown).toContain('This request was not priced.');
+  });
+
+  test('measured zero on a posted row is not missing usage', () => {
+    const shown = page(turn({ upstream_req_bytes: 320, in_tokens: 0, out_tokens: 0, cost_usd: 0 }));
+    expect(shown).toContain('<div class="n">0</div><h3>Read in</h3>');
+    expect(shown).toContain('<div class="n">0</div><h3>Written out</h3>');
+    expect(shown).not.toContain('Not reported');
+    expect(shown).not.toContain('This step sent no request to the model.');
   });
 });

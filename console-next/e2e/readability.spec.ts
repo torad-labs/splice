@@ -9,6 +9,15 @@ import type { SessionRow } from '../src/types/sessions';
 import { FIRST_READ_MS, env, open, routePath } from './support';
 import { STACK } from './stack';
 
+test('the retired needs-you bookmark opens Accounts', async ({ page }) => {
+  const faults = await open(page, 'accounts');
+  await page.goto(env('CONSOLE_E2E_BASE') + '/#/needs-you');
+  await expect.poll(() => new URL(page.url()).hash).toBe('#/accounts');
+  await expect(page.getByRole('heading', { name: 'Accounts', exact: true })).toBeVisible();
+  expect(faults.pageErrors).toEqual([]);
+  expect(faults.failedReads).toEqual([]);
+});
+
 test('wide Finished rows keep each name beside its measurements', async ({ page }) => {
   await page.setViewportSize({ width: 3840, height: 2060 });
   const faults = await open(page, 'requests');

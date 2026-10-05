@@ -1,64 +1,21 @@
-// The words lib/needs.ts prints, ported from the old Needs-you page's strings.ts. `S` holds labels (three
-// words or fewer, sentence case), `H` the one-line sentences a finding prints, `U` the fragments printed
-// beside a figure or a name, `K` the word a card prints as its state.
-import type { NeedKind } from '../types/needs';
+// Live Accounts warnings and the shared doctor-fix vocabulary.
 import type { AccountWindow } from '../types/accounts';
 import { windowSpan } from './accounts';
 import { localZonedInstantText } from './heads';
 import { H as LOGIN } from './words-login';
 
 export const S = {
-  /** The daemon's item is named for the daemon. */
-  daemon: 'splice',
-  nearest: 'Nearest limit',
-  singleLogin: 'Single login',
-  signIn: 'Sign in',
   openLog: 'Open log',
-  openFleet: 'Open fleet',
-  openAccounts: 'Open Accounts',
-  openUsage: 'Open usage',
-  openTurns: 'Open turns',
-  openTeams: 'Open team',
   openDoctor: 'Open doctor',
-  openSession: 'Open the session',
-  switchAccount: 'Switch account',
-  seePlan: 'See the command',
 } as const;
 
 export const H = {
-  down: 'Not running.',
-  unhealthy: 'Running, but failing its health check.',
-  signedOut: 'No login is saved for this command.',
-  keyMissingBare: 'Its API key is not set.',
-  loginExpired: 'Its login expired and the refresh is blocked.',
-  queueFull: 'Every slot is busy and the queue is full.',
-  configChanged: 'The splice.toml file changed since splice started.',
-  tracePending: (head: string): string => `Trace for ${head} in splice.toml applies after restart.`,
-  checkPending: 'A change in splice.toml applies after restart.',
-  accountSignedOut: 'Its login is gone; sign in again under this label.',
   nativeSpare: (name: string, pct: number, window: AccountWindow, renew: readonly string[]): string => {
     const span = window.length_known === false ? windowSpan(window) : window.seconds === 604800 ? 'weekly' : window.seconds === 18000 ? 'five-hour' : windowSpan(window);
     const model = window.model === undefined ? '' : ` ${window.model}`;
     const reset = window.reset_epoch_seconds === null ? '. Its reset has not been reported.' : `, which resets ${localZonedInstantText(window.reset_epoch_seconds)}.`;
     return `${name} is at ${Math.round(pct)}% of its ${span}${model} limit${reset} No other login can take over. ${renew.length === 0 ? 'Check the other logins on Accounts before the limit.' : renew.map(LOGIN.signInAgain).join(' ')}`;
   },
-  seatEnded: 'Its assigned session ended; assign another in the team.',
-  seatUnlisted: 'Its assigned session is not in the session list.',
-  /** A head whose provider refuses turns, said with the instant the refusal lifts. */
-  outOfQuota: (until: string): string => `Out of quota until ${until}`,
-} as const;
-
-export const U = {
-  runs: 'Runs',
-  wants: 'splice wants',
-  notSet: 'not set',
-  at: 'at',
-  resets: 'resets',
-  waiting: 'settings waiting',
-  oneWaiting: 'setting waiting',
-  seat: 'seat',
-  /** Before what Doctor's checks found, on the head item they are about. */
-  doctor: 'Doctor:',
 } as const;
 
 /** A head's runtime findings. Error counts describe errors, not failed turns. */
@@ -75,22 +32,6 @@ export const DF = {
   recent: (head: string, failed: number, total: number, ago: string, outcome: string): string =>
     `${head}: ${failed} of its last ${total} ${total === 1 ? 'turn' : 'turns'} failed; the latest, ${ago}, was ${outcome}`,
 } as const;
-
-/** The state word each kind of item prints. */
-export const K = {
-  waiting: 'Waiting on you',
-  quota: 'Out of quota',
-  signedOut: 'Signed out',
-  keyMissing: 'Key missing',
-  failing: 'Failing',
-  version: 'Version mismatch',
-  queue: 'Queue full',
-  restart: 'Restart needed',
-  plan: 'Command near its limit',
-  account: 'Account',
-  seat: 'Team seat',
-  doctor: 'Doctor',
-} as const satisfies Record<string, NeedKind>;
 
 /** What a doctor check is titled, by the daemon's id (`section/name`, the name sometimes `:detail`). A family collapsed
  *  to one row is titled by its id up to the colon. An id nobody has titled prints as its name, never with the path. */

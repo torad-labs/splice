@@ -4,6 +4,8 @@ import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, expect, test, vi } from 'vitest';
 import { SettingsPage } from '../src/pages/settings/SettingsPage';
 import type { ConfigPayload } from '../src/types/core';
+import type { Fix } from '../src/types/needs';
+import { NeedFix } from '../src/pages/needs/NeedFix';
 
 vi.mock('../src/lib/theme', () => ({ useThemeChoice: () => 'system', setThemeChoice: vi.fn() }));
 vi.mock('../src/lib/show-keys', () => ({ useShowKeys: () => false, setShowKeys: vi.fn() }));
@@ -49,6 +51,27 @@ test('Advanced explains the real key-icon button rather than a nonexistent code 
   const html = render('/settings/advanced');
   expect(html).toContain('use the key button on a row');
   expect(html).not.toContain('&lt;&gt;');
+});
+
+test('Settings retains the shared fix actions after the retired card is removed', () => {
+  const fix = (value: Fix): string => renderToStaticMarkup(<QueryClientProvider client={new QueryClient()}><MemoryRouter><NeedFix fix={value} /></MemoryRouter></QueryClientProvider>);
+  expect(fix({ kind: 'start', head: 'synthetic-command' })).toContain('>Start<');
+  expect(fix({ kind: 'restart', head: 'synthetic-command' })).toContain('>Restart<');
+  const restart = fix({ kind: 'restart-daemon' });
+  expect(restart).toContain('Restart splice');
+  expect(restart).not.toContain('Drain and restart');
+  expect(restart).not.toContain('Turns in flight finish first');
+  expect(fix({ kind: 'login', head: 'synthetic-command' })).toContain('>Sign in<');
+  expect(fix({ kind: 'login', head: 'synthetic-command', label: 'work' })).toContain('Sign in again');
+  expect(fix({ kind: 'copy', command: 'splice key set SYNTHETIC_KEY' })).toContain('Copy the command');
+  expect(fix({ kind: 'doctor-fix', id: 'synthetic-check' })).toContain('>Fix it<');
+  const masked = fix({ kind: 'masked', command: 'splice key set <redacted:synthetic>' });
+  expect(masked).toContain('keeps out of this page');
+  expect(masked).not.toContain('Copy the command');
+  expect(masked).not.toContain('redacted');
+  const open = fix({ kind: 'open', href: '#/models/synthetic-command', label: 'Open log', fallback: 'splice logs --head synthetic-command' });
+  expect(open).toContain('href="/models/synthetic-command"');
+  expect(open).toContain('splice logs --head synthetic-command');
 });
 
 test('a deep link stays a pending read, not a failure, until the initial settings arrive', () => {

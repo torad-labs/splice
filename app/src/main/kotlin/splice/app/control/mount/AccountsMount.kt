@@ -39,7 +39,11 @@ internal class AccountsMount(
     // Read at CALL time: ControlPlane assigns [ConsolePorts.accounts] after the server is constructed.
     private val loginRoutes = LoginRoutes(accountResolver, ConsoleAccountsSource { ports.accounts })
     private val switchRoute = SwitchRoute(accountResolver)
-    private val accountEditRoutes = AccountEditRoutes(accountResolver, ConsoleAccountsSource { ports.accounts })
+    private val accountEditRoutes = AccountEditRoutes(
+        accountResolver,
+        ConsoleAccountsSource { ports.accounts },
+        ClaudeLoginPlacesSource { ports.claudeLogins },
+    )
     private val accountsRoute = AccountsRoute(accountHeads)
     private val claudeRoutes = ClaudeLoginRoutes(ClaudeLoginPlacesSource { ports.claudeLogins })
     private val accountOrderRoute = AccountOrderRoute(accountResolver)

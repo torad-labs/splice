@@ -1,6 +1,7 @@
 // NEW: command-local Claude login identities and observations, never credential material.
 package splice.accounts.claude
 
+import splice.accounts.signin.AccountMutation
 import splice.accounts.signin.LoginStatus
 import splice.core.usage.QuotaSnapshot
 
@@ -37,6 +38,14 @@ public interface ClaudeLoginPlaces {
 
     /** Submit the native CLI's documented pasted-code fallback without logging or retaining the code. */
     public suspend fun submit(id: String, code: String): Boolean
+
+    /** A native-place target can never fall through to a pooled login with the same label. */
+    public suspend fun remove(place: ClaudeLoginPlaceId): AccountMutation =
+        AccountMutation.Refused("this native login has no stored removal target")
+
+    /** The native owner, not the pooled-login store, owns this place's display name. */
+    public suspend fun relabel(place: ClaudeLoginPlaceId, label: String): AccountMutation =
+        AccountMutation.Refused("this native login has no stored rename target")
 }
 
 /** Read after composition assigns the native login owner, never capture an unwired null at server construction. */

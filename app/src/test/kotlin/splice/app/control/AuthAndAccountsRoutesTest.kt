@@ -30,6 +30,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.Assertions.assertAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -37,6 +38,11 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
+import splice.accounts.claude.ClaudeAccountIdentity
+import splice.accounts.claude.ClaudeLoginPlaceId
+import splice.accounts.claude.ClaudeLoginPlaceView
+import splice.accounts.claude.ClaudeLoginPlaces
+import splice.accounts.claude.ClaudeLoginStanding
 import splice.accounts.pool.HeadAccountPinSource
 import splice.accounts.pool.HeadAccountPoolSource
 import splice.accounts.pool.HeadAccountPoolView
@@ -260,6 +266,112 @@ class AuthAndAccountsRoutesTest {
         val byKind = delete("/api/auth/$WIRED/accounts/plus-a")
         assertEquals(HttpStatusCode.BadRequest, byKind.status, byKind.bodyAsText())
         assertTrue(byKind.bodyAsText().contains("auth kind 'client'"), byKind.bodyAsText())
+    }
+
+    @Test
+    fun `a native login name cannot remove or rename a pooled login with that same name`() = runBlocking {
+        awaitPort()
+        var removals = 0
+        var renames = 0
+        accounts.onRemove = { _, _ ->
+            removals++
+            AccountMutation.Ok
+        }
+        accounts.onRelabel = { _, _, _ ->
+            renames++
+            AccountMutation.Ok
+        }
+        control.ports.claudeLogins = object : ClaudeLoginPlaces {
+            override fun places(): List<ClaudeLoginPlaceView> = listOf(
+                ClaudeLoginPlaceView(
+                    ClaudeLoginPlaceId.NATIVE,
+                    WIRED,
+                    "/synthetic/.claude/.credentials.json",
+                    true,
+                    ClaudeAccountIdentity("native-account", "native@synthetic.test"),
+                    null,
+                    ClaudeLoginStanding(null, null),
+                ),
+            )
+            override suspend fun login(place: ClaudeLoginPlaceId, label: String?): LoginStatus = error("not used")
+            override suspend fun refresh(place: ClaudeLoginPlaceId): ClaudeLoginPlaceView = places().single()
+            override fun poll(id: String): LoginStatus? = null
+            override suspend fun submit(id: String, code: String): Boolean = false
+        }
+        try {
+            val removed = delete("/api/auth/$WIRED/accounts/claude")
+            val renamed = patch("/api/auth/$WIRED/accounts/claude", """{"label":"new-name"}""")
+            val removedBody = removed.bodyAsText()
+            val renamedBody = renamed.bodyAsText()
+            assertAll(
+                { assertEquals(HttpStatusCode.Conflict, removed.status, removedBody) },
+                { assertEquals(HttpStatusCode.Conflict, renamed.status, renamedBody) },
+                { assertEquals(0, removals, "a place label is not a pooled-login deletion target") },
+                { assertEquals(0, renames, "a place label is not a pooled-login rename target") },
+            )
+        } finally {
+            control.ports.claudeLogins = null
+        }
+    }
+
+    @Test
+    fun `explicit targets isolate native and pool edits and reject mismatched ids before mutation`() = runBlocking {
+        awaitPort()
+        val nativeEdits = mutableListOf<String>()
+        val poolEdits = mutableListOf<String>()
+        accounts.onRemove = { _, id ->
+            poolEdits += "remove:$id"
+            AccountMutation.Ok
+        }
+        accounts.onRelabel = { _, id, name ->
+            poolEdits += "rename:$id:$name"
+            AccountMutation.Ok
+        }
+        control.ports.claudeLogins = object : ClaudeLoginPlaces {
+            override fun places(): List<ClaudeLoginPlaceView> = listOf(
+                ClaudeLoginPlaceView(
+                    ClaudeLoginPlaceId.NATIVE, WIRED, "/synthetic/native", true,
+                    null, null, ClaudeLoginStanding(null, null),
+                ),
+            )
+            override suspend fun login(place: ClaudeLoginPlaceId, label: String?): LoginStatus = error("not used")
+            override suspend fun refresh(place: ClaudeLoginPlaceId): ClaudeLoginPlaceView = places().single()
+            override fun poll(id: String): LoginStatus? = null
+            override suspend fun submit(id: String, code: String): Boolean = false
+            override suspend fun remove(place: ClaudeLoginPlaceId): AccountMutation {
+                nativeEdits += "remove:${place.wire}"
+                return AccountMutation.Ok
+            }
+            override suspend fun relabel(place: ClaudeLoginPlaceId, label: String): AccountMutation {
+                nativeEdits += "rename:${place.wire}:$label"
+                return AccountMutation.Ok
+            }
+        }
+        val base = "/api/auth/$WIRED/accounts/claude"
+        val body = """{"label":"new-name"}"""
+        try {
+            for (query in listOf("target_kind=unknown&target_id=claude", "target_kind=pool&target_id=other")) {
+                assertEquals(HttpStatusCode.BadRequest, delete("$base?$query").status)
+                assertEquals(HttpStatusCode.BadRequest, patch("$base?$query", body).status)
+            }
+            assertTrue(nativeEdits.isEmpty())
+            assertTrue(poolEdits.isEmpty())
+            assertEquals(HttpStatusCode.OK, delete("$base?target_kind=pool&target_id=claude").status)
+            assertEquals(HttpStatusCode.OK, patch("$base?target_kind=pool&target_id=claude", body).status)
+            control.ports.accounts = null
+            assertEquals(HttpStatusCode.OK, delete("$base?target_kind=native&target_id=claude").status)
+            assertEquals(HttpStatusCode.OK, patch("$base?target_kind=native&target_id=claude", body).status)
+            assertEquals(listOf("remove:claude", "rename:claude:new-name"), nativeEdits)
+            assertEquals(listOf("remove:claude", "rename:claude:new-name"), poolEdits)
+            val missing = "/api/auth/$WIRED/accounts/claude-splice?target_kind=native&target_id=claude-splice"
+            assertEquals(HttpStatusCode.Conflict, delete(missing).status)
+            assertEquals(HttpStatusCode.Conflict, patch(missing, body).status)
+            assertEquals(2, nativeEdits.size)
+            assertEquals(2, poolEdits.size)
+        } finally {
+            control.ports.claudeLogins = null
+            control.ports.accounts = accounts
+        }
     }
 
     @Test

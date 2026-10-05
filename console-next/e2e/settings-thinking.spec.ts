@@ -3,6 +3,81 @@ import type { ConfigPayload } from '../src/types/core';
 import { open, assertHealthy } from './support';
 import { STACK } from './stack';
 
+test('Advanced quantity controls preserve exact base values, save timing and command scope', async ({ page }) => {
+  const patches: Record<string, unknown>[] = [];
+  const writes: Record<string, unknown>[] = [];
+  const effective = { requestReadTimeoutMs: 1501, maxRequestBytes: 8 * 1024 * 1024, maxQueued: 3 };
+  await page.route(url => url.pathname === '/api/config', async route => {
+    if (route.request().method() === 'PATCH') {
+      const patch = route.request().postDataJSON() as Record<string, unknown>;
+      patches.push(patch);
+      Object.assign(effective, patch);
+      return route.fulfill({ json: { applied: patch, rejected: {}, restart_required: [], targets: [], persisted: '/synthetic/config.json' } });
+    }
+    const response = await route.fetch();
+    const body = await response.json() as ConfigPayload;
+    Object.assign(body.effective, effective);
+    await route.fulfill({ response, json: body });
+  });
+  await page.route(url => url.pathname === '/api/topology', async route => {
+    if (route.request().method() === 'PUT') {
+      writes.push((route.request().postDataJSON() as { topology: Record<string, unknown> }).topology);
+      return route.fulfill({ json: { ok: true, restart_required: true, findings: [] } });
+    }
+    const response = await route.fetch();
+    const body = await response.json() as { topology: Record<string, unknown> };
+    const heads = body.topology.heads as Record<string, Record<string, unknown>>;
+    body.topology = writes.at(-1) ?? { ...body.topology, heads: { ...heads, [STACK.oauthHead]: { ...heads[STACK.oauthHead], overrides: { effort: 'low', maxQueued: '7' } } } };
+    await route.fulfill({ response, json: body });
+  });
+  const faults = await open(page, 'settings/advanced');
+  await page.getByRole('button', { name: 'Open the full list', exact: true }).click();
+  const timeout = page.getByRole('spinbutton', { name: 'Request read limit', exact: true });
+  const size = page.getByRole('spinbutton', { name: 'Max request size', exact: true });
+  const count = page.getByRole('spinbutton', { name: 'Queued turns', exact: true });
+  await expect(timeout).toHaveValue('1.501');
+  await expect(size).toHaveValue('8');
+  await expect(count).toHaveAttribute('step', '1');
+  await page.getByRole('button', { name: 'Unit for Request read limit', exact: true }).click();
+  await page.getByRole('menuitemradio', { name: 'Milliseconds', exact: true }).click();
+  await expect(timeout).toHaveValue('1501');
+  expect(patches).toHaveLength(0);
+  await page.getByRole('button', { name: 'Unit for Request read limit', exact: true }).click();
+  await page.getByRole('menuitemradio', { name: 'Seconds', exact: true }).click();
+  await timeout.fill('1.001');
+  expect(patches).toHaveLength(0);
+  await timeout.press('Enter');
+  await expect.poll(() => patches).toEqual([{ requestReadTimeoutMs: 1001 }]);
+  await timeout.fill('1.0001');
+  await timeout.press('Tab');
+  await expect(timeout).toHaveValue('1.001');
+  expect(patches).toHaveLength(1);
+  await size.fill('8.5');
+  await size.press('Enter');
+  await expect.poll(() => patches.at(-1)).toEqual({ maxRequestBytes: 8912896 });
+  await count.fill('3.5');
+  await count.press('Enter');
+  await expect(count).toHaveValue('3');
+  expect(patches).toHaveLength(2);
+  await page.getByRole('button', { name: 'Which command', exact: true }).click();
+  await page.getByRole('menuitemradio', { name: STACK.oauthHead, exact: true }).click();
+  await expect(timeout).toHaveValue('1.001');
+  await timeout.fill('2.001');
+  await timeout.press('Enter');
+  await expect.poll(() => writes.length).toBe(1);
+  const saved = writes[0]?.heads as Record<string, Record<string, unknown>>;
+  expect(saved[STACK.oauthHead]?.overrides).toEqual({ effort: 'low', maxQueued: '7', requestReadTimeoutMs: '2001' });
+  expect(patches).toHaveLength(2);
+  for (const width of [1536, 393]) {
+    await page.setViewportSize({ width, height: 980 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await timeout.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: test.info().outputPath('advanced-quantity-' + width + '.png') });
+  }
+  await assertHealthy(page, faults);
+  await page.unrouteAll({ behavior: 'wait' });
+});
+
 test('Storage points to Requests rather than the retired Turns page', async ({ page }) => {
   const faults = await open(page, 'settings/storage');
   const storage = page.getByRole('region', { name: 'Storage', exact: true });

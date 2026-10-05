@@ -2,6 +2,7 @@ import * as Menu from '@radix-ui/react-dropdown-menu';
 import { useEffect, useState } from 'react';
 import { Check, Chevron } from './icons';
 import { W } from '../lib/words';
+import { quantityText, quantityUnits, quantityValue } from '../lib/quantity';
 
 /** An on/off choice that takes effect as it is made. */
 export function Switch({ checked, onChange, label, disabled = false }: { checked: boolean; onChange: (next: boolean) => void; label: string; disabled?: boolean }) {
@@ -83,19 +84,21 @@ export function Select<T extends string>({ value, options, onChange, label, menu
 }
 
 /** A number typed in, saved when the field is left or Enter is pressed; anything that is not a whole number goes back to what it was. */
-export function NumberInput({ value, onCommit, label, suffix }: { value: number; onCommit: (next: number) => void; label: string; suffix?: string | null }) {
-  const [text, setText] = useState(String(value));
-  useEffect(() => setText(String(value)), [value]);
+export function NumberInput({ value, onCommit, label, suffix, scale = 1 }: { value: number; onCommit: (next: number) => void; label: string; suffix?: string | null; scale?: number }) {
+  const [text, setText] = useState(quantityText(value, scale));
+  useEffect(() => setText(quantityText(value, scale)), [value, scale]);
   const commit = (): void => {
-    const next = Number(text.trim());
-    if (text.trim() === '' || !Number.isSafeInteger(next)) setText(String(value));
+    const next = quantityValue(text, scale);
+    if (next === null) setText(quantityText(value, scale));
     else if (next !== value) onCommit(next);
   };
   return (
     <span className="number">
       <input
         className="input"
-        inputMode="numeric"
+        type="number"
+        step={scale === 1 ? 1 : 'any'}
+        inputMode={scale === 1 ? 'numeric' : 'decimal'}
         aria-label={label}
         value={text}
         onChange={(event) => setText(event.currentTarget.value)}
@@ -107,6 +110,16 @@ export function NumberInput({ value, onCommit, label, suffix }: { value: number;
       {suffix === null || suffix === undefined ? null : <small>{suffix}</small>}
     </span>
   );
+}
+
+/** Changing the display unit does not write; leaving the numeric field writes the exact base value. */
+export function QuantityInput({ value, onCommit, label, unit }: { value: number; onCommit: (next: number) => void; label: string; unit: 'ms' | 'bytes' }) {
+  const units = quantityUnits(unit);
+  const [scale, setScale] = useState<number>(() => [...units].reverse().find(choice => Math.abs(value) >= choice.factor)?.factor ?? 1);
+  return <span className="quantity">
+    <NumberInput value={value} label={label} scale={scale} onCommit={onCommit} />
+    <Select label={W.unitFor(label)} value={String(scale)} options={units.map(choice => ({ id: String(choice.factor), label: choice.label }))} onChange={next => setScale(Number(next))} />
+  </span>;
 }
 
 /** A text value typed in, saved when the field is left or Enter is pressed. */

@@ -12,4 +12,5 @@ export const W = {
   retry: 'Try again',
   selectedValue: (value: number, unit: string): string => `Selected: ${value}${unit}`,
   searchKey: '⌘K',
+  unitFor: (label: string): string => `Unit for ${label}`,
 } as const;

@@ -9,7 +9,7 @@ import { controlOf, otherKnobs, textOf, withHeadOverride } from '../../lib/setti
 import { GROUP_LABELS, KNOB_HELP, KNOB_LABELS } from '../../lib/words-knobs';
 import type { KnobDisposition } from '../../types/config';
 import type { ConfigValue } from '../../types/core';
-import { Button, NumberInput, Select, Switch, TextInput } from '../../ui';
+import { Button, NumberInput, QuantityInput, Select, Switch, TextInput } from '../../ui';
 import { AS } from './copy';
 import { Row, SaveNote, useSetting } from './Row';
 import type { Saved } from './Row';
@@ -64,7 +64,9 @@ function KnobRow({ knob, head, topology }: { knob: KnobDisposition; head: string
           />
         );
       case 'number':
-        return <NumberInput label={nameOf(knob.key)} value={typeof knob.value === 'number' ? knob.value : 0} suffix={number.suffix} onCommit={save} />;
+        return meta?.unit === 'ms' || meta?.unit === 'bytes'
+          ? <QuantityInput label={nameOf(knob.key)} value={typeof knob.value === 'number' ? knob.value : 0} unit={meta.unit} onCommit={save} />
+          : <NumberInput label={nameOf(knob.key)} value={typeof knob.value === 'number' ? knob.value : 0} suffix={number.suffix} onCommit={save} />;
       case 'text':
         return <TextInput label={nameOf(knob.key)} value={textOf(knob.value)} onCommit={(next) => save(next === '' ? null : next)} />;
     }
@@ -74,7 +76,7 @@ function KnobRow({ knob, head, topology }: { knob: KnobDisposition; head: string
   const notes = [
     control.kind === 'locked' ? AS.locked : null,
     control.kind === 'head-only' ? AS.headOnly : null,
-    number.readable,
+    control.kind === 'number' && (meta?.unit === 'ms' || meta?.unit === 'bytes') ? null : number.readable,
     knob.provenance === 'default' ? null : AS.source[knob.provenance],
     !scoped && knob.overriddenBy.length > 0 ? AS.overriddenBy(knob.overriddenBy.join(', ')) : null,
   ].filter((note): note is string => note !== null);

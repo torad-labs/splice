@@ -1,5 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { useEffect, useReducer, useState } from 'react';
+import { useEffect, useId, useReducer, useState } from 'react';
 import type { ReactNode } from 'react';
 import { failureText } from '../../api/client';
 import { isPendingRoute, useLoginStatus, useStartLogin } from '../../api/auth';
@@ -12,8 +12,9 @@ import { useSignInTab } from './useSignInTab';
 
 /** The sign-in flow in a dialog: name the account, start the login, finish it in the browser with the code or link the
  *  daemon hands out, then wait for the head to restart with the account. A renewal begins at its existing label. */
-export function SignIn({ head, label = '', displayName, place, purpose, children }: { head: string; label?: string; displayName?: string; place?: ClaudeLoginPlaceId; purpose: 'add' | 'renew'; children: ReactNode }) {
+export function SignIn({ head, commandLabel = head, label = '', displayName, place, purpose, children }: { head: string; commandLabel?: string; label?: string; displayName?: string; place?: ClaudeLoginPlaceId; purpose: 'add' | 'renew'; children: ReactNode }) {
   const initialLabel = label || place || '';
+  const labelHintId = useId();
   const [open, setOpen] = useState(false);
   const [state, dispatch] = useReducer(next, initialLoginState(initialLabel));
   const [loginId, setLoginId] = useState<string | null>(null);
@@ -71,8 +72,9 @@ export function SignIn({ head, label = '', displayName, place, purpose, children
               </button>
             </Dialog.Close>
           </div>
-          <Dialog.Description className="hint">{H.destination(place, head)}</Dialog.Description>
+          <Dialog.Description className="hint">{H.destination(place, commandLabel)}</Dialog.Description>
           {state.step === 'idle' ? <p className="hint">{H.startWhy}</p> : null}
+          {state.step === 'idle' && purpose === 'add' && place === undefined ? <p className="hint">{H.addWhy(commandLabel)}</p> : null}
           {state.step === 'pending' ? (
             <p className="hint">{LOGIN_PENDING_EMPTY.source}</p>
           ) : (
@@ -85,7 +87,8 @@ export function SignIn({ head, label = '', displayName, place, purpose, children
               {place !== undefined || purpose === 'renew' && label !== '' ? null : (
                 <label className="field">
                   <span className="eyebrow">{S.label}</span>
-                  <input className="input" value={state.label} disabled={running} onChange={(event) => dispatch({ kind: 'label', value: event.target.value })} autoFocus />
+                  <input className="input" aria-label={S.label} aria-describedby={labelHintId} value={state.label} disabled={running} onChange={(event) => dispatch({ kind: 'label', value: event.target.value })} autoFocus />
+                  <small className="hint" id={labelHintId}>{H.labelWhy}</small>
                 </label>
               )}
               {message === null ? null : <p className={state.step === 'failed' ? 'hint alert' : 'hint'} role={state.step === 'failed' ? 'alert' : 'status'}>{message}</p>}

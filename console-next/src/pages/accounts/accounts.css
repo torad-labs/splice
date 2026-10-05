@@ -14,7 +14,7 @@
 .account-limit-track { height: var(--space-4); border-radius: var(--r1); background: var(--glass-track); overflow: hidden; }
 .account-limit-track i { display: block; height: 100%; background: var(--rim); }
 .account-limit-track i[data-stale] { opacity: .5; }
-.account-limit .hint { color: var(--glass-dim); font-size: var(--text-2); }
+.account-limit .hint { color: var(--glass-dim); font-size: var(--text-2); white-space: normal; overflow: visible; text-overflow: clip; }
 .account-card .account-acts { padding: 0 var(--space-7) var(--space-6); display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4); }
 .account-order { margin-top: var(--space-10); }
 .account-order ol { list-style: none; padding: 0; margin: var(--space-6) 0 0; }

@@ -15,11 +15,13 @@ const budgetCatalog = (priced: boolean): HeadCatalog => ({
 test('native and separate sign-in dialogs say what Start login does without inventing a label', async ({ page }) => {
   await page.route(url => url.pathname === '/api/accounts', route => route.fulfill({ json: { accounts: [] } }));
   const faults = await open(page, 'accounts');
+  await expect(page.getByRole('heading', { name: 'Claude logins', exact: true })).toBeVisible();
   const native = page.locator('.account-card').filter({ hasText: 'The login stored for the plain claude command.' });
   await native.getByRole('button', { name: 'Sign in', exact: true }).click();
   let dialog = page.getByRole('dialog');
   await expect(dialog).toContainText('This changes the native Claude Code login.');
   await expect(dialog).toContainText('The separate claude-splice login is unchanged.');
+  await expect(dialog).toContainText('Native means the login stored for plain claude.');
   await expect(dialog).toContainText('Start login opens provider sign-in.');
   await expect(dialog.getByRole('textbox')).toHaveCount(0);
   await expect(dialog.getByRole('button', { name: 'Start login', exact: true })).toBeEnabled();
@@ -29,6 +31,35 @@ test('native and separate sign-in dialogs say what Start login does without inve
   dialog = page.getByRole('dialog');
   await expect(dialog).toContainText('This changes the separate claude-splice login.');
   await expect(dialog).toContainText('The native Claude Code login is unchanged.');
+  await expect(dialog).toContainText('Separate means a login stored in claude-splice’s own configuration folder.');
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await assertHealthy(page, faults);
+});
+
+test('adding a login names its visible command and explains what its label does before any sign-in', async ({ page }) => {
+  const command = 'Study command';
+  await page.route(url => url.pathname === '/api/accounts', async route => {
+    const response = await route.fetch();
+    const body = await response.json() as AccountsWire;
+    body.accounts = body.accounts.filter(row => row.heads.includes(STACK.oauthHead));
+    await route.fulfill({ response, json: body });
+  });
+  await page.route(url => url.pathname === '/api/status', async route => {
+    const response = await route.fetch();
+    const body = await response.json() as { registry: { key: string; label: string }[] };
+    body.registry = body.registry.map(row => row.key === STACK.oauthHead ? { ...row, label: command } : row);
+    await route.fulfill({ response, json: body });
+  });
+  await page.route(url => url.pathname.endsWith('/login') && url.pathname.startsWith('/api/auth/'), () => { throw new Error('this walk must never start a real login'); });
+  const faults = await open(page, 'accounts');
+  const group = page.locator('.accounts-provider').filter({ has: page.getByRole('heading', { name: command, exact: true }) });
+  await group.getByRole('button', { name: 'Sign in to another account', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText('The new login joins Study command.');
+  await expect(dialog).toContainText('Its label lets you identify it in the account list and choose its order.');
+  await expect(dialog).toContainText('Choose a short label for this login, such as work or personal.');
+  await expect(dialog.getByRole('textbox', { name: 'Label', exact: true })).toHaveValue('');
+  await expect(dialog.getByRole('button', { name: 'Start login', exact: true })).toBeDisabled();
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   await assertHealthy(page, faults);
 });
@@ -212,6 +243,38 @@ test('an Accounts read failure stays visible while command kinds are still being
     expect(faults.pageErrors).toEqual([]);
   } finally {
     release();
+  }
+});
+
+test('Accounts keeps complete observed and reset timestamps readable on a narrow desktop card', async ({ page }) => {
+  await page.setViewportSize({ width: 720, height: 900 });
+  await page.route(url => url.pathname === '/api/accounts', async route => {
+    const response = await route.fetch();
+    const body = await response.json() as AccountsWire;
+    const base = body.accounts.find(row => row.heads.includes(STACK.oauthHead));
+    if (base === undefined) throw new Error('synthetic login is missing');
+    const now = Math.floor(Date.now() / 1000);
+    const row: AccountWire = {
+      ...base, provider: 'anthropic', kind: 'client', heads: ['claude-splice'], label: 'claude-splice',
+      display_name: 'Synthetic timestamp login', login_place: { id: 'claude-splice', command: 'claude-splice' },
+      five_hour_used_percent: 22, five_hour_reset_epoch_seconds: now + 3600, five_hour_window_seconds: 18000,
+      five_hour_current: false, seven_day_used_percent: 59, seven_day_reset_epoch_seconds: now + 86400,
+      seven_day_window_seconds: 604800, seven_day_current: false, observed_at_epoch_seconds: now - 3600,
+    };
+    await route.fulfill({ json: { accounts: [row] } });
+  });
+  await open(page, 'accounts');
+  const card = page.locator('.account-card').filter({ has: page.getByRole('heading', { name: 'Synthetic timestamp login', exact: true }) });
+  const timestamps = card.locator('.account-limit .hint').filter({ hasText: /Observed|Resets|Window reset/ });
+  await expect(timestamps).toHaveCount(4);
+  for (const paragraph of await timestamps.all()) {
+    expect(await paragraph.evaluate(element => {
+      const text = document.createRange();
+      text.selectNodeContents(element);
+      const box = element.getBoundingClientRect();
+      const words = text.getBoundingClientRect();
+      return words.left >= box.left - 1 && words.right <= box.right + 1;
+    })).toBe(true);
   }
 });
 

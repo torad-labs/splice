@@ -47,7 +47,7 @@ export function AccountsPage() {
         const title = claude || heads.length === 0 ? (PROVIDERS[provider] ?? provider) : heads.map(commandLabel).join(' · ');
         return <section className="accounts-provider" key={provider}>
           <GroupHead title={title} {...(claude && CLAUDE_PLACES.some(place => !rows.some(row => row.login_place?.id === place)) ? {} : { count: subscriptions(rows) })}
-            {...(addHead === undefined || rows.every(row => row.kind === 'api-key') ? {} : { action: <SignIn head={addHead} purpose="add"><Button small>{A.add}</Button></SignIn> })} />
+            {...(addHead === undefined || rows.every(row => row.kind === 'api-key') ? {} : { action: <SignIn head={addHead} commandLabel={commandLabel(addHead)} purpose="add"><Button small>{A.add}</Button></SignIn> })} />
           <ul className="accounts-grid">
             {claude ? CLAUDE_PLACES.map(place => <AccountCard key={place} place={place} account={rows.find(row => row.login_place?.id === place) ?? null} commandLabels={[commandLabel('claude-splice')]} colour={colour('claude-splice')} now={now} />) : null}
             {rows.filter(row => !claude || row.login_place == null).map(row => <AccountCard key={accountIdentity(row)} account={row} commandLabels={row.heads.map(commandLabel)} localRuntime={row.heads.length > 0 && row.heads.every(head => localCommands.has(head))} colour={colour(row.heads[0] ?? '')} now={now} />)}

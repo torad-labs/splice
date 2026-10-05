@@ -24,10 +24,12 @@ export const S = {
 
 export const H = {
   startWhy: 'Start login opens provider sign-in. Finish in the browser, then return here to see the result.',
+  addWhy: (command: string): string => `The new login joins ${command}. Its label lets you identify it in the account list and choose its order.`,
+  labelWhy: 'Choose a short label for this login, such as work or personal.',
   destination: (place: string | undefined, head: string): string => place === 'claude'
-    ? 'This changes the native Claude Code login. The separate claude-splice login is unchanged.'
+    ? 'This changes the native Claude Code login. The separate claude-splice login is unchanged. Native means the login stored for plain claude.'
     : place === 'claude-splice'
-      ? 'This changes the separate claude-splice login. The native Claude Code login is unchanged.'
+      ? 'This changes the separate claude-splice login. The native Claude Code login is unchanged. Separate means a login stored in claude-splice’s own configuration folder.'
       : `This signs in the ${head} command.`,
   signInUnavailable: 'This splice version cannot sign in here; run splice login <head>.',
   device: 'Finish signing in in the browser with this code.',

@@ -46,7 +46,7 @@ export const A = {
   modelWindow: (name: string, model: string) => `${name} · ${model}`,
   noAccounts: 'No saved accounts',
   noAccountsWhy: 'Sign in to add an account for this provider.',
-  claude: 'Claude',
+  claude: 'Claude logins',
   claudeNative: 'claude',
   claudeSplice: 'claude-splice',
   nativeWhy: 'The login stored for the plain claude command.',

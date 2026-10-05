@@ -408,6 +408,38 @@ class TestDiscoveryTest {
     }
 
     @Test
+    fun `a raw string closing on a run of four quotes keeps its nested class qualified`() {
+        // Kotlin ends a raw string on the LAST three quotes of a run, so `""""a""""` holds `"a"`. Measured
+        // 2026-10-05 on app's NativeUsageTruthTest, whose JSON body closes that way: the scanner closed on the
+        // first three, the stray quote masked the `}` after it, the outer class never closed, and its @Nested
+        // SessionAccounts was reported unqualified with no XML row while JUnit ran it as Outer$SessionAccounts.
+        val source = """
+            package app
+
+            import org.junit.jupiter.api.Test
+
+            class NativeUsageTruthTest {
+                private fun identity(account: String?) = account?.let { QQQQaccountUuid":"xQQQQ } ?: ""
+
+                @Test
+                fun `outer test`() {
+                    assertTrue(identity("x").isNotEmpty())
+                }
+
+                inner class SessionAccounts {
+                    @Test
+                    fun `inner test`() {
+                        assertTrue(true)
+                    }
+                }
+            }
+        """.trimIndent().replace("QQQQ", "\"\"\"\"")
+        val found = classesIn(source, MODULE, PATH).associateBy { it.name }
+        assertEquals(setOf("NativeUsageTruthTest", "NativeUsageTruthTest\$SessionAccounts"), found.keys)
+        assertEquals(listOf("inner test"), found.getValue("NativeUsageTruthTest\$SessionAccounts").methods)
+    }
+
+    @Test
     fun `a backtick test name holding an apostrophe is preserved, not read as a character literal`() {
         val source = """
             package app

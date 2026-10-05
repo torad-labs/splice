@@ -302,7 +302,10 @@ object SourceScan {
                 continue
             }
             if (source.startsWith("\"\"\"", i)) {
-                val end = source.indexOf("\"\"\"", i + 3)
+                var end = source.indexOf("\"\"\"", i + 3)
+                // Kotlin closes a raw string on the LAST three quotes of a run: `""""a""""` holds `"a"`.
+                // Closing on the first three left a stray quote that opened a string and hid a brace.
+                while (end >= 0 && end + 3 < n && source[end + 3] == '"') end += 1
                 val stop = if (end < 0) n else end + 3
                 for (idx in i until stop) out.append(xs(source[idx]))
                 i = stop

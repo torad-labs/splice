@@ -169,7 +169,10 @@ public class Daemon(
             // V4-134: the control plane's publisher, so every head reports to the bus the console
             // route streams from. Pinned by OneEventBusPinTest.
             console = controlPlane.console,
-        ).also { it.credentialAccountNames = controlPlane.credentialAccountNames }
+        ).also {
+            it.credentialAccountNames = controlPlane.credentialAccountNames
+            it.sentCredentials = controlPlane.sentCredentials
+        }
     private val managedHeadFactory = ManagedHeadFactory(
         statePaths,
         controlPlane.providerAssembly,

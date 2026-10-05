@@ -116,6 +116,31 @@ class ForwardedRateLimitTest {
     private fun key(token: String): String =
         requireNotNull(CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer $token")))
 
+    /** The console names the login a head's requests carry from these reports (2026-10-04: claude-splice's usage
+     *  read its command's folder while its requests carried the ~/.claude login). Each attempt reports the digest of
+     *  the credential it actually sent, so a second login on the same head is heard as itself. */
+    @Test
+    fun `every forwarded attempt reports the digest of the credential it sent, never the credential`() = runBlocking {
+        val sent = java.util.concurrent.CopyOnWriteArrayList<String>()
+        val names = object : HeadDeps.CredentialAccountNames {
+            override fun forCredential(key: String): String? = null
+            override fun sent(key: String) {
+                sent += key
+            }
+        }
+        val rig = LimitRig(directory, limits = false, names = names)
+        rig.head.start()
+        try {
+            for (token in listOf("synthetic-first-login", "synthetic-second-login")) {
+                assertEquals(HttpStatusCode.OK, rig.turn(token).first)
+            }
+            assertEquals(listOf(key("synthetic-first-login"), key("synthetic-second-login")), sent.toList())
+            assertTrue(sent.none { it.contains("synthetic") }, "a report carries the digest, never the token: $sent")
+        } finally {
+            rig.close()
+        }
+    }
+
     @Test
     fun `a refused credential never holds an existing or newly seen login`() = runBlocking {
         val rig = LimitRig(directory)

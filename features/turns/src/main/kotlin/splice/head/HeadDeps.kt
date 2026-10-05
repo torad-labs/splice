@@ -143,6 +143,10 @@ public data class HeadDeps(
      *  Null means no identity was proved. Implementations never throw or expose credential values. */
     public fun interface CredentialAccountNames {
         public fun forCredential(key: String): String?
+
+        /** The digest of a credential this head just sent on an attempt, never the credential. A resolver that only
+         *  names ignores it; the daemon's per-head one tells the native login owner which login carries the head. */
+        public fun sent(key: String): Unit = Unit
     }
 
     /** The substitutable runtime seams. A test drives these instead of sleeping or reading a clock,

@@ -9,8 +9,11 @@
 // from "something else did".
 package splice.app
 
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.app.head.HeadCredentialNames
+import splice.head.HeadDeps
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -35,15 +38,46 @@ class ConsoleWiringAccountsPinTest {
             "the daemon must hand its native account resolver to the head factory",
         )
         assertTrue(
-            source("app/src/main/kotlin/splice/app/head/HeadServerFactory.kt")
-                .contains("credentialAccountNames = credentialAccountNames,"),
-            "each head's account bundle must retain the daemon resolver",
+            source("app/src/main/kotlin/splice/app/head/HeadServerFactory.kt").contains(
+                "credentialAccountNames = HeadCredentialNames(key, credentialAccountNames, sentCredentials),",
+            ),
+            "each head's account bundle must retain the daemon resolver and report under its own key",
         )
         assertTrue(
             source("app/src/main/kotlin/splice/app/ControlPlane.kt")
                 .contains("claudeLoginOwner?.accountForCredential(key)"),
             "the resolver must consult the wired owner at request time, not capture an unwired null",
         )
+    }
+
+    /** 2026-10-04: without these links every head's sends go unheard, the console never learns which login carries
+     *  a Claude head, and its usage falls back to the command's own folder with nothing failing. */
+    @Test
+    fun `the daemon wires each head's sent credentials to the native login owner`() {
+        assertTrue(
+            source("app/src/main/kotlin/splice/app/Daemon.kt")
+                .contains("it.sentCredentials = controlPlane.sentCredentials"),
+            "the daemon must hand the control plane's sent-credential sink to the head factory",
+        )
+        assertTrue(
+            source("app/src/main/kotlin/splice/app/ControlPlane.kt")
+                .contains("claudeLoginOwner?.sent(head, key)"),
+            "the sink must reach the wired owner at send time, not capture an unwired null",
+        )
+    }
+
+    @Test
+    fun `a head's credential names report each sent digest under that head's key and name through the daemon`() {
+        val heard = mutableListOf<Pair<String, String>>()
+        val names = HeadCredentialNames(
+            "synthetic-head",
+            HeadDeps.CredentialAccountNames { key -> "proved@example.invalid".takeIf { key == "synthetic-digest" } },
+            HeadSentCredentials { head, key -> heard += head to key },
+        )
+        names.sent("synthetic-digest")
+        assertEquals(listOf("synthetic-head" to "synthetic-digest"), heard)
+        assertEquals("proved@example.invalid", names.forCredential("synthetic-digest"))
+        assertEquals(null, names.forCredential("another-digest"))
     }
 
     private fun consoleWiringSource(): String = source("app/src/main/kotlin/splice/app/ConsoleWiring.kt")

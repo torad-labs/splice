@@ -770,7 +770,8 @@ class RoleRegistryLawTest {
         // 142 since Oct 4 CT: CredentialAccountNames proves account identity from the effective credential digest.
         // 144 since Oct 4 CT: the two names of the new `(Usage?)->Unit` entry, RowRelease and RowWrite.
         // 145 since Oct 4 CT: ClaudePoolChange publishes live account membership without stopping its head.
-        assertEquals(145, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
+        // 146 since Oct 4, 10:20 PM CT: HeadSentCredentials hears the digest each head sends.
+        assertEquals(146, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
         assertTrue(config.entries.values.all { !it.text("reason").isNullOrBlank() }) { "every entry is reasoned" }
         assertTrue(config.entries.values.all { !it.text("dated").isNullOrBlank() }) { "every entry is dated" }
 

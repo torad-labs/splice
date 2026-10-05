@@ -5,6 +5,7 @@
 package splice.app.head
 
 import splice.app.ConsoleEventPublisher
+import splice.app.HeadSentCredentials
 import splice.app.provider.ProviderBuild
 import splice.core.budget.NoHeadBudget
 import splice.core.compaction.SessionProject
@@ -50,6 +51,9 @@ internal class HeadServerFactory(
     /** Assigned before any head is assembled; the callback reads the login owner at request time. */
     internal var credentialAccountNames: HeadDeps.CredentialAccountNames = HeadDeps.CredentialAccountNames { null }
 
+    /** Assigned beside [credentialAccountNames]: hears each head's sent credential digests under that head's key. */
+    internal var sentCredentials: HeadSentCredentials = HeadSentCredentials { _, _ -> }
+
     // v0.4.0: what a launched session holds, derived from the management key (see [TurnKey]).
     private val turnKey = TurnKey(mgmtKey)
 
@@ -88,7 +92,7 @@ internal class HeadServerFactory(
                     // publisher's one enforcement over the daemon's budget store. Pinned by
                     // BudgetWiringPinTest: without it the console's budgets are stored and ignored.
                     budget = console?.budgets?.forHead(key, ctx.catalog) ?: NoHeadBudget,
-                    credentialAccountNames = credentialAccountNames,
+                    credentialAccountNames = HeadCredentialNames(key, credentialAccountNames, sentCredentials),
                 ),
                 seams = seams(key),
                 policy = HeadDeps.HeadPolicy(
@@ -165,6 +169,18 @@ internal class HeadServerFactory(
         val m = config.getConfig().asMap()
         return m[Knob.MATERIALIZATION_HEAP_BYTES.key] as Long
     }
+}
+
+/** One head's view of the daemon's credential resolver: it names through that resolver and reports each sent digest
+ *  under its own head key, which the daemon-wide resolver cannot know. */
+internal class HeadCredentialNames(
+    private val head: String,
+    private val names: HeadDeps.CredentialAccountNames,
+    private val heard: HeadSentCredentials,
+) : HeadDeps.CredentialAccountNames {
+    override fun forCredential(key: String): String? = names.forCredential(key)
+
+    override fun sent(key: String) = heard.sent(head, key)
 }
 
 /** What a head's system-prompt layers resolve from, one bundle because the three are read together

@@ -33,6 +33,10 @@ public object TurnBill {
             put(PerfKeys.ABSORBED_CACHE_WRITE_TOKENS, absorbed.cacheWriteTokens)
             put(PerfKeys.ABSORBED_OUT_TOKENS, absorbed.outputTokens)
         }
+        // The reasoning tokens a Responses model reports are already inside outputTokens, so this counter
+        // is reported, never priced: no bucket below reads it, and a row that carries it costs what the
+        // same row without it costs. Written only when positive, like the cut rounds above.
+        if (usage.reasoningTokens > 0) put(PerfKeys.REASONING_TOKENS, usage.reasoningTokens)
         if (usage.cutRounds > 0) put(PerfKeys.CUT_SOURCE_ROUNDS, usage.cutRounds)
     }
 

@@ -59,6 +59,21 @@ class TurnBillTest {
         assertEquals(TurnBill.usd(TurnBill.counters(plain), rates), TurnBill.usd(row, rates), CENT_FRACTION)
     }
 
+    /** A Responses model reports its reasoning tokens inside its output-token details, so they are already in
+     *  out_tokens: the row reports the part without ever billing it again, and a row that carries the counter
+     *  costs what the same row without it costs. Absent, never zero, on a dialect that reports none. */
+    @Test
+    fun `a turn reports its reasoning tokens only when it had some, and pricing never counts them twice`() {
+        val plain = Usage(inputTokens = 10_000, outputTokens = 2_000)
+        assertTrue(PerfKeys.REASONING_TOKENS !in TurnBill.counters(plain), "${TurnBill.counters(plain)}")
+
+        val row = TurnBill.counters(plain.copy(reasoningTokens = 1_800))
+        assertEquals(1_800L, row[PerfKeys.REASONING_TOKENS], "$row")
+        assertEquals(2_000L, row[PerfKeys.OUT_TOKENS], "the reported output still holds the whole output: $row")
+        assertEquals(TurnBill.usd(TurnBill.counters(plain), rates), TurnBill.usd(row, rates), CENT_FRACTION)
+        assertEquals(TurnBill.total(TurnBill.counters(plain)), TurnBill.total(row), "$row")
+    }
+
     @Test
     fun `each absorbed round is priced as a request of its own, at its own tier`() {
         val early = Usage(inputTokens = 100_000, outputTokens = 300, cachedTokens = 60_000)

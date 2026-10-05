@@ -1,4 +1,5 @@
 source	sha256	disposition	destination	reason
+features/usage/src/main/kotlin/splice/usage/perf/TurnPriceGap.kt	2d340010b86215725de4793c714a8658dfd0e82ed01e951931be3cfe2b36d92d	created		One decision for why a request has no dollar figure, read by the window's unpriced counters and by each row's own cost reason.
 app/src/main/kotlin/splice/app/HeadSentCredentials.kt	55c443b252a2be914f458403e302157696eda6ad456861356296d4e428315966	created		Hears each head's sent credential digest under its own head key, so the native login owner can name the login carrying that head.
 app/src/main/kotlin/splice/app/auth/claude/ClaudeCarryingPlaces.kt	c6d5c368eee7dd62fbb1b5cc3cf5ef9c05051fb87efe042d77b94ce54c33c791	created		Per head, the native place whose live credential carried its newest matched request, held as a digest in memory, so usage names the login actually spending.
 app/src/main/kotlin/splice/app/auth/claude/ClaudePoolChanges.kt	048f512f6fabcdbeda9e83e8f86a70fab74fccfb369ea481100fa28eed446461	created		Head-local membership publication connects actual landing and removal to the running selector without engine restarts.

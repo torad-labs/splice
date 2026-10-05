@@ -138,6 +138,82 @@ class PerfTurnUsageTest {
         assertEquals(2_502L, session.getValue("requests").jsonPrimitive.long)
     }
 
+    /** The window's counters and each row's own figure are the same decision (TurnPriceGap), so the row carries
+     *  the reason behind its missing price rather than leaving the console to infer one from a null. A row with a
+     *  price has no reason at all: the two fields are never both null and never both set. */
+    @Test
+    fun `each row reports why it has no price, and nothing where it has one`() = testApplication {
+        val pool = HeadAccountPoolSource {
+            HeadAccountPoolView(
+                "plan",
+                listOf(
+                    HeadAccountView("plan", true, true, true, "pro", null, null, null, null),
+                    HeadAccountView("key", false, false, true, null, null, null, null, null),
+                ),
+                null,
+            )
+        }
+        val row = priced.last()
+        mount(
+            listOf(
+                row,
+                row.copy(ts = 1_001, fields = emptyMap(), account = "key"),
+                row.copy(ts = 1_002, model = "free", account = "key"),
+                failure.copy(ts = 1_003, outcome = "error:upstream-failed", cause = "VENDOR_RATE_LIMITED"),
+            ),
+            accountPool = pool,
+        )
+        val block = head(client.get("/api/perf/turns?head=synthetic&since=1000&local=0").bodyAsText())
+        val rows = block.getValue("rows").jsonArray.map { it.jsonObject }
+        val byRow = rows.associate { row ->
+            row.getValue("ts").jsonPrimitive.long to row.getValue("cost_reason").takeIf { it != JsonNull }
+                ?.jsonPrimitive?.content
+        }
+        assertEquals(
+            mapOf(row.ts to null, 1_001L to "uncounted", 1_002L to "undeclared", 1_003L to "unanswered"),
+            byRow,
+            "each row's reason: $rows",
+        )
+        assertEquals(
+            byRow.mapValues { it.value == null },
+            rows.associate { it.getValue("ts").jsonPrimitive.long to (it.getValue("cost_usd") != JsonNull) },
+            "a figure exactly where there is no reason: $rows",
+        )
+        val totals = block.getValue("usage").jsonObject.getValue("totals").jsonObject
+        val reasons = rows.mapNotNull { it.getValue("cost_reason").takeIf { r -> r != JsonNull } }
+        assertEquals(
+            reasons.count { it.jsonPrimitive.content != "unanswered" }.toLong(),
+            totals.getValue(UNPRICED).jsonPrimitive.long,
+            "the window's count is the rows' own reasons: $totals",
+        )
+    }
+
+    /** A Responses model's output tokens already include its reasoning tokens, so the counter is reported and
+     *  never priced. The same row with and without it costs the same, in its own figure and in the window's. */
+    @Test
+    fun `a row's reasoning counter changes neither its own cost nor the window's`() = testApplication {
+        val reasoning = priced.last().copy(ts = 1_001, fields = fields + (PerfKeys.REASONING_TOKENS to 80L))
+        mount(listOf(priced.last(), reasoning))
+        val block = head(client.get("/api/perf/turns?head=synthetic&since=1000&local=0").bodyAsText())
+        val rows = block.getValue("rows").jsonArray.map { it.jsonObject }
+        val (withReasoning, plain) = rows.partition { PerfKeys.REASONING_TOKENS in it }
+        assertEquals(
+            80L,
+            withReasoning.single().getValue(PerfKeys.REASONING_TOKENS).jsonPrimitive.long,
+            "the row reports it: $rows",
+        )
+        val costs = rows.map { it.getValue("cost_usd").jsonPrimitive.double }
+        assertEquals(
+            plain.single().getValue("cost_usd").jsonPrimitive.double,
+            withReasoning.single().getValue("cost_usd").jsonPrimitive.double,
+            1e-12,
+            "the reasoning part is inside the output it already billed",
+        )
+        val totals = block.getValue("usage").jsonObject.getValue("totals").jsonObject
+        assertEquals(costs[0] * 2, totals.getValue("cost_usd").jsonPrimitive.double, 1e-12, "$totals")
+        assertEquals(0L, totals.getValue(UNPRICED).jsonPrimitive.long, "both rows are priced: $totals")
+    }
+
     /** Marlin's pass 5: one sentence, "no recorded price", stood for three causes. Each unpriced request is
      *  counted under the cause the head can name: a priced model whose request has no token count, a model with
      *  no price on an account a plan covers, and a model whose price was never declared. */

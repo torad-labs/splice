@@ -33,7 +33,6 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.core.model.TurnPrice
-import splice.core.perf.PerfKeys
 import splice.core.util.WallClock
 import splice.usage.UsageHead
 import splice.usage.UsageHeadLookup
@@ -187,6 +186,8 @@ public class PerfRoutes(
         val matching = read.rows.filter(asked.filter::matches)
         val rows = projection.complete(matching.sortedBy { it.ts }.takeLast(asked.n))
         val price = head.catalog?.let(::TurnPrice)
+        // One classification for the window's counters and for each row's own figure (TurnPriceGap).
+        val gaps = TurnPriceGap(price, AccountPlans(head, heads.billing(head.key)))
         return buildJsonObject {
             put("key", head.key)
             put("label", head.label)
@@ -199,7 +200,7 @@ public class PerfRoutes(
             read.readError?.let { put("read_error", it) }
             if (read.skipped > 0) put("skipped_lines", read.skipped)
             put("usage", TurnUsage(matching, price, AccountPlans(head, heads.billing(head.key)), asked.zone).json())
-            putJsonArray("rows") { rows.forEach { add(rowJson(it, price)) } }
+            putJsonArray("rows") { rows.forEach { add(rowJson(it, gaps)) } }
         }
     }
 
@@ -207,7 +208,7 @@ public class PerfRoutes(
      *  facts written OVER it, so a key the writer put in both is reported by the typed fact and never
      *  by the bag. `ts` is the only such key today and is skipped from the bag to avoid writing it
      *  twice; the ordering is what makes that a safety net rather than a coincidence. */
-    private fun rowJson(row: PerfRow, price: TurnPrice?): JsonObject = buildJsonObject {
+    private fun rowJson(row: PerfRow, gaps: TurnPriceGap): JsonObject = buildJsonObject {
         row.fields.forEach { (key, value) -> if (key != TS) put(key, value) }
         put(TS, row.ts)
         put("outcome", row.outcome)
@@ -226,10 +227,11 @@ public class PerfRoutes(
         put("turn", row.turn)
         put("session_id", row.sessionId)
         put("response_message_id", row.responseMessageId)
-        // A cost needs both reported token totals; an early refusal without them is not a $0 turn.
-        // The daemon uses the head's card, as the exact trace read does (TraceRoute.turnJson).
-        val known = PerfKeys.IN_TOKENS in row.fields && PerfKeys.OUT_TOKENS in row.fields
-        put("cost_usd", if (known) price?.usd(row.model, row.fields) else null)
+        // The daemon uses the head's card, as the exact trace read does (TraceRoute.turnJson), and the
+        // same classification the window's counters are folded by says why a row has no figure: null
+        // cost_reason exactly where cost_usd is a number, so the console never has to guess which it is.
+        put("cost_usd", gaps.usd(row))
+        put("cost_reason", gaps.of(row)?.wire)
     }
 
     private suspend fun refuse(call: ApplicationCall, message: String, status: HttpStatusCode) {

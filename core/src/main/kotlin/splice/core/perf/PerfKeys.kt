@@ -154,6 +154,12 @@ public object PerfKeys {
     /** The part of [OUT_TOKENS] the absorbed rounds produced; [OUT_TOKENS] stays the turn's whole output. */
     public const val ABSORBED_OUT_TOKENS: String = "absorbed_out_tokens"
 
+    /** The reasoning part of [OUT_TOKENS] ([splice.core.turn.Usage.reasoningTokens]): a Responses model
+     *  reports it inside its output-token details, so it is already counted in [OUT_TOKENS] and pricing
+     *  must never add it again. Written only when the turn reported some, so an absent key is a row from
+     *  a dialect that reports none, or from before this counter, and reads as null rather than zero. */
+    public const val REASONING_TOKENS: String = "reasoning_tokens"
+
     /** Source rounds this turn cut while they still streamed ([splice.core.turn.Usage.cutRounds]): steering a
      *  parked code-mode script ends its round before the backend's terminal, so the tokens that round used are
      *  billed upstream and never reported here. Written only when the turn cut one, so an absent key reads as none. */

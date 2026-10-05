@@ -112,3 +112,8 @@ beba60d0f1545cad1d5a6b89c0ccb78df8cd15a5:features/diagnostics/src/test/kotlin/sp
 # is printed in third-party usage tools' docs. It grants nothing alone. The supplementary pass was
 # green on the same run.
 5685894667979261c2e1533302b571cc0c067af5:app/src/main/kotlin/splice/app/auth/claude/ClaudeOAuthRefresh.kt:generic-api-key:38
+# Oct 5 CT, vetted by hand after secret-scan went red on e0cb44ff2: a ledger install note names the
+# code-mode backup directory, a dated name ending in the installed short sha, a few words after the
+# phrase "management key answers". The flagged token is that backup name; no credential and no auth
+# consumer. Ledger notes now keep backup names away from the word "key".
+e0cb44ff2009e312b96027dacda6b1c30aec49ef:.dev/campaigns/v0.4.0.toml:generic-api-key:423

@@ -7,6 +7,7 @@ import splice.dialect.responses.request.ResponsesCodeModeInput
 import splice.dialect.responses.request.ResponsesCodeModeReplay
 import splice.provider.codex.CODE_MODE_FIELD_CALL_ID
 import splice.provider.codex.CODE_MODE_FIELD_TYPE
+import splice.provider.codex.CodeModeCallReplay
 import splice.provider.codex.CodeModeOmission
 import splice.provider.codex.CodeModeOwnership
 import splice.provider.codex.CodeModeRecord
@@ -99,7 +100,8 @@ internal class CodeModeCanonicalHistory(private val codec: CodexCodeModeHistoryC
             val item = index.items[at] as? JsonObject
             val type = codec.string(item, CODE_MODE_FIELD_TYPE)
             when {
-                type == "custom_tool_call" && item != record.outer -> "code-mode opaque call was edited"
+                type == "custom_tool_call" && item !in setOf(record.outer, CodeModeCallReplay.item(record)) ->
+                    "code-mode opaque call was edited"
                 type == TYPE_CUSTOM_OUTPUT && item != codec.customOutput(record) -> "code-mode opaque output was edited"
                 else -> null
             }
@@ -158,7 +160,7 @@ internal class CodeModeCanonicalHistory(private val codec: CodexCodeModeHistoryC
                     continuityReplay += ResponsesCodeModeReplay(logical.size + it.logicalOffset, null, it.items)
                 }
                 logical += record.continuity
-                logical += record.outer
+                logical += CodeModeCallReplay.item(record)
                 logical += codec.customOutput(record)
                 logical += record.accepted.durableMedia()
             }

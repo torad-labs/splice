@@ -144,7 +144,8 @@ internal class CodexCodeModeHistory(private val json: Json) {
         // ONCE, right after the canonical custom output — the same place the ordinary path puts a
         // tool_result's images, after its function_call_output — whether this is the live
         // continuation or a later turn's replay of the same record.
-        val canonical = record.continuity + record.outer + codec.customOutput(record) + record.accepted.durableMedia()
+        val canonical = record.continuity + CodeModeCallReplay.item(record) + codec.customOutput(record) +
+            record.accepted.durableMedia()
         val logical = input.logicalItems.filterIndexed { index, _ -> index in retained }.toMutableList()
         logical.addAll(boundary, canonical)
         val continuityReplay = record.continuityReplay.map {
@@ -221,7 +222,10 @@ internal class CodexCodeModeHistory(private val json: Json) {
     private fun opaqueProblem(items: List<JsonElement>, record: CodeModeRecord): String? {
         val found = items.filter { ownership.isOpaque(it, record.outerCallId) }
         if (found.isEmpty()) return null
-        return if (found == listOf(record.outer, codec.customOutput(record))) {
+        val output = codec.customOutput(record)
+        val replayed = listOf(CodeModeCallReplay.item(record), output)
+        val initial = listOf(record.outer, output)
+        return if (found == replayed || found == initial) {
             null
         } else {
             "code-mode opaque history conflicts with its persisted result"

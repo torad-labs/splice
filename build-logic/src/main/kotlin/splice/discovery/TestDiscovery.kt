@@ -151,6 +151,8 @@ val DISPOSITIONS: Map<String, Disposition> = mapOf(
         Disposition("1 @ParameterizedTest expands to 2 cases (1 @Test + 2 = 3)", 3),
     "CodeModeNativeSourceTest" to
         Disposition("2 @ParameterizedTest methods expand to 6 native lifetime/context + 2 altered envelope cases", 8),
+    "CodeModeCrossScriptSourceTest" to
+        Disposition("1 @ParameterizedTest expands to 8 callback/step/context cases (2 @Test + 8 = 10)", 10),
     // 89e98adab: closing a cell ends its withheld exchange with and without a late guest reply.
     "SharedWorkerChannelCellCloseTest" to
         Disposition("1 @ParameterizedTest expands to 2 cases; no plain @Test", 2),

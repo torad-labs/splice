@@ -847,6 +847,174 @@ class CodeModeNativeSourceTest {
         .toList()
 }
 
+private val CROSS_SCRIPT_SOURCE = "await tools.Read({fixture:'" + "x".repeat(600) + "'});\n"
+
+class CodeModeCrossScriptSourceTest {
+    @ParameterizedTest
+    @CsvSource("1,1,false", "1,1,true", "1,2,false", "1,2,true", "4,1,false", "4,1,true", "4,2,false", "4,2,true")
+    @Timeout(BILLING_TEST_SECONDS)
+    fun `earlier commentary stays outside a later live script with native-only callbacks`(
+        preludeCalls: Int,
+        liveSteps: Int,
+        reminder: Boolean,
+        @TempDir tmp: Path,
+    ) = runBlocking {
+        val fixture = Fixture(tmp, preludeCalls)
+        try {
+            val history = fixture.begin()
+            if (reminder) history += message("system", JsonPrimitive("synthetic context notification"))
+            repeat(liveSteps) { at ->
+                val next = async { send(fixture.client, fixture.url, history) }
+                val delivered = withTimeoutOrNull(1_000) { fixture.runtime.delivered.receive() }
+                assertEquals(0, fixture.ws.aborts.get(), "A commentary must not interrupt live B at step $at")
+                assertTrue(delivered != null, "B must resume with its callback result at step $at")
+                if (at + 1 < liveSteps) fixture.ws.nextNativeStatement() else fixture.ws.endSource()
+                val step = withTimeout(TURN_BOUND_MS) { next.await() }
+                history += fixture.returned(step)
+                if (reminder) history += message("system", JsonPrimitive("synthetic context notification"))
+            }
+            val final = withTimeout(TURN_BOUND_MS) { send(fixture.client, fixture.url, history) }
+            assertTrue(final.contains("fixture read"), final)
+            assertCommentaryOnce(fixture.ws.requests.last())
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    @Timeout(BILLING_TEST_SECONDS)
+    fun `a deliberately interrupted live exec replays the streamed prefix rather than an empty input`(
+        @TempDir tmp: Path,
+    ) = runBlocking {
+        val fixture = Fixture(tmp, 1)
+        try {
+            val history = fixture.begin()
+            history += message("user", JsonPrimitive("stop this synthetic script"))
+            val final = withTimeout(TURN_BOUND_MS) { send(fixture.client, fixture.url, history) }
+            assertTrue(final.contains("fixture read"), final)
+            assertEquals(1, fixture.ws.aborts.get(), "genuine steering must still interrupt B")
+            val input = Json.parseToJsonElement(fixture.ws.requests.last()).jsonObject.getValue("input") as JsonArray
+            val exec = input.map { it.jsonObject }.single {
+                it["type"]?.jsonPrimitive?.content == "custom_tool_call" &&
+                    it["call_id"]?.jsonPrimitive?.content == "source-call"
+            }
+            assertEquals(
+                CROSS_SCRIPT_SOURCE + "await ",
+                exec.getValue("input").jsonPrimitive.content,
+                "an interrupted B must preserve the exec bytes already streamed and admitted",
+            )
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    @Timeout(BILLING_TEST_SECONDS)
+    fun `A commentary is replayed once after genuine interruption of B`(@TempDir tmp: Path) = runBlocking {
+        val fixture = Fixture(tmp, 4)
+        try {
+            val history = fixture.begin()
+            history += message("user", JsonPrimitive("stop this synthetic script"))
+            val final = withTimeout(TURN_BOUND_MS) { send(fixture.client, fixture.url, history) }
+            assertTrue(final.contains("fixture read"))
+            assertCommentaryOnce(fixture.ws.requests.last())
+        } finally {
+            fixture.close()
+        }
+    }
+
+    private fun assertCommentaryOnce(bodyJson: String) {
+        val input = Json.parseToJsonElement(bodyJson).jsonObject.getValue("input") as JsonArray
+        val count = input.count { item ->
+            (item as? JsonObject)?.get("content")?.let { PRELUDE_COMMENTARY in it.toString() } == true
+        }
+        assertEquals(1, count, "A commentary must not be reintroduced in B's tail")
+    }
+
+    private class Fixture(tmp: Path, private val preludeCalls: Int) {
+        val upstream = BillingUpstream()
+        val runtime = StatementGatewayRuntime()
+        val ws = BillingWsRunner(CROSS_SCRIPT_SOURCE, reasoning = true, preludeCalls = preludeCalls)
+        private val bridge = CodexCodeModeBridge(
+            CodeModeBridgeConfig(
+                runtimes = { runtime },
+                state = CodeModeStateLocation(tmp.resolve("records"), tmp.resolve("legacy.json")),
+                clock = Clock.fixed(Instant.EPOCH, ZoneOffset.UTC),
+            ),
+        )
+        private val head = HeadServer(withWs(upstream.url, bridge, ws, replayReasoning = true), 0, headDeps(tmp))
+        val client = HttpClient(CIO)
+        val url: String get() = "http://127.0.0.1:${head.port}/v1/messages"
+
+        suspend fun begin(): MutableList<JsonObject> {
+            head.start()
+            val opening = message("user", JsonPrimitive("read a synthetic prelude then start another script"))
+            val history = mutableListOf(opening)
+            val a = withTimeout(TURN_BOUND_MS) { send(client, url, history) }
+            assertEquals(preludeCalls, toolUses(a).size, "A delivers its real client callback batch")
+            history += returned(a)
+            val b = withTimeout(TURN_BOUND_MS) { send(client, url, history) }
+            assertEquals(1, toolUses(b).size, "B publishes its first native-only callback while its source is live")
+            assertTrue(!b.contains(PRELUDE_COMMENTARY), "B must not emit A commentary")
+            withTimeout(TURN_BOUND_MS) { runtime.delivered.receive() }
+            history += returned(b)
+            return history
+        }
+
+        fun returned(wire: String): List<JsonObject> = listOf(
+            message("assistant", JsonArray(clientBlocks(wire))),
+            message("user", JsonArray(toolUses(wire).map(::result))),
+        )
+
+        suspend fun close() {
+            ws.endSource()
+            head.stop()
+            runtime.close()
+            client.close()
+            upstream.close()
+        }
+
+        private fun clientBlocks(wire: String): List<JsonObject> {
+            val blocks = linkedMapOf<Int, JsonObject>()
+            val arguments = mutableMapOf<Int, StringBuilder>()
+            wire.lineSequence().filter { it.startsWith("data: ") }.forEach { line ->
+                val event = Json.parseToJsonElement(line.removePrefix("data: ")).jsonObject
+                val at = event["index"]?.jsonPrimitive?.content?.toIntOrNull() ?: return@forEach
+                when (event["type"]?.jsonPrimitive?.content) {
+                    "content_block_start" -> blocks[at] = event.getValue("content_block").jsonObject
+                    "content_block_delta" -> replayDelta(at, event.getValue("delta").jsonObject, blocks, arguments)
+                }
+            }
+            arguments.forEach { (at, json) ->
+                blocks[at] = JsonObject(blocks.getValue(at) + ("input" to Json.parseToJsonElement(json.toString())))
+            }
+            return blocks.values.sortedBy { it["type"]?.jsonPrimitive?.content != "text" }
+        }
+
+        private fun replayDelta(
+            at: Int,
+            delta: JsonObject,
+            blocks: MutableMap<Int, JsonObject>,
+            arguments: MutableMap<Int, StringBuilder>,
+        ) {
+            val block = blocks[at] ?: return
+            val field = when (delta["type"]?.jsonPrimitive?.content) {
+                "text_delta" -> "text"
+                "thinking_delta" -> "thinking"
+                "signature_delta" -> "signature"
+                else -> null
+            }
+            if (field != null) {
+                val before = block[field]?.jsonPrimitive?.content.orEmpty()
+                val text = before + delta.getValue(field).jsonPrimitive.content
+                blocks[at] = JsonObject(block + (field to JsonPrimitive(text)))
+            } else if (delta["type"]?.jsonPrimitive?.content == "input_json_delta") {
+                arguments.getOrPut(at) { StringBuilder() }.append(delta.getValue("partial_json").jsonPrimitive.content)
+            }
+        }
+    }
+}
+
 /** No row carries a round's tokens a second time, as tokens or as absorbed rounds, nor prices it twice. */
 private fun assertBilledOnce(rows: List<JsonObject>) {
     rows.forEach { assertNull(it[PerfKeys.ABSORBED_ROUNDS], "a carried round is never absorbed: $it") }
@@ -1137,6 +1305,10 @@ private class BillingUpstream(
     }
 }
 
+private const val PRELUDE_COMMENTARY =
+    "I will read the synthetic fixture first, preserve its returned values, and then continue the next script " +
+        "without changing the earlier commentary."
+
 private const val BILLING_REASONING = """{"type":"reasoning","id":"synthetic-reasoning",
     "encrypted_content":"synthetic-encrypted-content","summary":[]}"""
 
@@ -1146,6 +1318,7 @@ private class BillingWsRunner(
     private val prose: Boolean = false,
     private val whole: Boolean = false,
     private val reasoning: Boolean = false,
+    private val preludeCalls: Int = 0,
 ) : WsRoundRunner {
     val posts = AtomicInteger()
     val aborts = AtomicInteger()
@@ -1167,6 +1340,16 @@ private class BillingWsRunner(
             "type":"custom_tool_call","id":"source-item","call_id":"source-call","name":"exec",
             "input":${JsonPrimitive(input)}}]}}"""
         listener.emit(active, completed)
+    }
+
+    fun nextNativeStatement() {
+        secondStatement = true
+        val execIndex = if (reasoning) 1 else 0
+        listener.emit(
+            active,
+            """{"type":"response.custom_tool_call_input.delta","output_index":$execIndex,
+                "delta":${JsonPrimitive(source.removePrefix("await ") + "text (")}}""",
+        )
     }
 
     fun nextStatement() {
@@ -1238,6 +1421,43 @@ private class BillingWsRunner(
         }
     }
 
+    private fun prelude(socket: WebSocket) {
+        val native = BILLING_REASONING.replace("synthetic-reasoning", "prelude-reasoning")
+        val code = "await Promise.all([" + List(preludeCalls) { "tools.Read({})" }.joinToString(",") + "]);\n"
+        listener.emit(socket, """{"type":"response.created","response":{"id":"prelude-response"}}""")
+        listener.emit(socket, """{"type":"response.output_item.added","output_index":0,"item":$native}""")
+        listener.emit(socket, """{"type":"response.output_item.done","output_index":0,"item":$native}""")
+        listener.emit(
+            socket,
+            """{"type":"response.output_item.added","output_index":1,"item":{
+                "type":"message","id":"prelude-prose","role":"assistant","content":[]}}""",
+        )
+        listener.emit(
+            socket,
+            """{"type":"response.output_text.delta","output_index":1,"content_index":0,
+                "item_id":"prelude-prose","delta":${JsonPrimitive(PRELUDE_COMMENTARY)}}""",
+        )
+        listener.emit(
+            socket,
+            """{"type":"response.output_item.added","output_index":2,"item":{
+                "type":"custom_tool_call","id":"prelude-item","call_id":"prelude-call","name":"exec","input":""}}""",
+        )
+        listener.emit(
+            socket,
+            """{"type":"response.custom_tool_call_input.delta","output_index":2,"delta":${JsonPrimitive(code)}}""",
+        )
+        listener.emit(
+            socket,
+            """{"type":"response.completed","response":{"id":"prelude-response","status":"completed",
+                "usage":{"input_tokens":$SOURCE_INPUT,"output_tokens":$SOURCE_OUTPUT,
+                "input_tokens_details":{"cached_tokens":$SOURCE_CACHED}},"output":[$native,
+                {"type":"message","id":"prelude-prose","role":"assistant","content":[
+                {"type":"output_text","text":${JsonPrimitive(PRELUDE_COMMENTARY)}}]},
+                {"type":"custom_tool_call","id":"prelude-item","call_id":"prelude-call","name":"exec",
+                "input":${JsonPrimitive(code)}}]}}""",
+        )
+    }
+
     private fun answer(socket: WebSocket) {
         listener.emit(socket, """{"type":"response.created","response":{"id":"answer-response"}}""")
         val added = """{"type":"response.output_item.added","output_index":0,"item":{
@@ -1262,7 +1482,12 @@ private class BillingWsRunner(
         listener = receiver
         return object : WebSocket {
             override fun sendText(data: CharSequence, last: Boolean): CompletableFuture<WebSocket> {
-                if (posts.incrementAndGet() == 1) source(this) else answer(this)
+                val attempt = posts.incrementAndGet()
+                when {
+                    preludeCalls > 0 && attempt == 1 -> prelude(this)
+                    attempt == (if (preludeCalls > 0) 2 else 1) -> source(this)
+                    else -> answer(this)
+                }
                 return CompletableFuture.completedFuture(this)
             }
             override fun sendBinary(

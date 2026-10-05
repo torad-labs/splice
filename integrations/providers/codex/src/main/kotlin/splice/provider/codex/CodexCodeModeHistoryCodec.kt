@@ -5,6 +5,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.perf.InputDigest
@@ -134,6 +135,19 @@ internal class CodexCodeModeHistoryCodec(private val json: Json) {
         (element as? JsonObject)?.let { JsonObject(it - FIELD_PHASE) } ?: element
 
     private fun digest(value: JsonElement): String = InputDigest.hex(value)
+}
+
+/** A streamed call's admitted prefix lives in source until its response terminal certifies the raw item. */
+internal object CodeModeCallReplay {
+    fun item(record: CodeModeRecord): JsonObject =
+        if (
+            record.sourceState?.complete == true ||
+            JsonScalars.strOrEmpty(record.outer[FIELD_INPUT]) == record.source
+        ) {
+            record.outer
+        } else {
+            JsonObject(record.outer + (FIELD_INPUT to JsonPrimitive(record.source)))
+        }
 }
 
 /** The lite preamble a request arrived with, and the conversation body every record is measured on. */

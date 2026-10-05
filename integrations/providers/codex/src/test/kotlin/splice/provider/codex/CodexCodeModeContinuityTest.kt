@@ -2,12 +2,15 @@ package splice.provider.codex
 
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
@@ -18,6 +21,7 @@ import splice.core.turn.Usage
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.request.BuildOptions
 import splice.dialect.responses.request.ResponsesRequestBuilder
+import splice.provider.codex.stream.CodeModeSourceState
 import splice.upstream.codemode.CodeModeStep
 
 class CodexCodeModeContinuityTest : CodeModeBridgeTestSupport() {
@@ -89,6 +93,29 @@ class CodexCodeModeContinuityTest : CodeModeBridgeTestSupport() {
 
         assertTrue(resumed is TurnOutcome.Success)
         assertContinuityOrder(finalPost)
+    }
+
+    @Test
+    fun `an unfinished call replays its admitted prefix without replacing retained raw state`() {
+        val record = CodeModeRecords.of("synthetic-partial", 1)
+        val raw = JsonObject(record.outer + ("input" to JsonPrimitive("")))
+        val prefix = "await tools.Read({fixture:'synthetic'});\nawait "
+        record.outer = raw
+        record.source = prefix
+        val replayed = CodeModeCallReplay.item(record)
+        assertEquals(prefix, replayed.getValue("input").jsonPrimitive.content)
+        assertEquals(raw - "input", replayed - "input", "all other model-authored fields stay exact")
+        assertSame(raw, record.outer, "rendering must not retain another raw source payload")
+        assertSame(prefix, record.source)
+    }
+
+    @Test
+    fun `a certified terminal call is replayed as the original model item`() {
+        val record = CodeModeRecords.of("synthetic-terminal", 1)
+        record.outer = JsonObject(record.outer + ("provider_field" to JsonPrimitive("synthetic-terminal-value")))
+        record.sourceState = CodeModeSourceState(complete = true)
+        val replayed = CodeModeCallReplay.item(record)
+        assertSame(record.outer, replayed, "terminal model bytes and fields remain authoritative")
     }
 
     private fun responsesBody(messages: String, replayReasoning: Boolean = false): String {

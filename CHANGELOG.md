@@ -59,8 +59,8 @@ curl -fsSL https://github.com/torad-labs/splice/releases/download/v0.4.0/install
 ```
 
 - **The installer leaves the running 0.3.x daemon alone.** The next launch of a head's command,
-  such as `claudex` or `claude-grok`, replaces it. The launch shim needs Node 22.15 or newer: the launch shim sees the old version on `/health`, stops that daemon and starts
-  0.4.0.
+  such as `claudex` or `claude-grok`, replaces it: the launch shim sees the old version on `/health`, stops that daemon and starts
+  0.4.0. The launch shim needs Node 22.15 or newer.
 - **Config and credentials keep their contents, and the state root stays where it is.**
   `splice.toml` and its backups are tightened to owner-only (0600). An install
   made before 0.4.0 keeps `~/.claude-codex/state` and its management key. 0.4.0 tightens that

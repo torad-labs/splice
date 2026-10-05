@@ -1,4 +1,5 @@
 source	sha256	disposition	destination	reason
+features/accounts/src/main/kotlin/splice/accounts/pool/AccountRowManagement.kt	3e73657deff7a9b1fb5989b7738996fce288b2fc2b6e55f2b3d7cc3859797607	created		One roster presentation boundary renders credential-proved display identity and explicitly addressed edit capabilities.
 app/src/main/kotlin/splice/app/auth/claude/ClaudeCredentialProfiles.kt	a090f0d8bea1d12d6614dd35d24054d1aca177fe5d270d97c255baac8023c03d	created		Native and pooled identities use only credential-bound provider profiles with bounded transient retries and durable definite refusals.
 app/src/main/kotlin/splice/app/auth/claude/ClaudeLoginEdits.kt	6c123e9a03ff208b35db583ead9a21d0bcb9768801255f8f905b0d1df05c68c7	created		Native-place edits back up only that live credential and resolve saved names through actual credential matches.
 app/src/test/kotlin/splice/app/auth/claude/ClaudeCredentialProfilesTest.kt	e196d96b73a58881642dd5fadaf7df014cb9f02f983f1d7f6849718ae4144c63	created		Synthetic controls pin profile privacy credential rotation failure classification restart suppression and retry boundaries.

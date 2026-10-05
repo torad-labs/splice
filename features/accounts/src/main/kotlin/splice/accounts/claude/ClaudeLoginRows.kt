@@ -19,6 +19,14 @@ internal object ClaudeLoginRows {
         put("credential_present", view.credentialPresent)
         put("kind", "client")
         put("label", view.id.wire)
+        put("display_name", view.management?.displayName ?: view.id.command)
+        put("identity_verified", view.account != null)
+        put("can_remove", view.management?.canRemove == true)
+        put("can_rename", view.management?.canRename == true)
+        putJsonObject("edit_target") {
+            put("kind", "native")
+            put("id", view.id.wire)
+        }
         put("primary", false)
         put("single_login", true)
         putJsonObject("login_place") {

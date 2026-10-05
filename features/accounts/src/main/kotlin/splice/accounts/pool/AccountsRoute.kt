@@ -14,6 +14,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.accounts.AccountHead
+import splice.accounts.claude.ClaudeAccountIdentity
 import splice.accounts.claude.ClaudeLoginPlaceView
 import splice.accounts.claude.ClaudeLoginRows
 import splice.core.auth.AuthDescription
@@ -25,6 +26,7 @@ import splice.core.usage.QuotaWindowView as PlanWindow
 
 public class AccountsRoute(private val heads: Map<String, AccountHead>) {
     private val extras = AccountRowExtras(heads)
+    private val management = AccountRowManagement()
 
     /** [nowSeconds] decides which windows are current (V4-407), by the rule /api/usage applies (V4-396). */
     public suspend fun accountsJson(
@@ -49,10 +51,10 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
 
     private suspend fun fold(head: AccountHead, joined: MutableMap<String, JoinedAccount>) {
         val description = head.auth.describe()
-        // Client-forwarded Claude logins are added from their command-local stores above.
-        // Key commands still need a credential-presence row so their daily budgets are reachable.
-        if (!AuthKindRegistry.isOAuth(description.kind) && description.kind != "api-key") return
         val pool = head.pool
+        // A forwarded head's stored pool logins are real accounts. Only its unheld caller is represented by places.
+        if (description.kind == "client" && pool == null) return
+        if (!AuthKindRegistry.isOAuth(description.kind) && description.kind !in listOf("api-key", "client")) return
         if (pool == null || description.kind == "api-key") {
             foldSingleLogin(head.key, description, head.quota?.quota(), joined)
             return
@@ -108,6 +110,7 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
         joined: MutableMap<String, JoinedAccount>,
     ) {
         view.accounts.forEach { account ->
+            if (kind == "client" && account.primary) return@forEach
             val fields = described[account.label]?.fields.orEmpty()
             merge(joined, fields["auth_path"] ?: "$headKey:${account.label}", headKey) {
                 pooledAccount(kind, account, view, fields)
@@ -145,6 +148,10 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
             account.authExcludedUntilEpochMillis,
             account.authExclusionReason,
             fields[REFUSAL_FIELD],
+            fields["account_uuid"]?.takeIf(String::isNotBlank)?.let {
+                ClaudeAccountIdentity(it, fields["account_email"])
+            },
+            fields["display_name"],
         ),
         flags = AccountFlags(
             available = account.available,
@@ -180,6 +187,11 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
         providers: Map<String, String>,
     ) {
         extras.write(into, row.heads, row.label, providers)
+        management.write(into, row.label, row.primary, row.authExclusion.displayName, row.authExclusion.identity)
+        writeQuota(into, row, nowSeconds)
+    }
+
+    private fun writeQuota(into: JsonObjectBuilder, row: JoinedAccount, nowSeconds: Long) {
         into.put("five_hour_limit_percent", row.fiveHour.usedPercent?.let { 100 })
         into.put("seven_day_limit_percent", row.sevenDay.usedPercent?.let { 100 })
         into.put("credential_path", row.credentialPath)
@@ -225,7 +237,13 @@ private data class QuotaWindowView(val usedPercent: Double?, val resetEpochSecon
 
 /** Why a pooled or single-login account cannot be selected right now, or all null when it can. [refusal]
  *  (V4-410) is the permanent kind: splice will not load that credential at all, so it is not a renewal. */
-private data class AuthExclusionView(val untilEpochMillis: Long?, val reason: String?, val refusal: String? = null)
+private data class AuthExclusionView(
+    val untilEpochMillis: Long?,
+    val reason: String?,
+    val refusal: String? = null,
+    val identity: ClaudeAccountIdentity? = null,
+    val displayName: String? = null,
+)
 
 /** The five yes/no/unknown facts a console row renders as booleans — grouped for the same
  *  constructor-width reason as [QuotaWindowView]. */

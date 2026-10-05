@@ -4,6 +4,7 @@ package splice.accounts.claude
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -11,11 +12,83 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.accounts.AccountHead
 import splice.accounts.pool.AccountsRoute
+import splice.accounts.pool.HeadAccountAuthSource
+import splice.accounts.pool.HeadAccountPoolSource
+import splice.accounts.pool.HeadAccountPoolView
+import splice.accounts.pool.HeadAccountView
+import splice.accounts.signin.HeadRestart
+import splice.core.auth.AuthDescription
+import splice.core.auth.AuthProvider
+import splice.core.auth.Credentials
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
 
 class ClaudeAccountRowsTest {
+    private fun forwardedAuth(): AuthProvider = object : AuthProvider {
+        override suspend fun credentials(): Credentials = Credentials.ClientForwarded
+        override suspend fun describe(): AuthDescription = AuthDescription(true, "client")
+    }
+
+    private fun storedDescriptions(): Map<String, AuthDescription> = mapOf(
+        "work" to AuthDescription(
+            true,
+            "claude-account",
+            mapOf(
+                "auth_path" to "/synthetic/work/.credentials.json",
+                "account_uuid" to "work-account",
+                "account_email" to "work@synthetic.test",
+            ),
+        ),
+    )
+
+    @Test
+    fun `a client kind head exposes its real added pool login beside the native place`() = runBlocking {
+        val native = ClaudeLoginPlaceView(
+            ClaudeLoginPlaceId.NATIVE,
+            "claude-splice",
+            "/synthetic/native/.credentials.json",
+            true,
+            ClaudeAccountIdentity("native-account", "native@synthetic.test"),
+            null,
+            ClaudeLoginStanding(null, null),
+        )
+        val added = HeadAccountView(
+            label = "work",
+            primary = false,
+            selected = true,
+            available = true,
+            plan = "max",
+            fiveHourUsedPercent = 11.0,
+            fiveHourResetEpochSeconds = 20_000,
+            sevenDayUsedPercent = 77.0,
+            sevenDayResetEpochSeconds = 30_000,
+        )
+        val head = AccountHead(
+            key = "claude-splice",
+            auth = forwardedAuth(),
+            pool = HeadAccountPoolSource { HeadAccountPoolView("work", listOf(added), null) },
+            accountAuth = HeadAccountAuthSource { storedDescriptions() },
+            restart = HeadRestart { },
+        )
+        val body = AccountsRoute(mapOf(head.key to head)).accountsJson(
+            mapOf(head.key to "anthropic"),
+            listOf(native),
+            nowSeconds = 100,
+        )
+        val rows = Json.parseToJsonElement(body).jsonObject.getValue("accounts").jsonArray
+        assertEquals(2, rows.size, "a real client pool is not discarded before folding")
+        val work = rows.map { it.jsonObject }.single { it["label"]?.jsonPrimitive?.content == "work" }
+        assertEquals(11.0, work.getValue("five_hour_used_percent").jsonPrimitive.content.toDouble())
+        assertTrue(work["account"] is JsonObject, body)
+        assertEquals("work-account", work.getValue("account").jsonObject.getValue("uuid").jsonPrimitive.content)
+        assertEquals("pool", work.getValue("edit_target").jsonObject.getValue("kind").jsonPrimitive.content)
+        assertEquals("work", work.getValue("edit_target").jsonObject.getValue("id").jsonPrimitive.content)
+        assertEquals("true", work.getValue("can_remove").jsonPrimitive.content)
+        assertEquals("work", work.getValue("display_name").jsonPrimitive.content)
+    }
+
     @Test
     fun `two commands on one head remain distinct rows and unknown windows never become zero or full limits`() =
         runBlocking {

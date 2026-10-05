@@ -6,8 +6,12 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -441,9 +445,37 @@ class CodeModeSaveBudgetTest(@param:TempDir private val dir: Path) {
             }
         }
 
-        /** A step with no witness is a legacy step and a step whose cell delivered no prose. Its saved bytes are the
-         *  bytes the daemon wrote before the field existed, so an old checkpoint still replays and a journal written
-         *  by this daemon is readable by the one before it. */
+        /** The native items a step was sent (an encrypted reasoning item is as large as a model's thinking) are the
+         *  same kind of retained payload as the prose. They are charged once: the record and its saved snapshot share
+         *  one charge, so two separate charges would weigh them twice. */
+        @Test
+        fun `an issued step's delivered native items are charged once while the record and its snapshot hold them`() {
+            val roomy = HeapBudget(Long.MAX_VALUE, 64 * 1024 * 1024)
+            val native = listOf(
+                buildJsonObject {
+                    put("type", "reasoning")
+                    put("id", "rs_synthetic")
+                    put("summary", buildJsonArray { })
+                    put("encrypted_content", "e".repeat(200_000))
+                },
+            )
+            val weight = CodeModeWeight.STORED.json(JsonArray(native))
+            val record = CodeModeRecords.of("synthetic", 1).apply {
+                issued += CodeModeIssuedStep("digest-synthetic-1", emptyList(), deliveredNative = native)
+            }
+            val registry = registry(record, roomy)
+            try {
+                val charged = settledCharge(roomy)
+                assertTrue(charged >= weight, "$charged bytes charged for $weight bytes of live native items")
+                assertTrue(charged < 2 * weight, "$charged bytes charged twice for $weight bytes of native items")
+            } finally {
+                registry.timed.finish { registry.onHeadStop() }
+            }
+        }
+
+        /** A step with no witness is a legacy step and a step whose cell delivered neither prose nor native items. Its
+         *  saved bytes are the bytes the daemon wrote before the fields existed, so an old checkpoint still replays and
+         *  a journal written by this daemon is readable by the one before it. */
         @Test
         fun `a step with no delivered witness saves the bytes it always did`() {
             val record = CodeModeRecords.of("synthetic", 1).apply {
@@ -454,6 +486,7 @@ class CodeModeSaveBudgetTest(@param:TempDir private val dir: Path) {
                 val saved = CodeModeStateFiles(location.dir).records().single()
                 val step = saved.getValue("issued").jsonArray.single().jsonObject
                 assertFalse("deliveredText" in step, "a null witness is not a key: $step")
+                assertFalse("deliveredNative" in step, "null native items are not a key: $step")
                 assertEquals(setOf("requestDigest", "calls"), step.keys, "the step's saved keys: $step")
             } finally {
                 registry.timed.finish { registry.onHeadStop() }

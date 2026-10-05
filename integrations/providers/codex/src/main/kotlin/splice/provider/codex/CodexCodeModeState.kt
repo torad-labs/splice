@@ -176,6 +176,8 @@ internal data class CodeModeIssuedStep(
     /** Client-echo matching only. Terminal model continuity remains the sole upstream replay payload. */
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val deliveredText: String? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val deliveredNative: List<JsonElement>? = null,
 )
 
 /** [media]: V4-179, see [CodeModeAccepted.media]. A v3 file has no such key: it decodes to null,

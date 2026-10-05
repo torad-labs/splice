@@ -125,13 +125,17 @@ internal enum class CodeModeWeight {
         record.nativeSegments.sumOf(::segment) + record.continuity.sumOf(::json) +
         record.continuityReplay.sumOf(::segment) + record.issued.sumOf(::issued)
 
-    /** A step's own payload. Its delivered witness (the prose the client was shown, kept so the next
-     *  continuation's echo is owned) is charged only when the step captured one: a legacy step and a step whose
-     *  cell delivered no prose weigh exactly what they weighed before the field existed, and a captured empty
-     *  string is a capture, charged like any other. The save path reserves from these weights, so an uncharged
-     *  witness is a reservation too small for the text the encoder retains. */
-    fun issued(step: CodeModeIssuedStep): Long =
-        text(step.requestDigest) + step.calls.sumOf(::call) + (step.deliveredText?.let(::text) ?: 0L)
+    /** A step's own payload: its digest, its calls and what [delivered] weighs. */
+    fun issued(step: CodeModeIssuedStep): Long = text(step.requestDigest) + step.calls.sumOf(::call) + delivered(step)
+
+    /** The witnesses a step kept of what its cell delivered, so the next continuation's echo is owned: the prose the
+     *  client was shown and the native items it was sent, weighed as the array they are. Each is charged only when the
+     *  step captured it: a legacy step and a step whose cell delivered neither weigh exactly what they weighed before
+     *  the fields existed, and a captured empty string or list is a capture, charged like any other. The save path
+     *  reserves from these weights and issuance grows a record by this, so an uncharged witness is a reservation too
+     *  small for what the encoder retains. */
+    fun delivered(step: CodeModeIssuedStep): Long =
+        (step.deliveredText?.let(::text) ?: 0L) + (step.deliveredNative?.let { json(JsonArray(it)) } ?: 0L)
 
     fun call(call: CodeModePending): Long =
         text(call.runtimeId) + text(call.clientId) + text(call.name) + json(call.arguments)

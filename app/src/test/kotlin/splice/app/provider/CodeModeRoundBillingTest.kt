@@ -48,9 +48,11 @@ import splice.core.model.ModelRates
 import splice.core.model.TurnBill
 import splice.core.model.TurnPrice
 import splice.core.perf.PerfKeys
+import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.WatchdogBudget
+import splice.core.util.LogSink
 import splice.dialect.responses.websocket.WsConnector
 import splice.dialect.responses.websocket.WsUpstream
 import splice.head.HeadDeps
@@ -683,6 +685,168 @@ class CodeModeSourceBoundaryTest {
     }
 }
 
+class CodeModeNativeSourceTest {
+    @ParameterizedTest
+    @CsvSource("false,none", "false,after", "false,between", "true,none", "true,after", "true,between")
+    @Timeout(BILLING_TEST_SECONDS)
+    fun `delivered native reasoning is not edited history before or after source terminal`(
+        completed: Boolean,
+        reminder: String,
+        @TempDir tmp: Path,
+    ) = runBlocking {
+        val actual = nativeSource(tmp, completed, reminder)
+        if (!completed) {
+            assertArrayEquals(
+                nativeSource(tmp.resolve("baseline"), completed = true, reminder),
+                actual,
+                "the next upstream request must be byte-identical whether the source terminal was held or already known",
+            )
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["edited", "foreign"])
+    @Timeout(BILLING_TEST_SECONDS)
+    fun `edited and foreign native envelopes still interrupt an unfinished source`(
+        alteration: String,
+        @TempDir tmp: Path,
+    ) = runBlocking {
+        nativeSource(tmp, completed = false, reminder = "between", alteration)
+        Unit
+    }
+
+    private suspend fun nativeSource(
+        tmp: Path,
+        completed: Boolean,
+        reminder: String,
+        alteration: String = "",
+    ): ByteArray = coroutineScope {
+        val upstream = BillingUpstream()
+        val runtime = StatementGatewayRuntime()
+        val ws = BillingWsRunner(reasoning = true)
+        val logs = ConcurrentLinkedQueue<String>()
+        val bridge = nativeBridge(tmp, runtime, logs)
+        val head = HeadServer(withWs(upstream.url, bridge, ws, replayReasoning = true), 0, headDeps(tmp))
+        var client = HttpClient(CIO)
+        try {
+            head.start()
+            val url = "http://127.0.0.1:${head.port}/v1/messages"
+            val history = mutableListOf(message("user", JsonPrimitive("read the fixture twice")))
+            val first = withTimeout(TURN_BOUND_MS) { sendAndDisconnect(client, url, history) }
+            val deliveredNative = nativeBlocks(first)
+            val native = alteredNative(deliveredNative, alteration)
+            assertEquals(1, native.size, "the client must actually receive its native reasoning envelope: $first")
+            assertEquals(1, toolUses(first).size, "the held raw round must publish a real callback")
+            assertPersistedNative(tmp, deliveredNative.single())
+            client = HttpClient(CIO)
+            if (completed) {
+                ws.endSource()
+                assertEquals(SOURCE_INPUT, rows(tmp, 1).single().count(PerfKeys.IN_TOKENS))
+            }
+            appendNativeEcho(history, native, toolUses(first), reminder)
+            val next = async { send(client, url, history) }
+            val delivered = withTimeoutOrNull(1_000) { runtime.delivered.receive() }
+            if (alteration.isNotEmpty()) {
+                assertNull(delivered, "an altered envelope cannot resume the original script")
+                assertRejectedNative(tmp, ws, withTimeout(TURN_BOUND_MS) { next.await() })
+                return@coroutineScope ws.requests.last().toByteArray()
+            }
+            assertNativeResumed(logs, ws, delivered != null)
+            if (!completed) ws.endSource()
+            val second = withTimeout(TURN_BOUND_MS) { next.await() }
+            assertEquals(1, toolUses(second).size, "the original script continues after its terminal")
+            history += message("assistant", JsonArray(toolUses(second)))
+            history += message("user", JsonArray(toolUses(second).map(::result)))
+            assertTrue(withTimeout(TURN_BOUND_MS) { send(client, url, history) }.contains("fixture read"))
+            assertWsReuse(ws, upstream)
+            assertBilledOnce(rows(tmp, 3))
+            ws.requests.last().toByteArray()
+        } finally {
+            ws.endSource()
+            head.stop()
+            runtime.close()
+            client.close()
+            upstream.close()
+        }
+    }
+
+    private fun nativeBridge(
+        tmp: Path,
+        runtime: StatementGatewayRuntime,
+        logs: ConcurrentLinkedQueue<String>,
+    ): CodexCodeModeBridge = CodexCodeModeBridge(
+        CodeModeBridgeConfig(
+            runtimes = { runtime },
+            state = CodeModeStateLocation(tmp.resolve("records"), tmp.resolve("legacy.json")),
+            clock = Clock.fixed(Instant.EPOCH, ZoneOffset.UTC),
+            log = LogSink { logs += it },
+        ),
+    )
+
+    private fun appendNativeEcho(
+        history: MutableList<JsonObject>,
+        native: List<JsonObject>,
+        calls: List<JsonObject>,
+        reminder: String,
+    ) {
+        if (reminder == "between") {
+            history += message("assistant", JsonArray(native))
+            history += message("system", JsonPrimitive("synthetic context notification"))
+            history += message("assistant", JsonArray(calls))
+        } else {
+            history += message("assistant", JsonArray(native + calls))
+        }
+        history += message("user", JsonArray(calls.map(::result)))
+        if (reminder == "after") history += message("system", JsonPrimitive("synthetic context notification"))
+    }
+
+    private fun assertNativeResumed(logs: ConcurrentLinkedQueue<String>, ws: BillingWsRunner, delivered: Boolean) {
+        assertEquals(
+            emptyList<String>(),
+            logs.filter { "abandoned record" in it },
+            "identical delivered native replay must not be abandoned: ${logs.toList()}",
+        )
+        assertEquals(0, ws.aborts.get(), "identical delivered native replay must not cut the raw source")
+        assertTrue(delivered, "the callback result must reach the retained script")
+    }
+
+    private suspend fun assertRejectedNative(tmp: Path, ws: BillingWsRunner, answer: String) {
+        assertEquals(1, ws.aborts.get(), "an edited or foreign native envelope must cut the source")
+        assertTrue(answer.contains("fixture read"), "the client history continues upstream after interruption")
+        val cut = rows(tmp, 2).single { it.count(PerfKeys.CUT_SOURCE_ROUNDS) == 1L }
+        assertEquals(ANSWER_INPUT, cut.count(PerfKeys.IN_TOKENS), "the cutting request keeps only its own usage")
+    }
+
+    private fun assertPersistedNative(tmp: Path, block: JsonObject) {
+        val item = checkNotNull(ReasoningReplay.decodeReasoningEnvelope(block.getValue("data").jsonPrimitive.content))
+        val expected = "\"deliveredNative\":${JsonArray(listOf(item))}"
+        val saved = Files.list(tmp.resolve("records")).use { paths ->
+            paths.anyMatch { Files.isRegularFile(it) && Files.readString(it).contains(expected) }
+        }
+        assertTrue(saved, "the actual delivered native envelope must be durable before its callback is published")
+    }
+
+    private fun alteredNative(blocks: List<JsonObject>, alteration: String): List<JsonObject> {
+        if (alteration.isEmpty()) return blocks
+        return blocks.map { block ->
+            val data = block.getValue("data").jsonPrimitive.content
+            val item = checkNotNull(ReasoningReplay.decodeReasoningEnvelope(data))
+            val key = if (alteration == "foreign") "id" else "encrypted_content"
+            val changed = JsonObject(item + (key to JsonPrimitive("synthetic-altered")))
+            val envelope = checkNotNull(ReasoningReplay.encodeReasoningEnvelope(changed))
+            JsonObject(block + ("data" to JsonPrimitive(envelope)))
+        }
+    }
+
+    private fun nativeBlocks(wire: String): List<JsonObject> = wire.lineSequence()
+        .filter { it.startsWith("data: ") }
+        .map { Json.parseToJsonElement(it.removePrefix("data: ")).jsonObject }
+        .filter { it["type"]?.jsonPrimitive?.content == "content_block_start" }
+        .map { it.getValue("content_block").jsonObject }
+        .filter { it["type"]?.jsonPrimitive?.content == "redacted_thinking" }
+        .toList()
+}
+
 /** No row carries a round's tokens a second time, as tokens or as absorbed rounds, nor prices it twice. */
 private fun assertBilledOnce(rows: List<JsonObject>) {
     rows.forEach { assertNull(it[PerfKeys.ABSORBED_ROUNDS], "a carried round is never absorbed: $it") }
@@ -779,8 +943,13 @@ private fun body(messages: String): String =
     """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":64,"messages":$messages,
         "tools":[{"name":"Read","description":"Read a synthetic fixture","input_schema":{"type":"object"}}]}"""
 
-private fun withWs(url: String, bridge: CodexCodeModeBridge, runner: WsRoundRunner?): Provider {
-    val delegate = provider(url, bridge)
+private fun withWs(
+    url: String,
+    bridge: CodexCodeModeBridge,
+    runner: WsRoundRunner?,
+    replayReasoning: Boolean = false,
+): Provider {
+    val delegate = provider(url, bridge, replayReasoning)
     return if (runner == null) {
         delegate
     } else {
@@ -797,7 +966,11 @@ private fun assertWsReuse(ws: BillingWsRunner, upstream: BillingUpstream) {
     assertEquals(0, upstream.posts.get(), "the WS source is not reissued over SSE")
 }
 
-private fun provider(url: String, bridge: CodexCodeModeBridge): CodexProvider = CodexProvider(
+private fun provider(
+    url: String,
+    bridge: CodexCodeModeBridge,
+    replayReasoning: Boolean = false,
+): CodexProvider = CodexProvider(
     tuning = ProviderTuning(
         key = "codex",
         label = "billing-test",
@@ -816,7 +989,7 @@ private fun provider(url: String, bridge: CodexCodeModeBridge): CodexProvider = 
         watchdog = WatchdogBudget(10.seconds, 10.seconds, 20.seconds),
     ),
     showReasoning = ReasoningDisplay.TEXT,
-    replayReasoning = false,
+    replayReasoning = replayReasoning,
     configEffort = null,
     configSummary = null,
     codeModeBridge = bridge,
@@ -964,11 +1137,15 @@ private class BillingUpstream(
     }
 }
 
+private const val BILLING_REASONING = """{"type":"reasoning","id":"synthetic-reasoning",
+    "encrypted_content":"synthetic-encrypted-content","summary":[]}"""
+
 /** A scripted WS source parks after a dispatchable prefix, before any terminal or usage exists. */
 private class BillingWsRunner(
     private val source: String = "await tools.Read({});\n",
     private val prose: Boolean = false,
     private val whole: Boolean = false,
+    private val reasoning: Boolean = false,
 ) : WsRoundRunner {
     val posts = AtomicInteger()
     val aborts = AtomicInteger()
@@ -983,9 +1160,10 @@ private class BillingWsRunner(
     fun endSource() {
         if (!::active.isInitialized) return
         val input = source + source + if (secondStatement) "text ('');\n" else ""
+        val native = if (reasoning) "$BILLING_REASONING," else ""
         val completed = """{"type":"response.completed","response":{"id":"source-response","status":"completed",
             "usage":{"input_tokens":$SOURCE_INPUT,"output_tokens":$SOURCE_OUTPUT,
-            "input_tokens_details":{"cached_tokens":$SOURCE_CACHED}},"output":[{
+            "input_tokens_details":{"cached_tokens":$SOURCE_CACHED}},"output":[$native{
             "type":"custom_tool_call","id":"source-item","call_id":"source-call","name":"exec",
             "input":${JsonPrimitive(input)}}]}}"""
         listener.emit(active, completed)
@@ -1032,6 +1210,13 @@ private class BillingWsRunner(
 
     private fun source(socket: WebSocket) {
         listener.emit(socket, """{"type":"response.created","response":{"id":"source-response"}}""")
+        if (reasoning) {
+            listener.emit(
+                socket,
+                """{"type":"response.output_item.added","output_index":0,"item":$BILLING_REASONING}""",
+            )
+            listener.emit(socket, """{"type":"response.output_item.done","output_index":0,"item":$BILLING_REASONING}""")
+        }
         if (prose) {
             val textItem = """{"type":"response.output_item.added","output_index":1,"item":{
                 "type":"message","id":"progress-item","role":"assistant","content":[]}}"""
@@ -1040,9 +1225,10 @@ private class BillingWsRunner(
             listener.emit(socket, textItem)
             listener.emit(socket, textDelta)
         }
-        val added = """{"type":"response.output_item.added","output_index":0,"item":{
+        val execIndex = if (reasoning) 1 else 0
+        val added = """{"type":"response.output_item.added","output_index":$execIndex,"item":{
             "type":"custom_tool_call","id":"source-item","call_id":"source-call","name":"exec","input":""}}"""
-        val delta = """{"type":"response.custom_tool_call_input.delta","output_index":0,
+        val delta = """{"type":"response.custom_tool_call_input.delta","output_index":$execIndex,
             "delta":${JsonPrimitive("${source}await ")}}"""
         listener.emit(socket, added)
         listener.emit(socket, delta)

@@ -2,6 +2,7 @@ package splice.provider.codex
 
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -10,6 +11,7 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
+import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.SpliceNotice
 import splice.provider.codex.stream.CodeModeClientStepSink
 import splice.provider.codex.stream.CodeModeSourceBuffer
@@ -213,6 +215,51 @@ class CodeModeStreamPortsTest : CodeModeBridgeTestSupport() {
         assertNull(round.detach(), "a later step cannot make the overflowed memory complete")
     }
 
+    @Test
+    fun `native witnesses contain only the envelopes delivered on each attachment`() = runBlocking {
+        val first = EventSink()
+        val round = CodeModeSwitchingSink(first) {}
+        val a = nativeEnvelope("first")
+        val b = nativeEnvelope("second")
+        round.addRedactedThinking(a)
+        assertEquals("", round.detach())
+        assertEquals(listOf(ReasoningReplay.decodeReasoningEnvelope(a)), round.deliveredNative)
+        round.addRedactedThinking(b)
+        assertEquals(listOf("native:$a"), first.events, "a detached write has not reached the client")
+        val second = EventSink()
+        round.attach(second)
+        round.detach()
+        assertEquals(listOf("native:$b"), second.events)
+        assertEquals(listOf(ReasoningReplay.decodeReasoningEnvelope(b)), round.deliveredNative)
+        round.attach(EventSink())
+        round.detach()
+        assertEquals(emptyList<JsonObject>(), round.deliveredNative, "an attachment cannot inherit earlier witnesses")
+    }
+
+    @Test
+    fun `native witness overflow shares the prose budget and never blocks delivery`() = runBlocking {
+        val target = EventSink()
+        val round = CodeModeSwitchingSink(target) {}
+        val envelope = nativeEnvelope("overflow")
+        round.addTextBlock("x".repeat(CodeModeLimits.MAX_FRAME_BYTES))
+        round.addRedactedThinking(envelope)
+        assertEquals(listOf("native:$envelope"), target.events, "overflow still delivers the envelope")
+        assertNull(round.detach(), "native overflow also invalidates incomplete prose capture")
+        assertNull(round.deliveredNative, "an incomplete native witness cannot own a partial echo")
+        round.attach(EventSink())
+        round.addRedactedThinking(envelope)
+        round.detach()
+        assertNull(round.deliveredNative, "another attachment cannot reset the cumulative budget")
+    }
+
+    private fun nativeEnvelope(id: String): String = checkNotNull(
+        ReasoningReplay.encodeReasoningEnvelope(
+            Json.parseToJsonElement(
+                """{"type":"reasoning","id":"synthetic-$id","encrypted_content":"synthetic-$id","summary":[]}""",
+            ) as JsonObject,
+        ),
+    )
+
     private class EventSink : WireSink {
         val events = mutableListOf<String>()
         private var next = 0
@@ -254,6 +301,8 @@ class CodeModeStreamPortsTest : CodeModeBridgeTestSupport() {
 
         override suspend fun closeAll() = Unit
         override suspend fun addTextBlock(text: String) = Unit
-        override suspend fun addRedactedThinking(data: String) = Unit
+        override suspend fun addRedactedThinking(data: String) {
+            events += "native:$data"
+        }
     }
 }

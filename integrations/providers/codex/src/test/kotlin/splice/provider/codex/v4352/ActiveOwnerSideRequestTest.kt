@@ -10,6 +10,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -402,6 +403,86 @@ class ActiveOwnerSideRequestTest : CodeModeBridgeTestSupport() {
         val input = checkNotNull(codec.root(body)).second
         return codec.conversation(codec.projection.project(input)).body.logicalItems
     }
+
+    private fun body(items: List<String>): String = """{"input":[${items.joinToString(",")}]}"""
+    private fun user(text: String): String = """{"role":"user","content":"$text"}"""
+    private fun read(id: String): String = """{"type":"function_call","call_id":"$id","name":"Read","arguments":"{}"}"""
+    private fun output(id: String, text: String): String =
+        """{"type":"function_call_output","call_id":"$id","output":"$text"}"""
+
+    private fun reasoningEnvelope(id: String): String = checkNotNull(
+        ReasoningReplay.encodeReasoningEnvelope(
+            buildJsonObject {
+                put("type", "reasoning")
+                put("id", id)
+                put("encrypted_content", "e-$id")
+            },
+        ),
+    )
+}
+
+class NativeAncestorPlacementTest : CodeModeBridgeTestSupport() {
+    @Test
+    fun `restoring an old callback repositions native history without abandoning a later script`() = runTest {
+        val runtime = ancestorRuntime()
+        val manager = bridge(runtime, maxRecords = 32)
+        val history = mutableListOf(DEVELOPER, user("start"))
+        val earlier = (0..9).map { n -> completeAncestor(manager, history, n) }
+        val missing = history.filterNot { earlier.first() in it }
+        val current = RecordingSink()
+        var before = ""
+        manager.interceptor(turn(), disableParallel = false).intercept(body(missing), current) {
+            before = it
+            outerOutcome("outer-current")
+        }
+        val activeId = current.tools.single().id
+        var after = ""
+        val outcome = manager.interceptor(turn(activeId, "last"), disableParallel = false)
+            .intercept(body(history + read(activeId) + output(activeId, "last")), RecordingSink()) {
+                after = it
+                completedOutcome()
+            }
+        assertTrue(logLines.none { "abandoned record" in it }, logLines.joinToString("\n"))
+        assertEquals(2, runtime.cells.last().advances, "the original later script consumes its own callback: $outcome")
+        assertEquals(3, oldExecIndex(after) - oldExecIndex(before), "the earlier canonical triple moves an old exec")
+    }
+
+    private fun ancestorRuntime(): QueuedRuntime = QueuedRuntime(
+        ArrayDeque(
+            (0..10).map { n ->
+                ArrayDeque<CodeModeStep>(
+                    listOf(CodeModeStep.Calls(listOf(call("ancestor-$n", "Read"))), CodeModeStep.Completed("done-$n")),
+                )
+            },
+        ),
+    )
+
+    private suspend fun completeAncestor(
+        manager: CodexCodeModeBridge,
+        history: MutableList<String>,
+        n: Int,
+    ): String {
+        history += user("start-$n")
+        val sink = RecordingSink()
+        manager.interceptor(turn(), disableParallel = false).intercept(body(history), sink) {
+            outerOutcome("outer-$n").copy(
+                emittedText = true,
+                bodyText = "prose-$n",
+                reasoningEnvelopes = listOf(reasoningEnvelope("ancestor-reason-$n")),
+            )
+        }
+        val id = sink.tools.single().id
+        history += read(id)
+        history += output(id, "done-$n")
+        manager.interceptor(turn(id, "done-$n"), disableParallel = false)
+            .intercept(body(history), RecordingSink()) { completedOutcome() }
+        return id
+    }
+
+    private fun oldExecIndex(bodyJson: String): Int =
+        Json.parseToJsonElement(bodyJson).jsonObject.getValue("input").jsonArray.indexOfFirst {
+            (it as? JsonObject)?.get("call_id")?.jsonPrimitive?.content == "outer-1"
+        }
 
     private fun body(items: List<String>): String = """{"input":[${items.joinToString(",")}]}"""
     private fun user(text: String): String = """{"role":"user","content":"$text"}"""

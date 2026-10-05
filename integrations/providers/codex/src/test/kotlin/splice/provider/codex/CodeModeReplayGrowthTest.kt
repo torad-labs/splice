@@ -19,6 +19,9 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.dialect.responses.request.AssistantPhase
 import splice.dialect.responses.request.ResponsesAssistantText
+import splice.dialect.responses.request.ResponsesCodeModeProjection
+import splice.dialect.responses.request.ResponsesCodeModeReplay
+import splice.dialect.responses.request.ResponsesContextMessage
 import splice.provider.codex.state.CodeModeAnchorCapture
 import splice.provider.codex.state.CodeModeExtraContent
 import splice.provider.codex.state.CodeModeNativeChain
@@ -116,6 +119,47 @@ internal class CodeModeReplayGrowthTest : CodeModeBridgeTestSupport() {
             emptySet<Int>(),
             placement.indexes(echo, 0, checkNotNull(reloaded[legacy.id])),
             "a step that captured no witness owns no echo",
+        )
+    }
+
+    /** The native items a step was sent (the reasoning delivered before its callback) are owned as replay. On a held
+     *  source the client's echo carries typed context between that reasoning and the owned callback, so projection
+     *  files the reasoning as a native segment of its own, and only the saved witness tells it apart from foreign
+     *  content after a restart. Both states come from one reload: the captured step owns that segment, and a step
+     *  that captured none owns nothing. */
+    @Test
+    fun `an issued step's delivered native items survive a restart and still own the client's echo`() {
+        val native = listOf(reasoning("rs-synthetic-delivered"))
+        val carried = record("script-carried", history, "call-0", emptyList()).also { record ->
+            record.issued[0] = record.issued[0].copy(deliveredNative = native)
+        }
+        val legacy = record("script-legacy", history, "call-0", emptyList())
+        store().also { it.load() }.save(listOf(carried, legacy), emptyList())
+
+        // From the FILE, so this proves the save carries the items rather than something rebuilding them.
+        val steps = stateFiles.records().flatMap { it.getValue("issued").jsonArray.map { step -> step.jsonObject } }
+        assertEquals(
+            listOf(JsonArray(native)),
+            steps.mapNotNull { it["deliveredNative"] },
+            "the saved bytes hold the captured items and no key for the step without them: $steps",
+        )
+
+        val reloaded = store().load().records.map { it.restore() }.associateBy { it.id }
+        val after = checkNotNull(reloaded[carried.id])
+        assertEquals(listOf(native), after.issued.map { it.deliveredNative }, "the reloaded step carries the items")
+
+        val echo = history + native + ResponsesContextMessage.item("synthetic context") + callback("call-0")
+        val projected = ResponsesCodeModeProjection().project(JsonArray(echo))
+        val placement = CodeModeExtraContent(codec, CodeModeOwnership(codec))
+        assertEquals(
+            listOf(native),
+            placement.deliveredReplay(projected, after).map { it.items },
+            "the echoed reasoning is owned after a restart: ${projected.replayItems}",
+        )
+        assertEquals(
+            emptySet<ResponsesCodeModeReplay>(),
+            placement.deliveredReplay(projected, checkNotNull(reloaded[legacy.id])),
+            "a step that captured no native items owns no echo",
         )
     }
 

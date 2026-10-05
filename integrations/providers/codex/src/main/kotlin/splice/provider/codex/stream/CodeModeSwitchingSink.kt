@@ -4,8 +4,10 @@ package splice.provider.codex.stream
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.core.index.WireBlockIndex
+import splice.core.reasoning.ReasoningReplay
 import splice.core.util.JsonWire
 import splice.upstream.sse.CustomToolSource
 import splice.upstream.sse.IndependentRoundSink
@@ -25,6 +27,9 @@ internal class CodeModeSwitchingSink(
     private val writes = CodeModeSinkWrites()
     private var readingScope: CoroutineScope? = null
     private val deliveredText = StringBuilder()
+    private val native = mutableListOf<JsonElement>()
+    var deliveredNative: List<JsonElement>? = null
+        private set
     private var deliveredBytes = 0
     private var continuityComplete = true
     override val ownerScope: CoroutineScope get() = checkNotNull(readingScope)
@@ -40,6 +45,8 @@ internal class CodeModeSwitchingSink(
     }
 
     suspend fun detach(): String? = mutex.withLock {
+        deliveredNative = target?.let { native.toList().takeIf { continuityComplete } }
+        native.clear()
         val delivered = target?.let {
             val text = deliveredText.toString().takeIf { continuityComplete }
             deliveredText.clear()
@@ -141,19 +148,28 @@ internal class CodeModeSwitchingSink(
     }
 
     private fun rememberText(text: String) {
-        if (!continuityComplete) return
-        val bytes = text.encodeToByteArray().size
+        if (rememberBytes(text.encodeToByteArray().size)) deliveredText.append(text)
+    }
+
+    private fun rememberBytes(bytes: Int): Boolean {
+        if (!continuityComplete) return false
         if (bytes > splice.upstream.codemode.CodeModeLimits.MAX_FRAME_BYTES - deliveredBytes) {
             continuityComplete = false
             deliveredText.clear()
-            return
+            native.clear()
+            return false
         }
         deliveredBytes += bytes
-        deliveredText.append(text)
+        return true
     }
 
     override suspend fun addRedactedThinking(data: String) {
-        write(data.encodeToByteArray().size) { it.addRedactedThinking(data) }
+        write(data.encodeToByteArray().size) {
+            it.addRedactedThinking(data)
+            ReasoningReplay.decodeReasoningEnvelope(data)?.let { item ->
+                if (rememberBytes(Math.toIntExact(JsonWire.byteSize(item)))) native += item
+            }
+        }
     }
 
     override suspend fun customToolSource(event: CustomToolSource) {

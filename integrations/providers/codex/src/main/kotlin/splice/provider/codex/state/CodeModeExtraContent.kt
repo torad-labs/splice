@@ -7,10 +7,12 @@ import kotlinx.serialization.json.JsonObject
 import splice.dialect.responses.request.AssistantPhase
 import splice.dialect.responses.request.ResponsesAssistantText
 import splice.dialect.responses.request.ResponsesCodeModeInput
+import splice.dialect.responses.request.ResponsesCodeModeReplay
 import splice.dialect.responses.request.ResponsesContextMessage
 import splice.provider.codex.CODE_MODE_FIELD_ROLE
 import splice.provider.codex.CODE_MODE_FIELD_TYPE
 import splice.provider.codex.CodeModeExtra
+import splice.provider.codex.CodeModeIssuedStep
 import splice.provider.codex.CodeModeOwnership
 import splice.provider.codex.CodeModePending
 import splice.provider.codex.CodeModeRecord
@@ -26,7 +28,7 @@ internal class CodeModeExtraContent(
         val owned = (record.results.keys + record.pending.map(CodeModePending::clientId)).toSet()
         val logicalExtra = unownedItems(projected.logicalItems, record, owned, candidateMedia, boundary)
         return when {
-            unexpectedReplay(projected, record, owned) || logicalExtra.any { !isSystemMessage(it) } ->
+            unexpectedReplay(projected, record, owned, boundary) || logicalExtra.any { !isSystemMessage(it) } ->
                 CodeModeExtra.STEERING
             logicalExtra.isNotEmpty() -> CodeModeExtra.SYSTEM
             else -> CodeModeExtra.NONE
@@ -116,16 +118,52 @@ internal class CodeModeExtraContent(
             ResponsesContextMessage.isContext(item)
     }
 
+    /** Native envelopes are client echoes only when their exact step and callback still place them. */
+    fun deliveredReplay(projected: ResponsesCodeModeInput, record: CodeModeRecord): Set<ResponsesCodeModeReplay> {
+        var lower = codec.baselineBoundary(projected.logicalItems, record) ?: return emptySet()
+        val matched = linkedSetOf<ResponsesCodeModeReplay>()
+        val prose = indexes(projected.logicalItems, lower, record)
+        for (step in record.issued) {
+            val callback = step.calls.firstOrNull()?.clientId?.let { id ->
+                projected.logicalItems.indexOfFirst {
+                    codec.callId(it) == id && codec.string(it as? JsonObject, CODE_MODE_FIELD_TYPE) == "function_call"
+                }
+            } ?: -1
+            if (callback < lower) continue
+            matched += deliveredCandidates(projected, record, step, lower..callback, prose)
+            lower = callback + 1
+        }
+        return matched
+    }
+
+    private fun deliveredCandidates(
+        projected: ResponsesCodeModeInput,
+        record: CodeModeRecord,
+        step: CodeModeIssuedStep,
+        range: IntRange,
+        prose: Set<Int>,
+    ): List<ResponsesCodeModeReplay> {
+        val expected = step.deliveredNative?.takeIf { it.isNotEmpty() } ?: return emptyList()
+        val candidates = projected.replayItems.filter { it.logicalOffset in range }
+        val contextOnly = (range.first until range.last).all {
+            skippable(projected.logicalItems[it], it, record, record.clientIds(), prose)
+        }
+        return candidates.takeIf { contextOnly && it.flatMap { replay -> replay.items } == expected }.orEmpty()
+    }
+
     private fun unexpectedReplay(
         projected: ResponsesCodeModeInput,
         record: CodeModeRecord,
         owned: Set<String>,
+        boundary: Int,
     ): Boolean {
         val allowed = CodeModeNativeChain.allowed(record)
+        val delivered = deliveredReplay(projected, record)
         return projected.replayItems.any { replay ->
             val slot = replay.logicalOffset to replay.items
             val expected = slot in allowed
-            replay.logicalOffset >= record.baselineLogicalCount && !expected && replay.callbackId !in owned
+            replay.logicalOffset >= boundary && !expected &&
+                replay !in delivered && replay.callbackId !in owned
         }
     }
 }
